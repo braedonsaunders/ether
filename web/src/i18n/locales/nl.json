@@ -2076,6 +2076,7 @@
   "m_0ebf362be967e5": "Indexer opslaan",
   "m_0ec10e0355f9f6": "Bron {n}",
   "m_0ec2214506c75e": "Streamt op",
+  "m_0ec49dc714595a": "Aan te bieden versies van dezelfde kwaliteit",
   "m_0ec4ae4a08c564": "Overgenomen uit een Radarr- of Sonarr-profiel.",
   "m_0ec6e5f133795d": {
     "one": "deze node: {slots} van {count} API-verbinding",
@@ -3102,6 +3103,7 @@
   "m_162737182d9849": "Zoeken in natuurlijke taal",
   "m_1627d178b0e53d": "Raakt {viewers}",
   "m_162943b8b57b2d": "{genre} dempen",
+  "m_162a001b8f1d07": "Andere releases met dezelfde cut, resolutie en HDR-type, getoond na Auto in het Plex-menu Afspeelversie, zodat je kunt wisselen als er één mislukt.",
   "m_162b9de049b42a": "Wachten op dienst · probeert automatisch opnieuw",
   "m_162c7efe448caa": "Status van wereldwijde trending",
   "m_162cb4ce185878": "{name} omlaag verplaatsen",

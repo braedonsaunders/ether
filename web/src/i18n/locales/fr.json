@@ -2135,6 +2135,7 @@
   "m_0ebf362be967e5": "Enregistrer l’indexeur",
   "m_0ec10e0355f9f6": "Source {n}",
   "m_0ec2214506c75e": "Disponible sur",
+  "m_0ec49dc714595a": "Versions de même qualité à proposer",
   "m_0ec4ae4a08c564": "Reprises d’un profil Radarr ou Sonarr.",
   "m_0ec6e5f133795d": {
     "one": "ce nœud : {slots} sur {count} connexion API",
@@ -3205,6 +3206,7 @@
   "m_162737182d9849": "Recherche en langage naturel",
   "m_1627d178b0e53d": "Concerne {viewers}",
   "m_162943b8b57b2d": "Atténuer {genre}",
+  "m_162a001b8f1d07": "Autres versions de même montage, résolution et type HDR, listées après Auto dans le menu Version de lecture de Plex pour pouvoir changer si l'une échoue.",
   "m_162b9de049b42a": "En attente du service · nouvel essai automatique",
   "m_162c7efe448caa": "État des tendances mondiales",
   "m_162cb4ce185878": "Descendre {name}",

@@ -370,6 +370,17 @@ export const RESOLVER: FieldGroup[] = localized(() => [
         help: t("Fallback releases kept for instant failover."),
       },
       {
+        key: "sameQualityAlternatives",
+        label: t("Same-quality versions to offer"),
+        kind: "number",
+        min: 0,
+        max: 3,
+        step: 1,
+        help: t(
+          "Other releases with the same cut, resolution and HDR type, listed after Auto in Plex's Play Version menu so you can switch if one fails.",
+        ),
+      },
+      {
         key: "healthSamples",
         label: t("Health check samples"),
         kind: "number",

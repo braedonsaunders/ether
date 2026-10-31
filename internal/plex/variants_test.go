@@ -22,10 +22,13 @@ import (
 type fakeVariantResolver struct {
 	byKey map[core.RatingKey][]core.ReleaseVariant
 	calls int
+	// lastMax is the cap the server asked for on the latest call.
+	lastMax int
 }
 
 func (r *fakeVariantResolver) Variants(_ context.Context, req core.ResolveRequest, max int) ([]core.ReleaseVariant, error) {
 	r.calls++
+	r.lastMax = max
 	vs := r.byKey[req.Title.Key]
 	if max > 0 && len(vs) > max {
 		vs = vs[:max]
@@ -520,5 +523,68 @@ func TestVIDAAPlaybackMetadataLifecycle(t *testing.T) {
 	check("stopped")
 	if r = f.get(t, path, "X-Plex-Token", "invalid", "X-Plex-Product", "Plex for VIDAA"); r.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized metadata: %d", r.Code)
+	}
+}
+
+// ETHE-5 C: same-quality alternatives are separate Play Versions. Auto stays
+// the first Media, each alternative prepares its own release by mediaIndex or
+// part id, and plain Play still prepares Auto.
+func TestSameQualityAlternativesAreSeparateVersions(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	alt := func(id, label string) core.ReleaseVariant {
+		return mkVariant(id, label, "", false, 1080, "h264", "eac3", false, 7000)
+	}
+	f.resolver.byKey[fightClub.Key] = []core.ReleaseVariant{
+		mkVariant("rel-auto", "Auto / Best for Device", "", true, 1080, "h264", "eac3", false, 7600),
+		alt("rel-alt1", "1080p WEB-DL · DD+ 5.1 · 2.3 GB · FLUX"),
+		alt("rel-alt2", "1080p WEB-DL · AAC 2.0 · 1.6 GB · EDITH"),
+		mkVariant("rel-4k", "4K Dolby Vision Remux", "", false, 2160, "hevc", "truehd", true, 45000),
+		mkVariant("rel-compat", "720p Blu-ray (High Compatibility)", "", false, 720, "h264", "aac", false, 4000),
+	}
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String())
+	body := rec.Body.String()
+	if n := strings.Count(body, "<Media "); n != 5 {
+		t.Fatalf("media count %d, want 5\n%s", n, body)
+	}
+	if f.resolver.lastMax != core.MaxVariants {
+		t.Errorf("render asked for %d versions, want core.MaxVariants=%d", f.resolver.lastMax, core.MaxVariants)
+	}
+	auto, a1, a2 := strings.Index(body, `title="Auto / Best`), strings.Index(body, "FLUX"), strings.Index(body, "EDITH")
+	if auto < 0 || !(auto < a1 && a1 < a2) {
+		t.Errorf("labels out of order auto=%d alt1=%d alt2=%d", auto, a1, a2)
+	}
+	if !strings.Contains(body, `id="`+fightClub.Key.String()+`"`) {
+		t.Errorf("auto keeps the rating-key id")
+	}
+
+	// A client that addresses the alternative's part key reaches the same release.
+	parts := regexp.MustCompile(`/library/parts/(9[0-9]{15})/[0-9]+/file\.mkv`).FindAllString(body, -1)
+	if len(parts) != 4 {
+		t.Fatalf("variant part keys %v", parts)
+	}
+	before := len(pb.variantCalls)
+	if rec := f.get(t, parts[0], "Range", "bytes=0-9"); rec.Code != http.StatusPartialContent {
+		t.Fatalf("part status %d", rec.Code)
+	}
+	if pb.variantCalls[before] != "rel-alt1" {
+		t.Errorf("first variant part prepared %v", pb.variantCalls)
+	}
+
+	base := "/video/:/transcode/universal/decision?path=/library/metadata/" + fightClub.Key.String()
+	for i, want := range []string{"rel-alt1", "rel-alt2"} {
+		before := len(pb.variantCalls)
+		if rec := f.get(t, base+fmt.Sprintf("&mediaIndex=%d&session=alt%d", i+1, i)); rec.Code != http.StatusOK {
+			t.Fatalf("decision %d status %d: %s", i+1, rec.Code, rec.Body.String())
+		}
+		if len(pb.variantCalls) != before+1 || pb.variantCalls[before] != want {
+			t.Fatalf("mediaIndex %d prepared %v, want %s", i+1, pb.variantCalls, want)
+		}
+	}
+	// Plain Play (no mediaIndex, or index 0) prepares Auto only.
+	n := len(pb.variantCalls)
+	f.get(t, base+"&session=plain")
+	f.get(t, base+"&mediaIndex=0&session=plain0")
+	if pb.prepared != 2 || len(pb.variantCalls) != n {
+		t.Errorf("plain play prepared=%d variantCalls=%v", pb.prepared, pb.variantCalls)
 	}
 }

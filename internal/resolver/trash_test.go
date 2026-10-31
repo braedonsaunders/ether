@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -132,6 +133,30 @@ func trashTree() map[string]string {
 	}
 }
 
+// trashGroupTree adds the cf-groups layout: the Base Profile carries no
+// formatItems of its own, so the formats it is supposed to have all come
+// from the guide's default-on groups.
+func trashGroupTree() map[string]string {
+	t := trashTree()
+	t["radarr/quality-profiles/base-profile.json"] = `{"trash_id":"p3","name":"Base Profile","group":99,
+		"items":[{"name":"WEBDL-1080p","allowed":true}],"formatItems":{}}`
+	t["radarr/cf-groups/audio-formats.json"] = `{"name":"[Audio] Audio Formats","trash_id":"g1","default":"true",
+		"quality_profiles":{"include":{"Base Profile":"p3","HD Bluray + WEB":"p1"}},
+		"custom_formats":[{"name":"DD+ ATMOS","trash_id":"cf-grp1","required":true},
+			{"name":"MP3","trash_id":"cf-grp2"},
+			{"name":"TrueHD","trash_id":"cf-grp3","default":true},
+			{"name":"BR-DISK","trash_id":"cf-brdisk","required":true}]}`
+	t["radarr/cf-groups/release-groups.json"] = `{"name":"[Release Groups] HQ","trash_id":"g2",
+		"quality_profiles":{"include":{"Base Profile":"p3"}},
+		"custom_formats":[{"name":"WEB Tier 01","trash_id":"cf-web1"}]}`
+	t["radarr/cf-groups/unwanted.json"] = `{"name":"[Unwanted] Unwanted Formats","trash_id":"g3","default":"true",
+		"quality_profiles":{"include":{"[SQP] SQP-1 (2160p)":"p2"}},
+		"custom_formats":[{"name":"X1","trash_id":"cf-x1","required":true}]}`
+	t["radarr/cf/grp-1.json"] = `{"trash_id":"cf-grp1","name":"DD+ ATMOS","trash_scores":{"default":2500},"specifications":[{"name":"atmos","implementation":"ReleaseTitleSpecification","fields":{"value":"ATMOS"}}]}`
+	t["radarr/cf/grp-3.json"] = `{"trash_id":"cf-grp3","name":"TrueHD","trash_scores":{"default":1750},"specifications":[{"name":"thd","implementation":"ReleaseTitleSpecification","fields":{"value":"TrueHD"}}]}`
+	return t
+}
+
 func TestTrashProfilesListsSummariesSafely(t *testing.T) {
 	gh := newFakeGitHub(t, trashTree())
 	g := gh.guides(nil)
@@ -178,6 +203,26 @@ func TestTrashProfileOnlyServesListedFiles(t *testing.T) {
 	data, err := g.Profile(context.Background(), AppRadarr, "sqp-1-2160p")
 	if err != nil || !strings.Contains(string(data), "SQP-1") {
 		t.Fatalf("profile %s %v", data, err)
+	}
+}
+
+func TestTrashProfileGroupFormats(t *testing.T) {
+	gh := newFakeGitHub(t, trashGroupTree())
+	g := gh.guides(nil)
+	got, err := g.ProfileGroupFormats(context.Background(), AppRadarr, "p3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"DD+ ATMOS": "cf-grp1", "TrueHD": "cf-grp3", "BR-DISK": "cf-brdisk"}
+	if !maps.Equal(got, want) {
+		t.Fatalf("group formats %v, want %v (required and default-on of default groups only)", got, want)
+	}
+	// A profile with no TRaSH ID keeps only its own formatItems.
+	if got, err := g.ProfileGroupFormats(context.Background(), AppRadarr, ""); err != nil || len(got) != 0 {
+		t.Fatalf("no trash ID: %v %v", got, err)
+	}
+	if _, err := g.ProfileGroupFormats(context.Background(), "lidarr", "p3"); err == nil {
+		t.Fatal("unknown app accepted")
 	}
 }
 

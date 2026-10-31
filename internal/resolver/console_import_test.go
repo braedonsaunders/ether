@@ -27,7 +27,12 @@ type importFixture struct {
 
 func newImportFixture(t *testing.T, save bool) *importFixture {
 	t.Helper()
-	f := &importFixture{gh: newFakeGitHub(t, trashTree()), cfg: testCfg()}
+	return newImportFixtureTree(t, save, trashTree())
+}
+
+func newImportFixtureTree(t *testing.T, save bool, tree map[string]string) *importFixture {
+	t.Helper()
+	f := &importFixture{gh: newFakeGitHub(t, tree), cfg: testCfg()}
 	f.svc = New(&fakeIndexer{}, nil, openTestDB(t), f.cfg, Options{})
 	deps := ConsoleDeps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Guides: f.gh.guides(nil)}
 	if save {
@@ -113,6 +118,41 @@ func TestConsolePreviewsAndAppliesTrashProfile(t *testing.T) {
 	}
 	if statuses["BR-DISK"] != FormatPresent || statuses["FreeLeech"] != FormatUnsupported || len(plan.Warnings) < 3 {
 		t.Fatalf("second plan %+v", plan)
+	}
+}
+
+func TestConsoleImportAddsDefaultGroupFormats(t *testing.T) {
+	f := newImportFixtureTree(t, true, trashGroupTree())
+	var plan QualityImportPlan
+	if code := f.do(t, "POST", "/quality-import/preview", body(importRequest{App: AppRadarr, Profile: "base-profile"}), &plan); code != 200 {
+		t.Fatalf("preview %d", code)
+	}
+	statuses := map[string]string{}
+	for _, fm := range plan.Formats {
+		statuses[fm.Name] = fm.Status
+	}
+	for _, want := range []string{"DD+ ATMOS", "TrueHD", "BR-DISK"} {
+		if statuses[want] != FormatAdd {
+			t.Errorf("%s not added: %+v", want, plan.Formats)
+		}
+	}
+	for _, left := range []string{"MP3", "WEB Tier 01"} {
+		if _, ok := statuses[left]; ok {
+			t.Errorf("%s should stay out (opt-out member / opt-in group): %+v", left, plan.Formats)
+		}
+	}
+	if plan.Profile.CustomFormatScores["cf-grp1"] != 2500 || plan.Profile.CustomFormatScores["cf-grp3"] != 1750 {
+		t.Fatalf("scores %v", plan.Profile.CustomFormatScores)
+	}
+	var applied struct {
+		Name         string `json:"name"`
+		FormatsAdded int    `json:"formatsAdded"`
+	}
+	if code := f.do(t, "POST", "/quality-import", body(importRequest{App: AppRadarr, Profile: "base-profile"}), &applied); code != 200 || applied.FormatsAdded != 3 {
+		t.Fatalf("apply %d %+v", code, applied)
+	}
+	if last := f.cfg.Quality.Profiles[len(f.cfg.Quality.Profiles)-1]; last.Name != "Base Profile" || len(f.cfg.Resolver.CustomFormats) != 3 {
+		t.Fatalf("saved %+v / %d formats", last, len(f.cfg.Resolver.CustomFormats))
 	}
 }
 

@@ -66,7 +66,7 @@ type candidateCheck struct {
 func (c *candidateCheck) wait(ctx context.Context) validation {
 	select {
 	case <-c.done:
-		if c.retrySpeculative != nil && (errors.Is(c.result.err, core.ErrNotCached) || errors.Is(c.result.err, core.ErrBudgetExhausted)) {
+		if c.retrySpeculative != nil && (errors.Is(c.result.err, core.ErrNotCached) || errors.Is(c.result.err, core.ErrBudgetExhausted) || errors.Is(c.result.err, core.ErrForegroundOnly)) {
 			return c.retrySpeculative(ctx)
 		}
 		return c.result

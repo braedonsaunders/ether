@@ -1,6 +1,15 @@
 package core
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrForegroundOnly reports a speculative check that could not decide a
+// source without work only a foreground attempt may do (adding a torrent to
+// a debrid account, say). Like ErrBudgetExhausted it is never evidence of
+// source absence: a foreground caller tries the source itself.
+var ErrForegroundOnly = errors.New("background check cannot decide this source")
 
 // BackgroundBudget is an optional admission hook for speculative work. Ordinary
 // playback has no hook. Implementations must be concurrency safe; denied work

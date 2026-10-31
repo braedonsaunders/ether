@@ -10,7 +10,7 @@ import (
 )
 
 // Positive hints are validated by the normal per-id readiness request.
-// Separate from listCache: its network refresh holds a lock for seconds.
+// Separate from the short-lived account snapshot; normal per-id reads validate hints.
 func (p *torBox) findKnown(hash string) string {
 	p.knownMu.Lock()
 	defer p.knownMu.Unlock()
@@ -37,6 +37,11 @@ func (p *torBox) rememberKnown(hash, id string) {
 // Matching by hash preserves episode/series identity and avoids duplicate
 // account entries without an unconditional account-wide request on Play.
 func (p *torBox) findFresh(ctx context.Context, hash string) (string, error) {
+	// D: a positive fresh/in-flight background snapshot already identifies
+	// this duplicate. A miss still needs the provider's fresh recovery read.
+	if id, err := p.list.reuse(ctx, p.opts.Now(), hash); id != "" || err != nil {
+		return id, err
+	}
 	data, err := p.do(ctx, apiRequest{method: http.MethodGet, path: "/torrents/mylist", query: url.Values{"bypass_cache": {"true"}}})
 	if err != nil {
 		return "", err

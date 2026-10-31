@@ -2194,6 +2194,7 @@
   "m_0ebf362be967e5": "Uložit indexer",
   "m_0ec10e0355f9f6": "Zdroj {n}",
   "m_0ec2214506c75e": "Streamováno na",
+  "m_0ec49dc714595a": "Počet verzí stejné kvality",
   "m_0ec4ae4a08c564": "Převzato z profilu Radarr nebo Sonarr.",
   "m_0ec6e5f133795d": {
     "one": "tento uzel: {slots} z {count} připojení API",
@@ -3308,6 +3309,7 @@
   "m_162737182d9849": "Vyhledávání přirozeným jazykem",
   "m_1627d178b0e53d": "Ovlivní: {viewers}",
   "m_162943b8b57b2d": "Ztlumit {genre}",
+  "m_162a001b8f1d07": "Další vydání se stejnou verzí, rozlišením a typem HDR, uvedená po Auto v nabídce Verze přehrávání v Plexu, abyste mohli přepnout, když jedno selže.",
   "m_162b9de049b42a": "Čeká se na službu · automaticky se zkusí znovu",
   "m_162c7efe448caa": "Stav globálních trendů",
   "m_162cb4ce185878": "Posunout {name} dolů",

@@ -2076,6 +2076,7 @@
   "m_0ebf362be967e5": "Save indexer",
   "m_0ec10e0355f9f6": "Source {n}",
   "m_0ec2214506c75e": "Streaming on",
+  "m_0ec49dc714595a": "Same-quality versions to offer",
   "m_0ec4ae4a08c564": "Carried over from a Radarr or Sonarr profile.",
   "m_0ec6e5f133795d": {
     "one": "this node: {slots} of {count} API connection",
@@ -3102,6 +3103,7 @@
   "m_162737182d9849": "Natural-language search",
   "m_1627d178b0e53d": "Affects {viewers}",
   "m_162943b8b57b2d": "Mute {genre}",
+  "m_162a001b8f1d07": "Other releases with the same cut, resolution and HDR type, listed after Auto in Plex's Play Version menu so you can switch if one fails.",
   "m_162b9de049b42a": "Waiting for service · retries automatically",
   "m_162c7efe448caa": "Global trending status",
   "m_162cb4ce185878": "Move {name} down",

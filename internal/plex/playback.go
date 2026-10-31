@@ -769,7 +769,13 @@ func applyStreamDecision(st model.Stream, src core.StreamInfo, dec core.Decision
 			st.Location = "sidecar"
 		default:
 			st.Decision = "copy"
-			st.Location = "segments-subtitle"
+			st.Location = "sidecar"
+			if st.Key == "" {
+				st.Key = "/library/streams/" + strconv.FormatInt(st.ID, 10)
+			}
+			if st.Format == "" {
+				st.Format = st.Codec
+			}
 		}
 	}
 	return st, true
@@ -1351,8 +1357,21 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if _, ext, ok := strings.Cut(chi.URLParam(r, "stream"), "."); ok {
 		format = subtitleFormat(ext)
 	}
-	if s.boundStreams == nil {
+	if s.boundStreams == nil || pr == nil || pr.User == nil {
 		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	binding, rerr := s.resolveStream(r.Context(), pr.User, id)
+	if rerr != nil {
+		if errors.Is(rerr, core.ErrUnauthorized) {
+			writeHTTPError(w, http.StatusUnauthorized)
+			return
+		}
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	if binding.Info.Type == "subtitle" && !binding.Info.External {
+		s.serveEmbeddedStream(w, r, binding.Key, binding.Info)
 		return
 	}
 	receipt, _ := acceptanceFrom(r.Context())

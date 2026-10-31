@@ -2076,6 +2076,7 @@
   "m_0ebf362be967e5": "Spara indexerare",
   "m_0ec10e0355f9f6": "Källa {n}",
   "m_0ec2214506c75e": "Streamas på",
+  "m_0ec49dc714595a": "Versioner i samma kvalitet att erbjuda",
   "m_0ec4ae4a08c564": "Överförda från en Radarr- eller Sonarr-profil.",
   "m_0ec6e5f133795d": {
     "one": "den här noden: {slots} av {count} API-anslutning",
@@ -3102,6 +3103,7 @@
   "m_162737182d9849": "Sökning på naturligt språk",
   "m_1627d178b0e53d": "Påverkar {viewers}",
   "m_162943b8b57b2d": "Dämpa {genre}",
+  "m_162a001b8f1d07": "Andra utgåvor med samma klipp, upplösning och HDR-typ, listade efter Auto i Plex meny Uppspelningsversion så att du kan byta om en misslyckas.",
   "m_162b9de049b42a": "Väntar på tjänsten · försöker igen automatiskt",
   "m_162c7efe448caa": "Status för globala trender",
   "m_162cb4ce185878": "Flytta {name} nedåt",

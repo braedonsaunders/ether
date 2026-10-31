@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -140,9 +141,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if len(keys) == 1 && isPlayable(t.Type) {
-				if warm, ok := s.d.Playback.(core.PlaybackPreparer); ok {
-					warm.PreResolve(ctx, pr.User, t.Key, pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps))
-				}
+				s.warmDetail(ctx, pr, t)
 			}
 			if len(keys) == 1 {
 				// Live session intent (#32): a single-item detail open.
@@ -177,6 +176,11 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 	s.decorateDetail(ctx, pr, t, &md)
 	if children && (t.Type == core.TypeShow || t.Type == core.TypeSeason) {
 		if kids, err := s.metadataChildren(ctx, pr, t.Key); err == nil {
+			if t.Type == core.TypeSeason {
+				if ep := s.seasonNextEpisode(ctx, pr, kids); ep != nil {
+					s.warmDetail(ctx, pr, ep)
+				}
+			}
 			rendered := s.renderTitles(ctx, pr, kids, renderOpts{media: true, skipLeafCounts: t.Type == core.TypeShow})
 			if t.Type == core.TypeShow {
 				s.applyLeafCounts(ctx, pr, rendered, kids, memo)
@@ -186,13 +190,11 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 	}
 	if onDeck && t.Type == core.TypeShow {
 		if ep, st := s.showOnDeck(ctx, pr, t.Key, memo); ep != nil {
+			// The show page's Play button plays this episode: resolve,
+			// open and probe it so OnDeck and the following Play have its tracks.
+			s.warmDetail(ctx, pr, ep)
 			if items := s.renderTitles(ctx, pr, []core.Title{*ep}, renderOpts{media: true, state: st}); len(items) > 0 {
 				md.OnDeck = &model.OnDeck{Metadata: items[0]}
-			}
-			// The show page's Play button plays this episode: resolve,
-			// open and probe it while the viewer reads the page.
-			if warm, ok := s.d.Playback.(core.PlaybackPreparer); ok {
-				warm.PreResolve(ctx, pr.User, ep.Key, pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps))
 			}
 		}
 	}
@@ -233,6 +235,77 @@ func (s *Server) showOnDeck(ctx context.Context, pr *Request, show core.RatingKe
 	}
 	st := s.stateFor(ctx, pr, eps)
 	return experience.ShowOnDeck(eps, st, func(t *core.Title) bool { return s.sameDayUnavailable(ctx, pr, t) }), st
+}
+
+const detailWarmWaitBudget = 4 * time.Second
+
+// warmDetail schedules a detail-page warm-up for t and waits up to a bounded
+// budget for its probe when no session, resumed probe or warm probe is ready
+// yet, so the first detail/season/show open renders the file's real audio and
+// subtitle tracks instead of an estimate.
+func (s *Server) warmDetail(ctx context.Context, pr *Request, t *core.Title) {
+	if t == nil || !isPlayable(t.Type) || s.d.Playback == nil {
+		return
+	}
+	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	if warm, ok := s.d.Playback.(core.PlaybackPreparer); ok {
+		warm.PreResolve(ctx, pr.User, t.Key, caps)
+	}
+	if pr == nil || pr.User == nil {
+		return
+	}
+	if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, t.Key); ok && ps != nil {
+		return
+	}
+	if _, _, ok := s.resumedTracks(ctx, pr, t); ok {
+		return
+	}
+	if wp, ok := s.d.Playback.(core.WarmProber); ok {
+		if _, warm := wp.WarmProbeInfo(pr.User, caps, t.Key); warm {
+			return
+		}
+	}
+	if waiter, ok := s.d.Playback.(core.WarmProbeWaiter); ok {
+		waiter.WaitWarmProbe(ctx, pr.User, caps, t.Key, detailWarmWaitBudget)
+	}
+}
+
+// seasonNextEpisode picks the episode a viewer opening a season page is most
+// likely to play first: an in-progress episode, else the episode after the
+// last watched one, else the first aired episode.
+func (s *Server) seasonNextEpisode(ctx context.Context, pr *Request, eps []core.Title) *core.Title {
+	if len(eps) == 0 {
+		return nil
+	}
+	now := s.now()
+	st := s.stateFor(ctx, pr, eps)
+	lastWatched := -1
+	for i := range eps {
+		if eps[i].Type != core.TypeEpisode || (!eps[i].Released.IsZero() && eps[i].Released.After(now)) {
+			continue
+		}
+		ws := st[eps[i].Key]
+		if ws.ViewOffset > 0 && ws.ViewCount == 0 {
+			return &eps[i]
+		}
+		if ws.ViewCount > 0 {
+			lastWatched = i
+		}
+	}
+	for i := lastWatched + 1; i < len(eps); i++ {
+		if eps[i].Type != core.TypeEpisode || (!eps[i].Released.IsZero() && eps[i].Released.After(now)) {
+			continue
+		}
+		if st[eps[i].Key].ViewCount == 0 && !s.sameDayUnavailable(ctx, pr, &eps[i]) {
+			return &eps[i]
+		}
+	}
+	for i := range eps {
+		if eps[i].Type == core.TypeEpisode && (eps[i].Released.IsZero() || !eps[i].Released.After(now)) && !s.sameDayUnavailable(ctx, pr, &eps[i]) {
+			return &eps[i]
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {
@@ -321,6 +394,11 @@ func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {
 	kids = appendScheduled(kids, future)
 	lo, hi := pr.window(len(kids))
 	page := kids[lo:hi]
+	if parent.Type == core.TypeSeason {
+		if ep := s.seasonNextEpisode(ctx, pr, page); ep != nil {
+			s.warmDetail(ctx, pr, ep)
+		}
+	}
 	if len(future) == 0 {
 		mc.Metadata = s.renderTitles(ctx, pr, page, renderOpts{media: true, inSection: true, skipLeafCounts: parent.Type == core.TypeShow})
 	} else {
@@ -506,6 +584,7 @@ func (s *Server) handleItemOnDeck(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if ep, st := s.showOnDeck(ctx, pr, k, nil); ep != nil {
+			s.warmDetail(ctx, pr, ep)
 			mc.Metadata = s.renderTitles(ctx, pr, []core.Title{*ep}, renderOpts{media: true, state: st})
 		}
 	}

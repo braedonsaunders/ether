@@ -113,24 +113,29 @@ type Plan struct {
 	Imported bool     `json:"imported"`
 }
 type media struct {
-	Key   string `xml:"ratingKey,attr"`
-	Type  string `xml:"type,attr"`
-	Title string `xml:"title,attr"`
-	Year  int    `xml:"year,attr"`
-	GUID  string `xml:"guid,attr"`
-	GUIDs []struct {
+	Key       string `xml:"ratingKey,attr"`
+	Type      string `xml:"type,attr"`
+	Title     string `xml:"title,attr"`
+	OrigTitle string `xml:"originalTitle,attr"`
+	Year      int    `xml:"year,attr"`
+	AirDate   string `xml:"originallyAvailableAt,attr"`
+	GUID      string `xml:"guid,attr"`
+	GUIDs     []struct {
 		ID string `xml:"id,attr"`
 	} `xml:"Guid"`
-	Views       int     `xml:"viewCount,attr"`
-	Offset      int64   `xml:"viewOffset,attr"`
-	Duration    int64   `xml:"duration,attr"`
-	Rating      float64 `xml:"userRating,attr"`
-	ViewedAt    int64   `xml:"lastViewedAt,attr"`
-	HistoryAt   int64   `xml:"viewedAt,attr"`
-	AccountID   int64   `xml:"accountID,attr"`
-	Grandparent string  `xml:"grandparentRatingKey,attr"`
-	Season      int     `xml:"parentIndex,attr"`
-	Episode     int     `xml:"index,attr"`
+	Views            int     `xml:"viewCount,attr"`
+	Offset           int64   `xml:"viewOffset,attr"`
+	Duration         int64   `xml:"duration,attr"`
+	Rating           float64 `xml:"userRating,attr"`
+	ViewedAt         int64   `xml:"lastViewedAt,attr"`
+	HistoryAt        int64   `xml:"viewedAt,attr"`
+	AccountID        int64   `xml:"accountID,attr"`
+	Grandparent      string  `xml:"grandparentRatingKey,attr"`
+	GrandparentKey   string  `xml:"grandparentKey,attr"`
+	GrandparentTitle string  `xml:"grandparentTitle,attr"`
+	ParentKey        string  `xml:"parentKey,attr"`
+	Season           int     `xml:"parentIndex,attr"`
+	Episode          int     `xml:"index,attr"`
 }
 type container struct {
 	Accounts []struct {
@@ -146,14 +151,63 @@ type container struct {
 		GUIDs     []struct {
 			ID string `xml:"id,attr"`
 		} `xml:"Guid"`
-		Type  string `xml:"type,attr"`
-		Title string `xml:"title,attr"`
-		Year  int    `xml:"year,attr"`
-		GUID  string `xml:"guid,attr"`
+		Type      string `xml:"type,attr"`
+		Title     string `xml:"title,attr"`
+		OrigTitle string `xml:"originalTitle,attr"`
+		Year      int    `xml:"year,attr"`
+		AirDate   string `xml:"originallyAvailableAt,attr"`
+		GUID      string `xml:"guid,attr"`
 	} `xml:"Directory"`
 	Videos    []media `xml:"Video"`
 	Playlists []media `xml:"Playlist"`
 	Metadata  []media `xml:"Metadata"`
+}
+
+func (m media) effectiveYear() int {
+	if m.Year >= 1900 && m.Year <= 2099 {
+		return m.Year
+	}
+	if y := parseLeadingYear(m.AirDate); y > 0 {
+		return y
+	}
+	if _, y := splitTitleYear(m.Title); y > 0 {
+		return y
+	}
+	return 0
+}
+
+func (m media) grandparentID() string {
+	if m.Grandparent != "" {
+		return m.Grandparent
+	}
+	if m.GrandparentKey != "" {
+		s := strings.TrimPrefix(m.GrandparentKey, "/library/metadata/")
+		s = strings.TrimSuffix(s, "/children")
+		if s != "" && !strings.Contains(s, "/") {
+			return s
+		}
+	}
+	return ""
+}
+
+func parseLeadingYear(s string) int {
+	s = strings.TrimSpace(s)
+	if len(s) < 4 {
+		return 0
+	}
+	y, err := strconv.Atoi(s[:4])
+	if err != nil || y < 1900 || y > 2099 {
+		return 0
+	}
+	return y
+}
+
+func episodeKeyFits(season, episode int) bool {
+	return season >= 0 && season < 1000 && episode >= 0 && episode < 10_000
+}
+
+func validEpisodeNumbers(season, episode int) bool {
+	return season >= 0 && season < 1000 && episode > 0 && episode < 10_000
 }
 
 func (s *Service) get(ctx context.Context, base, token, path string) (container, error) {
@@ -205,18 +259,54 @@ func (s *Service) getOnce(ctx context.Context, base, token, path string) (contai
 	e = xml.Unmarshal(b, &c)
 	return c, e
 }
+
 func (s *Service) mapMedia(ctx context.Context, base, token string, m media) (core.RatingKey, error) {
+	if k, err := s.mapMediaGUIDs(ctx, base, token, m); err == nil && k != 0 {
+		return k, nil
+	} else if errors.Is(err, context.Canceled) {
+		return 0, err
+	}
+	return s.mapMediaSearch(ctx, m)
+}
+
+func (s *Service) mapMediaGUIDs(ctx context.Context, base, token string, m media) (core.RatingKey, error) {
 	guids := []string{m.GUID}
 	for _, g := range m.GUIDs {
 		guids = append(guids, g.ID)
 	}
-	for _, g := range guids {
-		for _, prefix := range []string{"tmdb://", "com.plexapp.agents.themoviedb://", "imdb://", "com.plexapp.agents.imdb://", "tvdb://", "com.plexapp.agents.thetvdb://"} {
+	// Prefer TMDB identifiers over IMDb/TVDB regardless of XML attribute order.
+	for _, prefix := range []string{"tmdb://", "com.plexapp.agents.themoviedb://", "imdb://", "com.plexapp.agents.imdb://", "tvdb://", "com.plexapp.agents.thetvdb://"} {
+		for _, g := range guids {
 			if !strings.HasPrefix(g, prefix) {
 				continue
 			}
 			id := strings.Split(strings.TrimPrefix(g, prefix), "?")[0]
 			if strings.Contains(prefix, "tmdb") || strings.Contains(prefix, "themoviedb") {
+				if m.Type == "episode" && strings.Count(id, "/") >= 2 {
+					parts := strings.Split(id, "/")
+					showID, e1 := strconv.ParseInt(parts[0], 10, 64)
+					sNum, e2 := strconv.Atoi(parts[1])
+					eNum, e3 := strconv.Atoi(parts[2])
+					if e1 == nil && showID > 0 && e2 == nil && e3 == nil {
+						season, ep := m.Season, m.Episode
+						if !validEpisodeNumbers(season, ep) {
+							season, ep = sNum, eNum
+						}
+						if episodeKeyFits(season, ep) {
+							showKey := core.ShowKey(showID)
+							if s.catalog != nil {
+								if _, ce := s.catalogGet(ctx, showKey); ce != nil {
+									if errors.Is(ce, context.Canceled) {
+										return 0, ce
+									}
+									continue
+								}
+							}
+							return core.EpisodeKey(showID, season, ep), nil
+						}
+					}
+					continue
+				}
 				n, e := strconv.ParseInt(id, 10, 64)
 				if e != nil || n <= 0 {
 					continue
@@ -230,6 +320,9 @@ func (s *Service) mapMedia(ctx context.Context, base, token string, m media) (co
 				if k != 0 {
 					if s.catalog != nil {
 						if _, e = s.catalogGet(ctx, k); e != nil {
+							if errors.Is(e, context.Canceled) {
+								return 0, e
+							}
 							continue
 						}
 					}
@@ -240,18 +333,46 @@ func (s *Service) mapMedia(ctx context.Context, base, token string, m media) (co
 				if strings.Contains(prefix, "tvdb") {
 					source = "tvdb"
 				}
-				t, e := s.externalTitle(ctx, source, id)
+				if m.Type == "episode" && source == "tvdb" && strings.Count(id, "/") >= 2 {
+					parts := strings.Split(id, "/")
+					sNum, e1 := strconv.Atoi(parts[1])
+					eNum, e2 := strconv.Atoi(parts[2])
+					if e1 == nil && e2 == nil {
+						season, ep := m.Season, m.Episode
+						if !validEpisodeNumbers(season, ep) {
+							season, ep = sNum, eNum
+						}
+						if episodeKeyFits(season, ep) {
+							t, e := s.externalTitleForType(ctx, "tvdb", parts[0], "show")
+							if errors.Is(e, context.Canceled) {
+								return 0, e
+							}
+							if e == nil && t != nil && t.Type == core.TypeShow {
+								return core.EpisodeKey(t.Key.TMDB(), season, ep), nil
+							}
+						}
+					}
+					continue
+				}
+				t, e := s.externalTitleForType(ctx, source, id, m.Type)
+				if errors.Is(e, context.Canceled) {
+					return 0, e
+				}
 				if e == nil && t != nil && string(t.Type) == m.Type {
 					return t.Key, nil
 				}
 			}
 		}
 	}
-	if m.Type == "episode" && m.Grandparent != "" && base != "" {
-		c, e := s.get(ctx, base, token, "/library/metadata/"+url.PathEscape(m.Grandparent)+"?includeGuids=1")
+	gp := m.grandparentID()
+	if m.Type == "episode" && gp != "" && base != "" && episodeKeyFits(m.Season, m.Episode) {
+		c, e := s.get(ctx, base, token, "/library/metadata/"+url.PathEscape(gp)+"?includeGuids=1")
+		if errors.Is(e, context.Canceled) {
+			return 0, e
+		}
 		if e == nil {
 			for _, d := range c.Directories {
-				show := media{Type: "show", Title: d.Title, Year: d.Year, GUID: d.GUID, GUIDs: d.GUIDs}
+				show := media{Type: "show", Title: d.Title, OrigTitle: d.OrigTitle, Year: d.Year, AirDate: d.AirDate, GUID: d.GUID, GUIDs: d.GUIDs}
 				k, e := s.mapMedia(ctx, base, token, show)
 				if e == nil {
 					return core.EpisodeKey(k.TMDB(), m.Season, m.Episode), nil
@@ -266,13 +387,61 @@ func (s *Service) mapMedia(ctx context.Context, base, token string, m media) (co
 			}
 		}
 	}
-	if s.catalog != nil && m.Title != "" && m.Year > 0 && (m.Type == "movie" || m.Type == "show") {
-		if t, e := s.searchTitle(ctx, m.Type, m.Title, m.Year); e == nil && t != nil && t.Key != 0 {
+	return 0, core.ErrNotFound
+}
+
+func (s *Service) mapMediaSearch(ctx context.Context, m media) (core.RatingKey, error) {
+	if s.catalog == nil || m.Title == "" {
+		return 0, core.ErrNotFound
+	}
+	year := m.effectiveYear()
+	switch m.Type {
+	case "movie":
+		if year > 0 {
+			if t, e := s.searchTitle(ctx, "movie", m.Title, year); e == nil && t != nil && t.Key != 0 {
+				return t.Key, nil
+			} else if errors.Is(e, context.Canceled) {
+				return 0, e
+			}
+			if m.OrigTitle != "" && !strings.EqualFold(m.OrigTitle, m.Title) {
+				if t, e := s.searchTitle(ctx, "movie", m.OrigTitle, year); e == nil && t != nil && t.Key != 0 {
+					return t.Key, nil
+				} else if errors.Is(e, context.Canceled) {
+					return 0, e
+				}
+			}
+		}
+	case "show":
+		if year > 0 {
+			if t, e := s.searchTitle(ctx, "show", m.Title, year); e == nil && t != nil && t.Key != 0 {
+				return t.Key, nil
+			} else if errors.Is(e, context.Canceled) {
+				return 0, e
+			}
+			if m.OrigTitle != "" && !strings.EqualFold(m.OrigTitle, m.Title) {
+				if t, e := s.searchTitle(ctx, "show", m.OrigTitle, year); e == nil && t != nil && t.Key != 0 {
+					return t.Key, nil
+				} else if errors.Is(e, context.Canceled) {
+					return 0, e
+				}
+			}
+		}
+		if t, e := s.searchShow(ctx, m.Title, year, 0); e == nil && t != nil && t.Key != 0 {
 			return t.Key, nil
+		} else if errors.Is(e, context.Canceled) {
+			return 0, e
+		}
+		if m.OrigTitle != "" && !strings.EqualFold(m.OrigTitle, m.Title) {
+			if t, e := s.searchShow(ctx, m.OrigTitle, year, 0); e == nil && t != nil && t.Key != 0 {
+				return t.Key, nil
+			} else if errors.Is(e, context.Canceled) {
+				return 0, e
+			}
 		}
 	}
 	return 0, core.ErrNotFound
 }
+
 func (s *Service) pages(ctx context.Context, base, token, path string) ([]media, error) {
 	out := []media{}
 	for start := 0; start < 1000000; {
@@ -291,7 +460,7 @@ func (s *Service) pages(ctx context.Context, base, token, path string) ([]media,
 			if key == "" {
 				key = d.Key
 			}
-			items = append(items, media{Key: key, Title: d.Title, Year: d.Year, Type: d.Type, GUID: d.GUID, GUIDs: d.GUIDs})
+			items = append(items, media{Key: key, Title: d.Title, OrigTitle: d.OrigTitle, Year: d.Year, AirDate: d.AirDate, Type: d.Type, GUID: d.GUID, GUIDs: d.GUIDs})
 		}
 		out = append(out, items...)
 		addProgress(ctx, func(pr *PreviewProgress) { pr.Pages++ })
@@ -366,6 +535,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 			if e != nil {
 				return p, e
 			}
+			mapper.indexLibrary(ms)
 			mapped := make([]mappedRow, len(ms))
 			if e = s.eachMedia(ctx, ms, func(i int, m media) {
 				addProgress(ctx, func(pr *PreviewProgress) { pr.Scanned++ })
@@ -425,6 +595,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 		if he != nil {
 			p.Warnings = append(p.Warnings, "Detailed watch history unavailable for "+v.Name+"; last-viewed summaries will be imported")
 		} else {
+			mapper.indexHistory(history, accountID)
 			mapped := make([]mappedRow, len(history))
 			if e = s.eachMedia(ctx, history, func(i int, h media) {
 				addProgress(ctx, func(pr *PreviewProgress) { pr.Scanned++ })

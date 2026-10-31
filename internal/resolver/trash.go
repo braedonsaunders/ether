@@ -30,6 +30,7 @@ const (
 
 	trashKindProfiles = "quality-profiles"
 	trashKindFormats  = "cf"
+	trashKindGroups   = "cf-groups"
 
 	trashListLimit    = 2 << 20 // a directory listing
 	trashFileLimit    = 1 << 20 // one profile or custom format
@@ -172,6 +173,104 @@ func (g *TrashGuides) Profile(ctx context.Context, app, id string) ([]byte, erro
 		return nil, ErrTrashNotFound
 	}
 	return g.file(ctx, app, trashKindProfiles, id+".json")
+}
+
+// trashCFGroup is a TRaSH cf-group: custom formats the guide attaches to
+// profiles through quality_profiles.include.
+type trashCFGroup struct {
+	// Default is "true" when the group's formats belong to the profile
+	// without the owner choosing them; absent means opt-in.
+	Default string `json:"default"`
+	Formats []struct {
+		Name     string `json:"name"`
+		TrashID  string `json:"trash_id"`
+		Required bool   `json:"required"`
+		Default  bool   `json:"default"`
+	} `json:"custom_formats"`
+	QualityProfiles struct {
+		Include map[string]string `json:"include"` // profile name -> profile trash ID
+	} `json:"quality_profiles"`
+}
+
+// cfGroups reads app's format groups.
+func (g *TrashGuides) cfGroups(ctx context.Context, app string) ([]trashCFGroup, error) {
+	names, err := g.list(ctx, app, trashKindGroups)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]trashCFGroup, len(names))
+	ok := make([]bool, len(names))
+	var mu sync.Mutex
+	var firstErr error
+	g.eachSliding(ctx, names, func(ctx context.Context, i int, name string) bool {
+		data, err := g.file(ctx, app, trashKindGroups, name)
+		if err != nil {
+			mu.Lock()
+			firstErr = cmp.Or(firstErr, err)
+			mu.Unlock()
+			return true
+		}
+		var group trashCFGroup
+		if json.Unmarshal(data, &group) == nil {
+			out[i], ok[i] = group, true
+		}
+		return true
+	})
+	var groups []trashCFGroup
+	for i, group := range out {
+		if ok[i] {
+			groups = append(groups, group)
+		}
+	}
+	if len(groups) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+	return groups, nil
+}
+
+// groupDefaultFormats returns the custom formats (name -> trash ID) the
+// default-on groups add to the profile with this trash ID: a group whose
+// include lists the profile and whose default is "true" contributes only
+// its required and default-on formats. Opt-in groups and the opt-out
+// members of default-on groups are the owner's choice, not the profile's
+// defaults.
+func groupDefaultFormats(groups []trashCFGroup, profileID string) map[string]string {
+	out := map[string]string{}
+	if profileID == "" {
+		return out
+	}
+	for _, group := range groups {
+		if group.Default != "true" {
+			continue
+		}
+		included := false
+		for _, id := range group.QualityProfiles.Include {
+			if id == profileID {
+				included = true
+				break
+			}
+		}
+		if !included {
+			continue
+		}
+		for _, f := range group.Formats {
+			if (f.Required || f.Default) && f.Name != "" && f.TrashID != "" {
+				out[f.Name] = f.TrashID
+			}
+		}
+	}
+	return out
+}
+
+// ProfileGroupFormats returns the custom formats (name -> trash ID) that
+// TRaSH's default-on format groups add to profile. The result holds what
+// was found; the error reports why the groups could not all be read.
+func (g *TrashGuides) ProfileGroupFormats(ctx context.Context, app, profileID string) (map[string]string, error) {
+	if !validApp(app) {
+		return nil, fmt.Errorf("app must be radarr or sonarr")
+	}
+	groups, err := g.cfGroups(ctx, app)
+	return groupDefaultFormats(groups, profileID), err
 }
 
 // CustomFormats finds the definitions of the trash IDs in want (format name

@@ -62,6 +62,11 @@ func TestTorBoxBackgroundDiscoversExistingAccountTorrent(t *testing.T) {
 			p := newTorBox(testKey, fastOpts(srv.URL))
 			cfg := config.Debrid{CachedOnly: false, Providers: []config.DebridProvider{{ID: "tb", Kind: "torbox", APIKey: testKey, Enabled: true}}}
 			svc := NewService(cfg, Options{NewProvider: func(config.DebridProvider, ProviderOptions) (Provider, error) { return p, nil }})
+			// Accepted D preserves PR #44 discovery with a fresh shared list;
+			// a cold background check now warms it without waiting.
+			if _, err := p.Find(t.Context(), testHash); err != nil {
+				t.Fatal(err)
+			}
 			ctx := core.WithBackgroundBudget(t.Context(), func(context.Context, string, string, int64) error { return nil })
 			payload, err := svc.Acquire(ctx, core.Release{ID: "existing-episode", Name: "Show.S01", Protocol: core.ProtocolTorrent, InfoHash: testHash, Target: &core.ReleaseTarget{Season: 1, Episode: 2}})
 			if cached {

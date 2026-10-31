@@ -179,23 +179,29 @@ func (p *debridLink) Find(ctx context.Context, hash string) (string, error) {
 	if id := p.findKnown(hash); id != "" {
 		return id, nil
 	}
-	return p.list.find(ctx, p.opts.Now(), hash, func(ctx context.Context) (map[string]string, error) {
-		data, err := p.do(ctx, apiRequest{method: http.MethodGet, path: "/seedbox/list", query: url.Values{"perPage": {"100"}}})
-		if err != nil {
-			return nil, err
+	return p.list.findShared(ctx, p.opts.Now(), hash, p.loadList)
+}
+
+func (p *debridLink) findBackground(ctx context.Context, hash string) string {
+	return p.list.background(ctx, p.opts.Now(), hash, p.loadList)
+}
+
+func (p *debridLink) loadList(ctx context.Context) (map[string]string, error) {
+	data, err := p.do(ctx, apiRequest{method: http.MethodGet, path: "/seedbox/list", query: url.Values{"perPage": {"100"}}})
+	if err != nil {
+		return nil, err
+	}
+	var items []dlTorrent
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, errors.New("debrid-link: unexpected torrent list")
+	}
+	m := map[string]string{}
+	for _, it := range items {
+		if it.ID != "" && dlComplete(&it) {
+			m[strings.ToLower(it.HashString)] = it.ID
 		}
-		var items []dlTorrent
-		if err := json.Unmarshal(data, &items); err != nil {
-			return nil, errors.New("debrid-link: unexpected torrent list")
-		}
-		m := map[string]string{}
-		for _, it := range items {
-			if it.ID != "" && dlComplete(&it) {
-				m[strings.ToLower(it.HashString)] = it.ID
-			}
-		}
-		return m, nil
-	})
+	}
+	return m, nil
 }
 
 func dlComplete(t *dlTorrent) bool {

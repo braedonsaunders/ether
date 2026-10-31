@@ -284,8 +284,12 @@ type Resolver struct {
 	SearchCacheTTL       Duration            `json:"searchCacheTtl"`
 	UnavailableCooloff   Duration            `json:"unavailableCooloff"` // hide titles with no release this long
 	MaxCandidates        int                 `json:"maxCandidates"`
-	BlockedGroups        []string            `json:"blockedGroups"`
-	BlockedTerms         []string            `json:"blockedTerms"`
+	// SameQualityAlternatives is how many other releases of the same cut,
+	// resolution and HDR type a detail page lists after Auto as Play
+	// Versions (0 = none, at most 3; default 1).
+	SameQualityAlternatives int      `json:"sameQualityAlternatives"`
+	BlockedGroups           []string `json:"blockedGroups"`
+	BlockedTerms            []string `json:"blockedTerms"`
 	// SourcePreference orders releases of equivalent quality by source:
 	// "auto" (or empty) puts the source that measurably starts faster
 	// first, and cached debrid first for popular titles until both

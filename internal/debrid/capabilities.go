@@ -1,7 +1,15 @@
 package debrid
 
+import "context"
+
 // knownTorrentFinder is a package-specific optional capability.
 type knownTorrentFinder interface{ findKnown(string) string }
+
+// backgroundTorrentFinder never waits for a network listing. A cold list
+// starts one shared read-only refresh, retaining the background budget.
+type backgroundTorrentFinder interface {
+	findBackground(context.Context, string) string
+}
 
 // backgroundCacheOnlyProvider is a provider whose Acquire, with
 // CachedOnly set and no torrent id, serves already-cached content

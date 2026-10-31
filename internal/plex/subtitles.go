@@ -341,7 +341,7 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 		sessionID = sanitizeSessionID(firstNonEmpty(q.Get("session"), q.Get("transcodeSessionId"), pr.SessionID))
 	}
 	entry, ok := s.transcodes.get(sessionID)
-	if !ok || pr.User == nil || entry.userID != pr.User.ID || entry.clientID != pr.ClientID || entry.key == 0 || (perr == nil && p.key != entry.key) {
+	if !ok || pr.User == nil || entry.userID != pr.User.ID || (pr.ClientID != "" && entry.clientID != "" && entry.clientID != pr.ClientID) || entry.key == 0 || (perr == nil && p.key != entry.key) {
 		s.writeEmpty(w, r)
 		return
 	}
@@ -366,58 +366,12 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 	if !st.External {
 		// Embedded track: extract it from the playing source so a subtitle
 		// picked in-player renders without restarting the session.
-		ex, ok := s.d.Transcoder.(core.SubtitleExtractor)
-		if !ok || s.d.Playback == nil {
+		body, actual, ok := s.extractEmbeddedSubtitle(r.Context(), entry.playID, st, subtitleFormat(q.Get("format")), offset)
+		if !ok {
 			s.writeEmpty(w, r)
 			return
 		}
-		input := s.d.Playback.InputURL(entry.playID)
-		if input == "" {
-			s.writeEmpty(w, r)
-			return
-		}
-		var buf bytes.Buffer
-		if err := ex.ExtractSubtitle(r.Context(), input, st.Index, st.Codec, &buf); err != nil {
-			s.writeEmpty(w, r)
-			return
-		}
-		if buf.Len() == 0 {
-			s.writeEmpty(w, r)
-			return
-		}
-		body := buf.Bytes()
-		format := subtitleFormat(q.Get("format"))
-		if format != "vtt" {
-			// ExtractSubtitle always emits WebVTT; re-render as SRT.
-			cues, perr := subtitles.ParseCues(string(body))
-			if perr != nil {
-				s.writeEmpty(w, r)
-				return
-			}
-			if offset > 0 {
-				shifted, serr := subtitles.Shift(cues, -offset, 1)
-				if serr != nil {
-					s.writeEmpty(w, r)
-					return
-				}
-				cues = shifted
-			}
-			body = []byte(subtitles.RenderSRT(cues))
-			format = "srt"
-		} else if offset > 0 {
-			cues, perr := subtitles.ParseCues(string(body))
-			if perr != nil {
-				s.writeEmpty(w, r)
-				return
-			}
-			shifted, serr := subtitles.Shift(cues, -offset, 1)
-			if serr != nil {
-				s.writeEmpty(w, r)
-				return
-			}
-			body = []byte(subtitles.RenderVTT(shifted))
-		}
-		w.Header().Set("Content-Type", subtitleContentTypes[format])
+		w.Header().Set("Content-Type", subtitleContentTypes[actual])
 		_, _ = w.Write(body)
 		return
 	}
@@ -443,4 +397,100 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 	defer reader.Close()
 	w.Header().Set("Content-Type", subtitleContentTypes[actual])
 	_, _ = io.Copy(w, io.LimitReader(reader, 32<<20))
+}
+
+func (s *Server) extractEmbeddedSubtitle(ctx context.Context, playID string, st core.StreamInfo, format string, offset time.Duration) ([]byte, string, bool) {
+	ex, ok := s.d.Transcoder.(core.SubtitleExtractor)
+	if !ok || s.d.Playback == nil || playID == "" {
+		return nil, "", false
+	}
+	input := s.d.Playback.InputURL(playID)
+	if input == "" {
+		return nil, "", false
+	}
+	var buf bytes.Buffer
+	if err := ex.ExtractSubtitle(ctx, input, st.Index, st.Codec, &buf); err != nil || buf.Len() == 0 {
+		return nil, "", false
+	}
+	body := buf.Bytes()
+	if format != "vtt" {
+		// ExtractSubtitle always emits WebVTT; re-render as SRT.
+		cues, perr := subtitles.ParseCues(string(body))
+		if perr != nil {
+			return nil, "", false
+		}
+		if offset > 0 {
+			shifted, serr := subtitles.Shift(cues, -offset, 1)
+			if serr != nil {
+				return nil, "", false
+			}
+			cues = shifted
+		}
+		body = []byte(subtitles.RenderSRT(cues))
+		format = "srt"
+	} else if offset > 0 {
+		cues, perr := subtitles.ParseCues(string(body))
+		if perr != nil {
+			return nil, "", false
+		}
+		shifted, serr := subtitles.Shift(cues, -offset, 1)
+		if serr != nil {
+			return nil, "", false
+		}
+		body = []byte(subtitles.RenderVTT(shifted))
+	}
+	return body, format, true
+}
+
+func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, key core.RatingKey, info core.StreamInfo) {
+	pr := FromContext(r.Context())
+	if pr == nil || pr.User == nil || info.Type != "subtitle" || s.d.Playback == nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	var playID string
+	var offset time.Duration
+	var bestAt time.Time
+	for _, id := range s.transcodes.ids() {
+		e, ok := s.transcodes.get(id)
+		if !ok || e.userID != pr.User.ID || e.key != key || e.playID == "" {
+			continue
+		}
+		if pr.ClientID != "" && e.clientID != "" && e.clientID != pr.ClientID {
+			continue
+		}
+		if playID == "" || e.updatedAt.After(bestAt) {
+			playID, offset, bestAt = e.playID, e.offset, e.updatedAt
+		}
+	}
+	if playID == "" && pr.ClientID != "" {
+		if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, key); ok && ps != nil {
+			playID = ps.ID
+		}
+	}
+	if playID == "" {
+		for _, ps := range s.d.Playback.Sessions() {
+			if ps.UserID == pr.User.ID && ps.Key == key {
+				playID = ps.ID
+				break
+			}
+		}
+	}
+	q := r.URL.Query()
+	if q.Get("offset") != "" {
+		if sec, err := strconv.ParseFloat(q.Get("offset"), 64); err == nil && sec >= 0 {
+			offset = time.Duration(sec * float64(time.Second))
+		}
+	}
+	format := subtitleFormat(q.Get("format"))
+	if _, ext, ok := strings.Cut(chi.URLParam(r, "stream"), "."); ok && q.Get("format") == "" {
+		format = subtitleFormat(ext)
+	}
+	body, actual, ok := s.extractEmbeddedSubtitle(r.Context(), playID, info, format, offset)
+	if !ok {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", subtitleContentTypes[actual])
+	_, _ = w.Write(body)
 }

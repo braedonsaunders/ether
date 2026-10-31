@@ -2076,6 +2076,7 @@
   "m_0ebf362be967e5": "Tallenna indeksoija",
   "m_0ec10e0355f9f6": "Lähde {n}",
   "m_0ec2214506c75e": "Suoratoistopalvelu",
+  "m_0ec49dc714595a": "Tarjottavat samanlaatuiset versiot",
   "m_0ec4ae4a08c564": "Siirretty Radarr- tai Sonarr-profiilista.",
   "m_0ec6e5f133795d": {
     "one": "tämä solmu: {slots} / {count} API-yhteydestä",
@@ -3102,6 +3103,7 @@
   "m_162737182d9849": "Luonnollisen kielen haku",
   "m_1627d178b0e53d": "Koskee: {viewers}",
   "m_162943b8b57b2d": "Vaienna: {genre}",
+  "m_162a001b8f1d07": "Muut julkaisut, joilla on sama leikkaus, resoluutio ja HDR-tyyppi, listataan Autom. jälkeen Plexin toistoversio-valikossa, jotta voit vaihtaa, jos yksi epäonnistuu.",
   "m_162b9de049b42a": "Odotetaan palvelua · yritetään automaattisesti uudelleen",
   "m_162c7efe448caa": "Maailmanlaajuisen nousun tila",
   "m_162cb4ce185878": "Siirrä alas: {name}",

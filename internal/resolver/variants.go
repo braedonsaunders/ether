@@ -12,9 +12,14 @@ import (
 
 var _ core.VariantResolver = (*Service)(nil)
 
-// maxVariants caps the Play Version picker at the product requirement
-// (Auto plus up to three alternatives).
-const maxVariants = 4
+// maxVariants caps the Play Version picker (core.MaxVariants): Auto, up to
+// maxAlternativesLimit same-quality alternatives, and up to maxTierVariants
+// distinct tiers and cuts.
+const (
+	maxVariants          = core.MaxVariants
+	maxAlternativesLimit = 3
+	maxTierVariants      = 4 // Auto plus three tiers, the picker before alternatives
+)
 
 // Variants implements core.VariantResolver. It reads only the cached
 // search results — rendering a detail page never spends indexer budget.
@@ -61,7 +66,7 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 			return nil, err
 		}
 	}
-	return pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, max), nil
+	return pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max), nil
 }
 
 // relaxedVariantProfile raises the profile's height cap to the client's
@@ -78,6 +83,18 @@ func relaxedVariantProfile(profile core.QualityProfile, caps core.ClientCaps) (c
 	p := profile
 	p.MaxHeight = clientMax
 	return p, true
+}
+
+// sameQualityAlternatives is the owner's setting, clamped to 0..3.
+func (s *Service) sameQualityAlternatives() int {
+	n := s.resolverCfg().SameQualityAlternatives
+	if n < 0 {
+		return 0
+	}
+	if n > maxAlternativesLimit {
+		return maxAlternativesLimit
+	}
+	return n
 }
 
 func (s *Service) peekSearchCache(key string) ([]core.Release, bool) {
@@ -106,28 +123,37 @@ func variantKey(info core.ReleaseInfo) string {
 	return info.Edition + "|" + qualityTier(info)
 }
 
-// pickVariants assembles up to max distinct versions: Auto first, then a
-// 4K HDR/DV tier, a high-compatibility 1080p tier, one entry per distinct
-// cut, then any remaining distinct tiers — best-scored first within each
-// slot, deduplicated by (edition, quality tier).
-func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfile, auto core.Release, pool []candidate, max int) []core.ReleaseVariant {
+// pickVariants assembles up to max distinct versions: Auto first, then up to
+// the configured number of other releases of Auto's own cut, resolution and HDR type,
+// then a 4K HDR/DV tier, a high-compatibility 1080p tier, one entry per
+// distinct cut, and any remaining distinct tiers. Tiers are best-scored
+// first within each slot and deduplicated by (edition, quality tier); the
+// alternatives come from the strict profile pool, in rank order.
+func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfile, auto core.Release, pool, strict []candidate, alternatives, max int) []core.ReleaseVariant {
 	usedRel := map[string]bool{}
 	usedKey := map[string]bool{}
 	var out []core.ReleaseVariant
-	add := func(rel core.Release, kind string, isAuto bool) bool {
-		if len(out) >= max || usedRel[rel.ID] || usedKey[variantKey(rel.Info)] {
-			return false
-		}
-		usedRel[rel.ID] = true
-		usedKey[variantKey(rel.Info)] = true
-		out = append(out, core.ReleaseVariant{
+	tierMax := max
+	if tierMax > maxTierVariants {
+		tierMax = maxTierVariants
+	}
+	variant := func(rel core.Release, label string, isAuto bool) core.ReleaseVariant {
+		return core.ReleaseVariant{
 			ID:      rel.ID,
-			Label:   variantLabel(rel, kind),
+			Label:   label,
 			Edition: rel.Info.Edition,
 			Auto:    isAuto,
 			Release: rel,
 			Info:    estimateVariantInfo(t, sizedForEpisode(rel)),
-		})
+		}
+	}
+	add := func(rel core.Release, kind string, isAuto bool) bool {
+		if len(out) >= tierMax || usedRel[rel.ID] || usedKey[variantKey(rel.Info)] {
+			return false
+		}
+		usedRel[rel.ID] = true
+		usedKey[variantKey(rel.Info)] = true
+		out = append(out, variant(rel, variantLabel(rel, kind), isAuto))
 		return true
 	}
 	add(auto, "auto", true)
@@ -158,7 +184,53 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 	for _, c := range pool {
 		add(c.rel, "tier", false)
 	}
+
+	// Same-quality alternatives sit right after Auto, so plain Play and the
+	// first menu entry stay on Auto. They share Auto's variantKey, so none
+	// of them can be a tier above.
+	alts := pickAlternatives(auto, strict, alternatives, max-len(out))
+	if len(alts) == 0 {
+		return out
+	}
+	withAlts := make([]core.ReleaseVariant, 0, len(out)+len(alts))
+	withAlts = append(withAlts, out[:1]...)
+	for _, rel := range alts {
+		withAlts = append(withAlts, variant(rel, variantLabel(rel, "alt"), false))
+	}
+	return append(withAlts, out[1:]...)
+}
+
+// pickAlternatives returns up to limit releases from the ranked pool
+// that share Auto's cut, resolution and HDR type, skipping Auto itself and
+// any release whose name and size repeat one already chosen (the same file
+// on another indexer or source).
+func pickAlternatives(auto core.Release, ranked []candidate, limit, room int) []core.Release {
+	if room < limit {
+		limit = room
+	}
+	if limit <= 0 {
+		return nil
+	}
+	seen := map[string]bool{releaseIdentity(auto): true}
+	key := variantKey(auto.Info)
+	var out []core.Release
+	for _, c := range ranked {
+		if len(out) >= limit {
+			break
+		}
+		if c.rel.ID == auto.ID || variantKey(c.rel.Info) != key || seen[releaseIdentity(c.rel)] {
+			continue
+		}
+		seen[releaseIdentity(c.rel)] = true
+		out = append(out, c.rel)
+	}
 	return out
+}
+
+// releaseIdentity names a release for duplicate detection: the release
+// name (case-insensitive) and its size.
+func releaseIdentity(rel core.Release) string {
+	return strings.ToLower(strings.TrimSpace(rel.Name)) + "|" + strconv.FormatInt(rel.Size, 10)
 }
 
 func canOffer4KHDR(caps core.ClientCaps, profile core.QualityProfile) bool {
@@ -234,12 +306,60 @@ func variantLabel(rel core.Release, kind string) string {
 		return qualityPhrase(rel.Info) + " (High Compatibility)"
 	case "edition":
 		return rel.Info.Edition + " — " + qualityPhrase(rel.Info)
+	case "alt":
+		return alternativeLabel(rel)
 	}
 	q := qualityPhrase(rel.Info)
 	if rel.Info.Edition != "" {
 		q += " · " + rel.Info.Edition
 	}
 	return q
+}
+
+// alternativeLabel tells same-quality releases apart: quality, audio, size
+// and release group, e.g. "1080p WEB-DL · DD+ 5.1 · 2.3 GB · FLUX".
+// Anything the release name does not say is left out.
+func alternativeLabel(rel core.Release) string {
+	parts := []string{qualityPhrase(rel.Info)}
+	if a := audioPhrase(rel.Info); a != "" {
+		parts = append(parts, a)
+	}
+	if rel.Size > 0 {
+		parts = append(parts, sizePhrase(rel.Size))
+	}
+	if g := strings.TrimSpace(rel.Info.Group); g != "" {
+		parts = append(parts, g)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func audioPhrase(info core.ReleaseInfo) string {
+	codec := map[string]string{
+		"aac": "AAC", "ac3": "DD", "eac3": "DD+", "truehd": "TrueHD",
+		"dts": "DTS", "dtshd": "DTS-HD", "flac": "FLAC", "opus": "Opus", "mp3": "MP3",
+	}[info.AudioCodec]
+	if codec == "" {
+		codec = strings.ToUpper(info.AudioCodec)
+	}
+	parts := []string{}
+	if codec != "" {
+		parts = append(parts, codec)
+	}
+	if info.Atmos {
+		parts = append(parts, "Atmos")
+	}
+	if info.Channels != "" {
+		parts = append(parts, info.Channels)
+	}
+	return strings.Join(parts, " ")
+}
+
+func sizePhrase(size int64) string {
+	const gb = 1 << 30
+	if size >= gb {
+		return strconv.FormatFloat(float64(size)/gb, 'f', 1, 64) + " GB"
+	}
+	return strconv.FormatInt((size+(1<<20)/2)>>20, 10) + " MB"
 }
 
 func qualityPhrase(info core.ReleaseInfo) string {

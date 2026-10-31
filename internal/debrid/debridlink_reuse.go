@@ -10,7 +10,7 @@ import (
 )
 
 // Positive hints are validated by the normal per-id readiness request.
-// Separate from listCache: its network refresh holds a lock for seconds.
+// Separate from the short-lived account snapshot; normal per-id reads validate hints.
 // Mirrors torbox_reuse.go so a cold foreground Play can go straight to
 // the atomic cached-only add (src=hash is only added when cached)
 // instead of listing the whole account first.
@@ -50,6 +50,11 @@ func (p *debridLink) forgetKnown(id string) {
 // hash preserves episode/series identity and avoids duplicate account
 // entries without an unconditional account-wide request on Play.
 func (p *debridLink) findFresh(ctx context.Context, hash string) (string, error) {
+	// D: a positive fresh/in-flight background snapshot already identifies
+	// this duplicate. A miss still needs the provider's fresh recovery read.
+	if id, err := p.list.reuse(ctx, p.opts.Now(), hash); id != "" || err != nil {
+		return id, err
+	}
 	data, err := p.do(ctx, apiRequest{method: http.MethodGet, path: "/seedbox/list", query: url.Values{"perPage": {"100"}}})
 	if err != nil {
 		return "", err

@@ -14,6 +14,17 @@ import (
 type catalogFake struct{ core.Catalog }
 
 func (catalogFake) Get(_ context.Context, k core.RatingKey) (*core.Title, error) {
+	if k.Kind() == core.KindEpisode {
+		return &core.Title{
+			Key: k, Title: "Pilot", ShowTitle: "Breaking Bad", ShowYear: 2008, Year: 2008,
+			Type: core.TypeEpisode, ShowKey: core.ShowKey(k.TMDB()),
+			ShowIDs: core.IDs{TMDB: k.TMDB(), IMDB: "tt0903747"},
+			IDs:     core.IDs{TMDB: 62085}, Season: k.Season(), Episode: k.Episode(),
+		}, nil
+	}
+	if k.Kind() == core.KindShow {
+		return &core.Title{Key: k, Title: "Breaking Bad", Year: 2008, Type: core.TypeShow, IDs: core.IDs{TMDB: k.TMDB(), IMDB: "tt0903747"}}, nil
+	}
 	return &core.Title{Key: k, Title: "Example", Year: 2024, Type: core.TypeMovie, IDs: core.IDs{TMDB: 11}}, nil
 }
 func (catalogFake) Search(context.Context, string, []core.MediaType, int) ([]core.Title, error) {
@@ -125,6 +136,49 @@ func TestLetterboxdCSVImportExport(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Example,2024,4.5,2024-03-01,11") {
 		t.Fatalf("export %s", out.String())
+	}
+}
+func TestTraktCSVEpisodeExportImportRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db, e := store.OpenMemory(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at)VALUES(1,99,0,0),(2,100,0,0)`)
+	s := New(db, catalogFake{})
+	epKey := core.EpisodeKey(1396, 1, 1)
+	movKey := core.MovieKey(11)
+	if _, e = db.Exec(`INSERT INTO state_history(user_id,rating_key,viewed_at,completed)VALUES(1,?,1709251200000000000,1),(1,?,1709337600000000000,1)`, movKey, epKey); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Exec(`INSERT INTO state_watch(user_id,rating_key,view_count,user_rating,last_viewed_at)VALUES(1,?,1,8,1709251200000000000),(1,?,1,9,1709337600000000000)`, movKey, epKey); e != nil {
+		t.Fatal(e)
+	}
+	var exported strings.Builder
+	if e = s.ExportCSV(ctx, 1, "trakt", "history", &exported); e != nil {
+		t.Fatal(e)
+	}
+	p, e := s.PreviewCSV(ctx, 2, "trakt", "history", strings.NewReader(exported.String()))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(p.Warnings) != 0 || len(p.Items) != 2 {
+		t.Fatalf("round-trip preview items=%+v warnings=%v csv=%s", p.Items, p.Warnings, exported.String())
+	}
+	keys := map[core.RatingKey]bool{}
+	for _, it := range p.Items {
+		keys[it.Key] = true
+	}
+	if !keys[movKey] || !keys[epKey] {
+		t.Fatalf("expected movie %v and episode %v in round-trip plan, got %+v", movKey, epKey, p.Items)
+	}
+	if _, e = s.Import(ctx, p.ID); e != nil {
+		t.Fatal(e)
+	}
+	var count int
+	if e = db.QueryRow(`SELECT COUNT(*) FROM state_watch WHERE user_id=2`).Scan(&count); e != nil || count != 2 {
+		t.Fatalf("viewer 2 state_watch count=%d err=%v", count, e)
 	}
 }
 func TestRatingAndWatchlistImportPreserveProgress(t *testing.T) {
@@ -279,5 +333,124 @@ func TestPreviewSkipsUnwatchedAndMatchesPlexGUIDByTitleYear(t *testing.T) {
 	}
 	if len(plan.Lists) != 1 || len(plan.Lists[0].Keys) != 1 || plan.Lists[0].Keys[0] != core.MovieKey(11) {
 		t.Fatalf("lists=%+v", plan.Lists)
+	}
+}
+
+type richCatalogFake struct {
+	core.Catalog
+	externalCalls int
+}
+
+func (c *richCatalogFake) Get(_ context.Context, k core.RatingKey) (*core.Title, error) {
+	return &core.Title{Key: k, Type: core.TypeMovie, Year: 2014}, nil
+}
+
+func (c *richCatalogFake) ByExternalID(_ context.Context, source, id string) (*core.Title, error) {
+	c.externalCalls++
+	return nil, core.ErrNotFound
+}
+
+func (c *richCatalogFake) Search(_ context.Context, q string, types []core.MediaType, _ int) ([]core.Title, error) {
+	want := core.TypeMovie
+	if len(types) > 0 {
+		want = types[0]
+	}
+	switch {
+	case want == core.TypeMovie && strings.EqualFold(q, "Removed Film"):
+		return []core.Title{{Key: core.MovieKey(777), Title: "Removed Film", Year: 2019, Type: core.TypeMovie}}, nil
+	case want == core.TypeShow && strings.EqualFold(q, "The Office"):
+		return []core.Title{
+			{Key: core.ShowKey(2316), Title: "The Office", Year: 2005, Type: core.TypeShow, Countries: []string{"US"}, Popularity: 120},
+			{Key: core.ShowKey(2996), Title: "The Office", Year: 2001, Type: core.TypeShow, Countries: []string{"GB"}, Popularity: 40},
+		}, nil
+	case want == core.TypeShow && strings.EqualFold(q, "Deleted Show"):
+		return []core.Title{{Key: core.ShowKey(999), Title: "Deleted Show", Year: 2015, Type: core.TypeShow, Popularity: 50}}, nil
+	}
+	return nil, nil
+}
+
+func TestStrippedHistoryRowsAndGUIDOrder(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(`INSERT INTO auth_users(id,plex_id,username,created_at,updated_at)VALUES(1,99,'viewer',0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	cat := &richCatalogFake{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		switch r.URL.Path {
+		case "/identity":
+			w.Write([]byte(`<MediaContainer machineIdentifier="stripped-history"/>`))
+		case "/accounts":
+			w.Write([]byte(`<MediaContainer><Account id="0" name=""/><Account id="1" name="viewer"/></MediaContainer>`))
+		case "/library/sections":
+			w.Write([]byte(`<MediaContainer><Directory key="1" type="movie" title="Movies"/><Directory key="2" type="show" title="TV"/></MediaContainer>`))
+		case "/library/sections/1/all":
+			// Interstellar carries imdb:// before tmdb:// and was re-added with viewCount=0.
+			w.Write([]byte(`<MediaContainer totalSize="1"><Video ratingKey="m1" type="movie" title="Interstellar" originallyAvailableAt="2014-11-05" viewCount="1" lastViewedAt="1700000000" guid="plex://movie/5d7769cefb0d55001f530acd"><Guid id="imdb://tt0816692"/><Guid id="tmdb://157336"/><Guid id="tvdb://131079"/></Video></MediaContainer>`))
+		case "/library/sections/2/all":
+			// Library episodes have grandparentRatingKey="sh1" and grandparentTitle="Breaking Bad",
+			// but viewCount=0 (e.g. upgraded files), so library phase only indexes them.
+			w.Write([]byte(`<MediaContainer totalSize="1"><Video ratingKey="ep_new" type="episode" title="Pilot" grandparentRatingKey="sh1" grandparentTitle="Breaking Bad" parentIndex="1" index="1" viewCount="0"/></MediaContainer>`))
+		case "/library/metadata/sh1":
+			w.Write([]byte(`<MediaContainer><Directory ratingKey="sh1" type="show" title="Breaking Bad" originallyAvailableAt="2008-01-20" guid="plex://show/abc"><Guid id="imdb://tt0903747"/><Guid id="tmdb://1396"/><Guid id="tvdb://81189"/></Directory></MediaContainer>`))
+		case "/library/metadata/stale_ep":
+			w.WriteHeader(404)
+		case "/status/sessions/history/all":
+			// Stripped history rows matching live PMS probe:
+			// 1. Episode with NO ratingKey and NO grandparentRatingKey, resolved via indexed library show title ("Breaking Bad").
+			// 2. Episode with stale ratingKey (404s on /library/metadata/stale_ep), resolved via grandparentTitle ("Breaking Bad").
+			// 3. Episode of a deleted show with country suffix ("The Office (US)"), resolved via catalog search.
+			// 4. Episode of a deleted show ("Deleted Show (2015)"), resolved via catalog search.
+			// 5. Movie with NO ratingKey and NO year attribute (only originallyAvailableAt), resolved via library movie ("Interstellar").
+			// 6. Movie with NO ratingKey removed from library ("Removed Film"), resolved via catalog search using originallyAvailableAt year.
+			w.Write([]byte(`<MediaContainer totalSize="6">` +
+				`<Video accountID="1" deviceID="9" grandparentTitle="Breaking Bad" historyKey="/status/sessions/history/1" index="2" librarySectionID="2" originallyAvailableAt="2008-01-27" parentIndex="1" title="Cat's in the Bag..." type="episode" viewedAt="1700000100"/>` +
+				`<Video accountID="1" ratingKey="stale_ep" deviceID="9" grandparentTitle="Breaking Bad" historyKey="/status/sessions/history/2" index="3" librarySectionID="2" originallyAvailableAt="2008-02-10" parentIndex="1" title="...And the Bag's in the River" type="episode" viewedAt="1700000200"/>` +
+				`<Video accountID="1" deviceID="9" grandparentTitle="The Office (US)" historyKey="/status/sessions/history/3" index="1" librarySectionID="2" originallyAvailableAt="2005-03-24" parentIndex="1" title="Pilot" type="episode" viewedAt="1700000300"/>` +
+				`<Video accountID="1" deviceID="9" grandparentTitle="Deleted Show (2015)" historyKey="/status/sessions/history/4" index="4" librarySectionID="2" originallyAvailableAt="2015-04-10" parentIndex="2" title="Part 4" type="episode" viewedAt="1700000400"/>` +
+				`<Video accountID="1" historyKey="/status/sessions/history/5" librarySectionID="1" originallyAvailableAt="2014-11-05" title="Interstellar" type="movie" viewedAt="1700000500"/>` +
+				`<Video accountID="1" historyKey="/status/sessions/history/6" librarySectionID="1" originallyAvailableAt="2019-06-01" title="Removed Film" type="movie" viewedAt="1700000600"/>` +
+				`</MediaContainer>`))
+		case "/library/sections/1/collections", "/library/sections/2/collections", "/playlists":
+			w.Write([]byte(`<MediaContainer totalSize="0"/>`))
+		default:
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	svc := New(db, cat)
+	plan, err := svc.Preview(ctx, Request{URL: srv.URL, Token: "secret", Viewers: []Viewer{{LocalUserID: 1, Name: "viewer"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cat.externalCalls != 0 {
+		t.Fatalf("expected tmdb:// GUID to be preferred before imdb:// without calling ByExternalID, got %d calls", cat.externalCalls)
+	}
+	for _, warn := range plan.Warnings {
+		if strings.Contains(warn, "Unmatched") {
+			t.Fatalf("unexpected unmatched warning: %s", warn)
+		}
+	}
+	if len(plan.History) != 6 {
+		t.Fatalf("expected 6 matched history rows, got %d (%+v) warnings=%v", len(plan.History), plan.History, plan.Warnings)
+	}
+	wantKeys := []core.RatingKey{
+		core.EpisodeKey(1396, 1, 2),
+		core.EpisodeKey(1396, 1, 3),
+		core.EpisodeKey(2316, 1, 1),
+		core.EpisodeKey(999, 2, 4),
+		core.MovieKey(157336),
+		core.MovieKey(777),
+	}
+	for i, want := range wantKeys {
+		if plan.History[i].Key != want {
+			t.Fatalf("history[%d] key=%s want %s", i, plan.History[i].Key, want)
+		}
 	}
 }

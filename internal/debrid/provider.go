@@ -342,6 +342,7 @@ type listCache struct {
 	mu     sync.Mutex
 	at     time.Time
 	byHash map[string]string
+	flight *listFlight // used only by TorBox and Debrid-Link
 }
 
 const listTTL = time.Minute
@@ -357,6 +358,91 @@ func (c *listCache) find(ctx context.Context, now time.Time, hash string, load f
 		c.byHash, c.at = m, now
 	}
 	return c.byHash[strings.ToLower(hash)], nil
+}
+
+// listFlight publishes one shared refresh without holding mu during I/O.
+// Other providers keep their existing synchronous find behavior.
+type listFlight struct {
+	done chan struct{}
+	err  error
+}
+
+// shared starts a bounded refresh or joins the one already running. Detached
+// refreshes retain admission policy but outlive a speculative caller's cancel,
+// so foreground duplicate recovery can use the same account listing.
+func (c *listCache) shared(ctx context.Context, now time.Time, load func(context.Context) (map[string]string, error)) *listFlight {
+	if c.flight != nil {
+		return c.flight
+	}
+	f := &listFlight{done: make(chan struct{})}
+	c.flight = f
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), providerOpTimeout)
+	go func() {
+		defer cancel()
+		m, err := load(ctx)
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if err == nil {
+			c.byHash, c.at = m, now
+		}
+		f.err = err
+		c.flight = nil
+		close(f.done)
+	}()
+	return f
+}
+
+// background returns only fresh local state; a cold snapshot is fetched once
+// alongside the caller. Holding mu never entails waiting on network I/O.
+func (c *listCache) background(ctx context.Context, now time.Time, hash string, load func(context.Context) (map[string]string, error)) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.byHash != nil && now.Sub(c.at) <= listTTL {
+		return c.byHash[strings.ToLower(hash)]
+	}
+	c.shared(ctx, now, load)
+	return ""
+}
+
+// reuse waits only for an already-running refresh, and returns a positive
+// fresh hint. A negative snapshot never substitutes for duplicate recovery.
+func (c *listCache) reuse(ctx context.Context, now time.Time, hash string) (string, error) {
+	c.mu.Lock()
+	f := c.flight
+	c.mu.Unlock()
+	if f != nil {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-f.done:
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.byHash != nil && now.Sub(c.at) <= listTTL {
+		return c.byHash[strings.ToLower(hash)], nil
+	}
+	return "", nil
+}
+
+func (c *listCache) findShared(ctx context.Context, now time.Time, hash string, load func(context.Context) (map[string]string, error)) (string, error) {
+	c.mu.Lock()
+	if c.byHash != nil && now.Sub(c.at) <= listTTL {
+		id := c.byHash[strings.ToLower(hash)]
+		c.mu.Unlock()
+		return id, nil
+	}
+	f := c.shared(ctx, now, load)
+	c.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-f.done:
+	}
+	if f.err != nil {
+		return "", f.err
+	}
+	return c.reuse(ctx, now, hash)
 }
 
 // remember records an id the provider just returned.

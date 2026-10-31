@@ -60,10 +60,11 @@ func Defaults(dataDir string) Config {
 			RefreshInterval: Duration(24 * time.Hour),
 		},
 		Resolver: Resolver{
-			HealthSamples:      12,
-			SearchCacheTTL:     Duration(6 * time.Hour),
-			UnavailableCooloff: Duration(24 * time.Hour),
-			MaxCandidates:      3,
+			HealthSamples:           12,
+			SearchCacheTTL:          Duration(6 * time.Hour),
+			UnavailableCooloff:      Duration(24 * time.Hour),
+			MaxCandidates:           3,
+			SameQualityAlternatives: 1,
 		},
 		Quality: DefaultQuality(),
 		Transcode: Transcode{

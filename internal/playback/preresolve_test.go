@@ -35,15 +35,23 @@ func TestPreResolveReusedWithoutLiveSessionOrHistory(t *testing.T) {
 	}
 	// Metadata omits decision-only codec and bandwidth hints. The same profile
 	// must reuse its release and probe even several minutes later.
-	h.clock.Advance(5 * time.Minute)
+	h.clock.Advance(35 * time.Minute)
 	caps.MaxBitrateKbps = 20000
 	caps.VideoCodecs = []string{"h264"}
+	if info, ok := h.m.WarmProbeInfo(owner, caps, movieKey); !ok || info.Estimated {
+		t.Fatalf("warm probe expired before 60m TTL: ok=%v info=%+v", ok, info)
+	}
 	ps, err := h.m.Prepare(context.Background(), owner, movieKey, caps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ps.Resolution.Release.ID != "r1" {
 		t.Fatalf("wrong warm release %+v", ps)
+	}
+	// Consuming the warm resolution for playback must retain the probed
+	// tracks in WarmProbeInfo for subsequent detail-page refreshes.
+	if info, ok := h.m.WarmProbeInfo(owner, caps, movieKey); !ok || info.Estimated {
+		t.Fatalf("WarmProbeInfo lost probed tracks after Prepare consumed warm resolution: ok=%v info=%+v", ok, info)
 	}
 	h.resolver.mu.Lock()
 	calls := h.resolver.calls
@@ -92,6 +100,21 @@ func TestSurfaceVersionUsesMatchingWarmProbe(t *testing.T) {
 	h.tr.mu.Unlock()
 	if calls != 1 || probes != 1 {
 		t.Fatalf("matching warm repeated resolve/probe: %d/%d", calls, probes)
+	}
+}
+
+func TestWaitWarmProbeWaitsForInFlightDetailWarmup(t *testing.T) {
+	h := newHarness(t, []*fakeRelease{mkv("r1", 2<<30, 90*time.Minute)}, []string{"r1"})
+	h.resolver.mu.Lock()
+	h.resolver.delay = 80 * time.Millisecond
+	h.resolver.mu.Unlock()
+	caps := defaultCaps("client")
+	if !h.m.Prewarm(context.Background(), owner, movieKey, caps, core.PrewarmOptions{Reason: core.PrewarmDetail}) {
+		t.Fatal("detail prewarm skipped")
+	}
+	info, ok := h.m.WaitWarmProbe(context.Background(), owner, caps, movieKey, time.Second)
+	if !ok || info.Estimated || len(info.Streams) == 0 {
+		t.Fatalf("WaitWarmProbe did not return probed streams: ok=%v info=%+v", ok, info)
 	}
 }
 
@@ -171,62 +194,7 @@ func TestPrewarmRejectsMissingOpeningButNotTransientFailure(t *testing.T) {
 	}
 }
 
-func TestAwaitWarmProbeWaitsForTheInFlightProbe(t *testing.T) {
-	probed := core.MediaInfo{
-		Container: "mp4", Duration: 20 * time.Second, BitrateKbps: 17,
-		Streams: []core.StreamInfo{
-			{Type: "video", Codec: "h264", Width: 320, Height: 180},
-			{Type: "audio", Codec: "aac", Language: "fr"},
-			{Type: "audio", Codec: "aac", Language: "en"},
-			{Type: "subtitle", Codec: "mov_text", Language: "en"},
-		},
-	}
-	user := &core.User{ID: 9}
-	caps := core.ClientCaps{ClientID: "adult"}
-	key := core.MovieKey(10004)
-	done := make(chan struct{})
-	m := &Manager{
-		now:  time.Now,
-		warm: map[identity]*warmEntry{},
-	}
-	m.warm[identity{userID: user.ID, clientID: caps.ClientID, key: key}] = &warmEntry{
-		done:    done,
-		expires: time.Now().Add(time.Minute),
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	got := make(chan core.MediaInfo, 1)
-	go func() {
-		info, ok := m.AwaitWarmProbe(ctx, user, caps, key)
-		if !ok {
-			got <- core.MediaInfo{Estimated: true}
-			return
-		}
-		got <- info
-	}()
-	select {
-	case info := <-got:
-		t.Fatalf("returned before the probe finished: %+v", info)
-	case <-time.After(30 * time.Millisecond):
-	}
-	m.mu.Lock()
-	m.warm[identity{userID: user.ID, clientID: caps.ClientID, key: key}].probe = &probeCache{info: probed}
-	m.mu.Unlock()
-	close(done)
-	select {
-	case info := <-got:
-		if info.Estimated || info.Container != "mp4" || info.Duration != 20*time.Second || len(info.Streams) != 4 {
-			t.Fatalf("probe = %+v", info)
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for the probe")
-	}
-	if _, ok := m.WarmProbeInfo(user, caps, key); !ok {
-		t.Fatal("completed probe was not readable")
-	}
-}
-
-func TestAwaitWarmProbeGivesUpAtTheDetailBound(t *testing.T) {
+func TestWaitWarmProbeStopsAtTheCallerBudget(t *testing.T) {
 	user := &core.User{ID: 9}
 	caps := core.ClientCaps{ClientID: "adult"}
 	key := core.MovieKey(10004)
@@ -236,13 +204,13 @@ func TestAwaitWarmProbeGivesUpAtTheDetailBound(t *testing.T) {
 		done: done, expires: time.Now().Add(time.Minute),
 	}
 	start := time.Now()
-	_, ok := m.AwaitWarmProbe(context.Background(), user, caps, key)
+	_, ok := m.WaitWarmProbe(context.Background(), user, caps, key, 30*time.Millisecond)
 	elapsed := time.Since(start)
 	if ok {
-		t.Fatal("late probe was treated as ready")
+		t.Fatal("unfinished probe was treated as ready")
 	}
-	if elapsed > detailWarmWait+150*time.Millisecond {
-		t.Fatalf("detail wait %s exceeded %s", elapsed, detailWarmWait)
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("wait %s exceeded the caller budget", elapsed)
 	}
 	close(done)
 }

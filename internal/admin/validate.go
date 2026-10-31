@@ -312,6 +312,9 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.Resolver.MaxCandidates < 0 {
 		v.add("resolver.maxCandidates", "must be >= 0")
 	}
+	if n := cfg.Resolver.SameQualityAlternatives; n < 0 || n > 3 {
+		v.add("resolver.sameQualityAlternatives", "must be between 0 and 3")
+	}
 
 	profiles := map[string]bool{}
 	for i, p := range cfg.Quality.Profiles {

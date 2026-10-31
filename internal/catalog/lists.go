@@ -58,6 +58,16 @@ func limitTitles(items []core.Title, limit int) []core.Title {
 
 // Search reaches all of TMDB; matched titles join the browsable set.
 func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaType, limit int) ([]core.Title, error) {
+	return c.searchWithOpts(ctx, query, types, limit, false)
+}
+
+// SearchAll searches local and remote titles without applying browse-shelf
+// visibility or home-release gating (used when importing external watch state).
+func (c *Catalog) SearchAll(ctx context.Context, query string, types []core.MediaType, limit int) ([]core.Title, error) {
+	return c.searchWithOpts(ctx, query, types, limit, true)
+}
+
+func (c *Catalog) searchWithOpts(ctx context.Context, query string, types []core.MediaType, limit int, unfiltered bool) ([]core.Title, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return []core.Title{}, nil
@@ -65,7 +75,7 @@ func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaTy
 	if limit <= 0 {
 		limit = 20
 	}
-	items, err := c.searchTitles(ctx, query, types, limit, 0)
+	items, err := c.searchTitlesOpts(ctx, query, types, limit, 0, unfiltered)
 	if err != nil || len(items) > 0 {
 		return items, err
 	}
@@ -73,7 +83,7 @@ func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaTy
 	if year == 0 {
 		return items, nil
 	}
-	return c.searchTitles(ctx, title, types, limit, year)
+	return c.searchTitlesOpts(ctx, title, types, limit, year, unfiltered)
 }
 
 // Only interpret a final, separated year after the literal query found nothing.
@@ -98,8 +108,14 @@ func searchTitleYear(query string) (string, int) {
 }
 
 func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.MediaType, limit, year int) ([]core.Title, error) {
+	return c.searchTitlesOpts(ctx, query, types, limit, year, false)
+}
+
+func (c *Catalog) searchTitlesOpts(ctx context.Context, query string, types []core.MediaType, limit, year int, unfiltered bool) ([]core.Title, error) {
 	finish := func(items []core.Title) []core.Title {
-		items = c.FilterVisibility(ctx, items)
+		if !unfiltered {
+			items = c.FilterVisibility(ctx, items)
+		}
 		if year != 0 {
 			var matching []core.Title
 			for _, t := range items {
@@ -134,7 +150,7 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 	var out []core.Title
 	add := func(ts []core.Title) {
 		for _, t := range ts {
-			if t.Adult || !t.IsReleased(c.now()) || t.Key == 0 || seen[t.Key] {
+			if t.Adult || (!unfiltered && !t.IsReleased(c.now())) || t.Key == 0 || seen[t.Key] {
 				continue
 			}
 			seen[t.Key] = true
@@ -144,13 +160,19 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 	// Local first (instant, works offline). Seasons and episodes are library
 	// keyword hits; the remote catalogue only knows movies and shows.
 	like := store.Like(store.DialectOf(c.db))
+	var local []core.Title
 	var localErr error
-	local, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
-		AND (title `+like+` ? ESCAPE '\' OR original_title `+like+` ? ESCAPE '\') ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`,
-		"%"+escapeLike(query)+"%", "%"+escapeLike(query)+"%", year, year, limit*2)
-	if err != nil {
-		localErr = err
+	localSQL := `SELECT ` + titleCols + ` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
+		AND (title ` + like + ` ? ESCAPE '\' OR original_title ` + like + ` ? ESCAPE '\') ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
+	localArgs := []any{"%" + escapeLike(query) + "%", "%" + escapeLike(query) + "%", year, year, limit * 2}
+	if unfiltered {
+		localSQL = `SELECT ` + titleCols + ` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
+			AND adult=0 AND (title ` + like + ` ? ESCAPE '\' OR original_title ` + like + ` ? ESCAPE '\') ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
+		local, localErr = c.queryTitlesUnfiltered(ctx, localSQL, localArgs...)
 	} else {
+		local, localErr = c.queryTitles(ctx, localSQL, localArgs...)
+	}
+	if localErr == nil {
 		var filtered []core.Title
 		for _, t := range local {
 			if (t.Type == core.TypeMovie && wantMovie) || (t.Type == core.TypeShow && wantTV) || (t.Type == core.TypeSeason && wantSeason) || (t.Type == core.TypeEpisode && wantEpisode) {
@@ -234,6 +256,31 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 	// Remote (TMDB relevance) order is preserved after local exact-prefix matches:
 	// keep simple stable order: exact title first, then popularity.
 	return finish(out), nil
+}
+
+func (c *Catalog) queryTitlesUnfiltered(ctx context.Context, q string, args ...any) ([]core.Title, error) {
+	rows, err := c.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []core.Title
+	for rows.Next() {
+		st, err := scanTitle(rows)
+		if err != nil {
+			return nil, err
+		}
+		if !st.t.Adult {
+			out = append(out, st.t)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := c.hydrateSlice(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func sortTitlesForSearch(items []core.Title, q string) {
@@ -569,23 +616,56 @@ func isNotFound(err error) bool {
 
 // ByExternalID looks up by imdb ("tt123") or tvdb id.
 func (c *Catalog) ByExternalID(ctx context.Context, source, id string) (*core.Title, error) {
+	return c.byExternalID(ctx, source, id, "", false)
+}
+
+// ByExternalIDForType looks up an external ID restricted to typ ("movie",
+// "show", or "episode"), avoiding cross-type integer ID collisions on TVDB and
+// allowing stored non-adult titles even when gated on browse shelves.
+func (c *Catalog) ByExternalIDForType(ctx context.Context, source, id string, typ core.MediaType) (*core.Title, error) {
+	return c.byExternalID(ctx, source, id, typ, true)
+}
+
+func (c *Catalog) getOrStored(ctx context.Context, key core.RatingKey, allowUnfiltered bool) (*core.Title, error) {
+	t, err := c.Get(ctx, key)
+	if err != nil && allowUnfiltered {
+		if st, serr := c.loadByKey(ctx, key); serr == nil && st != nil && !st.t.Adult {
+			return &st.t, nil
+		}
+	}
+	return t, err
+}
+
+func (c *Catalog) byExternalID(ctx context.Context, source, id string, typ core.MediaType, allowUnfiltered bool) (*core.Title, error) {
 	source = strings.ToLower(strings.TrimSpace(source))
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, core.ErrNotFound
+	}
+	queryFn := c.queryTitles
+	if allowUnfiltered {
+		queryFn = c.queryTitlesUnfiltered
 	}
 	// Local first.
 	var items []core.Title
 	var err error
 	switch source {
 	case "imdb", "imdb_id":
-		items, err = c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE imdb=? AND type IN ('movie','show','episode') ORDER BY CASE type WHEN 'episode' THEN 1 ELSE 0 END LIMIT 1`, id)
+		if typ == core.TypeMovie || typ == core.TypeShow || typ == core.TypeEpisode {
+			items, err = queryFn(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE imdb=? AND type=? LIMIT 1`, id, string(typ))
+		} else {
+			items, err = queryFn(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE imdb=? AND type IN ('movie','show','episode') ORDER BY CASE type WHEN 'episode' THEN 1 ELSE 0 END LIMIT 1`, id)
+		}
 	case "tvdb", "tvdb_id":
 		n, perr := strconv.ParseInt(id, 10, 64)
 		if perr != nil {
 			return nil, fmt.Errorf("catalog: tvdb id %q: %w", id, perr)
 		}
-		items, err = c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE tvdb=? AND type IN ('movie','show') LIMIT 1`, n)
+		if typ == core.TypeMovie || typ == core.TypeShow || typ == core.TypeEpisode {
+			items, err = queryFn(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE tvdb=? AND type=? LIMIT 1`, n, string(typ))
+		} else {
+			items, err = queryFn(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE tvdb=? AND type IN ('movie','show') ORDER BY CASE type WHEN 'show' THEN 0 ELSE 1 END LIMIT 1`, n)
+		}
 	default:
 		return nil, fmt.Errorf("catalog: unsupported external source %q", source)
 	}
@@ -594,7 +674,7 @@ func (c *Catalog) ByExternalID(ctx context.Context, source, id string) (*core.Ti
 	}
 	if len(items) > 0 {
 		// Return the detail-enriched version.
-		return c.Get(ctx, items[0].Key)
+		return c.getOrStored(ctx, items[0].Key, allowUnfiltered)
 	}
 	if c.tmdb() == nil {
 		return nil, core.ErrNotFound
@@ -603,26 +683,71 @@ func (c *Catalog) ByExternalID(ctx context.Context, source, id string) (*core.Ti
 	if err != nil {
 		return nil, err
 	}
-	// Prefer episode results for imdb episode lookups? Titles (movie/show) are the common case.
-	if len(found.MovieResults) > 0 {
+	pickMovie := func() (*core.Title, bool, error) {
+		if len(found.MovieResults) == 0 {
+			return nil, false, nil
+		}
 		t := c.movieToTitle(ctx, found.MovieResults[0])
 		if err := c.upsertSummaries(ctx, []core.Title{t}, false); err != nil {
-			return nil, err
+			return nil, true, err
 		}
-		return c.Get(ctx, t.Key)
+		res, err := c.getOrStored(ctx, t.Key, allowUnfiltered)
+		return res, true, err
 	}
-	if len(found.TVResults) > 0 {
+	pickTV := func() (*core.Title, bool, error) {
+		if len(found.TVResults) == 0 {
+			return nil, false, nil
+		}
 		t := c.tvToTitle(ctx, found.TVResults[0])
 		if err := c.upsertSummaries(ctx, []core.Title{t}, false); err != nil {
-			return nil, err
+			return nil, true, err
 		}
-		return c.Get(ctx, t.Key)
+		res, err := c.getOrStored(ctx, t.Key, allowUnfiltered)
+		return res, true, err
 	}
-	if len(found.TVEpisodeResults) > 0 {
-		e := found.TVEpisodeResults[0]
-		if e.ShowID != 0 {
-			return c.Get(ctx, core.EpisodeKey(e.ShowID, e.SeasonNumber, e.EpisodeNumber))
+	pickEpisode := func() (*core.Title, bool, error) {
+		for _, e := range found.TVEpisodeResults {
+			if e.ShowID != 0 && episodeKeyFits(e.SeasonNumber, e.EpisodeNumber) {
+				res, err := c.getOrStored(ctx, core.EpisodeKey(e.ShowID, e.SeasonNumber, e.EpisodeNumber), allowUnfiltered)
+				return res, true, err
+			}
 		}
+		return nil, false, nil
+	}
+	switch typ {
+	case core.TypeMovie:
+		if res, ok, err := pickMovie(); ok {
+			return res, err
+		}
+		return nil, core.ErrNotFound
+	case core.TypeShow:
+		if res, ok, err := pickTV(); ok {
+			return res, err
+		}
+		return nil, core.ErrNotFound
+	case core.TypeEpisode:
+		if res, ok, err := pickEpisode(); ok {
+			return res, err
+		}
+		return nil, core.ErrNotFound
+	}
+	if source == "tvdb" || source == "tvdb_id" {
+		if res, ok, err := pickTV(); ok {
+			return res, err
+		}
+		if res, ok, err := pickMovie(); ok {
+			return res, err
+		}
+	} else {
+		if res, ok, err := pickMovie(); ok {
+			return res, err
+		}
+		if res, ok, err := pickTV(); ok {
+			return res, err
+		}
+	}
+	if res, ok, err := pickEpisode(); ok {
+		return res, err
 	}
 	return nil, core.ErrNotFound
 }

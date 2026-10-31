@@ -124,6 +124,22 @@ func (h *consoleAPI) plan(w http.ResponseWriter, r *http.Request, in importReque
 	if imp.App != "" && imp.App != app && in.JSON != "" {
 		app = imp.App // pasted: the quality names say which app it is for
 	}
+	// TRaSH's default-on format groups hold custom formats the profile's
+	// formatItems don't name — the Base Profile names none of its own.
+	extra, gerr := h.deps.Guides.ProfileGroupFormats(ctx, app, imp.TrashID)
+	if len(extra) > 0 {
+		if imp.FormatIDs == nil {
+			imp.FormatIDs = map[string]string{}
+		}
+		for name, id := range extra {
+			if _, ok := imp.FormatIDs[name]; !ok {
+				imp.FormatIDs[name] = id
+			}
+		}
+	}
+	if gerr != nil && !errors.Is(gerr, ErrTrashNotFound) {
+		imp.Warnings = append(imp.Warnings, fmt.Sprintf("Couldn't read TRaSH's default format groups (%s); only the profile's own formats are in this import.", trashReason(gerr)))
+	}
 	cfg := config.Config{Resolver: h.s.resolverCfg(), Quality: h.s.qualityCfg()}
 	// Formats the owner already has are looked up too: TRaSH's current
 	// scores for them come with the definition.

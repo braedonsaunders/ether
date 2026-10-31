@@ -82,12 +82,18 @@ var binaryUploads = map[string]bool{
 	"/api/adoption/backups/restore": true,
 }
 
+// csvUploads are the endpoints that take a CSV file body (text/csv or
+// application/octet-stream) instead of JSON.
+var csvUploads = map[string]bool{
+	"/api/adoption/migration/csv/preview": true,
+}
+
 // csrfOK guards mutating requests: state changes require the custom
 // X-Ether-Request header (which cross-site forms cannot set) and, when a
-// body is present, a JSON content type, or for the binaryUploads a raw
-// octet stream from a same-origin page. Authentication itself uses the
-// X-Plex-Token header, never cookies, so there is no ambient credential
-// for a CSRF attack to ride on.
+// body is present, a JSON content type, or for file-upload endpoints a
+// permitted file content type from a same-origin page. Authentication itself
+// uses the X-Plex-Token header, never cookies, so there is no ambient
+// credential for a CSRF attack to ride on.
 func csrfOK(r *http.Request) bool {
 	if !isMutating(r) {
 		return true
@@ -104,8 +110,15 @@ func csrfOK(r *http.Request) bool {
 		if strings.EqualFold(ct, "application/json") {
 			return true
 		}
-		return r.Method == http.MethodPost && binaryUpload(r.URL.Path) &&
-			strings.EqualFold(ct, "application/octet-stream") && sameOrigin(r)
+		if r.Method == http.MethodPost && sameOrigin(r) {
+			if binaryUpload(r.URL.Path) && strings.EqualFold(ct, "application/octet-stream") {
+				return true
+			}
+			if csvUploads[r.URL.Path] && (strings.EqualFold(ct, "text/csv") || strings.EqualFold(ct, "application/octet-stream")) {
+				return true
+			}
+		}
+		return false
 	}
 	return true
 }

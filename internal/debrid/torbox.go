@@ -139,25 +139,31 @@ func (p *torBox) Find(ctx context.Context, hash string) (string, error) {
 	if id := p.findKnown(hash); id != "" {
 		return id, nil
 	}
-	return p.list.find(ctx, p.opts.Now(), hash, func(ctx context.Context) (map[string]string, error) {
-		data, err := p.do(ctx, apiRequest{method: http.MethodGet, path: "/torrents/mylist", query: url.Values{"bypass_cache": {"true"}}})
-		if err != nil {
-			return nil, err
+	return p.list.findShared(ctx, p.opts.Now(), hash, p.loadList)
+}
+
+func (p *torBox) findBackground(ctx context.Context, hash string) string {
+	return p.list.background(ctx, p.opts.Now(), hash, p.loadList)
+}
+
+func (p *torBox) loadList(ctx context.Context) (map[string]string, error) {
+	data, err := p.do(ctx, apiRequest{method: http.MethodGet, path: "/torrents/mylist", query: url.Values{"bypass_cache": {"true"}}})
+	if err != nil {
+		return nil, err
+	}
+	var items []tbTorrent
+	if t := bytes.TrimSpace(data); len(t) > 0 && t[0] == '[' {
+		if err := json.Unmarshal(t, &items); err != nil {
+			return nil, errors.New("torbox: unexpected torrent list")
 		}
-		var items []tbTorrent
-		if t := bytes.TrimSpace(data); len(t) > 0 && t[0] == '[' {
-			if err := json.Unmarshal(t, &items); err != nil {
-				return nil, errors.New("torbox: unexpected torrent list")
-			}
+	}
+	m := map[string]string{}
+	for _, it := range items {
+		if it.DownloadPresent {
+			m[strings.ToLower(it.Hash)] = it.ID.String()
 		}
-		m := map[string]string{}
-		for _, it := range items {
-			if it.DownloadPresent {
-				m[strings.ToLower(it.Hash)] = it.ID.String()
-			}
-		}
-		return m, nil
-	})
+	}
+	return m, nil
 }
 
 func (p *torBox) torrent(ctx context.Context, id string) (*tbTorrent, error) {

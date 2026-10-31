@@ -852,6 +852,11 @@ func (s *Service) queueDownload(ctx context.Context, rel core.Release, e *entry,
 	return p, true, err
 }
 
+// errBackgroundUndecided is a background check that could not look at a
+// torrent without adding it: availability stays unknown, and a foreground
+// attempt may still add and play it.
+var errBackgroundUndecided = fmt.Errorf("%w: %w", ErrUnsupported, core.ErrForegroundOnly)
+
 // acquireOn resolves a torrent on one provider: reuse an existing torrent
 // by hash, else add it; then generate a direct link.
 func (s *Service) acquireOn(ctx context.Context, e *entry, base Payload, choose func([]File) (File, error)) (Payload, error) {
@@ -885,13 +890,16 @@ func (s *Service) acquireOn(ctx context.Context, e *entry, base Payload, choose 
 	findStarted := time.Now()
 	_, _, torrentID := s.knownFor(ctx, e.cfg.ID, hash)
 	if torrentID == "" {
-		if fast, ok := e.p.(knownTorrentFinder); ok && !core.IsBackgroundCheck(ctx) {
-			// Providers with atomic cached-only create + duplicate recovery
-			// can reuse known IDs without listing the whole account first.
-			// Background checks cannot create anything: they must use the
-			// read-only lookup to discover items added by another client or
-			// before this process started, even when the local cache is cold.
+		if fast, ok := e.p.(knownTorrentFinder); ok {
+			// Atomic cached-only providers need no account listing before
+			// foreground creation. Background discovery reads only local
+			// hints or a fresh snapshot, warming a cold list alongside A.
 			torrentID = fast.findKnown(hash)
+			if torrentID == "" && core.IsBackgroundCheck(ctx) {
+				if finder, ok := e.p.(backgroundTorrentFinder); ok {
+					torrentID = finder.findBackground(ctx, hash)
+				}
+			}
 		} else if id, err := e.p.Find(ctx, hash); err == nil {
 			torrentID = id
 		} else if !errors.Is(err, ErrUnsupported) {
@@ -911,18 +919,18 @@ func (s *Service) acquireOn(ctx context.Context, e *entry, base Payload, choose 
 	if core.IsBackgroundCheck(ctx) && torrentID == "" {
 		fast, ok := e.p.(backgroundCacheOnlyProvider)
 		if !ok || !fast.supportsBackgroundCacheOnly() {
-			return Payload{}, ErrUnsupported
+			return Payload{}, errBackgroundUndecided
 		}
 		cached, err := e.p.CheckCached(ctx, []string{hash})
 		if err != nil {
 			if errors.Is(err, ErrUnsupported) {
-				return Payload{}, ErrUnsupported
+				return Payload{}, errBackgroundUndecided
 			}
 			observe(err)
 			if errors.Is(err, ErrAuth) {
 				return Payload{}, err
 			}
-			return Payload{}, ErrUnsupported // availability stays unknown
+			return Payload{}, errBackgroundUndecided // availability stays unknown
 		}
 		if !cached[strings.ToLower(hash)] {
 			return Payload{}, ErrUnsupported

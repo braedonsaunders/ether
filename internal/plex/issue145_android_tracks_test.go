@@ -88,6 +88,38 @@ func TestAndroidTrackChoiceSurvivesStop(t *testing.T) {
 	assertRemuxAudio(t, replay.Body.String(), "fre", "eng")
 }
 
+// When Auto playback resolves a fallback candidate (because the top cached
+// candidate in Variants was skipped during health/debrid checks), stopping
+// playback and reopening the detail page must still attach the probed
+// audio/subtitle tracks to Auto (Media[0]) instead of dropping them because
+// probedRelease != vs[0].Release.ID.
+func TestAutoFallbackReleaseRetainsProbedTracksAfterStop(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	pb.info = probedInfo
+	android := []string{"X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android"}
+	key := fightClub.Key.String()
+
+	pb.mu.Lock()
+	pb.resumed = map[resumedFactKey]resumedFact{
+		{ownerUser.ID, fightClub.Key}: {
+			info:    probedInfo,
+			release: "rel-auto-fallback-candidate-2",
+		},
+	}
+	pb.mu.Unlock()
+
+	after := f.get(t, "/library/metadata/"+key, android...)
+	if after.Code != http.StatusOK {
+		t.Fatalf("metadata after stop %d", after.Code)
+	}
+	autoBlock := mediaBlock(after.Body.String(), "Auto / Best for Device")
+	audios := audioTags(autoBlock)
+	subs := streamTagsOfType(autoBlock, "3")
+	if len(audios) < 2 || len(subs) < 2 {
+		t.Fatalf("Auto variant lost probed tracks when probedRelease != vs[0].Release.ID: audios=%q subs=%d\n%s", audios, len(subs), autoBlock)
+	}
+}
+
 func TestDecisionListsAlternateTracksForAndroidOnly(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()

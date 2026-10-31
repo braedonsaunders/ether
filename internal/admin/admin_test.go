@@ -233,6 +233,16 @@ func TestCSRFAllowsLiveTVFileUpload(t *testing.T) {
 	if code := post(refresh, same, "application/octet-stream", true); code != http.StatusForbidden {
 		t.Fatalf("octet-stream refresh: got %d want 403", code)
 	}
+	csvPreview := "/ether/api/adoption/migration/csv/preview?viewer=1&format=trakt&kind=history"
+	if code := post(csvPreview, same, "text/csv; charset=utf-8", true); code != http.StatusNotFound {
+		t.Fatalf("csv preview upload csrf: got %d want 404 after the check", code)
+	}
+	if code := post(csvPreview, "http://evil.example", "text/csv", true); code != http.StatusForbidden {
+		t.Fatalf("cross-origin csv preview: got %d want 403", code)
+	}
+	if code := post(csvPreview, same, "text/csv", false); code != http.StatusForbidden {
+		t.Fatalf("csv preview without csrf header: got %d want 403", code)
+	}
 }
 
 func TestCSRFHeaderRequiredForMutations(t *testing.T) {
@@ -626,6 +636,24 @@ func TestValidateConfigDirect(t *testing.T) {
 	good.Indexers = []config.Indexer{{URL: "ftp://x"}}
 	if errs := admin.ValidateConfig(good); len(errs) < 2 {
 		t.Fatalf("expected >=2 errors, got %v", errs)
+	}
+}
+
+// The owner's same-quality version count is 0 (none) to 3.
+func TestValidateSameQualityAlternatives(t *testing.T) {
+	cfg := config.Defaults(t.TempDir())
+	for _, n := range []int{0, 1, 2, 3} {
+		cfg.Resolver.SameQualityAlternatives = n
+		if errs := admin.ValidateConfig(cfg); len(errs) != 0 {
+			t.Errorf("%d rejected: %v", n, errs)
+		}
+	}
+	for _, n := range []int{-1, 4} {
+		cfg.Resolver.SameQualityAlternatives = n
+		errs := admin.ValidateConfig(cfg)
+		if len(errs) != 1 || errs[0].Field != "resolver.sameQualityAlternatives" {
+			t.Errorf("%d: errs=%v", n, errs)
+		}
 	}
 }
 

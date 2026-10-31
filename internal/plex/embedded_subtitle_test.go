@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -52,6 +53,24 @@ func TestEmbeddedSubtitleServedFromSession(t *testing.T) {
 	body := rec.Body.String()
 	if body == "" || body == "<MediaContainer size=\"0\"/>" || !contains(body, "Hello world") {
 		t.Fatalf("embedded subtitle not served: %q", body)
+	}
+
+	// Selecting the embedded subtitle in a remux decision must report it as
+	// location="sidecar" with key="/library/streams/{id}" (since FFmpeg runs
+	// with -sn) and serve extracted cues from /library/streams/{id}.
+	decSub := f.get(t, fmt.Sprintf("/video/:/transcode/universal/decision?path=/library/metadata/%s&directPlay=0&directStream=1&session=embsub2&protocol=hls&subtitleStreamID=%d", key, subID),
+		"X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android",
+		"X-Plex-Client-Identifier", "client-1")
+	if decSub.Code != 200 {
+		t.Fatalf("decision with selected sub %d: %s", decSub.Code, decSub.Body.String())
+	}
+	streamKey := fmt.Sprintf("/library/streams/%d", subID)
+	if !strings.Contains(decSub.Body.String(), `location="sidecar"`) || !strings.Contains(decSub.Body.String(), `key="`+streamKey+`"`) {
+		t.Fatalf("selected embedded subtitle in remux decision missing sidecar key %s:\n%s", streamKey, decSub.Body.String())
+	}
+	streamRec := f.get(t, streamKey+"?format=vtt")
+	if streamRec.Code != 200 || !contains(streamRec.Body.String(), "Hello world") {
+		t.Fatalf("GET %s returned %d: %q", streamKey, streamRec.Code, streamRec.Body.String())
 	}
 }
 

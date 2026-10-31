@@ -2194,6 +2194,7 @@
   "m_0ebf362be967e5": "Zapisz indeksator",
   "m_0ec10e0355f9f6": "Źródło {n}",
   "m_0ec2214506c75e": "Dostępne w serwisie",
+  "m_0ec49dc714595a": "Liczba wersji tej samej jakości",
   "m_0ec4ae4a08c564": "Przeniesione z profilu Radarr lub Sonarr.",
   "m_0ec6e5f133795d": {
     "one": "ten węzeł: {slots} z {count} połączenia API",
@@ -3308,6 +3309,7 @@
   "m_162737182d9849": "Wyszukiwanie w języku naturalnym",
   "m_1627d178b0e53d": "Dotyczy: {viewers}",
   "m_162943b8b57b2d": "Wycisz: {genre}",
+  "m_162a001b8f1d07": "Inne wydania o tej samej wersji montażowej, rozdzielczości i typie HDR, wyświetlane po Auto w menu Wersja odtwarzania w Plex, aby można było przełączyć, gdy jedno zawiedzie.",
   "m_162b9de049b42a": "Oczekiwanie na usługę · ponawia automatycznie",
   "m_162c7efe448caa": "Status globalnych trendów",
   "m_162cb4ce185878": "Przesuń w dół: {name}",

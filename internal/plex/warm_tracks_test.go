@@ -3,7 +3,6 @@ package plex
 import (
 	"context"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -102,73 +101,75 @@ func TestMetadataWithVariantsListsWarmProbedTracks(t *testing.T) {
 	}
 }
 
-// A non-owner detail render starts the warm-up and then asks for media
-// before that warm-up has published. The render waits for the probe instead
-// of painting the 1080p estimate.
-type lateWarmPlayback struct {
+// warmWaiterPlayback simulates a cold detail-page open where Prewarm kicks
+// off a background resolve+probe and WaitWarmProbe completes within the
+// bounded detail budget so the very first GET /library/metadata/{key}
+// returns real audio and subtitle streams.
+type warmWaiterPlayback struct {
 	core.Playback
-	info    core.MediaInfo
-	once    sync.Once
-	started chan struct{}
-	release chan struct{}
+	info      core.MediaInfo
+	warmReady map[core.RatingKey]bool
+	prewarms  []core.RatingKey
+	waits     []core.RatingKey
 }
 
-func (w *lateWarmPlayback) WarmProbeInfo(*core.User, core.ClientCaps, core.RatingKey) (core.MediaInfo, bool) {
+func (w *warmWaiterPlayback) Prewarm(_ context.Context, _ *core.User, k core.RatingKey, _ core.ClientCaps, _ core.PrewarmOptions) bool {
+	w.prewarms = append(w.prewarms, k)
+	return true
+}
+
+func (w *warmWaiterPlayback) WaitWarmProbe(_ context.Context, _ *core.User, _ core.ClientCaps, k core.RatingKey, _ time.Duration) (core.MediaInfo, bool) {
+	w.waits = append(w.waits, k)
+	if w.warmReady == nil {
+		w.warmReady = map[core.RatingKey]bool{}
+	}
+	w.warmReady[k] = true
+	return w.info, true
+}
+
+func (w *warmWaiterPlayback) WarmProbeInfo(_ *core.User, _ core.ClientCaps, k core.RatingKey) (core.MediaInfo, bool) {
+	if w.warmReady[k] {
+		return w.info, true
+	}
 	return core.MediaInfo{}, false
 }
 
-func (w *lateWarmPlayback) AwaitWarmProbe(ctx context.Context, _ *core.User, _ core.ClientCaps, _ core.RatingKey) (core.MediaInfo, bool) {
-	w.once.Do(func() { close(w.started) })
-	select {
-	case <-w.release:
-		return w.info, true
-	case <-ctx.Done():
-		return core.MediaInfo{}, false
-	}
-}
-
-func TestMetadataWaitsForInFlightWarmProbe(t *testing.T) {
+func TestFirstOpenMovieAndShowSeasonWarmProbedTracks(t *testing.T) {
+	probed := sampleInfo
+	probed.Streams = append([]core.StreamInfo(nil), sampleInfo.Streams...)
 	f := newFixture()
 	defer f.srv.Close()
-	probed := core.MediaInfo{
-		Container: "mp4", Duration: 20 * time.Second, BitrateKbps: 17,
-		Streams: []core.StreamInfo{
-			{Index: 0, Type: "video", Codec: "h264", Width: 320, Height: 180},
-			{Index: 1, Type: "audio", Codec: "aac", Language: "fr", Channels: 2},
-			{Index: 2, Type: "audio", Codec: "aac", Language: "en", Channels: 2},
-			{Index: 3, Type: "subtitle", Codec: "mov_text", Language: "en"},
-		},
+	wpb := &warmWaiterPlayback{Playback: f.playback, info: probed}
+	f.srv.d.Playback = wpb
+
+	// 1. Cold first open of a movie detail page waits for the warm probe and renders real tracks.
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(),
+		"X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android", "X-Plex-Client-Identifier", "shield-1")
+	if rec.Code != 200 {
+		t.Fatalf("movie metadata %d: %s", rec.Code, rec.Body.String())
 	}
-	late := &lateWarmPlayback{
-		Playback: f.playback,
-		info:     probed,
-		started:  make(chan struct{}),
-		release:  make(chan struct{}),
+	if len(audioTags(rec.Body.String())) < 2 || len(streamTagsOfType(rec.Body.String(), "3")) < 2 {
+		t.Fatalf("first movie open did not include warm probed audio/subtitle tracks:\n%s", rec.Body.String())
 	}
-	f.srv.d.Playback = late
-	pr := &Request{User: &core.User{ID: 9, Username: "adult"}, ClientID: "adult-androidtv"}
-	got := make(chan core.MediaInfo, 1)
-	go func() {
-		info, _ := f.srv.mediaInfoFor(context.Background(), pr, &fightClub)
-		got <- info
-	}()
-	select {
-	case <-late.started:
-	case <-time.After(time.Second):
-		t.Fatal("detail render did not wait for the in-flight probe")
+
+	// 2. Show detail page with includeOnDeck=1 warms the next episode (bbE1) and includes its real streams in OnDeck.
+	showRec := f.get(t, "/library/metadata/"+breakingBad.Key.String()+"?includeOnDeck=1",
+		"X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android", "X-Plex-Client-Identifier", "shield-1")
+	if showRec.Code != 200 {
+		t.Fatalf("show metadata %d: %s", showRec.Code, showRec.Body.String())
 	}
-	select {
-	case info := <-got:
-		t.Fatalf("render returned the estimate before the probe: estimated=%v container=%s", info.Estimated, info.Container)
-	case <-time.After(40 * time.Millisecond):
+	if len(audioTags(showRec.Body.String())) < 2 || len(streamTagsOfType(showRec.Body.String(), "3")) < 2 {
+		t.Fatalf("show OnDeck did not include warm probed tracks for next episode:\n%s", showRec.Body.String())
 	}
-	close(late.release)
-	select {
-	case info := <-got:
-		if info.Estimated || info.Container != "mp4" || info.Duration != 20*time.Second || len(info.Streams) != 4 || info.Streams[0].Width != 320 {
-			t.Fatalf("probed media = %+v", info)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out after the probe was published")
+
+	// 3. Season children page warms the next episode and renders real streams on the warmed episode.
+	wpb.warmReady = map[core.RatingKey]bool{}
+	childrenRec := f.get(t, "/library/metadata/"+bbS1.Key.String()+"/children",
+		"X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android", "X-Plex-Client-Identifier", "shield-1")
+	if childrenRec.Code != 200 {
+		t.Fatalf("season children %d: %s", childrenRec.Code, childrenRec.Body.String())
+	}
+	if len(audioTags(childrenRec.Body.String())) < 2 || len(streamTagsOfType(childrenRec.Body.String(), "3")) < 2 {
+		t.Fatalf("season children did not include warm probed tracks for next episode:\n%s", childrenRec.Body.String())
 	}
 }

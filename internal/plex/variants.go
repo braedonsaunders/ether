@@ -247,7 +247,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
 	vctx, cancel := context.WithTimeout(ctx, variantRenderBudget)
 	defer cancel()
-	vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: caps, User: pr.User}, 4)
+	vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: caps, User: pr.User}, core.MaxVariants)
 	if err != nil {
 		s.log.Debug("variants unavailable", "key", t.Key, "err", err)
 		return nil, ""
@@ -261,15 +261,26 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 	}
 	s.renderedVariants.put(renderedVariantKey{userID: pr.User.ID, clientID: pr.ClientID, key: t.Key}, ids, s.now())
 
+	probedReady := !probed.Estimated && len(probed.Streams) > 0 && probed.Video() != nil
+	matchedNonAuto := false
+	if probedRelease != "" && probedReady {
+		for _, v := range vs {
+			if !v.Auto && v.Release.ID == probedRelease {
+				matchedNonAuto = true
+				break
+			}
+		}
+	}
 	out := make([]model.Media, 0, len(vs))
 	for _, v := range vs {
 		// Until this viewer has a resumed release, only Auto carries the
 		// stream list (the completed detail warm-up probe when available,
 		// otherwise the estimate). A resumed probe is drawn on the matching
 		// version only, never on a different explicit pick, and that version
-		// is selected.
-		probedReady := !probed.Estimated && len(probed.Streams) > 0 && probed.Video() != nil
-		played := probedRelease != "" && probedReady && v.Release.ID == probedRelease
+		// is selected; when the resumed release is not one of the explicit
+		// non-Auto picks (e.g. Auto resolved past an uncached top candidate),
+		// it belongs to Auto.
+		played := probedRelease != "" && probedReady && (v.Release.ID == probedRelease || (v.Auto && !matchedNonAuto))
 		warmAuto := probedRelease == "" && probedReady && v.Auto
 		variant := v
 		if played || warmAuto {
@@ -378,7 +389,7 @@ func (s *Server) resolveVariantSelection(ctx context.Context, pr *Request, p *pl
 	}
 	vctx, cancel := context.WithTimeout(ctx, variantRenderBudget)
 	defer cancel()
-	vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: p.caps, User: pr.User}, 4)
+	vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: p.caps, User: pr.User}, core.MaxVariants)
 	if err != nil || p.mediaIndex >= len(vs) {
 		return ""
 	}

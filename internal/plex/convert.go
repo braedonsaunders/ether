@@ -463,32 +463,37 @@ func (s *Server) personTags(key core.RatingKey, ps []core.Person, kind string, m
 // item they navigated with, so once a warm-up has probed the file its
 // real tracks must be rendered there: the estimate invents a single
 // audio track and no subtitles.
-func (s *Server) mediaInfoFor(ctx context.Context, pr *Request, t *core.Title) (core.MediaInfo, *core.PlaySession) {
-	// Resumed tracks and a finished warm probe stay ahead of the neutral
-	// estimate: they are Plex detail-page facts gated by playableTitle.
-	if s.d.Playback != nil && pr != nil && pr.User != nil {
+func (s *Server) mediaInfoWithSource(ctx context.Context, pr *Request, t *core.Title) (core.MediaInfo, *core.PlaySession, bool) {
+	if s.d.Playback == nil || pr == nil {
+		dur := time.Duration(0)
+		if t != nil {
+			dur = t.Runtime
+		}
+		return core.MediaInfo{Estimated: true, Duration: dur}, nil, false
+	}
+	if pr.User != nil {
 		if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, t.Key); ok && ps != nil {
-			return ps.Info, ps
+			return ps.Info, ps, !ps.Info.Estimated && len(ps.Info.Streams) > 0
 		}
 		if info, _, ok := s.resumedTracks(ctx, pr, t); ok {
-			return info, nil
+			return info, nil, true
 		}
-		caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
-		if wait, ok := s.d.Playback.(interface {
-			AwaitWarmProbe(context.Context, *core.User, core.ClientCaps, core.RatingKey) (core.MediaInfo, bool)
-		}); ok {
-			if info, warm := wait.AwaitWarmProbe(ctx, pr.User, caps, t.Key); warm {
-				return info, nil
-			}
-		} else if wp, ok := s.d.Playback.(core.WarmProber); ok {
+		if wp, ok := s.d.Playback.(core.WarmProber); ok {
+			caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
 			if info, warm := wp.WarmProbeInfo(pr.User, caps, t.Key); warm {
-				return info, nil
+				return info, nil, true
 			}
 		}
 	}
-	return sessions.Estimate(ctx, s.d.Playback, pr.User, pr.ClientID, t, func() core.ClientCaps {
+	info, ps := sessions.Estimate(ctx, s.d.Playback, pr.User, pr.ClientID, t, func() core.ClientCaps {
 		return pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
 	})
+	return info, ps, false
+}
+
+func (s *Server) mediaInfoFor(ctx context.Context, pr *Request, t *core.Title) (core.MediaInfo, *core.PlaySession) {
+	info, ps, _ := s.mediaInfoWithSource(ctx, pr, t)
+	return info, ps
 }
 
 // resumedTrackSource is implemented by the playback manager. It returns the
@@ -523,7 +528,7 @@ func (s *Server) resumedTracks(ctx context.Context, pr *Request, t *core.Title) 
 // version actually playing (its probed info), so variants are only
 // offered before playback starts for this client.
 func (s *Server) mediaFor(ctx context.Context, pr *Request, t *core.Title, withStreams bool, withVariants bool) ([]model.Media, string) {
-	info, ps := s.mediaInfoFor(ctx, pr, t)
+	info, ps, probedSource := s.mediaInfoWithSource(ctx, pr, t)
 	stamp := unixOrZero(t.UpdatedAt)
 	if ps != nil && !ps.StartedAt.IsZero() {
 		stamp = ps.StartedAt.Unix()
@@ -549,7 +554,7 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *core.Title, withS
 	if ps != nil && ps.Resolution != nil && s.d.Trickplay != nil && s.d.Trickplay.TrickplayAvailable(ps.Resolution.Release.ID) {
 		m.Part[0].Indexes = "sd"
 	}
-	if withStreams {
+	if withStreams || probedSource {
 		// Before a session the info is an estimate without subtitle
 		// tracks: list the viewer's cached sidecars (OpenSubtitles) so
 		// detail pages and play queues offer them.

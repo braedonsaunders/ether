@@ -2135,6 +2135,7 @@
   "m_0ebf362be967e5": "Salva l'indexer",
   "m_0ec10e0355f9f6": "Fonte {n}",
   "m_0ec2214506c75e": "In streaming su",
+  "m_0ec49dc714595a": "Versioni della stessa qualità da offrire",
   "m_0ec4ae4a08c564": "Riportate da un profilo Radarr o Sonarr.",
   "m_0ec6e5f133795d": {
     "one": "questo nodo: {slots} di {count} connessione API",
@@ -3205,6 +3206,7 @@
   "m_162737182d9849": "Ricerca in linguaggio naturale",
   "m_1627d178b0e53d": "Riguarda {viewers}",
   "m_162943b8b57b2d": "Silenzia {genre}",
+  "m_162a001b8f1d07": "Altre release con lo stesso montaggio, la stessa risoluzione e lo stesso tipo di HDR, elencate dopo Auto nel menu Versione di riproduzione di Plex per poter cambiare se una non funziona.",
   "m_162b9de049b42a": "In attesa del servizio · riprova automaticamente",
   "m_162c7efe448caa": "Stato delle tendenze globali",
   "m_162cb4ce185878": "Sposta {name} in giù",

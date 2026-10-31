@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Reasons for PrewarmOptions.Reason.
 const (
@@ -44,4 +47,13 @@ type Prewarmer interface {
 // this covers the first open, once the detail-page warm-up has landed.
 type WarmProber interface {
 	WarmProbeInfo(user *User, caps ClientCaps, key RatingKey) (MediaInfo, bool)
+}
+
+// WarmProbeWaiter is optionally implemented by playback managers that can wait
+// up to a bounded budget for an already-scheduled warm probe (PreResolve) to
+// finish, so the first detail-page open can render the file's real audio and
+// subtitle streams instead of an estimate. It never cancels the background
+// warm-up when the budget expires.
+type WarmProbeWaiter interface {
+	WaitWarmProbe(ctx context.Context, user *User, caps ClientCaps, key RatingKey, budget time.Duration) (MediaInfo, bool)
 }

@@ -2076,6 +2076,7 @@
   "m_0ebf362be967e5": "Dizinleyiciyi kaydet",
   "m_0ec10e0355f9f6": "Kaynak {n}",
   "m_0ec2214506c75e": "Yayında olduğu hizmet",
+  "m_0ec49dc714595a": "Sunulacak aynı kalitede sürüm sayısı",
   "m_0ec4ae4a08c564": "Bir Radarr veya Sonarr profilinden aktarıldı.",
   "m_0ec6e5f133795d": {
     "one": "bu düğüm: {count} API bağlantısından {slots} tanesi",
@@ -3102,6 +3103,7 @@
   "m_162737182d9849": "Doğal dil araması",
   "m_1627d178b0e53d": "{viewers} izleyiciyi etkiler",
   "m_162943b8b57b2d": "{genre} türünü sessize al",
+  "m_162a001b8f1d07": "Aynı kurgu, çözünürlük ve HDR türüne sahip diğer sürümler, biri başarısız olursa geçiş yapabilmeniz için Plex'in Oynatma Sürümü menüsünde Otomatik'ten sonra listelenir.",
   "m_162b9de049b42a": "Hizmet bekleniyor · otomatik yeniden dener",
   "m_162c7efe448caa": "Genel gündem durumu",
   "m_162cb4ce185878": "{name} öğesini aşağı taşı",

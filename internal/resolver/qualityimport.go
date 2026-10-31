@@ -26,6 +26,9 @@ const (
 type QualityImport struct {
 	Profile   core.QualityProfile `json:"profile"`
 	FormatIDs map[string]string   `json:"formatIds"`
+	// TrashID is the profile's TRaSH ID, which its default format groups
+	// are keyed by.
+	TrashID string `json:"trashId,omitempty"`
 	// ScoreSet names the trash_scores entry the profile's formats are scored
 	// with ("sqp-1-2160p"); empty means each format's default score.
 	ScoreSet string `json:"scoreSet,omitempty"`
@@ -46,6 +49,7 @@ type QualityImport struct {
 func ImportQualityProfile(data []byte) (QualityImport, error) {
 	var native struct {
 		Name                  string            `json:"name"`
+		TrashID               string            `json:"trash_id"`
 		ScoreSet              string            `json:"trash_score_set"`
 		UpgradeAllowed        bool              `json:"upgradeAllowed"`
 		Cutoff                json.RawMessage   `json:"cutoff"`
@@ -83,7 +87,7 @@ func ImportQualityProfile(data []byte) (QualityImport, error) {
 	if len(formatIDs) > 1000 {
 		return QualityImport{}, fmt.Errorf("quality profile: too many custom formats")
 	}
-	imp := QualityImport{FormatIDs: formatIDs, ScoreSet: strings.TrimSpace(native.ScoreSet)}
+	imp := QualityImport{FormatIDs: formatIDs, TrashID: strings.TrimSpace(native.TrashID), ScoreSet: strings.TrimSpace(native.ScoreSet)}
 	p := core.QualityProfile{
 		Name:                 native.Name,
 		PreferredCodecs:      []string{"h264", "hevc"},

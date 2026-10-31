@@ -2076,6 +2076,7 @@
   "m_0ebf362be967e5": "Gem indexer",
   "m_0ec10e0355f9f6": "Kilde {n}",
   "m_0ec2214506c75e": "Streames på",
+  "m_0ec49dc714595a": "Versioner i samme kvalitet at tilbyde",
   "m_0ec4ae4a08c564": "Overført fra en Radarr- eller Sonarr-profil.",
   "m_0ec6e5f133795d": {
     "one": "denne node: {slots} af {count} API-forbindelse",
@@ -3102,6 +3103,7 @@
   "m_162737182d9849": "Søgning på naturligt sprog",
   "m_1627d178b0e53d": "Påvirker {viewers}",
   "m_162943b8b57b2d": "Dæmp {genre}",
+  "m_162a001b8f1d07": "Andre udgivelser med samme klip, opløsning og HDR-type, vist efter Auto i Plex' menu Afspilningsversion, så du kan skifte, hvis én fejler.",
   "m_162b9de049b42a": "Venter på tjeneste · prøver automatisk igen",
   "m_162c7efe448caa": "Status for globale trends",
   "m_162cb4ce185878": "Flyt {name} ned",

@@ -2076,6 +2076,7 @@
   "m_0ebf362be967e5": "Lagre indekserer",
   "m_0ec10e0355f9f6": "Kilde {n}",
   "m_0ec2214506c75e": "Strømmes på",
+  "m_0ec49dc714595a": "Versjoner i samme kvalitet å tilby",
   "m_0ec4ae4a08c564": "Overført fra en Radarr- eller Sonarr-profil.",
   "m_0ec6e5f133795d": {
     "one": "denne noden: {slots} av {count} API-tilkobling",
@@ -3102,6 +3103,7 @@
   "m_162737182d9849": "Søk med naturlig språk",
   "m_1627d178b0e53d": "Påvirker {viewers}",
   "m_162943b8b57b2d": "Demp {genre}",
+  "m_162a001b8f1d07": "Andre utgivelser med samme klipp, oppløsning og HDR-type, vist etter Auto i Plex' Spillversjon-meny, slik at du kan bytte hvis én feiler.",
   "m_162b9de049b42a": "Venter på tjenesten · prøver på nytt automatisk",
   "m_162c7efe448caa": "Status for global trend",
   "m_162cb4ce185878": "Flytt {name} ned",

@@ -101,7 +101,7 @@ func TestVariantBitrateUsesEpisodeNotPackSize(t *testing.T) {
 	ep := &core.Title{Key: core.EpisodeKey(1, 1, 1), Type: core.TypeEpisode, Runtime: 45 * time.Minute}
 	pack := withParsed(rel("pack", "Show.S01.1080p.WEB-DL.H264-GRP", 40<<10))
 	pack.Protocol = core.ProtocolTorrent
-	out := pickVariants(ep, core.ClientCaps{}, core.QualityProfile{}, pack, nil, 4)
+	out := pickVariants(ep, core.ClientCaps{}, core.QualityProfile{}, pack, nil, nil, 2, 4)
 	if len(out) != 1 || out[0].Info.BitrateKbps > 20000 {
 		t.Fatalf("pack variant bitrate %+v", out)
 	}
