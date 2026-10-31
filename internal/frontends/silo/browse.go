@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,10 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
+
+func notFound(w http.ResponseWriter) {
+	problem(w, http.StatusNotFound, "https://siloserver.org/docs/api/v2/problems/not_found", "Not Found", "The requested resource was not found.")
+}
 
 func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	id := ids.RatingKeyGUID(t.Key)
@@ -51,11 +56,95 @@ func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	}
 	return out
 }
+
+const (
+	maxSourceOfferFileID int64 = 1<<53 - 1
+	liveChannelFileBit   int64 = 1 << 54
+	liveChannelFileMask  int64 = 1<<53 - 1
+)
+
+type liveChannelCardMeta struct {
+	title    string
+	overview string
+	runtime  int
+}
+
+func liveChannelFileID(channelGUID string) (string, error) {
+	raw, err := ids.ParseGUID(ids.Channel, channelGUID)
+	if err != nil {
+		return "", err
+	}
+	n := liveChannelFileBit | (raw & liveChannelFileMask)
+	return strconv.FormatInt(n, 10), nil
+}
+
+func isLiveChannelFileID(fileID string) bool {
+	n, err := ids.ParseDecimal(fileID)
+	if err != nil || n <= maxSourceOfferFileID {
+		return false
+	}
+	return n&liveChannelFileBit != 0 && n&^(liveChannelFileBit|liveChannelFileMask) == 0
+}
+
+func (i *instance) rememberLiveChannel(channelGUID string, meta liveChannelCardMeta) (string, error) {
+	raw, err := ids.ParseGUID(ids.Channel, channelGUID)
+	if err != nil {
+		return "", err
+	}
+	canonical, err := ids.GUID(ids.Channel, raw)
+	if err != nil {
+		return "", err
+	}
+	fileID, err := liveChannelFileID(canonical)
+	if err != nil {
+		return "", err
+	}
+	if i == nil {
+		return fileID, nil
+	}
+	i.liveMu.Lock()
+	defer i.liveMu.Unlock()
+	if i.liveChannels == nil || len(i.liveChannels) > 4096 {
+		i.liveChannels = map[string]string{}
+	}
+	i.liveChannels[fileID] = canonical
+	if meta.title != "" || meta.overview != "" || meta.runtime > 0 {
+		if i.liveCards == nil || len(i.liveCards) > 4096 {
+			i.liveCards = map[string]liveChannelCardMeta{}
+		}
+		i.liveCards[canonical] = meta
+	}
+	return fileID, nil
+}
+
+func (i *instance) rememberedLiveChannel(fileID string) string {
+	if i == nil {
+		return ""
+	}
+	i.liveMu.Lock()
+	defer i.liveMu.Unlock()
+	return i.liveChannels[fileID]
+}
+
+func (i *instance) rememberedLiveCard(channelGUID string) (liveChannelCardMeta, bool) {
+	if i == nil {
+		return liveChannelCardMeta{}, false
+	}
+	i.liveMu.Lock()
+	defer i.liveMu.Unlock()
+	meta, ok := i.liveCards[channelGUID]
+	return meta, ok
+}
+
 // liveChannelCards is the On Now shelf. Experience rows carry channels, not
 // catalogue titles, so the home builder cannot reuse title cards. The item
 // uses the catalogue card shape: the programme is the title and the channel
 // is the series line. content_id is the channel the client tunes.
 func liveChannelCards(row frontend.Row) []any {
+	return (*instance)(nil).buildLiveChannelCards(row)
+}
+
+func (i *instance) buildLiveChannelCards(row frontend.Row) []any {
 	items := make([]any, 0, len(row.Entries))
 	for _, entry := range row.Entries {
 		if entry.Kind != frontend.RowEntryLiveChannel || entry.LiveChannel == nil {
@@ -80,6 +169,7 @@ func liveChannelCards(row frontend.Row) []any {
 				runtime = int(ch.Current.End.Sub(ch.Current.Start).Minutes())
 			}
 		}
+		_, _ = i.rememberLiveChannel(id, liveChannelCardMeta{title: title, overview: channel, runtime: runtime})
 		items = append(items, map[string]any{
 			"content_id": id, "play_content_id": id, "title": title, "type": "episode",
 			"overview": channel, "year": 0, "runtime": runtime,
@@ -253,7 +343,7 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		var items []any
 		var e error
 		if row.Purpose == frontend.RowLive {
-			items = liveChannelCards(row)
+			items = i.buildLiveChannelCards(row)
 			if len(items) == 0 {
 				continue
 			}
@@ -336,15 +426,188 @@ func (i *instance) storeSections(key string, sections []any) {
 	}
 	i.sectionsCache[key] = siloSectionPage{at: time.Now(), sections: sections}
 }
+
+func (i *instance) liveChannelDetail(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, credential, channelGUID string) {
+	if i.host.LiveTV == nil {
+		notFound(w)
+		return
+	}
+	ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, channelGUID)
+	if err != nil || ch.ID == "" {
+		if errors.Is(err, frontend.ErrNotFound) || errors.Is(err, frontend.ErrUnauthorized) || ch.ID == "" {
+			notFound(w)
+			return
+		}
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	fileID, err := i.rememberLiveChannel(channelGUID, liveChannelCardMeta{})
+	if err != nil {
+		notFound(w)
+		return
+	}
+	channelLabel := ch.Name
+	if ch.Number != "" {
+		channelLabel = strings.TrimSpace(ch.Number + " " + ch.Name)
+	}
+	title := ch.Name
+	overview := channelLabel
+	runtime := 0
+	var durationSeconds int64
+	var addedAt time.Time
+	contentRating := ch.Rating
+	if card, ok := i.rememberedLiveCard(channelGUID); ok {
+		if card.title != "" {
+			title = card.title
+		}
+		if card.overview != "" {
+			overview = card.overview
+		}
+		if card.runtime > 0 {
+			runtime = card.runtime
+		}
+	}
+	now := time.Now().UTC()
+	var currentProgramme *frontend.LiveProgramme
+	if programmes, gErr := i.host.LiveTV.Guide(r.Context(), v, frontend.LiveGuideQuery{
+		From:     now.Add(-6 * time.Hour),
+		Until:    now.Add(6 * time.Hour),
+		Channels: []string{ch.ID},
+		Limit:    50,
+		Device:   device(r),
+	}); gErr == nil {
+		for idx := range programmes {
+			p := &programmes[idx]
+			if p.ChannelID != "" && p.ChannelID != ch.ID {
+				continue
+			}
+			if !p.Start.After(now) && p.End.After(now) {
+				currentProgramme = p
+				break
+			}
+			if currentProgramme == nil {
+				currentProgramme = p
+			}
+		}
+	}
+	if currentProgramme != nil {
+		if currentProgramme.Title != "" {
+			title = currentProgramme.Title
+		}
+		if currentProgramme.Summary != "" {
+			overview = currentProgramme.Summary
+		}
+		if currentProgramme.End.After(currentProgramme.Start) {
+			runtime = int(currentProgramme.End.Sub(currentProgramme.Start).Minutes())
+			durationSeconds = int64(currentProgramme.End.Sub(currentProgramme.Start).Seconds())
+		}
+		if !currentProgramme.Start.IsZero() {
+			addedAt = currentProgramme.Start.UTC()
+		}
+		if currentProgramme.Rating != "" {
+			contentRating = currentProgramme.Rating
+		}
+	}
+	if durationSeconds == 0 && runtime > 0 {
+		durationSeconds = int64(runtime) * 60
+	}
+	if addedAt.IsZero() {
+		addedAt = time.Unix(0, 0).UTC()
+	}
+	version := map[string]any{
+		"file_id":     fileID,
+		"resolution":  "",
+		"codec_video": "",
+		"codec_audio": "",
+		"hdr":         false,
+		"container":   "hls",
+		"duration":    durationSeconds,
+		"file_size":   int64(0),
+		"bitrate":     0,
+		"added_at":    addedAt.Format("2006-01-02T15:04:05.000Z"),
+	}
+	part := map[string]any{"part_index": 1, "default_file_id": fileID, "versions": []any{version}}
+	group := map[string]any{"variant_id": fileID, "default_file_id": fileID, "part_count": 1, "parts": []any{part}}
+	if durationSeconds > 0 {
+		part["total_duration"], group["total_duration"] = durationSeconds, durationSeconds
+	}
+	rollup := map[string]any{
+		"played":            false,
+		"watched_count":     0,
+		"unplayed_count":    1,
+		"in_progress_count": 0,
+		"is_in_progress":    false,
+	}
+	if durationSeconds > 0 {
+		rollup["duration_seconds"] = float64(durationSeconds)
+	}
+	out := map[string]any{
+		"content_id":        channelGUID,
+		"play_content_id":   channelGUID,
+		"title":             title,
+		"type":              "movie",
+		"overview":          overview,
+		"year":              0,
+		"runtime":           runtime,
+		"genres":            []string{},
+		"keywords":          []string{},
+		"studios":           []string{},
+		"rating_tmdb":       float64(0),
+		"status":            "matched",
+		"series_title":      channelLabel,
+		"user_state":        map[string]any{"played": false, "is_favorite": ch.Favorite, "in_watchlist": false, "not_interested": false},
+		"user_data":         rollup,
+		"cast":              []any{},
+		"crew":              []any{},
+		"themes":            map[string]any{"owner_id": channelGUID, "items": []any{}},
+		"versions":          []any{version},
+		"playback_variants": []any{group},
+		"ratings":           []any{},
+		"subtitles":         []any{},
+	}
+	if contentRating != "" {
+		out["content_rating"] = contentrating.Prefixed(contentRating)
+	}
+	if i.host.ImageGrants != nil {
+		prefix := ""
+		if r.Context().Value(sharedPrefix{}) != nil {
+			prefix = "/silo"
+		}
+		for _, img := range ch.Images {
+			if img.Path == "" {
+				continue
+			}
+			grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: credential, Device: device(r), Channel: ch.ID, Image: img})
+			if err != nil || grant == "" {
+				continue
+			}
+			path := prefix + "/api/v2/images/" + grant
+			if _, ok := out["poster_url"]; !ok {
+				out["poster_url"] = path
+			}
+			if _, ok := out["backdrop_url"]; !ok {
+				out["backdrop_url"] = path
+				out["backdrop_urls"] = []string{path}
+			}
+		}
+	}
+	i.finishDetailResponse(w, r, v, frontend.ItemDetail{}, map[string][]frontend.Marker{}, out)
+}
+
 func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	v, credential, err := i.viewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	if rawChannel, err := ids.ParseGUID(ids.Channel, r.PathValue("id")); err == nil {
+		channelGUID, _ := ids.GUID(ids.Channel, rawChannel)
+		i.liveChannelDetail(w, r, v, credential, channelGUID)
+		return
+	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
 	if err != nil {
-		http.NotFound(w, r)
+		notFound(w)
 		return
 	}
 	if i.host.Experience == nil {
@@ -353,7 +616,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
 	if err != nil {
-		http.NotFound(w, r)
+		notFound(w)
 		return
 	}
 	out := titleDTO(d.Title, d.UserData)
@@ -719,6 +982,10 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	i.finishDetailResponse(w, r, v, d, fileMarkers, out)
+}
+
+func (i *instance) finishDetailResponse(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, d frontend.ItemDetail, fileMarkers map[string][]frontend.Marker, out map[string]any) {
 	if strings.HasPrefix(r.URL.Path, "/api/v2/watch/") {
 		watch := map[string]any{"content_id": out["content_id"], "type": out["type"], "title": out["title"], "versions": []any{}, "subtitles": []any{}}
 		for _, name := range []string{"overview", "year", "poster_url", "backdrop_url", "series_id", "series_title", "season_number", "episode_number"} {
@@ -805,7 +1072,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasSuffix(r.URL.Path, "/versions") {
-		reply(w, 200, map[string]any{"items": out["versions"], "page": map[string]any{"has_more": false, "next_cursor": nil}})
+		reply(w, 200, map[string]any{"items": out["versions"], "page": map[string]any{"has_more": false}})
 		return
 	}
 	reply(w, 200, out)

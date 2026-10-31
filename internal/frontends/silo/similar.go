@@ -18,15 +18,6 @@ func (i *instance) similar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if i.host.Experience == nil {
-		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
 	q := r.URL.Query()
 	limit := 20
 	if raw := q.Get("limit"); raw != "" {
@@ -44,10 +35,37 @@ func (i *instance) similar(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if rawChannel, err := ids.ParseGUID(ids.Channel, r.PathValue("id")); err == nil {
+		if i.host.LiveTV == nil {
+			notFound(w)
+			return
+		}
+		channelGUID, _ := ids.GUID(ids.Channel, rawChannel)
+		ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, channelGUID)
+		if err != nil || ch.ID == "" {
+			if errors.Is(err, frontend.ErrNotFound) || errors.Is(err, frontend.ErrUnauthorized) || ch.ID == "" {
+				notFound(w)
+				return
+			}
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		reply(w, http.StatusOK, map[string]any{"items": []any{}})
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		notFound(w)
+		return
+	}
 	page, err := i.host.Experience.Similar(r.Context(), v, device(r), key, frontend.ItemQuery{Offset: offset, Limit: limit})
 	if err != nil {
 		if errors.Is(err, frontend.ErrNotFound) {
-			http.NotFound(w, r)
+			notFound(w)
 			return
 		}
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
