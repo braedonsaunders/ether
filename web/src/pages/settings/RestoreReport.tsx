@@ -44,7 +44,9 @@ export function RestoreReportPanel({
     }
   };
   const title = !ok
-    ? t("The restore didn't complete")
+    ? report.rolledBack
+      ? t("The backup couldn't start")
+      : t("The restore didn't complete")
     : report.kind === "undo"
       ? t("Restore undone")
       : t("Backup restored");
@@ -80,7 +82,9 @@ export function RestoreReportPanel({
           <h2 className="text-sm font-semibold text-fg">{title}</h2>
           <p className="mt-0.5 text-sm text-fg-muted">
             {!ok
-              ? t("Your server kept its own data; nothing was replaced.")
+              ? report.rolledBack
+                ? t("Ether put your previous data back automatically, so nothing was lost.")
+                : t("Your server kept its own data; nothing was replaced.")
               : report.kind === "undo"
                 ? t("Your server is back on the data it had before the restore.")
                 : t("Ether restarted on the backup {when}.", {

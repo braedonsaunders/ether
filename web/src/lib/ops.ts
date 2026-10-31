@@ -102,6 +102,8 @@ export interface StagedBackup {
 
 export interface RestoreReport {
   status: "restored" | "failed";
+  /** The backup was in place but couldn't start, so the original data was put back. */
+  rolledBack?: boolean;
   kind?: "snapshot" | "upload" | "undo";
   source: string;
   backupCreated?: string;
@@ -246,11 +248,41 @@ export interface LocalBackup {
   created: string;
 }
 
+/** How the owner may sign in on the startup page. */
+export interface RecoveryAccess {
+  /** False when this server's data can't be restored from the page (a cluster node). */
+  available: boolean;
+  /** Restore without signing in (setup isn't finished; local network). */
+  granted?: boolean;
+  /** The owner's local username and password can be checked. */
+  local?: boolean;
+  /** Plex sign-in for the owner's account. */
+  plex?: boolean;
+  /** The one-time recovery code (not through a reverse proxy). */
+  code?: boolean;
+}
+
+export interface RecoveryBackups {
+  snapshots: LocalBackup[];
+  /** The last restore, which can be undone. */
+  undo?: { source: string; restoredAt: string } | null;
+}
+
 /** Recovery tokens live in memory only: a failed start's sign-in, never a console session. */
 export const recoveryApi = {
-  /** Whether this browser may restore now, and whether Plex sign-in can let it. */
-  access: () =>
-    recoveryFetch<{ granted: boolean; plex: boolean; available: boolean }>("/access", ""),
+  access: () => recoveryFetch<RecoveryAccess>("/access", ""),
+  signInLocal: (username: string, password: string) =>
+    recoveryFetch<{ done: boolean; token: string }>("/local", "", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+      headers: { "Content-Type": "application/json" },
+    }),
+  signInCode: (code: string) =>
+    recoveryFetch<{ done: boolean; token: string }>("/code", "", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+      headers: { "Content-Type": "application/json" },
+    }),
   signInStart: () =>
     recoveryFetch<{ handle: string; code: string; authUrl: string }>("/pin", "", {
       method: "POST",
@@ -258,11 +290,16 @@ export const recoveryApi = {
   signInPoll: (handle: string) =>
     recoveryFetch<{ done: boolean; token?: string }>(`/pin/${encodeURIComponent(handle)}`, ""),
   backups: (token: string) =>
-    recoveryFetch<{ snapshots: LocalBackup[] }>("/backups", token).then((r) => r.snapshots ?? []),
+    recoveryFetch<RecoveryBackups>("/backups", token).then((r) => ({
+      snapshots: r.snapshots ?? [],
+      undo: r.undo ?? null,
+    })),
   restoreSnapshot: (name: string, token: string) =>
     recoveryFetch<StagedBackup>(`/restore/snapshot/${encodeURIComponent(name)}`, token, {
       method: "POST",
     }),
+  undo: (token: string) =>
+    recoveryFetch<{ ok: boolean }>("/restore/undo", token, { method: "POST" }),
   restoreUpload: (file: File, password: string, token: string) =>
     uploadBackup<StagedBackup>(RECOVERY + "/restore", file, {
       ...(token ? { [RECOVERY_TOKEN]: token } : {}),

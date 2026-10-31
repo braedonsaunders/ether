@@ -505,9 +505,15 @@ export function ReportSummary({ report }: { report: RestoreReport }) {
   if (report.status !== "restored")
     return (
       <Alert variant="destructive" role="alert">
-        <AlertTitle>{t("The restore didn't complete")}</AlertTitle>
+        <AlertTitle>
+          {report.rolledBack ? t("The backup couldn't start") : t("The restore didn't complete")}
+        </AlertTitle>
         <AlertDescription>
-          <span className="block">{t("Your server kept its own data; nothing was replaced.")}</span>
+          <span className="block">
+            {report.rolledBack
+              ? t("Ether put your previous data back automatically, so nothing was lost.")
+              : t("Your server kept its own data; nothing was replaced.")}
+          </span>
           {report.error ? <span className="mt-1 block text-xs">{report.error}</span> : null}
         </AlertDescription>
       </Alert>

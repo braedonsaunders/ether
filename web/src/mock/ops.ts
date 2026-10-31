@@ -71,10 +71,11 @@ export function createOpsMock(opts: OpsOptions) {
     { id: string; kind: string; source: string; created: string; size: number; path: string }
   >();
 
-  if (opts.restore === "restored" || opts.restore === "failed") {
+  if (opts.restore === "restored" || opts.restore === "failed" || opts.restore === "rolledback") {
     const backup = opts.backups()[1] ?? opts.backups()[0];
     report = {
-      status: opts.restore,
+      status: opts.restore === "restored" ? "restored" : "failed",
+      rolledBack: opts.restore === "rolledback",
       kind: "snapshot",
       source: backup?.name ?? "ether-20261030T030000.000000000Z.tar.gz",
       backupCreated: backup?.created,
@@ -86,7 +87,12 @@ export function createOpsMock(opts: OpsOptions) {
             files: ["config.json", ".credentials-key", "ether.db", "ether.db-wal"],
             integrity: { ok: true, checked: new Date(Date.now() - 4 * 60_000).toISOString() },
           }
-        : { error: "install ether.db: no space left on device" }),
+        : opts.restore === "rolledback"
+          ? {
+              error:
+                "the restored backup could not start: database: migration catalog/14: no such column: tmdb_rating",
+            }
+          : { error: "install ether.db: no space left on device" }),
     };
   }
   if (opts.restore === "pending")
@@ -269,7 +275,7 @@ export function createOpsMock(opts: OpsOptions) {
     if (st === UNREACHABLE) return UNREACHABLE;
     const ready = st.phase === "ready";
     if (seg[0] === "startup" && seg[1] === "recovery")
-      return st.phase === "failed" ? recovery(method, seg.slice(2), headers) : null;
+      return st.phase === "failed" ? recovery(method, seg.slice(2), headers, body) : null;
     if (!ready)
       return {
         status: 503,
@@ -379,10 +385,32 @@ export function createOpsMock(opts: OpsOptions) {
   }
 
   let signedIn = false;
-  function recovery(method: string, rest: string[], headers: Headers): Result {
+  function recovery(method: string, rest: string[], headers: Headers, body: unknown): Result {
     const route = `${method} /${rest.join("/")}`;
+    const fields = (body ?? {}) as { username?: string; password?: string; code?: string };
+    const token = { status: 200, body: { done: true, token: "ether-recovery-mock" } };
     if (route === "GET /access")
-      return { status: 200, body: { granted: false, plex: true, available: true } };
+      return {
+        status: 200,
+        body: { available: true, granted: false, local: true, plex: true, code: true },
+      };
+    if (route === "POST /local") {
+      if (fields.username === "owner" && fields.password === "correct horse battery") {
+        signedIn = true;
+        return token;
+      }
+      return {
+        status: 401,
+        body: { error: { code: "invalid_credentials", message: "invalid credentials" } },
+      };
+    }
+    if (route === "POST /code") {
+      if ((fields.code ?? "").replace(/[\s-]/g, "").toUpperCase() === "K7QFM2XD9PRT") {
+        signedIn = true;
+        return token;
+      }
+      return { status: 401, body: { error: { code: "invalid_code", message: "invalid code" } } };
+    }
     if (route === "POST /pin")
       return {
         status: 200,
@@ -390,14 +418,28 @@ export function createOpsMock(opts: OpsOptions) {
       };
     if (route === "GET /pin/h1") {
       signedIn = true;
-      return { status: 200, body: { done: true, token: "ether-recovery-mock" } };
+      return token;
     }
     if (!signedIn && !headers.get("X-Ether-Recovery-Token"))
       return { status: 401, body: { error: { code: "unauthorized", message: "sign in" } } };
-    if (route === "GET /backups") return { status: 200, body: { snapshots: opts.backups() } };
+    if (route === "GET /backups")
+      return {
+        status: 200,
+        body: {
+          snapshots: opts.backups(),
+          undo:
+            report?.status === "restored"
+              ? { source: report.source, restoredAt: report.restoredAt }
+              : null,
+        },
+      };
     if (method === "POST" && rest[0] === "restore") {
       const name =
-        rest[1] === "snapshot" ? decodeURIComponent(rest[2] ?? "") : "upload.etherbackup";
+        rest[1] === "snapshot"
+          ? decodeURIComponent(rest[2] ?? "")
+          : rest[1] === "undo"
+            ? (report?.source ?? "")
+            : "upload.etherbackup";
       play([
         { paces: 1.5, phase: "restoring", fresh: true, restoring: name },
         { paces: 1.2, phase: "checking_integrity", fresh: true },

@@ -3,10 +3,12 @@ import {
   AlertDescription,
   Button,
   Card,
+  Input,
+  Label,
   Spinner,
+  Tabs,
   ThemeToggle,
   confirmDialog,
-  cn,
 } from "@braedonsaunders/appkit-ui";
 import { Archive, FileUp, LifeBuoy, LogIn, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -18,7 +20,13 @@ import { t, tx } from "../i18n";
 import { LanguagePicker } from "../i18n/react";
 import { ApiError } from "../lib/api";
 import { formatBytes, formatDateTime, relativeTime } from "../lib/format";
-import { isEncryptedBackup, recoveryApi, type LocalBackup } from "../lib/ops";
+import {
+  isEncryptedBackup,
+  recoveryApi,
+  type LocalBackup,
+  type RecoveryAccess,
+  type RecoveryBackups,
+} from "../lib/ops";
 import { phaseText } from "../lib/startup-text";
 
 const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -104,68 +112,50 @@ export default function Startup({ onReady }: { onReady: () => void }) {
   );
 }
 
+type Method = "local" | "plex" | "code";
+
 /**
  * Restore from the startup page: the console can't open, so the backups
- * kept on this server (or a downloaded one) are restored from here. The
- * owner signs in with Plex unless the browser is on the server itself or
- * setup isn't finished.
+ * kept on this server (or a downloaded one) are restored from here, or the
+ * last restore undone. The owner signs in first, with their local
+ * password, Plex, or the one-time recovery code Ether wrote to its data
+ * folder; before setup is finished the local network needs none.
  */
 function Recovery() {
-  const [access, setAccess] = useState<{ granted: boolean; plex: boolean } | null>(null);
+  const [access, setAccess] = useState<RecoveryAccess | null>(null);
+  const [method, setMethod] = useState<Method>("local");
   const [token, setToken] = useState("");
-  const [backups, setBackups] = useState<LocalBackup[] | null>(null);
+  const [data, setData] = useState<{
+    snapshots: LocalBackup[];
+    undo: RecoveryBackups["undo"];
+  } | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const [signingIn, setSigningIn] = useState<{ authUrl: string } | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
   const [started, setStarted] = useState(false);
-  const cancelled = useRef(false);
 
   useEffect(() => {
-    cancelled.current = false;
-    recoveryApi.access().then(setAccess, setError);
-    return () => {
-      cancelled.current = true;
-    };
+    recoveryApi.access().then((a) => {
+      setAccess(a);
+      setMethod(a.local ? "local" : a.plex ? "plex" : "code");
+    }, setError);
   }, []);
   const allowed = Boolean(access?.granted || token);
   useEffect(() => {
     if (!allowed) return;
-    recoveryApi.backups(token).then(setBackups, setError);
+    recoveryApi.backups(token).then(setData, setError);
   }, [allowed, token]);
 
-  const signIn = async () => {
-    setError(null);
+  const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
-    const popup = window.open("", "plex-sign-in", "width=560,height=720");
+    setError(null);
     try {
-      const pin = await recoveryApi.signInStart();
-      setSigningIn({ authUrl: pin.authUrl });
-      if (popup) popup.location.href = pin.authUrl;
-      const deadline = Date.now() + SIGN_IN_TIMEOUT_MS;
-      while (!cancelled.current && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const res = await recoveryApi.signInPoll(pin.handle);
-        if (res.done && res.token) {
-          setToken(res.token);
-          return;
-        }
-      }
-      if (!cancelled.current) setError(new Error(t("Sign-in timed out. Try again.")));
+      await fn();
+      setStarted(true);
     } catch (e) {
-      setError(
-        e instanceof ApiError && e.code === "not_owner"
-          ? new Error(
-              t(
-                "That Plex account doesn't own this server. Sign in with the account that set Ether up.",
-              ),
-            )
-          : e,
-      );
+      setError(e);
     } finally {
-      popup?.close();
-      setSigningIn(null);
       setBusy(false);
     }
   };
@@ -179,24 +169,23 @@ function Recovery() {
       ),
       confirmLabel: t("Restore and start"),
     });
-    if (!ok) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await recoveryApi.restoreSnapshot(b.name, token);
-      setStarted(true);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
+    if (ok) await run(() => recoveryApi.restoreSnapshot(b.name, token));
   };
 
-  const restoreUpload = async () => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
+  const undo = async () => {
+    const ok = await confirmDialog({
+      title: t("Undo the last restore?"),
+      message: t(
+        "Ether puts back the data it had before the last restore and starts again. The restored data is kept in a rollback folder.",
+      ),
+      confirmLabel: t("Undo and start"),
+    });
+    if (ok) await run(() => recoveryApi.undo(token));
+  };
+
+  const restoreUpload = () =>
+    run(async () => {
+      if (!file) return;
       if (!(await isEncryptedBackup(file)))
         throw new Error(
           t(
@@ -205,13 +194,7 @@ function Recovery() {
         );
       await recoveryApi.restoreUpload(file, password, token);
       setPassword("");
-      setStarted(true);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
 
   if (started)
     return (
@@ -221,6 +204,14 @@ function Recovery() {
         </AlertDescription>
       </Alert>
     );
+
+  const methods: { value: Method; label: string }[] = access
+    ? [
+        ...(access.local ? [{ value: "local" as const, label: t("Password") }] : []),
+        ...(access.plex ? [{ value: "plex" as const, label: "Plex" }] : []),
+        ...(access.code ? [{ value: "code" as const, label: t("Recovery code") }] : []),
+      ]
+    : [];
 
   return (
     <section
@@ -252,82 +243,89 @@ function Recovery() {
             <Spinner size={14} label={t("Loading")} /> {t("Loading…")}
           </div>
         ) : !allowed ? (
-          access.plex ? (
-            <div className="space-y-3">
-              <p className="text-sm text-fg-muted">
-                {t("Sign in with the Plex account that owns this server to restore.")}
-              </p>
-              <Button disabled={busy} onClick={() => void signIn()}>
-                <LogIn size={15} />
-                {signingIn ? t("Waiting for Plex…") : t("Sign in with Plex")}
-              </Button>
-              {signingIn ? (
-                <p className="text-xs text-fg-muted">
-                  {tx("Finish signing in in the Plex window. No window? {link}.", {
-                    link: (
-                      <a
-                        className="font-medium text-primary underline-offset-4 hover:underline"
-                        href={signingIn.authUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {t("Open the Plex sign-in page")}
-                      </a>
-                    ),
-                  })}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-sm text-fg-muted">
-              {tx("To restore, open {address} in a browser on the computer that runs Ether.", {
-                address: (
-                  <code className="text-fg">{`http://localhost:${window.location.port || "80"}/ether/`}</code>
-                ),
-              })}
-            </p>
-          )
+          <div className="space-y-4">
+            <p className="text-sm text-fg-muted">{t("Sign in as the owner to restore.")}</p>
+            {methods.length > 1 ? (
+              <Tabs
+                tabs={methods}
+                value={method}
+                onValueChange={(v) => {
+                  setMethod(v as Method);
+                  setError(null);
+                }}
+                className="w-full"
+              />
+            ) : null}
+            {method === "local" ? (
+              <LocalSignIn onToken={setToken} onError={setError} />
+            ) : method === "plex" ? (
+              <PlexSignIn onToken={setToken} onError={setError} />
+            ) : (
+              <CodeSignIn onToken={setToken} onError={setError} />
+            )}
+          </div>
         ) : (
           <>
-            {backups === null ? (
+            {data === null ? (
               <div className="flex items-center gap-2 text-sm text-fg-muted" role="status">
                 <Spinner size={14} label={t("Loading")} /> {t("Loading backups…")}
               </div>
-            ) : backups.length ? (
-              <ul
-                aria-label={t("Backups on this server")}
-                className="divide-y divide-border-subtle overflow-hidden rounded-lg border border-border"
-              >
-                {backups.slice(0, 6).map((b, i) => (
-                  <li key={b.name} className="flex items-center gap-3 px-3 py-2.5">
-                    <Archive size={16} className="shrink-0 text-fg-subtle" aria-hidden />
+            ) : (
+              <>
+                {data.undo ? (
+                  <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary-subtle px-3 py-2.5">
+                    <RotateCcw size={16} className="shrink-0 text-primary" aria-hidden />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-fg">{formatDateTime(b.created)}</p>
+                      <p className="text-sm font-medium text-fg">{t("Undo the last restore")}</p>
                       <p className="text-xs text-fg-muted">
-                        {i === 0 ? (
-                          <span className="font-medium text-success">{t("Newest")} · </span>
-                        ) : null}
-                        {relativeTime(b.created)} · {formatBytes(b.size)}
+                        {t("Restored {when} from {backup}", {
+                          when: relativeTime(data.undo.restoredAt),
+                          backup: data.undo.source,
+                        })}
                       </p>
                     </div>
-                    <Button
-                      size="sm"
-                      variant={i === 0 ? "default" : "outline"}
-                      disabled={busy}
-                      aria-label={t("Restore the backup from {date}", {
-                        date: formatDateTime(b.created),
-                      })}
-                      onClick={() => void restoreSnapshot(b)}
-                    >
-                      <RotateCcw size={14} /> {t("Restore")}
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void undo()}>
+                      {t("Undo restore")}
                     </Button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-fg-muted">
-                {t("No backups are kept on this server. Upload one you downloaded earlier.")}
-              </p>
+                  </div>
+                ) : null}
+                {data.snapshots.length ? (
+                  <ul
+                    aria-label={t("Backups on this server")}
+                    className="divide-y divide-border-subtle overflow-hidden rounded-lg border border-border"
+                  >
+                    {data.snapshots.slice(0, 6).map((b, i) => (
+                      <li key={b.name} className="flex items-center gap-3 px-3 py-2.5">
+                        <Archive size={16} className="shrink-0 text-fg-subtle" aria-hidden />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-fg">{formatDateTime(b.created)}</p>
+                          <p className="text-xs text-fg-muted">
+                            {i === 0 ? (
+                              <span className="font-medium text-success">{t("Newest")} · </span>
+                            ) : null}
+                            {relativeTime(b.created)} · {formatBytes(b.size)}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={i === 0 && !data.undo ? "default" : "outline"}
+                          disabled={busy}
+                          aria-label={t("Restore the backup from {date}", {
+                            date: formatDateTime(b.created),
+                          })}
+                          onClick={() => void restoreSnapshot(b)}
+                        >
+                          <RotateCcw size={14} /> {t("Restore")}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-fg-muted">
+                    {t("No backups are kept on this server. Upload one you downloaded earlier.")}
+                  </p>
+                )}
+              </>
             )}
             <details className="group rounded-lg border border-border px-3 py-2.5">
               <summary className="cursor-pointer select-none text-sm font-medium text-fg">
@@ -340,11 +338,7 @@ function Recovery() {
                   void restoreUpload();
                 }}
               >
-                <label
-                  className={cn(
-                    "relative flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border-strong bg-bg-subtle px-3 py-3 text-sm text-fg-muted hover:bg-surface-hover focus-within:ring-2 focus-within:ring-ring/50",
-                  )}
-                >
+                <label className="relative flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border-strong bg-bg-subtle px-3 py-3 text-sm text-fg-muted hover:bg-surface-hover focus-within:ring-2 focus-within:ring-ring/50">
                   <FileUp size={16} aria-hidden />
                   <span className="truncate">{file ? file.name : t("Choose backup file")}</span>
                   <input
@@ -375,6 +369,189 @@ function Recovery() {
         )}
       </div>
     </section>
+  );
+}
+
+type SignInProps = { onToken: (token: string) => void; onError: (e: unknown) => void };
+
+/** The owner's local username and password. */
+function LocalSignIn({ onToken, onError }: SignInProps) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setBusy(true);
+        onError(null);
+        recoveryApi
+          .signInLocal(username, password)
+          .then(
+            (r) => onToken(r.token),
+            (err) =>
+              onError(
+                err instanceof ApiError && err.status === 401
+                  ? new Error(t("That username and password don't match the owner's."))
+                  : err instanceof ApiError && err.status === 429
+                    ? new Error(t("Too many attempts. Wait a few minutes, then try again."))
+                    : err,
+              ),
+          )
+          .finally(() => setBusy(false));
+      }}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="recovery-username">{t("Username")}</Label>
+        <Input
+          id="recovery-username"
+          autoComplete="username"
+          value={username}
+          onChange={(e) => setUsername(e.currentTarget.value)}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="recovery-owner-password">{t("Password")}</Label>
+        <PasswordInput
+          id="recovery-owner-password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.currentTarget.value)}
+        />
+      </div>
+      <Button type="submit" disabled={busy || !username || !password}>
+        <LogIn size={15} /> {busy ? t("Signing in…") : t("Sign in")}
+      </Button>
+    </form>
+  );
+}
+
+/** Plex sign-in, accepted for the account that owns the server. */
+function PlexSignIn({ onToken, onError }: SignInProps) {
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<{ authUrl: string } | null>(null);
+  const cancelled = useRef(false);
+  useEffect(() => {
+    cancelled.current = false;
+    return () => {
+      cancelled.current = true;
+    };
+  }, []);
+  const signIn = async () => {
+    onError(null);
+    setBusy(true);
+    const popup = window.open("", "plex-sign-in", "width=560,height=720");
+    try {
+      const pin = await recoveryApi.signInStart();
+      setPending({ authUrl: pin.authUrl });
+      if (popup) popup.location.href = pin.authUrl;
+      const deadline = Date.now() + SIGN_IN_TIMEOUT_MS;
+      while (!cancelled.current && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const res = await recoveryApi.signInPoll(pin.handle);
+        if (res.done && res.token) {
+          onToken(res.token);
+          return;
+        }
+      }
+      if (!cancelled.current) onError(new Error(t("Sign-in timed out. Try again.")));
+    } catch (e) {
+      onError(
+        e instanceof ApiError && e.code === "not_owner"
+          ? new Error(
+              t(
+                "That Plex account doesn't own this server. Sign in with the account that set Ether up.",
+              ),
+            )
+          : e,
+      );
+    } finally {
+      popup?.close();
+      if (!cancelled.current) {
+        setPending(null);
+        setBusy(false);
+      }
+    }
+  };
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-fg-muted">
+        {t("Sign in with the Plex account that owns this server.")}
+      </p>
+      <Button disabled={busy} onClick={() => void signIn()}>
+        <LogIn size={15} />
+        {pending ? t("Waiting for Plex…") : t("Sign in with Plex")}
+      </Button>
+      {pending ? (
+        <p className="text-xs text-fg-muted">
+          {tx("Finish signing in in the Plex window. No window? {link}.", {
+            link: (
+              <a
+                className="font-medium text-primary underline-offset-4 hover:underline"
+                href={pending.authUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("Open the Plex sign-in page")}
+              </a>
+            ),
+          })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** The one-time code Ether writes to its data folder and log while it can't start. */
+function CodeSignIn({ onToken, onError }: SignInProps) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setBusy(true);
+        onError(null);
+        recoveryApi
+          .signInCode(code)
+          .then(
+            (r) => onToken(r.token),
+            (err) =>
+              onError(
+                err instanceof ApiError && err.status === 401
+                  ? new Error(t("That recovery code isn't right. Check recovery-code.txt again."))
+                  : err instanceof ApiError && err.status === 429
+                    ? new Error(t("Too many attempts. Wait a few minutes, then try again."))
+                    : err,
+              ),
+          )
+          .finally(() => setBusy(false));
+      }}
+    >
+      <p className="text-sm text-fg-muted">
+        {tx(
+          "While it can't start, Ether writes a one-time code to {file} in its data folder and to its log. Whoever can open that folder can restore.",
+          { file: <code className="whitespace-nowrap text-fg">recovery-code.txt</code> },
+        )}
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor="recovery-code">{t("Recovery code")}</Label>
+        <Input
+          id="recovery-code"
+          autoComplete="one-time-code"
+          spellCheck={false}
+          placeholder="XXXX-XXXX-XXXX"
+          className="font-mono uppercase tracking-wider"
+          value={code}
+          onChange={(e) => setCode(e.currentTarget.value)}
+        />
+      </div>
+      <Button type="submit" disabled={busy || code.replace(/[\s-]/g, "").length < 12}>
+        {busy ? t("Checking…") : t("Continue")}
+      </Button>
+    </form>
   );
 }
 

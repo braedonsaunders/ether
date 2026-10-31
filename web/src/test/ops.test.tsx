@@ -228,17 +228,25 @@ describe("startup page", () => {
     expect(screen.getByRole("list", { name: "Startup progress" })).toBeInTheDocument();
   });
 
-  it("explains a failed start and restores a backup from the page", async () => {
-    vi.stubGlobal(
-      "open",
-      vi.fn(() => null),
-    );
+  it("explains a failed start and restores a backup after the owner's password sign-in", async () => {
     const { fake } = renderApp("/", { startup: "failed:database_corrupt", opsPace: 20 });
     expect(
       await screen.findByRole("heading", { name: "Ether couldn't start" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("The database is damaged")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "Sign in with Plex" }));
+    // Every available sign-in is offered; the owner's password first.
+    for (const tab of ["Password", "Plex", "Recovery code"])
+      expect(await screen.findByRole("tab", { name: tab })).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Username"), { target: { value: "owner" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(
+      await screen.findByText("That username and password don't match the owner's."),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     const backups = await screen.findByRole("list", { name: "Backups on this server" }, LONG);
     fireEvent.click(
       within(backups).getAllByRole("button", { name: /Restore the backup from/ })[0]!,
@@ -251,4 +259,51 @@ describe("startup page", () => {
     // Restored and started: the console takes over.
     expect(await screen.findByRole("link", { name: "Ether home" }, LONG)).toBeInTheDocument();
   }, 25_000);
+
+  it("signs in with the one-time recovery code and offers to undo the last restore", async () => {
+    const { fake } = renderApp("/", {
+      startup: "failed:migration_failed",
+      opsPace: 20,
+      restore: "restored",
+    });
+    fireEvent.click(await screen.findByRole("tab", { name: "Recovery code" }));
+    expect(screen.getByText("recovery-code.txt")).toBeInTheDocument();
+    const input = screen.getByLabelText("Recovery code");
+    fireEvent.change(input, { target: { value: "AAAA-BBBB-CCCC" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByText(/That recovery code isn't right/)).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "k7qf m2xd 9prt" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo restore" }, LONG));
+    const confirm = await screen.findByRole("dialog", { name: "Undo the last restore?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Undo and start" }));
+    await waitFor(() =>
+      expect(calls(fake, "POST", "/startup/recovery/restore/undo").length).toBe(1),
+    );
+  }, 20_000);
+
+  it("signs in with Plex", async () => {
+    vi.stubGlobal(
+      "open",
+      vi.fn(() => null),
+    );
+    renderApp("/", { startup: "failed:database_corrupt" });
+    fireEvent.click(await screen.findByRole("tab", { name: "Plex" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in with Plex" }));
+    expect(
+      await screen.findByRole("list", { name: "Backups on this server" }, LONG),
+    ).toBeInTheDocument();
+  }, 20_000);
+});
+
+describe("restore report", () => {
+  it("says when a restored backup couldn't start and the previous data came back", async () => {
+    renderApp("/maintenance/backups", { restore: "rolledback" });
+    expect(await screen.findByText("The backup couldn't start")).toBeInTheDocument();
+    expect(
+      screen.getByText("Ether put your previous data back automatically, so nothing was lost."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/no such column/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo restore" })).toBeNull();
+  });
 });

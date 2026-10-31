@@ -28,12 +28,22 @@ export function restartHow(info: Pick<RestartInfo, "manager" | "method">): {
     case "systemd":
       return {
         icon: <Server size={16} />,
-        text: t("Your system's service manager (systemd) starts Ether again."),
+        text: t(
+          "Ether restarts itself in place, so systemd keeps running it without its restart delay.",
+        ),
       };
     case "launchd":
-      return { icon: <MonitorCog size={16} />, text: t("macOS starts Ether again.") };
+      return {
+        icon: <MonitorCog size={16} />,
+        text: t("Ether restarts itself in place; macOS keeps running it."),
+      };
     case "windows-service":
-      return { icon: <MonitorCog size={16} />, text: t("Windows starts the Ether service again.") };
+      return {
+        icon: <MonitorCog size={16} />,
+        text: t(
+          "Windows starts the Ether service again after 5 seconds, or up to a minute if it has restarted several times today.",
+        ),
+      };
     case "container":
       return {
         icon: <Container size={16} />,
@@ -50,7 +60,10 @@ export function restartHow(info: Pick<RestartInfo, "manager" | "method">): {
             : t("Ether restarts in the same terminal window."),
       };
     default:
-      return { icon: <Server size={16} />, text: t("Your service manager starts Ether again.") };
+      return {
+        icon: <Server size={16} />,
+        text: t("Ether restarts itself in place; your service manager keeps running it."),
+      };
   }
 }
 
