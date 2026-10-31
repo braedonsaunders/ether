@@ -24,7 +24,7 @@ const CACHE_TABS = localized(
       { key: "preloading", label: t("Preloading") },
     ] as const,
 );
-import { MoreOptions } from "../../components/ConfigSection";
+import { Drawer } from "../../components/Drawer";
 import { ErrorPanel } from "../../components/feedback";
 import { Field, NumberInput } from "../../components/fields";
 import { useDraft, useUnsavedGuard } from "../../components/SaveBar";
@@ -287,6 +287,7 @@ export default function Cache() {
   useUnsavedGuard(dirty);
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<unknown>(null);
+  const [advanced, setAdvanced] = useState(false);
   const [editor, setEditor] = useState<"profiles" | "policy" | null>(null);
   const [profileChoice, setProfileChoice] = useState<{
     key: string;
@@ -662,24 +663,56 @@ export default function Cache() {
           )}
         </main>
       </div>
-      {editor !== null ? (
-      <section
-        aria-label={
+      <Drawer
+        open={editor !== null}
+        onClose={() => {
+          setEditor(null);
+          setAdvanced(false);
+        }}
+        title={
           editor === "profiles"
             ? t("Choose a cache profile")
             : profileChoice
               ? t("Review your cache profile")
               : t("Edit cache policy")
         }
-        className="shrink-0 border-t border-border bg-surface px-4 py-4 sm:px-6"
+        size="lg"
+        footer={
+          editor === "profiles" ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-fg-muted">{t("1 / Choose a starting point")}</span>
+              <Button
+                disabled={!profileChoice}
+                onClick={() => {
+                  if (profileChoice) {
+                    patch(profileChoice.values);
+                    setEditor("policy");
+                  }
+                }}
+              >
+                {t("Review profile")} <ArrowUpRight size={14} />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  reset();
+                  setEditor(null);
+                  setProfileChoice(null);
+                }}
+                disabled={saving}
+              >
+                {t("Discard changes")}
+              </Button>
+              <Button onClick={() => void save()} disabled={!dirty || saving}>
+                {saving ? t("Saving…") : t("Save policy")}
+              </Button>
+            </div>
+          )
+        }
       >
-        <h2 className="mb-3 text-base font-semibold">
-          {editor === "profiles"
-            ? t("Choose a cache profile")
-            : profileChoice
-              ? t("Review your cache profile")
-              : t("Edit cache policy")}
-        </h2>
         {editor === "profiles" ? (
           <div className="space-y-4">
             <p className="text-sm leading-relaxed text-fg-muted">
@@ -1128,16 +1161,21 @@ export default function Cache() {
                 </div>
               )}
             </div>
+            <Button variant="secondary" className="w-full" onClick={() => setAdvanced(true)}>
+              <Settings2 size={15} /> {t("Fine tune policy")} <ArrowUpRight size={14} />
+            </Button>
             <p className="text-[11px] leading-relaxed text-fg-subtle">
               {t(
                 "Live streams and pinned releases can exceed the budget. Expiry never removes protected bytes. This budget covers media segments; artwork, metadata and transcode output use separate storage.",
               )}
             </p>
-            <MoreOptions
-              label={t("More options: {title}", { title: t("Fine tune policy") })}
-              text={t("Fine tune policy")}
+            <Drawer
+              open={advanced}
+              onClose={() => setAdvanced(false)}
+              title={t("Fine tune your cache")}
+              size="lg"
             >
-              <div className="space-y-6 px-4 py-3">
+              <div className="space-y-6 p-1">
                 <p className="text-sm text-fg-muted">
                   {t("Changes join your draft. Save the policy when you’re ready.")}
                 </p>
@@ -1286,47 +1324,12 @@ export default function Cache() {
                     "Detail warming is rate limited and pauses during active playback. Trailer and post-play warming also require background warming here and their own feature settings.",
                   )}
                 </p>
+                <Button onClick={() => setAdvanced(false)}>{t("Done")}</Button>
               </div>
-            </MoreOptions>
+            </Drawer>
           </div>
         )}
-        <div className="mt-4 border-t border-border pt-4">
-          {editor === "profiles" ? (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-fg-muted">{t("1 / Choose a starting point")}</span>
-              <Button
-                disabled={!profileChoice}
-                onClick={() => {
-                  if (profileChoice) {
-                    patch(profileChoice.values);
-                    setEditor("policy");
-                  }
-                }}
-              >
-                {t("Review profile")} <ArrowUpRight size={14} />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  reset();
-                  setEditor(null);
-                  setProfileChoice(null);
-                }}
-                disabled={saving}
-              >
-                {t("Discard changes")}
-              </Button>
-              <Button onClick={() => void save()} disabled={!dirty || saving}>
-                {saving ? t("Saving…") : t("Save policy")}
-              </Button>
-            </div>
-          )}
-        </div>
-      </section>
-      ) : null}
+      </Drawer>
     </Workspace>
   );
 }
