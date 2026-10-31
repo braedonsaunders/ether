@@ -528,7 +528,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 					item["video_tracks"] = videoTracks
 				}
 				items = append(items, item)
-				if version.PartCount != nil && *version.PartCount == 1 {
+				// A probed version row is one file unless the catalogue records more parts.
+				// An unresolved estimate does not become a playback variant.
+				if !estimated && (version.PartCount == nil || *version.PartCount == 1) {
 					part := map[string]any{"part_index": 1, "default_file_id": id, "versions": []any{item}}
 					group := map[string]any{"variant_id": id, "default_file_id": id, "part_count": 1, "parts": []any{part}}
 					if duration > 0 {
