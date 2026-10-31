@@ -187,6 +187,7 @@ func (i *instance) writeListedTitles(w http.ResponseWriter, r *http.Request, vie
 		return
 	}
 	images, paths := i.gridImagesFor(r, titles), i.virtualPaths(r, viewer, keys)
+	ratingFacts := i.pageRatingFacts(r, viewer, titles)
 	i.fillSeriesTitles(r, viewer, titles)
 	r = i.pageEditions(r, viewer, keys)
 	items := make([]any, 0, len(titles))
@@ -216,6 +217,7 @@ func (i *instance) writeListedTitles(w http.ResponseWriter, r *http.Request, vie
 		if !latest {
 			i.jellyfinResumeFields(r, item)
 		}
+		i.applyListedRatings(item, ratingFacts, title.Key)
 		items = append(items, item)
 	}
 	if latest {

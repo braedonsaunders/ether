@@ -327,6 +327,7 @@ func (i *instance) browseRoutes() error {
 			}
 			items := make([]any, 0, len(page))
 			images := i.gridImagesFor(r, page)
+			ratingFacts := i.pageRatingFacts(r, v, page)
 			paths := i.virtualPaths(r, v, keys)
 			if fieldSet(r)["mediasources"] {
 				r = i.withPageEditions(r, v, keys)
@@ -361,6 +362,7 @@ func (i *instance) browseRoutes() error {
 				}
 				i.shapeJellyfinItem(r, v, item, title)
 				i.jellyfinSeasonListFields(r, item, title)
+				i.applyListedRatings(item, ratingFacts, title.Key)
 				items = append(items, item)
 			}
 			if reporter, ok := i.host.Experience.(frontend.RowInteractionReporter); ok && len(page) > 0 {
@@ -556,6 +558,7 @@ func (i *instance) browseRoutes() error {
 			i.embyItemDetailDTO(dto, d)
 		}
 		i.markUnreleased(dto, d.Title)
+		i.applyOpenedDetail(r, v, dto, d.Title)
 		i.replyItems(w, r, dto)
 	}
 	endpoints := []struct {
@@ -701,6 +704,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 	}
 	items := make([]any, 0, len(page.Items))
 	images := i.gridImagesFor(r, page.Items)
+	ratingFacts := i.pageRatingFacts(r, v, page.Items)
 	paths := i.virtualPaths(r, v, keys)
 	r = i.pageEditions(r, v, keys)
 	i.fillSeriesTitles(r, v, page.Items)
@@ -722,6 +726,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 				i.jellyfinListFacts(r, item, title)
 				i.jellyfinListFields(r, item, title)
 				i.markUnreleased(item, title)
+				i.applyListedRatings(item, ratingFacts, title.Key)
 				items = append(items, item)
 			}
 			continue
@@ -747,6 +752,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 		i.jellyfinListFacts(r, item, title)
 		i.jellyfinListFields(r, item, title)
 		i.markUnreleased(item, title)
+		i.applyListedRatings(item, ratingFacts, title.Key)
 		items = append(items, item)
 	}
 	total := page.Total + len(items) - len(page.Items)
@@ -936,6 +942,7 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]any, 0, len(titles))
 	paths := i.virtualPaths(r, v, keys)
+	ratingFacts := i.pageRatingFacts(r, v, titles)
 	for _, t := range titles {
 		item := i.itemDTO(t, state[t.Key])
 		if p := paths[t.Key]; p != "" {
@@ -943,6 +950,7 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 		}
 		i.shapeJellyfinItem(r, v, item, t)
 		i.jellyfinSeasonListFields(r, item, t)
+		i.applyListedRatings(item, ratingFacts, t.Key)
 		items = append(items, item)
 	}
 	i.replyItems(w, r, items)

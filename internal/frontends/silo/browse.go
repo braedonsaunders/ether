@@ -287,6 +287,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		}
 		out["rating_sources"] = []any{source}
 	}
+	i.applyDetailFacts(r, v, d.Title, out)
 	var playedSource *frontend.PlaybackSourceHistory
 	if d.Title.Type == "movie" || d.Title.Type == "episode" {
 		played := d.UserData.ViewCount > 0

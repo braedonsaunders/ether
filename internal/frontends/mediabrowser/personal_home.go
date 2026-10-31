@@ -622,12 +622,14 @@ func (i *instance) recommendations(w http.ResponseWriter, r *http.Request, want 
 		}
 		items := make([]any, 0, len(titles))
 		images := i.gridImagesFor(r, titles)
+		ratingFacts := i.pageRatingFacts(r, v, titles)
 		for _, title := range titles {
 			item := i.itemDTO(title, states[title.Key])
 			for key, value := range images[title.Key] {
 				item[key] = value
 			}
 			i.shapeJellyfinItem(r, v, item, title)
+			i.applyListedRatings(item, ratingFacts, title.Key)
 			items = append(items, item)
 		}
 		kind, baseline := recommendationWire(shelf.row)

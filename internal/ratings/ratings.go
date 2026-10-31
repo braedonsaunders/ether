@@ -263,6 +263,67 @@ func (s *Service) Cached(ctx context.Context, t *core.Title) ([]Badge, error) {
 	return out, e
 }
 
+// CachedMany is Cached for a page. Missing and expired titles are omitted.
+// The provider being disabled returns an empty map and a nil error.
+func (s *Service) CachedMany(ctx context.Context, titles []core.Title) (map[core.RatingKey][]Badge, error) {
+	out := map[core.RatingKey][]Badge{}
+	if s == nil || s.db == nil {
+		return out, nil
+	}
+	cfg, err := s.settings(ctx)
+	if err != nil || !cfg.Enabled {
+		return out, err
+	}
+	keys := make([]core.RatingKey, 0, len(titles))
+	seen := map[core.RatingKey]bool{}
+	for _, title := range titles {
+		if title.Key == 0 || seen[title.Key] {
+			continue
+		}
+		seen[title.Key] = true
+		keys = append(keys, title.Key)
+	}
+	freshAfter := s.o.Now().Add(-time.Duration(cfg.CacheHours) * time.Hour).Unix()
+	for start := 0; start < len(keys); start += 40 {
+		end := min(start+40, len(keys))
+		args := make([]any, 0, 1+end-start)
+		args = append(args, cfg.Provider)
+		query := `SELECT item_key,value,updated FROM ratings_cache WHERE provider=? AND item_key IN (?`
+		args = append(args, int64(keys[start]))
+		for _, key := range keys[start+1 : end] {
+			query += ",?"
+			args = append(args, int64(key))
+		}
+		query += `)`
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key, updated int64
+			var raw string
+			if err = rows.Scan(&key, &raw, &updated); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if updated < freshAfter {
+				continue
+			}
+			var badges []Badge
+			if json.Unmarshal([]byte(raw), &badges) != nil {
+				continue
+			}
+			out[core.RatingKey(key)] = badges
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // Refresh returns fresh-or-cached badges for t.
 //
 // Semântica de concorrência: nenhum lock é segurado durante o HTTP —

@@ -40,7 +40,7 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := detail.Title
-	meta := map[string]any{"id": strings.TrimSuffix(raw, ".json"), "type": typ, "name": title.Title, "description": title.Summary, "genres": title.Genres}
+	meta := map[string]any{"id": strings.TrimSuffix(raw, ".json"), "type": typ, "name": title.Title, "description": stremioDescription(r, i.host.Experience, viewer, title), "genres": title.Genres}
 	if title.Year > 0 {
 		meta["releaseInfo"] = strconv.Itoa(title.Year)
 	}
@@ -81,4 +81,40 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"meta": meta})
+}
+
+// stremioDescription puts the match header at the start of the only prose
+// field Stremio renders, and names provider ratings there. Stremio's
+// imdbRating field would mislabel a non-IMDb score, so it stays unused.
+func stremioDescription(r *http.Request, exp frontend.Experience, viewer *frontend.Viewer, title frontend.Title) string {
+	description := title.Summary
+	source, ok := exp.(frontend.DetailFactsSource)
+	if !ok || r == nil || viewer == nil {
+		return description
+	}
+	facts := source.DetailFacts(r.Context(), viewer, title)
+	if facts.Header != "" {
+		if strings.TrimSpace(description) == "" {
+			description = facts.Header
+		} else {
+			description = facts.Header + "\n\n" + description
+		}
+	}
+	if !facts.RatingsKnown || len(facts.Sources) == 0 {
+		return description
+	}
+	parts := make([]string, 0, len(facts.Sources))
+	for _, rating := range facts.Sources {
+		if rating.Name != "" && rating.Display != "" {
+			parts = append(parts, rating.Name+" "+rating.Display)
+		}
+	}
+	if len(parts) == 0 {
+		return description
+	}
+	line := strings.Join(parts, " · ")
+	if strings.TrimSpace(description) == "" {
+		return line
+	}
+	return description + "\n\n" + line
 }

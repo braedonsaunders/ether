@@ -162,7 +162,8 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		if title.BackdropPath != "" {
 			result.Images = append(result.Images, frontend.Image{Kind: "backdrop", Path: title.BackdropPath})
 		}
-		// The complete overlays-aware list is not yet available, so image grants remain disabled.
+		// surfaceExperience.Item replaces this list with the shared artwork
+		// selection. That selection is the composited poster when overlays are on.
 		if a.playback != nil {
 			caps := core.ClientCaps{Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
 			info := a.playback.Estimate(ctx, title, caps)
@@ -280,7 +281,14 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if len(artwork) > 0 {
 		artworkSource = artwork[0]
 	}
-	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser, rowViews: rowViews}, nil
+	detail := detailPersonalization{now: time.Now, ratings: a.ratings}
+	if a.personalize != nil {
+		detail.micro = a.personalize.MicroReason
+	}
+	if a.cfg != nil {
+		detail.enabled = func() bool { return a.cfg.Read().Personalize.MicroReasons }
+	}
+	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser, rowViews: rowViews, detail: detail}, nil
 }
 
 type surfaceExperience struct {
@@ -291,6 +299,7 @@ type surfaceExperience struct {
 	active      func(context.Context, int64) (*core.User, error)
 	rowViews    *experience.RowViewService
 	playability func(context.Context, frontend.ItemRequest) *bool
+	detail      detailPersonalization
 }
 
 func (s *surfaceExperience) ListRowViews(ctx context.Context, req frontend.RowViewRequest) ([]frontend.RowView, error) {
