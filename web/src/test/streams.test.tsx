@@ -126,9 +126,23 @@ it("saves a custom override for one viewer", async () => {
     }),
   );
   expect(await screen.findByText("Uses default", {}, WAIT)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Show subtitles" })).toHaveTextContent(
+    "Off unless I turn them on",
+  );
   fireEvent.change(screen.getByLabelText("Subtitle languages"), { target: { value: "es" } });
+  fireEvent.click(screen.getByRole("button", { name: "Show subtitles" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Only for foreign audio" }));
+  fireEvent.click(screen.getByRole("button", { name: "Size" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Small" }));
+  fireEvent.change(screen.getByLabelText("Text colour"), { target: { value: "#ffffff" } });
   fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
   await waitFor(() => expect(saved?.subtitleLanguages).toEqual(["es"]), WAIT);
+  expect(saved?.subtitleMode).toBe("foreign-only");
+  expect(saved?.subtitleAppearance).toMatchObject({
+    fontSize: "small",
+    fontColor: "#ffffff",
+    position: "bottom",
+  });
   expect(saved?.audioLanguages).toEqual(["en"]);
   expect(await screen.findByText("Custom for this viewer", {}, WAIT)).toBeInTheDocument();
 });
