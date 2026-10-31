@@ -423,11 +423,14 @@ is imported on first start), then point the other nodes at the new database.
 
 **Maintenance › Restart Ether** (and the restart prompts after storage
 changes) restarts the server without a terminal. The console shows who is
-watching first and can wait until nobody is. Under systemd, launchd or the
-Windows Service Control Manager, Ether exits and the service manager starts
-it again. In a container, and when run from a terminal, it replaces itself
-with a fresh process, so a container keeps running whatever its restart
-policy. The console follows the restart and reconnects by itself.
+watching first and can wait until nobody is. On Linux and macOS, and in a
+container or a terminal, Ether replaces itself with a fresh process (the
+same PID, so systemd and launchd keep running it without their restart
+delay, and a container keeps running whatever its restart policy). A
+Windows service exits and the Service Control Manager starts it again after
+5 seconds (15 and then 60 seconds when it restarts several times within a
+day, the service's recovery actions). The console follows the restart and
+reconnects by itself.
 
 ### While Ether starts
 
@@ -438,10 +441,30 @@ PostgreSQL, updating the database step by step, restoring a backup) and
 credentials; every other request, the Plex API included, gets `503` with
 `Retry-After`, and GDM discovery and plex.tv publishing wait. A start that
 fails (for example a damaged database or a database that refuses the
-connection) stays on that page with what to do and retries by itself. On a
-standalone server the page can restore a backup: sign in with the Plex
-account that owns the server, or open the page on the server's own machine
-at `http://localhost:<port>/ether/`.
+connection) stays on that page with what to do and retries by itself; the
+data directory stays locked meanwhile.
+
+On a standalone server the page can restore a backup or undo the last
+restore. Sign in as the owner first, with:
+
+- the owner's local username and password: Ether keeps a copy of that
+  sign-in (its Argon2id hash, never the password) in `owner-recovery.json`
+  in the data directory, refreshed at every owner sign-in and password
+  change, and otherwise reads the database read-only;
+- the Plex account that owns the server;
+- or the one-time **recovery code** Ether writes to `recovery-code.txt` in
+  the data directory and to its log while it cannot start. It works once,
+  and not through a reverse proxy.
+
+Sign-ins are rate limited and only open the restore actions on that page,
+for 15 minutes. Before setup is finished, the local network needs none.
+When `config.json` itself cannot be read, Ether treats setup as finished,
+offers no restore from the page and listens on `127.0.0.1` only.
+
+A restore counts once the restored server is about to serve. If it cannot
+start on the backup (a migration fails, the database is damaged, the
+settings don't match), Ether puts the original files back automatically,
+starts on them and says so in the report.
 
 ### Database integrity
 
