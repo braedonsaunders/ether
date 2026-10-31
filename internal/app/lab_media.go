@@ -133,3 +133,17 @@ func localEditionVariants(dir string, t *core.Title) ([]core.ReleaseVariant, err
 	vs, _ := labMediaVariants(dir, t)
 	return vs, nil
 }
+
+func localEditionVariantsMany(dir string, titles []core.Title) (map[core.RatingKey][]core.ReleaseVariant, error) {
+	out := map[core.RatingKey][]core.ReleaseVariant{}
+	for i := range titles {
+		variants, err := localEditionVariants(dir, &titles[i])
+		if err != nil {
+			return nil, err
+		}
+		if len(variants) > 0 {
+			out[titles[i].Key] = variants
+		}
+	}
+	return out, nil
+}

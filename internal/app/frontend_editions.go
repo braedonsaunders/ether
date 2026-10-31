@@ -49,3 +49,38 @@ func probedFileName(label string) string {
 		return ""
 	}
 }
+
+func (s surfaceEditions) EditionsMany(ctx context.Context, _ *core.Viewer, _ core.Device, keys []core.RatingKey) (map[core.RatingKey][]frontend.Version, error) {
+	out := map[core.RatingKey][]frontend.Version{}
+	if s.app == nil || s.app.catalog == nil || len(keys) == 0 {
+		return out, nil
+	}
+	titles, err := s.app.catalog.CachedGetMany(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+	list := make([]core.Title, 0, len(titles))
+	for _, key := range keys {
+		title, ok := titles[key]
+		if ok && title.Key == key {
+			list = append(list, title)
+		}
+	}
+	variants, err := localEditionVariantsMany(s.app.opts.DataDir, list)
+	if err != nil {
+		return nil, err
+	}
+	for key, copies := range variants {
+		title := titles[key]
+		versions := make([]frontend.Version, 0, len(copies))
+		for _, variant := range copies {
+			version := frontendVersion(&title, variant)
+			if name := probedFileName(variant.Label); name != "" {
+				version.FileName = name
+			}
+			versions = append(versions, version)
+		}
+		out[key] = versions
+	}
+	return out, nil
+}
