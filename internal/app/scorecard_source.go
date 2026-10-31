@@ -230,6 +230,9 @@ func (s scorecardSource) lookup(id string) (ScorecardFile, error) {
 	return file, nil
 }
 func (s scorecardSource) Open(_ context.Context, id string, b []byte) (core.MediaSource, error) {
+	if err := scorecardFaultBeforeIO(); err != nil {
+		return nil, err
+	}
 	if string(b) != id {
 		return nil, fmt.Errorf("release mismatch")
 	}

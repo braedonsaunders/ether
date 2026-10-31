@@ -350,7 +350,11 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		}
 	}
 	handlers := map[string]http.Handler{}
-	for _, p := range []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio", "dlna", "m3u"} {
+	protocols := []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio", "dlna", "m3u"}
+	if os.Getenv("SCORECARD_MOUNT_PLEX") == "1" {
+		protocols = append([]core.Protocol{"plex"}, protocols...)
+	}
+	for _, p := range protocols {
 		inst, err := a.frontends.registry.Mount(ctx, p)
 		if err != nil {
 			return fail(fmt.Errorf("mount %s: %w", p, err))
@@ -362,6 +366,9 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 				ip := net.ParseIP(host)
 				if err != nil || ip == nil || !ip.IsLoopback() {
 					http.NotFound(w, r)
+					return
+				}
+				if scorecardControl(a, w, r) {
 					return
 				}
 			}
@@ -479,7 +486,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 			actual.ServeHTTP(w, r)
 		})
 	}
-	return handlers, a.Close, nil
+	return handlers, func() { scorecardFaultClear(); a.Close() }, nil
 }
 
 type scorecardEvent struct {
