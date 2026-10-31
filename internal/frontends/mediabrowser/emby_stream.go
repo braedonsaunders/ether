@@ -94,25 +94,4 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 // With no transfer at all, that server still reports SDR for 8-bit 4:2:0
 // once Dolby Vision is known absent. Other pixel formats and depths stay
 // unlabelled: an unrecognised curve is not rewritten as SDR.
-func embySDR(stream frontend.StreamInfo) bool {
-	switch stream.ColorTransfer {
-	case "bt709", "bt470m", "bt470bg", "smpte170m", "smpte240m", "iec61966-2-1", "bt2020-10", "bt2020-12":
-		return true
-	case "":
-	default:
-		return false
-	}
-	depth := stream.BitDepth
-	if stream.BitsPerRawSample != nil && *stream.BitsPerRawSample > 0 {
-		depth = *stream.BitsPerRawSample
-	}
-	if depth != 8 {
-		return false
-	}
-	switch stream.PixelFormat {
-	case "yuv420p", "yuvj420p":
-		return true
-	default:
-		return false
-	}
-}
+func embySDR(stream frontend.StreamInfo) bool { return frontend.KnownSDR(stream) }

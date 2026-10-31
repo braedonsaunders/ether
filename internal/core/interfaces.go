@@ -402,15 +402,16 @@ type StreamInfo struct {
 	Interlaced        bool `json:"interlaced,omitempty"`
 	VariableFrameRate bool `json:"variableFrameRate,omitempty"`
 
-	Index    int    `json:"index"`
-	Type     string `json:"type"` // video, audio, subtitle
-	Codec    string `json:"codec"`
-	Profile  string `json:"profile,omitempty"`
-	Level    int    `json:"level,omitempty"`
-	Language string `json:"language,omitempty"`
-	Title    string `json:"title,omitempty"`
-	Default  bool   `json:"default,omitempty"`
-	Forced   bool   `json:"forced,omitempty"`
+	Index         int    `json:"index"`
+	Type          string `json:"type"` // video, audio, subtitle
+	Codec         string `json:"codec"`
+	Profile       string `json:"profile,omitempty"`
+	Level         int    `json:"level,omitempty"`
+	Language      string `json:"language,omitempty"`
+	Title         string `json:"title,omitempty"`
+	CodecLongName string `json:"codecLongName,omitempty"`
+	Default       bool   `json:"default,omitempty"`
+	Forced        bool   `json:"forced,omitempty"`
 	// Nil means the source did not report this ffprobe disposition.
 	DefaultDisposition *bool   `json:"defaultDisposition,omitempty"`
 	ForcedDisposition  *bool   `json:"forcedDisposition,omitempty"`

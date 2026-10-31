@@ -154,6 +154,7 @@ type ffprobeStream struct {
 	Index          int               `json:"index"`
 	Level          *int              `json:"level"`
 	CodecName      string            `json:"codec_name"`
+	CodecLongName  string            `json:"codec_long_name"`
 	CodecType      string            `json:"codec_type"`
 	CodecTagString string            `json:"codec_tag_string"`
 	Profile        string            `json:"profile"`
@@ -266,6 +267,7 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	}
 	si.Language = normalizeLanguage(tag(s.Tags, "language"))
 	si.Title = tag(s.Tags, "title")
+	si.CodecLongName = strings.TrimSpace(s.CodecLongName)
 	si.Default = s.Disposition["default"] == 1
 	si.Forced = s.Disposition["forced"] == 1
 	for _, field := range []struct {
@@ -436,10 +438,16 @@ func tag(tags map[string]string, key string) string {
 // garbage. It is the shared entry point for the ffprobe tag, the
 // Matroska legacy Language element and the MP4 mdhd code.
 func normalizeLanguage(l string) string {
+	l = strings.ToLower(strings.TrimSpace(l))
+	// "und" is a real tag. Silo reports it; dropping it makes the track
+	// look like the probe never named a language.
+	if l == "und" {
+		return "und"
+	}
 	if langtag.Normalize(l) == "" {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(l))
+	return l
 }
 
 // normalizeBCP47Language converts a BCP 47 tag (Matroska

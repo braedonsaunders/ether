@@ -226,6 +226,11 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	}
 }
 
+type labPersonFixture struct {
+	Name string
+	IMDB string
+}
+
 type labFixtureOptions struct {
 	Duration  time.Duration
 	FrameRate int
@@ -234,6 +239,8 @@ type labFixtureOptions struct {
 	AudioTitle string
 	// ConfigureTitle may add reference-derived metadata to the isolated seed.
 	ConfigureTitle func(*core.Title)
+	// People is the fixture TMDB person table, filled while titles are seeded.
+	People map[int64]labPersonFixture
 	// PublicViewerPicker enables only explicitly named protocol pickers.
 	// Omitted entries retain the default-off security behavior.
 	PublicViewerPicker map[string]bool
@@ -443,6 +450,20 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		if strings.HasPrefix(r.URL.Path, "/3/images/") && strings.HasSuffix(r.URL.Path, "/fixture.jpg") {
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write(jpegBytes.Bytes())
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/3/person/") && !strings.Contains(r.URL.Path, "/combined_credits") {
+			id, _ := strconv.ParseInt(strings.Trim(strings.TrimPrefix(r.URL.Path, "/3/person/"), "/"), 10, 64)
+			var person labPersonFixture
+			if len(options) == 1 {
+				person = options[0].People[id]
+			}
+			if person.IMDB == "" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "name": person.Name, "imdb_id": person.IMDB, "profile_path": "/fixture.jpg"})
 			return
 		}
 		if (strings.HasPrefix(r.URL.Path, "/3/movie/") || strings.HasPrefix(r.URL.Path, "/3/tv/")) && (strings.HasSuffix(r.URL.Path, "/recommendations") || strings.HasSuffix(r.URL.Path, "/similar")) {

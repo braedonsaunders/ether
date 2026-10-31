@@ -12,6 +12,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 func (i *instance) installationID() string {
@@ -249,8 +250,22 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 				if rangeName != "" {
 					recipe["dynamic_range"] = rangeName
 				}
-			} else if plan.Decision.ToneMap {
-				recipe["dynamic_range"] = "sdr"
+			} else {
+				if plan.Decision.MaxHeight > 0 {
+					recipe["height"] = plan.Decision.MaxHeight
+					if s.Width > 0 && s.Height > 0 {
+						recipe["width"] = s.Width * plan.Decision.MaxHeight / s.Height
+					}
+				}
+				if s.FrameRate > 0 {
+					recipe["frame_rate"] = s.FrameRate
+				}
+				if rangeName != "" {
+					recipe["dynamic_range"] = rangeName
+				}
+				if plan.Decision.ToneMap {
+					recipe["dynamic_range"] = "sdr"
+				}
 			}
 		}
 		if s.Type == "audio" && s.Index == plan.Decision.AudioStream {
@@ -332,15 +347,12 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	if plan.Decision.Reason != "" {
 		audioClaim["reason"] = plan.Decision.Reason
 	}
-	// Rungs are Ether's default quality profiles below the source. The source
-	// is not a rung, and auto returns to it. Ether stores no named
-	// transformation executor, so that list stays empty.
 	qualities := siloQualityMenu(sourceHeight)
 	encodeHeight := sourceHeight
 	if !plan.Decision.VideoCopy && plan.Decision.MaxHeight > 0 {
 		encodeHeight = plan.Decision.MaxHeight
 	}
-	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": qualities}
+	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": siloTransformations(plan), "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": qualities}
 	if active := siloActiveQuality(b.Quality, qualities, plan.Decision.VideoCopy, encodeHeight); active != "" {
 		output["active_quality"] = active
 	}
@@ -357,8 +369,58 @@ func siloQualityMenu(sourceHeight int) []any {
 	out := []any{}
 	for _, profile := range []rung{{"4K", 2160}, {"1080p", 1080}, {"720p", 720}} {
 		if sourceHeight > profile.height {
-			out = append(out, map[string]any{"label": profile.label, "height": profile.height, "preserves_source": false})
+			out = append(out, map[string]any{
+				"label":            profile.label,
+				"display_name":     profile.label,
+				"height":           profile.height,
+				"bitrate_kbps":     transcode.ProfileVideoKbps(profile.height),
+				"preserves_source": false,
+			})
 		}
+	}
+	return out
+}
+
+// siloTransformations lists operations this encode actually runs. A direct
+// copy has none. Names are Ether's, not another server's rung labels.
+func siloTransformations(plan frontend.PlayPlan) []any {
+	out := []any{}
+	add := func(name string, claims ...string) {
+		if len(claims) == 0 {
+			claims = []string{name}
+		}
+		out = append(out, map[string]any{"name": name, "executor": "ffmpeg", "recipe_version": "1", "validated_claims": claims})
+	}
+	var video *frontend.StreamInfo
+	for i := range plan.Media.Streams {
+		stream := &plan.Media.Streams[i]
+		if stream.Type == "video" && video == nil {
+			video = stream
+		}
+	}
+	if !plan.Decision.VideoCopy {
+		claims := []string{}
+		if video != nil && video.Codec != "" {
+			claims = append(claims, video.Codec+"_decode")
+		}
+		if plan.Decision.ToneMap {
+			claims = append(claims, "tone_mapped_to_sdr")
+		}
+		add("video_transcode", claims...)
+	}
+	if plan.Decision.BurnSubtitles {
+		add("subtitle_burn_in", "subtitles_burned_in")
+	}
+	if !plan.Decision.AudioCopy {
+		claims := []string{"audio_decode"}
+		if plan.Decision.AudioChannels > 0 {
+			for _, stream := range plan.Media.Streams {
+				if stream.Type == "audio" && stream.Index == plan.Decision.AudioStream && stream.Channels > plan.Decision.AudioChannels {
+					claims = append(claims, "fewer_channels")
+				}
+			}
+		}
+		add("audio_transcode", claims...)
 	}
 	return out
 }

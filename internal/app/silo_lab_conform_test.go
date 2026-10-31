@@ -159,9 +159,33 @@ func TestSiloLabConformance(t *testing.T) {
 			}
 		}
 	}
+	people := map[int64]labPersonFixture{}
+	libraryKeywords := map[string][]string{}
+	for _, row := range rows {
+		section, _ := row.(map[string]any)
+		if section["section_type"] != "custom_filter" {
+			continue
+		}
+		items, _ := section["items"].([]any)
+		for _, item := range items {
+			card, _ := item.(map[string]any)
+			name, _ := card["title"].(string)
+			raw, _ := card["keywords"].([]any)
+			words := make([]string, 0, len(raw))
+			for _, value := range raw {
+				if word, ok := value.(string); ok && word != "" {
+					words = append(words, word)
+				}
+			}
+			if name != "" && len(words) > 0 {
+				libraryKeywords[name] = words
+			}
+		}
+	}
 	seedTitle := func(title *core.Title) {
-		// Jellyfin tags are not Silo keywords. Captured home cards send [].
-		title.Keywords = nil
+		// Home rows send an empty keyword list. Library filter rows carry
+		// the captured lists, so the title keeps those and home strips them.
+		title.Keywords = append([]string(nil), libraryKeywords[title.Title]...)
 		// The fixture image is a poster, not an episode still.
 		title.StillPath = ""
 		if title.Type == core.TypeEpisode && title.ShowKey == core.ShowKey(91461) {
@@ -192,14 +216,6 @@ func TestSiloLabConformance(t *testing.T) {
 		if logo, _ := refDetail["logo_url"].(string); logo != "" {
 			title.LogoPath = "/fixture.jpg"
 		}
-		if raw, ok := refDetail["keywords"].([]any); ok {
-			title.Keywords = nil
-			for _, value := range raw {
-				if keyword, ok := value.(string); ok {
-					title.Keywords = append(title.Keywords, keyword)
-				}
-			}
-		}
 		if raw, ok := refDetail["crew"].([]any); ok {
 			title.Crew, title.Directors, title.Writers = nil, nil, nil
 			for _, value := range raw {
@@ -210,6 +226,9 @@ func TestSiloLabConformance(t *testing.T) {
 				person := core.Person{Name: name, Role: role, TMDB: tmdb}
 				if imdb, _ := row["imdb_id"].(string); imdb != "" {
 					person.IMDB = imdb
+					if tmdb > 0 {
+						people[tmdb] = labPersonFixture{Name: name, IMDB: imdb}
+					}
 				}
 				if photo, _ := row["photo_url"].(string); photo != "" {
 					person.ThumbPath = "/fixture.jpg"
@@ -228,7 +247,7 @@ func TestSiloLabConformance(t *testing.T) {
 			}
 		}
 	}
-	app, viewer, cleanup := newAlignedLabFixture(t, jf, labFixtureOptions{Duration: 634 * time.Second, FrameRate: 1, AudioTitle: "Fixture audio", ConfigureTitle: seedTitle})
+	app, viewer, cleanup := newAlignedLabFixture(t, jf, labFixtureOptions{Duration: 634 * time.Second, FrameRate: 1, AudioTitle: "Fixture audio", ConfigureTitle: seedTitle, People: people})
 	defer cleanup()
 	for _, key := range watched {
 		if title, err := app.catalog.Get(context.Background(), key); err != nil || title == nil || title.Key != key {

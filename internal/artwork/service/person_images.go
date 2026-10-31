@@ -20,7 +20,7 @@ func creditedPortraits(title core.Title) []creditedPortrait {
 	for _, group := range []struct {
 		role   string
 		people []core.Person
-	}{{"actor", title.Cast}, {"director", title.Directors}, {"writer", title.Writers}} {
+	}{{"actor", title.Cast}, {"director", title.Directors}, {"writer", title.Writers}, {"crew", title.Crew}} {
 		for _, person := range group.people {
 			if person.TMDB <= 0 || person.ThumbPath == "" {
 				continue

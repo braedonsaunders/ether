@@ -20,6 +20,7 @@ func TestDetachedPersonImagesPreserveExistingReferences(t *testing.T) {
 		{"actor", "1", "/actor.jpg"},
 		{"director", "2", "/director.jpg"},
 		{"writer", "3", "/writer.jpg"},
+		{"crew", "4", "/crew.jpg"},
 	} {
 		subject := "tmdb:" + spec.id
 		ref := artworkReference(req, frontend.ImagePerson, spec.role+"\x00"+subject+"\x00"+spec.thumb)
@@ -30,7 +31,7 @@ func TestDetachedPersonImagesPreserveExistingReferences(t *testing.T) {
 		return frontend.Image{}
 	}}
 	got, err := detached.PersonImages(ctx, req, title)
-	if err != nil || len(got) != 3 || !reflect.DeepEqual(got, want) {
+	if err != nil || len(got) != 4 || !reflect.DeepEqual(got, want) {
 		t.Fatalf("descriptor bytes/order changed\nwant=%+v\ngot=%+v err=%v", want, got, err)
 	}
 }

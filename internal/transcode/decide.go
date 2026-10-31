@@ -320,6 +320,10 @@ func heightForBitrate(kbps int, codec string) int {
 }
 
 // bitrateCeiling is the bitrate past which a height gains little.
+// ProfileVideoKbps is the H.264 video target Decide uses for a quality
+// profile height. Silo publishes the same number on that rung.
+func ProfileVideoKbps(height int) int { return bitrateCeiling(height, "h264") }
+
 func bitrateCeiling(height int, codec string) int {
 	var k int
 	switch {

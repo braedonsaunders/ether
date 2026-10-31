@@ -85,6 +85,33 @@ func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, im
 	}
 	key := artworkMetadataKey(req, img)
 	q.mu.Lock()
+	if cached, ok := q.cache[key]; ok && cached.thumbhash != "" {
+		img.Width, img.Height, img.BlurHash, img.ThumbHash = cached.width, cached.height, cached.blurhash, cached.thumbhash
+		q.mu.Unlock()
+		return img
+	}
+	q.mu.Unlock()
+	// A crew photo is part of the first item response. Posters can wait for
+	// the background worker; a person image is hashed before it is granted.
+	if img.Kind == frontend.ImagePerson {
+		job := artworkMetadataJob{key: key, request: req, image: img}
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := q.compute(ctx, job)
+		cancel()
+		if err == nil {
+			if metadata, loadErr := q.load(context.Background(), key); loadErr == nil && metadata.thumbhash != "" {
+				q.mu.Lock()
+				if len(q.cache) >= 4096 {
+					q.cache = map[string]artworkMetadata{}
+				}
+				q.cache[key] = metadata
+				q.mu.Unlock()
+				img.Width, img.Height, img.BlurHash, img.ThumbHash = metadata.width, metadata.height, metadata.blurhash, metadata.thumbhash
+				return img
+			}
+		}
+	}
+	q.mu.Lock()
 	defer q.mu.Unlock()
 	if cached, ok := q.cache[key]; ok {
 		img.Width, img.Height, img.BlurHash, img.ThumbHash = cached.width, cached.height, cached.blurhash, cached.thumbhash

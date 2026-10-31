@@ -19,7 +19,9 @@ func TestSiloDynamicRangeMixedAndUnknown(t *testing.T) {
 		{"BT709 with DV configuration", frontend.StreamInfo{ColorTransfer: "bt709", DolbyVisionConfigurationPresent: &yes}, "dolby_vision"},
 		{"contradictory DV enhancement", frontend.StreamInfo{ColorTransfer: "bt709", HDR10Plus: &no, DolbyVisionConfigurationPresent: &no, DolbyVisionRPUPresent: &no, DolbyVisionELPresent: &yes}, "dolby_vision"},
 		{"known SDR", frontend.StreamInfo{ColorTransfer: "bt709", HDR10Plus: &no, DolbyVisionConfigurationPresent: &no, DolbyVisionRPUPresent: &no}, "sdr"},
-		{"PQ", frontend.StreamInfo{ColorTransfer: "smpte2084"}, "hdr10"},
+		{"untagged 8-bit 4:2:0", frontend.StreamInfo{BitDepth: 8, PixelFormat: "yuv420p", DolbyVisionConfigurationPresent: &no}, "sdr"},
+		{"untagged without DV evidence", frontend.StreamInfo{BitDepth: 8, PixelFormat: "yuv420p"}, ""},
+		{"PQ", frontend.StreamInfo{ColorTransfer: "smpte2084", BitDepth: 8, PixelFormat: "yuv420p", DolbyVisionConfigurationPresent: &no}, "hdr10"},
 		{"HLG", frontend.StreamInfo{ColorTransfer: "arib-std-b67"}, "hlg"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

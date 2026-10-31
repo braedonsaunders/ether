@@ -50,6 +50,17 @@ func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	}
 	return out
 }
+func siloKeywordRow(title string) bool {
+	return strings.EqualFold(title, "Top Rated") || strings.HasPrefix(strings.ToLower(title), "top rated ")
+}
+
+func streamTitle(stream frontend.StreamInfo) string {
+	if stream.Title != "" {
+		return stream.Title
+	}
+	return stream.CodecLongName
+}
+
 func nonNil(v []string) []string {
 	if v == nil {
 		return []string{}
@@ -176,6 +187,11 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		items := make([]any, 0, len(titles))
 		for _, t := range titles {
 			item := titleDTO(t, states[t.Key])
+			// Home cards send an empty keyword list. Library cards keep the
+			// title keywords, including the filter row's lists.
+			if !strings.Contains(r.URL.Path, "/library/") {
+				item["keywords"] = []string{}
+			}
 			if row.Purpose == frontend.RowNextUp {
 				item["item_source"] = "next_up"
 			} else if row.Purpose == frontend.RowContinue && states[t.Key].ViewOffset > 0 {
@@ -188,6 +204,9 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		kind := map[frontend.RowPurpose]string{frontend.RowContinue: "continue_watching", frontend.RowNextUp: "returning_shows", frontend.RowRecentlyReleased: "recently_added", frontend.RowRecentlyAdded: "recently_added", frontend.RowRecommendation: "recommended_for_you", frontend.RowWatchlist: "watchlist", frontend.RowCollection: "collection", frontend.RowLive: "live"}[row.Purpose]
 		if kind == "" {
 			kind = "custom"
+		}
+		if strings.Contains(r.URL.Path, "/library/") && siloKeywordRow(row.Title) {
+			kind = "custom_filter"
 		}
 		id := row.ID
 		if id == "" {
@@ -292,6 +311,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	// Plex metadata has a theme attribute, and nothing in Ether fills or
 	// serves that audio. The set stays empty until a theme file exists.
 	out["themes"] = map[string]any{"owner_id": out["content_id"], "items": []any{}}
+	// The captured catalog item sends an empty keyword list. Library rows
+	// keep the title keywords.
+	out["keywords"] = []string{}
 	if len(d.Extras) > 0 {
 		videos := make([]any, 0, len(d.Extras))
 		for _, extra := range d.Extras {
@@ -411,8 +433,8 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						if stream.Level > 0 {
 							track["level"] = stream.Level
 						}
-						if stream.Title != "" {
-							track["title"] = stream.Title
+						if title := streamTitle(stream); title != "" {
+							track["title"] = title
 						}
 						if stream.FrameRate > 0 {
 							track["frame_rate"] = strconv.FormatFloat(stream.FrameRate, 'f', 3, 64)
@@ -502,8 +524,8 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						if stream.Language != "" {
 							track["language"] = stream.Language
 						}
-						if stream.Title != "" {
-							track["title"] = stream.Title
+						if title := streamTitle(stream); title != "" {
+							track["title"] = title
 						}
 						if stream.Channels > 0 {
 							track["channels"] = stream.Channels

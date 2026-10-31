@@ -24,10 +24,11 @@ func siloDynamicRange(s frontend.StreamInfo) string {
 		return "hdr10"
 	case "arib-std-b67":
 		return "hlg"
-	case "bt709", "smpte170m", "bt470bg":
-		if s.HDR10Plus != nil && !*s.HDR10Plus && s.DolbyVisionConfigurationPresent != nil && !*s.DolbyVisionConfigurationPresent && s.DolbyVisionRPUPresent != nil && !*s.DolbyVisionRPUPresent {
-			return "sdr"
-		}
+	}
+	// The same evidence Emby uses: Dolby Vision is known absent, HDR10+ is
+	// not present, and the transfer is not PQ. Untagged 8-bit 4:2:0 is SDR.
+	if s.DolbyVisionConfigurationPresent != nil && !*s.DolbyVisionConfigurationPresent && (s.HDR10Plus == nil || !*s.HDR10Plus) && frontend.KnownSDR(s) {
+		return "sdr"
 	}
 	return ""
 }

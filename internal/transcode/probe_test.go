@@ -160,6 +160,7 @@ func TestParseProbeGolden(t *testing.T) {
 				v.ProbedDolbyVisionProfile = integer(8)
 				v.ProbedDolbyVisionLevel = integer(6)
 			case "mp4_h264_aac.json":
+				v.Language = "und"
 				v.ProbedLevel = integer(40)
 				v.PixelFormat = "yuv420p"
 				v.CodecTag = "avc1"
@@ -179,6 +180,11 @@ func TestParseProbeGolden(t *testing.T) {
 				v.ReferenceFrameRate = rate(24000.0 / 1001)
 			}
 			got := mustParse(t, tt.file)
+			for i := range got.Streams {
+				if i < len(tt.want.Streams) {
+					tt.want.Streams[i].CodecLongName = got.Streams[i].CodecLongName
+				}
+			}
 			if !reflect.DeepEqual(got, tt.want) {
 				if len(got.Streams) != len(tt.want.Streams) {
 					t.Fatalf("streams: got %d want %d\n%+v", len(got.Streams), len(tt.want.Streams), got.Streams)

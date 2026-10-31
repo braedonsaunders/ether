@@ -53,6 +53,21 @@ func (a Source) Read(ctx context.Context, req frontend.ArtworkRequest, img front
 		if entry.virtualSeason != nil {
 			ctx = context.WithValue(ctx, artworkVirtualSeasonKey{}, entry.virtualSeason)
 		}
+		if entry.personKind != "" {
+			thumb, decErr := base64.RawURLEncoding.DecodeString(entry.personID)
+			if decErr != nil || len(thumb) == 0 {
+				return nil, "", core.ErrNotFound
+			}
+			width := transform.Width
+			if width <= 0 {
+				width = 185
+			}
+			data, ct, err := a.remote(ctx, string(thumb), width)
+			if err != nil || len(data) == 0 || len(data) > MaxImageBytes {
+				return nil, "", core.ErrNotAvailable
+			}
+			return a.transform(ctx, img.Path, data, ct, transform)
+		}
 		data, ct, err := a.readEntry(ctx, req, entry, transform.Width)
 		if err != nil || len(data) > MaxImageBytes {
 			return nil, "", core.ErrNotAvailable

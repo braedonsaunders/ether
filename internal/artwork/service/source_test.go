@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
@@ -140,6 +144,42 @@ func TestStalePortraitCacheFetchesTheCurrentThumb(t *testing.T) {
 	if err != nil || ct != "image/jpeg" || !bytes.Equal(got, []byte("portrait-bytes")) || len(fetched) != 1 || !strings.Contains(fetched[0], "actor.jpg") {
 		t.Fatalf("on-demand portrait: %s %q %v %+v", ct, got, err, fetched)
 	}
+}
+
+func TestCrewPortraitHashIsReadyOnList(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db := store.OpenTest(t)
+	img := image.NewNRGBA(image.Rect(0, 0, 8, 6))
+	img.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	key := core.MovieKey(10378)
+	title := core.Title{Key: key, Type: core.TypeMovie, Released: time.Unix(1, 0), Crew: []core.Person{{Name: "Producer", Role: "Producer", TMDB: 4, ThumbPath: "/crew.jpg"}}}
+	viewer := &core.User{ID: 7, IsOwner: true}
+	var fetched []string
+	images := NewRemoteCache(1024, &http.Client{Transport: imageTransport(func(r *http.Request) (*http.Response, error) {
+		fetched = append(fetched, r.URL.String())
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(encoded.Bytes()))}, nil
+	})})
+	source := Source{Catalog: refreshingArtwork{storedArtwork: storedArtwork{key: title}, fresh: title}, Visibility: experience.Visibility{Policy: &artworkPolicy{viewer: viewer}}, Images: images, ImageURL: func(path, size string) string { return "https://fixture.invalid/" + size + path }, Now: time.Now}
+	queue := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, source.Read)
+	source.Metadata = queue.Get
+	listed, _, err := source.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Item: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range listed {
+		if item.Kind == frontend.ImagePerson {
+			if item.ThumbHash == "" {
+				t.Fatalf("crew portrait listed without a thumbhash fetched=%v", fetched)
+			}
+			return
+		}
+	}
+	t.Fatal("crew portrait missing")
 }
 
 func TestNeutralArtworkParentLookupIsStoredOnly(t *testing.T) {

@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 // CurrentSource copies the current generation's historical open observation.
@@ -47,7 +48,7 @@ func observedHDR(video core.StreamInfo) *bool {
 		value := true
 		return &value
 	}
-	if video.ColorTransfer == "bt709" && video.HDR10Plus != nil && !*video.HDR10Plus && video.DolbyVisionConfigurationPresent != nil && !*video.DolbyVisionConfigurationPresent && video.DolbyVisionRPUPresent != nil && !*video.DolbyVisionRPUPresent {
+	if video.DolbyVisionConfigurationPresent != nil && !*video.DolbyVisionConfigurationPresent && (video.HDR10Plus == nil || !*video.HDR10Plus) && video.ColorTransfer != "smpte2084" && frontend.KnownSDR(video) {
 		value := false
 		return &value
 	}

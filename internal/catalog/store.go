@@ -624,6 +624,11 @@ ON CONFLICT(key) DO UPDATE SET
 					int64(t.Key), p.TMDB, p.Name, p.Role, kind, i, p.ThumbPath); err != nil {
 					return err
 				}
+				if p.TMDB > 0 && validPersonIMDB(p.IMDB) {
+					if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_people(person_tmdb,imdb) VALUES(?,?) ON CONFLICT(person_tmdb) DO UPDATE SET imdb=excluded.imdb`, p.TMDB, p.IMDB); err != nil {
+						return err
+					}
+				}
 			}
 			return nil
 		}
