@@ -12,10 +12,19 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 )
 
-// importRequest names a TRaSH profile (app + profile id) or carries pasted
-// profile JSON; name is the owner's choice for the saved profile.
+// Quality profile import sources.
+const (
+	ImportSourceTrash       = "trash"
+	ImportSourceDictionarry = "dictionarry"
+	ImportSourceProfilarr   = "profilarr"
+)
+
+// importRequest names a TRaSH or Profilarr (Dictionarry) profile (app +
+// optional source + profile id) or carries pasted profile JSON; name is the
+// owner's choice for the saved profile.
 type importRequest struct {
 	App     string `json:"app"`
+	Source  string `json:"source"`
 	Profile string `json:"profile"`
 	JSON    string `json:"json"`
 	Name    string `json:"name"`
@@ -35,6 +44,25 @@ func (h *consoleAPI) trashProfiles(w http.ResponseWriter, r *http.Request) {
 	items, err := h.deps.Guides.Profiles(ctx, app)
 	if err != nil {
 		h.importFail(w, err)
+		return
+	}
+	if items == nil {
+		items = []TrashProfile{}
+	}
+	consoleJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *consoleAPI) dictionarryProfiles(w http.ResponseWriter, r *http.Request) {
+	app := r.PathValue("app")
+	if !validApp(app) {
+		consoleError(w, http.StatusBadRequest, "invalid", "app must be radarr or sonarr")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	items, err := h.deps.Dictionarry.Profiles(ctx, app)
+	if err != nil {
+		h.dictionarryFail(w, err)
 		return
 	}
 	if items == nil {
@@ -96,8 +124,26 @@ func (h *consoleAPI) plan(w http.ResponseWriter, r *http.Request, in importReque
 		consoleError(w, http.StatusBadRequest, "invalid", "app must be radarr or sonarr")
 		return QualityImportPlan{}, false
 	}
+	source := strings.ToLower(strings.TrimSpace(in.Source))
+	if source != "" && source != ImportSourceTrash && source != ImportSourceDictionarry && source != ImportSourceProfilarr {
+		consoleError(w, http.StatusBadRequest, "invalid", "source must be trash or dictionarry")
+		return QualityImportPlan{}, false
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
+	if source == ImportSourceDictionarry || source == ImportSourceProfilarr {
+		if strings.TrimSpace(in.JSON) != "" || strings.TrimSpace(in.Profile) == "" {
+			consoleError(w, http.StatusBadRequest, "invalid", "choose a Profilarr (Dictionarry) profile")
+			return QualityImportPlan{}, false
+		}
+		imp, found, err := h.deps.Dictionarry.Import(ctx, app, in.Profile)
+		if err != nil {
+			h.dictionarryFail(w, err)
+			return QualityImportPlan{}, false
+		}
+		cfg := config.Config{Resolver: h.s.resolverCfg(), Quality: h.s.qualityCfg()}
+		return PlanQualityImport(imp, app, found, cfg), true
+	}
 	var data []byte
 	switch {
 	case strings.TrimSpace(in.JSON) != "" && in.Profile != "":
@@ -187,6 +233,8 @@ func trashReason(err error) string {
 		return "GitHub did not answer in time"
 	case errors.Is(err, ErrTrashUnavailable):
 		return strings.TrimPrefix(err.Error(), ErrTrashUnavailable.Error()+": ")
+	case errors.Is(err, ErrDictionarryUnavailable):
+		return strings.TrimPrefix(err.Error(), ErrDictionarryUnavailable.Error()+": ")
 	default:
 		return err.Error()
 	}
@@ -201,5 +249,17 @@ func (h *consoleAPI) importFail(w http.ResponseWriter, err error) {
 	default:
 		h.deps.Logger.Warn("TRaSH Guides request failed", "err", err)
 		consoleError(w, http.StatusBadGateway, "upstream", "Couldn't load TRaSH Guides: "+trashReason(err)+".")
+	}
+}
+
+func (h *consoleAPI) dictionarryFail(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrDictionarryNotFound):
+		consoleError(w, http.StatusNotFound, "not_found", "Profilarr (Dictionarry) has no such profile")
+	case errors.Is(err, context.Canceled):
+		consoleError(w, http.StatusBadRequest, "canceled", "the request was canceled")
+	default:
+		h.deps.Logger.Warn("Profilarr (Dictionarry) request failed", "err", err)
+		consoleError(w, http.StatusBadGateway, "upstream", "Couldn't load Profilarr (Dictionarry): "+trashReason(err)+".")
 	}
 }

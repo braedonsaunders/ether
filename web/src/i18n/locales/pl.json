@@ -1051,6 +1051,7 @@
   "m_0699f9855bc151": "Wybierz punkt wyjścia, a następnie sprawdź limit i zachowanie. Nic się nie zmieni, dopóki nie zapiszesz.",
   "m_069a3d1a5f8ba4": "nigdy",
   "m_069c43e7c09f6f": "Kolejność odcinków",
+  "m_069c69d42a5493": "Profil Profilarr",
   "m_069cafa19fefc9": "Luka w pokryciu",
   "m_069cf6f89406bb": "Zachowuj ostatnio odtwarzane multimedia",
   "m_069d55dae8ccc6": "{error}. Zapis do pamięci podręcznej jest wstrzymany do czasu udostępnienia zasobu i bazy danych.",
@@ -1561,7 +1562,6 @@
   "m_0a0cd129dd8fb4": "Zdarzenie",
   "m_0a0ed559822f63": "Połącz przez",
   "m_0a13d4098aac5c": "Nadchodzące odcinki",
-  "m_0a18403f1bac93": "Zamień profil jakości Radarr lub Sonarr z TRaSH Guides w profil Ether, wraz z ocenami formatów niestandardowych.",
   "m_0a188ffae86921": "Indeksator {number}",
   "m_0a19e6387037d4": "Szablony",
   "m_0a1b801eaf8fdb": "Plakat: {title}",
@@ -3384,9 +3384,9 @@
   "m_16270fad26ad99": "Maksymalna przepływność",
   "m_162737182d9849": "Wyszukiwanie w języku naturalnym",
   "m_1627731ab041b7": {
-    "one": "{count} znana aplikacja.",
     "few": "{count} znane aplikacje.",
     "many": "{count} znanych aplikacji.",
+    "one": "{count} znana aplikacja.",
     "other": "{count} znanej aplikacji."
   },
   "m_1627d178b0e53d": "Dotyczy: {viewers}",
@@ -3595,6 +3595,7 @@
   "m_175ee8fbf7f10f": "Zmiana tego folderu wymaga ponownego uruchomienia Ether po konfiguracji. Plakaty i grafiki pozostają w pamięci podręcznej folderu konfiguracji.",
   "m_1760c50582be9e": "Pasujące release są wykluczane.",
   "m_1763d33cbafbbe": "Wydanie zablokowane",
+  "m_1765b8761f746d": "Profile publikowane przez Dictionarry dla Profilarr, odświeżane co godzinę.",
   "m_1766932bae264b": "Oczekiwanie na selektywne sprawdzenie",
   "m_176c15643b5285": "Łączenie…",
   "m_17712c79c8ddcd": "{used} z {limit}",
@@ -4732,6 +4733,7 @@
     "other": "{count} ręcznie wybranego tytułu"
   },
   "m_1eb24748a2dfb4": "Ładowanie funkcji językowych",
+  "m_1eb27b7f8a06e1": "Zamień profil jakości Radarr lub Sonarr z TRaSH Guides lub Profilarr (Dictionarry) w profil Ether, wraz z ocenami formatów niestandardowych.",
   "m_1eb2eb9aa60cf2": "Sprawdzanie zainstalowanych definicji…",
   "m_1eb329e25cc73e": "Wydania torrentowe są strumieniowane przez Twoje konto debrid.",
   "m_1eb4e5a0839480": "Zapisz ustawienia Simkl",
@@ -4767,9 +4769,9 @@
   "m_1ef30bfb482ac5": "Unieważnić token dołączenia?",
   "m_1ef38ca172a4a4": "Adres skopiowany",
   "m_1ef47e53f18ed8": {
-    "one": "{count} klient połączył się z tym serwerem.",
     "few": "{count} klientów połączyło się z tym serwerem.",
     "many": "{count} klientów połączyło się z tym serwerem.",
+    "one": "{count} klient połączył się z tym serwerem.",
     "other": "{count} klienta połączyło się z tym serwerem."
   },
   "m_1ef55a8dbf237a": "Udostępnia niższe jakości kodowania podczas transkodowania, aby klient mógł dostosować jakość do przepustowości.",

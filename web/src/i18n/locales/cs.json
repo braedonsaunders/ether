@@ -1051,6 +1051,7 @@
   "m_0699f9855bc151": "Vyberte výchozí bod a poté zkontrolujte rozpočet a chování. Dokud neuložíte, nic se nezmění.",
   "m_069a3d1a5f8ba4": "nikdy",
   "m_069c43e7c09f6f": "Pořadí epizod",
+  "m_069c69d42a5493": "Profil Profilarr",
   "m_069cafa19fefc9": "Mezera v pokrytí",
   "m_069cf6f89406bb": "Uchovávat nedávno streamovaná média",
   "m_069d55dae8ccc6": "{error}. Zápisy do mezipaměti jsou pozastaveny, dokud nebude dostupné připojení a databáze.",
@@ -1561,7 +1562,6 @@
   "m_0a0cd129dd8fb4": "Událost",
   "m_0a0ed559822f63": "Připojit pomocí",
   "m_0a13d4098aac5c": "Nadcházející epizody",
-  "m_0a18403f1bac93": "Přeměňte profil kvality Radarr nebo Sonarr z TRaSH Guides na profil Ether, včetně skóre vlastních formátů.",
   "m_0a188ffae86921": "Indexer {number}",
   "m_0a19e6387037d4": "Šablony",
   "m_0a1b801eaf8fdb": "Plakát: {title}",
@@ -3384,9 +3384,9 @@
   "m_16270fad26ad99": "Maximální datový tok",
   "m_162737182d9849": "Vyhledávání přirozeným jazykem",
   "m_1627731ab041b7": {
-    "one": "{count} známá aplikace.",
     "few": "{count} známé aplikace.",
     "many": "{count} známé aplikace.",
+    "one": "{count} známá aplikace.",
     "other": "{count} známých aplikací."
   },
   "m_1627d178b0e53d": "Ovlivní: {viewers}",
@@ -3595,6 +3595,7 @@
   "m_175ee8fbf7f10f": "Změna této složky vyžaduje po nastavení restart Etheru. Plakáty a artwork zůstávají v mezipaměti konfigurační složky.",
   "m_1760c50582be9e": "Odpovídající release se vyloučí.",
   "m_1763d33cbafbbe": "Vydání zablokováno",
+  "m_1765b8761f746d": "Profily publikované Dictionarry pro Profilarr, obnovované každou hodinu.",
   "m_1766932bae264b": "Čeká se na výběrovou kontrolu",
   "m_176c15643b5285": "Připojování…",
   "m_17712c79c8ddcd": "{used} z {limit}",
@@ -4732,6 +4733,7 @@
     "other": "{count} ručně vybraných titulů"
   },
   "m_1eb24748a2dfb4": "Načítání jazykových funkcí",
+  "m_1eb27b7f8a06e1": "Přeměňte profil kvality Radarr nebo Sonarr z TRaSH Guides nebo Profilarr (Dictionarry) na profil Ether, včetně skóre vlastních formátů.",
   "m_1eb2eb9aa60cf2": "Kontrola nainstalovaných definic…",
   "m_1eb329e25cc73e": "Torrentová vydání se streamují přes váš účet debridu.",
   "m_1eb4e5a0839480": "Uložit nastavení Simkl",
@@ -4767,9 +4769,9 @@
   "m_1ef30bfb482ac5": "Zrušit token pro připojení?",
   "m_1ef38ca172a4a4": "Adresa zkopírována",
   "m_1ef47e53f18ed8": {
-    "one": "{count} klient se připojil k tomuto serveru.",
     "few": "{count} klienti se připojili k tomuto serveru.",
     "many": "{count} klienta se připojilo k tomuto serveru.",
+    "one": "{count} klient se připojil k tomuto serveru.",
     "other": "{count} klientů se připojilo k tomuto serveru."
   },
   "m_1ef55a8dbf237a": "Nabízí nižší kvality enkódování při transkódech, aby klienti mohli přizpůsobit kvalitu šířce pásma.",

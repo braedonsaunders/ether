@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -18,7 +19,8 @@ import (
 // store whose saves reach the resolver like the app's subscription does.
 type importFixture struct {
 	consoleFixture
-	gh *fakeGitHub
+	gh      *fakeGitHub
+	dictSrv *httptest.Server
 
 	cfgMu sync.Mutex
 	cfg   config.Config
@@ -32,9 +34,20 @@ func newImportFixture(t *testing.T, save bool) *importFixture {
 
 func newImportFixtureTree(t *testing.T, save bool, tree map[string]string) *importFixture {
 	t.Helper()
-	f := &importFixture{gh: newFakeGitHub(t, tree), cfg: testCfg()}
+	dictBytes := buildDictionarryTarGz(t, dictionarryTestFiles())
+	dictSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-gzip")
+		_, _ = w.Write(dictBytes)
+	}))
+	t.Cleanup(dictSrv.Close)
+
+	f := &importFixture{gh: newFakeGitHub(t, tree), dictSrv: dictSrv, cfg: testCfg()}
 	f.svc = New(&fakeIndexer{}, nil, openTestDB(t), f.cfg, Options{})
-	deps := ConsoleDeps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Guides: f.gh.guides(nil)}
+	deps := ConsoleDeps{
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Guides:      f.gh.guides(nil),
+		Dictionarry: NewDictionarry(DictionarryOptions{ArchiveURL: dictSrv.URL + "/database-v2.tar.gz", UserAgent: "Ether/test"}),
+	}
 	if save {
 		deps.SaveConfig = func(mutate func(*config.Config) error) error {
 			f.cfgMu.Lock()
@@ -79,6 +92,37 @@ func TestConsoleListsTrashProfiles(t *testing.T) {
 	f.gh.limited.Store(true)
 	if code := f.do(t, "GET", "/trash/sonarr/profiles", "", &e); code != 502 || !strings.Contains(e.Error.Message, "paste the profile JSON") {
 		t.Fatalf("rate limited %d %+v", code, e)
+	}
+}
+
+func TestConsoleListsAndAppliesDictionarryProfiles(t *testing.T) {
+	f := newImportFixture(t, true)
+	var out struct {
+		Items []TrashProfile `json:"items"`
+	}
+	if code := f.do(t, "GET", "/dictionarry/radarr/profiles", "", &out); code != 200 || len(out.Items) != 2 || out.Items[0].Name != "2160p Remux" {
+		t.Fatalf("list dictionarry %d %+v", code, out)
+	}
+	var plan QualityImportPlan
+	if code := f.do(t, "POST", "/quality-import/preview", body(importRequest{App: AppRadarr, Source: ImportSourceDictionarry, Profile: "2160p-remux"}), &plan); code != 200 {
+		t.Fatalf("preview %d", code)
+	}
+	if plan.Profile.Name != "2160p Remux" || plan.Profile.CustomFormatScores["dictionarry-radarr-2160p-remux"] != 860000 || f.saves != 0 {
+		t.Fatalf("plan %+v", plan)
+	}
+	var applied struct {
+		Name         string `json:"name"`
+		FormatsAdded int    `json:"formatsAdded"`
+	}
+	if code := f.do(t, "POST", "/quality-import", body(importRequest{App: AppRadarr, Source: ImportSourceDictionarry, Profile: "2160p-remux", Name: "2160p Remux (Profilarr)"}), &applied); code != 200 || applied.Name != "2160p Remux (Profilarr)" || applied.FormatsAdded != 5 {
+		t.Fatalf("apply %d %+v", code, applied)
+	}
+	if last := f.cfg.Quality.Profiles[len(f.cfg.Quality.Profiles)-1]; last.Name != "2160p Remux (Profilarr)" || *last.MinCustomFormatScore != 200000 {
+		t.Fatalf("saved %+v", last)
+	}
+	var e apiError
+	if code := f.do(t, "POST", "/quality-import/preview", body(importRequest{App: AppRadarr, Source: ImportSourceDictionarry, Profile: "missing"}), &e); code != 404 {
+		t.Fatalf("missing dictionarry profile: %d %+v", code, e)
 	}
 }
 
@@ -192,13 +236,15 @@ func TestConsoleImportRejectsBadRequests(t *testing.T) {
 		body string
 		code int
 	}{
-		"no app":        {body(importRequest{Profile: "x"}), 400},
-		"nothing":       {body(importRequest{App: AppRadarr}), 400},
-		"both":          {body(importRequest{App: AppRadarr, Profile: "x", JSON: "{}"}), 400},
-		"unknown":       {body(importRequest{App: AppRadarr, Profile: "nope"}), 404},
-		"bad json":      {body(importRequest{App: AppRadarr, JSON: `{"name":"x"}`}), 400},
-		"unknown field": {`{"app":"radarr","profile":"x","extra":1}`, 400},
-		"too large":     {`{"app":"radarr","json":"` + strings.Repeat("a", maxImportBody) + `"}`, 413},
+		"no app":         {body(importRequest{Profile: "x"}), 400},
+		"nothing":        {body(importRequest{App: AppRadarr}), 400},
+		"both":           {body(importRequest{App: AppRadarr, Profile: "x", JSON: "{}"}), 400},
+		"unknown":        {body(importRequest{App: AppRadarr, Profile: "nope"}), 404},
+		"bad source":     {body(importRequest{App: AppRadarr, Source: "other", Profile: "x"}), 400},
+		"dict with json": {body(importRequest{App: AppRadarr, Source: ImportSourceDictionarry, Profile: "x", JSON: "{}"}), 400},
+		"bad json":       {body(importRequest{App: AppRadarr, JSON: `{"name":"x"}`}), 400},
+		"unknown field":  {`{"app":"radarr","profile":"x","extra":1}`, 400},
+		"too large":      {`{"app":"radarr","json":"` + strings.Repeat("a", maxImportBody) + `"}`, 413},
 	} {
 		var e apiError
 		if code := f.do(t, "POST", "/quality-import/preview", tc.body, &e); code != tc.code || e.Error.Message == "" {

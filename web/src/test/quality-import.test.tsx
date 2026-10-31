@@ -70,6 +70,32 @@ describe("Quality profile import from TRaSH Guides", () => {
     expect(within(editor).getByLabelText("Minimum format score")).toHaveValue(1000);
   });
 
+  it("previews and imports a Profilarr (Dictionarry) quality profile", async () => {
+    const { fake } = renderApp("/releases/quality");
+    const drawer = await openImport();
+    fireEvent.click(within(drawer).getByRole("radio", { name: "Profilarr (Dictionarry)" }));
+
+    fireEvent.click(await within(drawer).findByRole("button", { name: "Profilarr profile" }, WAIT));
+    fireEvent.click(await screen.findByRole("option", { name: /2160p Remux/ }, WAIT));
+
+    const table = await within(drawer).findByRole("table", { name: "Custom formats" }, WAIT);
+    const rows = within(table).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("2160p Remux");
+    expect(rows[1]).toHaveTextContent("+860,000");
+    expect(within(drawer).getByText("Remux 4K")).toBeInTheDocument();
+    expect(within(drawer).getByText("200,000")).toBeInTheDocument();
+
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add profile" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument(), WAIT);
+    expect(imports(fake).at(-1)!.body).toEqual({
+      app: "radarr",
+      source: "dictionarry",
+      profile: "2160p-remux",
+      name: "2160p Remux",
+    });
+    expect(await screen.findByText("2160p Remux", {}, WAIT)).toBeInTheDocument();
+  });
+
   it("previews pasted profile JSON for the app its qualities name", async () => {
     const { fake } = renderApp("/releases/quality");
     const drawer = await openImport();

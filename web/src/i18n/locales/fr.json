@@ -1018,6 +1018,7 @@
   "m_0699f9855bc151": "Choisissez un point de départ, puis vérifiez le budget et le comportement. Rien ne change tant que vous n’enregistrez pas.",
   "m_069a3d1a5f8ba4": "jamais",
   "m_069c43e7c09f6f": "Ordre des épisodes",
+  "m_069c69d42a5493": "Profil Profilarr",
   "m_069cafa19fefc9": "Lacune de couverture",
   "m_069cf6f89406bb": "Conserver les médias diffusés récemment",
   "m_069d55dae8ccc6": "{error}. Les écritures dans le cache sont suspendues jusqu’à ce que le point de montage et la base de données soient disponibles.",
@@ -1517,7 +1518,6 @@
   "m_0a0cd129dd8fb4": "Événement",
   "m_0a0ed559822f63": "Se connecter avec",
   "m_0a13d4098aac5c": "Épisodes à venir",
-  "m_0a18403f1bac93": "Transformez un profil de qualité Radarr ou Sonarr de TRaSH Guides en profil Ether, scores des formats personnalisés inclus.",
   "m_0a188ffae86921": "Indexeur {number}",
   "m_0a19e6387037d4": "Modèles",
   "m_0a1b801eaf8fdb": "Affiche de {title}",
@@ -3281,8 +3281,8 @@
   "m_16270fad26ad99": "Débit maximal",
   "m_162737182d9849": "Recherche en langage naturel",
   "m_1627731ab041b7": {
-    "one": "{count} app connue.",
     "many": "{count} d’apps connues.",
+    "one": "{count} app connue.",
     "other": "{count} apps connues."
   },
   "m_1627d178b0e53d": "Concerne {viewers}",
@@ -3485,6 +3485,7 @@
   "m_175ee8fbf7f10f": "Modifier ce dossier nécessite de redémarrer Ether après la configuration. Les affiches et illustrations restent dans le cache du dossier de configuration.",
   "m_1760c50582be9e": "Les releases correspondantes sont exclues.",
   "m_1763d33cbafbbe": "Release bloquée",
+  "m_1765b8761f746d": "Les profils publiés par Dictionarry pour Profilarr, actualisés toutes les heures.",
   "m_1766932bae264b": "En attente d’une vérification sélective",
   "m_176c15643b5285": "Connexion…",
   "m_17712c79c8ddcd": "{used} sur {limit}",
@@ -4594,6 +4595,7 @@
     "other": "{count} titres choisis à la main"
   },
   "m_1eb24748a2dfb4": "Chargement des fonctions de langage",
+  "m_1eb27b7f8a06e1": "Transformez un profil de qualité Radarr ou Sonarr de TRaSH Guides ou Profilarr (Dictionarry) en profil Ether, scores des formats personnalisés inclus.",
   "m_1eb2eb9aa60cf2": "Vérification des définitions installées…",
   "m_1eb329e25cc73e": "Les releases torrent sont diffusées via votre compte debrid.",
   "m_1eb4e5a0839480": "Enregistrer les paramètres Simkl",
@@ -4629,8 +4631,8 @@
   "m_1ef30bfb482ac5": "Révoquer le jeton d’adhésion ?",
   "m_1ef38ca172a4a4": "Adresse copiée",
   "m_1ef47e53f18ed8": {
-    "one": "{count} client s’est connecté à ce serveur.",
     "many": "{count} de clients se sont connectés à ce serveur.",
+    "one": "{count} client s’est connecté à ce serveur.",
     "other": "{count} clients se sont connectés à ce serveur."
   },
   "m_1ef55a8dbf237a": "Propose des qualités d’encodage plus basses pendant les transcodes pour que les clients adaptent la qualité à la bande passante.",

@@ -46,6 +46,7 @@ func (a *App) extensionHandlers() map[string]http.Handler {
 	m["metadata"] = a.episodeorder.Router()
 	m["updates"] = a.updatesHandler()
 	m["cluster"] = a.clusterHandler()
+	ua := "Ether/" + a.opts.Version + " (+https://github.com/braedonsaunders/ether)"
 	m["releases"] = a.resolver.ConsoleHandler(resolver.ConsoleDeps{
 		Catalog: a.catalog,
 		Invalidate: func(key core.RatingKey) {
@@ -54,11 +55,10 @@ func (a *App) extensionHandlers() map[string]http.Handler {
 				a.playback.InvalidateTitleEverywhere(key)
 			}
 		},
-		Logger: a.log.With("component", "release-console"),
-		Guides: resolver.NewTrashGuides(resolver.TrashOptions{
-			UserAgent: "Ether/" + a.opts.Version + " (+https://github.com/braedonsaunders/ether)",
-		}),
-		SaveConfig: a.saveValidated,
+		Logger:      a.log.With("component", "release-console"),
+		Guides:      resolver.NewTrashGuides(resolver.TrashOptions{UserAgent: ua}),
+		Dictionarry: resolver.NewDictionarry(resolver.DictionarryOptions{UserAgent: ua}),
+		SaveConfig:  a.saveValidated,
 	})
 	a.discoveryHandlers(m)
 	adoptionHandlers(a, m)

@@ -33,7 +33,7 @@ import { RecordDrawer, TextRow } from "../sources/form";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
 import { useLocale } from "../../i18n/react";
 
-type Mode = "guides" | "paste";
+export type ImportMode = "guides" | "dictionarry" | "paste";
 
 const APPS = localized(() => [
   { value: "radarr" as const, label: t("Radarr (movies)") },
@@ -42,6 +42,7 @@ const APPS = localized(() => [
 
 const MODES = localized(() => [
   { value: "guides" as const, label: "TRaSH Guides" },
+  { value: "dictionarry" as const, label: "Profilarr (Dictionarry)" },
   { value: "paste" as const, label: t("Paste JSON") },
 ]);
 
@@ -49,7 +50,11 @@ const MODES = localized(() => [
 const MAX_PASTE = 1 << 20;
 
 /** "SQP", "German", "Anime" from "[SQP] SQP-1 (2160p)"; the rest are TRaSH's standard profiles. */
-function profileGroup(name: string): string {
+function profileGroup(name: string, mode: ImportMode): string {
+  if (mode === "dictionarry") {
+    const res = /^(2160p|1080p|720p)\b/i.exec(name)?.[1];
+    if (res) return res.toLowerCase() === "2160p" ? "4K (2160p)" : res;
+  }
   const tag = /^\[([^\]]+)\]/.exec(name)?.[1];
   return tag ? (tag.split(/\s+/)[0] ?? tag) : t("Standard");
 }
@@ -79,20 +84,23 @@ const STATUS: Record<
 }));
 
 /**
- * Import a Radarr or Sonarr quality profile from TRaSH Guides, or from pasted
- * profile JSON: preview what Ether makes of it, then add it as a new profile.
+ * Import a Radarr or Sonarr quality profile from TRaSH Guides, Profilarr
+ * (Dictionarry), or from pasted profile JSON: preview what Ether makes of it,
+ * then add it as a new profile.
  */
 export function TrashImport({
   open,
+  initialMode = "guides",
   onClose,
   onImported,
 }: {
   open: boolean;
+  initialMode?: ImportMode;
   onClose: () => void;
   onImported: () => Promise<void> | void;
 }) {
   const [app, setApp] = useState<StarrApp>("radarr");
-  const [mode, setMode] = useState<Mode>("guides");
+  const [mode, setMode] = useState<ImportMode>(initialMode);
   const [profileId, setProfileId] = useState("");
   const [pasted, setPasted] = useState("");
   const [plan, setPlan] = useState<QualityImportPlan | null>(null);
@@ -106,11 +114,15 @@ export function TrashImport({
   const preview = useRef<AbortController | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
-  const listing = open && mode === "guides";
+  const listing = open && (mode === "guides" || mode === "dictionarry");
   const profiles = useAsync(
-    (signal) =>
-      listing ? releaseConsole.trashProfiles(app, signal) : Promise.resolve<TrashProfile[]>([]),
-    [listing, app],
+    (signal) => {
+      if (!listing) return Promise.resolve<TrashProfile[]>([]);
+      return mode === "dictionarry"
+        ? releaseConsole.dictionarryProfiles(app, signal)
+        : releaseConsole.trashProfiles(app, signal);
+    },
+    [listing, mode, app],
   );
   const list = useMemo(() => (listing ? (profiles.data ?? []) : []), [listing, profiles.data]);
   const { locale } = useLocale();
@@ -119,22 +131,23 @@ export function TrashImport({
       list.map((p) => ({
         value: p.id,
         label: p.name,
-        group: profileGroup(p.name),
+        group: profileGroup(p.name, mode),
         hint: tn(p.formats, "{count} custom format", "{count} custom formats"),
       })),
-    [list, locale],
+    [list, mode, locale],
   );
   const chosen = list.find((p) => p.id === profileId);
 
   // Start over each time the drawer opens.
   useEffect(() => {
     if (!open) return;
+    setMode(initialMode);
     setProfileId("");
     setPasted("");
     clearPreview();
     setSaveError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, initialMode]);
 
   function clearPreview() {
     preview.current?.abort();
@@ -172,8 +185,15 @@ export function TrashImport({
 
   function pick(id: string) {
     setProfileId(id);
-    if (id) void load({ app, profile: id });
-    else clearPreview();
+    if (id) {
+      void load(
+        mode === "dictionarry"
+          ? { app, source: "dictionarry", profile: id }
+          : { app, profile: id },
+      );
+    } else {
+      clearPreview();
+    }
   }
 
   async function upload(f: File | undefined) {
@@ -212,13 +232,16 @@ export function TrashImport({
     }
   }
 
+  const isDictionarry = mode === "dictionarry";
+  const pickerLabel = isDictionarry ? t("Profilarr profile") : t("TRaSH profile");
+
   return (
     <RecordDrawer
       open={open}
       onClose={() => !saving && onClose()}
       title={t("Import from TRaSH Guides")}
       description={t(
-        "Turn a Radarr or Sonarr quality profile from TRaSH Guides into an Ether profile, custom format scores included.",
+        "Turn a Radarr or Sonarr quality profile from TRaSH Guides or Profilarr (Dictionarry) into an Ether profile, custom format scores included.",
       )}
       onSave={() => void save()}
       saving={saving}
@@ -261,13 +284,15 @@ export function TrashImport({
             />
           }
         />
-        {mode === "guides" ? (
+        {mode === "guides" || mode === "dictionarry" ? (
           <SettingsRow
             stacked
-            title={t("TRaSH profile")}
+            title={pickerLabel}
             description={
               profiles.error ? (
                 <span className="text-danger">{errorMessage(profiles.error)}</span>
+              ) : isDictionarry ? (
+                t("Profiles Dictionarry publishes for Profilarr, refreshed hourly.")
               ) : (
                 t("Profiles TRaSH Guides publishes, refreshed hourly.")
               )
@@ -284,10 +309,10 @@ export function TrashImport({
                   value={profileId}
                   onChange={pick}
                   options={options}
-                  ariaLabel={t("TRaSH profile")}
+                  ariaLabel={pickerLabel}
                   placeholder={profiles.loading ? t("Loading profiles…") : t("Choose a profile")}
                   searchPlaceholder={t("Search profiles")}
-                  sheetTitle={t("TRaSH profile")}
+                  sheetTitle={pickerLabel}
                   loading={profiles.loading}
                   disabled={profiles.loading && list.length === 0}
                   searchable
@@ -296,7 +321,8 @@ export function TrashImport({
               {chosen?.description ? (
                 <p className="whitespace-pre-line text-xs text-fg-muted">{chosen.description}</p>
               ) : null}
-              {chosen?.url?.startsWith("https://trash-guides.info/") ? (
+              {chosen?.url?.startsWith("https://trash-guides.info/") ||
+              chosen?.url?.startsWith("https://dictionarry.dev") ? (
                 <a
                   href={chosen.url}
                   target="_blank"

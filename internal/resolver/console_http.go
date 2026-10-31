@@ -31,6 +31,9 @@ type ConsoleDeps struct {
 	// Guides reads TRaSH Guides for quality profile imports; nil uses
 	// GitHub with default options.
 	Guides *TrashGuides
+	// Dictionarry reads Profilarr (Dictionarry) quality profiles for
+	// imports; nil uses GitHub with default options.
+	Dictionarry *Dictionarry
 	// SaveConfig saves an import through the owner's validated config
 	// path: it applies mutate to the current settings (again if they changed
 	// meanwhile), validates and saves them. nil disables imports.
@@ -40,9 +43,9 @@ type ConsoleDeps struct {
 // ConsoleHandler serves the release console under the owner API (mounted
 // at /ether/api/releases behind owner authentication):
 //
-//	GET    /profiles                 profiles interactive search can rank with
+//	GET    /profiles                     profiles interactive search can rank with
 //	GET    /search?key=&profile=&fresh=1
-//	GET    /titles/{key}/children    seasons of a show, episodes of a season
+//	GET    /titles/{key}/children        seasons of a show, episodes of a season
 //	POST   /health   {key, releaseId}
 //	POST   /forget   {key}
 //	GET    /pins
@@ -53,15 +56,19 @@ type ConsoleDeps struct {
 //	DELETE /blocklist/{releaseId}
 //	GET    /history?key=&limit=&offset=
 //	GET    /history/{id}
-//	GET    /trash/{app}/profiles     TRaSH Guides quality profiles (radarr, sonarr)
-//	POST   /quality-import/preview   {app, profile | json}
-//	POST   /quality-import           {app, profile | json, name}
+//	GET    /trash/{app}/profiles         TRaSH Guides quality profiles (radarr, sonarr)
+//	GET    /dictionarry/{app}/profiles   Profilarr (Dictionarry) quality profiles (radarr, sonarr)
+//	POST   /quality-import/preview       {app, source, profile | json}
+//	POST   /quality-import               {app, source, profile | json, name}
 func (s *Service) ConsoleHandler(deps ConsoleDeps) http.Handler {
 	if deps.Logger == nil {
 		deps.Logger = s.log
 	}
 	if deps.Guides == nil {
 		deps.Guides = NewTrashGuides(TrashOptions{})
+	}
+	if deps.Dictionarry == nil {
+		deps.Dictionarry = NewDictionarry(DictionarryOptions{})
 	}
 	h := &consoleAPI{s: s, deps: deps}
 	mux := http.NewServeMux()
@@ -80,6 +87,7 @@ func (s *Service) ConsoleHandler(deps ConsoleDeps) http.Handler {
 	mux.HandleFunc("GET /history", h.history)
 	mux.HandleFunc("GET /history/{id}", h.historyEntry)
 	mux.HandleFunc("GET /trash/{app}/profiles", h.trashProfiles)
+	mux.HandleFunc("GET /dictionarry/{app}/profiles", h.dictionarryProfiles)
 	mux.HandleFunc("POST /quality-import/preview", h.previewImport)
 	mux.HandleFunc("POST /quality-import", h.applyImport)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

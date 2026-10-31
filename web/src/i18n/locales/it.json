@@ -1018,6 +1018,7 @@
   "m_0699f9855bc151": "Scegli un punto di partenza, poi rivedi il budget e il comportamento. Non cambia nulla finché non salvi.",
   "m_069a3d1a5f8ba4": "mai",
   "m_069c43e7c09f6f": "Ordine degli episodi",
+  "m_069c69d42a5493": "Profilo Profilarr",
   "m_069cafa19fefc9": "Lacuna di copertura",
   "m_069cf6f89406bb": "Conserva i media riprodotti di recente",
   "m_069d55dae8ccc6": "{error}. Le scritture nella cache sono sospese finché il montaggio e il database non sono disponibili.",
@@ -1517,7 +1518,6 @@
   "m_0a0cd129dd8fb4": "Evento",
   "m_0a0ed559822f63": "Connetti con",
   "m_0a13d4098aac5c": "Episodi in arrivo",
-  "m_0a18403f1bac93": "Trasforma un profilo di qualità Radarr o Sonarr di TRaSH Guides in un profilo Ether, inclusi i punteggi dei formati personalizzati.",
   "m_0a188ffae86921": "Indexer {number}",
   "m_0a19e6387037d4": "Modelli",
   "m_0a1b801eaf8fdb": "Locandina di {title}",
@@ -3281,8 +3281,8 @@
   "m_16270fad26ad99": "Bitrate massimo",
   "m_162737182d9849": "Ricerca in linguaggio naturale",
   "m_1627731ab041b7": {
-    "one": "{count} app nota.",
     "many": "{count} app note.",
+    "one": "{count} app nota.",
     "other": "{count} app note."
   },
   "m_1627d178b0e53d": "Riguarda {viewers}",
@@ -3485,6 +3485,7 @@
   "m_175ee8fbf7f10f": "Per cambiare questa cartella devi riavviare Ether dopo la configurazione. Le locandine e le altre immagini restano nella cache della cartella di configurazione.",
   "m_1760c50582be9e": "Le release corrispondenti sono escluse.",
   "m_1763d33cbafbbe": "Release bloccata",
+  "m_1765b8761f746d": "I profili pubblicati da Dictionarry per Profilarr, aggiornati ogni ora.",
   "m_1766932bae264b": "In attesa di un controllo selettivo",
   "m_176c15643b5285": "Connessione…",
   "m_17712c79c8ddcd": "{used} di {limit}",
@@ -4594,6 +4595,7 @@
     "other": "{count} titoli scelti a mano"
   },
   "m_1eb24748a2dfb4": "Caricamento delle funzioni linguistiche",
+  "m_1eb27b7f8a06e1": "Trasforma un profilo di qualità Radarr o Sonarr di TRaSH Guides o Profilarr (Dictionarry) in un profilo Ether, inclusi i punteggi dei formati personalizzati.",
   "m_1eb2eb9aa60cf2": "Controllo delle definizioni installate…",
   "m_1eb329e25cc73e": "Le release torrent vengono riprodotte in streaming tramite il tuo account debrid.",
   "m_1eb4e5a0839480": "Salva impostazioni di Simkl",
@@ -4629,8 +4631,8 @@
   "m_1ef30bfb482ac5": "Revocare il token di adesione?",
   "m_1ef38ca172a4a4": "Indirizzo copiato",
   "m_1ef47e53f18ed8": {
-    "one": "{count} client si è connesso a questo server.",
     "many": "{count} client si sono connessi a questo server.",
+    "one": "{count} client si è connesso a questo server.",
     "other": "{count} client si sono connessi a questo server."
   },
   "m_1ef55a8dbf237a": "Offre qualità di encode inferiori durante i transcode così i client possono adattare la qualità alla banda.",

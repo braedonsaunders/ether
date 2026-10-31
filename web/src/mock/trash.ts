@@ -1,7 +1,7 @@
 /**
- * In-memory fake of the TRaSH Guides profile import (/ether/api/releases/trash
- * and /quality-import). A small slice of the guide, translated the way the
- * server translates it. Used by mock mode and the tests; never shipped.
+ * In-memory fake of the TRaSH Guides and Profilarr (Dictionarry) profile
+ * imports (/ether/api/releases/trash, /dictionarry and /quality-import).
+ * Used by mock mode and the tests; never shipped.
  */
 import type { ImportFormat, QualityImportPlan, StarrApp, TrashProfile } from "../lib/releases";
 import type { EtherConfig, QualityProfile } from "../lib/types";
@@ -45,12 +45,37 @@ const FORMATS: Record<StarrApp, FakeFormat[]> = {
       scores: { default: 0 },
       unsupported: "Uses indexer flags, which Ether doesn't read",
     },
+    {
+      id: "dictionarry-radarr-2160p-remux",
+      name: "2160p Remux",
+      scores: { default: 860000 },
+    },
+    {
+      id: "dictionarry-radarr-remux-tier-1",
+      name: "Remux Tier 1",
+      scores: { default: 485000 },
+    },
+    {
+      id: "dictionarry-radarr-x265",
+      name: "x265",
+      scores: { default: 20000 },
+    },
   ],
   sonarr: [
     { id: "85c61753df5da1fb2aab6f2a47426b09", name: "BR-DISK", scores: { default: -10000 } },
     { id: "9c11cd3f07101cdba90a2d81cf0e56b4", name: "LQ", scores: { default: -10000 } },
     { id: "47435ece6b99a0b477caf360e79ba0bb", name: "x265 (HD)", scores: { default: -10000 } },
     { id: "e6258996055b9fbab7e9cb2f75819294", name: "WEB Tier 01", scores: { default: 1700 } },
+    {
+      id: "dictionarry-sonarr-2160p-remux",
+      name: "2160p Remux",
+      scores: { default: 860000 },
+    },
+    {
+      id: "dictionarry-sonarr-x265",
+      name: "x265",
+      scores: { default: 25000 },
+    },
   ],
 };
 
@@ -148,6 +173,83 @@ const PROFILES: Record<StarrApp, FakeProfile[]> = {
       items: [WEB("2160p"), WEB("1080p")],
       minFormatScore: 0,
       formatItems: formatItems("sonarr", ["BR-DISK", "LQ"]),
+    },
+  ],
+};
+
+const DICTIONARRY_PROFILES: Record<StarrApp, FakeProfile[]> = {
+  radarr: [
+    {
+      id: "2160p-remux",
+      name: "2160p Remux",
+      description:
+        "2160p Remux utilizes Video / Audio Formats to prioritise high quality lossless copies of UHD Blurays.",
+      group: 1,
+      url: "https://dictionarry.dev",
+      formats: 2,
+      items: [
+        {
+          name: "2160p Remux",
+          allowed: true,
+          items: ["Remux-2160p", "Bluray-2160p", "WEBDL-2160p", "Remux-1080p", "SDTV"],
+        },
+      ],
+      minFormatScore: 200000,
+      formatItems: formatItems("radarr", ["2160p Remux", "Remux Tier 1"]),
+    },
+    {
+      id: "1080p-efficient",
+      name: "1080p Efficient",
+      description: "1080p Efficient targets high quality x265 Bluray and WEB Encodes.",
+      group: 2,
+      url: "https://dictionarry.dev",
+      formats: 1,
+      items: [
+        {
+          name: "1080p Efficient",
+          allowed: true,
+          items: ["Bluray-1080p", "WEBDL-1080p", "WEBRip-1080p", "SDTV"],
+        },
+      ],
+      minFormatScore: 200000,
+      formatItems: formatItems("radarr", ["x265"]),
+    },
+  ],
+  sonarr: [
+    {
+      id: "2160p-remux",
+      name: "2160p Remux",
+      description:
+        "2160p Remux utilizes Video / Audio Formats to prioritise high quality lossless copies of UHD Blurays.",
+      group: 1,
+      url: "https://dictionarry.dev",
+      formats: 1,
+      items: [
+        {
+          name: "2160p Remux",
+          allowed: true,
+          items: ["Bluray-2160p Remux", "Bluray-2160p", "WEBDL-2160p"],
+        },
+      ],
+      minFormatScore: 200000,
+      formatItems: formatItems("sonarr", ["2160p Remux"]),
+    },
+    {
+      id: "1080p-efficient",
+      name: "1080p Efficient",
+      description: "1080p Efficient targets high quality x265 Bluray and WEB Encodes.",
+      group: 2,
+      url: "https://dictionarry.dev",
+      formats: 1,
+      items: [
+        {
+          name: "1080p Efficient",
+          allowed: true,
+          items: ["Bluray-1080p", "WEBDL-1080p", "WEBRip-1080p"],
+        },
+      ],
+      minFormatScore: 200000,
+      formatItems: formatItems("sonarr", ["x265"]),
     },
   ],
 };
@@ -277,6 +379,11 @@ export function createTrashMock() {
   function resolve(body: Record<string, unknown>, config: EtherConfig): QualityImportPlan | Reply {
     let a = app(body.app);
     if (!a) return fail(400, "invalid", "app must be radarr or sonarr");
+    if (body.source === "dictionarry") {
+      const p = DICTIONARRY_PROFILES[a].find((x) => x.id === body.profile);
+      if (!p) return fail(404, "not_found", "Profilarr (Dictionarry) has no such profile");
+      return plan(a, p, p.scoreSet, config);
+    }
     if (typeof body.json === "string" && body.json.trim()) {
       let native: Native;
       try {
@@ -302,6 +409,15 @@ export function createTrashMock() {
       if (!a) return fail(400, "invalid", "app must be radarr or sonarr");
       return ok({
         items: PROFILES[a].map(
+          ({ items: _i, minFormatScore: _m, language: _l, formatItems: _f, ...summary }) => summary,
+        ),
+      });
+    }
+    if (method === "GET" && seg[1] === "dictionarry" && seg[3] === "profiles" && seg.length === 4) {
+      const a = app(seg[2]);
+      if (!a) return fail(400, "invalid", "app must be radarr or sonarr");
+      return ok({
+        items: DICTIONARRY_PROFILES[a].map(
           ({ items: _i, minFormatScore: _m, language: _l, formatItems: _f, ...summary }) => summary,
         ),
       });

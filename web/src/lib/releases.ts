@@ -155,16 +155,16 @@ export interface ConsoleProfiles {
 
 export type StarrApp = "radarr" | "sonarr";
 
-/** A TRaSH Guides quality profile offered for import. */
+/** A TRaSH Guides or Profilarr (Dictionarry) quality profile offered for import. */
 export interface TrashProfile {
-  /** File name without .json; what the import endpoints take. */
+  /** File/profile slug; what the import endpoints take. */
   id: string;
   trashId?: string;
   name: string;
   /** Plain text; never HTML. */
   description?: string;
   group?: number;
-  /** The guide page (always https://trash-guides.info). */
+  /** The guide page (https://trash-guides.info or https://dictionarry.dev). */
   url?: string;
   scoreSet?: string;
   formats: number;
@@ -191,8 +191,8 @@ export interface QualityImportPlan {
   warnings: string[];
 }
 
-/** A TRaSH profile by id, or pasted profile JSON. */
-export type QualityImportSource = { app: StarrApp } & (
+/** A TRaSH or Profilarr (Dictionarry) profile by id, or pasted profile JSON. */
+export type QualityImportSource = { app: StarrApp; source?: "trash" | "dictionarry" } & (
   { profile: string; json?: undefined } | { json: string; profile?: undefined }
 );
 
@@ -267,6 +267,12 @@ export const releaseConsole = {
   trashProfiles: async (app: StarrApp, signal?: AbortSignal) =>
     (await apiFetch<{ items: TrashProfile[] | null }>(`${base}/trash/${app}/profiles`, { signal }))
       .items ?? [],
+  dictionarryProfiles: async (app: StarrApp, signal?: AbortSignal) =>
+    (
+      await apiFetch<{ items: TrashProfile[] | null }>(`${base}/dictionarry/${app}/profiles`, {
+        signal,
+      })
+    ).items ?? [],
   previewImport: (source: QualityImportSource, signal?: AbortSignal) =>
     apiFetch<QualityImportPlan>(`${base}/quality-import/preview`, {
       method: "POST",
