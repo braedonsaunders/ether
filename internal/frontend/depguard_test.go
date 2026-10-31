@@ -76,7 +76,10 @@ func TestPlexProductionImportsStayInsideRecordedBoundary(t *testing.T) {
 }
 
 // Frontend implementations use the host and kit boundaries rather than
-// reaching into Ether's domain implementation packages.
+// reaching into Ether's domain implementation packages. contentrating is
+// allowed because it is a pure age-level model (stdlib only), the same
+// table the catalogue stores; ids stays under frontend/kit because that
+// helper exists for the wire format.
 func TestFrontendImports(t *testing.T) {
 	root := filepath.Join("..", "frontends")
 	if _, err := os.Stat(root); os.IsNotExist(err) {
@@ -96,12 +99,17 @@ func TestFrontendImports(t *testing.T) {
 			return err
 		}
 		const prefix = "github.com/braedonsaunders/ether/internal/"
+		allowed := map[string]bool{
+			prefix + "frontend": true,
+			// Pure certification model: no services and no I/O.
+			prefix + "contentrating": true,
+		}
 		for _, imp := range f.Imports {
 			name, err := strconv.Unquote(imp.Path.Value)
 			if err != nil {
 				return err
 			}
-			if strings.HasPrefix(name, prefix) && name != prefix+"frontend" && !strings.HasPrefix(name, prefix+"frontend/kit/") {
+			if strings.HasPrefix(name, prefix) && !allowed[name] && !strings.HasPrefix(name, prefix+"frontend/kit/") {
 				t.Errorf("%s imports forbidden internal package %s", path, name)
 			}
 		}
