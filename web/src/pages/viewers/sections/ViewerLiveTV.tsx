@@ -1,11 +1,20 @@
-import { Button, Input, SettingsSection, Spinner, Switch, toast } from "@braedonsaunders/appkit-ui";
+import {
+  Button,
+  Select,
+  SettingsSection,
+  Spinner,
+  Switch,
+  toast,
+} from "@braedonsaunders/appkit-ui";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ErrorPanel } from "../../../components/feedback";
 import { SaveBar, useDraft } from "../../../components/SaveBar";
 import { SettingsRow } from "../../../components/SettingsRow";
+import { CONTENT_RATINGS } from "../../../components/UserLimits";
 import { t, tn, tx } from "../../../i18n";
 import { apiFetch } from "../../../lib/api";
+import { canonicalRating } from "../../../lib/contentRatings";
 import { useAsync } from "../../../lib/hooks";
 
 type Policy = {
@@ -89,17 +98,22 @@ export function ViewerLiveTVAccess({ viewerId }: { viewerId: number }) {
         <SettingsRow
           title={<label htmlFor={`livetv-rating-${viewerId}`}>{t("Live TV maximum rating")}</label>}
           description={t(
-            "An extra limit for Live TV only, such as TV-PG. Leave blank to use their usual limit.",
+            "An extra limit for Live TV only, by age level. Their usual limit still applies.",
           )}
           control={
-            <Input
+            <Select
               id={`livetv-rating-${viewerId}`}
-              className="sm:w-40"
-              value={draft.maxRating || ""}
+              className="sm:w-56"
+              value={canonicalRating(draft.maxRating || "")}
               disabled={draft.disabled}
-              placeholder={t("No extra limit")}
               onChange={(e) => setDraft({ ...draft, maxRating: e.currentTarget.value })}
-            />
+            >
+              {CONTENT_RATINGS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.value ? r.label : t("No extra limit")}
+                </option>
+              ))}
+            </Select>
           }
         />
       </SettingsSection>

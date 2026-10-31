@@ -2,22 +2,20 @@ import { SettingsRow } from "./SettingsRow";
 import { SearchSelect } from "@braedonsaunders/appkit-ui";
 import type { ReactNode } from "react";
 import { localized, t } from "../i18n";
+import { RATING_LEVELS, canonicalRating } from "../lib/contentRatings";
 import type { EtherUser } from "../lib/types";
 import { NumberInput } from "./fields";
 
+/**
+ * Rating-limit choices: one per age level, so a "PG" limit also admits
+ * TV-PG and other countries' equivalents. Values are the level keys.
+ */
 export const CONTENT_RATINGS = localized(() => [
   { value: "", label: t("Unrestricted") },
-  { value: "G", label: "G" },
-  { value: "PG", label: "PG" },
-  { value: "PG-13", label: "PG-13" },
-  { value: "R", label: "R" },
-  { value: "NC-17", label: "NC-17" },
-  { value: "TV-Y", label: "TV-Y" },
-  { value: "TV-Y7", label: "TV-Y7" },
-  { value: "TV-G", label: "TV-G" },
-  { value: "TV-PG", label: "TV-PG" },
-  { value: "TV-14", label: "TV-14" },
-  { value: "TV-MA", label: "TV-MA" },
+  ...RATING_LEVELS.map((l) => ({
+    value: l.value,
+    label: t("{labels} ({name})", { labels: l.labels, name: l.name }),
+  })),
 ]);
 
 /** The user-record fields a viewer's limits edit. */
@@ -79,12 +77,14 @@ export function UserLimitRows({
         description={
           isOwner
             ? t("The owner is never limited by content rating.")
-            : t("Titles above this rating are hidden from this viewer.")
+            : t(
+                "Titles above this level, and unrated titles, are hidden from this viewer. TV and other countries' ratings count at their equivalent level.",
+              )
         }
         control={
-          <div className="w-44">
+          <div className="w-56">
             <SearchSelect
-              value={value.maxContentRating}
+              value={canonicalRating(value.maxContentRating)}
               onChange={(v) => onChange({ ...value, maxContentRating: v })}
               options={CONTENT_RATINGS}
               ariaLabel={t("Content rating cap")}

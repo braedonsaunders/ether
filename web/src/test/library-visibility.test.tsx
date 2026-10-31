@@ -87,4 +87,24 @@ describe("Library visibility", () => {
     expect(screen.getByRole("button", { name: "Save visibility" })).toBeDisabled();
     expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(0);
   });
+  it("shows a stored film-and-TV allowlist as rating levels", async () => {
+    const exclusions = [
+      {
+        name: "Family",
+        mediaType: "mixed",
+        match: "all",
+        rules: [{ field: "contentRating", op: "notIn", value: ["G", "PG", "TV-G", "TV-PG"] }],
+      },
+    ];
+    renderAppWith("/catalog/visibility", (method, path) => {
+      if (method === "GET" && path === "/config/catalog") return { value: { exclusions } };
+      if (path === "/catalog/visibility/preview")
+        return { total: 500, hidden: 120, movies: 100, shows: 20, unknownCountry: 0, items: [] };
+    });
+    expect(await screen.findByDisplayValue("Family")).toBeInTheDocument();
+    expect(await screen.findByText("G · TV-G · TV-Y")).toBeInTheDocument();
+    expect(screen.getByText("PG · TV-PG · TV-Y7")).toBeInTheDocument();
+    expect(screen.queryByText("TV-PG")).not.toBeInTheDocument();
+    expect(screen.getByText("Ratings match by age level")).toBeInTheDocument();
+  });
 });

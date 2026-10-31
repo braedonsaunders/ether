@@ -800,10 +800,46 @@ visibility subject to the normal release, availability and viewer restrictions.
 Country matches TMDB's origin/production country metadata, including
 co-productions, separately from original language. For example, a country rule
 for India also matches an English-language Indian production. Unknown country,
-genre, year and language never match an exclusion. A content rating rule set
-to "is none of" also hides titles with no rating, so a rating allowlist cannot
-be bypassed by a missing certification. The preview reports country coverage.
-Existing normal metadata refreshes fill gaps without a quota-consuming bulk lookup.
+genre, year and language never match an exclusion. The preview reports country
+coverage. Existing normal metadata refreshes fill gaps without a quota-consuming
+bulk lookup.
+
+#### Content ratings
+
+Ether compares content ratings by **age level**, everywhere: library
+visibility, collections, viewer rating caps, Live TV limits and
+recommendations. Film, TV and other countries' ratings at the same level are
+one choice, so the picker offers levels rather than individual labels:
+
+| Level | US film · US TV | Other boards, for example |
+| --- | --- | --- |
+| All ages | G · TV-G · TV-Y | U (UK), 0 (DE), L (BR), G (CA) |
+| Parental guidance | PG · TV-PG · TV-Y7 | PG (UK, CA, AU), 6 (DE), 7 (SE), 10 (BR, FR) |
+| Teens 13+ | PG-13 · TV-14 | 12A (UK), 12 (DE), 14A (CA), M (AU) |
+| Mature 16+ | R · TV-MA | 15 (UK), 16 (DE), MA15+ (AU), 18A (CA) |
+| Adults 18+ | NC-17 | 18 (UK, DE), R18+ (AU), R (CA) |
+| Not rated | NR, or no rating at all | |
+
+An allowlist such as "Content rating is none of G · TV-G · TV-Y, PG · TV-PG ·
+TV-Y7" therefore keeps a Hallmark movie certified G, a TV-G series, a UK PG
+film and a TV movie only Germany rates 6. Kids' 7+ ratings share PG's level, so
+choosing G and PG never hides something milder than PG.
+"Is none of" hides titles without a rating unless you also choose **Not
+rated**. To keep family titles without a rating but hide unrated adult ones,
+add a second group: Content rating is Not rated, and Genre is any of Horror,
+Thriller. Rules can also use **is at least** and **is at most** a level; these
+never match unrated titles. A viewer's rating cap admits everything at or
+below its level and always hides unrated titles.
+
+Ether picks each title's rating from TMDB: your catalogue region first, then
+the US, considering theatrical, digital, physical and TV releases in that
+order (TV movies are usually certified on their TV premiere). When neither
+has one, another country's rating is kept with its country (shown as
+"G (CA)", sent to Plex as `ca/G`), never passed off as a US rating. If you
+configure an OMDb or MDBList key under Metadata, IMDb's US certificate fills
+titles TMDB leaves unrated, as Plex Media Server does; Ether looks up a few
+unrated titles every ten minutes so your provider quota stays mostly for
+badges. The title inspector shows where each rating came from.
 
 Library collections and discovery rows are independent. Ether ships movie
 collections by genre and TV collections by locally known networks/studios.

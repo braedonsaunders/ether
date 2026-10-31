@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -311,14 +312,17 @@ func TestLookupsAndFacets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("contentRating facet: %v", err)
 	}
-	haveRating := map[string]bool{}
+	// One value per age level, mildest first, then "Not rated"; each lists
+	// its equivalent labels so film and TV ratings are one choice.
+	var keys []string
 	for _, v := range ratings {
-		haveRating[v.Key] = true
+		keys = append(keys, v.Key)
 	}
-	for _, want := range []string{"G", "PG", "PG-13", "R", "TV-G", "TV-PG", "TV-14", "TV-MA"} {
-		if !haveRating[want] {
-			t.Fatalf("movie contentRating facet missing %q in %+v", want, ratings)
-		}
+	if strings.Join(keys, ",") != "G,PG,PG-13,R,NC-17,NR" {
+		t.Fatalf("contentRating levels %v", keys)
+	}
+	if ratings[1].Title != "PG · TV-PG · TV-Y7" || !slices.Contains(ratings[1].Labels, "TV-PG") || !slices.Contains(ratings[1].Labels, "gb/PG") || !slices.Contains(ratings[1].Labels, "de/6") {
+		t.Fatalf("PG level %+v", ratings[1])
 	}
 	items, err := e.svc.SearchTitles(e.ctx, "Dream", core.TypeMovie, 5)
 	if err != nil || len(items) == 0 || items[0].Title != "Dream Heist" {

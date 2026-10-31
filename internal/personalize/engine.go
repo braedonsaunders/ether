@@ -48,6 +48,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/clusterbus"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/recommend"
 	"github.com/braedonsaunders/ether/internal/state"
@@ -429,7 +430,7 @@ func (e *Engine) enrichRelated(ctx context.Context, user *core.User, key core.Ra
 	seenCand := map[core.RatingKey]bool{key: true, tk: true}
 	for _, r := range m.rows {
 		for _, it := range r.items {
-			if it.t.Type == relType && !seenCand[it.t.Key] && recommend.ContentRatingAllowed(it.t.ContentRating, user.MaxContentRating) {
+			if it.t.Type == relType && !seenCand[it.t.Key] && contentrating.Allowed(it.t.ContentRating, user.MaxContentRating) {
 				seenCand[it.t.Key] = true
 				cands = append(cands, it.t)
 			}

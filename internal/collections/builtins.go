@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -172,7 +172,7 @@ func defaultSpecs() []core.CollectionSpec {
 	return out
 }
 
-func ratingExceeds(rating, max string) bool { return catalog.RatingExceeds(rating, max) }
+func ratingExceeds(rating, max string) bool { return contentrating.Exceeds(rating, max) }
 
 // refreshInterval is how often a scheduled collection is rebuilt.
 func refreshInterval(r string) time.Duration {

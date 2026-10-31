@@ -167,6 +167,12 @@ MIT License text:
 
 - Metadata and artwork come from **TMDB**. This product uses the TMDB
   API but is not endorsed or certified by TMDB.
+- Content-rating labels in `internal/contentrating` are the per-country
+  certification lists TMDB publishes (`/certification/movie/list`,
+  `/certification/tv/list`); their age levels follow each classification
+  board's published definitions. Jellyfin's rating files
+  (GPL-2.0, github.com/jellyfin/jellyfin) were consulted as a cross-check
+  only; no Jellyfin data or code is copied.
 - Watch sync (optional): **Trakt**. Subtitles (optional):
   **OpenSubtitles**. Both are off until the owner configures accounts.
 - Collection sources (optional): public **Trakt**, **Letterboxd** and

@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"strings"
 	"time"
@@ -47,7 +47,7 @@ func (s *Service) NaturalSearch(ctx context.Context, u *core.User, query string,
 func discoverySafe(u *core.User, titles []core.Title) []core.Title {
 	out := []core.Title{}
 	for _, t := range titles {
-		if t.Adult || (u != nil && catalog.RatingExceeds(t.ContentRating, u.MaxContentRating)) {
+		if t.Adult || (u != nil && contentrating.Exceeds(t.ContentRating, u.MaxContentRating)) {
 			continue
 		}
 		out = append(out, t)
@@ -88,7 +88,7 @@ func (s *Service) SeasonRecap(ctx context.Context, u *core.User, key core.Rating
 	var input strings.Builder
 	maxSeason, maxEpisode := t.Season, t.Episode
 	for _, ep := range episodes {
-		if ep.Type != core.TypeEpisode || statuses[ep.Key].ViewCount == 0 || ep.Summary == "" || ep.Adult || catalog.RatingExceeds(ep.ContentRating, u.MaxContentRating) {
+		if ep.Type != core.TypeEpisode || statuses[ep.Key].ViewCount == 0 || ep.Summary == "" || ep.Adult || contentrating.Exceeds(ep.ContentRating, u.MaxContentRating) {
 			continue
 		}
 		if maxSeason > 0 && (ep.Season > maxSeason || (t.Type == core.TypeEpisode && ep.Season == maxSeason && ep.Episode >= maxEpisode)) {
