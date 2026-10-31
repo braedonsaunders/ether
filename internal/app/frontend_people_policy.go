@@ -34,7 +34,7 @@ func (p peoplePolicy) Allowed(viewer *core.User, title *core.Title) bool {
 // body, not CanPlay. Release/home-release gates use one captured time and only
 // become more permissive as time advances; a backwards clock fails closed.
 func (a *App) beginPeopleRead(ctx context.Context, viewer *core.User) (experience.PeopleRead, error) {
-	if viewer == nil || viewer.ID <= 0 || a.cfg == nil || a.catalog == nil || a.db == nil || a.safety == nil {
+	if viewer == nil || viewer.ID <= 0 || a.cfg == nil || a.catalog == nil || a.db == nil || a.safety == nil || a.users == nil {
 		return experience.PeopleRead{}, core.ErrNotAvailable
 	}
 	lease, err := a.cfg.AcquirePolicySnapshot(ctx)
@@ -48,14 +48,22 @@ func (a *App) beginPeopleRead(ctx context.Context, viewer *core.User) (experienc
 		}
 	}()
 	cfg := lease.Config()
-	if !a.catalog.MatchesConfig(cfg.Catalog) {
+	evidence, matches := a.catalog.CaptureConfigEvidence(cfg.Catalog)
+	if !matches {
 		return experience.PeopleRead{}, viewerpolicy.ErrChanged
 	}
 	epoch, err := viewerpolicy.Read(ctx, a.db)
 	if err != nil {
 		return experience.PeopleRead{}, err
 	}
-	policy, err := a.safety.FreshPolicy(ctx, viewer.ID)
+	owned, err := a.users.PolicyUser(ctx, viewer.ID)
+	if err != nil {
+		return experience.PeopleRead{}, err
+	}
+	if owned == nil || owned.ID != viewer.ID {
+		return experience.PeopleRead{}, core.ErrUnauthorized
+	}
+	policy, err := a.safety.FreshPolicy(ctx, owned.ID)
 	if err != nil {
 		return experience.PeopleRead{}, err
 	}
@@ -63,13 +71,15 @@ func (a *App) beginPeopleRead(ctx context.Context, viewer *core.User) (experienc
 	now := started.UTC()
 	version, clustered := lease.SharedVersion()
 	access := experience.PeopleRead{
-		Policy: peoplePolicy{viewerID: viewer.ID, policy: policy},
+		Viewer:     owned,
+		SectionFor: experienceVisibility(nil, nil, nil, nil, serverLibraries(cfg)).SectionFor,
+		Policy:     peoplePolicy{viewerID: owned.ID, policy: policy},
 		Titles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 			return a.catalog.CachedCreditTitles(ctx, keys, cfg.Catalog, now)
 		},
 		Close: lease.Close,
 		Finish: func(ctx context.Context) error {
-			if !validPeopleReadTimes(started, time.Now()) || !a.catalog.MatchesConfig(cfg.Catalog) {
+			if !validPeopleReadTimes(started, time.Now()) || !evidence.Current() {
 				return viewerpolicy.ErrChanged
 			}
 			tx, err := a.db.BeginTx(ctx, nil)
@@ -85,10 +95,13 @@ func (a *App) beginPeopleRead(ctx context.Context, viewer *core.User) (experienc
 					return err
 				}
 			}
+			if !evidence.Current() {
+				return viewerpolicy.ErrChanged
+			}
 			if err := tx.Commit(); err != nil {
 				return err
 			}
-			if !validPeopleReadTimes(started, time.Now()) {
+			if !validPeopleReadTimes(started, time.Now()) || !evidence.Current() {
 				return viewerpolicy.ErrChanged
 			}
 			return nil

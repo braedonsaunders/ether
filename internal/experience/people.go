@@ -19,6 +19,8 @@ const peopleReadBudget = 4 * time.Second
 // intervening durable policy change; Close releases the host policy lease.
 // Neither callback may publish partial results on failure.
 type PeopleRead struct {
+	Viewer          *core.User
+	SectionFor      func(core.MediaType) (int, bool)
 	Policy          AccessPolicy
 	FilterAvailable func(context.Context, []core.Title) []core.Title
 	Titles          func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
@@ -38,10 +40,22 @@ func (s *Service) readPeople(ctx context.Context, viewer *core.User, read func(*
 		return core.ErrNotAvailable
 	}
 	defer access.Close()
-	if access.Policy == nil || access.Titles == nil || access.Finish == nil {
+	if viewer == nil || access.Viewer == nil || access.Viewer.ID != viewer.ID || access.Viewer.ID <= 0 || access.SectionFor == nil || access.Policy == nil || access.Titles == nil || access.Finish == nil {
 		return core.ErrNotAvailable
 	}
 	snapshot := *s
+	snapshot.d.Active = func(ctx context.Context, id int64) (*core.User, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if id != access.Viewer.ID {
+			return nil, core.ErrNotFound
+		}
+		owned := *access.Viewer
+		owned.AllowedSections = append([]int(nil), access.Viewer.AllowedSections...)
+		return &owned, nil
+	}
+	snapshot.d.Visibility.SectionFor = access.SectionFor
 	snapshot.d.Visibility.Policy = access.Policy
 	if access.FilterAvailable != nil {
 		snapshot.d.Visibility.FilterAvailable = access.FilterAvailable
@@ -445,3 +459,29 @@ func (s *Service) personCredit(ctx context.Context, viewer *core.Viewer, _ core.
 }
 
 var _ frontend.PeopleReader = (*Service)(nil)
+
+// WithPersonCredit keeps a host's cache-only descriptor read in the same
+// durable policy proof as the exact current credit. The callback must not
+// publish data; its output is valid only after this method returns success.
+func (s *Service) WithPersonCredit(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, tmdb int64, read func(*core.User, frontend.PersonDetail) error) error {
+	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
+	defer cancel()
+	if read == nil {
+		return core.ErrNotAvailable
+	}
+	return s.readPeople(ctx, viewer, func(snapshot *Service) error {
+		person, err := snapshot.personCredit(ctx, viewer, device, item, tmdb)
+		if err != nil {
+			return err
+		}
+		current, err := snapshot.viewer(ctx, viewer)
+		if err != nil {
+			return err
+		}
+		if err := read(current, person); err != nil {
+			return err
+		}
+		_, err = snapshot.personCredit(ctx, current, device, item, tmdb)
+		return err
+	})
+}

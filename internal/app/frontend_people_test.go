@@ -163,8 +163,12 @@ func peopleHTTPFixture(t *testing.T) (*surfaceExperience, *peopleHTTPState, *peo
 			panic("people read reached playback/source enrichment")
 		},
 	}
-	deps.BeginPeopleRead = func(context.Context, *core.User) (experience.PeopleRead, error) {
-		return experience.PeopleRead{Policy: peoplePolicy{viewerID: state.viewer.ID, policy: safety.Policy{}}, Titles: deps.CachedGetMany, Finish: func(context.Context) error { return nil }, Close: func() {}}, nil
+	deps.BeginPeopleRead = func(ctx context.Context, viewer *core.User) (experience.PeopleRead, error) {
+		owned, err := state.ActiveUser(ctx, viewer.ID)
+		if err != nil {
+			return experience.PeopleRead{}, err
+		}
+		return experience.PeopleRead{Viewer: owned, SectionFor: deps.Visibility.SectionFor, Policy: peoplePolicy{viewerID: state.viewer.ID, policy: safety.Policy{}}, Titles: deps.CachedGetMany, Finish: func(context.Context) error { return nil }, Close: func() {}}, nil
 	}
 	service, err := experience.NewService(deps)
 	if err != nil {
@@ -289,7 +293,7 @@ func TestPersonArtworkRechecksCreditAfterDescriptorRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	artwork.beforeList = func() { state.update(episode, func(title *core.Title) { title.Cast = nil }) }
-	if got, err := exp.Person(ctx, viewer, core.Device{}, ids[30], frontend.PersonReadOptions{Prefetch: true}); !errors.Is(err, core.ErrNotFound) || got.ID != "" || len(got.Images) != 0 {
+	if got, err := exp.Person(ctx, viewer, core.Device{}, ids[30], frontend.PersonReadOptions{}); !errors.Is(err, core.ErrNotFound) || got.ID != "" || len(got.Images) != 0 {
 		t.Fatalf("removed credit returned descriptor %+v %v", got, err)
 	}
 }
@@ -463,5 +467,84 @@ func TestSiloPeoplePrefetchDoesNotReachArtworkQueues(t *testing.T) {
 	person, err := exp.Person(ctx, viewer, core.Device{}, ids[30], frontend.PersonReadOptions{Prefetch: true})
 	if err != nil || person.ID != ids[30] || person.Name != "Episode Person" || len(person.Images) != 0 {
 		t.Fatalf("cached prefetch %+v %v", person, err)
+	}
+}
+
+type hiddenPeopleExperience struct{ frontend.Experience }
+
+func TestSiloPortraitDeniesMissingReaderAndGrantChangesDuringRead(t *testing.T) {
+	for _, change := range []string{"missing_reader", "image_revoke", "source_revoke", "header_delete", "image_expiry", "source_expiry", "cancel"} {
+		t.Run(change, func(t *testing.T) {
+			exp, state, artwork := peopleHTTPFixture(t)
+			ctx := context.Background()
+			db := store.OpenTest(t)
+			if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+				t.Fatal(err)
+			}
+			device := core.Device{ID: "tv"}
+			grants, err := identity.NewGrants(db, state, time.Hour, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := grants.Issue(ctx, 1, nil, "silo", device)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := core.EpisodeKey(1, 1, 1)
+			ids, err := exp.PersonFacetIDs(ctx, &state.viewer, device, key, []int64{30})
+			if err != nil {
+				t.Fatal(err)
+			}
+			person, err := exp.Person(ctx, &state.viewer, device, ids[30], frontend.PersonReadOptions{})
+			if err != nil || len(person.Images) != 1 {
+				t.Fatalf("initial portrait %+v %v", person, err)
+			}
+			var current frontend.Experience = exp
+			images, err := identity.NewArtworkImageGrantService(db, "silo", grants, func() frontend.Experience { return current }, artwork, time.Minute, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := frontend.ImageGrantRequest{Credential: credential, Device: device, Item: key, Image: person.Images[0]}
+			secret, err := images.Issue(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if change == "missing_reader" {
+				current = hiddenPeopleExperience{exp}
+				if _, err := images.Issue(ctx, req); !errors.Is(err, core.ErrNotAvailable) {
+					t.Fatalf("missing image reader issued: %v", err)
+				}
+				current = exp
+			}
+			readCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			artwork.beforeRead = func() {
+				var err error
+				switch change {
+				case "missing_reader":
+					current = hiddenPeopleExperience{exp}
+				case "image_revoke":
+					err = images.Revoke(ctx, credential, secret)
+				case "source_revoke":
+					err = grants.RevokeDevice(ctx, 1, device.ID)
+				case "header_delete":
+					_, err = db.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace='image'`)
+				case "image_expiry":
+					_, err = db.ExecContext(ctx, `UPDATE frontend_image_grants SET expires=1`)
+				case "source_expiry":
+					_, err = db.ExecContext(ctx, `UPDATE identity_grants SET expires=1 WHERE viewer_id=1`)
+				case "cancel":
+					cancel()
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			response := httptest.NewRecorder()
+			images.Serve(response, httptest.NewRequest("GET", "/", nil).WithContext(readCtx), secret)
+			if response.Code == http.StatusOK || strings.Contains(response.Body.String(), "person portrait") {
+				t.Fatalf("losing %s returned bytes: %d %s", change, response.Code, response.Body.String())
+			}
+		})
 	}
 }

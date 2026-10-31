@@ -119,12 +119,16 @@ func peopleFixture() (*Service, *peopleCatalogue) {
 			panic("people navigation reached playback/source enrichment")
 		},
 	}}
-	s.d.BeginPeopleRead = func(context.Context, *core.User) (PeopleRead, error) {
+	s.d.BeginPeopleRead = func(ctx context.Context, viewer *core.User) (PeopleRead, error) {
+		owned, err := s.d.Active(ctx, viewer.ID)
+		if err != nil {
+			return PeopleRead{}, core.ErrNotFound
+		}
 		policy := s.d.Visibility.Policy
 		if policy == nil {
 			policy = peopleFixturePolicy{}
 		}
-		return PeopleRead{Policy: policy, Titles: s.d.CachedGetMany, Finish: func(context.Context) error { return nil }, Close: func() {}}, nil
+		return PeopleRead{Viewer: owned, SectionFor: s.d.Visibility.SectionFor, Policy: policy, Titles: s.d.CachedGetMany, Finish: func(context.Context) error { return nil }, Close: func() {}}, nil
 	}
 	return s, c
 }

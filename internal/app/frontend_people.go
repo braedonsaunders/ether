@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -11,38 +12,66 @@ import (
 )
 
 func (s *surfaceExperience) personArtwork(ctx context.Context, viewer *frontend.Viewer, device frontend.Device, person frontend.PersonDetail) (frontend.PersonDetail, error) {
-	current, err := s.Service.PersonCredit(ctx, viewer, device, person.ArtworkItem, person.TMDB)
-	if err != nil {
-		return frontend.PersonDetail{}, err
-	}
-	if current.ID != person.ID {
-		return frontend.PersonDetail{}, core.ErrNotFound
-	}
-	images, complete, artErr := s.ItemArtwork(ctx, viewer, device, person.ArtworkItem)
-	if errors.Is(artErr, core.ErrUnauthorized) || errors.Is(artErr, core.ErrNotFound) {
-		return frontend.PersonDetail{}, core.ErrNotFound
-	}
-	person.Images = nil
-	if artErr == nil && complete {
-		subject := "tmdb:" + strconv.FormatInt(person.TMDB, 10)
-		for _, image := range images {
-			if image.Kind == frontend.ImagePerson && image.Subject == subject && image.Path != "" {
-				person.Images = append(person.Images, image)
-				break
+	var result frontend.PersonDetail
+	err := s.Service.WithPersonCredit(ctx, viewer, device, person.ArtworkItem, person.TMDB, func(current *core.User, credit frontend.PersonDetail) error {
+		if credit.ID != person.ID {
+			return core.ErrNotFound
+		}
+		result = credit
+		if s.artwork == nil {
+			return nil
+		}
+		images, complete, err := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: current, Device: device, Item: credit.ArtworkItem})
+		if errors.Is(err, core.ErrUnauthorized) || errors.Is(err, core.ErrNotFound) {
+			return core.ErrNotFound
+		}
+		if err == nil && complete {
+			subject := "tmdb:" + strconv.FormatInt(credit.TMDB, 10)
+			for _, image := range images {
+				if image.Kind == frontend.ImagePerson && image.Subject == subject && image.Path != "" {
+					result.Images = append(result.Images, image)
+					break
+				}
 			}
 		}
-	}
-	// Descriptor selection may cross I/O; the same credited membership must
-	// still be authorized before any descriptor reaches an image-grant issuer.
-	current, err = s.Service.PersonCredit(ctx, viewer, device, person.ArtworkItem, person.TMDB)
+		return nil
+	})
 	if err != nil {
 		return frontend.PersonDetail{}, err
 	}
-	if current.ID != person.ID {
-		return frontend.PersonDetail{}, core.ErrNotFound
+	return result, nil
+}
+
+// The production artwork source enumerates the current StoredTitle's exact
+// portrait identity. Its DB reads and the credit/policy reads are enclosed by
+// the same epoch proof, without holding DB locks across descriptor I/O.
+func (s *surfaceExperience) AuthorizePersonImage(ctx context.Context, viewer *frontend.Viewer, device frontend.Device, item frontend.RatingKey, image frontend.Image, admission func(context.Context) error) error {
+	raw, hasPrefix := strings.CutPrefix(image.Subject, "tmdb:")
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if image.Kind != frontend.ImagePerson || !hasPrefix || err != nil || id <= 0 || strconv.FormatInt(id, 10) != raw {
+		return core.ErrUnauthorized
 	}
-	current.Images = person.Images
-	return current, nil
+	return s.Service.WithPersonCredit(ctx, viewer, device, item, id, func(current *core.User, _ frontend.PersonDetail) error {
+		if s.artwork == nil {
+			return core.ErrNotAvailable
+		}
+		images, complete, err := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: current, Device: device, Item: item})
+		if err != nil {
+			return err
+		}
+		if !complete {
+			return core.ErrNotAvailable
+		}
+		for _, candidate := range images {
+			if frontend.SameImage(candidate, image) {
+				if admission != nil {
+					return admission(ctx)
+				}
+				return nil
+			}
+		}
+		return core.ErrUnauthorized
+	})
 }
 
 func (s *surfaceExperience) People(ctx context.Context, viewer *frontend.Viewer, device frontend.Device, q frontend.PeopleQuery) ([]frontend.PersonDetail, error) {
