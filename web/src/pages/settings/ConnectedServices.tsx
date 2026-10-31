@@ -991,10 +991,7 @@ function ServiceOverview({
   const switchesHeld = locked || busyId !== null;
 
   return (
-    <IntegrationGroup
-      title={t("Optional")}
-      description={t("Extras that make Ether smarter. Everything works without them.")}
-    >
+    <IntegrationGroup title={t("Optional")}>
       <IntegrationAppCard
         identity={{ id: "trakt", name: "Trakt" }}
         logo={<TraktMark />}
@@ -1082,21 +1079,9 @@ function ratingsStatus(ratings: RatingSettings | undefined) {
   return <Badge variant="success">{t("Configured")}</Badge>;
 }
 
-function IntegrationGroup({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
+function IntegrationGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="space-y-3">
-      <div>
-        <h2 className="text-sm font-semibold text-fg">{title}</h2>
-        <p className="text-sm text-fg-muted">{description}</p>
-      </div>
+    <section aria-label={title}>
       <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {Children.map(children, (child) => {
           const name = isValidElement<{ identity?: { name?: string } }>(child)
