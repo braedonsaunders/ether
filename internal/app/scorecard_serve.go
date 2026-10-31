@@ -40,8 +40,12 @@ type ScorecardItem struct {
 	Status, EndDate                                                                           string
 	Genres, ProductionLocations, Taglines, Tags                                               []string
 	Studios                                                                                   []struct{ Name string }
-	People                                                                                    []struct{ Id, Name, Role, Type string }
-	UserData                                                                                  struct {
+	RemoteTrailers                                                                            []struct{ Name, Url string }
+	People                                                                                    []struct {
+		Id, Name, Role, Type string
+		ProviderIds          map[string]string
+	}
+	UserData struct {
 		Played                bool
 		PlaybackPositionTicks int64
 	}
@@ -282,7 +286,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		if x.Type == "Movie" && preferred[tmdbID].Path != x.Path {
 			continue
 		}
-		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
+		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg", LogoPath: "/fixture.jpg"}
 		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
 		title.Genres, title.Countries, title.Keywords, title.Status = x.Genres, x.ProductionLocations, x.Tags, x.Status
 		if x.EndDate != "" {
@@ -296,8 +300,16 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		for _, s := range x.Studios {
 			title.Studios = append(title.Studios, s.Name)
 		}
+		if len(x.RemoteTrailers) > 0 && x.RemoteTrailers[0].Url != "" {
+			title.RemoteTrailerName = x.RemoteTrailers[0].Name
+			title.RemoteTrailerURL = x.RemoteTrailers[0].Url
+		}
 		for _, p := range x.People {
 			person := core.Person{ID: p.Id, Name: p.Name, Role: p.Role}
+			if n, err := strconv.ParseInt(p.ProviderIds["Tmdb"], 10, 64); err == nil && n > 0 {
+				person.TMDB = n
+				person.ThumbPath = "/fixture.jpg"
+			}
 			switch p.Type {
 			case "Actor":
 				title.Cast = append(title.Cast, person)

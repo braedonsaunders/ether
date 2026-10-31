@@ -71,13 +71,15 @@ type Title struct {
 	Runtime                     time.Duration `json:"runtime,omitempty"`
 	Status                      string        `json:"status,omitempty"` // TMDB status: Released, In Production, Ended...
 
-	Genres        []string `json:"genres,omitempty"`
-	Keywords      []string `json:"keywords,omitempty"` // TMDB keywords (lower-case), for content-based recommendations
-	Studios       []string `json:"studios,omitempty"`
-	Countries     []string `json:"countries,omitempty"`
-	Language      string   `json:"language,omitempty"` // ISO 639-1 original language
-	ContentRating string   `json:"contentRating,omitempty"`
-	Adult         bool     `json:"adult,omitempty"`
+	Genres            []string `json:"genres,omitempty"`
+	Keywords          []string `json:"keywords,omitempty"` // TMDB keywords (lower-case), for content-based recommendations
+	RemoteTrailerName string   `json:"remoteTrailerName,omitempty"`
+	RemoteTrailerURL  string   `json:"remoteTrailerURL,omitempty"`
+	Studios           []string `json:"studios,omitempty"`
+	Countries         []string `json:"countries,omitempty"`
+	Language          string   `json:"language,omitempty"` // ISO 639-1 original language
+	ContentRating     string   `json:"contentRating,omitempty"`
+	Adult             bool     `json:"adult,omitempty"`
 
 	Rating     float64 `json:"rating,omitempty"` // TMDB vote average 0-10
 	VoteCount  int     `json:"voteCount,omitempty"`

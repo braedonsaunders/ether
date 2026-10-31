@@ -515,6 +515,13 @@ func (i *instance) browseRoutes() error {
 			i.jellyfinKnownVersionFacts(dto, shown)
 			jellyfinStudioFacts(dto, d.Title)
 			i.jellyfinDetailShell(dto)
+			if d.Title.RemoteTrailerURL != "" {
+				name := d.Title.RemoteTrailerName
+				if name == "" {
+					name = "Trailer"
+				}
+				dto["RemoteTrailers"] = []any{map[string]string{"Name": name, "Url": d.Title.RemoteTrailerURL}}
+			}
 			if d.Title.Type == "show" {
 				i.attachUnplayedCount(r, v, dto, d.Title)
 				i.attachCumulativeRuntime(r, v, dto, d.Title)
