@@ -65,6 +65,20 @@ func TestWebHDRExplicitDenialToneMaps(t *testing.T) {
 	}
 }
 
+// Safari starts from HDR10. A PQ denial expressed only as list= must clear
+// that base claim. value= already did; list= used to be ignored here.
+func TestWebHDRListDenialClearsBaseHDR10(t *testing.T) {
+	base := "add-direct-play-profile(type=videoProfile&container=mkv&videoCodec=hevc&audioCodec=aac)"
+	deny := "+add-limitation(scope=videoCodec&scopeName=hevc&type=notMatch&name=video.colorTrc&list=smpte2084)"
+	caps, d := webDecide(t, "Plex Web", "Safari", base+deny)
+	if caps.HDR10 || d.VideoCopy || !d.ToneMap {
+		t.Fatalf("list= PQ denial left Safari HDR10: caps=%+v decision=%+v", caps, d)
+	}
+	if !caps.SupportsVideo("hevc") {
+		t.Fatalf("hevc should remain listed after list= denial: %+v", caps)
+	}
+}
+
 // HEVC listed without an affirmative 10-bit/PQ claim must not promote HDR10
 // (Braedon #136: hevc alone ≠ HDR10).
 func TestWebHDRHEVCAloneDoesNotPromoteHDR10(t *testing.T) {

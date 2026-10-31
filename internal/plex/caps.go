@@ -474,7 +474,8 @@ func applyLimitation(c *core.ClientCaps, a map[string]string) {
 	}
 	name := a["name"]
 	typ := a["type"]
-	val := a["value"]
+	// PMS sends colorTrc denials as list=, the same shape as its allow-lists.
+	val := limitationValue(a)
 	n, numErr := strconv.Atoi(val)
 	switch {
 	case scope == "videoCodec" && name == "video.height" && typ == "upperBound" && numErr == nil && n > 0:
