@@ -20,7 +20,9 @@ func (m *Manager) ParitySettleWarm(ctx context.Context, user *core.User, key cor
 		return nil
 	}
 	m.Prewarm(ctx, user, key, caps, core.PrewarmOptions{Reason: core.PrewarmDetail})
-	id := identity{userID: user.ID, clientID: caps.ClientID, key: key, surface: playbackSurface(string(caps.Protocol))}
+	// Plex warm-ups use the zero surface. Leaving newer identity fields at
+	// zero keeps this seam compiling against released main.
+	id := identity{userID: user.ID, clientID: caps.ClientID, key: key}
 	m.mu.Lock()
 	e := m.warm[id]
 	live := e != nil && m.now().Before(e.expires)
