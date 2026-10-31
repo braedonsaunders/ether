@@ -115,11 +115,6 @@ func assertUpgradeInventory(t *testing.T, db *sql.DB) {
 	t.Helper()
 	assertPrismCandidateBoundary(t)
 	known := store.KnownMigrations()
-	for _, reserved := range []string{"state_plexwatch", "plexwatch"} {
-		if _, ok := known[reserved]; ok {
-			t.Fatalf("reserved component %s is registered", reserved)
-		}
-	}
 	applied, err := store.AppliedMigrations(context.Background(), db)
 	if err != nil {
 		t.Fatal(err)

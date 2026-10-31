@@ -146,13 +146,13 @@ func TestPrismUpgradeFromDelivered9503(t *testing.T) {
 	}
 	// afdcb3f7 rejected capability_headers because that slice's base had not
 	// landed it. b7049abd is the reviewed inventory: capability_headers v3 is
-	// required, and state_plexwatch stays absent. Session checks below are
-	// unchanged.
+	// required. Account sync has since landed as plexwatch v4 and
+	// state_plexwatch v3. Session checks below are unchanged.
 	if store.KnownMigrations()["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", store.KnownMigrations()["capability_headers"])
 	}
-	if _, ok := store.KnownMigrations()["state_plexwatch"]; ok {
-		t.Fatal("upgrade gate included unlanded state_plexwatch")
+	if store.KnownMigrations()["plexwatch"] != 4 || store.KnownMigrations()["state_plexwatch"] != 3 {
+		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d", store.KnownMigrations()["plexwatch"], store.KnownMigrations()["state_plexwatch"])
 	}
 
 	var liveSessions, snapSessions int
@@ -411,11 +411,8 @@ func assertUpgradeBoundary(t *testing.T) {
 	if known["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
 	}
-	if _, ok := known["plexwatch"]; ok {
-		t.Fatal("reserved component plexwatch is registered")
-	}
-	if _, ok := known["state_plexwatch"]; ok {
-		t.Fatal("unlanded component state_plexwatch is registered")
+	if known["plexwatch"] != 4 || known["state_plexwatch"] != 3 {
+		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d", known["plexwatch"], known["state_plexwatch"])
 	}
 	if known["auth"] != 7 || known["auth_sessions"] != 1 {
 		t.Fatalf("landed auth inventory auth=%d auth_sessions=%d", known["auth"], known["auth_sessions"])

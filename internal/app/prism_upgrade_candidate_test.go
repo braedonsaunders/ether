@@ -22,6 +22,8 @@ var prismCandidateMigrations = map[string]int{
 	"frontend_tickets":      3,
 	"experience_receipts":   5,
 	"handle_reservations":   2,
+	"plexwatch":             4,
+	"state_plexwatch":       3,
 }
 
 func assertPrismCandidateBoundary(t *testing.T) {
@@ -30,11 +32,6 @@ func assertPrismCandidateBoundary(t *testing.T) {
 	for component, version := range prismCandidateMigrations {
 		if known[component] != version {
 			t.Fatalf("candidate %s/%d missing: got %d", component, version, known[component])
-		}
-	}
-	for _, component := range []string{"state_plexwatch", "plexwatch"} {
-		if _, ok := known[component]; ok {
-			t.Fatalf("reserved component %s registered", component)
 		}
 	}
 }

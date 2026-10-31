@@ -9,9 +9,9 @@ import (
 
 // TestDeliveredMainMigrationBoundary records bounded handle adoption on b69.
 // That candidate includes experience_receipts v5, frontend_tickets v2,
-// frontend_image_grants v6, and capability_headers v3. state_plexwatch,
-// rules, and watchsync stay unregistered. auth_sessions still applies
-// after auth.
+// frontend_image_grants v6, and capability_headers v3. Account sync is
+// plexwatch v4 and state_plexwatch v3. rules and watchsync stay
+// unregistered. auth_sessions still applies after auth.
 func TestDeliveredMainMigrationBoundary(t *testing.T) {
 	known := store.KnownMigrations()
 	want := map[string]int{
@@ -31,13 +31,15 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		"viewer_push":            2,
 		"watchlist_episodes":     1,
 		"notify_once":            1,
+		"plexwatch":              4,
+		"state_plexwatch":        3,
 	}
 	for component, version := range want {
 		if known[component] != version {
 			t.Errorf("%s version = %d, want %d", component, known[component], version)
 		}
 	}
-	for _, absent := range []string{"state_plexwatch", "rules", "watchsync"} {
+	for _, absent := range []string{"rules", "watchsync"} {
 		if _, ok := known[absent]; ok {
 			t.Errorf("excluded component %s is registered at v%d", absent, known[absent])
 		}
