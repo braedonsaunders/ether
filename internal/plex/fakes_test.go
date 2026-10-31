@@ -1032,7 +1032,16 @@ func (f *fixture) attachPlaybackBroker(d Deps) {
 		},
 		Playback: &fixturePlayback{f: f}, Transcoder: fixtureTranscoder{f: f}, Progress: fixtureProgress{f: f}, Trickplay: fixtureTrickplay{f: f}, ActiveViewer: active,
 		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
-		OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		OnTimeline: func(v *core.Viewer, key core.RatingKey, pos, dur time.Duration, state string) {
+			if d.Hooks.OnTimeline == nil || v == nil {
+				return
+			}
+			u := *v
+			if u.Username == "" && u.ID == ownerUser.ID {
+				u = ownerUser
+			}
+			d.Hooks.OnTimeline(&u, key, pos, dur, state)
+		},
 		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {
 			if f.srv == nil || f.srv.d.Subtitles == nil {
 				return nil, "", core.ErrNotAvailable

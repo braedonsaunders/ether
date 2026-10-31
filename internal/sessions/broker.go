@@ -1030,8 +1030,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
 		progress.PlaybackProgress(s.public.ViewerID, s.clientID, s.public.Item, t.Position, t.State)
 	}
-	// Plex keeps its own timeline hook so a broker report does not prefetch twice.
-	if b.deps.OnTimeline != nil && s.public.Protocol != "plex" {
+	if b.deps.OnTimeline != nil {
 		b.deps.OnTimeline(v, s.public.Item, t.Position, t.Duration, t.State)
 	}
 	b.publish(ctx, sessionEvent("SessionUpdated", s.public, &t))
@@ -1055,6 +1054,9 @@ func (b *Broker) ReportProgress(ctx context.Context, a frontend.SessionAccess, i
 	}
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
 		progress.PlaybackProgress(viewer.ID, a.Device.ID, item, t.Position, t.State)
+	}
+	if b.deps.OnTimeline != nil {
+		b.deps.OnTimeline(viewer, item, t.Position, t.Duration, t.State)
 	}
 	return nil
 }

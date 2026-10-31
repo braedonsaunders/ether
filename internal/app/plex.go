@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"runtime"
-	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
@@ -35,19 +34,6 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	}
 	hooks := plex.Hooks{
 		OnClientSeen: func(id string) { a.frontendClients.observe("plex", id) },
-		OnTimeline: func(u *core.User, key core.RatingKey, offset, duration time.Duration, state string) {
-			if u != nil {
-				// Plex renews/stops the requesting client's exact session.
-				// A title-wide renewal here would preserve abandoned streams
-				// on another device watching the same title.
-				// Session intent (#32): a detail open that just turned
-				// into this playback was a conversion, not browsing.
-				if state == "playing" {
-					a.personalize.NotePlayback(u, key)
-				}
-			}
-			a.prefetch.OnTimeline(u, key, offset, duration, state)
-		},
 	}
 
 	var deps plex.Deps
@@ -57,7 +43,6 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		if tc != nil {
 			deps.Transcoder = tc
 		}
-		hooks.OnTimeline = nil
 	} else {
 		deps = plex.Deps{
 			Catalog:     a.catalog,
