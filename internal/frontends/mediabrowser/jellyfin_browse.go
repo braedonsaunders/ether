@@ -596,7 +596,14 @@ func attachParentIdentity(m map[string]any, t frontend.Title) {
 	}
 	labeled := t
 	labeled.Season = seasonNumber
-	if t.Type == "episode" || t.Type == "season" {
+	// Lab season rows put "Season N" in Name and omit SeasonName. Episodes
+	// carry SeasonName alongside the episode title.
+	if t.Type == "season" && t.Title == "" {
+		if name := seasonDisplayName(labeled); name != "" {
+			m["Name"] = name
+		}
+	}
+	if t.Type == "episode" {
 		if name := seasonDisplayName(labeled); name != "" {
 			m["SeasonName"] = name
 		}
@@ -813,6 +820,89 @@ func (i *instance) jellyfinKnownVersionFacts(dto map[string]any, versions []fron
 	}
 }
 
+// jellyfinRootID is the user root folder. View numbers 1 and 2 are the
+// movie and show libraries, so 0 stays the root and does not move when a
+// library is renamed.
+func jellyfinRootID() string {
+	id, _ := ids.GUID(ids.View, 0)
+	return id
+}
+
+// writeUserRoot serves the folder user views name as ParentId. The lab
+// returns this object as a UserRootFolder named "Media Folders" from
+// /Items/Root and from /Items/{id}.
+func (i *instance) writeUserRoot(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer) {
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	views, err := i.host.Experience.Views(r.Context(), viewer)
+	if err != nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id := jellyfinRootID()
+	item := map[string]any{
+		"Id": id, "Name": "Media Folders", "Type": "UserRootFolder", "IsFolder": true,
+		"ServerId": i.info.ID, "DisplayPreferencesId": id, "ParentId": nil,
+	}
+	i.jellyfinCollectionFolder(item, id)
+	item["Type"] = "UserRootFolder"
+	item["Name"] = "Media Folders"
+	item["ParentId"] = nil
+	item["ChildCount"] = len(views)
+	jsonReply(w, item)
+}
+
+// jellyfinLibraryOptions describes this server's libraries. Chapters and
+// trickplay come from playback probes, not a library-scan image extractor.
+// Subtitles already in the file are served when a client asks; nothing is
+// downloaded or written back. Fields Ether does not have keep Jellyfin's
+// schema default. PathInfos stays empty: libraries are virtual.
+func jellyfinLibraryOptions() map[string]any {
+	return map[string]any{
+		"Enabled":                                 true,
+		"EnablePhotos":                            true,
+		"EnableRealtimeMonitor":                   false,
+		"EnableInternetProviders":                 false,
+		"EnableAutomaticSeriesGrouping":           true,
+		"EnableChapterImageExtraction":            false,
+		"ExtractChapterImagesDuringLibraryScan":   false,
+		"EnableTrickplayImageExtraction":          false,
+		"ExtractTrickplayImagesDuringLibraryScan": false,
+		"SaveTrickplayWithMedia":                  false,
+		"EnableEmbeddedTitles":                    false,
+		"EnableEmbeddedEpisodeInfos":              false,
+		"EnableEmbeddedExtrasTitles":              false,
+		"EnableLUFSScan":                          false,
+		"SaveLocalMetadata":                       false,
+		"SaveLyricsWithMedia":                     false,
+		"SaveSubtitlesWithMedia":                  false,
+		"AllowEmbeddedSubtitles":                  "AllowAll",
+		"RequirePerfectSubtitleMatch":             true,
+		"SkipSubtitlesIfAudioTrackMatches":        true,
+		"SkipSubtitlesIfEmbeddedSubtitlesPresent": false,
+		"AutomaticRefreshIntervalDays":            0,
+		"AutomaticallyAddToCollection":            false,
+		"PreferNonstandardArtistsTag":             false,
+		"UseCustomTagDelimiters":                  false,
+		"SeasonZeroDisplayName":                   "Specials",
+		"PreferredMetadataLanguage":               "en",
+		"MetadataCountryCode":                     "US",
+		"PathInfos":                               []any{},
+		"DisabledLocalMetadataReaders":            []any{},
+		"DisabledLyricFetchers":                   []any{},
+		"DisabledMediaSegmentProviders":           []any{},
+		"DisabledSubtitleFetchers":                []any{},
+		"LyricFetcherOrder":                       []any{},
+		"MediaSegmentProviderOrder":               []any{},
+		"SubtitleFetcherOrder":                    []any{},
+		"TypeOptions":                             []any{},
+		"DelimiterWhitelist":                      []any{},
+		"CustomTagDelimiters":                     []any{"/", "|", ";", "\\"},
+	}
+}
+
 func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 	viewer, _, err := i.viewer(r)
 	if err != nil || viewer == nil {
@@ -839,6 +929,10 @@ func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		entry := map[string]any{"Name": view.Name, "ItemId": viewID}
+		if i.protocol == "jellyfin" {
+			entry["LibraryOptions"] = jellyfinLibraryOptions()
+			entry["RefreshStatus"] = "Idle"
+		}
 		if i.protocol == "jellyfin" && view.Virtual {
 			entry["Locations"] = []string{}
 		}

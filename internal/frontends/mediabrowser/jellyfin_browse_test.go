@@ -447,8 +447,11 @@ func TestJellyfinSeasonListUsesParentSeriesName(t *testing.T) {
 	var page struct {
 		Items []map[string]any
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 || page.Items[0]["SeriesName"] != "The Scene" {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 || page.Items[0]["SeriesName"] != "The Scene" || page.Items[0]["Name"] != "Season 1" {
 		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := page.Items[0]["SeasonName"]; ok {
+		t.Fatal(page.Items[0]["SeasonName"])
 	}
 }
 
@@ -555,6 +558,50 @@ func TestJellyfinNamedPeopleProviderLinksAndRuntime(t *testing.T) {
 	requireJellyfinSpec(t, http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), w)
 }
 
+func TestJellyfinUserRootParentsEveryView(t *testing.T) {
+	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
+	}})
+	call := func(path string) map[string]any {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.Header.Set("X-Emby-Token", "grant")
+		inst.Handler().ServeHTTP(w, r)
+		var body map[string]any
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil {
+			t.Fatal(path, w.Code, w.Body.String())
+		}
+		return body
+	}
+	root := call("/Items/Root")
+	if root["Type"] != "UserRootFolder" || root["Name"] != "Media Folders" || root["Id"] != jellyfinRootID() || root["ChildCount"] != float64(2) || root["ParentId"] != nil {
+		t.Fatal(root["Type"], root["Name"], root["Id"], root["ChildCount"], root["ParentId"])
+	}
+	if _, ok := root["Path"]; ok {
+		t.Fatal(root["Path"])
+	}
+	userID, err := ids.GUID(ids.User, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again := call("/Users/" + userID + "/Items/Root")
+	if again["Id"] != root["Id"] {
+		t.Fatal(again["Id"])
+	}
+	byID := call("/Items/" + jellyfinRootID())
+	if byID["Id"] != root["Id"] || byID["Type"] != "UserRootFolder" {
+		t.Fatal(byID["Id"], byID["Type"])
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var page struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 2 || page.Items[0]["ParentId"] != root["Id"] || page.Items[1]["ParentId"] != root["Id"] {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
 func TestJellyfinVirtualFolders(t *testing.T) {
 	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
 		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
@@ -576,8 +623,15 @@ func TestJellyfinVirtualFolders(t *testing.T) {
 	if _, ok := folders[0]["Locations"]; ok {
 		t.Fatal("invented library path")
 	}
-	if _, ok := folders[0]["LibraryOptions"]; ok {
-		t.Fatal("copied library options")
+	options, _ := folders[0]["LibraryOptions"].(map[string]any)
+	if options["PreferredMetadataLanguage"] != "en" || options["MetadataCountryCode"] != "US" || options["EnableChapterImageExtraction"] != false || options["EnableTrickplayImageExtraction"] != false || options["EnableInternetProviders"] != false || options["SaveSubtitlesWithMedia"] != false {
+		t.Fatal(options)
+	}
+	if paths, ok := options["PathInfos"].([]any); !ok || len(paths) != 0 {
+		t.Fatal(options["PathInfos"])
+	}
+	if folders[0]["RefreshStatus"] != "Idle" {
+		t.Fatal(folders[0]["RefreshStatus"])
 	}
 	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
 }
@@ -601,11 +655,9 @@ func TestJellyfinVirtualLibraryHasEmptyLocations(t *testing.T) {
 	if _, ok := folders[1]["Locations"]; ok {
 		t.Fatal("non-virtual library gained locations")
 	}
-	if _, ok := folders[0]["LibraryOptions"]; ok {
-		t.Fatal(folders[0]["LibraryOptions"])
-	}
-	if _, ok := folders[0]["RefreshStatus"]; ok {
-		t.Fatal(folders[0]["RefreshStatus"])
+	options, _ := folders[0]["LibraryOptions"].(map[string]any)
+	if paths, ok := options["PathInfos"].([]any); !ok || len(paths) != 0 || folders[0]["RefreshStatus"] != "Idle" {
+		t.Fatal(folders[0]["LibraryOptions"], folders[0]["RefreshStatus"])
 	}
 	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
 }

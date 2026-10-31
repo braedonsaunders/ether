@@ -146,6 +146,9 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 	}
 	if i.protocol == "jellyfin" {
 		i.jellyfinCollectionFolder(item, viewID)
+		// Every library sits under the same user root. The id is stable so
+		// ParentId does not change between responses.
+		item["ParentId"] = jellyfinRootID()
 		// ChildCount is the number of items this viewer can list in the view.
 		// A failed count stays absent rather than a fabricated zero.
 		page, err := i.host.Experience.LibraryItems(r.Context(), v, device(r), view.ID, frontend.ItemQuery{Limit: 1})
@@ -160,6 +163,10 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 func (i *instance) writeCollectionFolder(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, viewNum int64) {
 	if i.host.Experience == nil {
 		http.Error(w, "Unavailable", 503)
+		return
+	}
+	if i.protocol == "jellyfin" && viewNum == 0 {
+		i.writeUserRoot(w, r, v)
 		return
 	}
 	vs, err := i.host.Experience.Views(r.Context(), v)
@@ -529,6 +536,24 @@ func (i *instance) browseRoutes() error {
 		}
 	}
 	if err := add("GET", "/UserViews/GroupingOptions", i.groupingOptions); err != nil {
+		return err
+	}
+	root := func(w http.ResponseWriter, r *http.Request) {
+		if i.protocol != "jellyfin" {
+			http.NotFound(w, r)
+			return
+		}
+		v, _, err := i.viewer(r)
+		if err != nil || v == nil {
+			http.Error(w, "Unauthorized", 401)
+			return
+		}
+		i.writeUserRoot(w, r, v)
+	}
+	if err := add("GET", "/Items/Root", root); err != nil {
+		return err
+	}
+	if err := add("GET", "/Users/{userId}/Items/Root", root); err != nil {
 		return err
 	}
 	if err := add("GET", "/Library/VirtualFolders", i.virtualFolders); err != nil {
