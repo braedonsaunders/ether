@@ -78,6 +78,15 @@ type connLimit struct {
 	widenAt   time.Time // next one-connection step of cap
 	dialFails int       // consecutive failed handshakes (not refusals)
 	dialAfter time.Time // no new handshake starts before this
+
+	// Teardown grace: sockets Ether closed in the window starting at
+	// closeWindow, and refusals excused in it. Each close excuses at most
+	// two refusals (the redial and its retry), so constant local closes
+	// cannot hide a real limit.
+	lastClose   time.Time
+	closeWindow time.Time
+	closes      int
+	excused     int
 }
 
 // connLimitPatterns find a stated connection limit in refusal text.
@@ -147,9 +156,28 @@ func (p *pool) applySize() (int, bool) {
 	return n, p.sem.setSize(n, p.o.PrefetchFraction)
 }
 
-// noteClose records that Ether closed one of this pool's sockets.
-func (p *pool) noteClose() {
-	p.lastClose.Store(time.Now().UnixNano())
+// noteClose records that Ether closed n of this pool's sockets.
+func (p *pool) noteClose(n int) {
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if now.Sub(p.limit.closeWindow) >= p.o.limits.teardownGrace {
+		p.limit.closeWindow, p.limit.closes, p.limit.excused = now, 0, 0
+	}
+	p.limit.closes += n
+	p.limit.lastClose = now
+}
+
+// teardownLocked reports whether a refusal now is excused as the server
+// still tearing down a socket Ether closed, and consumes the excuse.
+// p.mu must be held.
+func (p *pool) teardownLocked(now time.Time) bool {
+	l := &p.limit
+	if l.lastClose.IsZero() || now.Sub(l.lastClose) >= p.o.limits.teardownGrace || l.excused >= 2*l.closes {
+		return false
+	}
+	l.excused++
+	return true
 }
 
 // refused handles a dial the server turned away as over its connection
@@ -159,10 +187,13 @@ func (p *pool) noteClose() {
 func (p *pool) refused(err error, live int) bool {
 	t := &p.o.limits
 	now := time.Now()
-	if last := p.lastClose.Load(); last != 0 && now.Sub(time.Unix(0, last)) < t.teardownGrace {
-		p.mu.Lock()
+	p.mu.Lock()
+	teardown := p.teardownLocked(now)
+	if teardown {
 		p.limit.dialAfter = later(p.limit.dialAfter, now.Add(t.refusalPause))
-		p.mu.Unlock()
+	}
+	p.mu.Unlock()
+	if teardown {
 		p.teardownRefusals.Add(1)
 		p.log.Debug("usenet: connection refused while the server tears down a closed one; retrying", "err", err)
 		return true

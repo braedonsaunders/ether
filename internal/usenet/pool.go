@@ -51,9 +51,6 @@ type pool struct {
 	limit connLimit
 	// resizeMu serializes computing and applying the semaphore size.
 	resizeMu sync.Mutex
-	// lastClose is when Ether last closed one of this pool's sockets
-	// (UnixNano), for the teardown grace in refused.
-	lastClose atomic.Int64
 	// Warm-floor background redial state (guarded by mu): at most one
 	// warmLoop runs at a time, and after a failed dial it waits until
 	// warmNext (exponential backoff) before trying again.
@@ -395,7 +392,7 @@ func (p *pool) put(c *Conn, prio core.Priority) {
 			// Closed, or above a size that shrank while c was in use.
 			p.live--
 			p.mu.Unlock()
-			p.noteClose()
+			p.noteClose(1)
 			go c.Quit()
 		} else {
 			c.idleSince = now
@@ -416,7 +413,7 @@ func (p *pool) put(c *Conn, prio core.Priority) {
 
 func (p *pool) discard(c *Conn) {
 	_ = c.Close()
-	p.noteClose()
+	p.noteClose(1)
 	p.dropLive()
 }
 
@@ -433,7 +430,7 @@ func (p *pool) discardIdle() {
 		_ = c.Close()
 	}
 	if len(idle) > 0 {
-		p.noteClose()
+		p.noteClose(len(idle))
 		p.maintainFloor()
 	}
 }
@@ -486,7 +483,7 @@ func (p *pool) sweep() {
 	p.live -= len(expired)
 	p.mu.Unlock()
 	if len(expired) > 0 {
-		p.noteClose()
+		p.noteClose(len(expired))
 	}
 	for _, c := range expired {
 		_ = c.Quit()
@@ -634,7 +631,7 @@ func (p *pool) keepAliveOne(now time.Time) bool {
 		p.live--
 		p.mu.Unlock()
 		_ = c.Close()
-		p.noteClose()
+		p.noteClose(1)
 		return true
 	}
 	// Just pinged, but still the least recently used for requests: keep it
@@ -1108,7 +1105,7 @@ func (p *pool) setShare(n int) bool {
 	}
 	p.mu.Unlock()
 	if len(drop) > 0 {
-		p.noteClose()
+		p.noteClose(len(drop))
 	}
 	for _, c := range drop {
 		go c.Quit()
