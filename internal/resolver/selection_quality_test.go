@@ -235,3 +235,30 @@ func TestSourcePreferenceKeepsQualityClass(t *testing.T) {
 		t.Fatalf("order %v, want the Usenet remux first and the Latino remux last", got)
 	}
 }
+
+// A play below 4K says why, in the trace and the log.
+func TestBelow4KIsExplained(t *testing.T) {
+	cfg := testCfg()
+	idx := &fakeIndexer{releases: []core.Release{
+		withParsed(rel("tiny4k", "The.Signal.2026.2160p.BDRip.x265.10bit.DV.HDR-MarkII", 5<<10)),
+		withParsed(rel("good1080", "The.Signal.2026.1080p.BluRay.DD5.1.x264-GRP", 12<<10)),
+	}}
+	s := New(idx, fakeHealth{}, nil, cfg, Options{})
+	defer s.Close()
+	if _, err := s.Resolve(context.Background(), core.ResolveRequest{Title: signal2026(), Client: appleTV4K()}); err != nil {
+		t.Fatal(err)
+	}
+	tr := s.Traces()
+	if got := tr[0].Ceiling; !strings.Contains(got, "too little bitrate for 4K") {
+		t.Fatalf("ceiling %q", got)
+	}
+	// A client without a 4K rule gets the default 1080p profile, and says so.
+	web := core.ClientCaps{Product: "Plex Web", MaxHeight: 2160, VideoCodecs: []string{"h264", "hevc"}}
+	if _, err := s.Resolve(context.Background(), core.ResolveRequest{Title: signal2026(), Client: web}); err != nil {
+		t.Fatal(err)
+	}
+	tr = s.Traces()
+	if got := tr[0].Ceiling; !strings.Contains(got, "no client rule matched this client (Plex Web)") {
+		t.Fatalf("ceiling %q", got)
+	}
+}

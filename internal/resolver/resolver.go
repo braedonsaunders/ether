@@ -88,6 +88,7 @@ type CandidateTrace struct {
 	Rejected       bool          `json:"rejected"`
 	Reason         string        `json:"reason,omitempty"`
 	Size           int64         `json:"size,omitempty"`
+	Height         int           `json:"height,omitempty"`    // parsed resolution, 0 unknown
 	Pinned         bool          `json:"pinned,omitempty"`    // the owner's pin for the title
 	Attempted      bool          `json:"attempted,omitempty"` // fetch or health validation actually ran
 	HealthChecked  bool          `json:"healthChecked"`
@@ -120,6 +121,12 @@ type Trace struct {
 	Omitted int `json:"omitted,omitempty"`
 	// Routing summarises the source-routing decision (routing.go).
 	Routing string `json:"routing,omitempty"`
+	// Downgrade explains a winner well below the best quality on offer
+	// (failover.go): what failed and what plays instead.
+	Downgrade string `json:"downgrade,omitempty"`
+	// Ceiling explains a winner below 4K (explain.go): the profile or
+	// client limit, or why each 4K release lost.
+	Ceiling string `json:"ceiling,omitempty"`
 }
 
 // DiscoveryTrace records only the origin and number of returned releases.
@@ -579,6 +586,10 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	trace.Limits = &TraceLimits{ProfileMinHeight: profile.MinHeight, ProfileMaxHeight: profile.MaxHeight, ProfileConfiguredMaxHeight: traceConfiguredMaxHeight(profile), ClientMaxHeight: req.Client.MaxHeight, ClientMaxBitrateKbps: req.Client.MaxBitrateKbps}
 	defer func() {
 		trace.TotalDuration = time.Since(started)
+		trace.Ceiling = s.explainCeiling(&trace, profile, req)
+		if trace.Ceiling != "" {
+			s.log.Info("resolver: below 4K", "title", trace.TitleName, "profile", profile.Name, "why", trace.Ceiling)
+		}
 		s.addTrace(trace)
 		s.recordHistory(ctx, trace)
 	}()
@@ -811,13 +822,21 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		}
 		cands = cands[1:]
 	}
-	index, nzb, err := s.validateCandidates(ctx, cands, &trace, rcfg.HealthRace)
-	if err != nil {
-		trace.Err = err.Error()
-		return nil, err
-	}
-	if index >= 0 {
-		return s.acceptResolution(ctx, t.Key, cands, index, nzb, &trace), nil
+	// A drastic step down (to SD or an unknown resolution when 1080p or
+	// better was on offer, here or in a release this failover excludes)
+	// waits until everything comparable, a rescue search included, has
+	// failed. Then it plays, and the trace says why.
+	reference := s.referenceHeight(cands, req.Exclude)
+	primary, downgrades := splitDowngrades(cands, reference)
+	if len(primary) > 0 {
+		index, nzb, err := s.validateCandidates(ctx, primary, &trace, rcfg.HealthRace)
+		if err != nil {
+			trace.Err = err.Error()
+			return nil, err
+		}
+		if index >= 0 {
+			return s.acceptResolution(ctx, t.Key, primary, index, nzb, &trace), nil
+		}
 	}
 
 	// Retry discovery once after the initially ranked releases failed health.
@@ -830,11 +849,29 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 			at := time.Now()
 			rescueCands = s.prepareSources(ctx, rescueCands, req.Title, &trace, &rescueChecks)
 			trace.SourcePreparationDuration += time.Since(at)
-			index, nzb, verr := s.validateCandidates(ctx, rescueCands, &trace, rcfg.HealthRace)
-			if verr == nil && index >= 0 {
-				return s.acceptResolution(ctx, t.Key, rescueCands, index, nzb, &trace), nil
+			rescuePrimary, rescueDowngrades := splitDowngrades(rescueCands, reference)
+			if len(rescuePrimary) > 0 {
+				index, nzb, verr := s.validateCandidates(ctx, rescuePrimary, &trace, rcfg.HealthRace)
+				if verr == nil && index >= 0 {
+					return s.acceptResolution(ctx, t.Key, rescuePrimary, index, nzb, &trace), nil
+				}
 			}
+			downgrades = append(downgrades, rescueDowngrades...)
 			cands = append(cands, rescueCands...)
+		}
+	}
+	if len(downgrades) > 0 && ctx.Err() == nil {
+		sort.SliceStable(downgrades, func(i, j int) bool {
+			if downgrades[i].quality != downgrades[j].quality {
+				return downgrades[i].quality.better(downgrades[j].quality)
+			}
+			return downgrades[i].rel.Score > downgrades[j].rel.Score
+		})
+		index, nzb, verr := s.validateCandidates(ctx, downgrades, &trace, rcfg.HealthRace)
+		if verr == nil && index >= 0 {
+			trace.Downgrade = downgradeNote(reference, downgrades[index].rel, len(primary) > 0)
+			s.log.Info("resolver: playing a lower quality", "title", t.Title, "release", downgrades[index].rel.Name, "reason", trace.Downgrade)
+			return s.acceptResolution(ctx, t.Key, downgrades, index, nzb, &trace), nil
 		}
 	}
 
@@ -1030,7 +1067,7 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 	clientRejected := false
 	for ri, rel := range results {
 		rel = withTarget(rel, sreq)
-		ct := CandidateTrace{ReleaseID: rel.ID, Name: rel.Name, Indexer: rel.Indexer, Size: rel.Size}
+		ct := CandidateTrace{ReleaseID: rel.ID, Name: rel.Name, Indexer: rel.Indexer, Size: rel.Size, Height: rel.Info.Height}
 		pinned := pinID != "" && rel.ID == pinID
 		ct.Pinned = pinned
 		// Catalogue language is applied here, after the search cache.
@@ -1119,14 +1156,27 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 			tr = len(trace.Candidates) - 1
 		}
 		langOK := audioAcceptable(rel.Info, accepted)
-		starved := bitrateScore(sizedForEpisode(rel), t) < 0 || upscales[ri]
-		if upscales[ri] && trace != nil {
-			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; presumed upscale: ranked as 1080p", "; ")
+		lowBitrate := bitrateScore(sizedForEpisode(rel), t) < 0
+		starved := lowBitrate || upscales[ri]
+		bandwidth := s.deliveryFit(sizedForEpisode(rel), req.Client, t)
+		if trace != nil {
+			note := func(n string) {
+				trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; "+n, "; ")
+			}
+			switch {
+			case upscales[ri]:
+				note("presumed upscale: ranked one resolution lower")
+			case lowBitrate:
+				note("too little bitrate for its resolution: ranked one resolution lower")
+			}
+			if bandwidth < 0 {
+				note("larger than the client's connection carries")
+			}
 		}
 		if !langOK && trace != nil {
 			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; ranked after releases in an accepted audio language", "; ")
 		}
-		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, starved: starved, quality: rankQuality(rel.Info, profile, starved), bandwidth: s.deliveryFit(sizedForEpisode(rel), req.Client, t)})
+		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, starved: starved, quality: rankQuality(rel.Info, profile, starved), bandwidth: bandwidth})
 	}
 	return s.orderCandidates(cands, req.Title, trace), clientRejected, nil
 }
