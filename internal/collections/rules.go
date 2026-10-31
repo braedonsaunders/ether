@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -124,8 +124,19 @@ func compileRule(cr core.CollectionRule) (*rule, error) {
 			if len(r.tags) != 1 {
 				return nil, fmt.Errorf("contentRating %s needs one rating", cr.Op)
 			}
-			if r.ratingRank = catalog.RatingRank(r.tags[0]); r.ratingRank == 0 {
+			if r.ratingRank = int(contentrating.LevelOf(r.tags[0])); r.ratingRank == 0 {
 				return nil, fmt.Errorf("%q is not a rating Ether can order (try G, PG, PG-13, R, TV-14…)", r.tags[0])
+			}
+		} else if cr.Field == "contentRating" {
+			// Ratings match by age level: "pg" also covers TV-PG and gb/PG,
+			// and "nr" is titles without a rating. A label that names no
+			// level matches nothing.
+			for i, v := range r.tags {
+				key, ok := contentrating.Canonical(v)
+				if !ok {
+					key = "\x00" + v
+				}
+				r.tags[i] = strings.ToLower(key)
 			}
 		}
 	case classRefs:
@@ -513,7 +524,7 @@ func (r *rule) matchTags(e *entry) bool {
 		}
 	case "contentRating":
 		if r.op == "gte" || r.op == "lte" {
-			rank := catalog.RatingRank(e.crating)
+			rank := int(contentrating.LevelOf(e.crating))
 			if rank == 0 || r.ratingRank == 0 {
 				return false
 			}
@@ -522,9 +533,7 @@ func (r *rule) matchTags(e *entry) bool {
 			}
 			return rank <= r.ratingRank
 		}
-		if e.crating != "" {
-			have = []string{strings.ToLower(e.crating)}
-		}
+		have = []string{strings.ToLower(contentrating.LevelOf(e.crating).Key())}
 	}
 	has := func(want string) bool {
 		for _, h := range have {

@@ -42,7 +42,7 @@ func (c *Catalog) ScheduledEpisodes(ctx context.Context, key core.RatingKey) ([]
 	}
 	for i := range out {
 		if out[i].ContentRating == "" {
-			out[i].ContentRating = show.ContentRating
+			out[i].ContentRating, out[i].ContentRatingSource = show.ContentRating, show.ContentRatingSource
 		}
 	}
 	return out, nil

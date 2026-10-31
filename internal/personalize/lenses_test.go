@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // shown counts a kind's rows that have titles.
@@ -129,7 +129,7 @@ func TestOccasionRows(t *testing.T) {
 	_, m := lensModel(t, familyViewer)
 	fam := rowTitled(m, "Family Night")
 	assertItems(t, fam, func(x *core.Title) bool {
-		return anyShared(normGenres(x.Genres), []string{"Family", "Animation"}) && recommend.ContentRatingAllowed(x.ContentRating, "PG")
+		return anyShared(normGenres(x.Genres), []string{"Family", "Animation"}) && contentrating.Allowed(x.ContentRating, "PG")
 	}, "family night")
 	if rowTitled(m, "Date Night") != nil {
 		t.Fatal("Date Night without romance in the history")

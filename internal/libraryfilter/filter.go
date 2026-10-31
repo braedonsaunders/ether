@@ -5,6 +5,7 @@ package libraryfilter
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"golang.org/x/text/language"
 	"golang.org/x/text/language/display"
@@ -15,6 +16,9 @@ type condition struct {
 	field, op string
 	values    []string
 	nums      []float64
+	// levels are a content-rating rule's age levels (Unrated is the
+	// explicit "Not rated" choice); gte/lte hold exactly one rated level.
+	levels []contentrating.Level
 }
 type group struct {
 	typ, match string
@@ -44,7 +48,12 @@ func Compile(specs []core.LibraryExclusion) (*Filter, error) {
 		for _, r := range s.Rules {
 			c := condition{field: r.Field, op: r.Op}
 			switch r.Field {
-			case "country", "language", "genre", "contentRating":
+			case "contentRating":
+				var err error
+				if c.levels, err = compileRatings(r.Op, r.Value); err != nil {
+					return nil, err
+				}
+			case "country", "language", "genre":
 				if r.Op != "in" && r.Op != "notIn" && r.Op != "is" && r.Op != "isNot" {
 					return nil, fmt.Errorf("unsupported %s comparison", r.Field)
 				}
@@ -103,6 +112,50 @@ func Compile(specs []core.LibraryExclusion) (*Filter, error) {
 		f.groups = append(f.groups, g)
 	}
 	return f, nil
+}
+
+// compileRatings reads a content-rating rule. Values are any certification
+// label or level key ("TV-PG", "PG", "gb/PG" are one level) or "NR" for
+// titles without a rating; a value naming no level matches nothing. Ops are
+// set membership (in, notIn, is, isNot) or a bound (gte "at least", lte "at
+// most") on one rated level, which never matches unrated titles.
+func compileRatings(op string, raw json.RawMessage) ([]contentrating.Level, error) {
+	var values []string
+	var v string
+	if json.Unmarshal(raw, &v) == nil {
+		values = []string{v}
+	} else if json.Unmarshal(raw, &values) != nil {
+		return nil, fmt.Errorf("contentRating needs text values")
+	}
+	if len(values) == 0 || len(values) > 100 {
+		return nil, fmt.Errorf("contentRating needs 1–100 values")
+	}
+	var out []contentrating.Level
+	seen := map[contentrating.Level]bool{}
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v == "" || len(v) > 120 {
+			return nil, fmt.Errorf("invalid contentRating value")
+		}
+		key, ok := contentrating.Canonical(v)
+		if !ok {
+			continue
+		}
+		l := contentrating.LevelOf(key)
+		if !seen[l] {
+			seen[l] = true
+			out = append(out, l)
+		}
+	}
+	switch op {
+	case "in", "notIn", "is", "isNot":
+	case "gte", "lte":
+		if len(values) != 1 || len(out) != 1 || out[0] == contentrating.Unrated {
+			return nil, fmt.Errorf("contentRating %s needs one rating such as PG or TV-14", op)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported contentRating comparison")
+	}
+	return out, nil
 }
 
 // TMDB movie production countries use names; TV origins use ISO codes.
@@ -193,17 +246,27 @@ func (c condition) matches(t *core.Title) bool {
 			values = []string{t.Language}
 		}
 	case "contentRating":
-		if t.ContentRating != "" {
-			values = []string{t.ContentRating}
+		// Ratings compare by age level: "PG" covers PG, TV-PG and gb/PG.
+		// An unrated title has the Unrated level, so "none of" hides it
+		// unless "Not rated" is listed; a bound never matches it.
+		l := contentrating.LevelOf(t.ContentRating)
+		switch c.op {
+		case "gte":
+			return l != contentrating.Unrated && l >= c.levels[0]
+		case "lte":
+			return l != contentrating.Unrated && l <= c.levels[0]
 		}
+		in := false
+		for _, w := range c.levels {
+			in = in || w == l
+		}
+		if c.op == "notIn" || c.op == "isNot" {
+			return !in
+		}
+		return in
 	}
 	if len(values) == 0 {
-		// A blank certification is not one of the listed ratings. Negative
-		// content-rating rules therefore match, so "none of" cannot be
-		// bypassed by a missing rating. Unknown country, genre, language
-		// and numbers still do not match. Known ratings compare as the
-		// listed text, case-insensitively; PG-13 and PG13 stay distinct.
-		return c.field == "contentRating" && (c.op == "notIn" || c.op == "isNot")
+		return false // unknown country, genre and language never match
 	}
 	yes := false
 	for _, v := range values {
@@ -249,6 +312,28 @@ func (f *Filter) SQLHidden() (string, []any) {
 				rules = append(rules, "("+q+")")
 				continue
 			}
+			if c.field == "contentRating" {
+				var q string
+				switch c.op {
+				case "gte":
+					q = "t.content_rating_rank>0 AND t.content_rating_rank>=?"
+				case "lte":
+					q = "t.content_rating_rank>0 AND t.content_rating_rank<=?"
+				default:
+					q = "0=1"
+					if len(c.levels) > 0 {
+						q = "t.content_rating_rank IN (" + strings.TrimSuffix(strings.Repeat("?,", len(c.levels)), ",") + ")"
+					}
+					if c.op == "notIn" || c.op == "isNot" {
+						q = "NOT (" + q + ")"
+					}
+				}
+				for _, l := range c.levels {
+					args = append(args, int(l))
+				}
+				rules = append(rules, "("+q+")")
+				continue
+			}
 			ph := strings.TrimSuffix(strings.Repeat("?,", len(c.values)), ",")
 			var q, known string
 			switch c.field {
@@ -262,9 +347,6 @@ func (f *Filter) SQLHidden() (string, []any) {
 				q = "EXISTS (" + prefix + " AND LOWER(f." + col + ") IN (" + ph + "))"
 			default:
 				col := "t.language"
-				if c.field == "contentRating" {
-					col = "t.content_rating"
-				}
 				known = col + "<>''"
 				q = "LOWER(" + col + ") IN (" + ph + ")"
 			}
@@ -273,10 +355,6 @@ func (f *Filter) SQLHidden() (string, []any) {
 			}
 			if c.op == "notIn" || c.op == "isNot" {
 				q = "NOT (" + q + ")"
-			}
-			if c.field == "contentRating" && (c.op == "notIn" || c.op == "isNot") {
-				rules = append(rules, "("+q+")")
-				continue
 			}
 			rules = append(rules, "("+known+" AND "+q+")")
 		}
@@ -289,7 +367,7 @@ func (f *Filter) SQLHidden() (string, []any) {
 			q = "t.type=? AND " + q // type argument precedes this group's rules
 			n := 0
 			for _, c := range g.rules {
-				n += len(c.values) + len(c.nums)
+				n += len(c.values) + len(c.nums) + len(c.levels)
 			}
 			at := len(args) - n
 			args = append(args, nil)
