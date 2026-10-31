@@ -2,6 +2,7 @@ import { Badge, Button, Input, Spinner, Switch, cn, toast } from "@braedonsaunde
 import { Check, ImageIcon, Pin, RefreshCw, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Artwork } from "../../components/Artwork";
+import { MoreOptions } from "../../components/ConfigSection";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, MutationError } from "../../components/feedback";
 import { ListInput } from "../../components/fields";
@@ -313,7 +314,7 @@ export function ArtworkSettings() {
                   </button>
                 </p>
               ) : null}
-              {OPTIONS.map((o) => (
+              {OPTIONS.filter((o) => o.key !== "personalize" && o.key !== "localize").map((o) => (
                 <div className="metadata-toggle" key={o.key}>
                   <div>
                     <label htmlFor={`overlay-${o.key}`}>{o.label}</label>
@@ -340,6 +341,23 @@ export function ArtworkSettings() {
                   />
                 </div>
               ))}
+              <MoreOptions label={t("More options: {title}", { title: t("Poster layers") })}>
+                {OPTIONS.filter((o) => o.key === "personalize" || o.key === "localize").map((o) => (
+                  <div className="metadata-toggle" key={o.key}>
+                    <div>
+                      <label htmlFor={`overlay-${o.key}`}>{o.label}</label>
+                      <p>{o.hint}</p>
+                    </div>
+                    <Switch
+                      id={`overlay-${o.key}`}
+                      aria-label={o.label}
+                      checked={draft[o.key]}
+                      disabled={!draft.enabled || saving}
+                      onChange={(e) => set({ [o.key]: e.currentTarget.checked })}
+                    />
+                  </div>
+                ))}
+              </MoreOptions>
             </section>
             <Section
               title={t("Preview title")}

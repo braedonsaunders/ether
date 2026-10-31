@@ -305,6 +305,9 @@ describe("cluster helpers", () => {
 describe("Cluster details elsewhere", () => {
   it("edits node weight on General only on a cluster node", async () => {
     const { fake } = renderApp("/server", { cluster: true });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More options: This computer" }, WAIT),
+    );
     const weight = await screen.findByLabelText("Node weight", {}, WAIT);
     fireEvent.change(weight, { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
