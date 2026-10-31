@@ -167,19 +167,43 @@ func TestCrewPortraitHashIsReadyOnList(t *testing.T) {
 	source := Source{Catalog: refreshingArtwork{storedArtwork: storedArtwork{key: title}, fresh: title}, Visibility: experience.Visibility{Policy: &artworkPolicy{viewer: viewer}}, Images: images, ImageURL: func(path, size string) string { return "https://fixture.invalid/" + size + path }, Now: time.Now}
 	queue := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, source.Read)
 	source.Metadata = queue.Get
-	listed, _, err := source.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Item: key})
+	req := frontend.ArtworkRequest{Viewer: viewer, Item: key}
+	listed, _, err := source.List(ctx, req)
 	if err != nil {
 		t.Fatal(err)
 	}
+	saw := false
 	for _, item := range listed {
 		if item.Kind == frontend.ImagePerson {
-			if item.ThumbHash == "" {
-				t.Fatalf("crew portrait listed without a thumbhash fetched=%v", fetched)
+			saw = true
+			if item.ThumbHash != "" {
+				t.Fatal("crew portrait hash blocked the list")
 			}
-			return
 		}
 	}
-	t.Fatal("crew portrait missing")
+	if !saw {
+		t.Fatal("crew portrait missing")
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		again, _, err := source.List(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range again {
+			if item.Kind == frontend.ImagePerson && item.ThumbHash != "" {
+				if len(fetched) == 0 {
+					t.Fatal("hash stored without reading the portrait")
+				}
+				return
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("crew portrait hash was not filled fetched=%v", fetched)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 }
 
 func TestNeutralArtworkParentLookupIsStoredOnly(t *testing.T) {
