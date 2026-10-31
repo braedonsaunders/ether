@@ -91,6 +91,9 @@ func (c *Catalog) Get(ctx context.Context, key core.RatingKey) (*core.Title, err
 	}
 	// A season none of whose episodes has aired is not listed (seasonsOfShow)
 	// and must not open directly either.
+	if t != nil {
+		c.kickMovieYears([]core.Title{*t})
+	}
 	return t, err
 }
 
@@ -109,6 +112,7 @@ func (c *Catalog) CachedGet(ctx context.Context, key core.RatingKey) (*core.Titl
 	if !c.visibleTitle(&stored.t) {
 		return nil, core.ErrNotFound
 	}
+	c.kickMovieYears([]core.Title{stored.t})
 	return &stored.t, nil
 }
 

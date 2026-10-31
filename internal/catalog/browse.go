@@ -44,6 +44,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 			items[i] = cloneTitle(ent.page.Items[i])
 		}
 		c.cacheMu.RUnlock()
+		c.kickMovieYears(items)
 		return core.Page{Items: items, Total: ent.page.Total}, nil
 	}
 	cntEnt, hasCnt := c.countCache[ckey]
@@ -185,6 +186,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		c.browseCache[bkey] = cachedBrowse{page: core.Page{Items: cachedItems, Total: total}, gen: gen, minute: minBucket}
 		c.cacheMu.Unlock()
 	}
+	c.kickMovieYears(items)
 	return core.Page{Items: items, Total: total}, nil
 }
 

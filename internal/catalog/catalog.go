@@ -251,11 +251,15 @@ type Catalog struct {
 	progress   SyncProgress
 	progressMu sync.RWMutex
 
-	yearMu      sync.RWMutex
-	yearRunning atomic.Bool
-	yearState   MovieYearProgress
-	yearGap     time.Duration
-	syncYears   [2]int // 0,0 = 1900..now+2
+	yearMu         sync.RWMutex
+	yearRunning    atomic.Bool
+	yearState      MovieYearProgress
+	yearGap        time.Duration
+	yearAhead      chan core.RatingKey
+	yearInflight   sync.Map
+	yearInflightN  atomic.Int32
+	yearPauseUntil atomic.Int64
+	syncYears      [2]int // 0,0 = 1900..now+2
 
 	// High-speed in-memory read caches, invalidated atomically on writes.
 	writeGen    atomic.Uint64
@@ -378,7 +382,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 		stale = 24 * time.Hour
 	}
 	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log, hydrateSlots: make(chan struct{}, hydrateLimit),
-		staleAfter: stale, listTTL: 15 * time.Minute, yearGap: 2 * time.Second,
+		staleAfter: stale, listTTL: 15 * time.Minute, yearGap: 100 * time.Millisecond, yearAhead: make(chan core.RatingKey, 256),
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
 		browseCache: map[string]cachedBrowse{}, grandCache: map[core.RatingKey]cachedBrowse{}, facetCache: map[string]cachedFacet{},

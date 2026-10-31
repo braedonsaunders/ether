@@ -12,7 +12,15 @@ import (
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
-const yearRetryAfter = 6 * time.Hour
+const (
+	yearRetryAfter = 6 * time.Hour
+	// yearFetchRate is how many candidate movies the sweep starts per second.
+	// TMDB allows about 40–50 requests a second per IP; this leaves most of
+	// that budget for viewers. The shared client still applies its own limit
+	// and breaker.
+	yearFetchRate  = 10
+	yearFetchSlots = 10
+)
 
 // MovieYearProgress is the upgrade correction shown on Catalog health.
 // Stored counts movies whose year was taken from a date already in the
@@ -30,10 +38,11 @@ type MovieYearProgress struct {
 // correctMovieYears rewrites movie years that were taken from a regional
 // theatrical date. It runs beside catalogue sync and never on a request.
 // A summary row already stores the primary release_date in released_ts, so
-// that year is fixed with no TMDB call. A detailed row does not: its
-// released_ts may be theatrical, and the primary date was not kept. Those
-// movies are refreshed one at a time, slowly enough to leave the shared
-// TMDB budget for viewers, and they stop while the breaker is open.
+// that year is fixed with no TMDB call. A detailed row is fetched only when
+// its stored date is in January–March: that is when a primary date or a
+// type-1 premiere in the previous year can fall in a different calendar
+// year. Everything else keeps the stored year. The sweep starts about ten
+// fetches a second. A movie opened or drawn in a row starts at once.
 func (c *Catalog) correctMovieYears(ctx context.Context) {
 	if c == nil || !c.yearRunning.CompareAndSwap(false, true) {
 		return
@@ -56,16 +65,20 @@ func (c *Catalog) correctMovieYears(ctx context.Context) {
 			return
 		}
 	}
+	if err := c.settleUnchangedMovieYears(ctx); err != nil {
+		c.noteYearError(ctx, err)
+		if ctx.Err() != nil {
+			return
+		}
+	}
 	for ctx.Err() == nil {
-		pending, err := c.countPendingMovieYears(ctx)
-		if err != nil {
-			c.noteYearError(ctx, err)
-			return
+		if until := c.yearPauseUntil.Load(); until > c.now().UnixNano() {
+			if !waitGap(ctx, time.Duration(until-c.now().UnixNano())) {
+				return
+			}
+			continue
 		}
-		c.setYearProgress(func(p *MovieYearProgress) { p.Pending = pending })
-		if pending == 0 {
-			return
-		}
+		c.drainMovieYearViews(ctx)
 		if c.tmdb() == nil {
 			c.noteYearError(ctx, errors.New("catalog: movie year refresh waiting for TMDB"))
 			if !waitGap(ctx, 30*time.Second) {
@@ -73,25 +86,29 @@ func (c *Catalog) correctMovieYears(ctx context.Context) {
 			}
 			continue
 		}
-		advanced, err := c.refreshOneMovieYear(ctx)
+		key, ok, err := c.nextMovieYearKey(ctx)
 		if err != nil {
 			c.noteYearError(ctx, err)
-			if ctx.Err() != nil {
+			return
+		}
+		if ok {
+			c.startYearFetch(ctx, key)
+		} else if c.yearInflightN.Load() == 0 {
+			pending, err := c.countPendingMovieYears(ctx)
+			if err != nil {
+				c.noteYearError(ctx, err)
 				return
 			}
-			pause := c.yearGap
-			if errors.Is(err, tmdb.ErrUnavailable) || errors.Is(err, tmdb.ErrNoKey) {
-				pause = 30 * time.Second
-			}
-			if !waitGap(ctx, pause) {
+			c.setYearProgress(func(p *MovieYearProgress) { p.Pending = pending })
+			if pending == 0 {
 				return
 			}
-			continue
 		}
-		if advanced {
-			c.setYearProgress(func(p *MovieYearProgress) { p.Refreshed++; p.LastError = "" })
+		gap := c.yearGap
+		if gap <= 0 {
+			gap = time.Second / yearFetchRate
 		}
-		if !waitGap(ctx, c.yearGap) {
+		if !waitGap(ctx, gap) {
 			return
 		}
 	}
@@ -165,20 +182,157 @@ func (c *Catalog) rederiveStoredMovieYears(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// refreshOneMovieYear fetches one movie whose year source is still unknown.
-// It reports whether a movie was settled. ErrUnavailable and ErrNoKey leave
-// the row queued so the breaker, not this loop, decides when TMDB is tried
-// again. Any other failure cools that movie down so the next movie can proceed.
-func (c *Catalog) refreshOneMovieYear(ctx context.Context) (bool, error) {
+// settleUnchangedMovieYears marks movies whose stored year cannot differ
+// from the primary year. A detailed January–March date stays queued: the
+// primary release, or a type-1 premiere late the previous year, can fall in
+// the other calendar year. No type-1 date is stored on its own.
+func (c *Catalog) settleUnchangedMovieYears(ctx context.Context) error {
+	month := movieReleaseMonthSQL(store.DialectOf(c.db))
+	_, err := c.db.ExecContext(ctx, `UPDATE catalog_titles SET year_source=? WHERE type='movie' AND year_source='' AND released_ts=0`, yearSourceNone)
+	if err != nil {
+		return err
+	}
+	_, err = c.db.ExecContext(ctx, `UPDATE catalog_titles SET year_source=? WHERE type='movie' AND year_source='' AND NOT (detail=1 AND released_ts<>0 AND `+month+` BETWEEN 1 AND 3)`, yearSourceReleased)
+	return err
+}
+
+func movieReleaseMonthSQL(d store.Dialect) string {
+	if d == store.Postgres {
+		return `CAST(EXTRACT(MONTH FROM (to_timestamp(released_ts) AT TIME ZONE 'UTC')) AS INTEGER)`
+	}
+	return `CAST(strftime('%m', released_ts, 'unixepoch') AS INTEGER)`
+}
+
+// movieYearMightDiffer reports whether a stored theatrical date can sit in
+// a different calendar year from TMDB's primary release_date.
+func movieYearMightDiffer(t core.Title) bool {
+	if t.Type != core.TypeMovie || t.Released.IsZero() {
+		return false
+	}
+	m := t.Released.UTC().Month()
+	return m >= time.January && m <= time.March
+}
+
+// kickMovieYears starts a year refresh for movies on screen. It does not
+// wait, and it does not fetch a movie whose stored month cannot change the year.
+func (c *Catalog) kickMovieYears(items []core.Title) {
+	if c == nil {
+		return
+	}
+	for _, t := range items {
+		if !movieYearMightDiffer(t) {
+			continue
+		}
+		if c.yearAhead == nil || c.yearInflightN.Load() >= yearFetchSlots {
+			c.enqueueMovieYear(t.Key)
+			continue
+		}
+		if !c.startYearFetch(context.Background(), t.Key) {
+			c.enqueueMovieYear(t.Key)
+		}
+	}
+}
+
+func (c *Catalog) enqueueMovieYear(key core.RatingKey) {
+	if c.yearAhead == nil {
+		return
+	}
+	select {
+	case c.yearAhead <- key:
+	default:
+	}
+}
+
+func (c *Catalog) drainMovieYearViews(ctx context.Context) {
+	if c.yearAhead == nil {
+		return
+	}
+	for c.yearInflightN.Load() < yearFetchSlots {
+		select {
+		case <-ctx.Done():
+			return
+		case key := <-c.yearAhead:
+			c.startYearFetch(ctx, key)
+		default:
+			return
+		}
+	}
+}
+
+func (c *Catalog) startYearFetch(ctx context.Context, key core.RatingKey) bool {
+	if c.yearInflightN.Load() >= yearFetchSlots {
+		return false
+	}
+	if _, loaded := c.yearInflight.LoadOrStore(key, struct{}{}); loaded {
+		return false
+	}
+	if c.yearInflightN.Add(1) > yearFetchSlots {
+		c.yearInflightN.Add(-1)
+		c.yearInflight.Delete(key)
+		return false
+	}
+	go func() {
+		defer c.yearInflightN.Add(-1)
+		defer c.yearInflight.Delete(key)
+		advanced, err := c.refreshMovieYearKey(ctx, key)
+		if advanced {
+			c.setYearProgress(func(p *MovieYearProgress) { p.Refreshed++; p.LastError = "" })
+		}
+		if err != nil {
+			c.noteYearError(ctx, err)
+		}
+		if errors.Is(err, tmdb.ErrUnavailable) || errors.Is(err, tmdb.ErrNoKey) {
+			c.yearPauseUntil.Store(c.now().Add(30 * time.Second).UnixNano())
+		}
+	}()
+	return true
+}
+
+func (c *Catalog) nextMovieYearKey(ctx context.Context) (core.RatingKey, bool, error) {
 	var key int64
 	err := c.db.QueryRowContext(ctx, `SELECT key FROM catalog_titles WHERE type='movie' AND year_source='' AND tmdb_id<>0 AND year_checked_at<=? ORDER BY browsable DESC, popularity DESC, key LIMIT 1`, c.now().Add(-yearRetryAfter).Unix()).Scan(&key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return core.RatingKey(key), true, nil
+}
+
+// refreshMovieYearKey fetches one movie when its year is still unknown and
+// its stored date can differ from the primary year. ErrUnavailable and
+// ErrNoKey leave the row queued.
+func (c *Catalog) refreshMovieYearKey(ctx context.Context, key core.RatingKey) (bool, error) {
+	var source string
+	var released int64
+	var detail int
+	err := c.db.QueryRowContext(ctx, `SELECT year_source, released_ts, detail FROM catalog_titles WHERE key=? AND type='movie'`, int64(key)).Scan(&source, &released, &detail)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	rating := core.RatingKey(key)
+	if source != "" || detail != 1 || released == 0 || time.Unix(released, 0).UTC().Month() > time.March {
+		return false, nil
+	}
+	return c.fetchMovieYear(ctx, key)
+}
+
+// refreshOneMovieYear fetches the next queued movie. Tests call it directly.
+func (c *Catalog) refreshOneMovieYear(ctx context.Context) (bool, error) {
+	key, ok, err := c.nextMovieYearKey(ctx)
+	if !ok || err != nil {
+		return false, err
+	}
+	return c.fetchMovieYear(ctx, key)
+}
+
+func (c *Catalog) fetchMovieYear(ctx context.Context, rating core.RatingKey) (bool, error) {
+	if c.tmdb() == nil {
+		return false, errors.New("catalog: movie year refresh waiting for TMDB")
+	}
 	d, err := c.tmdb().MovieDetails(ctx, rating.TMDB())
 	if err != nil {
 		if errors.Is(err, tmdb.ErrUnavailable) || errors.Is(err, tmdb.ErrNoKey) {

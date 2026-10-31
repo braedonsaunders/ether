@@ -256,8 +256,6 @@ function yearCorrectionDetail(v: unknown): string {
       pending: formatNumber(pending),
     });
   }
-  if (v.finished === true && done > 0)
-    return t("Movie years corrected · {count} titles", { count: formatNumber(done) });
   return "";
 }
 

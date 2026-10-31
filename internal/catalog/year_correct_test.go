@@ -34,7 +34,7 @@ func TestMovieYearCorrectionUsesStoredDatesThenRefreshesTheRest(t *testing.T) {
 	insert(summary, "movie", 10, "Summary", 1943, primary.Unix(), 0, 0, 1)
 	insert(remembered, "movie", 11, "Remembered", 1955, time.Date(1956, 11, 19, 0, 0, 0, 0, time.UTC).Unix(), time.Date(1954, 4, 26, 0, 0, 0, 0, time.UTC).Unix(), 1, 2)
 	insert(casablanca, "movie", 289, "Casablanca", 1943, theatrical.Unix(), 0, 1, 100)
-	insert(other, "movie", 12, "Other", 2001, time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC).Unix(), 0, 1, 1)
+	insert(other, "movie", 12, "Other", 2001, time.Date(2001, 7, 4, 0, 0, 0, 0, time.UTC).Unix(), 0, 1, 1)
 	insert(show, "show", 99, "Show", 1960, time.Date(1960, 12, 9, 0, 0, 0, 0, time.UTC).Unix(), 0, 1, 50)
 	if err := c.UpsertTitle(ctx, core.Title{Key: casablanca, Type: core.TypeMovie, IDs: core.IDs{TMDB: 289}, Title: "Casablanca", Year: 1942, Released: primary, Popularity: 100}, true); err != nil {
 		t.Fatal(err)
@@ -118,8 +118,15 @@ func TestMovieYearCorrectionUsesStoredDatesThenRefreshesTheRest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stats.YearCorrection.Pending == 0 || stats.YearCorrection.Stored < 2 || stats.YearCorrection.Refreshed < 1 {
-				t.Fatalf("progress %+v", stats.YearCorrection)
+			if stats.YearCorrection.Pending != 0 || stats.YearCorrection.Stored < 2 || stats.YearCorrection.Refreshed < 1 {
+				continue
+			}
+			var otherSource string
+			if err := c.db.QueryRowContext(ctx, `SELECT year_source FROM catalog_titles WHERE key=?`, int64(other)).Scan(&otherSource); err != nil {
+				t.Fatal(err)
+			}
+			if otherSource != yearSourceReleased {
+				t.Fatalf("summer movie source %q", otherSource)
 			}
 			if calls.n() != 1 {
 				t.Fatalf("TMDB calls %d", calls.n())
@@ -151,6 +158,76 @@ func TestMovieYearRefreshLeavesTheQueueWhenTMDBIsDown(t *testing.T) {
 	if year != 1943 || source != "" {
 		t.Fatalf("down TMDB stored year %d source %q", year, source)
 	}
+}
+
+func TestViewedEarlyYearMovieRefreshesWithoutBlocking(t *testing.T) {
+	c := newChunkTestCatalog(t)
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	c.SetNow(func() time.Time { return now })
+	ctx := context.Background()
+	january := core.MovieKey(289)
+	july := core.MovieKey(12)
+	for _, row := range []struct {
+		key     core.RatingKey
+		id      int64
+		title   string
+		year    int
+		release time.Time
+	}{
+		{january, 289, "Casablanca", 1943, time.Date(1943, 1, 15, 0, 0, 0, 0, time.UTC)},
+		{july, 12, "Other", 2001, time.Date(2001, 7, 4, 0, 0, 0, 0, time.UTC)},
+	} {
+		if _, err := c.db.ExecContext(ctx, `INSERT INTO catalog_titles(key,type,tmdb_id,title,year,released_ts,detail,detail_at,browsable) VALUES(?,'movie',?,?,?,?,1,?,1)`, int64(row.key), row.id, row.title, row.year, row.release.Unix(), now.Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	c.SetTMDB(&yearTMDB{details: func(id int64) (*tmdb.MovieDetails, error) {
+		if id != 289 {
+			t.Errorf("fetched movie %d", id)
+			return nil, tmdb.ErrUnavailable
+		}
+		close(entered)
+		<-release
+		var d tmdb.MovieDetails
+		if err := json.Unmarshal([]byte(`{"id":289,"title":"Casablanca","release_date":"1942-11-26","release_dates":{"results":[{"iso_3166_1":"SE","release_dates":[{"type":2,"release_date":"1943-01-15T00:00:00Z"}]}]}}`), &d); err != nil {
+			return nil, err
+		}
+		return &d, nil
+	}})
+	getCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	got, err := c.CachedGet(getCtx, january)
+	cancel()
+	if err != nil || got == nil || got.Year != 1943 {
+		t.Fatalf("open waited on the year refresh: %v %+v", err, got)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("opening the movie did not refresh its year")
+	}
+	summer, err := c.CachedGet(ctx, july)
+	if err != nil || summer.Title != "Other" {
+		t.Fatalf("summer movie %v %+v", err, summer)
+	}
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var year int
+		var source string
+		if err := c.db.QueryRowContext(ctx, `SELECT year, year_source FROM catalog_titles WHERE key=?`, int64(january)).Scan(&year, &source); err != nil {
+			t.Fatal(err)
+		}
+		if source == yearSourcePrimary {
+			if year != 1942 {
+				t.Fatalf("viewed year %d", year)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("viewed movie year was not refreshed")
 }
 
 type yearTMDB struct {

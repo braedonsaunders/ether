@@ -446,6 +446,14 @@ describe("health", () => {
     expect(correcting.details.some((line) => line.includes("12") && line.includes("4"))).toBe(
       true,
     );
+    const finished = catalogHealth(
+      {
+        lastSync: "2026-10-30T00:00:00Z",
+        yearCorrection: { finished: true, pending: 0, stored: 30, refreshed: 4 },
+      },
+      now,
+    );
+    expect(finished.details.some((line) => line.includes("movie years"))).toBe(false);
     expect(remoteHealth({ claimed: false }).level).toBe("error");
     expect(
       remoteHealth({ claimed: true, remoteAccess: true, presence: { connected: false } }).level,
