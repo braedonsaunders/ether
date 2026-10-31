@@ -60,10 +60,23 @@ func TestJellyfinStreamRangeAndAudioLabels(t *testing.T) {
 	if named["LocalizedLanguage"] != "English" {
 		t.Fatal(named["LocalizedLanguage"])
 	}
-	text := i.mediaStreams([]frontend.StreamInfo{{Type: "subtitle", Codec: "subrip"}})[0].(map[string]any)
+	text := i.mediaStreams([]frontend.StreamInfo{{Type: "subtitle", Codec: "subrip", Language: "eng"}})[0].(map[string]any)
 	image := i.mediaStreams([]frontend.StreamInfo{{Type: "subtitle", Codec: "hdmv_pgs_subtitle"}})[0].(map[string]any)
 	if text["IsTextSubtitleStream"] != true || image["IsTextSubtitleStream"] != false {
 		t.Fatal(text["IsTextSubtitleStream"], image["IsTextSubtitleStream"])
+	}
+	for key, want := range map[string]any{"LocalizedDefault": "Default", "LocalizedExternal": "External", "LocalizedForced": "Forced", "LocalizedHearingImpaired": "Hearing Impaired", "LocalizedUndefined": "Undefined", "LocalizedLanguage": "English"} {
+		if text[key] != want {
+			t.Errorf("subtitle %s: got %v", key, text[key])
+		}
+	}
+	if _, ok := audio["LocalizedForced"]; ok {
+		t.Fatal("audio gained a subtitle label")
+	}
+	limited := i.mediaStreams([]frontend.StreamInfo{{Type: "video", Codec: "h264", ColorRange: "tv"}})[0].(map[string]any)
+	full := i.mediaStreams([]frontend.StreamInfo{{Type: "video", Codec: "h264", ColorRange: "pc"}})[0].(map[string]any)
+	if _, ok := limited["ColorRange"]; ok || full["ColorRange"] != "pc" {
+		t.Fatal(limited["ColorRange"], full["ColorRange"])
 	}
 }
 

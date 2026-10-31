@@ -117,6 +117,14 @@ func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token 
 	if i.host.ImageGrants == nil || !detail.ImagesAuthoritative {
 		return tags, backdrops, metadata
 	}
+	hasPoster := false
+	for _, img := range detail.Images {
+		switch strings.ToLower(img.Kind) {
+		case "poster", "primary":
+			hasPoster = true
+		}
+	}
+	primarySelected := false
 	for _, img := range detail.Images {
 		kind := ""
 		switch strings.ToLower(img.Kind) {
@@ -124,8 +132,15 @@ func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token 
 			kind = "Primary"
 		case "logo":
 			kind = "Logo"
-		case "thumb", "still":
+		case "thumb":
 			kind = "Thumb"
+		case "still":
+			// An episode still is the primary image when the title has no poster.
+			if hasPoster || primarySelected {
+				kind = "Thumb"
+			} else {
+				kind = "Primary"
+			}
 		case "banner":
 			kind = "Banner"
 		case "backdrop":
@@ -143,6 +158,9 @@ func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token 
 				backdrops = append(backdrops, grant)
 			} else {
 				tags[kind] = grant
+			}
+			if kind == "Primary" {
+				primarySelected = true
 			}
 			i.addImageMetadata(metadata, kind, grant, img)
 		}

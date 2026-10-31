@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,6 +56,9 @@ func TestSourceHistoryRealStateAdvancesOnlyOnAcceptedSamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got, err := history.LastSource(ctx, viewer.ID, key); err != nil || got == nil || got.VideoCodec != "h264" {
+		t.Fatalf("playback start did not record probe facts: %+v %v", got, err)
+	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: dev, Protocol: "silo"}
 	if _, err = b.StartStream(ctx, access, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect}); err != nil {
 		t.Fatal(err)
@@ -94,7 +98,7 @@ func TestSourceHistoryRealStateAdvancesOnlyOnAcceptedSamples(t *testing.T) {
 	b.mu.Lock()
 	sequence := b.sessions[session.ID].historySequence
 	b.mu.Unlock()
-	if sequence != 2 {
+	if sequence != 3 {
 		t.Fatalf("replay reserved source sequence %d", sequence)
 	}
 	got, err := history.LastSource(ctx, viewer.ID, key)
@@ -120,6 +124,7 @@ type fakeSourceHistory struct {
 type stalledSourceHistory struct {
 	entered, release chan struct{}
 	once             sync.Once
+	hold             atomic.Bool
 }
 
 type cancelableSourceHistory struct{ entered chan struct{} }
@@ -149,6 +154,9 @@ func TestSourceHistoryWorkerExitsOnCancellation(t *testing.T) {
 
 func (h *stalledSourceHistory) BeginSourceSession(context.Context) (int64, error) { return 1, nil }
 func (h *stalledSourceHistory) RecordLastSource(context.Context, int64, core.RatingKey, int64, int64, core.PlaybackSourceObservation) error {
+	if !h.hold.Load() {
+		return nil
+	}
 	h.once.Do(func() { close(h.entered) })
 	<-h.release // Deliberately ignore cancellation to model an uncooperative driver.
 	return nil
@@ -182,6 +190,7 @@ func TestSourceHistoryStalledStorageDoesNotBlockStop(t *testing.T) {
 	if _, err = b.StartStream(ctx, access, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect}); err != nil {
 		t.Fatal(err)
 	}
+	history.hold.Store(true)
 	if err = b.Report(ctx, access, session.ID, frontend.Timeline{Sequence: 1, State: "playing"}); err != nil {
 		t.Fatal(err)
 	}
@@ -233,6 +242,14 @@ func TestSourceHistoryRecordsOnlyAcceptedSamplesAndAuthorizedStop(t *testing.T) 
 		s, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "silo", PlanID: p.ID})
 		if err != nil {
 			t.Fatal(err)
+		}
+		select {
+		case source := <-history.writes:
+			if source.ReleaseID != "actual" {
+				t.Fatalf("opened source: %+v", source)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("playback start did not record the opened file")
 		}
 		return s
 	}

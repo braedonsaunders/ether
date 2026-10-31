@@ -36,6 +36,27 @@ func (p *Protocol) Compare(reference, target conform.Response) conform.Report {
 	return p.Protocol.Compare(reference, target)
 }
 
+// Corpus runs the Apple capture's playback before the catalog item read.
+// That item response includes last-play facts created by the preceding start.
+func (p *Protocol) Corpus(profile string) []conform.Request {
+	requests := p.Protocol.Corpus(profile)
+	if profile != "silo-apple" {
+		return requests
+	}
+	var earlier, playback, item []conform.Request
+	for _, request := range requests {
+		switch {
+		case strings.HasPrefix(request.Name, "item_detail_"):
+			item = append(item, request)
+		case strings.HasPrefix(request.Name, "play_"), strings.HasPrefix(request.Name, "progress_"), strings.HasPrefix(request.Name, "mark_"), strings.HasPrefix(request.Name, "stop_"):
+			playback = append(playback, request)
+		default:
+			earlier = append(earlier, request)
+		}
+	}
+	return append(append(earlier, playback...), item...)
+}
+
 func (p *Protocol) CompareRequest(request conform.Request, reference, target conform.Response) conform.Report {
 	if bytes.HasPrefix(bytes.TrimSpace(reference.Body), []byte("#EXTM3U")) || bytes.HasPrefix(bytes.TrimSpace(target.Body), []byte("#EXTM3U")) {
 		return compareSiloPlaylist(reference, target)

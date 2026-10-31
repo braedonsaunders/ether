@@ -479,6 +479,20 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "soak" {
+		if err := soak(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "soak-eval" {
+		if err := soakEval(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	file := flag.String("config", os.Getenv("SCORECARD_CONFIG"), "private JSON configuration file")
 	flag.Parse()
 	if *file == "" {

@@ -328,6 +328,12 @@ func TestBrowseAndMutationsUseViewer(t *testing.T) {
 	}
 }
 
+func TestSiloAudioLanguageReportsUntaggedAsUnd(t *testing.T) {
+	if siloAudioLanguage("") != "und" || siloAudioLanguage("eng") != "eng" {
+		t.Fatal("untagged audio must be reported as und without rewriting a real tag")
+	}
+}
+
 func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	v := &frontend.Viewer{ID: 1}
 	hdr10Plus := true

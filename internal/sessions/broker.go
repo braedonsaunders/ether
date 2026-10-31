@@ -835,6 +835,9 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		b.cluster.ownershipChanged(ctx)
 	}
 	b.publish(ctx, sessionEvent("SessionStarted", session, nil))
+	// Reference Silo publishes last-file probe facts when playback starts,
+	// before progress or stop, for direct play, remux, and transcode.
+	b.recordOpenedSource(ctx, s)
 	return session, nil
 }
 func (b *Broker) access(ctx context.Context, a frontend.SessionAccess, id string) (*brokerSession, *core.Viewer, error) {

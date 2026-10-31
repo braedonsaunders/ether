@@ -61,6 +61,16 @@ func streamTitle(stream frontend.StreamInfo) string {
 	return stream.CodecLongName
 }
 
+// siloAudioLanguage is Silo's wire form of a probed audio language. The
+// shared probe leaves undetermined and rejected tags empty so it matches
+// ffprobe; Silo still reports that untagged stream as "und".
+func siloAudioLanguage(language string) string {
+	if language == "" {
+		return "und"
+	}
+	return language
+}
+
 func nonNil(v []string) []string {
 	if v == nil {
 		return []string{}
@@ -513,7 +523,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 					if stream.Type == "audio" {
 						if chosenAudio < 0 || (stream.Default && !choseDefault) {
 							chosenAudio = audioOrdinal
-							chosenLanguage = stream.Language
+							chosenLanguage = siloAudioLanguage(stream.Language)
 							choseDefault = stream.Default
 						}
 						audioOrdinal++
@@ -521,9 +531,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						if stream.Codec != "" {
 							track["codec"] = stream.Codec
 						}
-						if stream.Language != "" {
-							track["language"] = stream.Language
-						}
+						track["language"] = siloAudioLanguage(stream.Language)
 						if title := streamTitle(stream); title != "" {
 							track["title"] = title
 						}

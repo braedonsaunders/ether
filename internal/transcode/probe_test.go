@@ -160,7 +160,6 @@ func TestParseProbeGolden(t *testing.T) {
 				v.ProbedDolbyVisionProfile = integer(8)
 				v.ProbedDolbyVisionLevel = integer(6)
 			case "mp4_h264_aac.json":
-				v.Language = "und"
 				v.ProbedLevel = integer(40)
 				v.PixelFormat = "yuv420p"
 				v.CodecTag = "avc1"
@@ -286,6 +285,22 @@ func TestParseProbeErrors(t *testing.T) {
 	}
 	if _, err := ParseProbe([]byte(`{}`)); err == nil {
 		t.Error("expected error for empty output")
+	}
+}
+
+func TestParseProbeAudioHandlerName(t *testing.T) {
+	raw := []byte(`{"format":{"format_name":"mov,mp4"},"streams":[
+		{"codec_type":"audio","codec_name":"aac","tags":{"handler_name":"GPAC ISO Audio Handler"}},
+		{"codec_type":"audio","codec_name":"aac","tags":{"title":"Commentary","handler_name":"SoundHandler"}},
+		{"codec_type":"audio","codec_name":"aac","tags":{"handler_name":"SoundHandler"}},
+		{"codec_type":"video","codec_name":"h264","tags":{"handler_name":"VideoHandler"}}
+	]}`)
+	info, err := ParseProbe(raw)
+	if err != nil || len(info.Streams) != 4 {
+		t.Fatal(err, info)
+	}
+	if info.Streams[0].Title != "GPAC ISO Audio Handler" || info.Streams[1].Title != "Commentary" || info.Streams[2].Title != "" || info.Streams[3].Title != "" {
+		t.Fatal(info.Streams[0].Title, info.Streams[1].Title, info.Streams[2].Title, info.Streams[3].Title)
 	}
 }
 

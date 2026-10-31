@@ -232,6 +232,9 @@ func normalizeForNative(want, got *core.MediaInfo) {
 			if g.CodecTag == "" {
 				w.CodecTag = ""
 			}
+			if g.CodecLongName == "" {
+				w.CodecLongName = ""
+			}
 			if g.TimeBase == "" {
 				w.TimeBase = ""
 			}

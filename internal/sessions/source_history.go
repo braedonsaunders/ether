@@ -24,6 +24,35 @@ type sourceHistorySample struct {
 	source                  core.PlaybackSourceObservation
 }
 
+// recordOpenedSource stores the started file's probe facts before playback
+// start returns. Later progress samples still advance the same history.
+// An unknown source identity is left untouched.
+func (b *Broker) recordOpenedSource(ctx context.Context, s *brokerSession) {
+	if s == nil || s.historyEpoch <= 0 || b.deps.SourceHistory == nil {
+		return
+	}
+	snapshotter, ok := b.deps.Playback.(core.PlaybackSourceSnapshot)
+	if !ok {
+		return
+	}
+	source, err := snapshotter.CurrentSource(ctx, s.playID)
+	if err != nil || source.Revision == "" {
+		return
+	}
+	b.mu.Lock()
+	current := b.sessions[s.public.ID]
+	if current == nil || current.playID != s.playID || current.historyEpoch != s.historyEpoch {
+		b.mu.Unlock()
+		return
+	}
+	current.historySequence++
+	sequence := current.historySequence
+	b.mu.Unlock()
+	if err = b.deps.SourceHistory.RecordLastSource(ctx, s.public.ViewerID, s.public.Item, s.historyEpoch, sequence, source); err != nil && b.deps.OnEventError != nil {
+		b.deps.OnEventError(err)
+	}
+}
+
 // recordSourceHistory runs under the session owner gate. Source capture and
 // order assignment precede queueing; no playback lock covers storage I/O.
 func (b *Broker) recordSourceHistory(ctx context.Context, s *brokerSession) {

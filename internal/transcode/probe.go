@@ -267,6 +267,12 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	}
 	si.Language = normalizeLanguage(tag(s.Tags, "language"))
 	si.Title = tag(s.Tags, "title")
+	// MP4 audio often has no title tag. A descriptive handler name is the label
+	// Jellyfin publishes, such as "GPAC ISO Audio Handler". Generic handler
+	// names (SoundHandler) and video or subtitle handlers stay off the title.
+	if si.Title == "" && s.CodecType == "audio" {
+		si.Title = descriptiveAudioHandler(tag(s.Tags, "handler_name"))
+	}
 	si.CodecLongName = strings.TrimSpace(s.CodecLongName)
 	si.Default = s.Disposition["default"] == 1
 	si.Forced = s.Disposition["forced"] == 1
@@ -420,6 +426,15 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	return si, true
 }
 
+func descriptiveAudioHandler(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "soundhandler", "videohandler", "subtitlehandler", "datahandler", "hinthandler":
+		return ""
+	default:
+		return strings.TrimSpace(name)
+	}
+}
+
 func tag(tags map[string]string, key string) string {
 	if v, ok := tags[key]; ok {
 		return strings.TrimSpace(v)
@@ -439,11 +454,10 @@ func tag(tags map[string]string, key string) string {
 // Matroska legacy Language element and the MP4 mdhd code.
 func normalizeLanguage(l string) string {
 	l = strings.ToLower(strings.TrimSpace(l))
-	// "und" is a real tag. Silo reports it; dropping it makes the track
-	// look like the probe never named a language.
-	if l == "und" {
-		return "und"
-	}
+	// "und" and any other tag langtag rejects stay empty. That is the
+	// form both the ffprobe tag parser and the native Matroska/MP4
+	// readers have always stored. Silo maps an absent audio language
+	// back to "und" at its own boundary.
 	if langtag.Normalize(l) == "" {
 		return ""
 	}

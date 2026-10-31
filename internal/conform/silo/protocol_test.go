@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,27 @@ func TestShippedProfilesSendDeviceIdentity(t *testing.T) {
 	}
 }
 
+func TestAppleCorpusPlaysBeforeItemRead(t *testing.T) {
+	p, err := Load("../profiles/silo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := func(profile, prefix string) int {
+		for n, request := range p.Corpus(profile) {
+			if strings.HasPrefix(request.Name, prefix) {
+				return n
+			}
+		}
+		return -1
+	}
+	if applePlay, appleItem := index("silo-apple", "play_"), index("silo-apple", "item_detail_"); applePlay < 0 || appleItem < 0 || applePlay > appleItem {
+		t.Fatalf("apple playback %d item %d", applePlay, appleItem)
+	}
+	if androidItem, androidPlay := index("silo-android", "item_detail_"), index("silo-android", "play_"); androidItem < 0 || androidPlay < 0 || androidItem > androidPlay {
+		t.Fatalf("android item %d playback %d", androidItem, androidPlay)
+	}
+}
+
 func TestSchemaValidatedExtraFieldsRemainInformational(t *testing.T) {
 	if _, err := openapi.CachedSpec("../specs/manifest.json", "silo", ""); os.IsNotExist(err) {
 		t.Skip("Silo OpenAPI cache is empty")
@@ -76,6 +98,22 @@ func TestSchemaValidatedExtraFieldsRemainInformational(t *testing.T) {
 	}
 	if known == nil || known.Blocking || unknown == nil || !unknown.Blocking {
 		t.Fatalf("schema classification: %+v", report.Differences)
+	}
+	homeRef := conform.Response{Status: 200, Headers: headers, Body: []byte(`{"sections":[{"id":"recent","section_type":"recently_added","title":"Recent","featured":false,"item_limit":1,"total_count":1,"is_custom":false,"customized":false,"items":[{"content_id":"movie-1","title":"Film","type":"movie"}]},{"id":"continue","section_type":"continue_watching","title":"Continue","featured":false,"item_limit":1,"total_count":1,"is_custom":false,"customized":false,"items":[{"content_id":"episode-1","title":"Ep","type":"episode"}]}]}`)}
+	homeTarget := conform.Response{Status: 200, Headers: headers, Body: []byte(`{"sections":[{"id":"recent","section_type":"recently_added","title":"Recent","featured":false,"item_limit":1,"total_count":1,"is_custom":false,"customized":false,"items":[{"content_id":"movie-1","title":"Film","type":"movie"}]},{"id":"continue","section_type":"continue_watching","title":"Continue","featured":false,"item_limit":1,"total_count":1,"is_custom":false,"customized":false,"items":[{"content_id":"episode-1","title":"Ep","type":"episode","episode_number":2,"season_number":1,"item_source":"in_progress","poster_is_episode_still":false,"backdrop_is_episode_still":false,"series_id":"series-1","series_title":"Show","series_poster_url":"/api/v2/images/p","series_backdrop_url":"/api/v2/images/b","season_poster_url":"/api/v2/images/s","series_poster_thumbhash":"abc","series_backdrop_thumbhash":"def","season_poster_thumbhash":"ghi"}]}]}`)}
+	home := p.CompareRequest(conform.Request{Method: "GET", Path: "/api/v2/home/sections"}, homeRef, homeTarget)
+	seen := map[string]conform.Difference{}
+	for _, d := range home.Differences {
+		seen[d.Path] = d
+		if d.Kind == conform.KindExtra && d.Blocking {
+			t.Fatalf("home extra still blocking: %+v", d)
+		}
+	}
+	for _, path := range []string{"$/sections[]/items[]/episode_number", "$/sections[]/items[]/series_poster_url", "$/sections[]/items[]/poster_is_episode_still"} {
+		d, ok := seen[path]
+		if !ok || d.Blocking || d.Kind != conform.KindValue {
+			t.Fatalf("home field %s not informational: %+v", path, d)
+		}
 	}
 }
 func TestObserveHLSAndRejectExternalURLs(t *testing.T) {

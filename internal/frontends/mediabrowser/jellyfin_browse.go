@@ -169,10 +169,13 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 	case "movie", "episode":
 		setMissing(item, "VideoType", "VideoFile")
 		setMissing(item, "Container", "")
+		if title.Type == "movie" {
+			i.attachLibraryParent(r, viewer, item, "movie")
+		}
 	case "show":
 		setMissing(item, "AirDays", []string{})
 		setMissing(item, "MediaType", "Unknown")
-		i.attachShowLibraryParent(r, viewer, item)
+		i.attachLibraryParent(r, viewer, item, "show")
 		if title.Status != "" {
 			setMissing(item, "Status", jellyfinSeriesStatus(title.Status))
 		}
@@ -409,10 +412,11 @@ func (i *instance) boxSetDTO(collection frontend.Collection) map[string]any {
 	return item
 }
 
-// attachShowLibraryParent sets a show's ParentId to the one visible show
-// library. A missing or ambiguous library leaves the field absent.
-func (i *instance) attachShowLibraryParent(r *http.Request, viewer *frontend.Viewer, item map[string]any) {
-	if r == nil || viewer == nil || i.host.Experience == nil {
+// attachLibraryParent sets ParentId to the one visible library of viewType.
+// A missing or ambiguous library leaves the field absent. Episodes and
+// seasons already name their season or show.
+func (i *instance) attachLibraryParent(r *http.Request, viewer *frontend.Viewer, item map[string]any, viewType frontend.MediaType) {
+	if r == nil || viewer == nil || i.host.Experience == nil || viewType == "" {
 		return
 	}
 	if _, ok := item["ParentId"]; ok {
@@ -424,7 +428,7 @@ func (i *instance) attachShowLibraryParent(r *http.Request, viewer *frontend.Vie
 	}
 	var libraryID string
 	for _, view := range views {
-		if view.Type != "show" {
+		if view.Type != viewType {
 			continue
 		}
 		if libraryID != "" {
@@ -444,6 +448,43 @@ func (i *instance) attachShowLibraryParent(r *http.Request, viewer *frontend.Vie
 		return
 	}
 	item["ParentId"] = viewID
+}
+
+// nameChildSeries copies the parent show's title onto children that do not
+// already carry it. Season rows often omit the series label that detail fills.
+func (i *instance) nameChildSeries(r *http.Request, viewer *frontend.Viewer, parent frontend.RatingKey, page *frontend.Page) {
+	if i == nil || r == nil || viewer == nil || page == nil || i.host.Experience == nil || parent.Kind() != frontend.KindShow {
+		return
+	}
+	missing := false
+	for _, title := range page.Items {
+		if title.ShowTitle == "" && (title.Type == "season" || title.Type == "episode") {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return
+	}
+	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: parent})
+	if err != nil || detail.Title.Title == "" {
+		return
+	}
+	if detail.Title.Type != "" && detail.Title.Type != "show" {
+		return
+	}
+	if detail.Title.Key != 0 && detail.Title.Key != parent {
+		return
+	}
+	name := detail.Title.Title
+	for n := range page.Items {
+		if page.Items[n].ShowTitle == "" && (page.Items[n].Type == "season" || page.Items[n].Type == "episode") {
+			page.Items[n].ShowTitle = name
+			if page.Items[n].ShowKey == 0 {
+				page.Items[n].ShowKey = parent
+			}
+		}
+	}
 }
 
 // attachParentIdentity writes the show and season ids and names the title
@@ -822,9 +863,21 @@ func (i *instance) jellyfinEditions(r *http.Request, viewer *frontend.Viewer, ti
 		source := i.detailMediaSourceDTO(id, version.Media)
 		jellyfinMediaSourceShape(source, title.Title)
 		i.jellyfinMediaSourceDTO(source, version.Media, false)
+		// Jellyfin list rows omit chapter arrays. Detail keeps them.
+		delete(source, "Chapters")
 		out = append(out, jellyfinEdition{handle: id, source: source, media: version.Media})
 	}
 	return out
+}
+
+func setSourcePath(source map[string]any, itemPath string) {
+	if source == nil || itemPath == "" {
+		return
+	}
+	if _, ok := source["Path"]; ok {
+		return
+	}
+	source["Path"] = itemPath
 }
 
 func applyJellyfinEditionFacts(item map[string]any, media frontend.MediaInfo) {

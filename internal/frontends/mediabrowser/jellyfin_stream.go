@@ -20,6 +20,16 @@ func (i *instance) jellyfinStreamDTO(dto map[string]any, s frontend.StreamInfo) 
 		dto["LocalizedOriginal"] = "Original"
 		dto["LocalizedLanguage"] = jellyfinLanguageName(s.Language)
 	}
+	if s.Type == "subtitle" {
+		// Jellyfin sends these words on every subtitle stream. They name the
+		// flag, including when the flag itself is false.
+		dto["LocalizedDefault"] = "Default"
+		dto["LocalizedExternal"] = "External"
+		dto["LocalizedForced"] = "Forced"
+		dto["LocalizedHearingImpaired"] = "Hearing Impaired"
+		dto["LocalizedUndefined"] = "Undefined"
+		dto["LocalizedLanguage"] = jellyfinLanguageName(s.Language)
+	}
 	if s.Type == "subtitle" && jellyfinTextSubtitle(s.Codec) {
 		dto["IsTextSubtitleStream"] = true
 	}
@@ -44,9 +54,15 @@ func (i *instance) jellyfinStreamDTO(dto map[string]any, s frontend.StreamInfo) 
 		}
 	}
 	for key, value := range map[string]string{"AspectRatio": s.DisplayAspectRatio, "PixelFormat": s.PixelFormat, "CodecTag": s.CodecTag, "TimeBase": s.TimeBase, "ColorRange": s.ColorRange, "ColorSpace": s.ColorSpace, "ColorTransfer": s.ColorTransfer, "ColorPrimaries": s.ColorPrimaries} {
-		if value != "" {
-			dto[key] = value
+		if value == "" {
+			continue
 		}
+		// Jellyfin omits the default limited range. A full-range probe still
+		// reports "pc".
+		if key == "ColorRange" && (value == "tv" || value == "mpeg") {
+			continue
+		}
+		dto[key] = value
 	}
 	if s.NALLengthSize != nil {
 		dto["NalLengthSize"] = strconv.Itoa(*s.NALLengthSize)

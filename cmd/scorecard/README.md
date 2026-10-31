@@ -160,12 +160,30 @@ For growth and peak observation use `scorecard resources -cgroup /absolute/path
 -interval 1s -samples 7201` in a separately coordinated run. This emits a
 machine-readable cgroup-v2 time series; interrupted runs have `complete=false`.
 Memory.current includes cache, RSS sums can double-count shared pages, and
-memory.peak may predate the run unless the cgroup is fresh. GPU, per-container
-network I/O and Go goroutine counts are explicitly unmeasured. FFmpeg children
-are included only if they remain in the measured cgroup. The tool does not yet
-measure CPU per verified stream-minute, perform mixed churn/failure injection,
-or control cold caches; no extended soak should run without aligned fixtures,
-resource isolation and the coordinator's reservation.
+memory.peak may predate the run unless the cgroup is fresh. The `resources`
+subcommand does not collect per-container network I/O, GPU utilization or Go
+goroutine counts. FFmpeg children are included only if they remain in the
+measured cgroup. No extended comparative soak should run without aligned
+fixtures, resource isolation and the coordinator's reservation.
+
+## Soak, fault and leak gates
+
+`scorecard soak` (scorecard build tag) starts a disposable Ether with Plex,
+Jellyfin and Emby on loopback, drives mixed browse and direct, remux and
+transcode playback with session churn, and injects a source outage, a slow
+read, an encoder crash, an encoder-guardian kill and a SQLite writer stall.
+`scorecard soak-eval -input manifest.json` applies the same gates to a saved
+manifest. Pass requires the injected faults, a Plex-majority mix, zero
+unexpected errors outside fault windows, three verified playback starts within
+30 seconds of fault removal followed by a clean five minutes, cleanup within
+five minutes (sessions and encoder processes back to baseline, FD delta at most
+5, retry queue not growing), goroutines within 50 of baseline, and monotonic
+network counters. GPU is recorded as `no_device`, `dri_present` or
+`nvidia_present`; a missing scope fails. The two-hour RSS gate is `not_run` on
+the shakedown profile and is required on `sustained`. A shakedown pass does not
+claim the two-hour run. Profiles: `-profile shakedown` (about 22 minutes plus
+cleanup) and `-profile sustained` (two hours of steady load before the same
+fault and recovery sequence). The manifest and report contain no credentials.
 
 When each quantile has enough tail observations (n·p·(1−p) >= 10), the
 collector emits approximate 95% binomial order-statistic intervals for

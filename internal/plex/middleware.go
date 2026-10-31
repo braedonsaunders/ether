@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 type acceptanceContextKey struct{}
@@ -423,7 +424,8 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeHTTPError(w, http.StatusNotFound)
 	case errors.Is(err, core.ErrUnauthorized):
 		writeHTTPError(w, http.StatusUnauthorized)
-	case errors.Is(err, core.ErrStreamLimit):
+	case errors.Is(err, core.ErrStreamLimit), errors.Is(err, transcode.ErrTooManyTranscodes):
+		w.Header().Set("Retry-After", "5")
 		writeHTTPError(w, http.StatusServiceUnavailable)
 	case errors.Is(err, core.ErrNotAvailable), errors.Is(err, core.ErrUnreleased), errors.Is(err, core.ErrDebridAuth):
 		// The title exists; nothing can play it right now (no release yet,
