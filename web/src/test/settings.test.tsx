@@ -29,10 +29,7 @@ describe("Settings", () => {
   });
   it("saves automatic franchise visibility without changing other catalog settings", async () => {
     const { fake } = renderApp("/catalog/settings");
-    fireEvent.click(
-      await screen.findByRole("button", { name: "More options: What's browsable" }, WAIT),
-    );
-    const toggle = screen.getByLabelText("Hide automatic franchise collections");
+    const toggle = await screen.findByLabelText("Hide automatic franchise collections", {}, WAIT);
     expect(toggle).not.toBeChecked();
     const before = { ...fake.state.config.catalog };
     fireEvent.click(toggle);

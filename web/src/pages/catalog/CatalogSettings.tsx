@@ -1,4 +1,5 @@
 import { SettingsSection } from "@braedonsaunders/appkit-ui";
+import { Database, Globe2, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { ConfigSection } from "../../components/ConfigSection";
@@ -51,19 +52,6 @@ export function CatalogSettings() {
               {t("Choose the titles and metadata your viewers discover.")}
             </p>
           </div>
-          <div className="space-y-5" aria-label={t("Catalog status")}>
-            {item ? (
-              <SettingsSection title={t("Catalog health")}>
-                <SettingsRow
-                  title={t("TMDB catalog")}
-                  description={item.details.join(" · ")}
-                  control={<LevelBadge level={item.level} label={item.summary} />}
-                />
-              </SettingsSection>
-            ) : null}
-            <HomeReleaseStatus />
-            <TrendingStatus />
-          </div>
           <ConfigSection
             configKey="catalog"
             endpoint="catalog"
@@ -73,6 +61,46 @@ export function CatalogSettings() {
             before={(draft) => <TmdbAccount apiKey={draft.tmdbKey} />}
           />
         </div>
+        <aside className="space-y-5" aria-label={t("Catalog status")}>
+          <HomeReleaseStatus />
+          <TrendingStatus />
+          {item ? (
+            <SettingsSection title={t("Catalog health")}>
+              <SettingsRow
+                title={t("TMDB catalog")}
+                description={item.details.join(" · ")}
+                control={<LevelBadge level={item.level} label={item.summary} />}
+              />
+            </SettingsSection>
+          ) : null}
+          <div className="catalog-settings-note">
+            <Globe2 size={21} />
+            <h3>{t("Metadata, your way")}</h3>
+            <p>
+              {t(
+                "Language and region tailor title names, descriptions, release dates and availability.",
+              )}
+            </p>
+          </div>
+          <div className="catalog-settings-note">
+            <Sparkles size={21} />
+            <h3>{t("A focused library")}</h3>
+            <p>
+              {t(
+                "Popularity and vote thresholds shape browsing. Other released titles remain discoverable through Plex search.",
+              )}
+            </p>
+          </div>
+          <div className="catalog-settings-note">
+            <Database size={21} />
+            <h3>{t("Always up to date")}</h3>
+            <p>
+              {t(
+                "Settings apply to new requests without a restart. Unknown and future release dates stay out of browsing.",
+              )}
+            </p>
+          </div>
+        </aside>
       </div>
     </div>
   );
