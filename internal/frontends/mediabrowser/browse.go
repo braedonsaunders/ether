@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/paging"
@@ -83,7 +84,8 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 		m["OriginalLanguage"] = t.Language
 	}
 	if t.ContentRating != "" {
-		m["OfficialRating"] = t.ContentRating
+		// Jellyfin and Emby write other countries' ratings "DE-6".
+		m["OfficialRating"] = contentrating.Prefixed(t.ContentRating)
 	}
 	if t.Rating > 0 {
 		m["CommunityRating"] = t.Rating
@@ -639,7 +641,9 @@ func itemQuery(r *http.Request) frontend.ItemQuery {
 		}
 	}
 	if values := route.Query(r.URL.Query(), "OfficialRatings"); len(values) == 1 && values[0] != "" {
-		q.Filter.ContentRatings = splitCSV(values[0])
+		for _, v := range splitCSV(values[0]) {
+			q.Filter.ContentRatings = append(q.Filter.ContentRatings, contentrating.FromPrefixed(v))
+		}
 	}
 	if values := route.Query(r.URL.Query(), "Studios"); len(values) == 1 {
 		names := splitCSV(values[0])

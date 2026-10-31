@@ -43,7 +43,7 @@ func (a *App) viewerCapabilities(local *identity.Local, experience frontend.Expe
 			}
 			tags := append([]string{}, a.safety.ForUser(v).BlockedKeywords...)
 			out.BlockedTags = &tags
-			rating := v.MaxContentRating
+			rating := a.safety.UserPolicy(v).MaxContentRating // the stricter of account and policy
 			out.MaxRating = &rating
 			cap := a.safety.BitrateLimit(v)
 			if remoteCap := a.cfg.Get().Transcode.RemoteMaxBitrateKbps; remoteCap > 0 && (cap == 0 || remoteCap < cap) {

@@ -332,3 +332,27 @@ var lookalike = map[rune]rune{
 	'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Η': 'H', 'Ι': 'I', 'Κ': 'K', 'Μ': 'M', 'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Χ': 'X',
 	'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'Х': 'X',
 }
+
+// Prefixed is a stored rating in the form Jellyfin and Emby store and show
+// ratings: bare for the US, "DE-6" (country, hyphen, label) elsewhere.
+func Prefixed(stored string) string {
+	if country, label, ok := splitQualified(strings.TrimSpace(stored)); ok {
+		return country + "-" + label
+	}
+	return stored
+}
+
+// FromPrefixed reads a Jellyfin or Emby rating label back into stored form:
+// "DE-6" is "de/6" when DE is a board Ether knows; anything else ("PG-13",
+// "TV-14") is already a stored label.
+func FromPrefixed(label string) string {
+	label = strings.TrimSpace(label)
+	for _, n := range []int{5, 2} { // "CA-QC-13+" before "CA-…"
+		if len(label) > n+1 && label[n] == '-' {
+			if _, known := tables[strings.ToUpper(label[:n])]; known && strings.ToUpper(label[:n]) != "US" {
+				return Qualify(label[:n], label[n+1:])
+			}
+		}
+	}
+	return label
+}

@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -229,6 +230,14 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	}
 	if caps.BlockedTags != nil {
 		policy["BlockedTags"] = *caps.BlockedTags
+	}
+	if caps.MaxRating != nil && *caps.MaxRating != "" {
+		// Ether's cap compares age levels, which are Jellyfin's parental
+		// scores for US ratings (PG 10, PG-13 13), and hides unrated titles.
+		if level := contentrating.LevelOf(*caps.MaxRating); level != contentrating.Unrated {
+			policy["MaxParentalRating"] = level.Age()
+		}
+		policy["BlockUnratedItems"] = []string{"Movie", "Series"}
 	}
 	if caps.RemoteBitrateKbps != nil {
 		policy["RemoteClientBitrateLimit"] = *caps.RemoteBitrateKbps * 1000

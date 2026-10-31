@@ -117,8 +117,10 @@ describe("Library visibility", () => {
       if (path === "/catalog/visibility/preview")
         return { total: 500, hidden: 120, movies: 100, shows: 20, unknownCountry: 0, items: [] };
     });
-    expect(await screen.findByDisplayValue("Family")).toBeInTheDocument();
-    expect(await screen.findByText("G · TV-G · TV-Y")).toBeInTheDocument();
+    await settleUi(() => {
+      expect(screen.getByDisplayValue("Family")).toBeInTheDocument();
+      expect(screen.getByText("G · TV-G · TV-Y")).toBeInTheDocument();
+    });
     expect(screen.getByText("PG · TV-PG")).toBeInTheDocument();
     expect(screen.queryByText("TV-PG")).not.toBeInTheDocument();
     expect(screen.getByText("Ratings match by age level")).toBeInTheDocument();

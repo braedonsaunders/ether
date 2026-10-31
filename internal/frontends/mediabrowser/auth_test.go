@@ -355,13 +355,14 @@ func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
 	bitrate := 5000
 	limit := 3
 	blocked := []string{"restricted"}
+	maxRating := "TV-PG"
 	views := []frontend.View{{ID: "1", Name: "Movies"}}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
 	host := frontend.Host{Identity: ident, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("198.51.100.7"), true }, ViewerCapabilities: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, ip netip.Addr) (frontend.ViewerCapabilities, error) {
 		if v != viewer || ip.String() != "198.51.100.7" {
 			t.Fatal(v, ip)
 		}
-		return frontend.ViewerCapabilities{CanPlay: &no, CanPlayRemote: &no, CanUseLiveTV: &yes, CanDownload: &yes, CanTranscodeAudio: &yes, CanTranscodeVideo: &no, CanRemux: &yes, MaxActiveSessions: &limit, BlockedTags: &blocked, RemoteBitrateKbps: &bitrate, HasLocalPassword: &yes, AllowedLibraries: &views}, nil
+		return frontend.ViewerCapabilities{CanPlay: &no, CanPlayRemote: &no, CanUseLiveTV: &yes, CanDownload: &yes, CanTranscodeAudio: &yes, CanTranscodeVideo: &no, CanRemux: &yes, MaxActiveSessions: &limit, BlockedTags: &blocked, RemoteBitrateKbps: &bitrate, HasLocalPassword: &yes, AllowedLibraries: &views, MaxRating: &maxRating}, nil
 	}}
 	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), host)
 	if err != nil {
@@ -388,6 +389,11 @@ func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
 		t.Fatal(result.Policy)
 	}
 	if result.Policy["EnableMediaPlayback"] != false || result.Policy["EnableAudioPlaybackTranscoding"] != true || result.Policy["EnablePlaybackRemuxing"] != true || result.Policy["MaxActiveSessions"] != float64(3) || len(result.Policy["BlockedTags"].([]any)) != 1 {
+		t.Fatal(result.Policy)
+	}
+	// A TV-PG cap is Jellyfin's parental score 10 (PG, TV-PG), and Ether
+	// hides unrated titles from capped viewers.
+	if result.Policy["MaxParentalRating"] != float64(10) || len(result.Policy["BlockUnratedItems"].([]any)) != 2 {
 		t.Fatal(result.Policy)
 	}
 }

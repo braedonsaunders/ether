@@ -299,10 +299,10 @@ func TestJellyfinBrowseFiltersReachTheLibrary(t *testing.T) {
 	}}
 	inst := mountJellyfin(t, exp)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true&MinCommunityRating=7.5&OfficialRatings=PG-13,R&Studios=A24&SearchTerm=Arrival&MinRuntimeTicks=600000000&SortBy=PremiereDate&SortOrder=Descending", nil)
+	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true&MinCommunityRating=7.5&OfficialRatings=PG-13,DE-16&Studios=A24&SearchTerm=Arrival&MinRuntimeTicks=600000000&SortBy=PremiereDate&SortOrder=Descending", nil)
 	r.Header.Set("X-Emby-Token", "grant")
 	inst.Handler().ServeHTTP(w, r)
-	if w.Code != 200 || got.Filter.MinRating != 7.5 || len(got.Filter.ContentRatings) != 2 || got.Filter.ContentRatings[0] != "PG-13" || got.Filter.Studio != "A24" || got.Filter.Query != "Arrival" || got.Filter.MinRuntime != 60*time.Second || got.Sort != core.SortReleased || !got.Desc {
+	if w.Code != 200 || got.Filter.MinRating != 7.5 || len(got.Filter.ContentRatings) != 2 || got.Filter.ContentRatings[0] != "PG-13" || got.Filter.ContentRatings[1] != "de/16" || got.Filter.Studio != "A24" || got.Filter.Query != "Arrival" || got.Filter.MinRuntime != 60*time.Second || got.Sort != core.SortReleased || !got.Desc {
 		t.Fatal(w.Code, got)
 	}
 }
@@ -1056,5 +1056,23 @@ func TestJellyfinEpisodeDetailLoadsTheShowStudio(t *testing.T) {
 	var item map[string]any
 	if json.Unmarshal(w.Body.Bytes(), &item) != nil || item["SeriesStudio"] != "Jun Group Productions" {
 		t.Fatal(item["SeriesStudio"])
+	}
+}
+
+// Other countries' ratings read the way Jellyfin and Emby write them.
+func TestOfficialRatingUsesCountryPrefix(t *testing.T) {
+	exp := frontendtest.Experience{LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+		return frontend.Page{Items: []frontend.Title{
+			{Key: core.MovieKey(1), Type: "movie", Title: "US", ContentRating: "TV-PG"},
+			{Key: core.MovieKey(2), Type: "movie", Title: "Germany", ContentRating: "de/6"},
+		}, Total: 2}, nil
+	}}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"OfficialRating":"TV-PG"`) || !strings.Contains(w.Body.String(), `"OfficialRating":"DE-6"`) {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }

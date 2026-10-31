@@ -189,3 +189,23 @@ func TestEquivalentsGroupByLevel(t *testing.T) {
 		t.Errorf("missing equivalents %v in %v", want, got)
 	}
 }
+
+func TestPrefixedRoundTrip(t *testing.T) {
+	for stored, prefixed := range map[string]string{
+		"PG": "PG", "TV-14": "TV-14", "de/6": "DE-6", "gb/12A": "GB-12A", "ca-qc/13+": "CA-QC-13+", "in/U/A 13+": "IN-U/A 13+", "": "",
+	} {
+		if got := Prefixed(stored); got != prefixed {
+			t.Errorf("Prefixed(%q) = %q, want %q", stored, got, prefixed)
+		}
+		if got := FromPrefixed(prefixed); got != stored {
+			t.Errorf("FromPrefixed(%q) = %q, want %q", prefixed, got, stored)
+		}
+	}
+	// US-style labels whose first part looks like a country code stay as
+	// they are: TV, PG and NC are not boards Ether knows.
+	for _, l := range []string{"TV-PG", "PG-13", "NC-17", "TV-Y7-FV"} {
+		if got := FromPrefixed(l); got != l {
+			t.Errorf("FromPrefixed(%q) = %q", l, got)
+		}
+	}
+}

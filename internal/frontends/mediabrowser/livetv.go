@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/paging"
@@ -105,7 +106,7 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 		if e != nil {
 			continue
 		}
-		items = append(items, map[string]any{"Id": id, "ChannelId": channel, "Name": p.Title, "Overview": p.Summary, "Type": "Program", "StartDate": wireTime(p.Start), "EndDate": wireTime(p.End), "OfficialRating": p.Rating, "IndexNumber": p.Episode, "ParentIndexNumber": p.Season})
+		items = append(items, map[string]any{"Id": id, "ChannelId": channel, "Name": p.Title, "Overview": p.Summary, "Type": "Program", "StartDate": wireTime(p.Start), "EndDate": wireTime(p.End), "OfficialRating": contentrating.Prefixed(p.Rating), "IndexNumber": p.Episode, "ParentIndexNumber": p.Season})
 	}
 	jsonReply(w, i.queryResult(items, len(items), 0))
 }

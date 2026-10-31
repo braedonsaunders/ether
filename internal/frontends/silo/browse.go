@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -19,7 +20,7 @@ func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	kind := map[frontend.MediaType]string{"movie": "movie", "show": "series", "season": "season", "episode": "episode"}[t.Type]
 	out := map[string]any{"content_id": id, "title": t.Title, "type": kind, "overview": t.Summary, "year": t.Year, "runtime": int(t.Runtime.Minutes()), "genres": nonNil(t.Genres), "keywords": nonNil(t.Keywords), "studios": nonNil(t.Studios), "rating_tmdb": t.Rating, "status": "matched", "user_state": map[string]any{"played": state.ViewCount > 0, "is_favorite": state.IsFavorite, "in_watchlist": state.InWatchlist, "not_interested": state.IsNotInterested}}
 	if t.ContentRating != "" {
-		out["content_rating"] = t.ContentRating
+		out["content_rating"] = contentrating.Prefixed(t.ContentRating)
 	}
 	if t.Language != "" {
 		out["original_language"] = t.Language
