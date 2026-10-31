@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
@@ -68,4 +70,38 @@ func (s scorecardSessionWrapper) StartStream(ctx context.Context, a frontend.Ses
 	v, e := s.embeddedScorecardSessions.StartStream(ctx, a, id, r)
 	s.failure("start_stream", e)
 	return v, e
+}
+func (s scorecardSessionWrapper) PlexSessionForPlayback(ctx context.Context, a frontend.SessionAccess, item frontend.RatingKey, playbackID, transcodeID string) (string, error) {
+	lookup, ok := s.embeddedScorecardSessions.(interface {
+		PlexSessionForPlayback(context.Context, frontend.SessionAccess, frontend.RatingKey, string, string) (string, error)
+	})
+	if !ok {
+		return "", core.ErrNotAvailable
+	}
+	return lookup.PlexSessionForPlayback(ctx, a, item, playbackID, transcodeID)
+}
+func (s scorecardSessionWrapper) PlexSessionSource(id string) (string, bool) {
+	source, ok := s.embeddedScorecardSessions.(interface{ PlexSessionSource(string) (string, bool) })
+	if !ok {
+		return "", false
+	}
+	return source.PlexSessionSource(id)
+}
+func (s scorecardSessionWrapper) NotePlexEncoder(id string, format frontend.StreamFormat, decision core.Decision, offset time.Duration) {
+	if note, ok := s.embeddedScorecardSessions.(interface {
+		NotePlexEncoder(string, frontend.StreamFormat, core.Decision, time.Duration)
+	}); ok {
+		note.NotePlexEncoder(id, format, decision, offset)
+	}
+}
+func (s scorecardSessionWrapper) StopProtocol(ctx context.Context, protocol frontend.Protocol) error {
+	stop, ok := s.embeddedScorecardSessions.(interface {
+		StopProtocol(context.Context, frontend.Protocol) error
+	})
+	if !ok {
+		return core.ErrNotAvailable
+	}
+	err := stop.StopProtocol(ctx, protocol)
+	s.failure("stop_protocol", err)
+	return err
 }

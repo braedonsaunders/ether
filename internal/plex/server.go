@@ -25,6 +25,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/sessions"
@@ -165,6 +166,7 @@ type Server struct {
 	downloads         *downloadStore
 	queues            *playQueueStore
 	sessions          *sessionTracker
+	playbackBroker    frontend.Sessions
 	playbackOwners    *sessions.PlaybackOwners
 	playbackLifecycle *sessions.Lifecycle
 	transcodes        *transcodeTable
@@ -271,6 +273,11 @@ func NewServer(d Deps) *Server {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
+
+// Closed reports whether Close has begun.
+func (s *Server) Closed() bool {
+	return s == nil || s.ctx.Err() != nil
+}
 
 // Close stops background goroutines and disconnects notification clients.
 func (s *Server) Close() error {

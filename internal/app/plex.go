@@ -23,7 +23,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if a.plexServer != nil {
+	if a.plexServer != nil && !a.plexServer.Closed() {
 		return a.plexServer, nil
 	}
 	tc := a.activeTranscoder()

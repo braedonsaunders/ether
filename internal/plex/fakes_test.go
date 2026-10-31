@@ -18,6 +18,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 var fixedNow = time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
@@ -828,5 +829,150 @@ func newFixture(opts ...func(*Deps)) *fixture {
 		o(&d)
 	}
 	f.srv = NewServer(d)
+	f.attachPlaybackBroker(d)
 	return f
+}
+
+// fixturePlayback follows Server deps. Tests replace Playback after NewServer.
+type fixturePlayback struct{ f *fixture }
+
+func (p *fixturePlayback) current() core.Playback {
+	if p.f.srv != nil && p.f.srv.d.Playback != nil {
+		return p.f.srv.d.Playback
+	}
+	return p.f.playback
+}
+
+func (p *fixturePlayback) Estimate(ctx context.Context, t *core.Title, caps core.ClientCaps) core.MediaInfo {
+	return p.current().Estimate(ctx, t, caps)
+}
+func (p *fixturePlayback) Prepare(ctx context.Context, u *core.User, k core.RatingKey, caps core.ClientCaps) (*core.PlaySession, error) {
+	return p.current().Prepare(ctx, u, k, caps)
+}
+func (p *fixturePlayback) Session(id string) (*core.PlaySession, bool) {
+	return p.current().Session(id)
+}
+func (p *fixturePlayback) SessionFor(u int64, client string, k core.RatingKey) (*core.PlaySession, bool) {
+	return p.current().SessionFor(u, client, k)
+}
+func (p *fixturePlayback) ServeRange(w http.ResponseWriter, r *http.Request, id string) {
+	p.current().ServeRange(w, r, id)
+}
+func (p *fixturePlayback) InputURL(id string) string { return p.current().InputURL(id) }
+func (p *fixturePlayback) Failover(ctx context.Context, id string, at time.Duration) (*core.PlaySession, error) {
+	return p.current().Failover(ctx, id, at)
+}
+func (p *fixturePlayback) Stop(id string)                { p.current().Stop(id) }
+func (p *fixturePlayback) Sessions() []*core.PlaySession { return p.current().Sessions() }
+func (p *fixturePlayback) PrepareSurface(ctx context.Context, u *core.User, k core.RatingKey, caps core.ClientCaps, releaseID string, exact bool) (*core.PlaySession, error) {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.PrepareSurface(ctx, u, k, caps, releaseID, exact)
+	}
+	return nil, core.ErrNotAvailable
+}
+func (p *fixturePlayback) SessionForSurface(surface string, userID int64, clientID string, key core.RatingKey, releaseID string, exact bool) (*core.PlaySession, bool) {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.SessionForSurface(surface, userID, clientID, key, releaseID, exact)
+	}
+	return nil, false
+}
+func (p *fixturePlayback) MarkSurfaceOpened(id string) bool {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.MarkSurfaceOpened(id)
+	}
+	return true
+}
+func (p *fixturePlayback) MarkSurfacePrepared(id string) bool {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.MarkSurfacePrepared(id)
+	}
+	return true
+}
+func (p *fixturePlayback) PinSourceRevision(ctx context.Context, id, revision string) error {
+	if pins, ok := p.current().(core.PlaybackRevisionPin); ok {
+		return pins.PinSourceRevision(ctx, id, revision)
+	}
+	return nil
+}
+func (p *fixturePlayback) UnpinSourceRevision(id string) {
+	if pins, ok := p.current().(core.PlaybackRevisionPin); ok {
+		pins.UnpinSourceRevision(id)
+	}
+}
+func (p *fixturePlayback) CurrentSource(ctx context.Context, id string) (core.PlaybackSourceObservation, error) {
+	if snap, ok := p.current().(core.PlaybackSourceSnapshot); ok {
+		return snap.CurrentSource(ctx, id)
+	}
+	return core.PlaybackSourceObservation{}, core.ErrNotAvailable
+}
+func (p *fixturePlayback) Touch(id string) {
+	if toucher, ok := p.current().(interface{ Touch(string) }); ok {
+		toucher.Touch(id)
+	}
+}
+func (p *fixturePlayback) PlaybackProgress(userID int64, clientID string, key core.RatingKey, position time.Duration, state string) {
+	if progress, ok := p.current().(core.PlaybackTimeline); ok {
+		progress.PlaybackProgress(userID, clientID, key, position, state)
+	}
+}
+
+type fixtureTranscoder struct{ f *fixture }
+
+func (t fixtureTranscoder) current() core.Transcoder {
+	if t.f.srv != nil && t.f.srv.d.Transcoder != nil {
+		return t.f.srv.d.Transcoder
+	}
+	return t.f.trans
+}
+func (t fixtureTranscoder) Probe(ctx context.Context, inputURL string) (*core.MediaInfo, error) {
+	return t.current().Probe(ctx, inputURL)
+}
+func (t fixtureTranscoder) Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions) core.Decision {
+	return t.current().Decide(info, caps, opts)
+}
+func (t fixtureTranscoder) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSession, error) {
+	return t.current().StartHLS(ctx, req)
+}
+func (t fixtureTranscoder) Session(id string) (core.HLSSession, bool) {
+	return t.current().Session(id)
+}
+func (t fixtureTranscoder) Stop(id string)        { t.current().Stop(id) }
+func (t fixtureTranscoder) HWAccel() core.HWAccel { return t.current().HWAccel() }
+
+type fixtureProgress struct{ f *fixture }
+
+func (p fixtureProgress) Progress(ctx context.Context, viewer int64, key core.RatingKey, position, duration time.Duration, state string) error {
+	if p.f.srv != nil && p.f.srv.d.State != nil {
+		return p.f.srv.d.State.Progress(ctx, viewer, key, position, duration, state)
+	}
+	return p.f.state.Progress(ctx, viewer, key, position, duration, state)
+}
+
+func (f *fixture) attachPlaybackBroker(d Deps) {
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		if id <= 0 {
+			return nil, core.ErrUnauthorized
+		}
+		return &core.Viewer{ID: id}, nil
+	}
+	events := sessions.NewEventBus(nil, active)
+	broker, err := sessions.NewBroker(sessions.BrokerDeps{
+		Lookup: func(ctx context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+			if f.srv != nil && f.srv.d.Catalog != nil {
+				return f.srv.d.Catalog.Get(ctx, key)
+			}
+			if d.Catalog != nil {
+				return d.Catalog.Get(ctx, key)
+			}
+			return f.catalog.Get(ctx, key)
+		},
+		Playback: &fixturePlayback{f: f}, Transcoder: fixtureTranscoder{f: f}, Progress: fixtureProgress{f: f}, ActiveViewer: active,
+		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
+		OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Events:     events, Now: d.Now,
+	})
+	if err != nil {
+		panic(err)
+	}
+	f.srv.UsePlaybackBroker(sessions.BindSurface(broker, "plex"))
 }

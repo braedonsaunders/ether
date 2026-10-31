@@ -72,19 +72,24 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	duration := msParam(q.Get("duration"))
 	user := pr.User
 	s.log.Debug("playback timeline", "user", user.ID, "client", pr.ClientID, "key", key, "state", state, "position", offset, "duration", duration)
+	brokerReported := s.reportBrokerTimeline(ctx, pr, key, offset, duration, state, sanitizeSessionID(q.Get("session")))
 
-	if err := sessions.RecordProgress(ctx, s.d.State, user.ID, key, offset, duration, state); err != nil {
-		s.log.Warn("record progress", "key", key, "err", err)
+	if !brokerReported {
+		if err := sessions.RecordProgress(ctx, s.d.State, user.ID, key, offset, duration, state); err != nil {
+			s.log.Warn("record progress", "key", key, "err", err)
+		}
 	}
 	var ps *core.PlaySession
 	if s.d.Playback != nil {
 		if p, ok := s.d.Playback.SessionFor(user.ID, pr.ClientID, key); ok {
 			ps = p
-			if state != "stopped" {
+			if state != "stopped" && !brokerReported {
 				s.ensureTrickplay(ctx, p, offset)
 			}
-			if t, ok := s.d.Playback.(SessionToucher); ok && (state == "playing" || state == "paused") {
-				t.Touch(p.ID)
+			if !brokerReported {
+				if t, ok := s.d.Playback.(SessionToucher); ok && (state == "playing" || state == "paused") {
+					t.Touch(p.ID)
+				}
 			}
 		}
 	}
@@ -118,7 +123,9 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			s.cl.forwardStop(r.Context(), tid, offset)
 		}
 		if ps != nil {
-			s.d.Playback.Stop(ps.ID)
+			if !brokerReported {
+				s.d.Playback.Stop(ps.ID)
+			}
 			s.cancelTrickplayIfIdle(ps)
 		}
 		for _, id := range tids {
@@ -165,8 +172,10 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			s.cl.poke() // share starts and state changes now; positions ride the heartbeat
 		}
 	}
-	if progress, ok := s.d.Playback.(core.PlaybackTimeline); ok {
-		progress.PlaybackProgress(user.ID, pr.ClientID, key, offset, state)
+	if !brokerReported {
+		if progress, ok := s.d.Playback.(core.PlaybackTimeline); ok {
+			progress.PlaybackProgress(user.ID, pr.ClientID, key, offset, state)
+		}
 	}
 	if hook := s.d.Hooks.OnTimeline; hook != nil {
 		u := *user
