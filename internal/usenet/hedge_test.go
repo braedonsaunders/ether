@@ -233,21 +233,29 @@ func TestHedgeNeedsSpareCapacity(t *testing.T) {
 	}
 	defer pbPool.sem.Release(core.PriorityLive)
 
-	start := time.Now()
-	got, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive)
-	if err != nil || !bytes.Equal(got, want) {
-		t.Fatalf("len=%d err=%v", len(got), err)
+	type result struct {
+		data []byte
+		err  error
 	}
-	if d := time.Since(start); d < 400*time.Millisecond {
-		t.Fatalf("answered in %v without a hedge?", d)
-	}
+	done := make(chan result, 1)
+	go func() {
+		data, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive)
+		done <- result{data, err}
+	}()
+	// Well past the 50ms threshold and still inside the 400ms stall. Once
+	// the primary releases its slot a hedge may start in the instant before
+	// its result is delivered; it is cancelled at once and not checked here.
+	time.Sleep(300 * time.Millisecond)
 	if n := b.BodyRequests("a@x") + a.BodyRequests("a@x"); n != 1 {
-		t.Fatalf("BODY requests = %d, want only the primary", n)
+		t.Fatalf("BODY requests during the stall = %d, want only the primary", n)
 	}
 	for _, id := range []string{"a", "b"} {
 		if st := statsFor(f, id); st.Hedges != 0 {
 			t.Fatalf("hedge without spare capacity on %s: %+v", id, st)
 		}
+	}
+	if r := <-done; r.err != nil || !bytes.Equal(r.data, want) {
+		t.Fatalf("len=%d err=%v", len(r.data), r.err)
 	}
 }
 
