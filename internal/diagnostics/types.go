@@ -10,20 +10,21 @@ const Schema = "ether.support.v1"
 
 // Limits applied before an event is retained and before an archive is built.
 const (
-	maxEvents        = 2048
-	maxCaptureEvents = maxEvents
-	maxDevices       = 64
-	maxSessions      = 256
-	maxCaptures      = 2
-	maxDiscovery     = 16
-	maxString        = 240
-	maxExcerpt       = 512
-	maxNoteRunes     = 500
-	maxCandidates    = 8
-	maxDuration      = 3 * time.Minute
-	preRoll          = 90 * time.Second
-	retainFor        = 15 * time.Minute
-	coalesceWindow   = 2 * time.Second
+	maxEvents             = 2048
+	maxCaptureEvents      = maxEvents
+	maxDevices            = 64
+	maxSessions           = 256
+	maxCaptures           = 2
+	maxDiscovery          = 16
+	maxString             = 240
+	maxExcerpt            = 512
+	maxNoteRunes          = 500
+	maxCandidates         = 8
+	maxPlaybackCandidates = 24
+	maxDuration           = 3 * time.Minute
+	preRoll               = 90 * time.Second
+	retainFor             = 15 * time.Minute
+	coalesceWindow        = 2 * time.Second
 	// deviceRecent is how long a sighting stays on the recent-device list.
 	// Older ids are stale: they are not offered, and starting a capture
 	// with one returns ErrStaleDevice.
@@ -54,6 +55,7 @@ const (
 	KindPlaybackReported  Kind = "playback.reported"
 	KindPoll              Kind = "client.poll"
 	KindTranscodeDecision Kind = "transcode.decision"
+	KindPlaybackDecision  Kind = "playback.decision"
 )
 
 // Event is one neutral observation. String fields are clipped before the
@@ -97,6 +99,10 @@ type Event struct {
 	Uncorrelated bool
 	Candidates   []Candidate
 	Media        *MediaFacts
+	// Playback is the structured resolution trace for KindPlaybackDecision.
+	// It is exported even when the titles flag is off. It must not carry
+	// a username or address.
+	Playback *PlaybackDecision
 }
 
 // Candidate is a bounded, URL-free source fact.
@@ -111,6 +117,45 @@ type Candidate struct {
 	Rejected   bool
 	Reason     string
 	Name       string
+}
+
+// PlaybackDecision is a privacy-safe explanation of one resolution:
+// the profile ceiling, who chose, the candidates that mattered, and
+// the Play Version part ids. Release names are included so a support
+// ZIP can explain a pick without the titles flag.
+type PlaybackDecision struct {
+	Profile            string              `json:"profile,omitempty"`
+	ProfileMaxHeight   int                 `json:"profileMaxHeight,omitempty"`
+	ClientMaxHeight    int                 `json:"clientMaxHeight,omitempty"`
+	EffectiveMaxHeight int                 `json:"effectiveMaxHeight,omitempty"`
+	AllowHDR           bool                `json:"allowHdr"`
+	AllowDolbyVision   bool                `json:"allowDolbyVision"`
+	Chooser            string              `json:"chooser,omitempty"`
+	ChosenRelease      string              `json:"chosenRelease,omitempty"`
+	RequestedPartID    int64               `json:"requestedPartId,omitempty"`
+	Candidates         []PlaybackCandidate `json:"candidates,omitempty"`
+	Variants           []PlaybackVariant   `json:"variants,omitempty"`
+}
+
+// PlaybackCandidate is one release in a playback decision.
+type PlaybackCandidate struct {
+	Name          string  `json:"name,omitempty"`
+	Height        int     `json:"height,omitempty"`
+	Size          int64   `json:"size,omitempty"`
+	Score         float64 `json:"score,omitempty"`
+	Rejected      bool    `json:"rejected,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
+	Healthy       bool    `json:"healthy,omitempty"`
+	HealthChecked bool    `json:"healthChecked,omitempty"`
+}
+
+// PlaybackVariant maps a Play Version part id to the release it starts.
+type PlaybackVariant struct {
+	PartID    int64  `json:"partId,omitempty"`
+	Auto      bool   `json:"auto,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Release   string `json:"release,omitempty"`
+	Requested bool   `json:"requested,omitempty"`
 }
 
 // MediaFacts is probe information safe to export. It has no URLs.

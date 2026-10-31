@@ -133,6 +133,9 @@ export interface HistoryRecord {
   error?: string;
   failover?: boolean;
   pinned?: boolean;
+  /** Who chose the release. Absent on older decisions. */
+  chooser?: "auto" | "viewer";
+  chosenVersion?: string;
   candidates: number;
   trace?: ResolverTrace | null;
 }

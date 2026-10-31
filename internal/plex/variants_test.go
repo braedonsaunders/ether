@@ -199,6 +199,23 @@ func TestDetailRendersPlayVersionMedia(t *testing.T) {
 	if !strings.Contains(body, `id="`+autoID+`"`) || !strings.Contains(body, "/library/parts/"+autoID+"/") {
 		t.Errorf("auto ids missing\n%s", body)
 	}
+	// Nothing is resumed, so Auto is the selected Media. A client that
+	// honors selected starts there.
+	mediaTags := regexp.MustCompile(`<Media\b[^>]*>`).FindAllString(body, -1)
+	selectedMedia := 0
+	selectedAuto := false
+	for _, tag := range mediaTags {
+		if !strings.Contains(tag, `selected="1"`) {
+			continue
+		}
+		selectedMedia++
+		if strings.Contains(tag, `id="`+autoID+`"`) {
+			selectedAuto = true
+		}
+	}
+	if selectedMedia != 1 || !selectedAuto {
+		t.Fatalf("selected media=%d auto=%v\n%s", selectedMedia, selectedAuto, body)
+	}
 	// The picker labels.
 	if !strings.Contains(body, `title="Auto / Best for Device"`) ||
 		!strings.Contains(body, `title="4K Dolby Vision Remux"`) ||

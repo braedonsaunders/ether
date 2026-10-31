@@ -128,6 +128,9 @@ type playRequest struct {
 	// when the request addressed a variant's Part key.
 	mediaIndex    int
 	partReleaseID string
+	// requestedPart is the Part id in the request path, when the client
+	// addressed a Play Version part directly.
+	requestedPart int64
 	// mde: the client runs its own media decision engine (hasMDE=1, sent
 	// by current Plex Web, iOS and Apple TV apps).
 	mde bool
@@ -195,6 +198,12 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 		caps.MaxBitrateKbps = limit
 	}
 	p := playRequest{key: key, caps: caps, audioSel: -1, subSel: -1, protocol: q.Get("protocol"), mde: q.Get("hasMDE") == "1", partReleaseID: partReleaseID}
+	for _, raw := range []string{q.Get("path"), q.Get("key")} {
+		if partID, ok := partIDFromPath(raw); ok {
+			p.requestedPart = partID
+			break
+		}
+	}
 	for _, raw := range []string{q.Get("path"), q.Get("key")} {
 		if u, err := url.Parse(raw); err == nil {
 			if c := u.Query().Get("collection"); c != "" {
@@ -394,6 +403,7 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 	if p.subSet && p.subSel >= 0 && p.subSel < len(ps.Info.Streams) && ps.Info.Streams[p.subSel].Type == "subtitle" {
 		subtitle = p.subSel
 	}
+	s.observePlaybackDecision(ctx, pr, p, ps)
 	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	s.transcodes.put(&transcodeEntry{
 		id: p.sessionID, playID: ps.ID, playbackID: pr.SessionID, userID: pr.User.ID, clientID: pr.ClientID, key: p.key,
@@ -1273,6 +1283,7 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 			s.writeErr(w, r, err)
 			return
 		}
+		s.observePlaybackDecision(ctx, pr, &playRequest{key: key, caps: caps, partReleaseID: releaseID, requestedPart: id}, ps)
 	}
 	if r.Method != http.MethodHead && r.URL.Query().Get("download") != "1" {
 		s.playbackOwners.Bind(pr.User.ID, pr.ClientID, key, pr.SessionID, ps.ID, false, s.now())

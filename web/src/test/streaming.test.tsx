@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { EtherConfig, UsenetProvider } from "../lib/types";
-import { normalizeTraces, resolutionCeilings, TraceDetail } from "../pages/releases/History";
+import { choiceLabel, normalizeTraces, resolutionCeilings, TraceDetail } from "../pages/releases/History";
 import { calls, renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
@@ -282,6 +282,7 @@ describe("Release selection", () => {
     const { fake } = renderApp("/releases/quality");
     const field = await screen.findByLabelText("Same-quality versions to offer", {}, WAIT);
     expect(field).toHaveValue(1);
+    expect(screen.getByLabelText("Offer higher versions")).not.toBeChecked();
     fireEvent.change(field, { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
@@ -463,6 +464,16 @@ describe("Release traces", () => {
     // Explicitly unlimited is present 0 and does render as "Any".
     expect(t[4]!.profileMaxHeight).toBe(0);
     expect(resolutionCeilings(t[4]!)).toBe("Profile Any · Client ≤1080 · Effective ≤1080");
+    const chosen = normalizeTraces([
+      { titleName: "Picked", chooser: "auto" },
+      { titleName: "Version", chooser: "viewer", chosenVersion: "Movie.2160p" },
+      { titleName: "Legacy" },
+    ]);
+    expect(choiceLabel(chosen[0]!.chooser, chosen[0]!.chosenVersion)).toBe("Auto");
+    expect(choiceLabel(chosen[1]!.chooser, chosen[1]!.chosenVersion)).toBe(
+      "Viewer picked version Movie.2160p",
+    );
+    expect(choiceLabel(chosen[2]!.chooser, chosen[2]!.chosenVersion)).toBeNull();
   });
 
   it("shows the ceilings in the trace detail", () => {

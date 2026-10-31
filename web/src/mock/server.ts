@@ -277,6 +277,7 @@ function defaultConfig(): EtherConfig {
       unavailableCooloff: "24h0m0s",
       maxCandidates: 3,
       sameQualityAlternatives: 1,
+      offerHigherVersions: false,
       blockedGroups: null,
       blockedTerms: null,
     },

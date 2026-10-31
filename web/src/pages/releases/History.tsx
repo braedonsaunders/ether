@@ -115,6 +115,13 @@ function normalizeTrace(raw: Record<string, unknown>, i: number): ResolverTrace 
     pinStatus: typeof raw.pinStatus === "string" ? raw.pinStatus : undefined,
     omitted: Number(raw.omitted ?? 0) || undefined,
     routing: typeof raw.routing === "string" ? raw.routing : undefined,
+    chooser: chooserOf(raw.chooser ?? nested.chooser),
+    chosenVersion:
+      typeof raw.chosenVersion === "string"
+        ? raw.chosenVersion
+        : typeof nested.chosenVersion === "string"
+          ? nested.chosenVersion
+          : undefined,
     discovery: Array.isArray(raw.discovery)
       ? raw.discovery.filter(isPlainObject).map((d) => ({
           path: String(d.path ?? "unknown"),
@@ -142,6 +149,21 @@ export function normalizeTraces(data: unknown): ResolverTrace[] {
       ? data.traces
       : [];
   return list.filter(isPlainObject).map(normalizeTrace);
+}
+
+function chooserOf(v: unknown): "auto" | "viewer" | undefined {
+  return v === "auto" || v === "viewer" ? v : undefined;
+}
+
+/** Who chose the release. Absent when the decision predates the field. */
+export function choiceLabel(chooser?: string, version?: string): string | null {
+  if (chooser === "viewer") {
+    return version
+      ? t("Viewer picked version {version}", { version })
+      : t("Viewer picked a version");
+  }
+  if (chooser === "auto") return t("Auto");
+  return null;
 }
 
 function outcome(h: { error?: string; err?: string; releaseId?: string; winner?: string }) {
@@ -289,12 +311,16 @@ export function HistoryTab() {
               {
                 key: "outcome",
                 header: t("Outcome"),
-                cell: (h) => (
-                  <span className="flex flex-wrap gap-1">
-                    {outcome(h)}
-                    {flags(h)}
-                  </span>
-                ),
+                cell: (h) => {
+                  const choice = choiceLabel(h.chooser, h.chosenVersion);
+                  return (
+                    <span className="flex flex-wrap gap-1">
+                      {outcome(h)}
+                      {choice ? <Badge variant="secondary">{choice}</Badge> : null}
+                      {flags(h)}
+                    </span>
+                  );
+                },
               },
               {
                 key: "profile",
@@ -424,6 +450,9 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         {outcome(trace)}
+        {choiceLabel(trace.chooser, trace.chosenVersion) ? (
+          <Badge variant="secondary">{choiceLabel(trace.chooser, trace.chosenVersion)}</Badge>
+        ) : null}
         {flags({ failover: trace.failover, pinned: trace.pinStatus === "used" })}
         {trace.err ? <span className="text-sm text-danger">{trace.err}</span> : null}
       </div>

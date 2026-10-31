@@ -322,6 +322,20 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		}
 		out = append(out, m)
 	}
+	// A recorded PMS movie has one Media and does not set Media@selected
+	// (testdata/conform/plex/web movie metadata). Ether's decision golden
+	// marks the Media that plays with selected="1"
+	// (internal/plex/testdata/golden/decision_directplay.xml). With several
+	// versions and nothing resumed, mark Auto so a client that honors
+	// selected starts there. Clients that ignore selected and play the
+	// tallest Media stay inside the profile because taller versions are
+	// not listed unless the owner opts in.
+	if !anyMediaSelected(out) && len(out) > 0 {
+		out[0].Selected = model.Ptr(true)
+		if len(out[0].Part) > 0 {
+			out[0].Part[0].Selected = model.Ptr(true)
+		}
+	}
 	edition := ""
 	if t.Type == core.TypeMovie {
 		edition = vs[0].Edition
@@ -332,6 +346,15 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 // buildMediaVariant renders one variant's Media/Part. Auto keeps the
 // historical ids (ratingKey); other variants get their registry id and
 // the variant label as the Media title Plex apps show in "Play Version".
+func anyMediaSelected(media []model.Media) bool {
+	for i := range media {
+		if media[i].Selected != nil && *media[i].Selected {
+			return true
+		}
+	}
+	return false
+}
+
 func buildMediaVariant(t *core.Title, v core.ReleaseVariant, stamp int64, registry *variantIDRegistry) model.Media {
 	m := buildMedia(t, v.Info, stamp)
 	var id int64

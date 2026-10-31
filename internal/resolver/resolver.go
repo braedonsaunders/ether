@@ -128,6 +128,12 @@ type Trace struct {
 	// Ceiling explains a winner below 4K (explain.go): the profile or
 	// client limit, or why each 4K release lost.
 	Ceiling string `json:"ceiling,omitempty"`
+	// Chooser is who selected the winner: "auto" (Ether's ranking) or
+	// "viewer" (an explicit Play Version pick that played). Empty on
+	// traces recorded before this field, and when nothing was picked.
+	Chooser string `json:"chooser,omitempty"`
+	// ChosenVersion is the release name when Chooser is "viewer".
+	ChosenVersion string `json:"chosenVersion,omitempty"`
 	// Unverified marks a winner played after every health check timed
 	// out without a confirmed failure (unverified.go).
 	Unverified bool `json:"unverified,omitempty"`
@@ -151,6 +157,11 @@ type TraceLimits struct {
 	ProfileConfiguredMaxHeight *int `json:"profileConfiguredMaxHeight,omitempty"`
 	ClientMaxHeight            int  `json:"clientMaxHeight"`
 	ClientMaxBitrateKbps       int  `json:"clientMaxBitrateKbps"`
+	// AllowHDR and AllowDolbyVision are the profile's HDR policy after
+	// the client clamp. A support capture uses them to show an SDR-only
+	// ceiling without reading the owner's settings file.
+	AllowHDR         bool `json:"allowHdr,omitempty"`
+	AllowDolbyVision bool `json:"allowDolbyVision,omitempty"`
 }
 
 type searchCacheEntry struct {
@@ -587,10 +598,11 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	started := time.Now()
 	t := req.Title
 	trace := Trace{TitleKey: t.Key, TitleName: consoleTitleName(t), Profile: profile.Name, At: s.now(), Failover: len(req.Exclude) > 0}
-	trace.Limits = &TraceLimits{ProfileMinHeight: profile.MinHeight, ProfileMaxHeight: profile.MaxHeight, ProfileConfiguredMaxHeight: traceConfiguredMaxHeight(profile), ClientMaxHeight: req.Client.MaxHeight, ClientMaxBitrateKbps: req.Client.MaxBitrateKbps}
+	trace.Limits = &TraceLimits{ProfileMinHeight: profile.MinHeight, ProfileMaxHeight: profile.MaxHeight, ProfileConfiguredMaxHeight: traceConfiguredMaxHeight(profile), ClientMaxHeight: req.Client.MaxHeight, ClientMaxBitrateKbps: req.Client.MaxBitrateKbps, AllowHDR: profile.AllowHDR, AllowDolbyVision: profile.AllowDolbyVision}
 	defer func() {
 		trace.TotalDuration = time.Since(started)
 		trace.Ceiling = s.explainCeiling(&trace, profile, req)
+		noteChooser(&trace, req)
 		if trace.Ceiling != "" {
 			s.log.Info("resolver: below 4K", "title", trace.TitleName, "profile", profile.Name, "why", trace.Ceiling)
 		}
@@ -1296,10 +1308,11 @@ func minFormatScore(rcfg config.Resolver, profile core.QualityProfile) *int {
 }
 
 // rejectReason returns "" to accept, or the reason to drop a release.
-// preferred (the viewer's explicit Play Version pick) bypasses the
-// profile-policy gates — resolution bounds, DV policy, imported quality gates,
-// per-profile size range — but never the hard client gates or the
-// identity/absolute-size sanity checks.
+// preferred (the viewer's explicit Play Version pick) may go below the
+// profile floor (a 720p pick on a 1080p minimum). Releases above the
+// ceiling — height, HDR policy, imported qualities, maximum size — stay
+// rejected unless the owner has opted in to offering higher versions.
+// Hard client gates and the identity/absolute-size checks always apply.
 func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.SearchRequest,
 	profile core.QualityProfile, rcfg config.Resolver, caps core.ClientCaps, exclude map[string]bool, preferred bool) string {
 	// Usenet passwords are supplied by NZB metadata and validated by the engine.
@@ -1340,7 +1353,7 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 	if reason := rejectIdentity(rel, t, sreq, s.catalogLanguage()); reason != "" {
 		return reason
 	}
-	return rejectPolicy(rel, t, profile, caps, preferred)
+	return rejectPolicy(rel, t, profile, caps, preferred, preferred && s.resolverCfg().OfferHigherVersions)
 }
 
 // rejectIdentity checks the result's reported identity without client policy.
@@ -1440,11 +1453,11 @@ func preferenceReason(result releasepolicy.Result) string {
 
 // rejectPolicy applies client support and quality/size policy in rejection order.
 // Release rules are judged once in rankCandidates; this does not compile them again.
-func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, caps core.ClientCaps, preferred bool) string {
-	// Client / profile hard gates. The viewer's explicit pick bypasses the
-	// profile-policy gates (an explicit 4K pick on a 1080p profile must
-	// still resolve), never the client's codec support.
-	if !preferred && len(profile.AllowedQualities) > 0 {
+// preferred lets an explicit pick go below the profile floor. ceilingBypass,
+// set only when the owner opted in to higher versions, is what lets that
+// pick exceed the ceiling. Codec support is never bypassed.
+func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, caps core.ClientCaps, preferred, ceilingBypass bool) string {
+	if !ceilingBypass && len(profile.AllowedQualities) > 0 {
 		allowed := false
 		for _, q := range profile.AllowedQualities {
 			if q == releaseQuality(rel.Info) {
@@ -1455,7 +1468,7 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 			return "quality excluded by imported profile"
 		}
 	}
-	if !preferred && profile.MaxHeight > 0 && rel.Info.Height > profile.MaxHeight {
+	if !ceilingBypass && profile.MaxHeight > 0 && rel.Info.Height > profile.MaxHeight {
 		// The effective ceiling is min(configured profile, client caps):
 		// name the strictly lower one as the limiter. An unlimited
 		// configured profile leaves the client as the only limiter. A
@@ -1470,7 +1483,7 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 	if h := floorHeight(rel.Info); !preferred && profile.MinHeight > 0 && h > 0 && h < profile.MinHeight {
 		return "below profile min height"
 	}
-	if !preferred && rel.Info.DolbyVision && !profile.AllowDolbyVision && !(rel.Info.HDR10 && profile.AllowHDR) {
+	if !ceilingBypass && rel.Info.DolbyVision && !profile.AllowDolbyVision && !(rel.Info.HDR10 && profile.AllowHDR) {
 		return "dolby vision not allowed for client"
 	}
 	if rel.Info.VideoCodec != "" && len(caps.VideoCodecs) > 0 && !caps.SupportsVideo(rel.Info.VideoCodec) {
@@ -1478,23 +1491,26 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 			return "video codec unsupported by client"
 		}
 	}
-	// Size sanity against runtime. The per-profile size range is policy
-	// (a 4K remux exceeds a 1080p profile's ceiling), so an explicit pick
-	// bypasses it; the absolute implausibility floor below still applies.
-	// A season pack's size is the whole season's, so it is not checked.
+	// Size sanity against runtime. An explicit pick may be smaller than
+	// the profile floor. The maximum is a ceiling: it holds unless the
+	// owner opted in to higher versions. The absolute implausibility
+	// floor always applies. A season pack's size is the whole season's,
+	// so it is not checked.
 	size := sizedForEpisode(rel).Size
 	if size > 0 && size < 5<<20 {
 		return "implausibly small"
 	}
-	if !preferred && size > 0 && t.Runtime > 0 {
+	if size > 0 && t.Runtime > 0 {
 		mbPerMin := float64(size) / (1 << 20) / t.Runtime.Minutes()
 		cfgMin, cfgMax := profile.SizeBoundsFor(t)
 		minMBPerMin := effectiveMinSizeMBPerMin(cfgMin, rel.Info)
-		if minMBPerMin > 0 && mbPerMin < minMBPerMin {
+		if !preferred && minMBPerMin > 0 && mbPerMin < minMBPerMin {
 			return "size too small for runtime"
 		}
-		if maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, rel.Info); maxMBPerMin > 0 && mbPerMin > maxMBPerMin {
-			return "size too large for runtime"
+		if !ceilingBypass {
+			if maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, rel.Info); maxMBPerMin > 0 && mbPerMin > maxMBPerMin {
+				return "size too large for runtime"
+			}
 		}
 	}
 	return ""

@@ -46,8 +46,8 @@ func TestMaxHeightRejectionNamesLimiter(t *testing.T) {
 		{"any profile with 1080 client", 0, 1080, false, "above client max height"},
 		{"any profile with 720 client", 0, 720, false, "above client max height"},
 		{"tie keeps profile limiter", 1080, 1080, false, "above profile max height"},
-		{"preferred bypasses client limiter", 2160, 1080, true, ""},
-		{"preferred bypasses profile limiter", 1080, 2160, true, ""},
+		{"preferred keeps the client limiter", 2160, 1080, true, "above client max height"},
+		{"preferred keeps the profile limiter", 1080, 2160, true, "above profile max height"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			profile := profileFor(tc.raw, tc.client)

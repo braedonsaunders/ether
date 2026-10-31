@@ -102,6 +102,9 @@ type Deps struct {
 	// Variants lists distinct release versions for "Play Version" detail
 	// pages (optional: without it, detail pages stay single-Media).
 	Variants core.VariantResolver
+	// DecisionTraces is the latest resolution for a title, copied into a
+	// support capture. Nil leaves playback unchanged.
+	DecisionTraces core.DecisionTraceSource
 	// Downloads remuxes resolved sources to temp MP4s for the Download
 	// Queue API; nil disables downloads (allowSync stays "0").
 	Downloads        core.DownloadRemuxer

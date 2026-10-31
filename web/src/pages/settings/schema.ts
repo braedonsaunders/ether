@@ -393,6 +393,14 @@ export const PLAY_VERSIONS: FieldGroup[] = localized(() => [
         step: 1,
         help: t("Listed after Auto in Plex's Play Version menu."),
       },
+      {
+        key: "offerHigherVersions",
+        label: t("Offer higher versions"),
+        kind: "bool",
+        help: t(
+          "Play Version can list releases taller than the profile. Off keeps the ceiling you set. HDR and file-size limits still apply.",
+        ),
+      },
     ],
   },
 ]);

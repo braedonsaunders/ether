@@ -511,6 +511,7 @@ type exportEvent struct {
 	Uncorrelated  bool              `json:"uncorrelated,omitempty"`
 	Candidates    []exportCandidate `json:"candidates,omitempty"`
 	Media         *MediaFacts       `json:"media,omitempty"`
+	Playback      *PlaybackDecision `json:"playback,omitempty"`
 }
 
 func eventsJSONL(events []Event, flags [3]bool, uses []secretUse) (string, int) {
@@ -536,6 +537,7 @@ func eventsJSONL(events []Event, flags [3]bool, uses []secretUse) (string, int) 
 			m := *e.Media
 			row.Media = &m
 		}
+		row.Playback = exportPlayback(e.Playback, uses)
 		if len(e.Candidates) > 0 {
 			row.Candidates = make([]exportCandidate, len(e.Candidates))
 			for i, c := range e.Candidates {

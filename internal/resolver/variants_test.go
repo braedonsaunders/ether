@@ -216,15 +216,22 @@ func TestResolvePreferWinsOverRanking(t *testing.T) {
 	if len(res.Alternates) == 0 {
 		t.Error("alternates kept empty on preferred resolve")
 	}
-	// A 4K pick on the 1080p web profile: the profile height gate must not
-	// reject the viewer's explicit choice (HEVC would be a hard client
-	// gate, so use the 1080p profile with an H.264-capable 4K client via a
-	// remote Apple TV which selects the 1080p profile).
+	// A 4K pick on the 1080p remote profile stays inside the ceiling unless
+	// the owner opted in. Remote Apple TV selects 1080p; the client can
+	// play HEVC, so the only gate is height.
 	remote := appleTVCaps()
 	remote.Remote = true
 	res, err = svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: remote, Prefer: "uhd"})
-	if err != nil || res.Release.ID != "uhd" {
+	if err != nil || res.Release.ID != "hd" {
 		t.Fatalf("prefer above profile height res=%+v err=%v", res, err)
+	}
+	cfg := testCfg()
+	cfg.Resolver.OfferHigherVersions = true
+	opted := New(idx, fakeHealth{}, nil, cfg, Options{})
+	defer opted.Close()
+	res, err = opted.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: remote, Prefer: "uhd"})
+	if err != nil || res.Release.ID != "uhd" {
+		t.Fatalf("opted-in prefer res=%+v err=%v", res, err)
 	}
 }
 
@@ -342,7 +349,7 @@ func TestPickVariantsSameQualityAlternatives(t *testing.T) {
 	}
 	caps := core.ClientCaps{MaxHeight: 2160}
 	profile := core.QualityProfile{MaxHeight: 2160, AllowHDR: true, AllowDolbyVision: true}
-	out := pickVariants(ep, caps, profile, pool[0].rel, pool, pool, 2, maxVariants)
+	out := pickVariants(ep, caps, profile, pool[0].rel, pool, pool, 2, maxVariants, true)
 	var ids []string
 	for _, v := range out {
 		ids = append(ids, v.ID)
@@ -362,7 +369,7 @@ func TestPickVariantsSameQualityAlternatives(t *testing.T) {
 		t.Errorf("alternative label %q", got)
 	}
 	// A smaller cap never drops a tier to make room for an alternative.
-	small := pickVariants(ep, caps, profile, pool[0].rel, pool, pool, 2, 4)
+	small := pickVariants(ep, caps, profile, pool[0].rel, pool, pool, 2, 4, true)
 	var got []string
 	for _, v := range small {
 		got = append(got, v.ID)
@@ -371,7 +378,7 @@ func TestPickVariantsSameQualityAlternatives(t *testing.T) {
 		t.Errorf("max=4 versions %v", got)
 	}
 	// A pool where only Auto and its copy exist yields no alternatives.
-	if out := pickVariants(ep, caps, profile, pool[0].rel, pool[:2], pool[:2], 2, maxVariants); len(out) != 1 {
+	if out := pickVariants(ep, caps, profile, pool[0].rel, pool[:2], pool[:2], 2, maxVariants, true); len(out) != 1 {
 		t.Errorf("duplicate offered as alternative: %+v", out)
 	}
 }

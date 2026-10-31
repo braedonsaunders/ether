@@ -57,17 +57,21 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 	}
 	strict = pinFirst(strict, pinID)
 	pool := strict
-	// The alternative pool may exceed the profile's height cap (a 4K pick
-	// on a 1080p remote profile), but never the client's own limits; every
-	// other acceptability rule still applies. Resolve honours the pick via
-	// ResolveRequest.Prefer's profile-gate bypass.
-	if relaxed, ok := relaxedVariantProfile(profile, req.Client); ok {
-		pool, _, err = s.rankCandidates(ctx, req, sreq, relaxed, results, nil, pinID)
-		if err != nil {
-			return nil, err
+	// Taller tiers (a 4K copy on a 1080p profile) are listed only when the
+	// owner opts in. The relaxed pool still stops at the client's own
+	// limits, and HDR policy and size limits stay on the strict profile.
+	// Without the opt-in, Resolve also refuses a Play Version pick above
+	// that ceiling (resolver.go).
+	allowTaller := s.resolverCfg().OfferHigherVersions
+	if allowTaller {
+		if relaxed, ok := relaxedVariantProfile(profile, req.Client); ok {
+			pool, _, err = s.rankCandidates(ctx, req, sreq, relaxed, results, nil, pinID)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
-	vs := pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max)
+	vs := pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max, allowTaller)
 	labelPlayedAuto(vs, req.PlayedRelease, results, s.LookupRelease)
 	return vs, nil
 }
@@ -98,8 +102,10 @@ func labelPlayedAuto(vs []core.ReleaseVariant, played string, results []core.Rel
 }
 
 // relaxedVariantProfile raises the profile's height cap to the client's
-// own maximum so taller tiers can be offered as explicit picks. It
-// reports false when nothing changes.
+// own maximum so taller tiers can be offered as explicit picks. HDR
+// policy and size limits are left as the owner set them. It reports
+// false when nothing changes. Callers use it only when the owner has
+// opted in to offering higher versions.
 func relaxedVariantProfile(profile core.QualityProfile, caps core.ClientCaps) (core.QualityProfile, bool) {
 	clientMax := caps.MaxHeight
 	if clientMax <= 0 {
@@ -157,7 +163,7 @@ func variantKey(info core.ReleaseInfo) string {
 // distinct cut, and any remaining distinct tiers. Tiers are best-scored
 // first within each slot and deduplicated by (edition, quality tier); the
 // alternatives come from the strict profile pool, in rank order.
-func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfile, auto core.Release, pool, strict []candidate, alternatives, max int) []core.ReleaseVariant {
+func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfile, auto core.Release, pool, strict []candidate, alternatives, max int, allowTaller bool) []core.ReleaseVariant {
 	usedRel := map[string]bool{}
 	usedKey := map[string]bool{}
 	var out []core.ReleaseVariant
@@ -176,6 +182,9 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 		}
 	}
 	add := func(rel core.Release, kind string, isAuto bool) bool {
+		if !isAuto && releaseAboveProfile(rel, t, profile, allowTaller) {
+			return false
+		}
 		if len(out) >= tierMax || usedRel[rel.ID] || usedKey[variantKey(rel.Info)] {
 			return false
 		}
@@ -217,6 +226,16 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 	// first menu entry stay on Auto. They share Auto's variantKey, so none
 	// of them can be a tier above.
 	alts := pickAlternatives(auto, strict, alternatives, max-len(out))
+	if len(alts) > 0 {
+		kept := alts[:0]
+		for _, rel := range alts {
+			if releaseAboveProfile(rel, t, profile, false) {
+				continue
+			}
+			kept = append(kept, rel)
+		}
+		alts = kept
+	}
 	if len(alts) == 0 {
 		return out
 	}
@@ -259,6 +278,32 @@ func pickAlternatives(auto core.Release, ranked []candidate, limit, room int) []
 // name (case-insensitive) and its size.
 func releaseIdentity(rel core.Release) string {
 	return strings.ToLower(strings.TrimSpace(rel.Name)) + "|" + strconv.FormatInt(rel.Size, 10)
+}
+
+// releaseAboveProfile reports a release Play Version must not list.
+// Height is waived only when the owner opted in. HDR policy and the
+// size ceiling always stand, including for that opt-in. Auto is never
+// passed here.
+func releaseAboveProfile(rel core.Release, t *core.Title, profile core.QualityProfile, allowTaller bool) bool {
+	info := rel.Info
+	if !allowTaller && profile.MaxHeight > 0 && info.Height > profile.MaxHeight {
+		return true
+	}
+	if info.DolbyVision && !profile.AllowDolbyVision && !(info.HDR10 && profile.AllowHDR) {
+		return true
+	}
+	if info.HDR10 && !info.DolbyVision && !profile.AllowHDR {
+		return true
+	}
+	size := sizedForEpisode(rel).Size
+	if size > 0 && t != nil && t.Runtime > 0 {
+		mbPerMin := float64(size) / (1 << 20) / t.Runtime.Minutes()
+		_, cfgMax := profile.SizeBoundsFor(t)
+		if maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, info); maxMBPerMin > 0 && mbPerMin > maxMBPerMin {
+			return true
+		}
+	}
+	return false
 }
 
 func canOffer4KHDR(caps core.ClientCaps, profile core.QualityProfile) bool {

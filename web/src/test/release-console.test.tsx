@@ -173,6 +173,7 @@ describe("Release history", () => {
       await within(drawer).findByText("above profile max height", {}, WAIT),
     ).toBeInTheDocument();
     expect(within(drawer).getAllByText("Picked").length).toBeGreaterThan(0);
+    expect(within(drawer).getAllByText("Auto").length).toBeGreaterThan(0);
     expect(within(drawer).getAllByText("Pinned").length).toBeGreaterThan(0);
     expect(calls(fake, "GET", "/releases/history/1")).toHaveLength(1);
     expect(screen.getAllByText("Failover").length).toBeGreaterThan(0);

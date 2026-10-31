@@ -83,6 +83,7 @@ func boundEvent(e Event, uses []secretUse) Event {
 		c.Reason = clipFree(c.Reason, maxString, uses)
 		c.Name = clipFree(c.Name, maxString, uses)
 	}
+	e.Playback = boundPlayback(e.Playback, uses)
 	if e.Bytes < 0 {
 		e.Bytes = 0
 	}

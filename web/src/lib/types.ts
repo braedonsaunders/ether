@@ -320,6 +320,7 @@ export interface EtherConfig {
     unavailableCooloff: string;
     maxCandidates: number;
     sameQualityAlternatives: number;
+    offerHigherVersions?: boolean;
     blockedGroups: string[] | null;
     blockedTerms: string[] | null;
     optimisticStart?: boolean;
@@ -625,6 +626,10 @@ export interface ResolverTrace {
   omitted?: number;
   /** The source-routing decision, e.g. "debrid first: popular title". */
   routing?: string;
+  /** Who chose the winner. Absent on decisions recorded before it existed. */
+  chooser?: "auto" | "viewer";
+  /** Release name when chooser is "viewer". */
+  chosenVersion?: string;
 }
 
 /** A source's measured startup (NZB or payload fetch plus a real health check). */

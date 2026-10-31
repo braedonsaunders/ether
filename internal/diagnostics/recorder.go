@@ -768,6 +768,7 @@ func cloneEvent(e Event) Event {
 		m := *e.Media
 		e.Media = &m
 	}
+	e.Playback = clonePlayback(e.Playback)
 	return e
 }
 
