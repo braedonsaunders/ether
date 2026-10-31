@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/braedonsaunders/ether/internal/auth"
@@ -55,6 +56,15 @@ type Grants struct {
 	times   *ViewerTimes
 	ttl     time.Duration
 	now     func() time.Time
+	gen     atomic.Uint64
+}
+
+// Generation changes when a credential is revoked.
+func (g *Grants) Generation() uint64 {
+	if g == nil {
+		return 0
+	}
+	return g.gen.Load()
 }
 
 func NewGrants(db *sql.DB, viewers ActiveViewer, ttl time.Duration, now func() time.Time) (*Grants, error) {
@@ -259,6 +269,9 @@ func (g *Grants) RevokeGrant(ctx context.Context, viewerID int64, hash string) e
 		return fmt.Errorf("identity: invalid grant hash")
 	}
 	_, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET revoked=1 WHERE viewer_id=? AND hash=?`, viewerID, hash)
+	if err == nil {
+		g.gen.Add(1)
+	}
 	return err
 }
 func (g *Grants) RevokeDevice(ctx context.Context, viewerID int64, deviceID string) error {
@@ -266,9 +279,15 @@ func (g *Grants) RevokeDevice(ctx context.Context, viewerID int64, deviceID stri
 		return errors.New("identity: device required")
 	}
 	_, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET revoked=1 WHERE viewer_id=? AND device_id=?`, viewerID, deviceID)
+	if err == nil {
+		g.gen.Add(1)
+	}
 	return err
 }
 func (g *Grants) RevokeViewer(ctx context.Context, viewerID int64) error {
 	_, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET revoked=1 WHERE viewer_id=?`, viewerID)
+	if err == nil {
+		g.gen.Add(1)
+	}
 	return err
 }

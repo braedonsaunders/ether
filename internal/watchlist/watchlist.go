@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/catalog"
@@ -70,10 +71,20 @@ type Options struct {
 	ResumeSchedule bool
 }
 type Service struct {
-	db *sql.DB
-	o  Options
-	mu sync.Mutex
+	db  *sql.DB
+	o   Options
+	mu  sync.Mutex
+	gen atomic.Uint64
 }
+
+// Generation changes when watchlist membership changes.
+func (s *Service) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
+}
+
 type Item struct {
 	Title       core.Title `json:"title"`
 	Sources     []string   `json:"sources"`
@@ -205,6 +216,9 @@ func (s *Service) ContainsMany(ctx context.Context, userID int64, keys []core.Ra
 }
 func (s *Service) Remove(ctx context.Context, userID int64, key core.RatingKey) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM watchlist_items WHERE user_id=? AND item_key=?`, userID, key)
+	if err == nil {
+		s.gen.Add(1)
+	}
 	return err
 }
 func (s *Service) upsert(ctx context.Context, uid int64, source string, t core.Title) error {
@@ -213,6 +227,9 @@ func (s *Service) upsert(ctx context.Context, uid int64, source string, t core.T
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, uid, t.Key, source, string(raw), s.o.Now().Unix())
+	if err == nil {
+		s.gen.Add(1)
+	}
 	return err
 }
 func (s *Service) replace(ctx context.Context, u *core.User, source string, ts []core.Title) error {
@@ -260,7 +277,11 @@ func (s *Service) replace(ctx context.Context, u *core.User, source string, ts [
 			return err
 		}
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
 }
 
 // Sync preserves the last successful snapshot when an upstream fails.

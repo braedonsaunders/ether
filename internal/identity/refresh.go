@@ -140,6 +140,7 @@ func (g *Grants) Refresh(ctx context.Context, surface, token string, device core
 		if err = tx.Commit(); err != nil {
 			return "", "", err
 		}
+		g.gen.Add(1)
 		return "", "", core.ErrUnauthorized
 	}
 	if e != nil {
@@ -168,5 +169,6 @@ func (g *Grants) Refresh(ctx context.Context, surface, token string, device core
 	if e = tx.Commit(); e != nil {
 		return "", "", e
 	}
+	g.gen.Add(1)
 	return access, fresh, nil
 }

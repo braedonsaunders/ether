@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/clusterbus"
@@ -346,6 +347,7 @@ type Service struct {
 	neg         map[string]time.Time
 	inflight    flight.Group[string, validation]
 	ownerPlexID int64
+	gen         atomic.Uint64
 
 	incarnation uint64
 	entrySeq    uint64
@@ -361,6 +363,14 @@ type Service struct {
 
 	invalMu sync.Mutex
 	inval   *clusterbus.Invalidator // nil on a standalone server
+}
+
+// Generation changes when a household member loses access.
+func (s *Service) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
 }
 
 type row struct {
@@ -797,6 +807,7 @@ func (s *Service) validateOnce(ctx context.Context, token, h string) (validation
 				if _, err := s.db.ExecContext(ctx, `UPDATE auth_users SET active=0, plex_shared=0 WHERE id=? AND is_owner=0`, localID); err != nil {
 					return validation{}, err
 				}
+				s.gen.Add(1)
 				if err := s.reload(ctx); err != nil {
 					return validation{}, err
 				}
@@ -1214,6 +1225,7 @@ RETURNING id`,
 		return err
 	}
 	if len(gone) > 0 {
+		s.gen.Add(1)
 		s.log.Info("friends lost access", "count", len(gone))
 	}
 	err = s.reload(ctx)

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -54,6 +55,16 @@ type ImageGrantService struct {
 	artGen             uint64
 	art                map[pageArtKey][]frontend.Image
 	denied             sync.Map
+	gen                atomic.Uint64
+}
+
+// Generation changes when an image grant is revoked, so a cached page stops
+// repeating that grant.
+func (s *ImageGrantService) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
 }
 
 // NewArtworkImageGrantService serves descriptors through the authorized
@@ -197,13 +208,19 @@ func (s *ImageGrantService) Revoke(ctx context.Context, credential, secret strin
 		return core.ErrUnauthorized
 	}
 	if strings.HasPrefix(secret, pageGrantPrefix) {
-		return s.revokePageGrant(ctx, viewer.ID, source, secret)
+		err = s.revokePageGrant(ctx, viewer.ID, source, secret)
+	} else {
+		var hash string
+		hash, ok = validImageSecret(secret)
+		if !ok {
+			return core.ErrUnauthorized
+		}
+		err = s.revokeAdmitted(ctx, viewer.ID, source, hash)
 	}
-	hash, ok := validImageSecret(secret)
-	if !ok {
-		return core.ErrUnauthorized
+	if err == nil {
+		s.gen.Add(1)
 	}
-	return s.revokeAdmitted(ctx, viewer.ID, source, hash)
+	return err
 }
 func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {

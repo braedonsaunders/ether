@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -156,6 +157,15 @@ type State struct {
 	// progress holds timeline writes through a database outage (nil when
 	// Options.Availability is nil).
 	progress *store.Outbox[progressKey, progressWrite]
+	gen      atomic.Uint64
+}
+
+// Generation changes when watch progress, played state, or a rating is saved.
+func (s *State) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
 }
 
 // State implements core.State; State.Playlists() returns the core.Playlists
@@ -449,6 +459,7 @@ func (s *State) updateAt(ctx context.Context, userID int64, keys []core.RatingKe
 	if err != nil {
 		return err
 	}
+	s.gen.Add(1)
 	for _, ev := range events {
 		ev.Origin = originFrom(ctx)
 		s.emit(ev)

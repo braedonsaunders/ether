@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -30,7 +31,19 @@ type Options struct {
 	Now     func() time.Time
 }
 
-type Service struct{ o Options }
+type Service struct {
+	o   Options
+	gen atomic.Uint64
+}
+
+// Generation changes when a title is hidden or restored.
+func (s *Service) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
+}
+
 type Entry struct {
 	Key     core.RatingKey
 	AddedAt time.Time
@@ -104,6 +117,7 @@ func (s *Service) Set(ctx context.Context, v *core.User, key core.RatingKey, exc
 	if count == 0 {
 		return false, nil
 	}
+	s.gen.Add(1)
 	s.o.Changed(ctx, v.ID, key)
 	return true, nil
 }
@@ -307,6 +321,7 @@ func (s *Service) Undo(ctx context.Context, v *core.User, handle string) (bool, 
 	if e != nil || !valid(key) || !s.o.Allowed(ctx, active, key) {
 		key = 0
 	}
+	s.gen.Add(1)
 	s.o.Changed(ctx, active.ID, key)
 	return true, nil
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -51,7 +52,18 @@ type Options struct {
 	Now           func() time.Time
 	Marked        core.TransactionalMarkedPlaylists
 }
-type Service struct{ o Options }
+type Service struct {
+	o   Options
+	gen atomic.Uint64
+}
+
+// Generation changes when a favorite is added or removed.
+func (s *Service) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
+}
 
 var ErrForbidden = errors.New("favorites: viewer or subject unavailable")
 
@@ -183,6 +195,9 @@ func (s *Service) setMany(ctx context.Context, viewer *core.User, subjects []Sub
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	if len(changed) > 0 {
+		s.gen.Add(1)
 	}
 	for _, subject := range changed {
 		s.o.Changed(ctx, viewer.ID, subject)
@@ -397,6 +412,7 @@ func (s *Service) removeTitleAt(ctx context.Context, viewer *core.User, expected
 			return err
 		}
 		if n > 0 {
+			s.gen.Add(1)
 			s.o.Changed(ctx, viewer.ID, subject)
 		}
 		return nil
