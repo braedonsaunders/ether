@@ -292,7 +292,11 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		}
 		if v.Auto || played {
 			info := s.withCachedSidecars(ctx, pr.User, t, variant.Info)
-			sel := resolveSelection(s.selections.get(pr.User.ID, int64(t.Key)), info)
+			stored := s.selections.get(pr.User.ID, int64(t.Key))
+			if stored.subtitleSet {
+				info = infoWithSelectedSidecar(info, stored.subtitleStream)
+			}
+			sel := resolveSelection(stored, info)
 			sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 			m.Part[0].Stream = s.buildStreams(t.Key, info, sel, pr.User)
 		}

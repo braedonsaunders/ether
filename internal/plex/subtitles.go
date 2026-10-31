@@ -62,6 +62,18 @@ type SubtitleTimeline interface {
 	OpenFormatAt(id, format string, offset time.Duration) (io.ReadCloser, string, error)
 }
 
+// infoWithSelectedSidecar keeps a chosen external subtitle on a metadata
+// stream list. Cached sidecars omit a language the file already embeds, so
+// the next detail response would select that embedded track, or Off when
+// the viewer's subtitle mode is off.
+func infoWithSelectedSidecar(info core.MediaInfo, want *core.StreamInfo) core.MediaInfo {
+	ps := ensureSelectedSidecar(&core.PlaySession{Info: info}, want)
+	if ps == nil {
+		return info
+	}
+	return ps.Info
+}
+
 // ensureSelectedSidecar keeps a viewer's chosen external subtitle on the
 // play session when the probe has no external file of that language.
 // Cached sidecars omit a language the file already embeds, so an embedded

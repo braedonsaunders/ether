@@ -573,8 +573,54 @@ func TestExternalSubtitleSwitchOnResume(t *testing.T) {
 	}
 }
 
-// TestEmbeddedToExternalSubtitleSwitch selects an embedded track, plays, then
-// switches to an external SRT whose language the file already embeds.
+// TestExplicitSubtitleWinsOverOffMode is the Apple TV detail chip: the
+// viewer's saved mode is off, they PUT a Spanish SRT, and the next metadata
+// response must keep that stream selected. Mode off is a default, not a
+// veto of a per-title choice.
+func TestExplicitSubtitleWinsOverOffMode(t *testing.T) {
+	f, subs := newSubtitleFixture(t)
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	f.srv.d.TrackPreferences = prefs
+	rules := trackprefs.Default()
+	rules.SubtitleMode = "off"
+	if err := prefs.PutRules(context.Background(), ownerUser.ID, rules); err != nil {
+		t.Fatal(err)
+	}
+	key := fightClub.Key
+	keyS := key.String()
+	subs.cache(key, sidecar("es", "ether-subtitle:cached-es"))
+	subs.files["ether-subtitle:cached-es"] = spanishSidecarSRT
+	f.playback.info = estimateInfo
+	meta := f.get(t, "/library/metadata/"+keyS, appleTV...)
+	esID := subtitleChoice(subtitleTags(meta.Body.String()), "spa", true)
+	if esID == "" {
+		t.Fatalf("spanish srt missing from the menu: %s", meta.Body.String())
+	}
+	putSubtitle(t, f, keyS, esID)
+	f.playback.info = core.MediaInfo{
+		Container: "mkv", Duration: 14 * time.Minute, Size: 800_000_000, BitrateKbps: 7600,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, Default: true},
+			{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+			{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en", Title: "full"},
+			{Index: 3, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "es", Title: "full"},
+		},
+	}
+	again := subtitleTags(f.get(t, "/library/metadata/"+keyS, appleTV...).Body.String())
+	chosen := selectedTag(again)
+	if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `external="1"`) || !strings.Contains(chosen, `languageCode="spa"`) {
+		t.Fatalf("off mode cleared the explicit Spanish choice: %q", again)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM trackprefs_memory WHERE user_id=? AND kind='subtitle'`, ownerUser.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("explicit subtitle was not stored, trackprefs_memory rows=%d", n)
+	}
+}
+
 func TestEmbeddedToExternalSubtitleSwitch(t *testing.T) {
 	f, subs := newSubtitleFixture(t)
 	f.srv.d.Transcoder = &extractTranscoder{fakeTranscoder: f.trans, out: "WEBVTT\n\n00:02:16.000 --> 00:02:20.000\nEmbedded english\n"}

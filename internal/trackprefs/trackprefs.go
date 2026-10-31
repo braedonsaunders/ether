@@ -179,8 +179,25 @@ func (s *Service) DeleteRules(ctx context.Context, user int64) error {
 	}
 	return err
 }
+
+// memoryTarget is the row id for a remembered track. Episodes share one row
+// per show. Movies keep their own row, under the rating key, so a movie id
+// cannot collide with a show id and a per-title choice is not discarded.
+func memoryTarget(key core.RatingKey) (int64, bool) {
+	switch key.Kind() {
+	case core.KindEpisode:
+		id := key.TMDB()
+		return id, id > 0
+	case core.KindMovie:
+		return int64(key), key.Valid()
+	default:
+		return 0, false
+	}
+}
+
 func (s *Service) Remember(ctx context.Context, user int64, key core.RatingKey, kind string, track *core.StreamInfo) error {
-	if key.Kind() != core.KindEpisode {
+	target, ok := memoryTarget(key)
+	if !ok {
 		return nil
 	}
 	if user <= 0 || (kind != "audio" && kind != "subtitle") {
@@ -199,7 +216,7 @@ func (s *Service) Remember(ctx context.Context, user int64, key core.RatingKey, 
 		c.SDH = sdh(*track)
 	}
 	b, _ := json.Marshal(c)
-	_, err := s.db.ExecContext(ctx, `INSERT INTO trackprefs_memory VALUES(?,?,?,?,?) ON CONFLICT(user_id,show_id,kind) DO UPDATE SET choice=excluded.choice,updated_at=excluded.updated_at`, user, key.TMDB(), kind, string(b), time.Now().Unix())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO trackprefs_memory VALUES(?,?,?,?,?) ON CONFLICT(user_id,show_id,kind) DO UPDATE SET choice=excluded.choice,updated_at=excluded.updated_at`, user, target, kind, string(b), time.Now().Unix())
 	return err
 }
 func (s *Service) Forget(ctx context.Context, user, show int64) error {
@@ -208,11 +225,12 @@ func (s *Service) Forget(ctx context.Context, user, show int64) error {
 }
 func (s *Service) choice(ctx context.Context, user int64, key core.RatingKey, kind string) (Choice, bool, error) {
 	var c Choice
-	if key.Kind() != core.KindEpisode {
+	target, ok := memoryTarget(key)
+	if !ok {
 		return c, false, nil
 	}
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT choice FROM trackprefs_memory WHERE user_id=? AND show_id=? AND kind=?`, user, key.TMDB(), kind).Scan(&raw)
+	err := s.db.QueryRowContext(ctx, `SELECT choice FROM trackprefs_memory WHERE user_id=? AND show_id=? AND kind=?`, user, target, kind).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, false, nil
 	}

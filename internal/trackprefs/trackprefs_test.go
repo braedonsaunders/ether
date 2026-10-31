@@ -125,6 +125,14 @@ func TestSubtitleModeSelectsATrackAndDoesNotFetch(t *testing.T) {
 	if err != nil || sel.Audio != 1 || sel.Subtitle != 3 {
 		t.Fatalf("always %+v %v", sel, err)
 	}
+	put("off", []string{"ja"}, []string{"en"})
+	if err = s.Remember(ctx, 4, key, "subtitle", &info.Streams[3]); err != nil {
+		t.Fatal(err)
+	}
+	sel, err = s.Select(ctx, 4, key, info, "ja")
+	if err != nil || sel.Subtitle != 3 {
+		t.Fatalf("explicit movie choice lost to off mode: %+v %v", sel, err)
+	}
 }
 
 func TestAppearanceRoundTrip(t *testing.T) {
