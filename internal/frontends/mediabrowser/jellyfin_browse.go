@@ -895,55 +895,6 @@ func (i *instance) jellyfinListFields(r *http.Request, item map[string]any, titl
 	delete(item, "CanDownload")
 }
 
-// jellyfinResumeParents adds the season and series of each resumed episode.
-// Jellyfin's resume list includes those folders with the series status,
-// end date, air days, and unplayed counts. Parents already in the list stay put.
-func (i *instance) jellyfinResumeParents(r *http.Request, viewer *frontend.Viewer, titles []frontend.Title) []frontend.Title {
-	if i == nil || i.protocol != "jellyfin" || i.host.Experience == nil || r == nil || viewer == nil {
-		return titles
-	}
-	seen := make(map[frontend.RatingKey]bool, len(titles))
-	for _, title := range titles {
-		seen[title.Key] = true
-	}
-	extra := make([]frontend.Title, 0)
-	for _, title := range titles {
-		if title.Type != "episode" {
-			continue
-		}
-		show := title.ShowKey
-		if show == 0 && title.Key.Kind() == frontend.KindEpisode {
-			show = frontend.ShowKey(title.Key.TMDB())
-		}
-		seasonNumber := title.Season
-		if seasonNumber == 0 {
-			seasonNumber = title.Key.Season()
-		}
-		parents := make([]frontend.RatingKey, 0, 2)
-		if show != 0 && seasonNumber > 0 {
-			parents = append(parents, frontend.SeasonKey(show.TMDB(), seasonNumber))
-		}
-		if show != 0 {
-			parents = append(parents, show)
-		}
-		for _, key := range parents {
-			if seen[key] {
-				continue
-			}
-			title, ok := i.storedListTitle(r, viewer, key)
-			if !ok {
-				continue
-			}
-			seen[key] = true
-			extra = append(extra, title)
-		}
-	}
-	if len(extra) == 0 {
-		return titles
-	}
-	return append(titles, extra...)
-}
-
 // jellyfinResumeFields drops keys a Jellyfin resume row does not carry unless
 // Fields asked for them. Parent artwork and series identity stay.
 func (i *instance) jellyfinResumeFields(r *http.Request, item map[string]any) {

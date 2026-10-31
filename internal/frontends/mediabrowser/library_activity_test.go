@@ -257,11 +257,9 @@ func TestLatestDefaultsHidePlayedOnBothFrontends(t *testing.T) {
 	}
 }
 
-func TestJellyfinResumeIncludesEpisodeParents(t *testing.T) {
+func TestJellyfinResumeStaysOnPlayableItems(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	show := core.ShowKey(91461)
-	season := core.SeasonKey(91461, 1)
-	watched := core.EpisodeKey(91461, 1, 1)
 	episode := core.EpisodeKey(91461, 1, 2)
 	exp := &activityFake{
 		viewer: viewer,
@@ -270,63 +268,41 @@ func TestJellyfinResumeIncludesEpisodeParents(t *testing.T) {
 		}},
 		Experience: frontendtest.Experience{
 			ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
-				switch req.Key {
-				case season:
-					return frontend.ItemDetail{Title: frontend.Title{Key: season, Type: "season", ShowKey: show, Season: 1, Title: "Season 1"}}, nil
-				case show:
-					return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "The Scene", Status: "Ended", LastAirDate: time.Date(2005, 5, 1, 0, 0, 0, 0, time.UTC)}}, nil
-				default:
-					return frontend.ItemDetail{}, frontend.ErrNotFound
+				if req.Key != show {
+					t.Fatal(req.Key)
 				}
-			},
-			ChildrenFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, key frontend.RatingKey, _ frontend.ItemQuery) (core.Page, error) {
-				if key != show && key != season {
-					return core.Page{}, frontend.ErrNotFound
-				}
-				episodes := []frontend.Title{{Key: watched, Type: "episode"}, {Key: episode, Type: "episode"}}
-				return core.Page{Items: episodes, Total: len(episodes)}, nil
-			},
-			UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
-				return map[frontend.RatingKey]frontend.WatchStatus{watched: {ViewCount: 1}}, nil
+				return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
 			},
 		},
 	}
 	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
-	inst, err := Jellyfin{MachineID: "test"}.Mount(context.Background(), frontend.Host{Identity: identity, Experience: exp})
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := httptest.NewRequest("GET", "/UserItems/Resume?limit=20&mediaTypes=Video&startIndex=0", nil)
-	r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
-	w := httptest.NewRecorder()
-	inst.Handler().ServeHTTP(w, r)
-	if w.Code != 200 {
-		t.Fatal(w.Code, w.Body.String())
-	}
-	var page struct {
-		Items []map[string]any
-	}
-	if json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 3 {
-		t.Fatal(w.Body.String())
-	}
-	var series, seasonRow map[string]any
-	for _, item := range page.Items {
-		switch item["Type"] {
-		case "Series":
-			series = item
-		case "Season":
-			seasonRow = item
+	for _, front := range []frontend.Frontend{Jellyfin{MachineID: "test"}, Emby{MachineID: "test"}} {
+		inst, err := front.Mount(context.Background(), frontend.Host{Identity: identity, Experience: exp})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if series == nil || series["Status"] != "Ended" || series["EndDate"] == nil || series["AirDays"] == nil {
-		t.Fatal(series)
-	}
-	if _, ok := series["ChildCount"]; ok {
-		t.Fatal(series)
-	}
-	data, _ := series["UserData"].(map[string]any)
-	seasonData, _ := seasonRow["UserData"].(map[string]any)
-	if data["UnplayedItemCount"] != float64(1) || seasonData["UnplayedItemCount"] != float64(1) {
-		t.Fatal(data, seasonData)
+		userID, err := ids.GUID(ids.User, viewer.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"/UserItems/Resume?limit=20&mediaTypes=Video&startIndex=0", "/Users/" + userID + "/Items/Resume?Limit=20"} {
+			r := httptest.NewRequest("GET", path, nil)
+			r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
+			w := httptest.NewRecorder()
+			inst.Handler().ServeHTTP(w, r)
+			if w.Code != 200 {
+				t.Fatal(front.Describe().ID, path, w.Code, w.Body.String())
+			}
+			var page struct {
+				Items            []map[string]any
+				TotalRecordCount float64
+			}
+			if json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 || page.TotalRecordCount != 1 {
+				t.Fatal(front.Describe().ID, path, w.Body.String())
+			}
+			if page.Items[0]["Type"] != "Episode" || page.Items[0]["Name"] != "Two" {
+				t.Fatal(page.Items[0]["Type"], page.Items[0]["Name"])
+			}
+		}
 	}
 }
