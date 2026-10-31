@@ -132,6 +132,25 @@ func (s surface) Report(ctx context.Context, a frontend.SessionAccess, id string
 	}
 	return s.broker.Report(ctx, a, id, t)
 }
+func (s surface) StopPlayback(ctx context.Context, playID string) bool {
+	b, ok := s.broker.(*Broker)
+	if !ok {
+		return false
+	}
+	return b.StopPlayback(ctx, playID)
+}
+
+func (s surface) ReportProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
+	if a.Protocol != s.protocol {
+		return core.ErrUnauthorized
+	}
+	b, ok := s.broker.(*Broker)
+	if !ok {
+		return core.ErrNotAvailable
+	}
+	return b.ReportProgress(ctx, a, item, t)
+}
+
 func (s surface) Stop(ctx context.Context, a frontend.SessionAccess, id string) error {
 	if a.Protocol != s.protocol {
 		return core.ErrUnauthorized
@@ -179,6 +198,17 @@ func (s surface) PlexSessionForPlayback(ctx context.Context, a frontend.SessionA
 		return "", core.ErrNotAvailable
 	}
 	return b.PlexSessionForPlayback(ctx, a, item, playbackID, transcodeID)
+}
+
+func (s surface) PlexSessionForSource(ctx context.Context, a frontend.SessionAccess, item frontend.RatingKey, playID string) (string, error) {
+	if s.protocol != "plex" || a.Protocol != s.protocol {
+		return "", core.ErrUnauthorized
+	}
+	b, ok := s.broker.(*Broker)
+	if !ok {
+		return "", core.ErrNotAvailable
+	}
+	return b.PlexSessionForSource(ctx, a, item, playID)
 }
 
 func (s surface) PlexSessionSource(id string) (string, bool) {

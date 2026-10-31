@@ -121,12 +121,12 @@ func (c clusterStore) expire(ctx context.Context, cutoff time.Time) error {
 }
 
 func (c clusterStore) remove(ctx context.Context, id string) error {
-	_, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE id=? AND node_id=? AND COALESCE(protocol,'plex')<>'plex'`, id, c.node)
+	_, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE id=? AND node_id=? AND protocol IS NOT NULL`, id, c.node)
 	return err
 }
 
 func (c clusterStore) touch(ctx context.Context, id string, now time.Time) error {
-	_, err := c.db.ExecContext(ctx, `UPDATE plex_sessions SET updated_at=? WHERE id=? AND node_id=? AND COALESCE(protocol,'plex')<>'plex' AND active=1`, now.UnixMilli(), id, c.node)
+	_, err := c.db.ExecContext(ctx, `UPDATE plex_sessions SET updated_at=? WHERE id=? AND node_id=? AND protocol IS NOT NULL AND active=1`, now.UnixMilli(), id, c.node)
 	return err
 }
 
@@ -154,7 +154,7 @@ type remoteSession struct {
 }
 
 func (c clusterStore) list(ctx context.Context, cutoff time.Time, live map[string]bool) ([]remoteSession, error) {
-	rows, err := c.db.QueryContext(ctx, `SELECT node_id,user_id,data,protocol,device_data FROM plex_sessions WHERE node_id<>? AND COALESCE(protocol,'plex')<>'plex' AND active=1 AND updated_at>=?`, c.node, cutoff.UnixMilli())
+	rows, err := c.db.QueryContext(ctx, `SELECT node_id,user_id,data,protocol,device_data FROM plex_sessions WHERE node_id<>? AND protocol IS NOT NULL AND active=1 AND updated_at>=?`, c.node, cutoff.UnixMilli())
 	if err != nil {
 		return nil, err
 	}

@@ -197,6 +197,33 @@ func (b *Broker) PlexSessionForPlayback(ctx context.Context, a frontend.SessionA
 	return newest, nil
 }
 
+// PlexSessionForSource is the broker session that owns a prepared source for
+// this viewer and item. The newest match wins when more than one remains.
+func (b *Broker) PlexSessionForSource(ctx context.Context, a frontend.SessionAccess, item frontend.RatingKey, playID string) (string, error) {
+	viewer, err := b.viewer(ctx, a.Viewer)
+	if err != nil || a.Protocol != "plex" || a.Device.ID == "" || a.Owner || item == 0 || playID == "" {
+		return "", core.ErrUnauthorized
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return "", core.ErrNotAvailable
+	}
+	newest, newestAt := "", time.Time{}
+	for id, s := range b.sessions {
+		if !plexViewerSession(s, viewer.ID, a.Device.ID, item) || s.playID != playID {
+			continue
+		}
+		if newest == "" || s.public.StartedAt.After(newestAt) {
+			newest, newestAt = id, s.public.StartedAt
+		}
+	}
+	if newest == "" {
+		return "", core.ErrNotFound
+	}
+	return newest, nil
+}
+
 // PlexSessionSource is the playback source owned by a published Plex session.
 func (b *Broker) PlexSessionSource(id string) (string, bool) {
 	if b == nil || id == "" {

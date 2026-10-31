@@ -80,6 +80,15 @@ func (s scorecardSessionWrapper) PlexSessionForPlayback(ctx context.Context, a f
 	}
 	return lookup.PlexSessionForPlayback(ctx, a, item, playbackID, transcodeID)
 }
+func (s scorecardSessionWrapper) PlexSessionForSource(ctx context.Context, a frontend.SessionAccess, item frontend.RatingKey, playID string) (string, error) {
+	lookup, ok := s.embeddedScorecardSessions.(interface {
+		PlexSessionForSource(context.Context, frontend.SessionAccess, frontend.RatingKey, string) (string, error)
+	})
+	if !ok {
+		return "", core.ErrNotAvailable
+	}
+	return lookup.PlexSessionForSource(ctx, a, item, playID)
+}
 func (s scorecardSessionWrapper) PlexSessionSource(id string) (string, bool) {
 	source, ok := s.embeddedScorecardSessions.(interface{ PlexSessionSource(string) (string, bool) })
 	if !ok {
@@ -93,6 +102,26 @@ func (s scorecardSessionWrapper) NotePlexEncoder(id string, format frontend.Stre
 	}); ok {
 		note.NotePlexEncoder(id, format, decision, offset)
 	}
+}
+func (s scorecardSessionWrapper) ReportProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
+	progress, ok := s.embeddedScorecardSessions.(interface {
+		ReportProgress(context.Context, frontend.SessionAccess, core.RatingKey, frontend.Timeline) error
+	})
+	if !ok {
+		return core.ErrNotAvailable
+	}
+	err := progress.ReportProgress(ctx, a, item, t)
+	s.failure("report_progress", err)
+	return err
+}
+func (s scorecardSessionWrapper) StopPlayback(ctx context.Context, playID string) bool {
+	stop, ok := s.embeddedScorecardSessions.(interface {
+		StopPlayback(context.Context, string) bool
+	})
+	if !ok {
+		return false
+	}
+	return stop.StopPlayback(ctx, playID)
 }
 func (s scorecardSessionWrapper) StopProtocol(ctx context.Context, protocol frontend.Protocol) error {
 	stop, ok := s.embeddedScorecardSessions.(interface {

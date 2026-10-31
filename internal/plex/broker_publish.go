@@ -73,6 +73,7 @@ func (s *Server) notePlexEncoder(id string, format frontend.StreamFormat, dec co
 
 type plexPlaybackLookup interface {
 	PlexSessionForPlayback(context.Context, frontend.SessionAccess, frontend.RatingKey, string, string) (string, error)
+	PlexSessionForSource(context.Context, frontend.SessionAccess, frontend.RatingKey, string) (string, error)
 	PlexSessionSource(string) (string, bool)
 }
 
@@ -85,12 +86,63 @@ func (s *Server) reportBrokerTimeline(ctx context.Context, pr *Request, key core
 		return false
 	}
 	access := s.plexAccess(pr)
+	timeline := frontend.Timeline{PlaybackID: pr.SessionID, Position: offset, Duration: duration, State: state}
 	id, err := lookup.PlexSessionForPlayback(ctx, access, key, pr.SessionID, transcodeID)
-	if err != nil || id == "" {
-		return false
+	if (err != nil || id == "") && s.d.Playback != nil {
+		if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, key); ok && ps != nil {
+			if sid, serr := lookup.PlexSessionForSource(ctx, access, key, ps.ID); serr == nil && sid != "" {
+				id = sid
+			}
+		}
 	}
-	err = s.playbackBroker.Report(ctx, access, id, frontend.Timeline{PlaybackID: pr.SessionID, Position: offset, Duration: duration, State: state})
-	return err == nil
+	if id == "" {
+		id = s.adoptBrokerTimeline(ctx, pr, key)
+	}
+	if id != "" {
+		return s.playbackBroker.Report(ctx, access, id, timeline) == nil
+	}
+	if progress, ok := s.playbackBroker.(interface {
+		ReportProgress(context.Context, frontend.SessionAccess, core.RatingKey, frontend.Timeline) error
+	}); ok {
+		return progress.ReportProgress(ctx, access, key, timeline) == nil
+	}
+	return false
+}
+
+// adoptBrokerTimeline publishes a source the client is already playing when
+// no broker session exists for this viewer and item. A mismatched playback
+// header does not open a second session.
+func (s *Server) adoptBrokerTimeline(ctx context.Context, pr *Request, key core.RatingKey) string {
+	if s.d.Playback == nil || pr == nil || pr.User == nil {
+		return ""
+	}
+	if lookup, ok := s.playbackBroker.(plexPlaybackLookup); ok {
+		if id, err := lookup.PlexSessionForPlayback(ctx, s.plexAccess(pr), key, "", ""); err == nil && id != "" {
+			return ""
+		}
+	}
+	ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, key)
+	if !ok || ps == nil {
+		return ""
+	}
+	sessionID := pr.SessionID
+	if sessionID == "" {
+		sessionID = pr.ClientID + "-" + key.String()
+	}
+	sessionID = sanitizeSessionID(sessionID)
+	if sessionID == "" {
+		return ""
+	}
+	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	if caps.ClientID == "" {
+		caps.ClientID = pr.ClientID
+	}
+	play := playRequest{key: key, caps: caps, sessionID: sessionID, audioSel: -1, subSel: -1}
+	if err := s.publishBrokerPlayback(ctx, pr, &play, ps, core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true}); err != nil {
+		s.log.Info("timeline broker adopt failed", "key", key, "err", err)
+		return ""
+	}
+	return sessionID
 }
 
 type plexProtocolStop interface {
