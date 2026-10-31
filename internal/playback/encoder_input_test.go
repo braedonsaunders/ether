@@ -266,7 +266,6 @@ func TestEncoderInputStalledReadAndCloseRetainBothTrackers(t *testing.T) {
 	}()
 	waitRetirementTest(t, src.entered, "scoped read entered")
 	cancel()
-	waitRetirementTest(t, returned, "request cancellation returned")
 	scope.SealInput()
 	requestDone := tracker.Seal()
 	assertRetirementOpen(t, scope.InputDone(), "stalled READ retained")
@@ -279,6 +278,9 @@ func TestEncoderInputStalledReadAndCloseRetainBothTrackers(t *testing.T) {
 	closeOnce.Do(func() { close(src.closeRelease) })
 	waitRetirementTest(t, callback, "one input callback")
 	waitRetirementTest(t, requestDone, "request producer done")
+	// Join only after the noncooperative read and actual Close are released;
+	// cancellation alone does not prove either producer or consumer completion.
+	waitRetirementTest(t, returned, "copy returned after source release")
 }
 
 func TestEncoderInputIndependentSharedSourceOwners(t *testing.T) {
