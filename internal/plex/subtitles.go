@@ -62,6 +62,33 @@ type SubtitleTimeline interface {
 	OpenFormatAt(id, format string, offset time.Duration) (io.ReadCloser, string, error)
 }
 
+// ensureSelectedSidecar keeps a viewer's chosen external subtitle on the
+// play session when the probe has no external file of that language.
+// Cached sidecars omit a language the file already embeds, so an embedded
+// PGS (or another track the client cannot draw) would otherwise win the
+// decision and Continue Watching would show no SRT. A probed external of
+// the same language is left alone: the stored choice follows that release
+// sidecar instead of pinning the earlier cached copy beside it.
+func ensureSelectedSidecar(ps *core.PlaySession, want *core.StreamInfo) *core.PlaySession {
+	if ps == nil || want == nil || want.Type != "subtitle" || !want.External || want.ExternalURL == "" {
+		return ps
+	}
+	for _, st := range ps.Info.Streams {
+		if st.Type != "subtitle" || !st.External {
+			continue
+		}
+		if st.ExternalURL == want.ExternalURL || sameLanguage(st.Language, want.Language) {
+			return ps
+		}
+	}
+	cp := *ps
+	streams := make([]core.StreamInfo, len(ps.Info.Streams)+1)
+	copy(streams, ps.Info.Streams)
+	streams[len(ps.Info.Streams)] = *want
+	cp.Info.Streams = streams
+	return &cp
+}
+
 // withCachedSidecars appends the viewer's cached sidecars that info does not
 // already list. It never touches the network.
 func (s *Server) withCachedSidecars(ctx context.Context, u *core.User, t *core.Title, info core.MediaInfo) core.MediaInfo {
