@@ -932,10 +932,10 @@ func (c *Catalog) getMeta(ctx context.Context, k string) string {
 	_ = c.db.QueryRowContext(ctx, `SELECT v FROM catalog_meta WHERE k=?`, k).Scan(&v)
 	return v
 }
+// setMeta records a sync or sweep marker. No cached read depends on one,
+// so it leaves the write generation, which every title, page and count
+// cache is stamped with, alone.
 func (c *Catalog) setMeta(ctx context.Context, k, v string) error {
 	_, err := c.db.ExecContext(ctx, `INSERT INTO catalog_meta(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`, k, v)
-	if err == nil {
-		c.writeGen.Add(1)
-	}
 	return err
 }
