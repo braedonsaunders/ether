@@ -98,10 +98,10 @@ export function WeekGrid({
       <div
         role="grid"
         aria-label={t("Weekly schedule")}
-        className="overflow-x-auto rounded-xl border border-border"
+        className="min-w-0 overflow-x-auto rounded-xl border border-border"
         onKeyDown={onKey}
       >
-        <div className="min-w-[720px]">
+        <div className="min-w-[52rem]">
           <div
             className="grid border-b border-border bg-bg-subtle text-[10px] tabular-nums text-fg-subtle"
             style={{ gridTemplateColumns: "4.5rem repeat(24, minmax(0, 1fr))" }}

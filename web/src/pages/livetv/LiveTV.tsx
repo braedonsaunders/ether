@@ -610,8 +610,7 @@ export default function LiveTV() {
             ? t("Stream, guide and who can watch.")
             : t("What plays, when it plays, and what happens when it runs out.")
         }
-        size="2xl"
-        initialFullscreen={draft?.channel.kind !== "iptv"}
+        size="lg"
         footer={
           editing ? (
             <div className="flex w-full flex-wrap items-center gap-2">
@@ -778,7 +777,7 @@ function AddMenu({
 
 function TemplateGallery({ onPick }: { onPick: (key: string) => void }) {
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-8">
+    <div className="@container mx-auto max-w-4xl space-y-6">
       <div className="space-y-1">
         <p className="text-xs font-semibold uppercase tracking-wider text-primary">
           {t("New channel")}
@@ -787,7 +786,7 @@ function TemplateGallery({ onPick }: { onPick: (key: string) => void }) {
           {t("What should it play?")}
         </h2>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 @md:grid-cols-2 @4xl:grid-cols-3">
         {TEMPLATES.map((template) => (
           <button
             key={template.key}

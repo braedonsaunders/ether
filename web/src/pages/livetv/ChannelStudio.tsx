@@ -248,7 +248,7 @@ export function ChannelStudio({
       ];
 
   return (
-    <div className="pb-10">
+    <div className="@container min-w-0 pb-10">
       {watching && c.id ? <LivePreview channel={c} onClose={() => setWatching(false)} /> : null}
       {/* hero */}
       <section
@@ -851,7 +851,7 @@ function Programming({
       <div
         role="radiogroup"
         aria-label={t("Programming source")}
-        className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4"
+        className="grid gap-2 @md:grid-cols-2 @5xl:grid-cols-4"
       >
         {modes.map((m) => {
           const on = draft.mode === m.value;
@@ -1392,50 +1392,52 @@ function Schedule({
       </div>
 
       {/* 24h day bar: click a free hour to add a block there */}
-      <div className="space-y-1">
-        <div className="relative h-12 overflow-hidden rounded-xl border border-border bg-[repeating-linear-gradient(135deg,transparent,transparent_6px,rgb(var(--ch-border)/0.5)_6px,rgb(var(--ch-border)/0.5)_7px)]">
-          {Array.from({ length: 24 }, (_, h) => (
-            <button
-              key={h}
-              type="button"
-              aria-label={
-                zone
-                  ? t("Add a block at {time}", { time: timeOfDay(h * 60) })
-                  : t("Add a block at {time} UTC", { time: timeOfDay(h * 60) })
-              }
-              onClick={() => {
-                const s = h * 60;
-                if (!blocks.some((b) => s < b.end && s + 60 > b.start)) add(s);
-              }}
-              className="absolute inset-y-0 border-r border-border/40 hover:bg-primary/10"
-              style={{ left: `${(h / 24) * 100}%`, width: `${100 / 24}%` }}
-            />
-          ))}
-          {blocks.map((b, i) => {
-            const hue = (i * 67 + 200) % 360;
-            return (
-              <div
-                key={i}
-                className="pointer-events-none absolute inset-y-1 overflow-hidden rounded-lg px-2 py-1 text-[11px] font-medium text-white shadow-sm"
-                style={{
-                  left: `${(b.start / 1440) * 100}%`,
-                  width: `${((b.end - b.start) / 1440) * 100}%`,
-                  background: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${(hue + 30) % 360} 65% 40%))`,
+      <div className="min-w-0 overflow-x-auto">
+        <div className="min-w-[52rem] space-y-1">
+          <div className="relative h-12 overflow-hidden rounded-xl border border-border bg-[repeating-linear-gradient(135deg,transparent,transparent_6px,rgb(var(--ch-border)/0.5)_6px,rgb(var(--ch-border)/0.5)_7px)]">
+            {Array.from({ length: 24 }, (_, h) => (
+              <button
+                key={h}
+                type="button"
+                aria-label={
+                  zone
+                    ? t("Add a block at {time}", { time: timeOfDay(h * 60) })
+                    : t("Add a block at {time} UTC", { time: timeOfDay(h * 60) })
+                }
+                onClick={() => {
+                  const s = h * 60;
+                  if (!blocks.some((b) => s < b.end && s + 60 > b.start)) add(s);
                 }}
-              >
-                <span className="block truncate" title={blockLabel(b)}>
-                  {blockLabel(b)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="relative h-4 text-[10.5px] tabular-nums text-fg-subtle" aria-hidden>
-          {[0, 3, 6, 9, 12, 15, 18, 21].map((h) => (
-            <span key={h} className="absolute" style={{ left: `${(h / 24) * 100}%` }}>
-              {timeOfDay(h * 60)}
-            </span>
-          ))}
+                className="absolute inset-y-0 border-r border-border/40 hover:bg-primary/10"
+                style={{ left: `${(h / 24) * 100}%`, width: `${100 / 24}%` }}
+              />
+            ))}
+            {blocks.map((b, i) => {
+              const hue = (i * 67 + 200) % 360;
+              return (
+                <div
+                  key={i}
+                  className="pointer-events-none absolute inset-y-1 overflow-hidden rounded-lg px-2 py-1 text-[11px] font-medium text-white shadow-sm"
+                  style={{
+                    left: `${(b.start / 1440) * 100}%`,
+                    width: `${((b.end - b.start) / 1440) * 100}%`,
+                    background: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${(hue + 30) % 360} 65% 40%))`,
+                  }}
+                >
+                  <span className="block truncate" title={blockLabel(b)}>
+                    {blockLabel(b)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="relative h-4 text-[10.5px] tabular-nums text-fg-subtle" aria-hidden>
+            {[0, 3, 6, 9, 12, 15, 18, 21].map((h) => (
+              <span key={h} className="absolute" style={{ left: `${(h / 24) * 100}%` }}>
+                {timeOfDay(h * 60)}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
