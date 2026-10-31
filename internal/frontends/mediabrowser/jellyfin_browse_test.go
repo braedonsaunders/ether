@@ -117,6 +117,53 @@ func TestJellyfinSortNameListOmitsUnrequestedFacts(t *testing.T) {
 	}
 }
 
+func TestJellyfinMovieAndEpisodeSourcesLookLikeFiles(t *testing.T) {
+	movie := frontend.Title{Key: 5, Type: "movie", Title: "Arrival", Year: 2016}
+	show := core.ShowKey(9)
+	episode := frontend.Title{Key: core.EpisodeKey(9, 1, 1), Type: "episode", Title: "Episode 1", ShowTitle: "Coronation Street", ShowKey: show, Season: 1, Episode: 1}
+	exp := frontendtest.Experience{
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{Items: []frontend.Title{movie}, Total: 1}, nil
+		},
+		ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{Items: []frontend.Title{episode}, Total: 1}, nil
+		},
+	}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?IncludeItemTypes=Movie&Fields=MediaSources,Path&Recursive=true&Limit=50", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var listed struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &listed) != nil || len(listed.Items) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	assertJellyfinFile(t, listed.Items[0], "/Movies/Arrival (2016)/Arrival (2016).mkv")
+
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Shows/"+ids.RatingKeyGUID(show)+"/Episodes?Fields=MediaSources", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var episodes struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &episodes) != nil || len(episodes.Items) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	assertJellyfinFile(t, episodes.Items[0], "/TV/Coronation Street/Season 01/Coronation Street - S01E01.mkv")
+}
+
+func assertJellyfinFile(t *testing.T, item map[string]any, path string) {
+	t.Helper()
+	sources, _ := item["MediaSources"].([]any)
+	if item["Path"] != path || item["Container"] != "mkv" || len(sources) != 1 {
+		t.Fatal(item["Path"], item["Container"], item["MediaSources"])
+	}
+	source := sources[0].(map[string]any)
+	streams, _ := source["MediaStreams"].([]any)
+	if source["Protocol"] != "File" || source["IsRemote"] != false || source["Path"] != path || source["Container"] != "mkv" || len(streams) < 1 {
+		t.Fatal(source["Protocol"], source["IsRemote"], source["Path"], source["Container"], len(streams))
+	}
+}
+
 func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 	exp := frontendtest.Experience{
 		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {

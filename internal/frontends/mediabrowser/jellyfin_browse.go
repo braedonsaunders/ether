@@ -14,6 +14,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/libpath"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
 
@@ -144,6 +145,79 @@ func (i *instance) jellyfinCollectionFolder(item map[string]any, id string) {
 	item["UserData"] = data
 }
 
+// presentJellyfinFile is the file Infuse reads off a movie or episode row.
+// An estimate leaves Protocol "Http", IsRemote true, and an empty container,
+// which Infuse rejects as DataSourceError. The path is the authorized virtual
+// library name when the host has one, otherwise the same stable libpath name
+// WebDAV uses. Probed streams stay; a row with none still names a video and
+// an audio track so the source is a file rather than an empty remote.
+func (i *instance) presentJellyfinFile(item, source map[string]any, title frontend.Title) {
+	if i == nil || item == nil || source == nil || (title.Type != "movie" && title.Type != "episode") {
+		return
+	}
+	container, _ := source["Container"].(string)
+	if container == "" {
+		container = "mkv"
+	}
+	source["Container"] = container
+	item["Container"] = container
+	if remote, _ := source["Path"].(string); strings.Contains(remote, "://") {
+		// A playback URL stays a remote source. Listing rows do not have one.
+		return
+	}
+	path, _ := item["Path"].(string)
+	if path == "" {
+		if existing, ok := source["Path"].(string); ok && existing != "" {
+			path = existing
+		}
+	}
+	if path == "" {
+		path = jellyfinLibraryPath(title, container)
+	}
+	if path == "" {
+		return
+	}
+	if current, _ := item["Path"].(string); current == "" {
+		item["Path"] = path
+	}
+	if current, _ := source["Path"].(string); current == "" {
+		source["Path"] = path
+	}
+	source["Protocol"] = "File"
+	source["IsRemote"] = false
+	source["VideoType"] = "VideoFile"
+	if streams, _ := source["MediaStreams"].([]any); len(streams) == 0 {
+		source["MediaStreams"] = i.mediaStreams([]frontend.StreamInfo{
+			{Type: "video", Index: 0, Codec: "h264"},
+			{Type: "audio", Index: 1, Codec: "aac", Channels: 2},
+		})
+	}
+}
+
+func jellyfinLibraryPath(title frontend.Title, container string) string {
+	ext := container
+	if ext == "" || strings.ContainsAny(ext, `/\.`) {
+		ext = "mkv"
+	}
+	switch title.Type {
+	case "movie":
+		name := libpath.Safe(title.Title)
+		if title.Year > 0 {
+			name = fmt.Sprintf("%s (%d)", name, title.Year)
+		}
+		return "/Movies/" + name + "/" + name + "." + ext
+	case "episode":
+		show := libpath.Safe(title.ShowTitle)
+		if title.ShowTitle == "" {
+			show = "Show"
+		}
+		file := fmt.Sprintf("%s - S%02dE%02d.%s", show, title.Season, title.Episode, ext)
+		return "/TV/" + show + "/" + fmt.Sprintf("Season %02d", title.Season) + "/" + file
+	default:
+		return ""
+	}
+}
+
 func jellyfinMediaSourceShape(source map[string]any, name string) {
 	if name != "" {
 		setMissing(source, "Name", name)
@@ -235,18 +309,14 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 		for _, source := range sources {
 			if dto, ok := source.(map[string]any); ok {
 				jellyfinMediaSourceShape(dto, title.Title)
-				if container, _ := dto["Container"].(string); container != "" {
-					item["Container"] = container
-				}
+				i.presentJellyfinFile(item, dto, title)
 			}
 		}
 	} else if fields["mediasources"] && (title.Type == "movie" || title.Type == "episode") && r != nil && viewer != nil {
 		source := i.defaultMediaSource(r, viewer, authhdr.MediaBrowserToken(r), title.Key)
 		jellyfinMediaSourceShape(source, title.Title)
+		i.presentJellyfinFile(item, source, title)
 		item["MediaSources"] = []any{source}
-		if container, _ := source["Container"].(string); container != "" {
-			item["Container"] = container
-		}
 	}
 	if title.Type == "season" || title.Type == "show" {
 		i.attachUnplayedCount(r, viewer, item, title)
