@@ -88,6 +88,13 @@ type pool struct {
 	latMu    sync.Mutex
 	latency  ewma // command round trip
 	fetching ewma // whole article
+	liveLat  latencyWindow
+
+	// Head-of-line hedges this provider served for another stalled live fetch.
+	hedges      atomic.Int64
+	hedgeWins   atomic.Int64
+	hedgeLosses atomic.Int64
+	hedgeWaste  atomic.Int64
 }
 
 type ewma struct {
@@ -925,6 +932,17 @@ type ProviderStats struct {
 	BODYPipelined    int64         `json:"bodyPipelined"`
 	STATBatches      int64         `json:"statBatches"`
 	STATBatchTime    time.Duration `json:"statBatchTime"`
+
+	// LiveFetchP50 is the median of recent live article fetches, the basis
+	// of the head-of-line hedge delay. Hedges* count duplicate fetches this
+	// provider served for a stalled live fetch on another connection: wins
+	// reached the viewer first, losses did not; HedgeWastedBytes are bytes
+	// read for the losing side of those races.
+	LiveFetchP50     time.Duration `json:"liveFetchP50"`
+	Hedges           int64         `json:"hedges"`
+	HedgeWins        int64         `json:"hedgeWins"`
+	HedgeLosses      int64         `json:"hedgeLosses"`
+	HedgeWastedBytes int64         `json:"hedgeWastedBytes"`
 }
 
 func (p *pool) stats() ProviderStats {
@@ -986,7 +1004,12 @@ func (p *pool) stats() ProviderStats {
 	p.latMu.Lock()
 	st.AvgLatency = time.Duration(p.latency.v)
 	st.AvgFetchTime = time.Duration(p.fetching.v)
+	st.LiveFetchP50, _ = p.liveLat.median()
 	p.latMu.Unlock()
+	st.Hedges = p.hedges.Load()
+	st.HedgeWins = p.hedgeWins.Load()
+	st.HedgeLosses = p.hedgeLosses.Load()
+	st.HedgeWastedBytes = p.hedgeWaste.Load()
 	return st
 }
 

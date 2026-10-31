@@ -87,6 +87,7 @@ type Conn struct {
 	idleSince time.Time
 	uses      int           // requests served (maintained by the pool)
 	lastRTT   time.Duration // command-to-status-line latency of the last command
+	wire      *atomic.Int64 // bytes read off this socket, including TLS framing
 }
 
 // aLongTimeAgo is a deadline in the past, used to interrupt blocked I/O.
@@ -130,10 +131,8 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 	if tc, ok := raw.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
 	}
-	var nc net.Conn = raw
-	if o.BytesRead != nil {
-		nc = &countingConn{Conn: raw, n: o.BytesRead}
-	}
+	wire := new(atomic.Int64)
+	var nc net.Conn = &countingConn{Conn: raw, n: o.BytesRead, own: wire}
 	if o.TLS {
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 		if o.TLSConfig != nil {
@@ -172,6 +171,7 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 		onCommand:      o.OnCommand,
 		created:        now,
 		used:           now,
+		wire:           wire,
 	}
 	if err := c.handshake(dctx, o.Username, o.Password); err != nil {
 		c.Close()
@@ -673,16 +673,24 @@ func (b *BodyReader) Close() error {
 	return b.ioErr
 }
 
-// countingConn counts bytes read for provider statistics.
+// wireBytes is how many bytes this connection has read off the wire.
+func (c *Conn) wireBytes() int64 { return c.wire.Load() }
+
+// countingConn counts bytes read for provider statistics (n, optional) and
+// for this connection alone (own).
 type countingConn struct {
 	net.Conn
-	n *atomic.Int64
+	n   *atomic.Int64
+	own *atomic.Int64
 }
 
 func (c *countingConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
-		c.n.Add(int64(n))
+		if c.n != nil {
+			c.n.Add(int64(n))
+		}
+		c.own.Add(int64(n))
 	}
 	return n, err
 }
