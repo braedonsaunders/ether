@@ -129,3 +129,43 @@ func TestSearchYearRemoteFallback(t *testing.T) {
 		})
 	}
 }
+
+type failingSearchTMDB struct{ TMDB }
+
+func (failingSearchTMDB) SearchMulti(context.Context, string, int) (*tmdb.Paged[tmdb.MultiResult], error) {
+	return nil, errors.New("metadata down")
+}
+func (failingSearchTMDB) SearchMovies(context.Context, string, int) (*tmdb.Paged[tmdb.Movie], error) {
+	return nil, errors.New("metadata down")
+}
+func (failingSearchTMDB) SearchTV(context.Context, string, int) (*tmdb.Paged[tmdb.TVShow], error) {
+	return nil, errors.New("metadata down")
+}
+
+func TestSearchRemoteOutageKeepsLocalKeyword(t *testing.T) {
+	c := newChunkTestCatalog(t)
+	c.client = failingSearchTMDB{}
+	ctx := context.Background()
+	released := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	c.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+	episode := core.EpisodeKey(8, 1, 1)
+	titles := []core.Title{
+		{Key: core.MovieKey(9), Type: core.TypeMovie, Title: "Fixture Film", Released: released},
+		{Key: episode, Type: core.TypeEpisode, ShowKey: core.ShowKey(8), Season: 1, Episode: 1, Title: "Pilot Unique", Released: released},
+	}
+	if err := c.upsertMany(ctx, titles, upsertOpts{browsable: true}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.Search(ctx, "Fixture", []core.MediaType{core.TypeMovie, core.TypeShow, core.TypeEpisode}, 10)
+	if err != nil || len(got) != 1 || got[0].Title != "Fixture Film" {
+		t.Fatalf("movie: %#v %v", got, err)
+	}
+	got, err = c.Search(ctx, "Pilot Unique", []core.MediaType{core.TypeMovie, core.TypeShow, core.TypeEpisode}, 10)
+	if err != nil || len(got) != 1 || got[0].Key != episode {
+		t.Fatalf("episode: %#v %v", got, err)
+	}
+	got, err = c.Search(ctx, "zzzz-not-a-title", nil, 10)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("empty: %#v %v", got, err)
+	}
+}

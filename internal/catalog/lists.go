@@ -114,15 +114,19 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 		sortTitlesForSearch(items, query)
 		return limitTitles(items, limit)
 	}
-	wantMovie, wantTV := true, true
+	wantMovie, wantTV, wantSeason, wantEpisode := true, true, false, false
 	if len(types) > 0 {
 		wantMovie, wantTV = false, false
 		for _, t := range types {
-			if t == core.TypeMovie {
+			switch t {
+			case core.TypeMovie:
 				wantMovie = true
-			}
-			if t == core.TypeShow {
+			case core.TypeShow:
 				wantTV = true
+			case core.TypeSeason:
+				wantSeason = true
+			case core.TypeEpisode:
+				wantEpisode = true
 			}
 		}
 	}
@@ -137,22 +141,38 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 			out = append(out, t)
 		}
 	}
-	// Local first (instant, works offline).
+	// Local first (instant, works offline). Seasons and episodes are library
+	// keyword hits; the remote catalogue only knows movies and shows.
 	like := store.Like(store.DialectOf(c.db))
-	local, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE type IN ('movie','show')
+	var localErr error
+	local, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
 		AND (title `+like+` ? ESCAPE '\' OR original_title `+like+` ? ESCAPE '\') ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`,
 		"%"+escapeLike(query)+"%", "%"+escapeLike(query)+"%", year, year, limit*2)
-	if err == nil {
+	if err != nil {
+		localErr = err
+	} else {
 		var filtered []core.Title
 		for _, t := range local {
-			if (t.Type == core.TypeMovie && wantMovie) || (t.Type == core.TypeShow && wantTV) {
+			if (t.Type == core.TypeMovie && wantMovie) || (t.Type == core.TypeShow && wantTV) || (t.Type == core.TypeSeason && wantSeason) || (t.Type == core.TypeEpisode && wantEpisode) {
 				filtered = append(filtered, t)
 			}
 		}
 		add(filtered)
 	}
-	if c.client == nil {
+	// A missing or failing metadata service must not fail the request.
+	// Context cancellation still aborts. A local query error is returned
+	// only when there is nothing else to answer with.
+	localAnswer := func() ([]core.Title, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if localErr != nil && len(out) == 0 {
+			return nil, localErr
+		}
 		return finish(out), nil
+	}
+	if c.client == nil || (!wantMovie && !wantTV) {
+		return localAnswer()
 	}
 	var remote []core.Title
 	// Page through TMDB until we have enough or run out (max 3 pages).
@@ -161,7 +181,7 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 			res, err := c.client.SearchMulti(ctx, query, page)
 			if err != nil {
 				if page == 1 && len(out) == 0 {
-					return nil, err
+					return localAnswer()
 				}
 				break
 			}
@@ -180,7 +200,7 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 	} else if wantMovie {
 		res, err := c.client.SearchMovies(ctx, query, 1)
 		if err != nil && len(out) == 0 {
-			return nil, err
+			return localAnswer()
 		}
 		if err == nil {
 			for _, m := range res.Results {
@@ -190,7 +210,7 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 	} else if wantTV {
 		res, err := c.client.SearchTV(ctx, query, 1)
 		if err != nil && len(out) == 0 {
-			return nil, err
+			return localAnswer()
 		}
 		if err == nil {
 			for _, s := range res.Results {

@@ -768,10 +768,18 @@ func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.D
 		return frontend.SearchPage{}, err
 	}
 	var types []core.MediaType
+	show := false
 	for _, lib := range s.libraries() {
 		if SectionAllowed(v, lib.ID) {
 			types = append(types, lib.Type)
+			if lib.Type == core.TypeShow {
+				show = true
+			}
 		}
+	}
+	// Season and episode titles are keyword hits inside a show library.
+	if show {
+		types = append(types, core.TypeSeason, core.TypeEpisode)
 	}
 	offset := max(q.Offset, 0)
 	limit := q.Limit

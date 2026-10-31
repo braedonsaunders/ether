@@ -369,6 +369,13 @@ func (c *Catalog) meetsThreshold(t core.Title) bool {
 	return MeetsThreshold(c.config(), t, c.now())
 }
 
+// SetTMDB replaces the remote metadata client. Nil answers from the local catalogue only.
+func (c *Catalog) SetTMDB(client TMDB) {
+	if c != nil {
+		c.client = client
+	}
+}
+
 // WriteGeneration changes when a catalogue write drops the read caches.
 func (c *Catalog) WriteGeneration() uint64 {
 	if c == nil {
