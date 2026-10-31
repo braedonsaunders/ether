@@ -23,7 +23,10 @@ describe("Settings", () => {
   it("shows and filters client families reported by other protocols", async () => {
     renderApp("/playback/devices");
     expect(await screen.findByText("Stremio TV", {}, WAIT)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "stremio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Protocol" }));
+    fireEvent.click(
+      within(await screen.findByRole("listbox", { hidden: true })).getByText("Stremio"),
+    );
     expect(screen.getByText("Stremio TV")).toBeInTheDocument();
     expect(screen.queryByText("Jellyfin TV")).toBeNull();
   });
@@ -84,7 +87,10 @@ describe("Settings", () => {
     const required = await screen.findByRole("region", { name: "Required" }, WAIT);
     expect(screen.queryByRole("region", { name: "Essentials" })).toBeNull();
     expect(within(required).getByRole("listitem", { name: "TMDB" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Set up TMDB" })).toHaveAttribute("href", "/services/tmdb");
+    expect(screen.getByRole("link", { name: "Set up TMDB" })).toHaveAttribute(
+      "href",
+      "/services/tmdb",
+    );
     const artwork = screen.getByRole("region", { name: "Artwork and ratings" });
     const posters = await within(artwork).findByRole("listitem", { name: "PostersPlus" }, WAIT);
     const ratings = within(artwork).getByRole("listitem", { name: "OMDb and MDBList" });
@@ -258,9 +264,7 @@ describe("Settings", () => {
     expect(screen.queryByRole("button", { name: "Test endpoint" })).toBeNull();
     fireEvent.click(await screen.findByRole("tab", { name: "Language model" }, WAIT));
     expect(await screen.findByRole("button", { name: "Test endpoint" }, WAIT)).toBeInTheDocument();
-    expect(
-      await screen.findByRole("heading", { name: "Language features" }, WAIT),
-    ).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Language features" }, WAIT)).toBeVisible();
   });
 
   it("picks a language-model provider and a model from its live list", async () => {

@@ -101,10 +101,16 @@ describe("Playback devices", () => {
     expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
     expect(screen.getByText("Swiftfin")).toBeInTheDocument();
     expect(screen.getByText(/Seen on this server/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "jellyfin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Protocol" }));
+    fireEvent.click(
+      within(await screen.findByRole("listbox", { hidden: true })).getByText("Jellyfin"),
+    );
     expect(screen.queryByText("Plex Web")).not.toBeInTheDocument();
     expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "Apple TV" } });
+    fireEvent.click(screen.getByRole("button", { name: "Device" }));
+    fireEvent.click(
+      within(await screen.findByRole("listbox", { hidden: true })).getByText("Apple TV"),
+    );
     expect(screen.queryByText("Jellyfin TV")).not.toBeInTheDocument();
     expect(screen.getByText("Swiftfin")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
@@ -124,6 +130,19 @@ describe("Playback devices", () => {
     await waitFor(() => expect(calls(fake, "PUT", "/config/clients")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/clients")[0]!.body).toMatchObject({
       overrides: [{ id: "apple-tv", dolbyVisionProfiles: [5, 7, 8] }],
+    });
+  });
+
+  it("adds an app override from a typed match", async () => {
+    const { fake } = renderApp("/playback/devices");
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "Add an app" });
+    fireEvent.change(within(drawer).getByLabelText("Match"), { target: { value: "Infuse" } });
+    fireEvent.change(within(drawer).getByLabelText("Video codecs"), { target: { value: "hevc" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/clients")).toHaveLength(1));
+    expect(calls(fake, "PUT", "/config/clients")[0]!.body).toMatchObject({
+      overrides: [{ product: "Infuse", videoCodecs: ["hevc"] }],
     });
   });
 });
