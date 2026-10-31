@@ -902,6 +902,7 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 	}
 	i.page(w, r, v, page, q.Offset)
 }
+
 // searchableParent reports whether a search may use the title index: no
 // parent, or a library view. Searches inside a show, season or personal
 // library keep filtering that listing.
