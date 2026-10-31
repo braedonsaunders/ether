@@ -1755,6 +1755,11 @@
   "m_0abadbedf6894f": "Azioni per {release}",
   "m_0abce084240d5f": "personalizzata",
   "m_0abd37a346cd74": "Avvia la registrazione",
+  "m_0abf41a4799823": {
+    "one": "in uso {using} di {count} connessione (limite del server rilevato)",
+    "many": "in uso {using} di {count} connessioni (limite del server rilevato)",
+    "other": "in uso {using} di {count} connessioni (limite del server rilevato)"
+  },
   "m_0ac04023bddbe8": "Solo SDR",
   "m_0ac1652ab7b5f4": "La locandina ufficiale della saga viene recuperata quando salvi. Le raccolte senza una fonte saga TMDB usano la grafica automatica.",
   "m_0ac3c72484745e": "Risultati per “{query}”",
@@ -4469,6 +4474,11 @@
   "m_1b832c3fc2b5f7": "Sta conoscendo lo spettatore: le righe sono personali ma ancora in fase di esplorazione.",
   "m_1b86404e2f0dd1": "Cerca una release",
   "m_1b8797fbdae067": "Ether è aggiornato",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} richiesta presa in carico da un provider occupato",
+    "many": "{count} richieste prese in carico da provider occupati",
+    "other": "{count} richieste prese in carico da provider occupati"
+  },
   "m_1b8d369ae23df1": "Pubblica il tuo indirizzo pubblico su plex.tv.",
   "m_1b8ffcd7534fa9": "Scegli gli spettatori a cui limitare questo canale. I loro limiti di controllo parentale continuano ad applicarsi; le impostazioni della TV in diretta per spettatore si trovano nel profilo di ciascuno.",
   "m_1b90e44b07407d": "I suoi canali e i relativi programmi vengono rimossi dalla TV in diretta.",
