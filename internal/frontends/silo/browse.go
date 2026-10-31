@@ -10,11 +10,8 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/contentrating"
-	"github.com/braedonsaunders/ether/internal/experience"
-	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
-	"github.com/braedonsaunders/ether/internal/trackprefs"
-
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
@@ -75,11 +72,15 @@ func siloAudioLanguage(language string) string {
 	return language
 }
 
-// audioPreference is the trackprefs chain: the viewer's saved languages
-// (their row, otherwise user 0), then the catalog language, then the title
-// original. PreferOriginal ranks the original first. The file default is
-// only the last resort inside PickAudio.
-func (i *instance) audioPreference(ctx context.Context, v *frontend.Viewer, original string) []string {
+// audioPreference is the shared no-choice chain: the viewer's saved
+// languages (their row, otherwise user 0), then the catalog language, then
+// the title original. PreferOriginal ranks the original first. The file
+// default is only the last resort inside PickAudio. A nil host hook leaves
+// the caller on the file default flag.
+func (i *instance) audioPreference(ctx context.Context, v *frontend.Viewer, original string) ([]string, bool) {
+	if i.host.AudioOrder == nil {
+		return nil, false
+	}
 	var audio []string
 	preferOriginal := false
 	if i.host.TrackPreferences != nil && v != nil {
@@ -92,7 +93,7 @@ func (i *instance) audioPreference(ctx context.Context, v *frontend.Viewer, orig
 	if i.host.MetadataLanguage != nil {
 		server = i.host.MetadataLanguage()
 	}
-	return trackprefs.AudioOrder(audio, server, original, preferOriginal)
+	return i.host.AudioOrder(audio, server, original, preferOriginal), true
 }
 
 func nonNil(v []string) []string {
@@ -449,6 +450,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				videoTracks := []any{}
 				audioOrdinal, chosenAudio := 0, -1
 				chosenLanguage := ""
+				choseDefault := false
 				// An unresolved estimate is not a probed source. Required Silo
 				// numbers stay zero and strings stay empty until playback resolves it.
 				estimated := version.Media.Estimated
@@ -456,7 +458,11 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				if estimated {
 					streams = nil
 				}
-				wantedAudio := experience.PickAudio(frontend.MediaInfo{Streams: streams}, i.audioPreference(r.Context(), v, d.Title.Language))
+				langs, ordered := i.audioPreference(r.Context(), v, d.Title.Language)
+				wantedAudio := -1
+				if ordered && i.host.PickAudio != nil {
+					wantedAudio = i.host.PickAudio(frontend.MediaInfo{Streams: streams}, langs)
+				}
 				for si, stream := range streams {
 					if stream.Type == "video" {
 						video = stream.Codec
@@ -573,9 +579,15 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						audio = stream.Codec
 					}
 					if stream.Type == "audio" {
-						if si == wantedAudio {
+						if ordered && i.host.PickAudio != nil {
+							if si == wantedAudio {
+								chosenAudio = audioOrdinal
+								chosenLanguage = siloAudioLanguage(stream.Language)
+							}
+						} else if chosenAudio < 0 || (stream.Default && !choseDefault) {
 							chosenAudio = audioOrdinal
 							chosenLanguage = siloAudioLanguage(stream.Language)
+							choseDefault = stream.Default
 						}
 						audioOrdinal++
 						track := map[string]any{"default": stream.Default}

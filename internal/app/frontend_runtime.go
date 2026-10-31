@@ -14,6 +14,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/egress"
+	experiencepkg "github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/compactids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -28,6 +29,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/trackprefs"
 	"github.com/braedonsaunders/ether/internal/watchparty"
 )
 
@@ -285,7 +287,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				return ""
 			}
 			return a.cfg.Get().Catalog.Language
-		}, PersonalHomes: a.personalHomeDisk()}
+		}, AudioOrder: trackprefs.AudioOrder, PickAudio: experiencepkg.PickAudio, PersonalHomes: a.personalHomeDisk()}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.listeners.log = a.log

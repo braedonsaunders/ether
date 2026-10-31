@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -85,18 +86,21 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
 	if i.host.SourceOffers == nil {
-		versionUnavailable(w)
+		i.versionUnavailable(w, errors.New("source offers are not configured"), "source offers")
 		return
 	}
 	offer, err := i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
 	if err != nil || offer.Target.Item == 0 || (offer.Target.VersionHandle == "") == (offer.Target.DetailSource == "") {
-		versionUnavailable(w)
+		if err == nil {
+			err = fmt.Errorf("offer %q item %d version %q detail %q", b.FileID, offer.Target.Item, offer.Target.VersionHandle, offer.Target.DetailSource)
+		}
+		i.versionUnavailable(w, err, "resolve source offer")
 		return
 	}
 	key, versionHandle := offer.Target.Item, offer.Target.VersionHandle
 	planner, hasDetailPlanner := i.host.Sessions.(frontend.DetailPlanner)
 	if (versionHandle != "" && i.host.VersionHandles == nil) || (offer.Target.DetailSource != "" && (!hasDetailPlanner || offer.Target.ETag == "")) {
-		versionUnavailable(w)
+		i.versionUnavailable(w, fmt.Errorf("version %q detail %q etag %q planner %v", versionHandle, offer.Target.DetailSource, offer.Target.ETag, hasDetailPlanner), "version handle")
 		return
 	}
 	direct, hls := true, true
@@ -120,7 +124,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, DetailSource: offer.Target.DetailSource, ExpectedSourceETag: offer.Target.ETag, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
 		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
-			versionUnavailable(w)
+			i.versionUnavailable(w, err, "plan")
 			return
 		}
 		playbackError(w, err)
@@ -129,7 +133,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
 	if err != nil {
 		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
-			versionUnavailable(w)
+			i.versionUnavailable(w, err, "open")
 			return
 		}
 		playbackError(w, err)
@@ -151,7 +155,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if err = matchOffer(); err != nil {
 		i.stopFailedAdmission(r.Context(), access, session.ID)
-		versionUnavailable(w)
+		i.versionUnavailable(w, err, "match offer")
 		return
 	}
 
@@ -178,7 +182,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	// selector check. Later expiry does not revoke the independent session.
 	if err = matchOffer(); err != nil {
 		i.stopFailedAdmission(r.Context(), access, session.ID)
-		versionUnavailable(w)
+		i.versionUnavailable(w, err, "match offer after stream")
 		return
 	}
 	if !strings.HasPrefix(media, "/sessions/media/") {
@@ -485,6 +489,13 @@ func (i *instance) stopFailedAdmission(ctx context.Context, access frontend.Sess
 	if err := i.host.Sessions.Stop(cleanup, access, sessionID); err != nil && i.host.Log != nil {
 		i.host.Log.Error("failed playback admission cleanup", "session", sessionID, "err", err)
 	}
+}
+
+func (i *instance) versionUnavailable(w http.ResponseWriter, err error, reason string) {
+	if i.host.Log != nil {
+		i.host.Log.Error("silo version unavailable", "reason", reason, "err", err)
+	}
+	versionUnavailable(w)
 }
 
 func versionUnavailable(w http.ResponseWriter) {

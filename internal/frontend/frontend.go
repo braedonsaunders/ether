@@ -283,7 +283,14 @@ type Host struct {
 	// MetadataLanguage is the catalog language (config catalog.language).
 	// Empty skips that step of the no-list audio chain.
 	MetadataLanguage func() string
-	Log              *slog.Logger
+	// AudioOrder is the shared no-choice language chain. Frontends call it
+	// instead of importing the track-preference package. Nil keeps the
+	// caller's own fallback.
+	AudioOrder func(audio []string, server, original string, preferOriginal bool) []string
+	// PickAudio returns a stream position in MediaInfo, or -1 when no audio
+	// stream exists. Nil keeps the caller's own fallback.
+	PickAudio func(MediaInfo, []string) int
+	Log       *slog.Logger
 	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
 	ViewerPortalURL func(context.Context, *http.Request) (string, error)
 	// SecurePortalURL selects a verified reachable HTTPS portal address.
