@@ -54,6 +54,13 @@ func TestVersionOfferPublicationIsNotModification(t *testing.T) {
 	if got.Publication != nil || !got.AddedAt.Equal(released) {
 		t.Fatalf("release date fallback: %+v", got)
 	}
+	variant.Release.PubDate = published
+	show := &core.Title{Type: core.TypeShow, Released: released, AddedAt: published, UpdatedAt: updated}
+	showOffer := VersionOfferFrom(show, variant)
+	if showOffer.Publication == nil || !showOffer.Publication.Equal(published) || !showOffer.AddedAt.Equal(released) {
+		t.Fatalf("show catalogue or publication date became added: %+v", showOffer)
+	}
+	variant.Release.PubDate = time.Time{}
 	title.Released = time.Time{}
 	if !VersionOfferFrom(title, variant).AddedAt.IsZero() || !VersionOfferFrom(nil, variant).AddedAt.IsZero() {
 		t.Fatal("invented date")

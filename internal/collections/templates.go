@@ -324,7 +324,7 @@ var templateDefs = []templateDef{
 		with(tpl("New Releases", MediaMovie, catalogSrc(), mkRule("released", "within", "90d")), sortBy("released", true), refresh(RefreshHourly))},
 	{"new-series", "New Series", "Shows that premiered in the last two months.", catNew,
 		with(tpl("New Series", MediaShow, catalogSrc(), mkRule("released", "within", "60d")), sortBy("released", true), refresh(RefreshHourly))},
-	{"recently-added", "Recently Added", "Titles that joined the library in the last two weeks.", catNew,
+	{"recently-added", "Recently Added", "Titles released in the last two weeks.", catNew,
 		with(tpl("Recently Added", MediaMixed, catalogSrc(), mkRule("addedAt", "within", "14d")), sortBy("added", true), refresh(RefreshHourly))},
 
 	// --- For each viewer -------------------------------------------------------

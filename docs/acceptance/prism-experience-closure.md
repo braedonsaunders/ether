@@ -26,29 +26,32 @@ by Experience B (`3a8c9a3bf`, `18846f422`), not duplicated here.
 
 Root confirmed the owner decision in thread `thr_6hmqzepnsk` on 2026-10-30:
 
-- Movie: release date. Episode: air date.
-- Series: most recent aired episode, falling back to first-air date.
-- Season: most recent aired episode in that season, then season air date,
-  then the series rule.
+- Movie, episode, series and season: that title's own release or air date.
+- A series or season premiere is not replaced by a later episode.
+- A show or season with no premiere of its own may still advertise a derived
+  air date stored on `AddedAt` (virtual DVD seasons). That is not a catalogue
+  insertion time.
 - Future/unknown dates are absent from Recently Added. No catalogue insertion,
   metadata refresh, file modification, publication or observation fallback.
 
-The catalogue's `airAddedSQL` and `CachedAddedTimes` already implement these
-series/season fallbacks. They remain unchanged. `KnownAddedDate` adds the same
-SQL expression to the filter **before counting and pagination**, only for
-Recently Added queries. Plain library date-added sorts still include unknown
-items. Spike's local-file catalogue now sorts by release instead of modification.
+`releaseAddedSQL` and `CachedAddedTimes` read `released_ts` only.
+`KnownAddedDate` adds that expression to the filter **before counting and
+pagination**, only for Recently Added queries. Plain library date-added sorts
+still include unknown items. Spike's local-file catalogue sorts by release
+instead of modification.
 
-Approved Plex differences: movie/episode `addedAt` ignores conflicting `AddedAt`;
-unknown/future release omits `addedAt` instead of falling back to `UpdatedAt`.
-Example: catalogue `1704067200` (2024-01-01) for a movie released at
-`1072915200` (2004-01-01) becomes **1072915200**. `originallyAvailableAt`
-remains **2004-01-01**; metadata `updatedAt` is unchanged. Series/season
-latest-aired dates remain unchanged. Recently Added excludes unknown/future
-items before its limit. No date differences are normalized out of comparisons.
+Approved Plex differences: `addedAt` is the title's own release date, including
+series and seasons. A supplied catalogue `AddedAt` of `1704067200` (2024-01-01)
+for a title released at `1072915200` (2004-01-01) becomes **1072915200**.
+`originallyAvailableAt` remains the premiere; metadata `updatedAt` is unchanged.
+Recently Added orders and filters by that same release date, so a 2004 series
+does not sort ahead of a 2020 movie because a descendant aired in 2024.
+Recently Added excludes unknown/future items before its limit. No date
+differences are normalized out of comparisons.
 
 Jellyfin and Emby `DateCreated` use this title date; `PremiereDate` remains the
-original release. Latest grouped rows retain their catalogue air-derived date.
+original release. Latest grouped series rows use the series premiere, not the
+newest episode. Ungrouped episode rows still use each episode's air date.
 Silo version `added_at` uses the same title date, omitting it when unknown.
 Version `Publication` and persisted `FirstObservedAt` remain distinct facts;
 neither is serialized by protocol adapters as an added date.
@@ -57,7 +60,7 @@ neither is serialized by protocol adapters as an added date.
 
 Exact approved date values: `TestApprovedReleaseDateAddedAtDelta`.
 Catalogue insertion/order/filter regression: `TestMovieAddedSortIgnoresCatalogueInsertion`.
-Series/season fallback and airing boundaries: existing `TestAirAddedAndAiredEpisodeBrowse`,
+Series and season premieres, not descendant air dates: `TestAirAddedAndAiredEpisodeBrowse`,
 `TestSeasonAirAddedFallbacks`, `TestSectionDateSortRoutesUseAirDates`.
 Neutral mixed-type sorting: `TestDateAddedSortAcrossTypesAndChildren`.
 Owner/restricted postplay frozen XML/JSON: `TestPostplaySelectionMatchesFrozenBytes`.

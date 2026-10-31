@@ -92,9 +92,9 @@ func TestOfflineSortDirectionsAndTies(t *testing.T) {
 		{"popularity", true, []core.RatingKey{core.MovieKey(101), core.MovieKey(102), core.MovieKey(103)}},
 		{"released", false, []core.RatingKey{core.MovieKey(102), core.MovieKey(101), core.MovieKey(103)}},
 		{"released", true, []core.RatingKey{core.MovieKey(103), core.MovieKey(101), core.MovieKey(102)}},
-		// Fixture rows have identical added timestamps; ties use popularity.
-		{"added", false, []core.RatingKey{core.MovieKey(101), core.MovieKey(102), core.MovieKey(103)}},
-		{"added", true, []core.RatingKey{core.MovieKey(101), core.MovieKey(102), core.MovieKey(103)}},
+		// Catalogue added_at is identical. Date added follows each title's release.
+		{"added", false, []core.RatingKey{core.MovieKey(102), core.MovieKey(101), core.MovieKey(103)}},
+		{"added", true, []core.RatingKey{core.MovieKey(103), core.MovieKey(101), core.MovieKey(102)}},
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s/%t", tc.mode, tc.desc), func(t *testing.T) {

@@ -4,18 +4,21 @@ import (
 	"time"
 )
 
-// AddedDate is the title's release/air date. Series and seasons carry the
-// catalogue's latest-aired descendant date, including its air-date fallbacks.
-// Publication, observation and metadata refresh times are independent facts.
+// DateAdded is the title's own release or air date. A known Released value
+// always wins. Shows and seasons with no premiere of their own may still
+// carry a derived air date in AddedAt, such as a virtual season built from
+// aired episodes. Catalogue insertion, first observation, metadata refresh,
+// file modification, descendant air dates and release-publication times are
+// never the date added. Future dates are unknown.
 func (title *Title) DateAdded(now time.Time) time.Time {
 	if title == nil {
 		return time.Time{}
 	}
 	date := title.Released
-	if (title.Type == TypeShow || title.Type == TypeSeason) && !title.AddedAt.IsZero() {
+	if date.IsZero() && (title.Type == TypeShow || title.Type == TypeSeason) {
 		date = title.AddedAt
 	}
-	if date.After(now) {
+	if date.IsZero() || date.After(now) {
 		return time.Time{}
 	}
 	return date

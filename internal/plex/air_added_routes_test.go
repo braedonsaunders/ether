@@ -58,9 +58,9 @@ func TestSectionDateSortRoutesUseAirDates(t *testing.T) {
 		path string
 		keys []core.RatingKey
 	}{
-		{"/library/sections/2/recentlyAdded", []core.RatingKey{a, b}},
-		{"/library/sections/2/all?sort=addedAt:asc", []core.RatingKey{b, a}},
-		{"/library/sections/2/all?sort=addedAt:desc", []core.RatingKey{a, b}},
+		{"/library/sections/2/recentlyAdded", []core.RatingKey{b, a}},
+		{"/library/sections/2/all?sort=addedAt:asc", []core.RatingKey{a, b}},
+		{"/library/sections/2/all?sort=addedAt:desc", []core.RatingKey{b, a}},
 		{"/library/sections/2/all?sort=updatedAt:desc", []core.RatingKey{b, a}},
 		{"/library/sections/2/all", []core.RatingKey{a, b}},
 	} {
@@ -77,7 +77,7 @@ func TestSectionDateSortRoutesUseAirDates(t *testing.T) {
 		})
 	}
 	rec := decode(t, f.get(t, fmt.Sprintf("/library/metadata/%s", season), jsonAccept...))
-	if len(rec.Metadata) != 1 || rec.Metadata[0].AddedAt != date(2024).Unix() {
-		t.Fatalf("season latest aired: %+v", rec.Metadata)
+	if len(rec.Metadata) != 1 || rec.Metadata[0].AddedAt != date(2001).Unix() || rec.Metadata[0].OriginallyAvailableAt != "" {
+		t.Fatalf("season premiere: %+v", rec.Metadata)
 	}
 }

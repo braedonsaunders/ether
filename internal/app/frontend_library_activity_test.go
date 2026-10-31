@@ -99,7 +99,7 @@ func TestSurfaceLatestTVUsesAiredEpisodeDates(t *testing.T) {
 		t.Fatal("production experience lacks latest grouping")
 	}
 	grouped, err := activity.LatestAddedGrouped(ctx, viewer, core.Device{ID: "tv"}, "2", 20, true)
-	if err != nil || len(grouped) != 1 || grouped[0].Title.Key != show.Key || grouped[0].AddedAt == nil || !grouped[0].AddedAt.Equal(latest.Released) {
+	if err != nil || len(grouped) != 1 || grouped[0].Title.Key != show.Key || grouped[0].AddedAt == nil || !grouped[0].AddedAt.Equal(show.Released) {
 		t.Fatalf("grouped TV latest %+v: %v", grouped, err)
 	}
 	ungrouped, err := activity.LatestAddedGrouped(ctx, viewer, core.Device{ID: "tv"}, "2", 20, false)

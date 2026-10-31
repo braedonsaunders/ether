@@ -8,16 +8,19 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// airAddedSQL derives the catalogue date from aired episodes or release dates.
-// All seven placeholders bind the same captured Unix time.
-const airAddedSQL = `COALESCE(CASE WHEN t.type='show' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.key AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type='season' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.show_key AND e.season=t.season AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END, (SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.show_key AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), (SELECT s.released_ts FROM catalog_titles s WHERE s.key=t.show_key AND s.type='show' AND s.released_ts>0 AND s.released_ts<=?)) WHEN t.type IN ('movie','episode') AND t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END,0)`
+// releaseAddedSQL is the title's own release or air timestamp when it is
+// known and not in the future. Descendant episodes, catalogue insertion
+// (added_at), metadata refresh (fetched_at), publication and observation
+// times are not date added.
+const releaseAddedSQL = `CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts ELSE 0 END`
 
-func airAddedArgs(now time.Time) []any {
-	return []any{now.Unix(), now.Unix(), now.Unix(), now.Unix(), now.Unix(), now.Unix(), now.Unix()}
+func releaseAddedArgs(now time.Time) []any {
+	return []any{now.Unix()}
 }
 
-// CachedAddedTimes reads air-derived dates without fetching or resolving
-// metadata. Missing, unknown and future dates are omitted.
+// CachedAddedTimes reads each title's own release or air date without
+// fetching or resolving metadata. Missing, unknown and future dates are
+// omitted. Descendant episodes do not replace a series or season premiere.
 func (c *Catalog) CachedAddedTimes(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]time.Time, error) {
 	return cachedAirAddedTimes(ctx, c.db, keys, c.now())
 }
@@ -27,11 +30,11 @@ func cachedAirAddedTimes(ctx context.Context, db *sql.DB, keys []core.RatingKey,
 	const chunk = 400
 	for start := 0; start < len(keys); start += chunk {
 		end := min(start+chunk, len(keys))
-		args := airAddedArgs(now)
+		args := releaseAddedArgs(now)
 		for _, key := range keys[start:end] {
 			args = append(args, int64(key))
 		}
-		rows, err := db.QueryContext(ctx, `SELECT t.key,`+airAddedSQL+` FROM catalog_titles t WHERE t.key IN (`+placeholders(end-start)+`)`, args...)
+		rows, err := db.QueryContext(ctx, `SELECT t.key,`+releaseAddedSQL+` FROM catalog_titles t WHERE t.key IN (`+placeholders(end-start)+`)`, args...)
 		if err != nil {
 			return nil, err
 		}

@@ -14,12 +14,8 @@ func TestAddedDateIgnoresPublicationAndObservation(t *testing.T) {
 	observed := time.Unix(1704067200, 0).UTC() // 2024-01-01
 	for _, typ := range []core.MediaType{core.TypeMovie, core.TypeEpisode, core.TypeShow, core.TypeSeason} {
 		title := core.Title{Type: typ, Released: released, AddedAt: observed, UpdatedAt: now}
-		want := released
-		if typ == core.TypeShow || typ == core.TypeSeason {
-			want = observed
-		}
-		if got := title.DateAdded(now); !got.Equal(want) {
-			t.Fatalf("%s: got %s want %s", typ, got, want)
+		if got := title.DateAdded(now); !got.Equal(released) {
+			t.Fatalf("%s: catalogue date %s replaced release %s", typ, got, released)
 		}
 		title.Released, title.AddedAt = time.Time{}, time.Time{}
 		if !title.DateAdded(now).IsZero() {
@@ -39,8 +35,12 @@ func TestDateAddedSortAcrossTypesAndChildren(t *testing.T) {
 	if err := s.sortTitles(context.Background(), items, frontend.ItemQuery{Sort: core.SortAdded, Desc: true}); err != nil {
 		t.Fatal(err)
 	}
-	if items[0].Key != 3 || items[1].Key != 2 || items[2].Key != 1 {
+	if items[0].Key != 2 || items[1].Key != 1 || items[2].Key != 3 {
 		t.Fatalf("order: %+v", items)
+	}
+	show := items[2]
+	if !show.DateAdded(time.Unix(1767225600, 0)).Equal(released) {
+		t.Fatalf("show sorted by catalogue date: %s", show.DateAdded(time.Unix(1767225600, 0)))
 	}
 }
 

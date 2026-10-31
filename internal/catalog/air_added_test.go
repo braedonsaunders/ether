@@ -31,13 +31,13 @@ func TestAirAddedAndAiredEpisodeBrowse(t *testing.T) {
 		}
 	}
 	got, err := c.CachedAddedTimes(ctx, []core.RatingKey{show, other, items[2].Key, items[3].Key, items[4].Key})
-	if err != nil || !got[show].Equal(old) || !got[other].Equal(items[5].Released) || !got[items[2].Key].Equal(old) || !got[items[3].Key].IsZero() || !got[items[4].Key].IsZero() {
-		t.Fatalf("air-derived times: %+v %v", got, err)
+	if err != nil || !got[show].Equal(items[0].Released) || !got[other].Equal(items[1].Released) || !got[items[2].Key].Equal(old) || !got[items[3].Key].IsZero() || !got[items[4].Key].IsZero() {
+		t.Fatalf("release dates: %+v %v", got, err)
 	}
 	for _, tc := range []struct {
 		key  core.RatingKey
 		date time.Time
-	}{{show, old}, {items[6].Key, items[6].Released}} {
+	}{{show, items[0].Released}, {items[6].Key, items[6].Released}} {
 		cached, e := c.CachedGet(ctx, tc.key)
 		if e != nil || !cached.AddedAt.Equal(tc.date) {
 			t.Fatalf("cached root %v: %+v %v", tc.key, cached, e)
@@ -48,7 +48,7 @@ func TestAirAddedAndAiredEpisodeBrowse(t *testing.T) {
 		t.Fatalf("aired episodes: %+v %v", page, err)
 	}
 	page, err = c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeShow}, Sort: core.SortAdded, Desc: true, Limit: 10})
-	if err != nil || len(page.Items) != 2 || page.Items[0].Key != other || !page.Items[0].AddedAt.Equal(items[5].Released) {
+	if err != nil || len(page.Items) != 2 || page.Items[0].Key != other || !page.Items[0].AddedAt.Equal(items[1].Released) {
 		t.Fatalf("show order: %+v %v", page, err)
 	}
 	if _, err = c.db.ExecContext(ctx, `UPDATE catalog_titles SET fetched_at=CASE WHEN key=? THEN CAST(? AS BIGINT) ELSE CAST(? AS BIGINT) END WHERE key IN (?,?)`, int64(show), now.Unix(), now.Add(-time.Hour).Unix(), int64(show), int64(other)); err != nil {
@@ -60,8 +60,8 @@ func TestAirAddedAndAiredEpisodeBrowse(t *testing.T) {
 	}
 	now = future.Add(time.Minute)
 	got, err = c.CachedAddedTimes(ctx, []core.RatingKey{show})
-	if err != nil || !got[show].Equal(future) {
-		t.Fatalf("air date crossing: %+v %v", got, err)
+	if err != nil || !got[show].Equal(items[0].Released) {
+		t.Fatalf("premiere stays date added: %+v %v", got, err)
 	}
 	page, err = c.CachedAiredEpisodes(ctx, show, 0, 1)
 	if err != nil || page.Total != 2 || len(page.Items) != 1 || page.Items[0].Key != items[3].Key {
@@ -72,7 +72,7 @@ func TestAirAddedAndAiredEpisodeBrowse(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err = c.CachedAddedTimes(ctx, []core.RatingKey{show})
-	if err != nil || !got[show].Equal(old) {
+	if err != nil || !got[show].Equal(items[0].Released) {
 		t.Fatalf("corrected future episode: %+v %v", got, err)
 	}
 	fallback := core.Title{Key: core.ShowKey(13), Type: core.TypeShow, Title: "No episodes", Released: old}
@@ -113,12 +113,12 @@ func TestSeasonAirAddedFallbacks(t *testing.T) {
 	}
 	keys := []core.RatingKey{items[3].Key, items[4].Key, items[5].Key, items[6].Key, items[7].Key}
 	got, err := c.CachedAddedTimes(ctx, keys)
-	if err != nil || !got[keys[0]].Equal(lastEpisode) || !got[keys[1]].Equal(seasonAir) || !got[keys[2]].Equal(lastEpisode) || !got[keys[3]].Equal(first) || !got[keys[4]].IsZero() {
-		t.Fatalf("season date and fallbacks: %+v %v", got, err)
+	if err != nil || !got[keys[0]].Equal(seasonAir) || !got[keys[1]].Equal(seasonAir) || !got[keys[2]].IsZero() || !got[keys[3]].IsZero() || !got[keys[4]].IsZero() {
+		t.Fatalf("season premiere dates: %+v %v", got, err)
 	}
 	now = now.Add(2 * time.Hour)
 	got, err = c.CachedAddedTimes(ctx, []core.RatingKey{items[3].Key, items[5].Key})
-	if err != nil || !got[items[3].Key].Equal(items[9].Released) || !got[items[5].Key].Equal(items[9].Released) {
+	if err != nil || !got[items[3].Key].Equal(seasonAir) || !got[items[5].Key].IsZero() {
 		t.Fatalf("airing boundary: %+v %v", got, err)
 	}
 }
