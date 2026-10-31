@@ -371,6 +371,10 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 			cp.Info = info
 			ps = &cp
 		}
+		// The chosen sidecar has to be on this media before track resolution.
+		// Otherwise a language already present in the probe drops it, and the
+		// decision either selects the other track or no subtitle at all.
+		ps = ensureSelectedSidecar(ps, p.subStream)
 		resolvePlaySelection(p, ps.Info)
 		s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
 		applySelections(p, ps.Info, s.audioLanguages(pr.User))
