@@ -52,7 +52,7 @@ func (s *detailPlannerStub) MatchDetailSession(_ context.Context, scope frontend
 	return nil
 }
 
-func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
+func TestItemPageDoesNotResolve(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
 	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
@@ -76,35 +76,12 @@ func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
 			return w
 		}
 		w := call("/Items/" + ids.RatingKeyGUID(5))
-		for _, want := range []string{`"Container":"mp4"`, `"RunTimeTicks":10800000000`, `"Size":113973614`, `"Codec":"h264"`, `"SupportsDirectPlay":true`, `"Path":"https://ether.example/sessions/lazy/scoped/file"`} {
-			if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
-				t.Fatal(tc.name, want, w.Code, w.Body.String())
-			}
+		if w.Code != 200 || planner.calls != 0 || strings.Contains(w.Body.String(), `"Container":"mp4"`) || strings.Contains(w.Body.String(), "/sessions/lazy/") || strings.Contains(w.Body.String(), "82b0c3fc-7616-46da-8528-fc26ec5cb4ab") || strings.Contains(w.Body.String(), "account-secret") {
+			t.Fatal(tc.name, w.Code, planner.calls, w.Body.String())
 		}
-		if tc.name == "emby" && strings.Contains(w.Body.String(), `"VideoType"`) {
-			t.Fatal("Emby schema does not describe VideoType")
-		}
-		if tc.name == "jellyfin" && !strings.Contains(w.Body.String(), `"VideoType":"VideoFile"`) {
-			t.Fatal("Jellyfin lost VideoType", w.Body.String())
-		}
-		if strings.Contains(w.Body.String(), "account-secret") || lazy.seen.Item != 5 || lazy.seen.Version != "" || lazy.seen.DetailSource != "82b0c3fc-7616-46da-8528-fc26ec5cb4ab" || lazy.seen.ExpectedSourceETag != "source-revision" {
-			t.Fatal("unsafe scope", lazy.seen, w.Body.String())
-		}
-		calls := planner.calls
 		w = call("/Items?Recursive=true")
-		if w.Code != 200 || planner.calls != calls {
+		if w.Code != 200 || planner.calls != 0 {
 			t.Fatal("listing resolved a source", tc.name, w.Code, planner.calls)
-		}
-		planner.noRevision = true
-		w = call("/Items/" + ids.RatingKeyGUID(5))
-		if w.Code != 200 || strings.Contains(w.Body.String(), `"Container":"mp4"`) || strings.Contains(w.Body.String(), "/sessions/lazy/scoped/file") {
-			t.Fatal("unbound revision advertised as source", tc.name, w.Code, w.Body.String())
-		}
-		planner.noRevision = false
-		planner.failure = true
-		w = call("/Items/" + ids.RatingKeyGUID(5))
-		if w.Code != 200 || strings.Contains(w.Body.String(), `"Container":"mp4"`) || !strings.Contains(w.Body.String(), `"SupportsDirectPlay":false`) {
-			t.Fatal("timeout did not preserve generic source", tc.name, w.Code, w.Body.String())
 		}
 	}
 }
