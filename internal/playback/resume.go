@@ -144,6 +144,22 @@ type resumeStore struct {
 
 	nzbMu    sync.Mutex
 	nzbCache map[string][]byte
+
+	// fresh is the resume row this process last confirmed. A repeated play
+	// of the same release skips the database read that only checks sameness.
+	freshMu sync.Mutex
+	fresh   map[resumeKey]resumeFresh
+}
+
+type resumeFresh struct {
+	hash             string
+	release          string
+	profile          string
+	originalLanguage string
+	size             int64
+	duration         time.Duration
+	probe            bool
+	points           int
 }
 
 type resumeKey struct {
@@ -211,7 +227,9 @@ func (s *resumeStore) putWithProbe(ctx context.Context, rec resumeRecord, nzb []
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
-	if s.resumeCurrent(ctx, rec, nzbHash(nzb), probe, len(points)) {
+	hash := nzbHash(nzb)
+	if s.resumeCurrent(ctx, rec, hash, probe, len(points)) {
+		s.rememberFresh(rec, hash, probe, len(points))
 		return nil
 	}
 	lease, err := s.acquireNZB(ctx, rec, nzb)
@@ -228,6 +246,9 @@ func (s *resumeStore) putWithProbe(ctx context.Context, rec resumeRecord, nzb []
 	err = s.writeBundle(ctx, rec, lease, points, probe, nzb)
 	if !errors.Is(err, errResumeCommitUnknown) {
 		s.releaseNZB(lease)
+	}
+	if err == nil {
+		s.rememberFresh(rec, hash, probe, len(points))
 	}
 	return err
 }
@@ -353,6 +374,9 @@ func (s *resumeStore) readNZB(hash string) ([]byte, error) {
 // keyframe index, is already stored. A matching row with no probe yet must
 // still be written so the next start can skip the container probe.
 func (s *resumeStore) resumeCurrent(ctx context.Context, rec resumeRecord, hash string, probe core.MediaInfo, points int) bool {
+	if s.freshHit(rec, hash, probe, points) {
+		return true
+	}
 	got, err := s.get(ctx, rec.userID, rec.key)
 	if err != nil || got == nil || got.release.ID == "" {
 		return false
@@ -372,7 +396,50 @@ func (s *resumeStore) resumeCurrent(ctx context.Context, rec resumeRecord, hash 
 			return false
 		}
 	}
+	s.rememberFresh(rec, hash, probe, points)
 	return true
+}
+
+func (s *resumeStore) freshHit(rec resumeRecord, hash string, probe core.MediaInfo, points int) bool {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.fresh[resumeKey{rec.userID, rec.key}]
+	if !ok || got.hash != hash || got.release != rec.release.ID || got.profile != rec.profile || got.originalLanguage != rec.originalLanguage || got.size != rec.size || got.duration != rec.duration {
+		return false
+	}
+	if _, ok := persistedProbeFacts(probe); ok && !got.probe {
+		return false
+	}
+	return points <= 0 || got.points > 0
+}
+
+func (s *resumeStore) rememberFresh(rec resumeRecord, hash string, probe core.MediaInfo, points int) {
+	_, probeOK := persistedProbeFacts(probe)
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	if s.fresh == nil {
+		s.fresh = map[resumeKey]resumeFresh{}
+	}
+	s.fresh[resumeKey{rec.userID, rec.key}] = resumeFresh{
+		hash: hash, release: rec.release.ID, profile: rec.profile, originalLanguage: rec.originalLanguage,
+		size: rec.size, duration: rec.duration, probe: probeOK, points: points,
+	}
+}
+
+func (s *resumeStore) forgetFresh(user int64, key core.RatingKey) {
+	s.freshMu.Lock()
+	delete(s.fresh, resumeKey{user, key})
+	s.freshMu.Unlock()
+}
+
+func (s *resumeStore) forgetFreshKey(key core.RatingKey) {
+	s.freshMu.Lock()
+	for id := range s.fresh {
+		if id.key == key {
+			delete(s.fresh, id)
+		}
+	}
+	s.freshMu.Unlock()
 }
 
 func (s *resumeStore) cachedNZB(hash string) ([]byte, bool) {
@@ -530,6 +597,7 @@ func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingK
 	err := s.db.QueryRowContext(ctx, `SELECT nzb_hash FROM playback_resume WHERE user_id=? AND rating_key=?`,
 		userID, int64(key)).Scan(&hash)
 	if errors.Is(err, sql.ErrNoRows) {
+		s.forgetFresh(userID, key)
 		return nil
 	}
 	if err != nil {
@@ -547,6 +615,7 @@ func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingK
 		return err
 	}
 	s.gcNZB(ctx, hash)
+	s.forgetFresh(userID, key)
 	return nil
 }
 
@@ -556,6 +625,9 @@ func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingK
 func (s *resumeStore) invalidateTitle(ctx context.Context, key core.RatingKey) error {
 	if key.Kind() != core.KindShow && key.Kind() != core.KindSeason {
 		_, err := s.db.ExecContext(ctx, `DELETE FROM playback_resume WHERE rating_key=?`, int64(key))
+		if err == nil {
+			s.forgetFreshKey(key)
+		}
 		return err
 	}
 	records, err := s.all(ctx)
@@ -567,6 +639,7 @@ func (s *resumeStore) invalidateTitle(ctx context.Context, key core.RatingKey) e
 			if _, err := s.db.ExecContext(ctx, `DELETE FROM playback_resume WHERE user_id=? AND rating_key=?`, rec.userID, int64(rec.key)); err != nil {
 				return err
 			}
+			s.forgetFresh(rec.userID, rec.key)
 		}
 	}
 	return nil
