@@ -108,8 +108,11 @@ func TestGuidedRestoreFromASnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	rep, err := ApplyPending(dataDir, time.Now)
-	if err != nil || rep.Status != "restored" {
+	if err != nil || rep.Status != "applied" {
 		t.Fatalf("apply at start = %+v, %v", rep, err)
+	}
+	if err := ConfirmRestore(dataDir, rep); err != nil {
+		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(s.configPath); !strings.Contains(string(got), "ether-sealed:") && !strings.Contains(string(got), "32460") {
 		t.Fatalf("restored config = %s", got)

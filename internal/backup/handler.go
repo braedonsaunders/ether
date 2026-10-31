@@ -273,6 +273,10 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		if e := request(q.WhenIdle); e != nil {
+			if errors.Is(e, ErrRestoreInProgress) {
+				fail(w, http.StatusConflict, "restore_in_progress", e.Error())
+				return
+			}
 			fail(w, http.StatusBadRequest, "invalid_request", e.Error())
 			return
 		}
