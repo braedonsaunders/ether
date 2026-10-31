@@ -103,7 +103,7 @@ describe("Library visibility", () => {
     });
     expect(await screen.findByDisplayValue("Family")).toBeInTheDocument();
     expect(await screen.findByText("G · TV-G · TV-Y")).toBeInTheDocument();
-    expect(screen.getByText("PG · TV-PG")).toBeInTheDocument();
+    expect(screen.getByText("PG · TV-PG · TV-Y7")).toBeInTheDocument();
     expect(screen.queryByText("TV-PG")).not.toBeInTheDocument();
     expect(screen.getByText("Ratings match by age level")).toBeInTheDocument();
   });

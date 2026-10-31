@@ -814,15 +814,16 @@ one choice, so the picker offers levels rather than individual labels:
 | Level | US film · US TV | Other boards, for example |
 | --- | --- | --- |
 | All ages | G · TV-G · TV-Y | U (UK), 0 (DE), L (BR), G (CA) |
-| Children 7+ | TV-Y7 | 6 (DE), 7 (SE), C8 (CA TV) |
-| Parental guidance | PG · TV-PG | PG (UK, CA, AU), 10 (BR, FR) |
+| Parental guidance | PG · TV-PG · TV-Y7 | PG (UK, CA, AU), 6 (DE), 7 (SE), 10 (BR, FR) |
 | Teens 13+ | PG-13 · TV-14 | 12A (UK), 12 (DE), 14A (CA), M (AU) |
 | Mature 16+ | R · TV-MA | 15 (UK), 16 (DE), MA15+ (AU), 18A (CA) |
 | Adults 18+ | NC-17 | 18 (UK, DE), R18+ (AU), R (CA) |
 | Not rated | NR, or no rating at all | |
 
-An allowlist such as "Content rating is none of G · TV-G · TV-Y, PG · TV-PG"
-therefore keeps a Hallmark movie certified G, a TV-G series and a UK PG film.
+An allowlist such as "Content rating is none of G · TV-G · TV-Y, PG · TV-PG ·
+TV-Y7" therefore keeps a Hallmark movie certified G, a TV-G series, a UK PG
+film and a TV movie only Germany rates 6. Kids' 7+ ratings share PG's level, so
+choosing G and PG never hides something milder than PG.
 "Is none of" hides titles without a rating unless you also choose **Not
 rated**. To keep family titles without a rating but hide unrated adult ones,
 add a second group: Content rating is Not rated, and Genre is any of Horror,

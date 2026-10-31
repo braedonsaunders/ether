@@ -25,26 +25,24 @@ type Level int
 const (
 	Unrated  Level = iota // no usable certification: blank, NR, Unrated, unknown label
 	AllAges               // G, TV-G, TV-Y; U (GB), 0 (DE), L (BR)
-	Children              // TV-Y7; 6 (DE), 7 (SE)
-	Parental              // PG, TV-PG; PG (GB), 10 (BR)
+	Parental              // PG, TV-PG, TV-Y7; PG (GB), 6 (DE), 7 (SE), 10 (BR)
 	Teen                  // PG-13, TV-14; 12A (GB), 12 (DE), 14A (CA)
 	Mature                // R, TV-MA; 15 (GB), 16 (DE), MA15+ (AU)
 	Adult                 // NC-17; 18 (GB, DE), R18+ (AU)
 )
 
-// Levels lists the rated levels, mildest first.
-var Levels = []Level{AllAges, Children, Parental, Teen, Mature, Adult}
+// Levels lists the rated levels, mildest first. There is no separate
+// "7+" level: the 6–11 age ratings (TV-Y7, DE 6, SE 7, BR 10) sit with PG,
+// so an allowlist of G and PG never hides a title rated milder than PG.
+var Levels = []Level{AllAges, Parental, Teen, Mature, Adult}
 
 // Age is the minimum viewer age the level stands for (-1 when unrated).
 // It is also the parental score other protocols use (Jellyfin and Emby
-// compare these numbers; Jellyfin's US file scores G 0, TV-Y7 7, PG 10,
-// PG-13 13).
+// compare these numbers; Jellyfin's US file scores G 0, PG 10, PG-13 13).
 func (l Level) Age() int {
 	switch l {
 	case AllAges:
 		return 0
-	case Children:
-		return 7
 	case Parental:
 		return 10
 	case Teen:
@@ -64,8 +62,6 @@ func (l Level) Key() string {
 	switch l {
 	case AllAges:
 		return "G"
-	case Children:
-		return "TV-Y7"
 	case Parental:
 		return "PG"
 	case Teen:
@@ -87,10 +83,8 @@ func (l Level) USLabels() []string {
 	switch l {
 	case AllAges:
 		return []string{"G", "TV-G", "TV-Y"}
-	case Children:
-		return []string{"TV-Y7", "TV-Y7-FV"}
 	case Parental:
-		return []string{"PG", "TV-PG"}
+		return []string{"PG", "TV-PG", "TV-Y7"}
 	case Teen:
 		return []string{"PG-13", "TV-14"}
 	case Mature:
@@ -289,16 +283,14 @@ func ageLevel(label string) Level {
 	return AgeLevel(n)
 }
 
-// AgeLevel is the band holding a minimum age: 0–5 all ages, 6–8 children,
-// 9–11 parental guidance, 12–14 teens, 15–17 mature, 18 and over adults.
+// AgeLevel is the band holding a minimum age: 0–5 all ages, 6–11 parental
+// guidance, 12–14 teens, 15–17 mature, 18 and over adults.
 func AgeLevel(age int) Level {
 	switch {
 	case age < 0:
 		return Unrated
 	case age <= 5:
 		return AllAges
-	case age <= 8:
-		return Children
 	case age <= 11:
 		return Parental
 	case age <= 14:

@@ -19,8 +19,7 @@ export interface RatingLevel {
 
 export const RATING_LEVELS = localized<RatingLevel[]>(() => [
   { value: "G", labels: "G · TV-G · TV-Y", name: t("All ages") },
-  { value: "TV-Y7", labels: "TV-Y7", name: t("Children 7+") },
-  { value: "PG", labels: "PG · TV-PG", name: t("Parental guidance") },
+  { value: "PG", labels: "PG · TV-PG · TV-Y7", name: t("Parental guidance") },
   { value: "PG-13", labels: "PG-13 · TV-14", name: t("Teens 13+") },
   { value: "R", labels: "R · TV-MA", name: t("Mature 16+") },
   { value: "NC-17", labels: "NC-17", name: t("Adults 18+") },
@@ -30,7 +29,8 @@ export const RATING_LEVELS = localized<RatingLevel[]>(() => [
 const US_ALIASES: Record<string, string> = {
   "TV-G": "G",
   "TV-Y": "G",
-  "TV-Y7-FV": "TV-Y7",
+  "TV-Y7": "PG",
+  "TV-Y7-FV": "PG",
   "TV-PG": "PG",
   "TV-14": "PG-13",
   "TV-MA": "R",

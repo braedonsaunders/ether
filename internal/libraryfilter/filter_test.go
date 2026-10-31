@@ -45,12 +45,12 @@ func TestContentRatingNotInFailsClosed(t *testing.T) {
 	movie := func(rating string) *core.Title {
 		return &core.Title{Type: core.TypeMovie, Title: rating, ContentRating: rating}
 	}
-	for _, rating := range []string{"G", "PG", "PG-13", "pg-13", "PG13", "M", "TV-G", "TV-PG", "TV-14", "gb/12A"} {
+	for _, rating := range []string{"G", "PG", "PG-13", "pg-13", "PG13", "M", "TV-G", "TV-PG", "TV-14", "gb/12A", "TV-Y7"} {
 		if allow.Hidden(movie(rating)) {
 			t.Fatalf("allowed rating %q hidden", rating)
 		}
 	}
-	for _, rating := range []string{"", "R", "NR", "NC-17", "TV-MA", "de/16", "TV-Y7"} {
+	for _, rating := range []string{"", "R", "NR", "NC-17", "TV-MA", "de/16"} {
 		if !allow.Hidden(movie(rating)) {
 			t.Fatalf("rating %q still visible", rating)
 		}
@@ -62,7 +62,7 @@ func TestContentRatingNotInFailsClosed(t *testing.T) {
 	if !strings.Contains(sql, "NOT (t.content_rating_rank IN (?,?,?))") {
 		t.Fatalf("negative rating SQL = %s", sql)
 	}
-	if len(args) != 4 || args[0] != "movie" || args[1] != 1 || args[2] != 3 || args[3] != 4 {
+	if len(args) != 4 || args[0] != "movie" || args[1] != 1 || args[2] != 2 || args[3] != 3 {
 		t.Fatalf("args = %#v", args)
 	}
 
@@ -151,7 +151,9 @@ func TestContentRatingAllowlistMatchesEquivalentLevels(t *testing.T) {
 		{title(core.TypeMovie, "ca/G"), false},  // Write Before Christmas (Canada only)
 		{title(core.TypeMovie, "gb/PG"), false}, // UK PG
 		{title(core.TypeShow, "TV-Y"), false},   // all ages
-		{title(core.TypeMovie, "se/7"), true},   // 7+ is its own level
+		{title(core.TypeMovie, "se/7"), false},  // Just in Time for Christmas: Sweden's 7 is PG's level
+		{title(core.TypeMovie, "de/6"), false},  // Summer Villa: Germany's 6 likewise
+		{title(core.TypeShow, "TV-Y7"), false},  // kids' 7+
 		{title(core.TypeMovie, "PG-13"), true},
 		{title(core.TypeMovie, "R"), true},
 		{title(core.TypeMovie, ""), true},
@@ -198,7 +200,7 @@ func TestContentRatingBounds(t *testing.T) {
 		}
 	}
 	sql, args := above.SQLHidden()
-	if !strings.Contains(sql, "t.content_rating_rank>0 AND t.content_rating_rank>=?") || args[1] != 4 {
+	if !strings.Contains(sql, "t.content_rating_rank>0 AND t.content_rating_rank>=?") || args[1] != 3 {
 		t.Fatalf("SQL %s %#v", sql, args)
 	}
 	for _, bad := range []string{`"NR"`, `["PG","R"]`, `"bogus"`} {

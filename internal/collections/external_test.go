@@ -318,11 +318,11 @@ func TestLookupsAndFacets(t *testing.T) {
 	for _, v := range ratings {
 		keys = append(keys, v.Key)
 	}
-	if strings.Join(keys, ",") != "G,TV-Y7,PG,PG-13,R,NC-17,NR" {
+	if strings.Join(keys, ",") != "G,PG,PG-13,R,NC-17,NR" {
 		t.Fatalf("contentRating levels %v", keys)
 	}
-	if ratings[2].Title != "PG · TV-PG" || !slices.Contains(ratings[2].Labels, "TV-PG") || !slices.Contains(ratings[2].Labels, "gb/PG") {
-		t.Fatalf("PG level %+v", ratings[2])
+	if ratings[1].Title != "PG · TV-PG · TV-Y7" || !slices.Contains(ratings[1].Labels, "TV-PG") || !slices.Contains(ratings[1].Labels, "gb/PG") || !slices.Contains(ratings[1].Labels, "de/6") {
+		t.Fatalf("PG level %+v", ratings[1])
 	}
 	items, err := e.svc.SearchTitles(e.ctx, "Dream", core.TypeMovie, 5)
 	if err != nil || len(items) == 0 || items[0].Title != "Dream Heist" {

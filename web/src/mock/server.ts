@@ -62,8 +62,7 @@ import { NOT_RATED, RATING_LEVELS, canonicalRating } from "../lib/contentRatings
 /** A few other boards' labels per level, as the server lists them. */
 const MOCK_EQUIVALENTS: Record<string, string[]> = {
   G: ["gb/U", "ca/G", "de/0", "br/L"],
-  "TV-Y7": ["de/6", "se/7"],
-  PG: ["gb/PG", "ca/PG", "br/10"],
+  PG: ["gb/PG", "ca/PG", "de/6", "se/7", "br/10"],
   "PG-13": ["gb/12A", "ca/14A", "de/12"],
   R: ["gb/15", "ca/18A", "de/16"],
   "NC-17": ["gb/18", "de/18"],
