@@ -228,7 +228,7 @@ func TestSignedPageGrantWritesNothingAndKeepsRevocation(t *testing.T) {
 	service.SetImageGeneration(func() uint64 { return 1 })
 	title := core.Title{Key: core.MovieKey(9), Type: core.TypeMovie, Title: "Bench"}
 	page, err := service.SignPage(ctx, frontend.ImagePageRequest{Credential: credential, Device: core.Device{ID: "tv"}, Titles: []core.Title{title}, Kinds: []string{frontend.ImagePoster}})
-	if err != nil || len(page) != 1 || len(page[0].Images) != 1 || !strings.HasPrefix(page[0].Images[0].Secret, "e1.") {
+	if err != nil || len(page) != 1 || len(page[0].Images) != 1 || !shortImageTag(page[0].Images[0].Secret) {
 		t.Fatalf("page %+v err=%v", page, err)
 	}
 	var count int
@@ -327,20 +327,32 @@ func TestSignedPageGrantSealsOncePerTitle(t *testing.T) {
 	service.SetImageKey([]byte("test-image-page-key"))
 	title := core.Title{Key: core.MovieKey(9), Type: core.TypeMovie, Title: "Bench"}
 	page, err := service.SignPage(ctx, frontend.ImagePageRequest{Credential: credential, Device: core.Device{ID: "tv"}, Titles: []core.Title{title}, Kinds: []string{frontend.ImagePoster, frontend.ImageBackdrop}})
-	if err != nil || len(page) != 1 || len(page[0].Images) != 2 || page[0].Images[0].Secret == "" || page[0].Images[0].Secret != page[0].Images[1].Secret {
+	if err != nil || len(page) != 1 || len(page[0].Images) != 2 || !shortImageTag(page[0].Images[0].Secret) || page[0].Images[0].Secret == page[0].Images[1].Secret {
 		t.Fatalf("page %+v err=%v", page, err)
 	}
-	secret := page[0].Images[0].Secret
 	rec := httptest.NewRecorder()
-	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Primary", nil), secret)
+	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Primary", nil), page[0].Images[0].Secret)
 	if rec.Code != 200 || source.path != "primary" || rec.Body.String() != "primary" {
 		t.Fatalf("primary %d %s path=%s", rec.Code, rec.Body.String(), source.path)
 	}
 	rec = httptest.NewRecorder()
-	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Backdrop", nil), secret)
+	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Backdrop", nil), page[0].Images[1].Secret)
 	if rec.Code != 200 || source.path != "back" || rec.Body.String() != "back" {
 		t.Fatalf("backdrop %d %s path=%s", rec.Code, rec.Body.String(), source.path)
 	}
+	rec = httptest.NewRecorder()
+	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Backdrop", nil), page[0].Images[0].Secret)
+	if rec.Code != 404 {
+		t.Fatalf("poster tag served a backdrop %d", rec.Code)
+	}
+}
+
+func shortImageTag(secret string) bool {
+	if len(secret) != 32 {
+		return false
+	}
+	_, err := hex.DecodeString(secret)
+	return err == nil
 }
 
 func TestPageGrantTagStaysStableAndImageRevalidates(t *testing.T) {

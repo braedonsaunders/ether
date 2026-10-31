@@ -258,6 +258,8 @@ type Host struct {
 	IDs         ids.Codecs
 	Events      Subscriber
 	Tickets     Tickets
+	// WatchParty is the shared Silo and Jellyfin room. Nil leaves both off.
+	WatchParty  WatchParty
 	Images      Images
 	ImageGrants ImageGrants
 	// Artwork serves the same composited poster bytes the other frontends

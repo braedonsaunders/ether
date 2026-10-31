@@ -96,6 +96,9 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err
 	}
+	if err := inst.syncPlayRoutes(); err != nil {
+		return nil, err
+	}
 	if err := inst.mutationRoutes(); err != nil {
 		return nil, err
 	}

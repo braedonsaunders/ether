@@ -809,7 +809,7 @@ func (s *Service) LocalEpisodes(ctx context.Context, viewer *core.Viewer, key co
 	default:
 		return nil, false, core.ErrNotFound
 	}
-	page, err := s.d.AiredEpisodes(ctx, show, 0, 500)
+	page, err := s.airedShowEpisodes(ctx, show)
 	if err != nil {
 		return nil, false, err
 	}
@@ -825,6 +825,39 @@ func (s *Service) LocalEpisodes(ctx context.Context, viewer *core.Viewer, key co
 		}
 	}
 	return out, complete, nil
+}
+
+// airedShowEpisodes reads at most 500 stored episodes of a show. A seasons
+// page asks once per season; the request memo keeps that to a single read.
+func (s *Service) airedShowEpisodes(ctx context.Context, show core.RatingKey) (core.Page, error) {
+	if memo := frontend.RequestMemoFrom(ctx); memo != nil {
+		memo.Mu.Lock()
+		if hit, ok := memo.Aired[show]; ok {
+			memo.Mu.Unlock()
+			if hit.Err != nil {
+				return core.Page{}, hit.Err
+			}
+			items := append([]core.Title(nil), hit.Items...)
+			return core.Page{Items: items, Total: hit.Total}, nil
+		}
+		memo.Mu.Unlock()
+	}
+	page, err := s.d.AiredEpisodes(ctx, show, 0, 500)
+	if memo := frontend.RequestMemoFrom(ctx); memo != nil {
+		memo.Mu.Lock()
+		if memo.Aired == nil {
+			memo.Aired = map[core.RatingKey]frontend.AiredMemo{}
+		}
+		stored := frontend.AiredMemo{Total: page.Total, Err: err}
+		if err == nil {
+			stored.Items = append([]core.Title(nil), page.Items...)
+		}
+		if _, ok := memo.Aired[show]; !ok {
+			memo.Aired[show] = stored
+		}
+		memo.Mu.Unlock()
+	}
+	return page, err
 }
 
 func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, q frontend.ItemQuery) (core.Page, error) {

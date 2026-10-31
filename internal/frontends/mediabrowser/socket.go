@@ -78,6 +78,12 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 		}
 		return write(map[string]any{"MessageType": "Sessions", "Data": rows})
 	}
+	var party <-chan frontend.PartyEvent
+	if i.protocol == "jellyfin" && i.host.WatchParty != nil {
+		ch, done := i.host.WatchParty.Subscribe(frontend.PartyActor{Viewer: viewer, Device: device(r), Protocol: i.protocol})
+		party = ch
+		defer done()
+	}
 	incoming := make(chan string, 1)
 	go func() {
 		defer close(incoming)
@@ -144,6 +150,14 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 				if writeSessions() != nil {
 					return
 				}
+			}
+		case ev, ok := <-party:
+			if !ok {
+				party = nil
+				continue
+			}
+			if msg, send := syncPlayFrame(ev); send && write(msg) != nil {
+				return
 			}
 		case event, ok := <-events:
 			if !ok {

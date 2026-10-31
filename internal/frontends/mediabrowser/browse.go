@@ -247,7 +247,7 @@ func (i *instance) browseRoutes() error {
 	}
 	rowHandler := func(purpose frontend.RowPurpose, asArray bool) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			r = withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r)))
+			r = withJellyfinListFiles(withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r))))
 			v, _, err := i.viewer(r)
 			if err != nil || v == nil {
 				http.Error(w, "Unauthorized", 401)
@@ -693,7 +693,7 @@ func withBrowseMemo(r *http.Request) *http.Request {
 }
 
 func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, page frontend.Page, offset int, anchor frontend.RatingKey, version string) {
-	r = withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r)))
+	r = withJellyfinListFiles(withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r))))
 	keys := make([]frontend.RatingKey, 0, len(page.Items))
 	for _, title := range page.Items {
 		keys = append(keys, title.Key)

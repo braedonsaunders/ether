@@ -145,6 +145,25 @@ func (i *instance) jellyfinCollectionFolder(item map[string]any, id string) {
 	item["UserData"] = data
 }
 
+type jellyfinListFileKey struct{}
+
+// withJellyfinListFiles marks a library, resume or home row. Item detail keeps
+// an estimated source without an invented container, path or stream list.
+func withJellyfinListFiles(r *http.Request) *http.Request {
+	if r == nil || r.Context().Value(jellyfinListFileKey{}) != nil {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), jellyfinListFileKey{}, true))
+}
+
+func jellyfinListFile(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	on, _ := r.Context().Value(jellyfinListFileKey{}).(bool)
+	return on
+}
+
 // presentJellyfinFile is the file Infuse reads off a movie or episode row.
 // An estimate leaves Protocol "Http", IsRemote true, and an empty container,
 // which Infuse rejects as DataSourceError. The path is the authorized virtual
@@ -309,10 +328,12 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 		for _, source := range sources {
 			if dto, ok := source.(map[string]any); ok {
 				jellyfinMediaSourceShape(dto, title.Title)
-				i.presentJellyfinFile(item, dto, title)
+				if jellyfinListFile(r) {
+					i.presentJellyfinFile(item, dto, title)
+				}
 			}
 		}
-	} else if fields["mediasources"] && (title.Type == "movie" || title.Type == "episode") && r != nil && viewer != nil {
+	} else if fields["mediasources"] && jellyfinListFile(r) && (title.Type == "movie" || title.Type == "episode") && r != nil && viewer != nil {
 		source := i.defaultMediaSource(r, viewer, authhdr.MediaBrowserToken(r), title.Key)
 		jellyfinMediaSourceShape(source, title.Title)
 		i.presentJellyfinFile(item, source, title)
@@ -395,6 +416,26 @@ func (i *instance) attachUnplayedCount(r *http.Request, viewer *frontend.Viewer,
 // A truncated page or an episode without a runtime leaves the field absent.
 func (i *instance) attachCumulativeRuntime(r *http.Request, viewer *frontend.Viewer, item map[string]any, title frontend.Title) {
 	if i == nil || i.protocol != "jellyfin" || r == nil || viewer == nil || i.host.Experience == nil || title.Type != "show" {
+		return
+	}
+	if _, ok := item["CumulativeRunTimeTicks"]; ok {
+		return
+	}
+	if local, ok := i.host.Experience.(interface {
+		LocalEpisodes(context.Context, *frontend.Viewer, frontend.RatingKey) ([]frontend.Title, bool, error)
+	}); ok {
+		listed, complete, err := local.LocalEpisodes(r.Context(), viewer, title.Key)
+		if err != nil || !complete || len(listed) == 0 {
+			return
+		}
+		var ticks int64
+		for _, child := range listed {
+			if child.Type != "episode" || child.Runtime <= 0 {
+				return
+			}
+			ticks += child.Runtime.Nanoseconds() / 100
+		}
+		item["CumulativeRunTimeTicks"] = ticks
 		return
 	}
 	page, err := i.host.Experience.Children(r.Context(), viewer, device(r), title.Key, frontend.ItemQuery{Recursive: true})

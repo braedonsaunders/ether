@@ -132,6 +132,24 @@ func TestResumeExpiryRunsWithoutCache(t *testing.T) {
 	}
 }
 
+// The pin loop can expire a row after save commits and before save stores
+// the in-memory copy. That late copy must not bring the resume back.
+func TestResumeExpiryBeatsLateLivePublish(t *testing.T) {
+	h := newHarness(t, nil, nil, func(h *harness, o *Options) {
+		h.noCache = true
+		o.ResumeRetention = 24 * time.Hour
+	})
+	h.m.resume.beforeLiveNote = func() {
+		if err := h.m.ReconcilePins(context.Background()); err != nil {
+			t.Error(err)
+		}
+	}
+	h.saveResume(owner.ID, movieKey, "A", 0, h.clock.Now().Add(-48*time.Hour))
+	if rp, _ := h.m.ResumePoint(context.Background(), owner.ID, movieKey); rp != nil {
+		t.Fatal("expired resume revived by the save that just lost the row")
+	}
+}
+
 func TestResumeStoreSweepsStaleTempsAndOrphans(t *testing.T) {
 	db, err := store.OpenMemory(context.Background())
 	if err != nil {

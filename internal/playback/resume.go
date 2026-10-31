@@ -153,6 +153,13 @@ type resumeStore struct {
 	freshMu sync.Mutex
 	fresh   map[resumeKey]resumeFresh
 	live    map[resumeKey]resumeLive
+	// liveGen invalidates a save's late publish. Expiry can delete the row
+	// after it commits and before the in-memory copy is stored; publishing
+	// that copy would resurrect a resume the reconciler already dropped.
+	liveGen map[resumeKey]uint64
+	// beforeLiveNote, when set, runs after the row commits and before the
+	// in-memory copy is published. Tests use it to expire the row in that window.
+	beforeLiveNote func()
 }
 
 type resumeLive struct {
@@ -439,10 +446,16 @@ func (s *resumeStore) rememberFresh(rec resumeRecord, hash string, probe core.Me
 	}
 }
 
-func (s *resumeStore) noteLive(rec resumeRecord, nzb []byte) {
+func (s *resumeStore) bumpLiveGenLocked(k resumeKey) uint64 {
+	if s.liveGen == nil {
+		s.liveGen = map[resumeKey]uint64{}
+	}
+	s.liveGen[k]++
+	return s.liveGen[k]
+}
+
+func (s *resumeStore) storeLiveLocked(rec resumeRecord, nzb []byte) {
 	res := &core.Resolution{Title: rec.key, Release: rec.release, NZB: append([]byte(nil), nzb...), ResolvedAt: rec.updatedAt}
-	s.freshMu.Lock()
-	defer s.freshMu.Unlock()
 	if s.live == nil {
 		s.live = map[resumeKey]resumeLive{}
 	}
@@ -450,6 +463,34 @@ func (s *resumeStore) noteLive(rec resumeRecord, nzb []byte) {
 		profile: rec.profile, originalLanguage: rec.originalLanguage, releaseID: rec.release.ID,
 		size: rec.size, duration: rec.duration, res: res,
 	}
+}
+
+// noteLive publishes a resume for the next prepare immediately. It supersedes
+// any save that has not published yet.
+func (s *resumeStore) noteLive(rec resumeRecord, nzb []byte) {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	s.bumpLiveGenLocked(resumeKey{rec.userID, rec.key})
+	s.storeLiveLocked(rec, nzb)
+}
+
+// claimLive reserves the next publish. A forget between the claim and
+// publishLive drops the publish, so expiry cannot be undone by the save
+// that just lost the row.
+func (s *resumeStore) claimLive(user int64, key core.RatingKey) uint64 {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	return s.bumpLiveGenLocked(resumeKey{user, key})
+}
+
+func (s *resumeStore) publishLive(gen uint64, rec resumeRecord, nzb []byte) {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	k := resumeKey{rec.userID, rec.key}
+	if s.liveGen[k] != gen {
+		return
+	}
+	s.storeLiveLocked(rec, nzb)
 }
 
 func (s *resumeStore) rememberedResolution(userID int64, key core.RatingKey, profile core.QualityProfile, profileKey, original string, maxBitrate int) *core.Resolution {
@@ -483,22 +524,30 @@ func (s *resumeStore) livePoint(userID int64, key core.RatingKey) *ResumePoint {
 
 func (s *resumeStore) forgetFresh(user int64, key core.RatingKey) {
 	s.freshMu.Lock()
-	delete(s.fresh, resumeKey{user, key})
-	delete(s.live, resumeKey{user, key})
+	k := resumeKey{user, key}
+	s.bumpLiveGenLocked(k)
+	delete(s.fresh, k)
+	delete(s.live, k)
 	s.freshMu.Unlock()
 }
 
 func (s *resumeStore) forgetFreshKey(key core.RatingKey) {
 	s.freshMu.Lock()
+	drop := map[resumeKey]struct{}{}
 	for id := range s.fresh {
 		if id.key == key {
-			delete(s.fresh, id)
+			drop[id] = struct{}{}
 		}
 	}
 	for id := range s.live {
 		if id.key == key {
-			delete(s.live, id)
+			drop[id] = struct{}{}
 		}
+	}
+	for id := range drop {
+		s.bumpLiveGenLocked(id)
+		delete(s.fresh, id)
+		delete(s.live, id)
 	}
 	s.freshMu.Unlock()
 }
@@ -555,6 +604,9 @@ func (s *resumeStore) save(ctx context.Context, rec resumeRecord, nzb []byte) er
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
+	// Claim before the row is visible. Expiry that wins after the commit
+	// bumps the generation and the publish below does not restore the copy.
+	gen := s.claimLive(rec.userID, rec.key)
 	lease, err := s.acquireNZB(ctx, rec, nzb)
 	if err != nil {
 		return err
@@ -564,9 +616,12 @@ func (s *resumeStore) save(ctx context.Context, rec resumeRecord, nzb []byte) er
 		s.releaseNZB(lease)
 	}
 	if err == nil {
+		if s.beforeLiveNote != nil {
+			s.beforeLiveNote()
+		}
 		// The in-process copy is what ResumeFor reads first. A later
 		// Remember has to replace the copy left by the play that just ended.
-		s.noteLive(rec, nzb)
+		s.publishLive(gen, rec, nzb)
 	}
 	return err
 }

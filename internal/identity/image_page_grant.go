@@ -20,6 +20,8 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
 const pageGrantPrefix = "e1."
@@ -127,7 +129,6 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		return nil, core.ErrNotAvailable
 	}
 	expires := s.pageExpires()
-	reqKey := pageRequestKey(master, viewer.ID, expires, string(s.surface))
 	out := make([]frontend.ImageBatchItem, 0, len(req.Titles))
 	seen := map[core.RatingKey]bool{}
 	for _, title := range req.Titles {
@@ -155,8 +156,6 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		item := frontend.ImageBatchItem{Item: title.Key, Authoritative: complete}
 		if complete {
 			chosen := map[string]bool{}
-			var sealed []pageImage
-			var granted []frontend.Image
 			for _, image := range images {
 				if !wanted[image.Kind] || chosen[image.Kind] || image.Path == "" {
 					continue
@@ -165,21 +164,13 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 					return nil, core.ErrNotAvailable
 				}
 				chosen[image.Kind] = true
-				sealed = append(sealed, pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject})
-				granted = append(granted, image)
-			}
-			if len(sealed) > 0 {
-				secret, err := sealPageGrant(reqKey, pageClaims{
-					Item: int64(title.Key), Images: sealed,
-					Kind: sealed[0].Kind, Path: sealed[0].Path, Tag: sealed[0].Tag, Subject: sealed[0].Subject,
+				img := pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject}
+				secret := s.publicImageTag(ctx, master, int64(title.Key), img)
+				s.rememberShort(secret, pageClaims{
+					Item: int64(title.Key), Kind: img.Kind, Path: img.Path, Tag: img.Tag, Subject: img.Subject,
 					Device: deviceJSON, Source: source, Viewer: viewer.ID, Expires: expires, Gen: s.Generation(),
 				})
-				if err != nil {
-					return nil, err
-				}
-				for _, image := range granted {
-					item.Images = append(item.Images, frontend.GrantedImage{Image: image, Secret: secret})
-				}
+				item.Images = append(item.Images, frontend.GrantedImage{Image: image, Secret: secret})
 			}
 		}
 		out = append(out, item)
@@ -404,6 +395,180 @@ func pageDigest(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func isShortImageTag(secret string) bool {
+	if len(secret) != 32 {
+		return false
+	}
+	for _, c := range secret {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func contentImageTag(key []byte, item int64, img pageImage, extra uint64) string {
+	mac := hmac.New(sha256.New, key)
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], uint64(item))
+	_, _ = mac.Write(buf[:])
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write([]byte(img.Kind))
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write([]byte(img.Path))
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write([]byte(img.Tag))
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write([]byte(img.Subject))
+	if extra != 0 {
+		binary.BigEndian.PutUint64(buf[:], extra)
+		_, _ = mac.Write(buf[:])
+	}
+	sum := mac.Sum(nil)
+	return hex.EncodeToString(sum[:16])
+}
+
+func (s *ImageGrantService) publicImageTag(ctx context.Context, key []byte, item int64, img pageImage) string {
+	tag := contentImageTag(key, item, img, 0)
+	if s.tagDenied(ctx, tag) {
+		extra := s.Generation()
+		if extra == 0 {
+			extra = 1
+		}
+		tag = contentImageTag(key, item, img, extra)
+	}
+	return tag
+}
+
+func (s *ImageGrantService) tagDenied(ctx context.Context, tag string) bool {
+	digest := pageDigest(tag)
+	if _, ok := s.denied.Load(digest); ok {
+		return true
+	}
+	var revoked int
+	err := s.db.QueryRowContext(ctx, `SELECT revoked FROM frontend_image_grants WHERE hash=? AND surface=?`, digest, string(s.surface)).Scan(&revoked)
+	if err == nil && revoked != 0 {
+		s.denied.Store(digest, true)
+		return true
+	}
+	return false
+}
+
+func (s *ImageGrantService) rememberShort(tag string, claims pageClaims) {
+	s.shortMu.Lock()
+	if s.short == nil {
+		s.short = map[string]pageClaims{}
+	}
+	s.short[tag] = claims
+	s.shortMu.Unlock()
+}
+
+func (s *ImageGrantService) loadShort(tag string) (pageClaims, bool) {
+	s.shortMu.Lock()
+	claims, ok := s.short[tag]
+	s.shortMu.Unlock()
+	return claims, ok
+}
+
+func (s *ImageGrantService) forgetShort(tag string) {
+	s.shortMu.Lock()
+	delete(s.short, tag)
+	s.shortMu.Unlock()
+}
+
+func (s *ImageGrantService) serveShortTag(w http.ResponseWriter, r *http.Request, secret string) {
+	if s.tagDenied(r.Context(), secret) {
+		http.NotFound(w, r)
+		return
+	}
+	now := s.now().UnixMilli()
+	claims, ok := s.loadShort(secret)
+	if ok && claims.Expires <= now {
+		ok = false
+	}
+	if !ok {
+		claims, ok = s.resolveShortTag(r, secret)
+	}
+	if !ok || !shortClaimMatches(claims, r) {
+		http.NotFound(w, r)
+		return
+	}
+	s.serveClaims(w, r, secret, claims, now)
+}
+
+func shortClaimMatches(claims pageClaims, r *http.Request) bool {
+	if claims.Kind == "" || claims.Path == "" {
+		return false
+	}
+	want := urlImageKinds(r)
+	if len(want) == 0 {
+		return true
+	}
+	for _, kind := range want {
+		if strings.EqualFold(kind, claims.Kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *ImageGrantService) resolveShortTag(r *http.Request, secret string) (pageClaims, bool) {
+	if r == nil || r.URL == nil {
+		return pageClaims{}, false
+	}
+	token := authhdr.MediaBrowserToken(r)
+	key, ok := imageItemKey(r.URL.Path)
+	if token == "" || !ok {
+		return pageClaims{}, false
+	}
+	viewer, err := s.grants.Resolve(r.Context(), string(s.surface), token)
+	if err != nil || viewer == nil {
+		return pageClaims{}, false
+	}
+	source, ok := grantHash(token)
+	if !ok {
+		return pageClaims{}, false
+	}
+	images, complete, err := s.pageImages(r.Context(), viewer, core.Device{}, key)
+	if err != nil || !complete {
+		return pageClaims{}, false
+	}
+	master := s.pageKey()
+	for _, image := range images {
+		img := pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject}
+		if contentImageTag(master, int64(key), img, 0) != secret && contentImageTag(master, int64(key), img, s.Generation()) != secret {
+			continue
+		}
+		deviceJSON, err := json.Marshal(core.Device{})
+		if err != nil {
+			return pageClaims{}, false
+		}
+		return pageClaims{
+			Item: int64(key), Kind: img.Kind, Path: img.Path, Tag: img.Tag, Subject: img.Subject,
+			Device: deviceJSON, Source: source, Viewer: viewer.ID, Expires: s.pageExpires(),
+		}, true
+	}
+	return pageClaims{}, false
+}
+
+func imageItemKey(path string) (core.RatingKey, bool) {
+	const marker = "/Items/"
+	i := strings.Index(path, marker)
+	if i < 0 {
+		return 0, false
+	}
+	rest := path[i+len(marker):]
+	slash := strings.IndexByte(rest, '/')
+	if slash <= 0 {
+		return 0, false
+	}
+	key, err := ids.ParseRatingKeyGUID(rest[:slash])
+	if err != nil {
+		return 0, false
+	}
+	return key, true
+}
+
 func (s *ImageGrantService) servePageGrant(w http.ResponseWriter, r *http.Request, secret string) {
 	if _, denied := s.denied.Load(pageDigest(secret)); denied {
 		http.NotFound(w, r)
@@ -425,8 +590,12 @@ func (s *ImageGrantService) servePageGrant(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
+	s.serveClaims(w, r, secret, claims, now)
+}
+
+func (s *ImageGrantService) serveClaims(w http.ResponseWriter, r *http.Request, secret string, claims pageClaims, now int64) {
 	var live int
-	err = s.db.QueryRowContext(r.Context(), `SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1`, claims.Source, claims.Viewer, string(s.surface), now).Scan(&live)
+	err := s.db.QueryRowContext(r.Context(), `SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1`, claims.Source, claims.Viewer, string(s.surface), now).Scan(&live)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -443,14 +612,41 @@ func (s *ImageGrantService) servePageGrant(w http.ResponseWriter, r *http.Reques
 	}
 	img, ok := claims.imageFor(r)
 	if !ok {
-		http.NotFound(w, r)
-		return
+		img = frontend.Image{Kind: claims.Kind, Path: claims.Path, Tag: claims.Tag, Subject: claims.Subject}
+		if img.Kind == "" || img.Path == "" {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	if err = s.authorized(r.Context(), viewer, device, core.RatingKey(claims.Item), claims.Channel, img); err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	s.writeGrantedImage(w, r, viewer, device, core.RatingKey(claims.Item), claims.Channel, img, pageDigest(secret), claims.Source, string(claims.Device))
+}
+
+func (s *ImageGrantService) revokeShortGrant(ctx context.Context, viewerID int64, source, secret string) error {
+	claims, ok := s.loadShort(secret)
+	if !ok || claims.Viewer != viewerID || subtle.ConstantTimeCompare([]byte(claims.Source), []byte(source)) != 1 {
+		return core.ErrUnauthorized
+	}
+	s.forgetShort(secret)
+	digest := pageDigest(secret)
+	s.denied.Store(digest, true)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil
+	}
+	defer tx.Rollback()
+	row := imageBatchRow{hash: digest, item: core.RatingKey(claims.Item), image: frontend.Image{Kind: claims.Kind, Path: claims.Path, Tag: claims.Tag, Subject: claims.Subject}}
+	if err = s.insertAdmitted(ctx, tx, viewerID, source, deviceID(claims.Device), string(claims.Device), claims.Channel, []imageBatchRow{row}); err != nil {
+		return nil
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE frontend_image_grants SET revoked=1 WHERE hash=? AND source_hash=? AND viewer_id=? AND surface=?`, digest, source, viewerID, string(s.surface)); err != nil {
+		return nil
+	}
+	_ = tx.Commit()
+	return nil
 }
 
 func (s *ImageGrantService) revokePageGrant(ctx context.Context, viewerID int64, source, secret string) error {

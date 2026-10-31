@@ -597,7 +597,11 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 	if !allowed {
 		state = "not_configured"
 	}
-	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": i.installationID(), "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
+	features := []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}
+	if i.host.WatchParty != nil {
+		features = append(features, "watch_party_coordinator_v1", "fixed_media_file_v1")
+	}
+	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": i.installationID(), "protocol_versions": []int{3}, "features": features, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
 }
 
 func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Request) {
