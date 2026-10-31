@@ -185,12 +185,12 @@ func (s *Session) chainOrHoldLocked(r *run) {
 	next := r.planEnd
 	if !s.clientNearLocked(next) {
 		s.log.Info("transcode run reached its segment cap ahead of the player", "segment", next, "playhead", s.lastReq)
-		s.stopRunLocked()
+		s.stopRunForLocked("segment cap ahead of player")
 		s.resumeAt = next
 		return
 	}
 	s.log.Debug("plan mode boundary; chaining run", "segment", next, "fromMode", r.mode, "playhead", s.lastReq)
-	if err := s.startRunLocked(next, false); err != nil {
+	if err := s.startRunForLocked(next, false, "plan boundary"); err != nil {
 		s.log.Warn("chain run at mode boundary", "segment", next, "err", err)
 	}
 }
@@ -226,6 +226,13 @@ func (s *Session) finish(r *run) {
 	if s.closed || r.stopped {
 		return
 	}
+	if s.traceOn() {
+		why := "eof"
+		if err != nil {
+			why = "error"
+		}
+		s.log.Info("ffmpeg run", "event", "stop", "reason", why, "run", r.seq, "segment", r.startSeg, "maxDone", r.maxDone, "planEnd", r.planEnd, "playhead", s.lastReq, "err", err)
+	}
 	log := s.log.With("run", r.seq)
 	if err == nil {
 		if r.rtx && s.cur == r {
@@ -242,7 +249,7 @@ func (s *Session) finish(r *run) {
 				// ahead of the playhead; declaring EOF there drops the rest
 				// of the title.
 				log.Debug("ffmpeg finished at plan boundary; chaining", "segment", r.planEnd, "playhead", s.lastReq)
-				if err := s.startRunLocked(r.planEnd, false); err != nil {
+				if err := s.startRunForLocked(r.planEnd, false, "plan boundary exit"); err != nil {
 					s.failErr = err
 				}
 				return
@@ -269,7 +276,7 @@ func (s *Session) finish(r *run) {
 	}
 	if r.rtx && r.produced == 0 && !s.inputFailed {
 		s.fallbackRTXLocked("native VSR run failed before producing segments", r.startSeg)
-		if err := s.startRunLocked(r.startSeg, r.spec.BigProbe); err != nil {
+		if err := s.startRunForLocked(r.startSeg, r.spec.BigProbe, "rtx fallback"); err != nil {
 			s.failErr = err
 		}
 		return
@@ -293,7 +300,7 @@ func (s *Session) finish(r *run) {
 		if r.hw && !s.forceCPU && looksLikeEncoderFailure(stderr, r.spec) {
 			s.forceCPU = true
 			log.Warn("hardware encoder failed; falling back to CPU", "hwaccel", r.spec.Accel.Name)
-			if err := s.startRunLocked(r.startSeg, r.spec.BigProbe); err != nil {
+			if err := s.startRunForLocked(r.startSeg, r.spec.BigProbe, "hardware fallback"); err != nil {
 				s.failErr = err
 			}
 			return
@@ -301,7 +308,7 @@ func (s *Session) finish(r *run) {
 		s.failures++
 		s.failErr = fmt.Errorf("ffmpeg: %w: %s", err, tail(stderr, 300))
 		if s.failures == 1 {
-			if err := s.startRunLocked(r.startSeg, true); err != nil {
+			if err := s.startRunForLocked(r.startSeg, true, "start retry"); err != nil {
 				s.failErr = err
 			}
 			return
@@ -382,7 +389,7 @@ func (s *Session) tryNextGraphLocked(r *run, name string) bool {
 		return false
 	}
 	s.log.Warn("ffmpeg filter missing; trying the next graph", "filter", name, "run", r.seq)
-	if err := s.startRunLocked(r.startSeg, false); err != nil {
+	if err := s.startRunForLocked(r.startSeg, false, "filter fallback"); err != nil {
 		s.failErr = err
 	}
 	return true

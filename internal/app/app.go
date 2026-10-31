@@ -194,6 +194,7 @@ type App struct {
 	trickplay           *trickplay.Owner
 	load                *sysload.Sampler // machine load for the Overview
 	playback            *playback.Manager
+	tracePlayback       bool // ETHER_TRACE_PLAYBACK, set in buildPlayback
 	prefetch            *prefetch.Prefetcher
 	cachefill           *cachefill.Manager
 	plextv              *plextv.Client

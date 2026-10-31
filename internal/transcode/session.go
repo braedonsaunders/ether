@@ -96,6 +96,10 @@ type sessionEncoding struct {
 	// hevcFallbackWarned latches the HEVC->libx264 fallback warning to
 	// at most once per session (warned from startRunLocked, under mu).
 	hevcFallbackWarned bool
+	// traceCause and traceStop are log labels for the next ffmpeg start or
+	// stop. They are read only when ETHER_TRACE_PLAYBACK is on.
+	traceCause string
+	traceStop  string
 }
 
 // sessionDelivery owns one aspect of the session. Fields are guarded by Session.mu.

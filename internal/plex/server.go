@@ -153,6 +153,9 @@ type Deps struct {
 	Now func() time.Time
 	// Support records neutral request and playback facts. Nil leaves playback unchanged.
 	Support *diagnostics.Recorder
+	// TracePlayback logs HLS/transcode requests when ETHER_TRACE_PLAYBACK=1.
+	// It does not change responses.
+	TracePlayback bool
 }
 
 // Server is the PMS API handler. It is an http.Handler; call Close on
