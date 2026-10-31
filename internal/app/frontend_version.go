@@ -12,5 +12,14 @@ import (
 // candidate id; broker issuance replaces it before a client-facing handle.
 func frontendVersion(title *core.Title, version core.ReleaseVariant) frontend.Version {
 	offer := experience.VersionOfferFrom(title, version)
-	return frontend.Version{ID: offer.ID, Name: offer.Name, Edition: offer.Edition, Media: offer.Media, AddedAt: offer.AddedAt, PublishedAt: offer.Publication}
+	out := frontend.Version{ID: offer.ID, Name: offer.Name, Edition: offer.Edition, Media: offer.Media, AddedAt: offer.AddedAt, PublishedAt: offer.Publication}
+	if !offer.Media.Estimated {
+		if name := probedFileName(offer.Name); name != "" {
+			out.FileName = name
+			// The probed basename is that one file, so the version is a single part.
+			one := 1
+			out.PartCount = &one
+		}
+	}
+	return out
 }

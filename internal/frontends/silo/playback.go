@@ -199,6 +199,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	recipe := map[string]any{"video_codec": plan.Decision.VideoCodec, "audio_codec": plan.Decision.AudioCodec, "bitrate_kbps": plan.Decision.BitrateKbps}
 	hdr10, hdr10Plus, hlg, dv := false, false, false, false
+	sourceHeight := 0
 	streams := plan.Media.Streams
 	if plan.Media.Estimated {
 		streams = nil
@@ -221,6 +222,9 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 			source["video_codec"] = s.Codec
 			source["width"] = s.Width
 			source["height"] = s.Height
+			if s.Height > sourceHeight {
+				sourceHeight = s.Height
+			}
 			source["bit_depth"] = s.BitDepth
 			source["video_profile"] = s.Profile
 			source["video_level"] = s.Level
@@ -328,11 +332,52 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	if plan.Decision.Reason != "" {
 		audioClaim["reason"] = plan.Decision.Reason
 	}
-	// Ether has no fixed transcode quality menu. The contract says the source
-	// itself is not a rung and quality_preference auto returns to it, so the
-	// list stays empty instead of inventing heights.
-	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
+	// Rungs are Ether's default quality profiles below the source. The source
+	// is not a rung, and auto returns to it. Ether stores no named
+	// transformation executor, so that list stays empty.
+	qualities := siloQualityMenu(sourceHeight)
+	encodeHeight := sourceHeight
+	if !plan.Decision.VideoCopy && plan.Decision.MaxHeight > 0 {
+		encodeHeight = plan.Decision.MaxHeight
+	}
+	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": qualities}
+	if active := siloActiveQuality(b.Quality, qualities, plan.Decision.VideoCopy, encodeHeight); active != "" {
+		output["active_quality"] = active
+	}
 	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "session_id": session.ID, "playback_plan": output})
+}
+
+// siloQualityMenu lists Ether's default quality profiles (config.DefaultQuality)
+// strictly below the source. The source itself is not a menu entry.
+func siloQualityMenu(sourceHeight int) []any {
+	type rung struct {
+		label  string
+		height int
+	}
+	out := []any{}
+	for _, profile := range []rung{{"4K", 2160}, {"1080p", 1080}, {"720p", 720}} {
+		if sourceHeight > profile.height {
+			out = append(out, map[string]any{"label": profile.label, "height": profile.height, "preserves_source": false})
+		}
+	}
+	return out
+}
+
+// siloActiveQuality names the menu entry this encode delivers. Auto and an
+// unchanged source copy name no entry. Ether has no "720p-medium" profile.
+func siloActiveQuality(preference string, menu []any, videoCopy bool, encodeHeight int) string {
+	if videoCopy || preference == "" || preference == "auto" {
+		return ""
+	}
+	for _, entry := range menu {
+		row, _ := entry.(map[string]any)
+		label, _ := row["label"].(string)
+		height, _ := row["height"].(int)
+		if label == preference && height == encodeHeight {
+			return label
+		}
+	}
+	return ""
 }
 
 func (i *instance) stopFailedAdmission(ctx context.Context, access frontend.SessionAccess, sessionID string) {

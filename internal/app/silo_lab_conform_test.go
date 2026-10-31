@@ -160,6 +160,10 @@ func TestSiloLabConformance(t *testing.T) {
 		}
 	}
 	seedTitle := func(title *core.Title) {
+		// Jellyfin tags are not Silo keywords. Captured home cards send [].
+		title.Keywords = nil
+		// The fixture image is a poster, not an episode still.
+		title.StillPath = ""
 		if title.Type == core.TypeEpisode && title.ShowKey == core.ShowKey(91461) {
 			for _, p := range progress {
 				if p.key == title.Key && p.seriesTitle != "" {
@@ -204,10 +208,21 @@ func TestSiloLabConformance(t *testing.T) {
 				role, _ := row["job"].(string)
 				tmdb, _ := strconv.ParseInt(fmt.Sprint(row["tmdb_id"]), 10, 64)
 				person := core.Person{Name: name, Role: role, TMDB: tmdb}
+				if imdb, _ := row["imdb_id"].(string); imdb != "" {
+					person.IMDB = imdb
+				}
 				if photo, _ := row["photo_url"].(string); photo != "" {
 					person.ThumbPath = "/fixture.jpg"
 				}
-				if name != "" {
+				if name == "" {
+					continue
+				}
+				switch {
+				case strings.Contains(strings.ToLower(role), "director"):
+					title.Directors = append(title.Directors, person)
+				case strings.Contains(strings.ToLower(role), "writer"), strings.Contains(strings.ToLower(role), "screenplay"):
+					title.Writers = append(title.Writers, person)
+				default:
 					title.Crew = append(title.Crew, person)
 				}
 			}

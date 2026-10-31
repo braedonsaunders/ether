@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -108,6 +109,23 @@ func labMediaVariants(dir string, t *core.Title) ([]core.ReleaseVariant, bool) {
 	if len(out) == 0 {
 		return nil, false
 	}
+	// The lab harness plays the first version. Prefer an H.264 file the
+	// phone profiles can open, shortest picture first.
+	sort.SliceStable(out, func(i, j int) bool {
+		vi, vj := out[i].Info.Video(), out[j].Info.Video()
+		hi, hj := 0, 0
+		ci, cj := "", ""
+		if vi != nil {
+			hi, ci = vi.Height, vi.Codec
+		}
+		if vj != nil {
+			hj, cj = vj.Height, vj.Codec
+		}
+		if (ci == "h264") != (cj == "h264") {
+			return ci == "h264"
+		}
+		return hi < hj
+	})
 	return out, true
 }
 
