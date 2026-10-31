@@ -152,12 +152,13 @@ func TestDetailSourceOfferFlowsThroughPlaybackAndSessionCheck(t *testing.T) {
 		t.Fatalf("detail %d %s", w.Code, w.Body.String())
 	}
 	versions := body["versions"].([]any)
-	if len(versions) != 1 || versions[0].(map[string]any)["file_id"] != "2147483648" || !strings.Contains(w.Body.String(), `"duration":60`) || target.DetailSource != "detail" || target.ETag != "generation" {
-		t.Fatalf("detail offer %s %+v", w.Body.String(), target)
+	if len(versions) != 0 || detailCalls != 0 {
+		t.Fatalf("browse planned a source: %s calls=%d", w.Body.String(), detailCalls)
 	}
+	target = frontend.SourceOfferTarget{Item: key, DetailSource: "detail", ETag: "generation"}
 	start := `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt"}`
 	w = call("POST", "/api/v2/playback/start", start)
-	if w.Code != 201 || detailCalls != 1 || plans != 1 || streams != 1 || matches != 2 {
+	if w.Code != 201 || detailCalls != 0 || plans != 1 || streams != 1 || matches != 2 {
 		t.Fatalf("play %d %s counts=%d/%d/%d/%d", w.Code, w.Body.String(), detailCalls, plans, streams, matches)
 	}
 	mismatch = true

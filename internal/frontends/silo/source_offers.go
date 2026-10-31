@@ -6,8 +6,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
-// A detail request may resolve one leaf source. Alternatives retain their
-// authorized exact version selectors; listing estimates never become probes.
+// Browse lists authorized version selectors only. Opening a leaf source
+// belongs to playback, so a detail page never plans or probes.
 func (i *instance) sourceVersions(r *http.Request, scope frontend.VersionScope, detail frontend.ItemDetail) ([]frontend.Version, []frontend.SourceOffer, error) {
 	if i.host.SourceOffers == nil {
 		return nil, nil, frontend.ErrSourceGone
@@ -38,22 +38,6 @@ func (i *instance) sourceVersions(r *http.Request, scope frontend.VersionScope, 
 				return nil, nil, frontend.ErrSourceGone
 			}
 			targets = append(targets, frontend.SourceOfferTarget{Item: detail.Title.Key, VersionHandle: handles[version.ID]})
-		}
-	}
-	if planner, ok := i.host.Sessions.(frontend.DetailPlanner); ok {
-		req := frontend.PlanRequest{Viewer: scope.Viewer, Device: scope.Device, Protocol: "silo", Item: detail.Title.Key, Caps: scope.Caps, Intent: frontend.PlayIntent{Options: frontend.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: -1, SubtitleStream: -1}}}
-		if len(targets) > 0 {
-			req.Version, req.Intent.ExactVersion = targets[0].VersionHandle, true
-		}
-		plan, err := planner.DetailPlan(r.Context(), req)
-		if err == nil && !plan.Estimated && !plan.Media.Estimated && plan.DetailSource != "" && plan.ETag != "" {
-			target := frontend.SourceOfferTarget{Item: detail.Title.Key, DetailSource: plan.DetailSource, ETag: plan.ETag}
-			if len(versions) == 0 {
-				versions = append(versions, frontend.Version{Media: plan.Media})
-				targets = append(targets, target)
-			} else {
-				versions[0].Media, targets[0] = plan.Media, target
-			}
 		}
 	}
 	if len(targets) == 0 {
