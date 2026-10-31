@@ -54,7 +54,8 @@ func (p plexWatchAdmin) status(st plexwatch.Status) admin.PlexWatchStatus {
 	return admin.PlexWatchStatus{
 		Connected: st.Connected, PlexID: st.PlexID, Username: st.Username,
 		Enabled: st.Enabled, Eligibility: st.Eligibility, Revoked: st.Revoked,
-		Pending: st.Pending, Dead: st.Dead, InFlight: st.InFlight, Skipped: st.Skipped, Restricted: st.Restricted,
+		Pending: st.Pending, Held: st.Held, HeldLegacy: st.HeldLegacy,
+		Dead: st.Dead, InFlight: st.InFlight, Skipped: st.Skipped, Restricted: st.Restricted,
 		PINCode: st.PINCode, PINURL: st.PINURL, PINExpires: st.PINExpires,
 		AccountMatch: st.AccountMatch,
 	}
@@ -97,6 +98,10 @@ func (p plexWatchAdmin) Disconnect(ctx context.Context, userID, plexID int64) (a
 }
 func (p plexWatchAdmin) Retry(ctx context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
 	st, err := p.svc.Retry(ctx, userID, plexID)
+	return p.status(st), mapPlexWatchErr(err)
+}
+func (p plexWatchAdmin) Resolve(ctx context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
+	st, err := p.svc.Resolve(ctx, userID, plexID)
 	return p.status(st), mapPlexWatchErr(err)
 }
 func (p plexWatchAdmin) ExportCurrent(ctx context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {

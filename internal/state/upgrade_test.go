@@ -66,7 +66,7 @@ func requireMigrations(t *testing.T, db *sql.DB, want []string, absent []string)
 
 // TestFreshStatePlexwatchSchema migrates an empty database. state/1 and
 // state/2 stay the watch tables. Prism already owns state/3 and state/4.
-// The account-sync additions are state_plexwatch/1 through /3, not state/5.
+// The account-sync additions are state_plexwatch/1 through /4, not state/5.
 func TestFreshStatePlexwatchSchema(t *testing.T) {
 	ctx := context.Background()
 	t.Run("sqlite", func(t *testing.T) {
@@ -95,13 +95,13 @@ func assertFreshSchema(t *testing.T, ctx context.Context, db *sql.DB) {
 	}
 	requireMigrations(t, db, []string{
 		"state/1", "state/2", "state/3", "state/4",
-		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3",
+		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3", "state_plexwatch/4",
 	}, []string{"state/5"})
-	var watchAt, ratingAt, consent int64
+	var watchAt, ratingAt, consent, neverSent int64
 	if err := db.QueryRow(`SELECT watch_at, rating_at FROM state_watch WHERE 0=1`).Scan(&watchAt, &ratingAt); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT consent_generation FROM state_sync_journal WHERE 0=1`).Scan(&consent); !errors.Is(err, sql.ErrNoRows) {
+	if err := db.QueryRow(`SELECT consent_generation, never_sent FROM state_sync_journal WHERE 0=1`).Scan(&consent, &neverSent); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal(err)
 	}
 	var holder string
@@ -184,7 +184,7 @@ func assertUpgradeKeepsOldWrite(t *testing.T, ctx context.Context, db *sql.DB) {
 	}
 	requireMigrations(t, db, []string{
 		"state/1", "state/2", "state/3", "state/4",
-		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3",
+		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3", "state_plexwatch/4",
 	}, []string{"state/5"})
 	var watchAt, ratingAt int64
 	if err := db.QueryRow(`SELECT watch_at, rating_at FROM state_watch WHERE user_id=7 AND rating_key=?`, int64(key)).Scan(&watchAt, &ratingAt); err != nil {
@@ -328,7 +328,7 @@ func assertUnreleasedIdentityConverts(t *testing.T, ctx context.Context, db *sql
 	}
 	requireMigrations(t, db, []string{
 		"state/1", "state/2", "state/3", "state/4",
-		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3",
+		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3", "state_plexwatch/4",
 	}, []string{"state/5"})
 	var offset, views int64
 	var rating float64

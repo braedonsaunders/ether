@@ -126,8 +126,8 @@ func (s *State) journalEvents(ctx context.Context, tx *sql.Tx, events []Event, f
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO state_sync_journal(user_id,rating_key,aspect,kind,rating,occurred_at,bulk,consent_generation)
-			VALUES(?,?,?,?,?,?,?,?)`, ev.UserID, int64(ev.Key), string(aspect), kind, ev.Rating, at.UnixNano(), b, gen); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO state_sync_journal(user_id,rating_key,aspect,kind,rating,occurred_at,bulk,consent_generation,never_sent)
+			VALUES(?,?,?,?,?,?,?,?,1)`, ev.UserID, int64(ev.Key), string(aspect), kind, ev.Rating, at.UnixNano(), b, gen); err != nil {
 			return err
 		}
 	}
@@ -302,14 +302,14 @@ func dropPending(ctx context.Context, db interface {
 	return err
 }
 
-// RetryDeadSync makes missing-GUID rows claimable again. Rejected and
-// unsupported rows stay dead.
+// RetryDeadSync makes matching dead or deferred rows claimable again. Rejected
+// and unsupported rows stay dead.
 func (s *State) RetryDeadSync(ctx context.Context, userID int64, reasons []string) error {
 	if len(reasons) == 0 {
 		return nil
 	}
 	q := `UPDATE state_sync_journal SET dead=0, attempts=0, next_attempt=0, claimed_by='', claimed_at=0
-		WHERE user_id=? AND delivered_at=0 AND superseded=0 AND dead=1 AND last_error IN (`
+		WHERE user_id=? AND delivered_at=0 AND superseded=0 AND last_error IN (`
 	args := []any{userID}
 	for i, reason := range reasons {
 		if i > 0 {

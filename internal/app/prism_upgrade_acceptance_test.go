@@ -146,13 +146,13 @@ func TestPrismUpgradeFromDelivered9503(t *testing.T) {
 	}
 	// afdcb3f7 rejected capability_headers because that slice's base had not
 	// landed it. b7049abd is the reviewed inventory: capability_headers v3 is
-	// required. Account sync has since landed as plexwatch v4 and
-	// state_plexwatch v3. Session checks below are unchanged.
+	// required. Account sync has since landed as plexwatch v4,
+	// state_plexwatch v4, and watchsend v1. Session checks below are unchanged.
 	if store.KnownMigrations()["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", store.KnownMigrations()["capability_headers"])
 	}
-	if store.KnownMigrations()["plexwatch"] != 4 || store.KnownMigrations()["state_plexwatch"] != 3 {
-		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d", store.KnownMigrations()["plexwatch"], store.KnownMigrations()["state_plexwatch"])
+	if store.KnownMigrations()["plexwatch"] != 4 || store.KnownMigrations()["state_plexwatch"] != 4 || store.KnownMigrations()["watchsend"] != 1 {
+		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d watchsend=%d", store.KnownMigrations()["plexwatch"], store.KnownMigrations()["state_plexwatch"], store.KnownMigrations()["watchsend"])
 	}
 
 	var liveSessions, snapSessions int
@@ -411,8 +411,8 @@ func assertUpgradeBoundary(t *testing.T) {
 	if known["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
 	}
-	if known["plexwatch"] != 4 || known["state_plexwatch"] != 3 {
-		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d", known["plexwatch"], known["state_plexwatch"])
+	if known["plexwatch"] != 4 || known["state_plexwatch"] != 4 || known["watchsend"] != 1 {
+		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d watchsend=%d", known["plexwatch"], known["state_plexwatch"], known["watchsend"])
 	}
 	if known["auth"] != 7 || known["auth_sessions"] != 1 {
 		t.Fatalf("landed auth inventory auth=%d auth_sessions=%d", known["auth"], known["auth_sessions"])

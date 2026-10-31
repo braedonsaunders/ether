@@ -58,4 +58,11 @@ UPDATE state_watch SET rating_at=updated_at WHERE rating_at=0 AND user_rating<>0
 	// intent was admitted. A later generation must not deliver it.
 	store.Register("state_plexwatch", 3, `
 ALTER TABLE state_sync_journal ADD COLUMN consent_generation INTEGER NOT NULL DEFAULT 0;`)
+	// never_sent records whether a journal row has never been handed to a
+	// network POST. Rows that were never attempted stay normal queued work;
+	// previously attempted or claimed rows lack durable never-sent proof.
+	store.Register("state_plexwatch", 4, `
+ALTER TABLE state_sync_journal ADD COLUMN never_sent INTEGER NOT NULL DEFAULT 0;
+UPDATE state_sync_journal SET never_sent=1 WHERE delivered_at=0 AND attempts=0 AND claimed_by='' AND claimed_at=0 AND last_error='';
+`)
 }

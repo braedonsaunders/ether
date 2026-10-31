@@ -40,6 +40,9 @@ func (s *Service) deliverAvailable(ctx context.Context) {
 			s.log.Warn("plex watch echo compact", "err", err.Error())
 		}
 	}
+	if _, err := s.ReconcileOnce(ctx); err != nil && ctx.Err() == nil {
+		s.log.Warn("plex watch hold reconcile", "err", err.Error())
+	}
 	for {
 		more, err := s.DeliverOnce(ctx)
 		if err != nil && ctx.Err() == nil {
@@ -135,7 +138,7 @@ func (s *Service) deliverClaim(ctx context.Context, row state.SyncRow, attempt s
 	default:
 		return s.state.DeadSync(ctx, row.Seq, attempt, "rejected")
 	}
-	permit, err := s.acquireSend(ctx, row, attempt)
+	permit, err := s.acquireSend(ctx, row, attempt, item)
 	if err != nil {
 		if rerr := s.state.ReleaseSync(ctx, row.Seq, attempt); rerr != nil {
 			return rerr
@@ -147,6 +150,9 @@ func (s *Service) deliverClaim(ctx context.Context, row state.SyncRow, attempt s
 		if err != nil || !current {
 			return err
 		}
+		if permit.Terminal == "not_eligible" {
+			return s.state.DeferSync(ctx, row.Seq, attempt, s.now().Add(15*time.Minute), "not_eligible")
+		}
 		reason := permit.Terminal
 		if reason == "" {
 			reason = "consent"
@@ -154,22 +160,21 @@ func (s *Service) deliverClaim(ctx context.Context, row state.SyncRow, attempt s
 		return s.state.DeadSync(ctx, row.Seq, attempt, reason)
 	}
 	defer s.releaseSend(ctx, permit.ID)
+	if s.afterAdmission != nil {
+		if err := s.afterAdmission(); err != nil {
+			return err
+		}
+	}
 	err = s.client.postState(ctx, permit.Token, permit.PlexID, item)
 	if err != nil {
-		return s.failDelivery(ctx, row, attempt, permit.Generation, err)
+		return s.failDelivery(ctx, row, attempt, permit.ID, permit.Generation, err)
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO plexwatch_sent(user_id, guid, kind, at_ms, rating, sent_at) VALUES(?,?,?,?,?,?)
-		ON CONFLICT DO NOTHING`, row.UserID, guid, sentKind, sentAt, sentRating, s.now().UnixNano()); err != nil {
-		return err
+	if s.afterPost != nil {
+		if err := s.afterPost(); err != nil {
+			return err
+		}
 	}
-	ok, err = s.state.AckSync(ctx, row.Seq, attempt, s.now())
-	if err != nil {
-		return err
-	}
-	if !ok {
-		s.log.Info("plex watch send superseded", "seq", row.Seq, "aspect", string(row.Aspect))
-	}
-	return nil
+	return s.completeSend(ctx, row, permit.ID, guid, sentKind, sentAt, sentRating)
 }
 
 var errGUIDKind = errors.New("plexwatch: guid kind does not match the title")
@@ -197,38 +202,39 @@ func (s *Service) lookupGUID(ctx context.Context, key core.RatingKey) (string, e
 	return guid, nil
 }
 
-func (s *Service) failDelivery(ctx context.Context, row state.SyncRow, attempt string, generation int64, err error) error {
+func (s *Service) failDelivery(ctx context.Context, row state.SyncRow, attempt, permitID string, generation int64, err error) error {
 	var st *StatusError
 	if errors.As(err, &st) {
 		switch {
 		case st.Status == 401:
 			s.log.Info("plex watch token rejected", "seq", row.Seq, "generation", generation)
+			if cerr := s.clearAttempt(ctx, permitID, row.Seq, false); cerr != nil {
+				return cerr
+			}
 			rerr := s.revoke(ctx, row.UserID, generation)
 			if rerr == nil {
-				return s.state.ReleaseSync(ctx, row.Seq, attempt)
+				return s.state.DeadSync(ctx, row.Seq, attempt, "unauthorized")
 			}
 			if !errors.Is(rerr, ErrRevoked) {
 				return rerr
 			}
 			return nil
 		case st.Status == 403:
+			if cerr := s.clearAttempt(ctx, permitID, row.Seq, true); cerr != nil {
+				return cerr
+			}
 			_, _ = s.db.ExecContext(ctx, `UPDATE plexwatch_account SET eligibility='refused', enabled=0, checked_at=? WHERE user_id=? AND token_generation=?`,
 				s.now().UnixNano(), row.UserID, generation)
 			return s.state.DeferSync(ctx, row.Seq, attempt, s.now().Add(15*time.Minute), "not_eligible")
 		case st.Status == 400 || st.Status == 422:
 			s.log.Info("plex watch state rejected", "seq", row.Seq, "status", st.Status)
-			return s.state.DeadSync(ctx, row.Seq, attempt, "rejected")
-		case st.Status == 429:
-			wait := st.RetryAfter
-			if wait <= 0 {
-				wait = backoff(row.Attempts)
+			if cerr := s.clearAttempt(ctx, permitID, row.Seq, false); cerr != nil {
+				return cerr
 			}
-			return s.state.DeferSync(ctx, row.Seq, attempt, s.now().Add(wait), "retry_after")
-		case st.Status >= 500:
-			return s.state.DeferSync(ctx, row.Seq, attempt, s.now().Add(backoff(row.Attempts)), "upstream")
+			return s.state.DeadSync(ctx, row.Seq, attempt, "rejected")
 		}
 	}
-	return s.state.DeferSync(ctx, row.Seq, attempt, s.now().Add(backoff(row.Attempts)), "upstream")
+	return s.state.DeadSync(ctx, row.Seq, attempt, "uncertain_send")
 }
 
 func backoff(attempts int) time.Duration {

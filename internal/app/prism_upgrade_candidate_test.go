@@ -23,7 +23,8 @@ var prismCandidateMigrations = map[string]int{
 	"experience_receipts":   5,
 	"handle_reservations":   2,
 	"plexwatch":             4,
-	"state_plexwatch":       3,
+	"state_plexwatch":       4,
+	"watchsend":             1,
 }
 
 func assertPrismCandidateBoundary(t *testing.T) {
