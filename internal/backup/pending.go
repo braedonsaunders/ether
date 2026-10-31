@@ -88,6 +88,11 @@ type Pending struct {
 	// Applied is set once every file is in place: the restored server is
 	// starting and the restore is confirmed when it is ready.
 	Applied bool `json:"applied,omitempty"`
+	// RollingBack replaces Applied once an applied restore's undo has
+	// swept the restored server's files into Installed: from then on only
+	// the journal says what to move, so a retried undo never mistakes an
+	// original already put back for a file the restored server made.
+	RollingBack bool `json:"rollingBack,omitempty"`
 	// Failure is why an applied restore is being rolled back.
 	Failure string `json:"failure,omitempty"`
 }
@@ -125,9 +130,11 @@ type Report struct {
 // fail part way through.
 type fsOps struct {
 	rename func(oldpath, newpath string) error
+	// remove deletes the restore record (ConfirmRestore's commit point).
+	remove func(path string) error
 }
 
-var osOps = fsOps{rename: os.Rename}
+var osOps = fsOps{rename: os.Rename, remove: removeFile}
 
 // ErrNoStaged means the staging folder named in a request does not exist.
 var ErrNoStaged = errors.New("the prepared backup is no longer available; choose it again")
@@ -231,7 +238,7 @@ func applyPending(dataDir string, now func() time.Time, ops fsOps) (*Report, err
 	if p.Rollback != "" {
 		// A previous start stopped part way through the swap, or never
 		// got the restored server ready: put the originals back.
-		applied, failure := p.Applied, p.Failure
+		applied, failure := p.Applied || p.RollingBack, p.Failure
 		if err := j.undo(); err != nil {
 			return rep, fmt.Errorf("a restore could not be undone; the original files are in %s: %w", j.rollback(), err)
 		}
@@ -289,46 +296,64 @@ func applyPending(dataDir string, now func() time.Time, ops fsOps) (*Report, err
 	return rep, nil
 }
 
-// ConfirmRestore records that the server started on the applied restore:
-// it saves the "restored" report (with the integrity check and import
-// result filled in by the caller) and keeps the rollback folder for undo.
+// ConfirmRestore records that the server started on the applied restore.
+// Removing the restore record is the commit point and comes first: if it
+// fails, the restore is not confirmed (the caller must not serve, and
+// rolls back). Then the "restored" report is saved (with the integrity
+// check and import result filled in by the caller) and the rollback
+// folder is kept for undo.
 func ConfirmRestore(dataDir string, rep *Report) error {
+	return confirmRestore(dataDir, rep, osOps)
+}
+
+func confirmRestore(dataDir string, rep *Report, ops fsOps) error {
 	p, err := ReadPending(dataDir)
 	if err != nil {
 		return err
 	}
-	if p == nil || !p.Applied {
+	if p == nil || !p.Applied || p.RollingBack {
 		return errors.New("backup: no applied restore to confirm")
 	}
-	j := journal{dataDir: dataDir, p: p, ops: osOps}
-	_ = writeJSON(filepath.Join(j.rollback(), rollbackInfo), Rollback{
+	j := journal{dataDir: dataDir, p: p, ops: ops}
+	// Written before the commit point: a rollback folder without it would
+	// look like an unfinished restore.
+	if err := writeJSON(filepath.Join(j.rollback(), rollbackInfo), Rollback{
 		Name: p.Rollback, Created: rep.RestoredAt, ReplacedBy: p.Source, Files: p.Moved,
-	})
+	}); err != nil {
+		return err
+	}
+	if err := ops.remove(filepath.Join(dataDir, PendingFile)); err != nil {
+		_ = os.Remove(filepath.Join(j.rollback(), rollbackInfo))
+		return fmt.Errorf("could not record the restore as finished: %w", err)
+	}
 	rep.Status = "restored"
-	if err := saveReport(dataDir, rep); err != nil {
-		return err
-	}
-	if err := removeFile(filepath.Join(dataDir, PendingFile)); err != nil {
-		return err
-	}
+	// From here the restore stands; a report that cannot be written only
+	// loses the summary.
+	reportErr := saveReport(dataDir, rep)
 	_ = os.RemoveAll(j.staged())
 	pruneRollbacks(dataDir, p.Rollback)
-	return nil
+	return reportErr
 }
 
 // RollbackApplied puts the original files back after the server could not
 // start on an applied restore (reason says why), and saves the report. The
 // settings and database must be closed.
 func RollbackApplied(dataDir string, now func() time.Time, reason string) (*Report, error) {
+	return rollbackApplied(dataDir, now, reason, osOps)
+}
+
+func rollbackApplied(dataDir string, now func() time.Time, reason string, ops fsOps) (*Report, error) {
 	p, err := ReadPending(dataDir)
 	if err != nil {
 		return nil, err
 	}
-	if p == nil || !p.Applied {
+	if p == nil || !(p.Applied || p.RollingBack) {
 		return nil, errors.New("backup: no applied restore to roll back")
 	}
-	p.Failure = "the restored backup could not start: " + reason
-	j := journal{dataDir: dataDir, p: p, ops: osOps}
+	if p.Failure == "" {
+		p.Failure = "the restored backup could not start: " + reason
+	}
+	j := journal{dataDir: dataDir, p: p, ops: ops}
 	if err := j.save(); err != nil {
 		return nil, err
 	}
@@ -474,12 +499,14 @@ func (j *journal) undo() error {
 		// any other live file was made by the restored server (its WAL and
 		// shared memory, or a database created to import a dump). It goes
 		// with the restored files: a foreign WAL must never sit next to
-		// the original database.
+		// the original database. This sweep happens once: the record says
+		// so before any file moves, and later retries trust the journal.
 		for _, f := range liveFiles {
 			if _, ok := statOK(filepath.Join(j.dataDir, f)); ok && !slices.Contains(j.p.Installed, f) {
 				j.p.Installed = append(j.p.Installed, f)
 			}
 		}
+		j.p.Applied, j.p.RollingBack = false, true
 	}
 	if err := j.save(); err != nil {
 		return err

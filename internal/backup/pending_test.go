@@ -462,3 +462,117 @@ func TestPruneRollbacksKeepsTheNewest(t *testing.T) {
 		t.Fatalf("kept %v", names)
 	}
 }
+
+// Round 3, finding 1: an applied restore's rollback that fails part way
+// (putting the original ether.db back) and is retried must not sweep the
+// originals already put back (config.json, the key) into the staging
+// folder, which is deleted after a day.
+func TestRetriedRollbackOfAnAppliedRestoreKeepsTheOriginals(t *testing.T) {
+	dataDir, staged := restoreFixture(t)
+	if _, err := ApplyPending(dataDir, fixedNow); err != nil {
+		t.Fatal(err)
+	}
+	liveDB := filepath.Join(dataDir, "ether.db")
+	failed := false
+	once := fsOps{rename: func(a, b string) error {
+		if b == liveDB && !failed {
+			failed = true
+			return errors.New("disk on fire")
+		}
+		return os.Rename(a, b)
+	}}
+	if _, err := rollbackApplied(dataDir, fixedNow, "boom", once); err == nil {
+		t.Fatal("rollback succeeded although the original database could not be put back")
+	}
+	if p, _ := ReadPending(dataDir); p == nil || p.Applied || !p.RollingBack {
+		t.Fatalf("record after a partial rollback = %+v", p)
+	}
+	rep, err := ApplyPending(dataDir, fixedNow)
+	if err != nil || rep.Status != "failed" || !rep.RolledBack {
+		t.Fatalf("retry = %+v, %v", rep, err)
+	}
+	assertLive(t, dataDir, "live")
+	for _, f := range []string{"config.json", config.CredentialKeyFile} {
+		if got := readFile(t, filepath.Join(staged, f)); !strings.HasPrefix(got, "staged-") {
+			t.Fatalf("staging %s = %q: an original was swept into the staging folder", f, got)
+		}
+	}
+	CleanStaged(dataDir, -time.Second)
+	assertLive(t, dataDir, "live")
+}
+
+// A crash at any move of an applied restore's rollback, before or after
+// the rename, is finished exactly at the next start.
+func TestAppliedRollbackRecoversACrashAtEveryMove(t *testing.T) {
+	// 4 files return to staging (3 installed and the restored server's
+	// -shm), then 4 originals come back.
+	for n := 1; n <= 8; n++ {
+		for _, after := range []bool{false, true} {
+			dataDir, staged := restoreFixture(t)
+			if _, err := ApplyPending(dataDir, fixedNow); err != nil {
+				t.Fatal(err)
+			}
+			writeFiles(t, dataDir, map[string]string{"ether.db-shm": "restored-shm"})
+			crashed := func() (c bool) {
+				defer func() {
+					if r := recover(); r != nil {
+						if _, ok := r.(crash); !ok {
+							panic(r)
+						}
+						c = true
+					}
+				}()
+				_, _ = rollbackApplied(dataDir, fixedNow, "boom", crashOps(n, after))
+				return false
+			}()
+			if !crashed {
+				t.Fatalf("move %d: no crash", n)
+			}
+			rep, err := ApplyPending(dataDir, fixedNow)
+			if err != nil || rep.Status != "failed" || !rep.RolledBack {
+				t.Fatalf("move %d after=%v: next start = %+v, %v", n, after, rep, err)
+			}
+			assertLive(t, dataDir, "live")
+			if got := readFile(t, filepath.Join(dataDir, "ether.db-wal")); got != "live-wal" {
+				t.Fatalf("move %d after=%v: wal = %q", n, after, got)
+			}
+			if _, err := os.Stat(filepath.Join(dataDir, "ether.db-shm")); err == nil {
+				t.Fatalf("move %d after=%v: the restored server's -shm left live", n, after)
+			}
+			for _, f := range []string{"config.json", config.CredentialKeyFile, "ether.db"} {
+				if got := readFile(t, filepath.Join(staged, f)); !strings.HasPrefix(got, "staged-") {
+					t.Fatalf("move %d after=%v: staged %s = %q", n, after, f, got)
+				}
+			}
+		}
+	}
+}
+
+// Round 3, finding 2: removing the restore record is the commit point. If
+// it fails, the restore is not confirmed (no "restored" report), and the
+// next start rolls it back rather than serving on it for days first.
+func TestConfirmRestoreCommitsByRemovingTheRecordFirst(t *testing.T) {
+	dataDir, _ := restoreFixture(t)
+	rep, err := ApplyPending(dataDir, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := fsOps{rename: os.Rename, remove: func(string) error { return errors.New("no space left on device") }}
+	if err := confirmRestore(dataDir, rep, full); err == nil {
+		t.Fatal("confirmed although the record could not be removed")
+	}
+	if r, _ := ReadReport(dataDir); r != nil {
+		t.Fatalf("report saved for an unconfirmed restore: %+v", r)
+	}
+	if p, _ := ReadPending(dataDir); p == nil || !p.Applied {
+		t.Fatalf("record = %+v", p)
+	}
+	if _, err := os.Stat(filepath.Join(rep.RollbackPath, rollbackInfo)); err == nil {
+		t.Fatal("an unconfirmed rollback folder was marked finished")
+	}
+	back, err := RollbackApplied(dataDir, fixedNow, "could not record the restore as finished")
+	if err != nil || !back.RolledBack {
+		t.Fatalf("rollback = %+v, %v", back, err)
+	}
+	assertLive(t, dataDir, "live")
+}
