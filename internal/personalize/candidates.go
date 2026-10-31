@@ -160,6 +160,9 @@ func (b *builder) browse(q core.BrowseQuery) []core.Title {
 	if b.user.MaxContentRating != "" {
 		q.Filter.MaxContentRating = b.user.MaxContentRating
 	}
+	// Rows use the items only; counting each filter's matches read the
+	// whole catalogue once per row.
+	q.NoTotal = true
 	return b.memoized(fmt.Sprintf("browse:%+v", q), func() ([]core.Title, error) {
 		page, err := b.e.catalog.Browse(b.ctx, q)
 		return page.Items, err

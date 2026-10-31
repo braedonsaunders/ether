@@ -36,7 +36,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
 	ckey := fmt.Sprintf("%+v", q.Filter)
-	bkey := fmt.Sprintf("%s|%s|%v|%d|%d", ckey, q.Sort, q.Desc, offset, limit)
+	bkey := fmt.Sprintf("%s|%s|%v|%d|%d|%v", ckey, q.Sort, q.Desc, offset, limit, q.NoTotal)
 	c.cacheMu.RLock()
 	if ent, ok := c.browseCache[bkey]; ok && ent.gen == gen && ent.minute == minBucket {
 		items := make([]core.Title, len(ent.page.Items))
@@ -58,6 +58,9 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	// total reaches the next read.
 	staleTotal := false
 	switch {
+	case q.NoTotal:
+		// The page query alone; the total is set from the page below.
+		total = offset + limit
 	case hasCnt && cntEnt.gen == gen && cntEnt.minute == minBucket:
 		total = cntEnt.total
 	case hasCnt && cntEnt.total >= staleCountMin:
@@ -124,7 +127,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	}
 	var items []core.Title
 	walked := false
-	if computedAdded && q.Desc && q.Filter.Type == core.TypeShow && total >= recentWalkMinTotal {
+	if computedAdded && q.Desc && q.Filter.Type == core.TypeShow && (q.NoTotal || total >= recentWalkMinTotal) {
 		// Newest-first series by date added, from the aired-episode index.
 		page, ok, err := c.recentShowsPage(ctx, where, args, asOf, offset, limit)
 		if err != nil {
@@ -166,6 +169,9 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	}
 	if items == nil {
 		items = []core.Title{}
+	}
+	if q.NoTotal {
+		total = offset + len(items)
 	}
 	if c.writeGen.Load() == gen && !staleTotal {
 		cachedItems := make([]core.Title, len(items))

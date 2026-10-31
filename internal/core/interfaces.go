@@ -54,6 +54,9 @@ type BrowseQuery struct {
 	Desc   bool
 	Offset int
 	Limit  int
+	// NoTotal skips counting the filter's matches, which reads every title
+	// the filter admits. Page.Total is then offset plus the items returned.
+	NoTotal bool
 }
 
 type Page struct {
