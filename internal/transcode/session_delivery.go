@@ -216,6 +216,9 @@ func (s *Session) beginFetchLocked(t, n int) {
 	}
 	s.inflight[n]++
 	s.notePlayheadLocked(t, n)
+	if s.log != nil {
+		s.log.Info("segment fetch", "segment", n, "playhead", s.lastReq, "oldest", s.oldestFetchLocked())
+	}
 }
 
 // endFetchLocked drops a finished or abandoned GET and lets a waiting seek
@@ -227,7 +230,7 @@ func (s *Session) endFetchLocked(n int) {
 		delete(s.inflight, n)
 	}
 	prev := s.lastReq
-	if oldest := s.oldestFetchLocked(); oldest >= 0 {
+	if oldest := s.oldestFetchLocked(); oldest >= 0 && !s.encoderHeadLocked(oldest) {
 		s.lastReq = oldest
 	}
 	if s.lastReq != prev {
@@ -238,19 +241,48 @@ func (s *Session) endFetchLocked(n int) {
 // notePlayheadLocked follows the oldest fetch still open. A segment the
 // encoder has not produced and will not reach is a seek: that request
 // becomes the playhead even if an older one is still open, and the older
-// one is then superseded. A fetch of a segment already on disk is not a
-// seek, so it cannot pull eviction up to the encoder head.
+// one is then superseded. A fetch of a segment the encoder has already
+// reached is the encoder head, not a seek, so it cannot pull eviction
+// up to that head.
 func (s *Session) notePlayheadLocked(t, n int) {
 	prev := s.lastReq
-	if !s.segmentPublishedLocked(t, n) && s.needsRestartLocked(n) {
+	if !s.segmentPublishedLocked(t, n) && s.needsRestartLocked(n) && !s.encoderHeadLocked(n) {
 		s.lastReq = n
-	} else if oldest := s.oldestFetchLocked(); oldest >= 0 {
+	} else if oldest := s.oldestFetchLocked(); oldest >= 0 && !s.encoderHeadLocked(oldest) {
 		s.lastReq = oldest
 	}
 	if s.lastReq > prev+3 || s.lastReq < prev-3 {
 		s.recoverySeekAt = time.Now()
 		s.completedDeliveries = nil
 	}
+}
+
+// encoderHeadLocked reports that n is at or behind the encoder and far
+// enough ahead of the playhead that adopting it would evict the segment
+// the client is still on. A real seek lands beyond the encoder.
+func (s *Session) encoderHeadLocked(n int) bool {
+	// With throttling off, the segment a client fetches is the playhead
+	// even when the encoder has already passed it.
+	if s.m == nil || s.m.opts.maxAhead <= 0 || s.segDur <= 0 {
+		return false
+	}
+	if n <= s.lastReq+s.restartLimit() {
+		return false
+	}
+	for t := range s.done {
+		if s.segmentPublishedLocked(t, n) {
+			return true
+		}
+	}
+	r := s.cur
+	if r == nil || r.finished || r.stopped || r.maxDone < 0 {
+		return false
+	}
+	tip := r.maxDone
+	if next := r.next(); next-1 > tip {
+		tip = next - 1
+	}
+	return n <= tip+s.restartLimit()
 }
 
 func (s *Session) segmentPublishedLocked(t, n int) bool {
@@ -292,7 +324,7 @@ func (s *Session) mayMoveEncoderLocked(t, n int, tracked bool) bool {
 	if !tracked {
 		return true
 	}
-	if !s.segmentPublishedLocked(t, n) && s.needsRestartLocked(n) {
+	if !s.segmentPublishedLocked(t, n) && s.needsRestartLocked(n) && !s.encoderHeadLocked(n) {
 		return true
 	}
 	return n == s.oldestFetchLocked()

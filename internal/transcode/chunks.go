@@ -680,7 +680,7 @@ func (s *Session) collectChunks(r *run, exited bool) {
 	}
 	changed := false
 	done := s.done[t]
-	for _, sg := range segs {
+	for i, sg := range segs {
 		n := sg.n
 		if n < r.startSeg || (r.planEnd > 0 && n >= r.planEnd) {
 			// Past this run's mode boundary: the next run redoes it in its
@@ -735,6 +735,18 @@ func (s *Session) collectChunks(r *run, exited bool) {
 			s.noteSegSizeLocked(n, dst)
 		}
 		changed = true
+		if s.leadOverLocked(r) {
+			// One poll can list hundreds of segments once VideoToolbox is
+			// ahead. Stop publishing at the throttle window so those files
+			// never become the only ones left on disk.
+			s.throttleLocked()
+			for _, rest := range segs[i+1:] {
+				if rest.file != "" {
+					s.removals.remove(rest.file)
+				}
+			}
+			break
+		}
 	}
 	if changed {
 		s.progressedLocked(r)
