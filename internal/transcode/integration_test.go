@@ -373,15 +373,19 @@ func TestIntegrationSDRAndHDRWithoutAssumingZscale(t *testing.T) {
 		t.Fatal("SDR transcode produced no video")
 	}
 
-	e.gen(t, "hdr.mkv", 3, "-map", "0:v", "-map", "1:a", "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
-		"-x265-params", "log-level=error:keyint=24:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
+	// FFmpeg 8 takes the encoder's colour from the frames. setparams tags
+	// them PQ; output flags alone are dropped by jellyfin-ffmpeg 8.1.
+	e.gen(t, "hdr.mkv", 3, "-map", "0:v", "-map", "1:a",
+		"-vf", "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
+		"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
+		"-x265-params", "log-level=error:pools=1:frame-threads=1:keyint=24:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
 		"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc", "-c:a", "aac")
 	hinfo, err := e.m.Probe(ctx, e.url("hdr.mkv"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if dynamicRange(hinfo.Video()) != rangeHDR10 {
-		t.Skipf("generated clip not tagged HDR10: %+v", hinfo.Video())
+		t.Fatalf("generated clip not tagged HDR10: %+v", hinfo.Video())
 	}
 	hd := e.m.Decide(*hinfo, plexWeb, allow())
 	hhs, err := e.m.StartHLS(ctx, core.HLSRequest{SessionID: "hdr-tonemap", InputURL: e.url("hdr.mkv"), Info: *hinfo, Decision: hd})
