@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -127,6 +128,9 @@ type Trace struct {
 	// Ceiling explains a winner below 4K (explain.go): the profile or
 	// client limit, or why each 4K release lost.
 	Ceiling string `json:"ceiling,omitempty"`
+	// Unverified marks a winner played after every health check timed
+	// out without a confirmed failure (unverified.go).
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // DiscoveryTrace records only the origin and number of returned releases.
@@ -604,6 +608,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		trace.Pinned = pinID
 	}
 
+	ctx, inconclusive := withUnverifiedPool(ctx)
 	sreq := searchRequestFor(t)
 	early := newSearchPreparation(ctx, s, req, sreq, profile, pinID)
 	defer early.close()
@@ -780,8 +785,19 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		return nil, failed(fmt.Errorf("%q: %w", t.Title, core.ErrNotAvailable))
 	}
 
+	// resolvePreferred drops the preferred release from cands in place.
+	var preferredCand *candidate
+	if prefer := cmp.Or(req.Prefer, pinID); prefer != "" {
+		if i := slices.IndexFunc(cands, func(c candidate) bool { return c.rel.ID == prefer }); i >= 0 {
+			c := cands[i]
+			preferredCand = &c
+		}
+	}
 	preferred, err := s.resolvePreferred(ctx, req, pin, cands, &trace, rcfg.HealthRace)
 	if err != nil {
+		if res := s.lastResort(ctx, inconclusive, t.Key, preferred.candidates, &trace); res != nil {
+			return res, nil
+		}
 		if len(preferred.candidates) == 0 {
 			return nil, failed(err)
 		}
@@ -789,6 +805,12 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	}
 	if preferred.resolution != nil {
 		return preferred.resolution, nil
+	}
+	// lead is the preferred release when it was tried: it heads the last
+	// resort when no health check verifies.
+	var lead []candidate
+	if preferred.attempted && preferredCand != nil {
+		lead = append(lead, *preferredCand)
 	}
 	cands = preferred.candidates
 	early.attach(cands)
@@ -831,6 +853,9 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	if len(primary) > 0 {
 		index, nzb, err := s.validateCandidates(ctx, primary, &trace, rcfg.HealthRace)
 		if err != nil {
+			if res := s.lastResort(ctx, inconclusive, t.Key, concat(lead, primary, downgrades), &trace); res != nil {
+				return res, nil
+			}
 			trace.Err = err.Error()
 			return nil, err
 		}
@@ -839,6 +864,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		}
 	}
 
+	var rescuePrimary []candidate
 	// Retry discovery once after the initially ranked releases failed health.
 	if !rescueTried && searchErr == nil && ctx.Err() == nil {
 		rescueCands, _, rejected, rerr := s.rescueCandidates(ctx, req, sreq, profile, results, &trace, pinID)
@@ -849,7 +875,8 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 			at := time.Now()
 			rescueCands = s.prepareSources(ctx, rescueCands, req.Title, &trace, &rescueChecks)
 			trace.SourcePreparationDuration += time.Since(at)
-			rescuePrimary, rescueDowngrades := splitDowngrades(rescueCands, reference)
+			var rescueDowngrades []candidate
+			rescuePrimary, rescueDowngrades = splitDowngrades(rescueCands, reference)
 			if len(rescuePrimary) > 0 {
 				index, nzb, verr := s.validateCandidates(ctx, rescuePrimary, &trace, rcfg.HealthRace)
 				if verr == nil && index >= 0 {
@@ -875,6 +902,14 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		}
 	}
 
+	// The resolver's own order: comparable quality (rescue included)
+	// before any drastic downgrade, which are already sorted by quality.
+	if res := s.lastResort(ctx, inconclusive, t.Key, concat(lead, primary, rescuePrimary, downgrades), &trace); res != nil {
+		if slices.ContainsFunc(downgrades, func(c candidate) bool { return c.rel.ID == res.Release.ID }) {
+			trace.Downgrade = downgradeNote(reference, res.Release, len(primary) > 0)
+		}
+		return res, nil
+	}
 	if optimisticErr != nil {
 		return nil, optimisticErr
 	}

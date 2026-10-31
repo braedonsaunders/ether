@@ -138,8 +138,16 @@ func TestTransientHealthFailureIsNotSkippedOrCachedAsUnavailable(t *testing.T) {
 	s := New(&fakeIndexer{releases: continuationReleases(1)}, h, nil, testCfg(), Options{})
 	defer s.Close()
 	req := core.ResolveRequest{Title: matrixTitle(), Client: webCaps()}
-	if _, err := s.Resolve(ctx, req); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("transient failure: %v", err)
+	// A timed-out check is not a confirmed failure: the release plays
+	// unverified rather than leaving the viewer with nothing.
+	if res, err := s.Resolve(ctx, req); err != nil || res.Release.ID != "source00" {
+		t.Fatalf("timed-out source: %+v %v", res, err)
+	}
+	if s.recentlyVerified(ctx, "source00") || s.recentlyFailedHealth("source00") {
+		t.Fatal("timed-out check was cached as verified or as failed")
+	}
+	if e, ok := s.getAvailability(ctx, int64(req.Title.Key)); ok {
+		t.Fatalf("unverified play cached availability %+v", e)
 	}
 	h.mu.Lock()
 	delete(h.failure, "source00")
