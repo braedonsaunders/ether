@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"strconv"
@@ -161,5 +162,162 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 	}
 	if got := all.Metadata[len(all.Metadata)-1].Title; got != "Été 85" {
 		t.Fatalf("expected the non-ASCII title after Z, last item %q", got)
+	}
+}
+
+type hiddenKeysCatalog struct {
+	*catalog.Catalog
+	hidden []core.RatingKey
+}
+
+func (c *hiddenKeysCatalog) withHidden(f core.Filter) core.Filter {
+	f.ExcludeKeys = append(append([]core.RatingKey{}, f.ExcludeKeys...), c.hidden...)
+	return f
+}
+
+func (c *hiddenKeysCatalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
+	q.Filter = c.withHidden(q.Filter)
+	return c.Catalog.Browse(ctx, q)
+}
+
+func (c *hiddenKeysCatalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]core.FacetValue, error) {
+	return c.Catalog.FacetFilter(ctx, c.withHidden(core.Filter{Type: t}), facet)
+}
+
+func (c *hiddenKeysCatalog) FacetFilter(ctx context.Context, f core.Filter, facet string) ([]core.FacetValue, error) {
+	return c.Catalog.FacetFilter(ctx, c.withHidden(f), facet)
+}
+
+// TestFirstCharacterJumpbarRealDataOrderingAndExcludedKeys reproduces the exact
+// tvOS jump-bar drift where 6 hidden release-evidence-window "#" movies
+// ("100 Days", "2 Valid IDs", "28 Kegs Later", "29 Seconds to Midnight",
+// "The 3 Killer Pigs", "58th") inflated the "#" bucket count by 6 (one 6-column
+// grid row), causing "A" to land on "A.C.O.D." (the 7th "A" movie) instead of
+// "A" (2017).
+func TestFirstCharacterJumpbarRealDataOrderingAndExcludedKeys(t *testing.T) {
+	c, err := catalog.New(store.OpenTest(t), nil, config.Catalog{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	rel := time.Now().Add(-90 * 24 * time.Hour)
+	var nextID int64 = 1
+	var hidden []core.RatingKey
+	add := func(title, rating string, isHidden bool) {
+		id := nextID
+		nextID++
+		key := core.MovieKey(id)
+		ti := core.Title{
+			Key:           key,
+			Type:          core.TypeMovie,
+			Title:         title,
+			Language:      "en",
+			ContentRating: rating,
+			Released:      rel,
+		}
+		if err := c.UpsertTitle(ctx, ti, true); err != nil {
+			t.Fatal(err)
+		}
+		if isHidden {
+			hidden = append(hidden, key)
+		}
+	}
+
+	// Visible "#" titles ending with [REC]..[REC]⁴ Apocalypse.
+	add("#Alive", "TV-MA", false)
+	add("(500) Days of Summer", "PG-13", false)
+	add("[REC]", "R", false)
+	add("[REC]²", "R", false)
+	add("[REC]³ Genesis", "R", false)
+	add("[REC]⁴ Apocalypse", "R", false)
+
+	// The 6 hidden evidence-window "#" movies from the lab catalogue.
+	add("100 Days", "PG", true)
+	add("2 Valid IDs", "PG-13", true)
+	add("28 Kegs Later", "R", true)
+	add("29 Seconds to Midnight", "R", true)
+	add("The 3 Killer Pigs", "NR", true)
+	add("58th", "PG-13", true)
+
+	// The first 7 visible "A" movies from the lab catalogue:
+	// index 0 of A = "A" (2017), index 6 of A (one 6-item row later) = "A.C.O.D.".
+	add("A", "PG-13", false)
+	add("A", "PG", false)
+	add("The A-Team", "PG-13", false)
+	add("A-X-L", "PG", false)
+	add("A. Rimbaud", "PG", false)
+	add("A.C.A.B. - All Cops Are Bastards", "R", false)
+	add("A.C.O.D.", "R", false)
+	add("Hidden A Unobserved", "PG", true)
+
+	// Populate B–Z with visible and hidden movies plus mixed ratings.
+	for ch := byte('B'); ch <= 'Z'; ch++ {
+		letter := string(ch)
+		add(letter+" First PG", "PG", false)
+		add("The "+letter+" Second R", "R", false)
+		add(letter+" Hidden Unobserved", "PG", true)
+	}
+	// Trailing non-ASCII sort titles.
+	add("½ Revolution", "PG", false)
+	add("Été 85", "PG-13", false)
+
+	wrapped := &hiddenKeysCatalog{Catalog: c, hidden: hidden}
+	f := newFixture(func(d *Deps) { d.Catalog = wrapped })
+	defer f.srv.Close()
+
+	decode := func(t *testing.T, rec *httptest.ResponseRecorder) model.MediaContainer {
+		t.Helper()
+		var body struct {
+			MediaContainer model.MediaContainer
+		}
+		if rec.Code != 200 {
+			t.Fatalf("HTTP %d: %s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body.MediaContainer
+	}
+
+	dirs := decode(t, f.get(t, "/library/sections/1/firstCharacter", jsonAccept...)).Directory
+	all := decode(t, f.get(t, "/library/sections/1/all?type=1&sort=titleSort:asc",
+		jsonAccept[0], jsonAccept[1],
+		"X-Plex-Container-Start", "0",
+		"X-Plex-Container-Size", "500",
+	)).Metadata
+
+	if len(dirs) != 27 {
+		t.Fatalf("expected 27 jump-bar buckets, got %d", len(dirs))
+	}
+	if dirs[0].Title != "#" || dirs[0].Size == nil || *dirs[0].Size != 6 {
+		t.Fatalf("expected # size=6 (excluding the 6 hidden # titles), got %+v", dirs[0])
+	}
+
+	offset := 0
+	for _, d := range dirs {
+		if d.Size == nil {
+			t.Fatalf("bucket %s missing size", d.Title)
+		}
+		if offset >= len(all) {
+			t.Fatalf("bucket %s offset %d out of range (len=%d)", d.Title, offset, len(all))
+		}
+		landed := all[offset]
+		if d.Title == "A" {
+			if offset != 6 {
+				t.Fatalf("expected A offset=6, got %d", offset)
+			}
+			if landed.Title != "A" {
+				t.Fatalf("selecting A landed on %q at offset %d (want \"A\")", landed.Title, offset)
+			}
+		}
+		sortTitle := strings.ToLower(landed.TitleSort)
+		if d.Title == "#" {
+			if sortTitle >= "a" {
+				t.Fatalf("# bucket landed on %q (sort %q)", landed.Title, sortTitle)
+			}
+		} else if !strings.HasPrefix(sortTitle, strings.ToLower(d.Title)) {
+			t.Fatalf("bucket %s at offset %d landed on %q (sort %q)", d.Title, offset, landed.Title, sortTitle)
+		}
+		offset += *d.Size
 	}
 }

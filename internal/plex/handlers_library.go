@@ -733,7 +733,17 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 	mc.ViewGroup = "secondary"
 	titles := map[string]string{"genre": "By Genre", "year": "By Year", "decade": "By Decade", "contentRating": "By Content Rating", "country": "By Country", "studio": "By Studio", "firstCharacter": "By First Letter", "categories": ""}
 	mc.Title2 = titles[sub]
-	vals, err := s.facet(ctx, t, facet)
+	var (
+		vals []core.FacetValue
+		err  error
+	)
+	if sub == "firstCharacter" {
+		pr := FromContext(ctx)
+		br := s.parseBrowse(ctx, sec, t, pr.User, r.URL.Query())
+		vals, err = s.firstCharacter(ctx, br.q.Filter)
+	} else {
+		vals, err = s.facet(ctx, t, facet)
+	}
 	if err != nil {
 		// Catalogues may not support every facet (e.g. firstCharacter);
 		// an empty list is what PMS returns for an empty library.

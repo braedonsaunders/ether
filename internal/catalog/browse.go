@@ -470,39 +470,50 @@ func (c *Catalog) countBrowse(ctx context.Context, ckey, where string, args []an
 
 // Facet returns value counts over the browsable set.
 func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]core.FacetValue, error) {
+	return c.FacetFilter(ctx, core.Filter{Type: t}, facet)
+}
+
+// FacetFilter returns value counts over the browsable set matching f.
+func (c *Catalog) FacetFilter(ctx context.Context, f core.Filter, facet string) ([]core.FacetValue, error) {
 	if err := c.admitFallbacks(ctx); err != nil {
 		return nil, err
 	}
+	if facet == "firstCharacter" {
+		f.FirstCharacter = ""
+	}
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
-	fkey := string(t) + "|" + facet
+	fkey := fmt.Sprintf("%+v|%s", f, facet)
 	c.cacheMu.RLock()
 	ent, cached := c.facetCache[fkey]
 	c.cacheMu.RUnlock()
 	if cached && ent.gen == gen && ent.minute == minBucket {
 		return append([]core.FacetValue(nil), ent.vals...), nil
 	}
-	if cached {
+	if cached && facet != "firstCharacter" {
 		// Library-wide counts walk every title. Serve the last counts and
 		// recount behind the read, at most once per recountEvery.
 		if time.Since(ent.counted) >= recountEvery {
 			_ = c.hydrate(ctx, "facet:"+fkey, 0, func(ctx context.Context) error {
-				_, err := c.countFacet(ctx, t, facet)
+				_, err := c.countFacet(ctx, f, facet)
 				return err
 			})
 		}
 		return append([]core.FacetValue(nil), ent.vals...), nil
 	}
-	return c.countFacet(ctx, t, facet)
+	return c.countFacet(ctx, f, facet)
 }
 
 // countFacet computes a facet's value counts over the browsable set and
 // caches them.
-func (c *Catalog) countFacet(ctx context.Context, t core.MediaType, facet string) ([]core.FacetValue, error) {
+func (c *Catalog) countFacet(ctx context.Context, f core.Filter, facet string) ([]core.FacetValue, error) {
+	if facet == "firstCharacter" {
+		f.FirstCharacter = ""
+	}
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
-	fkey := string(t) + "|" + facet
-	base, args, err := c.browseWhere(core.Filter{Type: t})
+	fkey := fmt.Sprintf("%+v|%s", f, facet)
+	base, args, err := c.browseWhere(f)
 	if err != nil {
 		return nil, err
 	}
@@ -560,6 +571,9 @@ func (c *Catalog) countFacet(ctx context.Context, t core.MediaType, facet string
 	}
 	if c.writeGen.Load() == gen {
 		c.cacheMu.Lock()
+		if len(c.facetCache) >= 512 {
+			c.facetCache = map[string]cachedFacet{}
+		}
 		c.facetCache[fkey] = cachedFacet{vals: append([]core.FacetValue(nil), out...), gen: gen, minute: minBucket, counted: time.Now()}
 		c.cacheMu.Unlock()
 	}

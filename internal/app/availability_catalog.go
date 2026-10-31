@@ -14,10 +14,21 @@ type availabilityCatalog struct {
 	availability *availability.Service
 }
 
+func (c *availabilityCatalog) excludeHidden(ctx context.Context, f core.Filter) core.Filter {
+	f.ExcludeKeys = append(append([]core.RatingKey{}, f.ExcludeKeys...), c.availability.HiddenMovies(ctx)...)
+	f.ExcludeKeys = append(f.ExcludeKeys, c.availability.HiddenShows(ctx)...)
+	return f
+}
+
 func (c *availabilityCatalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
-	q.Filter.ExcludeKeys = append(append([]core.RatingKey{}, q.Filter.ExcludeKeys...), c.availability.HiddenMovies(ctx)...)
-	q.Filter.ExcludeKeys = append(q.Filter.ExcludeKeys, c.availability.HiddenShows(ctx)...)
+	q.Filter = c.excludeHidden(ctx, q.Filter)
 	return c.Catalog.Browse(ctx, q)
+}
+func (c *availabilityCatalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]core.FacetValue, error) {
+	return c.Catalog.FacetFilter(ctx, c.excludeHidden(ctx, core.Filter{Type: t}), facet)
+}
+func (c *availabilityCatalog) FacetFilter(ctx context.Context, f core.Filter, facet string) ([]core.FacetValue, error) {
+	return c.Catalog.FacetFilter(ctx, c.excludeHidden(ctx, f), facet)
 }
 func (c *availabilityCatalog) Children(ctx context.Context, k core.RatingKey) ([]core.Title, error) {
 	ts, e := c.Catalog.Children(ctx, k)
