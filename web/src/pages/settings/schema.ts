@@ -411,142 +411,191 @@ export const RESOLVER: FieldGroup[] = localized(() => [
   },
 ]);
 
-export const TRANSCODE: FieldGroup[] = localized(() => [
-  {
-    title: t("Transcoding"),
-    fields: [
-      {
-        key: "hwAccel",
-        label: t("Hardware acceleration"),
-        kind: "select",
-        options: [
-          { value: "auto", label: t("Automatic") },
-          { value: "none", label: t("Off (software)") },
-          { value: "videotoolbox", label: "VideoToolbox (Apple)" },
-          { value: "nvenc", label: "NVENC (NVIDIA)" },
-          { value: "qsv", label: "Quick Sync (Intel)" },
-          { value: "vaapi", label: "VA-API (Linux)" },
-        ],
-      },
-      {
-        key: "vaapiDevice",
-        label: t("VA-API device"),
-        kind: "text",
-        help: t("Only for VA-API, e.g. /dev/dri/renderD128."),
-      },
-      {
-        key: "maxTranscodes",
-        label: t("Simultaneous transcodes"),
-        kind: "number",
-        min: 0,
-        step: 1,
-      },
-      {
-        key: "remoteMaxBitrateKbps",
-        label: t("Remote bitrate cap"),
-        kind: "number",
-        min: 0,
-        step: 500,
-        unit: "kbps",
-        help: t("0 = no cap."),
-      },
-    ],
-  },
-  {
-    title: t("Server video enhancement"),
-    description: t(
-      "Use NVIDIA RTX Video Super Resolution on this server to improve lower-resolution video before streaming. On supported Windows x64 servers, enabling this installs and verifies the required runtime automatically. Enhancement uses additional GPU capacity.",
+export const TRANSCODE: FieldGroup[] = localized(() => {
+  const HW_ACCEL = {
+    key: "hwAccel",
+    label: t("Hardware acceleration"),
+    kind: "select" as const,
+    help: t(
+      "Automatic uses this computer's graphics chip when an app can't play the file as-is. Choose Off only if converted video looks wrong.",
     ),
-    fields: [
-      {
-        key: "rtxVideo",
-        label: "RTX Video Super Resolution",
-        kind: "group",
-        fields: [
-          {
-            key: "mode",
-            label: "RTX Video Super Resolution",
-            kind: "select",
-            options: [
-              { value: "off", label: t("Off") },
-              { value: "auto", label: t("Automatic · local streams") },
-              { value: "on", label: t("On · eligible streams") },
-            ],
-            help: t(
-              "Eligible videos are enhanced within the viewer's resolution and bitrate limits. Unsupported videos use ordinary playback.",
-            ),
-          },
-          {
-            key: "sourceMaxHeight",
-            label: t("Enhance sources up to"),
-            kind: "number",
-            min: 144,
-            max: 2160,
-            step: 1,
-            unit: "p",
-          },
-          {
-            key: "targetMaxHeight",
-            label: t("Enhanced resolution limit"),
-            kind: "number",
-            min: 144,
-            max: 2160,
-            step: 1,
-            unit: "p",
-          },
-          {
-            key: "quality",
-            label: t("Enhancement quality"),
-            kind: "select",
-            numeric: true,
-            options: [
-              { value: "1", label: t("Low") },
-              { value: "2", label: t("Medium") },
-              { value: "3", label: t("High") },
-              { value: "4", label: t("Ultra") },
-              { value: "21", label: t("Streaming medium") },
-              { value: "23", label: t("Streaming ultra") },
-            ],
-            help: t(
-              "Higher quality uses more GPU resources. Streaming modes require an Ampere or newer GPU. Start with Medium.",
-            ),
-          },
-          {
-            key: "maxConcurrent",
-            label: t("Simultaneous enhancements"),
-            kind: "number",
-            min: 1,
-            max: 8,
-            step: 1,
-            help: t("Additional streams use ordinary playback when this limit is reached."),
-          },
-          {
-            key: "executablePath",
-            label: t("NVEnc executable path"),
-            kind: "text",
-            help: t(
-              "Optional path to your own NVEncC64.exe. Leave empty for automatic setup; custom installations are never overwritten.",
-            ),
-          },
-        ],
-      },
+    options: [
+      { value: "auto", label: t("Automatic") },
+      { value: "none", label: t("Off (software)") },
+      { value: "videotoolbox", label: "VideoToolbox (Apple)" },
+      { value: "nvenc", label: "NVENC (NVIDIA)" },
+      { value: "qsv", label: "Quick Sync (Intel)" },
+      { value: "vaapi", label: "VA-API (Linux)" },
     ],
-  },
-  {
-    title: "ffmpeg",
-    fields: [
-      {
-        key: "ffmpegPath",
-        label: t("ffmpeg path"),
-        kind: "text",
-        wide: true,
-        help: t("Leave empty to use the bundled ffmpeg."),
-      },
-      { key: "ffprobePath", label: t("ffprobe path"), kind: "text", wide: true },
-      { key: "tempDir", label: t("Temporary folder"), kind: "text", wide: true },
+  };
+
+  const RTX_MODE = {
+    key: "mode",
+    label: "RTX Video Super Resolution",
+    kind: "select" as const,
+    options: [
+      { value: "off", label: t("Off") },
+      { value: "auto", label: t("Automatic · local streams") },
+      { value: "on", label: t("On · eligible streams") },
     ],
-  },
-]);
+    help: t(
+      "Cleans up a soft picture before it is sent. The viewer's resolution and bitrate limits still apply. Unsupported videos play normally.",
+    ),
+  };
+
+  const RTX_DETAILS = [
+    {
+      key: "sourceMaxHeight",
+      label: t("Enhance sources up to"),
+      kind: "number" as const,
+      min: 144,
+      max: 2160,
+      step: 1,
+      unit: "p",
+      help: t("Videos taller than this play normally, without enhancement."),
+    },
+    {
+      key: "targetMaxHeight",
+      label: t("Enhanced resolution limit"),
+      kind: "number" as const,
+      min: 144,
+      max: 2160,
+      step: 1,
+      unit: "p",
+      help: t("The tallest picture enhancement is allowed to produce."),
+    },
+    {
+      key: "quality",
+      label: t("Enhancement quality"),
+      kind: "select" as const,
+      numeric: true,
+      options: [
+        { value: "1", label: t("Low") },
+        { value: "2", label: t("Medium") },
+        { value: "3", label: t("High") },
+        { value: "4", label: t("Ultra") },
+        { value: "21", label: t("Streaming medium") },
+        { value: "23", label: t("Streaming ultra") },
+      ],
+      help: t(
+        "Higher quality uses more of the graphics card. Streaming choices need a recent NVIDIA card. Medium is a good start.",
+      ),
+    },
+    {
+      key: "maxConcurrent",
+      label: t("Simultaneous enhancements"),
+      kind: "number" as const,
+      min: 1,
+      max: 8,
+      step: 1,
+      help: t("Additional streams play normally once this many are already being enhanced."),
+    },
+    {
+      key: "executablePath",
+      label: t("NVEnc executable path"),
+      kind: "text" as const,
+      help: t("Leave empty and Ether sets this up itself. A path you fill in is never replaced."),
+    },
+  ];
+
+  return [
+    {
+      id: "convert",
+      title: t("Converting for the app"),
+      description: t(
+        "Ether plays the file directly when the app can. It converts the video on this computer only when it has to.",
+      ),
+      fields: [HW_ACCEL],
+      more: [
+        {
+          key: "vaapiDevice",
+          label: t("VA-API device"),
+          kind: "text",
+          help: t(
+            "Linux graphics device, for example /dev/dri/renderD128. Leave empty unless converted video fails to start.",
+          ),
+        },
+        {
+          key: "maxTranscodes",
+          label: t("Simultaneous transcodes"),
+          kind: "number",
+          min: 0,
+          step: 1,
+          help: t(
+            "How many videos can be converted at once. Leave the default unless several people watch together and the computer struggles.",
+          ),
+        },
+        {
+          key: "remoteMaxBitrateKbps",
+          label: t("Remote bitrate cap"),
+          kind: "number",
+          min: 0,
+          step: 500,
+          unit: "kbps",
+          help: t(
+            "Limits picture quality for people watching away from home, so the stream fits their connection. 0 means no limit.",
+          ),
+        },
+      ],
+    },
+    {
+      id: "enhance",
+      title: t("Sharper picture"),
+      description: t(
+        "On a supported NVIDIA graphics card, Ether can clean up a soft video before sending it. This uses extra graphics power, and Ether installs what it needs on a supported Windows computer.",
+      ),
+      fields: [
+        {
+          key: "rtxVideo",
+          label: "RTX Video Super Resolution",
+          kind: "group",
+          fields: [RTX_MODE],
+        },
+      ],
+      more: [
+        {
+          key: "rtxVideo",
+          label: "RTX Video Super Resolution",
+          kind: "group",
+          fields: RTX_DETAILS,
+        },
+      ],
+    },
+    {
+      id: "programs",
+      title: t("Converter programs"),
+      description: t(
+        "Ether includes the programs it needs. Change a path only if you installed your own copy.",
+      ),
+      fields: [],
+      more: [
+        {
+          key: "ffmpegPath",
+          label: t("ffmpeg path"),
+          kind: "text",
+          wide: true,
+          help: t("Leave empty to use the bundled ffmpeg."),
+        },
+        {
+          key: "ffprobePath",
+          label: t("ffprobe path"),
+          kind: "text",
+          wide: true,
+          help: t("Leave empty to use the program Ether includes."),
+        },
+        {
+          key: "tempDir",
+          label: t("Temporary folder"),
+          kind: "text",
+          wide: true,
+          help: t(
+            "Where converted video is written while it plays. Empty uses the normal temporary folder.",
+          ),
+        },
+      ],
+    },
+  ];
+});
 
 export const TRAKT: FieldGroup[] = localized(() => [
   {

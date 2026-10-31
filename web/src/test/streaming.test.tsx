@@ -449,7 +449,10 @@ describe("Playback", () => {
   it("saves nested server enhancement settings without losing transcoding preferences", async () => {
     const { fake } = renderApp("/playback");
     await screen.findByRole("button", { name: "RTX Video Super Resolution" }, WAIT);
+    expect(screen.queryByLabelText("ffmpeg path")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Enhancement quality")).not.toBeInTheDocument();
     await choose("RTX Video Super Resolution", "Automatic · local streams");
+    fireEvent.click(screen.getByRole("button", { name: "More options: Sharper picture" }));
     await choose("Enhancement quality", "Streaming ultra");
     fireEvent.change(screen.getByLabelText("Enhanced resolution limit"), {
       target: { value: "1440" },

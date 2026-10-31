@@ -5,11 +5,36 @@ import { t } from "../i18n";
 import { api, ApiError } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import type { EtherConfig } from "../lib/types";
-import { asObj, GenericFields, SchemaField, type FieldGroup } from "../pages/settings/SchemaForm";
+import {
+  asObj,
+  GenericFields,
+  SchemaField,
+  type FieldDef,
+  type FieldGroup,
+} from "../pages/settings/SchemaForm";
 import { ErrorPanel } from "./feedback";
 import { SaveBar, useDraft } from "./SaveBar";
 
 type Obj = Record<string, unknown>;
+
+/** Power-user controls for one group. Collapsed until the owner asks. */
+function MoreOptions({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-t border-border">
+      <button
+        type="button"
+        className="w-full px-4 py-3 text-left text-sm font-medium text-primary"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {t("More options")}
+      </button>
+      {open ? children : null}
+    </div>
+  );
+}
 
 /**
  * One owner config section (`config.json` key) edited in place: its field
@@ -122,30 +147,41 @@ export function ConfigSection({
       </div>
     );
 
-  const known = new Set([...groups.flatMap((g) => g.fields.map((f) => f.key)), ...(omit ?? [])]);
+  const known = new Set([
+    ...groups.flatMap((g) => [...g.fields, ...(g.more ?? [])].map((f) => f.key)),
+    ...(omit ?? []),
+  ]);
   const extra = Object.keys(draft).filter((k) => !known.has(k));
   const change = (next: Obj) => setDraft(next);
+  const renderField = (f: FieldDef, reactKey: string) => (
+    <SchemaField
+      key={reactKey}
+      def={f}
+      value={draft[f.key]}
+      path={`${configKey}.${f.key}`}
+      error={errors[`${configKey}.${f.key}`]}
+      errors={errors}
+      onChange={(v) => change({ ...draft, [f.key]: v })}
+    />
+  );
   return (
     <>
       {before?.(draft, cfg)}
       {groups.map((g, i) =>
         show && !show(g, i) ? null : (
           <SettingsSection
-            key={g.title ?? `group-${i}`}
+            key={g.id ?? g.title ?? `group-${i}`}
             title={g.title ?? (i === 0 ? label : undefined)}
             description={g.description}
           >
-            {g.fields.map((f) => (
-              <SchemaField
-                key={f.key}
-                def={f}
-                value={draft[f.key]}
-                path={`${configKey}.${f.key}`}
-                error={errors[`${configKey}.${f.key}`]}
-                errors={errors}
-                onChange={(v) => change({ ...draft, [f.key]: v })}
-              />
-            ))}
+            {g.fields.map((f, j) => renderField(f, `${f.key}-${j}`))}
+            {g.more?.length ? (
+              <MoreOptions
+                label={g.title ? t("More options: {title}", { title: g.title }) : t("More options")}
+              >
+                {g.more.map((f, j) => renderField(f, `more-${f.key}-${j}`))}
+              </MoreOptions>
+            ) : null}
           </SettingsSection>
         ),
       )}

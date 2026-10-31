@@ -231,12 +231,12 @@ export const PAGES = localized<PageDef[]>(() => [
       },
       {
         key: "devices",
-        title: t("Device capabilities"),
+        title: t("App compatibility"),
         keywords: searchTerms(msg("compatibility codecs")),
       },
       {
         key: "markers",
-        title: t("Markers"),
+        title: t("Skip buttons"),
         keywords: searchTerms(msg("intro credits skip chapters")),
       },
       {

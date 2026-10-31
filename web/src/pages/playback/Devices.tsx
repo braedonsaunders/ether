@@ -59,7 +59,7 @@ export function DeviceCapabilities() {
     <>
       <p className="max-w-3xl text-sm text-fg-muted">
         {tx(
-          "This is a reference. Each app reports its actual codecs, display and receiver support when it plays. To choose quality for a device, use {link}.",
+          "Each app tells Ether what it can play when someone presses Play. This table is the built-in reference. To limit quality for a device, use {link}.",
           {
             link: (
               <Link to="/releases/rules" className="text-primary underline">
@@ -89,7 +89,7 @@ export function DeviceCapabilities() {
       ) : !matrix.data ? (
         <LoadingRows />
       ) : (
-        <Section title={t("Device capabilities")} bodyClassName="overflow-x-auto">
+        <Section title={t("App compatibility")} bodyClassName="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -105,7 +105,7 @@ export function DeviceCapabilities() {
                 .filter((p) => !protocol || (p.protocol ?? "plex") === protocol)
                 .map((p) => (
                   <TableRow key={`${p.protocol ?? "plex"}:${p.family}`}>
-                    <TableCell>{p.protocol ?? "plex"}</TableCell>
+                    <TableCell>{protocolLabel(p.protocol ?? "plex")}</TableCell>
                     <TableCell className="font-medium">{p.family}</TableCell>
                     <TableCell>
                       {p.dolbyVisionProfiles?.join(", ") || t("Reported by the app")}

@@ -65,12 +65,16 @@ export function HardwareStatus() {
                   : t("Hardware acceleration: {name}", { name: accel!.name })}
               </p>
               <p className="text-xs text-fg-muted">
-                {accel?.device
-                  ? t("Device {device}", { device: accel.device })
-                  : none
-                    ? t("Transcoding uses the CPU.")
-                    : ""}
-                {typeof ffmpeg === "string" && ffmpeg ? ` · FFmpeg ${ffmpeg}` : ""}
+                {[
+                  accel?.device
+                    ? t("Device {device}", { device: accel.device })
+                    : none
+                      ? t("Transcoding uses the CPU.")
+                      : "",
+                  typeof ffmpeg === "string" && ffmpeg ? `FFmpeg ${ffmpeg}` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             </div>
           </div>
@@ -95,9 +99,6 @@ export function HardwareStatus() {
               </pre>
             </details>
           ) : null}
-          <p className="text-xs text-fg-subtle">
-            {t("Live CPU and GPU load, disk checks and tone-mapping benchmarks aren't collected.")}
-          </p>
           {data.enhancement ? (
             <div
               className="rounded-md border border-border p-3"
