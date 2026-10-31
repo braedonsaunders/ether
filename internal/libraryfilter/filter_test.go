@@ -8,6 +8,31 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
+func TestUnnamedRulesCompile(t *testing.T) {
+	horror := textRule("genre", "in", `["Horror"]`)
+	specs := []core.LibraryExclusion{
+		{MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{horror}},
+		{Name: "   ", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{horror}},
+	}
+	unnamed, err := CompilePolicy(specs, "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := mustCompile(t, []core.LibraryExclusion{{
+		Name: "Horror", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{horror},
+	}})
+	title := &core.Title{Type: core.TypeMovie, Genres: []string{"Horror"}}
+	if unnamed.Hidden(title) != named.Hidden(title) || !unnamed.Hidden(title) {
+		t.Fatalf("unnamed hidden=%v named hidden=%v", unnamed.Hidden(title), named.Hidden(title))
+	}
+	long := strings.Repeat("n", 121)
+	if _, err := Compile([]core.LibraryExclusion{{
+		Name: long, MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{horror},
+	}}); err == nil {
+		t.Fatal("accepted a 121-character name")
+	}
+}
+
 func TestInvalidFiltersCannotHideWholeLibrary(t *testing.T) {
 	for _, g := range []core.LibraryExclusion{
 		{Name: "Empty", MediaType: "mixed", Match: "all"},

@@ -5,6 +5,7 @@ package core
 // "hide", so a saved exclusion group stays a hide rule. Conditions inside a
 // rule combine with Match "all" or "any". Watch history and metadata are kept.
 type LibraryExclusion struct {
+	// Name is optional. Clients label a rule from its conditions.
 	Name      string           `json:"name"`
 	Action    string           `json:"action,omitempty"` // show, hide; empty means hide
 	MediaType string           `json:"mediaType"`        // movie, show, mixed

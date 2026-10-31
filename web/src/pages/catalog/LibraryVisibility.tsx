@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { Drawer } from "../../components/Drawer";
 import { Artwork } from "../../components/Artwork";
 import { Segmented } from "../../components/fields";
-import { ErrorPanel } from "../../components/feedback";
 import { t, tn } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { formatNumber } from "../../lib/format";
@@ -271,9 +270,10 @@ export function RulesPanel({
       </div>
       <aside className="space-y-3 lg:sticky lg:top-0 lg:self-start" aria-label={t("Preview")}>
         <div className="rounded-lg border border-border bg-surface p-4">
-          {preview.error ? <ErrorPanel error={preview.error} onRetry={preview.reload} /> : null}
           {!complete ? (
             <p className="text-sm text-fg-muted">{t("Finish each condition to preview.")}</p>
+          ) : preview.error ? (
+            <p className="text-sm text-fg-muted">{t("Preview isn't available.")}</p>
           ) : (
             <>
               <p className="text-3xl font-semibold">{preview.loading ? "…" : formatNumber(visible)}</p>

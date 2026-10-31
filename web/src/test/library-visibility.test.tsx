@@ -113,6 +113,51 @@ describe("Library visibility", () => {
     expect(flashedEmpty).toBe(false);
   });
 
+  it("keeps a compiler rejection out of the preview", async () => {
+    const fake = createFakeServer();
+    (fake.state.config.catalog as { exclusions?: unknown }).exclusions = [
+      {
+        name: "",
+        action: "hide",
+        mediaType: "mixed",
+        match: "all",
+        rules: [{ field: "genre", op: "in", value: ["Horror"] }],
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://localhost");
+        const path = url.pathname.replace(/^\/ether\/api/, "");
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (method === "POST" && path === "/catalog/visibility/preview") {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: "invalid_filter",
+                message: "group 2 needs a name of 1–120 characters",
+              },
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return fake.fetch(input, init);
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/catalog/visibility"]}>
+        <App />
+      </MemoryRouter>,
+    );
+    await settleUi(() => {
+      expect(screen.getByText(/Hide · Genre is Horror/)).toBeInTheDocument();
+      expect(screen.getByText("Preview isn't available.")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/needs a name/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Something went wrong")).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 titles visible/)).not.toBeInTheDocument();
+  });
+
   it("does not save an unfinished rule", async () => {
     const { fake } = renderApp("/catalog/visibility");
     await settleUi(() => {

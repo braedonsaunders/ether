@@ -53,8 +53,9 @@ func CompilePolicy(specs []core.LibraryExclusion, fallback string) (*Filter, err
 	}
 	f := &Filter{fallback: fallback}
 	for i, s := range specs {
-		if len(strings.TrimSpace(s.Name)) == 0 || len(s.Name) > 120 {
-			return nil, fmt.Errorf("group %d needs a name of 1–120 characters", i+1)
+		// A name is optional. The owner UI labels a rule from its conditions.
+		if len(strings.TrimSpace(s.Name)) > 120 {
+			return nil, fmt.Errorf("group %d name must be at most 120 characters", i+1)
 		}
 		action := s.Action
 		if action == "" {

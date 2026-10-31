@@ -379,7 +379,7 @@ func (h *Handler) handleVisibilityPreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if _, err := libraryfilter.CompilePolicy(body.Exclusions, body.VisibilityDefault); err != nil {
-		writeError(w, 400, "invalid_filter", err.Error())
+		writeError(w, 400, "invalid_filter", "Could not preview catalogue")
 		return
 	}
 	p, err := h.deps.CatalogVisibility(r.Context(), body.Exclusions, body.VisibilityDefault)
