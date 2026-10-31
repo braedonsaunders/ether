@@ -50,7 +50,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: etherperf real -source DATA_DIR [flags] | etherperf audit -trace FILE -db FILE")
+	fmt.Fprintln(os.Stderr, "usage: etherperf real -source DATA_DIR [flags] | etherperf audit -trace FILE (-db FILE | -pg URL)")
 	os.Exit(2)
 }
 
@@ -202,10 +202,14 @@ func runAudit(ctx context.Context, args []string) error {
 	f := flag.NewFlagSet("audit", flag.ExitOnError)
 	trace := f.String("trace", "", "trace.jsonl from a run")
 	db := f.String("db", "", "the run's copied ether.db")
+	pg := f.String("pg", "", "audit against this PostgreSQL URL instead (EXPLAIN (GENERIC_PLAN), PostgreSQL 16+)")
 	_ = f.Parse(args)
 	byTag, _, err := perfharness.ReadTrace(*trace)
 	if err != nil {
 		return err
+	}
+	if *pg != "" {
+		return perfharness.AuditPostgres(ctx, *pg, byTag, os.Stdout)
 	}
 	return perfharness.Audit(ctx, *db, byTag, os.Stdout)
 }

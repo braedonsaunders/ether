@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
 // auditEntry is one distinct SQL statement seen on a request path.
@@ -91,6 +93,80 @@ func Audit(ctx context.Context, dbPath string, trace map[string]TraceRecord, w i
 		}
 	}
 	stats := indexStats(ctx, db)
+	return auditWith(trace, w, func(q string) ([]string, []string) { return explain(ctx, db, q, sizes, stats) })
+}
+
+// AuditPostgres audits the same statements against a PostgreSQL database
+// (a cluster node's, or a copy of one) with EXPLAIN (GENERIC_PLAN), which
+// plans a parameterized statement without values (PostgreSQL 16+). It flags
+// sequential scans of large tables, sorts and correlated subplans.
+func AuditPostgres(ctx context.Context, url string, trace map[string]TraceRecord, w io.Writer) error {
+	db, err := sql.Open(store.PostgresDriverName, url)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	sizes := map[string]int64{}
+	rows, err := db.QueryContext(ctx, `SELECT relname, GREATEST(reltuples, 0)::bigint FROM pg_class WHERE relkind='r' AND relnamespace=current_schema()::regnamespace`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var name string
+		var n int64
+		if rows.Scan(&name, &n) == nil {
+			sizes[name] = n
+		}
+	}
+	rows.Close()
+	return auditWith(trace, w, func(q string) ([]string, []string) { return explainPostgres(ctx, db, q, sizes) })
+}
+
+var (
+	pgSeqScan = regexp.MustCompile(`Seq Scan on (\S+)`)
+	pgSort    = regexp.MustCompile(`^\s*(?:->\s+)?(?:Incremental )?Sort `)
+	pgSubPlan = regexp.MustCompile(`SubPlan \d+`)
+)
+
+func explainPostgres(ctx context.Context, db *sql.DB, query string, sizes map[string]int64) ([]string, []string) {
+	q := strings.TrimSpace(query)
+	upper := strings.ToUpper(q)
+	if !(strings.HasPrefix(upper, "SELECT") || strings.HasPrefix(upper, "WITH") || strings.HasPrefix(upper, "UPDATE") || strings.HasPrefix(upper, "DELETE") || strings.HasPrefix(upper, "INSERT")) {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, "EXPLAIN (GENERIC_PLAN) "+q)
+	if err != nil {
+		return []string{"explain failed: " + err.Error()}, nil
+	}
+	defer rows.Close()
+	var plan, issues []string
+	seen := map[string]bool{}
+	add := func(s string) {
+		if !seen[s] {
+			seen[s] = true
+			issues = append(issues, s)
+		}
+	}
+	for rows.Next() {
+		var line string
+		if rows.Scan(&line) != nil {
+			continue
+		}
+		plan = append(plan, line)
+		if m := pgSeqScan.FindStringSubmatch(line); m != nil && sizes[m[1]] >= 2000 {
+			add(fmt.Sprintf("sequential scan of %s (%d rows)", m[1], sizes[m[1]]))
+		}
+		if pgSort.MatchString(line) {
+			add("sort")
+		}
+		if pgSubPlan.MatchString(line) {
+			add("correlated subplan")
+		}
+	}
+	return plan, issues
+}
+
+func auditWith(trace map[string]TraceRecord, w io.Writer, explainOne func(string) ([]string, []string)) error {
 	entries := map[string]*auditEntry{}
 	for tag, rec := range trace {
 		parts := strings.SplitN(tag, "|", 4)
@@ -116,7 +192,7 @@ func Audit(ctx context.Context, dbPath string, trace map[string]TraceRecord, w i
 	}
 	list := make([]*auditEntry, 0, len(entries))
 	for _, e := range entries {
-		e.Plan, e.Issues = explain(ctx, db, e.SQL, sizes, stats)
+		e.Plan, e.Issues = explainOne(e.SQL)
 		if e.MaxPerReq >= 20 {
 			e.Issues = append(e.Issues, fmt.Sprintf("N+1: %d executions in one request", e.MaxPerReq))
 		}
