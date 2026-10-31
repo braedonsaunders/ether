@@ -68,7 +68,7 @@ func (a *App) initUpdates() {
 		GOOS:        runtime.GOOS,
 		Target:      exe,
 		Dev:         updater.IsDev() || a.opts.Version == "dev",
-		InContainer: updater.InContainer(),
+		InContainer: service.InContainer(),
 		Supervised:  !service.Interactive(),
 	})
 	log := a.log.With("component", "updater")
