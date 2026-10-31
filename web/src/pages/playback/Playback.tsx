@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ConfigSection } from "../../components/ConfigSection";
+import { secretConfigured } from "../../components/IntegrationAccount";
 import { DomainPage, useRouteTab } from "../../components/layout";
 import { localized, t, tx } from "../../i18n";
 import * as S from "../settings/schema";
@@ -34,16 +35,31 @@ const SKIP_MARKERS = localized(() => [
         help: t("Uses a public lookup and remembers each episode it has already checked."),
       },
     ],
-    more: [
-      {
-        key: "apiKey",
-        label: t("Optional TheIntroDB key"),
-        kind: "secret" as const,
-        help: t("Leave empty to use the public lookup. Add a key only if you have one."),
-      },
-    ],
   },
 ]);
+
+function IntroDbStatus({ apiKey }: { apiKey: unknown }) {
+  if (secretConfigured(apiKey)) {
+    return (
+      <p className="text-sm">
+        <Link to="/services/introdb" className="text-primary underline">
+          {t("TheIntroDB connected")}
+        </Link>
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-fg-muted">
+      {tx("Add a TheIntroDB key in {link} for better coverage", {
+        link: (
+          <Link to="/services/introdb" className="text-primary underline">
+            {t("Integrations")}
+          </Link>
+        ),
+      })}
+    </p>
+  );
+}
 
 /** How a chosen release reaches the screen: transcoding, devices, skip markers, subtitles. */
 export default function Playback() {
@@ -74,7 +90,9 @@ export default function Playback() {
         endpoint="markers"
         groups={SKIP_MARKERS}
         label={t("Skip buttons")}
+        omit={["apiKey"]}
         showAdvanced={false}
+        before={(draft) => <IntroDbStatus apiKey={draft.apiKey} />}
         after={tab === "markers" ? () => <MarkerCoverage /> : undefined}
       />
       {tab === "subtitles" ? (
@@ -84,7 +102,7 @@ export default function Playback() {
               "When someone turns subtitles on and the file has none, Ether downloads them from OpenSubtitles. The account is set up in {link}.",
               {
                 link: (
-                  <Link to="/services" className="text-primary underline">
+                  <Link to="/services/opensubtitles" className="text-primary underline">
                     {t("Integrations")}
                   </Link>
                 ),

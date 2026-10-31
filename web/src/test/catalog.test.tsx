@@ -60,7 +60,12 @@ describe("Catalog workspace", () => {
     const language = await screen.findByLabelText("Language");
     expect(screen.getByLabelText("Region")).toBeInTheDocument();
     expect(screen.getByLabelText("Minimum popularity")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Test TMDB key" })).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Integrations" })
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/services");
+    expect(screen.queryByLabelText("Your TMDB API key")).not.toBeInTheDocument();
     const gate = screen.getByLabelText("Wait for digital or physical release");
     expect(gate).not.toBeChecked();
     fireEvent.click(gate);

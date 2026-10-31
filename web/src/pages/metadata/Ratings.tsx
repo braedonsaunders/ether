@@ -9,7 +9,9 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { RefreshCw, X } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
+import { secretConfigured } from "../../components/IntegrationAccount";
 import { ErrorPanel } from "../../components/feedback";
 import { NumberInput } from "../../components/fields";
 import { Section } from "../../components/layout";
@@ -17,7 +19,7 @@ import { TitleSearch } from "../../components/pickers";
 import { titleSubtitle } from "../../components/Poster";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
-import { localized, t, tn } from "../../i18n";
+import { localized, t, tn, tx } from "../../i18n";
 import { apiFetch, errorMessage } from "../../lib/api";
 import type { TitleCard } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
@@ -92,6 +94,7 @@ export function RatingSources({
   onPersisted,
   persist,
   disabled,
+  accountOnIntegrations,
 }: {
   /** Parent-owned saved document. Omit on the metadata page, which loads its own. */
   saved?: RatingSettings | null;
@@ -101,6 +104,8 @@ export function RatingSources({
   persist?: (task: () => Promise<void>) => Promise<unknown>;
   /** Disable the shared save bar while another integration write is in flight. */
   disabled?: boolean;
+  /** Metadata keeps the score choices. The API key is edited on Integrations. */
+  accountOnIntegrations?: boolean;
 } = {}) {
   const controlled = saved !== undefined;
   const doc = useAsync(() => apiFetch<RatingSettings>("/discovery/ratings/settings"), []);
@@ -197,29 +202,51 @@ export function RatingSources({
                   </select>
                 }
               />
-              <SettingsRow
-                stacked
-                title={<label htmlFor="ratings-key">{t("API key")}</label>}
-                description={
-                  draft.apiKey === STORED_KEY
-                    ? t("Saved. Leave as is to keep it, or type a new key to replace it.")
-                    : t("Your own key from the provider's website.")
-                }
-                control={
-                  <Input
-                    id="ratings-key"
-                    type="password"
-                    autoComplete="new-password"
-                    spellCheck={false}
-                    className="sm:w-64"
-                    value={draft.apiKey}
-                    onFocus={(e) => {
-                      if (draft.apiKey === STORED_KEY) e.currentTarget.select();
-                    }}
-                    onChange={(e) => set({ apiKey: e.currentTarget.value })}
-                  />
-                }
-              />
+              {accountOnIntegrations ? (
+                <SettingsRow
+                  stacked
+                  title={t("Account")}
+                  description={
+                    secretConfigured(draft.apiKey) ? (
+                      <Link to="/services/ratings" className="text-primary underline">
+                        {t("OMDb and MDBList connected")}
+                      </Link>
+                    ) : (
+                      tx("Connect OMDb or MDBList in {link}.", {
+                        link: (
+                          <Link to="/services/ratings" className="text-primary underline">
+                            {t("Integrations")}
+                          </Link>
+                        ),
+                      })
+                    )
+                  }
+                />
+              ) : (
+                <SettingsRow
+                  stacked
+                  title={<label htmlFor="ratings-key">{t("API key")}</label>}
+                  description={
+                    draft.apiKey === STORED_KEY
+                      ? t("Saved. Leave as is to keep it, or type a new key to replace it.")
+                      : t("Your own key from the provider's website.")
+                  }
+                  control={
+                    <Input
+                      id="ratings-key"
+                      type="password"
+                      autoComplete="new-password"
+                      spellCheck={false}
+                      className="sm:w-64"
+                      value={draft.apiKey}
+                      onFocus={(e) => {
+                        if (draft.apiKey === STORED_KEY) e.currentTarget.select();
+                      }}
+                      onChange={(e) => set({ apiKey: e.currentTarget.value })}
+                    />
+                  }
+                />
+              )}
               {(
                 [
                   ["critic", t("Plex rating"), t("The main score on a title's page.")],
