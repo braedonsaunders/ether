@@ -294,7 +294,7 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.Catalog.MinPopularity < 0 {
 		v.add("catalog.minPopularity", "must be >= 0")
 	}
-	if _, err := libraryfilter.Compile(cfg.Catalog.Exclusions); err != nil {
+	if _, err := libraryfilter.CompilePolicy(cfg.Catalog.Exclusions, cfg.Catalog.VisibilityDefault); err != nil {
 		v.add("catalog.exclusions", "%s", err.Error())
 	}
 	if cfg.Catalog.MinVotes < 0 {

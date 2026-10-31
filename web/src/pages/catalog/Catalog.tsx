@@ -26,7 +26,6 @@ import { api } from "../../lib/api";
 import { formatRating } from "../../lib/contentRatings";
 import { fixed, formatNumber } from "../../lib/format";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
-import { LibraryVisibility } from "./LibraryVisibility";
 import { CatalogSettings } from "./CatalogSettings";
 import { TitleInspector } from "./TitleInspector";
 import "./catalog.css";
@@ -86,9 +85,7 @@ export default function Catalog() {
         </>
       }
     >
-      {visibility ? (
-        <LibraryVisibility />
-      ) : settings ? (
+      {visibility || settings ? (
         <CatalogSettings />
       ) : (
         <CatalogBrowser params={params} setParams={setParams} refreshHealth={refreshDashboard} />

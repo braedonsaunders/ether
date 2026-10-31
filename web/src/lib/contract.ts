@@ -55,7 +55,7 @@ const RULE_FIELDS = [
 ] as const;
 export type RuleField = (typeof RULE_FIELDS)[number];
 
-const RULE_OPS = ["is", "isNot", "in", "notIn", "gte", "lte", "between", "within"] as const;
+const RULE_OPS = ["is", "isNot", "in", "notIn", "gte", "lte", "between", "within", "unknown", "known"] as const;
 export type RuleOp = (typeof RULE_OPS)[number];
 
 export interface Rule {
@@ -176,7 +176,7 @@ export interface CollectionTemplate {
   spec: CollectionSpec;
 }
 
-export type FacetName = "genre" | "decade" | "contentRating" | "studio" | "country" | "language";
+export type FacetName = "genre" | "decade" | "contentRating" | "studio" | "country" | "language" | "keyword";
 export interface FacetValue {
   key: string;
   title: string;

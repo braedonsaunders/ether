@@ -14,6 +14,7 @@ import {
   isRuleComplete,
   opLabel,
   parseWithin,
+  valueFor,
   withField,
   withOp,
   type FieldMeta,
@@ -38,8 +39,11 @@ export function RuleRow({
   index,
   kind,
   allowedFields,
+  metaFor,
 }: {
   allowedFields?: RuleField[];
+  /** Visibility rules add operators (is not set) and facet-backed studio/keyword. */
+  metaFor?: (field: RuleField) => FieldMeta | undefined;
   rule: Rule;
   onChange: (r: Rule) => void;
   onRemove: () => void;
@@ -48,7 +52,7 @@ export function RuleRow({
   index: number;
   kind: "include" | "exclude";
 }) {
-  const meta = fieldMeta(rule.field);
+  const meta = metaFor?.(rule.field) ?? fieldMeta(rule.field);
   const complete = isRuleComplete(rule);
   const n = index + 1;
   const label = kind === "exclude" ? t("Exclusion {n}", { n }) : t("Rule {n}", { n });
@@ -65,7 +69,18 @@ export function RuleRow({
         <div className="w-full sm:w-48">
           <SearchSelect
             value={rule.field}
-            onChange={(v) => v && onChange(withField(rule, v as RuleField))}
+            onChange={(v) => {
+              if (!v) return;
+              const field = v as RuleField;
+              const custom = metaFor?.(field);
+              if (!custom) onChange(withField(rule, field));
+              else
+                onChange({
+                  field,
+                  op: custom.defaultOp,
+                  value: valueFor(custom, custom.defaultOp),
+                });
+            }}
             options={
               allowedFields
                 ? FIELD_OPTIONS.filter((f) => allowedFields.includes(f.value))
@@ -162,6 +177,7 @@ function ValueEditor({
   region: string;
   label: string;
 }) {
+  if (rule.op === "unknown" || rule.op === "known") return null;
   const multi = rule.op === "in" || rule.op === "notIn";
   const facetType = mediaType === "show" ? "show" : mediaType === "movie" ? "movie" : "";
   switch (meta.kind) {

@@ -1,7 +1,10 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import App from "../App";
+import { createFakeServer } from "../mock/server";
+import { calls, renderApp, settleUi } from "./harness";
 import { renderAppWith } from "./routes";
-import { calls, settleUi } from "./harness";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
@@ -10,24 +13,20 @@ beforeEach(() => {
 describe("Library visibility", () => {
   it.each([null, undefined])("keeps empty previews usable when items is %s", async (items) => {
     const { fake } = renderAppWith("/catalog/visibility", (_method, path) => {
-      if (path === "/config/catalog") return { value: {} };
       if (path === "/catalog/visibility/preview")
         return { total: 63996, hidden: 0, movies: 0, shows: 0, unknownCountry: 16721, items };
     });
     await settleUi(() => {
-      expect(
-        screen.getByText(
-          "63,996 catalogue titles remain before release, availability and viewer restrictions.",
-        ),
-      ).toBeInTheDocument();
+      expect(screen.getByText("63,996")).toBeInTheDocument();
+      expect(screen.getByText("No rules. Everything uses the last row.")).toBeInTheDocument();
     });
-    expect(screen.getByText("No custom exclusions")).toBeInTheDocument();
-    expect(screen.queryByText("Example matches")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Add exclusion group" }));
-    expect(screen.getByLabelText("Group 1 name")).toBeInTheDocument();
+    expect(screen.queryByText("Hidden")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add rule" }));
+    expect(screen.getByLabelText("Rule name")).toHaveValue("Rule 1");
     expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(0);
   });
-  it("previews country rules locally and saves only the exclusions patch", async () => {
+
+  it("previews stored rules and saves the catalog draft", async () => {
     const exclusions = [
       {
         name: "Country boundary",
@@ -36,93 +35,111 @@ describe("Library visibility", () => {
         rules: [{ field: "country", op: "in", value: ["IN"] }],
       },
     ];
-    const { fake } = renderAppWith("/catalog/visibility", (method, path, body) => {
-      if (method === "GET" && path === "/config/catalog") return { value: { exclusions } };
-      if (method === "POST" && path === "/catalog/visibility/preview")
-        return {
-          total: 55000,
-          hidden: (body as { exclusions: unknown[] }).exclusions.length ? 1200 : 0,
-          movies: 1000,
-          shows: 200,
-          unknownCountry: 300,
-          items: [],
-        };
-    });
+    const fake = createFakeServer();
+    (fake.state.config.catalog as { exclusions?: unknown }).exclusions = exclusions;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://localhost");
+        const path = url.pathname.replace(/^\/ether\/api/, "");
+        const method = (init?.method ?? "GET").toUpperCase();
+        let body: unknown;
+        if (typeof init?.body === "string" && init.body) body = JSON.parse(init.body);
+        if (method === "POST" && path === "/catalog/visibility/preview") {
+          const n = ((body as { exclusions?: unknown[] }).exclusions ?? []).length;
+          fake.state.calls.push({ method, path: path + url.search, body });
+          return new Response(
+            JSON.stringify({
+              total: 55000,
+              hidden: n ? 1200 : 0,
+              movies: n ? 800 : 0,
+              shows: n ? 400 : 0,
+              rules: n ? [{ movies: 800, shows: 400 }] : [],
+              items: [],
+              shown: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return fake.fetch(input, init);
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/catalog/visibility"]}>
+        <App />
+      </MemoryRouter>,
+    );
     await settleUi(() => {
-      expect(screen.getByText("Your catalogue. Your boundaries.")).toBeInTheDocument();
-      expect(screen.getByText("1,200")).toBeInTheDocument();
+      expect(screen.getByText("Country boundary")).toBeInTheDocument();
+      expect(fake.state.calls.filter((c) => c.path.includes("preview")).length).toBeGreaterThan(0);
+      expect(screen.getByText(/1,200 hidden/)).toBeInTheDocument();
     });
-    expect(screen.getByText("Country is not language")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Delete group 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete rule 1" }));
     await settleUi(() => {
-      expect(screen.getByRole("button", { name: "Save visibility" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save visibility" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await settleUi(() => {
       expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(1);
     });
-    expect(calls(fake, "PUT", "/config/catalog")[0]?.body).toEqual({ exclusions: [] });
-    expect(calls(fake, "GET", "/catalog/search")).toHaveLength(0);
+    expect(calls(fake, "PUT", "/config/catalog")[0]?.body).toMatchObject({
+      exclusions: [],
+      language: "en-US",
+    });
   });
-  it("never shows stored groups as empty while adopting them", async () => {
+
+  it("never shows stored rules as empty while adopting them", async () => {
     let flashedEmpty = false;
     const observer = new MutationObserver(() => {
-      flashedEmpty ||= document.body.textContent?.includes("No custom exclusions") ?? false;
+      flashedEmpty ||=
+        document.body.textContent?.includes("No rules. Everything uses the last row.") ?? false;
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    const exclusions = [
-      {
-        name: "Stored group",
-        mediaType: "mixed",
-        match: "all",
-        rules: [{ field: "country", op: "in", value: ["IN"] }],
-      },
-    ];
-    renderAppWith("/catalog/visibility", (method, path) => {
-      if (method === "GET" && path === "/config/catalog") return { value: { exclusions } };
-      if (path === "/catalog/visibility/preview")
-        return { total: 500, hidden: 1, movies: 1, shows: 0, unknownCountry: 0, items: [] };
+    renderApp("/catalog/visibility", {}, (server) => {
+      (server.state.config.catalog as { exclusions?: unknown }).exclusions = [
+        {
+          name: "Stored group",
+          mediaType: "mixed",
+          match: "all",
+          rules: [{ field: "country", op: "in", value: ["IN"] }],
+        },
+      ];
     });
     await settleUi(() => {
-      expect(screen.getByDisplayValue("Stored group")).toBeInTheDocument();
+      expect(screen.getByText("Stored group")).toBeInTheDocument();
     });
     observer.disconnect();
     expect(flashedEmpty).toBe(false);
   });
-  it("does not enable an example exclusion or save an incomplete group", async () => {
-    const { fake } = renderAppWith("/catalog/visibility", (_method, path) => {
-      if (path === "/config/catalog") return { value: {} };
-      if (path === "/catalog/visibility/preview")
-        return { total: 500, hidden: 0, movies: 0, shows: 0, unknownCountry: 1, items: [] };
-    });
+
+  it("does not save an unfinished rule", async () => {
+    const { fake } = renderApp("/catalog/visibility");
     await settleUi(() => {
-      expect(screen.getByText("No custom exclusions")).toBeInTheDocument();
+      expect(screen.getByText("No rules. Everything uses the last row.")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add exclusion group" }));
-    expect(screen.getByLabelText("Group 1 name")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save visibility" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Add rule" }));
+    expect(screen.getByLabelText("Rule name")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(0);
   });
   it("shows a stored film-and-TV allowlist as rating levels", async () => {
-    const exclusions = [
-      {
-        name: "Family",
-        mediaType: "mixed",
-        match: "all",
-        rules: [{ field: "contentRating", op: "notIn", value: ["G", "PG", "TV-G", "TV-PG"] }],
-      },
-    ];
-    renderAppWith("/catalog/visibility", (method, path) => {
-      if (method === "GET" && path === "/config/catalog") return { value: { exclusions } };
-      if (path === "/catalog/visibility/preview")
-        return { total: 500, hidden: 120, movies: 100, shows: 20, unknownCountry: 0, items: [] };
+    renderApp("/catalog/visibility", {}, (server) => {
+      (server.state.config.catalog as { exclusions?: unknown }).exclusions = [
+        {
+          name: "Family",
+          mediaType: "mixed",
+          match: "all",
+          rules: [{ field: "contentRating", op: "notIn", value: ["G", "PG", "TV-G", "TV-PG"] }],
+        },
+      ];
     });
     await settleUi(() => {
-      expect(screen.getByDisplayValue("Family")).toBeInTheDocument();
-      expect(screen.getByText("G · TV-G · TV-Y")).toBeInTheDocument();
+      expect(screen.getByText("Family")).toBeInTheDocument();
+      expect(screen.getByText(/G · TV-G · TV-Y/)).toBeInTheDocument();
+      expect(screen.getByText(/PG · TV-PG/)).toBeInTheDocument();
     });
-    expect(screen.getByText("PG · TV-PG · TV-Y7")).toBeInTheDocument();
+    expect(screen.getByText(/PG · TV-PG · TV-Y7/)).toBeInTheDocument();
     expect(screen.queryByText("TV-PG")).not.toBeInTheDocument();
-    expect(screen.getByText("Ratings match by age level")).toBeInTheDocument();
+    expect(screen.getByText(/Ratings match by age level/)).toBeInTheDocument();
   });
 });

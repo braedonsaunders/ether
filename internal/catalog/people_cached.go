@@ -37,7 +37,7 @@ func (c *Catalog) CachedCreditItems(ctx context.Context, after core.RatingKey, l
 // against the caller's immutable config and time, including inherited parents.
 // The caller must hold the config lease and fence durable changes separately.
 func (c *Catalog) CachedCreditTitles(ctx context.Context, keys []core.RatingKey, cfg config.Catalog, now time.Time) (map[core.RatingKey]core.Title, error) {
-	filter, err := libraryfilter.Compile(cfg.Exclusions)
+	filter, err := libraryfilter.CompilePolicy(cfg.Exclusions, cfg.VisibilityDefault)
 	if err != nil {
 		return nil, err
 	}

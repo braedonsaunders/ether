@@ -687,6 +687,10 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const since = new Date(Date.now() - durationMs(String(r.value))).toISOString().slice(0, 10);
         return vals.some((x) => String(x) >= since);
       }
+      case "unknown":
+        return vals.length === 0 || vals.every((x) => x === "" || x == null);
+      case "known":
+        return vals.some((x) => x !== "" && x != null);
     }
   }
 

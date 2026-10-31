@@ -218,7 +218,7 @@ type Deps struct {
 	Collections CollectionStudio
 	// CatalogHelper backs /api/catalog/*.
 	CatalogHelper     CatalogHelper
-	CatalogVisibility func(context.Context, []core.LibraryExclusion) (any, error)
+	CatalogVisibility func(context.Context, []core.LibraryExclusion, string) (any, error)
 	// Images backs the TMDB image proxy at /api/image.
 	Images ImageProxy
 

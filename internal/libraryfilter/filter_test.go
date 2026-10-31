@@ -37,9 +37,9 @@ func mustCompile(t *testing.T, specs []core.LibraryExclusion) *Filter {
 	return f
 }
 
-// Content rating "none of" is an allowlist: listed levels stay visible, and
-// a missing certification is excluded unless "Not rated" is listed.
-// Unknown country, language and year still do not match.
+// Content rating "none of" is an allowlist of age levels: listed levels stay
+// visible, and a missing certification is excluded unless "Not rated" is
+// listed. Unknown country, language and year still do not match.
 func TestContentRatingNotInFailsClosed(t *testing.T) {
 	allow := mustCompile(t, movieRule("any", textRule("contentRating", "notIn", `["G","PG","PG-13","PG13","M"]`)))
 	movie := func(rating string) *core.Title {
@@ -119,7 +119,7 @@ func TestContentRatingNotInFailsClosed(t *testing.T) {
 		t.Fatal("unknown language rule changed")
 	}
 	countrySQL, _ := country.SQLHidden()
-	if !strings.Contains(countrySQL, "EXISTS (SELECT 1 FROM catalog_countries") {
+	if !strings.Contains(countrySQL, "t.key IN (SELECT key FROM catalog_countries) AND NOT (") {
 		t.Fatalf("country SQL dropped the known-value guard: %s", countrySQL)
 	}
 	yearSQL, _ := year.SQLHidden()
@@ -128,11 +128,6 @@ func TestContentRatingNotInFailsClosed(t *testing.T) {
 	}
 }
 
-// The reported case: an allowlist of G, PG, TV-G and TV-PG. Hallmark TV
-// movies TMDB certifies "G" or "PG" (on their TV premiere release), TV
-// series rated TV-G, foreign-only ratings kept region-qualified and the
-// equivalent kids' ratings all stay; mature and unrated titles are hidden
-// until "Not rated" is listed.
 func TestContentRatingAllowlistMatchesEquivalentLevels(t *testing.T) {
 	family := mustCompile(t, []core.LibraryExclusion{{Name: "Family", MediaType: "mixed", Match: "all",
 		Rules: []core.CollectionRule{textRule("contentRating", "notIn", `["G","PG","TV-G","TV-PG"]`)}}})
@@ -208,9 +203,120 @@ func TestContentRatingBounds(t *testing.T) {
 			t.Errorf("lte %s accepted", bad)
 		}
 	}
-	// A label no system knows names no level, so it matches nothing.
 	junk := mustCompile(t, movieRule("all", textRule("contentRating", "in", `["Yes"]`)))
 	if junk.Hidden(&core.Title{Type: core.TypeMovie, ContentRating: "Yes"}) || junk.Hidden(&core.Title{Type: core.TypeMovie}) {
 		t.Fatal("an unknown label matched")
+	}
+}
+
+func TestLegacyHideRulesMatchEitherGroup(t *testing.T) {
+	f := mustCompile(t, []core.LibraryExclusion{
+		{Name: "India", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{textRule("country", "in", `["IN"]`)}},
+		{Name: "Low", MediaType: "movie", Match: "all", Rules: []core.CollectionRule{textRule("rating", "lte", `4`)}},
+	})
+	if !f.Hidden(&core.Title{Type: core.TypeMovie, Countries: []string{"India"}, Rating: 9}) {
+		t.Fatal("india")
+	}
+	if !f.Hidden(&core.Title{Type: core.TypeMovie, Countries: []string{"US"}, Rating: 3}) {
+		t.Fatal("low")
+	}
+	if f.Hidden(&core.Title{Type: core.TypeMovie, Countries: []string{"US"}, Rating: 8}) {
+		t.Fatal("kept")
+	}
+	if f.Hidden(&core.Title{Type: core.TypeShow, Rating: 3}) {
+		t.Fatal("movie rule hid a show")
+	}
+	if f.Fallback() != "show" || f.Passive() {
+		t.Fatal("legacy default")
+	}
+}
+
+// Saved exclusion lists have no action and no default. They stay hide rules
+// with a show default, so a title is hidden exactly when any group matches.
+func TestExistingConfigsKeepIdenticalVisibility(t *testing.T) {
+	configs := [][]core.LibraryExclusion{
+		nil,
+		{{Name: "India", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{textRule("country", "in", `["IN"]`)}}},
+		{
+			{Name: "India", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{textRule("country", "in", `["IN"]`)}},
+			{Name: "Low", MediaType: "movie", Match: "all", Rules: []core.CollectionRule{textRule("rating", "lte", `4`)}},
+		},
+		{{Name: "Family", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{textRule("contentRating", "notIn", `["G","PG","TV-G","TV-PG"]`)}}},
+		{{Name: "Either", MediaType: "show", Match: "any", Rules: []core.CollectionRule{textRule("genre", "in", `["Horror"]`), textRule("language", "is", `"hi"`)}}},
+		{
+			{Name: "Movies", MediaType: "movie", Match: "all", Rules: []core.CollectionRule{textRule("year", "gte", `2020`)}},
+			{Name: "Shows", MediaType: "show", Match: "all", Rules: []core.CollectionRule{textRule("country", "notIn", `["US"]`)}},
+		},
+	}
+	titles := []*core.Title{
+		{Type: core.TypeMovie, Title: "blank"},
+		{Type: core.TypeMovie, Countries: []string{"India"}, Rating: 9, ContentRating: "PG", Year: 2019},
+		{Type: core.TypeMovie, Countries: []string{"US"}, Rating: 3, ContentRating: "R", Year: 2024, Language: "en"},
+		{Type: core.TypeMovie, Countries: []string{"France"}, Rating: 8, ContentRating: "TV-PG", Genres: []string{"Horror"}, Year: 2021},
+		{Type: core.TypeShow, Countries: []string{"IN"}, Rating: 2, ContentRating: "TV-MA", Genres: []string{"Drama"}, Language: "hi", Year: 2018},
+		{Type: core.TypeShow, ContentRating: "G", Genres: []string{"Horror"}, Language: "en"},
+		{Type: core.TypeEpisode, ContentRating: "R", Countries: []string{"IN"}},
+	}
+	for i, specs := range configs {
+		whole := mustCompile(t, specs)
+		sql, _ := whole.SQLHidden()
+		if strings.Contains(sql, "CASE") {
+			t.Fatalf("config %d compiled a first-match CASE: %s", i, sql)
+		}
+		for _, title := range titles {
+			want := false
+			for _, spec := range specs {
+				if mustCompile(t, []core.LibraryExclusion{spec}).Hidden(title) {
+					want = true
+				}
+			}
+			if whole.Hidden(title) != want {
+				t.Fatalf("config %d title %q hidden=%v want %v", i, title.Title, whole.Hidden(title), want)
+			}
+		}
+	}
+}
+
+func TestFirstMatchShowBeatsLaterHide(t *testing.T) {
+	f, err := CompilePolicy([]core.LibraryExclusion{
+		{Name: "TV movies", Action: "show", MediaType: "movie", Match: "all", Rules: []core.CollectionRule{textRule("genre", "is", `"TV Movie"`)}},
+		{Name: "Above PG", Action: "hide", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{textRule("contentRating", "gte", `"PG-13"`)}},
+	}, "show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tv := &core.Title{Type: core.TypeMovie, Genres: []string{"TV Movie"}, ContentRating: "R"}
+	action := &core.Title{Type: core.TypeMovie, Genres: []string{"Action"}, ContentRating: "R"}
+	family := &core.Title{Type: core.TypeMovie, Genres: []string{"Action"}, ContentRating: "PG"}
+	if f.Hidden(tv) || !f.Hidden(action) || f.Hidden(family) {
+		t.Fatalf("tv %v action %v family %v", f.Hidden(tv), f.Hidden(action), f.Hidden(family))
+	}
+	sql, _ := f.SQLHidden()
+	if !strings.Contains(sql, "CASE WHEN") || !strings.Contains(sql, "ELSE 0") {
+		t.Fatalf("SQL %s", sql)
+	}
+	hideRest, err := CompilePolicy(nil, "hide")
+	sqlHide, _ := hideRest.SQLHidden()
+	if err != nil || !hideRest.Hidden(&core.Title{Type: core.TypeMovie, ContentRating: "G"}) || sqlHide != "1=1" {
+		t.Fatal("default hide", err, sqlHide)
+	}
+}
+
+func TestUnknownAndStudioKeyword(t *testing.T) {
+	year, err := Compile([]core.LibraryExclusion{{Name: "No year", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{textRule("year", "unknown", `null`)}}})
+	if err != nil || !year.Hidden(&core.Title{Type: core.TypeMovie}) || year.Hidden(&core.Title{Type: core.TypeMovie, Year: 1999}) {
+		t.Fatal("unknown year", err)
+	}
+	studio := mustCompile(t, []core.LibraryExclusion{{Name: "Studio", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{textRule("studio", "is", `"Amblin"`)}}})
+	if !studio.Hidden(&core.Title{Type: core.TypeMovie, Studios: []string{"Amblin"}}) || studio.Hidden(&core.Title{Type: core.TypeMovie}) {
+		t.Fatal("studio")
+	}
+	kw := mustCompile(t, []core.LibraryExclusion{{Name: "Word", MediaType: "show", Match: "all", Rules: []core.CollectionRule{textRule("keyword", "is", `{"name":"heist"}`)}}})
+	if !kw.Hidden(&core.Title{Type: core.TypeShow, Keywords: []string{"Heist"}}) {
+		t.Fatal("keyword")
+	}
+	sql, _ := studio.SQLHidden()
+	if !strings.Contains(sql, "catalog_studios") {
+		t.Fatal(sql)
 	}
 }

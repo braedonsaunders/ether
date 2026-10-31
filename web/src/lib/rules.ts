@@ -278,6 +278,8 @@ export const OP_LABELS = localized<Record<RuleOp, string>>(() => ({
   lte: t("is at most"),
   between: t("is between"),
   within: t("in the last"),
+  unknown: t("is not set"),
+  known: t("is set"),
 }));
 
 export function opLabel(op: RuleOp, kind?: ValueKind): string {
@@ -328,6 +330,7 @@ export function valueFor(meta: FieldMeta, op: RuleOp, prev?: unknown): unknown {
     case "facet":
     case "lookup":
       if (op === "in" || op === "notIn") return list;
+      if (op === "unknown" || op === "known") return null;
       // A rating bound needs a rated level, never "Not rated".
       if (meta.field === "contentRating" && (op === "gte" || op === "lte"))
         return list.find((x) => x !== NOT_RATED) ?? "";
@@ -384,6 +387,7 @@ export function withField(rule: Rule, field: RuleField): Rule {
 
 /** Incomplete rules (no values picked yet) are left out of previews. */
 export function isRuleComplete(rule: Rule): boolean {
+  if (rule.op === "unknown" || rule.op === "known") return true;
   const meta = fieldMeta(rule.field);
   if (!meta) return true;
   const v = rule.value;
@@ -419,17 +423,19 @@ export function describeRule(rule: Rule): string {
   const unit = meta?.unit && meta.field !== "rating" ? ` ${meta.unit}` : "";
   if (rule.op === "within")
     return t("{field} in the last {window}", { field: label, window: formatWithin(v) });
+  if (rule.op === "unknown") return t("{field} is not set", { field: label });
+  if (rule.op === "known") return t("{field} is set", { field: label });
+  if (meta?.field === "contentRating") {
+    const values = (Array.isArray(v) ? v : [v]).filter((x) => x !== "" && x != null);
+    const shown = [...new Set(values.map((x) => ratingLevelLabel(String(x))))];
+    return opPhrase(rule.op, meta.kind, label, shown.join(", ") || "…");
+  }
   if (rule.op === "between" && Array.isArray(v))
     return t("{field} between {min} and {max}", {
       field: label,
       min: String(v[0]),
       max: `${String(v[1])}${unit}`,
     });
-  if (meta?.field === "contentRating") {
-    const values = (Array.isArray(v) ? v : [v]).filter((x) => x !== "" && x != null);
-    const shown = values.map((x) => ratingLevelLabel(String(x)));
-    return opPhrase(rule.op, meta.kind, label, shown.join(", ") || "…");
-  }
   if (Array.isArray(v)) return opPhrase(rule.op, meta?.kind, label, listText(rule, v) || "…");
   const text = rule.label || (v === "" || v === undefined || v === null ? "…" : String(v));
   return opPhrase(rule.op, meta?.kind, label, `${text}${typeof v === "number" ? unit : ""}`);
@@ -459,6 +465,10 @@ function opPhrase(op: RuleOp, kind: ValueKind | undefined, field: string, value:
       return t("{field} is between {value}", values);
     case "within":
       return t("{field} in the last {value}", values);
+    case "unknown":
+      return t("{field} is not set", { field });
+    case "known":
+      return t("{field} is set", { field });
   }
 }
 

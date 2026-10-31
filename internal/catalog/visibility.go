@@ -22,7 +22,7 @@ func (c *Catalog) FilterVisibility(ctx context.Context, ts []core.Title) []core.
 	if err := c.admitFallbacks(ctx); err != nil {
 		return nil
 	}
-	if len(c.config().Exclusions) == 0 && !c.config().GateMoviesByHomeRelease {
+	if c.visibilityFilter().Passive() && !c.config().GateMoviesByHomeRelease {
 		return ts
 	}
 	if len(ts) == 0 {
@@ -51,6 +51,8 @@ func (c *Catalog) FilterVisibility(ctx context.Context, ts []core.Title) []core.
 	}{
 		{"catalog_countries", "country", func(i int, v string) { out[i].Countries = append(out[i].Countries, v) }},
 		{"catalog_genres", "genre", func(i int, v string) { out[i].Genres = append(out[i].Genres, v) }},
+		{"catalog_studios", "studio", func(i int, v string) { out[i].Studios = append(out[i].Studios, v) }},
+		{"catalog_keywords", "keyword", func(i int, v string) { out[i].Keywords = append(out[i].Keywords, v) }},
 	} {
 		for start := 0; start < len(ts); start += batch {
 			part := ts[start:min(start+batch, len(ts))]
@@ -82,22 +84,34 @@ func (c *Catalog) FilterVisibility(ctx context.Context, ts []core.Title) []core.
 	return keep
 }
 
+type VisibilityRulePreview struct {
+	Movies int `json:"movies"`
+	Shows  int `json:"shows"`
+}
+
 type VisibilityPreview struct {
-	Total          int          `json:"total"`
-	Hidden         int          `json:"hidden"`
-	Movies         int          `json:"movies"`
-	Shows          int          `json:"shows"`
-	UnknownCountry int          `json:"unknownCountry"`
-	Items          []core.Title `json:"items"`
+	Total          int                     `json:"total"`
+	Hidden         int                     `json:"hidden"`
+	Visible        int                     `json:"visible"`
+	Movies         int                     `json:"movies"`
+	Shows          int                     `json:"shows"`
+	UnknownCountry int                     `json:"unknownCountry"`
+	Items          []core.Title            `json:"items"`
+	Shown          []core.Title            `json:"shown"`
+	Rules          []VisibilityRulePreview `json:"rules"`
 }
 
 func (c *Catalog) PreviewVisibility(ctx context.Context, specs []core.LibraryExclusion) (any, error) {
-	f, err := libraryfilter.Compile(specs)
+	return c.PreviewVisibilityPolicy(ctx, specs, "")
+}
+
+func (c *Catalog) PreviewVisibilityPolicy(ctx context.Context, specs []core.LibraryExclusion, fallback string) (any, error) {
+	f, err := libraryfilter.CompilePolicy(specs, fallback)
 	if err != nil {
 		return nil, err
 	}
 	where, args := f.SQLHidden()
-	p := VisibilityPreview{Items: []core.Title{}}
+	p := VisibilityPreview{Items: []core.Title{}, Shown: []core.Title{}, Rules: []VisibilityRulePreview{}}
 	err = c.db.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(CASE WHEN NOT EXISTS(SELECT 1 FROM catalog_countries co WHERE co.key=t.key) THEN 1 ELSE 0 END),0) FROM catalog_titles t WHERE `+mirrorBrowsableWhere).Scan(&p.Total, &p.UnknownCountry)
 	if err != nil {
 		return nil, err
@@ -107,9 +121,40 @@ func (c *Catalog) PreviewVisibility(ctx context.Context, specs []core.LibraryExc
 	if err != nil {
 		return nil, err
 	}
-	p.Items, err = c.queryTitles(ctx, `SELECT `+prefixedCols("t")+` FROM catalog_titles t WHERE `+base+` ORDER BY t.popularity DESC,t.key LIMIT 48`, args...)
+	p.Visible = p.Total - p.Hidden
+	if p.Visible < 0 {
+		p.Visible = 0
+	}
+	p.Items, err = c.queryTitles(ctx, `SELECT `+prefixedCols("t")+` FROM catalog_titles t WHERE `+base+` ORDER BY t.popularity DESC,t.key LIMIT 8`, args...)
+	if err != nil {
+		return nil, err
+	}
 	if p.Items == nil {
 		p.Items = []core.Title{}
 	}
-	return p, err
+	shownWhere, shownArgs := f.SQLHidden()
+	p.Shown, err = c.queryTitles(ctx, `SELECT `+prefixedCols("t")+` FROM catalog_titles t WHERE `+mirrorBrowsableWhere+` AND NOT (`+shownWhere+`) ORDER BY t.popularity DESC,t.key LIMIT 8`, shownArgs...)
+	if err != nil {
+		return nil, err
+	}
+	if p.Shown == nil {
+		p.Shown = []core.Title{}
+	}
+	sel, catchArgs := f.CatchCountsSQL()
+	if sel != "" {
+		row := c.db.QueryRowContext(ctx, `SELECT `+sel+` FROM catalog_titles t WHERE `+mirrorBrowsableWhere, catchArgs...)
+		nums := make([]int, len(specs)*2)
+		dest := make([]any, len(nums))
+		for i := range nums {
+			dest[i] = &nums[i]
+		}
+		if err = row.Scan(dest...); err != nil {
+			return nil, err
+		}
+		p.Rules = make([]VisibilityRulePreview, len(specs))
+		for i := range specs {
+			p.Rules[i] = VisibilityRulePreview{Movies: nums[i*2], Shows: nums[i*2+1]}
+		}
+	}
+	return p, nil
 }

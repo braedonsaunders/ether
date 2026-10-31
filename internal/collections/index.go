@@ -71,7 +71,7 @@ func (e *entry) card() core.Title {
 		Key: e.key, Type: e.typ, Title: e.title, Year: e.year, Rating: e.rating, VoteCount: e.votes,
 		Popularity: e.pop, ContentRating: e.crating, PosterPath: e.poster, BackdropPath: e.backdrop,
 		Runtime: time.Duration(e.runtime) * time.Minute, Language: e.lang, Genres: e.genres,
-		CollectionID: e.collID, Countries: e.countriesLC, Studios: e.studiosLC,
+		CollectionID: e.collID, Countries: e.countriesLC, Studios: e.studiosLC, Keywords: e.keywordsLC,
 	}
 	if e.released != 0 {
 		t.Released = time.Unix(e.released, 0).UTC()

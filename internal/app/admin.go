@@ -157,15 +157,17 @@ func (a *App) buildAdmin() http.Handler {
 			"database": a.databaseStatus,
 			"updates":  a.updateStatus,
 		},
-		ResolverTraces:    func(context.Context) (any, error) { return a.resolver.Traces(), nil },
-		Users:             a.users,
-		ViewerDirectory:   a.viewerDirectory,
-		Personalization:   a.personalize,
-		Collections:       a.collections,
-		CatalogHelper:     a.collections,
-		CatalogVisibility: a.catalog.PreviewVisibility,
-		Images:            a.images,
-		PlexWatch:         a.plexWatchAPI(),
+		ResolverTraces:  func(context.Context) (any, error) { return a.resolver.Traces(), nil },
+		Users:           a.users,
+		ViewerDirectory: a.viewerDirectory,
+		Personalization: a.personalize,
+		Collections:     a.collections,
+		CatalogHelper:   a.collections,
+		CatalogVisibility: func(ctx context.Context, specs []core.LibraryExclusion, fallback string) (any, error) {
+			return a.catalog.PreviewVisibilityPolicy(ctx, specs, fallback)
+		},
+		Images:    a.images,
+		PlexWatch: a.plexWatchAPI(),
 	})
 }
 

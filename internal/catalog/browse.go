@@ -390,6 +390,8 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 		q = `SELECT CAST(t.year AS TEXT), COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.year>0 GROUP BY t.year ORDER BY t.year DESC`
 	case "decade":
 		q = `SELECT CAST((t.year/10)*10 AS TEXT), COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.year>0 GROUP BY (t.year/10)*10 ORDER BY (t.year/10)*10 DESC`
+	case "keyword":
+		q = `SELECT k.keyword, COUNT(*) FROM catalog_keywords k JOIN catalog_titles t ON t.key=k.key WHERE ` + base + ` GROUP BY k.keyword ORDER BY COUNT(*) DESC, k.keyword ASC LIMIT 200`
 	case "contentRating":
 		q = `SELECT t.content_rating, COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.content_rating<>'' GROUP BY t.content_rating ORDER BY MIN(t.content_rating_rank) ASC, t.content_rating ASC`
 	case "contentRatingLevel":

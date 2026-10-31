@@ -1046,8 +1046,9 @@ func (s *Service) filterForUser(ctx context.Context, keys []core.RatingKey, pr p
 	personal := len(include)+len(exclude) > 0
 	var exposure *libraryfilter.Filter
 	if s.catCfg != nil {
-		if rules := s.catCfg().Exclusions; len(rules) > 0 {
-			exposure, _ = libraryfilter.Compile(rules)
+		cfg := s.catCfg()
+		if f, err := libraryfilter.CompilePolicy(cfg.Exclusions, cfg.VisibilityDefault); err == nil && !f.Passive() {
+			exposure = f
 		}
 	}
 	if max == "" && !personal && exposure == nil {

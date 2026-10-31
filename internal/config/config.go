@@ -266,8 +266,12 @@ type Catalog struct {
 	GateMoviesByHomeRelease bool `json:"gateMoviesByHomeRelease"`
 	// HideFranchiseCollections hides automatic TMDB groups from Plex's
 	// Collections tab. The zero value preserves existing libraries.
-	HideFranchiseCollections bool                    `json:"hideFranchiseCollections"`
-	Exclusions               []core.LibraryExclusion `json:"exclusions,omitempty"`
+	HideFranchiseCollections bool `json:"hideFranchiseCollections"`
+	// VisibilityDefault is what a title does when no exclusion rule matches:
+	// "show" or "hide". Empty means show, which keeps saved exclusion lists
+	// (hide rules, first match) identical to the previous OR of groups.
+	VisibilityDefault string                  `json:"visibilityDefault,omitempty"`
+	Exclusions        []core.LibraryExclusion `json:"exclusions,omitempty"`
 	TMDBKey                  string                  `json:"tmdbKey"`  // owner override; empty uses the bundled key
 	Language                 string                  `json:"language"` // TMDB language, e.g. "en-US"
 	Region                   string                  `json:"region"`

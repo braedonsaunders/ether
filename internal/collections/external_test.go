@@ -324,6 +324,17 @@ func TestLookupsAndFacets(t *testing.T) {
 	if ratings[1].Title != "PG · TV-PG · TV-Y7" || !slices.Contains(ratings[1].Labels, "TV-PG") || !slices.Contains(ratings[1].Labels, "gb/PG") || !slices.Contains(ratings[1].Labels, "de/6") {
 		t.Fatalf("PG level %+v", ratings[1])
 	}
+	var sawTVPG bool
+	for _, v := range ratings {
+		for _, label := range v.Labels {
+			if label == "TV-PG" {
+				sawTVPG = true
+			}
+		}
+	}
+	if !sawTVPG {
+		t.Fatal("PG level did not list TV-PG")
+	}
 	items, err := e.svc.SearchTitles(e.ctx, "Dream", core.TypeMovie, 5)
 	if err != nil || len(items) == 0 || items[0].Title != "Dream Heist" {
 		t.Fatalf("search: %+v %v", items, err)

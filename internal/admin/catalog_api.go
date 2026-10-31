@@ -371,17 +371,18 @@ func (h *Handler) handleVisibilityPreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var body struct {
-		Exclusions []core.LibraryExclusion `json:"exclusions"`
+		Exclusions        []core.LibraryExclusion `json:"exclusions"`
+		VisibilityDefault string                  `json:"visibilityDefault"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10)).Decode(&body); err != nil {
 		writeError(w, 400, "bad_json", "Invalid filter")
 		return
 	}
-	if _, err := libraryfilter.Compile(body.Exclusions); err != nil {
+	if _, err := libraryfilter.CompilePolicy(body.Exclusions, body.VisibilityDefault); err != nil {
 		writeError(w, 400, "invalid_filter", err.Error())
 		return
 	}
-	p, err := h.deps.CatalogVisibility(r.Context(), body.Exclusions)
+	p, err := h.deps.CatalogVisibility(r.Context(), body.Exclusions, body.VisibilityDefault)
 	if err != nil {
 		writeError(w, 500, "preview_failed", "Could not preview catalogue")
 		return
