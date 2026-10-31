@@ -25,7 +25,12 @@ CREATE TABLE identity_quickconnect (
 CREATE INDEX identity_quickconnect_expiry ON identity_quickconnect(expires);
 `)
 	store.Register("identity_quickconnect", 2, `ALTER TABLE identity_quickconnect ADD COLUMN device_name TEXT NOT NULL DEFAULT ''; ALTER TABLE identity_quickconnect ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;`)
+	store.Register("identity_quickconnect", 3, `ALTER TABLE identity_quickconnect ADD COLUMN replay_token TEXT NOT NULL DEFAULT ''; ALTER TABLE identity_quickconnect ADD COLUMN replay_until INTEGER NOT NULL DEFAULT 0;`)
 }
+
+// quickReplayWindow is how long a cancelled client may repeat the same secret
+// from the same device and receive the original token.
+const quickReplayWindow = 60 * time.Second
 
 // QuickConnect is a shared, one-use approval broker. HTTP handlers must rate
 // limit code approval and secret polling; codes are intentionally short.
@@ -210,7 +215,7 @@ func (q *QuickConnect) DetailsSurface(ctx context.Context, surface, secret strin
 }
 
 func (q *QuickConnect) Poll(ctx context.Context, secret string) (string, error) {
-	return q.poll(ctx, "", secret)
+	return q.poll(ctx, "", secret, nil)
 }
 
 // PollSurface verifies the surface atomically before consuming the request.
@@ -218,10 +223,19 @@ func (q *QuickConnect) PollSurface(ctx context.Context, surface, secret string) 
 	if surface == "" {
 		return "", core.ErrUnauthorized
 	}
-	return q.poll(ctx, surface, secret)
+	return q.poll(ctx, surface, secret, nil)
 }
 
-func (q *QuickConnect) poll(ctx context.Context, requestedSurface, secret string) (string, error) {
+// PollSurfaceDevice redeems a secret, or repeats the same token for a short
+// window when the device and client match the one that started the code.
+func (q *QuickConnect) PollSurfaceDevice(ctx context.Context, surface, secret string, device core.Device) (string, error) {
+	if surface == "" {
+		return "", core.ErrUnauthorized
+	}
+	return q.poll(ctx, surface, secret, &device)
+}
+
+func (q *QuickConnect) poll(ctx context.Context, requestedSurface, secret string, replayDevice *core.Device) (string, error) {
 	hash, ok := secretHash(secret)
 	if !ok {
 		return "", core.ErrUnauthorized
@@ -232,10 +246,28 @@ func (q *QuickConnect) poll(ctx context.Context, requestedSurface, secret string
 	}
 	defer tx.Rollback()
 	now := q.now().UnixMilli()
+	var raw [32]byte
+	if _, err = rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	token := grantPrefix + base64.RawURLEncoding.EncodeToString(raw[:])
+	replayUntil := now + quickReplayWindow.Milliseconds()
 	var viewer int64
 	var surface, device, client, product, version string
-	err = tx.QueryRowContext(ctx, `UPDATE identity_quickconnect SET consumed=1 WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NOT NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1 AND origin<>'dlna_guest') RETURNING viewer_id,surface,device_id,client,product,version`, hash, requestedSurface, requestedSurface, now).Scan(&viewer, &surface, &device, &client, &product, &version)
+	err = tx.QueryRowContext(ctx, `UPDATE identity_quickconnect SET consumed=1, replay_token=?, replay_until=? WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NOT NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1 AND origin<>'dlna_guest') RETURNING viewer_id,surface,device_id,client,product,version`, token, replayUntil, hash, requestedSurface, requestedSurface, now).Scan(&viewer, &surface, &device, &client, &product, &version)
 	if errors.Is(err, sql.ErrNoRows) {
+		if replayDevice != nil {
+			replayed, e := q.replay(ctx, tx, requestedSurface, hash, *replayDevice, now)
+			if e == nil {
+				if err = tx.Commit(); err != nil {
+					return "", err
+				}
+				return replayed, nil
+			}
+			if !errors.Is(e, sql.ErrNoRows) {
+				return "", e
+			}
+		}
 		var pending int
 		e := tx.QueryRowContext(ctx, `SELECT 1 FROM identity_quickconnect WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NULL AND consumed=0 AND expires>?`, hash, requestedSurface, requestedSurface, now).Scan(&pending)
 		if e == nil {
@@ -249,20 +281,37 @@ func (q *QuickConnect) poll(ctx context.Context, requestedSurface, secret string
 	if err != nil {
 		return "", err
 	}
-	var raw [32]byte
-	if _, err = rand.Read(raw[:]); err != nil {
-		return "", err
-	}
-	token := grantPrefix + base64.RawURLEncoding.EncodeToString(raw[:])
 	grantHashValue, _ := grantHash(token)
 	_, err = tx.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,?,?,?,?,?,?,?,?,?)`, grantHashValue, viewer, surface, device, client, product, version, now, now, now+q.grantTTL.Milliseconds())
 	if err != nil {
 		return "", err
 	}
-	if err = recordLogin(ctx, tx, viewer, now); err != nil {
+	if err = tx.Commit(); err != nil {
 		return "", err
 	}
-	if err = tx.Commit(); err != nil {
+	return token, nil
+}
+
+func (q *QuickConnect) replay(ctx context.Context, tx *sql.Tx, requestedSurface, hash string, device core.Device, now int64) (string, error) {
+	var token, storedDevice, storedClient, surface string
+	var viewer int64
+	err := tx.QueryRowContext(ctx, `SELECT replay_token,device_id,client,viewer_id,surface FROM identity_quickconnect WHERE secret_hash=? AND (?='' OR surface=?) AND consumed=1 AND replay_until>? AND replay_token<>''`, hash, requestedSurface, requestedSurface, now).Scan(&token, &storedDevice, &storedClient, &viewer, &surface)
+	if err != nil {
+		return "", err
+	}
+	if device.ID != storedDevice || device.Client != storedClient {
+		return "", core.ErrUnauthorized
+	}
+	grantHashValue, ok := grantHash(token)
+	if !ok {
+		return "", core.ErrUnauthorized
+	}
+	var live int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.revoked=0 AND g.expires>? AND u.active=1`, grantHashValue, surface, viewer, now).Scan(&live)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", core.ErrUnauthorized
+		}
 		return "", err
 	}
 	return token, nil

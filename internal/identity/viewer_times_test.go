@@ -149,6 +149,13 @@ func TestQuickConnectRecordsOnlySuccessfulRedemption(t *testing.T) {
 	if _, err = q.Poll(ctx, secret); err != nil {
 		t.Fatal(err)
 	}
+	before, err = times.Get(ctx, 1, 1)
+	if err != nil || !before.LastLogin.IsZero() {
+		t.Fatalf("redemption blocked on viewer times: %+v %v", before, err)
+	}
+	if err = times.RecordSignIn(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
 	after, err := times.Get(ctx, 1, 1)
 	if err != nil || !after.LastLogin.Equal(now) || !after.LastActivity.Equal(now) {
 		t.Fatalf("redemption %+v %v", after, err)
@@ -235,14 +242,15 @@ func TestLoginRecordingFailureRollsBackCredential(t *testing.T) {
 	if _, err = grants.IssueLogin(ctx, 1, nil, "jellyfin", core.Device{}); err == nil {
 		t.Fatal("issued login without its durable observation")
 	}
-	if _, err = q.Poll(ctx, secret); err == nil {
-		t.Fatal("redeemed quick connect without its durable observation")
+	token, err := q.Poll(ctx, secret)
+	if err != nil || token == "" {
+		t.Fatal(err)
 	}
 	var count, consumed int
-	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_grants`).Scan(&count); err != nil || count != 0 {
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_grants`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("grants=%d err=%v", count, err)
 	}
-	if err = db.QueryRowContext(ctx, `SELECT consumed FROM identity_quickconnect`).Scan(&consumed); err != nil || consumed != 0 {
+	if err = db.QueryRowContext(ctx, `SELECT consumed FROM identity_quickconnect`).Scan(&consumed); err != nil || consumed != 1 {
 		t.Fatalf("consumed=%d err=%v", consumed, err)
 	}
 }

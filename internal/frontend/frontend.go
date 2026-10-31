@@ -107,6 +107,20 @@ type SurfaceIdentity interface {
 	SetupComplete() bool
 }
 
+type quietIdentityKey struct{}
+
+// WithQuietIdentity tells credential resolution to skip activity writes.
+// Sign-in uses it so the response is not waiting on viewer-times bookkeeping.
+func WithQuietIdentity(ctx context.Context) context.Context {
+	return context.WithValue(ctx, quietIdentityKey{}, true)
+}
+
+// QuietIdentity reports whether activity writes should be skipped.
+func QuietIdentity(ctx context.Context) bool {
+	quiet, _ := ctx.Value(quietIdentityKey{}).(bool)
+	return quiet
+}
+
 // ViewerTimes contains observed events; a zero time means unknown.
 type ViewerTimes struct {
 	LastLogin, LastActivity time.Time

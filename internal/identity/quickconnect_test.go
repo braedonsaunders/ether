@@ -1,7 +1,10 @@
 package identity_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"testing"
@@ -99,5 +102,98 @@ func TestQuickConnect(t *testing.T) {
 	}
 	if _, err = q.Poll(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("inactive: %v", err)
+	}
+}
+
+func TestQuickConnectReplayIsDeviceBound(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,99,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(2000, 0)
+	q, err := identity.NewQuickConnect(db, time.Minute, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone := core.Device{ID: "apple-tv", Client: "Swiftfin"}
+	code, secret, err := q.Initiate(ctx, "jellyfin", phone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = q.Approve(ctx, code, 1); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	first, err := q.PollSurfaceDevice(ctx, "jellyfin", secret, phone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("redeem took %s", elapsed)
+	}
+	again, err := q.PollSurfaceDevice(ctx, "jellyfin", secret, phone)
+	if err != nil || again != first {
+		t.Fatalf("replay %q %v", again, err)
+	}
+	if _, err = q.PollSurfaceDevice(ctx, "jellyfin", secret, core.Device{ID: "other", Client: "Swiftfin"}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("other device: %v", err)
+	}
+	if _, err = q.PollSurfaceDevice(ctx, "jellyfin", secret, core.Device{ID: "apple-tv", Client: "Infuse"}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("other client: %v", err)
+	}
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(first))
+	if err = grants.RevokeGrant(ctx, 1, hex.EncodeToString(sum[:])); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = q.PollSurfaceDevice(ctx, "jellyfin", secret, phone); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("revoked replay: %v", err)
+	}
+	code, secret, err = q.Initiate(ctx, "jellyfin", phone)
+	if err != nil || q.Approve(ctx, code, 1) != nil {
+		t.Fatal(err)
+	}
+	if _, err = q.PollSurfaceDevice(ctx, "jellyfin", secret, phone); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(61 * time.Second)
+	if _, err = q.PollSurfaceDevice(ctx, "jellyfin", secret, phone); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("expired replay: %v", err)
+	}
+}
+
+func TestQuickConnectRedeemStaysFastOnALargeDatabase(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,99,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE quick_bulk(n INTEGER PRIMARY KEY, payload BLOB)`); err != nil {
+		t.Fatal(err)
+	}
+	payload := bytes.Repeat([]byte("x"), 256<<10)
+	for i := 0; i < 32; i++ {
+		if _, err := db.ExecContext(ctx, `INSERT INTO quick_bulk(n,payload) VALUES(?,?)`, i, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q, err := identity.NewQuickConnect(db, time.Minute, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, secret, err := q.Initiate(ctx, "jellyfin", core.Device{ID: "apple-tv", Client: "Swiftfin"})
+	if err != nil || q.Approve(ctx, code, 1) != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err = q.PollSurfaceDevice(ctx, "jellyfin", secret, core.Device{ID: "apple-tv", Client: "Swiftfin"}); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("large-db redeem took %s", elapsed)
 	}
 }

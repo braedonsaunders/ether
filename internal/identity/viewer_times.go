@@ -75,6 +75,23 @@ func (s *ViewerTimes) RecordOwnerLogin(ctx context.Context, viewerID int64) erro
 	return tx.Commit()
 }
 
+// RecordSignIn notes a completed password or Quick Connect sign-in. Callers
+// that must answer the client first invoke it after the response is written.
+func (s *ViewerTimes) RecordSignIn(ctx context.Context, viewerID int64) error {
+	if viewerID <= 0 {
+		return core.ErrUnauthorized
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = recordLogin(ctx, tx, viewerID, s.now().UnixMilli()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // Observe records an authenticated request at most once per viewer per node
 // per interval. Failed writes are not cached; an older node cannot regress data.
 func (s *ViewerTimes) Observe(ctx context.Context, viewerID int64) error {

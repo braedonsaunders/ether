@@ -16,6 +16,7 @@ import (
 
 	_ "github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -205,7 +206,9 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	// the authenticated request the activity time records.
 	window := int64((30 * time.Second).Milliseconds())
 	if now-lastUsed < window && expires >= now+g.ttl.Milliseconds()-window {
-		_ = g.times.Observe(ctx, viewer.ID)
+		if !frontend.QuietIdentity(ctx) {
+			_ = g.times.Observe(ctx, viewer.ID)
+		}
 		return viewer, nil
 	}
 	res, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET last_used=?,expires=? WHERE hash=? AND surface=? AND revoked=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (origin<>'dlna_guest' OR ?='dlna'))`, now, now+g.ttl.Milliseconds(), hash, surface, now, id, surface)
@@ -220,7 +223,9 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 		return nil, core.ErrUnauthorized
 	}
 	// Activity is an observation, never a reason to reject a valid credential.
-	_ = g.times.Observe(ctx, viewer.ID)
+	if !frontend.QuietIdentity(ctx) {
+		_ = g.times.Observe(ctx, viewer.ID)
+	}
 	return viewer, nil
 }
 

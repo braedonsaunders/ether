@@ -47,8 +47,11 @@ func TestUserTimesUseIssuedAndRequestCredentials(t *testing.T) {
 			w := httptest.NewRecorder()
 			inst.Handler().ServeHTTP(w, request)
 			var auth struct{ User map[string]any }
-			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &auth) != nil || auth.User["LastLoginDate"] != wireTime(login) || auth.User["LastActivityDate"] != wireTime(activity) {
+			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &auth) != nil || auth.User["Id"] == "" {
 				t.Fatal(w.Code, w.Body.String())
+			}
+			if _, ok := auth.User["LastLoginDate"]; ok || calls != 0 {
+				t.Fatal("sign-in waited for viewer times", w.Body.String(), calls)
 			}
 			spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", string(protocol), "")
 			if err != nil && !os.IsNotExist(err) {
@@ -68,7 +71,7 @@ func TestUserTimesUseIssuedAndRequestCredentials(t *testing.T) {
 			w = httptest.NewRecorder()
 			inst.Handler().ServeHTTP(w, request)
 			var me map[string]any
-			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &me) != nil || me["LastLoginDate"] != wireTime(login) || calls != 2 {
+			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &me) != nil || me["LastLoginDate"] != wireTime(login) || calls != 1 {
 				t.Fatal(w.Code, w.Body.String(), calls)
 			}
 			unavailable = true

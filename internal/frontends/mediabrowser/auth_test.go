@@ -391,3 +391,51 @@ func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
 		t.Fatal(result.Policy)
 	}
 }
+
+type replayIdentity struct {
+	frontendtest.Identity
+	device frontend.Device
+	secret string
+}
+
+func (r *replayIdentity) QuickConnectPollDevice(_ context.Context, secret string, device frontend.Device) (string, error) {
+	r.secret = secret
+	r.device = device
+	return "same-token", nil
+}
+
+func (r *replayIdentity) Resolve(context.Context, string) (*frontend.Viewer, error) {
+	return &frontend.Viewer{ID: 1, Username: "ada"}, nil
+}
+
+func TestSignInSkipsCatalogueWork(t *testing.T) {
+	ident := &replayIdentity{Identity: frontendtest.Identity{SignInFunc: func(context.Context, string, string, frontend.Device) (string, error) {
+		return "pw-token", nil
+	}}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{
+		Identity: ident,
+		Experience: frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			t.Fatal("sign-in built home rows")
+			return nil, nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/Users/AuthenticateWithQuickConnect", strings.NewReader(`{"Secret":"secret"}`))
+	req.Header.Set("X-Emby-Authorization", `MediaBrowser Client="Swiftfin", Device="Apple TV", DeviceId="apple-tv", Version="1.4.1"`)
+	inst.Handler().ServeHTTP(w, req)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"AccessToken":"same-token"`) || ident.device.ID != "apple-tv" || ident.device.Client != "Swiftfin" {
+		t.Fatal(w.Code, w.Body.String(), ident.device)
+	}
+	if strings.Contains(w.Body.String(), "LastLoginDate") {
+		t.Fatal(w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/Users/AuthenticateByName", strings.NewReader(`{"Username":"ada","Pw":"secret"}`))
+	inst.Handler().ServeHTTP(w, req)
+	if w.Code != 200 || strings.Contains(w.Body.String(), "LastLoginDate") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

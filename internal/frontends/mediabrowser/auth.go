@@ -354,6 +354,112 @@ func (i *instance) result(w http.ResponseWriter, r *http.Request, token string) 
 	}
 	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.userDTOWithTimes(r, v, token), "SessionInfo": i.sessionDTO(r, v)})
 }
+
+// fastResult answers a sign-in with the token and a small user. Home rows,
+// viewer timestamps, session capability lookups and path warming wait until
+// the bytes are written. Swiftfin cancels Quick Connect at about half a second.
+func (i *instance) fastResult(w http.ResponseWriter, r *http.Request, token string) {
+	v, err := i.host.Identity.Resolve(frontend.WithQuietIdentity(r.Context()), token)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.authUserDTO(v), "SessionInfo": i.authSessionDTO(r, v)})
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	ctx := context.WithoutCancel(r.Context())
+	viewer := *v
+	dev := device(r)
+	go i.finishSignIn(ctx, &viewer, dev)
+}
+
+func (i *instance) finishSignIn(ctx context.Context, v *frontend.Viewer, dev frontend.Device) {
+	if v == nil {
+		return
+	}
+	if note, ok := i.host.Identity.(interface {
+		NoteSignIn(context.Context, int64) error
+	}); ok {
+		_ = note.NoteSignIn(ctx, v.ID)
+	}
+	if warm, ok := i.host.VirtualPaths.(interface {
+		Warm(context.Context, *frontend.Viewer, frontend.Device)
+	}); ok {
+		warm.Warm(ctx, v, dev)
+	}
+}
+
+func (i *instance) authUserDTO(v *frontend.Viewer) map[string]any {
+	id, _ := ids.GUID(ids.User, v.ID)
+	// Static keys only. Preferences, home order and capabilities are read on
+	// later user requests so sign-in does not walk the catalogue.
+	policy := map[string]any{
+		"IsAdministrator": v.IsOwner && !v.Delegated, "IsHidden": true, "IsDisabled": false,
+		"EnableCollectionManagement": false, "EnableSubtitleManagement": false, "EnableLyricManagement": false,
+		"EnableUserPreferenceAccess": i.host.Preferences != nil, "EnableRemoteControlOfOtherUsers": false,
+		"EnableSharedDeviceControl": false, "EnableRemoteAccess": false, "EnableLiveTvManagement": false, "EnableLiveTvAccess": false,
+		"EnableMediaPlayback": i.host.Sessions != nil, "EnablePlaybackRemuxing": i.host.Sessions != nil,
+		"EnableAudioPlaybackTranscoding": i.host.Sessions != nil, "EnableVideoPlaybackTranscoding": i.host.Sessions != nil,
+		"ForceRemoteSourceTranscoding": false, "EnableContentDeletion": false, "EnableContentDownloading": false,
+		"EnableSyncTranscoding": false, "EnableMediaConversion": false, "EnableAllDevices": true, "EnableAllChannels": true,
+		"EnabledDevices": []string{}, "EnabledChannels": []string{}, "EnableContentDeletionFromFolders": []string{}, "AllowedTags": []string{}, "BlockedTags": []string{},
+		"EnableAllFolders": len(v.AllowedSections) == 0, "InvalidLoginAttemptCount": 0, "LoginAttemptsBeforeLockout": -1,
+		"MaxActiveSessions": v.StreamLimit, "EnablePublicSharing": false, "RemoteClientBitrateLimit": 0,
+		"AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "SyncPlayAccess": "None",
+	}
+	configuration := map[string]any{"PlayDefaultAudioTrack": true, "DisplayMissingEpisodes": false, "GroupedFolders": []string{}, "SubtitleMode": "Default", "DisplayCollectionsView": false, "EnableLocalPassword": false, "OrderedViews": []string{}, "LatestItemsExcludes": []string{}, "MyMediaExcludes": []string{}, "HidePlayedInLatest": true, "RememberAudioSelections": true, "RememberSubtitleSelections": true, "EnableNextEpisodeAutoPlay": true}
+	if i.protocol == "emby" {
+		for _, key := range []string{"AllowedTags", "EnableCollectionManagement", "EnableLyricManagement", "ForceRemoteSourceTranscoding", "LoginAttemptsBeforeLockout", "MaxActiveSessions", "PasswordResetProviderId", "SyncPlayAccess"} {
+			delete(policy, key)
+		}
+		policy["SimultaneousStreamLimit"] = v.StreamLimit
+		delete(configuration, "DisplayCollectionsView")
+		delete(configuration, "GroupedFolders")
+	}
+	user := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "HasPassword": true, "Policy": policy, "Configuration": configuration}
+	if i.protocol == "jellyfin" {
+		configuration["SubtitleLanguagePreference"] = ""
+		configuration["CastReceiverId"] = ""
+		user["EnableAutoLogin"] = false
+		user["HasConfiguredEasyPassword"] = false
+		policy["AccessSchedules"] = []any{}
+		policy["BlockUnratedItems"] = []any{}
+		policy["BlockedChannels"] = []any{}
+		policy["BlockedMediaFolders"] = []any{}
+	}
+	if i.protocol == "emby" {
+		i.embyUserDTO(user)
+	}
+	return user
+}
+
+func (i *instance) authSessionDTO(r *http.Request, v *frontend.Viewer) map[string]any {
+	d := device(r)
+	userID, _ := ids.GUID(ids.User, v.ID)
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", i.protocol, v.ID, d.ID)))
+	now := time.Now().UTC()
+	state := map[string]any{"CanSeek": false, "IsPaused": false, "IsMuted": false, "RepeatMode": "RepeatNone"}
+	session := map[string]any{"Id": hex.EncodeToString(sum[:16]), "UserId": userID, "UserName": v.Username, "ServerId": i.info.ID, "Client": d.Client, "DeviceId": d.ID, "DeviceName": d.DeviceName, "ApplicationVersion": d.Version, "LastActivityDate": wireTime(now), "RemoteEndPoint": "", "AdditionalUsers": []any{}, "PlayableMediaTypes": []any{}, "SupportedCommands": []any{}, "SupportsRemoteControl": false, "PlayState": state}
+	if i.protocol == "jellyfin" {
+		session["LastPlaybackCheckIn"] = wireTime(time.Time{})
+		state["PlaybackOrder"] = "Default"
+		session["IsActive"] = true
+		session["HasCustomDeviceName"] = false
+		session["SupportsMediaControl"] = false
+		session["NowPlayingQueue"] = []any{}
+		session["Capabilities"] = map[string]any{"PlayableMediaTypes": []any{}, "SupportedCommands": []any{}, "SupportsMediaControl": false, "SupportsPersistentIdentifier": d.ID != ""}
+	} else {
+		state["PlaybackRate"] = 1
+		state["Shuffle"] = false
+		state["SleepTimerMode"] = "None"
+		state["SubtitleOffset"] = 0
+		session["Protocol"] = r.Proto
+		session["PlaylistIndex"] = 0
+		session["PlaylistLength"] = 0
+	}
+	return session
+}
 func identityError(w http.ResponseWriter, err error) {
 	if errors.Is(err, frontend.ErrRateLimited) {
 		http.Error(w, "Too Many Requests", 429)
@@ -428,7 +534,7 @@ func (i *instance) routes() error {
 				identityError(w, err)
 				return
 			}
-			i.result(w, r, token)
+			i.fastResult(w, r, token)
 		}},
 		{"POST", "/Users/{userId}/Configuration", i.saveUserConfiguration},
 		{"GET", "/Users/Me", func(w http.ResponseWriter, r *http.Request) {
@@ -526,12 +632,21 @@ func (i *instance) routes() error {
 				http.Error(w, "Bad Request", 400)
 				return
 			}
-			token, err := i.host.Identity.QuickConnectPoll(i.identityContext(r), body.Secret)
+			dev := device(r)
+			var token string
+			var err error
+			if poller, ok := i.host.Identity.(interface {
+				QuickConnectPollDevice(context.Context, string, frontend.Device) (string, error)
+			}); ok {
+				token, err = poller.QuickConnectPollDevice(i.identityContext(r), body.Secret, dev)
+			} else {
+				token, err = i.host.Identity.QuickConnectPoll(i.identityContext(r), body.Secret)
+			}
 			if err != nil {
 				identityError(w, err)
 				return
 			}
-			i.result(w, r, token)
+			i.fastResult(w, r, token)
 		}},
 	}
 	for _, r := range routes {

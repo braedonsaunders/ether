@@ -98,7 +98,9 @@ func (s surfaceIdentity) SignIn(ctx context.Context, username, password string, 
 	if err != nil {
 		return "", err
 	}
-	return s.grants.IssueLogin(ctx, viewer, &link, string(s.surface), device)
+	// The grant is the sign-in. Login timestamps are recorded after the
+	// response so a large catalogue database cannot hold the client open.
+	return s.grants.Issue(ctx, viewer, &link, string(s.surface), device)
 }
 func (s surfaceIdentity) IssueRefresh(ctx context.Context, access string, device core.Device) (string, error) {
 	return s.grants.IssueRefresh(ctx, string(s.surface), access, device)
@@ -134,6 +136,29 @@ func (s surfaceIdentity) QuickConnectPoll(ctx context.Context, secret string) (s
 		return "", frontend.ErrQuickConnectPending
 	}
 	return grant, err
+}
+
+// QuickConnectPollDevice redeems or replays a secret for one device.
+func (s surfaceIdentity) QuickConnectPollDevice(ctx context.Context, secret string, device core.Device) (string, error) {
+	if s.surface == "plex" {
+		return "", core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.poll, secret); err != nil {
+		return "", err
+	}
+	grant, err := s.quick.PollSurfaceDevice(ctx, string(s.surface), secret, device)
+	if errors.Is(err, identity.ErrQuickConnectPending) {
+		return "", frontend.ErrQuickConnectPending
+	}
+	return grant, err
+}
+
+// NoteSignIn records a sign-in after the client has the token.
+func (s surfaceIdentity) NoteSignIn(ctx context.Context, viewerID int64) error {
+	if s.times == nil {
+		return nil
+	}
+	return s.times.RecordSignIn(ctx, viewerID)
 }
 
 func (s surfaceIdentity) QuickConnectStatus(ctx context.Context, secret string) (bool, error) {
