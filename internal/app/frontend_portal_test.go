@@ -53,6 +53,39 @@ func TestSecurePortalPrefersReachableLocalPlexDirect(t *testing.T) {
 	}
 }
 
+func TestSecurePortalLoopbackUsesServerLANPlexDirect(t *testing.T) {
+	_, network, _ := net.ParseCIDR("192.168.68.0/24")
+	_, other, _ := net.ParseCIDR("10.0.0.0/24")
+	interfaces := []remote.InterfaceAddr{
+		{IP: net.ParseIP("192.168.68.65"), Net: network},
+		{IP: net.ParseIP("10.0.0.4"), Net: other},
+	}
+	connections := []remote.Connection{
+		{URI: "https://8.8.8.8:443"},
+		{URI: "http://192.168.68.65:32400", Local: true},
+		{URI: "https://10-0-0-4.hash.plex.direct:32400", Local: true},
+		{URI: "https://192-168-68-65.hash.plex.direct:32400", Local: true},
+	}
+	want := "https://192-168-68-65.hash.plex.direct:32400/ether/me"
+	for _, peer := range []string{"127.0.0.1", "::1"} {
+		got, err := portalSecureAddress(context.Background(), netip.MustParseAddr(peer), "0.0.0.0", "32400", interfaces, connections)
+		if err != nil || got != want {
+			t.Fatalf("peer %s: %q %v", peer, got, err)
+		}
+	}
+	got, err := portalSecureAddress(context.Background(), netip.MustParseAddr("127.0.0.1"), "10.0.0.4", "32400", interfaces, connections)
+	if err != nil || got != "https://10-0-0-4.hash.plex.direct:32400/ether/me" {
+		t.Fatalf("bound interface: %q %v", got, err)
+	}
+	localOnly := []remote.Connection{{URI: "https://192-168-68-65.hash.plex.direct:32400", Local: true}}
+	if _, err = portalSecureAddress(context.Background(), netip.MustParseAddr("127.0.0.1"), "127.0.0.1", "32400", interfaces, localOnly); err == nil {
+		t.Fatal("loopback-only listener advertised a LAN certificate")
+	}
+	if _, err = portalSecureAddress(context.Background(), netip.MustParseAddr("127.0.0.1"), "0.0.0.0", "32400", interfaces, []remote.Connection{{URI: "http://192.168.68.65:32400", Local: true}}); err == nil {
+		t.Fatal("accepted insecure address for loopback")
+	}
+}
+
 func TestSurfaceLANAddressUsesActualBoundPort(t *testing.T) {
 	_, network, _ := net.ParseCIDR("192.168.1.0/24")
 	interfaces := []remote.InterfaceAddr{{IP: net.ParseIP("192.168.1.5"), Net: network}}

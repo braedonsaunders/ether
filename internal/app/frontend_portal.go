@@ -172,6 +172,14 @@ func (r *frontendRuntime) viewerPortalSecureURL(ctx context.Context, req *http.R
 }
 
 func portalSecureAddress(ctx context.Context, peer netip.Addr, host, port string, interfaces []remote.InterfaceAddr, connections []remote.Connection) (string, error) {
+	// A loopback admin session has no LAN address of its own. The certificate
+	// is published on the server's LAN interfaces, which is the address Stremio
+	// on this machine can still open.
+	if peer.Unmap().IsLoopback() {
+		if secure, ok := loopbackPlexDirect(host, port, interfaces, connections); ok {
+			return secure, nil
+		}
+	}
 	if lan, err := portalLANAddress(peer, host, port, interfaces); err == nil {
 		local, _ := url.Parse(lan)
 		localIP := net.ParseIP(local.Hostname())
@@ -196,6 +204,36 @@ func portalSecureAddress(ctx context.Context, peer netip.Addr, host, port string
 		}
 	}
 	return portalPublicAddress(ctx, secure)
+}
+
+// loopbackPlexDirect returns the server's own LAN plex.direct HTTPS address
+// when this listener can accept it. A loopback-only bind is not that listener.
+func loopbackPlexDirect(host, port string, interfaces []remote.InterfaceAddr, connections []remote.Connection) (string, bool) {
+	bound := net.ParseIP(host)
+	if bound != nil && bound.IsLoopback() {
+		return "", false
+	}
+	for _, iface := range interfaces {
+		if iface.IP == nil || iface.IP.IsLoopback() {
+			continue
+		}
+		if bound != nil && !bound.IsUnspecified() && !bound.Equal(iface.IP) {
+			continue
+		}
+		for _, candidate := range connections {
+			u, err := url.Parse(candidate.URI)
+			if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Port() != port {
+				continue
+			}
+			ip, _, ok := remote.ParsePlexDirectHost(u.Hostname())
+			if !candidate.Local || !ok || !ip.Equal(iface.IP) {
+				continue
+			}
+			u.Path = strings.TrimRight(u.Path, "/") + "/ether/me"
+			return u.String(), true
+		}
+	}
+	return "", false
 }
 
 func portalLANAddress(ip netip.Addr, host, port string, interfaces []remote.InterfaceAddr) (string, error) {
