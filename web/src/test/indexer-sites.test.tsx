@@ -134,6 +134,7 @@ describe("Sources › Indexers sites", () => {
       id: "site-1",
       secretSettings: { password: "••••" },
     });
+    fireEvent.click(within(drawer).getByRole("button", { name: "More options" }));
     fireEvent.change(within(drawer).getByLabelText("Searches per day"), {
       target: { value: "80" },
     });
@@ -239,7 +240,11 @@ describe("Sources › Indexers sites", () => {
     renderApp("/sources/indexers");
     const list = await screen.findByRole("region", { name: "Indexers" }, WAIT);
     expect(within(list).queryByText(/Prowlarr/)).toBeNull();
-    expect(await screen.findByText(/It ships none/)).toBeInTheDocument();
+    expect(screen.queryByText(/ships none/)).toBeNull();
+    expect(screen.queryByText(/ships no/)).toBeNull();
+    expect(
+      await screen.findByText("Add a definitions source to search tracker sites"),
+    ).toBeInTheDocument();
   });
 });
 

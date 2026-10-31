@@ -11,9 +11,10 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { Cloud, Plus } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app-context";
+import { MoreOptions } from "../../components/ConfigSection";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { SecretInput, TestButton } from "../../components/fields";
 import { Section } from "../../components/layout";
@@ -33,11 +34,13 @@ import type {
 } from "../../lib/types";
 import { SchemaField } from "../settings/SchemaForm";
 import { DEBRID } from "../settings/schema";
+import { DEBRID_KINDS, SourceCard, debridFix } from "./cards";
+
+export { DEBRID_KINDS };
 import {
   BoolRow,
   OrderButtons,
   RecordDrawer,
-  RecordItem,
   TextRow,
   recordErrors,
   swap,
@@ -45,15 +48,7 @@ import {
   useTests,
   type Errors,
 } from "./form";
-
-export const DEBRID_KINDS: { value: DebridKind; label: string }[] = [
-  { value: "realdebrid", label: "Real-Debrid" },
-  { value: "torbox", label: "TorBox" },
-  { value: "alldebrid", label: "AllDebrid" },
-  { value: "premiumize", label: "Premiumize" },
-  { value: "debridlink", label: "Debrid-Link" },
-  { value: "offcloud", label: "Offcloud" },
-];
+import { SortableList } from "../../components/Sortable";
 
 export function debridKindLabel(kind: string): string {
   return DEBRID_KINDS.find((k) => k.value === kind)?.label ?? kind;
@@ -204,7 +199,12 @@ function StateBadge({ p, s }: { p: DebridProvider; s?: DebridProviderStatus }) {
  * Debrid accounts in priority order, each edited in a drawer, followed by the
  * section's torrent-handling settings edited in place.
  */
-export function DebridSources() {
+export function DebridSources({
+  addKind,
+}: {
+  /** Set when the add gallery picks a debrid service. */
+  addKind?: { nonce: number; kind: DebridKind } | null;
+} = {}) {
   const { refreshDashboard } = useApp();
   const config = useAsync(() => api.getConfig(), []);
   // Live status refreshes on its own; a failed poll leaves the list usable.
@@ -215,6 +215,7 @@ export function DebridSources() {
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const { tests, runTest, reset } = useTests();
+  const seenAdd = useRef(0);
 
   const cfg = config.data;
   const debrid = cfg ? debridOf(cfg) : null;
@@ -251,6 +252,13 @@ export function DebridSources() {
     reset(draft.id);
     setEditing({ index, draft: structuredClone(draft) });
   };
+  useEffect(() => {
+    if (!addKind || !debrid || seenAdd.current === addKind.nonce) return;
+    seenAdd.current = addKind.nonce;
+    open(providers.length, { ...blankProvider(providers.length), kind: addKind.kind });
+    // Open once per gallery choice. `open` closes over the list at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addKind, debrid, providers.length]);
   const close = () => {
     if (!saving) setEditing(null);
   };
@@ -320,47 +328,54 @@ export function DebridSources() {
     setEditing((e) => (e ? { ...e, draft: { ...e.draft, ...patch } } : e));
   const isNew = editing ? editing.index >= providers.length : false;
   const name = draft && editing ? providerName(draft, editing.index) : "";
-  const indexersLink = (
-    <Link to="/sources/indexers" className="font-medium underline underline-offset-2">
-      {t("Indexers")}
-    </Link>
-  );
+  const needsTorrentSource = hasUsableDebrid(cfg) && torrentIndexers === 0;
 
   return (
     <>
-      <Alert variant="info">
-        <AlertDescription>
-          {torrentIndexers === 0
-            ? tx(
-                "Ether ships no debrid providers: bring your own Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or Offcloud account and its API key. Debrid streams torrent releases, so it also needs at least one torrent source (a Torznab indexer, torrent site or Stremio addon) under {indexers}; none is set up yet.",
-                { indexers: indexersLink },
-              )
-            : tx(
-                "Ether ships no debrid providers: bring your own Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or Offcloud account and its API key. Debrid streams torrent releases, so it also needs at least one torrent source (a Torznab indexer, torrent site or Stremio addon) under {indexers}.",
-                { indexers: indexersLink },
-              )}
-        </AlertDescription>
-      </Alert>
+      {needsTorrentSource ? (
+        <div role="status">
+          <Alert variant="warning">
+            <AlertDescription>
+              {tx("Debrid is connected but no torrent source is set up yet. {action}", {
+                action: (
+                  <Link to="/sources/indexers" className="font-medium underline underline-offset-2">
+                    {t("Add one")}
+                  </Link>
+                ),
+              })}
+            </AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
 
       <Section
+        id="sources-debrid"
         title={t("Debrid providers")}
-        description={t("Tried in order. A torrent is used only when a provider can stream it.")}
+        description={t(
+          "Ether asks these accounts in order when a torrent needs a debrid service. The first one that can stream it is used.",
+        )}
         actions={
           <Button size="sm" onClick={() => open(providers.length, blankProvider(providers.length))}>
-            <Plus size={14} /> {t("Add provider")}
+            <Plus size={14} /> {t("Add a debrid service")}
           </Button>
         }
-        bodyClassName=""
+        bodyClassName="space-y-3 p-4"
       >
         {providers.length === 0 ? (
           <EmptyState
             icon={<Cloud />}
-            title={t("No debrid providers")}
-            description={t("Add your debrid account to stream torrent releases.")}
+            title={t("No debrid services yet")}
+            description={t(
+              "Add Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or Offcloud to stream torrent releases.",
+            )}
           />
         ) : (
-          <ul className="divide-y divide-border">
-            {providers.map((p, i) => {
+          <SortableList
+            items={providers}
+            getId={(p) => p.id}
+            className="space-y-3"
+            onReorder={(next) => void commit(next, t("Provider order saved"))}
+            renderItem={(p, handle, i) => {
               const s = live.find((x) => x.id === p.id);
               const label = providerName(p, i);
               const latency = latencySummary(s?.latency);
@@ -376,10 +391,11 @@ export function DebridSources() {
                 </>
               );
               return (
-                <RecordItem
-                  key={p.id}
-                  title={label}
+                <SourceCard
+                  name={label}
+                  position={i + 1}
                   description={details}
+                  problem={debridFix(p.enabled, s?.state)}
                   meta={
                     <>
                       <Badge variant="outline">{debridKindLabel(p.kind)}</Badge>
@@ -394,12 +410,13 @@ export function DebridSources() {
                       onMove={(d) => void move(i, d)}
                     />
                   }
+                  handle={handle}
                   editLabel={t("Edit {name}", { name: label })}
                   onEdit={() => open(i, p)}
                 />
               );
-            })}
-          </ul>
+            }}
+          />
         )}
         {engine ? (
           <p
@@ -545,22 +562,59 @@ function DebridSettings({
   }
 
   if (!draft) return null;
+  // Connection knobs stay under More options whether the schema lists them as
+  // ordinary fields or on FieldGroup.more. omit is not used here: the draft
+  // still saves every key.
+  const power = new Set(["chunkBytes", "readAheadChunks", "maxConnections"]);
+  const collapsed = new Map<string, (typeof DEBRID)[number]["fields"][number]>();
+  for (const group of DEBRID) {
+    for (const item of [...group.fields, ...(group.more ?? [])]) {
+      if (power.has(item.key) || group.more?.some((extra) => extra.key === item.key)) {
+        collapsed.set(item.key, item);
+      }
+    }
+  }
   return (
     <>
-      {DEBRID.map((g) => (
-        <SettingsSection key={g.title} title={g.title} description={g.description}>
-          {g.fields.map((f) => (
-            <SchemaField
-              key={f.key}
-              def={f}
-              value={draft[f.key]}
-              path={`debrid.${f.key}`}
-              error={errors[`debrid.${f.key}`]}
-              onChange={(v) => setDraft({ ...draft, [f.key]: v })}
-            />
-          ))}
-        </SettingsSection>
-      ))}
+      {DEBRID.map((g) => {
+        const fields = g.fields.filter((f) => !collapsed.has(f.key));
+        if (!fields.length) return null;
+        return (
+          <SettingsSection key={g.title} title={g.title} description={g.description}>
+            {fields.map((f) => (
+              <SchemaField
+                key={f.key}
+                def={f}
+                value={draft[f.key]}
+                path={`debrid.${f.key}`}
+                error={errors[`debrid.${f.key}`]}
+                onChange={(v) => setDraft({ ...draft, [f.key]: v })}
+              />
+            ))}
+          </SettingsSection>
+        );
+      })}
+      {collapsed.size ? (
+        <MoreOptions label={t("More options")}>
+          <p className="px-4 pt-1 text-sm text-fg-muted">
+            {t(
+              "Leave these at 0. Ether already chooses a fast first byte and how far to read ahead. Change them only when a player stutters.",
+            )}
+          </p>
+          <div>
+            {[...collapsed.values()].map((def) => (
+              <SchemaField
+                key={def.key}
+                def={def}
+                value={draft[def.key]}
+                path={`debrid.${def.key}`}
+                error={errors[`debrid.${def.key}`]}
+                onChange={(v) => setDraft({ ...draft, [def.key]: v })}
+              />
+            ))}
+          </div>
+        </MoreOptions>
+      ) : null}
       <SaveBar
         dirty={dirty}
         saving={saving}

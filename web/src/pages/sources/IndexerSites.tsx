@@ -3,6 +3,7 @@ import {
   AlertDescription,
   Badge,
   Button,
+  EmptyState,
   Input,
   SearchSelect,
   SettingsSection,
@@ -636,12 +637,13 @@ export function SiteDefinitions({
               );
   return (
     <>
-      <SettingsSection
-        title={t("Site definitions")}
-        description={t(
-          "Ether searches the sites you add as indexers using Cardigann-format definitions you install. It ships none: install only definitions for sites you have the right to use.",
+      <SettingsSection title={t("Site definitions")}>
+        {saved.definitionsUrl?.trim() ? null : (
+          <EmptyState
+            icon={<Upload />}
+            title={t("Add a definitions source to search tracker sites")}
+          />
         )}
-      >
         <SettingsRow
           title={t("Installed")}
           description={summary}

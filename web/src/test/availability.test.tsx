@@ -18,6 +18,7 @@ describe("Sources availability", () => {
     const d = await screen.findByRole("dialog", { name: "Availability settings" });
     fireEvent.click(within(d).getByRole("switch", { name: "Monitor release feeds" }));
     fireEvent.click(within(d).getByRole("switch", { name: "Check discovered sources" }));
+    fireEvent.click(within(d).getByText("More options"));
     fireEvent.change(within(d).getByLabelText("Feed API requests"), { target: { value: "48" } });
     fireEvent.click(within(d).getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/availability")).toHaveLength(1));
@@ -51,10 +52,14 @@ describe("Sources availability", () => {
     const { fake } = renderApp("/sources/availability");
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     const d = await screen.findByRole("dialog", { name: "Availability settings" });
+    fireEvent.click(within(d).getByText("More options"));
     fireEvent.click(within(d).getByRole("switch", { name: "Use all supported feeds" }));
     fireEvent.click(within(d).getByRole("button", { name: "Cancel" }));
     expect(calls(fake, "PUT", "/config/availability")).toHaveLength(0);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("switch", { name: "Use all supported feeds" })).toBeChecked();
+    const again = await screen.findByRole("dialog", { name: "Availability settings" });
+    fireEvent.click(within(again).getByRole("button", { name: "More options" }));
+    expect(within(again).getByRole("switch", { name: "Use all supported feeds" })).toBeChecked();
   });
 });

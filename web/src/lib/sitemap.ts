@@ -144,6 +144,13 @@ export const PAGES = localized<PageDef[]>(() => [
     title: t("Sources"),
     sections: [
       {
+        key: "overview",
+        title: t("Your sources"),
+        keywords: searchTerms(
+          msg("debrid usenet indexer health order real-debrid torbox newznab prowlarr"),
+        ),
+      },
+      {
         key: "usenet",
         title: t("Usenet providers"),
         keywords: searchTerms(msg("nntp backfill connections")),
@@ -168,12 +175,12 @@ export const PAGES = localized<PageDef[]>(() => [
       },
       {
         key: "availability",
-        title: t("Availability"),
+        title: t("Will it play"),
         keywords: searchTerms(msg("release feeds rss source evidence checks budget")),
       },
       {
         key: "usage",
-        title: t("Usage & costs"),
+        title: t("Cost"),
         keywords: searchTerms(msg("quota price plan cost")),
       },
     ],

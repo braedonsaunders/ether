@@ -33,8 +33,8 @@ describe("Owner usability", () => {
   });
 
   it.each([
-    { path: "/sources/usenet", trigger: "Add provider", dialog: "New provider" },
-    { path: "/sources/debrid", trigger: "Add provider", dialog: "New debrid provider" },
+    { path: "/sources/usenet", trigger: "Add a Usenet provider", dialog: "New provider" },
+    { path: "/sources/debrid", trigger: "Add a debrid service", dialog: "New debrid provider" },
     { path: "/sources/indexers", trigger: "Import from Prowlarr", dialog: "Import from Prowlarr" },
     { path: "/cache", trigger: "Edit policy", dialog: "Edit cache policy" },
     { path: "/notifications/channels", trigger: "New channel", dialog: "New notification channel" },

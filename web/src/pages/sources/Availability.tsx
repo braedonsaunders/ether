@@ -2,6 +2,7 @@ import { getLocale, localized, t, tn } from "../../i18n";
 import { Badge, Button, SettingsSection, Spinner, toast } from "@braedonsaunders/appkit-ui";
 import { Activity, Radio, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { MoreOptions } from "../../components/ConfigSection";
 import { ErrorPanel, MutationError } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import type { AvailabilityConfig } from "../../lib/types";
@@ -80,7 +81,9 @@ export function Availability() {
       </div>
     );
   const change = <K extends keyof AvailabilityConfig>(key: K, value: AvailabilityConfig[K]) =>
-    setDraft((d) => d && { ...d, [key]: value });
+    setDraft((d) => (d ? { ...d, [key]: value } : d));
+  const evidenceDays = draft?.movieEvidenceDays ?? 60;
+  const daysInvalid = !Number.isInteger(evidenceDays) || evidenceDays < 1 || evidenceDays > 366;
   const save = async () => {
     if (!draft) return;
     setSaving(true);
@@ -131,7 +134,12 @@ export function Availability() {
                   : t("Monitoring")}
             </Badge>
           </div>
-          <p className="text-sm text-fg-muted">{s.message}</p>
+          <p className="text-sm text-fg-muted">
+            {t(
+              "This watches your search sites for new releases and can spot-check that a file is really there before someone presses Play. It does not change which account Ether streams from.",
+            )}
+          </p>
+          <p className="mt-2 text-sm text-fg-muted">{s.message}</p>
           <p className="mt-2 text-xs text-fg-muted">
             {cfg.disableMovieEvidenceGate
               ? t("Movie evidence requirement is off.")
@@ -310,87 +318,90 @@ export function Availability() {
       <RecordDrawer
         open={draft !== null}
         title={t("Availability settings")}
-        description={t("Configure movie visibility, polling and optional health checks.")}
+        description={t(
+          "This watches your search sites for new releases and can spot-check that a file is really there before someone presses Play. It does not change which account Ether streams from.",
+        )}
         onClose={() => {
           if (!saving) setDraft(null);
         }}
         onSave={() => void save()}
         saving={saving}
-        saveDisabled={
-          !!draft &&
-          (!Number.isInteger(draft.movieEvidenceDays) ||
-            draft.movieEvidenceDays! < 1 ||
-            draft.movieEvidenceDays! > 366)
-        }
+        saveDisabled={daysInvalid}
         saveLabel={t("Save settings")}
         error={saveError}
       >
         {draft ? (
           <>
-            <SettingsSection
-              title={t("Movie visibility")}
-              description={t(
-                "An eligible observed release unlocks a movie immediately; this is not a mandatory delay or a guarantee of quality or playback. Episodes retain their 24-hour policy.",
+          <SettingsSection
+            title={t("Movie visibility")}
+            description={t(
+              "An eligible observed release unlocks a movie immediately; this is not a mandatory delay or a guarantee of quality or playback. Episodes retain their 24-hour policy.",
+            )}
+          >
+            <BoolRow
+              label={t("Require movie release evidence")}
+              value={!draft.disableMovieEvidenceGate}
+              onChange={(v) => change("disableMovieEvidenceGate", !v)}
+            />
+            <NumRow
+              label={t("Movie evidence window")}
+              value={draft.movieEvidenceDays ?? 60}
+              onChange={(v) => change("movieEvidenceDays", v)}
+              min={1}
+              max={366}
+              unit={t("days")}
+              error={
+                draft.movieEvidenceDays! < 1 || draft.movieEvidenceDays! > 366
+                  ? t("Enter 1 to 366 days")
+                  : undefined
+              }
+            />
+          </SettingsSection>
+          <SettingsSection title={t("Discovery & presentation")}>
+            <BoolRow
+              label={t("Monitor release feeds")}
+              value={draft.monitor}
+              onChange={(v) => change("monitor", v)}
+              help={t(
+                "Use your configured indexers automatically. No separate RSS URL. Requests count toward API budgets; catch-up is bounded.",
               )}
-            >
-              <BoolRow
-                label={t("Require movie release evidence")}
-                value={!draft.disableMovieEvidenceGate}
-                onChange={(v) => change("disableMovieEvidenceGate", !v)}
-              />
-              <NumRow
-                label={t("Movie evidence window")}
-                value={draft.movieEvidenceDays ?? 60}
-                onChange={(v) => change("movieEvidenceDays", v)}
-                min={1}
-                max={366}
-                unit={t("days")}
-                error={
-                  draft.movieEvidenceDays! < 1 || draft.movieEvidenceDays! > 366
-                    ? t("Enter 1 to 366 days")
-                    : undefined
-                }
-              />
-            </SettingsSection>
-            <SettingsSection title={t("Discovery & presentation")}>
-              <BoolRow
-                label={t("Monitor release feeds")}
-                value={draft.monitor}
-                onChange={(v) => change("monitor", v)}
-                help={t(
-                  "Use your configured indexers automatically. No separate RSS URL. Requests count toward API budgets; catch-up is bounded.",
-                )}
-              />
-              <BoolRow
-                label={t("Check discovered sources")}
-                value={draft.verify}
-                onChange={(v) => change("verify", v)}
-                help={t(
-                  "Spend a small allowance validating promising sources. Checks pause while playback is active.",
-                )}
-              />
-              <BoolRow
-                label={t("Use debrid for checks")}
-                value={draft.debrid}
-                onChange={(v) => change("debrid", v)}
-                help={t(
-                  "Use supported cache checks and existing account files. Provider capabilities vary; unknown is never treated as absent.",
-                )}
-              />
-              <BoolRow
-                label={t("Prefer checked recommendations")}
-                value={draft.preferVerified}
-                onChange={(v) => change("preferVerified", v)}
-                help={t(
-                  "Move fresh checked movies forward in discovery shelves. Visibility follows the evidence settings above.",
-                )}
-              />
-              <BoolRow
-                label={t("Show newly available shelves")}
-                value={draft.newlyAvailable}
-                onChange={(v) => change("newlyAvailable", v)}
-              />
-            </SettingsSection>
+            />
+            <BoolRow
+              label={t("Check discovered sources")}
+              value={draft.verify}
+              onChange={(v) => change("verify", v)}
+              help={t(
+                "Spend a small allowance validating promising sources. Checks pause while playback is active.",
+              )}
+            />
+            <BoolRow
+              label={t("Use debrid for checks")}
+              value={draft.debrid}
+              onChange={(v) => change("debrid", v)}
+              help={t(
+                "Use supported cache checks and existing account files. Provider capabilities vary; unknown is never treated as absent.",
+              )}
+            />
+            <BoolRow
+              label={t("Prefer checked recommendations")}
+              value={draft.preferVerified}
+              onChange={(v) => change("preferVerified", v)}
+              help={t(
+                "Move fresh checked movies forward in discovery shelves. Visibility follows the evidence settings above.",
+              )}
+            />
+            <BoolRow
+              label={t("Show newly available shelves")}
+              value={draft.newlyAvailable}
+              onChange={(v) => change("newlyAvailable", v)}
+            />
+          </SettingsSection>
+          <MoreOptions label={t("More options")}>
+            <p className="mt-2 mb-3 px-4 text-sm text-fg-muted">
+              {t(
+                "Polling, which search sites to watch, and how much of each day's allowance this work may use. The defaults are safe.",
+              )}
+            </p>
             <SettingsSection
               title={t("Participating feeds")}
               description={t(
@@ -496,6 +507,7 @@ export function Availability() {
                 )}
               />
             </SettingsSection>
+          </MoreOptions>
           </>
         ) : null}
       </RecordDrawer>

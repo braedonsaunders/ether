@@ -2001,6 +2001,83 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return json(state.boot);
       case "GET /dashboard":
         return json(dashboard());
+      case "GET /stats/infrastructure":
+        return json({
+          month: "2026-10",
+          monthPlays: 40,
+          notes: null,
+          snapshots: {
+            providers: {
+              at: 1_762_000_000,
+              data: [
+                {
+                  id: "p1",
+                  name: "Primary news",
+                  host: "news.example.com",
+                  state: "ok",
+                  backfill: false,
+                  avgLatency: 42_000_000,
+                  bytes: 0,
+                  articles: 0,
+                  misses: 0,
+                  errors: 0,
+                },
+                {
+                  id: "p2",
+                  name: "Block account",
+                  host: "block.example.net",
+                  state: "ok",
+                  backfill: true,
+                  avgLatency: 80_000_000,
+                  bytes: 0,
+                  articles: 0,
+                  misses: 0,
+                  errors: 0,
+                },
+              ],
+            },
+            indexers: {
+              at: 1_762_000_000,
+              data: [
+                {
+                  indexer: "Indexer One",
+                  hitsUsed: 12,
+                  hitsRemaining: 88,
+                  grabsUsed: 2,
+                  grabsRemaining: 18,
+                },
+              ],
+            },
+          },
+          providerMonth: [
+            {
+              id: "p1",
+              bytes: 80 * 1073741824,
+              articles: 12000,
+              misses: 40,
+              errors: 1,
+              backfillSaves: 3,
+              bodyMisses: 30,
+              bodyTakedowns: 0,
+            },
+          ],
+          indexerMonth: [
+            {
+              indexer: "Indexer One",
+              searches: 400,
+              successes: 360,
+              grabs: 20,
+              grabSuccess: 18,
+              budgets: 0,
+              latencyMs: 180,
+              ageSeconds: 0,
+              ageSamples: 0,
+            },
+          ],
+          costs: [{ kind: "provider", id: "p1", monthly: 10, currency: "USD" }],
+        });
+      case "PUT /stats/costs":
+        return json({ ok: true });
       case "GET /config":
         return json({ config: state.config });
       case "PUT /config":

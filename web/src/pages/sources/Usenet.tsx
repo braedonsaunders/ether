@@ -8,22 +8,24 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { Network, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "../../app-context";
+import { MoreOptions } from "../../components/ConfigSection";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { SecretInput, TestButton } from "../../components/fields";
 import { Section } from "../../components/layout";
+import { SortableList } from "../../components/Sortable";
 import { SettingsRow } from "../../components/SettingsRow";
 import { api, newId } from "../../lib/api";
 import { formatBytes, isPlainObject } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import type { EtherConfig, UsenetProvider } from "../../lib/types";
+import { SourceCard, usenetFix } from "./cards";
 import {
   BoolRow,
   NumRow,
   OrderButtons,
   RecordDrawer,
-  RecordItem,
   TextRow,
   recordErrors,
   swap,
@@ -91,13 +93,28 @@ export function connectionText(stat: Record<string, unknown> | undefined, config
   ];
 }
 
+const DEFAULT_REPAIR: NonNullable<EtherConfig["usenet"]["repair"]> = {
+  enabled: false,
+  summaryRows: 4,
+  adaptiveSummaries: true,
+  maxDownloadBytes: 512 * 1024 * 1024,
+  liveWait: "2s",
+  aheadWait: "1m30s",
+};
+
 /** Usenet providers in priority order; each provider is edited in a drawer. */
-export function UsenetProviders() {
+export function UsenetProviders({
+  addNonce,
+}: {
+  /** Changes when the add gallery asks for a new provider. */
+  addNonce?: number | null;
+} = {}) {
   const { dashboard, refreshDashboard } = useApp();
   const config = useAsync(() => api.getConfig(), []);
-  const [repairDraft, setRepairDraft] = useState<NonNullable<
-    EtherConfig["usenet"]["repair"]
-  > | null>(null);
+  const seenAdd = useRef(0);
+  const [repairDraft, setRepairDraft] = useState<
+    NonNullable<EtherConfig["usenet"]["repair"]> | null
+  >(null);
   const [editing, setEditing] = useState<{ index: number; draft: UsenetProvider } | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState<unknown>(null);
@@ -142,6 +159,12 @@ export function UsenetProviders() {
     reset(draft.id);
     setEditing({ index, draft: structuredClone(draft) });
   };
+  useEffect(() => {
+    if (!addNonce || !cfg || seenAdd.current === addNonce) return;
+    seenAdd.current = addNonce;
+    open(providers.length, blankProvider(providers.length));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addNonce, cfg, providers.length]);
   const close = () => {
     if (!saving) setEditing(null);
   };
@@ -214,32 +237,39 @@ export function UsenetProviders() {
   return (
     <>
       <Section
-        title={t("Providers")}
+        id="sources-usenet"
+        title={t("Usenet providers")}
         description={t(
-          "Tried in order. Backfill providers are only used for articles missing everywhere else.",
+          "Ether downloads articles from these accounts in order. A backfill account is used only when the article is missing everywhere else.",
         )}
         actions={
           <Button size="sm" onClick={() => open(providers.length, blankProvider(providers.length))}>
-            <Plus size={14} /> {t("Add provider")}
+            <Plus size={14} /> {t("Add a Usenet provider")}
           </Button>
         }
-        bodyClassName=""
+        bodyClassName="space-y-3 p-4"
       >
         {providers.length === 0 ? (
           <EmptyState
             icon={<Network />}
-            title={t("No providers")}
-            description={t("Add your Usenet provider. Block accounts can be added as backfill.")}
+            title={t("No Usenet providers yet")}
+            description={t(
+              "Add the account from your Usenet plan. A block account can be backfill.",
+            )}
           />
         ) : (
-          <ul className="divide-y divide-border">
-            {providers.map((p, i) => {
+          <SortableList
+            items={providers}
+            getId={(p) => p.id}
+            className="space-y-3"
+            onReorder={(next) => void commit(next, t("Provider order saved"))}
+            renderItem={(p, handle, i) => {
               const stat = live.find((s) => s.id === p.id);
               const label = providerName(p, i);
               return (
-                <RecordItem
-                  key={p.id}
-                  title={label}
+                <SourceCard
+                  name={label}
+                  position={i + 1}
                   description={[
                     role(p, i),
                     p.host ? `${p.host}:${p.port}` : t("No host"),
@@ -248,6 +278,7 @@ export function UsenetProviders() {
                   ]
                     .filter(Boolean)
                     .join(" · ")}
+                  problem={usenetFix(p.enabled, stat?.state)}
                   meta={
                     <>
                       {!p.enabled ? <Badge variant="secondary">{t("Off")}</Badge> : null}
@@ -270,41 +301,30 @@ export function UsenetProviders() {
                       onMove={(d) => void move(i, d)}
                     />
                   }
+                  handle={handle}
                   editLabel={t("Edit {name}", { name: label })}
                   onEdit={() => open(i, p)}
                 />
               );
-            })}
-          </ul>
+            }}
+          />
         )}
       </Section>
 
       <Section
-        title={t("Repair Ahead")}
+        title={t("Repair missing pieces")}
         description={t(
-          "Restore missing source data during readahead when it can finish within your limits.",
+          "While a video is playing, Ether can fetch a little extra to fill gaps. Playback still switches sources if that cannot finish in time. This uses extra bandwidth.",
         )}
       >
         <SettingsRow
           title={cfg?.usenet.repair?.enabled ? t("Repair enabled") : t("Repair disabled")}
-          description={t(
-            "Repair uses additional download bandwidth. Playback can still switch sources when repair cannot finish in time.",
-          )}
           control={
             <Button
               variant="outline"
               onClick={() => {
                 setError(null);
-                setRepairDraft(
-                  cfg?.usenet.repair ?? {
-                    enabled: false,
-                    summaryRows: 4,
-                    adaptiveSummaries: true,
-                    maxDownloadBytes: 512 * 1024 * 1024,
-                    liveWait: "2s",
-                    aheadWait: "1m30s",
-                  },
-                );
+                setRepairDraft(cfg?.usenet.repair ?? DEFAULT_REPAIR);
               }}
             >
               {t("Configure repair")}
@@ -317,7 +337,7 @@ export function UsenetProviders() {
         onClose={() => {
           if (!saving) setRepairDraft(null);
         }}
-        title={t("Repair Ahead")}
+        title={t("Repair missing pieces")}
         onSave={() => void saveRepair()}
         saving={saving}
         saveLabel={t("Save repair settings")}
@@ -337,7 +357,7 @@ export function UsenetProviders() {
               max={4096}
               unit="MiB"
               help={t(
-                "Additional transfer budget per repair attempt; requests already in flight can finish.",
+                "How much extra Ether may download for one repair. 512 MiB is plenty for most gaps.",
               )}
               onChange={(n) =>
                 setRepairDraft({
@@ -346,20 +366,22 @@ export function UsenetProviders() {
                 })
               }
             />
-            <BoolRow
-              label={t("Remember downloaded data")}
-              value={repairDraft.summaryRows > 0}
-              help={t(
-                "After damage is detected, retain repair information when its expected benefit justifies the memory and CPU cost.",
-              )}
-              onChange={(enabled) =>
-                setRepairDraft({
-                  ...repairDraft,
-                  summaryRows: enabled ? 4 : 0,
-                  adaptiveSummaries: true,
-                })
-              }
-            />
+            <MoreOptions label={t("More options")}>
+              <BoolRow
+                label={t("Remember downloaded data")}
+                value={repairDraft.summaryRows > 0}
+                help={t(
+                  "After damage is detected, retain repair information when its expected benefit justifies the memory and CPU cost.",
+                )}
+                onChange={(enabled) =>
+                  setRepairDraft({
+                    ...repairDraft,
+                    summaryRows: enabled ? 4 : 0,
+                    adaptiveSummaries: true,
+                  })
+                }
+              />
+            </MoreOptions>
           </SettingsSection>
         ) : null}
       </RecordDrawer>
@@ -426,15 +448,19 @@ export function UsenetProviders() {
                 onChange={(v) => set({ password: v })}
               />
             </SettingsRow>
-            <NumRow
-              label={t("Connections")}
-              value={draft.connections}
-              min={0}
-              max={500}
-              error={errors.connections}
-              help={t("Your plan's connection limit.")}
-              onChange={(n) => set({ connections: n })}
-            />
+            <MoreOptions label={t("More options")}>
+              <NumRow
+                label={t("Connections")}
+                value={draft.connections}
+                min={0}
+                max={500}
+                error={errors.connections}
+                help={t(
+                  "How many downloads Ether opens at once. 20 suits a typical plan. Lower it only if the provider cuts you off.",
+                )}
+                onChange={(n) => set({ connections: n })}
+              />
+            </MoreOptions>
             <BoolRow
               label={t("Backfill only")}
               value={draft.backfill}

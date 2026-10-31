@@ -233,6 +233,11 @@ export function SourceUsage() {
 
   return (
     <>
+      <p className="text-sm text-fg-muted">
+        {t(
+          "What your providers and search sites used this month, and what that costs once you enter a plan price. Each currency stays separate.",
+        )}
+      </p>
       <Section
         title={t("Monthly costs")}
         description={t(

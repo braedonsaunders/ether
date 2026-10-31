@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { destinations } from "../lib/sitemap";
 import { engineSummary, latencySummary } from "../pages/sources/Debrid";
+import { debridFix, sourceMonogram } from "../pages/sources/cards";
 import type { DebridConfig, Indexer } from "../lib/types";
 import { calls, renderApp } from "./harness";
 
@@ -20,7 +21,11 @@ describe("Sources › Debrid", () => {
     });
     renderApp("/sources/debrid");
     expect(await screen.findByRole("heading", { name: "Sources" }, WAIT)).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Debrid" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Your sources" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByRole("region", { name: "Debrid providers" }, WAIT)).toBeInTheDocument();
   });
 
   it("lists providers with their kind and live status", async () => {
@@ -43,17 +48,28 @@ describe("Sources › Debrid", () => {
       "1 open file · 50 cache hits (10 memory, 40 disk) vs 120 fetched (60.0 MiB) · 2 hedged requests, 1 won · 3 links refreshed",
     );
     expect(calls(fake, "GET", "/status/debrid").length).toBeGreaterThan(0);
-    // Owners bring their own account; torrent indexers are what debrid streams.
-    expect(screen.getByText(/Ether ships no debrid providers/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Indexers" })).toHaveAttribute(
+    // A torrent source is already configured, so the gap notice stays hidden.
+    expect(screen.queryByText(/Ether ships no/)).toBeNull();
+    expect(screen.queryByText(/no torrent source is set up yet/)).toBeNull();
+  });
+
+  it("points at indexers only when debrid is connected and no torrent source exists", async () => {
+    renderApp("/sources/debrid", {}, (fake) => {
+      fake.state.config.indexers = (fake.state.config.indexers ?? []).map((ix) =>
+        ix.protocol === "torrent" ? { ...ix, enabled: false } : ix,
+      );
+    });
+    expect(await screen.findByText(/no torrent source is set up yet/, {}, WAIT)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Add one" })).toHaveAttribute(
       "href",
       "/sources/indexers",
     );
+    expect(screen.queryByText(/Ether ships no/)).toBeNull();
   });
 
   it("adds a provider from a drawer, tests it, and keeps stored keys", async () => {
     const { fake } = renderApp("/sources/debrid");
-    fireEvent.click(await screen.findByRole("button", { name: "Add provider" }, WAIT));
+    fireEvent.click(await screen.findByRole("button", { name: "Add a debrid service" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "New debrid provider" });
     const test = within(drawer).getByRole("button", { name: /Test/ });
     expect(test).toBeDisabled();
@@ -161,6 +177,16 @@ describe("Sources › Indexers protocol", () => {
     expect(await within(drawer).findByText(/Prowlarr Torrents/, {}, WAIT)).toBeInTheDocument();
     expect(within(drawer).getByText("Torznab")).toBeInTheDocument();
     expect(within(drawer).getByText("Newznab")).toBeInTheDocument();
+  });
+});
+
+describe("source cards", () => {
+  it("uses a monogram and says how to fix a rejected key", () => {
+    expect(sourceMonogram("Real-Debrid")).toBe("RD");
+    expect(sourceMonogram("TorBox")).toBe("T");
+    expect(debridFix(true, "auth_failed")).toMatch(/API key was rejected/);
+    expect(debridFix(true, "ok")).toBeNull();
+    expect(debridFix(false, "ok")).toMatch(/off/);
   });
 });
 
