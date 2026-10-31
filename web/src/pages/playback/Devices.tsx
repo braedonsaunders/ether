@@ -16,7 +16,6 @@ import { useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { SettingsRow } from "../../components/SettingsRow";
-import { StatusDot } from "../../components/status";
 import { pagedTableLabels, searchSelectLabels } from "../../i18n/appkit-labels";
 import { t, tx } from "../../i18n";
 import { api, apiFetch } from "../../lib/api";
@@ -128,18 +127,6 @@ function protocolLabel(value: string) {
   }
 }
 
-function certificationLabel(value: string) {
-  switch (value) {
-    case "pending":
-      return t("Not certified yet");
-    case "unsupported":
-      return t("Not supported");
-    case "builtin":
-      return t("Built in");
-    default:
-      return value;
-  }
-}
 
 function deviceNote(note: string) {
   switch (note) {
@@ -273,20 +260,6 @@ function CapabilityBadges({ row }: { row: CompatDevice }) {
   );
 }
 
-function CertificationMark({ value }: { value: string }) {
-  if (value === "builtin") return <Badge variant="secondary">{t("Built in")}</Badge>;
-  const unsupported = value === "unsupported";
-  return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
-      <StatusDot level={unsupported ? "warn" : "unknown"} />
-      {unsupported
-        ? t("Not supported")
-        : value === "pending"
-          ? t("Not certified yet")
-          : certificationLabel(value)}
-    </span>
-  );
-}
 
 function applyCapabilityDiff(
   override: CapabilityOverride,
@@ -816,19 +789,22 @@ export function DeviceCapabilities() {
                   {
                     key: "subtitles",
                     header: t("Subtitles"),
-                    cell: (row) =>
-                      (
+                    cell: (row) => {
+                      const codecs =
                         row.saved?.subtitleCodecs ??
-                        (row.kind === "known" ? row.app.subtitles : null)
-                      )?.join(", ") || t("Reported by the app"),
-                  },
-                  {
-                    key: "certification",
-                    header: t("Certification"),
-                    cell: (row) =>
-                      row.kind === "known" ? (
-                        <CertificationMark value={row.app.certification} />
-                      ) : null,
+                        (row.kind === "known" ? row.app.subtitles : null);
+                      return codecs?.length ? (
+                        <span className="flex flex-wrap gap-1">
+                          {codecs.map((codec) => (
+                            <Badge key={codec} variant="secondary">
+                              {codec.toUpperCase()}
+                            </Badge>
+                          ))}
+                        </span>
+                      ) : (
+                        <Badge variant="secondary">{t("Reports its own")}</Badge>
+                      );
+                    },
                   },
                 ]}
               />
