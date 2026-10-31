@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -310,6 +311,16 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	}
 	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser, rowViews: rowViews, detail: detail, generation: func(ctx context.Context) (int64, error) {
 		return viewerpolicy.Read(ctx, a.db)
+	}, catalogGen: func() uint64 {
+		if a.catalog == nil {
+			return 0
+		}
+		return a.catalog.WriteGeneration()
+	}, posters: func(ctx context.Context, typ core.MediaType, limit int) ([]core.Title, error) {
+		if a.catalog == nil {
+			return nil, core.ErrNotAvailable
+		}
+		return a.catalog.LibraryPosters(ctx, typ, limit)
 	}}, nil
 }
 
@@ -323,6 +334,17 @@ type surfaceExperience struct {
 	playability func(context.Context, frontend.ItemRequest) *bool
 	detail      detailPersonalization
 	generation  func(context.Context) (int64, error)
+	catalogGen  func() uint64
+	posters     func(context.Context, core.MediaType, int) ([]core.Title, error)
+	collageMu   sync.Mutex
+	collage     map[string]collageSlot
+}
+
+type collageSlot struct {
+	gen   uint64
+	img   frontend.Image
+	ready bool
+	busy  bool
 }
 
 // PolicyGeneration is the viewer-policy epoch. Personal-view caches drop
@@ -349,12 +371,8 @@ func (s *surfaceExperience) ResolveRowView(ctx context.Context, req frontend.Row
 }
 
 func (s *surfaceExperience) LibraryCollage(ctx context.Context, viewer *frontend.Viewer, device frontend.Device, viewID string) (frontend.Image, error) {
-	if s == nil || s.Service == nil || s.artwork == nil || viewer == nil || viewID == "" {
+	if s == nil || s.artwork == nil || viewer == nil || viewID == "" || s.posters == nil {
 		return frontend.Image{}, core.ErrNotAvailable
-	}
-	n, err := ids.ParseGUID(ids.View, viewID)
-	if err != nil {
-		return frontend.Image{}, err
 	}
 	builder, ok := s.artwork.(interface {
 		LibraryCollage(context.Context, *core.Viewer, core.Device, string, []core.Title) (frontend.Image, error)
@@ -362,11 +380,93 @@ func (s *surfaceExperience) LibraryCollage(ctx context.Context, viewer *frontend
 	if !ok {
 		return frontend.Image{}, core.ErrNotAvailable
 	}
-	page, err := s.LibraryItems(ctx, viewer, device, strconv.FormatInt(n, 10), frontend.ItemQuery{Limit: 24})
-	if err != nil {
-		return frontend.Image{}, err
+	typ, ok := s.libraryMediaType(ctx, viewer, viewID)
+	if !ok {
+		return frontend.Image{}, core.ErrNotFound
 	}
-	return builder.LibraryCollage(ctx, viewer, device, viewID, page.Items)
+	var gen uint64
+	if s.catalogGen != nil {
+		gen = s.catalogGen()
+	}
+	if img, fresh := s.collageImage(viewID, gen); fresh {
+		return img, nil
+	} else if img.Path != "" {
+		s.startCollage(viewID, gen, typ, *viewer, device, builder)
+		return img, nil
+	}
+	s.startCollage(viewID, gen, typ, *viewer, device, builder)
+	return frontend.Image{}, core.ErrNotFound
+}
+
+func (s *surfaceExperience) libraryMediaType(ctx context.Context, viewer *frontend.Viewer, viewID string) (core.MediaType, bool) {
+	if s == nil || s.Service == nil {
+		return "", false
+	}
+	n, err := ids.ParseGUID(ids.View, viewID)
+	if err != nil {
+		return "", false
+	}
+	want := strconv.FormatInt(n, 10)
+	views, err := s.Views(ctx, viewer)
+	if err != nil {
+		return "", false
+	}
+	for _, view := range views {
+		if view.ID == want {
+			return view.Type, true
+		}
+	}
+	return "", false
+}
+
+func (s *surfaceExperience) collageImage(viewID string, gen uint64) (frontend.Image, bool) {
+	s.collageMu.Lock()
+	defer s.collageMu.Unlock()
+	slot, ok := s.collage[viewID]
+	if !ok || !slot.ready {
+		return frontend.Image{}, false
+	}
+	return slot.img, slot.gen == gen
+}
+
+func (s *surfaceExperience) startCollage(viewID string, gen uint64, typ core.MediaType, viewer core.Viewer, device frontend.Device, builder interface {
+	LibraryCollage(context.Context, *core.Viewer, core.Device, string, []core.Title) (frontend.Image, error)
+}) {
+	s.collageMu.Lock()
+	if s.collage == nil {
+		s.collage = map[string]collageSlot{}
+	}
+	slot := s.collage[viewID]
+	if slot.busy || (slot.ready && slot.gen == gen) {
+		s.collageMu.Unlock()
+		return
+	}
+	slot.busy = true
+	s.collage[viewID] = slot
+	s.collageMu.Unlock()
+	go func() {
+		defer func() {
+			s.collageMu.Lock()
+			slot := s.collage[viewID]
+			slot.busy = false
+			s.collage[viewID] = slot
+			s.collageMu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		titles, err := s.posters(ctx, typ, 16)
+		if err != nil {
+			return
+		}
+		img, err := builder.LibraryCollage(ctx, &viewer, device, viewID, titles)
+		if err != nil || img.Path == "" {
+			return
+		}
+		img.Subject = viewID
+		s.collageMu.Lock()
+		s.collage[viewID] = collageSlot{gen: gen, img: img, ready: true}
+		s.collageMu.Unlock()
+	}()
 }
 
 func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {
