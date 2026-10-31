@@ -17,6 +17,10 @@ const rowItems = 24
 // personal rules, personal order and rotation applied. Each row says
 // whether it belongs on Home, in section hubs, or both; Hub.Type tells the
 // caller which section ("" for mixed collections).
+// homeIndexWait bounds how long a home waits for the catalogue index's
+// first build before it skips the live rows that need it.
+const homeIndexWait = 300 * time.Millisecond
+
 func (s *Service) HomeRowsFor(ctx context.Context, user *core.User, hc core.HubContext) ([]core.CollectionRow, error) {
 	rows, err := s.loadRows(ctx)
 	if err != nil {
@@ -27,6 +31,7 @@ func (s *Service) HomeRowsFor(ctx context.Context, user *core.User, hc core.HubC
 		now = s.now()
 	}
 	var out []core.CollectionRow
+	var indexReady *bool
 	for _, row := range rows {
 		sp := row.spec
 		if !visible(row, user) || (!sp.Targets.HomeRow && !sp.Targets.SectionRow) {
@@ -35,7 +40,18 @@ func (s *Service) HomeRowsFor(ctx context.Context, user *core.User, hc core.HubC
 		if !scheduleAllows(sp.Targets.Schedule, hc.Device, now) {
 			continue
 		}
-		keys, err := s.serve(ctx, row, user, sp.Refresh == RefreshLive)
+		// A live row is evaluated on request, but a home does not wait out
+		// the catalogue index's first build, which reads the whole
+		// catalogue: past homeIndexWait it skips the row until it is ready.
+		live := false
+		if sp.Refresh == RefreshLive {
+			if indexReady == nil {
+				ready := s.idx.readyWithin(ctx, homeIndexWait) != nil
+				indexReady = &ready
+			}
+			live = *indexReady
+		}
+		keys, err := s.serve(ctx, row, user, live)
 		if err != nil {
 			if !errors.Is(err, errNotBuilt) {
 				s.log.Debug("collections: row", "id", row.publicID(), "err", err)

@@ -310,9 +310,15 @@ func (s *Service) invalidate(id int64) {
 // was edited, or (live) the cached evaluation expired.
 func (s *Service) membersFor(ctx context.Context, row *specRow, wait bool) (*memberSet, error) {
 	if key, ok := localFacetSpec(row.spec); ok {
-		snap, err := s.idx.get(ctx)
-		if err != nil {
-			return nil, err
+		snap := s.idx.ready()
+		if snap == nil {
+			if !wait {
+				return nil, errNotBuilt
+			}
+			var err error
+			if snap, err = s.idx.get(ctx); err != nil {
+				return nil, err
+			}
 		}
 		keys := append([]core.RatingKey(nil), snap.facetKeys(key)...)
 		row.itemCount = len(keys)
@@ -467,8 +473,11 @@ func (s *Service) serve(ctx context.Context, row *specRow, user *core.User, wait
 	if err != nil {
 		return nil, err
 	}
-	snap := s.idx.current()
+	snap := s.idx.ready()
 	if snap == nil {
+		if !wait {
+			return nil, errNotBuilt
+		}
 		if snap, err = s.idx.get(ctx); err != nil {
 			return nil, err
 		}
