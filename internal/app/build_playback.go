@@ -24,8 +24,10 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 	// Transcoder. A missing ffmpeg is not fatal: direct play still works.
 	// A fixture transcoder is shared by Plex and every other protocol without
 	// starting ffmpeg.
+	tracePlayback := os.Getenv("ETHER_TRACE_PLAYBACK") == "1"
+	a.tracePlayback = tracePlayback
 	if a.opts.FixtureTranscoder == nil {
-		a.transcoder, err = transcode.New(cfg.Transcode, log, transcode.WithRuntimeDir(filepath.Join(dataDir, "tools")), transcode.WithEncoderObserver(func(sessionID string, started bool, excerpt string) {
+		a.transcoder, err = transcode.New(cfg.Transcode, log, transcode.WithRuntimeDir(filepath.Join(dataDir, "tools")), transcode.WithTracePlayback(tracePlayback), transcode.WithEncoderObserver(func(sessionID string, started bool, excerpt string) {
 			if a.support == nil {
 				return
 			}
@@ -125,7 +127,7 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 		Cluster:       a.clusterNode(),
 		DescribeGroup: a.describeLiveGroup,
 		Availability:  a.dbAvail,
-	}, cfg, playback.Options{Now: parityClock(), DataDir: dataDir, PayloadReplayGrace: 5 * time.Second, VerifyNativeProbe: os.Getenv("ETHER_VERIFY_NATIVE_PROBE") == "1", TracePlayback: os.Getenv("ETHER_TRACE_PLAYBACK") == "1"})
+	}, cfg, playback.Options{Now: parityClock(), DataDir: dataDir, PayloadReplayGrace: 5 * time.Second, VerifyNativeProbe: os.Getenv("ETHER_VERIFY_NATIVE_PROBE") == "1", TracePlayback: tracePlayback})
 	if err != nil {
 		return fmt.Errorf("playback: %w", err)
 	}

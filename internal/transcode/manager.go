@@ -51,6 +51,7 @@ type options struct {
 	onInputFailure func(sessionID, inputURL string, at time.Duration, err error)
 	onRunStart     func(inputURL string, from, to time.Duration)
 	onEncoder      func(sessionID string, started bool, excerpt string)
+	tracePlayback  bool
 	// rungDwell is how long a run keeps producing its rung before a
 	// request on another rung may replace it (see Session.rungDwellLocked).
 	rungDwell time.Duration
@@ -169,6 +170,10 @@ func WithRunStartHandler(f func(inputURL string, from, to time.Duration)) Option
 func WithEncoderObserver(f func(sessionID string, started bool, excerpt string)) Option {
 	return func(o *options) { o.onEncoder = f }
 }
+
+// WithTracePlayback logs Plex HLS playhead decisions and ffmpeg run
+// start/stop reasons. It does not change encoding or delivery.
+func WithTracePlayback(on bool) Option { return func(o *options) { o.tracePlayback = on } }
 
 func withFinder(f finder) Option { return func(o *options) { o.finder = &f } }
 
@@ -841,7 +846,7 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		"offset", offset, "segment", startSeg, "segments", s.total, "reason", d.Reason)
 
 	s.mu.Lock()
-	err := s.startRunLocked(startSeg, false)
+	err := s.startRunForLocked(startSeg, false, "session start")
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err

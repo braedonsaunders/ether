@@ -74,7 +74,7 @@ func (s *Session) swapInput(ctx context.Context, inputURL string, info core.Medi
 	if s.total > 0 && seg >= s.total {
 		seg = s.total - 1
 	}
-	s.stopRunLocked()
+	s.stopRunForLocked("input swap")
 	for t, done := range s.done {
 		for n := range done {
 			if n >= seg {
@@ -131,7 +131,7 @@ func (s *Session) swapInput(ctx context.Context, inputURL string, info core.Medi
 	}
 	s.seekRampSeg = seg
 	s.log.Info("input swapped", "at", at, "segment", seg)
-	return s.startRunLocked(seg, false)
+	return s.startRunForLocked(seg, false, "input swap")
 }
 
 // CheckSwap reports whether SwapInput can deliver info's video in the

@@ -25,7 +25,7 @@ func (s *Session) throttleLocked() {
 		if s.resumeAt >= 0 && s.endSeg < 0 && s.resumeAt-s.lastReq <= limit/2 && !s.closed {
 			at := s.resumeAt
 			s.log.Debug("throttle: restarting ffmpeg", "segment", at)
-			if err := s.startRunLocked(at, false); err != nil {
+			if err := s.startRunForLocked(at, false, "throttle resume"); err != nil {
 				s.log.Warn("throttle: restart failed", "err", err)
 			}
 		}
@@ -58,7 +58,7 @@ func (s *Session) throttleLocked() {
 			s.noPause = true
 		}
 		resume := r.maxDone + 1
-		s.stopRunLocked()
+		s.stopRunForLocked("pause unsupported")
 		s.resumeAt = resume
 		s.log.Debug("throttle: stopped ffmpeg", "ahead", ahead, "resumeAt", resume)
 	case r.paused && ahead <= limit/2:
@@ -79,7 +79,7 @@ func (s *Session) stopForLeadLocked(r *run, ahead int) {
 	if resume < 0 {
 		resume = 0
 	}
-	s.stopRunLocked()
+	s.stopRunForLocked("lead cap")
 	s.resumeAt = resume
 	s.log.Info("transcode lead capped", "ahead", ahead, "playhead", s.lastReq, "resumeAt", resume)
 }
@@ -131,7 +131,25 @@ func (s *Session) pruneLocked() {
 }
 
 // startRunLocked stops the current run and starts ffmpeg at segment seg.
+func (s *Session) traceOn() bool {
+	return s != nil && s.log != nil && s.m != nil && s.m.opts.tracePlayback
+}
+
+// startRunForLocked starts a run and, when playback tracing is on, records why.
+func (s *Session) startRunForLocked(seg int, bigProbe bool, reason string) error {
+	s.traceCause = reason
+	return s.startRunLocked(seg, bigProbe)
+}
+
+// stopRunForLocked stops the current run and, when playback tracing is on, records why.
+func (s *Session) stopRunForLocked(reason string) {
+	s.traceStop = reason
+	s.stopRunLocked()
+}
+
 func (s *Session) startRunLocked(seg int, bigProbe bool) error {
+	cause := s.traceCause
+	s.traceCause = ""
 	if s.closed {
 		return errors.New("transcode: session closed")
 	}
@@ -425,6 +443,12 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	s.deliveredCount = 0
 	runLog.Info("ffmpeg started", "segment", seg, "at", spec.Start, "kind", s.decision.Kind,
 		"videoCopy", s.decision.VideoCopy, "audioCopy", s.decision.AudioCopy, "hw", r.hw)
+	if s.traceOn() {
+		if cause == "" {
+			cause = "unspecified"
+		}
+		runLog.Info("ffmpeg run", "event", "start", "reason", cause, "segment", seg, "playhead", s.lastReq, "oldest", s.oldestFetchLocked())
+	}
 	runLog.Debug("ffmpeg args", "args", strings.Join(redactedRTXArgs(args), " "))
 	s.noteEncoder(true, args)
 	s.watchers.Add(1)
@@ -457,9 +481,17 @@ func (s *Session) chunkedLocked(d core.Decision) bool {
 // stopRunLocked detaches the current run immediately. Process reaping happens
 // outside the session lock and is included in Close's watcher barrier.
 func (s *Session) stopRunLocked() {
+	reason := s.traceStop
+	s.traceStop = ""
 	r := s.cur
 	if r == nil {
 		return
+	}
+	if s.traceOn() && !r.finished {
+		if reason == "" {
+			reason = "superseded"
+		}
+		s.log.Info("ffmpeg run", "event", "stop", "reason", reason, "run", r.seq, "segment", r.startSeg, "maxDone", r.maxDone, "playhead", s.lastReq, "oldest", s.oldestFetchLocked())
 	}
 	s.cur = nil
 	if r.rtx && enhancementSelected(s.decision) {

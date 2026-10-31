@@ -109,6 +109,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	deps.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
 	deps.DirectHTTP = &http.Client{Transport: egress.Transport(egress.CapDirect)}
 	deps.Logger = a.log.With("component", "plex")
+	deps.TracePlayback = a.tracePlayback
 	deps.Identity = identity
 	deps.OwnerSubscription = func() (bool, []string) {
 		st := a.registrar.Status()

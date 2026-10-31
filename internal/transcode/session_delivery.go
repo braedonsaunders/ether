@@ -151,7 +151,11 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 				restarts++
 				s.seekRampSeg = n
 				s.movedBy = seq
-				if err := s.startRunLocked(n, s.failures > 0); err != nil {
+				why := "fetch ahead"
+				if s.cur != nil && (n < s.cur.startSeg || n < s.cur.next()) {
+					why = "fetch behind"
+				}
+				if err := s.startRunForLocked(n, s.failures > 0, why); err != nil {
 					s.mu.Unlock()
 					s.log.Error("start ffmpeg", "segment", n, "err", err)
 					writeStartError(w, err)
@@ -246,10 +250,19 @@ func (s *Session) endFetchLocked(n int) {
 // up to that head.
 func (s *Session) notePlayheadLocked(t, n int) {
 	prev := s.lastReq
-	if !s.segmentPublishedLocked(t, n) && s.needsRestartLocked(n) && !s.encoderHeadLocked(n) {
+	published := s.segmentPublishedLocked(t, n)
+	restart := s.needsRestartLocked(n)
+	head := s.encoderHeadLocked(n)
+	decision := "hold"
+	if !published && restart && !head {
 		s.lastReq = n
+		decision = "seek"
 	} else if oldest := s.oldestFetchLocked(); oldest >= 0 && !s.encoderHeadLocked(oldest) {
 		s.lastReq = oldest
+		decision = "oldest"
+	}
+	if s.traceOn() {
+		s.log.Info("playhead", "segment", n, "decision", decision, "prev", prev, "playhead", s.lastReq, "oldest", s.oldestFetchLocked(), "published", published, "needsRestart", restart, "encoderHead", head)
 	}
 	if s.lastReq > prev+3 || s.lastReq < prev-3 {
 		s.recoverySeekAt = time.Now()
@@ -493,7 +506,7 @@ func (s *Session) serveInit(w http.ResponseWriter, r *http.Request, t int) {
 				if start < 0 {
 					start = 0
 				}
-				if err := s.startRunLocked(start, s.failures > 0); err != nil {
+				if err := s.startRunForLocked(start, s.failures > 0, "rendition init"); err != nil {
 					s.mu.Unlock()
 					writeStartError(w, err)
 					return

@@ -169,7 +169,7 @@ func (l *encoderLifetime) advance() {
 		if s != nil {
 			s.mu.Lock()
 			s.closed = true
-			s.stopRunLocked()
+			s.stopRunForLocked("session close")
 			s.broadcastLocked()
 			s.mu.Unlock()
 		}

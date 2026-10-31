@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -149,6 +150,14 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 			return
 		}
 		pr := FromContext(r.Context())
+		if s.d.TracePlayback && traceTranscodePath(r.URL.Path) {
+			status := sr.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			s.log.Info("hls request", "method", r.Method, "path", r.URL.Path, "query", redactTraceQuery(r.URL.Query()),
+				"range", r.Header.Get("Range"), "status", status, "bytes", sr.written, "duration", time.Since(start))
+		}
 		s.log.Debug("request", "method", r.Method, "path", r.URL.Path, "status", sr.status,
 			"dur", time.Since(start).Round(time.Millisecond), "product", pr.Product, "client", pr.ClientID,
 			"range", r.Header.Get("Range"), "contentRange", sr.Header().Get("Content-Range"),
@@ -156,6 +165,36 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 			"model", pr.Model, "device", pr.Device, "version", pr.Version, "platformVersion", pr.PlatformVersion, "peer", pr.RemoteIP.String())
 		s.observeRequest(r, sr)
 	})
+}
+
+// traceTranscodePath reports Plex HLS and session playlist/segment routes.
+func traceTranscodePath(path string) bool {
+	return strings.HasPrefix(path, "/video/:/transcode/") || strings.Contains(path, "/:/transcode/universal/session/")
+}
+
+// redactTraceQuery keeps the request query except credential parameters.
+func redactTraceQuery(q url.Values) string {
+	if len(q) == 0 {
+		return ""
+	}
+	cloned := url.Values{}
+	for k, vs := range q {
+		if traceSecretQuery(k) {
+			cloned[k] = []string{"redacted"}
+			continue
+		}
+		cloned[k] = vs
+	}
+	return cloned.Encode()
+}
+
+func traceSecretQuery(k string) bool {
+	switch strings.ToLower(k) {
+	case "x-plex-token", "token", "accesstoken", "access_token":
+		return true
+	default:
+		return false
+	}
 }
 
 // parse attaches the parsed request context.
