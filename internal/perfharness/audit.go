@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -134,7 +136,9 @@ func explainPostgres(ctx context.Context, db *sql.DB, query string, sizes map[st
 	if !(strings.HasPrefix(upper, "SELECT") || strings.HasPrefix(upper, "WITH") || strings.HasPrefix(upper, "UPDATE") || strings.HasPrefix(upper, "DELETE") || strings.HasPrefix(upper, "INSERT")) {
 		return nil, nil
 	}
-	rows, err := db.QueryContext(ctx, "EXPLAIN (GENERIC_PLAN) "+q)
+	// The simple protocol sends the statement with its $n placeholders
+	// unbound, which is what GENERIC_PLAN plans.
+	rows, err := db.QueryContext(ctx, "EXPLAIN (GENERIC_PLAN) "+q, pgx.QueryExecModeSimpleProtocol)
 	if err != nil {
 		return []string{"explain failed: " + err.Error()}, nil
 	}
