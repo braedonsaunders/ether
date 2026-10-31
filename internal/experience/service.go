@@ -70,6 +70,10 @@ type ServiceDeps struct {
 	PeopleIndex   func(context.Context, []string, int) ([]PersonCandidate, error)
 	PersonCredits func(context.Context, int64, []core.MediaType, int) ([]core.RatingKey, error)
 	AiredEpisodes func(context.Context, core.RatingKey, int, int) (core.Page, error)
+	// StoredEpisodes answers a recursive episode listing from the stored
+	// episodes in key order. Optional; without it the listing walks the
+	// library.
+	StoredEpisodes StoredEpisodeDeps
 	AddedTimes    func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
 	// RecentAir is the indexed date-added window. Nil keeps the catalogue scan.
 	RecentAir func(context.Context, core.MediaType, int, int) ([]core.Title, bool, error)
@@ -113,7 +117,10 @@ type ServiceDeps struct {
 	Enrich func(context.Context, *core.User, core.Device, *core.Title) (frontend.ItemDetail, error)
 }
 
-type Service struct{ d ServiceDeps }
+type Service struct {
+	d       ServiceDeps
+	cursors *episodeCursors
+}
 
 // pageUserData reads watch progress, favorites, not-interested and watchlist
 // membership for one page in a single query.
@@ -127,7 +134,7 @@ func NewService(d ServiceDeps) (*Service, error) {
 	}
 	d.Libraries = append([]Library(nil), d.Libraries...)
 	d.Search.Visibility = d.Visibility
-	return &Service{d: d}, nil
+	return &Service{d: d, cursors: &episodeCursors{}}, nil
 }
 
 func (s *Service) libraries() []Library {
@@ -410,6 +417,11 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		clear(recursiveBatch)
 		recursiveBatch = recursiveBatch[:0]
 		return nil
+	}
+	if page, ok, err := s.storedEpisodePage(ctx, v, library, q); err != nil {
+		return core.Page{}, err
+	} else if ok {
+		return page, nil
 	}
 	if page, ok, err := s.indexedLibraryPage(ctx, v, library, q); err != nil {
 		return core.Page{}, err

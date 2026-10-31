@@ -82,6 +82,15 @@ func (s *Service) Preference(ctx context.Context, user int64, show core.RatingKe
 	return p, err
 }
 
+// Customized reports that the viewer's preferences, or the owner's
+// defaults, change some series' episode set: an episode group, or hidden
+// specials. Showing specials first or last only reorders them.
+func (s *Service) Customized(ctx context.Context, u *core.User) (bool, error) {
+	var custom bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM episodeorder_preferences WHERE user_id IN (0,?) AND (group_id<>'' OR specials='hidden'))`, userID(u)).Scan(&custom)
+	return custom, err
+}
+
 // Grouped reports which of the shows present an alternate episode group to
 // the viewer: their own preference, else the owner's default. A show without
 // one keeps the canonical season tree, so a list can render it from the
