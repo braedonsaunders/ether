@@ -366,6 +366,51 @@ func TestBackgroundHealthPreservesBudgetContext(t *testing.T) {
 	}
 }
 
+func TestColdRemoteFirstByteBeatsOwnerTarget(t *testing.T) {
+	// 40 ms header delay and 200 ms between later 64 KiB chunks. The first
+	// request covers eight blocks. Waiting for that whole run is ~1.4 s;
+	// returning the first block is one header delay. Cached bytes do no I/O.
+	r := newEngineRig(t, 8<<20, -1)
+	cfg := r.svc.Config()
+	cfg.ReadAheadChunks = -1
+	r.svc.UpdateConfig(cfg)
+	r.media.latency = 40 * time.Millisecond
+	r.media.pace = 200 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	src, err := r.eng.Open(ctx, r.rel.ID, r.pl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	rc := src.(interface {
+		ReadAtContext(context.Context, []byte, int64) (int, error)
+	})
+	buf := make([]byte, testBlock)
+	started := time.Now()
+	n, err := rc.ReadAtContext(ctx, buf, 0)
+	cold := time.Since(started)
+	if err != nil || n != len(buf) {
+		t.Fatalf("cold read: n=%d err=%v", n, err)
+	}
+	again := time.Now()
+	n, err = rc.ReadAtContext(ctx, buf, 0)
+	cached := time.Since(again)
+	if err != nil || n != len(buf) {
+		t.Fatalf("cached read: n=%d err=%v", n, err)
+	}
+	t.Logf("cold=%s cached=%s requests=%d", cold, cached, r.media.requests.Load())
+	if cold > 5*time.Second {
+		t.Fatalf("cold first byte %s, want <= 5s", cold)
+	}
+	if cold > 800*time.Millisecond {
+		t.Fatalf("cold first byte %s waited on more than the first block", cold)
+	}
+	if cached > time.Second {
+		t.Fatalf("cached first byte %s, want <= 1s", cached)
+	}
+}
+
 func TestHTTPSourceOriginNamesService(t *testing.T) {
 	for kind, want := range map[string]string{"realdebrid": "Real-Debrid", "torbox": "TorBox", KindHTTP: "HTTP", "newsvc": "newsvc", "": "Debrid"} {
 		s := &httpSource{f: &remoteFile{pl: Payload{Kind: kind}}}

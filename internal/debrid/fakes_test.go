@@ -26,6 +26,7 @@ type mediaServer struct {
 	*httptest.Server
 	data    []byte
 	latency time.Duration // per request, before headers
+	pace    time.Duration // gap between 64 KiB body chunks, after the first
 
 	mu     sync.Mutex
 	valid  map[string]bool
@@ -122,7 +123,35 @@ func (m *mediaServer) serve(w http.ResponseWriter, r *http.Request) {
 		w.Write(m.data[a : b+1])
 		return
 	}
-	http.ServeContent(w, r, "f.mkv", time.Time{}, bytes.NewReader(m.data))
+	var body io.ReadSeeker = bytes.NewReader(m.data)
+	if m.pace > 0 {
+		body = &pacedReader{r: bytes.NewReader(m.data), pace: m.pace}
+	}
+	http.ServeContent(w, r, "f.mkv", time.Time{}, body)
+}
+
+// pacedReader delivers the first 64 KiB immediately and then waits between
+// chunks, so a test can tell a first-block return from a full-run wait.
+type pacedReader struct {
+	r    *bytes.Reader
+	pace time.Duration
+	n    int
+}
+
+func (p *pacedReader) Read(b []byte) (int, error) {
+	if p.n > 0 && p.pace > 0 {
+		time.Sleep(p.pace)
+	}
+	if len(b) > 64<<10 {
+		b = b[:64<<10]
+	}
+	n, err := p.r.Read(b)
+	p.n += n
+	return n, err
+}
+
+func (p *pacedReader) Seek(offset int64, whence int) (int64, error) {
+	return p.r.Seek(offset, whence)
 }
 
 func (m *mediaServer) issue(token string) string {
