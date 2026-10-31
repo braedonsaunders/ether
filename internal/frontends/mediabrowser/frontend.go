@@ -119,6 +119,7 @@ type instance struct {
 	pages    *browseCache
 	itemJSON itemJSONCache
 	credits  playCredits
+	personal personalIdentityCache
 }
 
 func (i *instance) Handler() http.Handler {

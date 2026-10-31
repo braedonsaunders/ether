@@ -508,15 +508,15 @@ func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel,
 	}
 	out := []Channel{}
 	for _, c := range cs {
-		ps, err := s.programmes(ctx, c, s.o.Now(), s.o.Now().Add(time.Second))
+		p, ok, err := s.programmeAt(ctx, c, s.o.Now())
 		if err != nil {
 			return nil, err
 		}
-		var p *Programme
-		if len(ps) > 0 {
-			p = &ps[0]
+		var current *Programme
+		if ok {
+			current = &p
 		}
-		if s.allowed(ctx, u, c, p) {
+		if s.allowed(ctx, u, c, current) {
 			c.StreamURL = ""
 			c.StreamSources = nil
 			out = append(out, c)
@@ -524,11 +524,84 @@ func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel,
 	}
 	return out, nil
 }
+
+// ChannelPermitted decides one channel. A memo on ctx, when present, answers
+// repeat checks for the same channel without another guide read. Callers that
+// are not looking at a live channel must not call this.
+func (s *Service) ChannelPermitted(ctx context.Context, u *core.User, id string) (bool, error) {
+	if u == nil || id == "" {
+		return false, nil
+	}
+	if memo, ok := channelMemoFrom(ctx); ok {
+		if decided, hit := memo.get(id); hit {
+			return decided, nil
+		}
+	}
+	c, err := s.Channel(ctx, id)
+	if err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			rememberChannel(ctx, id, false)
+			return false, nil
+		}
+		return false, err
+	}
+	p, ok, err := s.programmeAt(ctx, c, s.o.Now())
+	if err != nil {
+		return false, err
+	}
+	var current *Programme
+	if ok {
+		current = &p
+	}
+	allowed := s.allowed(ctx, u, c, current)
+	rememberChannel(ctx, id, allowed)
+	return allowed, nil
+}
+
+// programmeAt reads the single programme airing at a time. The primary key
+// is (source, channel, start), so the latest start at or before that time is
+// one indexed row rather than a walk of the channel's guide.
+func (s *Service) programmeAt(ctx context.Context, c Channel, at time.Time) (Programme, bool, error) {
+	if c.Kind == "virtual" {
+		ps := Schedule(c, at, at.Add(time.Second))
+		if len(ps) == 0 {
+			return Programme{}, false, nil
+		}
+		return ps[0], true, nil
+	}
+	var b []byte
+	err := s.o.DB.QueryRowContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND start_ms<=? ORDER BY start_ms DESC LIMIT 1`, guideSource(c), c.GuideID, at.UnixMilli()).Scan(&b)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Programme{}, false, nil
+	}
+	if err != nil {
+		return Programme{}, false, err
+	}
+	var p Programme
+	if err = json.Unmarshal(b, &p); err != nil {
+		return Programme{}, false, err
+	}
+	if !p.End.After(at) {
+		return Programme{}, false, nil
+	}
+	p.ChannelID = c.ID
+	p.ID = fmt.Sprintf("%s-%d", c.ID, p.Start.UnixMilli())
+	return p, true, nil
+}
+
 func (s *Service) programmes(ctx context.Context, c Channel, from, until time.Time) ([]Programme, error) {
 	if c.Kind == "virtual" {
 		return Schedule(c, from, until), nil
 	}
-	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND start_ms<? AND end_ms>? ORDER BY start_ms`, guideSource(c), c.GuideID, until.UnixMilli(), from.UnixMilli())
+	if until.Sub(from) <= time.Second {
+		p, ok, err := s.programmeAt(ctx, c, from)
+		if err != nil || !ok {
+			return nil, err
+		}
+		return []Programme{p}, nil
+	}
+	// end_ms leads so the guide index can skip programmes that have already ended.
+	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND end_ms>? AND start_ms<? ORDER BY start_ms`, guideSource(c), c.GuideID, from.UnixMilli(), until.UnixMilli())
 	if err != nil {
 		return nil, err
 	}

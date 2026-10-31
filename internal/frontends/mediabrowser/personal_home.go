@@ -10,6 +10,7 @@
 package mediabrowser
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -17,9 +18,11 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -28,10 +31,11 @@ import (
 )
 
 const (
-	personalRowFetch   = 50
-	personalRowMax     = 12
-	personalRowDefault = 4
-	playCreditCap      = 4096
+	personalRowFetch    = 50
+	personalRowMax      = 12
+	personalRowDefault  = 4
+	playCreditCap       = 4096
+	personalIdentityTTL = 30 * time.Second
 )
 
 // personalHomeConfig is the owner control for Jellyfin and Emby home rows.
@@ -120,10 +124,50 @@ type personalShelf struct {
 	wireID string
 	name   string
 	kind   string
+	count  int
 	row    frontend.Row
 	titles []frontend.Title
 }
 
+type personalIdentitySlot struct {
+	at      time.Time
+	gen     int64
+	shelves []personalShelf
+}
+
+type personalIdentityCache struct {
+	mu       sync.Mutex
+	items    map[string]personalIdentitySlot
+	inflight map[string]bool
+}
+
+type policyGeneration interface {
+	PolicyGeneration(context.Context) (int64, error)
+}
+
+func (i *instance) policyGeneration(ctx context.Context) int64 {
+	src, ok := i.host.Experience.(policyGeneration)
+	if !ok || src == nil {
+		return 0
+	}
+	gen, err := src.PolicyGeneration(ctx)
+	if err != nil || gen < 0 {
+		return 0
+	}
+	return gen
+}
+
+func personalCacheKey(protocol string, v *frontend.Viewer, dev frontend.Device, cfg personalHomeConfig) string {
+	kinds := make([]string, 0, len(cfg.kinds))
+	for kind := range cfg.kinds {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	return fmt.Sprintf("%s\n%d\n%s\n%t\n%d\n%s", protocol, v.ID, dev.ID, cfg.enabled, cfg.count, strings.Join(kinds, ","))
+}
+
+// personalShelves is the cached identity list. It never builds row items.
+// A cold cache answers empty and fills in the background.
 func (i *instance) personalShelves(r *http.Request, v *frontend.Viewer) []personalShelf {
 	cfg := i.personalConfig()
 	if !cfg.enabled || cfg.count == 0 || v == nil || i.host.Experience == nil {
@@ -133,9 +177,79 @@ func (i *instance) personalShelves(r *http.Request, v *frontend.Viewer) []person
 	if dev.ID == "" {
 		return nil
 	}
-	rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: dev, Placement: frontend.PlacementHome, Limit: personalRowFetch})
-	if err != nil || len(rows) == 0 {
+	key := personalCacheKey(string(i.protocol), v, dev, cfg)
+	gen := i.policyGeneration(r.Context())
+	i.personal.mu.Lock()
+	slot, ok := i.personal.items[key]
+	i.personal.mu.Unlock()
+	fresh := ok && time.Since(slot.at) < personalIdentityTTL && slot.gen == gen
+	if !fresh {
+		i.warmPersonalIdentities(key, gen, v, dev)
+	}
+	if ok && slot.gen == gen {
+		return cloneShelves(slot.shelves)
+	}
+	return nil
+}
+
+func (i *instance) warmPersonalIdentities(key string, gen int64, v *frontend.Viewer, dev frontend.Device) {
+	viewer := *v
+	i.personal.mu.Lock()
+	if i.personal.inflight == nil {
+		i.personal.inflight = map[string]bool{}
+	}
+	if i.personal.inflight[key] {
+		i.personal.mu.Unlock()
+		return
+	}
+	i.personal.inflight[key] = true
+	i.personal.mu.Unlock()
+	go func() {
+		defer func() {
+			i.personal.mu.Lock()
+			delete(i.personal.inflight, key)
+			i.personal.mu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(i.life, 15*time.Second)
+		defer cancel()
+		loaded := i.loadPersonalShelves(ctx, &viewer, dev)
+		if loaded == nil {
+			return
+		}
+		identities := make([]personalShelf, len(loaded))
+		for n, shelf := range loaded {
+			shelf.titles = nil
+			shelf.row.Entries = nil
+			shelf.row.Items = nil
+			shelf.row.Handle = ""
+			identities[n] = shelf
+		}
+		i.personal.mu.Lock()
+		if i.personal.items == nil {
+			i.personal.items = map[string]personalIdentitySlot{}
+		}
+		i.personal.items[key] = personalIdentitySlot{at: time.Now(), gen: gen, shelves: identities}
+		i.personal.mu.Unlock()
+	}()
+}
+
+func cloneShelves(in []personalShelf) []personalShelf {
+	out := make([]personalShelf, len(in))
+	copy(out, in)
+	return out
+}
+
+func (i *instance) loadPersonalShelves(ctx context.Context, v *frontend.Viewer, dev frontend.Device) []personalShelf {
+	cfg := i.personalConfig()
+	if !cfg.enabled || cfg.count == 0 || v == nil || i.host.Experience == nil || dev.ID == "" {
 		return nil
+	}
+	rows, err := i.host.Experience.Rows(ctx, frontend.RowRequest{Viewer: v, Device: dev, Placement: frontend.PlacementHome, Limit: personalRowFetch})
+	if err != nil {
+		return nil
+	}
+	if len(rows) == 0 {
+		return []personalShelf{}
 	}
 	out := make([]personalShelf, 0, cfg.count)
 	seen := map[string]bool{}
@@ -158,7 +272,7 @@ func (i *instance) personalShelves(r *http.Request, v *frontend.Viewer) []person
 		if err != nil {
 			continue
 		}
-		shelf := personalShelf{number: number, wireID: wire, name: personalLibraryName(row), kind: personalCollectionType(titles), row: row, titles: titles}
+		shelf := personalShelf{number: number, wireID: wire, name: personalLibraryName(row), kind: personalCollectionType(titles), count: len(titles), row: row, titles: titles}
 		if available {
 			copy := shelf
 			pinned = &copy
@@ -261,6 +375,13 @@ func personalSeed(title string, prefixes ...string) (string, bool) {
 	return "", false
 }
 
+func personalChildCount(shelf personalShelf) int {
+	if len(shelf.titles) > 0 {
+		return len(shelf.titles)
+	}
+	return shelf.count
+}
+
 func personalCollectionType(titles []frontend.Title) string {
 	shows := 0
 	for _, title := range titles {
@@ -275,7 +396,7 @@ func personalCollectionType(titles []frontend.Title) string {
 }
 
 func (i *instance) personalByNumber(r *http.Request, v *frontend.Viewer, number int64) (personalShelf, bool) {
-	for _, shelf := range i.personalShelves(r, v) {
+	for _, shelf := range i.loadPersonalShelves(r.Context(), v, device(r)) {
 		if shelf.number == number {
 			return shelf, true
 		}
@@ -287,7 +408,7 @@ func (i *instance) personalFolder(r *http.Request, v *frontend.Viewer, shelf per
 	item := map[string]any{
 		"Id": shelf.wireID, "Name": shelf.name, "Type": "CollectionFolder", "CollectionType": shelf.kind,
 		"IsFolder": true, "ServerId": i.info.ID, "SortName": shelf.name, "DisplayPreferencesId": shelf.wireID,
-		"CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}, "ChildCount": len(shelf.titles),
+		"CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}, "ChildCount": personalChildCount(shelf),
 	}
 	if i.protocol == "emby" {
 		i.embyViewDTO(item)
@@ -295,7 +416,7 @@ func (i *instance) personalFolder(r *http.Request, v *frontend.Viewer, shelf per
 	if i.protocol == "jellyfin" {
 		i.jellyfinCollectionFolder(item, shelf.wireID)
 		item["ParentId"] = jellyfinRootID()
-		item["ChildCount"] = len(shelf.titles)
+		item["ChildCount"] = personalChildCount(shelf)
 	}
 	return item
 }
@@ -313,12 +434,13 @@ func (i *instance) prependPersonalViews(r *http.Request, v *frontend.Viewer, ite
 }
 
 func (i *instance) writePersonalFolder(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, number int64) {
-	shelf, ok := i.personalByNumber(r, v, number)
-	if !ok {
-		http.NotFound(w, r)
-		return
+	for _, shelf := range i.personalShelves(r, v) {
+		if shelf.number == number {
+			i.replyItems(w, r, i.personalFolder(r, v, shelf))
+			return
+		}
 	}
-	i.replyItems(w, r, i.personalFolder(r, v, shelf))
+	http.NotFound(w, r)
 }
 
 func (i *instance) personalTitlePage(r *http.Request, v *frontend.Viewer, shelf personalShelf, q frontend.ItemQuery, latest bool) ([]frontend.Title, int, error) {
@@ -594,7 +716,7 @@ func (i *instance) recommendations(w http.ResponseWriter, r *http.Request, want 
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	shelves := i.personalShelves(r, v)
+	shelves := i.loadPersonalShelves(r.Context(), v, device(r))
 	categories := make([]any, 0, len(shelves))
 	for _, shelf := range shelves {
 		titles := make([]frontend.Title, 0, len(shelf.titles))

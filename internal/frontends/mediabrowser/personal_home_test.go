@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
@@ -95,7 +96,7 @@ func TestPersonalHomeViewsAreStableRankedAndAttributed(t *testing.T) {
 		return w
 	}
 	owner := mount(1, nil)
-	views := call(owner, http.MethodGet, "/UserViews", "")
+	views := waitFor(t, func() *httptest.ResponseRecorder { return call(owner, http.MethodGet, "/UserViews", "") }, "Trending")
 	var listed struct {
 		Items            []map[string]any
 		TotalRecordCount float64
@@ -122,7 +123,7 @@ func TestPersonalHomeViewsAreStableRankedAndAttributed(t *testing.T) {
 		t.Fatal(gotBecause, wantBecause, err)
 	}
 	other := mount(7, nil)
-	otherViews := call(other, http.MethodGet, "/UserViews", "")
+	otherViews := waitFor(t, func() *httptest.ResponseRecorder { return call(other, http.MethodGet, "/UserViews", "") }, "Trending")
 	var otherListed struct{ Items []map[string]any }
 	if json.Unmarshal(otherViews.Body.Bytes(), &otherListed) != nil || otherListed.Items[0]["Id"] == trendingID {
 		t.Fatal("viewer ids collided", otherViews.Body.String())
@@ -171,7 +172,7 @@ func TestPersonalHomeViewsAreStableRankedAndAttributed(t *testing.T) {
 	if restrictedLatest.Code != 404 {
 		t.Fatal(restrictedLatest.Code, restrictedLatest.Body.String())
 	}
-	ownLatest := call(restricted, http.MethodGet, "/UserViews", "")
+	ownLatest := waitFor(t, func() *httptest.ResponseRecorder { return call(restricted, http.MethodGet, "/UserViews", "") }, "Dune and Similar")
 	var restrictedViews struct{ Items []map[string]any }
 	if json.Unmarshal(ownLatest.Body.Bytes(), &restrictedViews) != nil {
 		t.Fatal(ownLatest.Body.String())
@@ -186,7 +187,9 @@ func TestPersonalHomeViewsAreStableRankedAndAttributed(t *testing.T) {
 	if json.Unmarshal(restrictedBrowse.Body.Bytes(), &restrictedItems) != nil || len(restrictedItems.Items) != 1 || restrictedItems.Items[0]["Name"] != "Zebra" {
 		t.Fatal(restrictedBrowse.Body.String())
 	}
-	prefsBody := call(owner, http.MethodGet, "/DisplayPreferences/usersettings?client=jellyfin-web", "")
+	prefsBody := waitFor(t, func() *httptest.ResponseRecorder {
+		return call(owner, http.MethodGet, "/DisplayPreferences/usersettings?client=jellyfin-web", "")
+	}, "latestmedia")
 	var display map[string]any
 	if prefsBody.Code != 200 || json.Unmarshal(prefsBody.Body.Bytes(), &display) != nil || display["CustomPrefs"].(map[string]any)["homesection0"] != "latestmedia" {
 		t.Fatal(prefsBody.Code, prefsBody.Body.String())
@@ -202,13 +205,26 @@ func TestPersonalHomeViewsAreStableRankedAndAttributed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	me := call(mount(8, nil), http.MethodGet, "/Users/Me", "")
+	viewerEight := mount(8, nil)
+	var me *httptest.ResponseRecorder
 	var user struct{ Configuration map[string]any }
-	if me.Code != 200 || json.Unmarshal(me.Body.Bytes(), &user) != nil {
-		t.Fatal(me.Code, me.Body.String())
+	var order []any
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		me = call(viewerEight, http.MethodGet, "/Users/Me", "")
+		order = nil
+		if me.Code == 200 && json.Unmarshal(me.Body.Bytes(), &user) == nil {
+			order, _ = user.Configuration["OrderedViews"].([]any)
+		}
+		if len(order) >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(me.Code, me.Body.String())
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	order, _ := user.Configuration["OrderedViews"].([]any)
-	if len(order) < 2 || order[0] == "Movies" {
+	if order[0] == "Movies" {
 		t.Fatal(user.Configuration["OrderedViews"])
 	}
 	libraryID, err := ids.GUID(ids.View, 1)
@@ -283,12 +299,80 @@ func TestNowAvailableLibraryDoesNotUseThePersonalizedRowBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
-	r.Header.Set("X-Emby-Token", "grant")
-	r.Header.Set("X-Emby-Device-Id", "living-room")
-	inst.Handler().ServeHTTP(w, r)
+	w := waitFor(t, func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
+		r.Header.Set("X-Emby-Token", "grant")
+		r.Header.Set("X-Emby-Device-Id", "living-room")
+		inst.Handler().ServeHTTP(rec, r)
+		return rec
+	}, "Now available")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Name":"Trending"`) || !strings.Contains(w.Body.String(), `"Name":"Now available"`) || strings.Contains(w.Body.String(), "Dune and Similar") {
 		t.Fatalf("views %d %s", w.Code, w.Body.String())
+	}
+}
+
+func waitFor(t *testing.T, call func() *httptest.ResponseRecorder, needle string) *httptest.ResponseRecorder {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var last *httptest.ResponseRecorder
+	for {
+		last = call()
+		if last.Code == 200 && strings.Contains(last.Body.String(), needle) {
+			return last
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("missing %s: %d %s", needle, last.Code, last.Body.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestUserAndLibraryListsDoNotWaitForRows(t *testing.T) {
+	block := make(chan struct{})
+	title := frontend.Title{Key: 4, Type: "show", Title: "Shown"}
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+		},
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			<-block
+			return []frontend.Row{{ID: "home.trending", Title: "Trending", Kind: "trending", Purpose: frontend.RowRecommendation, Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &title}}}}, nil
+		},
+	}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		v := frontend.Viewer{ID: 1, Username: "ada"}
+		return &v, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.Header.Set("X-Emby-Token", "grant")
+		r.Header.Set("X-Emby-Device-Id", "living-room")
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	done := make(chan *httptest.ResponseRecorder, 2)
+	go func() { done <- call("/UserViews") }()
+	go func() { done <- call("/Users/Me") }()
+	timeout := time.After(200 * time.Millisecond)
+	for n := 0; n < 2; n++ {
+		select {
+		case w := <-done:
+			if w.Code != 200 || strings.Contains(w.Body.String(), "Trending") {
+				t.Fatalf("cold list did row work: %d %s", w.Code, w.Body.String())
+			}
+		case <-timeout:
+			t.Fatal("user list waited on personalized rows")
+		}
+	}
+	close(block)
+	warm := waitFor(t, func() *httptest.ResponseRecorder { return call("/UserViews") }, "Trending")
+	if warm.Code != 200 {
+		t.Fatal(warm.Code)
 	}
 }

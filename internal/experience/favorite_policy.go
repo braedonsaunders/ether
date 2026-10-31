@@ -37,6 +37,10 @@ type FavoriteSubject struct {
 type FavoriteSources struct {
 	Title      func(context.Context, core.RatingKey) (*core.Title, error)
 	Collection func(context.Context, *core.User, core.RatingKey) (*core.Collection, error)
+	// ChannelAllowed checks one channel. It is the live-TV path; title,
+	// person, and collection decisions must not call it.
+	ChannelAllowed func(context.Context, *core.User, string) (bool, error)
+	// ChannelIDs lists every allowed channel. ChannelAllowed replaces it.
 	ChannelIDs func(context.Context, *core.User) ([]string, error)
 	PersonPage func(context.Context, int64, int, int) ([]core.Title, error)
 }
@@ -84,6 +88,10 @@ func FavoriteAllowed(ctx context.Context, viewer *core.User, subject FavoriteSub
 		collection, err := sources.Collection(ctx, viewer, key)
 		return err == nil && collection != nil && visibility.CollectionAllowed(viewer, collection)
 	case FavoriteKindChannel:
+		if sources.ChannelAllowed != nil {
+			ok, err := sources.ChannelAllowed(ctx, viewer, subject.ID)
+			return err == nil && ok
+		}
 		if sources.ChannelIDs == nil {
 			return false
 		}

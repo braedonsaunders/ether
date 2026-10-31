@@ -26,17 +26,9 @@ func (a *App) favoriteAllowed(ctx context.Context, u *core.User, subject favorit
 	if a.collections != nil {
 		sources.Collection = a.collections.Get
 	}
-	if a.livetv != nil {
-		sources.ChannelIDs = func(ctx context.Context, viewer *core.User) ([]string, error) {
-			channels, err := a.livetv.AllowedChannels(ctx, viewer)
-			if err != nil {
-				return nil, err
-			}
-			ids := make([]string, len(channels))
-			for i := range channels {
-				ids[i] = channels[i].ID
-			}
-			return ids, nil
+	if a.livetv != nil && subject.Kind == favorites.KindChannel {
+		sources.ChannelAllowed = func(ctx context.Context, viewer *core.User, id string) (bool, error) {
+			return a.livetv.ChannelPermitted(ctx, viewer, id)
 		}
 	}
 	return experience.FavoriteAllowed(ctx, u, experience.FavoriteSubject{Kind: experience.FavoriteKind(subject.Kind), ID: subject.ID}, visibility, sources)

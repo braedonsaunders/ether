@@ -12,6 +12,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"github.com/braedonsaunders/ether/internal/livetv"
+	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
 
 type experienceSituationKey struct{}
@@ -299,7 +301,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if a.cfg != nil {
 		detail.enabled = func() bool { return a.cfg.Read().Personalize.MicroReasons }
 	}
-	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser, rowViews: rowViews, detail: detail}, nil
+	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser, rowViews: rowViews, detail: detail, generation: func(ctx context.Context) (int64, error) {
+		return viewerpolicy.Read(ctx, a.db)
+	}}, nil
 }
 
 type surfaceExperience struct {
@@ -311,6 +315,16 @@ type surfaceExperience struct {
 	rowViews    *experience.RowViewService
 	playability func(context.Context, frontend.ItemRequest) *bool
 	detail      detailPersonalization
+	generation  func(context.Context) (int64, error)
+}
+
+// PolicyGeneration is the viewer-policy epoch. Personal-view caches drop
+// when it changes.
+func (s *surfaceExperience) PolicyGeneration(ctx context.Context) (int64, error) {
+	if s.generation == nil {
+		return 0, nil
+	}
+	return s.generation(ctx)
 }
 
 func (s *surfaceExperience) ListRowViews(ctx context.Context, req frontend.RowViewRequest) ([]frontend.RowView, error) {
@@ -404,11 +418,13 @@ func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) 
 }
 
 func (s *surfaceExperience) SnapshotRows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-	return s.Service.SnapshotRows(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)), req)
+	ctx = livetv.WithChannelMemo(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)))
+	return s.Service.SnapshotRows(ctx, req)
 }
 
 func (s *surfaceExperience) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-	rows, err := s.Service.Rows(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)), req)
+	ctx = livetv.WithChannelMemo(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)))
+	rows, err := s.Service.Rows(ctx, req)
 	if err == nil {
 		var active *core.User
 		if req.Viewer != nil {

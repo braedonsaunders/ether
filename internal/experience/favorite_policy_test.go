@@ -136,9 +136,18 @@ func TestFavoriteAllowedPolicy(t *testing.T) {
 			return &core.Title{Key: movie, Type: core.TypeMovie, ContentRating: "PG"}, nil
 		},
 	}
+	channels := 0
+	sources.ChannelAllowed = func(context.Context, *core.User, string) (bool, error) {
+		channels++
+		return false, nil
+	}
 	if !FavoriteAllowed(ctx, viewer, FavoriteSubject{Kind: FavoriteKindTitle, ID: movie.String()}, vis, sources) {
 		t.Fatal("visible title denied")
 	}
+	if channels != 0 {
+		t.Fatal("title decision read live TV")
+	}
+	sources.ChannelAllowed = nil
 	sources.Title = func(context.Context, core.RatingKey) (*core.Title, error) {
 		return &core.Title{Key: movie, Type: core.TypeMovie, Adult: true}, nil
 	}
@@ -168,6 +177,23 @@ func TestFavoriteAllowedPolicy(t *testing.T) {
 		t.Fatal("hidden collection allowed")
 	}
 	viewer.AllowedSections = nil
+	sources.ChannelAllowed = func(_ context.Context, _ *core.User, id string) (bool, error) {
+		if id != "news" && id != "secret" {
+			t.Fatalf("channel %s", id)
+		}
+		return id == "news", nil
+	}
+	sources.ChannelIDs = func(context.Context, *core.User) ([]string, error) {
+		t.Fatal("listed every channel")
+		return nil, nil
+	}
+	if !FavoriteAllowed(ctx, viewer, FavoriteSubject{Kind: FavoriteKindChannel, ID: "news"}, vis, sources) {
+		t.Fatal("one channel denied")
+	}
+	if FavoriteAllowed(ctx, viewer, FavoriteSubject{Kind: FavoriteKindChannel, ID: "secret"}, vis, sources) {
+		t.Fatal("other channel allowed")
+	}
+	sources.ChannelAllowed = nil
 	sources.ChannelIDs = func(context.Context, *core.User) ([]string, error) {
 		return []string{"sports", "news"}, nil
 	}
