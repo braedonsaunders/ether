@@ -11,6 +11,8 @@ import (
 // A large browse total walks the whole filtered set, so after a catalogue
 // write Browse serves the last total and recounts behind the read.
 func TestLargeBrowseTotalRecountsBehindTheRead(t *testing.T) {
+	defer func(d time.Duration) { recountEvery = d }(recountEvery)
+	recountEvery = 0
 	ctx := context.Background()
 	c := newChunkTestCatalog(t)
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)

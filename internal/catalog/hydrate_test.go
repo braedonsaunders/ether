@@ -315,6 +315,8 @@ func TestMovieAddedSortIsReleaseOrder(t *testing.T) {
 // Library-wide facet counts are served from the last count while a write
 // triggers a recount behind the read.
 func TestFacetServesLastCountWhileRecounting(t *testing.T) {
+	defer func(d time.Duration) { recountEvery = d }(recountEvery)
+	recountEvery = 0
 	ctx := context.Background()
 	db := store.OpenTest(t)
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

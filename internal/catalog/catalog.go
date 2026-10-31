@@ -266,9 +266,10 @@ type cachedStoredTitle struct {
 }
 
 type cachedCount struct {
-	total  int
-	gen    uint64
-	minute int64
+	total   int
+	gen     uint64
+	minute  int64
+	counted time.Time // when the count ran; zero for a synchronous count
 }
 
 type cachedBrowse struct {
@@ -278,9 +279,10 @@ type cachedBrowse struct {
 }
 
 type cachedFacet struct {
-	vals   []core.FacetValue
-	gen    uint64
-	minute int64
+	vals    []core.FacetValue
+	gen     uint64
+	minute  int64
+	counted time.Time
 }
 
 type cachedStats struct {

@@ -1,9 +1,12 @@
 package catalog
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
@@ -59,13 +62,16 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		total = cntEnt.total
 	case hasCnt && cntEnt.total >= staleCountMin:
 		// A large total walks the whole filtered set. Serve the last count
-		// and recount behind the read, as Facet does; a total a few seconds
-		// old only moves the end of the last page.
+		// and recount behind the read, at most once per recountEvery: the
+		// catalogue writes continuously, and a total that old only moves
+		// the end of the last page.
 		total, staleTotal = cntEnt.total, true
-		_ = c.hydrate(ctx, "count:"+ckey, 0, func(ctx context.Context) error {
-			_, err := c.countBrowse(ctx, ckey, where, args)
-			return err
-		})
+		if time.Since(cntEnt.counted) >= recountEvery {
+			_ = c.hydrate(ctx, "count:"+ckey, 0, func(ctx context.Context) error {
+				_, err := c.countBrowse(ctx, ckey, where, args)
+				return err
+			})
+		}
 	default:
 		if total, err = c.countBrowse(ctx, ckey, where, args); err != nil {
 			return core.Page{}, err
@@ -116,8 +122,19 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		// The date expression comes before the filter in the narrow subquery.
 		queryArgs = append(append([]any{}, orderArgs...), args...)
 	}
-	items, err := c.queryTitles(ctx, query, append(queryArgs, limit, offset)...)
-	if err != nil {
+	var items []core.Title
+	if q.Filter.Type == "" && !computedAdded && q.Sort != core.SortTitle && offset+limit <= mergedPageMax {
+		// Movies and series together: no index orders both types, so the
+		// sorted query reads every browsable title. Each type's page comes
+		// from its own index and the two merge.
+		keys, err := c.mergedTypeKeys(ctx, where, args, q, offset, limit)
+		if err != nil {
+			return core.Page{}, err
+		}
+		if items, err = c.titlesInKeyOrder(ctx, keys); err != nil {
+			return core.Page{}, err
+		}
+	} else if items, err = c.queryTitles(ctx, query, append(queryArgs, limit, offset)...); err != nil {
 		return core.Page{}, err
 	}
 	if q.Sort == core.SortAdded {
@@ -398,6 +415,9 @@ func escapeLike(s string) string {
 // recounts; a smaller count is cheap enough to take on the request.
 const staleCountMin = 10000
 
+// recountEvery spaces the background recounts of one stale total or facet.
+var recountEvery = 30 * time.Second
+
 // countBrowse counts a browse filter's matches and caches the total.
 func (c *Catalog) countBrowse(ctx context.Context, ckey, where string, args []any) (int, error) {
 	gen := c.writeGen.Load()
@@ -413,7 +433,7 @@ func (c *Catalog) countBrowse(ctx context.Context, ckey, where string, args []an
 	if len(c.countCache) >= 1024 {
 		c.countCache = map[string]cachedCount{}
 	}
-	c.countCache[ckey] = cachedCount{total: total, gen: gen, minute: minBucket}
+	c.countCache[ckey] = cachedCount{total: total, gen: gen, minute: minBucket, counted: time.Now()}
 	c.cacheMu.Unlock()
 	return total, nil
 }
@@ -434,11 +454,13 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 	}
 	if cached {
 		// Library-wide counts walk every title. Serve the last counts and
-		// recount behind the read; the next read has the new ones.
-		_ = c.hydrate(ctx, "facet:"+fkey, 0, func(ctx context.Context) error {
-			_, err := c.countFacet(ctx, t, facet)
-			return err
-		})
+		// recount behind the read, at most once per recountEvery.
+		if time.Since(ent.counted) >= recountEvery {
+			_ = c.hydrate(ctx, "facet:"+fkey, 0, func(ctx context.Context) error {
+				_, err := c.countFacet(ctx, t, facet)
+				return err
+			})
+		}
 		return append([]core.FacetValue(nil), ent.vals...), nil
 	}
 	return c.countFacet(ctx, t, facet)
@@ -508,8 +530,120 @@ func (c *Catalog) countFacet(ctx context.Context, t core.MediaType, facet string
 	}
 	if c.writeGen.Load() == gen {
 		c.cacheMu.Lock()
-		c.facetCache[fkey] = cachedFacet{vals: append([]core.FacetValue(nil), out...), gen: gen, minute: minBucket}
+		c.facetCache[fkey] = cachedFacet{vals: append([]core.FacetValue(nil), out...), gen: gen, minute: minBucket, counted: time.Now()}
 		c.cacheMu.Unlock()
 	}
 	return out, nil
+}
+
+// mergedPageMax is the deepest page end mergedTypeKeys reads: each type
+// reads offset+limit rows.
+const mergedPageMax = 1000
+
+type sortedKey struct {
+	key core.RatingKey
+	val any
+}
+
+// mergedTypeKeys returns the keys of a movies-and-series page in the sorted
+// query's order (browseOrder, then key), from one indexed page per type.
+// The sort column is numeric: text would merge by the database's collation.
+func (c *Catalog) mergedTypeKeys(ctx context.Context, where string, args []any, q core.BrowseQuery, offset, limit int) ([]core.RatingKey, error) {
+	order := browseOrder(q)
+	col, dir, _ := strings.Cut(order, " ")
+	desc := dir == "DESC"
+	var all []sortedKey
+	for _, typ := range []core.MediaType{core.TypeMovie, core.TypeShow} {
+		rows, err := c.db.QueryContext(ctx, `SELECT t.key, `+col+` FROM catalog_titles t WHERE `+where+` AND t.type=? ORDER BY `+order+`, t.key ASC LIMIT ?`, append(append([]any{}, args...), string(typ), offset+limit)...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key int64
+			var val any
+			if err := rows.Scan(&key, &val); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			all = append(all, sortedKey{key: core.RatingKey(key), val: val})
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	slices.SortStableFunc(all, func(a, b sortedKey) int {
+		if c := compareSQL(a.val, b.val); c != 0 {
+			if desc {
+				return -c
+			}
+			return c
+		}
+		return cmp.Compare(a.key, b.key)
+	})
+	if offset >= len(all) {
+		return nil, nil
+	}
+	out := make([]core.RatingKey, 0, limit)
+	for _, a := range all[offset:min(offset+limit, len(all))] {
+		out = append(out, a.key)
+	}
+	return out, nil
+}
+
+// compareSQL orders two values of one numeric column as the database does:
+// by value, NULL first; text, which does not occur, bytewise.
+func compareSQL(a, b any) int {
+	num := func(v any) (float64, bool) {
+		switch x := v.(type) {
+		case int64:
+			return float64(x), true
+		case float64:
+			return x, true
+		}
+		return 0, false
+	}
+	if x, ok := num(a); ok {
+		if y, ok := num(b); ok {
+			return cmp.Compare(x, y)
+		}
+	}
+	text := func(v any) string {
+		switch x := v.(type) {
+		case string:
+			return x
+		case []byte:
+			return string(x)
+		}
+		return ""
+	}
+	switch {
+	case a == nil && b == nil:
+		return 0
+	case a == nil:
+		return -1
+	case b == nil:
+		return 1
+	}
+	return strings.Compare(text(a), text(b))
+}
+
+// titlesInKeyOrder reads the titles of keys, in that order.
+func (c *Catalog) titlesInKeyOrder(ctx context.Context, keys []core.RatingKey) ([]core.Title, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(keys))
+	at := make(map[core.RatingKey]int, len(keys))
+	for i, k := range keys {
+		args[i] = k
+		at[k] = i
+	}
+	titles, err := c.queryTitles(ctx, `SELECT `+prefixedCols("t")+` FROM catalog_titles t WHERE t.key IN (`+placeholders(len(keys))+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(titles, func(a, b core.Title) int { return at[a.Key] - at[b.Key] })
+	return titles, nil
 }
