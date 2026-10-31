@@ -152,6 +152,22 @@ func TestEncoderWithoutDeviceCorrelatesOrOmits(t *testing.T) {
 	}
 }
 
+// The Android TV remux 500: ffmpeg has started, the encoder event has a
+// session and no device, and the device that session remembered has already
+// left the table. That lookup must not dereference a nil device.
+func TestEncoderAfterDeviceExpiryDoesNotPanic(t *testing.T) {
+	r, clk := newTestRecorder(t)
+	r.Observe(Event{Time: clk.t, Kind: KindPlaybackRequested, DeviceKey: "tv", SessionKey: "sess-1", DeviceName: "TV"})
+	clk.t = clk.t.Add(deviceRecent + time.Second)
+	r.Observe(Event{Time: clk.t, Kind: KindEncoderStarted, SessionKey: "sess-1", FFmpegExcerpt: "ffmpeg started"})
+	if _, ok := r.sessions["sess-1"]; ok {
+		t.Fatal("session still points at the expired device")
+	}
+	if got := r.Devices(); len(got) != 0 {
+		t.Fatalf("expired device still listed: %+v", got)
+	}
+}
+
 func TestSelectedDeviceExcludesTheOther(t *testing.T) {
 	r, clk := newTestRecorder(t)
 	r.Observe(Event{Time: clk.t, Kind: KindPlaybackRequested, DeviceKey: "tv", DeviceName: "TV", Title: "Only TV"})
