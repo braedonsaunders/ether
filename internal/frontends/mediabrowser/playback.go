@@ -122,12 +122,23 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 				http.NotFound(w, r)
 				return
 			}
-			ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
-			if e != nil || ch.ID == "" {
-				http.NotFound(w, r)
-				return
+			// A program plays by tuning the channel it is on. A channel id
+			// tunes that channel directly.
+			if _, e := ids.ParseGUID(ids.Programme, wireID); e == nil {
+				p, e := i.host.LiveTV.ResolveProgrammeGUID(r.Context(), v, wireID, programmeLookupQuery(time.Now().UTC()))
+				if e != nil || p.ChannelID == "" {
+					http.NotFound(w, r)
+					return
+				}
+				channel, key = p.ChannelID, 0
+			} else {
+				ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
+				if e != nil || ch.ID == "" {
+					http.NotFound(w, r)
+					return
+				}
+				channel, key = ch.ID, 0
 			}
-			channel, key = ch.ID, 0
 		}
 	}
 	// Native clients commonly omit IsPlayback when starting a stream. Only an

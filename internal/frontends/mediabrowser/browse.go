@@ -417,6 +417,9 @@ func (i *instance) browseRoutes() error {
 			i.writeCollectionFolder(w, r, v, viewNum)
 			return
 		}
+		if i.writeLiveGuideItem(w, r, v, token, wireID) {
+			return
+		}
 		key, err := ids.ParseRatingKeyGUID(wireID)
 		versionID := ""
 		releaseID := ""
@@ -863,6 +866,12 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.viewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if liveChannelTypesOnly(r) {
+		// Swiftfin › Media › Live TV › Channels asks /Items for LiveTvChannel.
+		// The catalogue library is the wrong index and was counting every season.
+		i.writeLiveChannelItems(w, r, v)
 		return
 	}
 	if i.host.Experience == nil {

@@ -3,10 +3,12 @@ package mediabrowser
 import (
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/paging"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -87,6 +89,164 @@ func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 	jsonReply(w, i.queryResult(items, len(channels), offset))
+}
+
+// programmeLookupQuery is the guide window a single program id is resolved
+// against. On Now and the surrounding guide fit; the facade rejects a longer span.
+func programmeLookupQuery(now time.Time) frontend.LiveGuideQuery {
+	return frontend.LiveGuideQuery{From: now.Add(-12 * time.Hour), Until: now.Add(12 * time.Hour)}
+}
+
+// liveChannelTypesOnly is Swiftfin's Channels library: IncludeItemTypes is
+// only a live channel. That request must not become a catalogue library walk.
+func liveChannelTypesOnly(r *http.Request) bool {
+	values := route.Query(r.URL.Query(), "IncludeItemTypes")
+	if len(values) == 0 {
+		return false
+	}
+	saw := false
+	for _, value := range values {
+		for _, typ := range strings.Split(value, ",") {
+			switch strings.ToLower(strings.TrimSpace(typ)) {
+			case "":
+				continue
+			case "livetvchannel", "tvchannel", "channel":
+				saw = true
+			default:
+				return false
+			}
+		}
+	}
+	return saw
+}
+
+func (i *instance) writeLiveChannelItems(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer) {
+	if i.host.LiveTV == nil {
+		i.replyItems(w, r, i.queryResult([]any{}, 0, queryInt(r, "StartIndex", 0)))
+		return
+	}
+	channels, err := i.host.LiveTV.Channels(r.Context(), viewer)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	q := itemQuery(r)
+	sort.SliceStable(channels, func(a, b int) bool {
+		if q.Desc {
+			return channels[a].Name > channels[b].Name
+		}
+		return channels[a].Name < channels[b].Name
+	})
+	token := authhdr.MediaBrowserToken(r)
+	offset := q.Offset
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	items := make([]any, 0)
+	for _, ch := range paging.Slice(channels, offset, limit) {
+		item, ok := i.channelDTO(r, token, ch)
+		if !ok {
+			continue
+		}
+		items = append(items, item)
+	}
+	i.replyItems(w, r, i.queryResult(items, len(channels), offset))
+}
+
+func (i *instance) recordings(w http.ResponseWriter, r *http.Request) {
+	viewer, _, err := i.viewer(r)
+	if err != nil || viewer == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	// Ether has no DVR. An empty page is the Jellyfin recordings list, so
+	// Swiftfin's recordings row is empty instead of an unmatched 404.
+	i.replyItems(w, r, i.queryResult([]any{}, 0, queryInt(r, "StartIndex", 0)))
+}
+
+func (i *instance) programmeDTO(p frontend.LiveProgramme, channel frontend.LiveChannel) (map[string]any, bool) {
+	id, err := ids.StringGUID(ids.Programme, p.ID)
+	if err != nil {
+		return nil, false
+	}
+	channelID, err := ids.StringGUID(ids.Channel, p.ChannelID)
+	if err != nil {
+		return nil, false
+	}
+	item := map[string]any{
+		"Id": id, "ChannelId": channelID, "Name": p.Title, "Overview": p.Summary, "Type": "Program",
+		"StartDate": wireTime(p.Start), "EndDate": wireTime(p.End), "OfficialRating": contentrating.Prefixed(p.Rating),
+		"IndexNumber": p.Episode, "ParentIndexNumber": p.Season, "IsMovie": false, "IsSeries": p.Episode > 0 || p.Season > 0,
+		"MediaType": "Video", "IsFolder": false, "UserData": map[string]any{"Key": id, "PlaybackPositionTicks": 0, "PlayCount": 0, "IsFavorite": false, "Played": false},
+	}
+	if channel.ID != "" {
+		item["ChannelName"] = channel.Name
+		item["ChannelNumber"] = channel.Number
+	}
+	return item, true
+}
+
+// writeLiveGuideItem serves a channel or program GUID as one item. A normal
+// catalogue id returns false so detail can keep resolving versions.
+func (i *instance) writeLiveGuideItem(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, token, wireID string) bool {
+	if _, err := ids.ParseGUID(ids.Channel, wireID); err == nil {
+		if i.host.LiveTV == nil {
+			http.NotFound(w, r)
+			return true
+		}
+		ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), viewer, wireID)
+		if err != nil || ch.ID == "" {
+			http.NotFound(w, r)
+			return true
+		}
+		item, ok := i.channelDTO(r, token, ch)
+		if !ok {
+			http.NotFound(w, r)
+			return true
+		}
+		i.replyItems(w, r, item)
+		return true
+	}
+	if _, err := ids.ParseGUID(ids.Programme, wireID); err != nil {
+		return false
+	}
+	if i.host.LiveTV == nil {
+		http.NotFound(w, r)
+		return true
+	}
+	p, err := i.host.LiveTV.ResolveProgrammeGUID(r.Context(), viewer, wireID, programmeLookupQuery(time.Now().UTC()))
+	if err != nil || p.ID == "" || p.ChannelID == "" {
+		http.NotFound(w, r)
+		return true
+	}
+	var channel frontend.LiveChannel
+	if channels, e := i.host.LiveTV.Channels(r.Context(), viewer); e == nil {
+		for _, ch := range channels {
+			if ch.ID == p.ChannelID {
+				channel = ch
+				break
+			}
+		}
+	}
+	item, ok := i.programmeDTO(p, channel)
+	if !ok {
+		http.NotFound(w, r)
+		return true
+	}
+	i.replyItems(w, r, item)
+	return true
+}
+
+func (i *instance) programme(w http.ResponseWriter, r *http.Request) {
+	viewer, token, err := i.viewer(r)
+	if err != nil || viewer == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if !i.writeLiveGuideItem(w, r, viewer, token, r.PathValue("id")) {
+		http.NotFound(w, r)
+	}
 }
 
 func (i *instance) channel(w http.ResponseWriter, r *http.Request) {
@@ -216,18 +376,9 @@ func (i *instance) writeProgrammes(w http.ResponseWriter, r *http.Request, viewe
 	}
 	items := make([]any, 0, len(rows))
 	for _, p := range rows {
-		id, e := ids.StringGUID(ids.Programme, p.ID)
-		if e != nil {
+		item, ok := i.programmeDTO(p, names[p.ChannelID])
+		if !ok {
 			continue
-		}
-		channel, e := ids.StringGUID(ids.Channel, p.ChannelID)
-		if e != nil {
-			continue
-		}
-		item := map[string]any{"Id": id, "ChannelId": channel, "Name": p.Title, "Overview": p.Summary, "Type": "Program", "StartDate": wireTime(p.Start), "EndDate": wireTime(p.End), "OfficialRating": contentrating.Prefixed(p.Rating), "IndexNumber": p.Episode, "ParentIndexNumber": p.Season, "IsMovie": false, "IsSeries": p.Episode > 0 || p.Season > 0}
-		if ch, ok := names[p.ChannelID]; ok {
-			item["ChannelName"] = ch.Name
-			item["ChannelNumber"] = ch.Number
 		}
 		items = append(items, item)
 	}

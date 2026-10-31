@@ -97,6 +97,12 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 	if err := r.Handle("GET", "/LiveTv/Programs/Recommended", http.HandlerFunc(inst.recommendedProgrammes)); err != nil {
 		return nil, err
 	}
+	if err := r.Handle("GET", "/LiveTv/Programs/{id}", http.HandlerFunc(inst.programme)); err != nil {
+		return nil, err
+	}
+	if err := r.Handle("GET", "/LiveTv/Recordings", http.HandlerFunc(inst.recordings)); err != nil {
+		return nil, err
+	}
 	for _, method := range []string{"GET", "HEAD"} {
 		if err := r.Handle(method, "/Videos/{id}/{source}/Subtitles/{index}/{name}", http.HandlerFunc(inst.subtitle)); err != nil {
 			return nil, err
