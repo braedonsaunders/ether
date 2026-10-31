@@ -48,7 +48,7 @@ describe("Viewers", () => {
     const row = await screen.findByText("Sam Rivera", {}, WAIT);
     expect(screen.getByText("The Kids")).toBeInTheDocument();
     // The kids' rating cap shows in the limits summary.
-    expect(await screen.findByText("Up to PG/TV-PG", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("Up to PG/TV-PG/TV-Y7", {}, WAIT)).toBeInTheDocument();
     fireEvent.click(row);
     expect(await screen.findByRole("heading", { name: /Sam Rivera/ }, WAIT)).toBeInTheDocument();
     expect(await screen.findByText("What Ether has learned", {}, WAIT)).toBeInTheDocument();

@@ -941,12 +941,12 @@ func (s *Service) translate(ctx context.Context, r *rule, kind string, q url.Val
 			return false
 		}
 		// TMDB discover filters US film certifications, so a level is
-		// pushed down as its US film label. Levels without one (TV-Y7) and
-		// "Not rated" are evaluated locally only.
+		// pushed down as its US film label (its key). "Not rated" is
+		// evaluated locally only.
 		var labels []string
 		for _, t := range r.tags {
 			l := contentrating.LevelOf(t)
-			if l == contentrating.Unrated || l == contentrating.Children {
+			if l == contentrating.Unrated {
 				return false
 			}
 			labels = append(labels, l.Key())

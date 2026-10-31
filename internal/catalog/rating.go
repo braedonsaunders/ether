@@ -65,6 +65,9 @@ func ratingPrecedence(col string) string {
 // every row from its label at startup and re-selects every detailed movie
 // and show from TMDB in the background (RefreshRatings).
 const (
+	// ratingLevels versions content_rating_rank's numbering (contentrating
+	// levels); raising it re-ranks every row at startup without a sweep.
+	ratingLevels       = "2"
 	ratingModel        = "1"
 	ratingModelKey     = "content_rating_model"
 	ratingRankedKey    = "content_rating_ranked"
@@ -73,10 +76,10 @@ const (
 )
 
 // rankRatings recomputes content_rating_rank from content_rating for every
-// row, once per rating model. Labels are few (a few hundred distinct), so
+// row, once per level numbering (ratingLevels). Labels are few (a few hundred distinct), so
 // it is one UPDATE with a CASE over them.
 func (c *Catalog) rankRatings(ctx context.Context) error {
-	if c.getMeta(ctx, ratingRankedKey) == ratingModel {
+	if c.getMeta(ctx, ratingRankedKey) == ratingLevels {
 		return nil
 	}
 	rows, err := c.db.QueryContext(ctx, `SELECT DISTINCT content_rating FROM catalog_titles WHERE content_rating<>''`)
@@ -97,7 +100,7 @@ func (c *Catalog) rankRatings(ctx context.Context) error {
 		return err
 	}
 	if len(labels) == 0 {
-		return c.setMeta(ctx, ratingRankedKey, ratingModel)
+		return c.setMeta(ctx, ratingRankedKey, ratingLevels)
 	}
 	q := `UPDATE catalog_titles SET content_rating_rank=CASE content_rating`
 	args := make([]any, 0, 2*len(labels))
@@ -109,7 +112,7 @@ func (c *Catalog) rankRatings(ctx context.Context) error {
 	if _, err := c.db.ExecContext(ctx, q, args...); err != nil {
 		return err
 	}
-	return c.setMeta(ctx, ratingRankedKey, ratingModel)
+	return c.setMeta(ctx, ratingRankedKey, ratingLevels)
 }
 
 // ratingsTMDB is the light TMDB surface for rating re-selection.

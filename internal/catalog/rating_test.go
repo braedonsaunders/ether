@@ -223,7 +223,7 @@ func TestRefreshRatingsReselectsStoredTitles(t *testing.T) {
 	if n, err = c2.RefreshRatings(ctx, 1); err != nil || n != 1 {
 		t.Fatalf("second pass %d %v", n, err)
 	}
-	if value, rank, source := stored(t, db, core.MovieKey(701)); value != "TV-PG" || rank != 3 || source != "tmdb:US:6" {
+	if value, rank, source := stored(t, db, core.MovieKey(701)); value != "TV-PG" || rank != 2 || source != "tmdb:US:6" {
 		t.Fatalf("re-selected %q rank %d %q", value, rank, source)
 	}
 	if n, err = c2.RefreshRatings(ctx, 2); err != nil || n != 1 {

@@ -344,7 +344,7 @@ func TestContentRatingRulesMatchByLevel(t *testing.T) {
 		{cr("contentRating", "in", []string{"TV-G", "TV-PG"}), url.Values{"certification": {"G|PG"}, "certification_country": {"US"}}},
 		{cr("contentRating", "lte", "TV-14"), url.Values{"certification.lte": {"PG-13"}, "certification_country": {"US"}}},
 		{cr("contentRating", "in", []string{"PG", "NR"}), nil},
-		{cr("contentRating", "in", []string{"TV-Y7"}), nil},
+		{cr("contentRating", "in", []string{"TV-Y7"}), url.Values{"certification": {"PG"}, "certification_country": {"US"}}},
 	} {
 		r, err := compileRule(c.r)
 		if err != nil {

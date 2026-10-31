@@ -11,8 +11,7 @@ func TestUSFilmAndTVLabelsShareLevels(t *testing.T) {
 		want   Level
 	}{
 		{[]string{"G", "TV-G", "TV-Y", "tv-g", " TV G "}, AllAges},
-		{[]string{"TV-Y7", "TV-Y7-FV"}, Children},
-		{[]string{"PG", "TV-PG", "tvpg"}, Parental},
+		{[]string{"PG", "TV-PG", "tvpg", "TV-Y7", "TV-Y7-FV"}, Parental},
 		{[]string{"PG-13", "PG13", "TV-14"}, Teen},
 		{[]string{"R", "TV-MA"}, Mature},
 		{[]string{"NC-17", "NC17"}, Adult},
@@ -37,7 +36,7 @@ func TestForeignQualifiedLabels(t *testing.T) {
 		{"gb/15", "GB", "15", Mature},
 		{"gb/18", "GB", "18", Adult},
 		{"de/0", "DE", "0", AllAges},
-		{"de/6", "DE", "6", Children},
+		{"de/6", "DE", "6", Parental},
 		{"de/FSK 16", "DE", "FSK 16", Mature},
 		{"br/L", "BR", "L", AllAges},
 		{"ca/G", "CA", "G", AllAges},
@@ -47,7 +46,7 @@ func TestForeignQualifiedLabels(t *testing.T) {
 		{"au/M", "AU", "M", Teen},
 		{"au/MA 15+", "AU", "MA 15+", Mature},
 		{"au/MA15+", "AU", "MA15+", Mature},
-		{"se/7", "SE", "7", Children},
+		{"se/7", "SE", "7", Parental},
 		{"se/Btl", "SE", "Btl", AllAges},
 		{"gr/Κ-12", "GR", "Κ-12", Teen}, // Greek capital kappa
 		{"kr/19", "KR", "19", Adult},
@@ -77,8 +76,8 @@ func TestBareForeignLabels(t *testing.T) {
 		{"TP", AllAges},     // France and Spain agree
 		{"Btl", AllAges},    // Sweden
 		{"0", AllAges},      // plain age
-		{"6", Children},     // plain age
-		{"7", Children},     // plain age
+		{"6", Parental},     // plain age
+		{"7", Parental},     // plain age
 		{"12", Teen},        // plain age
 		{"16", Mature},      // plain age
 		{"+16", Mature},     // plain age
@@ -116,7 +115,7 @@ func TestPlainLabelsWithSlashesAreNotQualified(t *testing.T) {
 func TestCanonical(t *testing.T) {
 	for in, want := range map[string]string{
 		"G": "G", "TV-G": "G", "TV-Y": "G", "gb/U": "G", "de/0": "G",
-		"TV-Y7": "TV-Y7", "de/6": "TV-Y7",
+		"TV-Y7": "PG", "de/6": "PG", "se/7": "PG",
 		"PG": "PG", "TV-PG": "PG", "gb/PG": "PG",
 		"PG-13": "PG-13", "TV-14": "PG-13", "gb/12A": "PG-13",
 		"R": "R", "TV-MA": "R", "gb/15": "R",
