@@ -74,7 +74,7 @@ func (e *Engine) CheckRelease(ctx context.Context, releaseID string, nzbData []b
 	}
 	defer e.release(rel)
 
-	b := &builder{e: e, rel: rel, prio: core.PriorityLive}
+	b := &builder{e: e, rel: rel, prio: healthPriority(ctx)}
 	cands := b.candidates(rel.files)
 
 	// STAT the likely main candidate while its headers are inspected.
@@ -112,7 +112,7 @@ func (e *Engine) CheckRelease(ctx context.Context, releaseID string, nzbData []b
 	if idx := rel.par2IndexFile(); idx != nil {
 		go func() {
 			defer close(par2Done)
-			rel.loadPar2(sctx, core.PriorityLive, fo, idx)
+			rel.loadPar2(sctx, healthPriority(sctx), fo, idx)
 		}()
 	} else {
 		close(par2Done)
@@ -126,7 +126,7 @@ func (e *Engine) CheckRelease(ctx context.Context, releaseID string, nzbData []b
 	planCh := make(chan planned, 1)
 	go func() {
 		started := time.Now()
-		p, err := rel.ensurePlanWithCandidate(sctx, core.PriorityLive, releaseID, startSample)
+		p, err := rel.ensurePlanWithCandidate(sctx, healthPriority(sctx), releaseID, startSample)
 		// Identification can reject before announcing any candidate. Always
 		// settle the sample channel so cancellation cleanup can join it.
 		startSample(nil)
@@ -183,7 +183,7 @@ func (e *Engine) CheckRelease(ctx context.Context, releaseID string, nzbData []b
 			}
 			// Beside the STAT/BODY probes still running: the first
 			// volume's head (fetched by the plan) against PAR2.
-			if err := rel.verifyPar2(ctx, ready.p, core.PriorityLive, fo, true); err != nil {
+			if err := rel.verifyPar2(ctx, ready.p, healthPriority(ctx), fo, true); err != nil {
 				par2Fail(err)
 				return false, err
 			}
@@ -513,15 +513,25 @@ func (e *Engine) statSample(parent context.Context, files []*postedFile, repairs
 	return out
 }
 
+// healthPriority leaves a pre-play check on the live lane and demotes a
+// background validation or optimistic post-start check to prefetch.
+func healthPriority(ctx context.Context) core.Priority {
+	if core.IsBackgroundCheck(ctx) {
+		return core.PriorityPrefetch
+	}
+	return core.PriorityLive
+}
+
 // probeBody runs one BODY probe, preferring the yEnc-header check that
 // validates the part against the NZB.
 func (e *Engine) probeBody(ctx context.Context, ref slotRef, id string) error {
+	prio := healthPriority(ctx)
 	if checker, ok := e.fetcher.(bodyPartChecker); ok {
-		return checker.CheckBodyPart(ctx, id, ref.pf.groups, core.PriorityLive, ref.pf.expectedPart(ref.slot))
+		return checker.CheckBodyPart(ctx, id, ref.pf.groups, prio, ref.pf.expectedPart(ref.slot))
 	}
 	if checker, ok := e.fetcher.(bodyChecker); ok {
-		return checker.CheckBody(ctx, id, ref.pf.groups, core.PriorityLive)
+		return checker.CheckBody(ctx, id, ref.pf.groups, prio)
 	}
-	_, err := e.fetcher.Body(ctx, id, ref.pf.groups, core.PriorityLive)
+	_, err := e.fetcher.Body(ctx, id, ref.pf.groups, prio)
 	return err
 }

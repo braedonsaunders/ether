@@ -22,8 +22,10 @@ const (
 // credentials cost one login attempt per backoff. A new pool (created when
 // settings change) starts closed.
 // Connection failures open it for an exponentially growing backoff once
-// failThreshold consecutive connections or commands have failed; a successful
-// article/STAT response resets it. A successful login alone does not.
+// failThreshold consecutive connections or commands have failed. Only a
+// successful BODY resets that ladder: STAT (including a 430) proves the
+// socket can talk, not that articles can be read. A successful login alone
+// does not reset it either. The first open stays at minBackoff (1s).
 type breaker struct {
 	mu            sync.Mutex
 	now           func() time.Time
@@ -51,6 +53,17 @@ func newBreaker(minB, maxB time.Duration, threshold int, now func() time.Time) *
 	}
 	return &breaker{now: now, minBackoff: minB, maxBackoff: maxB, failThreshold: threshold,
 		authMin: DefaultAuthRetryMin, authMax: DefaultAuthRetryMax, changed: make(chan struct{})}
+}
+
+// authDisabled reports a credential lockout. Connect backoff does not: idle
+// sockets authenticated before the backoff may still serve.
+func (b *breaker) authDisabled() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.authErr != nil {
+		return fmt.Errorf("%w: %v", ErrProviderDisabled, b.authErr)
+	}
+	return nil
 }
 
 // allow returns nil if the provider may be used now.

@@ -394,8 +394,9 @@ func (f *Fetcher) BodyPart(ctx context.Context, messageID string, groups []strin
 	return part.Data, ap, nil
 }
 
-// Stat reports whether any provider has the article (STAT, at live
-// priority since health checks gate playback). It returns (false, nil) when
+// Stat reports whether any provider has the article. A foreground health
+// check runs at live priority; a background check (availability, optimistic
+// post-start) runs at prefetch. It returns (false, nil) when
 // every provider able to answer said 430, and an error when that could not
 // be established.
 func (f *Fetcher) Stat(ctx context.Context, messageID string) (bool, error) {
@@ -905,24 +906,16 @@ func (f *Fetcher) CheckBodyPart(ctx context.Context, messageID string, groups []
 				return err
 			}
 		}
-		c, err := p.get(ctx, prio)
-		if err != nil {
-			return err
-		}
-		reused := c.uses > 0 || !c.idleSince.IsZero()
-		c.uses++
-		if p.o.UseGroup && len(groups) > 0 && !slices.Contains(groups, c.CurrentGroup()) {
-			if err = c.Group(ctx, groups[0]); err != nil && !errors.Is(err, ErrNoSuchGroup) {
-				p.put(c, prio)
-				return p.failed(err, reused, ctx)
+		err := p.withConn(ctx, prio, func(c *Conn) error {
+			if p.o.UseGroup && len(groups) > 0 && !slices.Contains(groups, c.CurrentGroup()) {
+				if err := c.Group(ctx, groups[0]); err != nil && !errors.Is(err, ErrNoSuchGroup) {
+					return err
+				}
 			}
-		}
-		reader, err := c.Body(ctx, id)
-		if err == nil {
-			err = probeBodyHeader(c, reader, p.o.MaxArticleSize, want)
-		}
-		p.put(c, prio)
-		if err != nil {
+			reader, err := c.Body(ctx, id)
+			if err == nil {
+				err = probeBodyHeader(c, reader, p.o.MaxArticleSize, want)
+			}
 			if errors.Is(err, ErrNoSuchArticle) {
 				p.bodyMisses.Add(1)
 				var pe *ProtocolError
@@ -930,7 +923,10 @@ func (f *Fetcher) CheckBodyPart(ctx context.Context, messageID string, groups []
 					p.bodyTakedowns.Add(1)
 				}
 			}
-			return p.failed(err, reused, ctx)
+			return err
+		})
+		if err != nil {
+			return err
 		}
 		p.brk.success()
 		return nil

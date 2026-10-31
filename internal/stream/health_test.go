@@ -338,3 +338,23 @@ func TestCheckRejectsAGapInTheFirstArticles(t *testing.T) {
 		t.Fatalf("Check = %v %v, want a missing-article rejection", ok, err)
 	}
 }
+
+func TestHealthPriorityFollowsContext(t *testing.T) {
+	f := newFakeFetcher()
+	doc := post(t, f, 10_000, postFile{name: "h.mkv", data: mkvBytes(1, 100_000)})
+	e := newTestEngine(t, f, nil, Options{HealthSamples: 4})
+	if ok, err := e.Check(context.Background(), doc); !ok || err != nil {
+		t.Fatalf("foreground Check = %v %v", ok, err)
+	}
+	if live, bg := f.prio(core.PriorityLive), f.prio(core.PriorityPrefetch); live == 0 || bg != 0 {
+		t.Fatalf("foreground priorities: live %d prefetch %d", live, bg)
+	}
+	f.resetCounts()
+	ctx := core.WithBackgroundBudget(context.Background(), func(context.Context, string, string, int64) error { return nil })
+	if ok, err := e.Check(ctx, doc); !ok || err != nil {
+		t.Fatalf("background Check = %v %v", ok, err)
+	}
+	if live, bg := f.prio(core.PriorityLive), f.prio(core.PriorityPrefetch); live != 0 || bg == 0 {
+		t.Fatalf("background priorities: live %d prefetch %d", live, bg)
+	}
+}
