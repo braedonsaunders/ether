@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -363,7 +364,7 @@ func TestRecoveryFollowsTheRetryLoop(t *testing.T) {
 	if w := recoveryCall(h, "POST", "restore/snapshot/"+bundle, done.Token, nil); w.Code != http.StatusConflict {
 		t.Fatalf("restore during a start: %d %s", w.Code, w.Body)
 	}
-	rc.endAttempt()
+	rc.endAttempt(false)
 	// The sign-in survived the attempt.
 	if w := recoveryCall(h, "GET", "backups", done.Token, nil); w.Code != 200 {
 		t.Fatalf("token after a retry: %d", w.Code)
@@ -385,7 +386,7 @@ func TestRecoveryFollowsTheRetryLoop(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the start never began")
 	}
-	rc.endAttempt()
+	rc.endAttempt(false)
 
 	// A stale wake-up does not skip the backoff.
 	rc.mu.Lock()
@@ -560,3 +561,220 @@ type fakeListener struct{}
 func (fakeListener) Accept() (net.Conn, error) { return nil, net.ErrClosed }
 func (fakeListener) Close() error              { return nil }
 func (fakeListener) Addr() net.Addr            { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 32500} }
+
+// Round 3, finding 2: a restore whose commit fails is not served; the
+// original data goes back.
+func TestFailedRestoreCommitIsNotServed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dataDir, bundle, db := ownedDataDir(t)
+	db.Close()
+	st, err := backup.StageLocal(context.Background(), dataDir, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backup.RequestStaged(dataDir, st.ID); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(dataDir, "config.json"))
+	a := &App{opts: Options{DataDir: dataDir}, log: quietLog(), tracker: startup.NewTracker("1", time.Now)}
+	if err := a.applyPendingRestore(); err != nil || !a.restoreApplied() {
+		t.Fatalf("apply: %v %+v", err, a.restored)
+	}
+	// The data directory is full or read-only: the record cannot go.
+	if err := os.Chmod(dataDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	err = a.confirmRestore()
+	os.Chmod(dataDir, 0o700)
+	if err == nil {
+		t.Fatal("confirmRestore succeeded although the restore record could not be removed")
+	}
+	if rep, _ := backup.ReadReport(dataDir); rep != nil {
+		t.Fatalf("report for an uncommitted restore: %+v", rep)
+	}
+	if !a.rollbackUnconfirmed(err) {
+		t.Fatal("no rollback after the failed commit")
+	}
+	if after, _ := os.ReadFile(filepath.Join(dataDir, "config.json")); string(after) != string(before) {
+		t.Fatal("original settings not put back")
+	}
+}
+
+func postFrom(h http.Handler, path, body, remote string, header map[string]string) int {
+	r := httptest.NewRequest("POST", "http://192.168.1.10:32400"+startup.RecoveryPrefix+path, strings.NewReader(body))
+	r.RemoteAddr = remote
+	r.Header.Set("X-Ether-Request", "1")
+	r.Header.Set("Content-Type", "application/json")
+	for k, v := range header {
+		r.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w.Code
+}
+
+// Round 3, finding 3a: once a client is over its limit nothing more is
+// recorded, usernames are bounded and keyed alone, and old keys go.
+func TestRecoveryLimiterIsBounded(t *testing.T) {
+	dataDir, _, _ := ownedDataDir(t)
+	rc := testRecovery(dataDir)
+	h := rc.handler()
+	limited := 0
+	for i := range 2000 {
+		if postFrom(h, "local", `{"username":"user`+strconv.Itoa(i)+`","password":"x"}`, "192.168.1.50:5000", nil) == http.StatusTooManyRequests {
+			limited++
+		}
+	}
+	rc.mu.Lock()
+	keys := len(rc.limits)
+	rc.mu.Unlock()
+	if limited != 2000-limitPerIP || keys > limitPerIP+1 {
+		t.Fatalf("limited %d, tracked keys %d", limited, keys)
+	}
+	if c := postFrom(h, "local", `{"username":"`+strings.Repeat("a", 4000)+`","password":"x"}`, "192.168.1.60:5000", nil); c != http.StatusBadRequest {
+		t.Fatalf("oversized username: %d", c)
+	}
+	// A username is limited across clients.
+	for i := range limitPerName {
+		postFrom(h, "local", `{"username":"owner","password":"guess"}`, "192.168.2."+strconv.Itoa(i+1)+":5000", nil)
+	}
+	if c := postFrom(h, "local", `{"username":"owner","password":"first secret"}`, "192.168.3.1:5000", nil); c != http.StatusTooManyRequests {
+		t.Fatalf("username over its limit from a new client: %d", c)
+	}
+	// Old attempts are pruned.
+	rc.now = func() time.Time { return time.Now().Add(limitWindow + time.Minute) }
+	rc.admit("probe", "")
+	rc.mu.Lock()
+	keys, fails := len(rc.limits), len(rc.failures)
+	rc.mu.Unlock()
+	if keys != 1 || fails != 0 {
+		t.Fatalf("after the window: %d keys, %d failures", keys, fails)
+	}
+	// The number of tracked keys is capped.
+	rc.mu.Lock()
+	for i := range limitKeys {
+		rc.limits["filler"+strconv.Itoa(i)] = []time.Time{rc.now()}
+	}
+	rc.mu.Unlock()
+	if rc.admit("new-client", "") {
+		t.Fatal("a new key was tracked beyond the cap")
+	}
+}
+
+// Round 3, finding 3b and c: forwarding headers only count from a trusted
+// proxy, and an IPv6 host cannot rotate through its /64.
+func TestRecoveryLimiterKeys(t *testing.T) {
+	dataDir, _, _ := ownedDataDir(t)
+	h := testRecovery(dataDir).handler()
+	last := 0
+	for i := range limitPerIP + 5 {
+		last = postFrom(h, "local", `{"username":"u`+strconv.Itoa(i)+`","password":"x"}`, "127.0.0.1:5000",
+			map[string]string{"X-Forwarded-For": "203.0.113." + strconv.Itoa(i+1)})
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("rotating X-Forwarded-For from loopback: %d", last)
+	}
+	for i := range limitPerIP + 5 {
+		last = postFrom(h, "local", `{"username":"v`+strconv.Itoa(i)+`","password":"x"}`, "[2001:db8:1:2::"+strconv.FormatInt(int64(i+1), 16)+"]:5000", nil)
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("rotating within an IPv6 /64: %d", last)
+	}
+	if c := postFrom(h, "local", `{"username":"w","password":"x"}`, "[2001:db8:1:3::1]:5000", nil); c == http.StatusTooManyRequests {
+		t.Fatal("another /64 was limited")
+	}
+
+	// Behind a trusted proxy each forwarded client counts on its own.
+	cfg, _ := config.Open(dataDir)
+	cfg.Update(func(c *config.Config) error { c.Server.TrustedProxyCIDRs = []string{"10.9.0.1/32"}; return nil })
+	h = testRecovery(dataDir).handler()
+	for i := range limitPerIP + 5 {
+		last = postFrom(h, "local", `{"username":"x`+strconv.Itoa(i)+`","password":"x"}`, "10.9.0.1:5000",
+			map[string]string{"X-Forwarded-For": "198.51.100." + strconv.Itoa(i+1)})
+	}
+	if last == http.StatusTooManyRequests {
+		t.Fatal("clients behind a trusted proxy shared one limit")
+	}
+}
+
+// Round 3, finding 3d: a limit on failures from everyone, and on
+// concurrent Argon2id checks.
+func TestRecoveryGlobalLimits(t *testing.T) {
+	dataDir, _, _ := ownedDataDir(t)
+	rc := testRecovery(dataDir)
+	h := rc.handler()
+	rc.prepare()
+	for i := range limitFailures {
+		postFrom(h, "code", `{"code":"ZZZZ-ZZZZ-ZZZZ"}`, "192.168."+strconv.Itoa(i/200)+"."+strconv.Itoa(i%200+1)+":5000", nil)
+	}
+	if c := postFrom(h, "code", `{"code":"`+rc.code+`"}`, "192.168.250.1:5000", nil); c != http.StatusTooManyRequests {
+		t.Fatalf("after %d failures from everyone: %d", limitFailures, c)
+	}
+
+	rc = testRecovery(dataDir)
+	h = rc.handler()
+	for range maxVerifies {
+		rc.verifying <- struct{}{}
+	}
+	if c := postFrom(h, "local", `{"username":"owner","password":"first secret"}`, "192.168.1.50:5000", nil); c != http.StatusTooManyRequests {
+		t.Fatalf("sign-in with every Argon2id slot busy: %d", c)
+	}
+}
+
+// Round 3, item 4: only a signed-in owner (or a restore) holds the retry,
+// a successful start refuses restores for good, settings that are null or
+// empty fail closed, a local owner ends tokenless access, and plex.tv only
+// sends the browser back to a local IP.
+func TestRecoveryRound3Items(t *testing.T) {
+	dataDir, bundle, _ := ownedDataDir(t)
+	rc := testRecovery(dataDir)
+	h := rc.handler()
+	recoveryCall(h, "GET", "access", "", nil)
+	postFrom(h, "local", `{"username":"owner","password":"wrong"}`, "192.168.1.50:5000", nil)
+	if rc.holding() {
+		t.Fatal("an unauthenticated request held the retry")
+	}
+	rc.prepare()
+	var done struct{ Token string }
+	jsonBody(t, signIn(t, h, "code", `{"code":"`+rc.code+`"}`, nil), &done)
+	if !rc.holding() {
+		t.Fatal("a signed-in owner did not hold the retry")
+	}
+	rc.endAttempt(true)
+	if w := recoveryCall(h, "POST", "restore/snapshot/"+bundle, done.Token, nil); w.Code != http.StatusConflict {
+		t.Fatalf("restore after a successful start: %d", w.Code)
+	}
+
+	for _, doc := range []string{"null", "{}", `{"plex":{}}`, `{"server":null}`} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "config.json"), []byte(doc), 0o600)
+		if f := readNodeFacts(dir, os.Getenv); f.Readable || !f.SetupComplete || f.Standalone() || f.Server.BindAddress != "127.0.0.1" {
+			t.Fatalf("settings %s: %+v", doc, f)
+		}
+	}
+
+	fresh := t.TempDir()
+	cfg, _ := config.Open(fresh)
+	cfg.Update(func(c *config.Config) error { c.Server.FriendlyName = "new"; return nil })
+	open := func() int { return recoveryCall(testRecovery(fresh).handler(), "GET", "backups", "", nil).Code }
+	if c := open(); c != 200 {
+		t.Fatalf("unfinished setup without an owner: %d", c)
+	}
+	if err := backup.WriteJSONDurable(ownerMirrorPath(fresh), ownerMirror{OwnerCredential: identity.OwnerCredential{Username: "owner", Hash: "$argon2id$x"}}); err != nil {
+		t.Fatal(err)
+	}
+	if c := open(); c != http.StatusUnauthorized {
+		t.Fatalf("tokenless access with a local owner: %d", c)
+	}
+
+	for host, want := range map[string]bool{
+		"192.168.1.10:32400": true, "10.0.0.5": true, "127.0.0.1:32400": true, "[::1]:32400": true, "[fd00::5]:32400": true,
+		"localhost:32400": false, "nas:32400": false, "ether.local": false, "evil.example.com": false, "8.8.8.8:32400": false,
+	} {
+		if got := localForwardHost(host); got != want {
+			t.Errorf("localForwardHost(%q) = %v", host, got)
+		}
+	}
+}

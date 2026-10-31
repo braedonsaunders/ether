@@ -177,16 +177,25 @@ func (a *App) restoreApplied() bool {
 }
 
 // confirmRestore records that the server is about to serve on the
-// restored backup: the report says "restored" from here on.
-func (a *App) confirmRestore() {
+// restored backup: the report says "restored" from here on. An error
+// means the restore was not committed; the server must not serve on it
+// (Serve then rolls it back).
+func (a *App) confirmRestore() error {
 	if !a.restoreApplied() {
-		return
+		return nil
 	}
 	if err := backup.ConfirmRestore(a.opts.DataDir, a.restored); err != nil {
-		a.log.Error("could not record the restore", "err", err)
-		return
+		if p, _ := backup.ReadPending(a.opts.DataDir); p == nil {
+			// Committed; only the report could not be written.
+			a.restored.Status = "restored"
+			a.log.Warn("restore finished, but its report could not be saved", "err", err)
+			return nil
+		}
+		return startFail(startup.FailRestore, fmt.Errorf("could not finish the restore: %w", err))
 	}
+	a.restored.Status = "restored"
 	a.log.Info("restore finished", "source", a.restored.Source, "rollback", a.restored.RollbackPath)
+	return nil
 }
 
 // rollbackUnconfirmed puts the original files back when a start on a

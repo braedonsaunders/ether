@@ -58,7 +58,7 @@ func readNodeFacts(dataDir string, getenv func(string) string) nodeFacts {
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		// A new data directory: nothing to protect yet.
-	case err != nil || json.Unmarshal(raw, &doc) != nil:
+	case err != nil || !settingsDocument(raw) || json.Unmarshal(raw, &doc) != nil:
 		f.Readable, f.SetupComplete, f.Postgres = false, true, true
 		f.Server.BindAddress = "127.0.0.1"
 	default:
@@ -80,4 +80,16 @@ func readNodeFacts(dataDir string, getenv func(string) string) nodeFacts {
 		f.Postgres = true
 	}
 	return f
+}
+
+// settingsDocument reports whether raw is a settings file at all: a JSON
+// object with server settings. null, {} or an unrelated document fail
+// closed like unparsable JSON.
+func settingsDocument(raw []byte) bool {
+	var top map[string]json.RawMessage
+	if json.Unmarshal(raw, &top) != nil || top == nil {
+		return false
+	}
+	server, ok := top["server"]
+	return ok && len(server) > 0 && server[0] == '{'
 }

@@ -10,7 +10,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -71,11 +73,18 @@ type recovery struct {
 	mu     sync.Mutex
 	pins   map[string]*plextv.PIN
 	tokens map[string]time.Time
-	limits map[string][]time.Time
-	code   string
-	// attempting is set while a start runs; busy counts restores being
-	// prepared; activeUntil holds the retry while the page is in use.
+	// limits holds recent sign-in attempts per client and per username,
+	// failures every failed sign-in from anyone (see admit); verifying
+	// bounds concurrent Argon2id checks.
+	limits    map[string][]time.Time
+	failures  []time.Time
+	verifying chan struct{}
+	code      string
+	// attempting is set while a start runs and ready once one succeeded;
+	// busy counts restores being prepared; activeUntil holds the retry
+	// while a signed-in owner uses the page.
 	attempting  bool
+	ready       bool
 	busy        int
 	activeUntil time.Time
 }
@@ -95,11 +104,18 @@ const (
 	recoveryCodeFile = "recovery-code.txt"
 	// recoveryHold is how long the page's last use keeps a retry waiting.
 	recoveryHold = 2 * time.Minute
-	// limitWindow bounds sign-in attempts: limitPerIP per address and
-	// limitPerName per address and username.
-	limitWindow  = 15 * time.Minute
-	limitPerIP   = 20
-	limitPerName = 5
+	// Sign-in attempts within limitWindow: limitPerIP per client (an IPv4
+	// address or an IPv6 /64), limitPerName per username, and
+	// limitFailures failures from all clients together. At most limitKeys
+	// clients and names are tracked, and maxVerifies Argon2id checks (about
+	// 19 MB each) run at once.
+	limitWindow   = 15 * time.Minute
+	limitPerIP    = 20
+	limitPerName  = 5
+	limitFailures = 100
+	limitKeys     = 4096
+	maxVerifies   = 2
+	maxUsername   = 128
 )
 
 func newRecovery(dataDir string, front *frontDoor, log *slog.Logger) *recovery {
@@ -118,6 +134,7 @@ func newRecovery(dataDir string, front *frontDoor, log *slog.Logger) *recovery {
 			return c
 		},
 		pins: map[string]*plextv.PIN{}, tokens: map[string]time.Time{}, limits: map[string][]time.Time{},
+		verifying: make(chan struct{}, maxVerifies),
 	}
 }
 
@@ -144,13 +161,16 @@ func (rc *recovery) beginAttempt(ctx context.Context) error {
 	}
 }
 
-func (rc *recovery) endAttempt() {
+// endAttempt records how a start ended. Once one succeeded, restores are
+// refused even from a request that reached the page before (sticky until
+// a later start fails).
+func (rc *recovery) endAttempt(started bool) {
 	rc.mu.Lock()
-	rc.attempting = false
+	rc.attempting, rc.ready = false, started
 	rc.mu.Unlock()
 }
 
-// touch records that the page is in use.
+// touch records that a signed-in owner is using the page.
 func (rc *recovery) touch() {
 	rc.mu.Lock()
 	rc.activeUntil = rc.now().Add(recoveryHold)
@@ -247,10 +267,7 @@ func (rc *recovery) handler() http.Handler {
 	mux.HandleFunc("POST "+prefix+"/restore/snapshot/{name}", rc.mutating(rc.authed(rc.restoreSnapshot)))
 	mux.HandleFunc("POST "+prefix+"/restore/undo", rc.mutating(rc.authed(rc.restoreUndo)))
 	mux.HandleFunc("POST "+prefix+"/restore", rc.authed(rc.restoreUpload))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rc.touch()
-		mux.ServeHTTP(w, r)
-	})
+	return mux
 }
 
 func recoveryJSON(w http.ResponseWriter, code int, v any) {
@@ -277,9 +294,16 @@ func (rc *recovery) mutating(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // open reports whether r may restore without signing in: only on the
-// local network before a setup known to be unfinished.
+// local network before a setup known to be unfinished, and never once a
+// local owner exists (as the console stops tokenless access then).
 func (rc *recovery) open(r *http.Request, f nodeFacts) bool {
-	return f.Readable && !f.SetupComplete && admin.SetupOpen(false, r, identity.ProxyPrefixes(f.Server.TrustedProxyCIDRs)...)
+	if !f.Readable || f.SetupComplete {
+		return false
+	}
+	if _, ok := readOwnerMirror(rc.dataDir); ok {
+		return false
+	}
+	return admin.SetupOpen(false, r, identity.ProxyPrefixes(f.Server.TrustedProxyCIDRs)...)
 }
 
 // authed admits a valid recovery token, or an open setup.
@@ -291,6 +315,7 @@ func (rc *recovery) authed(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if rc.validToken(r.Header.Get(recoveryTokenHeader)) || rc.open(r, f) {
+			rc.touch()
 			next(w, r)
 			return
 		}
@@ -322,42 +347,120 @@ func (rc *recovery) issueToken() string {
 	token := "ether-recovery-" + rand.Text()
 	rc.mu.Lock()
 	rc.tokens[token] = rc.now().Add(recoveryTokenTTL)
+	rc.activeUntil = rc.now().Add(recoveryHold)
 	rc.mu.Unlock()
 	return token
 }
 
-// allow records an attempt under each key and reports whether every key
-// is still within its limit (the first key gets limitPerIP, the rest
-// limitPerName). Attempts count whether or not they succeed.
-func (rc *recovery) allow(keys ...string) bool {
+// admit records a sign-in attempt from client (and for username, when
+// set) and reports whether it may proceed. The client's limit is checked
+// first and nothing is recorded once it is exceeded; so is the limit on
+// failures from everyone, and the number of tracked keys is capped.
+func (rc *recovery) admit(client, username string) bool {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	now := rc.now()
-	ok := true
-	for i, k := range keys {
-		kept := rc.limits[k][:0]
-		for _, at := range rc.limits[k] {
-			if now.Sub(at) < limitWindow {
-				kept = append(kept, at)
-			}
-		}
-		kept = append(kept, now)
-		rc.limits[k] = kept
-		limit := limitPerName
-		if i == 0 {
-			limit = limitPerIP
-		}
-		if len(kept) > limit {
-			ok = false
+	rc.pruneLocked(now)
+	if len(rc.failures) >= limitFailures {
+		return false
+	}
+	ipKey, nameKey := "ip:"+client, ""
+	if username != "" {
+		nameKey = "name:" + username
+	}
+	if len(rc.limits[ipKey]) >= limitPerIP {
+		return false
+	}
+	newKeys := 0
+	for _, k := range []string{ipKey, nameKey} {
+		if _, ok := rc.limits[k]; k != "" && !ok {
+			newKeys++
 		}
 	}
-	return ok
+	if len(rc.limits)+newKeys > limitKeys {
+		return false
+	}
+	rc.limits[ipKey] = append(rc.limits[ipKey], now)
+	if nameKey == "" {
+		return true
+	}
+	if len(rc.limits[nameKey]) >= limitPerName {
+		return false
+	}
+	rc.limits[nameKey] = append(rc.limits[nameKey], now)
+	return true
 }
 
-// clientIP is the requester's address, through trusted proxies only.
-func (rc *recovery) clientIP(r *http.Request, f nodeFacts) string {
-	ip, _ := identity.ClientNet(r, identity.ProxyPrefixes(f.Server.TrustedProxyCIDRs)...)
-	return ip.String()
+// failed records a failed sign-in for the limit on everyone.
+func (rc *recovery) failed() {
+	rc.mu.Lock()
+	rc.failures = append(rc.failures, rc.now())
+	rc.mu.Unlock()
+}
+
+// pruneLocked drops attempts older than the window, and keys left empty.
+func (rc *recovery) pruneLocked(now time.Time) {
+	fresh := func(ts []time.Time) []time.Time {
+		i := 0
+		for i < len(ts) && now.Sub(ts[i]) >= limitWindow {
+			i++
+		}
+		return ts[i:]
+	}
+	for k, ts := range rc.limits {
+		if ts = fresh(ts); len(ts) == 0 {
+			delete(rc.limits, k)
+		} else {
+			rc.limits[k] = ts
+		}
+	}
+	rc.failures = fresh(rc.failures)
+}
+
+// clientKey is who the limiter counts r against: the connecting peer,
+// or the client a trusted proxy (TrustedProxyCIDRs only) names. An IPv6
+// client counts as its /64, which one host can rotate through.
+func (rc *recovery) clientKey(r *http.Request, f nodeFacts) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	addr, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	if err != nil {
+		return "unknown"
+	}
+	addr = addr.Unmap()
+	if trusted := identity.ProxyPrefixes(f.Server.TrustedProxyCIDRs); len(trusted) > 0 {
+		for _, p := range trusted {
+			if p.Contains(addr) {
+				if ip, _ := identity.ClientNet(r, trusted...); ip.IsValid() {
+					addr = ip.Unmap()
+				}
+				break
+			}
+		}
+	}
+	if addr.Is6() {
+		return netip.PrefixFrom(addr, 64).Masked().String()
+	}
+	return addr.String()
+}
+
+// verify runs fn as one of at most maxVerifies concurrent Argon2id
+// checks; ran is false when that many are already running.
+func (rc *recovery) verify(fn func() bool) (result, ran bool) {
+	select {
+	case rc.verifying <- struct{}{}:
+	default:
+		return false, false
+	}
+	defer func() { <-rc.verifying }()
+	return fn(), true
+}
+
+// validUsername accepts what identity accepts for a local username.
+func validUsername(s string) bool {
+	return len(s) > 0 && len(s) <= maxUsername && strings.TrimSpace(s) == s && !strings.ContainsAny(s, "\x00\r\n")
 }
 
 // proxied reports whether a reverse proxy forwarded r.
@@ -406,13 +509,22 @@ func (rc *recovery) localSignIn(w http.ResponseWriter, r *http.Request) {
 		recoveryError(w, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
-	ip := rc.clientIP(r, f)
-	if !rc.allow("local-ip:"+ip, "local-name:"+ip+"\x00"+body.Username) {
+	if !validUsername(body.Username) || len(body.Password) == 0 || len(body.Password) > 1024 {
+		recoveryError(w, http.StatusBadRequest, "invalid", "enter a username and password")
+		return
+	}
+	if !rc.admit("local:"+rc.clientKey(r, f), body.Username) {
 		recoveryError(w, http.StatusTooManyRequests, "rate_limit", "too many attempts; try again later")
 		return
 	}
 	cred, ok := rc.ownerCredential(r.Context())
-	if !ok || !identity.VerifyOwnerCredential(cred, body.Username, body.Password) {
+	match, ran := rc.verify(func() bool { return ok && identity.VerifyOwnerCredential(cred, body.Username, body.Password) })
+	if !ran {
+		recoveryError(w, http.StatusTooManyRequests, "busy", "too many sign-ins at once; try again in a moment")
+		return
+	}
+	if !match {
+		rc.failed()
 		recoveryError(w, http.StatusUnauthorized, "invalid_credentials", "that username and password don't match the owner's")
 		return
 	}
@@ -446,7 +558,7 @@ func (rc *recovery) codeSignIn(w http.ResponseWriter, r *http.Request) {
 		recoveryError(w, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
-	if !rc.allow("code-ip:" + rc.clientIP(r, f)) {
+	if !rc.admit("code:"+rc.clientKey(r, f), "") {
 		recoveryError(w, http.StatusTooManyRequests, "rate_limit", "too many attempts; try again later")
 		return
 	}
@@ -459,6 +571,7 @@ func (rc *recovery) codeSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 	rc.mu.Unlock()
 	if !ok {
+		rc.failed()
 		recoveryError(w, http.StatusUnauthorized, "invalid_code", "that recovery code is not right")
 		return
 	}
@@ -473,7 +586,7 @@ func (rc *recovery) startPIN(w http.ResponseWriter, r *http.Request) {
 		recoveryError(w, http.StatusServiceUnavailable, "signin_unavailable", "Plex sign-in is not available for this server")
 		return
 	}
-	if !rc.allow("pin-ip:" + rc.clientIP(r, f)) {
+	if !rc.admit("pin:"+rc.clientKey(r, f), "") {
 		recoveryError(w, http.StatusTooManyRequests, "rate_limit", "too many attempts; try again later")
 		return
 	}
@@ -494,7 +607,7 @@ func (rc *recovery) startPIN(w http.ResponseWriter, r *http.Request) {
 	// plex.tv sends the browser back here after approval: only to a local
 	// name or address, never to whatever Host a request claimed.
 	forward := ""
-	if admin.LocalHost(r) {
+	if localForwardHost(r.Host) {
 		scheme := "http"
 		if r.TLS != nil {
 			scheme = "https"
@@ -531,6 +644,7 @@ func (rc *recovery) pollPIN(w http.ResponseWriter, r *http.Request) {
 	rc.mu.Unlock()
 	acct, err := plex.User(r.Context(), got.AuthToken)
 	if err != nil || f.OwnerPlexID == 0 || acct.ID != f.OwnerPlexID {
+		rc.failed()
 		recoveryError(w, http.StatusForbidden, "not_owner", "That Plex account doesn't own this server. Sign in as the owner.")
 		return
 	}
@@ -553,11 +667,15 @@ func (rc *recovery) backups(w http.ResponseWriter, r *http.Request) {
 	recoveryJSON(w, http.StatusOK, out)
 }
 
-// begin admits one restore at a time, and none once a start has begun.
+// begin admits one restore at a time, and none once a start has begun
+// or succeeded.
 func (rc *recovery) begin(w http.ResponseWriter) bool {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	switch {
+	case rc.ready:
+		recoveryError(w, http.StatusConflict, "running", "Ether is running; restore from the console")
+		return false
 	case rc.attempting:
 		recoveryError(w, http.StatusConflict, "starting", "Ether is starting again; try in a moment")
 		return false
@@ -660,6 +778,21 @@ func (rc *recovery) requestError(w http.ResponseWriter, err error) {
 		return
 	}
 	recoveryError(w, http.StatusBadRequest, "invalid_backup", err.Error())
+}
+
+// localForwardHost reports whether host (a Host header) is an IP literal
+// on loopback or a private network: the only place plex.tv may send the
+// browser back to after a recovery sign-in.
+func localForwardHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	addr, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap()
+	return addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast()
 }
 
 func sameOriginRequest(r *http.Request) bool {

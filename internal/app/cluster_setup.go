@@ -71,7 +71,7 @@ func Serve(ctx context.Context, opts Options) error {
 			return nil
 		}
 		a, err := New(ctx, opts)
-		rc.endAttempt()
+		rc.endAttempt(err == nil)
 		if err != nil {
 			if !front.bound() || ctx.Err() != nil || errors.Is(err, service.ErrRestartRequested) {
 				return err

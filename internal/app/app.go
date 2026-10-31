@@ -675,8 +675,11 @@ func (a *App) Run(ctx context.Context) error {
 	front.setTLS(a.certs.TLSConfig)
 	front.setProxies(func() []string { return a.cfg.Get().Server.TrustedProxyCIDRs })
 	// A restore applied at this start counts from here: the server is
-	// about to serve on it.
-	a.confirmRestore()
+	// about to serve on it. If it cannot be recorded, nothing is served
+	// and Serve puts the original data back.
+	if err := a.confirmRestore(); err != nil {
+		return err
+	}
 	front.gate.Open(a.handler)
 	a.log.Info("Ether listening", "addr", addr.String(), "ui", fmt.Sprintf("http://localhost:%d/ether/", cfg.Server.Port),
 		"version", a.opts.Version, "spike", cfg.Spike.Enabled)

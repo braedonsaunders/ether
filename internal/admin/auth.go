@@ -87,10 +87,6 @@ func SetupOpen(setupComplete bool, r *http.Request, trusted ...netip.Prefix) boo
 	return setupOpen(setupComplete, r, trusted...)
 }
 
-// LocalHost reports whether r addressed this server by a local name or IP
-// (localHost), for handlers outside the admin API that build URLs from it.
-func LocalHost(r *http.Request) bool { return localHost(r) }
-
 // setupOpen reports whether r gets tokenless access: setup is not complete
 // and the browser is on the local network, addressing this server by a
 // local name.
