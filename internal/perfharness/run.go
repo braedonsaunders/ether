@@ -159,6 +159,9 @@ func (r *Runner) do(ctx context.Context, phase string, c Client, s *session, st 
 	r.record(res)
 }
 
+// SetTimeout caps each request (60 s by default).
+func (r *Runner) SetTimeout(d time.Duration) { r.http.Timeout = d }
+
 // Results returns every timed request so far.
 func (r *Runner) Results() []Result {
 	r.mu.Lock()

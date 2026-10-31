@@ -241,6 +241,8 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	// The gate compares work, not wall time, so a cold pass and two warm
 	// passes for the owner, and one for a second viewer, are enough.
 	r := perfharness.NewRunner(port, true, viewers)
+	// A request this slow has already failed the ceiling; do not wait longer.
+	r.SetTimeout(15 * time.Second)
 	r.Sequential(ctx, "cold", viewers[:1], cs)
 	for range 2 {
 		r.Sequential(ctx, "warm", viewers[:1], cs)
