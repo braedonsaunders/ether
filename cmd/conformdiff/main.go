@@ -128,7 +128,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	if mb, ok := p.(*mediabrowser.Protocol); ok && *protocol == "jellyfin" && (cmd == "compare" || cmd == "live") {
+	if mb, ok := p.(*mediabrowser.Protocol); ok && *protocol == "jellyfin" && (cmd == "compare" || cmd == "live" || cmd == "record") {
 		for _, profile := range profiles(p, *client) {
 			if err := mb.LoadCapturedBindings(*fixtures, profile); err != nil {
 				return err
@@ -267,15 +267,20 @@ func record(p pmsconform.Protocol, variables map[string]string, base, token, out
 			return report, fmt.Errorf("no requests match client %q and filter %q", profile, only)
 		}
 		// A partial recording reuses the saved IDs so the new fixtures
-		// describe the same items as the rest of the set.
+		// describe the same items as the rest of the set. Captured Jellyfin
+		// clients still discover, because each request is bound to the
+		// current server before it is fetched.
 		ids, e := loadDiscovery(out, profile)
-		if only == "" || e != nil {
+		if only == "" || e != nil || strings.HasPrefix(profile, "infuse-") || strings.Contains(profile, "jellyfin") {
 			ids = p.Discover(ctx, client, base, token, profile, withRunDevice(nil, variables))
 			for _, w := range ids.Warnings {
 				report.Discovery = append(report.Discovery, profile+": "+w)
 			}
-			if e := saveDiscovery(out, profile, ids); e != nil {
-				return report, e
+			// An empty rediscovery must not replace a saved id map.
+			if len(ids.Values) > 0 || e != nil {
+				if e := saveDiscovery(out, profile, ids); e != nil {
+					return report, e
+				}
 			}
 		}
 		for k, v := range variables {
@@ -625,7 +630,20 @@ func writeManifest(dir string, r pmsconform.Report, only string) error {
 			}
 		}
 	}
-	data := map[string]any{"fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.", "trimmedResponses": trimmed, "fixtureCounts": counts, "discoveryWarnings": discovery, "requestErrors": r.Differences}
+	data := map[string]any{}
+	if b, e := os.ReadFile(filepath.Join(dir, "manifest.json")); e == nil {
+		_ = json.Unmarshal(b, &data)
+	}
+	if data == nil {
+		data = map[string]any{}
+	}
+	if _, ok := data["fixturePolicy"]; !ok {
+		data["fixturePolicy"] = "Response listings are trimmed to the first 50 entries per repeated container child."
+	}
+	data["trimmedResponses"] = trimmed
+	data["fixtureCounts"] = counts
+	data["discoveryWarnings"] = discovery
+	data["requestErrors"] = r.Differences
 	b, e := json.MarshalIndent(data, "", "  ")
 	if e != nil {
 		return e
