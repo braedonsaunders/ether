@@ -645,7 +645,7 @@ func TestRecoveryLimiterIsBounded(t *testing.T) {
 	}
 	// Old attempts are pruned.
 	rc.now = func() time.Time { return time.Now().Add(limitWindow + time.Minute) }
-	rc.admit("probe", "")
+	rc.admit("probe", "", true)
 	rc.mu.Lock()
 	keys, fails := len(rc.limits), len(rc.failures)
 	rc.mu.Unlock()
@@ -658,7 +658,7 @@ func TestRecoveryLimiterIsBounded(t *testing.T) {
 		rc.limits["filler"+strconv.Itoa(i)] = []time.Time{rc.now()}
 	}
 	rc.mu.Unlock()
-	if rc.admit("new-client", "") {
+	if rc.admit("new-client", "", false) {
 		t.Fatal("a new key was tracked beyond the cap")
 	}
 }
@@ -706,11 +706,30 @@ func TestRecoveryGlobalLimits(t *testing.T) {
 	rc := testRecovery(dataDir)
 	h := rc.handler()
 	rc.prepare()
+	// A few hosts guessing passwords under unique usernames reach the limit
+	// on everyone: password sign-ins stop.
 	for i := range limitFailures {
-		postFrom(h, "code", `{"code":"ZZZZ-ZZZZ-ZZZZ"}`, "192.168."+strconv.Itoa(i/200)+"."+strconv.Itoa(i%200+1)+":5000", nil)
+		postFrom(h, "local", `{"username":"user`+strconv.Itoa(i)+`","password":"guess"}`, "192.168.1."+strconv.Itoa(i/limitPerIP+1)+":5000", nil)
 	}
-	if c := postFrom(h, "code", `{"code":"`+rc.code+`"}`, "192.168.250.1:5000", nil); c != http.StatusTooManyRequests {
-		t.Fatalf("after %d failures from everyone: %d", limitFailures, c)
+	if c := postFrom(h, "local", `{"username":"owner","password":"first secret"}`, "192.168.250.1:5000", nil); c != http.StatusTooManyRequests {
+		t.Fatalf("password sign-in after %d failures from everyone: %d", limitFailures, c)
+	}
+	// They do not lock the owner out of the recovery code, which keeps
+	// its per-client limit.
+	if w := signIn(t, h, "code", `{"code":"`+rc.code+`"}`, nil); w.Code != http.StatusOK {
+		t.Fatalf("correct recovery code after %d password failures: %d %s", limitFailures, w.Code, w.Body)
+	}
+	for range limitPerIP {
+		postFrom(h, "code", `{"code":"ZZZZ-ZZZZ-ZZZZ"}`, "192.168.9.9:5000", nil)
+	}
+	if c := postFrom(h, "code", `{"code":"`+rc.code+`"}`, "192.168.9.9:5000", nil); c != http.StatusTooManyRequests {
+		t.Fatalf("recovery code over its client's limit: %d", c)
+	}
+	rc.mu.Lock()
+	fails := len(rc.failures)
+	rc.mu.Unlock()
+	if fails != limitFailures {
+		t.Fatalf("recovery code failures counted against passwords: %d", fails)
 	}
 
 	rc = testRecovery(dataDir)
