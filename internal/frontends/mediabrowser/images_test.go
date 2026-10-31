@@ -105,6 +105,28 @@ func TestImagesRequireScopedGrant(t *testing.T) {
 	}
 }
 
+func TestStillIsPrimaryWhenPosterIsAbsent(t *testing.T) {
+	grants := &imageGrantsFake{}
+	i := &instance{protocol: "jellyfin", host: frontend.Host{ImageGrants: grants}}
+	r := httptest.NewRequest("GET", "/Items/x", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	still := frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "episode"}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: "still", Path: "/still", Width: 400, Height: 200, BlurHash: "stillhash"}}}
+	tags, _, meta := i.imageTags(r, still, "grant")
+	if tags["Primary"] != "scoped-image/still" || tags["Thumb"] != nil {
+		t.Fatal(tags)
+	}
+	hashes, _ := meta["ImageBlurHashes"].(map[string]any)
+	primary, _ := hashes["Primary"].(map[string]string)
+	if meta["PrimaryImageAspectRatio"] != float64(2) || primary["scoped-image/still"] != "stillhash" {
+		t.Fatal(meta)
+	}
+	both := frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "episode"}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: "still", Path: "/still"}, {Kind: "poster", Path: "/poster"}}}
+	tags, _, _ = i.imageTags(r, both, "grant")
+	if tags["Primary"] != "scoped-image/poster" || tags["Thumb"] != "scoped-image/still" {
+		t.Fatal(tags)
+	}
+}
+
 func TestImageMetadataRequiresGrantedAndKnownDescriptor(t *testing.T) {
 	i := &instance{protocol: "jellyfin"}
 	dto := map[string]any{}
