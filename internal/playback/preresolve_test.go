@@ -225,3 +225,24 @@ func TestAwaitWarmProbeWaitsForTheInFlightProbe(t *testing.T) {
 		t.Fatal("completed probe was not readable")
 	}
 }
+
+func TestAwaitWarmProbeGivesUpAtTheDetailBound(t *testing.T) {
+	user := &core.User{ID: 9}
+	caps := core.ClientCaps{ClientID: "adult"}
+	key := core.MovieKey(10004)
+	done := make(chan struct{})
+	m := &Manager{now: time.Now, warm: map[identity]*warmEntry{}}
+	m.warm[identity{userID: user.ID, clientID: caps.ClientID, key: key}] = &warmEntry{
+		done: done, expires: time.Now().Add(time.Minute),
+	}
+	start := time.Now()
+	_, ok := m.AwaitWarmProbe(context.Background(), user, caps, key)
+	elapsed := time.Since(start)
+	if ok {
+		t.Fatal("late probe was treated as ready")
+	}
+	if elapsed > detailWarmWait+150*time.Millisecond {
+		t.Fatalf("detail wait %s exceeded %s", elapsed, detailWarmWait)
+	}
+	close(done)
+}
