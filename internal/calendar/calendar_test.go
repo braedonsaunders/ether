@@ -268,8 +268,12 @@ func TestCalendarFilters(t *testing.T) {
 		t.Fatalf("watchlist movies: %v", keys(lists))
 	}
 	popular := byTitle(f.get(t, Query{Movies: "popular", Types: "movie"}))
-	if popular["Popular Horror"].Title == "" || popular["Watchlisted Thriller"].Title != "" {
+	if popular["Popular Horror"].Title == "" || popular["Look Ahead Pick"].Title == "" {
 		t.Fatalf("popular movies: %v", keys(popular))
+	}
+	// A popular movie that is also watchlisted is still a popular release.
+	if e := popular["Watchlisted Thriller"]; !slices.Equal(e.Reasons, []string{ReasonPopular}) || len(e.Viewers) != 2 {
+		t.Fatalf("watchlisted popular movie: %+v", e)
 	}
 	if e := popular["Popular Horror"]; !slices.Equal(e.Reasons, []string{ReasonPopular}) {
 		t.Fatalf("popular reason: %+v", e)

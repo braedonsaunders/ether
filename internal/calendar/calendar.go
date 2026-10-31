@@ -517,8 +517,8 @@ type pick struct {
 }
 
 // discoverMovies picks popular releases in the range. For "foryou" they
-// must share a genre with what the household follows; "popular" takes the
-// most popular regardless. Titles already on the calendar are skipped.
+// must share a genre with what the household follows and must not already
+// be on the calendar; "popular" takes the most popular regardless.
 func (s *Service) discoverMovies(ctx context.Context, q Query, from, until time.Time, shows, movies map[core.RatingKey]*interest) ([]pick, error) {
 	weeks := int(until.Sub(from).Hours()/(24*7)) + 1
 	limit := weeks * 6
@@ -545,7 +545,9 @@ func (s *Service) discoverMovies(ctx context.Context, q Query, from, until time.
 	}
 	var out []scored
 	for _, e := range pool {
-		if movies[e.Title.Key] != nil {
+		// "For you" already lists watchlisted and Look Ahead titles; "Popular"
+		// shows them only when they are popular, so keep them in its pool.
+		if q.Movies == "foryou" && movies[e.Title.Key] != nil {
 			continue
 		}
 		score := e.Title.Popularity
