@@ -60,7 +60,10 @@ func Generate(ctx context.Context, db *sql.DB, s Scale, now time.Time) error {
 	if err := g.viewers(s); err != nil {
 		return fmt.Errorf("viewers: %w", err)
 	}
-	_, err := db.ExecContext(ctx, `ANALYZE`)
+	if _, err := db.ExecContext(ctx, `ANALYZE`); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
 	return err
 }
 
@@ -72,6 +75,7 @@ type generator struct {
 
 	tx      *sql.Tx
 	pending int
+	flushes int
 	movies  []core.RatingKey
 	eps     []core.RatingKey
 }
@@ -105,6 +109,16 @@ func (g *generator) flush() error {
 	}
 	err := g.tx.Commit()
 	g.tx = nil
+	if err != nil {
+		return err
+	}
+	// store opens SQLite with automatic checkpoints off (the server runs a
+	// background checkpointer); without one the WAL grows by gigabytes and
+	// every later statement slows down.
+	g.flushes++
+	if g.flushes%20 == 0 {
+		_, err = g.db.ExecContext(g.ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	}
 	return err
 }
 
