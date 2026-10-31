@@ -554,3 +554,67 @@ func TestBrokerHLSLadder(t *testing.T) {
 		t.Fatalf("HEAD %d %q", head.Code, head.Body.String())
 	}
 }
+
+func TestReportNotifiesTimelineOnceForPlexAndJellyfin(t *testing.T) {
+	ctx := context.Background()
+	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 4}
+	var mu sync.Mutex
+	var calls []string
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	b, err := NewBroker(BrokerDeps{Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, Playback: p, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(v *core.Viewer, key core.RatingKey, _ time.Duration, _ time.Duration, state string) {
+		mu.Lock()
+		calls = append(calls, fmt.Sprintf("%d %s %s", v.ID, key, state))
+		mu.Unlock()
+	}, Events: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := &core.Viewer{ID: 2}
+	open := func(protocol frontend.Protocol, device, session string, item core.RatingKey) string {
+		t.Helper()
+		dev := core.Device{ID: device}
+		plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: protocol, Item: item, Caps: core.ClientCaps{ClientID: device}, Intent: frontend.PlayIntent{ClientSessionID: session, Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		opened, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: dev, Protocol: protocol, PlanID: plan.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = b.Report(ctx, frontend.SessionAccess{Viewer: viewer, Device: dev, Protocol: protocol}, opened.ID, frontend.Timeline{Position: time.Minute, Duration: time.Hour, State: "playing"}); err != nil {
+			t.Fatal(err)
+		}
+		return opened.ID
+	}
+	open("jellyfin", "jf", "jf-1", core.MovieKey(2))
+	ps, err := p.Prepare(ctx, &core.User{ID: 2}, core.MovieKey(1), core.ClientCaps{ClientID: "plex-tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plexCtx := WithPlexAdmission(ctx, func(context.Context) (PlexAdmission, error) {
+		return PlexAdmission{Source: ps, Media: ps.Info, Caps: core.ClientCaps{ClientID: "plex-tv"}, Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}, nil
+	})
+	dev := core.Device{ID: "plex-tv"}
+	plan, err := b.Plan(plexCtx, frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: "plex", Item: core.MovieKey(1), Caps: core.ClientCaps{ClientID: "plex-tv"}, Intent: frontend.PlayIntent{ClientSessionID: "plex-1", Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.Open(plexCtx, frontend.OpenRequest{Viewer: viewer, Device: dev, Protocol: "plex", PlanID: plan.ID}); err != nil {
+		t.Fatal(err)
+	}
+	access := frontend.SessionAccess{Viewer: viewer, Device: dev, Protocol: "plex"}
+	if err = b.Report(ctx, access, "plex-1", frontend.Timeline{Position: time.Minute, Duration: time.Hour, State: "playing"}); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	got := append([]string(nil), calls...)
+	mu.Unlock()
+	want := []string{"2 " + core.MovieKey(2).String() + " playing", "2 " + core.MovieKey(1).String() + " playing"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("timeline notifications = %v, want %v", got, want)
+	}
+}

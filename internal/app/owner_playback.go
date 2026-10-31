@@ -64,8 +64,5 @@ func (a *App) stopOwnerSession(id string) error {
 			}
 		}
 	}
-	if a.playback != nil {
-		a.playback.Stop(id)
-	}
 	return nil
 }

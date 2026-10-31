@@ -14,6 +14,7 @@ import (
 func (s *Server) UsePlaybackBroker(b frontend.Sessions) {
 	if s != nil {
 		s.playbackBroker = b
+		s.sessions.bind(sessions.UnderlyingBroker(b))
 	}
 }
 

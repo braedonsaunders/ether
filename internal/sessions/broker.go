@@ -140,6 +140,8 @@ type Broker struct {
 	mu                  sync.Mutex
 	plans               map[string]brokerPlan
 	sessions            map[string]*brokerSession
+	plexActivities      map[string]*PlexActivity
+	plexActivityNext    int
 	retired             map[string]retiredSession
 	lazySessions        map[string]lazySession
 	lazyCleanup         map[string]lazyCleanupEntry
@@ -192,7 +194,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if limit > 4096 {
 		return nil, errors.New("sessions: max pending starts exceeds 4096")
 	}
-	b := &Broker{sampleLimit: 100000, deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent](), plexStreams: NewPlexStreamTable()}
+	b := &Broker{sampleLimit: 100000, deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), plexActivities: make(map[string]*PlexActivity), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent](), plexStreams: NewPlexStreamTable()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -1055,8 +1057,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
 		progress.PlaybackProgress(s.public.ViewerID, s.clientID, s.public.Item, t.Position, t.State)
 	}
-	// Plex keeps its own timeline hook so a broker report does not prefetch twice.
-	if b.deps.OnTimeline != nil && s.public.Protocol != "plex" {
+	if b.deps.OnTimeline != nil {
 		b.deps.OnTimeline(v, s.public.Item, t.Position, t.Duration, t.State)
 	}
 	b.publish(ctx, sessionEvent("SessionUpdated", s.public, &t))
@@ -1080,6 +1081,9 @@ func (b *Broker) ReportProgress(ctx context.Context, a frontend.SessionAccess, i
 	}
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
 		progress.PlaybackProgress(viewer.ID, a.Device.ID, item, t.Position, t.State)
+	}
+	if b.deps.OnTimeline != nil {
+		b.deps.OnTimeline(viewer, item, t.Position, t.Duration, t.State)
 	}
 	return nil
 }

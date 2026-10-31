@@ -132,6 +132,21 @@ func (s surface) Report(ctx context.Context, a frontend.SessionAccess, id string
 	}
 	return s.broker.Report(ctx, a, id, t)
 }
+
+// UnderlyingBroker unwraps a surface binding to the broker that stores
+// Plex activities. A non-broker Sessions value has none.
+func UnderlyingBroker(s frontend.Sessions) *Broker {
+	switch v := s.(type) {
+	case *Broker:
+		return v
+	case surface:
+		b, _ := v.broker.(*Broker)
+		return b
+	default:
+		return nil
+	}
+}
+
 func (s surface) StopPlayback(ctx context.Context, playID string) bool {
 	b, ok := s.broker.(*Broker)
 	if !ok {

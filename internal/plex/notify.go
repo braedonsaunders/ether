@@ -40,23 +40,160 @@ type playEntry struct {
 	remoteTS *model.TranscodeSess
 }
 
-type sessionTracker struct{ tracker *sessions.Tracker[playEntry] }
-
-func newSessionTracker() *sessionTracker {
-	return &sessionTracker{tracker: sessions.NewTracker(func(id string, key int) playEntry { return playEntry{id: id, sessionKey: key} }, func(e *playEntry) time.Time { return e.updatedAt })}
+// sessionActivities reads and writes the mounted broker. A server that is
+// not mounted keeps the rows itself so an in-flight request still sees them
+// after unmount drops the broker binding.
+type sessionActivities struct {
+	mu     sync.Mutex
+	local  map[string]playEntry
+	next   int
+	broker *sessions.Broker
 }
+
+func newSessionActivities() *sessionActivities {
+	return &sessionActivities{local: map[string]playEntry{}}
+}
+
 func trackID(userID int64, clientID, sessionID string) string {
 	return fmt.Sprintf("%d/%s/%s", userID, clientID, sessionID)
 }
-func (t *sessionTracker) has(id string) bool        { return t.tracker.Has(id) }
-func (t *sessionTracker) ensure(id string, key int) { t.tracker.Ensure(id, key) }
-func (t *sessionTracker) update(id string, fn func(*playEntry)) playEntry {
-	return t.tracker.Update(id, fn)
+func (t *sessionActivities) bind(b *sessions.Broker) {
+	if t != nil {
+		t.broker = b
+	}
 }
-func (t *sessionTracker) remove(id string) (playEntry, bool) { return t.tracker.Remove(id) }
-func (t *sessionTracker) list() []playEntry                  { return t.tracker.List() }
-func (t *sessionTracker) expire(now time.Time, ttl time.Duration) []playEntry {
-	return t.tracker.Expire(now, ttl)
+func (t *sessionActivities) has(id string) bool {
+	if t == nil {
+		return false
+	}
+	if t.broker != nil {
+		return t.broker.HasPlexActivity(id)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.local[id]
+	return ok
+}
+func (t *sessionActivities) ensure(id string, key int) {
+	if t == nil {
+		return
+	}
+	if t.broker != nil {
+		t.broker.EnsurePlexActivity(id, key)
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, ok := t.local[id]; !ok && key > 0 {
+		t.local[id] = playEntry{id: id, sessionKey: key}
+	}
+}
+func (t *sessionActivities) update(id string, fn func(*playEntry)) playEntry {
+	if t == nil {
+		var zero playEntry
+		if fn != nil {
+			fn(&zero)
+		}
+		return zero
+	}
+	if t.broker != nil {
+		act := t.broker.UpsertPlexActivity(id, func(a *sessions.PlexActivity) {
+			e := activityEntry(*a)
+			fn(&e)
+			*a = entryActivity(e)
+		})
+		return activityEntry(act)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e, ok := t.local[id]
+	if !ok {
+		t.next++
+		e = playEntry{id: id, sessionKey: t.next}
+	}
+	fn(&e)
+	t.local[id] = e
+	return e
+}
+func (t *sessionActivities) remove(id string) (playEntry, bool) {
+	if t == nil {
+		return playEntry{}, false
+	}
+	if t.broker != nil {
+		act, ok := t.broker.RemovePlexActivity(id)
+		if !ok {
+			return playEntry{}, false
+		}
+		return activityEntry(act), true
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e, ok := t.local[id]
+	if !ok {
+		return playEntry{}, false
+	}
+	delete(t.local, id)
+	return e, true
+}
+func (t *sessionActivities) list() []playEntry {
+	if t == nil {
+		return nil
+	}
+	if t.broker != nil {
+		acts := t.broker.ListPlexActivities()
+		out := make([]playEntry, 0, len(acts))
+		for _, a := range acts {
+			out = append(out, activityEntry(a))
+		}
+		return out
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]playEntry, 0, len(t.local))
+	for _, e := range t.local {
+		out = append(out, e)
+	}
+	return out
+}
+func (t *sessionActivities) expire(now time.Time, ttl time.Duration) []playEntry {
+	if t == nil {
+		return nil
+	}
+	if t.broker != nil {
+		acts := t.broker.ExpirePlexActivities(now, ttl)
+		out := make([]playEntry, 0, len(acts))
+		for _, a := range acts {
+			out = append(out, activityEntry(a))
+		}
+		return out
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var out []playEntry
+	for id, e := range t.local {
+		if now.Sub(e.updatedAt) > ttl {
+			out = append(out, e)
+			delete(t.local, id)
+		}
+	}
+	return out
+}
+
+func activityEntry(a sessions.PlexActivity) playEntry {
+	e := playEntry{id: a.ID, sessionKey: a.SessionKey, user: a.User, key: a.Key, state: a.State, offset: a.Offset, duration: a.Duration, playQueueItemID: a.PlayQueueItemID, transcodeID: a.TranscodeID, startedAt: a.StartedAt, updatedAt: a.UpdatedAt}
+	e.client = Request{ClientID: a.ClientID, Product: a.Product, Version: a.Version, Platform: a.Platform, PlatformVersion: a.PlatformVersion, Device: a.Device, DeviceName: a.DeviceName, Model: a.Model, Vendor: a.Vendor, SessionID: a.SessionID, Remote: a.Remote}
+	if a.RemoteIP != "" {
+		e.client.RemoteIP = parseAddr(a.RemoteIP)
+	}
+	return e
+}
+
+func entryActivity(e playEntry) sessions.PlexActivity {
+	a := sessions.PlexActivity{ID: e.id, SessionKey: e.sessionKey, User: e.user, ClientID: e.client.ClientID, Product: e.client.Product, Version: e.client.Version, Platform: e.client.Platform, PlatformVersion: e.client.PlatformVersion, Device: e.client.Device, DeviceName: e.client.DeviceName, Model: e.client.Model, Vendor: e.client.Vendor, SessionID: e.client.SessionID, Remote: e.client.Remote, Key: e.key, State: e.state, Offset: e.offset, Duration: e.duration, PlayQueueItemID: e.playQueueItemID, TranscodeID: e.transcodeID, StartedAt: e.startedAt, UpdatedAt: e.updatedAt}
+	if e.client.RemoteIP.IsValid() {
+		a.RemoteIP = e.client.RemoteIP.String()
+	}
+	return a
 }
 
 // ---------------------------------------------------------------------------

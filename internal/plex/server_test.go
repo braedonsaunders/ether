@@ -232,6 +232,11 @@ func TestTimelineUpdatesState(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("OnTimeline not called")
 	}
+	select {
+	case h := <-f.hooks:
+		t.Fatalf("timeline hook ran again: %s", h)
+	case <-time.After(50 * time.Millisecond):
+	}
 	if len(f.playback.touched) != 1 {
 		t.Fatalf("session not touched: %v", f.playback.touched)
 	}
