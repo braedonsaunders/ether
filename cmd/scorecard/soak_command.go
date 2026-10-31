@@ -75,6 +75,7 @@ func soak(args []string) error {
 	os.Setenv("ETHER_PARITY_TMDB_URL", "http://"+stubAddr+"/3")
 	os.Setenv("ETHER_PARITY_PLEXTV_URL", "http://"+stubAddr)
 	os.Setenv("SCORECARD_MOUNT_PLEX", "1")
+	os.Setenv("SCORECARD_LIVE_CLOCK", "1")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	handlers, closeApp, err := app.StartScorecard(ctx, *data, *user, *password, items)
