@@ -147,8 +147,21 @@ type resumeStore struct {
 
 	// fresh is the resume row this process last confirmed. A repeated play
 	// of the same release skips the database read that only checks sameness.
+	// live is the same choice kept for the next prepare, so that prepare does
+	// not read the database or the NZB file while the durable write is still
+	// catching up.
 	freshMu sync.Mutex
 	fresh   map[resumeKey]resumeFresh
+	live    map[resumeKey]resumeLive
+}
+
+type resumeLive struct {
+	profile          string
+	originalLanguage string
+	releaseID        string
+	size             int64
+	duration         time.Duration
+	res              *core.Resolution
 }
 
 type resumeFresh struct {
@@ -426,9 +439,52 @@ func (s *resumeStore) rememberFresh(rec resumeRecord, hash string, probe core.Me
 	}
 }
 
+func (s *resumeStore) noteLive(rec resumeRecord, nzb []byte) {
+	res := &core.Resolution{Title: rec.key, Release: rec.release, NZB: append([]byte(nil), nzb...), ResolvedAt: rec.updatedAt}
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	if s.live == nil {
+		s.live = map[resumeKey]resumeLive{}
+	}
+	s.live[resumeKey{rec.userID, rec.key}] = resumeLive{
+		profile: rec.profile, originalLanguage: rec.originalLanguage, releaseID: rec.release.ID,
+		size: rec.size, duration: rec.duration, res: res,
+	}
+}
+
+func (s *resumeStore) rememberedResolution(userID int64, key core.RatingKey, profile core.QualityProfile, profileKey, original string, maxBitrate int) *core.Resolution {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.live[resumeKey{userID, key}]
+	if !ok || got.res == nil || got.profile != profileKey || got.releaseID == "" {
+		return nil
+	}
+	if !rememberedOriginalAudioCurrent(profile, got.originalLanguage, original, got.res.Release) || !sourceFitsBitrate(got.size, got.duration, 0, maxBitrate) {
+		return nil
+	}
+	cp := *got.res
+	cp.NZB = append([]byte(nil), got.res.NZB...)
+	return &cp
+}
+
+func (s *resumeStore) livePoint(userID int64, key core.RatingKey) *ResumePoint {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.live[resumeKey{userID, key}]
+	if !ok || got.res == nil {
+		return nil
+	}
+	return &ResumePoint{
+		UserID: userID, Key: key, Release: got.res.Release, NZB: append([]byte(nil), got.res.NZB...),
+		Profile: profileName(got.profile), Size: got.size, Duration: got.duration, UpdatedAt: got.res.ResolvedAt,
+		profileKey: got.profile, originalLanguage: got.originalLanguage,
+	}
+}
+
 func (s *resumeStore) forgetFresh(user int64, key core.RatingKey) {
 	s.freshMu.Lock()
 	delete(s.fresh, resumeKey{user, key})
+	delete(s.live, resumeKey{user, key})
 	s.freshMu.Unlock()
 }
 
@@ -437,6 +493,11 @@ func (s *resumeStore) forgetFreshKey(key core.RatingKey) {
 	for id := range s.fresh {
 		if id.key == key {
 			delete(s.fresh, id)
+		}
+	}
+	for id := range s.live {
+		if id.key == key {
+			delete(s.live, id)
 		}
 	}
 	s.freshMu.Unlock()

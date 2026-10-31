@@ -206,12 +206,15 @@ type Manager struct {
 	// that can lose to a loaded machine.
 	sourceCleanupBudget context.Context
 	events              eventBus
-	deps             Deps
-	opts             Options
-	log              *slog.Logger
-	now              func() time.Time
-	resume           *resumeStore
-	reg              *registry // nil on a standalone server
+	deps                Deps
+	opts                Options
+	log                 *slog.Logger
+	now                 func() time.Time
+	resume              *resumeStore
+	resumeSaveMu        sync.Mutex
+	resumeSaves         int
+	resumeSaveCond      *sync.Cond
+	reg                 *registry // nil on a standalone server
 	// titleInval broadcasts title invalidations (nil standalone).
 	titleInval *clusterbus.Invalidator
 	bufs       sync.Pool
@@ -345,6 +348,7 @@ func New(deps Deps, cfg config.Config, opts Options) (*Manager, error) {
 		progressPins: map[string]bool{},
 		pinKick:      make(chan struct{}, 1),
 	}
+	m.resumeSaveCond = sync.NewCond(&m.resumeSaveMu)
 	chunk := opts.ChunkSize
 	m.bufs.New = func() any { b := make([]byte, chunk); return &b }
 	if deps.DB != nil {
@@ -444,6 +448,7 @@ func (m *Manager) Close() error {
 		m.reg.close()
 	}
 	m.titleInval.Close()
+	m.waitResumeSaves()
 	if m.resume != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		if herr := m.resume.close(ctx); herr != nil {
@@ -490,10 +495,37 @@ func (m *Manager) Draining() bool {
 // ResumeOutboxStatus reports resume records held through a database
 // outage; ok is false when records are written synchronously.
 func (m *Manager) ResumeOutboxStatus() (st store.OutboxStatus, ok bool) {
+	m.waitResumeSaves()
 	if m.resume == nil || m.resume.held == nil {
 		return st, false
 	}
 	return m.resume.held.Status(), true
+}
+
+func (m *Manager) beginResumeSave() {
+	m.resumeSaveMu.Lock()
+	m.resumeSaves++
+	m.resumeSaveMu.Unlock()
+}
+
+func (m *Manager) endResumeSave() {
+	m.resumeSaveMu.Lock()
+	m.resumeSaves--
+	if m.resumeSaves == 0 && m.resumeSaveCond != nil {
+		m.resumeSaveCond.Broadcast()
+	}
+	m.resumeSaveMu.Unlock()
+}
+
+func (m *Manager) waitResumeSaves() {
+	if m.resumeSaveCond == nil {
+		return
+	}
+	m.resumeSaveMu.Lock()
+	for m.resumeSaves > 0 {
+		m.resumeSaveCond.Wait()
+	}
+	m.resumeSaveMu.Unlock()
 }
 
 // errDraining is returned for new sessions while the node drains.
@@ -836,7 +868,7 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 		c.RecordPlay(g.releaseID(), title, g.src.Size())
 	}
 	ginfo := g.infoSnapshot()
-	log.Info("playback session started", "session", s.id, "release", g.res.Release.Name,
+	log.Debug("playback session started", "session", s.id, "release", g.res.Release.Name,
 		"container", ginfo.Container, "size", g.src.Size(), "duration", ginfo.Duration, "estimated", ginfo.Estimated)
 	m.emitEvent("start", s, nil)
 	return s, nil
@@ -974,7 +1006,7 @@ func (m *Manager) finishSessionStop(s *session, g *generation) {
 	m.reg.poke()
 	m.emitEvent("stop", s, nil)
 	m.kickPins()
-	m.log.Info("playback session ended", "session", id, "key", s.ident.key, "bytes", s.bytes.Load())
+	m.log.Debug("playback session ended", "session", id, "key", s.ident.key, "bytes", s.bytes.Load())
 }
 
 // InputURL is the loopback URL ffmpeg reads the session's current source

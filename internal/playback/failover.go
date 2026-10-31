@@ -287,7 +287,7 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 	if (facts == nil || facts.needsAugment) && m.deps.AugmentMedia != nil {
 		m.deps.AugmentMedia(ctx, s.title, &s.user, res, src, &mi)
 	}
-	m.log.Info("media preparation completed", "session", s.id, "release", res.Release.ID,
+	m.log.Debug("media preparation completed", "session", s.id, "release", res.Release.ID,
 		"probe", probeDuration, "probeCached", facts != nil, "prober", prober, "estimated", mi.Estimated,
 		"augment", time.Since(augmentStarted))
 	var points []IndexPoint
@@ -1037,6 +1037,9 @@ func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.R
 	if m.resume == nil || m.deps.Availability.Down() {
 		return nil
 	}
+	if res := m.resume.rememberedResolution(userID, key, profile, profileKey(profile), originalLanguage, caps.MaxBitrateKbps); res != nil && !m.releaseBlocked(ctx, res.Release.ID) && m.resumeSourceAllowed(res.Release) {
+		return res
+	}
 	rec, err := m.resume.get(ctx, userID, key)
 	if err != nil {
 		m.log.Warn("resume lookup failed", "err", err)
@@ -1059,8 +1062,6 @@ func (m *Manager) saveResume(ctx context.Context, s *session, g *generation) {
 	if m.resume == nil || g.res == nil || len(g.res.NZB) == 0 {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
 	info := g.infoSnapshot()
 	rec := resumeRecord{
 		userID:           s.ident.userID,
@@ -1072,13 +1073,20 @@ func (m *Manager) saveResume(ctx context.Context, s *session, g *generation) {
 		duration:         info.Duration,
 		updatedAt:        m.now(),
 	}
-	// A clustered node holds the record through a database outage (put
-	// returns at once), so a start or failover never waits on it. The
-	// probed facts ride in the same write, so the first Play after a
-	// restart skips the probe the warm path would have skipped.
-	if err := m.resume.putWithProbe(ctx, rec, g.res.NZB, info.Keyframes, info); err != nil {
-		m.log.Warn("save resume record failed", "key", s.ident.key, "err", err)
-	}
+	nzb := append([]byte(nil), g.res.NZB...)
+	points := append([]core.KeyframePoint(nil), info.Keyframes...)
+	// The next prepare reads this copy. The durable row, including its NZB
+	// rename, follows after the response so a slow disk cannot stall it.
+	m.resume.noteLive(rec, nzb)
+	m.beginResumeSave()
+	go func() {
+		defer m.endResumeSave()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := m.resume.putWithProbe(ctx, rec, nzb, points, info); err != nil {
+			m.log.Warn("save resume record failed", "key", rec.key, "err", err)
+		}
+	}()
 }
 
 // ResumePoint returns the release that last served (or was prefetched for)
@@ -1086,6 +1094,15 @@ func (m *Manager) saveResume(ctx context.Context, s *session, g *generation) {
 func (m *Manager) ResumePoint(ctx context.Context, userID int64, key core.RatingKey) (*ResumePoint, error) {
 	if m.resume == nil {
 		return nil, nil
+	}
+	if live := m.resume.livePoint(userID, key); live != nil {
+		if m.releaseBlocked(ctx, live.Release.ID) {
+			return nil, nil
+		}
+		if pts, err := m.resume.loadIndex(ctx, userID, key, live.Release.ID); err == nil {
+			live.Keyframes = pts
+		}
+		return live, nil
 	}
 	rec, err := m.resume.get(ctx, userID, key)
 	if err != nil || rec == nil {

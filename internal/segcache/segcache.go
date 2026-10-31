@@ -84,6 +84,11 @@ type Cache struct {
 	pinDone chan struct{}
 	pinOnce sync.Once
 
+	expMu      sync.Mutex
+	expCond    *sync.Cond
+	expPending map[string][]byte
+	expWriting bool
+
 	evictMu sync.Mutex // serialises passes that free space; taken before floorMu
 	floorMu sync.Mutex // guards diskFn and floor; taken before mu
 	diskFn  DiskUsageFunc
@@ -169,6 +174,7 @@ func Open(dir string, budget int64, logger *slog.Logger) (*Cache, error) {
 		return nil, err
 	}
 	c.evict()
+	c.expCond = sync.NewCond(&c.expMu)
 	go c.writePinsLoop()
 	used, b := c.Usage()
 	c.logger.Info("segment cache opened", "dir", dir, "segments", c.segCountSafe(),
@@ -544,6 +550,7 @@ func (c *Cache) Close() error {
 		<-c.pinDone
 		_ = c.writePinsFile()
 	})
+	c.flushExperience()
 	return nil
 }
 

@@ -149,6 +149,7 @@ func (m *Manager) ReconcilePins(ctx context.Context) error {
 	if m.resume == nil {
 		return nil
 	}
+	m.waitResumeSaves()
 	m.resume.payload.scheduleRecovery()
 	recs, err := m.resume.all(ctx)
 	if err != nil {
