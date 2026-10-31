@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import {
   Alert,
   AlertDescription,
-  Badge,
   Button,
   EmptyState,
   Input,
@@ -230,7 +229,6 @@ export default function SignInMethods({
               key={method.id}
               title={method.display || providerLabel(method.provider)}
               description={method.display ? providerLabel(method.provider) : undefined}
-              control={<Badge variant="secondary">{providerLabel(method.provider)}</Badge>}
             />
           ))
         ) : (

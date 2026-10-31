@@ -22,13 +22,11 @@ export default function Profile() {
       base="/profile"
       status={
         owner ? (
-          <ul aria-label={t("Status")} className="grid gap-3 sm:grid-cols-2">
+          <ul aria-label={t("Status")}>
             <li className="flex items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3">
               <StatusDot level="ok" className="mt-1.5" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-fg">
-                  {t("Signed in as {name}", { name })}
-                </span>
+                <span className="block truncate text-sm font-medium text-fg">{name}</span>
                 <span className="block text-xs text-fg-muted">{t("Owner")}</span>
               </span>
               <LevelBadge level="ok" label={t("Signed in")} />
