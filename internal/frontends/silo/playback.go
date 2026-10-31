@@ -12,7 +12,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
-	"github.com/braedonsaunders/ether/internal/transcode"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/quality"
 )
 
 func (i *instance) installationID() string {
@@ -373,7 +373,7 @@ func siloQualityMenu(sourceHeight int) []any {
 				"label":            profile.label,
 				"display_name":     profile.label,
 				"height":           profile.height,
-				"bitrate_kbps":     transcode.ProfileVideoKbps(profile.height),
+				"bitrate_kbps":     quality.ProfileVideoKbps(profile.height),
 				"preserves_source": false,
 			})
 		}
