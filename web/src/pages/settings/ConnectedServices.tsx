@@ -1259,7 +1259,7 @@ function IntegrationGroup({ title, children }: { title: string; children: ReactN
     (child) => !(isValidElement<{ identity?: { name?: string } }>(child) && child.props.identity),
   );
   return (
-    <section aria-label={title} className="space-y-3">
+    <section aria-label={title} className="space-y-3 pt-6 first:pt-0">
       <h2 className="text-sm font-semibold text-fg">{title}</h2>
       <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((child) => {
