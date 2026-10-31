@@ -49,6 +49,44 @@ func TestHomeAssemblyKeepsPaintFactsWithFilteredRows(t *testing.T) {
 	}
 }
 
+func TestHomeAssemblyCreditsFirstDuplicateThenDiscovery(t *testing.T) {
+	// main 4588b9893: a repeated recommender identifier is not rendered again,
+	// so the first arm stays in the impression map; a later discovery hub with
+	// that id overwrites it; playlists and live are not inserted.
+	assembly := func(discovery []core.Hub) HomeAssembly[string] {
+		return HomeAssembly[string]{
+			Render:   func(h core.Hub) string { return h.ID },
+			Identity: func(row string) string { return row },
+			Continue: func() (core.Hub, string) {
+				return core.Hub{ID: "home.continue", Items: []core.Title{{Key: 9}}}, "home.continue"
+			},
+			Playlists:   func() (string, bool) { return "home.playlists", true },
+			Discovery:   func() []core.Hub { return discovery },
+			Live:        func() (string, bool) { return "livetv", true },
+			InLibraries: func(core.Hub) bool { return true },
+		}
+	}
+	first := core.Hub{ID: "home.trending", Promoted: true, Items: []core.Title{{Key: 1}}}
+	second := core.Hub{ID: "home.trending", Promoted: true, Items: []core.Title{{Key: 2}}}
+	_, served := assembly(nil).Rows([]core.Hub{first, second}, true, false, true, func(core.Hub) core.RowPurpose { return "recommendation" })
+	if len(served["home.trending"].Items) != 1 || served["home.trending"].Items[0].Key != 1 {
+		t.Fatalf("first arm credit %+v", served["home.trending"])
+	}
+	if len(served["home.continue"].Items) != 1 || served["home.continue"].Items[0].Key != 9 {
+		t.Fatalf("continue %+v", served["home.continue"])
+	}
+	if _, ok := served["home.playlists"]; ok {
+		t.Fatal("playlist credited")
+	}
+	if _, ok := served["livetv"]; ok {
+		t.Fatal("live credited")
+	}
+	_, served = assembly([]core.Hub{{ID: "home.trending", Items: []core.Title{{Key: 3}}}}).Rows([]core.Hub{first, second}, true, false, true, func(core.Hub) core.RowPurpose { return "recommendation" })
+	if len(served["home.trending"].Items) != 1 || served["home.trending"].Items[0].Key != 3 {
+		t.Fatalf("discovery overwrite %+v", served["home.trending"])
+	}
+}
+
 func TestCompleteHomeProducerOrder(t *testing.T) {
 	var got []string
 	add := func(s string) func() { return func() { got = append(got, s) } }

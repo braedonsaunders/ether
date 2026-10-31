@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -84,7 +82,7 @@ func TestFavoritePolicyNilAppDependencies(t *testing.T) {
 	}
 }
 
-func TestFavoritePolicyMatchesIndependentLegacy(t *testing.T) {
+func TestFavoritePolicyDecisions(t *testing.T) {
 	ctx := context.Background()
 	viewer := &core.User{ID: 3, MaxContentRating: "PG"}
 	show := core.Title{Key: core.ShowKey(4), Type: core.TypeShow, ContentRating: "TV-G"}
@@ -97,61 +95,60 @@ func TestFavoritePolicyMatchesIndependentLegacy(t *testing.T) {
 	dbErr := errors.New("database down")
 	vis := experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 2, true }}
 
-	compareAllowed := func(subject experience.FavoriteSubject, sources experience.FavoriteSources) {
+	compareAllowed := func(subject experience.FavoriteSubject, sources experience.FavoriteSources, want bool) {
 		t.Helper()
 		got := experience.FavoriteAllowed(ctx, viewer, subject, vis, sources)
-		want := legacyFavoriteAllowed(ctx, viewer, subject, vis, sources)
 		if got != want {
-			t.Fatalf("%+v got %v legacy %v", subject, got, want)
+			t.Fatalf("%+v got %v want %v", subject, got, want)
 		}
 	}
 
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindTitle, ID: movieKey.String()}, experience.FavoriteSources{
 		Title: func(context.Context, core.RatingKey) (*core.Title, error) { return &movie, nil },
-	})
+	}, true)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindTitle, ID: movieKey.String()}, experience.FavoriteSources{
 		Title: func(context.Context, core.RatingKey) (*core.Title, error) { return nil, dbErr },
-	})
+	}, false)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindTitle, ID: movieKey.String()}, experience.FavoriteSources{
 		Title: func(context.Context, core.RatingKey) (*core.Title, error) {
 			return &core.Title{Key: core.MovieKey(1), Type: core.TypeMovie}, nil
 		},
-	})
+	}, false)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindTitle, ID: "bad"}, experience.FavoriteSources{
 		Title: func(context.Context, core.RatingKey) (*core.Title, error) {
 			t.Fatal("lookup")
 			return nil, nil
 		},
-	})
+	}, false)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindCollection, ID: collectionKey.String()}, experience.FavoriteSources{
 		Collection: func(context.Context, *core.User, core.RatingKey) (*core.Collection, error) {
 			return collection, nil
 		},
-	})
+	}, true)
 	hidden := *collection
 	viewer.AllowedSections = []int{1}
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindCollection, ID: collectionKey.String()}, experience.FavoriteSources{
 		Collection: func(context.Context, *core.User, core.RatingKey) (*core.Collection, error) { return &hidden, nil },
-	})
+	}, false)
 	viewer.AllowedSections = nil
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindCollection, ID: collectionKey.String()}, experience.FavoriteSources{
 		Collection: func(context.Context, *core.User, core.RatingKey) (*core.Collection, error) { return nil, dbErr },
-	})
+	}, false)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindChannel, ID: "news"}, experience.FavoriteSources{
 		ChannelIDs: func(context.Context, *core.User) ([]string, error) { return []string{"sports", "news"}, nil },
-	})
+	}, true)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindChannel, ID: "secret"}, experience.FavoriteSources{
 		ChannelIDs: func(context.Context, *core.User) ([]string, error) { return []string{"sports"}, nil },
-	})
+	}, false)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindChannel, ID: "news"}, experience.FavoriteSources{
 		ChannelIDs: func(context.Context, *core.User) ([]string, error) { return nil, dbErr },
-	})
+	}, false)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindPerson, ID: "tmdb:01"}, experience.FavoriteSources{
 		PersonPage: func(context.Context, int64, int, int) ([]core.Title, error) {
 			t.Fatal("browse")
 			return nil, nil
 		},
-	})
+	}, false)
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindPerson, ID: "tmdb:15"}, experience.FavoriteSources{
 		PersonPage: func(_ context.Context, person int64, offset, limit int) ([]core.Title, error) {
 			if person != 15 || offset != 0 || limit != 100 {
@@ -159,7 +156,7 @@ func TestFavoritePolicyMatchesIndependentLegacy(t *testing.T) {
 			}
 			return []core.Title{episode}, nil
 		},
-	})
+	}, false)
 	seen := map[int]int{}
 	compareAllowed(experience.FavoriteSubject{Kind: experience.FavoriteKindPerson, ID: "tmdb:15"}, experience.FavoriteSources{
 		PersonPage: func(_ context.Context, person int64, offset, limit int) ([]core.Title, error) {
@@ -176,8 +173,8 @@ func TestFavoritePolicyMatchesIndependentLegacy(t *testing.T) {
 			}
 			return items, nil
 		},
-	})
-	if seen[0] != 2 || seen[100] != 2 || len(seen) != 2 {
+	}, false)
+	if seen[0] != 1 || seen[100] != 1 || len(seen) != 2 {
 		t.Fatalf("person error pages %+v", seen)
 	}
 
@@ -191,145 +188,32 @@ func TestFavoritePolicyMatchesIndependentLegacy(t *testing.T) {
 		}
 		return out, nil
 	}
-	compareCached := func(user *core.User, keys []core.RatingKey, read func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)) {
+	compareCached := func(user *core.User, keys []core.RatingKey, read func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error), want bool, wantErr error) {
 		t.Helper()
 		got, gotErr := experience.FavoriteTitlesCached(ctx, user, keys, vis, read)
-		want, wantErr := legacyFavoriteTitlesCached(ctx, user, keys, vis, read)
-		if got != want || !errors.Is(gotErr, wantErr) && gotErr != wantErr {
-			t.Fatalf("keys %v got %v %v legacy %v %v", keys, got, gotErr, want, wantErr)
+		if got != want || !errors.Is(gotErr, wantErr) {
+			t.Fatalf("keys %v got %v %v want %v %v", keys, got, gotErr, want, wantErr)
 		}
 	}
-	compareCached(viewer, []core.RatingKey{episodeKey}, cached)
+	compareCached(viewer, []core.RatingKey{episodeKey}, cached, true, nil)
 	delete(lookup, show.Key)
-	compareCached(viewer, []core.RatingKey{episodeKey}, cached)
+	compareCached(viewer, []core.RatingKey{episodeKey}, cached, false, nil)
 	lookup[show.Key] = show
 	show.ContentRating = "TV-MA"
 	lookup[show.Key] = show
-	compareCached(viewer, []core.RatingKey{episodeKey}, cached)
-	compareCached(nil, []core.RatingKey{movieKey}, cached)
-	compareCached(viewer, []core.RatingKey{movieKey}, nil)
+	compareCached(viewer, []core.RatingKey{episodeKey}, cached, false, nil)
+	compareCached(nil, []core.RatingKey{movieKey}, cached, false, nil)
+	compareCached(viewer, []core.RatingKey{movieKey}, nil, false, nil)
 	compareCached(viewer, []core.RatingKey{movieKey}, func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		return nil, dbErr
-	})
+	}, false, dbErr)
 	compareCached(viewer, []core.RatingKey{episodeKey}, func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		if len(keys) == 1 && keys[0] == episodeKey {
 			return map[core.RatingKey]core.Title{episodeKey: episode}, nil
 		}
 		return nil, dbErr
-	})
-	compareCached(viewer, []core.RatingKey{core.MovieKey(99)}, cached)
-}
-
-// legacyFavoriteAllowed is the pre-extraction decision, transcribed against the
-// same ports. It is the independent control for experience.FavoriteAllowed.
-func legacyFavoriteAllowed(ctx context.Context, u *core.User, subject experience.FavoriteSubject, visibility experience.Visibility, sources experience.FavoriteSources) bool {
-	if u == nil {
-		return false
-	}
-	switch subject.Kind {
-	case experience.FavoriteKindTitle:
-		if sources.Title == nil {
-			return false
-		}
-		key, err := core.ParseRatingKey(subject.ID)
-		if err != nil {
-			return false
-		}
-		title, err := sources.Title(ctx, key)
-		return err == nil && title != nil && title.Key == key && visibility.Visible(ctx, u, title)
-	case experience.FavoriteKindCollection:
-		if sources.Collection == nil {
-			return false
-		}
-		key, err := core.ParseRatingKey(subject.ID)
-		if err != nil {
-			return false
-		}
-		collection, err := sources.Collection(ctx, u, key)
-		return err == nil && collection != nil && visibility.CollectionAllowed(u, collection)
-	case experience.FavoriteKindChannel:
-		if sources.ChannelIDs == nil {
-			return false
-		}
-		ids, err := sources.ChannelIDs(ctx, u)
-		if err != nil {
-			return false
-		}
-		for _, id := range ids {
-			if id == subject.ID {
-				return true
-			}
-		}
-		return false
-	case experience.FavoriteKindPerson:
-		if sources.PersonPage == nil {
-			return false
-		}
-		raw, ok := strings.CutPrefix(subject.ID, "tmdb:")
-		if !ok {
-			return false
-		}
-		id, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != raw {
-			return false
-		}
-		for offset := 0; offset < 1000; offset += 100 {
-			items, err := sources.PersonPage(ctx, id, offset, 100)
-			if err != nil {
-				return false
-			}
-			for i := range items {
-				if visibility.Visible(ctx, u, &items[i]) {
-					return true
-				}
-			}
-			if len(items) < 100 {
-				return false
-			}
-		}
-		return false
-	}
-	return false
-}
-
-// legacyFavoriteTitlesCached is the pre-extraction cache decision. It reads
-// only the injected cache function and fails closed on that function's error.
-func legacyFavoriteTitlesCached(ctx context.Context, u *core.User, keys []core.RatingKey, visibility experience.Visibility, cached func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)) (bool, error) {
-	if u == nil || cached == nil {
-		return false, nil
-	}
-	titles, err := cached(ctx, keys)
-	if err != nil {
-		return false, err
-	}
-	var parents []core.RatingKey
-	for _, key := range keys {
-		title, ok := titles[key]
-		if !ok {
-			return false, nil
-		}
-		if title.ShowKey != 0 {
-			parents = append(parents, title.ShowKey)
-		}
-	}
-	shows, err := cached(ctx, parents)
-	if err != nil {
-		return false, err
-	}
-	visibility.GetTitle = func(_ context.Context, key core.RatingKey) (*core.Title, error) {
-		show, ok := shows[key]
-		if !ok {
-			return nil, core.ErrNotFound
-		}
-		return &show, nil
-	}
-	for _, key := range keys {
-		title := titles[key]
-		if !visibility.Visible(ctx, u, &title) {
-			return false, nil
-		}
-	}
-	return true, nil
+	}, false, dbErr)
+	compareCached(viewer, []core.RatingKey{core.MovieKey(99)}, cached, false, nil)
 }
 
 func TestResolveBrowseParentsPreservesGetOutcomes(t *testing.T) {

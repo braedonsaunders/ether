@@ -123,6 +123,61 @@ func TestHubsUseContextualRecommender(t *testing.T) {
 	}
 }
 
+func TestImpressionCreditFollowsMainDuplicateRules(t *testing.T) {
+	// main 4588b9893 recordImpressions credits served[hubIdentifier]. Home
+	// skips a second recommender row whose rendered id was already seen, so
+	// the first arm is the one recorded. Section adds overwrite, so the last
+	// add is credited even when the visible row is the first copy.
+	rec := &contextualRecommender{fakeRecommender: fakeRecommender{
+		home: []core.Hub{
+			{ID: "home.trending", Title: "First", Promoted: true, Items: []core.Title{fightClub}},
+			{ID: "home.trending", Title: "Second", Promoted: true, Items: []core.Title{alien}},
+		},
+	}}
+	f := newContextualFixture(t, rec)
+	f.get(t, "/hubs", "Accept", "application/json")
+	rec.mu.Lock()
+	if len(rec.impressions) != 1 {
+		t.Fatalf("home impressions recorded %d times", len(rec.impressions))
+	}
+	var trending []core.Hub
+	for _, h := range rec.impressions[0] {
+		if h.ID == "home.trending" {
+			trending = append(trending, h)
+		}
+		if h.ID == "home.playlists" || h.ID == "livetv" {
+			t.Fatalf("non-credited row recorded: %+v", h)
+		}
+	}
+	rec.mu.Unlock()
+	if len(trending) != 1 || len(trending[0].Items) != 1 || trending[0].Items[0].Key != fightClub.Key {
+		t.Fatalf("home credit = %+v, want the first arm", trending)
+	}
+
+	section := &contextualRecommender{fakeRecommender: fakeRecommender{
+		section: map[core.MediaType][]core.Hub{core.TypeMovie: {
+			{ID: "movie.top10", Title: "First", Type: core.TypeMovie, Items: []core.Title{fightClub}},
+			{ID: "movie.top10", Title: "Second", Type: core.TypeMovie, Items: []core.Title{alien}},
+		}},
+	}}
+	sf := newContextualFixture(t, section)
+	sf.get(t, "/hubs/sections/1", "Accept", "application/json")
+	section.mu.Lock()
+	defer section.mu.Unlock()
+	if len(section.impressions) != 1 {
+		t.Fatalf("section impressions recorded %d times", len(section.impressions))
+	}
+	var top []core.Hub
+	for _, h := range section.impressions[0] {
+		if h.ID == "movie.top10" {
+			top = append(top, h)
+		}
+	}
+	if len(top) != 1 || len(top[0].Items) != 1 || top[0].Items[0].Key != alien.Key {
+		t.Fatalf("section credit = %+v, want the last add", top)
+	}
+}
+
 func TestHubsContinueFirstWithoutPlaceholder(t *testing.T) {
 	rec := &contextualRecommender{fakeRecommender: fakeRecommender{
 		home: []core.Hub{{ID: "home.trending", Title: "Trending", Promoted: true, Items: []core.Title{alien}}},
