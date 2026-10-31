@@ -154,16 +154,24 @@ describe("Metadata › Ratings", () => {
     expect(screen.queryByLabelText("Viewer")).toBeNull();
     fireEvent.click(toggle);
     fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "mdblist" } });
-    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "owner-key" } });
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Integrations" })
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/services/ratings");
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(calls(fake, "PUT", "/discovery/ratings/settings").at(-1)?.body).toMatchObject({
         enabled: true,
         provider: "mdblist",
-        apiKey: "owner-key",
+        apiKey: "",
       }),
     );
-    expect(await screen.findByText(/Saved\. Leave as is to keep it/)).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "OMDb and MDBList connected" })).toHaveAttribute(
+      "href",
+      "/services/ratings",
+    );
 
     const name = fake.catalog[0]!.title;
     const badges = screen.getByRole("region", { name: "Title badges" });

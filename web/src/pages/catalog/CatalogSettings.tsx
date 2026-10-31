@@ -1,13 +1,12 @@
 import { SettingsSection } from "@braedonsaunders/appkit-ui";
 import { Database, Globe2, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { ConfigSection } from "../../components/ConfigSection";
-import { TestButton, type TestState } from "../../components/fields";
+import { secretConfigured } from "../../components/IntegrationAccount";
 import { SettingsRow } from "../../components/SettingsRow";
 import { LevelBadge } from "../../components/status";
-import { t } from "../../i18n";
-import { api } from "../../lib/api";
+import { t, tx } from "../../i18n";
 import {
   HomeReleaseSettings,
   HomeReleaseStatus,
@@ -16,22 +15,32 @@ import {
 import { TrendingStatus } from "./TrendingStatus";
 import { CATALOG } from "../settings/schema";
 
+function TmdbAccount({ apiKey }: { apiKey: unknown }) {
+  if (secretConfigured(apiKey)) {
+    return (
+      <p className="text-sm">
+        <Link to="/services" className="text-primary underline">
+          {t("TMDB connected")}
+        </Link>
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-fg-muted">
+      {tx("Connect TMDB in {link}.", {
+        link: (
+          <Link to="/services" className="text-primary underline">
+            {t("Integrations")}
+          </Link>
+        ),
+      })}
+    </p>
+  );
+}
+
 export function CatalogSettings() {
   const { health } = useApp();
   const item = health.find((h) => h.id === "catalog");
-  const [test, setTest] = useState<TestState>({ status: "idle" });
-  const runTest = (key: string) => {
-    setTest({ status: "running" });
-    api.testTMDB(key).then(
-      (r) =>
-        setTest(
-          r.ok
-            ? { status: "ok", durationMs: r.durationMs }
-            : { status: "fail", message: r.error ?? t("Test failed") },
-        ),
-      (e) => setTest({ status: "fail", message: (e as Error).message }),
-    );
-  };
   return (
     <div className="catalog-scroll app-scroll">
       <div className="catalog-settings">
@@ -40,7 +49,7 @@ export function CatalogSettings() {
             <p className="catalog-eyebrow">{t("CATALOG SETTINGS")}</p>
             <h2 className="text-2xl font-semibold tracking-tight">{t("Shape your library")}</h2>
             <p className="mt-2 text-sm text-fg-muted">
-              {t("Connect TMDB and choose the titles and metadata your viewers discover.")}
+              {t("Choose the titles and metadata your viewers discover.")}
             </p>
           </div>
           <ConfigSection
@@ -48,13 +57,9 @@ export function CatalogSettings() {
             endpoint="catalog"
             groups={[...CATALOG, HomeReleaseSettings, UpcomingEpisodeSettings]}
             label={t("Catalog")}
-            test={(draft) => (
-              <TestButton
-                label={t("Test TMDB key")}
-                state={test}
-                onTest={() => runTest(String(draft.tmdbKey ?? ""))}
-              />
-            )}
+            omit={["tmdbKey"]}
+            showAdvanced={false}
+            before={(draft) => <TmdbAccount apiKey={draft.tmdbKey} />}
           />
         </div>
         <aside className="space-y-5" aria-label={t("Catalog status")}>

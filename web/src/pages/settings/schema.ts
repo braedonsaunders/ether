@@ -303,14 +303,11 @@ export const CACHE: FieldGroup[] = localized(() => [
 
 export const CATALOG: FieldGroup[] = localized(() => [
   {
-    title: "TMDB",
+    title: t("Names and dates"),
+    description: t(
+      "Language and region choose title names, descriptions, release dates and which titles count as available.",
+    ),
     fields: [
-      {
-        key: "tmdbKey",
-        label: t("Your TMDB API key"),
-        kind: "secret",
-        help: t("Your personal TMDB v3 API key or v4 read-access token."),
-      },
       {
         key: "language",
         label: t("Language"),
