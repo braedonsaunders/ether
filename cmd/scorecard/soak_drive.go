@@ -54,6 +54,8 @@ type soakRun struct {
 	cfg      SoakConfig
 	client   *http.Client
 	mu       sync.Mutex
+	mbGate   sync.Mutex
+	pause    atomic.Bool
 	manifest SoakManifest
 	expected atomic.Int32
 	plex     *plexClient
@@ -65,7 +67,7 @@ type soakRun struct {
 // returns the manifest. The caller evaluates it with EvaluateSoak.
 func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 	if cfg.Workers < 1 {
-		cfg.Workers = 3
+		cfg.Workers = 2
 	}
 	if cfg.Timing.Sample <= 0 || cfg.Timing.Sample > 30*time.Second {
 		return SoakManifest{}, fmt.Errorf("sample interval must be 1ms..30s")
@@ -226,6 +228,12 @@ func (run *soakRun) worker(ctx context.Context, client string) {
 	cursor := map[string]int{}
 	kinds := []string{"browse", "direct", "remux", "transcode"}
 	for i := 0; ctx.Err() == nil; i++ {
+		if run.pause.Load() {
+			if err := sleep(ctx, 50*time.Millisecond); err != nil {
+				return
+			}
+			continue
+		}
 		protocol := protocols[i%len(protocols)]
 		kind := kinds[cursor[protocol]%len(kinds)]
 		cursor[protocol]++
@@ -254,6 +262,29 @@ func (run *soakRun) diagnose(ctx context.Context) error {
 	fmt.Fprintf(os.Stderr, "diag plex part %s rating %s\n", run.plex.partKey, run.plex.ratingKey)
 	run.plex.explain(ctx)
 	fmt.Fprintf(os.Stderr, "diag jellyfin item %s source %s\n", run.jellyfin.item, run.jellyfin.source)
+	loadCtx, stopLoad := context.WithTimeout(ctx, 25*time.Second)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			run.worker(loadCtx, fmt.Sprintf("w%d", n))
+		}(i)
+	}
+	wg.Wait()
+	stopLoad()
+	seen := map[string]int{}
+	run.mu.Lock()
+	for _, op := range run.manifest.Ops {
+		if op.Success || op.Error == "" {
+			continue
+		}
+		seen[op.Protocol+" "+op.Kind+": "+op.Error]++
+	}
+	run.mu.Unlock()
+	for msg, n := range seen {
+		fmt.Fprintf(os.Stderr, "diag load %d %s\n", n, msg)
+	}
 	if failed > 0 {
 		return fmt.Errorf("diagnose found %d failures", failed)
 	}
@@ -277,6 +308,10 @@ func (run *soakRun) operate(ctx context.Context, protocol, kind, client string) 
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if protocol == "jellyfin" || protocol == "emby" {
+		run.mbGate.Lock()
+		defer run.mbGate.Unlock()
+	}
 	overlapped := run.expected.Load() > 0
 	delivery, err := run.one(ctx, protocol, kind, client)
 	if ctx.Err() != nil && err != nil {
@@ -293,6 +328,9 @@ func (run *soakRun) operate(ctx context.Context, protocol, kind, client string) 
 	}
 	if !op.Success && (overlapped || run.expected.Load() > 0) {
 		op.ExpectedFailure = true
+	}
+	if err != nil {
+		op.Error = snippet([]byte(err.Error()))
 	}
 	run.mu.Lock()
 	run.manifest.Ops = append(run.manifest.Ops, op)
@@ -352,6 +390,14 @@ func (run *soakRun) faultStep(ctx context.Context, action string, hold time.Dura
 		}
 	}
 	if action == "encoder_crash" || action == "encoder_kill" {
+		run.pause.Store(true)
+		defer run.pause.Store(false)
+		deadline := time.Now().Add(20 * time.Second)
+		for run.ffmpegNow(ctx) > 0 && time.Now().Before(deadline) {
+			if err := sleep(ctx, 200*time.Millisecond); err != nil {
+				return err
+			}
+		}
 		go run.operate(ctx, "plex", "transcode", "encoder-hold")
 		_ = run.waitFFmpeg(ctx, minDuration(hold*2/3, 8*time.Second))
 	}

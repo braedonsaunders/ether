@@ -170,6 +170,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		c.Catalog.TMDBKey = "fixture"
 		c.Plex.Token = "fixture-owner-token"
 		c.Server.MaxStreams = 100
+		c.Server.DefaultStreamLimit = 8
 		c.Frontends = map[string]config.Frontend{"plex": {Enabled: false}}
 		for i := range c.Quality.Profiles {
 			c.Quality.Profiles[i].MinSizeMBPerMin = 0
@@ -181,7 +182,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 	if e != nil {
 		return nil, nil, e
 	}
-	a, e := New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	a, e := New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))})
 	if e != nil {
 		return nil, nil, e
 	}

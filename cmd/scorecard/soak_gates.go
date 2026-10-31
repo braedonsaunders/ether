@@ -24,6 +24,7 @@ type SoakOp struct {
 	Success         bool      `json:"success"`
 	ExpectedFailure bool      `json:"expected_failure"`
 	Verified        bool      `json:"verified"`
+	Error           string    `json:"error,omitempty"`
 }
 
 // SoakFault records one injected fault.
