@@ -26,6 +26,7 @@ type Telemetry struct {
 	HeapReleased uint64    `json:"heap_released"`
 	GOGC         int       `json:"gogc"`
 	FDs          int       `json:"fds"`
+	SQLiteFDs    int       `json:"sqlite_fds"`
 	Goroutines   int       `json:"goroutines"`
 	FFmpeg       int       `json:"ffmpeg"`
 	Sessions     int       `json:"sessions"`
@@ -63,6 +64,7 @@ func Collect(procRoot, devRoot string, pid, sessions, transcodes int) Telemetry 
 	out.HeapReleased = mem.HeapReleased
 	out.GOGC = gogc()
 	out.FDs = tree.FDs
+	out.SQLiteFDs = tree.SQLiteFDs
 	out.FFmpeg = len(tree.FFmpegPIDs)
 	out.Children = tree.Children
 	out.NetRx = rx
@@ -76,6 +78,7 @@ type Tree struct {
 	RSSBytes     uint64
 	SelfRSS      uint64
 	FDs          int
+	SQLiteFDs    int
 	Children     int
 	FFmpegPIDs   []int
 	GuardianPIDs []int
@@ -131,7 +134,7 @@ func ProcessTree(procRoot string, pid int) (Tree, error) {
 		if !ok {
 			return fmt.Errorf("missing process %d", id)
 		}
-		fds, err := countFDs(filepath.Join(procRoot, strconv.Itoa(id), "fd"))
+		fds, sqlite, err := countFDs(filepath.Join(procRoot, strconv.Itoa(id), "fd"))
 		if err != nil {
 			return err
 		}
@@ -140,6 +143,7 @@ func ProcessTree(procRoot string, pid int) (Tree, error) {
 			tree.SelfRSS = row.rss
 		}
 		tree.FDs += fds
+		tree.SQLiteFDs += sqlite
 		if id != pid {
 			tree.Children++
 		}
@@ -185,15 +189,36 @@ func isFFmpeg(name string, cmdline []byte) bool {
 	return false
 }
 
-func countFDs(dir string) (int, error) {
+func countFDs(dir string) (int, int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, nil
+			return 0, 0, nil
 		}
-		return 0, err
+		return 0, 0, err
 	}
-	return len(entries), nil
+	sqlite := 0
+	for _, entry := range entries {
+		if sqliteFD(filepath.Join(dir, entry.Name())) {
+			sqlite++
+		}
+	}
+	return len(entries), sqlite, nil
+}
+
+// sqliteFD reports a descriptor whose target is the warm SQLite pool:
+// ether.db, its WAL, its shared memory, or a rollback journal.
+func sqliteFD(path string) bool {
+	target, err := os.Readlink(path)
+	if err != nil {
+		return false
+	}
+	switch filepath.Base(target) {
+	case "ether.db", "ether.db-wal", "ether.db-shm", "ether.db-journal":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseStatus(status []byte) (name string, ppid int, rss uint64, err error) {

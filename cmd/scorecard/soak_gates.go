@@ -235,7 +235,7 @@ func gateCleanup(m SoakManifest) SoakGate {
 	}
 	baseline := cleanupObservation{
 		At: m.Baseline.At, ActiveSessions: m.Baseline.Sessions, Children: m.Baseline.Children,
-		FDs: m.Baseline.FDs, Encoders: m.Baseline.FFmpeg, RetryQueue: m.Baseline.RetryQueue, Valid: true,
+		FDs: m.Baseline.FDs, SQLiteFDs: m.Baseline.SQLiteFDs, Encoders: m.Baseline.FFmpeg, RetryQueue: m.Baseline.RetryQueue, Valid: true,
 	}
 	var samples []cleanupObservation
 	for _, sample := range m.Samples {
@@ -244,7 +244,7 @@ func gateCleanup(m SoakManifest) SoakGate {
 		}
 		samples = append(samples, cleanupObservation{
 			At: sample.At, ActiveSessions: sample.Sessions, Children: sample.Children,
-			FDs: sample.FDs, Encoders: sample.FFmpeg, RetryQueue: sample.RetryQueue, Valid: sample.Valid,
+			FDs: sample.FDs, SQLiteFDs: sample.SQLiteFDs, Encoders: sample.FFmpeg, RetryQueue: sample.RetryQueue, Valid: sample.Valid,
 		})
 	}
 	result := evaluateCleanup(m.LoadStopped, baseline, samples)

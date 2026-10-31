@@ -115,6 +115,33 @@ func TestCleanupRequiresFullStableWindow(t *testing.T) {
 	}
 }
 
+func TestCleanupExcludesWarmSQLitePool(t *testing.T) {
+	base := time.Unix(1000, 0)
+	// 30-minute soak: baseline 7 sqlite fds, cleanup 18, other descriptors -4.
+	baseline := cleanupObservation{Valid: true, FDs: 27, SQLiteFDs: 7}
+	rows := []cleanupObservation{}
+	for i := 0; i <= 10; i++ {
+		rows = append(rows, cleanupObservation{At: base.Add(time.Duration(i) * 30 * time.Second), Valid: true, FDs: 34, SQLiteFDs: 18})
+	}
+	if got := evaluateCleanup(base, baseline, rows); got.Status != "pass" {
+		t.Fatalf("warm pool: %+v", got)
+	}
+	for i := range rows {
+		rows[i].SQLiteFDs = sqliteFDCap + 1
+		rows[i].FDs = 27 - 7 + rows[i].SQLiteFDs
+	}
+	if got := evaluateCleanup(base, baseline, rows); got.Status != "fail" || got.Reason != "sqlite file descriptors exceeded the warm-pool cap" {
+		t.Fatalf("cap: %+v", got)
+	}
+	for i := range rows {
+		rows[i].SQLiteFDs = 18
+		rows[i].FDs = 46
+	}
+	if got := evaluateCleanup(base, baseline, rows); got.Status != "fail" || got.Reason == "sqlite file descriptors exceeded the warm-pool cap" {
+		t.Fatalf("unnamed growth: %+v", got)
+	}
+}
+
 func TestAcceptanceProvenanceDisqualifiesMismatchAndErrors(t *testing.T) {
 	hash := strings.Repeat("a", 64)
 	declared := time.Unix(1000, 0)

@@ -243,10 +243,20 @@ type cleanupObservation struct {
 	ActiveSessions int       `json:"active_sessions"`
 	Children       int       `json:"children"`
 	FDs            int       `json:"fds"`
+	SQLiteFDs      int       `json:"sqlite_fds"`
 	Encoders       int       `json:"encoders"`
 	RetryQueue     int       `json:"retry_queue"`
 	Valid          bool      `json:"valid"`
 }
+
+// sqliteFDCap is the warm SQLite pool from acba38f9e (SetMaxIdleConns(8)).
+// Cleanup snapshots on 7d755907c named every extra descriptor: sockets,
+// pipes and the playback lock did not grow. ether.db-wal stayed at 8 and
+// ether.db-shm at 1 from the 30-minute window through the 60-minute
+// window. ether.db was 9, then 10. 10+8+1 = 19 is that longer window,
+// with no slack above it.
+const sqliteFDCap = 19
+
 type cleanupResult struct {
 	Status     string  `json:"status"`
 	RecoveryMS float64 `json:"recovery_ms,omitempty"`
@@ -254,8 +264,11 @@ type cleanupResult struct {
 }
 
 func evaluateCleanup(stop time.Time, baseline cleanupObservation, samples []cleanupObservation) cleanupResult {
-	if stop.IsZero() || !baseline.Valid || baseline.ActiveSessions < 0 || baseline.Children < 0 || baseline.FDs < 0 || baseline.Encoders != 0 || baseline.RetryQueue < 0 || len(samples) < 2 {
+	if stop.IsZero() || !baseline.Valid || baseline.ActiveSessions < 0 || baseline.Children < 0 || baseline.FDs < 0 || baseline.SQLiteFDs < 0 || baseline.SQLiteFDs > baseline.FDs || baseline.Encoders != 0 || baseline.RetryQueue < 0 || len(samples) < 2 {
 		return cleanupResult{Status: "inconclusive", Reason: "missing cleanup baseline or samples"}
+	}
+	if baseline.SQLiteFDs > sqliteFDCap {
+		return cleanupResult{Status: "fail", Reason: "sqlite file descriptors exceeded the warm-pool cap"}
 	}
 	rows := append([]cleanupObservation(nil), samples...)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].At.Before(rows[j].At) })
@@ -271,11 +284,17 @@ func evaluateCleanup(stop time.Time, baseline cleanupObservation, samples []clea
 		if sample.At.Before(stop) {
 			continue
 		}
-		if sample.At.Sub(lastAt) > 30*time.Second || !sample.Valid || sample.ActiveSessions < 0 || sample.Children < 0 || sample.FDs < 0 || sample.Encoders < 0 || sample.RetryQueue < 0 {
+		if sample.At.Sub(lastAt) > 30*time.Second || !sample.Valid || sample.ActiveSessions < 0 || sample.Children < 0 || sample.FDs < 0 || sample.SQLiteFDs < 0 || sample.SQLiteFDs > sample.FDs || sample.Encoders < 0 || sample.RetryQueue < 0 {
 			return cleanupResult{Status: "inconclusive", Reason: "invalid or sparse cleanup samples"}
 		}
 		lastAt = sample.At
-		good := sample.ActiveSessions == baseline.ActiveSessions && sample.Children == baseline.Children && absInt(sample.FDs-baseline.FDs) <= 5 && sample.Encoders == 0 && (lastRetry < 0 || sample.RetryQueue <= lastRetry)
+		if sample.SQLiteFDs > sqliteFDCap {
+			return cleanupResult{Status: "fail", Reason: "sqlite file descriptors exceeded the warm-pool cap"}
+		}
+		// The +5 allowance is for descriptors other than the named SQLite
+		// pool. The pool has its own cap above and is not folded into +5.
+		other := absInt((sample.FDs - sample.SQLiteFDs) - (baseline.FDs - baseline.SQLiteFDs))
+		good := sample.ActiveSessions == baseline.ActiveSessions && sample.Children == baseline.Children && other <= 5 && sample.Encoders == 0 && (lastRetry < 0 || sample.RetryQueue <= lastRetry)
 		if good {
 			if stable.IsZero() {
 				stable = sample.At
