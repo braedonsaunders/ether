@@ -150,7 +150,7 @@ func TestClusterOwnerStopReachesServingNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	admitted := sessions.PlexAdmission{Source: ps, Decision: core.Decision{Kind: core.DecisionDirectPlay}, Media: ps.Info}
+	admitted := sessions.PlexAdmission{Source: ps, Media: ps.Info, Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}
 	plexCtx := sessions.WithPlexAdmission(ctx, func(context.Context) (sessions.PlexAdmission, error) {
 		return admitted, nil
 	})

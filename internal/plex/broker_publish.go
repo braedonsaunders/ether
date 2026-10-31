@@ -35,26 +35,52 @@ func (s *Server) plexPlanRequest(pr *Request, p *playRequest) frontend.PlanReque
 	}
 }
 
+// replayPlay is a repeated start of a decision the plan already made.
+// The stored caps and options are the inputs of that decision.
+func replayPlay(p playRequest, entry *transcodeEntry) *playRequest {
+	if entry == nil {
+		return &p
+	}
+	p.caps = entry.caps
+	p.opts = entry.opts
+	p.protocol = entry.requested.protocol
+	p.mde = entry.requested.mde
+	return &p
+}
+
 func (s *Server) plexAccess(pr *Request) frontend.SessionAccess {
 	return frontend.SessionAccess{Viewer: pr.User, Device: core.Device{ID: pr.ClientID}, Protocol: "plex"}
 }
 
-// publishBrokerPlayback records a prepared Plex playback on the shared broker.
-// The HTTP body is still rendered by the Plex adapter from the same decision.
-func (s *Server) publishBrokerPlayback(ctx context.Context, pr *Request, p *playRequest, ps *core.PlaySession, dec core.Decision) error {
-	if s == nil || s.playbackBroker == nil || pr == nil || pr.User == nil || p == nil || ps == nil || p.sessionID == "" {
-		return nil
+// openPlexPlan runs version and track resolution inside Plan, then publishes
+// the decision Plan made. The adapter renders that decision.
+func (s *Server) openPlexPlan(ctx context.Context, pr *Request, p *playRequest, admit func(context.Context) (sessions.PlexAdmission, error)) (core.Decision, error) {
+	if s == nil || s.playbackBroker == nil || pr == nil || pr.User == nil || p == nil || p.sessionID == "" || admit == nil {
+		return core.Decision{}, core.ErrNotAvailable
 	}
-	admitted := sessions.PlexAdmission{Source: ps, Decision: dec, Media: ps.Info}
-	ctx = sessions.WithPlexAdmission(ctx, func(context.Context) (sessions.PlexAdmission, error) {
-		return admitted, nil
-	})
+	ctx = sessions.WithPlexAdmission(ctx, admit)
 	plan, err := s.playbackBroker.Plan(ctx, s.plexPlanRequest(pr, p))
 	if err != nil {
-		return err
+		return core.Decision{}, err
 	}
 	_, err = s.playbackBroker.Open(ctx, frontend.OpenRequest{Protocol: "plex", PlanID: plan.ID, Viewer: pr.User, Device: core.Device{ID: pr.ClientID, Client: pr.Product, Product: pr.Product, Version: pr.Version, Platform: pr.Platform, DeviceName: pr.Device, Language: pr.Language}})
-	return err
+	if err != nil {
+		return core.Decision{}, err
+	}
+	return plan.Decision, nil
+}
+
+// publishBrokerPlayback plans a source that is already open.
+func (s *Server) publishBrokerPlayback(ctx context.Context, pr *Request, p *playRequest, ps *core.PlaySession) (core.Decision, error) {
+	if ps == nil {
+		return core.Decision{}, core.ErrNotAvailable
+	}
+	return s.openPlexPlan(ctx, pr, p, func(context.Context) (sessions.PlexAdmission, error) {
+		return sessions.PlexAdmission{
+			Source: ps, Media: ps.Info, Caps: p.caps, Options: p.opts, PreferRemux: p.mde, Protocol: p.protocol,
+			RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,
+		}, nil
+	})
 }
 
 type plexEncoderNote interface {
@@ -137,7 +163,9 @@ func (s *Server) adoptBrokerTimeline(ctx context.Context, pr *Request, key core.
 		caps.ClientID = pr.ClientID
 	}
 	play := playRequest{key: key, caps: caps, sessionID: sessionID, audioSel: -1, subSel: -1}
-	if err := s.publishBrokerPlayback(ctx, pr, &play, ps, core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true}); err != nil {
+	play.opts.DirectPlay = true
+	play.opts.DirectStream = true
+	if _, err := s.publishBrokerPlayback(ctx, pr, &play, ps); err != nil {
 		s.log.Info("timeline broker adopt failed", "key", key, "err", err)
 		return ""
 	}

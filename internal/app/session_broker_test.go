@@ -171,7 +171,7 @@ func (activityTranscoder) Probe(context.Context, string) (*core.MediaInfo, error
 	return nil, core.ErrNotAvailable
 }
 func (activityTranscoder) Decide(core.MediaInfo, core.ClientCaps, core.DecideOptions) core.Decision {
-	return core.Decision{Kind: core.DecisionDirectPlay}
+	return core.Decision{Kind: core.DecisionDirectPlay, Reason: "planned"}
 }
 func (activityTranscoder) StartHLS(context.Context, core.HLSRequest) (core.HLSSession, error) {
 	return nil, core.ErrNotAvailable
@@ -197,7 +197,7 @@ func TestOwnerActivityIncludesAndStopsLegacyAndBrokerSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	admitted := sessions.PlexAdmission{Source: plexSource, Decision: core.Decision{Kind: core.DecisionDirectPlay}, Media: plexSource.Info}
+	admitted := sessions.PlexAdmission{Source: plexSource, Media: plexSource.Info, Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}
 	plexCtx := sessions.WithPlexAdmission(ctx, func(context.Context) (sessions.PlexAdmission, error) {
 		return admitted, nil
 	})
@@ -206,6 +206,9 @@ func TestOwnerActivityIncludesAndStopsLegacyAndBrokerSessions(t *testing.T) {
 	plexPlan, err := broker.Plan(plexCtx, frontend.PlanRequest{Viewer: plexViewer, Device: plexDevice, Protocol: "plex", Item: core.MovieKey(1), Caps: core.ClientCaps{ClientID: "plex-tv", Protocol: "plex"}, Intent: frontend.PlayIntent{ClientSessionID: "plex-1", Options: core.DecideOptions{DirectPlay: true}}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if plexPlan.Decision.Reason != "planned" || plexPlan.Decision.Kind != core.DecisionDirectPlay {
+		t.Fatalf("plan decision = %+v, want the transcoder decision", plexPlan.Decision)
 	}
 	if _, err = broker.Open(plexCtx, frontend.OpenRequest{Viewer: plexViewer, Device: plexDevice, Protocol: "plex", PlanID: plexPlan.ID}); err != nil {
 		t.Fatal(err)

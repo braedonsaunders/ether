@@ -10,12 +10,17 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
-// PlexAdmission is a source the Plex adapter has already prepared. Plan stores
-// it; Open publishes it. The adapter does not prepare a second time.
+// PlexAdmission is the source and the version and track selections for one
+// Plex plan. Plan makes the direct, remux, or transcode decision from them.
+// Open publishes that decision. The adapter renders it and does not decide again.
 type PlexAdmission struct {
-	Source   *core.PlaySession
-	Decision core.Decision
-	Media    core.MediaInfo
+	Source               *core.PlaySession
+	Media                core.MediaInfo
+	Caps                 core.ClientCaps
+	Options              core.DecideOptions
+	PreferRemux          bool
+	Protocol             string
+	RemoteMaxBitrateKbps int
 }
 
 type plexAdmissionKey struct{}
@@ -96,16 +101,37 @@ func (b *Broker) planPlexAdmission(ctx context.Context, req frontend.PlanRequest
 	if len(media.Streams) == 0 && media.Container == "" {
 		media = ps.Info
 	}
+	caps := req.Caps
+	opts := req.Intent.Options
+	if admitted.Caps.ClientID != "" {
+		caps = admitted.Caps
+		opts = admitted.Options
+	}
+	protocol := admitted.Protocol
+	if protocol == "" {
+		protocol = string(req.Protocol)
+	}
+	preferRemux := admitted.PreferRemux || req.Intent.PreferRemux
+	dec, err := Decide(b.deps.Playback, b.deps.Transcoder, DecisionRequest{
+		Session: ps, Caps: caps, Options: opts, PreferRemux: preferRemux,
+		Protocol: protocol, RemoteMaxBitrateKbps: admitted.RemoteMaxBitrateKbps,
+	})
+	if err != nil {
+		return frontend.PlayPlan{}, err
+	}
+	req.Caps = caps
+	req.Intent.Options = opts
+	req.Intent.PreferRemux = preferRemux
 	etag := sourceRevision(ps)
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
-	b.plans[id] = brokerPlan{request: req, source: ps, decision: admitted.Decision, created: b.deps.Now(), etag: etag, external: true}
+	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now(), etag: etag, external: true}
 	stored = true
 	b.mu.Unlock()
-	return frontend.PlayPlan{ID: id, Media: publicMedia(media), Decision: admitted.Decision, ETag: etag}, nil
+	return frontend.PlayPlan{ID: id, Media: publicMedia(media), Decision: dec, ETag: etag}, nil
 }
 
 // reusePlexSession updates the broker session already published for a Plex

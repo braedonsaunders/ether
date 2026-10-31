@@ -81,15 +81,16 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		entry, _ = s.transcodes.get(p.sessionID)
+	} else if dec, err := s.publishBrokerPlayback(ctx, pr, replayPlay(p, entry), ps); err != nil {
+		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
+		writeHTTPError(w, http.StatusServiceUnavailable)
+		return
+	} else {
+		entry.decision = dec
 	}
 	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
-	if err := s.publishBrokerPlayback(ctx, pr, &p, ps, entry.decision); err != nil {
-		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
-		writeHTTPError(w, http.StatusServiceUnavailable)
-		return
-	}
 
 	dec := entry.decision
 	if dec.Kind == core.DecisionDirectPlay {
