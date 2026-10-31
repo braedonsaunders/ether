@@ -153,6 +153,40 @@ func browseOrder(q core.BrowseQuery) string {
 	return col + " " + dir
 }
 
+// CountBrowsable is the library size behind a view list. The (type, browsable,
+// adult) prefix of catalog_titles_type_browse_sort answers it without reading
+// title rows.
+func (c *Catalog) CountBrowsable(ctx context.Context, typ core.MediaType) (int, error) {
+	if c == nil || c.db == nil {
+		return 0, fmt.Errorf("catalog: count unavailable")
+	}
+	if typ != core.TypeMovie && typ != core.TypeShow {
+		return 0, fmt.Errorf("catalog: count: unsupported type %q", typ)
+	}
+	gen := c.writeGen.Load()
+	minute := c.minuteBucket()
+	key := "count-browsable:" + string(typ)
+	c.cacheMu.RLock()
+	if ent, ok := c.countCache[key]; ok && ent.gen == gen && ent.minute == minute {
+		c.cacheMu.RUnlock()
+		return ent.total, nil
+	}
+	c.cacheMu.RUnlock()
+	var total int
+	if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles WHERE type=? AND browsable=1 AND adult=0`, string(typ)).Scan(&total); err != nil {
+		return 0, err
+	}
+	if c.writeGen.Load() == gen {
+		c.cacheMu.Lock()
+		if c.countCache == nil {
+			c.countCache = map[string]cachedCount{}
+		}
+		c.countCache[key] = cachedCount{total: total, gen: gen, minute: minute}
+		c.cacheMu.Unlock()
+	}
+	return total, nil
+}
+
 // Browse filters share one SQL statement; their combined parameters remain subject
 // to the database's statement-wide variable limit.
 func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {

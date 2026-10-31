@@ -80,4 +80,23 @@ func TestCurrentProgrammeDoesNotScanTheGuide(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
 		t.Fatalf("repeat channel checks scanned the guide: %s", elapsed)
 	}
+	before := s.policyReads.Load()
+	start = time.Now()
+	nowChannels, programmes, err := s.OnNow(ctx, owner, now, now.Add(24*time.Hour))
+	if err != nil || len(nowChannels) != sourcesN*channelsN {
+		t.Fatalf("on now channels %d %v", len(nowChannels), err)
+	}
+	if reads := s.policyReads.Load() - before; reads != 1 {
+		t.Fatalf("on now read policy %d times", reads)
+	}
+	perChannel := map[string]int{}
+	for _, programme := range programmes {
+		perChannel[programme.ChannelID]++
+		if perChannel[programme.ChannelID] > 2 {
+			t.Fatalf("on now loaded %d programmes for %s", perChannel[programme.ChannelID], programme.ChannelID)
+		}
+	}
+	if elapsed := time.Since(start); elapsed > 400*time.Millisecond {
+		t.Fatalf("on now scanned the guide: %s", elapsed)
+	}
 }

@@ -50,6 +50,9 @@ type ServiceDeps struct {
 	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
+	// CountBrowsable is the indexed library size. The view list uses it instead
+	// of browsing titles.
+	CountBrowsable func(context.Context, core.MediaType) (int, error)
 	// CreditItems enumerates cached credit-title keys without browsing or hydration.
 	CreditItems   func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
 	AiredEpisodes func(context.Context, core.RatingKey, int, int) (core.Page, error)
@@ -198,6 +201,33 @@ func (s *Service) Views(ctx context.Context, viewer *core.Viewer) ([]frontend.Vi
 	return out, nil
 }
 
+// LibraryCount is the indexed size of one library. It does not browse or
+// hydrate titles. A viewer who cannot open the library gets zero.
+func (s *Service) LibraryCount(ctx context.Context, viewer *core.Viewer, viewID string) (int, error) {
+	if s == nil || s.d.CountBrowsable == nil {
+		return 0, errors.New("experience: library count unavailable")
+	}
+	v, err := s.viewer(ctx, viewer)
+	if err != nil {
+		return 0, err
+	}
+	var library Library
+	var found bool
+	for _, lib := range s.libraries() {
+		if strconv.Itoa(lib.ID) == viewID {
+			library, found = lib, true
+			break
+		}
+	}
+	if !found {
+		return 0, core.ErrNotFound
+	}
+	if !SectionAllowed(v, library.ID) {
+		return 0, nil
+	}
+	return s.d.CountBrowsable(ctx, library.Type)
+}
+
 // LibraryItems scans catalogue pages and filters before applying the requested page.
 func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device core.Device, viewID string, q frontend.ItemQuery) (core.Page, error) {
 	if q.StartAt != 0 && q.AdjacentTo != 0 {
@@ -285,6 +315,10 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	totalMatched := 0
 	bounded := !q.Recursive && q.AdjacentTo == 0 && q.StartAt == 0 && q.Limit > 0
 	expand := q.Recursive && library.Type == core.TypeShow
+	// A plain library probe (the view list asks for one title) can use the
+	// catalogue total when this viewer has no extra visibility filter. The
+	// browse total already excludes adult and hidden titles.
+	plainTotal := bounded && !expand && q.Watched == nil && q.Favorite == nil && len(q.Types) == 0 && q.Season == nil && plainItemFilter(q.Filter) && v.MaxContentRating == "" && (v.IsOwner || len(v.AllowedSections) == 0) && s.d.Visibility.FilterAvailable == nil && s.d.Visibility.Policy == nil
 	if expand && wantShowEpisodes && s.d.Grandchildren == nil {
 		return core.Page{}, errors.New("experience: recursive library unavailable")
 	}
@@ -496,6 +530,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 				totalMatched++
 			}
 		}
+		if plainTotal && len(candidatesPage) == len(page.Items) && totalMatched == len(candidatesPage) && len(permitted) >= q.Limit {
+			return core.Page{Items: permitted[:q.Limit], Total: page.Total}, nil
+		}
 		offset += len(page.Items)
 		if offset >= page.Total {
 			break
@@ -533,6 +570,10 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		end = min(start+q.Limit, total)
 	}
 	return core.Page{Items: permitted[start:end], Total: total}, nil
+}
+
+func plainItemFilter(f core.Filter) bool {
+	return !f.KnownAddedDate && len(f.ExcludeKeys) == 0 && f.Type == "" && len(f.Genres) == 0 && f.YearFrom == 0 && f.YearTo == 0 && f.MinRating == 0 && f.MaxRuntime == 0 && f.MinRuntime == 0 && len(f.Languages) == 0 && len(f.Countries) == 0 && len(f.ContentRatings) == 0 && f.MaxContentRating == "" && f.Collection == 0 && f.Person == 0 && f.Studio == "" && f.FirstCharacter == "" && f.Query == ""
 }
 
 func (s *Service) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {

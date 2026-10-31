@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/catalog"
@@ -38,6 +39,7 @@ type Service struct {
 	transMu          sync.RWMutex
 	transcodes       map[string]core.HLSSession
 	o                Options
+	policyReads      atomic.Uint64
 	mu               sync.Mutex
 	sessions         map[string]*session
 	nextSubscription int64 // guarded by mu
@@ -370,6 +372,7 @@ func (s *Service) DeleteChannel(ctx context.Context, id string) error {
 	return err
 }
 func (s *Service) Policy(ctx context.Context, userID int64) (Policy, error) {
+	s.policyReads.Add(1)
 	p := Policy{UserID: userID}
 	var b []byte
 	err := s.o.DB.QueryRowContext(ctx, `SELECT data FROM livetv_policies WHERE user_id=?`, userID).Scan(&b)
@@ -416,11 +419,34 @@ func (s *Service) allowed(ctx context.Context, u *core.User, c Channel, p *Progr
 	return s.allowedWithLookup(ctx, u, c, p, lookup, false)
 }
 
+type loadedPolicyKey struct{}
+
+type loadedPolicy struct {
+	id  int64
+	pol Policy
+}
+
+// withPolicy reads the viewer's Live TV policy once and reuses it for every
+// channel check on this request.
+func (s *Service) withPolicy(ctx context.Context, u *core.User) (context.Context, Policy, error) {
+	if u == nil {
+		return ctx, Policy{}, nil
+	}
+	if loaded, ok := ctx.Value(loadedPolicyKey{}).(loadedPolicy); ok && loaded.id == u.ID {
+		return ctx, loaded.pol, nil
+	}
+	pol, err := s.Policy(ctx, u.ID)
+	if err != nil {
+		return ctx, Policy{}, err
+	}
+	return context.WithValue(ctx, loadedPolicyKey{}, loadedPolicy{id: u.ID, pol: pol}), pol, nil
+}
+
 func (s *Service) allowedWithLookup(ctx context.Context, u *core.User, c Channel, p *Programme, lookup func(context.Context, core.RatingKey) (*core.Title, error), strict bool) bool {
 	if u == nil || !c.Enabled {
 		return false
 	}
-	pol, err := s.Policy(ctx, u.ID)
+	_, pol, err := s.withPolicy(ctx, u)
 	if err != nil {
 		return false
 	}
@@ -502,6 +528,10 @@ func (s *Service) AllowedChannelCached(ctx context.Context, u *core.User, id str
 	return nil
 }
 func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel, error) {
+	ctx, _, err := s.withPolicy(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	cs, err := s.Channels(ctx)
 	if err != nil {
 		return nil, err
@@ -626,6 +656,11 @@ func (s *Service) Guide(ctx context.Context, u *core.User, from, until time.Time
 	if !until.After(from) || until.Sub(from) > 7*24*time.Hour {
 		return nil, fmt.Errorf("guide window must be positive and at most 7 days")
 	}
+	var err error
+	ctx, _, err = s.withPolicy(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	cs, err := s.Channels(ctx)
 	if err != nil {
 		return nil, err
@@ -648,6 +683,79 @@ func (s *Service) Guide(ctx context.Context, u *core.User, from, until time.Time
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
 	return out, nil
 }
+
+// OnNow is the bounded guide used to build a live row: one policy read, then
+// at most the current and next programme for each enabled channel.
+func (s *Service) OnNow(ctx context.Context, u *core.User, now, until time.Time) ([]Channel, []Programme, error) {
+	if u == nil || !until.After(now) {
+		return nil, nil, fmt.Errorf("invalid on-now window")
+	}
+	ctx, _, err := s.withPolicy(ctx, u)
+	if err != nil {
+		return nil, nil, err
+	}
+	cs, err := s.Channels(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	channels := make([]Channel, 0, len(cs))
+	programmes := make([]Programme, 0, len(cs)*2)
+	for _, c := range cs {
+		if !c.Enabled {
+			continue
+		}
+		ps, err := s.programmesLimit(ctx, c, now, until, 2)
+		if err != nil {
+			return nil, nil, err
+		}
+		var current *Programme
+		if len(ps) > 0 {
+			current = &ps[0]
+		}
+		if !s.allowed(ctx, u, c, current) {
+			continue
+		}
+		c.StreamURL = ""
+		c.StreamSources = nil
+		channels = append(channels, c)
+		programmes = append(programmes, ps...)
+	}
+	return channels, programmes, nil
+}
+
+func (s *Service) programmesLimit(ctx context.Context, c Channel, from, until time.Time, limit int) ([]Programme, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	if c.Kind == "virtual" {
+		ps := Schedule(c, from, until)
+		if len(ps) > limit {
+			ps = ps[:limit]
+		}
+		return ps, nil
+	}
+	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND end_ms>? AND start_ms<? ORDER BY start_ms LIMIT ?`, guideSource(c), c.GuideID, from.UnixMilli(), until.UnixMilli(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Programme, 0, limit)
+	for rows.Next() {
+		var b []byte
+		var p Programme
+		if err = rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		if err = json.Unmarshal(b, &p); err != nil {
+			return nil, err
+		}
+		p.ChannelID = c.ID
+		p.ID = fmt.Sprintf("%s-%d", c.ID, p.Start.UnixMilli())
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (s *Service) Sources(ctx context.Context) ([]Source, error) {
 	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_sources ORDER BY id`)
 	if err != nil {
