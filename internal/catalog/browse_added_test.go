@@ -72,39 +72,73 @@ func TestRecentShowsWalkMatchesSortedQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	asOf := c.now()
-	// A short step puts ties at the page's last date across steps.
+	premiere := map[core.RatingKey]bool{}
+	for i := 0; i < 1600; i += 9 {
+		premiere[core.ShowKey(int64(1000+i))] = true
+	}
+	// A short step puts ties at the page's last date across steps. That case
+	// is the unfiltered catalogue; the other filters repeat the same walk.
 	defer func(n int) { recentWalkBatch = n }(recentWalkBatch)
-	for _, batch := range []int{256, 7} {
-		recentWalkBatch = batch
-		for fi, f := range []core.Filter{
-			{Type: core.TypeShow},
-			{Type: core.TypeShow, KnownAddedDate: true},
-			{Type: core.TypeShow, KnownAddedDate: true, Genres: []string{"Comedy"}},
-			{Type: core.TypeShow, ExcludeKeys: []core.RatingKey{core.ShowKey(1002), core.ShowKey(1003), core.ShowKey(1004)}},
-		} {
-			where, args, err := c.browseWhere(f)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var total int
-			if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total); err != nil {
-				t.Fatal(err)
-			}
-			pages := [][2]int{{0, 1}, {0, 24}, {0, 50}, {13, 7}, {200, 50}, {total - 30, 50}, {total + 5, 10}}
-			for offset := range 150 {
-				if fi > 0 || batch != 256 {
-					break
-				}
-				// Every page end, so some fall on a premiere-dated series.
+	filters := []core.Filter{
+		{Type: core.TypeShow},
+		{Type: core.TypeShow, KnownAddedDate: true},
+		{Type: core.TypeShow, KnownAddedDate: true, Genres: []string{"Comedy"}},
+		{Type: core.TypeShow, ExcludeKeys: []core.RatingKey{core.ShowKey(1002), core.ShowKey(1003), core.ShowKey(1004)}},
+	}
+	for fi, f := range filters {
+		where, args, err := c.browseWhere(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var total int
+		if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total); err != nil {
+			t.Fatal(err)
+		}
+		order := sortedAdded(t, c, where, args, asOf, 0, max(total, 1))
+		if len(order) != total {
+			t.Fatalf("%+v sorted %d, counted %d", f, len(order), total)
+		}
+		pages := [][2]int{{0, 1}, {0, 24}, {0, 50}, {13, 7}, {200, 50}, {total - 30, 50}, {total + 5, 10}}
+		if fi == 0 {
+			// Page ends across the newest series. A stride still lands on a
+			// premiere-dated series; checking every offset repeats the walk.
+			var sawPremiere bool
+			for offset := 0; offset < min(total, 150); offset += 15 {
 				pages = append(pages, [2]int{offset, 1})
+				if premiere[order[offset].key] {
+					sawPremiere = true
+				}
 			}
+			if !sawPremiere {
+				for i, row := range order[:min(len(order), 150)] {
+					if premiere[row.key] {
+						pages = append(pages, [2]int{i, 1})
+						sawPremiere = true
+						break
+					}
+				}
+			}
+			if !sawPremiere {
+				t.Fatal("newest window has no premiere-dated series")
+			}
+		}
+		batches := []int{256}
+		if fi == 0 {
+			batches = []int{256, 7}
+		}
+		for _, batch := range batches {
+			recentWalkBatch = batch
 			for _, page := range pages {
 				offset, limit := max(page[0], 0), page[1]
 				got, ok, err := c.recentShowsPage(ctx, where, args, asOf, offset, limit)
 				if err != nil || !ok {
-					t.Fatalf("%+v %v: walk ok=%v err=%v", f, page, ok, err)
+					t.Fatalf("batch %d %+v %v: walk ok=%v err=%v", batch, f, page, ok, err)
 				}
-				want := sortedAdded(t, c, where, args, asOf, offset, limit)
+				end := min(offset+limit, len(order))
+				want := []addedKey{}
+				if offset < len(order) {
+					want = order[offset:end]
+				}
 				if !slices.Equal(got, want) {
 					t.Fatalf("batch %d %+v page %v (total %d):\n got %v\nwant %v", batch, f, page, total, got, want)
 				}
