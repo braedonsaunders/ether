@@ -62,6 +62,15 @@ func applySubtitleProfiles(caps *core.ClientCaps) {
 	}
 }
 
+func profileEqualsAny(value, want string) bool {
+	for _, v := range strings.Split(want, "|") {
+		if strings.EqualFold(value, strings.TrimSpace(v)) {
+			return true
+		}
+	}
+	return false
+}
+
 func profileName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	switch s {
@@ -117,6 +126,247 @@ func profileConditions(cs []core.ClientProfileCondition, info core.MediaInfo, st
 	return match && !unknown
 }
 
+// profileVideoRangeValue is the Jellyfin VideoRangeType a codec condition
+// compares. Eight-bit untagged 4:2:0 is SDR once Dolby Vision is known to be
+// absent, the same evidence as frontend.KnownSDR. A picture whose range cannot
+// be classified stays empty so a required condition fails closed and playback
+// can fall back to an encode. Equals and NotEquals against the single token
+// DOVI still treat every Dolby Vision profile as DOVI, which is how clients
+// reject profile 5 and every other profile together.
+func profileVideoRangeValue(stream *core.StreamInfo, c core.ClientProfileCondition) string {
+	if stream == nil || (stream.Type != "" && stream.Type != "video") {
+		return ""
+	}
+	dv, known := dolbyVisionEvidence(stream)
+	if dv {
+		if dolbyVisionEquality(c) {
+			return "DOVI"
+		}
+		return dolbyVisionRangeType(stream)
+	}
+	if !known {
+		return ""
+	}
+	if value, ok := plainVideoRangeType(stream); ok {
+		return value
+	}
+	if dolbyVisionEquality(c) {
+		return "non-DOVI"
+	}
+	return ""
+}
+
+func dolbyVisionEquality(c core.ClientProfileCondition) bool {
+	if !strings.EqualFold(strings.TrimSpace(c.Value), "DOVI") {
+		return false
+	}
+	switch strings.ToLower(c.Operator) {
+	case "equals", "notequals":
+		return true
+	default:
+		return false
+	}
+}
+
+func dolbyVisionEvidence(stream *core.StreamInfo) (present, known bool) {
+	if stream.DolbyVision || (stream.DolbyVisionConfigurationPresent != nil && *stream.DolbyVisionConfigurationPresent) || dolbyVisionCodecTag(stream.CodecTag) {
+		return true, true
+	}
+	if stream.DolbyVisionConfigurationPresent != nil && !*stream.DolbyVisionConfigurationPresent {
+		return false, true
+	}
+	// AVC has no Dolby Vision configuration, so a missing container probe is
+	// still enough to classify the picture.
+	switch strings.ToLower(stream.Codec) {
+	case "h264", "avc":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func dolbyVisionCodecTag(tag string) bool {
+	switch strings.ToLower(tag) {
+	case "dvh1", "dvhe", "dva1", "dvav", "dovi", "dav1":
+		return true
+	default:
+		return false
+	}
+}
+
+func dolbyVisionRangeType(stream *core.StreamInfo) string {
+	profile := stream.DolbyVisionProfile
+	if stream.ProbedDolbyVisionProfile != nil && *stream.ProbedDolbyVisionProfile > 0 {
+		profile = *stream.ProbedDolbyVisionProfile
+	}
+	compat := stream.DolbyVisionCompatibilityID
+	hdr10Plus := stream.HDR10Plus != nil && *stream.HDR10Plus
+	switch profile {
+	case 5:
+		return "DOVI"
+	case 7:
+		if hdr10Plus {
+			return "DOVIWithELHDR10Plus"
+		}
+		return "DOVIWithEL"
+	case 8:
+		switch compat {
+		case 1:
+			if hdr10Plus {
+				return "DOVIWithHDR10Plus"
+			}
+			return "DOVIWithHDR10"
+		case 2:
+			return "DOVIWithSDR"
+		case 4:
+			return "DOVIWithHLG"
+		default:
+			return "DOVIInvalid"
+		}
+	case 10:
+		switch compat {
+		case 0:
+			return "DOVI"
+		case 1:
+			if hdr10Plus {
+				return "DOVIWithHDR10Plus"
+			}
+			return "DOVIWithHDR10"
+		case 2:
+			return "DOVIWithSDR"
+		case 4:
+			return "DOVIWithHLG"
+		default:
+			return "DOVIInvalid"
+		}
+	default:
+		return "DOVI"
+	}
+}
+
+func plainVideoRangeType(stream *core.StreamInfo) (string, bool) {
+	if stream.HDR10Plus != nil && *stream.HDR10Plus {
+		return "HDR10Plus", true
+	}
+	switch strings.ToLower(stream.ColorTransfer) {
+	case "smpte2084":
+		return "HDR10", true
+	case "arib-std-b67":
+		return "HLG", true
+	}
+	if frontend.KnownSDR(*stream) {
+		return "SDR", true
+	}
+	return "", false
+}
+
+// stampEncodedVideoRange records the picture an encode or Dolby Vision strip
+// actually delivers. An H.264 encode, and any tone-mapped encode, is 8-bit
+// SDR. An HEVC encode that keeps HDR keeps the base-layer transfer and drops
+// Dolby Vision metadata. Without this, a required VideoRangeType condition
+// stays unknown on the output and a playable title is refused.
+func stampEncodedVideoRange(s *core.StreamInfo, d core.Decision) {
+	if d.VideoCopy {
+		if !d.StripDolbyVision {
+			return
+		}
+		no := false
+		s.DolbyVision = false
+		s.DolbyVisionConfigurationPresent = &no
+		s.DolbyVisionProfile = 0
+		s.DolbyVisionCompatibilityID = 0
+		s.CodecTag = ""
+		return
+	}
+	keepHDR := strings.EqualFold(d.VideoCodec, "hevc") && !d.ToneMap && encodedPictureHDR(s)
+	transfer := "bt709"
+	if keepHDR {
+		if strings.EqualFold(s.ColorTransfer, "arib-std-b67") || s.DolbyVisionCompatibilityID == 4 {
+			transfer = "arib-std-b67"
+		} else {
+			transfer = "smpte2084"
+		}
+	}
+	no := false
+	s.DolbyVision = false
+	s.DolbyVisionConfigurationPresent = &no
+	s.DolbyVisionProfile = 0
+	s.DolbyVisionCompatibilityID = 0
+	s.CodecTag = ""
+	s.HDR10Plus = &no
+	s.ColorTransfer = transfer
+	if keepHDR {
+		if s.BitDepth < 10 {
+			s.BitDepth = 10
+		}
+		depth := s.BitDepth
+		s.BitsPerRawSample = &depth
+		return
+	}
+	s.BitDepth = 8
+	depth := 8
+	s.BitsPerRawSample = &depth
+	s.PixelFormat = "yuv420p"
+}
+
+// applyProfileRangeCaps lets a device profile's VideoRangeType list drive the
+// direct-play decision. Equals and EqualsAny name ranges the client can play.
+// A list that only says SDR does not advertise HDR or Dolby Vision.
+func applyProfileRangeCaps(caps core.ClientCaps) core.ClientCaps {
+	if caps.Profiles == nil {
+		return caps
+	}
+	for _, codec := range caps.Profiles.Codecs {
+		for _, cond := range codec.Conditions {
+			noteProfileRange(&caps, cond)
+		}
+		for _, cond := range codec.ApplyConditions {
+			noteProfileRange(&caps, cond)
+		}
+	}
+	return caps
+}
+
+func noteProfileRange(caps *core.ClientCaps, cond core.ClientProfileCondition) {
+	if !strings.EqualFold(cond.Property, "VideoRangeType") {
+		return
+	}
+	switch strings.ToLower(cond.Operator) {
+	case "equals", "equalsany":
+	default:
+		return
+	}
+	for _, part := range strings.Split(cond.Value, "|") {
+		switch strings.ToUpper(strings.TrimSpace(part)) {
+		case "HDR10", "HLG", "HDR10PLUS":
+			caps.HDR10 = true
+		case "DOVI", "DOVIWITHSDR", "DOVIWITHEL":
+			caps.DolbyVision = true
+		case "DOVIWITHHDR10", "DOVIWITHHLG", "DOVIWITHHDR10PLUS", "DOVIWITHELHDR10PLUS":
+			caps.HDR10 = true
+			caps.DolbyVision = true
+		}
+	}
+}
+
+func encodedPictureHDR(s *core.StreamInfo) bool {
+	dv := s.DolbyVision || (s.DolbyVisionConfigurationPresent != nil && *s.DolbyVisionConfigurationPresent) || dolbyVisionCodecTag(s.CodecTag)
+	switch strings.ToLower(s.ColorTransfer) {
+	case "smpte2084", "arib-std-b67":
+		return true
+	}
+	if !dv {
+		return false
+	}
+	if s.DolbyVisionProfile == 5 || (s.ProbedDolbyVisionProfile != nil && *s.ProbedDolbyVisionProfile == 5) {
+		return false
+	}
+	if s.DolbyVisionCompatibilityID == 2 {
+		return false
+	}
+	return s.DolbyVisionProfile == 7 || s.DolbyVisionProfile == 8 || s.DolbyVisionProfile == 10
+}
+
 // unknown reports an unsupported or unavailable required value separately
 // from a false condition, which can make an ApplyConditions profile inapplicable.
 func evaluateProfileConditions(cs []core.ClientProfileCondition, info core.MediaInfo, stream *core.StreamInfo) (bool, bool) {
@@ -124,15 +374,7 @@ func evaluateProfileConditions(cs []core.ClientProfileCondition, info core.Media
 		var value string
 		switch strings.ToLower(c.Property) {
 		case "videorangetype":
-			// This condition can establish DOVI versus non-DOVI without
-			// inventing an SDR/HDR subtype. Other comparisons stay unknown.
-			if stream != nil && strings.EqualFold(strings.TrimSpace(c.Value), "DOVI") && (strings.EqualFold(c.Operator, "Equals") || strings.EqualFold(c.Operator, "NotEquals")) {
-				if stream.DolbyVision || (stream.DolbyVisionConfigurationPresent != nil && *stream.DolbyVisionConfigurationPresent) {
-					value = "DOVI"
-				} else if stream.DolbyVisionConfigurationPresent != nil && !*stream.DolbyVisionConfigurationPresent {
-					value = "non-DOVI"
-				}
-			}
+			value = profileVideoRangeValue(stream, c)
 		case "videowidth", "width":
 			if stream != nil {
 				value = strconv.Itoa(stream.Width)
@@ -184,13 +426,17 @@ func evaluateProfileConditions(cs []core.ClientProfileCondition, info core.Media
 		case "equals":
 			ok = strings.EqualFold(value, want)
 		case "notequals":
-			ok = !strings.EqualFold(value, want)
-		case "equalsany":
-			for _, v := range strings.Split(want, "|") {
-				if strings.EqualFold(value, strings.TrimSpace(v)) {
-					ok = true
-				}
+			// Jellyfin Android TV rejects an unsupported range by NotEquals
+			// against a pipe-separated list, and only applies that profile when
+			// the picture is already in the list. A single token stays an exact
+			// comparison, which is what NotEquals DOVI clients send.
+			if strings.EqualFold(c.Property, "videorangetype") && strings.Contains(want, "|") {
+				ok = !profileEqualsAny(value, want)
+			} else {
+				ok = !strings.EqualFold(value, want)
 			}
+		case "equalsany":
+			ok = profileEqualsAny(value, want)
 		case "lessthanequal", "greaterthanequal":
 			a, e1 := strconv.ParseFloat(value, 64)
 			b, e2 := strconv.ParseFloat(want, 64)
@@ -339,10 +585,11 @@ func profileDeliveryAllowed(p *core.ClientCapabilityProfiles, d core.Decision, i
 					if d.H264Level > 0 {
 						s.Profile, s.BitDepth, s.FrameRate = "High", 8, d.H264FrameRate
 					}
-					no := false
-					s.DolbyVision, s.DolbyVisionConfigurationPresent = false, &no
 				}
 				s.BitrateKbps = 0
+				stampEncodedVideoRange(s, d)
+			} else if d.StripDolbyVision {
+				stampEncodedVideoRange(s, d)
 			}
 		} else if s.Type == "audio" && s.Index == d.AudioStream {
 			s.Codec = d.AudioCodec
@@ -445,6 +692,7 @@ func (b *Broker) h264EncoderVerified() bool {
 }
 
 func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (core.Decision, error) {
+	req.Caps = applyProfileRangeCaps(req.Caps)
 	r := DecisionRequest{Session: ps, Caps: req.Caps, Options: req.Intent.Options, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true}
 	d, err := Decide(b.deps.Playback, b.deps.Transcoder, r)
 	if err != nil || req.Caps.Profiles == nil {
