@@ -78,6 +78,14 @@ type Options struct {
 	// Sealer protects the stored API key, bound to its provider; nil
 	// stores it as given.
 	Sealer config.FieldSealer
+	// Certification receives the US certification (IMDb's, e.g. "TV-G")
+	// a provider reports with a fresh fetch, so the catalogue can rate
+	// titles TMDB leaves unrated. Nil ignores it.
+	Certification func(ctx context.Context, key core.RatingKey, label, provider string) error
+	// Unrated lists catalogue titles without a rating, by key after the
+	// given one; Run looks a few of them up each cycle (Backfill). Nil
+	// disables the backfill.
+	Unrated func(ctx context.Context, after core.RatingKey, limit int) ([]core.Title, error)
 }
 
 // refreshCall is one in-flight Refresh fetch for a title (singleflight,
@@ -107,6 +115,8 @@ type Service struct {
 	qmu      sync.Mutex
 	queued   map[core.RatingKey]bool
 	retryAt  map[core.RatingKey]time.Time
+	// backfillAfter is Backfill's position in the catalogue (by key).
+	backfillAfter core.RatingKey
 }
 
 func New(db *sql.DB, o Options) *Service {
@@ -424,6 +434,7 @@ func (s *Service) refresh(ctx context.Context, t *core.Title) ([]Badge, error) {
 	}
 	defer resp.Body.Close()
 	var badges []Badge
+	var certification string
 	switch {
 	case resp.StatusCode == http.StatusNotFound && cfg.Provider == "mdblist":
 		// MDBList does not know the title: a definite answer, cached like
@@ -436,9 +447,9 @@ func (s *Service) refresh(ctx context.Context, t *core.Title) ([]Badge, error) {
 			return nil, errors.New("rating response unreadable")
 		}
 		if cfg.Provider == "omdb" {
-			badges, e = parseOMDb(data)
+			badges, certification, e = parseOMDb(data)
 		} else {
-			badges, e = parseMDBList(data)
+			badges, certification, e = parseMDBList(data)
 		}
 		if e != nil {
 			return nil, e
@@ -452,27 +463,34 @@ func (s *Service) refresh(ctx context.Context, t *core.Title) ([]Badge, error) {
 		return nil, e
 	}
 	_, e = s.db.ExecContext(ctx, `INSERT INTO ratings_cache(item_key,provider,value,updated) VALUES(?,?,?,?) ON CONFLICT(item_key,provider) DO UPDATE SET value=excluded.value,updated=excluded.updated`, t.Key, cfg.Provider, string(raw), s.o.Now().Unix())
+	if e == nil && certification != "" && s.o.Certification != nil && (t.Type == core.TypeMovie || t.Type == core.TypeShow) {
+		e = s.o.Certification(ctx, t.Key, certification, cfg.Provider)
+	}
 	return badges, e
 }
-func parseOMDb(data []byte) ([]Badge, error) {
+
+// parseOMDb returns the badges and OMDb's "Rated" (IMDb's US certificate;
+// "N/A" when it has none).
+func parseOMDb(data []byte) ([]Badge, string, error) {
 	var response struct {
 		Response string
 		Error    string
+		Rated    string
 		Ratings  []struct {
 			Source string
 			Value  string
 		}
 	}
 	if json.Unmarshal(data, &response) != nil {
-		return nil, errors.New("invalid OMDb response")
+		return nil, "", errors.New("invalid OMDb response")
 	}
 	if response.Response == "False" {
 		// A title OMDb does not have is a definite answer (no ratings),
 		// cached like one; key, quota and server errors are retried.
 		if msg := strings.ToLower(response.Error); strings.Contains(msg, "not found") || strings.Contains(msg, "incorrect imdb id") {
-			return []Badge{}, nil
+			return []Badge{}, "", nil
 		}
-		return nil, errors.New("OMDb lookup failed")
+		return nil, "", errors.New("OMDb lookup failed")
 	}
 	var out []Badge
 	for _, r := range response.Ratings {
@@ -495,19 +513,22 @@ func parseOMDb(data []byte) ([]Badge, error) {
 			out = append(out, Badge{Source: source, Value: value, Scale: scale})
 		}
 	}
-	return out, nil
+	return out, response.Rated, nil
 }
 func valid(v, scale float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= scale }
-func parseMDBList(data []byte) ([]Badge, error) {
+
+// parseMDBList returns the badges and MDBList's US certification.
+func parseMDBList(data []byte) ([]Badge, string, error) {
 	var response struct {
-		Ratings []struct {
+		Certification string `json:"certification"`
+		Ratings       []struct {
 			Source string          `json:"source"`
 			Value  json.RawMessage `json:"value"`
 			Votes  int64           `json:"votes"`
 		}
 	}
 	if json.Unmarshal(data, &response) != nil {
-		return nil, errors.New("invalid MDBList response")
+		return nil, "", errors.New("invalid MDBList response")
 	}
 	var out []Badge
 	for _, r := range response.Ratings {
@@ -526,7 +547,61 @@ func parseMDBList(data []byte) ([]Badge, error) {
 			out = append(out, Badge{Source: r.Source, Value: value, Scale: scale, Votes: r.Votes})
 		}
 	}
-	return out, nil
+	return out, response.Certification, nil
+}
+
+// Backfill pacing: a few unrated titles per cycle keeps the owner's
+// provider quota (OMDb and MDBList free tiers allow about 1,000 calls a
+// day) mostly for badges people look at: at most ~580 lookups a day.
+const (
+	backfillEvery = 10 * time.Minute
+	backfillBatch = 4
+)
+
+// Backfill queues the next few catalogue titles without a rating that the
+// provider has not answered within the cache interval, so their
+// certification (Options.Certification) reaches titles nobody opens, such
+// as ones a library rule hides. It walks the catalogue by key and wraps.
+func (s *Service) Backfill(ctx context.Context) {
+	if s.o.Unrated == nil {
+		return
+	}
+	cfg, err := s.settings(ctx)
+	if err != nil || !cfg.Enabled {
+		return
+	}
+	queued := 0
+	for scanned := 0; queued < backfillBatch && scanned < 200; {
+		s.qmu.Lock()
+		after := s.backfillAfter
+		s.qmu.Unlock()
+		titles, err := s.o.Unrated(ctx, after, 50)
+		if err != nil {
+			return
+		}
+		if len(titles) == 0 {
+			s.qmu.Lock()
+			s.backfillAfter = 0
+			s.qmu.Unlock()
+			if after == 0 {
+				return
+			}
+			continue
+		}
+		for _, t := range titles {
+			scanned++
+			s.qmu.Lock()
+			s.backfillAfter = t.Key
+			s.qmu.Unlock()
+			if bs, e := s.Cached(ctx, &t); e != nil || bs != nil {
+				continue // answered within the cache interval
+			}
+			s.Queue(t)
+			if queued++; queued == backfillBatch {
+				return
+			}
+		}
+	}
 }
 
 // Queue is bounded, deduplicated and nonblocking; Run owns the network worker.
@@ -543,10 +618,14 @@ func (s *Service) Queue(t core.Title) {
 	}
 }
 func (s *Service) Run(ctx context.Context) {
+	backfill := time.NewTicker(backfillEvery)
+	defer backfill.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-backfill.C:
+			s.Backfill(ctx)
 		case t := <-s.queue:
 			job, cancel := context.WithTimeout(ctx, 20*time.Second)
 			_, err := s.Refresh(job, &t)

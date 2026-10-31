@@ -15,6 +15,7 @@ import { viewerName } from "../../components/pickers";
 import { t } from "../../i18n";
 import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer } from "../../lib/contract";
+import { canonicalRating } from "../../lib/contentRatings";
 import { useAsync } from "../../lib/hooks";
 import { PlexWatchSync } from "./sections/PlexWatchSync";
 import { ViewerLiveTVAccess } from "./sections/ViewerLiveTV";
@@ -191,10 +192,10 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
             <SettingsRow
               title={t("Maximum content rating")}
               control={
-                <div className="w-44">
+                <div className="w-56">
                   <Select
                     aria-label={t("Maximum content rating")}
-                    value={p.maxContentRating}
+                    value={canonicalRating(p.maxContentRating)}
                     onChange={(e) => patchPolicy({ maxContentRating: e.target.value })}
                   >
                     {CONTENT_RATINGS.map((r) => (

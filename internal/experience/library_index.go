@@ -3,7 +3,7 @@ package experience
 import (
 	"context"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
@@ -43,7 +43,7 @@ func (s *Service) indexedLibraryPage(ctx context.Context, v *core.User, library 
 }
 
 func tightenRating(current, extra string) string {
-	if extra != "" && (current == "" || catalog.RatingRank(extra) < catalog.RatingRank(current)) {
+	if extra != "" && (current == "" || int(contentrating.LevelOf(extra)) < int(contentrating.LevelOf(current))) {
 		return extra
 	}
 	return current

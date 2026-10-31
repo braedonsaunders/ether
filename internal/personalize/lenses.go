@@ -9,8 +9,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // Lens rows: the Movies and TV Shows pages' own rows (kinds.go). Each is
@@ -577,7 +577,7 @@ func (b *builder) genOccasions() []*candRow {
 	familyFilms := 0
 	for _, e := range liked {
 		if anyShared(normGenres(e.Title.Genres), []string{"Family", "Animation"}) && e.Title.ContentRating != "" &&
-			recommend.ContentRatingAllowed(e.Title.ContentRating, "PG") {
+			contentrating.Allowed(e.Title.ContentRating, "PG") {
 			familyFilms++
 		}
 	}
@@ -624,7 +624,7 @@ func (b *builder) genOccasions() []*candRow {
 		occasion(occasionFamilyNight, "Family Night", fmt.Sprintf("You've enjoyed %d family and animated films: picks everyone can watch together.", n), src,
 			func(t *core.Title) bool {
 				return anyShared(normGenres(t.Genres), []string{"Family", "Animation"}) && t.ContentRating != "" &&
-					recommend.ContentRatingAllowed(t.ContentRating, "PG") && weightedRating(t) >= 6.3
+					contentrating.Allowed(t.ContentRating, "PG") && weightedRating(t) >= 6.3
 			},
 			func(t *core.Title) string { return t.ContentRating + " · " + runtimePhrase(t) })
 	}

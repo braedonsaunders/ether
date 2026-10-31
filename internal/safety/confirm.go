@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
@@ -138,7 +138,7 @@ func readFreshPlayback(ctx context.Context, tx *sql.Tx, u *core.User) (*core.Use
 		sections = plex
 	}
 	out.AllowedSections = append([]int(nil), sections...)
-	if policy.MaxContentRating != "" && (out.MaxContentRating == "" || catalog.RatingRank(policy.MaxContentRating) < catalog.RatingRank(out.MaxContentRating)) {
+	if policy.MaxContentRating != "" && (out.MaxContentRating == "" || int(contentrating.LevelOf(policy.MaxContentRating)) < int(contentrating.LevelOf(out.MaxContentRating))) {
 		out.MaxContentRating = policy.MaxContentRating
 	}
 	if policy.StreamLimit > 0 && (out.StreamLimit <= 0 || policy.StreamLimit < out.StreamLimit) {

@@ -58,6 +58,17 @@ import { createCacheMock } from "./cache";
 import { createCalendarMock } from "./calendar";
 import { createLiveTVMock } from "./livetv";
 import { TEMPLATES } from "./templates";
+import { NOT_RATED, RATING_LEVELS, canonicalRating } from "../lib/contentRatings";
+
+/** A few other boards' labels per level, as the server lists them. */
+const MOCK_EQUIVALENTS: Record<string, string[]> = {
+  G: ["gb/U", "ca/G", "de/0", "br/L"],
+  "TV-Y7": ["de/6", "se/7"],
+  PG: ["gb/PG", "ca/PG", "br/10"],
+  "PG-13": ["gb/12A", "ca/14A", "de/12"],
+  R: ["gb/15", "ca/18A", "de/16"],
+  "NC-17": ["gb/18", "de/18"],
+};
 
 const NOW = () => new Date();
 
@@ -626,7 +637,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       case "runtime":
         return [t.runtimeMinutes ?? 0];
       case "contentRating":
-        return t.contentRating ? [t.contentRating] : [];
+        return [t.contentRating ? canonicalRating(t.contentRating) : NOT_RATED];
       case "released":
         return [t.released];
       case "addedAt":
@@ -645,6 +656,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
   }
 
   function matches(t: FakeTitle, r: Rule): boolean {
+    if (r.field === "contentRating") return ratingMatches(t, r);
     const vals = fieldValues(t, r.field);
     const eq = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
     switch (r.op) {
@@ -677,6 +689,29 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return vals.some((x) => String(x) >= since);
       }
     }
+  }
+
+  /** Content ratings compare by level, as on the server. */
+  function ratingMatches(t: FakeTitle, r: Rule): boolean {
+    const have = fieldValues(t, "contentRating")[0] as string;
+    const want = (Array.isArray(r.value) ? r.value : [r.value]).map((v) =>
+      canonicalRating(String(v)),
+    );
+    const bound = want[0] ?? "";
+    const order = RATING_LEVELS.map((l) => l.value);
+    switch (r.op) {
+      case "in":
+      case "is":
+        return want.includes(have);
+      case "notIn":
+      case "isNot":
+        return !want.includes(have);
+      case "gte":
+        return have !== NOT_RATED && order.indexOf(have) >= order.indexOf(bound);
+      case "lte":
+        return have !== NOT_RATED && order.indexOf(have) <= order.indexOf(bound);
+    }
+    return false;
   }
 
   function evaluate(spec: CollectionSpec) {
@@ -2572,6 +2607,25 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const facet = q.get("facet");
         const type = q.get("type");
         const pool = catalog.filter((t) => !type || type === "mixed" || t.type === type);
+        if (facet === "contentRating") {
+          const level = (t: FakeTitle) => fieldValues(t, "contentRating")[0];
+          return json({
+            values: [
+              ...RATING_LEVELS.map((l) => ({
+                key: l.value,
+                title: l.labels,
+                count: pool.filter((t) => level(t) === l.value).length,
+                labels: [...l.labels.split(" · "), ...(MOCK_EQUIVALENTS[l.value] ?? [])],
+              })),
+              {
+                key: NOT_RATED,
+                title: NOT_RATED,
+                count: pool.filter((t) => level(t) === NOT_RATED).length,
+                labels: [NOT_RATED],
+              },
+            ],
+          });
+        }
         const counts = new Map<string, number>();
         for (const t of pool) {
           const vals =

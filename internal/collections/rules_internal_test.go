@@ -305,3 +305,61 @@ func TestExtractObjectToleratesModelNoise(t *testing.T) {
 		}
 	}
 }
+
+// Content ratings match by age level, so film and TV labels (and other
+// boards' labels) are one choice; "NR" picks titles without a rating.
+func TestContentRatingRulesMatchByLevel(t *testing.T) {
+	ec := &evalCtx{now: time.Now()}
+	for _, c := range []struct {
+		crating string
+		r       core.CollectionRule
+		want    bool
+	}{
+		{"TV-PG", cr("contentRating", "in", []string{"PG"}), true},
+		{"PG", cr("contentRating", "is", "TV-PG"), true},
+		{"gb/PG", cr("contentRating", "in", []string{"TV-PG"}), true},
+		{"TV-14", cr("contentRating", "in", []string{"PG-13"}), true},
+		{"TV-14", cr("contentRating", "lte", "PG-13"), true},
+		{"TV-MA", cr("contentRating", "gte", "R"), true},
+		{"TV-MA", cr("contentRating", "notIn", []string{"G", "PG"}), true},
+		{"", cr("contentRating", "in", []string{"NR"}), true},
+		{"NR", cr("contentRating", "in", []string{"Not rated"}), true},
+		{"", cr("contentRating", "notIn", []string{"G", "PG"}), true},
+		{"", cr("contentRating", "lte", "R"), false},
+		{"PG", cr("contentRating", "in", []string{"Yes"}), false},
+	} {
+		r, err := compileRule(c.r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := r.match(&entry{key: core.MovieKey(1), typ: core.TypeMovie, crating: c.crating}, ec); got != c.want {
+			t.Errorf("%q %s %s: got %v", c.crating, c.r.Op, c.r.Value, got)
+		}
+	}
+	s := &Service{}
+	for _, c := range []struct {
+		r    core.CollectionRule
+		want url.Values // nil: not pushed down
+	}{
+		{cr("contentRating", "in", []string{"TV-G", "TV-PG"}), url.Values{"certification": {"G|PG"}, "certification_country": {"US"}}},
+		{cr("contentRating", "lte", "TV-14"), url.Values{"certification.lte": {"PG-13"}, "certification_country": {"US"}}},
+		{cr("contentRating", "in", []string{"PG", "NR"}), nil},
+		{cr("contentRating", "in", []string{"TV-Y7"}), nil},
+	} {
+		r, err := compileRule(c.r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		q := url.Values{}
+		ok := s.translate(t.Context(), r, "movie", q)
+		if c.want == nil {
+			if ok || len(q) != 0 {
+				t.Errorf("%s pushed down: %v", c.r.Value, q)
+			}
+			continue
+		}
+		if !ok || !reflect.DeepEqual(q, c.want) {
+			t.Errorf("%s %s pushdown %v %v", c.r.Op, c.r.Value, ok, q)
+		}
+	}
+}

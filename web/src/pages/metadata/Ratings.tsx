@@ -159,7 +159,7 @@ export function RatingSources({
             <SettingsSection
               title={t("Rating sources")}
               description={t(
-                "Show IMDb and Rotten Tomatoes scores in Plex using your own OMDb or MDBList key. Scores a source doesn't have stay blank.",
+                "Show IMDb and Rotten Tomatoes scores in Plex using your own OMDb or MDBList key. Scores a source doesn't have stay blank. The source's US content rating (IMDb's, such as TV-G) also rates titles TMDB leaves unrated.",
               )}
             >
               <SettingsRow

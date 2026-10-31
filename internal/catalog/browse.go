@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -307,9 +308,9 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		}
 	}
 	if f.MaxContentRating != "" {
-		if rank := RatingRank(f.MaxContentRating); rank > 0 {
+		if level := contentrating.LevelOf(f.MaxContentRating); level != contentrating.Unrated {
 			conds = append(conds, "t.content_rating_rank>0 AND t.content_rating_rank<=?")
-			args = append(args, rank)
+			args = append(args, int(level))
 		} else {
 			conds = append(conds, "0=1")
 		}
@@ -391,6 +392,9 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 		q = `SELECT CAST((t.year/10)*10 AS TEXT), COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.year>0 GROUP BY (t.year/10)*10 ORDER BY (t.year/10)*10 DESC`
 	case "contentRating":
 		q = `SELECT t.content_rating, COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.content_rating<>'' GROUP BY t.content_rating ORDER BY MIN(t.content_rating_rank) ASC, t.content_rating ASC`
+	case "contentRatingLevel":
+		// Titles per contentrating.Level ("0" is unrated), mildest first.
+		q = `SELECT CAST(t.content_rating_rank AS TEXT), COUNT(*) FROM catalog_titles t WHERE ` + base + ` GROUP BY t.content_rating_rank ORDER BY t.content_rating_rank ASC`
 	case "firstCharacter":
 		q = `SELECT CASE WHEN t.sort_title < 'a' THEN '#' WHEN SUBSTR(t.sort_title, 1, 1) BETWEEN 'a' AND 'z' THEN UPPER(SUBSTR(t.sort_title, 1, 1)) ELSE '~' END, COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.sort_title<>'' GROUP BY 1 ORDER BY 1 ASC`
 	default:

@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -19,7 +19,7 @@ func TitleAllowed(policy AccessPolicy, viewer *core.User, title *core.Title) boo
 	if title == nil || title.Adult {
 		return false
 	}
-	if viewer != nil && catalog.RatingExceeds(title.ContentRating, viewer.MaxContentRating) {
+	if viewer != nil && contentrating.Exceeds(title.ContentRating, viewer.MaxContentRating) {
 		return false
 	}
 	return policy == nil || policy.Allowed(viewer, title)

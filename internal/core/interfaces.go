@@ -103,6 +103,9 @@ type FacetValue struct {
 	Key   string `json:"key"`
 	Title string `json:"title"`
 	Count int    `json:"count"`
+	// Labels are the equivalent values Key stands for, where a facet groups
+	// them (content-rating levels list every board's label).
+	Labels []string `json:"labels,omitempty"`
 }
 
 // ImageURL returns a full TMDB image URL for a path and size ("w500", "original").

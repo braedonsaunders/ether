@@ -178,6 +178,21 @@ func (c *Client) MovieDetails(ctx context.Context, id int64) (*MovieDetails, err
 	return &out, err
 }
 
+// MovieReleaseDates fetches only a movie's release dates and certifications
+// (the catalogue's rating re-selection; far lighter than MovieDetails).
+func (c *Client) MovieReleaseDates(ctx context.Context, id int64) (*ReleaseDates, error) {
+	var out ReleaseDates
+	err := c.getJSON(ctx, fmt.Sprintf("/movie/%d/release_dates", id), nil, &out)
+	return &out, err
+}
+
+// TVContentRatings fetches only a show's per-country content ratings.
+func (c *Client) TVContentRatings(ctx context.Context, id int64) (*ContentRatings, error) {
+	var out ContentRatings
+	err := c.getJSON(ctx, fmt.Sprintf("/tv/%d/content_ratings", id), nil, &out)
+	return &out, err
+}
+
 // TVDetails fetches full TV details.
 func (c *Client) TVDetails(ctx context.Context, id int64) (*TVDetails, error) {
 	q := values("append_to_response", "content_ratings,external_ids,credits,aggregate_credits,keywords,alternative_titles,images,similar,recommendations")

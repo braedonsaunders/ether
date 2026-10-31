@@ -112,6 +112,10 @@ CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts D
 	// Alternative titles (altTitles) for release-name matching, from the
 	// detail fetch; at most maxAltTitles per title, keyed for hydration.
 	store.Register("catalog", 15, `CREATE TABLE catalog_alt_titles (key INTEGER NOT NULL, title TEXT NOT NULL, PRIMARY KEY(key, title));`)
+	// content_rating_source records where content_rating came from; see
+	// rating.go. content_rating_rank now holds contentrating.Level, re-ranked
+	// once at startup (rankRatings).
+	store.Register("catalog", 16, `ALTER TABLE catalog_titles ADD COLUMN content_rating_source TEXT NOT NULL DEFAULT '';`)
 	store.Register("catalog", 7, `
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC);
 CREATE INDEX catalog_titles_browse_warm ON catalog_titles(browsable, detail, adult, popularity DESC, vote_count DESC);

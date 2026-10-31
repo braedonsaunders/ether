@@ -15,6 +15,8 @@ export interface TitleCard {
   backdrop?: string;
   rating?: number;
   contentRating?: string;
+  /** Where contentRating came from: "tmdb:US:6", "tmdb:CA", "omdb", "mdblist". */
+  contentRatingSource?: string;
   runtimeMinutes?: number;
   genres?: string[];
   showTitle?: string;
@@ -179,6 +181,8 @@ export interface FacetValue {
   key: string;
   title: string;
   count: number;
+  /** Equivalent values the key stands for (content-rating levels). */
+  labels?: string[];
 }
 
 export type LookupKind =

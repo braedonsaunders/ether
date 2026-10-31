@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 	"time"
@@ -38,7 +38,7 @@ func discoveryIdentity(t *core.Title) core.RatingKey {
 	return t.Key
 }
 func (d *Discovery) visible(u *core.User, t *core.Title) bool {
-	if u == nil || t == nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
+	if u == nil || t == nil || t.Adult || contentrating.Exceeds(t.ContentRating, u.MaxContentRating) {
 		return false
 	}
 	section := 1
