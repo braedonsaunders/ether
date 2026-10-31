@@ -382,10 +382,9 @@ func (i *instance) browseRoutes() error {
 				dto["EnableMediaSourceDisplay"] = len(sources) > 1
 			}
 		}
+		// A single item page is still browsing. Compatibility comes from the
+		// estimate plan above; DetailPlan runs only when playback starts.
 		i.versionItemFacts(dto, d.Versions)
-		if d.Title.Type == "movie" || d.Title.Type == "episode" {
-			i.applyResolvedDetail(r, v, token, key, versionID, dto)
-		}
 		tags, backdrops, imageMetadata := i.imageTags(r, d, token)
 		for key, value := range imageMetadata {
 			dto[key] = value

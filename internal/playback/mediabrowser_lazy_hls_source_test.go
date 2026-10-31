@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -222,22 +221,38 @@ func runMediaBrowserLazyHLSRealSegments(t *testing.T, protocol, container string
 		return w
 	}
 	response := request(http.MethodGet, "/Items/"+ids.RatingKeyGUID(movieKey), true)
-	var dto struct {
-		MediaSources []struct {
-			Id, ETag, TranscodingUrl, TranscodingContainer string
-			SupportsDirectPlay                             bool
-		}
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "TranscodingUrl") || strings.Contains(response.Body.String(), "account-secret") || strings.Contains(response.Body.String(), "private-reference") || counted.probes.Load() != 0 || engine.opens.Load() != 0 || counted.starts() != 0 {
+		t.Fatal("item page resolved a source", response.Code, response.Body.String(), counted.probes.Load(), engine.opens.Load())
 	}
-	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &dto) != nil || len(dto.MediaSources) != 1 {
-		t.Fatal(response.Code, response.Body.String())
+	req := frontend.PlanRequest{Viewer: friend, Device: device, Protocol: frontend.Protocol(protocol), Item: movieKey, Caps: caps, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: -1, SubtitleStream: -1}}}
+	resolved, err := b.DetailPlan(ctx, req)
+	if err != nil || resolved.DetailSource == "" || resolved.ETag == "" || !resolved.HLS {
+		t.Fatal(resolved, err)
 	}
-	offered := dto.MediaSources[0]
+	req.DetailSource, req.ExpectedSourceETag = resolved.DetailSource, resolved.ETag
+	issuer, ok := lazy.(frontend.LazyHLSStreams)
+	if !ok {
+		t.Fatal("lazy issuer has no HLS capability")
+	}
+	masterIssued, err := issuer.IssueHLS(ctx, "account-secret", req, frontend.StreamRequest{Format: frontend.StreamHLS})
+	if err != nil || !strings.HasPrefix(masterIssued, "/sessions/lazy/") {
+		t.Fatal(masterIssued, err)
+	}
+	offered := struct {
+		Id, ETag, TranscodingUrl, TranscodingContainer string
+		SupportsDirectPlay                             bool
+	}{Id: resolved.DetailSource, ETag: resolved.ETag, TranscodingUrl: "https://fixture.invalid" + masterIssued, SupportsDirectPlay: resolved.DirectPlay}
 	wireContainer := "ts"
 	if container == "fmp4" {
 		wireContainer = "mp4"
 	}
-	if offered.TranscodingContainer != wireContainer || !strings.HasPrefix(offered.TranscodingUrl, "https://fixture.invalid/sessions/lazy/") || strings.Contains(response.Body.String(), "account-secret") || strings.Contains(response.Body.String(), "private-reference") {
-		t.Fatal("invalid detail offer", response.Body.String())
+	offered.TranscodingContainer = wireContainer
+	wantHLS := "mpegts"
+	if container == "fmp4" {
+		wantHLS = "fmp4"
+	}
+	if resolved.HLSContainer != wantHLS {
+		t.Fatal("container metadata", resolved.HLSContainer)
 	}
 	scope := frontend.VersionScope{Viewer: friend, Device: device, Protocol: frontend.Protocol(protocol), Caps: caps}
 	target, err := b.ResolveDetailSource(ctx, scope, offered.Id)
