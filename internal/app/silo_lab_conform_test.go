@@ -160,6 +160,39 @@ func TestSiloLabConformance(t *testing.T) {
 		}
 	}
 	people := map[int64]labPersonFixture{}
+	videos := map[int64][]labTMDBVideo{}
+	if raw, ok := refDetail["videos"].([]any); ok {
+		clips := make([]labTMDBVideo, 0, len(raw))
+		for _, value := range raw {
+			row, _ := value.(map[string]any)
+			kind, _ := row["kind"].(string)
+			site, _ := row["site"].(string)
+			key, _ := row["site_key"].(string)
+			if key == "" || site == "" {
+				continue
+			}
+			tmdbType := map[string]string{"trailer": "Trailer", "teaser": "Teaser", "clip": "Clip", "featurette": "Featurette", "behindthescenes": "Behind the Scenes"}[strings.ToLower(strings.ReplaceAll(kind, " ", ""))]
+			if tmdbType == "" {
+				tmdbType = "Clip"
+			}
+			switch strings.ToLower(site) {
+			case "youtube":
+				site = "YouTube"
+			case "vimeo":
+				site = "Vimeo"
+			}
+			name, _ := row["name"].(string)
+			lang, _ := row["language"].(string)
+			official, _ := row["is_official"].(bool)
+			clips = append(clips, labTMDBVideo{Name: name, Site: site, Key: key, Type: tmdbType, Language: lang, Official: official})
+		}
+		if len(clips) > 0 {
+			videos[10378] = clips
+		}
+	}
+	if len(videos[10378]) == 0 {
+		t.Fatal("reference movie has no videos")
+	}
 	libraryKeywords := map[string][]string{}
 	for _, row := range rows {
 		section, _ := row.(map[string]any)
@@ -247,7 +280,7 @@ func TestSiloLabConformance(t *testing.T) {
 			}
 		}
 	}
-	app, viewer, cleanup := newAlignedLabFixture(t, jf, labFixtureOptions{Duration: 634 * time.Second, FrameRate: 1, AudioTitle: "Fixture audio", ConfigureTitle: seedTitle, People: people})
+	app, viewer, cleanup := newAlignedLabFixture(t, jf, labFixtureOptions{Duration: 634 * time.Second, FrameRate: 1, AudioTitle: "Fixture audio", ConfigureTitle: seedTitle, People: people, Videos: videos})
 	defer cleanup()
 	for _, key := range watched {
 		if title, err := app.catalog.Get(context.Background(), key); err != nil || title == nil || title.Key != key {

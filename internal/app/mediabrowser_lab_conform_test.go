@@ -232,6 +232,16 @@ type labPersonFixture struct {
 	IMDB string
 }
 
+// labTMDBVideo is one /videos result the extras resolver can list.
+type labTMDBVideo struct {
+	Name     string `json:"name"`
+	Site     string `json:"site"`
+	Key      string `json:"key"`
+	Type     string `json:"type"`
+	Language string `json:"iso_639_1"`
+	Official bool   `json:"official"`
+}
+
 type labFixtureOptions struct {
 	Duration  time.Duration
 	FrameRate int
@@ -242,6 +252,8 @@ type labFixtureOptions struct {
 	ConfigureTitle func(*core.Title)
 	// People is the fixture TMDB person table, filled while titles are seeded.
 	People map[int64]labPersonFixture
+	// Videos is the fixture TMDB /videos table, keyed by movie or TV id.
+	Videos map[int64][]labTMDBVideo
 	// PublicViewerPicker enables only explicitly named protocol pickers.
 	// Omitted entries retain the default-off security behavior.
 	PublicViewerPicker map[string]bool
@@ -468,6 +480,23 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "name": person.Name, "imdb_id": person.IMDB, "profile_path": "/fixture.jpg"})
 			return
 		}
+		if strings.HasSuffix(r.URL.Path, "/videos") && (strings.Contains(r.URL.Path, "/movie/") || strings.Contains(r.URL.Path, "/tv/")) {
+			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+			var id int64
+			if len(parts) >= 3 {
+				id, _ = strconv.ParseInt(parts[2], 10, 64)
+			}
+			var results []labTMDBVideo
+			if len(options) == 1 {
+				results = options[0].Videos[id]
+			}
+			if results == nil {
+				results = []labTMDBVideo{}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "results": results})
+			return
+		}
 		if (strings.HasPrefix(r.URL.Path, "/3/movie/") || strings.HasPrefix(r.URL.Path, "/3/tv/")) && (strings.HasSuffix(r.URL.Path, "/recommendations") || strings.HasSuffix(r.URL.Path, "/similar")) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"page":1,"total_pages":1,"total_results":1,"results":[{"id":987654321,"title":"Future hidden title","name":"Future hidden title","release_date":"2099-01-01","first_air_date":"2099-01-01"}]}`)
@@ -519,6 +548,10 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		if len(options) == 1 {
 			if err := configureLabPickers(c, options[0].PublicViewerPicker); err != nil {
 				return err
+			}
+			if len(options[0].Videos) > 0 {
+				c.Extras.Enabled = true
+				c.Extras.ResolverCommand = "/usr/bin/true"
 			}
 		}
 		for i := range c.Quality.Profiles {

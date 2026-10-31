@@ -13,7 +13,11 @@ func TestValidExtraRouteAndNestedValues(t *testing.T) {
 		want              bool
 	}{
 		{"/Items", `{"Items":[{"Overview":"one"},{"Overview":"two"}]}`, "$/Items[]/Overview", true},
+		{"/Items", `{"Items":[{},{"Overview":"one"}]}`, "$/Items[]/Overview", true},
 		{"/Items", `{"Items":[{"Overview":"one"},{"Overview":2}]}`, "$/Items[]/Overview", false},
+		{"/Items", `{"Items":[{"Nested":{}},{"Nested":{"Good":true}}]}`, "$/Items[]/Nested/Good", true},
+		{"/Items", `{"Items":[{"Nested":{"Good":false}},{"Nested":{"Good":true}}]}`, "$/Items[]/Nested/Good", true},
+		{"/Items", `{"Items":[{"Nested":{"Good":"no"}},{"Nested":{"Good":true}}]}`, "$/Items[]/Nested/Good", false},
 		{"/Items", `{"Items":[{"ImageTags":{"Primary":"x"}}]}`, "$/Items[]/ImageTags", true},
 		{"/Items", `{"Items":[{"ImageTags":{"Primary":2}}]}`, "$/Items[]/ImageTags", false},
 		{"/Items", `{"Items":[{"Genres":["a","b"]}]}`, "$/Items[]/Genres[]", true},

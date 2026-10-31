@@ -87,6 +87,7 @@ func (d *Document) extraPath(schema, value any, parts []string, depth int) (bool
 	if len(candidates) == 0 {
 		return true, false
 	}
+	invalid := false
 	for _, candidate := range candidates {
 		if arrayPart {
 			s, err := d.resolve(candidate)
@@ -95,30 +96,43 @@ func (d *Document) extraPath(schema, value any, parts []string, depth int) (bool
 			}
 			a, ok := v.([]any)
 			if !ok {
+				invalid = true
 				continue
 			}
-			if len(a) == 0 {
-				continue
-			}
-			all, any := true, false
+			all, found := true, false
 			for _, item := range a {
 				f, valid := d.extraPath(s["items"], item, parts[1:], depth+1)
-				any = any || f
-				if f && !valid {
+				if !f {
+					continue
+				}
+				found = true
+				if !valid {
 					all = false
 				}
 			}
-			if any && all {
+			// An element that omits the field is not an occurrence. Only a
+			// present, invalid value rejects the path.
+			if !found {
+				continue
+			}
+			if all {
 				return true, true
 			}
-		} else {
-			f, valid := d.extraPath(candidate, v, parts[1:], depth+1)
-			if f && valid {
-				return true, true
-			}
+			invalid = true
+			continue
+		}
+		f, valid := d.extraPath(candidate, v, parts[1:], depth+1)
+		if f && valid {
+			return true, true
+		}
+		if f && !valid {
+			invalid = true
 		}
 	}
-	return true, false
+	if invalid {
+		return true, false
+	}
+	return false, true
 }
 
 func (d *Document) strictValue(schema, value any, depth int) bool {
