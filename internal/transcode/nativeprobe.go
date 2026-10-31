@@ -608,14 +608,36 @@ func applyMKVTagBitrates(ctx context.Context, src io.ReaderAt, size int64, m *co
 			}
 			if id == mkvSeekHead {
 				seekTargets(b, segStart, segEnd, targets)
+				// No seek entry for tags means there is nothing to copy.
+				// Stop before a later attachment or cluster is touched.
+				if _, ok := targets[mkvTags]; !ok {
+					return false
+				}
 			} else {
 				tracks = b
 			}
 		}
 		off = stop
+		if _, ok := targets[mkvTags]; ok && stop > int64(len(s.head)) {
+			_, tracksAt := targets[mkvTracks]
+			if tracks != nil || tracksAt {
+				break
+			}
+		}
 	}
 	if tracks == nil {
-		return false
+		at, ok := targets[mkvTracks]
+		if !ok {
+			return false
+		}
+		id, start, stop, err := s.header(at, segEnd)
+		if err != nil || id != mkvTracks || stop-start > nativeElementLimit {
+			return false
+		}
+		tracks, err = s.read(start, int(stop-start))
+		if err != nil {
+			return false
+		}
 	}
 	parsed, err := mkvTracksOf(tracks)
 	if err != nil {
@@ -1097,15 +1119,67 @@ func (t mkvTrack) stream(index int) (core.StreamInfo, bool, error) {
 	return si, true, nil
 }
 
+func reducedFrameRate(ns uint64) float64 {
+	n, d := avReduce(1_000_000_000, ns, 30000)
+	if d == 0 {
+		return 0
+	}
+	return float64(n) / float64(d)
+}
+
+func avReduce(num, den, max uint64) (uint64, uint64) {
+	if den == 0 {
+		return 0, 0
+	}
+	g := num
+	for b := den; b != 0; {
+		g, b = b, g%b
+	}
+	num /= g
+	den /= g
+	if num <= max && den <= max {
+		return num, den
+	}
+	a0n, a0d := uint64(0), uint64(1)
+	a1n, a1d := uint64(1), uint64(0)
+	for den != 0 {
+		x := num / den
+		next := num - den*x
+		a2n := x*a1n + a0n
+		a2d := x*a1d + a0d
+		if a2n > max || a2d > max {
+			if a1n != 0 {
+				x = (max - a0n) / a1n
+			}
+			if a1d != 0 {
+				if y := (max - a0d) / a1d; y < x {
+					x = y
+				}
+			}
+			if den*(2*x*a1d+a0d) > num*a1d {
+				a1n = x*a1n + a0n
+				a1d = x*a1d + a0d
+			}
+			break
+		}
+		a0n, a0d = a1n, a1d
+		a1n, a1d = a2n, a2d
+		num, den = den, next
+	}
+	return a1n, a1d
+}
+
 func (t mkvTrack) video(si *core.StreamInfo) error {
 	if t.width == 0 || t.height == 0 || t.defaultDur == 0 {
 		return incomplete("video geometry or frame rate missing")
 	}
 	si.Width, si.Height = int(t.width), int(t.height)
-	si.FrameRate = math.Round(1e9/float64(t.defaultDur)*1000) / 1000
-	rate := si.FrameRate
-	si.AverageFrameRate = &rate
-	si.ReferenceFrameRate = &rate
+	// libavformat reduces 1e9/DefaultDuration with av_reduce's 30000 cap,
+	// so 41708333ns is published as 24000/1001 rather than the raw quotient.
+	exact := reducedFrameRate(t.defaultDur)
+	si.FrameRate = math.Round(exact*1000) / 1000
+	si.AverageFrameRate = &exact
+	si.ReferenceFrameRate = &exact
 	codec := ""
 	switch {
 	case strings.HasPrefix(t.codecID, "V_MPEG4/ISO/AVC"):
