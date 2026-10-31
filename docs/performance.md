@@ -249,6 +249,33 @@ totals behind every listing fell from 0.4–2 s to 20–30 ms.
   generation (`viewer_policy_epoch`), so a cached response is never served
   across viewers or after a policy change.
 
+## Results
+
+Measured with `etherperf` on a copy of the Mac lab data: an 866 MB
+`ether.db` with 264k catalogue rows, 51k history rows and 122k guide
+programmes. Outbound network was blocked, and the Mac shared its CPU with
+about ten other agents (load average 20–40), so warm numbers are noisy.
+
+| request (real client sequence) | before | after |
+|---|---:|---:|
+| Plex /hubs/promoted, cold | 58–87 s | 1.9 s |
+| Plex /hubs, /hubs/continueWatching, /library/onDeck, cold | 35–90 s | 0.13–0.2 s |
+| Plex /hubs/sections/shows, cold | 61–89 s | 1.5 s |
+| Plex /library/metadata/{movie}, cold | 12–22 s | 0.7 s |
+| Plex /hubs/search?query=star, cold | 3.7–7.3 s | 0.08 s |
+| Infuse /Items?searchTerm=star, cold | 10.7–26 s | 0.12–0.29 s |
+| Jellyfin /Persons?searchTerm=star | 12.0 s, unrelated people | 0.13–0.3 s, matches only |
+| Emby /Users/{id}/Items?SearchTerm | 7.6 s | 0.05–0.17 s |
+| Swiftfin cross-library Recently Added | 20 s timeout | about 0.25 s once settled |
+| Movie and show browse totals behind every listing | 0.4–2 s (11 s under load) | 20–30 ms |
+| A short write behind a busy writer (store test) | waited the full 10 s busy timeout, then failed | at most one transaction |
+
+The gate's first full run (54k against 540k synthetic rows) lists the 50
+endpoints that still scale with the library in
+`internal/app/testdata/perf_gate_debt.txt`: home rows built from whole-library
+candidate sets, listings with per-item hydration, facets, collections and
+search over a dense synthetic catalogue. That list is the work queue.
+
 ## Rules for new code
 
 1. A request path never scales with the library, the history or a guide.
