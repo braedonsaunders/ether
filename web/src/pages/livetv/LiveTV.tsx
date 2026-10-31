@@ -44,6 +44,7 @@ import { SourceEditor, type SourceKind } from "./SourceEditor";
 import {
   MINUTE,
   TEMPLATES,
+  browserTimeZone,
   byNumber,
   emptyChannel,
   groupBy,
@@ -280,6 +281,7 @@ export default function LiveTV() {
     const template = TEMPLATES.find((x) => x.key === templateKey) ?? TEMPLATES[0]!;
     const base = emptyChannel();
     base.number = nextNumber(channels ?? []);
+    base.timezone = browserTimeZone();
     const d = studioDraft(template.apply(base));
     setDraft(d);
     setBaseline("");
@@ -784,11 +786,6 @@ function TemplateGallery({ onPick }: { onPick: (key: string) => void }) {
         <h2 className="text-2xl font-semibold tracking-tight text-fg">
           {t("What should it play?")}
         </h2>
-        <p className="text-sm text-fg-muted">
-          {t(
-            "Start from a template or a blank slate. Everything stays editable, and the schedule previews live as you build it.",
-          )}
-        </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {TEMPLATES.map((template) => (

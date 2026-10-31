@@ -40,6 +40,18 @@ func programmeAt(ps []Programme, start time.Time) Programme {
 	return Programme{}
 }
 
+func TestTimezoneWithoutBlocksStaysOnTheEpochLoop(t *testing.T) {
+	c := testChannel()
+	c.Timezone = "America/New_York"
+	from := time.Unix(10_000, 0).UTC()
+	withZone := Schedule(c, from, from.Add(time.Hour))
+	c.Timezone = ""
+	plain := Schedule(c, from, from.Add(time.Hour))
+	if !reflect.DeepEqual(withZone, plain) {
+		t.Fatal("a timezone with no blocks changed the 24/7 schedule")
+	}
+}
+
 func TestWeekdayBlockStaysOffOtherDays(t *testing.T) {
 	// Saturday 8:00–12:00 in New York. 31 Oct 2026 is a Saturday.
 	ny, err := time.LoadLocation("America/New_York")

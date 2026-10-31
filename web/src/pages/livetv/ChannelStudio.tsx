@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Artwork } from "../../components/Artwork";
+import { MoreOptions } from "../../components/ConfigSection";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { DragHandle, SortableList } from "../../components/Sortable";
 import { Field, Segmented } from "../../components/fields";
@@ -44,7 +45,7 @@ import { Timeline } from "./Timeline";
 import { WeekGrid } from "./WeekGrid";
 import {
   MINUTE,
-  blocksInZone,
+  blockLabel,
   clock,
   duration,
   hueOf,
@@ -56,6 +57,7 @@ import {
   programmingMode,
   progress,
   timeOfDay,
+  timeZones,
   tv,
   upNext,
   type Block,
@@ -1335,41 +1337,49 @@ function Schedule({
   };
   const offset = -new Date().getTimezoneOffset();
   const zone = c.timezone || "";
+  const zones = useMemo(() => {
+    const list = timeZones();
+    const current = zone || "UTC";
+    return list.includes(current) ? list : [current, ...list];
+  }, [zone]);
   return (
     <div className="space-y-5">
       <WeekGrid blocks={blocks} onChange={setBlocks} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-fg-muted">
-          {zone
-            ? t("Blocks use {zone}.", { zone })
-            : t("Blocks are stored in UTC until you switch them to your timezone.")}
-        </p>
-        {zone ? null : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-              onChange({ timezone, blocks: blocksInZone(blocks, timezone) });
-            }}
-          >
-            {t("Use my timezone")}
-          </Button>
-        )}
-      </div>
+      <MoreOptions label={t("More options")}>
+        <div className="px-4 pb-4">
+          <Field label={t("Timezone")}>
+            <Select
+              aria-label={t("Timezone")}
+              value={zone || "UTC"}
+              onChange={(e) => {
+                const next = e.currentTarget.value;
+                onChange({ timezone: next === "UTC" ? "" : next });
+              }}
+            >
+              {zones.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      </MoreOptions>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-fg">{t("Daily time blocks")}</h3>
-          <p className="text-xs text-fg-muted">
-            {offset
-              ? t(
-                  "Pin programming to times of day (in UTC; your time is UTC{offset}). The base programming fills the rest of the day.",
-                  { offset: `${offset > 0 ? "+" : ""}${offset / 60}` },
-                )
-              : t(
-                  "Pin programming to times of day (in UTC). The base programming fills the rest of the day.",
-                )}
-          </p>
+          {zone ? null : (
+            <p className="text-xs text-fg-muted">
+              {offset
+                ? t(
+                    "Pin programming to times of day (in UTC; your time is UTC{offset}). The base programming fills the rest of the day.",
+                    { offset: `${offset > 0 ? "+" : ""}${offset / 60}` },
+                  )
+                : t(
+                    "Pin programming to times of day (in UTC). The base programming fills the rest of the day.",
+                  )}
+            </p>
+          )}
         </div>
         <Button
           variant="outline"
@@ -1388,7 +1398,11 @@ function Schedule({
             <button
               key={h}
               type="button"
-              aria-label={t("Add a block at {time} UTC", { time: timeOfDay(h * 60) })}
+              aria-label={
+                zone
+                  ? t("Add a block at {time}", { time: timeOfDay(h * 60) })
+                  : t("Add a block at {time} UTC", { time: timeOfDay(h * 60) })
+              }
               onClick={() => {
                 const s = h * 60;
                 if (!blocks.some((b) => s < b.end && s + 60 > b.start)) add(s);
@@ -1409,9 +1423,8 @@ function Schedule({
                   background: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${(hue + 30) % 360} 65% 40%))`,
                 }}
               >
-                <span className="block truncate">{t("Block {number}", { number: i + 1 })}</span>
-                <span className="block truncate opacity-80">
-                  {tn(b.items.length, "{count} title", "{count} titles")}
+                <span className="block truncate" title={blockLabel(b)}>
+                  {blockLabel(b)}
                 </span>
               </div>
             );
@@ -1443,9 +1456,11 @@ function Schedule({
                 aria-hidden
               />
               <Field
-                label={t("Start (UTC)")}
+                label={zone ? t("Start time") : t("Start (UTC)")}
                 htmlFor={`blk-${index}-start`}
-                hint={t("{time} your time", { time: localBlockTime(block.start) })}
+                hint={
+                  zone ? undefined : t("{time} your time", { time: localBlockTime(block.start) })
+                }
               >
                 <Input
                   id={`blk-${index}-start`}
@@ -1455,12 +1470,14 @@ function Schedule({
                 />
               </Field>
               <Field
-                label={t("End (UTC)")}
+                label={zone ? t("End") : t("End (UTC)")}
                 htmlFor={`blk-${index}-end`}
                 hint={
-                  block.end === 1440
-                    ? t("Midnight")
-                    : t("{time} your time", { time: localBlockTime(block.end) })
+                  zone
+                    ? undefined
+                    : block.end === 1440
+                      ? t("Midnight")
+                      : t("{time} your time", { time: localBlockTime(block.end) })
                 }
               >
                 <div className="flex items-center gap-2">

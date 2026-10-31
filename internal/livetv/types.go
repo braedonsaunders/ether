@@ -48,9 +48,12 @@ type Block struct {
 	// the channel has no timezone. End may be 1440. Days empty means every
 	// day, which is how channels saved before the weekly grid behave.
 	// Days are Go weekdays: 0 Sunday … 6 Saturday, in that same zone.
-	Start       int             `json:"start"`
-	End         int             `json:"end"`
-	Days        []int           `json:"days,omitempty"`
+	Start int   `json:"start"`
+	End   int   `json:"end"`
+	Days  []int `json:"days,omitempty"`
+	// Name is a short grid label such as "Cartoons". It does not change
+	// what plays. Known preset names are translated in the console.
+	Name        string          `json:"name,omitempty"`
 	Items       []Item          `json:"items"`
 	Shuffle     bool            `json:"shuffle"`
 	Mode        string          `json:"mode,omitempty"`  // order, shuffle, random, marathon, newest

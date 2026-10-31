@@ -31,15 +31,19 @@ func Schedule(c Channel, from, until time.Time) []Programme {
 }
 
 // legacyCalendar is true when every scheduling field is the zero value the
-// original engine understood. Timezone, weekdays, playout mode, alignment,
-// filler and repeat gaps opt into weeklySchedule.
+// original engine understood. Weekdays, playout mode, alignment, filler and
+// repeat gaps opt into weeklySchedule. A timezone names the clock for painted
+// blocks; with no blocks a 24/7 channel stays on the original epoch loop.
 func legacyCalendar(c Channel) bool {
-	if c.Timezone != "" || c.Mode != "" || c.Align != "" || c.Fit != "" || c.RepeatDays > 0 || len(c.Filler) > 0 || c.MarathonKey != 0 {
+	if c.Mode != "" || c.Align != "" || c.Fit != "" || c.RepeatDays > 0 || len(c.Filler) > 0 || c.MarathonKey != 0 {
 		return false
 	}
 	// Fallback and off-air only change a channel that has nothing else to play.
 	// A channel that already has items keeps the original loop.
 	if len(c.Items) == 0 && (c.OffAir || len(c.Fallback) > 0) {
+		return false
+	}
+	if c.Timezone != "" && len(c.Blocks) > 0 {
 		return false
 	}
 	for _, b := range c.Blocks {

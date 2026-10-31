@@ -1,4 +1,4 @@
-import { getLocale, localized, t } from "../../i18n";
+import { getLocale, localized, t, tn } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { unit } from "../../lib/format";
 
@@ -27,6 +27,8 @@ export type Block = {
   end: number;
   /** Weekdays in the channel timezone, 0 Sunday … 6 Saturday. Empty means every day. */
   days?: number[];
+  /** Preset key ("Cartoons", "Movie night") or a custom grid label. */
+  name?: string;
   items: Item[];
   shuffle: boolean;
   mode?: string;
@@ -341,6 +343,52 @@ export const TEMPLATES: Template[] = localized<Template[]>(() => [
 // ---- time ------------------------------------------------------------------------
 
 export const MINUTE = 60_000;
+/** IANA zone of this browser. Empty means UTC, which the schedule engine already treats as the default. */
+export function browserTimeZone(): string {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return zone && zone !== "UTC" ? zone : "";
+  } catch {
+    return "";
+  }
+}
+
+export function timeZones(): string[] {
+  const intl = Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] };
+  const zones = intl.supportedValuesOf?.("timeZone") ?? [];
+  return zones.includes("UTC") ? zones : ["UTC", ...zones];
+}
+
+/** What a block chip should say before the clock range. Empty when the block has no programming yet. */
+export function blockPlays(block: Block): string {
+  const name = block.name?.trim();
+  if (name === "Cartoons") return t("Cartoons");
+  if (name === "Movie night") return t("Movie night");
+  if (name) return name;
+  const genres = block.filter?.genres;
+  if (Array.isArray(genres)) {
+    const labels = genres.map((genre) => String(genre).trim()).filter(Boolean);
+    if (labels.length) return labels.join(", ");
+  }
+  if (block.filter?.type === "movie") return t("Movies");
+  if (block.filter?.type === "show") return t("TV shows");
+  const items = block.items ?? [];
+  if (items.length > 1) return tn(items.length, "{count} title", "{count} titles");
+  if (items[0]?.title) return items[0].title;
+  const source = block.sources?.find((item) => item.name?.trim());
+  if (source?.name) return source.name;
+  if (block.sources?.length) return t("Mix");
+  if (block.collection) return t("Collection");
+  return "";
+}
+
+export function blockLabel(block: Block): string {
+  const end = block.end === 1440 ? "24:00" : timeOfDay(block.end);
+  const range = `${timeOfDay(block.start)}–${end}`;
+  const what = blockPlays(block);
+  return what ? `${what} · ${range}` : range;
+}
+
 export const timeOfDay = (minutes: number) =>
   minutes === 1440
     ? "24:00"

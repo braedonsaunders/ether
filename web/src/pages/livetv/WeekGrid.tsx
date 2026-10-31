@@ -1,7 +1,8 @@
 import { Button, cn } from "@braedonsaunders/appkit-ui";
+import { HelpCircle } from "lucide-react";
 import { useRef, useState } from "react";
 import { t } from "../../i18n";
-import { timeOfDay, type Block } from "./model";
+import { blockLabel, timeOfDay, type Block } from "./model";
 
 const ROW_DAYS = [1, 2, 3, 4, 5, 6, 0];
 
@@ -79,8 +80,21 @@ export function WeekGrid({
     }
   };
 
+  const help = t(
+    "Drag across a day to paint a block. Arrow keys move, Enter paints the focused hour, Delete removes the block under the cursor.",
+  );
   return (
     <div className="space-y-2">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          className="grid size-6 place-items-center rounded-full text-fg-muted hover:bg-bg-subtle hover:text-fg"
+          title={help}
+          aria-label={help}
+        >
+          <HelpCircle size={14} aria-hidden />
+        </button>
+      </div>
       <div
         role="grid"
         aria-label={t("Weekly schedule")}
@@ -167,6 +181,7 @@ export function WeekGrid({
                   const days = block.days?.length ? block.days : ROW_DAYS;
                   if (!days.includes(day)) return null;
                   const hue = (index * 67 + 200) % 360;
+                  const label = blockLabel(block);
                   return (
                     <div
                       key={index}
@@ -177,9 +192,8 @@ export function WeekGrid({
                         background: `linear-gradient(135deg, hsl(${hue} 65% 48%), hsl(${(hue + 28) % 360} 65% 38%))`,
                       }}
                     >
-                      <span className="block truncate">
-                        {timeOfDay(block.start)}–
-                        {block.end === 1440 ? "24:00" : timeOfDay(block.end)}
+                      <span className="block truncate" title={label}>
+                        {label}
                       </span>
                     </div>
                   );
@@ -210,6 +224,7 @@ export function WeekGrid({
                 start: 8 * 60,
                 end: 12 * 60,
                 days: [6],
+                name: "Cartoons",
                 items: [],
                 shuffle: false,
                 filter: { type: "show", genres: ["Animation"], maxContentRating: "PG" },
@@ -230,6 +245,7 @@ export function WeekGrid({
                 start: 20 * 60,
                 end: 23 * 60,
                 days: [5],
+                name: "Movie night",
                 items: [],
                 shuffle: false,
                 mode: "shuffle",
@@ -249,11 +265,6 @@ export function WeekGrid({
           {t("Clear every-day blocks")}
         </Button>
       </div>
-      <p className="text-xs text-fg-muted">
-        {t(
-          "Drag across a day to paint a block. Arrow keys move, Enter paints the focused hour, Delete removes the block under the cursor.",
-        )}
-      </p>
     </div>
   );
 }
