@@ -16,6 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/clusterbus"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/trickplay"
 )
@@ -98,6 +99,11 @@ type brokerSession struct {
 	exactRelease     string
 	sourcePinned     bool
 	sourceETag       string
+	// transferBarrier and lazyHolds are durable protections. Stop may detach
+	// the session before they are released; only a successful backend outcome
+	// with no in-flight transfer drops them.
+	transferBarrier *capability.Header
+	lazyHolds       []capability.Header
 }
 
 type retiredSession struct {
@@ -144,6 +150,8 @@ type Broker struct {
 	historyQueue        chan sourceHistorySample
 	historyCancel       context.CancelFunc
 	historyDone         chan struct{}
+	holdMu              sync.Mutex
+	holds               map[string]*capabilityHold
 }
 
 func NewBroker(d BrokerDeps) (*Broker, error) {
@@ -678,6 +686,15 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 			b.deps.OnEventError(err)
 		}
 	}
+	barrier, barrierErr := b.admitSessionBarrier(ctx, v.ID, string(req.Protocol), p.request.Device.ID, ps.ID, id)
+	if barrierErr != nil {
+		if errors.Is(barrierErr, errTransferCommitUnknown) {
+			// The durable row may exist. Keep the prepared source; do not Stop it.
+			transferred = true
+		}
+		return frontend.Session{}, barrierErr
+	}
+	s.transferBarrier = barrier
 	if b.cluster != nil && session.Protocol != "plex" {
 		if err := b.cluster.store.put(ctx, session, ps.ID, *v, b.deps.Now()); err != nil {
 			return frontend.Session{}, err
@@ -689,12 +706,18 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		if b.cluster != nil {
 			_ = b.cluster.store.remove(ctx, session.ID)
 		}
+		if s.transferBarrier != nil {
+			transferred = true
+		}
 		return frontend.Session{}, core.ErrNotAvailable
 	}
 	if scoped, ok := b.deps.Playback.(core.SurfaceScopedPlayback); !ok || !scoped.MarkSurfaceOpened(ps.ID) {
 		b.mu.Unlock()
 		if b.cluster != nil {
 			_ = b.cluster.store.remove(ctx, session.ID)
+		}
+		if s.transferBarrier != nil {
+			transferred = true
 		}
 		return frontend.Session{}, core.ErrNotAvailable
 	}
@@ -996,6 +1019,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	}
 	stopSource := false
 	if ok {
+		s = current
 		delete(b.sessions, s.public.ID)
 		b.rememberRetiredLocked(s)
 		if !s.live {
@@ -1029,14 +1053,12 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	b.bindings.Remove(s.public.ID)
 	if s.live {
 		err := b.deps.Live.Stop(ctx, &core.Viewer{ID: s.public.ViewerID}, s.playID)
+		b.settleRetirement(context.WithoutCancel(ctx), s, err == nil)
 		b.publish(ctx, sessionEvent("SessionStopped", s.public, nil))
 		return err
 	}
-	if b.deps.Transcoder != nil {
-		b.deps.Transcoder.Stop(s.public.ID)
-	}
-	if stopSource && !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
-		b.deps.Playback.Stop(s.playID)
+	if err := b.retireBackends(ctx, s, stopSource); err != nil && b.deps.OnEventError != nil {
+		b.deps.OnEventError(err)
 	}
 	b.publish(ctx, sessionEvent("SessionStopped", s.public, nil))
 	return nil

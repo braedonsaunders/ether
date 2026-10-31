@@ -351,3 +351,21 @@ Scalar capacity follows decision changes between runs: noncopy decisions retain
 their reservation even between processes, while copy transitions retain all
 previous real-run charges until both watcher and reaper finish. Sealing a verified
 input with prior encoding retains that charge while input drain is unproved.
+
+## Broker transfer on the current primitive
+
+Schema 9/10 lease and transfer tables are not revived. A flight claims
+`retirement-owner` on the existing lazy-stream header and admits a second
+`broker-transfer` header for the target side, in one transaction. Expiry
+pruning skips that claim, and the schema 8 trigger still rejects deleting the
+stream while its header exists, including an old process's bulk delete.
+The lazy claim lasts for the in-flight response. A failed or unknown commit
+does not delete either side and does not stop the prepared source.
+
+Open records one `broker-transfer` header with the same claim. Stop, supersede,
+and live stop drop it only after the backend outcome is successful:
+`Live.Stop` returned nil, or `RetireSource` / `RetireEncoder` reached a nil
+error. `ErrEncoderInputUnverified` and a source Close error keep the claim.
+Read retirement still proves only that the request's producers exited.
+Stop does not wait on the database to drop the claim. There is no sessions
+migration in this increment.

@@ -21,6 +21,7 @@ type retirementTestSource struct {
 	closing      chan struct{}
 	closeRelease chan struct{}
 	readErr      error
+	closeErr     error
 }
 
 func (s *retirementTestSource) Size() int64       { return 1 }
@@ -35,7 +36,11 @@ func (s *retirementTestSource) ReadAt(p []byte, _ int64) (int, error) {
 	p[0] = 1
 	return 1, nil
 }
-func (s *retirementTestSource) Close() error { close(s.closing); <-s.closeRelease; return nil }
+func (s *retirementTestSource) Close() error {
+	close(s.closing)
+	<-s.closeRelease
+	return s.closeErr
+}
 
 func retirementFixture() (*Manager, *generation, *retirementTestSource) {
 	src := &retirementTestSource{entered: make(chan struct{}), readRelease: make(chan struct{}), closing: make(chan struct{}), closeRelease: make(chan struct{})}
@@ -84,6 +89,34 @@ func TestReadRetirementAfterProducerRelease(t *testing.T) {
 			close(src.closeRelease)
 			waitRetirementTest(t, done, "producer released")
 		})
+	}
+}
+
+func TestReadRetirementCloseErrorIsNotSuccess(t *testing.T) {
+	m, g, src := retirementFixture()
+	src.closeErr = errors.New("source close failed")
+	tracker := &core.ReadRetirement{}
+	ctx := core.WithReadRetirement(context.Background(), tracker)
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		_, _, _ = m.copyFrom(ctx, io.Discard, g, 0, 1, func(int) {}, true)
+	}()
+	waitRetirementTest(t, src.entered, "read start")
+	g.retire()
+	close(src.readRelease)
+	waitRetirementTest(t, src.closing, "source close")
+	done := tracker.Seal()
+	assertRetirementOpen(t, done, "close has not returned")
+	close(src.closeRelease)
+	waitRetirementTest(t, returned, "producer released")
+	waitRetirementTest(t, done, "producer exit")
+	// The tracker is closed even though Close failed. That is request-producer
+	// evidence only; it must not be read as a successful source retirement.
+	select {
+	case <-done:
+	default:
+		t.Fatal("read retirement stayed open after the producer exited")
 	}
 }
 
