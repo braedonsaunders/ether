@@ -71,7 +71,7 @@ func TestVariantsTiersEditionsAndLabels(t *testing.T) {
 		t.Fatalf("too many variants: %d", len(vs))
 	}
 	// Auto first, and it is the release normal resolution picks.
-	if !vs[0].Auto || vs[0].Release.ID != "uhd" || vs[0].Label != "Auto / Best for Device" {
+	if !vs[0].Auto || vs[0].Release.ID != "uhd" || vs[0].Label != "Auto · 4K Dolby Vision Remux · TrueHD 7.1 · GRP" {
 		t.Fatalf("auto variant %+v", vs[0])
 	}
 	// No duplicate releases; a (cut, tier) repeats only as one of Auto's
@@ -444,5 +444,78 @@ func TestVariantsAlternativeCountSetting(t *testing.T) {
 			t.Errorf("setting %d: %d alternatives (want %d) in %d versions", tc.setting, got, tc.want, len(vs))
 		}
 		svc.Close()
+	}
+}
+
+// Every version names its source and group, so viewers can tell which
+// release they would play (#188); Auto carries no size.
+func TestVariantLabelsNameSourceAndGroup(t *testing.T) {
+	flux := withParsed(rel("x", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-FLUX", 2300))
+	for kind, want := range map[string]string{
+		"auto":   "Auto · 1080p WEB-DL · DD+ 5.1 · FLUX",
+		"tier":   "1080p WEB-DL · FLUX",
+		"4k":     "1080p WEB-DL · FLUX",
+		"compat": "1080p WEB-DL · FLUX (High Compatibility)",
+		"alt":    "1080p WEB-DL · DD+ 5.1 · 2.2 GB · FLUX",
+	} {
+		if got := variantLabel(flux, kind); got != want {
+			t.Errorf("%s label %q, want %q", kind, got, want)
+		}
+	}
+	dc := withParsed(rel("dc", "The.Signal.1999.Directors.Cut.1080p.BluRay.x264-AMIABLE", 9000))
+	if got := variantLabel(dc, "edition"); got != "Director's Cut — 1080p Blu-ray · AMIABLE" {
+		t.Errorf("edition label %q", got)
+	}
+	nogroup := withParsed(rel("n", "The Signal 1999 1080p WEB-DL", 2000))
+	nogroup.Info.Group = ""
+	if got := variantLabel(nogroup, "auto"); got != "Auto · 1080p WEB-DL" {
+		t.Errorf("label without group or audio %q", got)
+	}
+}
+
+// After a play, Auto is named after the release that actually played when
+// that is not one of the explicit versions (Auto resolved past its first
+// candidate); an explicit version keeps Auto's own name.
+func TestAutoLabelFollowsPlayedRelease(t *testing.T) {
+	idx := &fakeIndexer{releases: append(variantReleases(),
+		rel("played", "The.Signal.1999.2160p.UHD.BluRay.REMUX.DV.HEVC.DTS-HD.MA.5.1-FraMeSToR", 52000))}
+	svc := New(idx, fakeHealth{}, nil, testCfg(), Options{})
+	ctx := context.Background()
+	primeSearchCache(t, svc, appleTVCaps())
+	base, err := svc.Variants(ctx, core.ResolveRequest{Title: matrixTitle(), Client: appleTVCaps()}, 4)
+	if err != nil || len(base) < 2 {
+		t.Fatalf("variants %v %v", base, err)
+	}
+	played := ""
+	inList := map[string]bool{}
+	for _, v := range base {
+		inList[v.Release.ID] = true
+	}
+	for _, id := range []string{"played", "uhd", "uhd2"} {
+		if !inList[id] {
+			played = id
+			break
+		}
+	}
+	if played == "" {
+		t.Skip("every candidate release is an explicit version")
+	}
+	vs, err := svc.Variants(ctx, core.ResolveRequest{Title: matrixTitle(), Client: appleTVCaps(), PlayedRelease: played}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ""
+	for _, r := range idx.releases {
+		if r.ID == played {
+			want = autoLabel(withParsed(r))
+		}
+	}
+	if vs[0].Label != want || vs[0].Label == base[0].Label {
+		t.Fatalf("auto label after a play of %s: %q, want %q", played, vs[0].Label, want)
+	}
+	explicit := base[1].Release.ID
+	vs, err = svc.Variants(ctx, core.ResolveRequest{Title: matrixTitle(), Client: appleTVCaps(), PlayedRelease: explicit}, 4)
+	if err != nil || vs[0].Label != base[0].Label {
+		t.Fatalf("auto relabelled for an explicit version: %q (err %v)", vs[0].Label, err)
 	}
 }

@@ -442,3 +442,37 @@ func TestOnlyAuthenticatedClientsAreCounted(t *testing.T) {
 		t.Fatalf("unexpected clients: %+v", seen)
 	}
 }
+
+// The stream names the version Ether plays, with the label the other apps
+// show (#188); without a known version it is left out.
+func TestStreamNamesTheAutoVersion(t *testing.T) {
+	for _, tc := range []struct {
+		versions []frontend.Version
+		want     string
+	}{
+		{[]frontend.Version{{ID: "r1", Name: "Auto · 1080p WEB-DL · DD+ 5.1 · FLUX"}, {ID: "r2", Name: "4K Dolby Vision Remux · FraMeSToR"}}, `"description":"Auto · 1080p WEB-DL · DD+ 5.1 · FLUX"`},
+		{nil, ""},
+	} {
+		host := frontend.Host{
+			Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+				return &frontend.Viewer{ID: 7}, nil
+			}},
+			Experience: frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+				return frontend.ItemDetail{Versions: tc.versions}, nil
+			}},
+			Sessions: frontendtest.Sessions{}, LazyStreams: &lazyFixture{},
+			Capabilities: frontendtest.Capabilities{}, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.168.1.7"), true },
+			SecurePortalURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/ether/me", nil },
+		}
+		inst, err := (Frontend{}).Mount(context.Background(), host)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/stremio/grant/stream/movie/tmdb:42.json", nil))
+		body := w.Body.String()
+		if w.Code != 200 || (tc.want != "" && !strings.Contains(body, tc.want)) || (tc.want == "" && strings.Contains(body, "description")) {
+			t.Fatalf("response: %d %s", w.Code, body)
+		}
+	}
+}

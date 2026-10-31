@@ -67,7 +67,34 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 			return nil, err
 		}
 	}
-	return pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max), nil
+	vs := pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max)
+	labelPlayedAuto(vs, req.PlayedRelease, results, s.LookupRelease)
+	return vs, nil
+}
+
+// labelPlayedAuto names Auto after the release this viewer actually played
+// (the one a resume opens) when that is not one of the explicit versions:
+// Auto resolved past its first candidate, or an earlier pick ranks
+// differently now. The played release is looked up in the cached results,
+// then among recently seen releases; unknown leaves Auto's own label.
+func labelPlayedAuto(vs []core.ReleaseVariant, played string, results []core.Release, lookup func(string) (core.Release, bool)) {
+	if played == "" || len(vs) == 0 || !vs[0].Auto {
+		return
+	}
+	for _, v := range vs {
+		if v.Release.ID == played {
+			return // Auto itself, or an explicit version the client marks as played
+		}
+	}
+	for _, r := range results {
+		if r.ID == played {
+			vs[0].Label = autoLabel(r)
+			return
+		}
+	}
+	if r, ok := lookup(played); ok {
+		vs[0].Label = autoLabel(r)
+	}
 }
 
 // relaxedVariantProfile raises the profile's height cap to the client's
@@ -297,16 +324,26 @@ func bestCompat(pool []candidate, caps core.ClientCaps, used map[string]bool) (c
 	return best, found
 }
 
-// variantLabel is the viewer-facing version name, e.g.
-// "4K Dolby Vision Remux" or "Director's Cut — 1080p Blu-ray".
+// variantLabel is the viewer-facing version name (Plex Media@title,
+// Jellyfin and Emby MediaSources[].Name, Silo and Stremio version names):
+// what the release is, with its source and group when the name says, e.g.
+// "Auto · 1080p WEB-DL · DD+ 5.1 · FLUX", "4K Dolby Vision Remux ·
+// FraMeSToR" or "Director's Cut — 1080p Blu-ray · AMIABLE".
 func variantLabel(rel core.Release, kind string) string {
+	group := strings.TrimSpace(rel.Info.Group)
+	withGroup := func(s string) string {
+		if group == "" {
+			return s
+		}
+		return s + " · " + group
+	}
 	switch kind {
 	case "auto":
-		return "Auto / Best for Device"
+		return autoLabel(rel)
 	case "compat":
-		return qualityPhrase(rel.Info) + " (High Compatibility)"
+		return withGroup(qualityPhrase(rel.Info)) + " (High Compatibility)"
 	case "edition":
-		return rel.Info.Edition + " — " + qualityPhrase(rel.Info)
+		return rel.Info.Edition + " — " + withGroup(qualityPhrase(rel.Info))
 	case "alt":
 		return alternativeLabel(rel)
 	}
@@ -314,7 +351,20 @@ func variantLabel(rel core.Release, kind string) string {
 	if rel.Info.Edition != "" {
 		q += " · " + rel.Info.Edition
 	}
-	return q
+	return withGroup(q)
+}
+
+// autoLabel names the release Auto plays, kept short (no size):
+// "Auto · 1080p WEB-DL · DD+ 5.1 · FLUX".
+func autoLabel(rel core.Release) string {
+	parts := []string{"Auto", qualityPhrase(rel.Info)}
+	if a := audioPhrase(rel.Info); a != "" {
+		parts = append(parts, a)
+	}
+	if g := strings.TrimSpace(rel.Info.Group); g != "" {
+		parts = append(parts, g)
+	}
+	return strings.Join(parts, " · ")
 }
 
 // alternativeLabel tells same-quality releases apart: quality, audio, size

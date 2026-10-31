@@ -1,9 +1,11 @@
 package stremio
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
@@ -82,8 +84,29 @@ func (i *instance) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base.Path = strings.TrimSuffix(base.Path, "/image/") + lazy
+	stream := map[string]any{"name": "Ether", "url": base.String()}
+	if label := i.autoVersionName(r, viewer, device, key); label != "" {
+		stream["description"] = label
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"streams": []any{map[string]any{"name": "Ether", "url": base.String()}}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"streams": []any{stream}})
+}
+
+// autoVersionLabelBudget bounds the version lookup for a stream answer; a
+// slow lookup drops the label, never the stream.
+const autoVersionLabelBudget = 1500 * time.Millisecond
+
+// autoVersionName is the name of the version Ether plays (the same label
+// Plex, Jellyfin, Emby and Silo show, "Auto · 1080p WEB-DL · DD+ 5.1 ·
+// FLUX"), or "" when no version is known yet.
+func (i *instance) autoVersionName(r *http.Request, viewer *frontend.Viewer, device frontend.Device, key frontend.RatingKey) string {
+	ctx, cancel := context.WithTimeout(r.Context(), autoVersionLabelBudget)
+	defer cancel()
+	detail, err := i.host.Experience.Item(ctx, frontend.ItemRequest{Viewer: viewer, Device: device, Key: key})
+	if err != nil || len(detail.Versions) == 0 {
+		return ""
+	}
+	return detail.Versions[0].Name
 }
 
 func (i *instance) serveLazy(w http.ResponseWriter, r *http.Request) {

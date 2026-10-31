@@ -24,11 +24,14 @@ type fakeVariantResolver struct {
 	calls int
 	// lastMax is the cap the server asked for on the latest call.
 	lastMax int
+	// lastPlayed is the latest call's ResolveRequest.PlayedRelease.
+	lastPlayed string
 }
 
 func (r *fakeVariantResolver) Variants(_ context.Context, req core.ResolveRequest, max int) ([]core.ReleaseVariant, error) {
 	r.calls++
 	r.lastMax = max
+	r.lastPlayed = req.PlayedRelease
 	vs := r.byKey[req.Title.Key]
 	if max > 0 && len(vs) > max {
 		vs = vs[:max]
@@ -586,5 +589,26 @@ func TestSameQualityAlternativesAreSeparateVersions(t *testing.T) {
 	f.get(t, base+"&mediaIndex=0&session=plain0")
 	if pb.prepared != 2 || len(pb.variantCalls) != n {
 		t.Errorf("plain play prepared=%d variantCalls=%v", pb.prepared, pb.variantCalls)
+	}
+}
+
+// The detail page names Auto after what this viewer actually played: the
+// resumed release goes to the resolver with the variants request (#188).
+func TestDetailPassesPlayedReleaseToVariants(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	f.get(t, "/library/metadata/"+fightClub.Key.String())
+	if f.resolver.lastPlayed != "" {
+		t.Fatalf("played release %q before any play", f.resolver.lastPlayed)
+	}
+	info := pb.info
+	info.Estimated = false
+	pb.mu.Lock()
+	pb.resumed = map[resumedFactKey]resumedFact{{ownerUser.ID, fightClub.Key}: {info: info, release: "rel-played"}}
+	pb.mu.Unlock()
+	if rec := f.get(t, "/library/metadata/"+fightClub.Key.String()); rec.Code != http.StatusOK {
+		t.Fatalf("detail %d", rec.Code)
+	}
+	if f.resolver.lastPlayed != "rel-played" {
+		t.Fatalf("played release %q, want rel-played", f.resolver.lastPlayed)
 	}
 }

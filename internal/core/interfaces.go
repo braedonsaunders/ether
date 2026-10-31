@@ -276,6 +276,9 @@ type ResolveRequest struct {
 	Title  *Title
 	Client ClientCaps
 	User   *User
+	// PlayedRelease is the release this viewer last played of the title
+	// (the one a resume opens); Variants names Auto after it (additive).
+	PlayedRelease string
 	// Exclude releases already tried (failover).
 	Exclude []string
 	// Prefer is a release ID to try first (the viewer picked a version in

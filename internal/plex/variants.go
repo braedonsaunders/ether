@@ -247,7 +247,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 	caps := s.clientCaps(pr)
 	vctx, cancel := context.WithTimeout(ctx, variantRenderBudget)
 	defer cancel()
-	vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: caps, User: pr.User}, core.MaxVariants)
+	vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: caps, User: pr.User, PlayedRelease: probedRelease}, core.MaxVariants)
 	if err != nil {
 		s.log.Debug("variants unavailable", "key", t.Key, "err", err)
 		return nil, ""
