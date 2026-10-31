@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -354,5 +355,27 @@ func TestFacetServesLastCountWhileRecounting(t *testing.T) {
 	c.WaitRefreshes()
 	if got := count(); got["Drama"] != 2 {
 		t.Fatalf("recount behind the read missing: %v", got)
+	}
+}
+
+// A title with nothing stored, read after the request's TMDB budget is spent,
+// is not found (pages skip it), never a failure; the fetch still lands.
+func TestExhaustedBudgetReadsAreNotFound(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	slow := &slowTMDB{release: make(chan struct{})}
+	c, err := New(db, slow, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqCtx := WithReadWaitBudget(ctx, 0)
+	if _, err := c.Get(reqCtx, core.MovieKey(42)); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("unstored title with no budget left = %v, want not found", err)
+	}
+	close(slow.release)
+	c.WaitRefreshes()
+	if got, err := c.Get(ctx, core.MovieKey(42)); err != nil || got.Title != "Fresh" {
+		t.Fatalf("after the background fetch = %+v, %v", got, err)
 	}
 }

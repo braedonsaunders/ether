@@ -3,8 +3,11 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // Reads never wait on TMDB for long. A title whose details are stored but
@@ -19,8 +22,11 @@ const (
 )
 
 // errHydrating means a refresh is still running (or could not start because
-// hydrateLimit refreshes already are); the caller serves what it has.
-var errHydrating = errors.New("catalog: metadata refresh in progress")
+// hydrateLimit refreshes already are); the caller serves what it has. A
+// title with nothing stored yet is not available to this read, so the error
+// is a not-found: pages skip the title instead of failing, and the fetch
+// carries on so the next read has it.
+var errHydrating = fmt.Errorf("%w: metadata refresh in progress", core.ErrNotFound)
 
 type hydration struct {
 	done chan struct{}
