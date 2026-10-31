@@ -17,9 +17,9 @@ expiry_only=${14:-0}
 cluster_only=${15:-0}
 infuse_only=${16:-0}
 expect_early_resume=${17:-0}
-seconds=${18:-120}
+seconds=${18:-7200}
 allow_internal_pg=${19:-0}
-[[ "$seconds" =~ ^[1-9][0-9]{0,3}$ ]] && ((seconds <= 3600)) || { echo 'timeout must be 1..3600 seconds' >&2; exit 2; }
+[[ "$seconds" =~ ^[1-9][0-9]{0,4}$ ]] && ((seconds >= 1 && seconds <= 14400)) || { echo 'timeout must be 1..14400 seconds' >&2; exit 2; }
 case "$allow_internal_pg" in 0|1) ;; *) echo 'invalid internal PostgreSQL capability' >&2; exit 2;; esac
 if [ "$cluster_only" = 1 ] && [ "$allow_internal_pg" != 1 ]; then echo 'cluster probe requires explicit internal PostgreSQL capability' >&2; exit 2; fi
 case "$root" in /data/prism-test/plexparity.*) ;; *) echo 'invalid /data parity stage' >&2; exit 2;; esac
@@ -315,6 +315,9 @@ timeout --signal=TERM --kill-after=10s "$seconds" docker run --rm --pull=never -
  '
 status=$?
 set -e
+if [ "$status" -eq 124 ] || [ "$status" -eq 143 ]; then
+ echo "PARITY_TIMEOUT exit=$status seconds=$seconds (timeout sent SIGTERM after seed, before a verdict). Raise PRISM_PARITY_TIMEOUT_SECONDS or PRISM_TEST_TIMEOUT_SECONDS." >&2
+fi
 cleanup_run
 trap - EXIT HUP INT TERM
 runner_remaining=0

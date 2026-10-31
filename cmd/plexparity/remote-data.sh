@@ -14,10 +14,12 @@ if [ -z "$both_models" ]; then
  done
 fi
 host=${PRISM_TEST_HOST:-braedon@100.123.220.120}
-seconds=${PRISM_PARITY_TIMEOUT_SECONDS:-120}
+# 120s dies with SIGTERM (exit 143) just after seed verification, before any
+# diff. PRISM_TEST_TIMEOUT_SECONDS is the brief's name for the same budget.
+seconds=${PRISM_PARITY_TIMEOUT_SECONDS:-${PRISM_TEST_TIMEOUT_SECONDS:-7200}}
 allow_internal_pg=${PRISM_PARITY_ALLOW_INTERNAL_PG:-0}
 [[ "$host" =~ ^[a-zA-Z0-9_.@-]+$ && "$host" != -* ]] || { echo 'invalid worker host' >&2; exit 2; }
-[[ "$seconds" =~ ^[1-9][0-9]{0,3}$ ]] && ((seconds <= 3600)) || { echo 'timeout must be 1..3600 seconds' >&2; exit 2; }
+[[ "$seconds" =~ ^[1-9][0-9]{0,4}$ ]] && ((seconds >= 1 && seconds <= 14400)) || { echo 'timeout must be 1..14400 seconds' >&2; exit 2; }
 case "$allow_internal_pg" in 0|1) ;; *) echo 'invalid internal PostgreSQL capability' >&2; exit 2;; esac
 if [ "${ETHER_PARITY_CLUSTER_ONLY:-0}" = 1 ] && [ "$allow_internal_pg" != 1 ]; then echo 'cluster probe requires explicit internal PostgreSQL capability' >&2; exit 2; fi
 root=$(git rev-parse --show-toplevel)
@@ -28,6 +30,7 @@ if [ "${ETHER_PARITY_POLICY_COUNTERFACTUAL:-0}" = 1 ] && [ "$baseline" != 24be28
 fi
 if [ ! -d "$candidate" ]; then candidate=$(git -C "$root" rev-parse --verify "${candidate}^{commit}"); fi
 printf 'baseline=%s candidate=%s\n' "$baseline" "$candidate"
+printf 'PARITY_TIMEOUT_SECONDS=%s\n' "$seconds"
 remote=$(ssh -o BatchMode=yes "$host" bash -s <<'CHECK'
 set -euo pipefail
 base=/data/prism-test
