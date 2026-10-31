@@ -1,6 +1,6 @@
 import { Input, Popover, cn } from "@braedonsaunders/appkit-ui";
 import { Check, ChevronDown, Search } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n";
 
 export interface ToolbarOption<T extends string> {
@@ -34,6 +34,7 @@ export function ToolbarPicker<T extends string>({
   menuClassName,
   footer,
   side,
+  matchWidth,
 }: {
   value: T;
   options: ToolbarOption<T>[];
@@ -50,9 +51,22 @@ export function ToolbarPicker<T extends string>({
   footer?: ReactNode;
   /** Open the menu above the trigger, e.g. in a sidebar footer. */
   side?: "top" | "bottom";
+  /** Make the menu exactly as wide as a full-width trigger. */
+  matchWidth?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // The menu is portalled to <body>, so a full-width trigger hands its width
+  // over as a custom property the menu's width class reads.
+  const measure = () => {
+    if (matchWidth && triggerRef.current) {
+      document.documentElement.style.setProperty(
+        "--toolbar-picker-width",
+        `${triggerRef.current.offsetWidth}px`,
+      );
+    }
+  };
   const current = options.find((o) => o.value === value);
   const showSearch = searchable ?? options.length > 8;
   const shown = useMemo(() => {
@@ -78,15 +92,19 @@ export function ToolbarPicker<T extends string>({
       }}
       align="start"
       side={side}
-      className={cn("w-72 p-1", menuClassName)}
+      className={cn(matchWidth ? "w-[var(--toolbar-picker-width)] p-1" : "w-72 p-1", menuClassName)}
       trigger={
         <button
+          ref={triggerRef}
           type="button"
           aria-label={ariaLabel}
           aria-haspopup="menu"
           aria-expanded={open}
           title={iconOnly ? `${ariaLabel}: ${current?.label ?? ""}` : undefined}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => {
+            measure();
+            setOpen((o) => !o);
+          }}
           className={cn(
             "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg border border-border bg-surface px-2 text-sm font-medium text-fg shadow-xs transition-colors hover:border-border-strong hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             open && "border-primary/40 bg-primary-subtle",
