@@ -26,6 +26,40 @@ func (e relatedArtworkExperience) RelatedArtwork(ctx context.Context, viewer *fr
 	return e.related(ctx, viewer, dev, key)
 }
 
+func TestHomeOnNowUsesGuideChannels(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 5}
+	start := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	exp := frontendtest.Experience{
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			return []frontend.Row{{
+				ID: "live", Title: "On Now", Purpose: frontend.RowLive,
+				Entries: []frontend.RowEntry{{Kind: frontend.RowEntryLiveChannel, LiveChannel: &frontend.RowLiveChannel{
+					ID: "news", Number: "2", Name: "News",
+					Current: &frontend.RowProgramme{ID: "p", Title: "Evening News", Start: start, End: start.Add(time.Hour)},
+				}}},
+			}}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/home/sections", nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"section_type":"live"`) || !strings.Contains(w.Body.String(), `"title":"On Now"`) || !strings.Contains(w.Body.String(), `"title":"Evening News"`) || !strings.Contains(w.Body.String(), `"series_title":"2 News"`) || !strings.Contains(w.Body.String(), `"item_source":"live"`) {
+		t.Fatalf("on now %d %s", w.Code, w.Body.String())
+	}
+	id, err := ids.StringGUID(ids.Channel, "news")
+	if err != nil || !strings.Contains(w.Body.String(), id) {
+		t.Fatal(err, id, w.Body.String())
+	}
+}
+
 func TestHomeNextUpReportsActualSource(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 5}
 	next := frontend.Title{Key: 1000000000000001, Type: "episode", Title: "Next episode"}

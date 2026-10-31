@@ -51,6 +51,47 @@ func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	}
 	return out
 }
+// liveChannelCards is the On Now shelf. Experience rows carry channels, not
+// catalogue titles, so the home builder cannot reuse title cards. The item
+// uses the catalogue card shape: the programme is the title and the channel
+// is the series line. content_id is the channel the client tunes.
+func liveChannelCards(row frontend.Row) []any {
+	items := make([]any, 0, len(row.Entries))
+	for _, entry := range row.Entries {
+		if entry.Kind != frontend.RowEntryLiveChannel || entry.LiveChannel == nil {
+			continue
+		}
+		ch := entry.LiveChannel
+		id, err := ids.StringGUID(ids.Channel, ch.ID)
+		if err != nil {
+			continue
+		}
+		title := ch.Name
+		channel := ch.Name
+		if ch.Number != "" {
+			channel = strings.TrimSpace(ch.Number + " " + ch.Name)
+		}
+		runtime := 0
+		if ch.Current != nil {
+			if ch.Current.Title != "" {
+				title = ch.Current.Title
+			}
+			if ch.Current.End.After(ch.Current.Start) {
+				runtime = int(ch.Current.End.Sub(ch.Current.Start).Minutes())
+			}
+		}
+		items = append(items, map[string]any{
+			"content_id": id, "play_content_id": id, "title": title, "type": "episode",
+			"overview": channel, "year": 0, "runtime": runtime,
+			"genres": []string{}, "keywords": []string{}, "studios": []string{},
+			"rating_tmdb": float64(0), "status": "matched", "series_title": channel,
+			"item_source": "live",
+			"user_state":  map[string]any{"played": false, "is_favorite": false, "in_watchlist": false, "not_interested": false},
+		})
+	}
+	return items
+}
+
 func siloKeywordRow(title string) bool {
 	return strings.EqualFold(title, "Top Rated") || strings.HasPrefix(strings.ToLower(title), "top rated ")
 }
@@ -209,7 +250,16 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 	used := map[string]bool{}
 	partial := false
 	for _, row := range rows {
-		items, e := i.sectionCards(r, v, credential, row)
+		var items []any
+		var e error
+		if row.Purpose == frontend.RowLive {
+			items = liveChannelCards(row)
+			if len(items) == 0 {
+				continue
+			}
+		} else {
+			items, e = i.sectionCards(r, v, credential, row)
+		}
 		if e != nil {
 			if r.Context().Err() != nil {
 				http.Error(w, "Unavailable", 503)
