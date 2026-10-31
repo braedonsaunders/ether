@@ -400,6 +400,29 @@ func TestJellyfinSeasonListOmitsUnrequestedFields(t *testing.T) {
 	requireJellyfinSpec(t, "GET", r.URL.Path, w)
 }
 
+func TestJellyfinSeasonListUsesParentSeriesName(t *testing.T) {
+	show := core.ShowKey(42)
+	season := frontend.Title{Key: core.SeasonKey(42, 1), Type: "season", Season: 1, Title: "Season 1"}
+	inst := mountJellyfin(t, frontendtest.Experience{
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "The Scene"}}, nil
+		},
+		ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (core.Page, error) {
+			return core.Page{Items: []frontend.Title{season}, Total: 1}, nil
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Shows/"+ids.RatingKeyGUID(show)+"/Seasons?Fields=ParentId", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var page struct {
+		Items []map[string]any
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 || page.Items[0]["SeriesName"] != "The Scene" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
 func TestJellyfinDetailShellAndKnownVersionFacts(t *testing.T) {
 	inst := mountJellyfin(t, frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
 		return frontend.ItemDetail{Title: frontend.Title{Key: core.EpisodeKey(42, 1, 1), Type: "episode", Title: "Arrival", ShowKey: core.ShowKey(42), ShowTitle: "Show", Season: 1, Episode: 1, Studios: []string{"A24"}}, Versions: []frontend.Version{{
@@ -605,6 +628,10 @@ func TestJellyfinShowParentIsTheVisibleLibrary(t *testing.T) {
 		t.Fatal(item["ParentId"])
 	}
 
+	movies, err := ids.GUID(ids.View, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
 	movie := mountJellyfin(t, frontendtest.Experience{
 		ViewsFunc: views,
 		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
@@ -616,11 +643,8 @@ func TestJellyfinShowParentIsTheVisibleLibrary(t *testing.T) {
 	r.Header.Set("X-Emby-Token", "grant")
 	movie.Handler().ServeHTTP(w, r)
 	item = nil
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
-		t.Fatal(w.Code, w.Body.String())
-	}
-	if _, ok := item["ParentId"]; ok {
-		t.Fatal(item["ParentId"])
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil || item["ParentId"] != movies {
+		t.Fatal(w.Code, item["ParentId"])
 	}
 }
 

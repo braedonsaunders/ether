@@ -619,6 +619,9 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 		}
 		if p := paths[title.Key]; p != "" {
 			item["Path"] = p
+			if len(editions) == 1 {
+				setSourcePath(editions[0].source, p)
+			}
 		}
 		for key, value := range images[title.Key] {
 			item[key] = value
@@ -654,6 +657,7 @@ func (i *instance) children(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	i.nameChildSeries(r, v, key, &page)
 	i.page(w, r, v, page, q.Offset)
 }
 

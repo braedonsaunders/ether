@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"encoding/json"
+
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -108,6 +111,64 @@ func (f *groupedActivityFake) LatestAddedGrouped(ctx context.Context, v *fronten
 		rows[0].Title.Title = "Latest episode"
 	}
 	return rows, err
+}
+
+type listedEdition struct{}
+
+func (listedEdition) Editions(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey) ([]frontend.Version, error) {
+	return []frontend.Version{{
+		ID: "file",
+		Media: frontend.MediaInfo{
+			Container: "mkv", Size: 100, BitrateKbps: 1000, Duration: 2 * time.Second,
+			Chapters: []core.Chapter{{Title: "Start", Start: time.Second}},
+			Streams: []frontend.StreamInfo{
+				{Type: "video", Index: 0, Codec: "h264"},
+				{Type: "audio", Index: 1, Codec: "aac"},
+				{Type: "subtitle", Index: 2, Codec: "subrip", Language: "eng"},
+			},
+		},
+	}}, nil
+}
+
+func TestLatestEditionFactsAndPath(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	exp := &activityFake{viewer: viewer}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	paths := frontendtest.VirtualPaths{PathsFunc: func(context.Context, *frontend.Viewer, frontend.Device, []frontend.RatingKey) (map[frontend.RatingKey]string, error) {
+		return map[frontend.RatingKey]string{5: "Movies/Film.mkv"}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: exp, Editions: listedEdition{}, VirtualPaths: paths})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, _ := ids.GUID(ids.View, 1)
+	r := httptest.NewRequest("GET", "/Items/Latest?limit=20&ParentId="+view+"&Fields=MediaSources", nil)
+	r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	var items []map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &items) != nil || len(items) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if items[0]["Path"] != "/Movies/Film.mkv" || items[0]["HasSubtitles"] != true || items[0]["Container"] != "mkv" {
+		t.Fatal(items[0]["Path"], items[0]["HasSubtitles"], items[0]["Container"])
+	}
+	sources, _ := items[0]["MediaSources"].([]any)
+	if len(sources) != 1 {
+		t.Fatal(items[0]["MediaSources"])
+	}
+	source := sources[0].(map[string]any)
+	streams, _ := source["MediaStreams"].([]any)
+	if source["Container"] != "mkv" || source["Path"] != "/Movies/Film.mkv" || source["Bitrate"] != float64(1000000) || len(streams) != 3 {
+		t.Fatal(source["Container"], source["Path"], source["Bitrate"], len(streams))
+	}
+	if _, ok := source["Chapters"]; ok {
+		t.Fatal(source["Chapters"])
+	}
+	subtitle := streams[2].(map[string]any)
+	if subtitle["LocalizedForced"] != "Forced" || subtitle["LocalizedLanguage"] != "English" {
+		t.Fatal(subtitle["LocalizedForced"], subtitle["LocalizedLanguage"])
+	}
 }
 
 func TestLatestGroupingAndItemAddedDate(t *testing.T) {

@@ -289,6 +289,22 @@ func TestParseProbeErrors(t *testing.T) {
 	}
 }
 
+func TestParseProbeAudioHandlerName(t *testing.T) {
+	raw := []byte(`{"format":{"format_name":"mov,mp4"},"streams":[
+		{"codec_type":"audio","codec_name":"aac","tags":{"handler_name":"GPAC ISO Audio Handler"}},
+		{"codec_type":"audio","codec_name":"aac","tags":{"title":"Commentary","handler_name":"SoundHandler"}},
+		{"codec_type":"audio","codec_name":"aac","tags":{"handler_name":"SoundHandler"}},
+		{"codec_type":"video","codec_name":"h264","tags":{"handler_name":"VideoHandler"}}
+	]}`)
+	info, err := ParseProbe(raw)
+	if err != nil || len(info.Streams) != 4 {
+		t.Fatal(err, info)
+	}
+	if info.Streams[0].Title != "GPAC ISO Audio Handler" || info.Streams[1].Title != "Commentary" || info.Streams[2].Title != "" || info.Streams[3].Title != "" {
+		t.Fatal(info.Streams[0].Title, info.Streams[1].Title, info.Streams[2].Title, info.Streams[3].Title)
+	}
+}
+
 func TestProbeRetriesLargerWhenIncomplete(t *testing.T) {
 	incomplete := `{"streams":[{"index":0,"codec_type":"video","codec_name":"h264","width":1920,"height":1080},
 		{"index":1,"codec_type":"audio","codec_name":"dts","channels":0,"sample_rate":"0"}],

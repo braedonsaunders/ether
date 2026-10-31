@@ -142,14 +142,26 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		return
 	}
 	images, paths := i.gridImagesFor(r, titles), i.virtualPaths(r, viewer, keys)
+	if fieldSet(r)["mediasources"] {
+		r = i.withPageEditions(r, viewer, keys)
+	}
 	items := make([]any, 0, len(titles))
 	for _, title := range titles {
 		item := i.itemDTO(title, states[title.Key])
 		if at, ok := added[title.Key]; ok {
 			item["DateCreated"] = at
 		}
-		if path := paths[title.Key]; path != "" {
+		path := paths[title.Key]
+		if path != "" {
 			item["Path"] = path
+		}
+		if fieldSet(r)["mediasources"] {
+			editions := i.jellyfinEditions(r, viewer, title)
+			if len(editions) == 1 {
+				setSourcePath(editions[0].source, path)
+				item["MediaSources"] = []any{editions[0].source}
+				applyJellyfinEditionFacts(item, editions[0].media)
+			}
 		}
 		for key, value := range images[title.Key] {
 			item[key] = value
