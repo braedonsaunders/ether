@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
@@ -125,6 +126,13 @@ func (i *instance) Handler() http.Handler {
 		inner = i.pages.wrap(inner, i.host.PageFreshness)
 	}
 	next := StripPrefix("/"+string(i.protocol), inner)
+	if i.protocol == "jellyfin" {
+		innerNext := next
+		next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r = r.WithContext(frontend.WithSynchronousArtworkMetadata(r.Context(), 8*time.Second))
+			innerNext.ServeHTTP(w, r)
+		})
+	}
 	if i.protocol != "emby" {
 		return next
 	}

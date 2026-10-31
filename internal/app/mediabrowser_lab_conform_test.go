@@ -665,6 +665,9 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 					p.TMDB = parsed
 				}
 			}
+			if p.TMDB > 0 {
+				p.ThumbPath = "/fixture.jpg"
+			}
 			switch person.Type {
 			case "Actor":
 				title.Cast = append(title.Cast, p)
