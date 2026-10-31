@@ -98,6 +98,8 @@ func (f *seasonLoadFixture) read(t *testing.T, step string, want []core.RatingKe
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Stale seasons are served as stored and refreshed behind the read.
+	f.c.WaitRefreshes()
 	if got := episodeKeys(eps); !sameKeys(got, want) {
 		t.Fatalf("%s: episodes %v, want %v", step, got, want)
 	}
@@ -124,6 +126,7 @@ func TestGrandchildrenRefreshesOnlySeasonsThatCanChange(t *testing.T) {
 	if _, err := f.c.Children(context.Background(), core.SeasonKey(800, 1)); err != nil {
 		t.Fatal(err)
 	}
+	f.c.WaitRefreshes()
 	if got := f.fake.fetched(); fmt.Sprint(got) != fmt.Sprint(map[int]int{1: 1}) {
 		t.Fatalf("season page fetches %v, want season 1", got)
 	}
@@ -157,5 +160,16 @@ func TestGrandchildrenLoadsSeasonWhoseEpisodeCountGrew(t *testing.T) {
 	f.fake.mu.Unlock()
 	f.stale()
 	want := append(append([]core.RatingKey(nil), showEpisodes800...), core.EpisodeKey(800, 3, 3), core.EpisodeKey(800, 4, 1), core.EpisodeKey(800, 4, 2))
-	f.read(t, "new season", want, map[int]int{2: 1, 3: 1, 4: 1})
+	// The stale read serves the mirror and refreshes the show and the seasons
+	// that can change; the next read lists the new season and loads it.
+	// Whether this read already sees season 3's new episode depends on
+	// whether the show refresh lands first; the fetches do not.
+	if _, err := f.c.Grandchildren(context.Background(), core.ShowKey(800)); err != nil {
+		t.Fatal(err)
+	}
+	f.c.WaitRefreshes()
+	if got := f.fake.fetched(); fmt.Sprint(got) != fmt.Sprint(map[int]int{2: 1, 3: 1}) {
+		t.Fatalf("stale: season fetches %v, want seasons 2 and 3", got)
+	}
+	f.read(t, "new season", want, map[int]int{4: 1})
 }

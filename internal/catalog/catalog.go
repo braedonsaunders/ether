@@ -198,6 +198,11 @@ type Catalog struct {
 	refreshMissMu sync.Mutex
 	refreshMiss   map[string]time.Time
 
+	// hydrating holds the TMDB refreshes running behind reads (hydrate.go).
+	hydrateMu    sync.Mutex
+	hydrating    map[string]*hydration
+	hydrateSlots chan struct{}
+
 	trendFlights flight.Group[string, trendSnapshot]
 	statsFlights flight.Group[string, Stats]
 	listMu       sync.Mutex
@@ -327,7 +332,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	if stale <= 0 {
 		stale = 24 * time.Hour
 	}
-	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log,
+	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log, hydrateSlots: make(chan struct{}, hydrateLimit),
 		staleAfter: stale, listTTL: 15 * time.Minute,
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},

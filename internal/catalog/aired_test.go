@@ -241,6 +241,11 @@ func TestEpisodeGainsAirDateOnSeasonRefresh(t *testing.T) {
 	fake.s2e3Date = "2026-03-12"
 	fake.mu.Unlock()
 	clock.set(time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC))
+	// The stale season is served as stored and refreshed behind the read.
+	if _, err := c.Children(ctx, core.SeasonKey(700, 2)); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitRefreshes()
 	eps, err := c.Children(ctx, core.SeasonKey(700, 2))
 	if err != nil || len(eps) != 3 || eps[2].Key != core.EpisodeKey(700, 2, 3) {
 		t.Fatalf("season 2 after dating: %v %v", episodeKeys(eps), err)
