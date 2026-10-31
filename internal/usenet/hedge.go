@@ -17,8 +17,8 @@ import (
 // A viewer-blocking BODY whose provider stalls would otherwise hold the
 // player until the idle read deadline (seconds) fails it over. Once a live
 // fetch has gone unanswered for max(500ms, 2×p50) of its provider's recent
-// live fetches, or max(250ms, p50) once a live fetch issued after it has
-// already completed, one duplicate goes out on a separate, never-coalesced
+// live fetches, or max(250ms, p50) once a later live fetch of the same
+// playback stream (core.StreamKey) has already completed, one duplicate goes out on a separate, never-coalesced
 // connection: to another provider with spare capacity first, else to a fresh
 // connection of the same provider while it has spare slots, else nowhere.
 // The first CRC-verified result wins and the other side is cancelled.
@@ -60,7 +60,8 @@ type liveHedger struct {
 
 type liveFetch struct {
 	seq       uint64
-	overtaken chan struct{} // closed when a later live fetch succeeds first
+	key       any           // core.StreamKey of the caller; nil never overtakes
+	overtaken chan struct{} // closed when a later fetch of the stream succeeds first
 	flagged   bool
 }
 
@@ -68,26 +69,27 @@ func newLiveHedger() *liveHedger {
 	return &liveHedger{policy: defaultHedgePolicy, pending: make(map[*liveFetch]struct{}), hedging: make(map[string]struct{})}
 }
 
-func (h *liveHedger) begin() *liveFetch {
+func (h *liveHedger) begin(key any) *liveFetch {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.seq++
-	lf := &liveFetch{seq: h.seq, overtaken: make(chan struct{})}
+	lf := &liveFetch{seq: h.seq, key: key, overtaken: make(chan struct{})}
 	h.pending[lf] = struct{}{}
 	return lf
 }
 
-// end retires lf. A success overtakes every live fetch issued before it that
-// is still waiting: the clearest sign that one of them is stuck.
+// end retires lf. A success overtakes every still-waiting live fetch the
+// same stream issued before it: the clearest sign that one of them is stuck.
+// Other viewers' fetches finishing first are ordinary variance, not a stall.
 func (h *liveHedger) end(lf *liveFetch, ok bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.pending, lf)
-	if !ok {
+	if !ok || lf.key == nil {
 		return
 	}
 	for other := range h.pending {
-		if other.seq < lf.seq && !other.flagged {
+		if other.key == lf.key && other.seq < lf.seq && !other.flagged {
 			other.flagged = true
 			close(other.overtaken)
 		}
@@ -136,6 +138,9 @@ func (h *liveHedger) threshold(p *pool, overtaken bool) time.Duration {
 }
 
 // latencyWindow keeps the most recent live fetch durations for a median.
+// Samples run from the request to the decoded article, so they include time
+// spent waiting for a connection slot: when a pool saturates, p50 rises and
+// hedges become rarer, which is the right direction when capacity is scarce.
 type latencyWindow struct {
 	buf [32]time.Duration
 	n   int
@@ -209,7 +214,7 @@ func (f *Fetcher) bodyLive(ctx context.Context, id string, groups []string) (*ye
 	if h.policy.off {
 		return f.bodyChain(ctx, id, groups, core.PriorityLive, nil)
 	}
-	lf := h.begin()
+	lf := h.begin(core.StreamKey(ctx))
 	ok := false
 	defer func() { h.end(lf, ok) }()
 

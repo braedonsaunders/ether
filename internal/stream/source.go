@@ -140,7 +140,7 @@ func (s *source) readAtWithPriority(parent context.Context, p []byte, off int64,
 		s.readAhead(off, int64(len(want)))
 	}
 
-	ctx, cancel := context.WithTimeout(parent, s.e.opts.ReadTimeout)
+	ctx, cancel := context.WithTimeout(core.WithStreamKey(parent, s), s.e.opts.ReadTimeout)
 	stop := context.AfterFunc(s.ctx, cancel)
 	defer stop()
 	defer cancel()

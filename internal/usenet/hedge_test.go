@@ -398,34 +398,58 @@ func TestHedgeLoserCancelledWhenPrimaryWins(t *testing.T) {
 	}
 }
 
-// A later live fetch completing while the head is still pending lowers the
-// hedge delay to the overtaken floor.
-func TestHedgeOvertakenTriggersEarly(t *testing.T) {
-	a, b, pa, pb := twoTiers(t, "head@x", randData(8, 80_000), 2, 4)
-	next := randData(9, 80_000)
-	addSeg(t, a, "next@x", next)
-	stallBody(a, 30*time.Second, "head@x")
-	f := newFetcher(t, []config.UsenetProvider{pa, pb}, Options{IdleReadTimeout: 10 * time.Second})
-	f.live.policy.floor, f.live.policy.cold = 2*time.Second, 2*time.Second
-	f.live.policy.overtakenFloor = 50 * time.Millisecond
+// A later live fetch of the same playback stream completing while the head
+// is still pending lowers the hedge delay to the overtaken floor. Another
+// viewer's fetch finishing first is ordinary variance and changes nothing,
+// and fetches without a stream key never overtake.
+func TestHedgeOvertakenOnlyWithinStream(t *testing.T) {
+	type stream struct{ _ byte }
+	s1, s2 := &stream{}, &stream{}
+	const floor = 800 * time.Millisecond
+	for _, tc := range []struct {
+		name       string
+		head, next any
+		early      bool
+	}{
+		{"same stream", s1, s1, true},
+		{"other stream", s1, s2, false},
+		{"no stream key", nil, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, b, pa, pb := twoTiers(t, "head@x", randData(8, 80_000), 2, 4)
+			next := randData(9, 80_000)
+			addSeg(t, a, "next@x", next)
+			stallBody(a, 30*time.Second, "head@x")
+			bLog := stallBody(b, 0)
+			f := newFetcher(t, []config.UsenetProvider{pa, pb}, Options{IdleReadTimeout: 10 * time.Second})
+			f.live.policy.floor, f.live.policy.cold = floor, floor
+			f.live.policy.overtakenFloor = 50 * time.Millisecond
 
-	done := make(chan time.Duration, 1)
-	start := time.Now()
-	go func() {
-		if _, err := f.Body(context.Background(), "head@x", nil, core.PriorityLive); err != nil {
-			t.Error(err)
-		}
-		done <- time.Since(start)
-	}()
-	time.Sleep(20 * time.Millisecond)
-	if got, err := f.Body(context.Background(), "next@x", nil, core.PriorityLive); err != nil || !bytes.Equal(got, next) {
-		t.Fatalf("next: len=%d err=%v", len(got), err)
-	}
-	if d := <-done; d > time.Second {
-		t.Fatalf("overtaken head answered after %v; the 2s stall floor was not lowered", d)
-	}
-	if n := b.BodyRequests("head@x"); n != 1 {
-		t.Fatalf("head hedges = %d", n)
+			done := make(chan error, 1)
+			start := time.Now()
+			go func() {
+				_, err := f.Body(core.WithStreamKey(context.Background(), tc.head), "head@x", nil, core.PriorityLive)
+				done <- err
+			}()
+			time.Sleep(20 * time.Millisecond)
+			if got, err := f.Body(core.WithStreamKey(context.Background(), tc.next), "next@x", nil, core.PriorityLive); err != nil || !bytes.Equal(got, next) {
+				t.Fatalf("next: len=%d err=%v", len(got), err)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			sent := bLog.times()
+			if len(sent) != 1 {
+				t.Fatalf("head hedges = %d, want 1", len(sent))
+			}
+			at := sent[0].Sub(start)
+			if tc.early && at >= floor/2 {
+				t.Fatalf("overtaken head hedged after %v; the %v floor was not lowered", at, floor)
+			}
+			if !tc.early && at < floor {
+				t.Fatalf("head hedged after %v, before the %v floor, on another stream's completion", at, floor)
+			}
+		})
 	}
 }
 
