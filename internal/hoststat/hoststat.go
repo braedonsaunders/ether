@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -15,20 +16,27 @@ import (
 
 // Telemetry is one soak sample. Session counts are supplied by the caller.
 type Telemetry struct {
-	At         time.Time `json:"at"`
-	RSSBytes   uint64    `json:"rss_bytes"`
-	FDs        int       `json:"fds"`
-	Goroutines int       `json:"goroutines"`
-	FFmpeg     int       `json:"ffmpeg"`
-	Sessions   int       `json:"sessions"`
-	Transcodes int       `json:"transcodes"`
-	Children   int       `json:"children"`
-	RetryQueue int       `json:"retry_queue"`
-	NetRx      uint64    `json:"net_rx_bytes"`
-	NetTx      uint64    `json:"net_tx_bytes"`
-	GPU        string    `json:"gpu"`
-	Valid      bool      `json:"valid"`
-	Error      string    `json:"error,omitempty"`
+	At           time.Time `json:"at"`
+	RSSBytes     uint64    `json:"rss_bytes"`
+	SelfRSS      uint64    `json:"self_rss_bytes"`
+	HeapAlloc    uint64    `json:"heap_alloc"`
+	HeapInuse    uint64    `json:"heap_inuse"`
+	HeapSys      uint64    `json:"heap_sys"`
+	HeapIdle     uint64    `json:"heap_idle"`
+	HeapReleased uint64    `json:"heap_released"`
+	GOGC         int       `json:"gogc"`
+	FDs          int       `json:"fds"`
+	Goroutines   int       `json:"goroutines"`
+	FFmpeg       int       `json:"ffmpeg"`
+	Sessions     int       `json:"sessions"`
+	Transcodes   int       `json:"transcodes"`
+	Children     int       `json:"children"`
+	RetryQueue   int       `json:"retry_queue"`
+	NetRx        uint64    `json:"net_rx_bytes"`
+	NetTx        uint64    `json:"net_tx_bytes"`
+	GPU          string    `json:"gpu"`
+	Valid        bool      `json:"valid"`
+	Error        string    `json:"error,omitempty"`
 }
 
 // Collect reads the process tree, network counters and GPU presence.
@@ -44,7 +52,16 @@ func Collect(procRoot, devRoot string, pid, sessions, transcodes int) Telemetry 
 		out.Error = "network counters unavailable"
 		return out
 	}
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
 	out.RSSBytes = tree.RSSBytes
+	out.SelfRSS = tree.SelfRSS
+	out.HeapAlloc = mem.HeapAlloc
+	out.HeapInuse = mem.HeapInuse
+	out.HeapSys = mem.HeapSys
+	out.HeapIdle = mem.HeapIdle
+	out.HeapReleased = mem.HeapReleased
+	out.GOGC = gogc()
 	out.FDs = tree.FDs
 	out.FFmpeg = len(tree.FFmpegPIDs)
 	out.Children = tree.Children
@@ -57,6 +74,7 @@ func Collect(procRoot, devRoot string, pid, sessions, transcodes int) Telemetry 
 // Tree is one process and its descendants.
 type Tree struct {
 	RSSBytes     uint64
+	SelfRSS      uint64
 	FDs          int
 	Children     int
 	FFmpegPIDs   []int
@@ -118,6 +136,9 @@ func ProcessTree(procRoot string, pid int) (Tree, error) {
 			return err
 		}
 		tree.RSSBytes += row.rss
+		if id == pid {
+			tree.SelfRSS = row.rss
+		}
 		tree.FDs += fds
 		if id != pid {
 			tree.Children++
@@ -138,6 +159,14 @@ func ProcessTree(procRoot string, pid int) (Tree, error) {
 		return Tree{}, err
 	}
 	return tree, nil
+}
+
+func gogc() int {
+	pct := debug.SetGCPercent(100)
+	if pct != 100 {
+		debug.SetGCPercent(pct)
+	}
+	return pct
 }
 
 func isGuardian(cmdline []byte) bool {

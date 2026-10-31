@@ -15,10 +15,11 @@ name=prism-soak-${build}
 case "$name" in
   prism-jellyfin|prism-emby|prism-silo|prism-jf-lab-zbv) echo "refusing reserved name" >&2; exit 2;;
 esac
-case "$profile" in shakedown|sustained|diagnose) ;; *) echo "bad profile" >&2; exit 2;; esac
+case "$profile" in shakedown|sustained|diagnose|heap) ;; *) echo "bad profile" >&2; exit 2;; esac
 seconds=3000
 if [[ "$profile" == sustained ]]; then seconds=9000; fi
 if [[ "$profile" == diagnose ]]; then seconds=900; fi
+if [[ "$profile" == heap ]]; then seconds=1800; fi
 diagnose=0
 if [[ "$profile" == diagnose ]]; then diagnose=1; profile=shakedown; fi
 slot_dir=/Users/braedonsaunders/.bb/thread-storage/prism-briefs/slots
@@ -111,7 +112,8 @@ docker run --pull=never --init --name "$name" --network=none \
   -e PATH=/opt/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/bin:/bin \
   prism-go:1.27.3 \
   sh -c 'set -eu
-    if [ "${3:-}" != -diagnose ]; then
+    if [ "$1" = heap ]; then export SCORECARD_HEAP_DIR=/soak/heaps; fi
+    if [ "${3:-}" != -diagnose ] && [ "$1" != heap ]; then
       go test -tags "scorecard" -count=1 -timeout 600s -run TestScorecardFaultOutageAndTelemetry ./internal/app/
       go test -count=1 -timeout 120s -run "TestEvaluateSoak|TestRunSoak|TestSynthesize|TestProcessTree|TestNetDev" ./cmd/scorecard/ ./internal/hoststat/
     fi

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -138,6 +139,13 @@ func scorecardControl(a *App, w http.ResponseWriter, r *http.Request) bool {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(scorecardTelemetry(a))
+		return true
+	case "/__scorecard/heap":
+		if r.Method != http.MethodGet {
+			return false
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_ = pprof.Lookup("heap").WriteTo(w, 0)
 		return true
 	case "/__scorecard/fault":
 		if r.Method != http.MethodPost {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,8 +31,10 @@ func profileTiming(profile string) (soakTiming, error) {
 		return soakTiming{Steady: 8 * time.Minute, Fault: 3 * time.Minute, Followup: 5*time.Minute + 20*time.Second, Cleanup: 5*time.Minute + 15*time.Second, Sample: 10 * time.Second}, nil
 	case "sustained":
 		return soakTiming{Steady: 135 * time.Minute, Fault: 3 * time.Minute, Followup: 5*time.Minute + 20*time.Second, Cleanup: 5*time.Minute + 15*time.Second, Sample: 15 * time.Second}, nil
+	case "heap":
+		return soakTiming{Steady: 8 * time.Minute, Followup: 4 * time.Minute, Cleanup: time.Minute, Sample: 30 * time.Second}, nil
 	default:
-		return soakTiming{}, fmt.Errorf("profile must be shakedown or sustained")
+		return soakTiming{}, fmt.Errorf("profile must be shakedown, sustained or heap")
 	}
 }
 
@@ -142,10 +145,12 @@ func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 		wg.Wait()
 		return run.snapshot(), err
 	}
-	if err := run.faults(loadCtx); err != nil {
-		stopLoad()
-		wg.Wait()
-		return run.snapshot(), err
+	if run.cfg.Profile != "heap" {
+		if err := run.faults(loadCtx); err != nil {
+			stopLoad()
+			wg.Wait()
+			return run.snapshot(), err
+		}
 	}
 	stopLoad()
 	wg.Wait()
@@ -245,7 +250,31 @@ func (run *soakRun) sample(ctx context.Context) error {
 	run.mu.Lock()
 	run.manifest.Samples = append(run.manifest.Samples, sample)
 	run.mu.Unlock()
+	if dir := os.Getenv("SCORECARD_HEAP_DIR"); dir != "" {
+		_ = run.saveHeap(ctx, dir, sample.At)
+	}
 	return nil
+}
+
+func (run *soakRun) saveHeap(ctx context.Context, dir string, at time.Time) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, run.cfg.Jellyfin+"/__scorecard/heap", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := run.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil || resp.StatusCode != http.StatusOK || len(body) == 0 {
+		return err
+	}
+	name := filepath.Join(dir, "heap-"+at.UTC().Format("20060102T150405")+".pprof")
+	return os.WriteFile(name, body, 0600)
 }
 
 func (run *soakRun) worker(ctx context.Context, client string) {

@@ -36,7 +36,7 @@ func TestProcessTreeSumsDescendants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tree.RSSBytes != 14*1024 || tree.FDs != 3 || tree.Children != 2 || len(tree.FFmpegPIDs) != 1 || tree.FFmpegPIDs[0] != 12 || len(tree.GuardianPIDs) != 1 || tree.GuardianPIDs[0] != 11 {
+	if tree.RSSBytes != 14*1024 || tree.SelfRSS != 2*1024 || tree.FDs != 3 || tree.Children != 2 || len(tree.FFmpegPIDs) != 1 || tree.FFmpegPIDs[0] != 12 || len(tree.GuardianPIDs) != 1 || tree.GuardianPIDs[0] != 11 {
 		t.Fatalf("tree: %+v", tree)
 	}
 }
