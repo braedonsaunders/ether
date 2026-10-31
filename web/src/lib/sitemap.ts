@@ -151,12 +151,12 @@ export const PAGES = localized<PageDef[]>(() => [
         ),
       },
       {
-        key: "usenet",
+        key: "yours/usenet",
         title: t("Usenet providers"),
         keywords: searchTerms(msg("nntp backfill connections")),
       },
       {
-        key: "indexers",
+        key: "yours/indexers",
         title: t("Indexers"),
         keywords: searchTerms(
           msg(
@@ -165,7 +165,7 @@ export const PAGES = localized<PageDef[]>(() => [
         ),
       },
       {
-        key: "debrid",
+        key: "yours/debrid",
         title: t("Debrid"),
         keywords: searchTerms(
           msg(

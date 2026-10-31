@@ -14,7 +14,7 @@ async function openAddAddon() {
 
 describe("Sources › Indexers Stremio addons", () => {
   it("adds an addon from its stremio:// install link as a torrent source", async () => {
-    const { fake } = renderApp("/sources/indexers");
+    const { fake } = renderApp("/sources/yours/indexers");
     const drawer = await openAddAddon();
     expect(within(drawer).getByText("Stremio addon · Torrent")).toBeInTheDocument();
     expect(within(drawer).queryByLabelText("API key")).toBeNull();
@@ -47,7 +47,7 @@ describe("Sources › Indexers Stremio addons", () => {
   });
 
   it("warns when the link embeds a debrid key", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     const drawer = await openAddAddon();
     fireEvent.change(within(drawer).getByLabelText("Addon URL"), {
       target: { value: "https://addon.example/sort=size|realdebrid=ABC123/manifest.json" },

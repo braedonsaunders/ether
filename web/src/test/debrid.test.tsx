@@ -16,11 +16,11 @@ async function choose(label: string, option: string) {
 
 describe("Sources › Debrid", () => {
   it("is a Sources tab that search can find", async () => {
-    expect(destinations().find((d) => d.href === "/sources/debrid")).toMatchObject({
+    expect(destinations().find((d) => d.href === "/sources/yours/debrid")).toMatchObject({
       title: "Debrid",
       page: "Sources",
     });
-    renderApp("/sources/debrid");
+    renderApp("/sources/yours/debrid");
     expect(await screen.findByRole("heading", { name: "Sources" }, WAIT)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Your sources" })).toHaveAttribute(
       "aria-selected",
@@ -29,8 +29,19 @@ describe("Sources › Debrid", () => {
     expect(await screen.findByRole("region", { name: "Debrid providers" }, WAIT)).toBeInTheDocument();
   });
 
+  it.each(["/sources/usenet", "/sources/indexers", "/sources/debrid", "/sources/usage"])(
+    "does not treat %s as its own page",
+    async (path) => {
+      renderApp(path);
+      expect(await screen.findByRole("region", { name: "Debrid providers" }, WAIT)).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Usenet providers" })).toBeNull();
+      expect(screen.queryByRole("region", { name: "Indexers" })).toBeNull();
+      expect(screen.queryByText("Plays this month")).toBeNull();
+    },
+  );
+
   it("lists providers with their kind and live status", async () => {
-    const { fake } = renderApp("/sources/debrid");
+    const { fake } = renderApp("/sources/yours/debrid");
     expect(await screen.findByRole("button", { name: "Edit Real-Debrid" }, WAIT)).toBeVisible();
     const list = screen.getByRole("region", { name: "Debrid providers" });
     expect(within(list).getByRole("button", { name: "Edit TorBox backup" })).toBeInTheDocument();
@@ -55,7 +66,7 @@ describe("Sources › Debrid", () => {
   });
 
   it("points at indexers only when debrid is connected and no torrent source exists", async () => {
-    renderApp("/sources/debrid", {}, (fake) => {
+    renderApp("/sources/yours/debrid", {}, (fake) => {
       fake.state.config.indexers = (fake.state.config.indexers ?? []).map((ix) =>
         ix.protocol === "torrent" ? { ...ix, enabled: false } : ix,
       );
@@ -63,13 +74,13 @@ describe("Sources › Debrid", () => {
     expect(await screen.findByText(/no torrent source is set up yet/, {}, WAIT)).toBeVisible();
     expect(screen.getByRole("link", { name: "Add one" })).toHaveAttribute(
       "href",
-      "/sources/indexers",
+      "/sources/yours/indexers",
     );
     expect(screen.queryByText(/Ether ships no/)).toBeNull();
   });
 
   it("adds a provider from a drawer, tests it, and keeps stored keys", async () => {
-    const { fake } = renderApp("/sources/debrid");
+    const { fake } = renderApp("/sources/yours/debrid");
     fireEvent.click(await screen.findByRole("button", { name: "Add a debrid service" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "New debrid provider" });
     const test = within(drawer).getByRole("button", { name: /Test/ });
@@ -99,7 +110,7 @@ describe("Sources › Debrid", () => {
   });
 
   it("tests a saved provider with its redacted key", async () => {
-    const { fake } = renderApp("/sources/debrid");
+    const { fake } = renderApp("/sources/yours/debrid");
     fireEvent.click(await screen.findByRole("button", { name: "Edit Real-Debrid" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "Real-Debrid" });
     fireEvent.click(within(drawer).getByRole("button", { name: /Test/ }));
@@ -111,7 +122,7 @@ describe("Sources › Debrid", () => {
   });
 
   it("edits cached-only handling in place and keeps the providers", async () => {
-    const { fake } = renderApp("/sources/debrid");
+    const { fake } = renderApp("/sources/yours/debrid");
     const cached = await screen.findByRole("switch", { name: "Cached torrents only" }, WAIT);
     expect(cached).toBeChecked();
     expect(screen.queryByRole("button", { name: /Save changes/ })).not.toBeInTheDocument();
@@ -129,7 +140,7 @@ describe("Sources › Debrid", () => {
 
 describe("Sources › Indexers protocol", () => {
   it("badges torrent indexers and saves the protocol from the drawer", async () => {
-    const { fake } = renderApp("/sources/indexers");
+    const { fake } = renderApp("/sources/yours/indexers");
     fireEvent.click(await screen.findByRole("button", { name: "Edit Indexer Two" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "Indexer Two" });
     const protocol = within(drawer).getByRole("radiogroup", { name: "Protocol" });
@@ -149,22 +160,22 @@ describe("Sources › Indexers protocol", () => {
   });
 
   it("points torrent indexers at the Debrid tab when no debrid account is set up", async () => {
-    renderApp("/sources/indexers", {}, (fake) => {
+    renderApp("/sources/yours/indexers", {}, (fake) => {
       fake.state.config.debrid = { providers: [], cachedOnly: true, removeUncached: true };
     });
     expect(
       await screen.findByRole("link", { name: "Add a debrid provider" }, WAIT),
-    ).toHaveAttribute("href", "/sources/debrid");
+    ).toHaveAttribute("href", "/sources/yours/debrid");
   });
 
   it("does not nag when a debrid account is ready", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     expect(await screen.findByRole("button", { name: "Edit Torrent Tracker" }, WAIT)).toBeVisible();
     expect(screen.queryByRole("link", { name: "Add a debrid provider" })).toBeNull();
   });
 
   it("shows each Prowlarr result's protocol", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     await screen.findByRole("button", { name: "Edit Indexer One" }, WAIT);
     fireEvent.click(screen.getByRole("button", { name: /Import from Prowlarr/ }));
     const drawer = await screen.findByRole("dialog", { name: "Import from Prowlarr" });

@@ -31,7 +31,7 @@ async function openAddSite() {
 
 describe("Sources › Indexers sites", () => {
   it("adds a site from an installed definition, tests it and saves it", async () => {
-    const { fake } = renderApp("/sources/indexers");
+    const { fake } = renderApp("/sources/yours/indexers");
     const picker = await openAddSite();
     fireEvent.click(await within(picker).findByRole("button", { name: "Use Example Private" }));
     const drawer = await screen.findByRole("dialog", { name: "Example Private" });
@@ -84,7 +84,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("generates the settings form from the definition", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     const picker = await openAddSite();
     fireEvent.click(await within(picker).findByRole("button", { name: "Use Example Tracker" }));
     const drawer = await screen.findByRole("dialog", { name: "Example Tracker" });
@@ -99,7 +99,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("lists sites with their type and last test, and keeps stored secrets", async () => {
-    const { fake } = renderApp("/sources/indexers", {}, (f) => {
+    const { fake } = renderApp("/sources/yours/indexers", {}, (f) => {
       f.state.config.indexers = [...(f.state.config.indexers ?? []), builtinIndexer];
       f.sites.state.statuses = [
         {
@@ -149,7 +149,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("shows a failed test's error", async () => {
-    renderApp("/sources/indexers", {}, (f) => {
+    renderApp("/sources/yours/indexers", {}, (f) => {
       f.state.config.indexers = [
         ...(f.state.config.indexers ?? []),
         { ...builtinIndexer, secretSettings: { password: "wrong" } },
@@ -162,7 +162,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("flags a site whose definition was removed", async () => {
-    renderApp("/sources/indexers", {}, (f) => {
+    renderApp("/sources/yours/indexers", {}, (f) => {
       f.state.config.indexers = [{ ...builtinIndexer, definition: "gone" }];
     });
     const list = await screen.findByRole("region", { name: "Indexers" }, WAIT);
@@ -174,7 +174,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("installs a site from the definitions source when picked", async () => {
-    const { fake } = renderApp("/sources/indexers", {}, (f) => {
+    const { fake } = renderApp("/sources/yours/indexers", {}, (f) => {
       f.state.config.indexerSites = { definitionsUrl: "https://defs.invalid/definitions/" };
     });
     const picker = await openAddSite();
@@ -194,13 +194,13 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("explains that browsing needs a definitions source", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     const picker = await openAddSite();
     expect(await within(picker).findByText(/No definitions source is set/)).toBeInTheDocument();
   });
 
   it("marks sites that are already indexers in the picker", async () => {
-    renderApp("/sources/indexers", {}, (f) => {
+    renderApp("/sources/yours/indexers", {}, (f) => {
       f.state.config.indexers = [...(f.state.config.indexers ?? []), builtinIndexer];
     });
     await screen.findByText("Torrent site", {}, WAIT);
@@ -212,7 +212,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("uploads a definition from the picker and continues to its settings", async () => {
-    const { fake } = renderApp("/sources/indexers");
+    const { fake } = renderApp("/sources/yours/indexers");
     const picker = await openAddSite();
     fireEvent.click(within(picker).getByRole("button", { name: /Upload definition/ }));
     const upload = await screen.findByRole("dialog", { name: "Upload definition" });
@@ -228,7 +228,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("still adds Newznab and Torznab URLs from the same menu", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     fireEvent.click(await screen.findByRole("button", { name: /Add indexer/ }, WAIT));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Newznab or Torznab URL…" }));
     const drawer = await screen.findByRole("dialog", { name: "New indexer" });
@@ -237,7 +237,7 @@ describe("Sources › Indexers sites", () => {
   });
 
   it("does not present Prowlarr as a requirement", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     const list = await screen.findByRole("region", { name: "Indexers" }, WAIT);
     expect(within(list).queryByText(/Prowlarr/)).toBeNull();
     expect(screen.queryByText(/ships none/)).toBeNull();
@@ -250,7 +250,7 @@ describe("Sources › Indexers sites", () => {
 
 describe("Sources › Indexers definitions", () => {
   it("edits the definitions source and FlareSolverr in place", async () => {
-    const { fake } = renderApp("/sources/indexers");
+    const { fake } = renderApp("/sources/yours/indexers");
     const flare = await screen.findByLabelText("FlareSolverr", {}, WAIT);
     expect(screen.queryByRole("button", { name: /Save changes/ })).toBeNull();
     fireEvent.change(flare, { target: { value: "http://localhost:8191" } });
@@ -266,7 +266,7 @@ describe("Sources › Indexers definitions", () => {
   });
 
   it("lists unused definitions with warnings and updates them from the source", async () => {
-    const { fake } = renderApp("/sources/indexers");
+    const { fake } = renderApp("/sources/yours/indexers");
     const unused = await screen.findByRole("list", { name: "Unused definitions" }, WAIT);
     expect(within(unused).getByText("Example Tracker")).toBeInTheDocument();
     expect(within(unused).getByText(/filter "sparkle" is not supported/)).toBeInTheDocument();
@@ -277,7 +277,7 @@ describe("Sources › Indexers definitions", () => {
   });
 
   it("uploads a pasted definition and reports invalid ones", async () => {
-    const { fake } = renderApp("/sources/indexers");
+    const { fake } = renderApp("/sources/yours/indexers");
     fireEvent.click(await screen.findByRole("button", { name: /Upload definition/ }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "Upload definition" });
     const install = within(drawer).getByRole("button", { name: /Install definition/ });
@@ -302,7 +302,7 @@ describe("Sources › Indexers definitions", () => {
   });
 
   it("adds an unused definition as an indexer", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     fireEvent.click(
       await screen.findByRole("button", { name: "Add Example Tracker as an indexer" }, WAIT),
     );
@@ -314,7 +314,7 @@ describe("Sources › Indexers definitions", () => {
   });
 
   it("removes an unused definition and keeps ones in use off the list", async () => {
-    const { fake } = renderApp("/sources/indexers", {}, (f) => {
+    const { fake } = renderApp("/sources/yours/indexers", {}, (f) => {
       f.state.config.indexers = [...(f.state.config.indexers ?? []), builtinIndexer];
     });
     const installed = await screen.findByRole("list", { name: "Unused definitions" }, WAIT);

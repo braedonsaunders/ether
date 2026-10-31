@@ -43,21 +43,15 @@ function isSourceSub(value: string | undefined): value is SourceSub {
 }
 
 /**
- * Where playback comes from. Each source type has its own sub-tab.
- * Old /sources/usenet, /debrid, /indexers and /usage addresses still open
- * the matching tab. Adding one starts from a gallery, then a drawer.
+ * Where playback comes from. Each source type has its own sub-tab under
+ * /sources/yours. An unknown address opens Your sources, not a renamed page.
+ * Adding one starts from a gallery, then a drawer.
  */
 export default function Sources() {
   const { tab: raw, sub: rawSub } = useParams();
   const navigate = useNavigate();
-  const legacySource = isSourceSub(raw) ? raw : undefined;
-  const top =
-    raw === "usage" || raw === "cost"
-      ? "stats"
-      : raw === "overview" || legacySource
-        ? "yours"
-        : TABS.find((item) => item.key === raw)?.key ?? "yours";
-  const sourceSub: SourceSub = legacySource ?? (isSourceSub(rawSub) ? rawSub : "debrid");
+  const top = TABS.find((item) => item.key === raw)?.key ?? "yours";
+  const sourceSub: SourceSub = top === "yours" && isSourceSub(rawSub) ? rawSub : "debrid";
   const [importing, setImporting] = useState(false);
   const [gallery, setGallery] = useState(false);
   const [version, setVersion] = useState(0);

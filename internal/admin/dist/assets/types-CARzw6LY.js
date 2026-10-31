@@ -1,1 +1,0 @@
-import{t as r}from"./index-BlhRtB61.js";const t=e=>{const n=e.title||e.username;return e.isOwner?r("{name} (owner)",{name:n}):n};function o(e){return`?days=${e.days}&user=${encodeURIComponent(e.user)}${e.year?`&year=${e.year}`:""}`}export{o as a,t as v};

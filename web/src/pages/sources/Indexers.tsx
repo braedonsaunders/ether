@@ -387,7 +387,7 @@ export function IndexerList({
         <Alert variant="info" role="status">
           <AlertDescription>
             {t("Torrent indexers need a debrid account to stream from.")}{" "}
-            <Link to="/sources/debrid" className="font-medium underline underline-offset-2">
+            <Link to="/sources/yours/debrid" className="font-medium underline underline-offset-2">
               {t("Add a debrid provider")}
             </Link>
           </AlertDescription>

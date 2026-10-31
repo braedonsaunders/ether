@@ -33,9 +33,9 @@ describe("Owner usability", () => {
   });
 
   it.each([
-    { path: "/sources/usenet", trigger: "Add a Usenet provider", dialog: "New provider" },
-    { path: "/sources/debrid", trigger: "Add a debrid service", dialog: "New debrid provider" },
-    { path: "/sources/indexers", trigger: "Import from Prowlarr", dialog: "Import from Prowlarr" },
+    { path: "/sources/yours/usenet", trigger: "Add a Usenet provider", dialog: "New provider" },
+    { path: "/sources/yours/debrid", trigger: "Add a debrid service", dialog: "New debrid provider" },
+    { path: "/sources/yours/indexers", trigger: "Import from Prowlarr", dialog: "Import from Prowlarr" },
     { path: "/cache", trigger: "Edit policy", dialog: "Edit cache policy" },
     { path: "/notifications/channels", trigger: "New channel", dialog: "New notification channel" },
   ])("keeps $path mounted while its drawer opens and closes", async ({ path, trigger, dialog }) => {
@@ -44,7 +44,7 @@ describe("Owner usability", () => {
     // The import action belongs to the page shell and appears before the
     // indexer list finishes its initial config read. Observe the loaded list
     // before checking that opening its drawer does not remount/refetch it.
-    if (path === "/sources/indexers") {
+    if (path === "/sources/yours/indexers") {
       await screen.findByRole("button", { name: "Add indexer" }, WAIT);
     }
     const page = control.closest("main")!;

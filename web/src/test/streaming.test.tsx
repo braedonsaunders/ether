@@ -13,7 +13,7 @@ async function choose(label: string, option: string) {
 
 describe("Sources", () => {
   it("enables bounded repair without changing provider credentials", async () => {
-    const { fake } = renderApp("/sources/usenet");
+    const { fake } = renderApp("/sources/yours/usenet");
     fireEvent.click(await screen.findByRole("button", { name: "Configure repair" }, WAIT));
     const enabled = await screen.findByRole("switch", { name: "Enable repair" });
     expect(enabled).not.toBeChecked();
@@ -29,7 +29,7 @@ describe("Sources", () => {
   });
 
   it("discards unsaved provider edits when its drawer closes", async () => {
-    const { fake } = renderApp("/sources/usenet");
+    const { fake } = renderApp("/sources/yours/usenet");
     fireEvent.click(await screen.findByRole("button", { name: "Edit Primary news" }, WAIT));
     fireEvent.change(screen.getByLabelText("Host"), { target: { value: "draft.example" } });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -40,7 +40,7 @@ describe("Sources", () => {
   });
 
   it("saves one provider from its drawer and keeps redacted secrets", async () => {
-    const { fake } = renderApp("/sources/usenet");
+    const { fake } = renderApp("/sources/yours/usenet");
     fireEvent.click(await screen.findByRole("button", { name: "Edit Primary news" }, WAIT));
     fireEvent.change(screen.getByLabelText("Host"), { target: { value: "eu.news.example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
@@ -56,7 +56,7 @@ describe("Sources", () => {
   });
 
   it("persists provider removal from its drawer and retains remaining credentials", async () => {
-    const { fake } = renderApp("/sources/usenet");
+    const { fake } = renderApp("/sources/yours/usenet");
     fireEvent.click(await screen.findByRole("button", { name: "Edit Primary news" }, WAIT));
     fireEvent.click(screen.getByRole("button", { name: "Remove provider" }));
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
@@ -71,7 +71,7 @@ describe("Sources", () => {
   });
 
   it("reorders providers and saves the new priorities", async () => {
-    const { fake } = renderApp("/sources/usenet");
+    const { fake } = renderApp("/sources/yours/usenet");
     fireEvent.click(await screen.findByRole("button", { name: "Move Block account up" }, WAIT));
     await waitFor(() => expect(calls(fake, "PUT", "/config/usenet")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/usenet")[0]!.body).toMatchObject({
@@ -83,7 +83,7 @@ describe("Sources", () => {
   });
 
   it("imports indexers from Prowlarr in a drawer", async () => {
-    renderApp("/sources/indexers");
+    renderApp("/sources/yours/indexers");
     expect(
       await screen.findByRole("button", { name: "Edit Indexer One" }, WAIT),
     ).toBeInTheDocument();
