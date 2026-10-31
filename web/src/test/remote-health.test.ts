@@ -25,6 +25,14 @@ describe("remoteHealth", () => {
     expect(remoteHealth({ ...claimed, friendSyncError: "500" }).summary).toMatch(/Shared users/);
   });
 
+  it("points an unclaimed server at the in-page claim action", () => {
+    const h = remoteHealth({ claimed: false });
+    expect(h.level).toBe("error");
+    expect(h.href).toBe("/apps/plex/account");
+    expect(h.details.join(" ")).toMatch(/Sign in and claim this server on the Plex page/);
+    expect(h.details.join(" ")).not.toMatch(/setup wizard/);
+  });
+
   it("treats enabled remote access as configuration when plex.tv has no verdict", () => {
     const h = remoteHealth(claimed);
     expect(h.level).toBe("ok");

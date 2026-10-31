@@ -135,6 +135,8 @@ export const PLEX: FieldGroup[] = localized(() => [
         kind: "bool",
         help: t("Publishes your public address to plex.tv."),
       },
+    ],
+    more: [
       {
         key: "useUpnp",
         label: t("Map the port automatically (UPnP)"),
@@ -168,6 +170,7 @@ export const PLEX: FieldGroup[] = localized(() => [
   {
     id: "secure",
     title: t("Secure connections"),
+    description: t("How Plex apps encrypt the connection to this server."),
     fields: [
       {
         key: "secureConnections",
@@ -179,6 +182,8 @@ export const PLEX: FieldGroup[] = localized(() => [
           { value: "disabled", label: t("Disabled") },
         ],
       },
+    ],
+    more: [
       {
         key: "certFile",
         label: t("Certificate file"),
@@ -186,26 +191,13 @@ export const PLEX: FieldGroup[] = localized(() => [
         wide: true,
         help: t("Leave empty to use the plex.direct certificate Ether manages."),
       },
-      { key: "keyFile", label: t("Key file"), kind: "text", wide: true },
-    ],
-  },
-  {
-    id: "account",
-    title: t("Account"),
-    fields: [
-      { key: "ownerUsername", label: t("Owner"), kind: "readonly" },
       {
-        key: "claimed",
-        label: t("Claimed"),
-        kind: "bool",
-        help: t(
-          "Set by the setup wizard when the server is linked to your Plex account. Turning it off signs the server out of Plex: it is removed from the account's devices so another account can claim it.",
-        ),
+        key: "keyFile",
+        label: t("Key file"),
+        kind: "text",
+        wide: true,
+        help: t("The private key that matches the certificate file."),
       },
-      { key: "token", label: t("Owner token"), kind: "secret" },
-      { key: "clientIdentifier", label: t("Client identifier"), kind: "readonly" },
-      { key: "ownerPlexId", label: t("Owner Plex ID"), kind: "readonly" },
-      { key: "certHash", label: t("plex.direct hash"), kind: "readonly" },
     ],
   },
   {
@@ -221,17 +213,19 @@ export const PLEX: FieldGroup[] = localized(() => [
         ),
       },
       {
+        key: "latestCompatibilityVersion",
+        label: t("Latest public PMS version"),
+        kind: "readonly",
+      },
+    ],
+    more: [
+      {
         key: "compatibilityVersion",
         label: t("Compatibility version override"),
         kind: "text",
         help: t(
           "Leave empty to use the verified version, or the latest public version when tracking is on.",
         ),
-      },
-      {
-        key: "latestCompatibilityVersion",
-        label: t("Latest public PMS version"),
-        kind: "readonly",
       },
     ],
   },

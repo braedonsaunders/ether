@@ -8,7 +8,7 @@ import { api } from "../../lib/api";
 import { isPlainObject, relativeTime } from "../../lib/format";
 import { plexDirectHealth, remoteHealth } from "../../lib/health";
 import { useAsync } from "../../lib/hooks";
-import type { EtherConfig, UpdateStatus } from "../../lib/types";
+import type { UpdateStatus } from "../../lib/types";
 import { SecureAddresses } from "./SecureAddresses";
 
 /**
@@ -25,15 +25,8 @@ export type RunTest = (
 
 // ---- Status cards -----------------------------------------------------------------------
 
-export function PlexStatus({
-  cfg,
-  remote,
-  onReopen,
-}: {
-  cfg: EtherConfig;
-  remote: unknown;
-  onReopen: () => void;
-}) {
+/** Remote-access and plex.direct health for the Plex app page. Account sign-in lives on that page, not here. */
+export function PlexStatus({ remote }: { remote: unknown }) {
   const r = remoteHealth(remote);
   const c = plexDirectHealth(remote);
   const conns =
@@ -42,21 +35,6 @@ export function PlexStatus({
       : [];
   return (
     <SettingsSection title={t("Status")}>
-      <SettingsRow
-        title={t("Plex account")}
-        description={
-          cfg.plex.claimed && cfg.plex.token
-            ? cfg.plex.ownerUsername
-              ? t("Claimed by {owner}.", { owner: cfg.plex.ownerUsername })
-              : t("Claimed by your account.")
-            : t("Not signed in to plex.tv. Run the setup wizard to sign in and claim this server.")
-        }
-        control={
-          <Button variant="outline" size="sm" onClick={onReopen}>
-            {t("Reopen setup wizard")}
-          </Button>
-        }
-      />
       <SettingsRow
         title={t("Remote access")}
         description={r.details.join(" · ") || r.summary}

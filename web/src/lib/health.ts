@@ -288,16 +288,17 @@ export function remoteHealth(v: unknown): HealthItem {
   const base = {
     id: "remote" as const,
     label: t("Remote access"),
-    href: "/apps/plex",
+    href: "/apps/plex/remote",
   };
   if (!isPlainObject(v))
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };
   if (v.claimed === false)
     return {
       ...base,
+      href: "/apps/plex/account",
       level: "error",
       summary: t("Server is not claimed"),
-      details: [t("Finish the setup wizard to link Ether to your Plex account.")],
+      details: [t("Sign in and claim this server on the Plex page.")],
     };
   const presence = isPlainObject(v.presence) ? v.presence : {};
   const details: string[] = [];
@@ -406,7 +407,7 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
   const base = {
     id: "plexdirect" as const,
     label: "plex.direct",
-    href: "/apps/plex",
+    href: "/apps/plex/remote",
   };
   if (!isPlainObject(v))
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };

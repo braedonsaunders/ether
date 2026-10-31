@@ -7,13 +7,17 @@ const WAIT = { timeout: 8000 };
 describe("Apps Plex placement", () => {
   it("keeps account, remote access, and secure connections on the Plex tab", async () => {
     const { fake } = renderApp("/apps/plex");
-    expect(await screen.findByLabelText("Allow remote access", {}, WAIT)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Sign out of Plex" }, WAIT),
+    ).toBeInTheDocument();
     expect(screen.getByText("127.0.0.1:32400")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Owner token")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Claimed" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Remote access" }));
+    expect(await screen.findByLabelText("Allow remote access", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByLabelText("Secure connections")).toBeInTheDocument();
-    expect(screen.getByLabelText("Owner token")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Connection checks" })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Remote access" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Secure connections" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Advanced" })).not.toBeInTheDocument();
     expect(calls(fake, "POST", "/plex/claim")).toHaveLength(0);
     fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
     await waitFor(() =>
@@ -38,7 +42,9 @@ describe("Apps Plex placement", () => {
     expect(screen.queryByLabelText("Secure connections")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Allow remote access")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
-    expect(document.querySelector('[data-app-id="plex"]')).toHaveTextContent("Off");
+    await waitFor(() =>
+      expect(document.querySelector('[data-app-id="plex"]')).toHaveTextContent("Off"),
+    );
   });
 
   it("does not treat /apps/secure as the Plex page", async () => {

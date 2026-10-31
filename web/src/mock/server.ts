@@ -1998,6 +1998,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
       case "POST /plex/pin":
         return json({ id: "pin1", code: "WXYZ", authUrl: "https://app.plex.tv/auth#?code=WXYZ" });
       case "POST /plex/claim":
+        state.config.plex.claimed = true;
+        if (!state.config.plex.token) state.config.plex.token = "••••";
+        if (!state.config.plex.ownerUsername) state.config.plex.ownerUsername = "owner";
         return json({ ok: true });
       case "POST /auth/pin":
         return json({ handle: "h1", code: "ABCD", authUrl: "https://app.plex.tv/auth#?code=ABCD" });
@@ -2649,8 +2652,18 @@ export function createFakeServer(opts: FakeOptions = {}) {
     }
     if (seg[0] === "config" && seg[1] && method === "PUT") {
       const key = seg[1] === "opensubtitles" ? "openSubtitles" : seg[1];
-      (state.config as unknown as Record<string, unknown>)[key] = body;
-      return json({ section: key, value: body });
+      let value = body;
+      if (
+        key === "plex" &&
+        body !== null &&
+        typeof body === "object" &&
+        !Array.isArray(body) &&
+        (body as { claimed?: boolean }).claimed === false
+      ) {
+        value = { ...(body as Record<string, unknown>), token: "" };
+      }
+      (state.config as unknown as Record<string, unknown>)[key] = value;
+      return json({ section: key, value });
     }
     if (seg[0] === "cluster" && seg[1] === "join-tokens" && seg[2] && method === "DELETE") {
       if (!state.clustered) return err(409, "not_clustered", "clustering is not enabled");

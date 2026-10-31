@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecureAddresses, secureAddresses } from "../pages/settings/SecureAddresses";
 import { PlexStatus } from "../pages/settings/sections";
-import { createFakeServer } from "../mock/server";
 
 const lan = "https://192-168-1-20.example.plex.direct:32450";
 const wan = "https://203-0-113-20.example.plex.direct:32450";
@@ -18,9 +17,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("secure discovery addresses", () => {
   it("includes secure discovery addresses in Connectivity beside HTTP registration addresses", () => {
-    render(
-      <PlexStatus cfg={createFakeServer().state.config} remote={remote} onReopen={() => {}} />,
-    );
+    render(<PlexStatus remote={remote} />);
     expect(screen.getByRole("textbox", { name: "Local network" })).toHaveValue(lan);
     expect(screen.getByText("http://192.168.1.20:32450")).toBeInTheDocument();
     expect(
