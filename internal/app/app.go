@@ -74,6 +74,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -113,13 +114,17 @@ type Options struct {
 
 // App is a running Ether server.
 type App struct {
-	availability *availability.Service
-	opts         Options
-	log          *slog.Logger
-	logs         *admin.LogBuffer
-	support      *diagnostics.Recorder
-	cfg          *config.Store
-	db           *sql.DB
+	availability  *availability.Service
+	opts          Options
+	log           *slog.Logger
+	logs          *admin.LogBuffer
+	support       *diagnostics.Recorder
+	cfg           *config.Store
+	proxyMu       sync.Mutex
+	proxyGen      uint64
+	proxyReady    bool
+	proxyPrefixes []netip.Prefix
+	db            *sql.DB
 	// databaseURL is the cluster database, placed in join tokens
 	// (cluster_settings.go); empty on a standalone server.
 	databaseURL string
