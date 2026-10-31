@@ -39,9 +39,8 @@ CREATE INDEX playback_resume_hash ON playback_resume(nzb_hash);
 	// selection key. Rows remember the language a release was chosen
 	// under so a later edit can drop that memory without changing the
 	// stored `Name|<16 hex>` profile column.
-	// Prism already owns playback/3 (payload incarnations). This column is the
-	// next migration so both schemas are applied.
-	store.Register("playback", 4, `ALTER TABLE playback_resume ADD COLUMN original_language TEXT NOT NULL DEFAULT '';`)
+	// Released main owns playback/3. Payload incarnations are playback/4.
+	store.Register("playback", 3, `ALTER TABLE playback_resume ADD COLUMN original_language TEXT NOT NULL DEFAULT '';`)
 	// Keep the existing playback migration immutable; indexes have their own
 	// component history.
 	store.Register("playback_index", 1, `CREATE TABLE playback_index (
