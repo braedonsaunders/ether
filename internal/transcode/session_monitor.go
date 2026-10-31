@@ -168,18 +168,47 @@ func (s *Session) progressedLocked(r *run) {
 		s.failErr = nil
 	}
 	s.maybeGovernLocked()
-	// A run that reached its plan's mode boundary (fast-start ramp ->
-	// steady, copy -> clamp, ...) stops there and the next mode's run
-	// starts immediately, so the switch segment has no startup gap.
-	if s.cur == r && r.planEnd > 0 && r.maxDone >= r.planEnd-1 && (s.total == 0 || r.planEnd < s.total) && s.endSeg < 0 {
-		next := r.planEnd
-		s.log.Debug("plan mode boundary; chaining run", "segment", next, "fromMode", r.mode)
-		if err := s.startRunLocked(next, false); err != nil {
-			s.log.Warn("chain run at mode boundary", "segment", next, "err", err)
-		}
-	}
+	s.chainOrHoldLocked(r)
 	s.throttleLocked()
 	s.broadcastLocked()
+}
+
+// chainOrHoldLocked starts the next plan run when this one has reached its
+// mode boundary and the client is close enough to need it. A forced-key
+// cap (maxForcedKeySegments) is the same kind of boundary: reaching it
+// while the player is still minutes behind must not start that far run or
+// the encoder head becomes the only window left on disk.
+func (s *Session) chainOrHoldLocked(r *run) {
+	if !s.boundaryReadyLocked(r) {
+		return
+	}
+	next := r.planEnd
+	if !s.clientNearLocked(next) {
+		s.log.Info("transcode run reached its segment cap ahead of the player", "segment", next, "playhead", s.lastReq)
+		s.stopRunLocked()
+		s.resumeAt = next
+		return
+	}
+	s.log.Debug("plan mode boundary; chaining run", "segment", next, "fromMode", r.mode, "playhead", s.lastReq)
+	if err := s.startRunLocked(next, false); err != nil {
+		s.log.Warn("chain run at mode boundary", "segment", next, "err", err)
+	}
+}
+
+// boundaryReadyLocked reports that run r filled up to its plan boundary
+// and another run is what produces the following segment.
+func (s *Session) boundaryReadyLocked(r *run) bool {
+	return s.cur == r && r.planEnd > 0 && r.maxDone >= r.planEnd-1 && (s.total == 0 || r.planEnd < s.total) && s.endSeg < 0
+}
+
+// clientNearLocked reports that the player is close enough to seg that the
+// next run has to be producing it. With throttling disabled the encoder is
+// allowed to run the whole title, and the boundary chains as before.
+func (s *Session) clientNearLocked(seg int) bool {
+	if s.m == nil || s.m.opts.maxAhead <= 0 || s.segDur <= 0 {
+		return true
+	}
+	return seg-s.lastReq <= s.aheadLimit()
 }
 
 // finish records a run's exit and reacts to failures: a hardware encoder
@@ -206,12 +235,19 @@ func (s *Session) finish(r *run) {
 		// A run bounded by a plan mode boundary that produced up to it
 		// has not hit the end of the input: chain the next mode's run
 		// when the player is in (or near) this run's range.
-		if r.planEnd > 0 && r.produced > 0 && r.maxDone >= r.planEnd-1 && (s.total == 0 || r.planEnd < s.total) && s.cur == r {
-			if s.lastReq >= r.startSeg {
-				log.Debug("ffmpeg finished at plan boundary; chaining", "segment", r.planEnd)
+		if s.boundaryReadyLocked(r) && r.produced > 0 {
+			if s.clientNearLocked(r.planEnd) && s.lastReq >= r.startSeg {
+				log.Debug("ffmpeg finished at plan boundary; chaining", "segment", r.planEnd, "playhead", s.lastReq)
 				if err := s.startRunLocked(r.planEnd, false); err != nil {
 					s.failErr = err
 				}
+				return
+			}
+			if !s.clientNearLocked(r.planEnd) {
+				// The process exited at the cap. This is not the end of the
+				// input; resume there once the player arrives.
+				s.resumeAt = r.planEnd
+				log.Info("transcode run reached its segment cap ahead of the player", "segment", r.planEnd, "playhead", s.lastReq)
 				return
 			}
 		}

@@ -102,7 +102,8 @@ type sessionEncoding struct {
 type sessionDelivery struct {
 	completedDeliveries map[int]map[int]bool // bounded by the rolling segment window
 	done                []map[int]bool       // finished segments per track
-	lastReq             int
+	inflight            map[int]int          // video segment -> in-flight GETs
+	lastReq             int                  // playhead: oldest fetch still inside the restart window
 	recoverySeekAt      time.Time
 	mkvDelivery         map[int]mkvDelivery // last response per track, including retries of a seek
 	// Published Matroska data segment path -> the video stream that
