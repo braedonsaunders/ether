@@ -404,16 +404,14 @@ func TestPlaybackCapacityProblem(t *testing.T) {
 	}
 }
 
-func TestUnknownTransferRemainsPlayableAndUnknownPQIsSuppressed(t *testing.T) {
-	positive, negative := true, false
-	for _, tc := range []struct {
-		transfer string
-		probe    *bool
-		want     bool
-	}{{"bt709", nil, true}, {"arib-std-b67", nil, true}, {"", nil, true}, {"smpte2084", nil, false}, {"smpte2084", &positive, true}, {"smpte2084", &negative, true}} {
-		media := frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: tc.transfer, HDR10Plus: tc.probe}}}
-		if got := siloSourceHasKnownHDR10Plus(media); got != tc.want {
-			t.Errorf("transfer %q: got %v", tc.transfer, got)
-		}
+func TestUnknownPQStaysHDR10WithoutClaimingHDR10Plus(t *testing.T) {
+	stream := frontend.StreamInfo{Type: "video", ColorTransfer: "smpte2084"}
+	if got := siloDynamicRange(stream); got != "hdr10" {
+		t.Fatalf("unknown PQ classified as %q", got)
+	}
+	positive := true
+	stream.HDR10Plus = &positive
+	if got := siloDynamicRange(stream); got != "hdr10_plus" {
+		t.Fatalf("known HDR10+ classified as %q", got)
 	}
 }

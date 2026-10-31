@@ -2,7 +2,6 @@ package silo
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http/httptest"
@@ -385,8 +384,8 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"bitrate":1000000`) {
 		t.Errorf("watch bitrate units: %s", rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), `"marker_segments"`) || strings.Contains(rec.Body.String(), `"intro"`) {
-		t.Errorf("unbound marker exposed as file-specific: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `"kind":"intro"`) || !strings.Contains(rec.Body.String(), `"start_seconds":1`) || !strings.Contains(rec.Body.String(), `"end_seconds":10`) {
+		t.Errorf("single probed file markers: %s", rec.Body.String())
 	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", "")
 	if e == nil {
@@ -397,11 +396,8 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 		if e = doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
 			t.Errorf("detail spec: %v", e)
 		}
-		// Silo requires marker_segments, but until the broker exposes a
-		// version-bound known/unknown result an empty list would invent a fact.
-		// Keep this incompatibility explicit until the binding contract lands.
-		if e = doc.Validate("GET", watchPath, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()); e == nil || !strings.Contains(e.Error(), "marker_segments") {
-			t.Errorf("expected unknown-marker schema gap, got %v", e)
+		if e = doc.Validate("GET", watchPath, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()); e != nil {
+			t.Errorf("watch spec: %v", e)
 		}
 
 	} else if !os.IsNotExist(e) {

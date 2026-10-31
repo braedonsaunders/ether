@@ -351,9 +351,6 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 			items := make([]any, 0, len(versions))
 			groups := make([]any, 0, len(versions))
 			for n, version := range versions {
-				if !siloSourceHasKnownHDR10Plus(version.Media) {
-					continue
-				}
 				id := offers[n].ID
 				resolution, video, audio := "", "", ""
 				hdr := false
@@ -553,6 +550,12 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				watch[name] = value
 			}
 		}
+		probedFiles := 0
+		for _, entry := range out["versions"].([]any) {
+			if sec, ok := entry.(map[string]any)["duration"].(int64); ok && sec > 0 {
+				probedFiles++
+			}
+		}
 		versions := []any{}
 		for _, entry := range out["versions"].([]any) {
 			source := entry.(map[string]any)
@@ -567,6 +570,16 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				item["bitrate"] = int64(kbps) * 1000
 			}
 			item["trickplay_available"] = false
+			// Marker ranges are file-specific. Publish them only when this
+			// watch response has exactly one probed file those ranges fit.
+			// Every other file gets an empty set rather than another file's timeline.
+			segments := []any{}
+			if probedFiles == 1 {
+				if sec, ok := source["duration"].(int64); ok && sec > 0 {
+					segments = fileMarkerSegments(d.Markers, time.Duration(sec)*time.Second)
+				}
+			}
+			item["marker_segments"] = segments
 			versions = append(versions, item)
 		}
 		watch["versions"] = versions
@@ -615,6 +628,22 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, 200, out)
+}
+
+func fileMarkerSegments(markers []frontend.Marker, duration time.Duration) []any {
+	out := make([]any, 0, len(markers))
+	for _, marker := range markers {
+		switch marker.Type {
+		case "intro", "credits", "recap", "preview":
+		default:
+			continue
+		}
+		if marker.Start < 0 || marker.End <= marker.Start || marker.End > duration {
+			continue
+		}
+		out = append(out, map[string]any{"kind": marker.Type, "start_seconds": marker.Start.Seconds(), "end_seconds": marker.End.Seconds()})
+	}
+	return out
 }
 
 // addLastPlayedFacts only exposes facts measured on the opened source. Missing

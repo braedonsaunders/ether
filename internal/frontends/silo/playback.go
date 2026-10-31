@@ -24,17 +24,6 @@ func installationChanged(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"type": "/problems/installation_changed", "title": "Playback installation changed", "status": http.StatusConflict, "detail": "Refresh playback capabilities before retrying."})
 }
 
-// A PQ stream can contain HDR10+ metadata; absent probe evidence is unknown.
-// Explicit positive metadata takes precedence over a conflicting transfer.
-func siloSourceHasKnownHDR10Plus(media frontend.MediaInfo) bool {
-	for _, stream := range media.Streams {
-		if stream.Type == "video" && stream.ColorTransfer == "smpte2084" && stream.HDR10Plus == nil {
-			return false
-		}
-	}
-	return true
-}
-
 type startRequest struct {
 	Context struct {
 		Deliveries map[string]struct {
@@ -133,10 +122,6 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		playbackError(w, err)
-		return
-	}
-	if !siloSourceHasKnownHDR10Plus(plan.Media) {
-		http.Error(w, "Source HDR metadata unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
