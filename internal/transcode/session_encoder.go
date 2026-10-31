@@ -158,6 +158,10 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	}
 	s.encoder.decisionEncoding(!s.decision.VideoCopy)
 	s.stopRunLocked()
+	// This start replaces any throttle resume. Clear it before waiting on
+	// the old process: a collector can take the lock during that wait and
+	// would otherwise start the old lead as a second run.
+	s.resumeAt = -1
 	// Reserve this transition before dropping the lock. A later seek or swap
 	// supersedes it; only the newest transition may start another encoder.
 	s.runSeq++
@@ -190,7 +194,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 			s.starting = nil
 		}
 	}
-	s.resumeAt = -1
 	if s.total > 0 && seg >= s.total {
 		seg = s.total - 1
 	}

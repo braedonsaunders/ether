@@ -673,6 +673,40 @@ func TestThrottleStopsWhenPauseUnsupported(t *testing.T) {
 	}
 }
 
+// A downswitch while the primary is throttle-stopped must start once, at the
+// requested segment. Resuming the old lead first and then restarting counted
+// two runs (TestIntegrationAdaptiveRapidMediaHandoff/dash: "handoff used 3").
+func TestRungSwitchDoesNotResumeThrottleBeforeRestart(t *testing.T) {
+	fr := newFakeRunner()
+	fr.segDelay = time.Millisecond
+	fr.noPause = true
+	m := newTestManager(t, fr, config.Transcode{ABRLadder: true}, WithBuffering(24*time.Second, 16*time.Second, 0), withRungDwell(0))
+	s := startSession(t, m, ladderEncodeRequest(t, "handoff", 10*time.Minute))
+	first := fr.lastProc()
+	waitFor(t, "throttle stop", first.wasKilled)
+	s.mu.Lock()
+	resumeAt := s.resumeAt
+	s.mu.Unlock()
+	if resumeAt < 5 {
+		t.Fatalf("resumeAt = %d", resumeAt)
+	}
+	if fr.startCount() != 1 {
+		t.Fatalf("starts = %d", fr.startCount())
+	}
+	n := resumeAt - 2
+	rec := httptest.NewRecorder()
+	s.ServeRungSegment(rec, httptest.NewRequest(http.MethodGet, "/", nil), "720p4m", n)
+	if rec.Code != 200 {
+		t.Fatalf("rung segment %d: %d %s", n, rec.Code, rec.Body.String())
+	}
+	if fr.startCount() != 2 {
+		t.Fatalf("starts = %d, want 2", fr.startCount())
+	}
+	if got, want := argValue(fr.lastStart(), "-ss"), secs(time.Duration(n)*4*time.Second); got != want {
+		t.Fatalf("restarted at %s, want segment %d at %s", got, n, want)
+	}
+}
+
 func TestPruneDeletesOldSegments(t *testing.T) {
 	fr := newFakeRunner()
 	fr.segDelay = time.Millisecond

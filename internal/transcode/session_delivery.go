@@ -68,13 +68,15 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 				s.notePlayheadLocked(t, n)
 			}
 		}
-		s.throttleLocked()
 		paths, availability := s.segmentFilesLocked(t, n, r.Method)
 		if availability == segmentRetry {
 			s.mu.Unlock()
 			continue
 		}
 		if availability == segmentReady {
+			// The segment is already on disk. A throttle stop still resumes
+			// here so the encoder continues ahead of this playhead.
+			s.throttleLocked()
 			s.pruneLocked()
 			s.mu.Unlock()
 			if s.serveFiles(w, r, paths, t, n) {
@@ -120,6 +122,7 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 		// for a segment the encoder has already raced to is a buffer fill,
 		// not a seek, and must not abandon the segment the client is on.
 		if !waitTail && !s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
+			s.throttleLocked()
 			s.mu.Unlock()
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, "segment is ahead of the playhead", http.StatusServiceUnavailable)
@@ -139,8 +142,12 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 				// Another rung's run is inside its dwell: wait it out
 				// instead of restarting the encoder now.
 				s.wantTrack = previousTrack // pending/canceled probes must not steer chaining
+				s.throttleLocked()
 				dwell = time.NewTimer(left)
 			} else {
+				// Starting at n. A throttle resume would first start at the
+				// old lead (the copy ran ahead and stopped), and this request
+				// would start again. One rung switch counted as two runs.
 				if restarts >= 2 {
 					err := s.failErr
 					s.mu.Unlock()
@@ -162,6 +169,8 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 					return
 				}
 			}
+		} else {
+			s.throttleLocked()
 		}
 		ch := s.changed
 		s.mu.Unlock()
