@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -1350,104 +1349,28 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if _, ext, ok := strings.Cut(chi.URLParam(r, "stream"), "."); ok {
 		format = subtitleFormat(ext)
 	}
-	if s.boundStreams != nil {
-		receipt, _ := acceptanceFrom(r.Context())
-		reader, info, err := s.boundStreams.OpenPlexSidecar(sessions.WithPlexServe(r.Context(), pr.Remote, format), s.plexStreamAccess(pr.User), receipt, id)
-		if err != nil || reader == nil {
-			if reader != nil {
-				_ = reader.Close()
-			}
-			if errors.Is(err, core.ErrUnauthorized) {
-				writeHTTPError(w, http.StatusUnauthorized)
-				return
-			}
-			writeHTTPError(w, http.StatusNotFound)
+	if s.boundStreams == nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	receipt, _ := acceptanceFrom(r.Context())
+	reader, info, err := s.boundStreams.OpenPlexSidecar(sessions.WithPlexServe(r.Context(), pr.Remote, format), s.plexStreamAccess(pr.User), receipt, id)
+	if err != nil || reader == nil {
+		if reader != nil {
+			_ = reader.Close()
+		}
+		if errors.Is(err, core.ErrUnauthorized) {
+			writeHTTPError(w, http.StatusUnauthorized)
 			return
 		}
-		defer reader.Close()
-		ct := subtitleContentTypes[plexCodec(info.Codec)]
-		if ct == "" {
-			ct = "text/plain; charset=utf-8"
-		}
-		w.Header().Set("Content-Type", ct)
-		_, _ = io.Copy(w, io.LimitReader(reader, 32<<20))
-		return
-	}
-	ref, ok := s.streams.lookup(id)
-	if !ok || !ref.info.External || ref.info.ExternalURL == "" {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	title, titleErr := s.d.Catalog.Get(r.Context(), ref.key)
-	if titleErr != nil || !s.visibleTitle(r.Context(), pr.User, title) {
-		writeHTTPError(w, http.StatusNotFound)
-		return
-	}
-	ct := subtitleContentTypes[plexCodec(ref.info.Codec)]
+	defer reader.Close()
+	ct := subtitleContentTypes[plexCodec(info.Codec)]
 	if ct == "" {
 		ct = "text/plain; charset=utf-8"
 	}
-	src := ref.info.ExternalURL
-	if strings.HasPrefix(src, "ether-subtitle:") {
-		if s.d.Subtitles == nil {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-		format := subtitleFormat(r.URL.Query().Get("format"))
-		if _, ext, ok := strings.Cut(chi.URLParam(r, "stream"), "."); ok {
-			format = subtitleFormat(ext)
-		}
-		reader, actual, err := s.d.Subtitles.OpenFormat(src, format)
-		if err != nil {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-		defer reader.Close()
-		contentType := subtitleContentTypes[actual]
-		if contentType == "" {
-			contentType = "text/plain; charset=utf-8"
-		}
-		w.Header().Set("Content-Type", contentType)
-		_, _ = io.Copy(w, io.LimitReader(reader, 32<<20))
-		return
-	}
-	u, err := url.Parse(src)
-	if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, src, nil)
-		if err != nil {
-			writeHTTPError(w, http.StatusInternalServerError)
-			return
-		}
-		resp, err := s.d.HTTPClient.Do(req)
-		if err != nil {
-			writeHTTPError(w, http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", ct)
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.Copy(w, io.LimitReader(resp.Body, 32<<20))
-		return
-	}
-	path := src
-	if err == nil && u.Scheme == "file" {
-		path = u.Path
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		writeHTTPError(w, http.StatusNotFound)
-		return
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil || st.IsDir() {
-		writeHTTPError(w, http.StatusNotFound)
-		return
-	}
 	w.Header().Set("Content-Type", ct)
-	http.ServeContent(w, r, filepath.Base(path), st.ModTime(), f)
+	_, _ = io.Copy(w, io.LimitReader(reader, 32<<20))
 }

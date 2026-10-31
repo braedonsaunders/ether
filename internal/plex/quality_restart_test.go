@@ -80,7 +80,7 @@ func TestStartRenegotiatesQualityAndTracks(t *testing.T) {
 			}
 
 			// Track changes must also renegotiate a cached conversion.
-			id := f.srv.streams.register(fightClub.Key, 2, sampleInfo.Streams[2])
+			id := f.bindStream(fightClub.Key, 2, sampleInfo.Streams[2])
 			get(start + low + fmt.Sprintf("&audioStreamID=%d", id))
 			third := request()
 			if len(f.trans.stopped) != 2 || third.Decision.AudioStream != 2 || third.StartOffset != second.StartOffset {

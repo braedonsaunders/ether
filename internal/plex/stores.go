@@ -9,46 +9,12 @@ import (
 	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
-// ---------------------------------------------------------------------------
-// Stream ids
-
-// streamRef is what a Stream id points at.
-type streamRef struct {
-	key   core.RatingKey
-	index int // position in MediaInfo.Streams when last rendered
-	info  core.StreamInfo
-	slot  string // identity within the title (see streamSlot)
-}
-
-// streamRegistry is the fixture map. Mounted servers bind through the broker.
-type streamRegistry struct {
-	table *sessions.PlexStreamTable
-}
-
-func newStreamRegistry() *streamRegistry {
-	return &streamRegistry{table: sessions.NewPlexStreamTable()}
-}
-
+// slotHash is the visible id for a subtitle search offer. Offers are not
+// stream bindings; playback ids come from the broker.
 func slotHash(key core.RatingKey, slot string) int64 { return sessions.PlexWireID(key, slot) }
 
 func streamSlot(index int, info core.StreamInfo) string {
 	return sessions.PlexStreamSlot(index, info)
-}
-
-func (r *streamRegistry) register(key core.RatingKey, index int, info core.StreamInfo) int64 {
-	id, err := r.table.Bind(sessions.PlexStreamBinding{Key: key, Index: index, Info: info})
-	if err != nil {
-		return 0
-	}
-	return id
-}
-
-func (r *streamRegistry) lookup(id int64) (streamRef, bool) {
-	binding, ok := r.table.Lookup(id)
-	if !ok {
-		return streamRef{}, false
-	}
-	return streamRef{key: binding.Key, index: binding.Index, info: binding.Info, slot: streamSlot(binding.Index, binding.Info)}, true
 }
 
 // ---------------------------------------------------------------------------
@@ -57,8 +23,6 @@ func (r *streamRegistry) lookup(id int64) (streamRef, bool) {
 // Selection identity excludes mutable probe/default hints. It includes the
 // distinguishing audio/subtitle metadata so an old ID cannot change language
 // when a later release reuses the same stream position.
-func sameStreamIdentity(a, b core.StreamInfo) bool { return sessions.PlexStreamsMatch(a, b) }
-
 type selection struct {
 	audio       int // position in MediaInfo.Streams
 	audioSet    bool

@@ -10,8 +10,7 @@ import (
 )
 
 // UsePlexStreams binds visible stream ids and sidecar reads to the broker.
-// Pass sessions.BindPlexStreams(broker). Fixtures without a broker keep
-// the local map.
+// Pass sessions.BindPlexStreams(broker).
 func (s *Server) UsePlexStreams(api sessions.PlexStreamAPI) {
 	if s != nil {
 		s.boundStreams = api
@@ -23,27 +22,23 @@ func (s *Server) plexStreamAccess(u *core.User) frontend.SessionAccess {
 }
 
 func (s *Server) assignStream(ctx context.Context, u *core.User, key core.RatingKey, index int, info core.StreamInfo, sessionID string) int64 {
-	if s.boundStreams != nil {
-		id, err := s.boundStreams.BindPlexStream(ctx, s.plexStreamAccess(u), sessions.PlexStreamBinding{
-			Key: key, Index: index, Info: info, SessionID: sessionID,
-		})
-		if err != nil {
-			return 0
-		}
-		return id
+	if s == nil || s.boundStreams == nil {
+		return 0
 	}
-	return s.streams.register(key, index, info)
+	id, err := s.boundStreams.BindPlexStream(ctx, s.plexStreamAccess(u), sessions.PlexStreamBinding{
+		Key: key, Index: index, Info: info, SessionID: sessionID,
+	})
+	if err != nil {
+		return 0
+	}
+	return id
 }
 
 func (s *Server) resolveStream(ctx context.Context, u *core.User, id int64) (sessions.PlexStreamBinding, error) {
-	if s.boundStreams != nil {
-		return s.boundStreams.ResolvePlexStream(ctx, s.plexStreamAccess(u), id)
-	}
-	ref, ok := s.streams.lookup(id)
-	if !ok {
+	if s == nil || s.boundStreams == nil {
 		return sessions.PlexStreamBinding{}, core.ErrNotFound
 	}
-	return sessions.PlexStreamBinding{WireID: id, Key: ref.key, Index: ref.index, Info: ref.info}, nil
+	return s.boundStreams.ResolvePlexStream(ctx, s.plexStreamAccess(u), id)
 }
 
 func streamMiss(err error) bool {

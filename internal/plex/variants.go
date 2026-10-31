@@ -22,7 +22,7 @@ package plex
 // hash of (ratingKey, release ID) with linear collision probing; mappings
 // are persisted in the variants_ids table so old part keys keep working
 // across restarts (without a DB they are recomputed deterministically,
-// matching streamRegistry's approach). The Auto variant keeps
+// the same way a Plex stream id is). The Auto variant keeps
 // Media.ID == Part.ID == ratingKey, exactly as before variants existed.
 
 import (
