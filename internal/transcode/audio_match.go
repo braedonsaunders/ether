@@ -150,10 +150,14 @@ func (s *Session) sampleAudio(ctx context.Context, input string, track int, at t
 	args = append(args, inputSafetyArgs(input, false)...)
 	args = append(args, httpInputArgs(input, false)...)
 	args = append(args, "-ss", secs(at), "-i", u.String(), "-map", fmt.Sprintf("0:%d", track), "-vn", "-sn", "-dn", "-t", secs(audioMatchDuration+100*time.Millisecond), "-ac", "1", "-ar", "8000", "-c:a", "pcm_f32le", "-f", "f32le", "-")
+	args, err = s.encoderSampleArgs(u.String(), args)
+	if err != nil {
+		return nil
+	}
 	// Allow encoder priming at the cut, but compare exactly six seconds.
 	const sampleBytes = audioMatchRate * 6 * 4
 	out := &pictureSample{limit: sampleBytes + audioMatchRate*4/10}
-	if s.m.runner.Run(ctx, Command{Path: s.m.ffmpeg, Args: args, Stdout: out, Stderr: io.Discard}) != nil || out.Len() < sampleBytes {
+	if s.encoderRun(ctx, Command{Path: s.m.ffmpeg, Args: args, Stdout: out, Stderr: io.Discard}) != nil || out.Len() < sampleBytes {
 		return nil
 	}
 	return out.Bytes()[:sampleBytes]

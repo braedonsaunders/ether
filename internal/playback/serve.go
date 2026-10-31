@@ -204,7 +204,9 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 		m.installDamageHandler(g)
 	}
 	var retired func()
-	if tracker := core.ReadRetirementFrom(ctx); tracker != nil {
+	tracker := core.ReadRetirementFrom(ctx)
+	input, _ := ctx.Value(encoderInputKey{}).(*encoderInputScope)
+	if tracker != nil || input != nil {
 		if err := ctx.Err(); err != nil {
 			return 0, err, nil
 		}
@@ -213,13 +215,35 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 		default:
 			return 0, core.ErrNotAvailable, nil
 		}
-		var ok bool
-		finish, ok := tracker.Begin()
-		if !ok {
-			<-readProducers
-			return 0, errRetired, nil
+		var requestDone, inputDone func()
+		if tracker != nil {
+			var ok bool
+			requestDone, ok = tracker.Begin()
+			if !ok {
+				<-readProducers
+				return 0, errRetired, nil
+			}
 		}
-		retired = func() { <-readProducers; finish() }
+		if input != nil {
+			var ok bool
+			inputDone, ok = input.begin(g)
+			if !ok {
+				<-readProducers
+				if requestDone != nil {
+					requestDone()
+				}
+				return 0, errRetired, nil
+			}
+		}
+		retired = func() {
+			<-readProducers
+			if requestDone != nil {
+				requestDone()
+			}
+			if inputDone != nil {
+				inputDone()
+			}
+		}
 	}
 	if !g.acquire() {
 		if retired != nil {
@@ -340,6 +364,12 @@ func (m *Manager) serveLoopback(w http.ResponseWriter, r *http.Request) {
 	m.mu.Unlock()
 	if g == nil {
 		http.Error(w, "gone", http.StatusGone)
+		return
+	}
+	var inputErr error
+	r, inputErr = m.encoderInputRequest(r, g)
+	if inputErr != nil {
+		http.Error(w, "unverified input", http.StatusForbidden)
 		return
 	}
 	s := g.sess

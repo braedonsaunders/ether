@@ -234,3 +234,120 @@ or replacement during probe clears identity and scalar facts. Report/Stop reads
 perform no filesystem/source callback I/O; HDR pointers are defensive copies.
 This is historical open evidence, not fresh authorization or proof that a local
 path stayed immutable. Fresh PinSourceRevision and serve checks are unchanged.
+
+## Staged encoder work accounting
+
+The encoder increment reserves an exact session lifetime before startup and
+output-directory creation. It has no broker caller and supplies no durable
+transfer or sticky-consumption authority. Its source review and execution gates
+are separate from the payload/3 and historical-observation receipts above.
+
+Process-wide admission bounds 1,024 lifetimes, each with at most 64 outstanding
+work tickets. Four fixed cleanup workers share a queue of 1,024 admitted
+lifetimes. Sealing prevents new tickets and queues exact-object detachment;
+workers do not wait for process exit. Starts, session-owned `Runner.Run`
+preflights, run hints, collectors and reapers finish their own tickets only when
+the corresponding operation actually returns. A run reserves its collector and
+future Stop tickets before Start, including a process returned together with an
+error. A stopped or superseded late start is reaped without publication.
+
+`RetireEncoder` seals without taking manager/session locks. Legacy `Close` waits
+on the exact outcome for ten seconds; successful completion still requires
+process/reaper/collector completion before directory removal, session removal
+and capacity release. A stalled Start, Run, Stop, collector, filesystem cleanup
+or shutdown worker returns/retains pending responsibility. A confirmed cleanup
+error is a terminal error and retains directory/lifetime/encoder charges. Another
+manager in the same process skips protected output directories at startup.
+Manager capacity uses scalar lifetime charges and never takes a session mutex
+under the manager mutex. Shutdown has one shared deadline and no per-Close
+WaitGroup waiter or goroutine per detached session.
+
+`EncoderDone` closes only at a terminal result; `EncoderErr` is the explicit
+`core.ErrEncoderPending` sentinel beforehand. A terminal error cannot later turn
+into successful proof. Until the separately reviewed manager-issued input lease
+is implemented, an actual input attempt terminates with
+`core.ErrEncoderInputUnverified` after proven legacy work cleanup. That error
+cannot authorize broker retirement, but it does not retain completed legacy
+process/finalizer capacity. Missing optional input proof must never exhaust
+ordinary successful start/close cycles. Source retirement proves neither encoder
+work nor input drain. Native/global probe processes remain outside this increment.
+
+Same-ID admission has its own exact-lifetime reservation before directory/start
+work. A concurrent replacement seals even an unpublished prior reservation and
+waits outside locks for confirmed legacy cleanup before claiming the ID. Timeout
+or terminal cleanup error refuses replacement. Publication checks that exact ID
+reservation together with the seal/manager state, so a late older start cannot
+publish over its successor. The controlled test holds the first external Start,
+lets the second seal it, then proves the process lifetimes never overlap.
+
+## Staged verified encoder input leases
+
+The optional `HLSRequest.InputLease` is excluded from JSON. Only trusted host
+composition can pass the opaque object minted by
+`PlaybackEncoderInputs.ReserveEncoderInput(ctx, id, exactSourceOutcome)`; broker
+activation is still a separate unapproved seam. A manager validates the actual
+private Session and SourceLifetime together when minting. At most 128 scopes
+exist process-wide; no eviction or authority from a provider header is possible.
+Unclaimed leases remain caller-owned if admission/validation fails before claim;
+the caller must seal unused leases. A successfully claimed lease transfers its
+input-drain responsibility to that exact encoder lifetime.
+
+`ClaimInput(onDrained)` succeeds once, before seal. A second claim, claim after
+seal or nil callback refuses without storing that caller's callback. The encoder
+reserves its input ticket before claim; failed claims release it exactly once and
+never seal another encoder's lease. Successful claims yield exactly one callback,
+including a callback racing the claim return. Zero producers or producers already
+released still require seal before drain. The callback may only perform bounded
+accounting/requeue. It runs after the producer count is committed drained, the
+manager registry entry/global scope slot are released and InputDone is closed,
+outside scope, source, generation, manager and session locks.
+
+`HeadersForInput` checks the supplied URL's exact manager loopback origin,
+canonical issued generation path and optional sole `background=1` query. It
+rejects provider/redirect URLs, foreign ports, userinfo, fragments, escaped paths
+and unknown generations. Every use validates token membership against the
+captured Session and SourceLifetime. Future failover generations may attach only
+when issued by that manager to the same captured responsibility. A later current
+session or a replacement with the same client identity cannot be substituted.
+The permitted loopback route serves representations and never redirects; no
+scope-bearing command is constructed for a provider or redirect locator.
+
+The internal header is reserved separately from provider InputHeaders. Run and
+picture/audio sample commands bind it independently before execution; it does
+not disable audio matching by appearing to be provider metadata. Plain provider
+headers retain their existing construction, selection and redaction. Raw
+provider attempts to set the reserved control header refuse. Input values are
+redacted before stderr truncation and in command/start/exit diagnostics; opaque
+lease formatting hides the internal value. The lease grants no viewer, policy,
+source-open or transfer authorization.
+
+A loopback request with a supplied forged/sealed/mismatched scope fails closed.
+Unscoped reads preserve legacy behavior. Request READ and input trackers may
+coexist: both register before generation acquire, and both finish after release
+returns. The global producer slot is returned before input callbacks. Source
+Close success remains an independent SourceRetirement obligation.
+
+To avoid a cycle, the encoder's actual-work count excludes its one retained input
+ticket when deciding to seal. A bounded cleanup task calls SealInput outside all
+lifecycle locks and returns immediately. A stalled producer occupies neither a
+waiter goroutine nor a cleanup worker; its callback later releases that input
+ticket and requeues cleanup. EncoderDone/charges wait for actual work AND verified
+input drain. Missing optional proof remains ErrEncoderInputUnverified after
+confirmed legacy cleanup, with no repeated-close capacity leak. An input proof
+error or unknown actual work retains its cleanup/charge and never becomes nil.
+
+Same-ID startup serialization is a **single Manager** guarantee. Independent
+Managers do not share the ID map. The process-wide admission bound and skipping
+currently protected output directories do not assert cross-manager process
+serialization or durable transfer authority.
+
+Scoped live-playlist input refuses before claim: the private VOD scope must never
+be forwarded to child playlist/provider requests. Ordinary unscoped live playback
+keeps its existing header and demuxer behavior. Scoped run and sample commands
+retain the VOD demuxer restrictions, and only the exact nonredirecting loopback
+representation route can receive the private value.
+
+Scalar capacity follows decision changes between runs: noncopy decisions retain
+their reservation even between processes, while copy transitions retain all
+previous real-run charges until both watcher and reaper finish. Sealing a verified
+input with prior encoding retains that charge while input drain is unproved.
