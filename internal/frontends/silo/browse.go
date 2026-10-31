@@ -1,6 +1,7 @@
 package silo
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
@@ -160,6 +161,25 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 	}
 	if view == nowAvailableLibraryID {
 		rows = onlyNowAvailable(rows)
+	}
+	var pageTitles []frontend.Title
+	for _, row := range rows {
+		pageTitles = append(pageTitles, rowTitles(row)...)
+	}
+	pageKeys := make([]frontend.RatingKey, 0, len(pageTitles))
+	seenKey := map[frontend.RatingKey]bool{}
+	for _, title := range pageTitles {
+		if !seenKey[title.Key] {
+			seenKey[title.Key] = true
+			pageKeys = append(pageKeys, title.Key)
+		}
+	}
+	if states, e := i.host.Experience.UserData(r.Context(), v, pageKeys); e != nil {
+		i.logSectionError("user-data", placement, view, "", e)
+	} else {
+		overlays, batched := i.editionOverlays(r, v, pageKeys)
+		artwork := i.sectionArtwork(r, v, credential, pageTitles)
+		r = r.WithContext(context.WithValue(r.Context(), sectionPrepKey{}, sectionPrep{states: states, artwork: artwork, overlays: overlays, batched: batched}))
 	}
 	sections := make([]any, 0, len(rows))
 	seen := map[string]int{}

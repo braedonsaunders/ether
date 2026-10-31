@@ -53,6 +53,9 @@ func (a Source) now() time.Time {
 	return time.Now()
 }
 func (a Source) title(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+	if t, ok := frontend.ArtworkTitle(ctx, key); ok {
+		return t, nil
+	}
 	if t, ok := ctx.Value(artworkVirtualSeasonKey{}).(*core.Title); ok && t != nil && t.Key == key {
 		return t, nil
 	}
@@ -352,6 +355,51 @@ func (a *Source) StoreMetadata(ctx context.Context, viewer *core.User, titles []
 		}
 	}
 	return nil
+}
+
+// ListPage lists artwork for titles already loaded by the caller. Overlay
+// settings and saved variants are read once for the page.
+func (a Source) ListPage(ctx context.Context, viewer *core.Viewer, device core.Device, titles []core.Title) (map[core.RatingKey][]frontend.Image, error) {
+	if viewer == nil {
+		return nil, core.ErrUnauthorized
+	}
+	ctx = withVisMemo(ctx)
+	memo, _ := ctx.Value(visMemoKey{}).(*visMemo)
+	if memo != nil {
+		memo.mu.Lock()
+		if memo.seen == nil {
+			memo.seen = map[core.RatingKey]bool{}
+			memo.val = map[core.RatingKey]bool{}
+		}
+		for i := range titles {
+			memo.seen[titles[i].Key] = true
+			memo.val[titles[i].Key] = true
+		}
+		memo.mu.Unlock()
+	}
+	if a.Discovery != nil && a.Discovery.Overlays != nil {
+		keys := make([]core.RatingKey, len(titles))
+		for i := range titles {
+			keys[i] = titles[i].Key
+		}
+		next, err := a.Discovery.Overlays.WithArtworkPage(ctx, keys)
+		if err != nil {
+			return nil, err
+		}
+		ctx = next
+	}
+	out := make(map[core.RatingKey][]frontend.Image, len(titles))
+	for i := range titles {
+		images, _, err := a.List(frontend.WithArtworkTitle(ctx, &titles[i]), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: titles[i].Key})
+		if errors.Is(err, core.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[titles[i].Key] = images
+	}
+	return out, nil
 }
 
 func (a Source) List(ctx context.Context, req frontend.ArtworkRequest) ([]frontend.Image, bool, error) {

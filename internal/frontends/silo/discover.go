@@ -140,18 +140,36 @@ func discoverRow(row frontend.Row) bool {
 	return len(rowTitles(row)) > 0
 }
 
+type sectionPrepKey struct{}
+
+type sectionPrep struct {
+	states   map[frontend.RatingKey]frontend.WatchStatus
+	artwork  map[frontend.RatingKey][]frontend.GrantedImage
+	overlays map[frontend.RatingKey]map[string]any
+	batched  bool
+}
+
 func (i *instance) sectionCards(r *http.Request, v *frontend.Viewer, credential string, row frontend.Row) ([]any, error) {
 	titles := rowTitles(row)
 	keys := make([]frontend.RatingKey, 0, len(titles))
 	for _, t := range titles {
 		keys = append(keys, t.Key)
 	}
-	states, err := i.host.Experience.UserData(r.Context(), v, keys)
-	if err != nil {
-		return nil, err
+	var states map[frontend.RatingKey]frontend.WatchStatus
+	var artwork map[frontend.RatingKey][]frontend.GrantedImage
+	var overlays map[frontend.RatingKey]map[string]any
+	var batched bool
+	var err error
+	if prep, ok := r.Context().Value(sectionPrepKey{}).(sectionPrep); ok {
+		states, artwork, overlays, batched = prep.states, prep.artwork, prep.overlays, prep.batched
+	} else {
+		states, err = i.host.Experience.UserData(r.Context(), v, keys)
+		if err != nil {
+			return nil, err
+		}
+		overlays, batched = i.editionOverlays(r, v, keys)
+		artwork = i.sectionArtwork(r, v, credential, titles)
 	}
-	overlays, batched := i.editionOverlays(r, v, keys)
-	artwork := i.sectionArtwork(r, v, credential, titles)
 	home := !strings.Contains(r.URL.Path, "/library/")
 	items := make([]any, 0, len(titles))
 	for _, t := range titles {

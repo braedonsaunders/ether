@@ -129,6 +129,38 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		return nil, core.ErrNotAvailable
 	}
 	expires := s.pageExpires()
+	experience := s.experience()
+	if page, ok := experience.(frontend.ItemArtworkPage); ok {
+		keys := make([]core.RatingKey, 0, len(req.Titles))
+		seen := map[core.RatingKey]bool{}
+		for _, title := range req.Titles {
+			if title.Key == 0 || seen[title.Key] {
+				continue
+			}
+			seen[title.Key] = true
+			keys = append(keys, title.Key)
+		}
+		if len(keys) > maxImageBatchItems {
+			return nil, frontend.ErrImageBatchLimit
+		}
+		listed, err := page.ItemArtworkPage(ctx, viewer, req.Device, keys)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]frontend.ImageBatchItem, 0, len(keys))
+		for _, key := range keys {
+			images, ok := listed[key]
+			if !ok {
+				continue
+			}
+			item, err := s.sealPageImages(ctx, master, source, deviceJSON, viewer.ID, expires, key, images, true, wanted)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, item)
+		}
+		return out, nil
+	}
 	out := make([]frontend.ImageBatchItem, 0, len(req.Titles))
 	seen := map[core.RatingKey]bool{}
 	for _, title := range req.Titles {
@@ -153,29 +185,38 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		if err != nil {
 			return nil, err
 		}
-		item := frontend.ImageBatchItem{Item: title.Key, Authoritative: complete}
-		if complete {
-			chosen := map[string]bool{}
-			for _, image := range images {
-				if !wanted[image.Kind] || chosen[image.Kind] || image.Path == "" {
-					continue
-				}
-				if len(image.Path) > 1024 || len(image.Kind) > 128 || len(image.Tag) > 256 || len(image.Subject) > 256 {
-					return nil, core.ErrNotAvailable
-				}
-				chosen[image.Kind] = true
-				img := pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject}
-				secret := s.publicImageTag(ctx, master, int64(title.Key), img)
-				s.rememberShort(secret, pageClaims{
-					Item: int64(title.Key), Kind: img.Kind, Path: img.Path, Tag: img.Tag, Subject: img.Subject,
-					Device: deviceJSON, Source: source, Viewer: viewer.ID, Expires: expires, Gen: s.Generation(),
-				})
-				item.Images = append(item.Images, frontend.GrantedImage{Image: image, Secret: secret})
-			}
+		item, err := s.sealPageImages(ctx, master, source, deviceJSON, viewer.ID, expires, title.Key, images, complete, wanted)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, item)
 	}
 	return out, nil
+}
+
+func (s *ImageGrantService) sealPageImages(ctx context.Context, master []byte, source string, deviceJSON []byte, viewer int64, expires int64, key core.RatingKey, images []frontend.Image, complete bool, wanted map[string]bool) (frontend.ImageBatchItem, error) {
+	item := frontend.ImageBatchItem{Item: key, Authoritative: complete}
+	if !complete {
+		return item, nil
+	}
+	chosen := map[string]bool{}
+	for _, image := range images {
+		if !wanted[image.Kind] || chosen[image.Kind] || image.Path == "" {
+			continue
+		}
+		if len(image.Path) > 1024 || len(image.Kind) > 128 || len(image.Tag) > 256 || len(image.Subject) > 256 {
+			return frontend.ImageBatchItem{}, core.ErrNotAvailable
+		}
+		chosen[image.Kind] = true
+		img := pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject}
+		secret := s.publicImageTag(ctx, master, int64(key), img)
+		s.rememberShort(secret, pageClaims{
+			Item: int64(key), Kind: img.Kind, Path: img.Path, Tag: img.Tag, Subject: img.Subject,
+			Device: deviceJSON, Source: source, Viewer: viewer, Expires: expires, Gen: s.Generation(),
+		})
+		item.Images = append(item.Images, frontend.GrantedImage{Image: image, Secret: secret})
+	}
+	return item, nil
 }
 
 func (s *ImageGrantService) pageImages(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {
