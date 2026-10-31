@@ -19,7 +19,7 @@ func (c *Catalog) storedEpisodesWhere(show core.Filter) (string, []any, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	return `e.type='episode' AND e.adult=0 AND e.released_ts>0 AND e.released_ts<=? AND ` + where, append([]any{c.now().Unix()}, args...), nil
+	return `e.type='episode' AND e.adult=0 AND e.release_known=1 AND e.released_ts<=? AND ` + where, append([]any{c.now().Unix()}, args...), nil
 }
 
 // StoredEpisodesByKey returns up to limit stored, aired, non-adult episodes

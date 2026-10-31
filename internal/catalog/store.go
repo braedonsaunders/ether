@@ -932,6 +932,7 @@ func (c *Catalog) getMeta(ctx context.Context, k string) string {
 	_ = c.db.QueryRowContext(ctx, `SELECT v FROM catalog_meta WHERE k=?`, k).Scan(&v)
 	return v
 }
+
 // setMeta records a sync or sweep marker. No cached read depends on one,
 // so it leaves the write generation, which every title, page and count
 // cache is stamped with, alone.

@@ -123,7 +123,27 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		queryArgs = append(append([]any{}, orderArgs...), args...)
 	}
 	var items []core.Title
-	if q.Filter.Type == "" && !computedAdded && q.Sort != core.SortTitle && offset+limit <= mergedPageMax {
+	walked := false
+	if computedAdded && q.Desc && q.Filter.Type == core.TypeShow && total >= recentWalkMinTotal {
+		// Newest-first series by date added, from the aired-episode index.
+		page, ok, err := c.recentShowsPage(ctx, where, args, asOf, offset, limit)
+		if err != nil {
+			return core.Page{}, err
+		}
+		if ok {
+			walked = true
+			keys := make([]core.RatingKey, len(page))
+			for i, a := range page {
+				keys[i] = a.key
+			}
+			if items, err = c.titlesInKeyOrder(ctx, keys); err != nil {
+				return core.Page{}, err
+			}
+		}
+	}
+	switch {
+	case walked:
+	case q.Filter.Type == "" && !computedAdded && q.Sort != core.SortTitle && offset+limit <= mergedPageMax:
 		// Movies and series together: no index orders both types, so the
 		// sorted query reads every browsable title. Each type's page comes
 		// from its own index and the two merge.
@@ -134,8 +154,10 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		if items, err = c.titlesInKeyOrder(ctx, keys); err != nil {
 			return core.Page{}, err
 		}
-	} else if items, err = c.queryTitles(ctx, query, append(queryArgs, limit, offset)...); err != nil {
-		return core.Page{}, err
+	default:
+		if items, err = c.queryTitles(ctx, query, append(queryArgs, limit, offset)...); err != nil {
+			return core.Page{}, err
+		}
 	}
 	if q.Sort == core.SortAdded {
 		if err := applyAirAddedTimes(ctx, c.db, items, asOf); err != nil {
