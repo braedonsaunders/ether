@@ -113,7 +113,7 @@ func TestSearchYearRemoteFallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newChunkTestCatalog(t)
 			f := &yearSearchTMDB{}
-			c.client = f
+			c.SetTMDB(f)
 			got, err := c.Search(context.Background(), tt.q, tt.types, 1)
 			if err != nil || len(got) != 1 || got[0].Year != tt.year {
 				t.Fatalf("got %v, %v", got, err)
@@ -144,7 +144,7 @@ func (failingSearchTMDB) SearchTV(context.Context, string, int) (*tmdb.Paged[tmd
 
 func TestSearchRemoteOutageKeepsLocalKeyword(t *testing.T) {
 	c := newChunkTestCatalog(t)
-	c.client = failingSearchTMDB{}
+	c.SetTMDB(failingSearchTMDB{})
 	ctx := context.Background()
 	released := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	c.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }

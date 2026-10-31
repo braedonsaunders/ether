@@ -169,7 +169,7 @@ func (c *Catalog) admitFallbacks(ctx context.Context) error {
 // Recently reached dates are rechecked daily; settled dates are revisited
 // after 90 days to pick up later corrections.
 func (c *Catalog) BackfillHomeReleases(ctx context.Context, limit int) (int, error) {
-	if c.client == nil || limit <= 0 {
+	if c.tmdb() == nil || limit <= 0 {
 		return 0, nil
 	}
 	now := c.now().Unix()
@@ -200,7 +200,7 @@ func (c *Catalog) BackfillHomeReleases(ctx context.Context, limit int) (int, err
 		if err != nil {
 			return count, err
 		}
-		d, fetchErr := c.client.MovieDetails(ctx, key.TMDB())
+		d, fetchErr := c.tmdb().MovieDetails(ctx, key.TMDB())
 		if fetchErr != nil || d == nil {
 			continue
 		}

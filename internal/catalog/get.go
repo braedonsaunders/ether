@@ -149,14 +149,14 @@ func (c *Catalog) getMovie(ctx context.Context, id int64) (*core.Title, error) {
 	if err == nil && c.fresh(st) {
 		return &st.t, nil
 	}
-	if c.client != nil {
+	if c.tmdb() != nil {
 		if c.refreshMissed(movieRefreshKey(id)) {
 			if err == nil {
 				return &st.t, nil
 			}
 			return nil, core.ErrNotFound
 		}
-		d, ferr := c.client.MovieDetails(ctx, id)
+		d, ferr := c.tmdb().MovieDetails(ctx, id)
 		if ferr != nil {
 			if ctx.Err() == nil {
 				c.noteRefreshMiss(movieRefreshKey(id))
@@ -223,14 +223,14 @@ func (c *Catalog) getShow(ctx context.Context, id int64) (*core.Title, error) {
 	if err == nil && c.showFresh(st) {
 		return &st.t, nil
 	}
-	if c.client != nil {
+	if c.tmdb() != nil {
 		if c.refreshMissed(showRefreshKey(id)) {
 			if err == nil {
 				return &st.t, nil
 			}
 			return nil, core.ErrNotFound
 		}
-		d, ferr := c.client.TVDetails(ctx, id)
+		d, ferr := c.tmdb().TVDetails(ctx, id)
 		if ferr != nil {
 			if ctx.Err() == nil {
 				c.noteRefreshMiss(showRefreshKey(id))
@@ -314,7 +314,7 @@ func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int,
 			}
 		}
 	}
-	if c.client == nil {
+	if c.tmdb() == nil {
 		st, lerr := c.loadByKey(ctx, key)
 		if lerr != nil {
 			return nil, lerr
@@ -328,7 +328,7 @@ func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int,
 		}
 		return &st.t, nil
 	}
-	sd, err := c.client.SeasonDetails(ctx, showID, season)
+	sd, err := c.tmdb().SeasonDetails(ctx, showID, season)
 	if err != nil {
 		if ctx.Err() == nil {
 			c.noteRefreshMiss(seasonRefreshKey(showID, season))
@@ -391,8 +391,8 @@ func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Tit
 	// Best-effort episode external ids (its own IMDb id is useful to indexers).
 	// A season refresh that just failed will fail these too; do not fan that
 	// wait out across every episode in a list.
-	if c.client != nil && st.t.IDs.IMDB == "" && !c.refreshMissed(seasonRefreshKey(key.TMDB(), key.Season())) {
-		if ext, ferr := c.client.EpisodeExternalIDs(ctx, key.TMDB(), key.Season(), key.Episode()); ferr == nil && ext != nil && (ext.IMDBID != "" || ext.TVDBID != 0) {
+	if c.tmdb() != nil && st.t.IDs.IMDB == "" && !c.refreshMissed(seasonRefreshKey(key.TMDB(), key.Season())) {
+		if ext, ferr := c.tmdb().EpisodeExternalIDs(ctx, key.TMDB(), key.Season(), key.Episode()); ferr == nil && ext != nil && (ext.IMDBID != "" || ext.TVDBID != 0) {
 			t := st.t
 			t.IDs.IMDB = ext.IMDBID
 			if ext.TVDBID != 0 {
@@ -693,7 +693,8 @@ func (c *Catalog) NextEpisode(ctx context.Context, episode core.RatingKey) (*cor
 
 // RefreshTitle updates canonical details from TMDB without a stale fallback.
 func (c *Catalog) RefreshTitle(ctx context.Context, key core.RatingKey, persist bool) (*core.Title, error) {
-	if c.client == nil {
+	client := c.tmdb()
+	if client == nil {
 		return nil, fmt.Errorf("catalog: TMDB unavailable")
 	}
 	var t core.Title
@@ -701,7 +702,7 @@ func (c *Catalog) RefreshTitle(ctx context.Context, key core.RatingKey, persist 
 	case core.KindMovie:
 		var d *tmdb.MovieDetails
 		var err error
-		if fresh, ok := c.client.(interface {
+		if fresh, ok := client.(interface {
 			MovieDetailsFresh(context.Context, int64) (*tmdb.MovieDetails, error)
 		}); ok {
 			d, err = fresh.MovieDetailsFresh(ctx, key.TMDB())
@@ -723,7 +724,7 @@ func (c *Catalog) RefreshTitle(ctx context.Context, key core.RatingKey, persist 
 	case core.KindShow:
 		var d *tmdb.TVDetails
 		var err error
-		if fresh, ok := c.client.(interface {
+		if fresh, ok := client.(interface {
 			TVDetailsFresh(context.Context, int64) (*tmdb.TVDetails, error)
 		}); ok {
 			d, err = fresh.TVDetailsFresh(ctx, key.TMDB())

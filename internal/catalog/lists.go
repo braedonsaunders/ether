@@ -171,14 +171,14 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 		}
 		return finish(out), nil
 	}
-	if c.client == nil || (!wantMovie && !wantTV) {
+	if c.tmdb() == nil || (!wantMovie && !wantTV) {
 		return localAnswer()
 	}
 	var remote []core.Title
 	// Page through TMDB until we have enough or run out (max 3 pages).
 	if wantMovie && wantTV {
 		for page := 1; page <= 3 && len(remote) < limit*2; page++ {
-			res, err := c.client.SearchMulti(ctx, query, page)
+			res, err := c.tmdb().SearchMulti(ctx, query, page)
 			if err != nil {
 				if page == 1 && len(out) == 0 {
 					return localAnswer()
@@ -198,7 +198,7 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 			}
 		}
 	} else if wantMovie {
-		res, err := c.client.SearchMovies(ctx, query, 1)
+		res, err := c.tmdb().SearchMovies(ctx, query, 1)
 		if err != nil && len(out) == 0 {
 			return localAnswer()
 		}
@@ -208,7 +208,7 @@ func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.M
 			}
 		}
 	} else if wantTV {
-		res, err := c.client.SearchTV(ctx, query, 1)
+		res, err := c.tmdb().SearchTV(ctx, query, 1)
 		if err != nil && len(out) == 0 {
 			return localAnswer()
 		}
@@ -286,7 +286,7 @@ func (c *Catalog) List(ctx context.Context, list string, t core.MediaType, limit
 		return c.releasedTitles(c.FilterVisibility(ctx, items)), nil
 	}
 	c.listMu.Unlock()
-	if c.client == nil {
+	if c.tmdb() == nil {
 		// Offline fallback: best-effort browse by popularity/rating.
 		sortOrder := core.SortPopularity
 		if list == "top_rated" {
@@ -388,13 +388,13 @@ func (c *Catalog) fetchList(ctx context.Context, list string, t core.MediaType, 
 		}
 		switch t {
 		case core.TypeMovie:
-			return collectMovies(func(p int) (*tmdb.Paged[tmdb.Movie], error) { return c.client.TrendingMovies(ctx, window, p) })
+			return collectMovies(func(p int) (*tmdb.Paged[tmdb.Movie], error) { return c.tmdb().TrendingMovies(ctx, window, p) })
 		case core.TypeShow:
-			return collectTV(func(p int) (*tmdb.Paged[tmdb.TVShow], error) { return c.client.TrendingTV(ctx, window, p) })
+			return collectTV(func(p int) (*tmdb.Paged[tmdb.TVShow], error) { return c.tmdb().TrendingTV(ctx, window, p) })
 		default:
 			var out []core.Title
 			for p := 1; p <= pages; p++ {
-				res, err := c.client.TrendingAll(ctx, window, p)
+				res, err := c.tmdb().TrendingAll(ctx, window, p)
 				if err != nil {
 					return out, err
 				}
@@ -420,13 +420,13 @@ func (c *Catalog) fetchList(ctx context.Context, list string, t core.MediaType, 
 			if l == "upcoming" {
 				l = "on_the_air"
 			}
-			return collectTV(func(p int) (*tmdb.Paged[tmdb.TVShow], error) { return c.client.TVList(ctx, l, p) })
+			return collectTV(func(p int) (*tmdb.Paged[tmdb.TVShow], error) { return c.tmdb().TVList(ctx, l, p) })
 		}
 		l := list
 		if l == "airing_today" || l == "on_the_air" {
 			l = "now_playing"
 		}
-		return collectMovies(func(p int) (*tmdb.Paged[tmdb.Movie], error) { return c.client.MovieList(ctx, l, p) })
+		return collectMovies(func(p int) (*tmdb.Paged[tmdb.Movie], error) { return c.tmdb().MovieList(ctx, l, p) })
 	default:
 		return nil, fmt.Errorf("catalog: unknown list %q", list)
 	}
@@ -453,17 +453,17 @@ func (c *Catalog) Similar(ctx context.Context, key core.RatingKey, limit int) ([
 			}
 		}
 	}
-	if c.client == nil {
+	if c.tmdb() == nil {
 		// Offline: same genres via browse is the recommender's job; return nothing.
 		return []core.Title{}, nil
 	}
 	switch kind {
 	case core.KindMovie:
-		if res, err := c.client.MovieRecommendations(ctx, id, 1); err == nil {
+		if res, err := c.tmdb().MovieRecommendations(ctx, id, 1); err == nil {
 			for _, m := range res.Results {
 				add([]core.Title{c.movieToTitle(ctx, m)})
 			}
-		} else if res2, err2 := c.client.MovieSimilar(ctx, id, 1); err2 != nil {
+		} else if res2, err2 := c.tmdb().MovieSimilar(ctx, id, 1); err2 != nil {
 			return nil, err
 		} else {
 			for _, m := range res2.Results {
@@ -471,17 +471,17 @@ func (c *Catalog) Similar(ctx context.Context, key core.RatingKey, limit int) ([
 			}
 			break
 		}
-		if res, err := c.client.MovieSimilar(ctx, id, 1); err == nil {
+		if res, err := c.tmdb().MovieSimilar(ctx, id, 1); err == nil {
 			for _, m := range res.Results {
 				add([]core.Title{c.movieToTitle(ctx, m)})
 			}
 		}
 	case core.KindShow, core.KindSeason, core.KindEpisode:
-		if res, err := c.client.TVRecommendations(ctx, id, 1); err == nil {
+		if res, err := c.tmdb().TVRecommendations(ctx, id, 1); err == nil {
 			for _, s := range res.Results {
 				add([]core.Title{c.tvToTitle(ctx, s)})
 			}
-		} else if res2, err2 := c.client.TVSimilar(ctx, id, 1); err2 != nil {
+		} else if res2, err2 := c.tmdb().TVSimilar(ctx, id, 1); err2 != nil {
 			return nil, err
 		} else {
 			for _, s := range res2.Results {
@@ -489,7 +489,7 @@ func (c *Catalog) Similar(ctx context.Context, key core.RatingKey, limit int) ([
 			}
 			break
 		}
-		if res, err := c.client.TVSimilar(ctx, id, 1); err == nil {
+		if res, err := c.tmdb().TVSimilar(ctx, id, 1); err == nil {
 			for _, s := range res.Results {
 				add([]core.Title{c.tvToTitle(ctx, s)})
 			}
@@ -517,8 +517,8 @@ func (c *Catalog) Collection(ctx context.Context, tmdbCollection int64) (string,
 	if tmdbCollection <= 0 {
 		return "", nil, core.ErrNotFound
 	}
-	if c.client != nil {
-		d, err := c.client.CollectionDetails(ctx, tmdbCollection)
+	if c.tmdb() != nil {
+		d, err := c.tmdb().CollectionDetails(ctx, tmdbCollection)
 		if err == nil {
 			_, _ = c.db.ExecContext(ctx, `INSERT INTO catalog_collections(tmdb_id,name,summary,poster,backdrop,fetched_at) VALUES(?,?,?,?,?,?)
 				ON CONFLICT(tmdb_id) DO UPDATE SET name=excluded.name,summary=excluded.summary,poster=excluded.poster,backdrop=excluded.backdrop,fetched_at=excluded.fetched_at`,
@@ -596,10 +596,10 @@ func (c *Catalog) ByExternalID(ctx context.Context, source, id string) (*core.Ti
 		// Return the detail-enriched version.
 		return c.Get(ctx, items[0].Key)
 	}
-	if c.client == nil {
+	if c.tmdb() == nil {
 		return nil, core.ErrNotFound
 	}
-	found, err := c.client.FindByExternalID(ctx, source, id)
+	found, err := c.tmdb().FindByExternalID(ctx, source, id)
 	if err != nil {
 		return nil, err
 	}

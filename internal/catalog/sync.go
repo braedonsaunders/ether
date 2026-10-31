@@ -242,7 +242,7 @@ func (c *Catalog) untilDue(ctx context.Context) time.Duration {
 var ErrSyncInProgress = fmt.Errorf("catalog: sync already in progress")
 
 func (c *Catalog) Sync(ctx context.Context) error {
-	if c.client == nil {
+	if c.tmdb() == nil {
 		return fmt.Errorf("catalog: sync: no TMDB client")
 	}
 	if !c.syncing.CompareAndSwap(false, true) {
@@ -347,7 +347,7 @@ func (c *Catalog) syncSlice(ctx context.Context, tv bool, params tmdb.DiscoverPa
 		var titles []core.Title
 		totalPages := 0
 		if tv {
-			res, err := c.client.DiscoverTV(ctx, p)
+			res, err := c.tmdb().DiscoverTV(ctx, p)
 			if err != nil {
 				return 0, err
 			}
@@ -359,7 +359,7 @@ func (c *Catalog) syncSlice(ctx context.Context, tv bool, params tmdb.DiscoverPa
 				titles = append(titles, c.tvToTitle(ctx, s))
 			}
 		} else {
-			res, err := c.client.DiscoverMovies(ctx, p)
+			res, err := c.tmdb().DiscoverMovies(ctx, p)
 			if err != nil {
 				return 0, err
 			}
@@ -429,7 +429,7 @@ func (c *Catalog) qualifiesNewRelease(t core.Title) bool {
 // long-term vote counts to accumulate. Errors on optional endpoints are
 // ignored so minimal test fixtures are unaffected.
 func (c *Catalog) syncNewReleases(ctx context.Context) {
-	if c.client == nil || ctx.Err() != nil {
+	if c.tmdb() == nil || ctx.Err() != nil {
 		return
 	}
 	var batch []core.Title
@@ -465,7 +465,7 @@ func (c *Catalog) syncNewReleases(ctx context.Context) {
 // followed by the most popular and most-voted titles. Settled titles are
 // marked detail=1 and never re-queried.
 func (c *Catalog) WarmDetails(ctx context.Context, limit int) (int, error) {
-	if c.client == nil || limit <= 0 {
+	if c.tmdb() == nil || limit <= 0 {
 		return 0, nil
 	}
 	now := c.now()
@@ -515,10 +515,11 @@ type personCreditsTMDB interface {
 // /person/{id}/combined_credits on first browse when the local mirror holds
 // only a few detail-enriched titles for them.
 func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
-	if personID <= 0 || c.client == nil {
+	client := c.tmdb()
+	if personID <= 0 || client == nil {
 		return
 	}
-	pc, ok := c.client.(personCreditsTMDB)
+	pc, ok := client.(personCreditsTMDB)
 	if !ok {
 		return
 	}
@@ -555,7 +556,7 @@ func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
 	var personName, personThumb, personIMDB string
 	_ = c.db.QueryRowContext(ctx, `SELECT name, thumb FROM catalog_credits WHERE person_tmdb=? AND name<>'' LIMIT 1`, personID).Scan(&personName, &personThumb)
 	if personName == "" {
-		if pd, ok := c.client.(personDetailsSource); ok {
+		if pd, ok := client.(personDetailsSource); ok {
 			if p, err := pd.PersonDetails(bctx, personID); err == nil && p != nil {
 				personName, personThumb = p.Name, p.ProfilePath
 				if p.ID == personID && validPersonIMDB(p.IMDBID) {

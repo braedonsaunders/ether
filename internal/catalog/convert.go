@@ -49,8 +49,8 @@ func (c *Catalog) genreMap(ctx context.Context, mediaType string) map[int]string
 		return m
 	}
 	m := map[int]string{}
-	if c.client != nil {
-		if gs, err := c.client.Genres(ctx, mediaType); err == nil {
+	if c.tmdb() != nil {
+		if gs, err := c.tmdb().Genres(ctx, mediaType); err == nil {
 			for _, g := range gs {
 				m[g.ID] = g.Name
 			}

@@ -361,7 +361,7 @@ func (c *Catalog) ResolveShowParents(ctx context.Context, keys []core.RatingKey)
 		var warm []core.Title
 		for _, key := range part {
 			st := stored[key]
-			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.client == nil) {
+			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.tmdb() == nil) {
 				warm = append(warm, st.t)
 			}
 		}
@@ -376,7 +376,7 @@ func (c *Catalog) ResolveShowParents(ctx context.Context, keys []core.RatingKey)
 		}
 		for _, key := range part {
 			st := stored[key]
-			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.client == nil) {
+			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.tmdb() == nil) {
 				continue
 			}
 			title, e := c.Get(ctx, key)

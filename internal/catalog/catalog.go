@@ -155,11 +155,15 @@ type TMDB interface {
 var _ TMDB = (*tmdb.Client)(nil)
 var _ core.Catalog = (*Catalog)(nil)
 
+// tmdbRef is the swappable metadata client. The pointer is what concurrent
+// readers and SetTMDB publish.
+type tmdbRef struct{ client TMDB }
+
 // Catalog implements core.Catalog.
 type Catalog struct {
 	visibility     *libraryfilter.Filter
 	db             *sql.DB
-	client         TMDB
+	remote         atomic.Pointer[tmdbRef]
 	configUpdateMu sync.Mutex // serializes transitions without blocking config readers
 	// Retry a failed preservation on the next config transition. The saved
 	// settings still take effect immediately, even when the database fails.
@@ -287,12 +291,13 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	if stale <= 0 {
 		stale = 24 * time.Hour
 	}
-	c := &Catalog{visibility: visibility, db: db, client: client, cfg: cfg, cfgVersion: &configVersion{}, log: log, now: time.Now,
+	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log, now: time.Now,
 		staleAfter: stale, listTTL: 15 * time.Minute,
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
 		browseCache: map[string]cachedBrowse{}, facetCache: map[string]cachedFacet{},
 		personHydrated: map[int64]time.Time{}}
+	c.SetTMDB(client)
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -372,8 +377,19 @@ func (c *Catalog) meetsThreshold(t core.Title) bool {
 // SetTMDB replaces the remote metadata client. Nil answers from the local catalogue only.
 func (c *Catalog) SetTMDB(client TMDB) {
 	if c != nil {
-		c.client = client
+		c.remote.Store(&tmdbRef{client: client})
 	}
+}
+
+func (c *Catalog) tmdb() TMDB {
+	if c == nil {
+		return nil
+	}
+	ref := c.remote.Load()
+	if ref == nil {
+		return nil
+	}
+	return ref.client
 }
 
 // WriteGeneration changes when a catalogue write drops the read caches.
