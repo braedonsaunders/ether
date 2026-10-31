@@ -378,3 +378,35 @@ func TestIndexedPeopleMatchTheCreditWalk(t *testing.T) {
 		t.Fatalf("indexed people search walked credits %d times", n)
 	}
 }
+
+type denyRated struct{ rating string }
+
+func (d denyRated) Allowed(_ *core.User, t *core.Title) bool { return t.ContentRating != d.rating }
+
+// A restricted viewer never finds a person through a title their policy
+// hides, on the indexed path exactly as on the credit walk.
+func TestIndexedPeopleHonourRestrictedPolicy(t *testing.T) {
+	ctx := context.Background()
+	viewer := &core.User{ID: 1}
+	for _, indexed := range []bool{false, true} {
+		s, c := peopleFixture()
+		if indexed {
+			indexPeopleFixture(s, c)
+		}
+		c.update(core.MovieKey(1), func(title *core.Title) { title.ContentRating = "R" })
+		rows, err := s.People(ctx, viewer, core.Device{}, frontend.PeopleQuery{Query: "scene", Scope: frontend.PeopleMovies})
+		if err != nil || len(rows) != 2 {
+			t.Fatalf("indexed=%v unrestricted: %+v %v", indexed, rows, err)
+		}
+		s.d.Visibility.Policy = denyRated{rating: "R"}
+		rows, err = s.People(ctx, viewer, core.Device{}, frontend.PeopleQuery{Query: "scene", Scope: frontend.PeopleMovies})
+		if err != nil || len(rows) != 0 {
+			t.Fatalf("indexed=%v restricted viewer found people through a hidden title: %+v %v", indexed, rows, err)
+		}
+		// The episode credit still shows The Scene to the restricted viewer.
+		rows, err = s.People(ctx, viewer, core.Device{}, frontend.PeopleQuery{Query: "the scene", Scope: frontend.PeopleVideoWithEpisodes, Limit: 1})
+		if err != nil || len(rows) != 1 || rows[0].TMDB != 10 || rows[0].ArtworkItem != core.EpisodeKey(1, 1, 1) {
+			t.Fatalf("indexed=%v restricted episode credit: %+v %v", indexed, rows, err)
+		}
+	}
+}
