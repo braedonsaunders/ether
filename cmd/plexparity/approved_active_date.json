@@ -3,7 +3,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -20,7 +20,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -156,7 +156,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -173,7 +173,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -190,7 +190,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -207,7 +207,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -343,7 +343,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -360,7 +360,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -377,7 +377,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -394,7 +394,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -530,7 +530,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -547,7 +547,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -564,7 +564,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -581,7 +581,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -717,7 +717,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -734,7 +734,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -751,7 +751,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -768,7 +768,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -904,7 +904,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -921,7 +921,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -938,7 +938,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -955,7 +955,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1091,7 +1091,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1108,7 +1108,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1125,7 +1125,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1142,7 +1142,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1278,7 +1278,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1295,7 +1295,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1312,7 +1312,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1329,7 +1329,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1465,7 +1465,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1482,7 +1482,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1499,7 +1499,7 @@
     "viewer": "owner",
     "client": "web",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1516,7 +1516,7 @@
     "viewer": "owner",
     "client": "web",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1652,7 +1652,7 @@
     "viewer": "owner",
     "client": "web",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1669,7 +1669,7 @@
     "viewer": "owner",
     "client": "web",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1686,7 +1686,7 @@
     "viewer": "owner",
     "client": "web",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1703,7 +1703,7 @@
     "viewer": "owner",
     "client": "web",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1839,7 +1839,7 @@
     "viewer": "owner",
     "client": "web",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1856,7 +1856,7 @@
     "viewer": "owner",
     "client": "web",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -1873,7 +1873,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -1890,7 +1890,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2026,7 +2026,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2043,7 +2043,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2060,7 +2060,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2077,7 +2077,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2213,7 +2213,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2230,7 +2230,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2247,7 +2247,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2264,7 +2264,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2400,7 +2400,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2417,7 +2417,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2434,7 +2434,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2451,7 +2451,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2587,7 +2587,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2604,7 +2604,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2621,7 +2621,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2638,7 +2638,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2774,7 +2774,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2791,7 +2791,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -2808,7 +2808,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2825,7 +2825,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2961,7 +2961,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2978,7 +2978,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -2995,7 +2995,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3012,7 +3012,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3148,7 +3148,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3165,7 +3165,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3182,7 +3182,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3199,7 +3199,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3335,7 +3335,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3352,7 +3352,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3369,7 +3369,7 @@
     "viewer": "adult",
     "client": "web",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3386,7 +3386,7 @@
     "viewer": "adult",
     "client": "web",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3522,7 +3522,7 @@
     "viewer": "adult",
     "client": "web",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3539,7 +3539,7 @@
     "viewer": "adult",
     "client": "web",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3556,7 +3556,7 @@
     "viewer": "adult",
     "client": "web",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3573,7 +3573,7 @@
     "viewer": "adult",
     "client": "web",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3709,7 +3709,7 @@
     "viewer": "adult",
     "client": "web",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3726,7 +3726,7 @@
     "viewer": "adult",
     "client": "web",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3743,7 +3743,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3760,7 +3760,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3862,7 +3862,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -3879,7 +3879,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3896,7 +3896,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -3998,7 +3998,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4015,7 +4015,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4032,7 +4032,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4134,7 +4134,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4151,7 +4151,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4168,7 +4168,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4270,7 +4270,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4287,7 +4287,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4304,7 +4304,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4406,7 +4406,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4423,7 +4423,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4440,7 +4440,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4542,7 +4542,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4559,7 +4559,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4576,7 +4576,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4678,7 +4678,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4695,7 +4695,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4712,7 +4712,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4814,7 +4814,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4831,7 +4831,7 @@
     "viewer": "teen",
     "client": "web",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4848,7 +4848,7 @@
     "viewer": "teen",
     "client": "web",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4950,7 +4950,7 @@
     "viewer": "teen",
     "client": "web",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -4967,7 +4967,7 @@
     "viewer": "teen",
     "client": "web",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -4984,7 +4984,7 @@
     "viewer": "teen",
     "client": "web",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5086,7 +5086,7 @@
     "viewer": "teen",
     "client": "web",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5103,7 +5103,7 @@
     "viewer": "child",
     "client": "androidtv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5120,7 +5120,7 @@
     "viewer": "child",
     "client": "androidtv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5222,7 +5222,7 @@
     "viewer": "child",
     "client": "androidtv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5239,7 +5239,7 @@
     "viewer": "child",
     "client": "androidtv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5341,7 +5341,7 @@
     "viewer": "child",
     "client": "appletv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5358,7 +5358,7 @@
     "viewer": "child",
     "client": "appletv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5460,7 +5460,7 @@
     "viewer": "child",
     "client": "appletv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5477,7 +5477,7 @@
     "viewer": "child",
     "client": "appletv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5579,7 +5579,7 @@
     "viewer": "child",
     "client": "desktop",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5596,7 +5596,7 @@
     "viewer": "child",
     "client": "desktop",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5698,7 +5698,7 @@
     "viewer": "child",
     "client": "desktop",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5715,7 +5715,7 @@
     "viewer": "child",
     "client": "desktop",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5817,7 +5817,7 @@
     "viewer": "child",
     "client": "ios",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5834,7 +5834,7 @@
     "viewer": "child",
     "client": "ios",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -5936,7 +5936,7 @@
     "viewer": "child",
     "client": "ios",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -5953,7 +5953,7 @@
     "viewer": "child",
     "client": "ios",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6055,7 +6055,7 @@
     "viewer": "child",
     "client": "web",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6072,7 +6072,7 @@
     "viewer": "child",
     "client": "web",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6174,7 +6174,7 @@
     "viewer": "child",
     "client": "web",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6191,7 +6191,7 @@
     "viewer": "child",
     "client": "web",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6293,7 +6293,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6310,7 +6310,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6446,7 +6446,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6463,7 +6463,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6480,7 +6480,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6497,7 +6497,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6633,7 +6633,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6650,7 +6650,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6667,7 +6667,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6684,7 +6684,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6820,7 +6820,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6837,7 +6837,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -6854,7 +6854,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -6871,7 +6871,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7007,7 +7007,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7024,7 +7024,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7041,7 +7041,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7058,7 +7058,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7194,7 +7194,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7211,7 +7211,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7228,7 +7228,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7245,7 +7245,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7381,7 +7381,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7398,7 +7398,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7415,7 +7415,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7432,7 +7432,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7568,7 +7568,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7585,7 +7585,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7602,7 +7602,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7619,7 +7619,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7755,7 +7755,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7772,7 +7772,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7789,7 +7789,7 @@
     "viewer": "friend",
     "client": "web",
     "json": false,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7806,7 +7806,7 @@
     "viewer": "friend",
     "client": "web",
     "json": false,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7942,7 +7942,7 @@
     "viewer": "friend",
     "client": "web",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7959,7 +7959,7 @@
     "viewer": "friend",
     "client": "web",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -7976,7 +7976,7 @@
     "viewer": "friend",
     "client": "web",
     "json": true,
-    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0&X-Plex-Container-Size=50",
+    "path": "/library/sections/{{section}}/all?X-Plex-Container-Start=0\u0026X-Plex-Container-Size=50",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -7993,7 +7993,7 @@
     "viewer": "friend",
     "client": "web",
     "json": true,
-    "path": "/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+    "path": "/library/metadata/{{movieKey}}?includeExtras=1\u0026includeRelated=1\u0026includeOnDeck=1\u0026includeChapters=1\u0026includeGuids=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -8129,7 +8129,7 @@
     "viewer": "friend",
     "client": "web",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -8146,7 +8146,7 @@
     "viewer": "friend",
     "client": "web",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -8384,7 +8384,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -8860,7 +8860,7 @@
     "viewer": "owner",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -9336,7 +9336,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -9812,7 +9812,7 @@
     "viewer": "owner",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -10288,7 +10288,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -10764,7 +10764,7 @@
     "viewer": "owner",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -11240,7 +11240,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -11716,7 +11716,7 @@
     "viewer": "owner",
     "client": "ios",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -12192,7 +12192,7 @@
     "viewer": "owner",
     "client": "web",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -12668,7 +12668,7 @@
     "viewer": "owner",
     "client": "web",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -13144,7 +13144,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -13620,7 +13620,7 @@
     "viewer": "adult",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -14096,7 +14096,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -14572,7 +14572,7 @@
     "viewer": "adult",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -15048,7 +15048,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -15524,7 +15524,7 @@
     "viewer": "adult",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -16000,7 +16000,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -16476,7 +16476,7 @@
     "viewer": "adult",
     "client": "ios",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -16952,7 +16952,7 @@
     "viewer": "adult",
     "client": "web",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -17428,7 +17428,7 @@
     "viewer": "adult",
     "client": "web",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -17853,7 +17853,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -18244,7 +18244,7 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -18635,7 +18635,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -19026,7 +19026,7 @@
     "viewer": "teen",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -19417,7 +19417,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -19808,7 +19808,7 @@
     "viewer": "teen",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -20199,7 +20199,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -20590,7 +20590,7 @@
     "viewer": "teen",
     "client": "ios",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -20981,7 +20981,7 @@
     "viewer": "teen",
     "client": "web",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -21372,7 +21372,7 @@
     "viewer": "teen",
     "client": "web",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -21763,7 +21763,7 @@
     "viewer": "child",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -22137,7 +22137,7 @@
     "viewer": "child",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -22511,7 +22511,7 @@
     "viewer": "child",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -22885,7 +22885,7 @@
     "viewer": "child",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -23259,7 +23259,7 @@
     "viewer": "child",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -23633,7 +23633,7 @@
     "viewer": "child",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -24007,7 +24007,7 @@
     "viewer": "child",
     "client": "ios",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -24381,7 +24381,7 @@
     "viewer": "child",
     "client": "ios",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -24755,7 +24755,7 @@
     "viewer": "child",
     "client": "web",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -25129,7 +25129,7 @@
     "viewer": "child",
     "client": "web",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -25554,7 +25554,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -26030,7 +26030,7 @@
     "viewer": "friend",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -26506,7 +26506,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -26982,7 +26982,7 @@
     "viewer": "friend",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -27458,7 +27458,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -27934,7 +27934,7 @@
     "viewer": "friend",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -28410,7 +28410,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -28886,7 +28886,7 @@
     "viewer": "friend",
     "client": "ios",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -29362,7 +29362,7 @@
     "viewer": "friend",
     "client": "web",
     "json": false,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
@@ -29838,7 +29838,7 @@
     "viewer": "friend",
     "client": "web",
     "json": true,
-    "path": "/hubs/home/recentlyAdded?type=1&contentDirectoryID=1",
+    "path": "/hubs/home/recentlyAdded?type=1\u0026contentDirectoryID=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
@@ -33769,12 +33769,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "965219792aa26adca5c9396fc255846992c08c591bd3fc7acc7d158d6e9ee20f"
+      "sha256": "af0af068013dd2af7aecea66ce1e60fbe87098e90ba71fbad05041bee90f8722"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -33782,16 +33782,16 @@
     "viewer": "child",
     "client": "androidtv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "94a3a1907b07cd8d73f76dd8c74d0f30526822857453a13918b1c4f52f919950"
+      "sha256": "f02aae300e1c12bd1177979e5a5d503140d4d51c3835bea31d06ba04535ee29c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "c98a7d8ae98705cb491f3a4a36343bc2b211fb63f4b76168d5964b45b48f7e5e"
+      "sha256": "207450c0f0076e1ce3843dfb4a0003e232769e93a4d7e6bdab2e1a9c5cae84d8"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33803,12 +33803,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "3c3493168beb2f263be914aaeee7bca2f6ca6d0450c6c22e10b278bf658d9015"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "b7370d652f5324a4b38e6241013aac1a678eea95c35af45de1981d4b8fe8b9fc"
+      "sha256": "e597d2ae3fa686f983355187eaa5b5f76a99def4ad4d905d6e48d0ee4cb28127"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -33820,12 +33820,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "1a076e54e3181695cc0aa0092b7d2817a5b2601f94209be9f4aa55592b4bdf3c"
+      "sha256": "c91d6fb06b91e298668cdb34451312e615f4c5bdbee60c8430bd2f8c6962fe6d"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "197cfcbfdf15ac3a031da043e248a2de700ccf3329676f8b679f30a2d02be7fc"
+      "sha256": "4a28d1aa9a633d17966cce8592ba8787243c61519f93fda2abbd47c5b50d5640"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33833,16 +33833,16 @@
     "viewer": "child",
     "client": "appletv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "3e0deebcc36d6138a54312b119bc0e9fd8f903d80e1289bc45bd045cd16adc3c"
+      "sha256": "f02aae300e1c12bd1177979e5a5d503140d4d51c3835bea31d06ba04535ee29c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "004c6e935454019454400e214e907ce2123e29016abf4a5196d25cf53c18d98b"
+      "sha256": "207450c0f0076e1ce3843dfb4a0003e232769e93a4d7e6bdab2e1a9c5cae84d8"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33854,12 +33854,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "078589674630cf047eebc75278dd654ae7f98c7e72db8940cec3e00c18ac9062"
+      "sha256": "e597d2ae3fa686f983355187eaa5b5f76a99def4ad4d905d6e48d0ee4cb28127"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -33867,16 +33867,16 @@
     "viewer": "child",
     "client": "desktop",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "d821098fd95d4ff321380f8f34e11a1c59a9decddefe15d915a4de23276fcd0f"
+      "sha256": "de9d63b5f170fc0f16fc7959b33932f3c2f5dacb1d7ac02b664ae28eb9a3afaf"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8e70b43b358309181d8671ecdffbe211244fe89febcb94bf6258a49321b1b51f"
+      "sha256": "2ae88f363f142e331346aab2cdeb28636c073251639a8d6e897566b2c77e9593"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33888,12 +33888,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "6d24c2b11624c1d936707b5f742f8b55e5273d342002f22f3affe72a350cadff"
+      "sha256": "551f68c3bcc8ac4640286ce7af36bb728f85d25314fc1a4f8df99e775beae16c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "9fc2a887867a607895d914b3a0e6398505d949611b7ea827220c6a12ba672431"
+      "sha256": "c5df469078d40e036664764256918a504789d0dd13a464e6e92fa528a5651c21"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33901,16 +33901,16 @@
     "viewer": "child",
     "client": "appletv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "477c3cd470ea05cb25309080324d51ee132e6b0f3fc6c04c6ca7189ae2199be8"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "076a2d2b6aad4ee5759a8fd7c37499c5786d2ddbe0b9891b924f813e922df2a2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33922,12 +33922,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "9a96c98275547ead6b00b4a105c78809c131e8bad67ee77b87f0503c5ae5d8a7"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "c5e0ec5362cd8db5db3aa0f804aeb24c94b3a2258ce25ca1d58deba0ece9d891"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33939,12 +33939,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "137a67d0f827d1b110b82ca868fdbe202eb5336b0a622b00b773b8a180724d5c"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "e5ba628fef5af7511375f2c5e5ba479a610c27b97bcf028c11ab45c182242677"
+      "sha256": "d3dfb4c6eefdaea7a624f3dc5632ef2b8713589e6d52ba59c50e75f4d1f18929"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -33952,16 +33952,16 @@
     "viewer": "teen",
     "client": "ios",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "1cb13f97656c1aab90a6dfabde1d34c78b7c807ffbab6aa5090777029fc0d1d7"
+      "sha256": "614fbd0d9cf6b1eb11dc7460b99720fde2d34b259391660f9b62dd6e61456768"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "c8fd79ee34c1e186426e7ebe926c7d1836ec9eaaacd5dd08f58ba3f7fe122e26"
+      "sha256": "703631a9b99208e3b9217c034c10d9028562a99efaa5be1ea82e3bc1d71272b9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33973,12 +33973,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "84778a2f9ef6333ed78cf19a379f628ca695721776bf3150080c919fcf6303ed"
+      "sha256": "551f68c3bcc8ac4640286ce7af36bb728f85d25314fc1a4f8df99e775beae16c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "0fe16c5c13ab6939da58a0a7f420ff815d8df1818116a8141e81000b3abde567"
+      "sha256": "c5df469078d40e036664764256918a504789d0dd13a464e6e92fa528a5651c21"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -33990,12 +33990,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8f3989bb01c57bfc594acbad12975144ab70a447682fc3b00e2e533163cf8741"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34007,12 +34007,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "51eac47ff2fc479d8011afd3f27abefecefd0d971e895e30bba8ac2c6249bf79"
+      "sha256": "d3dfb4c6eefdaea7a624f3dc5632ef2b8713589e6d52ba59c50e75f4d1f18929"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34024,12 +34024,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "1bd407a2fa61cda6c1ee735db84c26ce12c22ed026737beab3eb5995657c2487"
+      "sha256": "db05d4e64b90553b3a95398d377b7ca5bbcdad2a20971689f46df7cf13e7fee0"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "40fbd6a6d73516e7ef6bb24b4eefdb0e2682a2180b69d7facb809251a3fd51e3"
+      "sha256": "c8327340fc5e54c766c07ebc0c6b2f548c6c1f55a826780d73c3cb363aa86722"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34037,16 +34037,16 @@
     "viewer": "child",
     "client": "web",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "22bd898fbe71801a3aa9c4f743da76147bc3a1cc02f096a6ce25254c83a33931"
+      "sha256": "de9d63b5f170fc0f16fc7959b33932f3c2f5dacb1d7ac02b664ae28eb9a3afaf"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "402593df1ca2a02d1962a43e0f816f4b6086ba65493f7295c2a554c69d653026"
+      "sha256": "2ae88f363f142e331346aab2cdeb28636c073251639a8d6e897566b2c77e9593"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34058,12 +34058,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "0607f88ae4a0a3cd6f272584f8bed97db7a502c894efbd1a8e45c25ed84925ea"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "d760906d803758f7eb11e2a5169eea374536a553799da7e568f458299844be92"
+      "sha256": "f7f0cf01cced69faf90abdded879a54bc9cac7e09846c3098a4c82960197f80a"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34075,12 +34075,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "078589674630cf047eebc75278dd654ae7f98c7e72db8940cec3e00c18ac9062"
+      "sha256": "e597d2ae3fa686f983355187eaa5b5f76a99def4ad4d905d6e48d0ee4cb28127"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34088,16 +34088,16 @@
     "viewer": "child",
     "client": "desktop",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "af4763fcf0779aaeaf7116bfad42d50076c4f33a2cc9355241b28533f5bca6f2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34105,16 +34105,16 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "1cb13f97656c1aab90a6dfabde1d34c78b7c807ffbab6aa5090777029fc0d1d7"
+      "sha256": "614fbd0d9cf6b1eb11dc7460b99720fde2d34b259391660f9b62dd6e61456768"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "c8fd79ee34c1e186426e7ebe926c7d1836ec9eaaacd5dd08f58ba3f7fe122e26"
+      "sha256": "703631a9b99208e3b9217c034c10d9028562a99efaa5be1ea82e3bc1d71272b9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34122,16 +34122,16 @@
     "viewer": "child",
     "client": "web",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "9a96c98275547ead6b00b4a105c78809c131e8bad67ee77b87f0503c5ae5d8a7"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "c5e0ec5362cd8db5db3aa0f804aeb24c94b3a2258ce25ca1d58deba0ece9d891"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34143,12 +34143,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "84778a2f9ef6333ed78cf19a379f628ca695721776bf3150080c919fcf6303ed"
+      "sha256": "551f68c3bcc8ac4640286ce7af36bb728f85d25314fc1a4f8df99e775beae16c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "0fe16c5c13ab6939da58a0a7f420ff815d8df1818116a8141e81000b3abde567"
+      "sha256": "c5df469078d40e036664764256918a504789d0dd13a464e6e92fa528a5651c21"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34156,16 +34156,16 @@
     "viewer": "teen",
     "client": "appletv",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "8db4aabba4112fe46fdc4fc63deff9242ef07b0cc305f160db71aa70e44060e6"
+      "sha256": "614fbd0d9cf6b1eb11dc7460b99720fde2d34b259391660f9b62dd6e61456768"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "0ad68c599fbccd3979f13568a71209a4bab56aa6829df419d49368a4a62ca684"
+      "sha256": "703631a9b99208e3b9217c034c10d9028562a99efaa5be1ea82e3bc1d71272b9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34177,12 +34177,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "51eac47ff2fc479d8011afd3f27abefecefd0d971e895e30bba8ac2c6249bf79"
+      "sha256": "d3dfb4c6eefdaea7a624f3dc5632ef2b8713589e6d52ba59c50e75f4d1f18929"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34190,16 +34190,16 @@
     "viewer": "child",
     "client": "ios",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8f3989bb01c57bfc594acbad12975144ab70a447682fc3b00e2e533163cf8741"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34211,12 +34211,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8f3989bb01c57bfc594acbad12975144ab70a447682fc3b00e2e533163cf8741"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34224,16 +34224,16 @@
     "viewer": "teen",
     "client": "desktop",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "9c5752c0e9d41a511a10a10cec86d5156f530e680f274ea5e7b0c49f090826a7"
+      "sha256": "4d83ceff6067916f7db13884556ceae1c255989c77be9329b4c3e1013e225e97"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "be10d6d4d197c245f28470ede263504f8c7971626124994990c3d7ffd3ba3758"
+      "sha256": "275d10e0a1cdefef6aaf99ea289cd7be6aad6bf908de7e18b3be85ce3b3ef14e"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34245,12 +34245,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "656b61e10fd795fc7bc8acca05c59c3ee76d48f930e7e4f083befce693384d13"
+      "sha256": "db05d4e64b90553b3a95398d377b7ca5bbcdad2a20971689f46df7cf13e7fee0"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "6b665e63fcee033347ed7eea74d5644dbda2279170ba04f5f2db2d8fecbce783"
+      "sha256": "c8327340fc5e54c766c07ebc0c6b2f548c6c1f55a826780d73c3cb363aa86722"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34262,12 +34262,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "f305028237973f5aa77cb2602fff4000d5cbd75c4af831516c9f6b9c9d6955cc"
+      "sha256": "2eacd01940e44f213e5f3d65349fd83cb3e1404b2b4039c499dd2a21b82338af"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "e6ba8624addd74ab2d39cb3681b1975674dc9b4213f438957b5e8e937629a3e3"
+      "sha256": "6b1b7ed20307902cf66949a2401140e401096fdc332901da4d65d30f5d5af461"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34279,12 +34279,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "af4763fcf0779aaeaf7116bfad42d50076c4f33a2cc9355241b28533f5bca6f2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34296,12 +34296,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "07b59e2f5d6d852a2e224559175f9b965f28d91efd8f323fef221fec90ebde7b"
+      "sha256": "f7f0cf01cced69faf90abdded879a54bc9cac7e09846c3098a4c82960197f80a"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34313,12 +34313,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "137a67d0f827d1b110b82ca868fdbe202eb5336b0a622b00b773b8a180724d5c"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "6b16b0b053e30f0b85fff3c14debcec7599961506878773d388efdd8af6ef5e9"
+      "sha256": "af0af068013dd2af7aecea66ce1e60fbe87098e90ba71fbad05041bee90f8722"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34330,12 +34330,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2fcce6eb3a654f43692451d7a34c8260c7a71343b60c2daa6d53f7526d53a663"
+      "sha256": "2eacd01940e44f213e5f3d65349fd83cb3e1404b2b4039c499dd2a21b82338af"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2828f7025c3c91d675d1200a39c659ce43238d101829555155c3c4a54afe5f38"
+      "sha256": "6b1b7ed20307902cf66949a2401140e401096fdc332901da4d65d30f5d5af461"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34343,16 +34343,16 @@
     "viewer": "child",
     "client": "androidtv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "d821098fd95d4ff321380f8f34e11a1c59a9decddefe15d915a4de23276fcd0f"
+      "sha256": "de9d63b5f170fc0f16fc7959b33932f3c2f5dacb1d7ac02b664ae28eb9a3afaf"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8e70b43b358309181d8671ecdffbe211244fe89febcb94bf6258a49321b1b51f"
+      "sha256": "2ae88f363f142e331346aab2cdeb28636c073251639a8d6e897566b2c77e9593"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34364,12 +34364,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "965219792aa26adca5c9396fc255846992c08c591bd3fc7acc7d158d6e9ee20f"
+      "sha256": "af0af068013dd2af7aecea66ce1e60fbe87098e90ba71fbad05041bee90f8722"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34377,16 +34377,16 @@
     "viewer": "child",
     "client": "desktop",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "94a3a1907b07cd8d73f76dd8c74d0f30526822857453a13918b1c4f52f919950"
+      "sha256": "f02aae300e1c12bd1177979e5a5d503140d4d51c3835bea31d06ba04535ee29c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "c98a7d8ae98705cb491f3a4a36343bc2b211fb63f4b76168d5964b45b48f7e5e"
+      "sha256": "207450c0f0076e1ce3843dfb4a0003e232769e93a4d7e6bdab2e1a9c5cae84d8"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34398,12 +34398,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "801037433aad2889091aa605caba8ee09c857f4dc3896c2b84fae99789b0c9d8"
+      "sha256": "c91d6fb06b91e298668cdb34451312e615f4c5bdbee60c8430bd2f8c6962fe6d"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "376646da3b1ecf3dd9a220206810c81c35a841629aba802298ee650667394562"
+      "sha256": "4a28d1aa9a633d17966cce8592ba8787243c61519f93fda2abbd47c5b50d5640"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34411,16 +34411,16 @@
     "viewer": "teen",
     "client": "web",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8de5d9f199727a53432784d05baa0dee16e770c2baffe4d3e4cca9001268d972"
+      "sha256": "4d83ceff6067916f7db13884556ceae1c255989c77be9329b4c3e1013e225e97"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "1adb475faaf08486bf4e087bb41ba361b022fbec104455f293402b1af1781d7c"
+      "sha256": "275d10e0a1cdefef6aaf99ea289cd7be6aad6bf908de7e18b3be85ce3b3ef14e"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34432,12 +34432,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "0607f88ae4a0a3cd6f272584f8bed97db7a502c894efbd1a8e45c25ed84925ea"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "06247db6b825876b1a0e735cff4896a9ef3921ec33a2e1a111e2da4f2d000606"
+      "sha256": "e597d2ae3fa686f983355187eaa5b5f76a99def4ad4d905d6e48d0ee4cb28127"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34449,12 +34449,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2b1fca3f0ac3ea5d864f85efa34b08475fa2f34e72fa3f26d3704a4b97add413"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "4a17ff515f6e5c50bdc2a5c8e50223b6fe16df22ba4bb8775d2d35c7bafa068e"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34462,16 +34462,16 @@
     "viewer": "child",
     "client": "androidtv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8f3989bb01c57bfc594acbad12975144ab70a447682fc3b00e2e533163cf8741"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34479,16 +34479,16 @@
     "viewer": "child",
     "client": "ios",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "d821098fd95d4ff321380f8f34e11a1c59a9decddefe15d915a4de23276fcd0f"
+      "sha256": "de9d63b5f170fc0f16fc7959b33932f3c2f5dacb1d7ac02b664ae28eb9a3afaf"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8e70b43b358309181d8671ecdffbe211244fe89febcb94bf6258a49321b1b51f"
+      "sha256": "2ae88f363f142e331346aab2cdeb28636c073251639a8d6e897566b2c77e9593"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34500,12 +34500,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "af4763fcf0779aaeaf7116bfad42d50076c4f33a2cc9355241b28533f5bca6f2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34517,12 +34517,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2fcce6eb3a654f43692451d7a34c8260c7a71343b60c2daa6d53f7526d53a663"
+      "sha256": "2eacd01940e44f213e5f3d65349fd83cb3e1404b2b4039c499dd2a21b82338af"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2828f7025c3c91d675d1200a39c659ce43238d101829555155c3c4a54afe5f38"
+      "sha256": "6b1b7ed20307902cf66949a2401140e401096fdc332901da4d65d30f5d5af461"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34534,12 +34534,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "965219792aa26adca5c9396fc255846992c08c591bd3fc7acc7d158d6e9ee20f"
+      "sha256": "af0af068013dd2af7aecea66ce1e60fbe87098e90ba71fbad05041bee90f8722"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34551,12 +34551,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "94c975d9c2e9a1e08cadc9bf5ea4a62587e92d8443aec56ab2959d43bfb7d588"
+      "sha256": "551f68c3bcc8ac4640286ce7af36bb728f85d25314fc1a4f8df99e775beae16c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "42b1a64ff75a0fb2c53fd1607a721fbe61da84e04c1ee3e03309975b1585a81d"
+      "sha256": "c5df469078d40e036664764256918a504789d0dd13a464e6e92fa528a5651c21"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34564,16 +34564,16 @@
     "viewer": "child",
     "client": "web",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "cbec65f2021a236587ec32ad5e669c4fa1771b3eb5c3d113ed62a8fa86ae8edf"
+      "sha256": "f02aae300e1c12bd1177979e5a5d503140d4d51c3835bea31d06ba04535ee29c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "acf584a6b8fcc9396c65031d9d5b7c23988a08209d9ac607daef5a7d54e3e633"
+      "sha256": "207450c0f0076e1ce3843dfb4a0003e232769e93a4d7e6bdab2e1a9c5cae84d8"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34585,12 +34585,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "66688ad11234afda9bc882598be6c47b3f2d4b04313bf93d35efad8f9022b67a"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "ee5548ae9e053e84d949e904577d3c1e1ee760167c242736131dce368f21150f"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34602,12 +34602,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "bf631d0b8a6e61001a323bdd04df142354b772010eed83303609a488fabd8d57"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "ca9ac882454f36dd68d25f0a015eec565383987e543d9170f0c6bf40424398ac"
+      "sha256": "d3dfb4c6eefdaea7a624f3dc5632ef2b8713589e6d52ba59c50e75f4d1f18929"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34619,12 +34619,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "1a076e54e3181695cc0aa0092b7d2817a5b2601f94209be9f4aa55592b4bdf3c"
+      "sha256": "c91d6fb06b91e298668cdb34451312e615f4c5bdbee60c8430bd2f8c6962fe6d"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "197cfcbfdf15ac3a031da043e248a2de700ccf3329676f8b679f30a2d02be7fc"
+      "sha256": "4a28d1aa9a633d17966cce8592ba8787243c61519f93fda2abbd47c5b50d5640"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34636,12 +34636,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "078589674630cf047eebc75278dd654ae7f98c7e72db8940cec3e00c18ac9062"
+      "sha256": "e597d2ae3fa686f983355187eaa5b5f76a99def4ad4d905d6e48d0ee4cb28127"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34649,16 +34649,16 @@
     "viewer": "child",
     "client": "web",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2b1fca3f0ac3ea5d864f85efa34b08475fa2f34e72fa3f26d3704a4b97add413"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "4a17ff515f6e5c50bdc2a5c8e50223b6fe16df22ba4bb8775d2d35c7bafa068e"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34666,16 +34666,16 @@
     "viewer": "child",
     "client": "appletv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "79c29532bba2913fd0edba69fe7fda3d1798c16977cce77d97d4c13a0f666f0d"
+      "sha256": "de9d63b5f170fc0f16fc7959b33932f3c2f5dacb1d7ac02b664ae28eb9a3afaf"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "d7360ea009f276e98fe07d6fb041c335ddeec5f27d503f810e670d8d29d80857"
+      "sha256": "2ae88f363f142e331346aab2cdeb28636c073251639a8d6e897566b2c77e9593"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34683,16 +34683,16 @@
     "viewer": "child",
     "client": "ios",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "af4763fcf0779aaeaf7116bfad42d50076c4f33a2cc9355241b28533f5bca6f2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34700,16 +34700,16 @@
     "viewer": "teen",
     "client": "androidtv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "9c5752c0e9d41a511a10a10cec86d5156f530e680f274ea5e7b0c49f090826a7"
+      "sha256": "4d83ceff6067916f7db13884556ceae1c255989c77be9329b4c3e1013e225e97"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "be10d6d4d197c245f28470ede263504f8c7971626124994990c3d7ffd3ba3758"
+      "sha256": "275d10e0a1cdefef6aaf99ea289cd7be6aad6bf908de7e18b3be85ce3b3ef14e"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34721,12 +34721,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "656b61e10fd795fc7bc8acca05c59c3ee76d48f930e7e4f083befce693384d13"
+      "sha256": "db05d4e64b90553b3a95398d377b7ca5bbcdad2a20971689f46df7cf13e7fee0"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "6b665e63fcee033347ed7eea74d5644dbda2279170ba04f5f2db2d8fecbce783"
+      "sha256": "c8327340fc5e54c766c07ebc0c6b2f548c6c1f55a826780d73c3cb363aa86722"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34734,16 +34734,16 @@
     "viewer": "teen",
     "client": "desktop",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "1cb13f97656c1aab90a6dfabde1d34c78b7c807ffbab6aa5090777029fc0d1d7"
+      "sha256": "614fbd0d9cf6b1eb11dc7460b99720fde2d34b259391660f9b62dd6e61456768"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "c8fd79ee34c1e186426e7ebe926c7d1836ec9eaaacd5dd08f58ba3f7fe122e26"
+      "sha256": "703631a9b99208e3b9217c034c10d9028562a99efaa5be1ea82e3bc1d71272b9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34755,12 +34755,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "84778a2f9ef6333ed78cf19a379f628ca695721776bf3150080c919fcf6303ed"
+      "sha256": "551f68c3bcc8ac4640286ce7af36bb728f85d25314fc1a4f8df99e775beae16c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "0fe16c5c13ab6939da58a0a7f420ff815d8df1818116a8141e81000b3abde567"
+      "sha256": "c5df469078d40e036664764256918a504789d0dd13a464e6e92fa528a5651c21"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34772,12 +34772,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "9d9bb9035ea2390eeb0e1ab6b37c3a0f3d9293de3f49c64998e4acd7d2404154"
+      "sha256": "db05d4e64b90553b3a95398d377b7ca5bbcdad2a20971689f46df7cf13e7fee0"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "dba9dffdb5eabbbf77a29d69404fdb0b7cb07df4db87bff6b8b7362c3c005896"
+      "sha256": "c8327340fc5e54c766c07ebc0c6b2f548c6c1f55a826780d73c3cb363aa86722"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34789,12 +34789,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8f3989bb01c57bfc594acbad12975144ab70a447682fc3b00e2e533163cf8741"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34802,16 +34802,16 @@
     "viewer": "child",
     "client": "appletv",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "66688ad11234afda9bc882598be6c47b3f2d4b04313bf93d35efad8f9022b67a"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "ee5548ae9e053e84d949e904577d3c1e1ee760167c242736131dce368f21150f"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34823,12 +34823,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "51eac47ff2fc479d8011afd3f27abefecefd0d971e895e30bba8ac2c6249bf79"
+      "sha256": "d3dfb4c6eefdaea7a624f3dc5632ef2b8713589e6d52ba59c50e75f4d1f18929"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34840,12 +34840,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "3c3493168beb2f263be914aaeee7bca2f6ca6d0450c6c22e10b278bf658d9015"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "33810f7ff720099e215edcb1f530f9fa0661e9c82565dcdae48a19796322df3d"
+      "sha256": "f7f0cf01cced69faf90abdded879a54bc9cac7e09846c3098a4c82960197f80a"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34853,16 +34853,16 @@
     "viewer": "teen",
     "client": "ios",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "9c5752c0e9d41a511a10a10cec86d5156f530e680f274ea5e7b0c49f090826a7"
+      "sha256": "4d83ceff6067916f7db13884556ceae1c255989c77be9329b4c3e1013e225e97"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "be10d6d4d197c245f28470ede263504f8c7971626124994990c3d7ffd3ba3758"
+      "sha256": "275d10e0a1cdefef6aaf99ea289cd7be6aad6bf908de7e18b3be85ce3b3ef14e"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34874,12 +34874,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "656b61e10fd795fc7bc8acca05c59c3ee76d48f930e7e4f083befce693384d13"
+      "sha256": "db05d4e64b90553b3a95398d377b7ca5bbcdad2a20971689f46df7cf13e7fee0"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "6b665e63fcee033347ed7eea74d5644dbda2279170ba04f5f2db2d8fecbce783"
+      "sha256": "c8327340fc5e54c766c07ebc0c6b2f548c6c1f55a826780d73c3cb363aa86722"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34891,12 +34891,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "07b59e2f5d6d852a2e224559175f9b965f28d91efd8f323fef221fec90ebde7b"
+      "sha256": "f7f0cf01cced69faf90abdded879a54bc9cac7e09846c3098a4c82960197f80a"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34904,16 +34904,16 @@
     "viewer": "child",
     "client": "androidtv",
     "json": false,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "af4763fcf0779aaeaf7116bfad42d50076c4f33a2cc9355241b28533f5bca6f2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34925,12 +34925,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "1e8b53734ccb1c882b19979f69c3007e8130bc11490beb7c2f60ca791587f147"
+      "sha256": "2eacd01940e44f213e5f3d65349fd83cb3e1404b2b4039c499dd2a21b82338af"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "27dcf20302bf9af092ee03f18498281e6bd904607b78a1de3da2df5854ad55ef"
+      "sha256": "6b1b7ed20307902cf66949a2401140e401096fdc332901da4d65d30f5d5af461"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34938,16 +34938,16 @@
     "viewer": "teen",
     "client": "web",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "0d30d0197c7602bcce3d512314647518432aad4c64409948a2ccee5b62639abb"
+      "sha256": "614fbd0d9cf6b1eb11dc7460b99720fde2d34b259391660f9b62dd6e61456768"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "f37ccbad837ffa858601e3cce9c7ef9c621d9099e8046328e704c1968d9d1961"
+      "sha256": "703631a9b99208e3b9217c034c10d9028562a99efaa5be1ea82e3bc1d71272b9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34959,12 +34959,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "bf631d0b8a6e61001a323bdd04df142354b772010eed83303609a488fabd8d57"
+      "sha256": "816ab8e8795eb8293c364b499e9a452faa71ec93731b60f726562ea38d33d843"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "59535e1cfce62f9db5c0076fd6c50c46a1110a73074af168d142a68981b1ab47"
+      "sha256": "af0af068013dd2af7aecea66ce1e60fbe87098e90ba71fbad05041bee90f8722"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -34972,16 +34972,16 @@
     "viewer": "child",
     "client": "ios",
     "json": false,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "94a3a1907b07cd8d73f76dd8c74d0f30526822857453a13918b1c4f52f919950"
+      "sha256": "f02aae300e1c12bd1177979e5a5d503140d4d51c3835bea31d06ba04535ee29c"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "c98a7d8ae98705cb491f3a4a36343bc2b211fb63f4b76168d5964b45b48f7e5e"
+      "sha256": "207450c0f0076e1ce3843dfb4a0003e232769e93a4d7e6bdab2e1a9c5cae84d8"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -34989,16 +34989,16 @@
     "viewer": "child",
     "client": "desktop",
     "json": true,
-    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "path": "/hubs/search?query=fixture\u0026limit=10\u0026includeCollections=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+      "sha256": "42a4fbd88b7b9f3b9a98d42010fb511eb03985bba61ce0beeebcfb9fee7b8a2b"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "8f3989bb01c57bfc594acbad12975144ab70a447682fc3b00e2e533163cf8741"
+      "sha256": "173180a4a0eb544e853c8c6a08ad2c46c706068943e60d3dc8f28c1356188fc9"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -35010,12 +35010,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "af4763fcf0779aaeaf7116bfad42d50076c4f33a2cc9355241b28533f5bca6f2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -35023,16 +35023,16 @@
     "viewer": "teen",
     "client": "appletv",
     "json": true,
-    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "path": "/library/search?query=fixture\u0026limit=10\u0026searchTypes=movies%2Ctv\u0026includeMetadata=1",
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "c8ec72de43bc083091edb95a8c650b0f9f6bb76c2283aa7e1d19d6637609d4d0"
+      "sha256": "4d83ceff6067916f7db13884556ceae1c255989c77be9329b4c3e1013e225e97"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "33cd972fdc70c38a1ca184e25fad8bfb076865056520d647a6e8a6644e54d66a"
+      "sha256": "275d10e0a1cdefef6aaf99ea289cd7be6aad6bf908de7e18b3be85ce3b3ef14e"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -35044,12 +35044,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "1a076e54e3181695cc0aa0092b7d2817a5b2601f94209be9f4aa55592b4bdf3c"
+      "sha256": "c91d6fb06b91e298668cdb34451312e615f4c5bdbee60c8430bd2f8c6962fe6d"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "197cfcbfdf15ac3a031da043e248a2de700ccf3329676f8b679f30a2d02be7fc"
+      "sha256": "4a28d1aa9a633d17966cce8592ba8787243c61519f93fda2abbd47c5b50d5640"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -35061,12 +35061,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "477c3cd470ea05cb25309080324d51ee132e6b0f3fc6c04c6ca7189ae2199be8"
+      "sha256": "609e3cb1dc5624d2aae837feaf90d873af4c4950f59386bc4add5d78965e9798"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "076a2d2b6aad4ee5759a8fd7c37499c5786d2ddbe0b9891b924f813e922df2a2"
+      "sha256": "47d5eedcd275b0116ab56d92e0b463e542b12384a5540703cd09565130bf5825"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -35078,12 +35078,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+      "sha256": "bc01599d4d7200f9b9d4c2d7d49a9efe4f54aaf5cec6c98a067902e67129d991"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "07b59e2f5d6d852a2e224559175f9b965f28d91efd8f323fef221fec90ebde7b"
+      "sha256": "f7f0cf01cced69faf90abdded879a54bc9cac7e09846c3098a4c82960197f80a"
     },
     "commit": "2c7bcdc9+77af603e"
   },
@@ -35095,12 +35095,12 @@
     "baseline": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2fcce6eb3a654f43692451d7a34c8260c7a71343b60c2daa6d53f7526d53a663"
+      "sha256": "2eacd01940e44f213e5f3d65349fd83cb3e1404b2b4039c499dd2a21b82338af"
     },
     "candidate": {
       "status": 200,
       "content_type": "text/xml;charset=utf-8",
-      "sha256": "2828f7025c3c91d675d1200a39c659ce43238d101829555155c3c4a54afe5f38"
+      "sha256": "6b1b7ed20307902cf66949a2401140e401096fdc332901da4d65d30f5d5af461"
     },
     "commit": "c82a7830+77af603e"
   },
@@ -35112,12 +35112,12 @@
     "baseline": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "1fe1d134292583bfe2a86686dc22a5f211c486270b1ff1e062093821f34245ff"
+      "sha256": "c91d6fb06b91e298668cdb34451312e615f4c5bdbee60c8430bd2f8c6962fe6d"
     },
     "candidate": {
       "status": 200,
       "content_type": "application/json",
-      "sha256": "2ac1440ddd037e6e1f5a7e564feb0c936f55d849a30c488fdba6b4546383b169"
+      "sha256": "4a28d1aa9a633d17966cce8592ba8787243c61519f93fda2abbd47c5b50d5640"
     },
     "commit": "c82a7830+77af603e"
   }
