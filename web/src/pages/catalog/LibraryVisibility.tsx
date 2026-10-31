@@ -270,7 +270,13 @@ export function LibraryVisibility() {
             <h3 className="mb-2 font-medium text-fg">{t("Country is not language")}</h3>
             <p>
               {t(
-                "Country matches TMDB origin or production countries, including co-productions. Language is a separate condition. Unknown country, genre, year and language never match an exclusion. Content rating “is none of” also hides titles with no rating.",
+                "Country matches TMDB origin or production countries, including co-productions. Language is a separate condition. Unknown country, genre, year and language never match an exclusion.",
+              )}
+            </p>
+            <h3 className="mb-2 mt-4 font-medium text-fg">{t("Ratings match by age level")}</h3>
+            <p>
+              {t(
+                "PG also covers TV-PG, the UK's PG and other countries' equivalents. “Is none of” hides titles with no rating unless you include Not rated. To keep family titles without a rating but hide others, add a group: Content rating is Not rated, and Genre is any of Horror, Thriller.",
               )}
             </p>
             <p className="mt-3">

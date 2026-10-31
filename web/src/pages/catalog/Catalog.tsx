@@ -23,6 +23,7 @@ import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { Workspace } from "../../components/workspace";
 import { localized, t, tn } from "../../i18n";
 import { api } from "../../lib/api";
+import { formatRating } from "../../lib/contentRatings";
 import { fixed, formatNumber } from "../../lib/format";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
 import { LibraryVisibility } from "./LibraryVisibility";
@@ -434,7 +435,9 @@ function CatalogBrowser({
                     ) : null}
                     {list ? (
                       <>
-                        <Badge variant="secondary">{title.contentRating || t("Unrated")}</Badge>
+                        <Badge variant="secondary">
+                          {title.contentRating ? formatRating(title.contentRating) : t("Unrated")}
+                        </Badge>
                         <ArrowRight size={15} className="text-fg-subtle" />
                       </>
                     ) : null}

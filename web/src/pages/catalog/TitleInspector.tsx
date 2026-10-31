@@ -6,6 +6,7 @@ import { Drawer } from "../../components/Drawer";
 import { ErrorPanel } from "../../components/feedback";
 import { t } from "../../i18n";
 import { api } from "../../lib/api";
+import { formatRating, ratingSource } from "../../lib/contentRatings";
 import { fixed } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 
@@ -52,7 +53,7 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
                 <p>
                   {[
                     title.year,
-                    title.contentRating,
+                    title.contentRating ? formatRating(title.contentRating) : null,
                     title.runtimeMinutes
                       ? t("{minutes} min", { minutes: title.runtimeMinutes })
                       : null,
@@ -60,6 +61,13 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
+                {title.contentRating && title.contentRatingSource ? (
+                  <p className="mt-1 text-xs text-fg-muted">
+                    {t("Content rating from {source}", {
+                      source: ratingSource(title.contentRatingSource),
+                    })}
+                  </p>
+                ) : null}
                 {title.rating ? (
                   <span className="mt-3 inline-flex items-center gap-1.5 text-sm">
                     <Star size={14} />
