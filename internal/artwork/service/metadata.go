@@ -123,6 +123,11 @@ func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, im
 	if ctx.Err() != nil {
 		return img
 	}
+	// A response that asked for hashes already joined or hashed what fit in
+	// its budget. Queueing the rest keeps a write lock across the next request.
+	if _, budgeted := frontend.SynchronousArtworkDeadline(ctx); budgeted {
+		return img
+	}
 	if q.pending[key] || time.Now().Before(q.retry[key]) || len(q.pending) >= cap(q.jobs) {
 		return img
 	}

@@ -373,10 +373,10 @@ func labRecommendationPage(id int64, tv bool) map[string]any {
 	return map[string]any{"page": 1, "total_pages": 1, "total_results": len(results), "results": results}
 }
 
-func rememberLabReferenceMedia(t *testing.T, ref labReferenceData, movieID string) {
+func rememberLabReferenceMedia(t *testing.T, ref labReferenceData, movieID string, ratings map[int64]float64) {
 	t.Helper()
 	labReferenceMediaMemo.once.Do(func() {
-		videos, movies := fetchLabReferenceMedia(ref, movieID)
+		videos, movies := fetchLabReferenceMedia(ref, movieID, ratings)
 		labReferenceMediaMemo.videos = videos
 		labReferenceMediaMemo.movies = movies
 		labReferenceMediaMemo.shows = map[int64][]any{}
@@ -384,7 +384,7 @@ func rememberLabReferenceMedia(t *testing.T, ref labReferenceData, movieID strin
 	})
 }
 
-func fetchLabReferenceMedia(ref labReferenceData, movieID string) (map[int64][]labTMDBVideo, map[int64][]any) {
+func fetchLabReferenceMedia(ref labReferenceData, movieID string, ratings map[int64]float64) (map[int64][]labTMDBVideo, map[int64][]any) {
 	videos := map[int64][]labTMDBVideo{}
 	movies := map[int64][]any{}
 	if movieID == "" || ref.base == "" || ref.token == "" {
@@ -428,10 +428,11 @@ func fetchLabReferenceMedia(ref labReferenceData, movieID string) (map[int64][]l
 	var similar struct {
 		Items []struct {
 			Name, Type, PremiereDate string
+			CommunityRating          float64
 			ProviderIds              map[string]string
 		}
 	}
-	if get("/Items/"+item+"/Similar?Limit=20&Fields=ProviderIds,PremiereDate,Name,Type&UserId="+user, &similar) {
+	if get("/Items/"+item+"/Similar?Limit=20&Fields=ProviderIds,PremiereDate,Name,Type,CommunityRating&UserId="+user, &similar) {
 		results := make([]any, 0, len(similar.Items))
 		for _, item := range similar.Items {
 			if item.Type != "" && item.Type != "Movie" {
@@ -449,7 +450,15 @@ func fetchLabReferenceMedia(ref labReferenceData, movieID string) (map[int64][]l
 			if name == "" {
 				name = "Recommended"
 			}
-			results = append(results, map[string]any{"id": id, "title": name, "name": name, "release_date": date, "first_air_date": date})
+			row := map[string]any{"id": id, "title": name, "name": name, "release_date": date, "first_air_date": date}
+			rating := item.CommunityRating
+			if rating <= 0 {
+				rating = ratings[id]
+			}
+			if rating > 0 {
+				row["vote_average"] = rating
+			}
+			results = append(results, row)
 		}
 		movies[10378] = results
 	}
@@ -814,13 +823,20 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		t.Fatal(e)
 	}
 	var movieRefID string
+	ratings := map[int64]float64{}
 	for _, x := range listing.Items {
-		if x.Type == "Movie" && x.ProviderIds["Tmdb"] == "10378" {
+		if x.Type != "Movie" {
+			continue
+		}
+		id, _ := strconv.ParseInt(x.ProviderIds["Tmdb"], 10, 64)
+		if id == 10378 {
 			movieRefID = x.Id
-			break
+		}
+		if id > 0 && x.CommunityRating > 0 {
+			ratings[id] = x.CommunityRating
 		}
 	}
-	rememberLabReferenceMedia(t, jellyfinRef, movieRefID)
+	rememberLabReferenceMedia(t, jellyfinRef, movieRefID, ratings)
 	if len(labMemoVideos(10378)) > 0 {
 		if err := a.cfg.Update(func(c *config.Config) error {
 			c.Extras.Enabled = true

@@ -741,7 +741,8 @@ func (i *instance) jellyfinListFields(r *http.Request, item map[string]any, titl
 	if !fields["sortname"] {
 		delete(item, "SortName")
 	}
-	if !fields["providerids"] {
+	// Similar rows carry provider ids even when the request does not ask.
+	if !fields["providerids"] && (r == nil || !strings.Contains(r.URL.Path, "/Similar")) {
 		delete(item, "ProviderIds")
 	}
 	if !fields["genres"] {
