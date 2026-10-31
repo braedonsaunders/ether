@@ -501,8 +501,30 @@ func (c *Catalog) FacetFilter(ctx context.Context, f core.Filter, facet string) 
 		}
 		return append([]core.FacetValue(nil), ent.vals...), nil
 	}
+	if fmt.Sprintf("%+v", f) == fmt.Sprintf("%+v", core.Filter{Type: f.Type}) {
+		// The first count of a facet walks the catalogue. Count the type's
+		// other facets behind it, so the console's next facet is ready.
+		for _, other := range prewarmFacets {
+			if other == facet {
+				continue
+			}
+			okey := fmt.Sprintf("%+v|%s", f, other)
+			c.cacheMu.RLock()
+			_, have := c.facetCache[okey]
+			c.cacheMu.RUnlock()
+			if !have {
+				_ = c.hydrate(ctx, "facet:"+okey, 0, func(ctx context.Context) error {
+					_, err := c.countFacet(ctx, f, other)
+					return err
+				})
+			}
+		}
+	}
 	return c.countFacet(ctx, f, facet)
 }
+
+// prewarmFacets are counted together on a type's first facet read.
+var prewarmFacets = []string{"genre", "decade", "year", "language", "contentRatingLevel"}
 
 // countFacet computes a facet's value counts over the browsable set and
 // caches them.
