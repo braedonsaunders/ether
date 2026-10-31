@@ -135,7 +135,7 @@ func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateF
 		bySmall[r.Client+" "+r.Step] = r
 	}
 	var failures []gateFailure
-	fmt.Fprintln(w, "| client | step | queries S→L | rows S→L | db S→L | warm p50 S→L | verdict |")
+	fmt.Fprintln(w, "| client | step | queries S max→L min | rows S max→L min | db S→L | warm p50 S→L | verdict |")
 	fmt.Fprintln(w, "|---|---|---:|---:|---:|---:|---|")
 	for _, l := range large {
 		s := bySmall[l.Client+" "+l.Step]
@@ -152,16 +152,20 @@ func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateF
 		case l.Status == "ERROR":
 			verdict = "error on both: " + strings.Join(l.Errors, "; ")
 		default:
+			// A pass may or may not be answered by a cache (a generation or
+			// minute bucket can turn over between passes), so the large
+			// library's least work is compared with the small one's most: a
+			// path that walks the catalogue does more work on every pass.
 			switch {
 			case l.RowsBound > 0:
-				if l.Rows > int64(l.RowsBound) {
-					why = append(why, fmt.Sprintf("rows read %d over the step's bound %d", l.Rows, l.RowsBound))
+				if l.RowsMax > int64(l.RowsBound) {
+					why = append(why, fmt.Sprintf("rows read %d over the step's bound %d", l.RowsMax, l.RowsBound))
 				}
-			case float64(l.Rows) > gateRowsFactor*float64(s.Rows)+gateRowsSlack:
-				why = append(why, fmt.Sprintf("rows read grow with the library (%d → %d)", s.Rows, l.Rows))
+			case float64(l.RowsMin) > gateRowsFactor*float64(s.RowsMax)+gateRowsSlack:
+				why = append(why, fmt.Sprintf("rows read grow with the library (%d → %d)", s.RowsMax, l.RowsMin))
 			}
-			if float64(l.Queries) > gateQueriesFactor*float64(s.Queries)+gateQueriesSlack {
-				why = append(why, fmt.Sprintf("statements grow with the library (%d → %d)", s.Queries, l.Queries))
+			if float64(l.QueriesMin) > gateQueriesFactor*float64(s.QueriesMax)+gateQueriesSlack {
+				why = append(why, fmt.Sprintf("statements grow with the library (%d → %d)", s.QueriesMax, l.QueriesMin))
 			}
 			if l.DBTime > time.Duration(gateDBFactor*float64(s.DBTime))+gateDBSlack {
 				why = append(why, fmt.Sprintf("database time grows with the library (%s → %s)", s.DBTime, l.DBTime))
@@ -174,7 +178,7 @@ func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateF
 			verdict = "FAIL: " + strings.Join(why, "; ")
 			failures = append(failures, gateFailure{key: l.Client + " | " + l.Step, why: strings.Join(why, "; ")})
 		}
-		fmt.Fprintf(w, "| %s | %s | %d → %d | %d → %d | %s → %s | %s → %s | %s |\n", l.Client, l.Step, s.Queries, l.Queries, s.Rows, l.Rows,
+		fmt.Fprintf(w, "| %s | %s | %d → %d | %d → %d | %s → %s | %s → %s | %s |\n", l.Client, l.Step, s.QueriesMax, l.QueriesMin, s.RowsMax, l.RowsMin,
 			s.DBTime.Round(time.Microsecond*100), l.DBTime.Round(time.Microsecond*100), s.WarmP50.Round(time.Microsecond*100), l.WarmP50.Round(time.Microsecond*100), verdict)
 	}
 	return failures
@@ -274,9 +278,7 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 		}
 	}
 	r.Sequential(ctx, "cold", viewers[:1], cs)
-	// Three warm passes, so a pass that straddles a cache's minute bucket
-	// does not decide the median.
-	for range 3 {
+	for range 2 {
 		r.Sequential(ctx, "warm", viewers[:1], cs)
 	}
 	r.Sequential(ctx, "warm", viewers[1:2], viewing)

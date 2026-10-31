@@ -84,6 +84,10 @@ type Row struct {
 	RowsBound                              int
 	Cold, WarmP50, WarmP95, ConcP95, BgP95 time.Duration
 	Queries, Writes, Rows                  int64
+	// The fewest and most statements and rows over the cold and warm
+	// passes. A pass may or may not be answered by a cache, so the gate
+	// compares the large library's least work with the small one's most.
+	QueriesMin, QueriesMax, RowsMin, RowsMax int64
 	DBTime, LockWait                       time.Duration
 	Status                                 string
 	Fails                                  []string
@@ -167,6 +171,8 @@ func Summarize(results []Result, trace map[string]TraceRecord, order []Client) [
 		r.ConcP95 = percentile(r.samples["concurrent"], 0.95)
 		r.BgP95 = percentile(r.samples["background"], 0.95)
 		r.Queries, r.Writes, r.Rows = median64(r.queries), median64(r.writes), median64(r.rowsRead)
+		r.QueriesMin, r.QueriesMax = minMax(r.queries)
+		r.RowsMin, r.RowsMax = minMax(r.rowsRead)
 		r.DBTime = percentile(r.dbTimes, 0.5)
 		r.LockWait = percentile(r.lockWaits, 1)
 		check := func(name string, got, limit time.Duration, n int) {
@@ -244,4 +250,16 @@ func WriteReport(w io.Writer, title string, meta []string, rows []*Row) (failed 
 		fmt.Fprintf(w, "- %s: warm %s, cold %s, loaded %s (%s)\n", c, ms(b.Warm), ms(b.Cold), ms(b.Loaded), gate)
 	}
 	return failed
+}
+
+func minMax(xs []int64) (lo, hi int64) {
+	for i, x := range xs {
+		if i == 0 || x < lo {
+			lo = x
+		}
+		if i == 0 || x > hi {
+			hi = x
+		}
+	}
+	return lo, hi
 }
