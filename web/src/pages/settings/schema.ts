@@ -674,6 +674,8 @@ export const UPDATES: FieldGroup[] = localized(() => [
         kind: "bool",
         help: t("Installs during the maintenance window, once nobody is watching."),
       },
+    ],
+    more: [
       {
         key: "maintenanceStart",
         label: t("Maintenance window starts"),
@@ -694,6 +696,14 @@ export const UPDATES: FieldGroup[] = localized(() => [
         kind: "text",
         wide: true,
         help: t("Leave empty for the official feed."),
+      },
+      {
+        key: "maxDrain",
+        label: t("Wait for playback to finish"),
+        kind: "duration",
+        help: t(
+          "How long a clustered node waits for current playback to end before installing. Leave empty to wait 30 minutes. A server on its own waits until nobody is watching.",
+        ),
       },
     ],
   },

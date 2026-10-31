@@ -139,4 +139,19 @@ describe("Updates settings", () => {
     ).toBeInTheDocument();
     expect(calls(fake, "POST", "/updates/apply").length).toBe(1);
   });
+
+  it("keeps the channel up front and tucks the window, feed and wait behind more options", async () => {
+    renderApp("/maintenance/updates");
+    expect(await screen.findByLabelText("Channel", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Install updates automatically")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Update feed")).toBeNull();
+    expect(screen.queryByLabelText("Wait for playback to finish")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More options: Release channel" }));
+    expect(await screen.findByLabelText("Maintenance window starts", {}, WAIT)).toHaveValue(
+      "03:00",
+    );
+    expect(screen.getByLabelText("Maintenance window ends")).toHaveValue("06:00");
+    expect(screen.getByLabelText("Update feed")).toHaveValue("");
+    expect(screen.getByLabelText("Wait for playback to finish")).toHaveValue("");
+  });
 });

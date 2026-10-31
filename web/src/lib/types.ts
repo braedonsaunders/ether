@@ -355,6 +355,7 @@ export interface EtherConfig {
     feedUrl: string;
     maintenanceStart?: string;
     maintenanceEnd?: string;
+    maxDrain?: string;
   };
   spike: { enabled: boolean; localFiles: string[] | null };
   downloads?: {
