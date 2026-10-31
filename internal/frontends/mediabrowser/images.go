@@ -117,6 +117,22 @@ func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token 
 	if i.host.ImageGrants == nil || !detail.ImagesAuthoritative {
 		return tags, backdrops, metadata
 	}
+	if signer, ok := i.host.ImageGrants.(frontend.ImagePageSigner); ok {
+		rows, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{
+			Credential: token, Device: device(r), Titles: []frontend.Title{detail.Title},
+			Kinds: []string{frontend.ImagePoster, frontend.ImageStill, frontend.ImageBackdrop, frontend.ImageLogo, frontend.ImageThumb, frontend.ImageBanner},
+		})
+		if err == nil && len(rows) > 0 && rows[0].Authoritative && rows[0].Item == detail.Title.Key {
+			images := make([]frontend.Image, len(rows[0].Images))
+			secrets := make([]string, len(rows[0].Images))
+			for n, granted := range rows[0].Images {
+				images[n] = granted.Image
+				secrets[n] = granted.Secret
+			}
+			tags, backdrops, metadata = i.tagGrantedImages(images, secrets)
+			return tags, backdrops, metadata
+		}
+	}
 	hasPoster := false
 	for _, img := range detail.Images {
 		switch strings.ToLower(img.Kind) {
@@ -164,6 +180,57 @@ func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token 
 			}
 			i.addImageMetadata(metadata, kind, grant, img)
 		}
+	}
+	return tags, backdrops, metadata
+}
+
+func (i *instance) tagGrantedImages(images []frontend.Image, secrets []string) (map[string]any, []string, map[string]any) {
+	tags := map[string]any{}
+	backdrops := []string{}
+	metadata := map[string]any{}
+	hasPoster := false
+	for _, img := range images {
+		switch strings.ToLower(img.Kind) {
+		case "poster", "primary":
+			hasPoster = true
+		}
+	}
+	primarySelected := false
+	for n, img := range images {
+		kind := ""
+		switch strings.ToLower(img.Kind) {
+		case "poster", "primary":
+			kind = "Primary"
+		case "logo":
+			kind = "Logo"
+		case "thumb":
+			kind = "Thumb"
+		case "still":
+			if hasPoster || primarySelected {
+				kind = "Thumb"
+			} else {
+				kind = "Primary"
+			}
+		case "banner":
+			kind = "Banner"
+		case "backdrop":
+			kind = "Backdrop"
+		}
+		if kind == "" || n >= len(secrets) || secrets[n] == "" {
+			continue
+		}
+		if _, exists := tags[kind]; exists && kind != "Backdrop" {
+			continue
+		}
+		if kind == "Backdrop" {
+			backdrops = append(backdrops, secrets[n])
+		} else {
+			tags[kind] = secrets[n]
+		}
+		if kind == "Primary" {
+			primarySelected = true
+		}
+		i.addImageMetadata(metadata, kind, secrets[n], img)
 	}
 	return tags, backdrops, metadata
 }

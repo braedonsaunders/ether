@@ -1179,7 +1179,7 @@ func (i *instance) cachedShowArtwork(r *http.Request, show frontend.RatingKey) m
 		}
 	}
 	art := map[string]any{}
-	if row := i.gridImages(r, []frontend.RatingKey{show})[show]; row != nil {
+	if row := i.gridImagesFor(r, []frontend.Title{{Key: show}})[show]; row != nil {
 		art = row
 	}
 	if cache != nil {
