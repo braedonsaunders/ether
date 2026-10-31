@@ -1753,12 +1753,12 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const warnings =
       byIP.size > 1
         ? [
-            `nodes reach the internet from different public addresses (${[...byIP]
+            `nodes reach providers from different public addresses (${[...byIP]
               .sort()
               .map(([ip, names]) => `${ip}: ${names.sort().join(", ")}`)
               .join(
                 "; ",
-              )}); debrid providers may flag simultaneous use of one account from several IPs`,
+              )}); a debrid account can be limited when it is used from more than one address`,
           ]
         : undefined;
     return {
@@ -2161,6 +2161,31 @@ export function createFakeServer(opts: FakeOptions = {}) {
       }
       case "GET /system/load":
         return json(mockSystemLoad(Date.now()));
+      case "POST /outbound/check": {
+        const posted = body as { enabled?: boolean; url?: string };
+        if (posted?.enabled && posted.url === "http://down") {
+          return json({
+            sourceError: "proxy did not answer",
+            publishedIp: "203.0.113.7",
+            remoteAccess: true,
+            proxyEnabled: true,
+          });
+        }
+        if (posted?.enabled) {
+          return json({
+            sourceIp: "198.51.100.20",
+            publishedIp: "203.0.113.7",
+            remoteAccess: true,
+            proxyEnabled: true,
+          });
+        }
+        return json({
+          sourceIp: "203.0.113.7",
+          publishedIp: "203.0.113.7",
+          remoteAccess: true,
+          proxyEnabled: false,
+        });
+      }
       case "POST /test/usenet":
       case "POST /test/indexer":
       case "POST /test/debrid":

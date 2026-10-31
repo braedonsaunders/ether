@@ -70,10 +70,21 @@ export function transcodeLabel(n: ClusterNode): string {
   return hw && hw !== "none" ? hw : t("Software");
 }
 
+function translateClusterWarning(w: string): string {
+  const m = /^nodes reach providers from different public addresses \(([^)]*)\)/.exec(w);
+  if (m) {
+    return t(
+      "These computers reach indexers and debrid from different public addresses ({detail}). One debrid account can be limited when it is used from more than one address.",
+      { detail: m[1] ?? "" },
+    );
+  }
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 /** Server warnings plus conditions this node's own health reports. */
 export function clusterWarnings(s: ClusterStatus, now: Date = new Date()): string[] {
   // Server warnings are log-style sentences; capitalise them for the banner.
-  const out = (s.warnings ?? []).map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  const out = (s.warnings ?? []).map(translateClusterWarning);
   if (s.error)
     out.push(t("Couldn't read the cluster's nodes from the database: {error}", { error: s.error }));
   const h = s.health;
@@ -381,8 +392,15 @@ function Nodes({
           },
           {
             key: "ip",
-            header: t("Public IP"),
-            cell: (n) => <code className="text-xs text-fg-muted">{n.caps?.egressIp || "—"}</code>,
+            header: t("Source address"),
+            cell: (n) => (
+              <code
+                className="text-xs text-fg-muted"
+                title={t("The public address this computer uses for indexers, debrid and Usenet.")}
+              >
+                {n.caps?.egressIp || "—"}
+              </code>
+            ),
           },
         ]}
       />

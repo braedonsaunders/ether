@@ -316,6 +316,15 @@ export const api = {
   llmModels: (cfg: EtherConfig["llm"], signal?: AbortSignal) =>
     post<{ models: LLMModel[]; error?: string }>("/llm/models", cfg, signal),
   testTrakt: (cfg: EtherConfig["trakt"]) => post<TestResult>("/test/trakt", cfg),
+  checkOutbound: (cfg: EtherConfig["outbound"]) =>
+    post<{
+      sourceIp?: string;
+      sourceError?: string;
+      publishedIp?: string;
+      publishedError?: string;
+      remoteAccess?: boolean;
+      proxyEnabled?: boolean;
+    }>("/outbound/check", cfg),
 
   // ---- Built-in indexer sites ------------------------------------------------------
   sites: {

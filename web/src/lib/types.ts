@@ -265,6 +265,20 @@ export interface EtherConfig {
   indexerSites?: IndexerSitesConfig;
   /** Absent on servers without debrid support. */
   debrid?: DebridConfig;
+  /** Node-local outbound proxy. Absent until the server sends the section. */
+  outbound?: {
+    enabled: boolean;
+    preset?: string;
+    url: string;
+    username?: string;
+    password?: string;
+    indexers: boolean;
+    stremio: boolean;
+    debrid: boolean;
+    usenet: boolean;
+    metadata: boolean;
+    bypass?: string[] | null;
+  };
   sharedCache?: EtherConfig["cache"];
   cache: {
     storage?: "local" | "shared";

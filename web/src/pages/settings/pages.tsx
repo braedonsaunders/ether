@@ -17,6 +17,7 @@ import { useAsync } from "../../lib/hooks";
 import Logs from "../Logs";
 import { BackupsAndImport } from "./Backups";
 import { ClusterOverview, useClustered } from "./Cluster";
+import { OutboundInternet } from "./OutboundInternet";
 import { ConnectedServices, integrationTabs, type ServiceTab } from "./ConnectedServices";
 import { type FieldGroup } from "./SchemaForm";
 import * as S from "./schema";
@@ -90,6 +91,7 @@ export function GeneralPage() {
         onFieldErrors={toServer}
         onSaved={() => void reloadBoot()}
       />
+      <OutboundInternet hidden={tab !== "server"} />
       {tab === "server" ? <RunSetupWizard /> : null}
       {GENERAL_SECTIONS.map((x) => (
         <GeneralSection key={x.key} section={x} hidden={tab !== x.key} />

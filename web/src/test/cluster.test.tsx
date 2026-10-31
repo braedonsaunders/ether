@@ -279,6 +279,19 @@ describe("cluster helpers", () => {
       "Nodes differ",
       "Couldn't read the cluster's nodes from the database: connection refused",
     ]);
+    expect(
+      clusterWarnings(
+        {
+          ...base,
+          warnings: [
+            "nodes reach providers from different public addresses (198.51.100.2: b; 203.0.113.1: a); a debrid account can be limited when it is used from more than one address",
+          ],
+        },
+        now,
+      )[0],
+    ).toBe(
+      "These computers reach indexers and debrid from different public addresses (198.51.100.2: b; 203.0.113.1: a). One debrid account can be limited when it is used from more than one address.",
+    );
   });
 
   it("builds safe links to peer managers", () => {

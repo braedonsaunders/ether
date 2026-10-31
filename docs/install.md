@@ -184,6 +184,58 @@ for remote access outside your LAN:
   Keep the owner UI path `/ether/` private at the proxy; complete initial
   setup before exposing the server.
 
+## How Ether reaches the internet
+
+Ether can send indexers, Stremio addons, debrid and Usenet through one proxy
+on this computer, and leave Plex, updates, UPnP and remote access on the
+normal connection. The setting is off until you turn it on, under
+**Server → General → How Ether reaches the internet**. A username and password
+are stored with Ether's other secrets and are not put in the address.
+
+Two layouts are common:
+
+1. **Split tunnel.** Ether stays on the host network so Plex discovery and
+   remote access keep working. A VPN container publishes a proxy. Gluetun's
+   HTTP proxy listens on port 8888 when `HTTPPROXY=on`. From a host-network
+   Ether process that address is `http://127.0.0.1:8888`, because Docker DNS
+   names are not visible there. On a shared Docker network it is
+   `http://gluetun:8888`. SOCKS on port 1080 is only useful if you enabled a
+   SOCKS proxy yourself; gluetun does not publish one by default.
+2. **Whole stack in the VPN network.** Leave Ether's proxy off. Publish
+   Ether's ports on the VPN container, and point remote access at the VPN
+   address. Do not also turn Ether's proxy on.
+
+Indexer names are looked up on this computer. If the ISP's DNS sinks those
+names, point this computer's resolver at the VPN. `ALL_PROXY` is ignored.
+`HTTP_PROXY` and `HTTPS_PROXY` apply only while Ether's own proxy setting is
+off. While it is on, a routed call that cannot reach the proxy fails; Ether
+does not dial that call directly.
+
+```yaml
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=custom
+      - VPN_TYPE=openvpn
+      - HTTPPROXY=on
+    ports:
+      - 8888:8888/tcp
+      - 32400:32400/tcp
+  ether:
+    image: ghcr.io/braedonsaunders/ether:latest
+    network_mode: host
+```
+
+Use the published proxy address in Ether. Do not set
+`network_mode: service:gluetun` on Ether when Plex remote access has to stay
+on your home address. Publish Ether's own port on gluetun only for the
+whole-stack layout, and then leave Ether's proxy off.
+
 ## Running a cluster
 
 A cluster is two or more Ether servers ("nodes") on one network that share a
@@ -220,15 +272,12 @@ and one-time join tokens. No terminal commands are required for setup.
   or UPnP. Set the public port on each node's *Connectivity* page.
 - **One public IP for providers.** Debrid services may flag one account used
   from several addresses at once. Keep every node behind the same internet
-  connection; the Cluster page warns you when nodes reach the internet from
-  different public addresses. Some Usenet accounts also restrict simultaneous
-  source IPs. An HTTP(S) proxy does not route NNTP. If nodes use a common
-  gateway, set `ETHER_USENET_PROXY=socks5://host:port` in each remote node's
-  service environment as well as configuring its HTTP(S) proxy. This optional,
-  node-local setting routes NNTP through SOCKS5 while retaining end-to-end
-  provider TLS verification. An unavailable proxy fails the connection; Ether
-  never silently falls back to another public IP. Keep credentials, if needed,
-  in the protected service environment, not command-line arguments.
+  connection. The Cluster page warns when the address nodes use for indexers,
+  debrid and Usenet differs. Set the same proxy on every node under
+  **Server → General → How Ether reaches the internet**. Usenet uses SOCKS5 or
+  an HTTP CONNECT tunnel, and the provider certificate is still checked.
+  A proxy that is down fails the connection; Ether does not fall back to a
+  direct address. Plex, updates and the router stay on the normal connection.
 
 ### Start a cluster from an existing server
 
