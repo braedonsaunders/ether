@@ -192,6 +192,42 @@ func (c *Catalog) admitFallbacks(ctx context.Context) error {
 	return nil
 }
 
+// HomeReleases returns digital or physical dates that have been recorded.
+// A missing key has not been checked. A zero time means the movie was
+// checked and has no digital or physical date (theatrical only).
+func (c *Catalog) HomeReleases(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+	out := map[core.RatingKey]time.Time{}
+	for start := 0; start < len(keys); start += 500 {
+		batch := keys[start:min(start+500, len(keys))]
+		args := make([]any, len(batch))
+		for i, k := range batch {
+			args[i] = int64(k)
+		}
+		rows, err := c.db.QueryContext(ctx, `SELECT key,earliest_ts FROM catalog_home_release WHERE checked=1 AND key IN (`+placeholders(len(batch))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key, ts int64
+			if err = rows.Scan(&key, &ts); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if ts > 0 {
+				out[core.RatingKey(key)] = time.Unix(ts, 0).UTC()
+			} else {
+				out[core.RatingKey(key)] = time.Time{}
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // BackfillHomeReleases fetches at most limit details, never from a browse.
 // Missing and future dates are revisited daily; failures also cool down for a
 // day so an unavailable title cannot starve the remaining catalogue.

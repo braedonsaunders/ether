@@ -2098,6 +2098,43 @@ export function createFakeServer(opts: FakeOptions = {}) {
 
     // Static routes
     switch (route) {
+      case "GET /availability/titles":
+        return json([
+          {
+            key: "1",
+            title: "Ready Movie",
+            year: 2026,
+            theatrical: 1_760_000_000,
+            digital: 1_762_000_000,
+            code: "playable",
+            source: "Indexer One",
+          },
+          {
+            key: "2",
+            title: "Waiting Movie",
+            year: 2026,
+            theatrical: 1_761_000_000,
+            code: "searching",
+            nextCheck: Math.floor(Date.now() / 1000) + 7200,
+          },
+          {
+            key: "3",
+            title: "Theatre Movie",
+            year: 2026,
+            theatrical: 1_762_500_000,
+            code: "theatrical",
+          },
+          {
+            key: "4",
+            title: "Quality Movie",
+            year: 2026,
+            theatrical: 1_760_500_000,
+            code: "quality",
+            reason: "cam",
+          },
+        ]);
+      case "GET /availability/title/1":
+        return json({ code: "playable" });
       case "GET /availability":
         return json({
           mode: state.config.availability?.verify
@@ -2119,10 +2156,14 @@ export function createFakeServer(opts: FakeOptions = {}) {
               message: "Ready to monitor",
               matched: 0,
             })),
-          usage: {},
+          usage: { feedRequests: 12 },
           counts: {},
           recent: [],
           day: new Date().toISOString().slice(0, 10),
+          effort: state.config.availability?.effort || "normal",
+          effectiveFeedRequests: state.config.availability?.feedRequests ?? 100,
+          effectivePollMinutes: state.config.availability?.pollMinutes ?? 30,
+          effectiveMaxPages: state.config.availability?.maxPages ?? 3,
         });
       case "POST /availability/sync":
         return state.config.availability?.monitor

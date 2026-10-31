@@ -5,7 +5,7 @@ import { Artwork } from "../../components/Artwork";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel } from "../../components/feedback";
 import { t } from "../../i18n";
-import { api } from "../../lib/api";
+import { api, apiFetch } from "../../lib/api";
 import { formatRating, ratingSource } from "../../lib/contentRatings";
 import { fixed } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
@@ -90,6 +90,7 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
               <h3>{t("Overview")}</h3>
               <p>{title.summary || t("No overview is available for this title yet.")}</p>
             </section>
+            <ReleaseEvidence titleKey={title.key} type={title.type} />
             <dl className="catalog-detail-facts">
               <div>
                 <dt>{t("Catalog ID")}</dt>
@@ -155,5 +156,35 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
         </>
       )}
     </Drawer>
+  );
+}
+
+function evidenceLine(code: string) {
+  if (code === "playable" || code === "digital") return t("Ready to play");
+  if (code === "theatrical") return t("In theatres only");
+  if (code === "quality") return t("Hidden by your quality profile");
+  if (code === "searching") return t("Waiting for a release");
+  return "";
+}
+
+/** Why a new movie is shown or still hidden. Missing evidence stays quiet. */
+function ReleaseEvidence({ titleKey, type }: { titleKey: string; type?: string }) {
+  const state = useAsync(async () => {
+    if (type && type !== "movie") return null;
+    try {
+      return await apiFetch<{ code: string }>(
+        `/availability/title/${encodeURIComponent(titleKey)}`,
+      );
+    } catch {
+      return null;
+    }
+  }, [titleKey, type]);
+  const line = evidenceLine(state.data?.code ?? "");
+  if (!line) return null;
+  return (
+    <section>
+      <h3>{t("New release")}</h3>
+      <p>{line}</p>
+    </section>
   );
 }

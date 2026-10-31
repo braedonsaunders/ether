@@ -38,6 +38,10 @@ type ReleaseFeed struct {
 	Protocol   string `json:"protocol"`
 	Supported  bool   `json:"supported"`
 	Reason     string `json:"reason,omitempty"`
+	// DailyLimit is the indexer's own cap. Zero means unlimited.
+	DailyLimit int `json:"dailyLimit,omitempty"`
+	// PageMax is the page size reported by caps. Zero means unknown.
+	PageMax int `json:"pageMax,omitempty"`
 }
 type foregroundReserveKey struct{}
 

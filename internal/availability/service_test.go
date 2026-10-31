@@ -107,6 +107,7 @@ func setup(t *testing.T) *fixture {
 	x := &fixture{c: config.Defaults(t.TempDir()), now: time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)}
 	x.c.Availability.Monitor = true
 	x.c.Availability.Verify = true
+	x.c.Availability.CatchUp = true
 	x.c.Usenet.Providers = []config.UsenetProvider{{Enabled: true, Host: "fake"}}
 	x.f = &fakeFeeds{sources: []core.ReleaseFeed{{ID: "f", Name: "Fake", Generation: "one", Supported: true}}}
 	title := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Film", Year: 2020, Released: x.now.Add(-time.Hour)}

@@ -14,12 +14,15 @@ import (
 
 type FeedStatus struct {
 	core.ReleaseFeed
-	Selected    bool   `json:"selected"`
-	LastAttempt int64  `json:"lastAttempt"`
-	LastSync    int64  `json:"lastSync"`
-	Gap         bool   `json:"gap"`
-	Message     string `json:"message"`
-	Matched     int    `json:"matched"`
+	Selected    bool    `json:"selected"`
+	LastAttempt int64   `json:"lastAttempt"`
+	LastSync    int64   `json:"lastSync"`
+	Gap         bool    `json:"gap"`
+	Message     string  `json:"message"`
+	Matched     int     `json:"matched"`
+	Queued      bool    `json:"queued"`
+	Progress    float64 `json:"progress,omitempty"`
+	ETASeconds  int64   `json:"etaSeconds,omitempty"`
 }
 type Observation struct {
 	Key           core.RatingKey `json:"key"`
@@ -34,18 +37,25 @@ type Observation struct {
 	NextCheck     int64          `json:"nextCheck"`
 }
 type Status struct {
-	Mode    string           `json:"mode"`
-	Message string           `json:"message"`
-	Feeds   []FeedStatus     `json:"feeds"`
-	Usage   map[string]int64 `json:"usage"`
-	Counts  map[string]int   `json:"counts"`
-	Recent  []Observation    `json:"recent"`
-	Day     string           `json:"day"`
+	Mode                  string           `json:"mode"`
+	Message               string           `json:"message"`
+	Feeds                 []FeedStatus     `json:"feeds"`
+	Usage                 map[string]int64 `json:"usage"`
+	Counts                map[string]int   `json:"counts"`
+	Recent                []Observation    `json:"recent"`
+	Day                   string           `json:"day"`
+	Ceilings              map[string]int64 `json:"ceilings,omitempty"`
+	Effort                string           `json:"effort"`
+	EffectiveFeedRequests int              `json:"effectiveFeedRequests"`
+	EffectivePollMinutes  int              `json:"effectivePollMinutes"`
+	EffectiveMaxPages     int              `json:"effectiveMaxPages"`
+	OverAllowance         bool             `json:"overAllowance"`
 }
 
 func (s *Service) Status(ctx context.Context) (Status, error) {
 	c := s.cfg().Availability
-	out := Status{Mode: "off", Message: "Background monitoring and checks are off.", Feeds: []FeedStatus{}, Usage: map[string]int64{}, Counts: map[string]int{}, Recent: []Observation{}, Day: s.now().UTC().Format("2006-01-02")}
+	live := s.budgets()
+	out := Status{Mode: "off", Message: "Background monitoring and checks are off.", Feeds: []FeedStatus{}, Usage: map[string]int64{}, Ceilings: map[string]int64{}, Counts: map[string]int{}, Recent: []Observation{}, Day: s.now().UTC().Format("2006-01-02"), Effort: live.Effort, EffectiveFeedRequests: live.FeedRequests, EffectivePollMinutes: live.PollMinutes, EffectiveMaxPages: live.MaxPages}
 	if c.Monitor {
 		out.Mode = "monitoring"
 		out.Message = "Watching configured indexers for eligible releases."
@@ -63,30 +73,51 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	for _, f := range s.d.Feeds.FeedSources() {
 		x := FeedStatus{ReleaseFeed: f, Selected: selected(c.IndexerIDs, f.ID)}
 		var gap int
-		err := s.db.QueryRowContext(ctx, `SELECT checked_at,synced_at,gap,message,discovered FROM availability_feeds WHERE source_id=? AND generation=?`, f.ID, f.Generation).Scan(&x.LastAttempt, &x.LastSync, &gap, &x.Message, &x.Matched)
+		var oldest, started int64
+		err := s.db.QueryRowContext(ctx, `SELECT checked_at,synced_at,gap,message,discovered,catchup_oldest,catchup_started FROM availability_feeds WHERE source_id=? AND generation=?`, f.ID, f.Generation).Scan(&x.LastAttempt, &x.LastSync, &gap, &x.Message, &x.Matched, &oldest, &started)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return out, err
 		}
 		x.Gap = gap != 0
+		x.Queued = x.Message == "Sync queued"
+		if x.Gap && oldest > 0 {
+			window := time.Duration(c.EffectiveMovieEvidenceDays()) * 24 * time.Hour
+			covered := s.now().Sub(time.Unix(oldest, 0))
+			if covered < 0 {
+				covered = 0
+			}
+			if covered > window {
+				covered = window
+			}
+			x.Progress = float64(covered) / float64(window)
+			if started > 0 && x.Progress > 0.02 {
+				elapsed := s.now().Sub(time.Unix(started, 0))
+				x.ETASeconds = int64(float64(elapsed) * (1 - x.Progress) / x.Progress)
+			}
+		}
 		out.Feeds = append(out.Feeds, x)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT resource,used FROM availability_budget WHERE day=?`, out.Day)
+	rows, err := s.db.QueryContext(ctx, `SELECT resource,used,ceiling FROM availability_budget WHERE day=?`, out.Day)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var k string
-		var n int64
-		if err = rows.Scan(&k, &n); err != nil {
+		var n, ceiling int64
+		if err = rows.Scan(&k, &n, &ceiling); err != nil {
 			rows.Close()
 			return out, err
 		}
 		out.Usage[k] = n
+		out.Ceilings[k] = ceiling
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return out, err
+	}
+	if used := out.Usage["feedRequests"]; used > int64(live.FeedRequests) && out.Ceilings["feedRequests"] >= used {
+		out.OverAllowance = true
 	}
 	rows, err = s.db.QueryContext(ctx, `SELECT CASE WHEN state='verified' AND (verified_at<? OR policy<>?) THEN 'stale' ELSE state END AS label,COUNT(*) FROM availability_releases GROUP BY label`, s.now().Add(-6*time.Hour).Unix(), s.policy())
 	if err != nil {
@@ -139,13 +170,36 @@ func (s *Service) Handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(v)
 	})
+	mux.HandleFunc("GET /titles", func(w http.ResponseWriter, r *http.Request) {
+		rows, err := s.NewReleases(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rows)
+	})
+	mux.HandleFunc("GET /title/{key}", func(w http.ResponseWriter, r *http.Request) {
+		key, err := core.ParseRatingKey(r.PathValue("key"))
+		if err != nil {
+			http.Error(w, "no such title", http.StatusNotFound)
+			return
+		}
+		v, err := s.Explain(r.Context(), key)
+		if err != nil {
+			http.Error(w, "Availability for this title could not be loaded", 503)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v)
+	})
 	mux.HandleFunc("POST /sync", func(w http.ResponseWriter, r *http.Request) {
 		if !s.cfg().Availability.Monitor {
 			http.Error(w, "Enable release monitoring first", 409)
 			return
 		}
 		// Durable request: the cluster leader sees it on its next scheduler tick.
-		if _, err := s.db.ExecContext(r.Context(), `UPDATE availability_feeds SET checked_at=0`); err != nil {
+		if _, err := s.db.ExecContext(r.Context(), `UPDATE availability_feeds SET checked_at=0, message=?`, "Sync queued"); err != nil {
 			http.Error(w, "Could not schedule feed sync", 503)
 			return
 		}

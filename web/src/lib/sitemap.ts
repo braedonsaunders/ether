@@ -183,9 +183,9 @@ export const PAGES = localized<PageDef[]>(() => [
       },
       {
         key: "availability",
-        title: t("Will it play"),
+        title: t("New releases"),
         keywords: searchTerms(
-          msg("release feeds rss source evidence checks budget search memory candidates"),
+          msg("new releases movies playable theatres quality indexer budget search memory"),
         ),
       },
       {

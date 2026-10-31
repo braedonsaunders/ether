@@ -94,6 +94,11 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if a.ReservePercent < 0 || a.ReservePercent > 99 {
 		v.add("availability.reservePercent", "must be between 0 and 99")
 	}
+	switch a.Effort {
+	case "", "gentle", "normal", "unlimited", "custom":
+	default:
+		v.add("availability.effort", "must be gentle, normal, unlimited, or custom")
+	}
 
 	if cfg.SharedCache != nil {
 		shared := cfg
