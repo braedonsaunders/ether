@@ -27,7 +27,7 @@ import {
   TestButton,
   type TestState,
 } from "../components/fields";
-import { localized, t, tx } from "../i18n";
+import { loadLocale, localized, rememberLocale, t, tx } from "../i18n";
 import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
@@ -35,13 +35,24 @@ import { appLabel, appPurpose } from "./apps/catalog";
 import { CachePresetCards, cachePresetKey } from "./cache/presets";
 import { DEBRID_KINDS } from "./sources/Debrid";
 import { addonUrlHasDebridKey, isStremio, normalizeAddonUrl } from "./sources/Indexers";
+import { LanguageStep } from "./setup/LanguageStep";
+import {
+  householdLanguageFor,
+  projectHouseholdRules,
+  sameHouseholdLanguage,
+  type HouseholdLanguage,
+} from "./setup/language";
+import { normalizeRules, type StreamRules } from "./viewers/shared";
 
-export type WizardStepId = "apps" | "account" | "sources" | "indexers" | "cache" | "catalog";
+export type WizardStepId =
+  "language" | "apps" | "account" | "sources" | "indexers" | "cache" | "catalog";
 
 /** Survives a remount after the owner account is created so the visit does not start over. */
 export const SETUP_STEP_KEY = "ether.setup.step";
 
 const STEP_COPY = localized(() => ({
+  languageTitle: t("Language"),
+  languageHeading: t("Choose a language"),
   appsTitle: t("Apps"),
   appsHeading: t("Where will your household watch?"),
   plexTitle: "Plex",
@@ -77,6 +88,7 @@ export function wizardSteps(
   plexSelected: boolean,
 ): { id: WizardStepId; title: string; heading: string }[] {
   return [
+    { id: "language", title: STEP_COPY.languageTitle, heading: STEP_COPY.languageHeading },
     { id: "apps", title: STEP_COPY.appsTitle, heading: STEP_COPY.appsHeading },
     plexSelected
       ? { id: "account", title: STEP_COPY.plexTitle, heading: STEP_COPY.plexHeading }
@@ -236,6 +248,7 @@ export function canAdvance(
 ): boolean {
   if (opts.skipped[step]) return true;
   switch (step) {
+    case "language":
     case "apps":
     case "cache":
       return true;
@@ -270,6 +283,9 @@ export default function Setup() {
   const navigate = useNavigate();
   const app = useAppOptional();
   const [cfg, setCfg] = useState<EtherConfig | null>(null);
+  const [languageChoice, setLanguageChoice] = useState<HouseholdLanguage | null>(null);
+  const languageBaseline = useRef<HouseholdLanguage | null>(null);
+  const [householdRules, setHouseholdRules] = useState<StreamRules | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [step, setStepState] = useState(storedStep);
   const [apps, setApps] = useState<SetupApp[]>(() => appCatalog(null));
@@ -323,8 +339,9 @@ export default function Setup() {
     Promise.all([
       api.getConfig(),
       apiFetch<{ descriptor: { id: string; name: string } }[]>("/frontends").catch(() => null),
+      apiFetch<Partial<StreamRules>>("/stream-preferences/0").catch(() => ({})),
     ])
-      .then(([c, list]) => {
+      .then(([c, list, rules]) => {
         const catalog = appCatalog(list);
         setApps(catalog);
         setFrontends(
@@ -333,6 +350,20 @@ export default function Setup() {
             catalog.map((item) => item.id),
           ),
         );
+        const normalized = normalizeRules(rules);
+        setHouseholdRules(normalized);
+        if (!languageBaseline.current) {
+          const choice = householdLanguageFor({
+            setupComplete: c.setupComplete,
+            catalogLanguage: c.catalog.language,
+            catalogRegion: c.catalog.region,
+            audioLanguages: normalized.audioLanguages,
+            subtitleLanguages: normalized.subtitleLanguages,
+            preferOriginal: normalized.preferOriginal,
+          });
+          languageBaseline.current = choice;
+          setLanguageChoice(choice);
+        }
         setCfg(c);
         setPinDone(Boolean(c.plex.token));
         setLoadError(null);
@@ -597,11 +628,49 @@ export default function Setup() {
     setSaving(true);
     setError(null);
     try {
+      let draft = cfg;
+      if (stepId === "language" && languageChoice) {
+        const baseline = languageBaseline.current;
+        const edited = !baseline || !sameHouseholdLanguage(languageChoice, baseline);
+        const audioEdited =
+          !baseline ||
+          baseline.audio !== languageChoice.audio ||
+          baseline.subtitle !== languageChoice.subtitle;
+        if (
+          !cfg.setupComplete ||
+          edited ||
+          languageChoice.metadata !== cfg.catalog.language ||
+          languageChoice.region !== cfg.catalog.region
+        ) {
+          draft = {
+            ...cfg,
+            catalog: {
+              ...cfg.catalog,
+              language: languageChoice.metadata,
+              region: languageChoice.region,
+            },
+          };
+        }
+        if (!cfg.setupComplete || audioEdited) {
+          const saved = normalizeRules(
+            await apiFetch<Partial<StreamRules>>("/stream-preferences/0", {
+              method: "PUT",
+              body: JSON.stringify(
+                projectHouseholdRules(householdRules ?? normalizeRules(null), languageChoice),
+              ),
+            }),
+          );
+          setHouseholdRules(saved);
+        }
+        languageBaseline.current = languageChoice;
+        rememberLocale(languageChoice.console);
+        await loadLocale(languageChoice.console);
+      }
       setCfg(
         await api.putConfig(
           savedDraft(
             mergeFrontendSelection(
-              cfg,
+              draft,
               apps.map((item) => item.id),
               frontends,
             ),
@@ -718,6 +787,9 @@ export default function Setup() {
       <h2 className="text-base font-semibold text-fg">{steps[step]?.heading}</h2>
       <MutationError error={error} />
 
+      {stepId === "language" && languageChoice ? (
+        <LanguageStep choice={languageChoice} onChange={setLanguageChoice} />
+      ) : null}
       {stepId === "apps" ? (
         <div className="grid gap-4 md:grid-cols-2">
           {apps.map((item) => (

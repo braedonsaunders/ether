@@ -1,6 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { systemMessageKey, type MessageCatalog } from "@braedonsaunders/appkit-i18n";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadLocale } from "../i18n";
+import fr from "../i18n/locales/fr.json";
 import { createFakeServer } from "../mock/server";
 import Setup, {
   SETUP_STEP_KEY,
@@ -11,6 +14,16 @@ import Setup, {
 import type { DiskInfo, Indexer, UsenetProvider } from "../lib/types";
 import { api } from "../lib/api";
 import { calls, renderApp } from "./harness";
+
+const french = (source: string) => {
+  const entry = (fr as MessageCatalog)[systemMessageKey(source)];
+  return typeof entry === "string" ? entry : source;
+};
+
+afterEach(async () => {
+  localStorage.removeItem("ether.locale");
+  await loadLocale("en");
+});
 
 const provider: UsenetProvider = {
   id: "p1",
@@ -140,7 +153,18 @@ describe("savedDraft", () => {
 
 function renderWizard(configure?: (fake: ReturnType<typeof createFakeServer>) => void) {
   sessionStorage.removeItem(SETUP_STEP_KEY);
+  localStorage.removeItem("ether.locale");
   const fake = createFakeServer();
+  fake.state.streamDefaults = {
+    audioLanguages: [],
+    subtitleLanguages: [],
+    preferOriginal: false,
+    subtitleMode: "off",
+    subtitleStyle: "normal",
+    loudness: false,
+    nightMode: false,
+    dialogueBoost: false,
+  };
   fake.state.config.setupComplete = false;
   fake.state.config.plex.ownerUsername = "alice";
   // A fresh install has no debrid accounts (the shared fixture has two).
@@ -178,7 +202,13 @@ function renderWizard(configure?: (fake: ReturnType<typeof createFakeServer>) =>
   return fake;
 }
 
+async function continueLanguage() {
+  expect(await screen.findByRole("heading", { name: "Choose a language" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+}
+
 async function selectPlex() {
+  await continueLanguage();
   expect(
     await screen.findByRole("heading", { name: "Where will your household watch?" }),
   ).toBeInTheDocument();
@@ -523,7 +553,7 @@ describe("setup wizard", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     });
-    expect(calls(fake, "PUT", "/config")[0]?.body).toMatchObject({
+    expect(calls(fake, "PUT", "/config").at(-1)?.body).toMatchObject({
       plex: { token: "••••", claimed: true, ownerUsername: "alice" },
     });
     expect(screen.getByRole("heading", { name: "Usenet providers" })).toBeInTheDocument();
@@ -648,6 +678,7 @@ describe("setup wizard", () => {
       f.state.config.plex.claimed = false;
     });
     const create = vi.spyOn(api, "localSetup").mockResolvedValue({ token: "local-session" });
+    await continueLanguage();
     await screen.findByRole("heading", { name: "Where will your household watch?" });
     fireEvent.click(screen.getByRole("switch", { name: "Plex enabled" }));
     fireEvent.click(screen.getByRole("switch", { name: "Jellyfin enabled" }));
@@ -668,7 +699,7 @@ describe("setup wizard", () => {
     expect(next).toBeEnabled();
     fireEvent.click(next);
     expect(await screen.findByRole("heading", { name: "Usenet providers" })).toBeInTheDocument();
-    expect(calls(fake, "PUT", "/config")).toHaveLength(2);
+    expect(calls(fake, "PUT", "/config")).toHaveLength(3);
     expect(screen.getAllByRole("button", { name: "Save and continue" })[0]).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", { name: /^Test$/ })[0]!);
     await waitFor(() => expect(screen.getAllByText(/OK · \d+ ms/).length).toBeGreaterThan(0));
@@ -695,9 +726,7 @@ describe("setup wizard", () => {
     sessionStorage.removeItem(SETUP_STEP_KEY);
     renderApp("/", { bootstrap: { setupComplete: false, ownerConfigured: false } });
     expect(await screen.findByRole("heading", { name: "Set up Ether" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Where will your household watch?" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Choose a language" })).toBeInTheDocument();
     expect(screen.queryAllByRole("link", { name: "Finish setup" })).toHaveLength(0);
     expect(screen.getAllByRole("link", { name: "Overview" }).length).toBeGreaterThan(0);
   });
@@ -721,6 +750,7 @@ describe("setup wizard", () => {
         dlna: { enabled: true, settings: { guest: true } },
       };
     });
+    await continueLanguage();
     expect(await screen.findByRole("switch", { name: "Jellyfin enabled" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("switch", { name: "Jellyfin enabled" }));
     fireEvent.click(screen.getByRole("switch", { name: "Plex enabled" }));
@@ -748,7 +778,7 @@ describe("setup wizard", () => {
 
   it("resumes the same wizard step after the owner account is created", async () => {
     renderWizard((f) => {
-      sessionStorage.setItem(SETUP_STEP_KEY, "1");
+      sessionStorage.setItem(SETUP_STEP_KEY, "2");
       f.state.config.plex.token = "";
       f.state.config.plex.claimed = false;
       f.state.config.frontends = { jellyfin: { enabled: true, settings: { serverName: "House" } } };
@@ -759,6 +789,74 @@ describe("setup wizard", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Set up Ether" })).toBeInTheDocument();
     expect(screen.queryAllByRole("link", { name: "Finish setup" })).toHaveLength(0);
+  });
+
+  it("saves one language as the console, the catalogue, and household defaults", async () => {
+    const fake = renderWizard();
+    await screen.findByRole("heading", { name: "Choose a language" });
+    fireEvent.click(screen.getByLabelText("Language"));
+    fireEvent.click(await screen.findByRole("option", { name: "Français" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText(french("Language"))).toHaveTextContent("Français"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: french("Save and continue") }));
+    await screen.findByRole("heading", { name: french("Where will your household watch?") });
+    const config = calls(fake, "PUT", "/config").at(-1)?.body as {
+      catalog: { language: string; region: string };
+    };
+    expect(config.catalog.language).toBe("fr-FR");
+    expect(config.catalog.region).toBe("US");
+    expect(calls(fake, "PUT", "/stream-preferences/0").at(-1)?.body).toMatchObject({
+      audioLanguages: ["fr"],
+      subtitleLanguages: ["fr"],
+      preferOriginal: false,
+      subtitleMode: "off",
+    });
+    expect(localStorage.getItem("ether.locale")).toBe("fr");
+  });
+
+  it("keeps a separate audio language and the browser region under more options", async () => {
+    const fake = renderWizard();
+    await screen.findByRole("heading", { name: "Choose a language" });
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    fireEvent.click(screen.getByLabelText("Audio language"));
+    fireEvent.click(await screen.findByRole("option", { name: "Japanese" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await screen.findByRole("heading", { name: "Where will your household watch?" });
+    const config = calls(fake, "PUT", "/config").at(-1)?.body as {
+      catalog: { language: string; region: string };
+    };
+    expect(config.catalog.language).toBe("en-US");
+    expect(config.catalog.region).toBe("US");
+    expect(calls(fake, "PUT", "/stream-preferences/0").at(-1)?.body).toMatchObject({
+      audioLanguages: ["ja"],
+      subtitleLanguages: ["en"],
+      preferOriginal: false,
+      subtitleMode: "off",
+    });
+  });
+
+  it("does not rewrite a finished server until the language choice changes", async () => {
+    const fake = renderWizard((f) => {
+      f.state.config.setupComplete = true;
+      f.state.config.catalog.language = "de-DE";
+      f.state.config.catalog.region = "DE";
+      const defaults = f.state.streamDefaults;
+      if (!defaults) throw new Error("household defaults are not modelled");
+      defaults.audioLanguages = ["de"];
+      defaults.subtitleLanguages = ["de"];
+      defaults.subtitleMode = "foreign-only";
+    });
+    await screen.findByRole("heading", { name: "Choose a language" });
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await screen.findByRole("heading", { name: "Where will your household watch?" });
+    expect(calls(fake, "PUT", "/stream-preferences/0")).toHaveLength(0);
+    const config = calls(fake, "PUT", "/config").at(-1)?.body as {
+      catalog: { language: string; region: string };
+    };
+    expect(config.catalog.language).toBe("de-DE");
+    expect(config.catalog.region).toBe("DE");
+    expect(fake.state.streamDefaults?.subtitleMode).toBe("foreign-only");
   });
 });
 
@@ -783,4 +881,3 @@ describe("mergeFrontendSelection", () => {
     });
   });
 });
-

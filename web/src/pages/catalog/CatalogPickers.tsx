@@ -5,7 +5,7 @@ import { searchSelectLabels } from "../../i18n/appkit-labels";
 import { t } from "../../i18n";
 import { useLocale } from "../../i18n/react";
 
-const LANGUAGE_TAGS = [
+export const LANGUAGE_TAGS = [
   "en-US",
   "en-GB",
   "fr-FR",
@@ -62,7 +62,7 @@ const LANGUAGE_TAGS = [
   "sw-KE",
 ];
 
-const REGION_CODES =
+export const REGION_CODES =
   "AD AE AF AG AI AL AM AO AR AT AU AW AZ BA BB BD BE BF BG BH BI BJ BN BO BR BS BT BW BY BZ CA CD CF CG CH CI CL CM CN CO CR CV CY CZ DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FR GA GB GD GE GH GM GN GR GT GW GY HK HN HR HT HU ID IE IL IN IQ IR IS IT JM JO JP KE KG KH KR KW KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MG MK ML MM MN MR MT MU MV MW MX MY MZ NA NE NG NI NL NO NP NZ OM PA PE PG PH PK PL PT PY QA RO RS RU RW SA SB SC SD SE SG SI SK SL SM SN SO SR SS ST SV SY SZ TD TG TH TJ TL TM TN TR TT TW TZ UA UG US UY UZ VA VE VN VU YE ZA ZM ZW".split(
     " ",
   );
@@ -118,8 +118,8 @@ export function CatalogPickers({
   const languages = useMemo(
     () =>
       withCurrent(
-        LANGUAGE_TAGS.map((tag) => ({ value: tag, label: languageName(locale, tag) })).sort((a, b) =>
-          a.label.localeCompare(b.label, locale),
+        LANGUAGE_TAGS.map((tag) => ({ value: tag, label: languageName(locale, tag) })).sort(
+          (a, b) => a.label.localeCompare(b.label, locale),
         ),
         lang,
       ),
@@ -128,9 +128,10 @@ export function CatalogPickers({
   const regions = useMemo(
     () =>
       withCurrent(
-        REGION_CODES.map((code) => ({ value: code, label: displayName(locale, "region", code) })).sort(
-          (a, b) => a.label.localeCompare(b.label, locale),
-        ),
+        REGION_CODES.map((code) => ({
+          value: code,
+          label: displayName(locale, "region", code),
+        })).sort((a, b) => a.label.localeCompare(b.label, locale)),
         regionCode,
       ),
     [locale, regionCode],

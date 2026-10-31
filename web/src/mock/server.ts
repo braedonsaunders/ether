@@ -448,6 +448,18 @@ export function createFakeServer(opts: FakeOptions = {}) {
       ...opts.bootstrap,
     } as Bootstrap,
     config: defaultConfig(),
+    // Null until a caller opts in. Viewer tests still overlay these routes
+    // on a 404 from the shared fake.
+    streamDefaults: null as null | {
+      audioLanguages: string[];
+      subtitleLanguages: string[];
+      preferOriginal: boolean;
+      subtitleMode: string;
+      subtitleStyle: string;
+      loudness: boolean;
+      nightMode: boolean;
+      dialogueBoost: boolean;
+    },
     users: VIEWERS.map<EtherUser>((v) => ({
       id: v.id,
       plexId: v.plexId,
@@ -1891,6 +1903,19 @@ export function createFakeServer(opts: FakeOptions = {}) {
 
   async function handle(method: string, url: URL, body: unknown): Promise<Response> {
     const p = url.pathname.replace(/^\/ether\/api/, "");
+    if (
+      state.streamDefaults &&
+      p === "/stream-preferences/0" &&
+      (method === "GET" || method === "PUT")
+    ) {
+      if (method === "PUT" && body && typeof body === "object") {
+        state.streamDefaults = {
+          ...state.streamDefaults,
+          ...(body as NonNullable<typeof state.streamDefaults>),
+        };
+      }
+      return json(state.streamDefaults);
+    }
     const q = url.searchParams;
     const seg = p.split("/").filter(Boolean);
     const route = `${method} /${seg.join("/")}`;

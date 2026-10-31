@@ -56,14 +56,21 @@ export function getLocale(): Locale {
   return translator.locale;
 }
 
-/** The owner's saved choice, else the browser's best supported match. */
-export function preferredLocale(): Locale {
+/** The owner's saved console language, when they have chosen one. */
+export function rememberedLocale(): Locale | null {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (isAppLocale(saved)) return saved;
+    return isAppLocale(saved) ? saved : null;
   } catch {
-    // Storage can be unavailable (privacy modes); fall through to the browser.
+    // Storage can be unavailable (privacy modes); nothing was saved.
+    return null;
   }
+}
+
+/** The owner's saved choice, else the browser's best supported match. */
+export function preferredLocale(): Locale {
+  const saved = rememberedLocale();
+  if (saved) return saved;
   if (typeof navigator === "undefined") return DEFAULT_LOCALE;
   return negotiateLocale(navigator.languages?.length ? navigator.languages : [navigator.language]);
 }
