@@ -628,14 +628,33 @@ func (i *instance) saveUserConfiguration(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if i.host.Preferences == nil {
-		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	var object map[string]any
 	if decode(r, &object) != nil || object == nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
+	}
+	_, hasMode := object["SubtitleMode"]
+	_, hasLanguage := object["SubtitleLanguagePreference"]
+	home := false
+	for _, key := range []string{"OrderedViews", "LatestItemsExcludes", "MyMediaExcludes", "HidePlayedInLatest"} {
+		if _, ok := object[key]; ok {
+			home = true
+			break
+		}
+	}
+	if home && i.host.Preferences == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if hasMode || hasLanguage {
+		if err = i.saveSubtitleConfiguration(r, v, object); err != nil {
+			if errors.Is(err, errBadSubtitle) {
+				http.Error(w, "Bad Request", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	kept := map[string]any{}
 	if stored, ok := i.storedUserConfig(r, v); ok {
@@ -660,6 +679,10 @@ func (i *instance) saveUserConfiguration(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		kept["HidePlayedInLatest"] = value
+	}
+	if !home {
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	body, err := json.Marshal(kept)
 	if err != nil {

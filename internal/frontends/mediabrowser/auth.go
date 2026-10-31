@@ -145,8 +145,10 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	}
 	if i.host.TrackPreferences != nil {
 		if prefs, err := i.host.TrackPreferences.Get(r.Context(), v); err == nil {
-			modes := map[string]string{"off": "None", "forced-only": "OnlyForced", "always": "Always"}
-			if mode, ok := modes[prefs.SubtitleMode]; ok {
+			if len(prefs.SubtitleLanguages) > 0 {
+				configuration["SubtitleLanguagePreference"] = prefs.SubtitleLanguages[0]
+			}
+			if mode, ok := jellyfinSubtitleMode(prefs.SubtitleMode); ok {
 				configuration["SubtitleMode"] = mode
 			}
 		}
