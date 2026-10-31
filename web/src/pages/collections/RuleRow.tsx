@@ -3,6 +3,7 @@ import { AlertCircle, Trash2 } from "lucide-react";
 import { Segmented, NumberInput } from "../../components/fields";
 import { FacetPicker, FacetSelect, LookupPicker, type Picked } from "../../components/pickers";
 import { localized, t } from "../../i18n";
+import { NOT_RATED } from "../../lib/contentRatings";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
 import type { Rule, RuleField, RuleOp } from "../../lib/contract";
 import {
@@ -180,6 +181,7 @@ function ValueEditor({
           value={String(rule.value ?? "")}
           onChange={(v) => onChange({ ...rule, value: v })}
           ariaLabel={t("{label} value", { label })}
+          omit={rule.op === "gte" || rule.op === "lte" ? [NOT_RATED] : undefined}
         />
       );
     case "lookup":

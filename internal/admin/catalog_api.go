@@ -94,20 +94,23 @@ type ImageProxy interface {
 
 // TitleCard is the shared title shape of the owner API.
 type TitleCard struct {
-	Key            string   `json:"key"`
-	Type           string   `json:"type"`
-	Title          string   `json:"title"`
-	Year           int      `json:"year,omitempty"`
-	Summary        string   `json:"summary,omitempty"`
-	Poster         string   `json:"poster,omitempty"`
-	Backdrop       string   `json:"backdrop,omitempty"`
-	Rating         float64  `json:"rating,omitempty"`
-	ContentRating  string   `json:"contentRating,omitempty"`
-	RuntimeMinutes int      `json:"runtimeMinutes,omitempty"`
-	Genres         []string `json:"genres,omitempty"`
-	ShowTitle      string   `json:"showTitle,omitempty"`
-	Season         int      `json:"season,omitempty"`
-	Episode        int      `json:"episode,omitempty"`
+	Key           string  `json:"key"`
+	Type          string  `json:"type"`
+	Title         string  `json:"title"`
+	Year          int     `json:"year,omitempty"`
+	Summary       string  `json:"summary,omitempty"`
+	Poster        string  `json:"poster,omitempty"`
+	Backdrop      string  `json:"backdrop,omitempty"`
+	Rating        float64 `json:"rating,omitempty"`
+	ContentRating string  `json:"contentRating,omitempty"`
+	// ContentRatingSource is where ContentRating came from ("tmdb:US:6",
+	// "omdb"); see core.Title.
+	ContentRatingSource string   `json:"contentRatingSource,omitempty"`
+	RuntimeMinutes      int      `json:"runtimeMinutes,omitempty"`
+	Genres              []string `json:"genres,omitempty"`
+	ShowTitle           string   `json:"showTitle,omitempty"`
+	Season              int      `json:"season,omitempty"`
+	Episode             int      `json:"episode,omitempty"`
 }
 
 // ImageURL is the browser-loadable proxy URL of a TMDB image path.
@@ -125,7 +128,7 @@ func ImageURL(path string, w int) string {
 func CardFor(t core.Title) TitleCard {
 	c := TitleCard{
 		Key: t.Key.String(), Type: string(t.Type), Title: t.Title, Year: t.Year, Summary: t.Summary,
-		Rating: roundRating(t.Rating), ContentRating: t.ContentRating, RuntimeMinutes: int(t.Runtime / time.Minute),
+		Rating: roundRating(t.Rating), ContentRating: t.ContentRating, ContentRatingSource: t.ContentRatingSource, RuntimeMinutes: int(t.Runtime / time.Minute),
 		Genres: t.Genres, ShowTitle: t.ShowTitle, Season: t.Season, Episode: t.Episode,
 	}
 	poster := t.PosterPath
