@@ -12,6 +12,21 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
 
+func latestPlayedQuery(r *http.Request) (bool, bool, error) {
+	values := route.Query(r.URL.Query(), "IsPlayed")
+	if len(values) == 0 || (len(values) == 1 && values[0] == "") {
+		return false, false, nil
+	}
+	if len(values) != 1 {
+		return false, false, errors.New("ambiguous IsPlayed")
+	}
+	played, err := strconv.ParseBool(values[0])
+	if err != nil {
+		return false, false, err
+	}
+	return played, true, nil
+}
+
 func activityView(r *http.Request) (string, error) {
 	values := route.Query(r.URL.Query(), "ParentId")
 	if len(values) > 1 {
@@ -47,15 +62,28 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 	offset, limit := queryInt(r, "StartIndex", 0), queryInt(r, "Limit", 50)
 	if limit == 0 {
 		if latest {
-			jsonReply(w, []any{})
+			i.replyItems(w, r, []any{})
 		} else {
-			jsonReply(w, i.queryResult([]any{}, 0, offset))
+			i.replyItems(w, r, i.queryResult([]any{}, 0, offset))
 		}
 		return
 	}
 	if offset > 500 || limit > 500 || offset > 500-limit {
 		http.Error(w, "Unsupported page", http.StatusBadRequest)
 		return
+	}
+	if latest {
+		played, set, err := latestPlayedQuery(r)
+		if err != nil {
+			http.Error(w, "Invalid IsPlayed", http.StatusBadRequest)
+			return
+		}
+		if !set {
+			// Both servers default HidePlayedInLatest to true, so an omitted
+			// IsPlayed hides played items. An explicit query value wins.
+			played = false
+		}
+		r = r.WithContext(frontend.WithLatestPlayed(r.Context(), played))
 	}
 	count := offset + limit
 	var titles []frontend.Title
@@ -175,12 +203,12 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		items = append(items, item)
 	}
 	if latest {
-		jsonReply(w, items)
+		i.replyItems(w, r, items)
 	} else {
 		result := i.queryResult(items, total, offset)
 		if !totalExact {
 			delete(result, "TotalRecordCount")
 		}
-		jsonReply(w, result)
+		i.replyItems(w, r, result)
 	}
 }

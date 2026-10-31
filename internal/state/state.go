@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -416,6 +417,86 @@ func (s *State) GetMany(ctx context.Context, userID int64, keys []core.RatingKey
 				ws.UpdatedAt = time.Unix(0, upd).UTC()
 			}
 			out[ws.Key] = ws
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return out, nil
+}
+
+// PageUserData reads watch progress and the page's favorite, not-interested
+// and watchlist flags in one query. Keys the caller has not authorized must
+// not be passed in.
+func (s *State) PageUserData(ctx context.Context, userID int64, keys []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
+	out := make(map[core.RatingKey]core.WatchStatus, len(keys))
+	for _, key := range keys {
+		out[key] = core.WatchStatus{Key: key}
+	}
+	if s == nil || s.db == nil || userID <= 0 || len(keys) == 0 {
+		return out, nil
+	}
+	for start := 0; start < len(keys); start += 200 {
+		chunk := keys[start:min(start+200, len(keys))]
+		var b strings.Builder
+		args := make([]any, 0, 4+len(chunk)*4)
+		writeIn := func(prefix string, asText bool, extra ...any) {
+			b.WriteString(prefix)
+			args = append(args, extra...)
+			for i, key := range chunk {
+				if i > 0 {
+					b.WriteByte(',')
+				}
+				b.WriteByte('?')
+				if asText {
+					args = append(args, key.String())
+				} else {
+					args = append(args, int64(key))
+				}
+			}
+			b.WriteByte(')')
+		}
+		writeIn(`SELECT 'w', rating_key, view_offset_ns, duration_ns, view_count, last_viewed_at, user_rating, updated_at FROM state_watch WHERE user_id=? AND rating_key IN (`, false, userID)
+		writeIn(` UNION ALL SELECT 'f', CAST(subject_id AS INTEGER), 0, 0, 0, 0, 0, 0 FROM favorites_items WHERE viewer_id=? AND kind=? AND subject_id IN (`, true, userID, "title")
+		writeIn(` UNION ALL SELECT 'n', CAST(title_key AS INTEGER), 0, 0, 0, 0, 0, 0 FROM notinterested_titles WHERE viewer_id=? AND title_key IN (`, true, userID)
+		writeIn(` UNION ALL SELECT 'l', item_key, 0, 0, 0, 0, 0, 0 FROM watchlist_items WHERE user_id=? AND item_key IN (`, false, userID)
+		rows, err := s.db.QueryContext(ctx, b.String(), args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var kind string
+			var key, off, dur, last, upd int64
+			var views int
+			var rating float64
+			if err := rows.Scan(&kind, &key, &off, &dur, &views, &last, &rating, &upd); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			status := out[core.RatingKey(key)]
+			status.Key = core.RatingKey(key)
+			switch kind {
+			case "w":
+				status.ViewOffset = time.Duration(off)
+				status.Duration = time.Duration(dur)
+				status.ViewCount = views
+				status.UserRating = rating
+				if last > 0 {
+					status.LastViewedAt = time.Unix(0, last).UTC()
+				}
+				if upd > 0 {
+					status.UpdatedAt = time.Unix(0, upd).UTC()
+				}
+			case "f":
+				status.IsFavorite = true
+			case "n":
+				status.IsNotInterested = true
+			case "l":
+				status.InWatchlist = true
+			}
+			out[status.Key] = status
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()

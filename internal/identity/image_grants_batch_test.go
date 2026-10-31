@@ -276,8 +276,9 @@ func TestSignedPageGrantWritesNothingAndKeepsRevocation(t *testing.T) {
 
 type pageArtwork struct {
 	frontendtest.Experience
-	allow *bool
-	calls *int
+	allow  *bool
+	calls  *int
+	images []frontend.Image
 }
 
 func (p *pageArtwork) ItemArtwork(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]frontend.Image, bool, error) {
@@ -285,5 +286,59 @@ func (p *pageArtwork) ItemArtwork(context.Context, *core.Viewer, core.Device, co
 	if p.allow == nil || !*p.allow {
 		return nil, false, core.ErrNotFound
 	}
+	if len(p.images) > 0 {
+		return p.images, true, nil
+	}
 	return []frontend.Image{{Kind: frontend.ImagePoster, Path: "primary"}}, true, nil
+}
+
+type pathImageFixture struct{ path string }
+
+func (p *pathImageFixture) Get(_ context.Context, path string, _ int) ([]byte, string, error) {
+	p.path = path
+	return []byte(path), "image/jpeg", nil
+}
+
+func TestSignedPageGrantSealsOncePerTitle(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := grants.Issue(ctx, 1, nil, "jellyfin", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := true
+	calls := 0
+	art := &pageArtwork{allow: &allowed, calls: &calls, images: []frontend.Image{
+		{Kind: frontend.ImagePoster, Path: "primary"},
+		{Kind: frontend.ImageBackdrop, Path: "back"},
+	}}
+	source := &pathImageFixture{}
+	service, err := identity.NewImageGrantService(db, "jellyfin", grants, func() frontend.Experience { return art }, source, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetImageKey([]byte("test-image-page-key"))
+	title := core.Title{Key: core.MovieKey(9), Type: core.TypeMovie, Title: "Bench"}
+	page, err := service.SignPage(ctx, frontend.ImagePageRequest{Credential: credential, Device: core.Device{ID: "tv"}, Titles: []core.Title{title}, Kinds: []string{frontend.ImagePoster, frontend.ImageBackdrop}})
+	if err != nil || len(page) != 1 || len(page[0].Images) != 2 || page[0].Images[0].Secret == "" || page[0].Images[0].Secret != page[0].Images[1].Secret {
+		t.Fatalf("page %+v err=%v", page, err)
+	}
+	secret := page[0].Images[0].Secret
+	rec := httptest.NewRecorder()
+	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Primary", nil), secret)
+	if rec.Code != 200 || source.path != "primary" || rec.Body.String() != "primary" {
+		t.Fatalf("primary %d %s path=%s", rec.Code, rec.Body.String(), source.path)
+	}
+	rec = httptest.NewRecorder()
+	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Backdrop", nil), secret)
+	if rec.Code != 200 || source.path != "back" || rec.Body.String() != "back" {
+		t.Fatalf("backdrop %d %s path=%s", rec.Code, rec.Body.String(), source.path)
+	}
 }

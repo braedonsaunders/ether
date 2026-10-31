@@ -274,6 +274,31 @@ func TestArtworkMetadataKeepsExistingBlurHashWhenUpgradeFails(t *testing.T) {
 	}
 }
 
+func TestArtworkMetadataDoesNotBlockWithoutADeadline(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db := store.OpenTest(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	q := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+		close(started)
+		<-release
+		return nil, "", core.ErrNotAvailable
+	})
+	req := frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}
+	start := time.Now()
+	got := q.Get(ctx, req, frontend.Image{Kind: frontend.ImagePerson, Path: "portrait", Subject: "tmdb:1"})
+	if time.Since(start) > 200*time.Millisecond || got.BlurHash != "" || got.ThumbHash != "" {
+		t.Fatalf("person image waited on hashing: %+v after %s", got, time.Since(start))
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("hash was not queued")
+	}
+	close(release)
+}
+
 func TestArtworkMetadataHashesInsideTheRequestBudget(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

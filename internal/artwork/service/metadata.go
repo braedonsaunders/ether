@@ -137,10 +137,7 @@ func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, im
 	return img
 }
 
-func synchronousArtworkWait(ctx context.Context, img frontend.Image) (time.Duration, bool) {
-	if img.Kind == frontend.ImagePerson {
-		return 2 * time.Second, true
-	}
+func synchronousArtworkWait(ctx context.Context, _ frontend.Image) (time.Duration, bool) {
 	deadline, ok := frontend.SynchronousArtworkDeadline(ctx)
 	if !ok {
 		return 0, false

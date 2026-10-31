@@ -31,12 +31,20 @@ type pageArtKey struct {
 	sections string
 }
 
+type pageImage struct {
+	Kind    string `json:"kind"`
+	Path    string `json:"path"`
+	Tag     string `json:"tag,omitempty"`
+	Subject string `json:"subject,omitempty"`
+}
+
 type pageClaims struct {
 	Item    int64           `json:"item"`
-	Kind    string          `json:"kind"`
-	Path    string          `json:"path"`
-	Tag     string          `json:"tag"`
-	Subject string          `json:"subject"`
+	Kind    string          `json:"kind,omitempty"`
+	Path    string          `json:"path,omitempty"`
+	Tag     string          `json:"tag,omitempty"`
+	Subject string          `json:"subject,omitempty"`
+	Images  []pageImage     `json:"images,omitempty"`
 	Channel string          `json:"channel"`
 	Device  json.RawMessage `json:"device"`
 	Source  string          `json:"source"`
@@ -145,6 +153,8 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		item := frontend.ImageBatchItem{Item: title.Key, Authoritative: complete}
 		if complete {
 			chosen := map[string]bool{}
+			var sealed []pageImage
+			var granted []frontend.Image
 			for _, image := range images {
 				if !wanted[image.Kind] || chosen[image.Kind] || image.Path == "" {
 					continue
@@ -152,15 +162,22 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 				if len(image.Path) > 1024 || len(image.Kind) > 128 || len(image.Tag) > 256 || len(image.Subject) > 256 {
 					return nil, core.ErrNotAvailable
 				}
+				chosen[image.Kind] = true
+				sealed = append(sealed, pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject})
+				granted = append(granted, image)
+			}
+			if len(sealed) > 0 {
 				secret, err := sealPageGrant(reqKey, pageClaims{
-					Item: int64(title.Key), Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject,
+					Item: int64(title.Key), Images: sealed,
+					Kind: sealed[0].Kind, Path: sealed[0].Path, Tag: sealed[0].Tag, Subject: sealed[0].Subject,
 					Device: deviceJSON, Source: source, Viewer: viewer.ID, Expires: expires,
 				})
 				if err != nil {
 					return nil, err
 				}
-				chosen[image.Kind] = true
-				item.Images = append(item.Images, frontend.GrantedImage{Image: image, Secret: secret})
+				for _, image := range granted {
+					item.Images = append(item.Images, frontend.GrantedImage{Image: image, Secret: secret})
+				}
 			}
 		}
 		out = append(out, item)
@@ -286,10 +303,76 @@ func openPageGrant(master []byte, surface, secret string, now int64) (pageClaims
 		return pageClaims{}, core.ErrUnauthorized
 	}
 	var claims pageClaims
-	if json.Unmarshal(plain, &claims) != nil || claims.Viewer != viewer || claims.Expires != expires || claims.Source == "" || claims.Item == 0 || claims.Kind == "" || claims.Path == "" {
+	if json.Unmarshal(plain, &claims) != nil || claims.Viewer != viewer || claims.Expires != expires || claims.Source == "" || claims.Item == 0 {
 		return pageClaims{}, core.ErrUnauthorized
 	}
+	if len(claims.Images) == 0 {
+		if claims.Kind == "" || claims.Path == "" {
+			return pageClaims{}, core.ErrUnauthorized
+		}
+		return claims, nil
+	}
+	for _, img := range claims.Images {
+		if img.Kind == "" || img.Path == "" || len(img.Path) > 1024 || len(img.Kind) > 128 {
+			return pageClaims{}, core.ErrUnauthorized
+		}
+	}
 	return claims, nil
+}
+
+func (c pageClaims) imageFor(r *http.Request) (frontend.Image, bool) {
+	if len(c.Images) == 0 {
+		if c.Kind == "" || c.Path == "" {
+			return frontend.Image{}, false
+		}
+		return frontend.Image{Kind: c.Kind, Path: c.Path, Tag: c.Tag, Subject: c.Subject}, true
+	}
+	want := urlImageKinds(r)
+	if len(want) == 0 {
+		img := c.Images[0]
+		if img.Kind == "" || img.Path == "" {
+			return frontend.Image{}, false
+		}
+		return frontend.Image{Kind: img.Kind, Path: img.Path, Tag: img.Tag, Subject: img.Subject}, true
+	}
+	for _, kind := range want {
+		for _, img := range c.Images {
+			if strings.EqualFold(img.Kind, kind) && img.Path != "" {
+				return frontend.Image{Kind: img.Kind, Path: img.Path, Tag: img.Tag, Subject: img.Subject}, true
+			}
+		}
+	}
+	return frontend.Image{}, false
+}
+
+func urlImageKinds(r *http.Request) []string {
+	if r == nil || r.URL == nil {
+		return nil
+	}
+	const marker = "/Images/"
+	path := r.URL.Path
+	i := strings.LastIndex(path, marker)
+	if i < 0 {
+		return nil
+	}
+	rest := path[i+len(marker):]
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+		rest = rest[:slash]
+	}
+	switch strings.ToLower(rest) {
+	case "primary":
+		return []string{frontend.ImagePoster, "primary", frontend.ImageStill}
+	case "thumb":
+		return []string{frontend.ImageThumb, frontend.ImageStill}
+	case "backdrop":
+		return []string{frontend.ImageBackdrop}
+	case "logo":
+		return []string{frontend.ImageLogo}
+	case "banner":
+		return []string{frontend.ImageBanner}
+	default:
+		return nil
+	}
 }
 
 func pageDigest(secret string) string {
@@ -334,7 +417,11 @@ func (s *ImageGrantService) servePageGrant(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
-	img := frontend.Image{Kind: claims.Kind, Path: claims.Path, Tag: claims.Tag, Subject: claims.Subject}
+	img, ok := claims.imageFor(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 	if err = s.authorized(r.Context(), viewer, device, core.RatingKey(claims.Item), claims.Channel, img); err != nil {
 		http.NotFound(w, r)
 		return

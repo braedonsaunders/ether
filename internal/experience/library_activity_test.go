@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 type activityState struct {
@@ -16,6 +17,19 @@ type activityState struct {
 
 func (s activityState) InProgress(context.Context, int64, int) ([]core.WatchStatus, error) {
 	return s.statuses, nil
+}
+
+func (s activityState) GetMany(_ context.Context, _ int64, keys []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
+	out := make(map[core.RatingKey]core.WatchStatus, len(keys))
+	for _, key := range keys {
+		out[key] = core.WatchStatus{Key: key}
+	}
+	for _, status := range s.statuses {
+		if _, ok := out[status.Key]; ok {
+			out[status.Key] = status
+		}
+	}
+	return out, nil
 }
 
 func TestLibraryActivityDoesNotDependOnHomeAndFiltersBeforeLimit(t *testing.T) {
@@ -84,6 +98,25 @@ func TestLibraryActivityDoesNotDependOnHomeAndFiltersBeforeLimit(t *testing.T) {
 	resume, err = s.Resume(ctx, v, core.Device{}, "2", []core.MediaType{core.TypeEpisode}, 0, 5, false)
 	if err != nil || len(resume.Items) != 0 || !resume.TotalExact {
 		t.Fatalf("restricted parent leaked episode: %+v %v", resume, err)
+	}
+}
+
+func TestLatestHidesPlayedWhenTheQueryOmitsIsPlayed(t *testing.T) {
+	v := &core.User{ID: 1}
+	played := core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, Title: "Played"}
+	fresh := core.Title{Key: core.MovieKey(3), Type: core.TypeMovie, Title: "Fresh"}
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return v, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, State: activityState{statuses: []core.WatchStatus{{Key: played.Key, ViewCount: 1}}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, Browse: func(context.Context, core.BrowseQuery) (core.Page, error) {
+		return core.Page{Items: []core.Title{played, fresh}, Total: 2}, nil
+	}, AddedTimes: func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+		return map[core.RatingKey]time.Time{played.Key: time.Unix(30, 0), fresh.Key: time.Unix(10, 0)}, nil
+	}}}
+	hidden, err := s.LatestAdded(frontend.WithLatestPlayed(context.Background(), false), v, core.Device{}, "1", 16)
+	if err != nil || len(hidden) != 1 || hidden[0].Title.Key != fresh.Key {
+		t.Fatalf("unplayed latest %+v %v", hidden, err)
+	}
+	onlyPlayed, err := s.LatestAdded(frontend.WithLatestPlayed(context.Background(), true), v, core.Device{}, "1", 16)
+	if err != nil || len(onlyPlayed) != 1 || onlyPlayed[0].Title.Key != played.Key {
+		t.Fatalf("played latest %+v %v", onlyPlayed, err)
 	}
 }
 

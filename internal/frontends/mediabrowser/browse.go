@@ -184,7 +184,7 @@ func (i *instance) writeCollectionFolder(w http.ResponseWriter, r *http.Request,
 		if !ok {
 			break
 		}
-		jsonReply(w, item)
+		i.replyItems(w, r, item)
 		return
 	}
 	http.NotFound(w, r)
@@ -222,7 +222,7 @@ func (i *instance) browseRoutes() error {
 			}
 			items = append(items, item)
 		}
-		jsonReply(w, i.queryResult(items, len(items), 0))
+		i.replyItems(w, r, i.queryResult(items, len(items), 0))
 	}
 	rowHandler := func(purpose frontend.RowPurpose, asArray bool) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -354,9 +354,9 @@ func (i *instance) browseRoutes() error {
 				}
 			}
 			if asArray {
-				jsonReply(w, items)
+				i.replyItems(w, r, items)
 			} else {
-				jsonReply(w, i.queryResult(items, len(titles), offset))
+				i.replyItems(w, r, i.queryResult(items, len(titles), offset))
 			}
 		}
 	}
@@ -414,7 +414,7 @@ func (i *instance) browseRoutes() error {
 			if len(backdrops) > 0 {
 				dto["BackdropImageTags"] = backdrops
 			}
-			jsonReply(w, dto)
+			i.replyItems(w, r, dto)
 			return
 		}
 		dto := i.itemDTO(d.Title, d.UserData)
@@ -532,7 +532,7 @@ func (i *instance) browseRoutes() error {
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)
 		}
-		jsonReply(w, dto)
+		i.replyItems(w, r, dto)
 	}
 	endpoints := []struct {
 		path    string
@@ -719,7 +719,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 	if total < len(items) {
 		total = len(items)
 	}
-	jsonReply(w, i.queryResult(items, total, offset))
+	i.replyItems(w, r, i.queryResult(items, total, offset))
 }
 func (i *instance) children(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.viewer(r)
@@ -789,7 +789,7 @@ func (i *instance) search(w http.ResponseWriter, r *http.Request) {
 		}
 		hints = append(hints, hint)
 	}
-	jsonReply(w, map[string]any{"SearchHints": hints, "TotalRecordCount": result.Page.Total})
+	i.replyItems(w, r, map[string]any{"SearchHints": hints, "TotalRecordCount": result.Page.Total})
 }
 
 func (i *instance) items(w http.ResponseWriter, r *http.Request) {
@@ -908,7 +908,7 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 		i.jellyfinSeasonListFields(r, item, t)
 		items = append(items, item)
 	}
-	jsonReply(w, items)
+	i.replyItems(w, r, items)
 }
 
 func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {

@@ -19,12 +19,19 @@ type activityFake struct {
 	frontendtest.Experience
 	viewer      *frontend.Viewer
 	latestViews []string
+	played      []bool
+	unfiltered  int
 	resumeCalls int
 	lowerBound  bool
 	lastExact   bool
 }
 
-func (f *activityFake) LatestAdded(_ context.Context, v *frontend.Viewer, d frontend.Device, view string, limit int) ([]frontend.LatestItem, error) {
+func (f *activityFake) LatestAdded(ctx context.Context, v *frontend.Viewer, d frontend.Device, view string, limit int) ([]frontend.LatestItem, error) {
+	if played, ok := frontend.LatestPlayedFilter(ctx); ok {
+		f.played = append(f.played, played)
+	} else {
+		f.unfiltered++
+	}
 	if v != f.viewer || d.ID != "tv" || limit != 20 {
 		return nil, frontend.ErrNotFound
 	}
@@ -203,6 +210,44 @@ func TestLatestGroupingAndItemAddedDate(t *testing.T) {
 		}
 		if dto := i.itemDTO(frontend.Title{Key: 5, Type: "movie"}, frontend.WatchStatus{}); dto["DateCreated"] != nil {
 			t.Fatal(tc.name, dto)
+		}
+	}
+}
+
+func TestLatestDefaultsHidePlayedOnBothFrontends(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	for _, tc := range []struct {
+		name  string
+		front frontend.Frontend
+	}{{"jellyfin", Jellyfin{MachineID: "test"}}, {"emby", Emby{MachineID: "test"}}} {
+		exp := &activityFake{viewer: viewer}
+		identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+		inst, err := tc.front.Mount(context.Background(), frontend.Host{Identity: identity, Experience: exp})
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, _ := ids.GUID(ids.View, 1)
+		for _, query := range []struct {
+			raw    string
+			played bool
+		}{{"", false}, {"&IsPlayed=false", false}, {"&IsPlayed=true", true}} {
+			r := httptest.NewRequest("GET", "/Items/Latest?limit=20&ParentId="+view+query.raw, nil)
+			r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
+			w := httptest.NewRecorder()
+			inst.Handler().ServeHTTP(w, r)
+			if w.Code != 200 {
+				t.Fatal(tc.name, query.raw, w.Code, w.Body.String())
+			}
+		}
+		if exp.unfiltered != 0 || len(exp.played) != 3 || exp.played[0] || exp.played[1] || !exp.played[2] {
+			t.Fatalf("%s played=%v unfiltered=%d", tc.name, exp.played, exp.unfiltered)
+		}
+		r := httptest.NewRequest("GET", "/Items/Latest?limit=20&ParentId="+view+"&IsPlayed=maybe", nil)
+		r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != 400 {
+			t.Fatal(tc.name, w.Code)
 		}
 	}
 }

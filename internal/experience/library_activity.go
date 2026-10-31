@@ -91,9 +91,23 @@ func (s *Service) latestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 			if err != nil {
 				return nil, err
 			}
+			var states map[core.RatingKey]core.WatchStatus
+			playedOnly, filterPlayed := frontend.LatestPlayedFilter(ctx)
+			if filterPlayed {
+				if s.d.State == nil {
+					return nil, core.ErrNotAvailable
+				}
+				states, err = s.d.State.GetMany(ctx, v.ID, keys)
+				if err != nil {
+					return nil, err
+				}
+			}
 			for i := range page.Items {
 				at, known := times[page.Items[i].Key]
 				if known && !at.IsZero() && s.visible(ctx, v, &page.Items[i]) {
+					if filterPlayed && (states[page.Items[i].Key].ViewCount > 0) != playedOnly {
+						continue
+					}
 					value := at
 					result = append(result, frontend.LatestItem{Title: page.Items[i], AddedAt: &value})
 					found++

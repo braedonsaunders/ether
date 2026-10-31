@@ -5,6 +5,24 @@ import (
 	"time"
 )
 
+type latestPlayedFilterKey struct{}
+
+// WithLatestPlayed records the Latest IsPlayed filter. False keeps only
+// unplayed items. Jellyfin and Emby both do that when the query omits
+// IsPlayed and the user still has the default HidePlayedInLatest setting.
+func WithLatestPlayed(ctx context.Context, played bool) context.Context {
+	return context.WithValue(ctx, latestPlayedFilterKey{}, played)
+}
+
+// LatestPlayedFilter reports whether Latest should filter on played state.
+func LatestPlayedFilter(ctx context.Context) (played bool, ok bool) {
+	if ctx == nil {
+		return false, false
+	}
+	played, ok = ctx.Value(latestPlayedFilterKey{}).(bool)
+	return played, ok
+}
+
 // LatestItem carries date added. For a grouped series that is the latest
 // aired episode. Nil means unknown. It is not a catalogue insertion time.
 type LatestItem struct {

@@ -404,46 +404,27 @@ func (a *App) build(ctx context.Context, cfg config.Config) error {
 	return nil
 }
 
-// prewarmBrowse fills the catalog, statement and title caches before the first
-// viewer request. It does not block startup and a request during the warm-up
-// still reads the same data.
+// prewarmBrowse fills the catalog and statement caches before the first viewer
+// request. It stays on local reads: episode expansion can fetch seasons and
+// take the write lock, and a request in flight must not wait for that.
 func (a *App) prewarmBrowse(ctx context.Context) {
 	if a == nil || a.catalog == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			movies, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortAdded, Desc: true, Limit: 16, Filter: core.Filter{Type: core.TypeMovie, KnownAddedDate: true}})
-			shows, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortTitle, Limit: 16, Filter: core.Filter{Type: core.TypeShow}})
-			keys := make([]core.RatingKey, 0, len(movies.Items)+len(shows.Items))
-			var show core.RatingKey
-			for _, title := range movies.Items {
-				keys = append(keys, title.Key)
-			}
-			for _, title := range shows.Items {
-				keys = append(keys, title.Key)
-				if show == 0 && title.Type == core.TypeShow {
-					show = title.Key
-				}
-			}
-			if show != 0 {
-				if episodes, err := a.catalog.Grandchildren(ctx, show); err == nil {
-					for _, episode := range episodes {
-						keys = append(keys, episode.Key)
-					}
-				}
-			}
-			if len(keys) > 0 {
-				_, _ = a.catalog.CachedGetMany(ctx, keys)
-			}
-		}()
+	movies, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortAdded, Desc: true, Limit: 16, Filter: core.Filter{Type: core.TypeMovie, KnownAddedDate: true}})
+	shows, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortTitle, Limit: 16, Filter: core.Filter{Type: core.TypeShow}})
+	keys := make([]core.RatingKey, 0, len(movies.Items)+len(shows.Items))
+	for _, title := range movies.Items {
+		keys = append(keys, title.Key)
 	}
-	wg.Wait()
+	for _, title := range shows.Items {
+		keys = append(keys, title.Key)
+	}
+	if len(keys) > 0 {
+		_, _ = a.catalog.CachedGetMany(ctx, keys)
+	}
 }
 
 // applyConfig pushes an edited config into the running components.

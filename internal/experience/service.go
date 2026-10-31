@@ -85,6 +85,12 @@ type ServiceDeps struct {
 
 type Service struct{ d ServiceDeps }
 
+// pageUserData reads watch progress, favorites, not-interested and watchlist
+// membership for one page in a single query.
+type pageUserData interface {
+	PageUserData(context.Context, int64, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
+}
+
 func NewService(d ServiceDeps) (*Service, error) {
 	if d.Active == nil || d.Get == nil || d.Children == nil || d.State == nil || d.Rows == nil || d.Protocol == "" || d.Visibility.GetTitle == nil || d.Visibility.SectionFor == nil || d.Search.Catalog == nil {
 		return nil, errors.New("experience: incomplete service dependencies")
@@ -842,6 +848,18 @@ func (s *Service) UserData(ctx context.Context, viewer *core.Viewer, keys []core
 				allowed = append(allowed, key)
 			}
 		}
+	}
+	if facts, ok := s.d.State.(pageUserData); ok {
+		data, err := facts.PageUserData(ctx, v.ID, allowed)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range allowed {
+			status := data[key]
+			status.Key = key
+			data[key] = status
+		}
+		return data, nil
 	}
 	data, err := s.d.State.GetMany(ctx, v.ID, allowed)
 	if err != nil {
