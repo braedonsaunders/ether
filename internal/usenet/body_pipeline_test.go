@@ -440,7 +440,9 @@ func TestBodyRecoveryPersistentTruncationIsBounded(t *testing.T) {
 	s := nntptest.Start(t, nntptest.Options{})
 	addSeg(t, s, "bad@test", bytes.Repeat([]byte("bad"), 4096))
 	s.SetFault(func(cmd, id string) nntptest.Fault { return nntptest.Fault{Truncate: cmd == "BODY"} })
-	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 4)}, Options{FailThreshold: 1, BackoffMin: 20 * time.Millisecond, BackoffMax: 20 * time.Millisecond})
+	// One socket and a single retry: the first BODY opens the breaker, the
+	// retry observes backoff, and recovery then uses its fixed pass budget.
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 1)}, Options{FailThreshold: 1, BackoffMin: 20 * time.Millisecond, BackoffMax: 20 * time.Millisecond, Retries: 1})
 	started := time.Now()
 	_, err := f.Body(context.Background(), "bad@test", nil, core.PriorityLive)
 	if err == nil || errors.Is(err, core.ErrArticleMissing) {
@@ -449,7 +451,11 @@ func TestBodyRecoveryPersistentTruncationIsBounded(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 2500*time.Millisecond {
 		t.Fatalf("unbounded recovery %s", elapsed)
 	}
-	if requests := s.BodyRequests("bad@test"); requests < 2 || requests > 9 {
+	// The opening BODY trips the breaker. Recovery then allows eight passes
+	// (see Fetcher.each), so a persistent truncation is exactly nine BODY
+	// commands and finishes inside the recovery deadline.
+	requests := s.BodyRequests("bad@test")
+	if requests != 9 {
 		t.Fatalf("recovery request bound: %d", requests)
 	}
 }
