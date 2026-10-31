@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
+	"github.com/braedonsaunders/ether/internal/core"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -435,6 +436,53 @@ func TestPlaybackCapacityProblem(t *testing.T) {
 	playbackError(w, &frontend.TranscodeCapacityError{RetryAfter: 1500 * time.Millisecond})
 	if w.Code != 503 || w.Header().Get("Retry-After") != "2" || w.Header().Get("Content-Type") != "application/problem+json" || !strings.Contains(w.Body.String(), "transcode_capacity") {
 		t.Fatalf("capacity %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestOnNowChannelStartsLivePlayback(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	channelID, err := ids.StringGUID(ids.Channel, "news")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tuned string
+	var format frontend.StreamFormat
+	sessions := frontendtest.Sessions{
+		PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
+			if r.Item != 0 || r.Channel != "news" || r.Protocol != "silo" || r.Intent.AllowTranscoding == nil || !*r.Intent.AllowTranscoding {
+				t.Fatal(r.Item, r.Channel, r.Protocol, r.Intent.AllowTranscoding)
+			}
+			tuned = r.Channel
+			return frontend.PlayPlan{ID: "plan", Decision: core.Decision{Kind: core.DecisionRemux}, Media: core.MediaInfo{Container: "mpegts", Estimated: true}}, nil
+		},
+		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			return frontend.Session{ID: "session"}, nil
+		},
+		StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, _ string, r frontend.StreamRequest) (string, error) {
+			format = r.Format
+			return "/sessions/media/session/grant/live/index.m3u8", nil
+		},
+	}
+	live := frontendtest.LiveTV{ResolveChannelFunc: func(_ context.Context, v *frontend.Viewer, id string) (frontend.LiveChannel, error) {
+		if v != viewer || id != channelID {
+			t.Fatal(v, id)
+		}
+		return frontend.LiveChannel{ID: "news", Name: "News", Number: "2"}, nil
+	}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{
+		Identity: testDeviceIdentity(frontendtest.Identity{}, viewer), Sessions: sessions, LiveTV: live, Capabilities: frontendtest.Capabilities{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"protocol_version":3,"file_id":"` + channelID + `","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt","start_position":12}`
+	r := httptest.NewRequest("POST", "/api/v2/playback/start", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer grant")
+	r.Header.Set("X-Silo-Device-Id", "tv")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 201 || tuned != "news" || format != frontend.StreamHLS || !strings.Contains(w.Body.String(), `/api/v2/playback/transcode/session/master.m3u8`) || !strings.Contains(w.Body.String(), `"delivery":"server_remux_hls"`) || !strings.Contains(w.Body.String(), `"can_seek_anywhere":false`) {
+		t.Fatal(w.Code, tuned, format, w.Body.String())
 	}
 }
 

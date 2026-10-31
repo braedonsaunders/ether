@@ -13,6 +13,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/quality"
 )
 
@@ -85,19 +86,31 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
-	if i.host.SourceOffers == nil {
-		i.versionUnavailable(w, errors.New("source offers are not configured"), "source offers")
+	// A channel GUID is the On Now card's play_content_id. It tunes through
+	// the same live session as Jellyfin and Plex instead of a catalogue file.
+	channel, liveFile, err := i.resolveLiveFile(r, v, b.FileID)
+	if err != nil {
+		http.NotFound(w, r)
 		return
 	}
-	offer, err := i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
-	if err != nil || offer.Target.Item == 0 || (offer.Target.VersionHandle == "") == (offer.Target.DetailSource == "") {
-		if err == nil {
-			err = fmt.Errorf("offer %q item %d version %q detail %q", b.FileID, offer.Target.Item, offer.Target.VersionHandle, offer.Target.DetailSource)
+	var offer frontend.SourceOffer
+	var key frontend.RatingKey
+	versionHandle := ""
+	if !liveFile {
+		if i.host.SourceOffers == nil {
+			i.versionUnavailable(w, errors.New("source offers are not configured"), "source offers")
+			return
 		}
-		i.versionUnavailable(w, err, "resolve source offer")
-		return
+		offer, err = i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
+		if err != nil || offer.Target.Item == 0 || (offer.Target.VersionHandle == "") == (offer.Target.DetailSource == "") {
+			if err == nil {
+				err = fmt.Errorf("offer %q item %d version %q detail %q", b.FileID, offer.Target.Item, offer.Target.VersionHandle, offer.Target.DetailSource)
+			}
+			i.versionUnavailable(w, err, "resolve source offer")
+			return
+		}
+		key, versionHandle = offer.Target.Item, offer.Target.VersionHandle
 	}
-	key, versionHandle := offer.Target.Item, offer.Target.VersionHandle
 	planner, hasDetailPlanner := i.host.Sessions.(frontend.DetailPlanner)
 	if (versionHandle != "" && i.host.VersionHandles == nil) || (offer.Target.DetailSource != "" && (!hasDetailPlanner || offer.Target.ETag == "")) {
 		i.versionUnavailable(w, fmt.Errorf("version %q detail %q etag %q planner %v", versionHandle, offer.Target.DetailSource, offer.Target.ETag, hasDetailPlanner), "version handle")
@@ -110,7 +123,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		h, ok := b.Context.Deliveries["hls"]
 		hls = ok && h.Enabled && h.Supported
 	}
-	if !direct && !hls {
+	if !direct && !hls || (liveFile && !hls) {
 		http.Error(w, "Playback unavailable", 422)
 		return
 	}
@@ -120,8 +133,13 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pos := time.Duration(b.Position * float64(time.Second))
-	pos = i.skipIntroAtStart(r, v, scope, key, versionHandle, pos)
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, DetailSource: offer.Target.DetailSource, ExpectedSourceETag: offer.Target.ETag, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
+	if liveFile {
+		// The live edge is the only start. A file position would seek a tuner.
+		pos = 0
+	} else {
+		pos = i.skipIntroAtStart(r, v, scope, key, versionHandle, pos)
+	}
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Channel: channel, Version: versionHandle, DetailSource: offer.Target.DetailSource, ExpectedSourceETag: offer.Target.ETag, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
 		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
 			i.versionUnavailable(w, err, "plan")
@@ -141,6 +159,9 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	access := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "silo"}
 	matchOffer := func() error {
+		if liveFile {
+			return nil
+		}
 		current, err := i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
 		if err != nil {
 			return err
@@ -163,10 +184,10 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	delivery := "original_http"
 	proto := "http_progressive"
 	mime := "video/" + plan.Media.Container
-	if plan.Decision.Kind != "directplay" {
+	if liveFile || plan.Decision.Kind != "directplay" {
 		format = frontend.StreamHLS
 		delivery = "server_transcode_hls"
-		if plan.Decision.Kind == "copy" {
+		if liveFile || plan.Decision.Kind == "copy" {
 			delivery = "server_remux_hls"
 		}
 		proto = "hls"
@@ -348,6 +369,13 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		timeline["player_start_seconds"] = 0
 		timeline["timeline_offset_seconds"] = b.Position
 	}
+	if liveFile {
+		timeline["source_start_seconds"] = float64(0)
+		timeline["stream_origin_seconds"] = float64(0)
+		timeline["player_start_seconds"] = float64(0)
+		timeline["timeline_offset_seconds"] = float64(0)
+		timeline["can_seek_anywhere"] = false
+	}
 	audioClaim := map[string]any{"passthrough": false, "atmos_preserved": false}
 	if plan.Decision.AudioCodec != "" {
 		audioClaim["codec"] = plan.Decision.AudioCodec
@@ -372,6 +400,26 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 // siloMediaURL is the only stream address the Apple TV client will play.
 // Direct play is the session itself. HLS, including remux and transcode, is
 // the session master. A grant in the path is rejected before the request.
+// resolveLiveFile maps an On Now play_content_id to the neutral channel id.
+// Any other file id is a catalogue offer. A channel id the viewer cannot
+// tune is not a catalogue miss.
+func (i *instance) resolveLiveFile(r *http.Request, v *frontend.Viewer, fileID string) (string, bool, error) {
+	if _, err := ids.ParseGUID(ids.Channel, fileID); err != nil {
+		return "", false, nil
+	}
+	if i.host.LiveTV == nil {
+		return "", false, frontend.ErrNotFound
+	}
+	ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, fileID)
+	if err != nil || ch.ID == "" {
+		if err == nil {
+			err = frontend.ErrNotFound
+		}
+		return "", false, err
+	}
+	return ch.ID, true, nil
+}
+
 func siloMediaURL(sessionID string, format frontend.StreamFormat) string {
 	if format == frontend.StreamHLS {
 		return "/api/v2/playback/transcode/" + sessionID + "/master.m3u8"

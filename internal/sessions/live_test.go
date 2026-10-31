@@ -77,3 +77,36 @@ func TestLiveChannelEstimateOpenAndScopedMedia(t *testing.T) {
 		t.Fatal("owner stop did not close live stream")
 	}
 }
+
+func TestSiloLiveMasterRewritesToThePublicPlaylist(t *testing.T) {
+	ctx := context.Background()
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	b, err := NewBroker(BrokerDeps{Live: &fakeLive{}, Events: events, Playback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	viewer, device := &core.Viewer{ID: 2}, core.Device{ID: "tv"}
+	plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "silo", Channel: "channel", Intent: frontend.PlayIntent{ClientSessionID: "11111111-1111-4111-8111-111111111111"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "silo", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: "silo"}
+	if _, err = b.StartStream(ctx, access, s.ID, frontend.StreamRequest{Format: frontend.StreamHLS}); err != nil {
+		t.Fatal(err)
+	}
+	out := httptest.NewRecorder()
+	b.ServeSessionMedia(out, httptest.NewRequest(http.MethodGet, "/api/v2/playback/transcode/"+s.ID+"/master.m3u8", nil), access, s.ID, "master.m3u8")
+	want := "/api/v2/playback/transcode/" + s.ID + "/live/index.m3u8"
+	if out.Code != 200 || !strings.Contains(out.Body.String(), want) || strings.Contains(out.Body.String(), "/sessions/media/") {
+		t.Fatalf("master %d %s", out.Code, out.Body.String())
+	}
+}

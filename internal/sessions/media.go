@@ -264,19 +264,35 @@ func (b *Broker) ServeSessionMedia(w http.ResponseWriter, r *http.Request, a fro
 	b.mu.Lock()
 	live := b.sessions[sessionID]
 	grant := ""
+	tuned := false
 	if live != nil {
 		grant = live.grant
+		tuned = live.live
 	}
 	b.mu.Unlock()
 	if grant == "" {
 		http.NotFound(w, r)
 		return
 	}
+	resourcePath := resource
+	liveBase := ""
+	// Silo plays the session master. A live tune's playlist and segments stay
+	// under that same public prefix so the client never sees the media grant.
+	if tuned && a.Protocol == "silo" {
+		liveBase = "/api/v2/playback/transcode/" + sessionID + "/live/"
+		if resource == "master.m3u8" {
+			resourcePath = "live/index.m3u8"
+		}
+	}
 	forward := r.Clone(r.Context())
 	u := *r.URL
-	u.Path = "/sessions/media/" + sessionID + "/" + grant + "/" + resource
+	u.Path = "/sessions/media/" + sessionID + "/" + grant + "/" + resourcePath
 	u.RawPath = ""
 	forward.URL = &u
+	if liveBase != "" {
+		b.serveMediaAt(a.Protocol, &a, w, forward, liveBase)
+		return
+	}
 	b.ServeMediaAccess(w, forward, a)
 }
 
