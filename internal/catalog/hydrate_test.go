@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -273,5 +274,39 @@ func TestReadWaitBudgetBoundsARequest(t *testing.T) {
 	}
 	if d := time.Since(start); d > 900*time.Millisecond {
 		t.Fatalf("four titles waited %s in all, want about the 500ms budget", d)
+	}
+}
+
+// Movies sorted by date added come back in release order (date added is the
+// release date), ties broken by key, with unreleased movies left out.
+func TestMovieAddedSortIsReleaseOrder(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	c, err := New(db, nil, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := []time.Time{now.AddDate(-1, 0, 0), now.AddDate(0, -2, 0), now.AddDate(0, -2, 0), now.AddDate(-3, 0, 0), now.AddDate(0, 1, 0)}
+	for i, r := range released {
+		key := core.MovieKey(int64(i + 1))
+		if err := c.UpsertTitle(ctx, core.Title{Key: key, Type: core.TypeMovie, IDs: core.IDs{TMDB: key.TMDB()}, Title: "M", Released: r, Popularity: 50, VoteCount: 1000}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET browsable=1`); err != nil {
+		t.Fatal(err)
+	}
+	page, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortAdded, Desc: true, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []core.RatingKey
+	for _, item := range page.Items {
+		got = append(got, item.Key)
+	}
+	want := []core.RatingKey{core.MovieKey(2), core.MovieKey(3), core.MovieKey(1), core.MovieKey(4)}
+	if fmt.Sprint(got) != fmt.Sprint(want) || page.Total != 4 {
+		t.Fatalf("added order = %v (total %d), want %v", got, page.Total, want)
 	}
 }

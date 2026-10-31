@@ -81,7 +81,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	order := browseOrder(q)
 	orderArgs := []any{}
 	asOf := c.now()
-	if q.Sort == core.SortAdded {
+	if q.Sort == core.SortAdded && q.Filter.Type != core.TypeMovie {
 		dir := "ASC"
 		if q.Desc {
 			dir = "DESC"
@@ -89,6 +89,10 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		order = airAddedSQL + " " + dir
 		orderArgs = airAddedArgs(asOf)
 	}
+	// A movie's date added is its release date, and browseWhere keeps only
+	// movies released by now, so browseOrder's t.released_ts gives the same
+	// order from the (type, browsable, released_ts) index instead of a
+	// computed expression sorted over the whole library.
 	query := `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t WHERE ` + where + ` ORDER BY ` + order + `, t.key ASC LIMIT ? OFFSET ?`
 	queryArgs := append(append([]any{}, args...), orderArgs...)
 	items, err := c.queryTitles(ctx, query, append(queryArgs, limit, offset)...)
