@@ -46,7 +46,7 @@ func TestMediaStreamUsesReportedDispositions(t *testing.T) {
 
 func TestStreamCapacityResponseIncludesRetryDelay(t *testing.T) {
 	w := httptest.NewRecorder()
-	streamError(w, &frontend.TranscodeCapacityError{RetryAfter: 1500 * time.Millisecond})
+	streamError("jellyfin", w, &frontend.TranscodeCapacityError{RetryAfter: 1500 * time.Millisecond})
 	if w.Code != 503 || w.Header().Get("Retry-After") != "2" {
 		t.Fatal(w.Code, w.Header())
 	}

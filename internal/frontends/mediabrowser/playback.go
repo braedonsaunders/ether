@@ -34,7 +34,17 @@ func boolValue(p *bool, def bool) bool {
 	return *p
 }
 
-func streamError(w http.ResponseWriter, err error) {
+func streamError(protocol frontend.Protocol, w http.ResponseWriter, err error) {
+	if errors.Is(err, frontend.ErrNotFound) || errors.Is(err, frontend.ErrNotAvailable) || errors.Is(err, frontend.ErrSourceGone) {
+		if protocol == "jellyfin" {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, "Error processing request.")
+			return
+		}
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
 	var capacity *frontend.TranscodeCapacityError
 	var busy *frontend.SessionBusyError
 	var retryAfter time.Duration
@@ -290,7 +300,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
 		if err != nil {
 			_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID)
-			streamError(w, err)
+			streamError(i.protocol, w, err)
 			return
 		}
 		scopedURL := url
@@ -829,7 +839,7 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	url, err := i.host.Sessions.StartStream(r.Context(), access, sessionID, frontend.StreamRequest{Format: format})
 	if err != nil {
-		streamError(w, err)
+		streamError(i.protocol, w, err)
 		return
 	}
 	if !strings.HasPrefix(url, "/sessions/media/") || strings.ContainsAny(url, "\r\n") {

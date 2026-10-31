@@ -24,7 +24,7 @@ func (b *Broker) rememberRetiredLocked(s *brokerSession) {
 			break
 		}
 	}
-	b.retired[s.public.ID] = retiredSession{viewerID: s.public.ViewerID, protocol: s.public.Protocol, deviceID: s.public.Device.ID, until: now.Add(2 * time.Hour)}
+	b.retired[s.public.ID] = retiredSession{viewerID: s.public.ViewerID, protocol: s.public.Protocol, deviceID: s.public.Device.ID, item: s.public.Item, until: now.Add(2 * time.Hour)}
 }
 
 // collectSupersededLocked keeps one active playback for a viewer, surface and
@@ -98,7 +98,7 @@ func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession,
 
 // retiredAccess keeps late reports harmless while preserving viewer/device
 // authorization for the short-lived supersession history.
-func (b *Broker) retiredAccess(ctx context.Context, a frontend.SessionAccess, id string) (bool, error) {
+func (b *Broker) retiredAccess(ctx context.Context, a frontend.SessionAccess, id string) (core.RatingKey, bool, error) {
 	b.mu.Lock()
 	r, ok := b.retired[id]
 	if ok && !r.until.After(b.deps.Now()) {
@@ -107,18 +107,18 @@ func (b *Broker) retiredAccess(ctx context.Context, a frontend.SessionAccess, id
 	}
 	b.mu.Unlock()
 	if !ok {
-		return false, nil
+		return 0, false, nil
 	}
 	v, err := b.viewer(ctx, a.Viewer)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	owner := a.Owner && v.IsOwner && !v.Delegated
 	if a.Owner && !owner {
-		return false, core.ErrUnauthorized
+		return 0, false, core.ErrUnauthorized
 	}
 	if !owner && (v.ID != r.viewerID || a.Protocol != r.protocol || a.Device.ID == "" || a.Device.ID != r.deviceID) {
-		return false, core.ErrUnauthorized
+		return 0, false, core.ErrUnauthorized
 	}
-	return true, nil
+	return r.item, true, nil
 }

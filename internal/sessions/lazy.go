@@ -508,20 +508,12 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reserved = true
 		plan, err := s.broker.Plan(ctx, req)
 		if err != nil {
-			if errors.Is(err, frontend.ErrSourceGone) {
-				s.sourceGone(w, r)
-				return
-			}
-			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+			s.writePlaybackError(w, r, err)
 			return
 		}
 		session, err := s.broker.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: req.Device, Protocol: s.protocol, PlanID: plan.ID})
 		if err != nil {
-			if errors.Is(err, frontend.ErrSourceGone) {
-				s.sourceGone(w, r)
-				return
-			}
-			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+			s.writePlaybackError(w, r, err)
 			return
 		}
 		id = session.ID
@@ -560,28 +552,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			delete(s.broker.lazySessions, binding)
 			s.broker.mu.Unlock()
 		}
-		if errors.Is(err, frontend.ErrSourceGone) {
-			s.sourceGone(w, r)
-			return
-		}
-		if stored.HLS != nil {
-			var capacity *frontend.TranscodeCapacityError
-			var busy *frontend.SessionBusyError
-			var retry time.Duration
-			if errors.As(err, &capacity) {
-				retry = capacity.RetryAfter
-			} else if errors.As(err, &busy) {
-				retry = busy.RetryAfter
-			}
-			if retry > 0 {
-				seconds := int64(retry / time.Second)
-				if retry%time.Second != 0 {
-					seconds++
-				}
-				w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
-			}
-		}
-		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+		s.writePlaybackError(w, r, err)
 		return
 	}
 	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil || s.renewActiveBinding(ctx, hash, binding, reference, viewerID, id) != nil {
@@ -670,6 +641,32 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *lazyStreams) sourceGone(w http.ResponseWriter, r *http.Request) {
 	serveSourceGone(s.protocol, w, r)
+}
+
+// writePlaybackError answers a static open. A missing file is Jellyfin's
+// 404. Only a full encoder or admission slot stays 503, with Retry-After
+// when the broker named a delay.
+func (s *lazyStreams) writePlaybackError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrNotAvailable) || errors.Is(err, frontend.ErrSourceGone) {
+		s.sourceGone(w, r)
+		return
+	}
+	var capacity *frontend.TranscodeCapacityError
+	var busy *frontend.SessionBusyError
+	var retry time.Duration
+	if errors.As(err, &capacity) && capacity != nil {
+		retry = capacity.RetryAfter
+	} else if errors.As(err, &busy) && busy != nil {
+		retry = busy.RetryAfter
+	}
+	if retry > 0 {
+		seconds := int64(retry / time.Second)
+		if retry%time.Second != 0 {
+			seconds++
+		}
+		w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+	}
+	http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 }
 func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.Request) {
 	if protocol == "jellyfin" {

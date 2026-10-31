@@ -50,6 +50,7 @@ type remoteRetired struct {
 	ViewerID int64
 	Protocol frontend.Protocol
 	DeviceID string
+	Item     core.RatingKey
 }
 
 func startBrokerCluster(b *Broker, db *sql.DB, node clusterbus.Node) (*brokerCluster, error) {
@@ -192,7 +193,7 @@ func (c *brokerCluster) reconcile() {
 }
 
 func (c *brokerCluster) announceRetired(ctx context.Context, s *brokerSession) {
-	data, err := json.Marshal(remoteRetired{ID: s.public.ID, ViewerID: s.public.ViewerID, Protocol: s.public.Protocol, DeviceID: s.public.Device.ID})
+	data, err := json.Marshal(remoteRetired{ID: s.public.ID, ViewerID: s.public.ViewerID, Protocol: s.public.Protocol, DeviceID: s.public.Device.ID, Item: s.public.Item})
 	if err == nil {
 		err = c.node.Publish(ctx, brokerRetireTopic, data)
 	}
@@ -213,7 +214,7 @@ func (c *brokerCluster) receiveRetired(data []byte) {
 			break
 		}
 	}
-	c.broker.retired[r.ID] = retiredSession{viewerID: r.ViewerID, protocol: r.Protocol, deviceID: r.DeviceID, until: c.broker.deps.Now().Add(2 * time.Hour)}
+	c.broker.retired[r.ID] = retiredSession{viewerID: r.ViewerID, protocol: r.Protocol, deviceID: r.DeviceID, item: r.Item, until: c.broker.deps.Now().Add(2 * time.Hour)}
 }
 
 func (c *brokerCluster) forwardReport(ctx context.Context, a frontend.SessionAccess, id string, timeline frontend.Timeline) error {

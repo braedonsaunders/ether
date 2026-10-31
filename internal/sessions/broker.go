@@ -130,6 +130,7 @@ type retiredSession struct {
 	viewerID int64
 	protocol frontend.Protocol
 	deviceID string
+	item     core.RatingKey
 	until    time.Time
 }
 
@@ -944,11 +945,19 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
 	s, v, err := b.accessSession(ctx, a, id, t.State != "stopped")
 	if errors.Is(err, core.ErrNotFound) {
-		retired, retiredErr := b.retiredAccess(ctx, a, id)
+		item, retired, retiredErr := b.retiredAccess(ctx, a, id)
 		if retiredErr != nil {
 			return retiredErr
 		}
 		if retired {
+			// Static playback opens a second session and retires the one
+			// PlaybackInfo minted. Infuse keeps reporting that first id.
+			// A bare stop still does not rewind a resume point.
+			if item != 0 && (a.Protocol == "jellyfin" || a.Protocol == "emby") && (t.Position > 0 || t.Duration > 0) {
+				if err := b.recordItemTimeline(ctx, a, id, item, t); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 	}
@@ -1072,6 +1081,30 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		return b.stopLocked(ctx, s)
 	}
 	b.ensureTrickplay(ctx, s, t.Position)
+	return nil
+}
+
+// recordItemTimeline writes a Jellyfin or Emby watch update without stopping
+// the playback that replaced this session.
+func (b *Broker) recordItemTimeline(ctx context.Context, a frontend.SessionAccess, sessionID string, item core.RatingKey, t frontend.Timeline) error {
+	viewer, err := b.viewer(ctx, a.Viewer)
+	if err != nil || viewer == nil {
+		return core.ErrUnauthorized
+	}
+	origin := t.PlaybackID
+	if origin == "" {
+		origin = sessionID
+	}
+	ctx = state.WithOrigin(ctx, state.Origin{Surface: a.Protocol, SessionID: origin, ClientID: a.Device.ID})
+	if err := RecordProgress(ctx, b.deps.Progress, viewer.ID, item, t.Position, t.Duration, t.State); err != nil {
+		return err
+	}
+	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
+		progress.PlaybackProgress(viewer.ID, a.Device.ID, item, t.Position, t.State)
+	}
+	if b.deps.OnTimeline != nil {
+		b.deps.OnTimeline(viewer, item, t.Position, t.Duration, t.State)
+	}
 	return nil
 }
 
