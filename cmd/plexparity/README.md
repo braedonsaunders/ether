@@ -114,13 +114,21 @@ disagrees with Auto's estimate, Auto's media title follows the probe
 SD file; the downgrade trace is unchanged. This note does not allowlist any
 response.
 
-Scrobble: `PUT/GET /:/scrobble` and `/:/unscrobble` return an empty
-MediaContainer. Timeline entries set `metadataState` to `created`. A movie's
-`rootItemID` is its own rating key so the open detail refreshes; an episode
-still names its season and show. This note does not allowlist any response.
+Scrobble and watch refresh (`23d9fffb2`, #6): 129 pairs in each world,
+including the four Infuse unscrobble resets. `PUT` and `GET` `/:/scrobble`
+and `/:/unscrobble` return an empty MediaContainer (`size="0"`) instead of
+an empty 200. That is the PMS container for this call: the same encoder
+already used for the other empty library replies, with a content type.
+An empty body has no content type, and tvOS treats that PUT as a failure.
+Timeline eventsource and websocket entries set `metadataState` to `created`.
+A movie's `rootItemID` is its own rating key, which is how PMS refreshes the
+open detail; an episode still names its season and show. The harness
+approves a difference only as an exact response pair (`approved_*.json`).
+This note does not allowlist a route.
 
-Movie intros: a movie intro that starts at the head of the file and ends
-within 90 seconds is not offered. TheIntroDB's row for The Matrix is one
-submission from the start to 40 seconds, and Plex showed Skip Intro at 0:23.
-An intro that starts later, and episode intros, are unchanged. This note
-does not allowlist any response.
+Movie intros (`766c16dcd`): a movie intro that starts at the head of the file
+(within one second) and ends within 90 seconds is not offered as Skip Intro.
+TheIntroDB's row for The Matrix is one submission from the start to 40
+seconds; that range is a studio card, not a title sequence. An intro that
+starts later, and every episode intro, stays. This note does not allowlist
+any response.
