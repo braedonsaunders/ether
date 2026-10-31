@@ -47,7 +47,7 @@ func (s *Server) handleParityWarmSettled(w http.ResponseWriter, r *http.Request)
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	if err := settle.ParitySettleWarm(r.Context(), pr.User, core.RatingKey(key), s.declaredCaps(pr)); err != nil {
+	if err := settle.ParitySettleWarm(r.Context(), pr.User, core.RatingKey(key), s.clientCaps(pr)); err != nil {
 		writeHTTPError(w, http.StatusServiceUnavailable)
 		return
 	}
@@ -74,7 +74,9 @@ func (s *Server) handleParityWarmProbe(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	caps := s.declaredCaps(pr)
+	// clientCaps, not the registry helper: this file is copied onto the
+	// parity baseline, which only has clientCaps.
+	caps := s.clientCaps(pr)
 	for _, raw := range keys {
 		key, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || key <= 0 {
