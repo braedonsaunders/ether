@@ -614,24 +614,31 @@ func TestThrottlePausesAndResumes(t *testing.T) {
 	p := fr.lastProc()
 	waitFor(t, "pause", p.isPaused)
 	s.mu.Lock()
-	ahead := s.cur.maxDone
+	// A pause that does not hold is stopped and remembered at resumeAt,
+	// which clears the current run. Reading s.cur unconditionally panics.
+	frontier := s.resumeAt
+	if s.cur != nil {
+		frontier = s.cur.maxDone
+	}
 	s.mu.Unlock()
 	// The upper bound depends on how far the poller lagged ffmpeg.
-	if ahead < 4 {
-		t.Errorf("paused at segment %d", ahead)
+	if frontier < 4 {
+		t.Errorf("paused at segment %d", frontier)
 	}
-	// Player caught up with the paused encoder. Under load the poller can
-	// see ffmpeg pause well past the limit (and one more segment may land
-	// after the pause), so request the paused frontier itself rather than
-	// a fixed segment that may still be more than limit/2 behind it.
-	if r := get(t, s, ahead); r.Code != 200 {
-		t.Fatal(r.Code)
+	// Catch the player up one segment at a time. A single fetch of the
+	// paused frontier is farther than restartLimit from the playhead, so
+	// it is the encoder head: the playhead stays put and throttle never
+	// resumes.
+	for n := 0; n <= frontier; n++ {
+		if r := get(t, s, n); r.Code != 200 {
+			t.Fatalf("segment %d: %d", n, r.Code)
+		}
 	}
 	// ffmpeg resumed and produces more.
 	waitFor(t, "progress past pause", func() bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		return s.cur != nil && s.cur.maxDone > ahead
+		return s.cur != nil && s.cur.maxDone > frontier
 	})
 }
 
