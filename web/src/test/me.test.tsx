@@ -68,6 +68,7 @@ it("uses a separate portal credential to approve a device", async () => {
   fireEvent.change(code, { target: { value: "abc-123" } });
   expect(await screen.findByRole("heading", { name: "Device approved" })).toBeInTheDocument();
   expect(screen.getByText("Jellyfin on Living Room")).toBeInTheDocument();
+  expect(document.querySelector("svg.ether-approve-pop")).toHaveClass("h-40", "w-40");
   const [, options] = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/quickconnect"))!;
   expect((options?.headers as Record<string, string>)["X-Ether-Request"]).toBe("1");
   expect((options?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");

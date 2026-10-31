@@ -2,7 +2,6 @@ package admin_test
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ func (f *fakeNotInterestedPortal) RestoreNotInterested(_ context.Context, u *cor
 	f.restored = handle == "opaque"
 	return f.restored, nil
 }
-func TestNotInterestedPortalAuthorizationAndHiddenEntries(t *testing.T) {
+func TestPortalHiddenAndPushRoutesAreGone(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
 	users, err := auth.New(ctx, db, auth.Options{})
@@ -48,30 +47,16 @@ func TestNotInterestedPortalAuthorizationAndHiddenEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fake := &fakeNotInterestedPortal{}
-	h := admin.New(admin.Deps{Config: newStore(t, nil), IdentityGrants: grants, NotInterested: fake})
-	r := req("GET", "/ether/api/me/not-interested", "")
-	r.Header.Set("Authorization", "Bearer "+token)
-	res := serve(h, r)
-	var got struct {
-		Items []map[string]any `json:"items"`
-	}
-	if res.Code != 200 || json.Unmarshal(res.Body.Bytes(), &got) != nil || len(got.Items) != 1 || len(got.Items[0]) != 1 || fake.viewer != id {
-		t.Fatalf("hidden response %d %s", res.Code, res.Body.String())
-	}
-	r = req("POST", "/ether/api/me/not-interested/restore", `{"handle":"opaque"}`)
-	r.Header.Set("Authorization", "Bearer "+token)
-	r.Header.Del("X-Ether-Request")
-	if res = serve(h, r); res.Code != 403 || fake.restored {
-		t.Fatalf("csrf %d", res.Code)
-	}
-	r.Header.Set("X-Ether-Request", "1")
-	if res = serve(h, r); res.Code != 200 || !fake.restored {
-		t.Fatalf("restore %d %s", res.Code, res.Body.String())
-	}
-	r = req("GET", "/ether/api/me/not-interested", "")
-	if res = serve(h, r); res.Code != 401 {
-		t.Fatalf("unauthenticated %d", res.Code)
+	h := admin.New(admin.Deps{Config: newStore(t, nil), IdentityGrants: grants, NotInterested: &fakeNotInterestedPortal{}})
+	for _, path := range []string{
+		"/ether/api/me/not-interested",
+		"/ether/api/me/alerts/push/key",
+	} {
+		r := req("GET", path, "")
+		r.Header.Set("Authorization", "Bearer "+token)
+		if res := serve(h, r); res.Code != 404 {
+			t.Fatalf("%s %d", path, res.Code)
+		}
 	}
 }
 

@@ -396,21 +396,31 @@ export default function Me() {
           )
         ) : viewer ? (
           approved ? (
-            <div role="status" className="space-y-4 text-center">
-              <div className="ether-approve-pop text-primary" aria-hidden="true">
-                <svg viewBox="0 0 80 80" className="mx-auto h-28 w-28">
-                  <circle cx="40" cy="40" r="36" className="fill-primary/15" />
+            <div role="status" className="space-y-5 text-center">
+              <div className="ether-approve text-primary" aria-hidden="true">
+                <span className="ether-approve-ring" />
+                <span className="ether-approve-burst">
+                  {Array.from({ length: 8 }, (_, i) => (
+                    <span key={i} style={{ ["--ether-burst" as string]: `${i * 45}deg` }} />
+                  ))}
+                </span>
+                <svg viewBox="0 0 160 160" className="ether-approve-pop h-40 w-40">
+                  <circle cx="80" cy="80" r="68" className="ether-approve-glow fill-primary/15" />
                   <path
-                    d="M24 42 l10 10 l22-24"
+                    d="M46 84 L72 110 L116 54"
                     className="ether-approve-check fill-none stroke-current"
-                    strokeWidth="5"
+                    strokeWidth="10"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
                 </svg>
               </div>
-              <h2 className="text-2xl font-semibold text-fg">{t("Device approved")}</h2>
-              {detail ? <p className="text-sm text-fg-muted">{detail}</p> : null}
+              <div className="space-y-2">
+                <h2 className="text-4xl font-semibold tracking-tight text-fg">
+                  {t("Device approved")}
+                </h2>
+                {detail ? <p className="text-lg text-fg">{detail}</p> : null}
+              </div>
               <Button
                 type="button"
                 variant="outline"

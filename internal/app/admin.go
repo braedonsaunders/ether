@@ -36,7 +36,6 @@ func (a *App) buildAdmin() http.Handler {
 		FavoritesMirror:  a.favorites,
 		NotInterested:    notInterestedPortal{a},
 		ViewerAlerts:     &notify.ViewerAlerts{DB: a.db, Active: a.users.ActiveUser},
-		ViewerPush:       a.viewerPush(),
 		ActiveViewer:     a.users.ActiveUser,
 		ViewerPortalURL:  a.frontends.viewerPortalURL,
 		StremioPortalURL: a.frontends.viewerPortalSecureURL,

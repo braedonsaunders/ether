@@ -104,7 +104,6 @@ type Deps struct {
 	FavoritesMirror      FavoritesMirror
 	NotInterested        NotInterestedPortal
 	ViewerAlerts         ViewerAlertPreferences
-	ViewerPush           ViewerPushService
 	ActiveViewer         func(context.Context, int64) (*core.User, error)
 	ViewerPortalURL      func(context.Context, *http.Request) (string, error)
 	StremioPortalURL     func(context.Context, *http.Request) (string, error)
@@ -297,7 +296,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) routes() *http.ServeMux {
 	mux := http.NewServeMux()
-	h.viewerPushRoutes(mux, h.deps.ViewerPush)
 	api := func(pattern string, fn http.HandlerFunc) {
 		mux.HandleFunc(pattern, h.requireAuth(fn))
 	}
@@ -310,8 +308,6 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/me", h.handleMe)
 	mux.HandleFunc("GET /api/me/favorite-episode-alert", h.portalFavoriteEpisodeAlert)
 	mux.HandleFunc("POST /api/me/favorite-episode-alert", h.portalFavoriteEpisodeAlert)
-	mux.HandleFunc("GET /api/me/not-interested", h.portalNotInterested)
-	mux.HandleFunc("POST /api/me/not-interested/restore", h.portalNotInterested)
 	mux.HandleFunc("GET /api/me/favorites-mirror", h.portalFavoritesMirror)
 	mux.HandleFunc("POST /api/me/favorites-mirror", h.portalFavoritesMirror)
 	mux.HandleFunc("GET /api/me/apps", h.portalConnectApps)

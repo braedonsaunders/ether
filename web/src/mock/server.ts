@@ -2931,9 +2931,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
             },
           ],
         });
-      if (sub === "not-interested" && method === "GET") return json({ items: [] });
       if (sub === "favorite-episode-alert") return json({ enabled: false });
-      if (sub === "alerts/push/key") return json({ publicKey: "" });
       if (method === "POST" && sub === "invite/redeem") return json({ token: "viewer-grant" });
       if (method === "POST" && sub === "password") return json({ ok: true });
       if (method === "POST" && sub === "devices/revoke") return json({ ok: true });
