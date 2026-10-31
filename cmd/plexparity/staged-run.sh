@@ -160,6 +160,13 @@ PYCODE
  # lab_media.go supplies readLabMedia/labReleaseID for the source fixture.
  # With no lab-media.json both trees keep the synthetic releases.
  cp "$root/harness/parity_runtime_default.go" "$root/harness/parity_runtime_fixture.go" "$root/harness/parity_source_default.go" "$root/harness/parity_source_fixture.go" "$root/harness/lab_media.go" "$root/$tree/internal/app/"
+ # Released main has no core.ProbeFactsVersion. Both parity trees share
+ # prism's current lab-media generation so the seam still compiles there.
+ python3 - "$root/$tree/internal/app/lab_media.go" <<'PYCODE'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+p.write_text(p.read_text().replace("core.ProbeFactsVersion", "2"))
+PYCODE
  cp "$root/harness/parity_wait_fixture.go" "$root/$tree/internal/personalize/"
  cp "$root/harness/parity_session_fixture.go" "$root/$tree/internal/livetv/"
  cp "$root/harness/parity_clock_fixture.go" "$root/$tree/internal/transcode/"
