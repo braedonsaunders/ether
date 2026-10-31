@@ -197,6 +197,11 @@ func TestOwnedSourceCleanupStaysPendingWhileResumeShares(t *testing.T) {
 	waitFor(t, func() bool { a, _ := sourceResponsibilities(h.m); return a == 0 })
 	requireOwnedPending(t, outcome)
 	requireSourceResponsibilities(t, h.m, 0, 1)
+	waitFor(t, func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return len(p.releasedAfter) == 1
+	})
 	repair()
 	if err := p.release(context.Background(), shared); err != nil {
 		t.Fatal(err)

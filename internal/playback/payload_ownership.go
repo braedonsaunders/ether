@@ -44,8 +44,10 @@ type payloadAnchor struct {
 	purpose    string
 	retiring   bool
 	// afterGone runs once the durable row is deleted. The last source ref
-	// registers here when a resume holder still shares the row.
+	// registers here when a resume holder still shares the row. goneIDs are
+	// the releasedAfter keys for those callbacks so shutdown still sees them.
 	afterGone []func()
+	goneIDs   []string
 }
 
 type payloadPark struct {
@@ -547,6 +549,13 @@ func (p *payloadStore) releaseOwned(ctx context.Context, o payloadOwner, forSour
 		if forSource && o.state.purpose == "source-open" && anchor.sourceRefs == 0 {
 			if onGone != nil {
 				anchor.afterGone = append(anchor.afterGone, onGone)
+				anchor.goneIDs = append(anchor.goneIDs, o.state.id)
+				p.mu.Lock()
+				if p.releasedAfter == nil {
+					p.releasedAfter = map[string]func(){}
+				}
+				p.releasedAfter[o.state.id] = onGone
+				p.mu.Unlock()
 			}
 			return errPayloadRetained
 		}
@@ -580,7 +589,13 @@ func (p *payloadStore) releaseOwned(ctx context.Context, o payloadOwner, forSour
 	anchor.refs = 0
 	o.state.released = true
 	notify = anchor.afterGone
+	p.mu.Lock()
+	for _, id := range anchor.goneIDs {
+		delete(p.releasedAfter, id)
+	}
+	p.mu.Unlock()
 	anchor.afterGone = nil
+	anchor.goneIDs = nil
 	p.finish()
 	return nil
 }
