@@ -551,20 +551,37 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 }
 
 // Image tags under these image types are not schema fields.
-var jellyfinBlurHashKey = regexp.MustCompile(`^\$/(?:Items\[\]/)?ImageBlurHashes/(?:Primary|Backdrop|Logo|Thumb|Banner)/[^/]+$`)
+var jellyfinBlurHashKey = regexp.MustCompile(`^\$(?:\[\]|)/(?:Items\[\]/)?ImageBlurHashes/(?:Primary|Backdrop|Logo|Thumb|Banner|Art|Disc|Box|Screenshot|Menu|Chapter|BoxRear|Profile)/[^/]+$`)
 
-// jellyfinItemSchemaPath maps the legacy user-scoped item route onto the
-// documented item route. Other paths return empty and keep their own schema.
+// jellyfinItemSchemaPath maps user-scoped item routes onto the routes the
+// Jellyfin 12.4 spec documents. Those responses are the same BaseItemDto
+// documents. Other paths return empty and keep their own schema.
 func jellyfinItemSchemaPath(requestPath string) string {
 	u, err := url.Parse(requestPath)
 	if err != nil {
 		return ""
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) == 4 && strings.EqualFold(parts[0], "Users") && strings.EqualFold(parts[2], "Items") && parts[1] != "" && parts[3] != "" {
+	if len(parts) < 3 || !strings.EqualFold(parts[0], "Users") || parts[1] == "" {
+		return ""
+	}
+	if len(parts) == 3 && strings.EqualFold(parts[2], "Items") {
+		return "/Items"
+	}
+	if len(parts) == 3 && strings.EqualFold(parts[2], "Views") {
+		return "/UserViews"
+	}
+	if len(parts) != 4 || !strings.EqualFold(parts[2], "Items") || parts[3] == "" {
+		return ""
+	}
+	switch strings.ToLower(parts[3]) {
+	case "resume":
+		return "/UserItems/Resume"
+	case "latest":
+		return "/Items/Latest"
+	default:
 		return "/Items/" + parts[3]
 	}
-	return ""
 }
 
 func emptyEmbyReferenceAddresses(a, b conform.Response) bool {

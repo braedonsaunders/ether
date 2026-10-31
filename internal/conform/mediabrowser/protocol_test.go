@@ -290,6 +290,42 @@ func TestCompareRequestClassifiesOnlySchemaValidExtras(t *testing.T) {
 	}
 }
 
+func TestPinnedJellyfinUserRoutesDemoteSchemaExtras(t *testing.T) {
+	data, err := openapi.CachedSpecManifest(specs.Manifest, "jellyfin", "")
+	if err != nil {
+		t.Skipf("pinned spec cache unavailable: %v", err)
+	}
+	doc, err := openapi.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Protocol{Dialect: "jellyfin", spec: doc}
+	p.specOnce.Do(func() {})
+	response := func(body string) conform.Response {
+		return conform.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json; charset=utf-8"}}, Body: []byte(body)}
+	}
+	resume := response(`{"Items":[{"CanDelete":false,"CanDownload":false,"Overview":"text","Genres":[],"Tags":[],"OriginalTitle":"A","SortName":"a","ProviderIds":{},"ProductionLocations":[],"PrimaryImageAspectRatio":1.7,"ParentId":"00000000-0000-0000-0000-000000000001","SeriesStudio":"Studio","DateCreated":"2000-01-01T00:00:00.0000000Z","ImageTags":{"Logo":"logo","Thumb":"thumb"},"ImageBlurHashes":{"Thumb":{"thumb":"LGF5"}},"CommunityRating":6.5,"OfficialRating":"G","OriginalLanguage":"en","HasSubtitles":false,"BackdropImageTags":["back"],"UserData":{"LastPlayedDate":"2000-01-01T00:00:00.0000000Z"}}]}`)
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/Users/${user_id}/Items/Resume"}, response(`{"Items":[{"UserData":{}}]}`), resume)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+	list := response(`{"Items":[{"MediaSources":[{"MediaStreams":[{"ColorRange":"tv"}]}]}],"TotalRecordCount":1}`)
+	report = p.CompareRequest(conform.Request{Method: "GET", Path: "/Users/${user_id}/Items"}, response(`{"Items":[{}]}`), list)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+	detail := response(`{"MediaSources":[{"MediaStreams":[{"ColorRange":"tv"}]}]}`)
+	report = p.CompareRequest(conform.Request{Method: "GET", Path: "/Users/${user_id}/Items/${item_id}"}, response(`{}`), detail)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+	unknown := response(`{"Items":[{"NotAField":true}]}`)
+	report = p.CompareRequest(conform.Request{Method: "GET", Path: "/Users/${user_id}/Items"}, response(`{"Items":[{}]}`), unknown)
+	if report.Blocking() != 1 {
+		t.Fatal(report.Differences)
+	}
+}
+
 func TestPinnedEmbySchemaRecognizesRouteExtras(t *testing.T) {
 	data, err := openapi.CachedSpecManifest(specs.Manifest, "emby", "")
 	if err != nil {
