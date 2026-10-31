@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
@@ -82,7 +81,7 @@ func (i *instance) probedVersion(r *http.Request, scope frontend.VersionScope, d
 		Protocol: scope.Protocol,
 		Item:     detail.Title.Key,
 		Caps:     scope.Caps,
-		Intent:   frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, AudioStream: -1, SubtitleStream: -1}},
+		Intent:   frontend.PlayIntent{Options: frontend.DecideOptions{DirectPlay: true, AudioStream: -1, SubtitleStream: -1}},
 	})
 	if err != nil || plan.DetailSource == "" || plan.ETag == "" {
 		return nil, nil, nil
