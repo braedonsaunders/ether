@@ -152,6 +152,16 @@ func assertUpgradeKeepsOldWrite(t *testing.T, ctx context.Context, db *sql.DB) {
   version INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, rating_key)
 )`,
+		// A recorded state/1 already has playlists. state/3's foreign key
+		// needs that table, and PostgreSQL rejects the reference when this
+		// fixture omits it.
+		`CREATE TABLE state_playlists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  smart INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+)`,
 		`CREATE TABLE schema_migrations (
   component TEXT NOT NULL,
   version INTEGER NOT NULL,
