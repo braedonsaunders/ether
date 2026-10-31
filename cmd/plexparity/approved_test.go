@@ -8,6 +8,7 @@ import (
 	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -371,5 +372,105 @@ func TestApprovedActiveSubtitleDateRegistryIsExact(t *testing.T) {
 	b.response.Body = []byte("unreviewed")
 	if got, err := approved(a, b); err != nil || got != "" {
 		t.Fatalf("unreviewed subtitle body approved: %q %v", got, err)
+	}
+}
+
+func TestApprovedWatchRegistryIsExact(t *testing.T) {
+	var entries []approvedDifference
+	if err := json.Unmarshal(approvedWatch, &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 129 {
+		t.Fatalf("got %d watch response pairs, want 129", len(entries))
+	}
+	viewers := map[string]bool{"owner": true, "adult": true, "teen": true, "child": true, "friend": true}
+	clients := map[string]bool{"web": true, "ios": true, "appletv": true, "androidtv": true, "desktop": true}
+	counts := map[string]int{}
+	seen := make(map[approvedDifference]bool, len(entries))
+	for _, e := range entries {
+		kind := e.Path
+		if i := strings.Index(kind, "?"); i >= 0 {
+			kind = kind[:i]
+		}
+		switch kind {
+		case "sequence:/:/scrobble", "sequence:/:/unscrobble", "/:/eventsource/notifications", "/:/websocket/notifications", "/:/websockets/notifications", "playback:infuse-resume:30000:reset", "playback:infuse-resume:61000:reset", "playback:infuse-resume:120000:reset", "playback:infuse-resume:201274:reset":
+		default:
+			t.Fatalf("watch approval includes an unreviewed route: %+v", e)
+		}
+		counts[kind]++
+		if seen[e] || !viewers[e.Viewer] || !clients[e.Client] || e.Commit != "23d9fffb2" || e.Baseline.Status == 0 || e.Candidate.Status == 0 || len(e.Baseline.SHA256) != 64 || len(e.Candidate.SHA256) != 64 || e.Baseline.SHA256 == e.Candidate.SHA256 {
+			t.Fatalf("watch approval is not a unique exact reviewed pair: %+v", e)
+		}
+		seen[e] = true
+	}
+	want := map[string]int{
+		"sequence:/:/scrobble": 25, "sequence:/:/unscrobble": 25,
+		"/:/eventsource/notifications": 25, "/:/websocket/notifications": 25, "/:/websockets/notifications": 25,
+		"playback:infuse-resume:30000:reset": 1, "playback:infuse-resume:61000:reset": 1,
+		"playback:infuse-resume:120000:reset": 1, "playback:infuse-resume:201274:reset": 1,
+	}
+	if !reflect.DeepEqual(counts, want) {
+		t.Fatalf("watch approval counts %v, want %v", counts, want)
+	}
+	old := approvedWatch
+	defer func() { approvedWatch = old }()
+	a := capture{viewer: "owner", client: "web", json: true, path: "sequence:/:/scrobble", response: protocol.Response{Status: 200, Body: []byte("")}}
+	b := capture{viewer: a.viewer, client: a.client, json: true, path: a.path, response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte("{\"MediaContainer\":{\"size\":0}}\n")}}
+	e := approvedDifference{Viewer: a.viewer, Client: a.client, JSON: true, Path: a.path, Baseline: signature(a.response), Candidate: signature(b.response), Commit: "23d9fffb2"}
+	approvedWatch, _ = json.Marshal([]approvedDifference{e})
+	if got, err := approved(a, b); err != nil || got != e.Commit {
+		t.Fatalf("exact watch pair: %q %v", got, err)
+	}
+	b.response.Body = []byte("unreviewed")
+	if got, err := approved(a, b); err != nil || got != "" {
+		t.Fatalf("unreviewed watch body approved: %q %v", got, err)
+	}
+}
+
+func TestWatchApprovalAcceptsOnlyTheTypedContainerAndHandshake(t *testing.T) {
+	body := []byte("{\"MediaContainer\":{\"size\":0}}\n")
+	pair := func(extra string, contentType string) (capture, capture) {
+		base := http.Header{"Content-Length": {"0"}, "X-Plex-Protocol": {"1.0"}}
+		cand := http.Header{"Content-Length": {fmt.Sprintf("%d", len(body))}, "Content-Type": {contentType}, "Cache-Control": {"no-cache"}, "X-Plex-Protocol": {"1.0"}}
+		if extra != "" {
+			cand.Set("X-Extra", extra)
+		}
+		a := capture{path: "sequence:/:/scrobble", response: protocol.Response{Headers: base, Body: []byte("")}}
+		b := capture{path: a.path, response: protocol.Response{Headers: cand, Body: body}}
+		return a, b
+	}
+	a, b := pair("", "application/json")
+	if !approvedWatchHeaders(a, b) {
+		t.Fatal("expected the empty container headers")
+	}
+	a, b = pair("1", "application/json")
+	if approvedWatchHeaders(a, b) {
+		t.Fatal("unrelated header difference accepted")
+	}
+	a, b = pair("", "text/xml")
+	if approvedWatchHeaders(a, b) {
+		t.Fatal("unreviewed content type accepted")
+	}
+	socket := func(extra string) (capture, capture) {
+		base := make(http.Header)
+		cand := make(http.Header)
+		base.Set("Sec-WebSocket-Accept", "aaa")
+		base.Set("Content-Length", "1")
+		cand.Set("Sec-WebSocket-Accept", "bbb")
+		cand.Set("Content-Length", "1")
+		if extra != "" {
+			cand.Set("X-Extra", extra)
+		}
+		a := capture{path: "/:/websocket/notifications", response: protocol.Response{Headers: base, Body: []byte("a")}}
+		b := capture{path: a.path, response: protocol.Response{Headers: cand, Body: []byte("a")}}
+		return a, b
+	}
+	wa, wb := socket("")
+	if !approvedWatchHeaders(wa, wb) {
+		t.Fatal("expected the handshake token to be ignored")
+	}
+	wa, wb = socket("1")
+	if approvedWatchHeaders(wa, wb) {
+		t.Fatal("unrelated websocket header accepted")
 	}
 }

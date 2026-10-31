@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
 )
@@ -60,6 +61,12 @@ var approvedActiveResume []byte
 //go:embed approved_active_subtitle_date.json
 var approvedActiveSubtitleDate []byte
 
+// Exact scrobble, timeline, and Infuse reset pairs from the 80208da4d versus
+// 0901e52df run. Both worlds produced the same 129 pairs.
+//
+//go:embed approved_watch.json
+var approvedWatch []byte
+
 type responseSignature struct {
 	Status      int    `json:"status"`
 	ContentType string `json:"content_type"`
@@ -84,7 +91,7 @@ func approved(a, b capture) (string, error) {
 	for _, registry := range []struct {
 		data       []byte
 		restricted bool
-	}{{approvedSearch, true}, {approvedScopes, false}, {approvedResume, false}, {approvedDateAdded, false}, {approvedComposite, false}, {approvedActiveDate, false}, {approvedActiveResume, false}, {approvedActiveSubtitleDate, false}} {
+	}{{approvedSearch, true}, {approvedScopes, false}, {approvedResume, false}, {approvedDateAdded, false}, {approvedComposite, false}, {approvedActiveDate, false}, {approvedActiveResume, false}, {approvedActiveSubtitleDate, false}, {approvedWatch, false}} {
 		if registry.restricted && a.viewer != "teen" && a.viewer != "child" {
 			continue
 		}
@@ -134,6 +141,27 @@ func approvedScopeHeaders(a, b capture) bool {
 		return false
 	}
 	x.Del("Vary")
+	a.response.Headers, b.response.Headers = x, y
+	return approvedHeaders(a, b)
+}
+
+// The watched-state fix replaces an empty 200 with an empty MediaContainer.
+// That reply gains Content-Type and Cache-Control. A websocket notification
+// also carries a per-connection handshake token, which the comparison already
+// ignores. Accept those two differences only; every other header still matches.
+func approvedWatchHeaders(a, b capture) bool {
+	x, y := a.response.Headers.Clone(), b.response.Headers.Clone()
+	if strings.HasPrefix(a.path, "/:/websocket") {
+		if x.Get("Sec-WebSocket-Accept") == "" || y.Get("Sec-WebSocket-Accept") == "" {
+			return false
+		}
+		x.Del("Sec-WebSocket-Accept")
+		y.Del("Sec-WebSocket-Accept")
+	}
+	if x.Get("Content-Type") == "" && x.Get("Cache-Control") == "" && y.Get("Content-Type") == "application/json" && y.Get("Cache-Control") == "no-cache" {
+		y.Del("Content-Type")
+		y.Del("Cache-Control")
+	}
 	a.response.Headers, b.response.Headers = x, y
 	return approvedHeaders(a, b)
 }

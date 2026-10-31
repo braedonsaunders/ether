@@ -1,0 +1,2195 @@
+[
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/scrobble?identifier=com.plexapp.plugins.library\u0026key={{episodeKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": true,
+    "path": "sequence:/:/unscrobble?key={{movieKey}}",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:30000:reset",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:61000:reset",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:120000:reset",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:201274:reset",
+    "baseline": {
+      "status": 200,
+      "content_type": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b6cfd8c40e68ba10fa809531b1df75fc45a4a6aa4a02fcb34513383740ef8434"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "/:/eventsource/notifications",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "2221a11498d3340ddc6e0e51c0d2a9d7d2a1ce045925ea6ab40eabe87be3a9be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "sha256": "3e827cd3f17eb6cd196bfae162d84e3b268ee0ac17c632b353c977ee6e954074"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "/:/websocket/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "/:/websockets/notifications",
+    "baseline": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "c19dc1a53e809604acd34808ce8396f1bab448d00c5aba5882f0fe2477cfb36b"
+    },
+    "candidate": {
+      "status": 101,
+      "content_type": "",
+      "sha256": "9353c24dc7b48aa8617f167a7d7257a82d0e58e879e8d341b99401ebcddc94ba"
+    },
+    "commit": "23d9fffb2"
+  }
+]
