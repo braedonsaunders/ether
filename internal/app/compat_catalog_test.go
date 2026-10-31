@@ -90,7 +90,7 @@ func TestBuiltinAppsCoverConformProfilesAndCertification(t *testing.T) {
 	if embyTV.Certification != "unsupported" {
 		t.Fatalf("emby tv: %+v", embyTV)
 	}
-	for _, device := range builtinDevices() {
+	for _, device := range builtinDevices(nil) {
 		if device.Name == "Apple TV" && !slices.Equal(device.DolbyVisionProfiles, []int{5, 8}) {
 			t.Fatalf("apple tv device: %+v", device)
 		}

@@ -36,7 +36,8 @@ func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityR
 	if err != nil {
 		return frontend.CapabilityResult{}, err
 	}
-	policy := transcode.ClientPolicyFor(declared)
+	overrides := s.app.cfg.Read().Clients.Overrides
+	policy := transcode.ResolvePolicy(declared, overrides)
 	if declared.SubtitleCodecs == nil {
 		declared.SubtitleCodecs = append([]string(nil), policy.SubtitleCodecs...)
 	}

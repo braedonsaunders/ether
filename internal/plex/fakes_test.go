@@ -18,6 +18,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
@@ -804,15 +805,16 @@ func newFixture(opts ...func(*Deps)) *fixture {
 		},
 	}
 	d := Deps{
-		Catalog:     cat,
-		Collections: f.cols,
-		Recommender: rec,
-		State:       f.state,
-		Playlists:   f.pls,
-		Auth:        &fakeAuth{users: map[string]core.User{ownerToken: ownerUser, friendToken: friendUser}},
-		Playback:    f.playback,
-		Transcoder:  f.trans,
-		HTTPClient:  &http.Client{Transport: f.art},
+		Catalog:          cat,
+		Collections:      f.cols,
+		Recommender:      rec,
+		State:            f.state,
+		Playlists:        f.pls,
+		Auth:             &fakeAuth{users: map[string]core.User{ownerToken: ownerUser, friendToken: friendUser}},
+		Playback:         f.playback,
+		Transcoder:       f.trans,
+		ApplyClientRules: resolver.ApplyClientRules,
+		HTTPClient:       &http.Client{Transport: f.art},
 		Config: func() config.Config {
 			c := config.Config{}
 			c.Server.Port = 32400

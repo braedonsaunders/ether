@@ -371,86 +371,24 @@ func encodedPictureHDR(s *core.StreamInfo) bool {
 // from a false condition, which can make an ApplyConditions profile inapplicable.
 func evaluateProfileConditions(cs []core.ClientProfileCondition, info core.MediaInfo, stream *core.StreamInfo) (bool, bool) {
 	for _, c := range cs {
-		var value string
-		switch strings.ToLower(c.Property) {
-		case "videorangetype":
-			value = profileVideoRangeValue(stream, c)
-		case "videowidth", "width":
-			if stream != nil {
-				value = strconv.Itoa(stream.Width)
-			}
-		case "videoheight", "height":
-			if stream != nil {
-				value = strconv.Itoa(stream.Height)
-			}
-		case "videoframerate", "framerate":
-			if stream != nil && stream.FrameRate > 0 {
-				value = strconv.FormatFloat(stream.FrameRate, 'f', -1, 64)
-			}
-		case "videobitdepth":
-			if stream != nil {
-				value = strconv.Itoa(stream.BitDepth)
-			}
-		case "videolevel":
-			if stream != nil {
-				value = strconv.Itoa(stream.Level)
-			}
-		case "videoprofile", "audioprofile":
-			if stream != nil {
-				value = stream.Profile
-			}
-		case "audiochannels":
-			if stream != nil {
-				value = strconv.Itoa(stream.Channels)
-			}
-		case "audiosamplerate":
-			if stream != nil {
-				value = strconv.Itoa(stream.SampleRate)
-			}
-		case "videobitrate", "audiobitrate":
-			if stream != nil {
-				value = strconv.Itoa(stream.BitrateKbps * 1000)
-			}
-		case "containerbitrate":
-			value = strconv.Itoa(info.BitrateKbps * 1000)
-		}
-		if value == "" || value == "0" {
+		value, zeroKnown := profileMeasurement(c, info, stream)
+		// A missing measurement is Jellyfin's null: a required condition
+		// fails closed and an optional one does not constrain playback.
+		// A reported zero stays a real zero (reference frames, stream counts).
+		if value == "" || (value == "0" && !zeroKnown) {
 			if c.Required {
 				return false, true
 			}
 			continue
 		}
-		want := strings.TrimSpace(c.Value)
-		ok, known := false, true
-		switch strings.ToLower(c.Operator) {
-		case "equals":
-			ok = strings.EqualFold(value, want)
-		case "notequals":
-			// Jellyfin Android TV rejects an unsupported range by NotEquals
-			// against a pipe-separated list, and only applies that profile when
-			// the picture is already in the list. A single token stays an exact
-			// comparison, which is what NotEquals DOVI clients send.
-			if strings.EqualFold(c.Property, "videorangetype") && strings.Contains(want, "|") {
-				ok = !profileEqualsAny(value, want)
-			} else {
-				ok = !strings.EqualFold(value, want)
+		// Jellyfin treats HDR10Plus as HDR10 when that comparison succeeds,
+		// then still compares the HDR10Plus token itself.
+		if strings.EqualFold(c.Property, "videorangetype") && strings.EqualFold(value, "HDR10Plus") {
+			if ok, known := profileConditionHolds("HDR10", c); known && ok {
+				continue
 			}
-		case "equalsany":
-			ok = profileEqualsAny(value, want)
-		case "lessthanequal", "greaterthanequal":
-			a, e1 := strconv.ParseFloat(value, 64)
-			b, e2 := strconv.ParseFloat(want, 64)
-			known = e1 == nil && e2 == nil
-			if known {
-				if strings.EqualFold(c.Operator, "lessthanequal") {
-					ok = a <= b
-				} else {
-					ok = a >= b
-				}
-			}
-		default:
-			known = false
 		}
+		ok, known := profileConditionHolds(value, c)
 		if !known && c.Required {
 			return false, true
 		}
@@ -459,6 +397,199 @@ func evaluateProfileConditions(cs []core.ClientProfileCondition, info core.Media
 		}
 	}
 	return true, false
+}
+
+func profileConditionHolds(value string, c core.ClientProfileCondition) (ok, known bool) {
+	want := strings.TrimSpace(c.Value)
+	switch strings.ToLower(c.Operator) {
+	case "equals":
+		return strings.EqualFold(value, want), true
+	case "notequals":
+		// Jellyfin Android TV rejects an unsupported range by NotEquals
+		// against a pipe-separated list, and only applies that profile when
+		// the picture is already in the list. A single token stays an exact
+		// comparison, which is what NotEquals DOVI clients send.
+		if strings.EqualFold(c.Property, "videorangetype") && strings.Contains(want, "|") {
+			return !profileEqualsAny(value, want), true
+		}
+		return !strings.EqualFold(value, want), true
+	case "equalsany":
+		return profileEqualsAny(value, want), true
+	case "lessthanequal", "greaterthanequal":
+		a, e1 := strconv.ParseFloat(value, 64)
+		b, e2 := strconv.ParseFloat(want, 64)
+		if e1 != nil || e2 != nil {
+			return false, false
+		}
+		if strings.EqualFold(c.Operator, "lessthanequal") {
+			return a <= b, true
+		}
+		return a >= b, true
+	default:
+		return false, false
+	}
+}
+
+// profileMeasurement reads one Jellyfin ProfileConditionValue.
+// zeroKnown is set when "0" is a real measurement rather than "not reported".
+// PacketLength, VideoTimestamp, Has64BitOffsets and VideoRotation stay empty:
+// the probe does not carry them, so they follow Jellyfin's null rule.
+func profileMeasurement(c core.ClientProfileCondition, info core.MediaInfo, stream *core.StreamInfo) (value string, zeroKnown bool) {
+	switch strings.ToLower(strings.TrimSpace(c.Property)) {
+	case "videorangetype":
+		return profileVideoRangeValue(stream, c), false
+	case "videowidth", "width":
+		if stream != nil {
+			return strconv.Itoa(stream.Width), false
+		}
+	case "videoheight", "height":
+		if stream != nil {
+			return strconv.Itoa(stream.Height), false
+		}
+	case "videoframerate", "framerate":
+		if stream != nil && stream.FrameRate > 0 {
+			return strconv.FormatFloat(stream.FrameRate, 'f', -1, 64), false
+		}
+	case "videobitdepth":
+		if stream != nil {
+			return strconv.Itoa(stream.BitDepth), false
+		}
+	case "videolevel":
+		if stream != nil {
+			return strconv.Itoa(stream.Level), false
+		}
+	case "videoprofile", "audioprofile":
+		if stream != nil {
+			return stream.Profile, false
+		}
+	case "audiochannels":
+		if stream != nil {
+			return strconv.Itoa(stream.Channels), false
+		}
+	case "audiosamplerate":
+		if stream != nil {
+			return strconv.Itoa(stream.SampleRate), false
+		}
+	case "audiobitdepth":
+		if stream != nil && stream.Type == "audio" && stream.BitsPerRawSample != nil {
+			return strconv.Itoa(*stream.BitsPerRawSample), false
+		}
+	case "videobitrate", "audiobitrate":
+		if stream != nil {
+			return strconv.Itoa(stream.BitrateKbps * 1000), false
+		}
+	case "containerbitrate":
+		return strconv.Itoa(info.BitrateKbps * 1000), false
+	case "videocodectag":
+		if stream != nil {
+			return stream.CodecTag, false
+		}
+	case "refframes":
+		if stream != nil && stream.ReferenceFrames != nil {
+			return strconv.Itoa(*stream.ReferenceFrames), true
+		}
+	case "isanamorphic":
+		return anamorphicValue(stream)
+	case "isinterlaced":
+		return interlacedValue(stream)
+	case "isavc":
+		return avcValue(stream)
+	case "issecondaryaudio":
+		return secondaryAudioValue(info, stream)
+	case "numaudiostreams":
+		return strconv.Itoa(countStreams(info, "audio")), true
+	case "numvideostreams":
+		return strconv.Itoa(countStreams(info, "video")), true
+	case "numstreams":
+		return strconv.Itoa(len(info.Streams)), true
+	case "videotimestamp", "packetlength", "has64bitoffsets", "videorotation":
+		return "", false
+	}
+	return "", false
+}
+
+func countStreams(info core.MediaInfo, kind string) int {
+	n := 0
+	for _, s := range info.Streams {
+		if s.Type == kind {
+			n++
+		}
+	}
+	return n
+}
+
+func anamorphicValue(stream *core.StreamInfo) (string, bool) {
+	if stream == nil || stream.Type == "audio" || stream.Type == "subtitle" {
+		return "", false
+	}
+	sar := strings.TrimSpace(stream.SampleAspectRatio)
+	if sar == "" || strings.EqualFold(sar, "N/A") || sar == "0:1" {
+		return "", false
+	}
+	sar = strings.ReplaceAll(sar, "/", ":")
+	n, d, ok := strings.Cut(sar, ":")
+	if !ok {
+		return "", false
+	}
+	num, e1 := strconv.ParseFloat(n, 64)
+	den, e2 := strconv.ParseFloat(d, 64)
+	if e1 != nil || e2 != nil || den == 0 {
+		return "", false
+	}
+	if num/den > 0.99 && num/den < 1.01 {
+		return "false", false
+	}
+	return "true", false
+}
+
+func interlacedValue(stream *core.StreamInfo) (string, bool) {
+	if stream == nil || (stream.Type != "" && stream.Type != "video") {
+		return "", false
+	}
+	if stream.ProbedInterlaced != nil {
+		return strconv.FormatBool(*stream.ProbedInterlaced), false
+	}
+	switch strings.ToLower(stream.FieldOrder) {
+	case "progressive":
+		return "false", false
+	case "tt", "bb", "tb", "bt":
+		return "true", false
+	}
+	if stream.Interlaced {
+		return "true", false
+	}
+	return "", false
+}
+
+func avcValue(stream *core.StreamInfo) (string, bool) {
+	if stream == nil || (stream.Type != "" && stream.Type != "video") {
+		return "", false
+	}
+	switch strings.ToLower(stream.CodecTag) {
+	case "avc1", "avc3":
+		return "true", false
+	}
+	if stream.NALLengthSize != nil {
+		return strconv.FormatBool(*stream.NALLengthSize > 0), false
+	}
+	return "", false
+}
+
+func secondaryAudioValue(info core.MediaInfo, stream *core.StreamInfo) (string, bool) {
+	if stream == nil || stream.Type != "audio" {
+		return "", false
+	}
+	first := -1
+	for _, s := range info.Streams {
+		if s.Type == "audio" {
+			first = s.Index
+			break
+		}
+	}
+	if first < 0 {
+		return "", false
+	}
+	return strconv.FormatBool(stream.Index != first), false
 }
 
 func profileRestrictions(p *core.ClientCapabilityProfiles, info core.MediaInfo, video, audio string, audioIndex int) bool {

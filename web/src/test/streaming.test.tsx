@@ -109,6 +109,19 @@ describe("Playback devices", () => {
     expect(screen.getByText("Swiftfin")).toBeInTheDocument();
     expect(screen.getByText("5, 8")).toBeInTheDocument();
   });
+
+  it("saves an app compatibility override from a drawer", async () => {
+    const { fake } = renderApp("/playback/devices");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Apple TV" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "Edit Apple TV" });
+    const profiles = within(drawer).getByLabelText("Dolby Vision profiles");
+    fireEvent.change(profiles, { target: { value: "5, 7, 8" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/clients")).toHaveLength(1));
+    expect(calls(fake, "PUT", "/config/clients")[0]!.body).toMatchObject({
+      overrides: [{ id: "apple-tv", dolbyVisionProfiles: [5, 7, 8] }],
+    });
+  });
 });
 
 describe("Releases", () => {

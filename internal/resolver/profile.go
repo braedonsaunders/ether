@@ -5,6 +5,7 @@ package resolver
 import (
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 )
@@ -24,17 +25,11 @@ func defaultProfile() core.QualityProfile {
 }
 
 // defaultCappedAndroidClient reports whether caps describes an Android
-// mobile client whose default base ceiling is 1080p unless overridden by
-// a user-configured client rule.
+// mobile client whose registry playback ceiling is 1080p unless an owner
+// quality rule lifts it. The match is the registry quirk
+// android-mobile-ceiling, the same fact the capability engine uses.
 func defaultCappedAndroidClient(caps core.ClientCaps) bool {
-	pr := strings.ToLower(caps.Product)
-	pl := strings.ToLower(caps.Platform)
-	dv := strings.ToLower(caps.Device)
-	isAndroid := strings.Contains(pr, "android") || (pl == "android" && !strings.Contains(pr, "web"))
-	if !isAndroid {
-		return false
-	}
-	return !strings.Contains(pr, "tv") && !strings.Contains(dv, "shield") && !strings.Contains(dv, "tv")
+	return clientreg.HasQuirk(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: caps.Device, Version: caps.Version}, "android-mobile-ceiling")
 }
 
 // ApplyClientRules returns caps with any matching user-defined client rule

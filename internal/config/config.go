@@ -50,6 +50,8 @@ type Config struct {
 	Personalize   Personalize   `json:"personalize"`
 	Extras        Extras        `json:"extras"`
 	Debrid        Debrid        `json:"debrid"`
+	// Clients holds owner overrides of the capability registry.
+	Clients ClientCompatibility `json:"clients"`
 	// Database is node-local storage selection (SQLite or PostgreSQL).
 	Database     Database     `json:"database"`
 	IndexerSites IndexerSites `json:"indexerSites"`
@@ -319,6 +321,12 @@ type QualityRule struct {
 	UserID    int64         `json:"userId,omitempty"`
 	Profile   string        `json:"profile"`
 	MaxHeight int           `json:"maxHeight,omitempty"` // optional max-height override (2160, 1080, 720, 480; 0 = profile ceiling)
+}
+
+// ClientCompatibility stores owner edits of the capability registry.
+// An empty list means the embedded defaults. A client declaration still wins.
+type ClientCompatibility struct {
+	Overrides []core.ClientCapabilityOverride `json:"overrides"`
 }
 
 type Transcode struct {

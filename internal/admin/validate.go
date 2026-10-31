@@ -427,5 +427,20 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.Updates.MaxDrain < 0 {
 		v.add("updates.maxDrain", "must not be negative")
 	}
+	if len(cfg.Clients.Overrides) > 128 {
+		v.add("clients.overrides", "must be 128 entries or fewer")
+	}
+	for i, o := range cfg.Clients.Overrides {
+		f := fmt.Sprintf("clients.overrides[%d]", i)
+		if o.ID == "" && o.Product == "" && o.Platform == "" && o.Device == "" {
+			v.add(f, "needs a client id or a product, platform or device")
+		}
+		if o.MaxHeight < 0 || o.MaxHeight > 8640 || o.MaxBitrateKbps < 0 {
+			v.add(f+".maxHeight", "is out of range")
+		}
+		if len(o.VideoCodecs) > 64 || len(o.AudioCodecs) > 64 || len(o.Containers) > 64 || len(o.SubtitleCodecs) > 64 || len(o.DolbyVisionProfiles) > 32 {
+			v.add(f, "lists too many values")
+		}
+	}
 	return v.errs
 }

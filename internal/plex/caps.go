@@ -7,179 +7,38 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
-// baseCaps is what a product/platform can play according to what Plex
-// clients are known to support. Profile-extra directives refine it.
+// baseCaps is what a product/platform can play when the client sends no
+// profile. The values come from the capability registry. Profile-extra
+// directives refine them afterwards.
 type baseCaps struct {
-	video      []string
-	audio      []string
-	containers []string
-	maxHeight  int
-	hdr10      bool
-	dv         bool
-}
-
-var (
-	genericCaps = baseCaps{
-		video:      []string{"h264"},
-		audio:      []string{"aac", "mp3"},
-		containers: []string{"mp4", "mpegts"},
-		maxHeight:  1080,
-	}
-	appleTVCaps = baseCaps{
-		video:      []string{"h264", "hevc"},
-		audio:      []string{"aac", "ac3", "eac3", "mp3", "flac", "alac", "opus"},
-		containers: []string{"mp4", "mov", "mkv", "mpegts"},
-		maxHeight:  2160,
-		hdr10:      true,
-		dv:         true,
-	}
-	iosCaps = baseCaps{
-		video:      []string{"h264", "hevc"},
-		audio:      []string{"aac", "ac3", "eac3", "mp3", "flac", "alac", "opus"},
-		containers: []string{"mp4", "mov", "mkv", "mpegts"},
-		maxHeight:  2160,
-		hdr10:      true,
-		dv:         true,
-	}
-	androidCaps = baseCaps{
-		video:      []string{"h264", "hevc", "vp9"},
-		audio:      []string{"aac", "ac3", "eac3", "mp3", "flac", "opus", "vorbis"},
-		containers: []string{"mp4", "mkv", "mpegts", "webm"},
-		maxHeight:  1080,
-	}
-	androidTVCaps = baseCaps{
-		video:      []string{"h264", "hevc", "vp9", "av1"},
-		audio:      []string{"aac", "ac3", "eac3", "mp3", "flac", "opus", "vorbis"},
-		containers: []string{"mp4", "mkv", "mpegts", "webm"},
-		maxHeight:  2160,
-		hdr10:      true,
-	}
-	rokuCaps = baseCaps{
-		video:      []string{"h264", "hevc"},
-		audio:      []string{"aac", "ac3", "eac3", "mp3", "flac"},
-		containers: []string{"mp4", "mkv", "mpegts"},
-		maxHeight:  2160,
-		hdr10:      true,
-	}
-	smartTVCaps = baseCaps{
-		video:      []string{"h264", "hevc"},
-		audio:      []string{"aac", "ac3", "eac3", "mp3"},
-		containers: []string{"mp4", "mkv", "mpegts"},
-		maxHeight:  2160,
-		hdr10:      true,
-	}
-	htpcCaps = baseCaps{
-		video:      []string{"h264", "hevc", "vp9", "av1", "mpeg2video", "vc1", "mpeg4"},
-		audio:      []string{"aac", "ac3", "eac3", "truehd", "dts", "dtshd", "mp3", "flac", "opus", "vorbis", "pcm"},
-		containers: []string{"mp4", "mkv", "mov", "avi", "mpegts", "webm"},
-		maxHeight:  2160,
-		hdr10:      true,
-	}
-)
-
-// browserCaps is Plex Web, which depends on the browser in X-Plex-Platform.
-// Base caps stay conservative: only Safari claims HEVC+HDR10 by default.
-// Chromium may list HEVC without HDR10; Firefox lists neither. Profile-extra
-// can add codecs via applyProfileExtra, but hevc alone never implies HDR10.
-// Audio stays conservative (no EAC3 on Chrome/Firefox) so incompatible
-// soundtracks remux to AAC.
-func browserCaps(platform string) baseCaps {
-	p := strings.ToLower(platform)
-	c := baseCaps{
-		video:      []string{"h264"},
-		audio:      []string{"aac", "mp3", "opus", "flac", "vorbis"},
-		containers: []string{"mp4", "mkv", "webm", "mpegts"},
-		maxHeight:  2160,
-	}
-	switch {
-	case strings.Contains(p, "safari"):
-		c.video = []string{"h264", "hevc"}
-		c.audio = []string{"aac", "mp3", "ac3", "eac3", "flac", "alac"}
-		c.containers = []string{"mp4", "mov", "mpegts"}
-		c.hdr10 = true
-	case strings.Contains(p, "edge"):
-		c.video = []string{"h264", "hevc", "vp9", "av1"}
-		c.audio = append(c.audio, "ac3", "eac3")
-	case strings.Contains(p, "chrome"), strings.Contains(p, "opera"), strings.Contains(p, "brave"):
-		c.video = []string{"h264", "vp9", "av1", "hevc"}
-	case strings.Contains(p, "firefox"):
-		c.video = []string{"h264", "vp9", "av1"}
-	}
-	return c
-}
-
-// productCaps picks the base capabilities for a client.
-func productCaps(product, platform, device string) baseCaps {
-	pr := strings.ToLower(product)
-	pl := strings.ToLower(platform)
-	dv := strings.ToLower(device)
-	switch {
-	case strings.Contains(pr, "apple tv") || pl == "tvos" || strings.Contains(dv, "apple tv"):
-		return appleTVCaps
-	case strings.Contains(pr, "plex web"):
-		return browserCaps(platform)
-	case strings.Contains(pr, "plex for windows") || strings.Contains(pr, "plex for mac") || strings.Contains(pr, "plex for linux") || strings.Contains(pr, "plex desktop"):
-		// Native desktop apps use mpv like HTPC. Their platform header is
-		// an OS, not a browser; per-request limitations still apply below.
-		return htpcCaps
-	case strings.Contains(pr, "ios") || pl == "ios" || pl == "ipados" || strings.Contains(dv, "iphone") || strings.Contains(dv, "ipad"):
-		return iosCaps
-	case (strings.Contains(pr, "android") || (pr == "plezy" && pl == "android")) && (strings.Contains(pr, "tv") || strings.Contains(dv, "shield") || strings.Contains(dv, "tv")):
-		// Plezy/Android reuses this TV split: TV-ish Device (shield/tv)
-		// only; a generic Android device falls to androidCaps below.
-		return androidTVCaps
-	case strings.Contains(pr, "android") || pl == "android":
-		return androidCaps
-	case pr == "plezy":
-		// Plezy is mpv-based and capable on desktop (incl. decision requests
-		// forcing Platform to Generic); Apple/Android matched their platform
-		// caps above, so weak Android phones keep androidCaps as official.
-		return htpcCaps
-	case strings.Contains(pr, "roku") || pl == "roku":
-		return rokuCaps
-	case strings.Contains(pr, "htpc") || strings.Contains(pr, "plex media player") || strings.Contains(pr, "kodi") || strings.Contains(pr, "infuse"):
-		return htpcCaps
-	case strings.Contains(pr, "samsung") || strings.Contains(pr, "lg") || strings.Contains(pr, "vizio") || pl == "tizen" || pl == "webos" || strings.Contains(pr, "xbox") || strings.Contains(pr, "playstation") || strings.Contains(pr, "fire tv"):
-		return smartTVCaps
-	case strings.Contains(pl, "chrome") || strings.Contains(pl, "safari") || strings.Contains(pl, "firefox") || strings.Contains(pl, "edge"):
-		return browserCaps(platform)
-	}
-	return genericCaps
-}
-
-// androidClient reports Plex's Android family: Plex for Android, Android TV,
-// and Fire TV builds that identify as Android. A platform of Android does
-// not include Plex Web.
-func androidClient(product, platform string) bool {
-	product = strings.ToLower(product)
-	return strings.Contains(product, "android") || (strings.EqualFold(platform, "android") && !strings.Contains(product, "web"))
-}
-
-func fireTV4KMax(model string) bool {
-	switch strings.ToUpper(strings.TrimSpace(model)) {
-	case "AFTKA", "AFTKRT":
-		return true
-	default:
-		return false
-	}
+	video        []string
+	audio        []string
+	containers   []string
+	maxHeight    int
+	hdr10        bool
+	dv           bool
+	heightLocked bool
 }
 
 // ClientCaps derives core.ClientCaps for the request. remoteMaxKbps caps
 // the bitrate of remote clients (0 = unlimited).
 func (pr *Request) ClientCaps(remoteMaxKbps int) core.ClientCaps {
-	b := productCaps(pr.Product, pr.Platform, pr.Device)
-	// Fire TV can identify itself as generic Android and expose its hardware
-	// model in either header. These exact models are both 4K Max generations:
-	// https://developer.amazon.com/docs/device-specs/identify-fire-tv-devices.html
-	// Do not infer 4K from an AFT prefix (HD devices share it) or DeviceName,
-	// which is an owner-editable friendly name. Request limits apply below.
-	if androidClient(pr.Product, pr.Platform) && (fireTV4KMax(pr.Device) || fireTV4KMax(pr.Model)) {
-		b.maxHeight = 2160
-		b.hdr10 = true
-	}
+	return pr.ClientCapsWith(remoteMaxKbps, nil)
+}
 
+// ClientCapsWith is ClientCaps with owner registry overrides applied before
+// the request's own profile and capability headers.
+func (pr *Request) ClientCapsWith(remoteMaxKbps int, overrides []core.ClientCapabilityOverride) core.ClientCaps {
+	if pr == nil {
+		return core.ClientCaps{}
+	}
+	// Plex Web's browser split, desktop mpv clients, Plezy's platform split
+	// and the Fire TV 4K Max model patch all live in the registry. An owner
+	// override sits under the headers this request actually sent.
+	b := playbackCaps(pr, overrides)
 	c := core.ClientCaps{
 		Protocol:        "plex",
 		Product:         pr.Product,
@@ -197,6 +56,16 @@ func (pr *Request) ClientCaps(remoteMaxKbps int) core.ClientCaps {
 		Containers:      slices.Clone(b.containers),
 		Remote:          pr.Remote,
 	}
+	if b.heightLocked {
+		c.ExplicitMaxHeight = true
+	}
+	dv, subs, dvChanged, subsChanged := transcode.PolicyStamp(pr.Product, pr.Platform, pr.Device, pr.Model, pr.Version, overrides)
+	if dvChanged {
+		c.DVProfiles = dv
+	}
+	if subsChanged {
+		c.SubtitleCodecs = subs
+	}
 	if pr.ClientCapabilities != "" {
 		applyLegacyCapabilities(&c, pr.ClientCapabilities)
 	}
@@ -212,12 +81,26 @@ func (pr *Request) ClientCaps(remoteMaxKbps int) core.ClientCaps {
 	return c
 }
 
+func playbackCaps(pr *Request, overrides []core.ClientCapabilityOverride) baseCaps {
+	got := transcode.PlaybackDefaultsFor(pr.Product, pr.Platform, pr.Device, pr.Model, pr.Version, overrides)
+	return baseCaps{video: got.Video, audio: got.Audio, containers: got.Containers, maxHeight: got.MaxHeight, hdr10: got.HDR10, dv: got.DolbyVision, heightLocked: got.HeightLocked}
+}
+
+// declaredCaps is the registry plus this request's headers, before a quality
+// rule changes the ceiling.
+func (s *Server) declaredCaps(pr *Request) core.ClientCaps {
+	if pr == nil {
+		return core.ClientCaps{}
+	}
+	return pr.ClientCapsWith(s.cfg().Transcode.RemoteMaxBitrateKbps, s.cfg().Clients.Overrides)
+}
+
 // clientCaps derives core.ClientCaps for the request and applies any
 // matching client rule override from the server's quality configuration.
 // The override stays behind Deps so this package does not import the resolver.
 func (s *Server) clientCaps(pr *Request) core.ClientCaps {
 	cfg := s.cfg()
-	caps := pr.ClientCaps(cfg.Transcode.RemoteMaxBitrateKbps)
+	caps := s.declaredCaps(pr)
 	if s.d.ApplyClientRules == nil {
 		return caps
 	}

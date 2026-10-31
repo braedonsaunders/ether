@@ -332,7 +332,7 @@ var syncVideoQualities = []struct{ kbps, height int }{
 
 // downloadCaps builds the caps an add request asked for.
 func (s *Server) downloadCaps(r *http.Request, pr *Request) core.ClientCaps {
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.declaredCaps(pr)
 	q := r.URL.Query()
 	if v := q.Get("videoResolution"); v != "" {
 		if _, h, ok := strings.Cut(v, "x"); ok {

@@ -1,0 +1,547 @@
+{
+  "version": 1,
+  "presets": {
+    "text": {
+      "subtitles": ["srt", "subrip", "webvtt", "vtt", "ass", "ssa"],
+      "notes": "Text is served separately; image subtitles require explicit client support."
+    },
+    "image": {
+      "subtitles": ["srt", "subrip", "webvtt", "vtt", "ass", "ssa", "pgs", "hdmv_pgs_subtitle", "vobsub", "dvd_subtitle"],
+      "notes": "Text is served separately; image subtitles require explicit client support."
+    },
+    "apple": {
+      "video": ["h264", "hevc"],
+      "audio": ["aac", "ac3", "eac3", "mp3", "flac", "alac", "opus"],
+      "containers": ["mp4", "mov", "mkv", "mpegts"],
+      "maxHeight": 2160,
+      "hdr10": true,
+      "dolbyVision": true
+    },
+    "android": {
+      "video": ["h264", "hevc", "vp9"],
+      "audio": ["aac", "ac3", "eac3", "mp3", "flac", "opus", "vorbis"],
+      "containers": ["mp4", "mkv", "mpegts", "webm"],
+      "maxHeight": 1080
+    },
+    "androidTV": {
+      "video": ["h264", "hevc", "vp9", "av1"],
+      "audio": ["aac", "ac3", "eac3", "mp3", "flac", "opus", "vorbis"],
+      "containers": ["mp4", "mkv", "mpegts", "webm"],
+      "maxHeight": 2160,
+      "hdr10": true
+    },
+    "roku": {
+      "video": ["h264", "hevc"],
+      "audio": ["aac", "ac3", "eac3", "mp3", "flac"],
+      "containers": ["mp4", "mkv", "mpegts"],
+      "maxHeight": 2160,
+      "hdr10": true
+    },
+    "smartTV": {
+      "video": ["h264", "hevc"],
+      "audio": ["aac", "ac3", "eac3", "mp3"],
+      "containers": ["mp4", "mkv", "mpegts"],
+      "maxHeight": 2160,
+      "hdr10": true
+    },
+    "htpc": {
+      "video": ["h264", "hevc", "vp9", "av1", "mpeg2video", "vc1", "mpeg4"],
+      "audio": ["aac", "ac3", "eac3", "truehd", "dts", "dtshd", "mp3", "flac", "opus", "vorbis", "pcm"],
+      "containers": ["mp4", "mkv", "mov", "avi", "mpegts", "webm"],
+      "maxHeight": 2160,
+      "hdr10": true
+    },
+    "generic": {
+      "video": ["h264"],
+      "audio": ["aac", "mp3"],
+      "containers": ["mp4", "mpegts"],
+      "maxHeight": 1080
+    },
+    "browser": {
+      "video": ["h264"],
+      "audio": ["aac", "mp3", "opus", "flac", "vorbis"],
+      "containers": ["mp4", "mkv", "webm", "mpegts"],
+      "maxHeight": 2160
+    },
+    "browserSafari": {
+      "video": ["h264", "hevc"],
+      "audio": ["aac", "mp3", "ac3", "eac3", "flac", "alac"],
+      "containers": ["mp4", "mov", "mpegts"],
+      "maxHeight": 2160,
+      "hdr10": true
+    },
+    "browserEdge": {
+      "video": ["h264", "hevc", "vp9", "av1"],
+      "audio": ["aac", "mp3", "opus", "flac", "vorbis", "ac3", "eac3"],
+      "containers": ["mp4", "mkv", "webm", "mpegts"],
+      "maxHeight": 2160
+    },
+    "browserChrome": {
+      "video": ["h264", "vp9", "av1", "hevc"],
+      "audio": ["aac", "mp3", "opus", "flac", "vorbis"],
+      "containers": ["mp4", "mkv", "webm", "mpegts"],
+      "maxHeight": 2160
+    },
+    "browserFirefox": {
+      "video": ["h264", "vp9", "av1"],
+      "audio": ["aac", "mp3", "opus", "flac", "vorbis"],
+      "containers": ["mp4", "mkv", "webm", "mpegts"],
+      "maxHeight": 2160
+    }
+  },
+  "definitions": [
+    {
+      "id": "apple-tv",
+      "role": "policy",
+      "family": "Apple TV",
+      "preset": "text",
+      "notes": "Dolby Vision profile 7 uses a compatible HDR base layer; TrueHD requires an audio transcode unless declared supported.",
+      "dolbyVisionProfiles": [5, 8],
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "apple tv"},
+          {"field": "identity", "op": "contains", "value": "tvos"}
+        ]
+      }
+    },
+    {
+      "id": "ios",
+      "role": "policy",
+      "family": "iOS",
+      "preset": "text",
+      "dolbyVisionProfiles": [5, 8],
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "ios"},
+          {"field": "identity", "op": "contains", "value": "ipados"}
+        ]
+      }
+    },
+    {
+      "id": "browser",
+      "role": "policy",
+      "family": "Plex Web",
+      "preset": "text",
+      "notes": "Browser codec declarations govern playback; text subtitles remain sidecars.",
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "plex web"},
+          {"field": "identity", "op": "contains", "value": "safari"},
+          {"field": "identity", "op": "contains", "value": "chrome"},
+          {"field": "identity", "op": "contains", "value": "firefox"},
+          {"field": "identity", "op": "contains", "value": "edge"}
+        ]
+      }
+    },
+    {
+      "id": "shield",
+      "role": "policy",
+      "family": "Android TV (Shield)",
+      "preset": "image",
+      "dolbyVisionProfiles": [5, 8],
+      "match": {"field": "identity", "op": "contains", "value": "shield"}
+    },
+    {
+      "id": "android",
+      "role": "policy",
+      "family": "Android / Google TV",
+      "preset": "text",
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "android"},
+          {"field": "identity", "op": "contains", "value": "google tv"}
+        ]
+      }
+    },
+    {
+      "id": "fire-tv",
+      "role": "policy",
+      "family": "Fire TV",
+      "preset": "text",
+      "match": {"field": "identity", "op": "contains", "value": "fire tv"}
+    },
+    {
+      "id": "roku",
+      "role": "policy",
+      "family": "Roku",
+      "preset": "text",
+      "match": {"field": "identity", "op": "contains", "value": "roku"}
+    },
+    {
+      "id": "webos",
+      "role": "policy",
+      "family": "LG webOS",
+      "preset": "text",
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "webos"},
+          {"field": "identity", "op": "contains", "value": "lg"}
+        ]
+      }
+    },
+    {
+      "id": "tizen",
+      "role": "policy",
+      "family": "Samsung Tizen",
+      "preset": "text",
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "tizen"},
+          {"field": "identity", "op": "contains", "value": "samsung"}
+        ]
+      }
+    },
+    {
+      "id": "console",
+      "role": "policy",
+      "family": "Console",
+      "preset": "text",
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "xbox"},
+          {"field": "identity", "op": "contains", "value": "playstation"}
+        ]
+      }
+    },
+    {
+      "id": "htpc",
+      "role": "policy",
+      "family": "HTPC",
+      "preset": "image",
+      "dolbyVisionProfiles": [5, 7, 8],
+      "match": {
+        "any": [
+          {"field": "identity", "op": "contains", "value": "htpc"},
+          {"field": "identity", "op": "contains", "value": "kodi"},
+          {"field": "identity", "op": "contains", "value": "infuse"}
+        ]
+      }
+    },
+    {
+      "id": "generic",
+      "role": "policy",
+      "family": "generic",
+      "preset": "text",
+      "match": {}
+    },
+    {
+      "id": "apple-tv",
+      "role": "playback",
+      "preset": "apple",
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "apple tv"},
+          {"field": "platform", "op": "equals", "value": "tvos"},
+          {"field": "device", "op": "contains", "value": "apple tv"}
+        ]
+      }
+    },
+    {
+      "id": "browser-safari",
+      "role": "playback",
+      "preset": "browserSafari",
+      "match": {
+        "all": [
+          {"field": "product", "op": "contains", "value": "plex web"},
+          {"field": "platform", "op": "contains", "value": "safari"}
+        ]
+      }
+    },
+    {
+      "id": "browser-edge",
+      "role": "playback",
+      "preset": "browserEdge",
+      "match": {
+        "all": [
+          {"field": "product", "op": "contains", "value": "plex web"},
+          {"field": "platform", "op": "contains", "value": "edge"}
+        ]
+      }
+    },
+    {
+      "id": "browser-chrome",
+      "role": "playback",
+      "preset": "browserChrome",
+      "match": {
+        "all": [
+          {"field": "product", "op": "contains", "value": "plex web"},
+          {
+            "any": [
+              {"field": "platform", "op": "contains", "value": "chrome"},
+              {"field": "platform", "op": "contains", "value": "opera"},
+              {"field": "platform", "op": "contains", "value": "brave"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "browser-firefox",
+      "role": "playback",
+      "preset": "browserFirefox",
+      "match": {
+        "all": [
+          {"field": "product", "op": "contains", "value": "plex web"},
+          {"field": "platform", "op": "contains", "value": "firefox"}
+        ]
+      }
+    },
+    {
+      "id": "browser",
+      "role": "playback",
+      "preset": "browser",
+      "match": {"field": "product", "op": "contains", "value": "plex web"}
+    },
+    {
+      "id": "htpc",
+      "role": "playback",
+      "preset": "htpc",
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "plex for windows"},
+          {"field": "product", "op": "contains", "value": "plex for mac"},
+          {"field": "product", "op": "contains", "value": "plex for linux"},
+          {"field": "product", "op": "contains", "value": "plex desktop"}
+        ]
+      }
+    },
+    {
+      "id": "ios",
+      "role": "playback",
+      "preset": "apple",
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "ios"},
+          {"field": "platform", "op": "equals", "value": "ios"},
+          {"field": "platform", "op": "equals", "value": "ipados"},
+          {"field": "device", "op": "contains", "value": "iphone"},
+          {"field": "device", "op": "contains", "value": "ipad"}
+        ]
+      }
+    },
+    {
+      "id": "android-tv",
+      "role": "playback",
+      "preset": "androidTV",
+      "match": {
+        "all": [
+          {
+            "any": [
+              {"field": "product", "op": "contains", "value": "android"},
+              {
+                "all": [
+                  {"field": "product", "op": "equals", "value": "plezy"},
+                  {"field": "platform", "op": "equals", "value": "android"}
+                ]
+              }
+            ]
+          },
+          {
+            "any": [
+              {"field": "product", "op": "contains", "value": "tv"},
+              {"field": "device", "op": "contains", "value": "shield"},
+              {"field": "device", "op": "contains", "value": "tv"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "android",
+      "role": "playback",
+      "preset": "android",
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "android"},
+          {"field": "platform", "op": "equals", "value": "android"}
+        ]
+      }
+    },
+    {
+      "id": "htpc",
+      "role": "playback",
+      "preset": "htpc",
+      "match": {"field": "product", "op": "equals", "value": "plezy"}
+    },
+    {
+      "id": "roku",
+      "role": "playback",
+      "preset": "roku",
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "roku"},
+          {"field": "platform", "op": "equals", "value": "roku"}
+        ]
+      }
+    },
+    {
+      "id": "htpc",
+      "role": "playback",
+      "preset": "htpc",
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "htpc"},
+          {"field": "product", "op": "contains", "value": "plex media player"},
+          {"field": "product", "op": "contains", "value": "kodi"},
+          {"field": "product", "op": "contains", "value": "infuse"}
+        ]
+      }
+    },
+    {
+      "id": "smart-tv",
+      "role": "playback",
+      "preset": "smartTV",
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "samsung"},
+          {"field": "product", "op": "contains", "value": "lg"},
+          {"field": "product", "op": "contains", "value": "vizio"},
+          {"field": "platform", "op": "equals", "value": "tizen"},
+          {"field": "platform", "op": "equals", "value": "webos"},
+          {"field": "product", "op": "contains", "value": "xbox"},
+          {"field": "product", "op": "contains", "value": "playstation"},
+          {"field": "product", "op": "contains", "value": "fire tv"}
+        ]
+      }
+    },
+    {
+      "id": "browser-safari",
+      "role": "playback",
+      "preset": "browserSafari",
+      "match": {"field": "platform", "op": "contains", "value": "safari"}
+    },
+    {
+      "id": "browser-edge",
+      "role": "playback",
+      "preset": "browserEdge",
+      "match": {"field": "platform", "op": "contains", "value": "edge"}
+    },
+    {
+      "id": "browser-chrome",
+      "role": "playback",
+      "preset": "browserChrome",
+      "match": {"field": "platform", "op": "contains", "value": "chrome"}
+    },
+    {
+      "id": "browser-firefox",
+      "role": "playback",
+      "preset": "browserFirefox",
+      "match": {"field": "platform", "op": "contains", "value": "firefox"}
+    },
+    {
+      "id": "generic",
+      "role": "playback",
+      "preset": "generic",
+      "match": {}
+    },
+    {
+      "id": "fire-tv-4k-max",
+      "role": "patch",
+      "patchHeight": 2160,
+      "patchHdr10": true,
+      "match": {
+        "all": [
+          {
+            "any": [
+              {"field": "product", "op": "contains", "value": "android"},
+              {
+                "all": [
+                  {"field": "platform", "op": "equals", "value": "android"},
+                  {"field": "product", "op": "notContains", "value": "web"}
+                ]
+              }
+            ]
+          },
+          {
+            "any": [
+              {"field": "device", "op": "equals", "value": "AFTKA"},
+              {"field": "model", "op": "equals", "value": "AFTKA"},
+              {"field": "device", "op": "equals", "value": "AFTKRT"},
+              {"field": "model", "op": "equals", "value": "AFTKRT"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "plex-appletv-hdr10-base",
+      "role": "quirk",
+      "quirks": ["plex-appletv-hdr10-base"],
+      "match": {
+        "all": [
+          {"field": "product", "op": "contains", "value": "plex"},
+          {
+            "any": [
+              {"field": "product", "op": "contains", "value": "apple tv"},
+              {"field": "platform", "op": "equals", "value": "tvos"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "plex-list-all-tracks",
+      "role": "quirk",
+      "quirks": ["plex-list-all-tracks"],
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "android"},
+          {
+            "all": [
+              {"field": "platform", "op": "equals", "value": "android"},
+              {"field": "product", "op": "notContains", "value": "web"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "android-mobile-ceiling",
+      "role": "quirk",
+      "quirks": ["android-mobile-ceiling"],
+      "match": {
+        "all": [
+          {
+            "any": [
+              {"field": "product", "op": "contains", "value": "android"},
+              {
+                "all": [
+                  {"field": "platform", "op": "equals", "value": "android"},
+                  {"field": "product", "op": "notContains", "value": "web"}
+                ]
+              }
+            ]
+          },
+          {"field": "product", "op": "notContains", "value": "tv"},
+          {"field": "device", "op": "notContains", "value": "shield"},
+          {"field": "device", "op": "notContains", "value": "tv"}
+        ]
+      }
+    },
+    {
+      "id": "probe-hls-without-codecs",
+      "role": "quirk",
+      "quirks": ["probe-hls-without-codecs"],
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "apple"},
+          {"field": "platform", "op": "equals", "value": "tvos"},
+          {"field": "platform", "op": "equals", "value": "ios"}
+        ]
+      }
+    },
+    {
+      "id": "plex-native-live-tune",
+      "role": "quirk",
+      "quirks": ["plex-native-live-tune"],
+      "match": {
+        "any": [
+          {"field": "product", "op": "contains", "value": "apple"},
+          {"field": "platform", "op": "equals", "value": "tvos"},
+          {"field": "platform", "op": "equals", "value": "ios"},
+          {"field": "platform", "op": "equals", "value": "android"}
+        ]
+      }
+    }
+  ]
+}

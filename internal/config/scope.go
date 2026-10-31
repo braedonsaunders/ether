@@ -49,6 +49,7 @@ var sectionScopes = map[string]Scope{
 	"updates":       Shared, // incl. maxDrain: every node drains the same way
 	"markers":       Shared,
 	"personalize":   Shared,
+	"clients":       Shared,
 	"setupComplete": Shared,
 	// Spike serves files from this node's disk.
 	"spike": Local,

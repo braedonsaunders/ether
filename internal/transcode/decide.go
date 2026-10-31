@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -735,6 +736,8 @@ func describeSource(info core.MediaInfo, v, a *core.StreamInfo) string {
 
 // appleTVHDR10Base is a player quirk, not a hardware certification or a
 // blanket HEVC/HDR limit. Profile 5 has no HDR10 base and must not be stripped.
+// The client match is the registry quirk plex-appletv-hdr10-base: native Plex
+// on tvOS accepts the decision and then fails to open profiles 7 and 8.1.
 func appleTVHDR10Base(v *core.StreamInfo, caps core.ClientCaps) bool {
 	if v == nil || v.Codec != "hevc" || !v.DolbyVision || v.ColorTransfer != "smpte2084" || !caps.HDR10 {
 		return false
@@ -748,6 +751,5 @@ func appleTVHDR10Base(v *core.StreamInfo, caps core.ClientCaps) bool {
 	if v.DolbyVisionBLPresent != nil && !*v.DolbyVisionBLPresent {
 		return false
 	}
-	product := strings.ToLower(caps.Product)
-	return strings.Contains(product, "plex") && (strings.Contains(product, "apple tv") || strings.EqualFold(caps.Platform, "tvos"))
+	return clientreg.HasQuirk(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: caps.Device, Version: caps.Version}, "plex-appletv-hdr10-base")
 }

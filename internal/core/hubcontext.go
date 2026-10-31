@@ -7,8 +7,9 @@ import (
 )
 
 // ClassifyDevice maps a Plex client's X-Plex-Product, X-Plex-Platform and
-// X-Plex-Device headers onto a device class (DeviceTV, DeviceMobile,
-// DeviceWeb, DeviceDesktop).
+// X-Plex-Device headers onto a hub form factor (DeviceTV, DeviceMobile,
+// DeviceWeb, DeviceDesktop). Playback codecs, HDR and subtitle support are
+// not decided here; those come from the client capability registry.
 //
 //   - TV: Apple TV, Android TV / Google TV / Fire TV / Shield, Roku, smart
 //     TVs (Samsung Tizen, LG webOS, Vizio, Hisense, Sony...), game consoles

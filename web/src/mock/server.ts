@@ -2242,6 +2242,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
           devices: [
             {
               name: "Apple TV",
+              id: "apple-tv",
               dolbyVisionProfiles: [5, 8],
               subtitleCodecs: ["srt"],
               notes:

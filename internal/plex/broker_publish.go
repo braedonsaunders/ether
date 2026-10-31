@@ -159,7 +159,7 @@ func (s *Server) adoptBrokerTimeline(ctx context.Context, pr *Request, key core.
 	if sessionID == "" {
 		return ""
 	}
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.declaredCaps(pr)
 	if caps.ClientID == "" {
 		caps.ClientID = pr.ClientID
 	}

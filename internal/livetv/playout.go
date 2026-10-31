@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/sessions"
 )
@@ -906,7 +907,7 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	isHLS := strings.HasPrefix(strings.TrimSpace(string(prefix[:n])), "#EXTM3U") || strings.Contains(strings.ToLower(res.Header.Get("Content-Type")), "mpegurl")
 	var info *core.MediaInfo
 	if isHLS && !c.Transcode {
-		analyze := len(ss.caps.VideoCodecs) > 0 || len(ss.caps.AudioCodecs) > 0 || strings.Contains(strings.ToLower(ss.caps.Product), "apple") || strings.EqualFold(ss.caps.Platform, "tvos") || strings.EqualFold(ss.caps.Platform, "ios")
+		analyze := len(ss.caps.VideoCodecs) > 0 || len(ss.caps.AudioCodecs) > 0 || clientreg.HasQuirk(clientreg.Identity{Product: ss.caps.Product, Platform: ss.caps.Platform, Device: ss.caps.Device, Version: ss.caps.Version}, "probe-hls-without-codecs")
 		if s.o.Transcoder != nil && analyze {
 			info, err = s.probeSessionInput(ctx, ss)
 			if err != nil {

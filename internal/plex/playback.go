@@ -140,18 +140,15 @@ type playRequest struct {
 	listAllTracks bool
 }
 
-// androidFamilyClient reports whether the request comes from Plex's
-// Android app family (Android, Android TV and Fire TV builds send an
-// Android product/platform pair).
+// androidFamilyClient reports whether the decision lists every probed track.
+// Plex's Android family does; web, iOS and Apple TV stay selected-only.
+// That is the PMS response shape, selected by the registry quirk
+// plex-list-all-tracks rather than a playback capability.
 func androidFamilyClient(pr *Request) bool {
 	if pr == nil {
 		return false
 	}
-	product := strings.ToLower(pr.Product)
-	if strings.Contains(product, "android") {
-		return true
-	}
-	return strings.EqualFold(pr.Platform, "android") && !strings.Contains(product, "web")
+	return transcode.HasQuirk(pr.Product, pr.Platform, pr.Device, pr.Model, pr.Version, "plex-list-all-tracks")
 }
 
 // sameSettings compares playback controls, excluding the seek position (DASH
@@ -1237,7 +1234,7 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		if sessionID == "" {
 			sessionID = sanitizeSessionID(pr.ClientID + "-" + key.String())
 		}
-		partPlay := playRequest{key: key, caps: pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps), sessionID: sanitizeSessionID(sessionID), audioSel: -1, subSel: -1}
+		partPlay := playRequest{key: key, caps: s.declaredCaps(pr), sessionID: sanitizeSessionID(sessionID), audioSel: -1, subSel: -1}
 		if partPlay.caps.ClientID == "" {
 			partPlay.caps.ClientID = pr.ClientID
 		}

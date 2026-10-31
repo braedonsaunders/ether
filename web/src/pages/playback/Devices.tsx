@@ -11,9 +11,10 @@ import { Link } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { t, tn, tx } from "../../i18n";
-import { apiFetch } from "../../lib/api";
+import { api, apiFetch } from "../../lib/api";
 import { relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
+import { BoolRow, RecordDrawer, TextRow } from "../sources/form";
 
 type CompatApp = {
   protocol: string;
@@ -27,10 +28,30 @@ type CompatApp = {
 };
 
 type CompatDevice = {
+  id?: string;
   name: string;
   dolbyVisionProfiles: number[] | null;
   subtitleCodecs: string[] | null;
   notes: string;
+  videoCodecs?: string[] | null;
+  maxHeight?: number;
+  hdr10?: boolean;
+  dolbyVision?: boolean;
+  builtinMaxHeight?: number;
+  builtinHdr10?: boolean;
+  builtinDolbyVision?: boolean;
+};
+
+type CapabilityOverride = {
+  id?: string;
+  product?: string;
+  dolbyVisionProfiles?: number[];
+  subtitleCodecs?: string[];
+  videoCodecs?: string[];
+  maxHeight?: number;
+  hdr10?: boolean;
+  dolbyVision?: boolean;
+  notes?: string;
 };
 
 type ObservedClient = {
@@ -43,6 +64,7 @@ type Catalog = {
   apps: CompatApp[];
   devices: CompatDevice[];
   observed: ObservedClient[];
+  overrides?: CapabilityOverride[];
 };
 
 function protocolLabel(value: string) {
@@ -144,27 +166,123 @@ function seenFor(app: CompatApp, observed: ObservedClient[]) {
   );
 }
 
+function listText(values: string[] | null | undefined) {
+  return values?.join(", ") ?? "";
+}
+
+function parseList(value: string) {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function parseProfiles(value: string) {
+  return parseList(value)
+    .map((part) => Number(part))
+    .filter((n) => Number.isInteger(n) && n >= 0);
+}
+
 /** Built-in app reference, separate from the devices those apps run on. */
 export function DeviceCapabilities() {
   const [protocol, setProtocol] = useState("");
   const [device, setDevice] = useState("");
+  const [editing, setEditing] = useState<CompatDevice | null>(null);
+  const [draft, setDraft] = useState({
+    profiles: "",
+    subtitles: "",
+    video: "",
+    height: "",
+    hdr: false,
+    dolby: false,
+    product: "",
+  });
+  const [baseline, setBaseline] = useState(draft);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<unknown>(null);
   const matrix = useAsync(() => apiFetch<Catalog>("/playback/policy"), []);
   const apps = matrix.data?.apps ?? [];
   const devices = matrix.data?.devices ?? [];
   const observed = matrix.data?.observed ?? [];
   const protocols = [
-    ...new Set(["plex", "jellyfin", "emby", "silo", "stremio", "dlna", "webdav", ...apps.map((app) => app.protocol)]),
+    ...new Set([
+      "plex",
+      "jellyfin",
+      "emby",
+      "silo",
+      "stremio",
+      "dlna",
+      "webdav",
+      ...apps.map((app) => app.protocol),
+    ]),
   ];
   const deviceNames = [...new Set(devices.map((row) => row.name))];
   const visibleApps = apps.filter(
-    (app) =>
-      (!protocol || app.protocol === protocol) && (!device || app.devices.includes(device)),
+    (app) => (!protocol || app.protocol === protocol) && (!device || app.devices.includes(device)),
   );
   const visibleDevices = devices.filter((row) => !device || row.name === device);
-  const matched = new Set(visibleApps.flatMap((app) => seenFor(app, observed).map((row) => `${row.protocol}:${row.name}`)));
-  const unmatched = observed.filter(
-    (row) => !matched.has(`${row.protocol}:${row.name}`) && (!protocol || row.protocol === protocol),
+  const matched = new Set(
+    visibleApps.flatMap((app) =>
+      seenFor(app, observed).map((row) => `${row.protocol}:${row.name}`),
+    ),
   );
+  const unmatched = observed.filter(
+    (row) =>
+      !matched.has(`${row.protocol}:${row.name}`) && (!protocol || row.protocol === protocol),
+  );
+  const openDevice = (row: CompatDevice) => {
+    const saved = matrix.data?.overrides?.find((item) => item.id === row.id);
+    const next = {
+      profiles: listText(row.dolbyVisionProfiles?.map(String) ?? null),
+      subtitles: listText(row.subtitleCodecs),
+      video: listText(row.videoCodecs),
+      height: row.maxHeight ? String(row.maxHeight) : "",
+      hdr: Boolean(row.hdr10),
+      dolby: Boolean(row.dolbyVision),
+      product: saved?.product ?? "",
+    };
+    setDraft(next);
+    setBaseline(next);
+    setSaveError(null);
+    setEditing(row);
+  };
+  const saveDevice = async () => {
+    if (!editing?.id) return;
+    setSaving(true);
+    setSaveError(null);
+    const saved = matrix.data?.overrides?.find((item) => item.id === editing.id);
+    const override: CapabilityOverride = { ...saved, id: editing.id };
+    if (draft.profiles !== baseline.profiles)
+      override.dolbyVisionProfiles = parseProfiles(draft.profiles);
+    if (draft.subtitles !== baseline.subtitles)
+      override.subtitleCodecs = parseList(draft.subtitles);
+    if (draft.video !== baseline.video) override.videoCodecs = parseList(draft.video);
+    const height = Number(draft.height);
+    const builtinHeight = editing.builtinMaxHeight ?? editing.maxHeight ?? 0;
+    if (draft.height !== baseline.height) {
+      if (Number.isInteger(height) && height > 0 && height !== builtinHeight)
+        override.maxHeight = height;
+      else delete override.maxHeight;
+    }
+    if (draft.hdr !== baseline.hdr) override.hdr10 = draft.hdr;
+    if (draft.dolby !== baseline.dolby) override.dolbyVision = draft.dolby;
+    if (draft.product !== baseline.product) {
+      if (draft.product.trim()) override.product = draft.product.trim();
+      else delete override.product;
+    }
+    const others = (matrix.data?.overrides ?? []).filter((item) => item.id !== editing.id);
+    const changed = Object.keys(override).some((key) => key !== "id");
+    const overrides = changed ? [...others, override] : others;
+    try {
+      await api.putSection("clients", { overrides });
+      setEditing(null);
+      await matrix.reload();
+    } catch (err) {
+      setSaveError(err);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <>
       <p className="max-w-3xl text-sm text-fg-muted">
@@ -209,7 +327,11 @@ export function DeviceCapabilities() {
         </label>
         <label className="flex items-center gap-2 text-sm">
           {t("Device")}
-          <select aria-label={t("Device")} value={device} onChange={(e) => setDevice(e.currentTarget.value)}>
+          <select
+            aria-label={t("Device")}
+            value={device}
+            onChange={(e) => setDevice(e.currentTarget.value)}
+          >
             <option value="">{t("All devices")}</option>
             {deviceNames.map((name) => (
               <option key={name} value={name}>
@@ -262,7 +384,9 @@ export function DeviceCapabilities() {
                           {plays(app)}
                           {note ? <span className="mt-1 block text-fg-muted">{note}</span> : null}
                         </TableCell>
-                        <TableCell>{app.subtitles?.join(", ") || t("Reported by the app")}</TableCell>
+                        <TableCell>
+                          {app.subtitles?.join(", ") || t("Reported by the app")}
+                        </TableCell>
                         <TableCell>{certificationLabel(app.certification)}</TableCell>
                       </TableRow>
                     );
@@ -300,17 +424,81 @@ export function DeviceCapabilities() {
               <TableBody>
                 {visibleDevices.map((row) => (
                   <TableRow key={row.name}>
-                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="font-medium">
+                      {row.name}
+                      {row.id ? (
+                        <button
+                          type="button"
+                          className="mt-1 block text-xs font-normal text-primary underline"
+                          aria-label={t("Edit {name}", { name: row.name })}
+                          onClick={() => openDevice(row)}
+                        >
+                          {t("Edit")}
+                        </button>
+                      ) : null}
+                    </TableCell>
                     <TableCell>
                       {row.dolbyVisionProfiles?.join(", ") || t("Reported by the app")}
                     </TableCell>
-                    <TableCell>{row.subtitleCodecs?.join(", ") || t("Reported by the app")}</TableCell>
+                    <TableCell>
+                      {row.subtitleCodecs?.join(", ") || t("Reported by the app")}
+                    </TableCell>
                     <TableCell className="text-fg-muted">{deviceNote(row.notes)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </Section>
+          <RecordDrawer
+            open={editing != null}
+            title={editing ? tx("Edit {name}", { name: editing.name }) : ""}
+            description={t("What the app reports at playback replaces this.")}
+            onClose={() => setEditing(null)}
+            onSave={() => void saveDevice()}
+            saving={saving}
+            saveLabel={t("Save")}
+            error={saveError}
+          >
+            <TextRow
+              label={t("Dolby Vision profiles")}
+              value={draft.profiles}
+              placeholder={t("Comma-separated")}
+              onChange={(profiles) => setDraft({ ...draft, profiles })}
+            />
+            <TextRow
+              label={t("Subtitles")}
+              value={draft.subtitles}
+              placeholder={t("Comma-separated")}
+              onChange={(subtitles) => setDraft({ ...draft, subtitles })}
+            />
+            <TextRow
+              label={t("Video codecs")}
+              value={draft.video}
+              placeholder={t("Comma-separated")}
+              onChange={(video) => setDraft({ ...draft, video })}
+            />
+            <TextRow
+              label={t("Maximum resolution")}
+              value={draft.height}
+              onChange={(height) => setDraft({ ...draft, height })}
+            />
+            <BoolRow
+              label={t("HDR")}
+              value={draft.hdr}
+              onChange={(hdr) => setDraft({ ...draft, hdr })}
+            />
+            <BoolRow
+              label={t("Dolby Vision")}
+              value={draft.dolby}
+              onChange={(dolby) => setDraft({ ...draft, dolby })}
+            />
+            <TextRow
+              label={t("Only when the app name contains")}
+              help={t("Leave this blank to change the device for every app.")}
+              value={draft.product}
+              onChange={(product) => setDraft({ ...draft, product })}
+            />
+          </RecordDrawer>
         </>
       )}
     </>

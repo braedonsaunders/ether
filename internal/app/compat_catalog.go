@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
@@ -22,12 +23,21 @@ type compatApp struct {
 }
 
 // compatDevice is a piece of hardware. The same Apple TV is an Apple TV
-// whether the app is Plex, Infuse, Swiftfin, or Silo.
+// whether the app is Plex, Infuse, Swiftfin, or Silo. The numbers are the
+// registry record the engine uses, after owner overrides.
 type compatDevice struct {
+	ID                  string   `json:"id,omitempty"`
 	Name                string   `json:"name"`
 	DolbyVisionProfiles []int    `json:"dolbyVisionProfiles"`
 	SubtitleCodecs      []string `json:"subtitleCodecs"`
 	Notes               string   `json:"notes"`
+	VideoCodecs         []string `json:"videoCodecs,omitempty"`
+	MaxHeight           int      `json:"maxHeight,omitempty"`
+	HDR10               bool     `json:"hdr10"`
+	DolbyVision         bool     `json:"dolbyVision"`
+	BuiltinMaxHeight    int      `json:"builtinMaxHeight,omitempty"`
+	BuiltinHDR10        bool     `json:"builtinHdr10"`
+	BuiltinDolbyVision  bool     `json:"builtinDolbyVision"`
 }
 
 type observedClient struct {
@@ -37,9 +47,10 @@ type observedClient struct {
 }
 
 type compatCatalog struct {
-	Apps     []compatApp      `json:"apps"`
-	Devices  []compatDevice   `json:"devices"`
-	Observed []observedClient `json:"observed"`
+	Apps      []compatApp                     `json:"apps"`
+	Devices   []compatDevice                  `json:"devices"`
+	Observed  []observedClient                `json:"observed"`
+	Overrides []core.ClientCapabilityOverride `json:"overrides"`
 }
 
 // builtinApps is the reference list. Names and certification come from
@@ -70,7 +81,7 @@ func builtinApps() []compatApp {
 	}
 }
 
-func builtinDevices() []compatDevice {
+func builtinDevices(overrides []core.ClientCapabilityOverride) []compatDevice {
 	products := []struct{ name, product string }{
 		{"Apple TV", "Apple TV"},
 		{"iOS", "iOS"},
@@ -91,12 +102,23 @@ func builtinDevices() []compatDevice {
 	}
 	out := make([]compatDevice, 0, len(products)+1)
 	for _, item := range products {
-		policy := transcode.ClientPolicyFor(core.ClientCaps{Product: item.product})
+		id := clientreg.Identity{Product: item.product}
+		edited := transcode.ResolvePolicy(core.ClientCaps{Product: item.product}, overrides)
+		playBase := clientreg.Playback(id, nil)
+		play := clientreg.Playback(id, overrides)
 		out = append(out, compatDevice{
+			ID:                  clientreg.Policy(id, nil).ID,
 			Name:                item.name,
-			DolbyVisionProfiles: policy.DolbyVisionProfiles,
-			SubtitleCodecs:      policy.SubtitleCodecs,
-			Notes:               policy.Notes,
+			DolbyVisionProfiles: edited.DolbyVisionProfiles,
+			SubtitleCodecs:      edited.SubtitleCodecs,
+			Notes:               edited.Notes,
+			VideoCodecs:         play.Video,
+			MaxHeight:           play.MaxHeight,
+			HDR10:               play.HDR10,
+			DolbyVision:         play.DolbyVision,
+			BuiltinMaxHeight:    playBase.MaxHeight,
+			BuiltinHDR10:        playBase.HDR10,
+			BuiltinDolbyVision:  playBase.DolbyVision,
 		})
 	}
 	out = append(out, compatDevice{
@@ -115,7 +137,11 @@ func (a *App) compatibilityCatalog(ctx context.Context) (compatCatalog, error) {
 	if observed == nil {
 		observed = []observedClient{}
 	}
-	return compatCatalog{Apps: builtinApps(), Devices: builtinDevices(), Observed: observed}, nil
+	overrides := a.cfg.Read().Clients.Overrides
+	if overrides == nil {
+		overrides = []core.ClientCapabilityOverride{}
+	}
+	return compatCatalog{Apps: builtinApps(), Devices: builtinDevices(overrides), Observed: observed, Overrides: overrides}, nil
 }
 
 func (a *App) observedClients(ctx context.Context) ([]observedClient, error) {

@@ -47,7 +47,7 @@ func (s *Server) handleParityWarmSettled(w http.ResponseWriter, r *http.Request)
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	if err := settle.ParitySettleWarm(r.Context(), pr.User, core.RatingKey(key), pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)); err != nil {
+	if err := settle.ParitySettleWarm(r.Context(), pr.User, core.RatingKey(key), s.declaredCaps(pr)); err != nil {
 		writeHTTPError(w, http.StatusServiceUnavailable)
 		return
 	}
@@ -74,7 +74,7 @@ func (s *Server) handleParityWarmProbe(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.declaredCaps(pr)
 	for _, raw := range keys {
 		key, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || key <= 0 {
