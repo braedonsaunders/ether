@@ -4,8 +4,10 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
@@ -188,6 +190,7 @@ func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails)
 		}
 	}
 	t.Keywords = keywordNames(d.Keywords)
+	t.AlternativeTitles = altTitles(d.AlternativeTitles, t.Title, t.OriginalTitle)
 	t.Tagline = d.Tagline
 	t.Status = d.Status
 	if d.Runtime > 0 {
@@ -273,6 +276,7 @@ func (c *Catalog) tvToTitle(ctx context.Context, s tmdb.TVShow) core.Title {
 func (c *Catalog) tvDetailsToTitle(ctx context.Context, d *tmdb.TVDetails) core.Title {
 	t := c.tvToTitle(ctx, d.TVShow)
 	t.Keywords = keywordNames(d.Keywords)
+	t.AlternativeTitles = altTitles(d.AlternativeTitles, t.Title, t.OriginalTitle)
 	t.Tagline = d.Tagline
 	t.Status = d.Status
 	t.LastAirDate = tmdb.ParseDate(d.LastAirDate)
@@ -443,6 +447,59 @@ func itoa(n int) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
+}
+
+// maxAltTitles bounds the alternative titles kept per title; maxAltTitleLen
+// bounds each one. Popular titles list a hundred or more.
+const (
+	maxAltTitles   = 24
+	maxAltTitleLen = 200
+)
+
+// altTitles keeps the alternative titles release names can use: written in
+// Latin script (a release name's script), not the title or original title
+// again, unique after normalization, in TMDB's order, at most maxAltTitles.
+// Romanized originals ("Sousou no Frieren") are what anime and foreign
+// releases are named by. Non-nil when TMDB sent the block, so an empty list
+// replaces stale rows.
+func altTitles(a *tmdb.AltTitles, title, original string) []string {
+	if a == nil {
+		return nil
+	}
+	out := []string{}
+	seen := map[string]bool{releaseparse.NormalizeTitle(title): true, releaseparse.NormalizeTitle(original): true}
+	for _, list := range [][]tmdb.AltTitle{a.Titles, a.Results} {
+		for _, alt := range list {
+			name := strings.TrimSpace(alt.Title)
+			if name == "" || len(name) > maxAltTitleLen || !latinScript(name) {
+				continue
+			}
+			norm := releaseparse.NormalizeTitle(name)
+			if norm == "" || seen[norm] {
+				continue
+			}
+			seen[norm] = true
+			out = append(out, name)
+			if len(out) == maxAltTitles {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+// latinScript reports a name whose letters are all Latin.
+func latinScript(s string) bool {
+	letters := 0
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			if !unicode.Is(unicode.Latin, r) {
+				return false
+			}
+			letters++
+		}
+	}
+	return letters > 0
 }
 
 // keywordNames flattens TMDB keywords (movies use "keywords", TV "results").

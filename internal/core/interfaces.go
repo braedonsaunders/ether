@@ -257,6 +257,10 @@ type SearchRequest struct {
 	// commonly numbered that way (additive).
 	AbsoluteEpisode int
 	Anime           bool
+	// AlternativeTitles are other names of the movie or series (TMDB
+	// alternative titles) a release name may use; matching only, never
+	// part of a query or cache key (additive).
+	AlternativeTitles []string `json:"-"`
 }
 
 type Indexer interface {

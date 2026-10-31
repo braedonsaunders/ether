@@ -39,6 +39,8 @@ func (e extraScan) Scan(dest ...any) error { return e.s.Scan(append(dest, e.extr
 func cloneTitle(t core.Title) core.Title {
 	t.Genres = append([]string(nil), t.Genres...)
 	t.Keywords = append([]string(nil), t.Keywords...)
+	t.AlternativeTitles = append([]string(nil), t.AlternativeTitles...)
+	t.ShowAlternativeTitles = append([]string(nil), t.ShowAlternativeTitles...)
 	t.Studios = append([]string(nil), t.Studios...)
 	t.Countries = append([]string(nil), t.Countries...)
 	t.Cast = append([]core.Person(nil), t.Cast...)
@@ -235,6 +237,7 @@ type seriesIdentity struct {
 	tvdb           int64
 	year           int
 	keywords       []string
+	altTitles      []string
 }
 
 type creditFact struct {
@@ -250,6 +253,8 @@ SELECT key, 'genre' AS tag, genre AS a, '' AS b, '' AS c, '' AS d, '' AS e, '' A
 UNION ALL
 SELECT key, 'keyword', keyword, '', '', '', '', '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
 UNION ALL
+SELECT key, 'alt', title, '', '', '', '', '', '', '' FROM catalog_alt_titles WHERE key IN (` + ph + `)
+UNION ALL
 SELECT key, 'studio', studio, '', '', '', '', '', '', '' FROM catalog_studios WHERE key IN (` + ph + `)
 UNION ALL
 SELECT key, 'country', country, '', '', '', '', '', '', '' FROM catalog_countries WHERE key IN (` + ph + `)
@@ -258,8 +263,8 @@ SELECT c.key, 'credit', c.kind, c.name, c.role, c.thumb, CAST(c.person_tmdb AS T
 UNION ALL
 SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST(h.fallback_admitted AS TEXT), CAST(t.released_ts AS TEXT), CAST(t.year AS TEXT), '', '', '' FROM catalog_home_release h JOIN catalog_titles t ON t.key=h.key WHERE h.key IN (` + ph + `)
 )`
-	bound := make([]any, 0, len(args)*6)
-	for i := 0; i < 6; i++ {
+	bound := make([]any, 0, len(args)*7)
+	for i := 0; i < 7; i++ {
 		bound = append(bound, args...)
 	}
 	rows, err := c.db.QueryContext(ctx, q, bound...)
@@ -285,6 +290,10 @@ SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST
 		case "keyword":
 			for _, i := range idx[k] {
 				items[i].Keywords = append(items[i].Keywords, a)
+			}
+		case "alt":
+			for _, i := range idx[k] {
+				items[i].AlternativeTitles = append(items[i].AlternativeTitles, a)
 			}
 		case "studio":
 			for _, i := range idx[k] {
@@ -325,6 +334,7 @@ SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST
 		for _, i := range idx[key] {
 			sort.Strings(items[i].Genres)
 			sort.Strings(items[i].Keywords)
+			sort.Strings(items[i].AlternativeTitles)
 			sort.Strings(items[i].Studios)
 			sort.Strings(items[i].Countries)
 		}
@@ -379,10 +389,12 @@ SELECT 'id' AS tag, key, imdb AS a, CAST(tvdb AS TEXT) AS b, CAST(year AS TEXT) 
 UNION ALL
 SELECT 'kw', key, keyword, '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
 UNION ALL
+SELECT 'alt', key, title, '', '', '' FROM catalog_alt_titles WHERE key IN (` + ph + `)
+UNION ALL
 SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', '' FROM catalog_titles WHERE type='season' AND season>0 AND show_key IN (` + ph + `)
 )`
-		bound := make([]any, 0, len(part)*3)
-		for i := 0; i < 3; i++ {
+		bound := make([]any, 0, len(part)*4)
+		for i := 0; i < 4; i++ {
 			bound = append(bound, part...)
 		}
 		rows, err := c.db.QueryContext(ctx, q, bound...)
@@ -408,6 +420,10 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 				if show := shows[k]; show != nil {
 					show.keywords = append(show.keywords, a)
 				}
+			case "alt":
+				if show := shows[k]; show != nil {
+					show.altTitles = append(show.altTitles, a)
+				}
 			case "season":
 				season, _ := strconv.Atoi(a)
 				n, _ := strconv.Atoi(b)
@@ -425,6 +441,7 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 	}
 	for show := range shows {
 		sort.Strings(shows[show].keywords)
+		sort.Strings(shows[show].altTitles)
 	}
 	for i := range items {
 		show := shows[items[i].ShowKey]
@@ -436,6 +453,9 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 		}
 		if items[i].ShowYear == 0 {
 			items[i].ShowYear = show.year
+		}
+		if len(show.altTitles) > 0 {
+			items[i].ShowAlternativeTitles = append([]string(nil), show.altTitles...)
 		}
 		if show.original != "" {
 			items[i].ShowOriginalTitle = show.original
@@ -690,6 +710,11 @@ ON CONFLICT(key) DO UPDATE SET
 	}
 	if t.Keywords != nil {
 		if err := replacePairs(ctx, tx, "catalog_keywords", "keyword", int64(t.Key), t.Keywords); err != nil {
+			return err
+		}
+	}
+	if t.AlternativeTitles != nil {
+		if err := replacePairs(ctx, tx, "catalog_alt_titles", "title", int64(t.Key), t.AlternativeTitles); err != nil {
 			return err
 		}
 	}

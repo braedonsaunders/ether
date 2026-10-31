@@ -81,3 +81,15 @@ func localizedEpisodeTitle(info core.ReleaseInfo, t *core.Title, catalogLang str
 	}
 	return false
 }
+
+// matchesAlternativeTitle reports a release named by another of the title's
+// names: a romanized original ("Sousou.no.Frieren"), a regional or working
+// title. The year, episode and identifier checks still apply.
+func matchesAlternativeTitle(info core.ReleaseInfo, alts []string) bool {
+	for _, alt := range alts {
+		if releaseparse.TitleMatches(info, alt) {
+			return true
+		}
+	}
+	return false
+}

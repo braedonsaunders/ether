@@ -279,3 +279,24 @@ func TestLocalizedEpisodeTitleIsNotAMismatch(t *testing.T) {
 		t.Fatalf("different English episode title: %q", got)
 	}
 }
+
+// Anime releases go by the romanized original; the catalogue's alternative
+// titles let them match. An unrelated name still does not.
+func TestAlternativeTitleMatchesRomanizedRelease(t *testing.T) {
+	title := &core.Title{Key: core.EpisodeKey(209867, 1, 1), Type: core.TypeEpisode, ShowIDs: core.IDs{TMDB: 209867},
+		ShowTitle: "Frieren: Beyond Journey's End", ShowOriginalTitle: "葬送のフリーレン", ShowYear: 2023, Title: "The Journey's End",
+		Season: 1, Episode: 1, Runtime: 24 * time.Minute, Language: "ja", ShowAlternativeTitles: []string{"Frieren", "Sousou no Frieren"}}
+	sreq := searchRequestFor(title)
+	romaji := withParsed(rel("romaji", "Sousou.no.Frieren.S01E01.REPACK.1080p.BluRay.Remux.MULTi.FLAC.2.0.AVC-AUTISM", 8<<10))
+	if got := rejectIdentity(romaji, title, sreq, "en-US"); got != "" {
+		t.Fatalf("romanized release rejected: %q", got)
+	}
+	other := withParsed(rel("other", "Dungeon.Meshi.S01E01.1080p.BluRay.Remux-GRP", 8<<10))
+	if got := rejectIdentity(other, title, sreq, "en-US"); got != "title mismatch" {
+		t.Fatalf("unrelated release: %q", got)
+	}
+	title.ShowAlternativeTitles = nil
+	if got := rejectIdentity(romaji, title, searchRequestFor(title), "en-US"); got != "title mismatch" {
+		t.Fatalf("without alternative titles the romanized release should not match: %q", got)
+	}
+}

@@ -71,15 +71,21 @@ type Title struct {
 	Runtime                     time.Duration `json:"runtime,omitempty"`
 	Status                      string        `json:"status,omitempty"` // TMDB status: Released, In Production, Ended...
 
-	Genres            []string `json:"genres,omitempty"`
-	Keywords          []string `json:"keywords,omitempty"` // TMDB keywords (lower-case), for content-based recommendations
-	RemoteTrailerName string   `json:"remoteTrailerName,omitempty"`
-	RemoteTrailerURL  string   `json:"remoteTrailerURL,omitempty"`
-	Studios           []string `json:"studios,omitempty"`
-	Countries         []string `json:"countries,omitempty"`
-	Language          string   `json:"language,omitempty"` // ISO 639-1 original language
-	ContentRating     string   `json:"contentRating,omitempty"`
-	Adult             bool     `json:"adult,omitempty"`
+	Genres   []string `json:"genres,omitempty"`
+	Keywords []string `json:"keywords,omitempty"` // TMDB keywords (lower-case), for content-based recommendations
+	// AlternativeTitles are other names the title goes by (TMDB alternative
+	// titles: romanized originals, regional and working titles). Release
+	// matching only; never serialized (additive). Episodes and seasons carry
+	// their series' in ShowAlternativeTitles.
+	AlternativeTitles     []string `json:"-"`
+	ShowAlternativeTitles []string `json:"-"`
+	RemoteTrailerName     string   `json:"remoteTrailerName,omitempty"`
+	RemoteTrailerURL      string   `json:"remoteTrailerURL,omitempty"`
+	Studios               []string `json:"studios,omitempty"`
+	Countries             []string `json:"countries,omitempty"`
+	Language              string   `json:"language,omitempty"` // ISO 639-1 original language
+	ContentRating         string   `json:"contentRating,omitempty"`
+	Adult                 bool     `json:"adult,omitempty"`
 
 	Rating     float64 `json:"rating,omitempty"` // TMDB vote average 0-10
 	VoteCount  int     `json:"voteCount,omitempty"`
@@ -172,19 +178,19 @@ type ClientCaps struct {
 	ClientID        string                    `json:"clientId"` // X-Plex-Client-Identifier
 	Version         string                    `json:"version"`
 
-	MaxHeight            int                 `json:"maxHeight"`                      // 2160, 1080, 720...
-	ExplicitMaxHeight    bool                `json:"explicitMaxHeight,omitempty"`    // true when MaxHeight came from a request header/query limitation rather than a product default
+	MaxHeight            int                 `json:"maxHeight"`                   // 2160, 1080, 720...
+	ExplicitMaxHeight    bool                `json:"explicitMaxHeight,omitempty"` // true when MaxHeight came from a request header/query limitation rather than a product default
 	HDR10                bool                `json:"hdr10"`
 	ExplicitNoHDR        bool                `json:"explicitNoHdr,omitempty"` // true when HDR was explicitly denied by profile-extra limitations
 	DolbyVision          bool                `json:"dolbyVision"`
-	VideoCodecs          []string            `json:"videoCodecs"`                     // h264, hevc, av1, vp9
-	AudioCodecs          []string            `json:"audioCodecs"`                     // aac, ac3, eac3, truehd, dts, opus, flac
-	Containers           []string            `json:"containers"`                      // mp4, mkv, mpegts
-	HLSContainers        []string            `json:"hlsContainers,omitempty"`         // explicit segmented output targets; distinct from direct-play containers
-	MaxBitrateKbps       int                 `json:"maxBitrateKbps"`                  // 0 = unlimited
-	DefaultRemoteBitrate bool                `json:"defaultRemoteBitrate,omitempty"`  // true when MaxBitrateKbps came from the server's default remote cap rather than a client limitation
-	SubtitleCodecs       []string            `json:"subtitleCodecs,omitempty"`        // native image/text subtitle rendering
-	DVProfiles           []int               `json:"dvProfiles,omitempty"`            // explicit Dolby Vision profiles; empty uses product defaults
+	VideoCodecs          []string            `json:"videoCodecs"`                    // h264, hevc, av1, vp9
+	AudioCodecs          []string            `json:"audioCodecs"`                    // aac, ac3, eac3, truehd, dts, opus, flac
+	Containers           []string            `json:"containers"`                     // mp4, mkv, mpegts
+	HLSContainers        []string            `json:"hlsContainers,omitempty"`        // explicit segmented output targets; distinct from direct-play containers
+	MaxBitrateKbps       int                 `json:"maxBitrateKbps"`                 // 0 = unlimited
+	DefaultRemoteBitrate bool                `json:"defaultRemoteBitrate,omitempty"` // true when MaxBitrateKbps came from the server's default remote cap rather than a client limitation
+	SubtitleCodecs       []string            `json:"subtitleCodecs,omitempty"`       // native image/text subtitle rendering
+	DVProfiles           []int               `json:"dvProfiles,omitempty"`           // explicit Dolby Vision profiles; empty uses product defaults
 	VideoProfiles        map[string][]string `json:"videoProfiles,omitempty"`
 	VideoLevels          map[string]int      `json:"videoLevels,omitempty"` // codec level in ffprobe units (H.264 51 = 5.1)
 	Remote               bool                `json:"remote"`                // not on the server's LAN

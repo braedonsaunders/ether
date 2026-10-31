@@ -687,6 +687,13 @@ func pickName(req core.SearchRequest, file, torrent string) string {
 		n := 0
 		if releaseparse.TitleMatches(info, req.Title) || (req.OriginalTitle != "" && releaseparse.TitleMatches(info, req.OriginalTitle)) {
 			n += 4
+		} else {
+			for _, alt := range req.AlternativeTitles {
+				if releaseparse.TitleMatches(info, alt) {
+					n += 4
+					break
+				}
+			}
 		}
 		if req.Type != core.TypeMovie && req.Episode > 0 && releaseparse.EpisodeMatches(info, req.Season, req.Episode) {
 			n += 2

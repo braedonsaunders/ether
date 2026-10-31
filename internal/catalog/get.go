@@ -402,7 +402,7 @@ func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Tit
 			// especially: the loaded episode carries its show's (inherited
 			// on read), which must not be saved as the episode's own.
 			t.Cast, t.Directors, t.Writers, t.Crew = nil, nil, nil, nil
-			t.Genres, t.Studios, t.Countries, t.Keywords = nil, nil, nil, nil
+			t.Genres, t.Studios, t.Countries, t.Keywords, t.AlternativeTitles = nil, nil, nil, nil, nil
 			_ = c.upsert(ctx, t, upsertOpts{detail: true})
 			st.t.IDs.IMDB = ext.IMDBID
 			if ext.TVDBID != 0 {

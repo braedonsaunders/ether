@@ -172,7 +172,7 @@ func (c *Client) DiscoverTV(ctx context.Context, p DiscoverParams) (*Paged[TVSho
 
 // MovieDetails fetches full movie details.
 func (c *Client) MovieDetails(ctx context.Context, id int64) (*MovieDetails, error) {
-	q := values("append_to_response", "credits,release_dates,external_ids,images,keywords,similar,recommendations")
+	q := values("append_to_response", "credits,release_dates,external_ids,images,keywords,alternative_titles,similar,recommendations")
 	var out MovieDetails
 	err := c.getJSON(ctx, fmt.Sprintf("/movie/%d", id), q, &out)
 	return &out, err
@@ -180,7 +180,7 @@ func (c *Client) MovieDetails(ctx context.Context, id int64) (*MovieDetails, err
 
 // TVDetails fetches full TV details.
 func (c *Client) TVDetails(ctx context.Context, id int64) (*TVDetails, error) {
-	q := values("append_to_response", "content_ratings,external_ids,credits,aggregate_credits,keywords,images,similar,recommendations")
+	q := values("append_to_response", "content_ratings,external_ids,credits,aggregate_credits,keywords,alternative_titles,images,similar,recommendations")
 	var out TVDetails
 	err := c.getJSON(ctx, fmt.Sprintf("/tv/%d", id), q, &out)
 	return &out, err
@@ -368,14 +368,14 @@ func cloneValues(q url.Values) url.Values {
 // MovieDetailsFresh and TVDetailsFresh bypass the response cache for callers
 // that must verify current release dates. They never serve a stale response.
 func (c *Client) MovieDetailsFresh(ctx context.Context, id int64) (*MovieDetails, error) {
-	q := values("append_to_response", "credits,release_dates,external_ids,images,keywords,similar,recommendations")
+	q := values("append_to_response", "credits,release_dates,external_ids,images,keywords,alternative_titles,similar,recommendations")
 	var out MovieDetails
 	err := c.getFreshJSON(ctx, fmt.Sprintf("/movie/%d", id), q, &out)
 	return &out, err
 }
 
 func (c *Client) TVDetailsFresh(ctx context.Context, id int64) (*TVDetails, error) {
-	q := values("append_to_response", "content_ratings,external_ids,credits,aggregate_credits,keywords,images,similar,recommendations")
+	q := values("append_to_response", "content_ratings,external_ids,credits,aggregate_credits,keywords,alternative_titles,images,similar,recommendations")
 	var out TVDetails
 	err := c.getFreshJSON(ctx, fmt.Sprintf("/tv/%d", id), q, &out)
 	return &out, err
