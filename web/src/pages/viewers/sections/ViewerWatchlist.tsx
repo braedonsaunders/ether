@@ -62,7 +62,7 @@ export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
     <Section
       title={t("Watchlist")}
       description={t(
-        "Titles Ether is watching for on this viewer's behalf. Each one appears on their Plex Home once it can be streamed.",
+        "Titles watched for this viewer. Each one shows on their Home once it can be streamed.",
       )}
       actions={
         <>

@@ -269,9 +269,7 @@ export function ArtworkPanel({
       <div>
         <h3 className="text-sm font-semibold text-fg">{t("Collection poster")}</h3>
         <p className="mt-1 text-xs leading-relaxed text-fg-muted">
-          {t(
-            "Saved artwork is served to Plex apps as the collection’s native poster. Collages follow the collection’s title order.",
-          )}
+          {t("Saved artwork is the collection poster. Collages follow the title order.")}
         </p>
       </div>
       <div role="radiogroup" aria-label={t("Artwork style")} className="grid grid-cols-2 gap-2">
@@ -627,13 +625,13 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
         </div>
         <ToggleRow
           title={t("Collections tab")}
-          description={t("Listed with the other collections in the matching Plex libraries.")}
+          description={t("Listed in the matching libraries.")}
           checked={tg.collectionsTab}
           onChange={(v) => setTargets({ collectionsTab: v })}
         />
         <ToggleRow
           title={t("Home row")}
-          description={t("Offered to the personalization engine as a row on Plex Home.")}
+          description={t("Shown as a Home row.")}
           checked={tg.homeRow}
           onChange={(v) => setTargets({ homeRow: v })}
         />

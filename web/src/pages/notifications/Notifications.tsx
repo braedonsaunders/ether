@@ -51,9 +51,6 @@ export default function Notifications() {
   return (
     <DomainPage
       title={t("Notifications")}
-      description={t(
-        "Know when something needs you. Send server, playback and source alerts to your devices.",
-      )}
       base="/notifications"
       tabs={TABS.map((tb) =>
         tb.key === "channels" && data?.channels.length

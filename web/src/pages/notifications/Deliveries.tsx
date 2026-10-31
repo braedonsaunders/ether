@@ -31,9 +31,7 @@ export function Deliveries({ data }: { data: NotificationsData }) {
   return (
     <Section
       title={t("Delivery history")}
-      description={t(
-        "Last 100 deliveries, retained for 30 days. Sent means the destination accepted the message. Failed or interrupted sends are not automatically retried because the alert may have arrived. Crash-watcher alerts are sent outside this queue.",
-      )}
+      description={t("The last 100 deliveries, kept for 30 days.")}
     >
       {data.deliveries.length ? (
         <PagedTable

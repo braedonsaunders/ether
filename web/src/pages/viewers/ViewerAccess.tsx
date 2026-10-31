@@ -121,7 +121,7 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
           <SettingsSection
             title={t("Account languages")}
             description={t(
-              "Preferred languages reported to Plex apps for this account. Track selection rules live on the Audio & subtitles tab.",
+              "Preferred languages for this account. Track rules are on the Audio & subtitles tab.",
             )}
           >
             <SettingsRow

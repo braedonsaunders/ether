@@ -38,7 +38,7 @@ export function LanguageFeatures({
           id="llm-natural-search"
           title={t("Natural-language search")}
           does={t("Viewers can search with a sentence, such as “90s heist movies”.")}
-          trigger={t("A viewer types that search in Plex.")}
+          trigger={t("A viewer runs that search.")}
           checked={draft.naturalSearch}
           onChange={(on) => set({ naturalSearch: on })}
           ready={textModelReady}

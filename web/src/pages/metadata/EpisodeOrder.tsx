@@ -66,7 +66,7 @@ export function EpisodeOrders() {
             <Section
               title={t("Episode order")}
               description={t(
-                "Present a show in DVD, absolute or story order in Plex. Playback, release matching and watch history always use TMDB's original numbering.",
+                "Present a show in DVD, absolute or story order. Playback keeps the original episode numbers.",
               )}
             >
               <form
@@ -91,7 +91,7 @@ export function EpisodeOrders() {
               <Tv size={17} />
               <p>
                 {t(
-                  "Orders change how episodes appear in Plex. Watch history and playback keep their original identities.",
+                  "Orders change how episodes are listed. Watch history stays on the original episodes.",
                 )}
               </p>
             </div>

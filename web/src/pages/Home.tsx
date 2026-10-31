@@ -124,7 +124,7 @@ export default function Home() {
             <Alert variant="warning" className="shrink-0">
               <AlertTitle>{t("Setup isn't finished")}</AlertTitle>
               <AlertDescription>
-                {tx("Plex apps can't find Ether until setup is complete. {link}", {
+                {tx("Apps can't find this server until setup is complete. {link}", {
                   link: (
                     <Link className="font-medium underline" to="/setup">
                       {t("Continue setup")}
@@ -206,7 +206,7 @@ function NowPlayingPanel({
         <EmptyState
           icon={<MonitorPlay />}
           title={t("Nothing playing")}
-          description={t("Streams appear here the moment someone presses play in Plex.")}
+          description={t("Streams appear here when someone presses play.")}
           className="py-6"
         />
       ) : (
@@ -598,7 +598,7 @@ function RowsPanel({
         <EmptyState
           icon={<Film />}
           title={t("No row data yet")}
-          description={t("Once viewers browse Plex Home, the rows that lead to plays rank here.")}
+          description={t("Once viewers open Home, the rows that lead to plays rank here.")}
           className="py-6"
         />
       ) : (

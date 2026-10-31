@@ -278,7 +278,7 @@ export function TasteView({
       {tab === "overview" && (
         <div className="space-y-6">
           <DashboardPanel
-            title={t("Up First — What They'll Want to Watch Right Now")}
+            title={t("Up next")}
             icon={<Sparkles size={16} />}
             actions={
               <Segmented
@@ -290,11 +290,6 @@ export function TasteView({
               />
             }
           >
-            <p className="mb-4 text-sm text-fg-muted">
-              {t(
-                "The #1 and #2 high-conviction picks across Movies and TV for this viewing window—blending long-term taste, recent viewing momentum, and session-length fit. Click any genre tag to boost or mute it.",
-              )}
-            </p>
             {spotlight.length === 0 ? (
               <p className="text-sm text-fg-muted">
                 {t("Building recommendations for this viewer…")}
@@ -316,7 +311,7 @@ export function TasteView({
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Badge variant={idx === 0 ? "info" : "secondary"}>
-                            {t("#{rank} Pick Right Now", { rank: idx + 1 })}
+                            {t("Pick {rank}", { rank: idx + 1 })}
                           </Badge>
                           <Badge variant="outline">
                             {pick.item.type === "show" ? t("TV Series") : t("Movie")}
@@ -670,17 +665,11 @@ export function TasteView({
 
       {tab === "corrections" && (
         <DashboardPanel title={t("Your corrections")} icon={<Sparkles size={16} />}>
-          <p className="mb-4 text-sm text-fg-muted">
-            {t(
-              "Corrections override what Ether learned, e.g. “not into horror”. −1 never recommends it; +1 always favours it.",
-            )}
-          </p>
+          <p className="mb-4 text-sm text-fg-muted">{t("−1 hides it. +1 favours it.")}</p>
           {overrides.length === 0 ? (
             <EmptyState
               title={t("No corrections")}
-              description={t(
-                "Ether's learned profile is used as is. Add one below or click a genre above.",
-              )}
+              description={t("Add one below, or use a genre tag.")}
               className="mb-4 py-6"
             />
           ) : (

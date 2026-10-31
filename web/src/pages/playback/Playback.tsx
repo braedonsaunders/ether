@@ -66,15 +66,7 @@ function IntroDbStatus({ apiKey }: { apiKey: unknown }) {
 export default function Playback() {
   const tab = useRouteTab(TABS);
   return (
-    <DomainPage
-      title={t("Playback")}
-      description={t(
-        "How a video is adjusted so the app on the other end can play it. The defaults work for a household.",
-      )}
-      base="/playback"
-      tabs={TABS}
-      active={tab}
-    >
+    <DomainPage title={t("Playback")} base="/playback" tabs={TABS} active={tab}>
       <ConfigSection
         hidden={tab !== "transcoding"}
         configKey="transcode"

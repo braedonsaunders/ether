@@ -179,7 +179,7 @@ export function ArtworkSettings() {
             <div className="metadata-enable">
               <div>
                 <label htmlFor="overlay-enabled">{t("Ether posters")}</label>
-                <p>{t("Serve customized posters in Plex")}</p>
+                <p>{t("Serve customized posters")}</p>
               </div>
               <Switch
                 id="overlay-enabled"
@@ -571,7 +571,7 @@ function TitleArtworkDrawer({
       open={title !== null}
       onClose={onClose}
       title={title?.title ?? t("Title artwork")}
-      description={t("Pick the poster and backdrop Plex shows for this title.")}
+      description={t("Pick the poster and backdrop for this title.")}
       size="xl"
       footer={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">

@@ -45,8 +45,8 @@ export function LayerSwitcher({
         label: t("Everyone"),
         hint: tn(
           viewers.length,
-          "The Plex Home all {count} viewer get",
-          "The Plex Home all {count} viewers get",
+          "The Home all {count} viewer gets",
+          "The Home all {count} viewers get",
         ),
         icon: globe(26),
       },

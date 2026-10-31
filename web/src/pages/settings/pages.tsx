@@ -73,13 +73,7 @@ export function GeneralPage() {
   const tab = useRouteTab(tabs);
   const toServer = useRevealErrors("/server", serverTab);
   return (
-    <DomainPage
-      title={t("General")}
-      description={t("Server name, port and limits, downloads, personalization and trailers.")}
-      base="/server"
-      tabs={tabs}
-      active={tab}
-    >
+    <DomainPage title={t("General")} base="/server" tabs={tabs} active={tab}>
       <ConfigSection
         configKey="server"
         endpoint="server"
@@ -187,15 +181,7 @@ export function ServicesPage() {
   const tabs = integrationTabs(enabled);
   const tab = useRouteTab(tabs);
   return (
-    <DomainPage
-      title={t("Integrations")}
-      description={t(
-        "Every integration Ether uses and how it's doing. Turn one on and its settings open on a tab here.",
-      )}
-      base="/services"
-      tabs={tabs}
-      active={tab}
-    >
+    <DomainPage title={t("Integrations")} base="/services" tabs={tabs} active={tab}>
       <ConnectedServices tab={tab} onEnabled={setEnabled} />
     </DomainPage>
   );
@@ -222,13 +208,7 @@ const MAINTENANCE_TABS = localized(
 export function MaintenancePage() {
   const tab = useRouteTab(MAINTENANCE_TABS);
   return (
-    <DomainPage
-      title={t("Maintenance")}
-      description={t("Back up and import your data, manage updates and troubleshoot your server.")}
-      base="/maintenance"
-      tabs={MAINTENANCE_TABS}
-      active={tab}
-    >
+    <DomainPage title={t("Maintenance")} base="/maintenance" tabs={MAINTENANCE_TABS} active={tab}>
       {tab === "backups" ? <BackupsSettings /> : null}
       {tab === "updates" ? (
         <ConfigSection
@@ -273,7 +253,7 @@ export function ClusterPage() {
   return (
     <DomainPage
       title={t("Cluster")}
-      description={t("Ether servers sharing one database and appearing in Plex as one server.")}
+      description={t("Servers that share one database.")}
       base="/cluster"
     >
       <ClusterOverview />

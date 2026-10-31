@@ -258,10 +258,9 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
         {id === "jellyfin" || id === "emby" ? (
           <SettingsSection
             title={t("Home")}
-            description={t(
-              "{app} apps show this viewer's For You rows, the same ones Plex uses.",
-              { app: protocolName(id) },
-            )}
+            description={t("{app} apps show this viewer's For You rows, the same ones Plex uses.", {
+              app: protocolName(id),
+            })}
           >
             <SettingsRow
               title={t("Personalized rows")}
@@ -600,13 +599,7 @@ export default function Apps() {
     }
   }
   return (
-    <DomainPage
-      title={t("Apps")}
-      description={t("Manage the apps and protocols your household uses.")}
-      base="/apps"
-      tabs={tabs}
-      active={tab}
-    >
+    <DomainPage title={t("Apps")} base="/apps" tabs={tabs} active={tab}>
       {tab === "overview" &&
         (state.error ? (
           <ErrorPanel error={state.error} onRetry={() => void state.reload()} />

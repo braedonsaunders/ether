@@ -193,7 +193,7 @@ export default function Calendar() {
           "Built from {count} show the household follows, plus movie releases",
           "Built from {count} shows the household follows, plus movie releases",
         )
-    : t("Upcoming episodes and releases for what your household watches.");
+    : undefined;
 
   const isCurrent = anchor === today;
   const emptyHousehold = data && data.entries.length === 0 && data.shows === 0 && !data.warming;
@@ -210,11 +210,6 @@ export default function Calendar() {
   } else if (emptyHousehold && filters.viewer === "all" && filters.types === "all") {
     body = (
       <EmptyNote icon={<CalendarDays size={26} />} title={t("Nothing on the calendar yet")}>
-        <p>
-          {t(
-            "The calendar fills itself in from what your household watches: shows someone is watching or has on a watchlist, Look Ahead collections, and new movies that match their taste.",
-          )}
-        </p>
         <div className="flex flex-wrap justify-center gap-2">
           <Link
             to="/collections/new"

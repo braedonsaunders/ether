@@ -16,9 +16,6 @@ export default function Profile() {
   return (
     <DomainPage
       title={t("Your account")}
-      description={t(
-        "How you sign in to Ether, and the phones, TVs and browsers that stay signed in.",
-      )}
       base="/profile"
       status={
         owner ? (

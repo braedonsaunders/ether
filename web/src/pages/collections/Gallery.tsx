@@ -193,7 +193,6 @@ export default function CollectionsGallery({
     <>
       <Workspace
         title={t("Collections")}
-        subtitle={t("Library collections and discovery rows, independently curated.")}
         actions={
           <>
             {tab !== "templates" ? (
@@ -431,7 +430,7 @@ export default function CollectionsGallery({
                 to="/home"
                 className="flex items-center justify-between gap-2 text-xs font-medium text-fg-muted hover:text-primary"
               >
-                <span>{t("Arrange your Plex Home rows")}</span>
+                <span>{t("Arrange Home rows")}</span>
                 <ArrowRight size={13} />
               </Link>
             </div>
@@ -454,11 +453,7 @@ export default function CollectionsGallery({
                   {tab === "builtin" ? t("Built-in collections") : t("Your collections")}
                 </h2>
                 <span className="text-xs text-fg-muted">
-                  {tn(
-                    items.length,
-                    "{count} collection · Artwork shown in Plex",
-                    "{count} collections · Artwork shown in Plex",
-                  )}
+                  {tn(items.length, "{count} collection", "{count} collections")}
                 </span>
               </div>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-6">

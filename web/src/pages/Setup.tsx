@@ -778,9 +778,7 @@ export default function Setup() {
       {stepId === "account" && plexSelected ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
-            {t(
-              "Ether registers with your Plex account like a fresh Plex Media Server, so the official Plex apps can find it.",
-            )}
+            {t("Signs this server in to your Plex account so Plex apps can find it.")}
           </p>
           {plexSigned && !plexRecovery && !claimFailed ? (
             <Alert variant="success">

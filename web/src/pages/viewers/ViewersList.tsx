@@ -26,13 +26,7 @@ const TABS: readonly (PageTab & { key: Tab })[] = localized(() => [
 
 export default function ViewersList({ tab = "people" }: { tab?: Tab } = {}) {
   return (
-    <DomainPage
-      title={t("Viewers")}
-      description={t("Manage household viewers and imported history.")}
-      base="/viewers"
-      tabs={TABS}
-      active={tab}
-    >
+    <DomainPage title={t("Viewers")} base="/viewers" tabs={TABS} active={tab}>
       {tab === "defaults" ? <ViewerDefaults /> : <People />}
     </DomainPage>
   );

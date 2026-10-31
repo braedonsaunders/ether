@@ -5,36 +5,32 @@ export const SERVER: FieldGroup[] = localized(() => [
   {
     id: "identity",
     title: t("What viewers see"),
-    description: t("The names Plex apps show for this server and its libraries."),
+    description: t("The names apps show for this server and its libraries."),
     fields: [
       {
         key: "friendlyName",
         label: t("Server name"),
         kind: "text",
-        help: t("How the server appears in Plex apps."),
+        help: t("How the server appears in apps."),
       },
       {
         key: "moviesLibraryName",
         label: t("Movies library name"),
         kind: "text",
-        help: t(
-          "How the Movies library appears in Plex apps. Ether sets this; Plex's own rename does not stick.",
-        ),
+        help: t("Name shown in Plex. A rename inside Plex does not stick."),
       },
       {
         key: "tvShowsLibraryName",
         label: t("TV Shows library name"),
         kind: "text",
-        help: t(
-          "How the TV Shows library appears in Plex apps. Ether sets this; Plex's own rename does not stick.",
-        ),
+        help: t("Name shown in Plex. A rename inside Plex does not stick."),
       },
     ],
   },
   {
     id: "connect",
     title: t("How apps connect"),
-    description: t("The address Plex apps use to reach this computer."),
+    description: t("The address apps use to reach this computer."),
     fields: [
       {
         key: "port",
@@ -251,7 +247,7 @@ export const PLEX: FieldGroup[] = localized(() => [
         label: t("Report the latest public PMS version"),
         kind: "bool",
         help: t(
-          "Off reports the version Ether is verified against. Plex apps turn on features by server version, so tracking can expose features Ether doesn't support.",
+          "Off reports the version Ether is verified against. Plex enables features by server version.",
         ),
       },
       {
@@ -367,7 +363,7 @@ export const CATALOG: FieldGroup[] = localized(() => [
   },
   {
     title: t("What's browsable"),
-    description: t("Thresholds keep obscure titles out of Plex libraries; they remain searchable."),
+    description: t("Hide obscure titles from libraries. They stay searchable."),
     fields: [
       { key: "minPopularity", label: t("Minimum popularity"), kind: "number", min: 0, step: 1 },
       { key: "minVotes", label: t("Minimum votes"), kind: "number", min: 0, step: 10 },
@@ -376,9 +372,7 @@ export const CATALOG: FieldGroup[] = localized(() => [
         key: "hideFranchiseCollections",
         label: t("Hide automatic franchise collections"),
         kind: "bool",
-        help: t(
-          "Hide TMDB franchise groups such as Zootopia from Plex's Collections tab. Your curated collections and Home rows stay available. Applies after saving; refresh the Collections tab in Plex.",
-        ),
+        help: t("Hide automatic franchise groups, such as Zootopia."),
       },
     ],
   },
@@ -388,9 +382,7 @@ export const CATALOG: FieldGroup[] = localized(() => [
 export const PLAY_VERSIONS: FieldGroup[] = localized(() => [
   {
     title: t("Versions in the app"),
-    description: t(
-      "When several releases are the same cut and picture, Plex can list the extras after Auto so a viewer can switch if one fails.",
-    ),
+    description: t("Extra copies of the same picture, after Auto in Plex."),
     fields: [
       {
         key: "sameQualityAlternatives",
@@ -399,9 +391,7 @@ export const PLAY_VERSIONS: FieldGroup[] = localized(() => [
         min: 0,
         max: 3,
         step: 1,
-        help: t(
-          "Other releases with the same cut, resolution and HDR type, listed after Auto in Plex's Play Version menu so you can switch if one fails.",
-        ),
+        help: t("Listed after Auto in Plex's Play Version menu."),
       },
     ],
   },
@@ -730,9 +720,7 @@ export const UPDATES: FieldGroup[] = localized(() => [
 export const SPIKE: FieldGroup[] = localized(() => [
   {
     title: t("Test playback with a local file"),
-    description: t(
-      "Serve a file from this computer to your Plex apps to tell whether a playback problem is the app or the stream. This is a diagnostic, not a library; turn it off when you're done.",
-    ),
+    description: t("Play a local file in Plex to see if the problem is the app or the stream."),
     fields: [
       { key: "enabled", label: t("Serve test files"), kind: "bool" },
       {
@@ -900,7 +888,7 @@ export const DOWNLOADS: FieldGroup[] = localized(() => [
 export const PERSONALIZE: FieldGroup[] = localized(() => [
   {
     title: t("Personalization"),
-    description: t("Per-viewer touches in Plex apps. Turn any off for plain Plex behaviour."),
+    description: t("Extras for each viewer. Turn any off for the plain layout."),
     fields: [
       {
         key: "postPlay",
@@ -952,7 +940,7 @@ export const EXTRAS: FieldGroup[] = localized(() => [
         key: "enabled",
         label: t("Trailers and Cinema Trailers"),
         kind: "bool",
-        help: t("Offer trailers and Cinema Trailers in Plex apps."),
+        help: t("Offer trailers in apps."),
       },
     ],
     more: [

@@ -260,7 +260,7 @@ export function HomeCanvas({
       ) : (
         <div
           className={cn("space-y-1 transition-opacity", stale && "opacity-70")}
-          aria-label={t("Plex Home for {who}", { who })}
+          aria-label={t("Home for {who}", { who })}
           aria-busy={stale}
         >
           <p className="text-xs text-fg-muted">

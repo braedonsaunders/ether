@@ -230,7 +230,6 @@ export default function Cache() {
   return (
     <Workspace
       title={t("Cache")}
-      subtitle={t("Storage, playback readiness, and background activity.")}
       actions={
         <>
           {dirty && <Badge variant="warning">{t("Unsaved policy")}</Badge>}

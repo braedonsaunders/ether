@@ -354,7 +354,7 @@ function HandPicked({ keys, onChange }: { keys: string[]; onChange: (k: string[]
       {keys.length > 1 ? (
         <p className="text-[11px] text-fg-subtle">
           {t(
-            "Drag the handle or use the arrows to reorder. Sort by “Source order” to keep this order in Plex.",
+            "Drag the handle or use the arrows to reorder. Sort by “Source order” to keep this order.",
           )}
         </p>
       ) : null}

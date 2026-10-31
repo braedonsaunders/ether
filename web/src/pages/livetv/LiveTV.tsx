@@ -641,7 +641,7 @@ export default function LiveTV() {
                 "{count} channel on air · Plex Pass required in Plex",
                 "{count} channels on air · Plex Pass required in Plex",
               )
-          : t("Virtual channels from your catalogue and your own IPTV, with a real guide.")
+          : undefined
       }
       actions={actions}
       asideLabel={t("Lineup")}
