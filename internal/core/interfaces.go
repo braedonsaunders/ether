@@ -24,7 +24,11 @@ const (
 type Filter struct {
 	KnownAddedDate bool `json:"-"` // only released/aired titles, before pagination
 	// ExcludeKeys applies local visibility policy before counting and pagination.
-	ExcludeKeys      []RatingKey   `json:"-"`
+	ExcludeKeys []RatingKey `json:"-"`
+	// ExcludeGenres and ExcludeKeywords remove viewer-blocked facts before
+	// counting and pagination. Matching is case-insensitive.
+	ExcludeGenres    []string      `json:"-"`
+	ExcludeKeywords  []string      `json:"-"`
 	Type             MediaType     `json:"type,omitempty"` // movie or show
 	Genres           []string      `json:"genres,omitempty"`
 	YearFrom         int           `json:"yearFrom,omitempty"`

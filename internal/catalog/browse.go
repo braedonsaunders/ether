@@ -256,6 +256,18 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 			args = append(args, g)
 		}
 	}
+	if len(f.ExcludeGenres) > 0 {
+		conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_genres g WHERE g.key=t.key AND LOWER(g.genre) IN (`+placeholders(len(f.ExcludeGenres))+`))`)
+		for _, g := range f.ExcludeGenres {
+			args = append(args, strings.ToLower(strings.TrimSpace(g)))
+		}
+	}
+	if len(f.ExcludeKeywords) > 0 {
+		conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_keywords k WHERE k.key=t.key AND LOWER(k.keyword) IN (`+placeholders(len(f.ExcludeKeywords))+`))`)
+		for _, k := range f.ExcludeKeywords {
+			args = append(args, strings.ToLower(strings.TrimSpace(k)))
+		}
+	}
 	if f.YearFrom > 0 {
 		conds = append(conds, "t.year>=?")
 		args = append(args, f.YearFrom)
