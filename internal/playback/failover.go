@@ -628,6 +628,9 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 	if cur != observed {
 		return cur, nil // someone else already swapped
 	}
+	if m.encoderInputHolds(s.id) {
+		return nil, fmt.Errorf("%w: encoder input lease", core.ErrNotAvailable)
+	}
 	if fo.stillNeeded != nil && !fo.stillNeeded() {
 		return cur, nil
 	}

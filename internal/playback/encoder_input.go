@@ -32,6 +32,17 @@ type encoderInputScope struct {
 func (*encoderInputScope) String() string   { return "encoder input lease" }
 func (*encoderInputScope) GoString() string { return "encoder input lease" }
 
+func (m *Manager) encoderInputHolds(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, scope := range m.encoderInputs {
+		if scope != nil && scope.session != nil && scope.session.id == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) ReserveEncoderInput(ctx context.Context, id string, expected core.SourceRetirement) (core.EncoderInputLease, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

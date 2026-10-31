@@ -79,10 +79,10 @@ callers of the public tracker. Chunk/read-ahead configuration remains separate.
 Broker lead `thr_fc855ih3dk` owns broker.go, media.go, plex_lookup.go and Plex
 wiring. The first delivery is only `core.WithReadRetirement` /
 `ReadRetirementFrom`, `Begin`, `Seal`, and playback copy-producer integration.
-No broker attaches this scope automatically yet. A future broker consumer can
-attach one tracker per request, seal after its handler stops creating producers,
-and retain the signal as request-producer evidence. It must not free a protected
-source/capability lease solely on that signal.
+The broker attaches one tracker to every serving request, seals it when that
+handler stops creating producers, and waits on stop and supersede until those
+producers release. The signal is request-producer evidence. It does not free a
+protected source or capability lease by itself.
 
 Lifecycle worker `thr_8g6zxzjbdu` calls existing Report/Stop; no additional Stop
 helper belongs in timeline, terminate or unmount. A cancelled request or a
@@ -286,8 +286,10 @@ lets the second seal it, then proves the process lifetimes never overlap.
 
 The optional `HLSRequest.InputLease` is excluded from JSON. Only trusted host
 composition can pass the opaque object minted by
-`PlaybackEncoderInputs.ReserveEncoderInput(ctx, id, exactSourceOutcome)`; broker
-activation is still a separate unapproved seam. A manager validates the actual
+`PlaybackEncoderInputs.ReserveEncoderInput(ctx, id, exactSourceOutcome)`. The
+broker mints one lease before `StartHLS` when playback implements that seam and
+seals it if the encoder is not published. A live lease refuses `RetireSource`
+and generation replacement. A manager validates the actual
 private Session and SourceLifetime together when minting. At most 128 scopes
 exist process-wide; no eviction or authority from a provider header is possible.
 Unclaimed leases remain caller-owned if admission/validation fails before claim;

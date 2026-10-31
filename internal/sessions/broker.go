@@ -113,6 +113,10 @@ type brokerSession struct {
 	// with no in-flight transfer drops them.
 	transferBarrier *capability.Header
 	lazyHolds       []capability.Header
+	// servingReads is one tracker per in-flight media request. Stop and
+	// supersede wait until those producers release; the signal does not
+	// itself free a source or capability claim.
+	servingReads []*core.ReadRetirement
 }
 
 type retiredSession struct {
@@ -1119,8 +1123,10 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 		hold = current.trickplay
 	}
 	stopSource := false
+	var reads []*core.ReadRetirement
 	if ok {
 		s = current
+		reads = slices.Clone(s.servingReads)
 		delete(b.sessions, s.public.ID)
 		b.rememberRetiredLocked(s)
 		if !s.live {
@@ -1130,6 +1136,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	transfers := b.lazyTransfers[s.public.ID]
 	delete(b.lazyTransfers, s.public.ID)
 	b.mu.Unlock()
+	waitReadRetirement(reads)
 	if hold != nil {
 		// Plex applies its own idle rule after the stop, so other sources of
 		// the same release keep their thumbnails.

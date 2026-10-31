@@ -14,6 +14,30 @@ import (
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
+func waitReadRetirement(reads []*core.ReadRetirement) {
+	for _, tracker := range reads {
+		if tracker != nil {
+			<-tracker.Seal()
+		}
+	}
+}
+
+func (b *Broker) mintEncoderInput(ctx context.Context, playID string) (core.EncoderInputLease, error) {
+	inputs, ok := b.deps.Playback.(core.PlaybackEncoderInputs)
+	if !ok {
+		return nil, nil
+	}
+	owned, ok := b.deps.Playback.(core.OwnedSourcePlayback)
+	if !ok {
+		return nil, core.ErrNotAvailable
+	}
+	source, ok := owned.SourceRetirement(playID)
+	if !ok {
+		return nil, core.ErrNotAvailable
+	}
+	return inputs.ReserveEncoderInput(ctx, playID, source)
+}
+
 func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id string, req frontend.StreamRequest) (string, error) {
 	if req.Position < 0 || req.SegmentDuration < 0 {
 		return "", core.ErrNotAvailable
@@ -125,11 +149,18 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		return "", core.ErrNotAvailable
 	}
 	b.deps.Transcoder.Stop(id)
-	hs, err := b.deps.Transcoder.StartHLS(context.WithoutCancel(ctx), core.HLSRequest{RequireIndependentProof: s.public.Protocol == "emby" || s.public.Protocol == "jellyfin", SessionID: id, InputURL: b.deps.Playback.InputURL(s.playID), Info: ps.Info, Decision: dec, StartOffset: req.Position, SegmentDuration: req.SegmentDuration, Protocol: proto})
-	if err != nil {
-		return "", capacityError(err)
+	lease, leaseErr := b.mintEncoderInput(ctx, s.playID)
+	if leaseErr != nil {
+		return "", leaseErr
 	}
-	if hs == nil {
+	hs, err := b.deps.Transcoder.StartHLS(context.WithoutCancel(ctx), core.HLSRequest{RequireIndependentProof: s.public.Protocol == "emby" || s.public.Protocol == "jellyfin", SessionID: id, InputURL: b.deps.Playback.InputURL(s.playID), InputLease: lease, Info: ps.Info, Decision: dec, StartOffset: req.Position, SegmentDuration: req.SegmentDuration, Protocol: proto})
+	if err != nil || hs == nil {
+		if lease != nil {
+			lease.SealInput()
+		}
+		if err != nil {
+			return "", capacityError(err)
+		}
 		b.deps.Transcoder.Stop(id)
 		return "", core.ErrNotAvailable
 	}
@@ -245,16 +276,35 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 		return
 	}
 	b.mu.Lock()
-	s, ok := b.sessions[parts[0]]
+	live, ok := b.sessions[parts[0]]
+	var tracker *core.ReadRetirement
+	var s *brokerSession
 	if ok {
-		copy := *s
-		s = &copy
+		tracker = &core.ReadRetirement{}
+		live.servingReads = append(live.servingReads, tracker)
+		copied := *live
+		s = &copied
+		r = r.WithContext(core.WithReadRetirement(r.Context(), tracker))
 	}
 	b.mu.Unlock()
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
+	defer func() {
+		<-tracker.Seal()
+		b.mu.Lock()
+		if cur := b.sessions[parts[0]]; cur != nil {
+			kept := cur.servingReads[:0]
+			for _, item := range cur.servingReads {
+				if item != tracker {
+					kept = append(kept, item)
+				}
+			}
+			cur.servingReads = kept
+		}
+		b.mu.Unlock()
+	}()
 	if protocol != "" && s.public.Protocol != protocol {
 		http.NotFound(w, r)
 		return

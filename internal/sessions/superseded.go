@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -42,6 +43,10 @@ func (b *Broker) collectSupersededLocked(replacement *brokerSession) []*brokerSe
 
 func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession, newSource string) {
 	for _, old := range entries {
+		b.mu.Lock()
+		reads := slices.Clone(old.servingReads)
+		b.mu.Unlock()
+		waitReadRetirement(reads)
 		if old.trickplay != nil {
 			old.trickplay.Close(true)
 		}

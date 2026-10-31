@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -195,6 +196,9 @@ func (m *Manager) RetireSource(id string, outcome core.SourceRetirement) error {
 	expected, ok := outcome.(*sourceLifetime)
 	if !ok || expected == nil {
 		return core.ErrNotAvailable
+	}
+	if m.encoderInputHolds(id) {
+		return fmt.Errorf("%w: encoder input lease", core.ErrNotAvailable)
 	}
 	m.sourceAccounting.mu.Lock()
 	if m.sourceAccounting.cleanup >= maxSourceCleanup {
