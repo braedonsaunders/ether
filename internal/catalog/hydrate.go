@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 )
 
@@ -39,6 +40,13 @@ func (c *Catalog) hydrate(ctx context.Context, refreshKey string, wait time.Dura
 
 // hydrateValue is hydrate for a fetch whose result every waiter shares.
 func (c *Catalog) hydrateValue(ctx context.Context, refreshKey string, wait time.Duration, fetch func(context.Context) (any, error)) (any, error) {
+	if budget, ok := ctx.Value(waitBudgetKey{}).(*waitBudget); ok && wait > 0 {
+		wait = min(wait, time.Duration(budget.remaining.Load()))
+		if wait > 0 {
+			start := time.Now()
+			defer func() { budget.remaining.Add(-int64(time.Since(start))) }()
+		}
+	}
 	var deadline <-chan time.Time
 	if wait > 0 {
 		timer := time.NewTimer(wait)
@@ -110,6 +118,21 @@ func (c *Catalog) startHydration(ctx context.Context, refreshKey string, block b
 		close(h.done)
 	}()
 	return h
+}
+
+// waitBudget is what is left of one request's time to wait on TMDB.
+type waitBudget struct{ remaining atomic.Int64 }
+
+type waitBudgetKey struct{}
+
+// WithReadWaitBudget bounds the total time reads under ctx wait on TMDB,
+// across every title they touch. A page that lists thirty titles with no
+// details yet waits at most d in all, not 2 s for each; the rest are served
+// as stored and refreshed in the background.
+func WithReadWaitBudget(ctx context.Context, d time.Duration) context.Context {
+	b := &waitBudget{}
+	b.remaining.Store(int64(d))
+	return context.WithValue(ctx, waitBudgetKey{}, b)
 }
 
 // refreshing reports whether a refresh of refreshKey is running.

@@ -213,7 +213,12 @@ func (c *Client) doWithRetry(ctx context.Context, full, etag string, cfg clientS
 	case err != nil && ctx.Err() != nil:
 		// The caller gave up; that says nothing about TMDB.
 	case err != nil && !errors.Is(err, core.ErrNotFound) && retryableFailure(err):
-		c.brk.failure(time.Now())
+		var he *HTTPError
+		if errors.As(err, &he) {
+			// Transport failures were counted per attempt; an exhausted
+			// 429/5xx ladder counts once.
+			c.brk.failure(time.Now())
+		}
 	default:
 		// A definite answer (data, 304, 404, 401) proves TMDB is reachable.
 		c.brk.success()
@@ -255,6 +260,9 @@ func (c *Client) doAttempts(ctx context.Context, full, etag string, cfg clientSe
 			if ctx.Err() != nil {
 				return nil, "", false, ctx.Err()
 			}
+			// Every unreachable attempt counts, so an outage opens the
+			// breaker within the first request's retries.
+			c.brk.failure(time.Now())
 		} else {
 			b, rerr := io.ReadAll(io.LimitReader(resp.Body, (32<<20)+1))
 			resp.Body.Close()

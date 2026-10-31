@@ -136,14 +136,27 @@ func TestTitleSearchIndexMatchesLike(t *testing.T) {
 	if err := c.UpsertTitle(ctx, core.Title{Key: core.MovieKey(7), Type: core.TypeMovie, IDs: core.IDs{TMDB: 7}, Title: "Custard Star", Released: now.AddDate(-1, 0, 0)}, true); err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{"star", "STAR", "amé", "AMÉ", "élie", "tar", "ard", "% W", "r_s", "zzz", "mus"} {
+	// Alternative titles match too, and stay in step through replacement.
+	if err := c.UpsertTitle(ctx, core.Title{Key: core.MovieKey(4), Type: core.TypeMovie, IDs: core.IDs{TMDB: 4}, Title: "Amélie", AlternativeTitles: []string{"Le Fabuleux Destin", "Sousou no Frieren"}, Released: now.AddDate(-1, 0, 0)}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.UpsertTitle(ctx, core.Title{Key: core.MovieKey(4), Type: core.TypeMovie, IDs: core.IDs{TMDB: 4}, Title: "Amélie", AlternativeTitles: []string{"Sousou no Frieren"}, Released: now.AddDate(-1, 0, 0)}, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"star", "STAR", "amé", "AMÉ", "élie", "tar", "ard", "% W", "r_s", "zzz", "mus", "frieren", "Fabuleux"} {
 		cond, args := c.titleMatch("", q)
 		indexed := keysWhere(t, db, cond, args)
 		like := "%" + escapeLike(q) + "%"
-		plain := keysWhere(t, db, `(title LIKE ? ESCAPE '\' OR original_title LIKE ? ESCAPE '\')`, []any{like, like})
+		plain := keysWhere(t, db, `(title LIKE ? ESCAPE '\' OR original_title LIKE ? ESCAPE '\' OR EXISTS (SELECT 1 FROM catalog_alt_titles a WHERE a.key=catalog_titles.key AND a.title LIKE ? ESCAPE '\'))`, []any{like, like, like})
 		if strings.Join(indexed, ",") != strings.Join(plain, ",") {
 			t.Errorf("%q: index %v, LIKE %v", q, indexed, plain)
 		}
+	}
+	if got := keysWhere(t, db, func() string { c, _ := c.titleMatch("", "frieren"); return c }(), []any{"%frieren%", "%frieren%", "%frieren%"}); len(got) != 1 {
+		t.Fatalf("alternative title search = %v", got)
+	}
+	if got := keysWhere(t, db, func() string { c, _ := c.titleMatch("", "fabuleux"); return c }(), []any{"%fabuleux%", "%fabuleux%", "%fabuleux%"}); len(got) != 0 {
+		t.Fatalf("a removed alternative title still matches: %v", got)
 	}
 }
 
@@ -163,4 +176,88 @@ func keysWhere(t *testing.T, db *sql.DB, cond string, args []any) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// The people-name index follows credits as titles are stored and replaced,
+// and matches word prefixes.
+func TestPeopleNameIndexFollowsCredits(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	c, err := New(db, nil, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store1 := func(key core.RatingKey, cast ...core.Person) {
+		t.Helper()
+		if err := c.UpsertTitle(ctx, core.Title{Key: key, Type: core.TypeMovie, IDs: core.IDs{TMDB: key.TMDB()}, Title: "Film", Released: now.AddDate(-1, 0, 0), Cast: cast}, true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET browsable=1 WHERE key=?`, int64(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store1(core.MovieKey(1), core.Person{TMDB: 7, Name: "Ringo Starr"}, core.Person{TMDB: 8, Name: "Mustard Plant"})
+	store1(core.MovieKey(2), core.Person{TMDB: 7, Name: "Ringo Starr"})
+	names := func(terms ...string) []string {
+		t.Helper()
+		got, err := c.MatchPeople(ctx, terms, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, m := range got {
+			out = append(out, m.Name)
+		}
+		return out
+	}
+	if got := names("star"); strings.Join(got, ",") != "Ringo Starr" {
+		t.Fatalf("star = %v (word prefixes only)", got)
+	}
+	if got := names("ringo", "sta"); strings.Join(got, ",") != "Ringo Starr" {
+		t.Fatalf("ringo sta = %v", got)
+	}
+	keys, err := c.PersonCreditKeys(ctx, 7, []core.MediaType{core.TypeMovie}, 10)
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("credit keys = %v, %v", keys, err)
+	}
+	// Replacing a title's cast drops a person whose last credit went.
+	store1(core.MovieKey(1), core.Person{TMDB: 7, Name: "Ringo Starr"})
+	if got := names("mustard"); len(got) != 0 {
+		t.Fatalf("uncredited person still found: %v", got)
+	}
+}
+
+// A request's reads share one wait budget across every title they touch.
+func TestReadWaitBudgetBoundsARequest(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	slow := &slowTMDB{release: make(chan struct{})}
+	c, err := New(db, slow, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		close(slow.release)
+		c.WaitRefreshes()
+	}()
+	var keys []core.RatingKey
+	for i := int64(1); i <= 4; i++ {
+		key := core.MovieKey(i)
+		keys = append(keys, key)
+		if err := c.UpsertTitle(ctx, core.Title{Key: key, Type: core.TypeMovie, IDs: core.IDs{TMDB: i}, Title: "Stored", Released: now.AddDate(0, -1, 0)}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reqCtx := WithReadWaitBudget(ctx, 500*time.Millisecond)
+	start := time.Now()
+	for _, key := range keys {
+		if got, err := c.Get(reqCtx, key); err != nil || got.Title != "Stored" {
+			t.Fatalf("%s = %+v, %v", key, got, err)
+		}
+	}
+	if d := time.Since(start); d > 900*time.Millisecond {
+		t.Fatalf("four titles waited %s in all, want about the 500ms budget", d)
+	}
 }

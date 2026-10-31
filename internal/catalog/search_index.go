@@ -29,12 +29,25 @@ CREATE TRIGGER catalog_titles_fts_update AFTER UPDATE OF title, original_title O
 WHEN old.title IS NOT new.title OR old.original_title IS NOT new.original_title BEGIN
  INSERT INTO catalog_titles_fts(catalog_titles_fts, rowid, title, original_title) VALUES ('delete', old.key, old.title, old.original_title);
  INSERT INTO catalog_titles_fts(rowid, title, original_title) VALUES (new.key, new.title, new.original_title);
+END;
+CREATE VIRTUAL TABLE catalog_alt_titles_fts USING fts5(title, content='catalog_alt_titles', tokenize='trigram');
+INSERT INTO catalog_alt_titles_fts(catalog_alt_titles_fts) VALUES('rebuild');
+CREATE TRIGGER catalog_alt_titles_fts_insert AFTER INSERT ON catalog_alt_titles BEGIN
+ INSERT INTO catalog_alt_titles_fts(rowid, title) VALUES (new.rowid, new.title);
+END;
+CREATE TRIGGER catalog_alt_titles_fts_delete AFTER DELETE ON catalog_alt_titles BEGIN
+ INSERT INTO catalog_alt_titles_fts(catalog_alt_titles_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+END;
+CREATE TRIGGER catalog_alt_titles_fts_update AFTER UPDATE OF title ON catalog_alt_titles WHEN old.title IS NOT new.title BEGIN
+ INSERT INTO catalog_alt_titles_fts(catalog_alt_titles_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+ INSERT INTO catalog_alt_titles_fts(rowid, title) VALUES (new.rowid, new.title);
 END;`)
 	store.RegisterDialect("catalog", 16, store.Postgres, `
 DO $$
 BEGIN
  CREATE EXTENSION IF NOT EXISTS pg_trgm;
  CREATE INDEX IF NOT EXISTS catalog_titles_title_trgm ON catalog_titles USING gin (title gin_trgm_ops, original_title gin_trgm_ops);
+ CREATE INDEX IF NOT EXISTS catalog_alt_titles_title_trgm ON catalog_alt_titles USING gin (title gin_trgm_ops);
 EXCEPTION WHEN OTHERS THEN
  RAISE NOTICE 'catalog: pg_trgm unavailable, title search scans: %', SQLERRM;
 END
@@ -106,19 +119,21 @@ END
 $$;`)
 }
 
-// titleMatch is the substring match of query against a title's name or
-// original name. alias prefixes the columns ("t." or ""). On SQLite a query
-// of three or more characters with no LIKE metacharacters is answered from
+// titleMatch is the substring match of query against a title's name,
+// original name or one of its alternative titles (romanized and regional
+// names, so "Sousou no Frieren" finds Frieren). alias prefixes the columns
+// ("t." or ""). On SQLite a query of three or more characters with no LIKE metacharacters is answered from
 // the trigram index (FTS5 uses the index only without an ESCAPE clause);
 // anything else keeps the plain LIKE.
 func (c *Catalog) titleMatch(alias, query string) (string, []any) {
 	like := "%" + escapeLike(query) + "%"
 	d := store.DialectOf(c.db)
 	if d == store.SQLite && utf8.RuneCountInString(query) >= 3 && !strings.ContainsAny(query, `%_\`) {
-		return alias + `key IN (SELECT rowid FROM catalog_titles_fts WHERE title LIKE ? UNION SELECT rowid FROM catalog_titles_fts WHERE original_title LIKE ?)`, []any{like, like}
+		return alias + `key IN (SELECT rowid FROM catalog_titles_fts WHERE title LIKE ? UNION SELECT rowid FROM catalog_titles_fts WHERE original_title LIKE ?
+			UNION SELECT a.key FROM catalog_alt_titles a WHERE a.rowid IN (SELECT rowid FROM catalog_alt_titles_fts WHERE title LIKE ?))`, []any{like, like, like}
 	}
 	op := store.Like(d)
-	return "(" + alias + "title " + op + ` ? ESCAPE '\' OR ` + alias + "original_title " + op + ` ? ESCAPE '\')`, []any{like, like}
+	return "(" + alias + "title " + op + ` ? ESCAPE '\' OR ` + alias + "original_title " + op + ` ? ESCAPE '\' OR EXISTS (SELECT 1 FROM catalog_alt_titles a WHERE a.key=` + alias + "key AND a.title " + op + ` ? ESCAPE '\'))`, []any{like, like, like}
 }
 
 // PersonMatch is a credited person a people search may return.

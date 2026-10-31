@@ -11,8 +11,9 @@ import (
 // exhausted 429/5xx retries.
 var ErrUnavailable = errors.New("tmdb: temporarily unreachable")
 
-// After breakerThreshold consecutive failed requests (each already retried)
-// the client fails fast for breakerCooldown, then lets one request probe.
+// After breakerThreshold consecutive failures (unreachable attempts, or
+// requests whose 429/5xx retries ran out) the client fails fast for
+// breakerCooldown, then lets one request probe.
 // Without it an outage costs every caller the full retry ladder per title,
 // and a page that touches many titles waits for all of them.
 const (

@@ -297,3 +297,84 @@ func TestPeopleRequiresSnapshotAndDiscardsLosingRead(t *testing.T) {
 		t.Fatalf("losing read escaped: %+v %v closed=%d", rows, err, closed.Load())
 	}
 }
+
+// indexPeopleFixture answers people searches the way the catalogue's name
+// index does: every credited person with a name word starting with each
+// term, and a person's credited titles of the asked types.
+func indexPeopleFixture(s *Service, c *peopleCatalogue) {
+	s.d.PeopleIndex = func(_ context.Context, terms []string, limit int) ([]PersonCandidate, error) {
+		c.mu.RLock()
+		defer c.mu.RUnlock()
+		seen := map[int64]bool{}
+		var out []PersonCandidate
+		for _, title := range c.titles {
+			for _, group := range [][]core.Person{title.Cast, title.Directors, title.Writers, title.Crew} {
+				for _, p := range group {
+					if p.TMDB > 0 && !seen[p.TMDB] && personMatches(p.Name, terms) {
+						seen[p.TMDB] = true
+						out = append(out, PersonCandidate{TMDB: p.TMDB, Name: p.Name})
+					}
+				}
+			}
+		}
+		sort.Slice(out, func(a, b int) bool { return out[a].TMDB < out[b].TMDB })
+		return out[:min(len(out), limit)], nil
+	}
+	s.d.PersonCredits = func(_ context.Context, person int64, types []core.MediaType, limit int) ([]core.RatingKey, error) {
+		c.mu.RLock()
+		defer c.mu.RUnlock()
+		var keys []core.RatingKey
+		for key, title := range c.titles {
+			wanted := false
+			for _, t := range types {
+				wanted = wanted || title.Type == t
+			}
+			if !wanted {
+				continue
+			}
+			for _, group := range [][]core.Person{title.Cast, title.Directors, title.Writers, title.Crew} {
+				for _, p := range group {
+					if p.TMDB == person {
+						keys = append(keys, key)
+					}
+				}
+			}
+		}
+		sort.Slice(keys, func(a, b int) bool { return keys[a] < keys[b] })
+		return keys[:min(len(keys), limit)], nil
+	}
+}
+
+// The name index returns what the credit walk returns, without the walk.
+func TestIndexedPeopleMatchTheCreditWalk(t *testing.T) {
+	walk, _ := peopleFixture()
+	indexed, c := peopleFixture()
+	indexPeopleFixture(indexed, c)
+	ctx := context.Background()
+	viewer := &core.User{ID: 1}
+	for _, q := range []frontend.PeopleQuery{
+		{Query: "the scene", Limit: 1}, {Query: "scene", Limit: 1}, {Query: "scene"}, {Query: "cene"},
+		{Query: "episode", Scope: frontend.PeopleVideoWithEpisodes}, {Query: "episode", Scope: frontend.PeopleMovies},
+		{Query: "series", Scope: frontend.PeopleSeries}, {Query: "hidden"},
+	} {
+		want, err := walk.People(ctx, viewer, core.Device{}, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := indexed.People(ctx, viewer, core.Device{}, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("%+v: indexed %+v, walk %+v", q, got, want)
+		}
+		for i := range got {
+			if got[i].ID != want[i].ID || got[i].Name != want[i].Name || got[i].IMDB != want[i].IMDB || got[i].ArtworkItem != want[i].ArtworkItem {
+				t.Fatalf("%+v: indexed %+v, walk %+v", q, got, want)
+			}
+		}
+	}
+	if n := c.creditCalls.Load(); n != 0 {
+		t.Fatalf("indexed people search walked credits %d times", n)
+	}
+}

@@ -69,3 +69,22 @@ func TestBreakerClosesAfterSuccess(t *testing.T) {
 		t.Fatal("one failure after a success reopened the breaker")
 	}
 }
+
+// An unreachable TMDB opens the breaker within the first request's own
+// retries, so the next request fails fast.
+func TestBreakerOpensWithinOneUnreachableRequest(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close() // connections are refused from here on
+	c := New("k", nil, WithBaseURL(url), WithMaxRetries(breakerThreshold-1), WithRateLimit(1000, 1000))
+	if _, err := c.MovieDetails(context.Background(), 1); err == nil || errors.Is(err, ErrUnavailable) {
+		t.Fatalf("first request err = %v, want the transport failure", err)
+	}
+	start := time.Now()
+	if _, err := c.MovieDetails(context.Background(), 2); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("second request err = %v, want ErrUnavailable", err)
+	}
+	if time.Since(start) > 100*time.Millisecond {
+		t.Fatal("second request did not fail fast")
+	}
+}

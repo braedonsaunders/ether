@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -32,6 +33,8 @@ const (
 	perfSlowDBTime    = 500 * time.Millisecond
 	perfChattyQueries = 300
 	perfWarnInterval  = time.Minute
+	// requestProviderWait is the most one request waits on TMDB in all.
+	requestProviderWait = 1500 * time.Millisecond
 )
 
 // perfObserver gives every request a store.QueryStats.
@@ -94,6 +97,7 @@ func (p *perfObserver) wrap(surface string, next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, stats := store.WithQueryStats(r.Context())
+		ctx = catalog.WithReadWaitBudget(ctx, requestProviderWait)
 		start := time.Now()
 		var recorder middleware.WrapResponseWriter
 		p.mu.Lock()
