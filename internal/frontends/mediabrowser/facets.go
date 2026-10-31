@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func facetView(r *http.Request) string {
@@ -30,6 +31,10 @@ func (i *instance) facets(kind string) http.HandlerFunc {
 			http.Error(w, "Unavailable", 503)
 			return
 		}
+		if terms := route.Query(r.URL.Query(), "SearchTerm"); kind == "person" && len(terms) == 1 && strings.TrimSpace(terms[0]) != "" {
+			i.searchPersons(w, r, v, terms[0])
+			return
+		}
 		facets, err := i.host.Experience.Facets(r.Context(), v, device(r), facetView(r), kind)
 		if err != nil {
 			http.Error(w, "Unavailable", 503)
@@ -44,6 +49,32 @@ func (i *instance) facets(kind string) http.HandlerFunc {
 		jsonReply(w, i.queryResult(items, len(facets), offset))
 	}
 }
+
+// searchPersons answers /Persons?searchTerm= from the people-name index:
+// the people whose names match, visible to the viewer through at least one
+// credited title, at most 100.
+func (i *instance) searchPersons(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, term string) {
+	reader, ok := i.host.Experience.(frontend.PeopleReader)
+	if !ok || utf8.RuneCountInString(term) > 200 {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	offset, limit := max(queryInt(r, "StartIndex", 0), 0), queryInt(r, "Limit", 50)
+	if limit <= 0 {
+		limit = 50
+	}
+	people, err := reader.People(r.Context(), v, device(r), frontend.PeopleQuery{Query: term, Limit: min(offset+limit, 100)})
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	items := make([]any, 0, len(people))
+	for _, person := range paging.Slice(people, offset, limit) {
+		items = append(items, map[string]any{"Id": person.ID, "Name": person.Name, "Type": "Person", "ServerId": i.info.ID})
+	}
+	jsonReply(w, i.queryResult(items, len(people), offset))
+}
+
 func (i *instance) resolveFilters(r *http.Request, v *frontend.Viewer, q *frontend.ItemQuery) error {
 	view := facetView(r)
 	for _, field := range []struct{ name, kind string }{{"GenreIds", "genre"}, {"StudioIds", "studio"}, {"PersonIds", "person"}} {

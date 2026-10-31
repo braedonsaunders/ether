@@ -7,7 +7,6 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/store"
 )
 
 // Browse queries the browsable mirror entirely in SQL, with generation-stamped
@@ -320,11 +319,13 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		args = append(args, f.Collection)
 	}
 	if f.Person > 0 {
-		conds = append(conds, `EXISTS (SELECT 1 FROM catalog_credits cr WHERE cr.key=t.key AND cr.person_tmdb=?)`)
+		// IN, not a correlated EXISTS: a person's few titles drive the
+		// query by key instead of a walk over every browsable title.
+		conds = append(conds, `t.key IN (SELECT key FROM catalog_credits WHERE person_tmdb=?)`)
 		args = append(args, f.Person)
 	}
 	if f.Studio != "" {
-		conds = append(conds, `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND s.studio=?)`)
+		conds = append(conds, `t.key IN (SELECT key FROM catalog_studios WHERE studio=?)`)
 		args = append(args, f.Studio)
 	}
 	if fc := strings.TrimSpace(f.FirstCharacter); fc != "" {
@@ -341,10 +342,9 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		}
 	}
 	if f.Query != "" {
-		op := store.Like(store.DialectOf(c.db))
-		conds = append(conds, "(t.title "+op+" ? ESCAPE '\\' OR t.original_title "+op+" ? ESCAPE '\\')")
-		like := "%" + escapeLike(f.Query) + "%"
-		args = append(args, like, like)
+		match, matchArgs := c.titleMatch("t.", f.Query)
+		conds = append(conds, match)
+		args = append(args, matchArgs...)
 	}
 	conds = append(conds, "t.released_ts<>0 AND t.released_ts<=?")
 	args = append(args, c.now().Unix())

@@ -2,6 +2,8 @@ package catalog
 
 import (
 	"context"
+	"database/sql"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -112,4 +114,53 @@ func TestConcurrentReadsShareOneRefresh(t *testing.T) {
 	if n := slow.calls.Load(); n != 1 {
 		t.Fatalf("TMDB calls = %d, want 1", n)
 	}
+}
+
+// The trigram index answers title searches with exactly the rows LIKE does.
+func TestTitleSearchIndexMatchesLike(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	c, err := New(db, nil, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles := []string{"Star Wars", "Lone Star", "STARGATE", "Amélie", "AMÉLIE", "The Starling", "Mustard", "Ça", "100% Wolf", "Under_score"}
+	for i, name := range titles {
+		key := core.MovieKey(int64(i + 1))
+		if err := c.UpsertTitle(ctx, core.Title{Key: key, Type: core.TypeMovie, IDs: core.IDs{TMDB: key.TMDB()}, Title: name, Released: now.AddDate(-1, 0, 0)}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Renames keep the index in step.
+	if err := c.UpsertTitle(ctx, core.Title{Key: core.MovieKey(7), Type: core.TypeMovie, IDs: core.IDs{TMDB: 7}, Title: "Custard Star", Released: now.AddDate(-1, 0, 0)}, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"star", "STAR", "amé", "AMÉ", "élie", "tar", "ard", "% W", "r_s", "zzz", "mus"} {
+		cond, args := c.titleMatch("", q)
+		indexed := keysWhere(t, db, cond, args)
+		like := "%" + escapeLike(q) + "%"
+		plain := keysWhere(t, db, `(title LIKE ? ESCAPE '\' OR original_title LIKE ? ESCAPE '\')`, []any{like, like})
+		if strings.Join(indexed, ",") != strings.Join(plain, ",") {
+			t.Errorf("%q: index %v, LIKE %v", q, indexed, plain)
+		}
+	}
+}
+
+func keysWhere(t *testing.T, db *sql.DB, cond string, args []any) []string {
+	t.Helper()
+	rows, err := db.Query(`SELECT key FROM catalog_titles WHERE `+cond+` ORDER BY key`, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, k)
+	}
+	return out
 }

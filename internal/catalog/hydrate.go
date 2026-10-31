@@ -23,6 +23,7 @@ var errHydrating = errors.New("catalog: metadata refresh in progress")
 
 type hydration struct {
 	done chan struct{}
+	val  any
 	err  error
 }
 
@@ -32,6 +33,12 @@ type hydration struct {
 // also waits, within the same bound, for one of the hydrateLimit slots. A
 // failed fetch is remembered with noteRefreshMiss, as a synchronous fetch was.
 func (c *Catalog) hydrate(ctx context.Context, refreshKey string, wait time.Duration, fetch func(context.Context) error) error {
+	_, err := c.hydrateValue(ctx, refreshKey, wait, func(ctx context.Context) (any, error) { return nil, fetch(ctx) })
+	return err
+}
+
+// hydrateValue is hydrate for a fetch whose result every waiter shares.
+func (c *Catalog) hydrateValue(ctx context.Context, refreshKey string, wait time.Duration, fetch func(context.Context) (any, error)) (any, error) {
 	var deadline <-chan time.Time
 	if wait > 0 {
 		timer := time.NewTimer(wait)
@@ -40,21 +47,21 @@ func (c *Catalog) hydrate(ctx context.Context, refreshKey string, wait time.Dura
 	}
 	h := c.startHydration(ctx, refreshKey, wait > 0, deadline, fetch)
 	if h == nil || wait <= 0 {
-		return errHydrating
+		return nil, errHydrating
 	}
 	select {
 	case <-h.done:
-		return h.err
+		return h.val, h.err
 	case <-deadline:
-		return errHydrating
+		return nil, errHydrating
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 
 // startHydration joins the running refresh of refreshKey or starts one in a
 // free slot. It returns nil when no slot came free in time.
-func (c *Catalog) startHydration(ctx context.Context, refreshKey string, block bool, deadline <-chan time.Time, fetch func(context.Context) error) *hydration {
+func (c *Catalog) startHydration(ctx context.Context, refreshKey string, block bool, deadline <-chan time.Time, fetch func(context.Context) (any, error)) *hydration {
 	c.hydrateMu.Lock()
 	if h := c.hydrating[refreshKey]; h != nil {
 		c.hydrateMu.Unlock()
@@ -92,7 +99,7 @@ func (c *Catalog) startHydration(ctx context.Context, refreshKey string, block b
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), hydrateBudget)
 	go func() {
 		defer cancel()
-		h.err = fetch(bg)
+		h.val, h.err = fetch(bg)
 		if h.err != nil && !errors.Is(bg.Err(), context.DeadlineExceeded) {
 			c.noteRefreshMiss(refreshKey)
 		}

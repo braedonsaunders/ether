@@ -59,7 +59,13 @@ type ServiceDeps struct {
 	// of browsing titles.
 	CountBrowsable func(context.Context, core.MediaType) (int, error)
 	// CreditItems enumerates cached credit-title keys without browsing or hydration.
-	CreditItems   func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
+	CreditItems func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
+	// PeopleIndex lists credited people with a name word starting with every
+	// term, most credited first. PersonCredits lists a person's most popular
+	// credited titles of the given types. With both, people searches use the
+	// name index instead of walking every credited title. Optional.
+	PeopleIndex   func(context.Context, []string, int) ([]PersonCandidate, error)
+	PersonCredits func(context.Context, int64, []core.MediaType, int) ([]core.RatingKey, error)
 	AiredEpisodes func(context.Context, core.RatingKey, int, int) (core.Page, error)
 	AddedTimes    func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
 	// RecentAir is the indexed date-added window. Nil keeps the catalogue scan.
@@ -967,6 +973,9 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 	}
 	return core.Page{Items: out[start:end], Total: total}, nil
 }
+// searchWindowMin is the smallest candidate window a search reads.
+const searchWindowMin = 100
+
 func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.Device, query string, q frontend.ItemQuery) (frontend.SearchPage, error) {
 	v, err := s.viewer(ctx, viewer)
 	if err != nil {
@@ -995,7 +1004,10 @@ func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.D
 		return frontend.SearchPage{Continuation: frontend.ContinuationUnknown}, nil
 	}
 	end := min(offset+limit, 1000)
-	candidates, err := s.d.Search.Find(ctx, v, query, types, 1000)
+	// The candidate window grows with the page asked for, so a first page
+	// of search results does not load and hydrate a thousand titles.
+	window := min(max(2*end, searchWindowMin), 1000)
+	candidates, err := s.d.Search.Find(ctx, v, query, types, window)
 	if err != nil {
 		return frontend.SearchPage{}, err
 	}

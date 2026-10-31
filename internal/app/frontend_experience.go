@@ -53,6 +53,19 @@ func (a *App) experienceSearch(vis experience.Visibility) experience.Search {
 	return experience.Search{Catalog: a.catalog.Search, Visibility: vis, Unrestricted: unrestricted, Vibe: experience.VibeSearch{Source: source, Visibility: vis, Unrestricted: unrestricted}}
 }
 
+// peopleIndex adapts the catalogue's people-name index to experience.
+func (a *App) peopleIndex(ctx context.Context, terms []string, limit int) ([]experience.PersonCandidate, error) {
+	found, err := a.catalog.MatchPeople(ctx, terms, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]experience.PersonCandidate, len(found))
+	for i, m := range found {
+		out[i] = experience.PersonCandidate{TMDB: m.TMDB, Name: m.Name}
+	}
+	return out, nil
+}
+
 // configuredLibraries is the live Movies / TV Shows pair. IDs stay 1 and 2 so
 // saved ParentId and section UUIDs do not change when the owner renames them.
 func (a *App) configuredLibraries() []experience.Library {
@@ -151,7 +164,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			out = append(out, frontend.NotInterestedEntry{Key: entry.Key, AddedAt: entry.AddedAt})
 		}
 		return out, nil
-	}, ByExternalID: a.catalog.ByExternalID, Active: a.users.PolicyUser, Libraries: libs, LiveLibraries: a.configuredLibraries, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, PageExclusions: newLibraryPageExclusions(a), CountBrowsable: a.catalog.CountBrowsable, CreditItems: a.catalog.CachedCreditItems, AiredEpisodes: a.catalog.CachedAiredEpisodes, AddedTimes: a.catalog.CachedAddedTimes, RecentAir: a.catalog.RecentAir, CountUnplayedAired: a.catalog.CountUnplayedAired, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Scheduled: a.scheduledEpisodes, Grouped: a.groupedShows, Search: a.experienceSearch(vis), CachedGet: a.catalog.CachedGet, CachedGetMany: a.catalog.CachedGetMany, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	}, ByExternalID: a.catalog.ByExternalID, Active: a.users.PolicyUser, Libraries: libs, LiveLibraries: a.configuredLibraries, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, PageExclusions: newLibraryPageExclusions(a), CountBrowsable: a.catalog.CountBrowsable, CreditItems: a.catalog.CachedCreditItems, PeopleIndex: a.peopleIndex, PersonCredits: a.catalog.PersonCreditKeys, AiredEpisodes: a.catalog.CachedAiredEpisodes, AddedTimes: a.catalog.CachedAddedTimes, RecentAir: a.catalog.RecentAir, CountUnplayedAired: a.catalog.CountUnplayedAired, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Scheduled: a.scheduledEpisodes, Grouped: a.groupedShows, Search: a.experienceSearch(vis), CachedGet: a.catalog.CachedGet, CachedGetMany: a.catalog.CachedGetMany, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		return a.catalog.ResolveShowParents(ctx, keys)
 	}, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
 		if a.episodeorder != nil {

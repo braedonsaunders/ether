@@ -311,10 +311,12 @@ func (c *Catalog) seasonFresh(st *storedTitle, show *core.Title) bool {
 // fetchSeason ensures season+episodes are in the mirror, fetching TMDB when
 // missing or stale. Returns the season title.
 func (c *Catalog) fetchSeason(ctx context.Context, showID int64, season int) (*core.Title, error) {
-	return c.fetchSeasonOpts(ctx, showID, season, false)
+	return c.fetchSeasonOpts(ctx, showID, season, false, false)
 }
 
-func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int, force bool) (*core.Title, error) {
+// fetchSeasonOpts refreshes a season; force waits for TMDB, and
+// knownMirrored says the caller already holds one of its episodes.
+func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int, force, knownMirrored bool) (*core.Title, error) {
 	key := core.SeasonKey(showID, season)
 	show, err := c.ensureShow(ctx, showID)
 	if err != nil {
@@ -324,8 +326,8 @@ func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int,
 	// Mirrored, not aired: a fresh season whose episodes are all still
 	// to air must not refetch on every read.
 	stored, lerr := c.loadByKey(ctx, key)
-	mirrored := false
-	if lerr == nil {
+	mirrored := knownMirrored
+	if lerr == nil && !mirrored {
 		mirrored, _ = c.seasonMirrored(ctx, showID, season)
 	}
 	if !force && lerr == nil && mirrored && c.seasonFresh(stored, show) {
@@ -400,10 +402,13 @@ func tmdbSeasonSummary(sd *tmdb.SeasonDetails) tmdb.SeasonSummary {
 }
 
 func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Title, error) {
-	if st, err := c.loadByKey(ctx, key); err == nil && c.fresh(st) {
-		return &st.t, nil
+	stored, lerr := c.loadByKey(ctx, key)
+	if lerr == nil && c.fresh(stored) {
+		return &stored.t, nil
 	}
-	if _, err := c.fetchSeason(ctx, key.TMDB(), key.Season()); err != nil {
+	// A stored episode proves its season is mirrored, so the season check
+	// needs no episode count.
+	if _, err := c.fetchSeasonOpts(ctx, key.TMDB(), key.Season(), false, lerr == nil); err != nil {
 		if st, lerr := c.loadByKey(ctx, key); lerr == nil {
 			return &st.t, nil
 		}
@@ -733,7 +738,7 @@ func (c *Catalog) NextEpisode(ctx context.Context, episode core.RatingKey) (*cor
 			if show != nil && strings.EqualFold(show.Status, "Returning Series") {
 				sKey := core.SeasonKey(showID, curSeason)
 				if st, lerr := c.loadByKey(ctx, sKey); lerr == nil && c.now().Sub(st.detailAt) >= min(c.staleAfter, caughtUpRefreshTTL) {
-					if _, ferr := c.fetchSeasonOpts(ctx, showID, curSeason, true); ferr == nil {
+					if _, ferr := c.fetchSeasonOpts(ctx, showID, curSeason, true, false); ferr == nil {
 						if eps2, eerr := c.episodesOfSeason(ctx, showID, curSeason); eerr == nil {
 							for _, e := range eps2 {
 								if e.Episode > curEp {
