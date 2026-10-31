@@ -13,6 +13,7 @@ import type {
   TmdbListName,
 } from "./contract";
 import { localized, t, tn } from "../i18n";
+import { NOT_RATED, ratingLevelLabel } from "./contentRatings";
 
 /**
  * Rule value encoding (the contract leaves `value` typed by field):
@@ -86,9 +87,9 @@ export const FIELDS = localized<FieldMeta[]>(() => [
     group: t("Content"),
     kind: "facet",
     facet: "contentRating",
-    ops: SET_OPS,
+    ops: ["in", "notIn", "lte", "gte"],
     defaultOp: "in",
-    hint: t("Certification such as PG-13 or TV-MA"),
+    hint: t("Age level: PG also covers TV-PG and other countries' equivalents"),
   },
   {
     field: "country",
@@ -327,6 +328,9 @@ export function valueFor(meta: FieldMeta, op: RuleOp, prev?: unknown): unknown {
     case "facet":
     case "lookup":
       if (op === "in" || op === "notIn") return list;
+      // A rating bound needs a rated level, never "Not rated".
+      if (meta.field === "contentRating" && (op === "gte" || op === "lte"))
+        return list.find((x) => x !== NOT_RATED) ?? "";
       return list[0] ?? "";
     case "number": {
       const first = typeof list[0] === "number" ? list[0] : undefined;
@@ -421,6 +425,11 @@ export function describeRule(rule: Rule): string {
       min: String(v[0]),
       max: `${String(v[1])}${unit}`,
     });
+  if (meta?.field === "contentRating") {
+    const values = (Array.isArray(v) ? v : [v]).filter((x) => x !== "" && x != null);
+    const shown = values.map((x) => ratingLevelLabel(String(x)));
+    return opPhrase(rule.op, meta.kind, label, shown.join(", ") || "…");
+  }
   if (Array.isArray(v)) return opPhrase(rule.op, meta?.kind, label, listText(rule, v) || "…");
   const text = rule.label || (v === "" || v === undefined || v === null ? "…" : String(v));
   return opPhrase(rule.op, meta?.kind, label, `${text}${typeof v === "number" ? unit : ""}`);

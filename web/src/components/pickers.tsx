@@ -19,6 +19,7 @@ import type {
   TitleCard,
   Viewer,
 } from "../lib/contract";
+import { NOT_RATED, RATING_LEVELS, ratingExamples } from "../lib/contentRatings";
 import { useDebouncedValue } from "../lib/hooks";
 import { Artwork } from "./Artwork";
 import { titleSubtitle } from "./Poster";
@@ -78,18 +79,24 @@ export function FacetPicker({
 }) {
   const { values, error } = useFacet(type, facet);
   const { locale } = useLocale();
+  // A facet that groups labels (content-rating levels) shows a stored
+  // equivalent ("TV-PG") as its group ("PG").
+  const selected = useMemo(
+    () => [...new Set(value.map((v) => canonicalFacetValue(v, values)))],
+    [value, values],
+  );
   const options = useMemo(() => {
     const opts = (values ?? []).map((v) => ({
       value: v.key,
       label: v.title,
-      description: v.count ? tn(v.count, "{count} title", "{count} titles") : undefined,
+      description: facetDescription(facet, v),
     }));
     // Keep values that aren't in the facet list (e.g. from a template) selectable.
-    for (const v of value)
+    for (const v of selected)
       if (!opts.some((o) => o.value === v))
         opts.push({ value: v, label: v, description: undefined });
     return opts;
-  }, [values, value, locale]);
+  }, [values, selected, facet, locale]);
   if (error) {
     return (
       <TextListFallback
@@ -104,7 +111,7 @@ export function FacetPicker({
   }
   return (
     <MultiSelect
-      value={value}
+      value={selected}
       onChange={onChange}
       options={options}
       ariaLabel={ariaLabel}
@@ -158,19 +165,26 @@ export function FacetSelect({
   value,
   onChange,
   ariaLabel,
+  omit,
 }: {
   type: string;
   facet: FacetName;
   value: string;
   onChange: (v: string) => void;
   ariaLabel: string;
+  /** Facet keys not offered (e.g. "Not rated" for an "at most" bound). */
+  omit?: string[];
 }) {
   const { values } = useFacet(type, facet);
-  const options = (values ?? []).map((v) => ({ value: v.key, label: v.title }));
-  if (value && !options.some((o) => o.value === value)) options.push({ value, label: value });
+  const selected = value ? canonicalFacetValue(value, values) : value;
+  const options = (values ?? [])
+    .filter((v) => !omit?.includes(v.key))
+    .map((v) => ({ value: v.key, label: v.title, description: facetDescription(facet, v) }));
+  if (selected && !options.some((o) => o.value === selected))
+    options.push({ value: selected, label: selected, description: undefined });
   return (
     <SearchSelect
-      value={value}
+      value={selected}
       onChange={onChange}
       options={options}
       ariaLabel={ariaLabel}
@@ -182,6 +196,26 @@ export function FacetSelect({
       searchable
     />
   );
+}
+
+/** The facet key a stored value stands for, through the facet's labels. */
+function canonicalFacetValue(value: string, values: FacetValue[] | null): string {
+  if (!values || values.some((v) => v.key === value)) return value;
+  const upper = value.toUpperCase();
+  return values.find((v) => v.labels?.some((l) => l.toUpperCase() === upper))?.key ?? value;
+}
+
+function facetDescription(facet: FacetName, v: FacetValue): string | undefined {
+  const count = v.count ? tn(v.count, "{count} title", "{count} titles") : undefined;
+  if (facet !== "contentRating") return count;
+  const name =
+    v.key === NOT_RATED
+      ? t("No rating from any source")
+      : RATING_LEVELS.find((l) => l.value === v.key)?.name;
+  const examples = ratingExamples(v.labels);
+  return [name, examples ? t("also {labels}", { labels: examples }) : undefined, count]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // ---- Lookup (people, keywords, companies…) ----------------------------------------
