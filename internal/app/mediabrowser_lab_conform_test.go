@@ -128,6 +128,12 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					passed := t.Run(mode+"/"+clientName, func(t *testing.T) {
 						target := newLabProfileTarget(t, jellyfinRef, spec.proto, clientName)
 						defer target.close()
+						if spec.proto == "jellyfin" && mode == "compare" {
+							// The checked-in library browse is The Scene season 1.
+							// View 1 is the movies library and has a different item shape.
+							// Live keeps the movies view on both sides.
+							target.values["parent_id"] = ids.RatingKeyGUID(core.SeasonKey(91461, 1))
+						}
 						protocolVersion = target.version
 						referenceValues := map[string]string{}
 						for key, value := range spec.reference.vars {

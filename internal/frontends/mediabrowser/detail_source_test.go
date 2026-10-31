@@ -36,6 +36,19 @@ func TestDetailSourceOmitsEstimatedMediaFacts(t *testing.T) {
 	}
 }
 
+func TestJellyfinItemUsesTheFirstProbedVersion(t *testing.T) {
+	i := &instance{protocol: "jellyfin"}
+	dto := map[string]any{}
+	i.jellyfinKnownVersionFacts(dto, []frontend.Version{
+		{Media: frontend.MediaInfo{Estimated: true, Container: "mkv", Streams: []frontend.StreamInfo{{Type: "video", Codec: "hevc"}}}},
+		{Media: frontend.MediaInfo{Container: "mp4", Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Codec: "aac"}}}},
+	})
+	streams, _ := dto["MediaStreams"].([]any)
+	if dto["Container"] != "mp4" || len(streams) != 2 {
+		t.Fatalf("container=%v streams=%d", dto["Container"], len(streams))
+	}
+}
+
 func TestItemDetailDoesNotExposeEstimatedVersionStreams(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}

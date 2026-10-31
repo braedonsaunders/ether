@@ -683,6 +683,55 @@ func (i *instance) jellyfinListFields(r *http.Request, item map[string]any, titl
 	delete(item, "CanDownload")
 }
 
+// jellyfinResumeParents adds the season and series of each resumed episode.
+// Jellyfin's resume list includes those folders with the series status,
+// end date, air days, and unplayed counts. Parents already in the list stay put.
+func (i *instance) jellyfinResumeParents(r *http.Request, viewer *frontend.Viewer, titles []frontend.Title) []frontend.Title {
+	if i == nil || i.protocol != "jellyfin" || i.host.Experience == nil || r == nil || viewer == nil {
+		return titles
+	}
+	seen := make(map[frontend.RatingKey]bool, len(titles))
+	for _, title := range titles {
+		seen[title.Key] = true
+	}
+	extra := make([]frontend.Title, 0)
+	for _, title := range titles {
+		if title.Type != "episode" {
+			continue
+		}
+		show := title.ShowKey
+		if show == 0 && title.Key.Kind() == frontend.KindEpisode {
+			show = frontend.ShowKey(title.Key.TMDB())
+		}
+		seasonNumber := title.Season
+		if seasonNumber == 0 {
+			seasonNumber = title.Key.Season()
+		}
+		parents := make([]frontend.RatingKey, 0, 2)
+		if show != 0 && seasonNumber > 0 {
+			parents = append(parents, frontend.SeasonKey(show.TMDB(), seasonNumber))
+		}
+		if show != 0 {
+			parents = append(parents, show)
+		}
+		for _, key := range parents {
+			if seen[key] {
+				continue
+			}
+			detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: key})
+			if err != nil || detail.Title.Key != key {
+				continue
+			}
+			seen[key] = true
+			extra = append(extra, detail.Title)
+		}
+	}
+	if len(extra) == 0 {
+		return titles
+	}
+	return append(titles, extra...)
+}
+
 // jellyfinResumeFields drops keys a Jellyfin resume row does not carry unless
 // Fields asked for them. Parent artwork and series identity stay.
 func (i *instance) jellyfinResumeFields(r *http.Request, item map[string]any) {
@@ -710,6 +759,10 @@ func (i *instance) jellyfinResumeFields(r *http.Request, item map[string]any) {
 		delete(item, "MediaSources")
 		delete(item, "HasSubtitles")
 	}
+	// Resume rows do not carry folder counts or the show's last-added date.
+	delete(item, "ChildCount")
+	delete(item, "RecursiveItemCount")
+	delete(item, "DateLastMediaAdded")
 	if !fields["path"] {
 		delete(item, "Path")
 	}
@@ -799,14 +852,23 @@ func jellyfinStudioFacts(item map[string]any, title frontend.Title) {
 }
 
 // jellyfinKnownVersionFacts copies probe facts that BaseItemDto allows from
-// the single known version. Estimated media stays off the item. Several
-// versions do not identify which one owns the top-level fields.
+// the default version. That is the only version, or the first probed one
+// when several files exist. Estimated media stays off the item.
 func (i *instance) jellyfinKnownVersionFacts(dto map[string]any, versions []frontend.Version) {
-	if i.protocol != "jellyfin" || len(versions) != 1 {
+	if i.protocol != "jellyfin" || len(versions) == 0 {
 		return
 	}
-	version := versions[0]
-	if version.Media.Estimated {
+	version, ok := versions[0], !versions[0].Media.Estimated && len(versions[0].Media.Streams) > 0
+	if !ok {
+		for _, candidate := range versions[1:] {
+			if !candidate.Media.Estimated && len(candidate.Media.Streams) > 0 {
+				version = candidate
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok || version.Media.Estimated {
 		return
 	}
 	if len(version.Media.Chapters) > 0 {

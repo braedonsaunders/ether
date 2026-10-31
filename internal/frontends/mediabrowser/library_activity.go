@@ -147,6 +147,13 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		}
 		page, e := service.Resume(r.Context(), viewer, device(r), view, types, offset, limit, requireExact)
 		err, titles, total, totalExact = e, page.Items, page.Total, page.TotalExact
+		if err == nil && i.protocol == "jellyfin" {
+			before := len(titles)
+			titles = i.jellyfinResumeParents(r, viewer, titles)
+			if totalExact && total == before {
+				total = len(titles)
+			}
+		}
 		if err == nil && requireExact && !totalExact {
 			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 			return
