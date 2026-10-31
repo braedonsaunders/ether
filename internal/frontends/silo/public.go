@@ -99,7 +99,15 @@ func (i *instance) optionalCapability(w http.ResponseWriter, r *http.Request) {
 	case "/api/v2/shuffles/capabilities":
 		base["scope_kinds"] = []string{}
 	case "/api/v2/subtitles/providers/status":
-		base["schema_version"], base["enabled"], base["providers"] = 1, false, []string{}
+		enabled := i.host.Subtitles != nil && i.host.Subtitles.Enabled()
+		providers := []string{}
+		if enabled {
+			providers = []string{"opensubtitles"}
+			base["state"] = "available"
+			base["allowed"] = true
+			base["revision"] = "ether-subtitles-v1"
+		}
+		base["schema_version"], base["enabled"], base["providers"] = 1, enabled, providers
 	case "/api/v2/watch-together/capabilities":
 		for _, key := range []string{"staged_selection", "lobby_ready", "connection_replaced", "selection_mode_switch", "member_state", "picker", "vote_host_override", "stop_playback"} {
 			base[key] = false

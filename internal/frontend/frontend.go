@@ -263,8 +263,17 @@ type Host struct {
 	// Artwork serves the same composited poster bytes the other frontends
 	// grant. DLNA has no credential, so it reads this after LANViewer.
 	Artwork Artwork
-	Config      func() Settings
-	Log         *slog.Logger
+	// ExtraStreams opens a playable trailer or extra. Nil means extras are not
+	// configured; listing routes still authorize the parent and return nothing.
+	ExtraStreams ExtraStreams
+	// Cinema lists preroll trailers of other movies. Nil means cinema intros
+	// are not wired; the intros route returns an empty page after authorization.
+	Cinema CinemaIntros
+	// Subtitles searches and downloads a sidecar only after an explicit pick.
+	// Nil or Enabled false tells clients the server will not fetch one.
+	Subtitles SubtitleCatalog
+	Config    func() Settings
+	Log       *slog.Logger
 	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
 	ViewerPortalURL func(context.Context, *http.Request) (string, error)
 	// SecurePortalURL selects a verified reachable HTTPS portal address.

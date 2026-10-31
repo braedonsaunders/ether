@@ -65,6 +65,9 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 		}
 	}
 	m["LocalTrailerCount"] = trailers
+	if remote := jellyfinRemoteTrailers(d); len(remote) > 0 {
+		m["RemoteTrailers"] = remote
+	}
 	for _, key := range []string{"RemoteTrailers", "People", "Studios", "TagItems", "Taglines", "GenreItems"} {
 		if _, ok := m[key]; !ok {
 			m[key] = []any{}

@@ -289,6 +289,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	}
 	i.applyDetailFacts(r, v, d.Title, out)
 	var playedSource *frontend.PlaybackSourceHistory
+	fileMarkers := map[string][]frontend.Marker{}
 	if d.Title.Type == "movie" || d.Title.Type == "episode" {
 		played := d.UserData.ViewCount > 0
 		watched, unplayed, inProgress := 0, 1, 0
@@ -331,6 +332,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 			groups := make([]any, 0, len(versions))
 			for n, version := range versions {
 				id := offers[n].ID
+				fileMarkers[id] = version.Markers
 				resolution, video, audio := "", "", ""
 				hdr := false
 				audioTracks := []any{}
@@ -573,16 +575,21 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				item["bitrate"] = int64(kbps) * 1000
 			}
 			item["trickplay_available"] = false
-			// Marker ranges are file-specific. Publish them only when this
-			// watch response has exactly one probed file those ranges fit.
-			// Every other file gets an empty set rather than another file's timeline.
+			// Each probed file carries the ranges for its own timeline.
+			// A single-file response can still use the detail marker set when
+			// that file has not been given its own ranges.
 			segments := []any{}
-			if probedFiles == 1 {
-				if sec, ok := source["duration"].(int64); ok && sec > 0 {
-					segments = fileMarkerSegments(d.Markers, time.Duration(sec)*time.Second)
-				}
+			fileID, _ := source["file_id"].(string)
+			markers := fileMarkers[fileID]
+			if len(markers) == 0 && probedFiles == 1 {
+				markers = d.Markers
 			}
+			if sec, ok := source["duration"].(int64); ok && sec > 0 {
+				segments = fileMarkerSegments(markers, time.Duration(sec)*time.Second)
+			}
+			segments = i.withoutSkippedIntros(r, v, segments)
 			item["marker_segments"] = segments
+			attachWatchMarkers(item, segments)
 			versions = append(versions, item)
 		}
 		watch["versions"] = versions

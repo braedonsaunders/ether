@@ -116,6 +116,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pos := time.Duration(b.Position * float64(time.Second))
+	pos = i.skipIntroAtStart(r, v, scope, key, versionHandle, pos)
 	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, DetailSource: offer.Target.DetailSource, ExpectedSourceETag: offer.Target.ETag, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
 		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
@@ -310,6 +311,9 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		if e == nil && strings.HasPrefix(url, "/sessions/media/") {
 			entry["delivery"] = "sidecar"
 			entry["url"] = "/api/v2/stream/" + strings.TrimPrefix(url, "/sessions/media/")
+			if sync := i.subtitleSyncMS(r, v); sync != 0 {
+				entry["url"] = entry["url"].(string) + "?sync_ms=" + strconv.Itoa(sync)
+			}
 		}
 		inventory = append(inventory, entry)
 		if track.Index == plan.Decision.SubtitleStream {

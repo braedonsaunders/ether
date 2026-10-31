@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -210,6 +211,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			intent.ExactVersion = true
 			resolvedRelease = tag
 		}
+	}
+	if i.extraPlayback(w, r, v, key, playback) {
+		return
 	}
 	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, ResolvedRelease: resolvedRelease, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: intent}
 	plan, err := i.host.Sessions.Plan(r.Context(), planRequest)
@@ -469,6 +473,12 @@ func (i *instance) playbackRoutes() error {
 	if err := i.router.Handle("GET", "/MediaSegments/{itemId}", http.HandlerFunc(i.mediaSegments)); err != nil {
 		return err
 	}
+	if err := i.router.Handle("GET", "/Items/{id}/RemoteSearch/Subtitles/{language}", http.HandlerFunc(i.remoteSubtitles)); err != nil {
+		return err
+	}
+	if err := i.router.Handle("POST", "/Items/{id}/RemoteSearch/Subtitles/{subtitleId}", http.HandlerFunc(i.downloadSubtitle)); err != nil {
+		return err
+	}
 	for _, entry := range []struct {
 		path    string
 		stopped bool
@@ -570,6 +580,13 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	if err != nil || viewer == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
+	}
+	if key, keyErr := ids.ParseRatingKeyGUID(r.PathValue("id")); keyErr == nil && key.Kind() == core.KindExtra {
+		streamName := strings.ToLower(r.PathValue("name"))
+		if streamName == "stream" || strings.HasPrefix(streamName, "stream.") {
+			i.serveExtra(w, r, viewer, key)
+			return
+		}
 	}
 	if i.host.Sessions == nil {
 		http.Error(w, "Unavailable", 503)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -116,6 +117,7 @@ func (b *Broker) serveSubtitle(w http.ResponseWriter, r *http.Request, s *broker
 			raw = []byte(subtitles.RenderSRT(cues))
 		}
 	}
+	raw = b.presentSubtitle(r, s, ps.Info, stream, raw, format)
 	if format == "vtt" {
 		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	} else {
@@ -124,6 +126,104 @@ func (b *Broker) serveSubtitle(w http.ResponseWriter, r *http.Request, s *broker
 	w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(raw)
+	}
+}
+
+func (b *Broker) presentSubtitle(r *http.Request, s *brokerSession, info core.MediaInfo, stream core.StreamInfo, raw []byte, format string) []byte {
+	offset := time.Duration(0)
+	if stream.External {
+		if cues, err := subtitles.ParseCues(string(raw)); err == nil {
+			if reference := b.referenceCues(r, s, info, stream); len(reference) > 0 {
+				if delta, err := subtitles.AlignAgainst(cues, reference); err == nil {
+					offset += delta
+				}
+			}
+		}
+	}
+	if ms, ok := syncMS(r); ok {
+		offset += time.Duration(ms) * time.Millisecond
+	}
+	if offset == 0 {
+		return raw
+	}
+	cues, err := subtitles.ParseCues(string(raw))
+	if err != nil {
+		return raw
+	}
+	shifted, err := subtitles.Shift(cues, offset, 1)
+	if err != nil {
+		return raw
+	}
+	if format == "srt" {
+		return []byte(subtitles.RenderSRT(shifted))
+	}
+	return []byte(subtitles.RenderVTT(shifted))
+}
+
+func syncMS(r *http.Request) (int, bool) {
+	raw := r.URL.Query().Get("sync_ms")
+	if raw == "" {
+		return 0, false
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < -10000 || value > 10000 || value == 0 {
+		return 0, false
+	}
+	return value, true
+}
+
+func (b *Broker) referenceCues(r *http.Request, s *brokerSession, info core.MediaInfo, current core.StreamInfo) []subtitles.Cue {
+	for _, other := range info.Streams {
+		if other.Index == current.Index || other.Type != "subtitle" || !textSubtitle(other.Codec) || transcode.IsImageSubtitle(other.Codec) {
+			continue
+		}
+		raw, ok := b.subtitleBytes(r, s, other, "vtt")
+		if !ok {
+			continue
+		}
+		cues, err := subtitles.ParseCues(string(raw))
+		if err != nil || len(cues) == 0 {
+			continue
+		}
+		return cues
+	}
+	return nil
+}
+
+func (b *Broker) subtitleBytes(r *http.Request, s *brokerSession, stream core.StreamInfo, format string) ([]byte, bool) {
+	const maxSubtitle = 32 << 20
+	if stream.External {
+		if b.deps.OpenSubtitle == nil || !strings.HasPrefix(stream.ExternalURL, "ether-subtitle:") {
+			return nil, false
+		}
+		reader, actual, err := b.deps.OpenSubtitle(stream.ExternalURL, format)
+		if err != nil {
+			return nil, false
+		}
+		defer reader.Close()
+		raw, err := io.ReadAll(io.LimitReader(reader, maxSubtitle+1))
+		if err != nil || len(raw) > maxSubtitle || actual != format {
+			return nil, false
+		}
+		return raw, true
+	}
+	if b.deps.ExtractSubtitle == nil || b.deps.Playback == nil {
+		return nil, false
+	}
+	var buf limitedBuffer
+	buf.limit = maxSubtitle
+	if err := b.deps.ExtractSubtitle(r.Context(), b.deps.Playback.InputURL(s.playID), stream.Index, stream.Codec, &buf); err != nil {
+		return nil, false
+	}
+	return buf.Bytes(), true
+}
+
+func textSubtitle(codec string) bool {
+	switch strings.ToLower(codec) {
+	case "srt", "subrip", "ass", "ssa", "vtt", "webvtt", "mov_text", "text":
+		return true
+	default:
+		return false
 	}
 }
 

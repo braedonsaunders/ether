@@ -254,6 +254,10 @@ type Version struct {
 	// the premiere. It is not a catalogue insertion, observation, or refresh.
 	AddedAt time.Time
 	Media   core.MediaInfo
+	// Markers are ranges for this version's probed timeline. Nil means the
+	// version has no separate timeline yet; a detail-level marker set is not
+	// a substitute when several files are present.
+	Markers []Marker
 	// Source facts are absent unless they are known for this version. FileName
 	// is a basename only; DateModified is never a catalogue fallback date.
 	FileName     string     `json:"fileName,omitempty"`
@@ -276,6 +280,36 @@ type SessionMarkers struct {
 	Known      bool
 	SourceETag string
 	Markers    []Marker
+}
+
+// ExtraStreams resolves a playable trailer or clip the extras service registered.
+// Open returns a direct media URL. Callers authorize the parent before Open.
+type ExtraStreams interface {
+	Lookup(core.RatingKey) (Extra, bool)
+	Open(context.Context, core.RatingKey) (container, rawURL string, headers map[string]string, err error)
+}
+
+// CinemaIntros returns playable trailers of other visible, unwatched movies
+// to play before feature. An empty slice means cinema intros are off or none match.
+type CinemaIntros interface {
+	Trailers(context.Context, *core.Viewer, core.Device, core.RatingKey, int) ([]Extra, error)
+}
+
+// SubtitleOffer is one subtitle search result. ID is the only value a later
+// Download accepts, and only for the title Search returned it for.
+type SubtitleOffer struct {
+	ID, Language, Name, Provider, Format, Author     string
+	Downloads                                        int
+	Rating                                           float64
+	HearingImpaired, Forced, HashMatch, AITranslated bool
+}
+
+// SubtitleCatalog searches and downloads sidecars. Download fetches only an
+// offer Search returned for that title. It does not prefetch.
+type SubtitleCatalog interface {
+	Enabled() bool
+	Search(context.Context, *core.Viewer, core.Device, core.RatingKey, string) ([]SubtitleOffer, error)
+	Download(context.Context, *core.Viewer, core.Device, core.RatingKey, string) (int, error)
 }
 
 // Extra describes a playable trailer or clip. Key is the broker-facing item

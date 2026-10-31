@@ -39,7 +39,7 @@ func TestEmbyUserUnsupportedPolicyOnCapabilityPaths(t *testing.T) {
 				t.Fatal("policy absorbed configuration")
 			}
 			cfg := i.userDTO(httptest.NewRequest("GET", "/", nil), &frontend.Viewer{ID: 1, Username: "Ada"})
-			if cfg["Prefix"] != "A" || cfg["Configuration"].(map[string]any)["IntroSkipMode"] != "None" || cfg["Policy"].(map[string]any)["LockedOutDate"] != 0 {
+			if cfg["Prefix"] != "A" || cfg["Configuration"].(map[string]any)["IntroSkipMode"] != "ShowButton" || cfg["Policy"].(map[string]any)["LockedOutDate"] != 0 {
 				t.Fatal(cfg)
 			}
 		})

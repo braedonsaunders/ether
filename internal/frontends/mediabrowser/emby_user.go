@@ -15,8 +15,9 @@ func (i *instance) embyUserDTO(user map[string]any) {
 		}
 	}
 	if cfg, ok := user["Configuration"].(map[string]any); ok {
-		// Ether has no intro-skip control and resumes at the stored offset.
-		cfg["IntroSkipMode"] = "None"
+		// ShowButton is Emby's skip-intro control. None tells the client not to
+		// skip even when MediaSegments carries intro and credits ranges.
+		cfg["IntroSkipMode"] = "ShowButton"
 		cfg["ResumeRewindSeconds"] = 0
 		if latest, ok := cfg["HidePlayedInLatest"]; ok {
 			cfg["HidePlayedInMoreLikeThis"] = latest
@@ -30,7 +31,7 @@ func (i *instance) embyUserDTO(user map[string]any) {
 	policy["AllowCameraUpload"] = false
 	policy["AllowSharingPersonalItems"] = false
 	policy["AllowTagOrRating"] = false
-	policy["EnableSubtitleDownloading"] = false
+	policy["EnableSubtitleDownloading"] = i.host.Subtitles != nil && i.host.Subtitles.Enabled()
 	policy["EnableTranscodingQuality"] = false
 	policy["IsHiddenFromUnusedDevices"] = false
 	policy["IsTagBlockingModeInclusive"] = false

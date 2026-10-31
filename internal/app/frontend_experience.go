@@ -210,6 +210,13 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 					a.log.Warn("version observation unavailable", "err", e)
 				}
 			}
+			var markerSource experience.MarkerSource
+			if a.markers != nil {
+				markerSource = a.markers
+			}
+			for n := range result.Versions {
+				result.Versions[n].Markers = experience.ItemMarkers(ctx, markerSource, title.Key, result.Versions[n].Media)
+			}
 		}
 		if a.extras != nil {
 			clips, err := a.extras.List(ctx, title, device.Language)

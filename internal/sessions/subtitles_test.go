@@ -105,3 +105,62 @@ func TestScopedSubtitleExtractionAndSidecars(t *testing.T) {
 		t.Fatal("stopped grant remained valid")
 	}
 }
+
+func TestExternalSubtitleAlignsToEmbeddedReference(t *testing.T) {
+	ctx := context.Background()
+	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 1}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	sidecar := "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello there friend\n\n00:00:03.000 --> 00:00:04.000\nSecond matching line\n\n00:00:05.000 --> 00:00:06.000\nThird matching line\n"
+	reference := "WEBVTT\n\n00:00:03.000 --> 00:00:04.000\nHello there friend\n\n00:00:05.000 --> 00:00:06.000\nSecond matching line\n\n00:00:07.000 --> 00:00:08.000\nThird matching line\n"
+	b, err := NewBroker(BrokerDeps{Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, Playback: p, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: events,
+		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {
+			if id != "ether-subtitle:cached" {
+				return nil, "", core.ErrNotFound
+			}
+			return io.NopCloser(strings.NewReader(sidecar)), format, nil
+		},
+		ExtractSubtitle: func(_ context.Context, _ string, index int, _ string, w io.Writer) error {
+			if index != 1 {
+				t.Fatal(index)
+			}
+			_, err := io.WriteString(w, reference)
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := &core.Viewer{ID: 2}
+	device := core.Device{ID: "tv"}
+	plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	for _, ps := range p.sessions {
+		ps.Info.Streams = []core.StreamInfo{{Index: 1, Type: "subtitle", Codec: "srt"}, {Index: 2, Type: "subtitle", Codec: "srt", External: true, ExternalURL: "ether-subtitle:cached"}}
+	}
+	p.mu.Unlock()
+	path, err := b.SubtitleURL(ctx, frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: "jellyfin"}, session.ID, 2, "vtt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	b.ServeMedia(w, httptest.NewRequest(http.MethodGet, path, nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "00:00:03.000") || strings.Contains(w.Body.String(), "00:00:01.000") {
+		t.Fatalf("aligned %d %s", w.Code, w.Body.String())
+	}
+	shifted := httptest.NewRecorder()
+	b.ServeMedia(shifted, httptest.NewRequest(http.MethodGet, path+"?sync_ms=1000", nil))
+	if shifted.Code != 200 || !strings.Contains(shifted.Body.String(), "00:00:04.000") {
+		t.Fatalf("sync %d %s", shifted.Code, shifted.Body.String())
+	}
+}
