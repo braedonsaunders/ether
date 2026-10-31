@@ -735,6 +735,13 @@ func (s *Service) ServePlaylist(w http.ResponseWriter, r *http.Request, id strin
 				target = int(math.Ceil(dur.Seconds()))
 			}
 			uri := fmt.Sprintf("program/%d/%d.ts", tr.programme.Start.UnixMilli(), n)
+			// start.m3u8 is not the session playlist, so a relative segment
+			// resolves outside /livetv and the stream token cannot authenticate
+			// it. Root it. The session index keeps relative URLs, which resolve
+			// next to that playlist.
+			if !strings.Contains(r.URL.Path, "/livetv/sessions/") {
+				uri = "/livetv/sessions/" + id + "/0/" + uri
+			}
 			uri = withAuth(uri, ss.streamGrant)
 			segments = append(segments, seg{tr.sequence + int64(n), at, dur, uri, ti > 0 && n == 0})
 		}

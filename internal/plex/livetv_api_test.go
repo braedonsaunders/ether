@@ -445,6 +445,96 @@ func TestStreamTokenAloneFetchesPlaylistAndDASH(t *testing.T) {
 	}
 }
 
+// Plex tvOS plays a virtual channel through decision and start.m3u8, then
+// follows the segment with the stream token and no account token. A relative
+// segment URL would be resolved under /video/:/transcode/universal/, miss the
+// stream-token route, and the player would close the session.
+func TestVirtualChannelHLSFromStartPlaylistKeepsTheSession(t *testing.T) {
+	f := newFixture()
+	t.Cleanup(func() { f.srv.Close() })
+	db, err := store.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	now := time.Unix(0, 0).UTC().Add(time.Hour + time.Minute + 44*time.Second)
+	pb := newFakePlayback(core.MediaInfo{Duration: 2 * time.Hour, Streams: []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 1280, Height: 720},
+		{Index: 1, Type: "audio", Codec: "aac"},
+	}})
+	tc := newFakeTranscoder(core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"})
+	service, err := livetv.New(livetv.Options{Transcoder: tc, Playback: pb, DB: db, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { service.Close() })
+	if _, err = service.SaveChannel(context.Background(), livetv.Channel{
+		Name: "Family Animation", Number: "4", Kind: "virtual", Enabled: true, Rating: "PG",
+		Epoch: time.Unix(0, 0).UTC(),
+		Items: []livetv.Item{{Key: core.MovieKey(1), Title: "Cartoon", DurationMS: int64((2 * time.Hour).Milliseconds()), Rating: "PG"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.d.LiveTV = service
+	f.srv.d.Identity.MyPlexSubscription = true
+	headers := map[string]string{"Accept": "application/json", "X-Plex-Product": "Plex for Apple TV", "X-Plex-Platform": "tvOS", "X-Plex-Version": "2026.20.0"}
+	tune := f.request(t, "POST", "/livetv/dvrs/1/channels/4/tune", headers)
+	if tune.Code != 200 {
+		t.Fatalf("tune %d %s", tune.Code, tune.Body.String())
+	}
+	tuned := decodeJSON(t, tune)
+	var sessionPath string
+	if md, ok := tuned["Metadata"].([]any); ok && len(md) > 0 {
+		sessionPath = md[0].(map[string]any)["key"].(string)
+	} else {
+		sub := tuned["MediaSubscription"].([]any)[0].(map[string]any)
+		op := sub["MediaGrabOperation"].([]any)[0].(map[string]any)
+		sessionPath = op["Metadata"].(map[string]any)["key"].(string)
+	}
+	decision := f.request(t, "GET", "/video/:/transcode/universal/decision?path="+url.QueryEscape(sessionPath), headers)
+	if decision.Code != 200 {
+		t.Fatalf("decision %d %s", decision.Code, decision.Body.String())
+	}
+	start := f.request(t, "GET", "/video/:/transcode/universal/start.m3u8?path="+url.QueryEscape(sessionPath), headers)
+	if start.Code != 200 || !strings.Contains(start.Body.String(), "#EXTM3U") {
+		t.Fatalf("start.m3u8 %d %s", start.Code, start.Body.String())
+	}
+	var segment string
+	for _, line := range strings.Split(start.Body.String(), "\n") {
+		if strings.Contains(line, "/program/") {
+			segment = strings.TrimSpace(line)
+			break
+		}
+	}
+	if segment == "" || !strings.HasPrefix(segment, sessionPath+"/0/program/") || !strings.Contains(segment, sessions.StreamGrantParam+"=") {
+		t.Fatalf("start.m3u8 segment is not a rooted stream-token URL:\n%s", start.Body.String())
+	}
+	joined := time.Hour + time.Minute + 44*time.Second
+	sawJoin := false
+	for _, h := range tc.sessions {
+		if h.req.StartOffset == joined && !h.req.LiveInput {
+			sawJoin = true
+		}
+	}
+	if !sawJoin {
+		t.Fatalf("virtual join did not seek %s into the programme", joined)
+	}
+	if strings.Contains(start.Body.String(), "\nprogram/") {
+		t.Fatal("start.m3u8 still advertises a relative segment")
+	}
+	media := f.request(t, "GET", segment, map[string]string{"X-Plex-Token": ""})
+	if media.Code != 200 || !strings.HasPrefix(media.Body.String(), "segment-") {
+		t.Fatalf("segment with only the stream token: %d %q", media.Code, media.Body.String())
+	}
+	if len(service.ViewingSessions()) != 1 {
+		t.Fatal("segment request closed the live session")
+	}
+	index := f.request(t, "GET", sessionPath+"/0/index.m3u8", headers)
+	if index.Code != 200 || !strings.Contains(index.Body.String(), "\nprogram/") {
+		t.Fatalf("session playlist lost relative segments: %d %s", index.Code, index.Body.String())
+	}
+}
+
 // Malformed guide queries are the client's error, not the server's.
 func TestLiveGuideBadQueriesAreBadRequests(t *testing.T) {
 	f, _, _ := liveFixture(t)
