@@ -290,6 +290,21 @@ func TestCompareRequestClassifiesOnlySchemaValidExtras(t *testing.T) {
 	}
 }
 
+func TestJellyfinLatestBlurHashKeysAreContent(t *testing.T) {
+	p := &Protocol{Dialect: "jellyfin"}
+	p.specOnce.Do(func() {})
+	body := func(itemTag, personTag string) []byte {
+		return []byte(`[{"ImageBlurHashes":{"Primary":{"` + itemTag + `":"hash"}},"People":[{"ImageBlurHashes":{"Primary":{"` + personTag + `":"hash"}}}]}]`)
+	}
+	header := http.Header{"Content-Type": {"application/json"}}
+	ref := conform.Response{Status: 200, Headers: header, Body: body("tag-a", "person-a")}
+	target := conform.Response{Status: 200, Headers: header, Body: body("tag-b", "person-b")}
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/Items/Latest"}, ref, target)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+}
+
 func TestPinnedJellyfinUserRoutesDemoteSchemaExtras(t *testing.T) {
 	data, err := openapi.CachedSpecManifest(specs.Manifest, "jellyfin", "")
 	if err != nil {

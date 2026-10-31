@@ -551,7 +551,7 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 }
 
 // Image tags under these image types are not schema fields.
-var jellyfinBlurHashKey = regexp.MustCompile(`^\$(?:\[\]|)/(?:Items\[\]/)?ImageBlurHashes/(?:Primary|Backdrop|Logo|Thumb|Banner|Art|Disc|Box|Screenshot|Menu|Chapter|BoxRear|Profile)/[^/]+$`)
+var jellyfinBlurHashKey = regexp.MustCompile(`^\$(?:\[\]/|/)(?:(?:Items|People)\[\]/)?ImageBlurHashes/(?:Primary|Backdrop|Logo|Thumb|Banner|Art|Disc|Box|Screenshot|Menu|Chapter|BoxRear|Profile)/[^/]+$`)
 
 // jellyfinItemSchemaPath maps user-scoped item routes onto the routes the
 // Jellyfin 12.4 spec documents. Those responses are the same BaseItemDto

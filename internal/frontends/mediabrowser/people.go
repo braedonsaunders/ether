@@ -53,7 +53,8 @@ func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token str
 			}
 		}
 	}
-	grants := map[int64]string{}
+	grants := map[int64]frontend.Image{}
+	granted := map[int64]string{}
 	attempted := map[int64]bool{}
 	result := make([]any, 0, len(credits))
 	for _, c := range credits {
@@ -79,12 +80,14 @@ func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token str
 			if img, ok := portraits["tmdb:"+strconv.FormatInt(c.id, 10)]; ok {
 				grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: token, Device: device(r), Item: detail.Title.Key, Image: img})
 				if err == nil {
-					grants[c.id] = grant
+					grants[c.id] = img
+					granted[c.id] = grant
 				}
 			}
 		}
-		if grant := grants[c.id]; grant != "" {
+		if grant := granted[c.id]; grant != "" {
 			dto["PrimaryImageTag"] = grant
+			i.addImageMetadata(dto, "Primary", grant, grants[c.id])
 		}
 		result = append(result, dto)
 	}
