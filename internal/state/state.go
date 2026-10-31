@@ -459,8 +459,11 @@ func (s *State) PageUserData(ctx context.Context, userID int64, keys []core.Rati
 			b.WriteByte(')')
 		}
 		writeIn(`SELECT 'w', rating_key, view_offset_ns, duration_ns, view_count, last_viewed_at, user_rating, updated_at FROM state_watch WHERE user_id=? AND rating_key IN (`, false, userID)
-		writeIn(` UNION ALL SELECT 'f', CAST(subject_id AS INTEGER), 0, 0, 0, 0, 0, 0 FROM favorites_items WHERE viewer_id=? AND kind=? AND subject_id IN (`, true, userID, "title")
-		writeIn(` UNION ALL SELECT 'n', CAST(title_key AS INTEGER), 0, 0, 0, 0, 0, 0 FROM notinterested_titles WHERE viewer_id=? AND title_key IN (`, true, userID)
+		// Rating keys are kind*10^15 plus a payload, so they do not fit in
+		// PostgreSQL INTEGER (int4). SQLite INTEGER is already 64-bit;
+		// BIGINT keeps both engines on that width.
+		writeIn(` UNION ALL SELECT 'f', CAST(subject_id AS BIGINT), 0, 0, 0, 0, 0, 0 FROM favorites_items WHERE viewer_id=? AND kind=? AND subject_id IN (`, true, userID, "title")
+		writeIn(` UNION ALL SELECT 'n', CAST(title_key AS BIGINT), 0, 0, 0, 0, 0, 0 FROM notinterested_titles WHERE viewer_id=? AND title_key IN (`, true, userID)
 		writeIn(` UNION ALL SELECT 'l', item_key, 0, 0, 0, 0, 0, 0 FROM watchlist_items WHERE user_id=? AND item_key IN (`, false, userID)
 		rows, err := s.db.QueryContext(ctx, b.String(), args...)
 		if err != nil {
