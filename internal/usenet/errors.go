@@ -49,6 +49,11 @@ var (
 	ErrConnBroken = errors.New("nntp: connection broken")
 )
 
+// errStaleReuse is a network failure on a socket the pool had already used.
+// The server dropped it while it sat idle. It is not a provider fault: the
+// command is retried once on a fresh dial and the breaker is left alone.
+var errStaleReuse = errors.New("usenet: stale connection")
+
 // ProtocolError is an unexpected NNTP status reply.
 type ProtocolError struct {
 	Cmd  string // command verb, e.g. "BODY"

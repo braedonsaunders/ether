@@ -204,22 +204,41 @@ func (p *pool) dialOptions() DialOptions {
 
 // get acquires a slot at prio and returns a connection for it. The caller
 // must hand the connection back with put using the same prio.
+// Connect backoff pauses new dials only. Command backoff refuses idle
+// sockets too: those sockets are what failed. A credential lockout refuses
+// every socket.
 func (p *pool) get(ctx context.Context, prio core.Priority) (*Conn, error) {
 	for try := 0; ; try++ {
-		if err := p.brk.allow(); err != nil {
+		if err := p.brk.authDisabled(); err != nil {
 			return nil, err
 		}
 		if err := p.sem.Acquire(ctx, prio); err != nil {
 			return nil, err
 		}
+		if err := p.brk.idleAllowed(); err != nil {
+			p.sem.Release(prio)
+			return nil, err
+		}
+		c, err := p.takeIdle()
+		if err != nil {
+			p.sem.Release(prio)
+			return nil, err
+		}
+		if c != nil {
+			return c, nil
+		}
 		// A waiter may have queued before a different command opened the
-		// breaker. Recheck even when reusing an idle socket.
+		// breaker. Recheck before dialing; idle sockets already returned above.
+		if err := p.brk.allow(); err != nil {
+			p.sem.Release(prio)
+			return nil, err
+		}
 		probe, err := p.brk.admit()
 		if err != nil {
 			p.sem.Release(prio)
 			return nil, err
 		}
-		c, err := p.conn(ctx)
+		c, err = p.dialNew(ctx)
 		if err == nil {
 			c.recoveryProbe = probe
 			return c, nil
@@ -252,7 +271,9 @@ func (p *pool) shrinkTo(n int) {
 	}
 }
 
-func (p *pool) conn(ctx context.Context) (*Conn, error) {
+// takeIdle returns a live idle connection, or (nil, nil) when the caller
+// must dial. The caller already holds a semaphore slot.
+func (p *pool) takeIdle() (*Conn, error) {
 	// The floor is read once, outside p.mu: idleFloor takes the semaphore
 	// lock, and the lock order elsewhere is semaphore before p.mu.
 	floor := p.idleFloor()
@@ -275,9 +296,8 @@ func (p *pool) conn(ctx context.Context) (*Conn, error) {
 			return c, nil
 		}
 		p.mu.Unlock()
-		break
+		return nil, nil
 	}
-	return p.dialNew(ctx)
 }
 
 // dialNew dials, negotiates TLS and authenticates one fresh connection,
@@ -634,21 +654,64 @@ func (p *pool) closeMode(abort bool) {
 	}
 }
 
-// stat runs STAT on one connection.
+// commandPriority keeps a viewer-facing health check on the live lane.
+// Availability sweeps and the post-start optimistic check carry a background
+// budget and run as prefetch so they yield to playback.
+func commandPriority(ctx context.Context) core.Priority {
+	if core.IsBackgroundCheck(ctx) {
+		return core.PriorityPrefetch
+	}
+	return core.PriorityLive
+}
+
+// withConn runs fn on a pooled connection. A failure on a socket the server
+// already dropped is retried once on a fresh dial and does not consume the
+// fetcher's retry budget: withConn calls failed, which leaves the breaker
+// unchanged for that case.
+func (p *pool) withConn(ctx context.Context, prio core.Priority, fn func(*Conn) error) error {
+	var err error
+	for try := 0; try < 2; try++ {
+		c, getErr := p.get(ctx, prio)
+		if getErr != nil {
+			return getErr
+		}
+		reused := c.uses > 0 || !c.idleSince.IsZero()
+		c.uses++
+		err = fn(c)
+		// Before put releases a connect probe. A completed command, including
+		// a 430, is what re-opens concurrent dials; the dial alone does not.
+		if err == nil || errors.Is(err, ErrNoSuchArticle) {
+			p.brk.connectOK()
+		}
+		p.put(c, prio)
+		if err == nil {
+			return nil
+		}
+		err = p.failed(err, reused, ctx)
+		if !errors.Is(err, errStaleReuse) {
+			return err
+		}
+	}
+	return err
+}
+
+// stat runs STAT on one connection. A present article or a 430 resets the
+// connect ladder only. The command ladder waits for a BODY success.
 func (p *pool) stat(ctx context.Context, id string) (bool, error) {
-	c, err := p.get(ctx, core.PriorityLive)
+	prio := commandPriority(ctx)
+	var ok bool
+	var rtt time.Duration
+	err := p.withConn(ctx, prio, func(c *Conn) error {
+		var e error
+		ok, e = c.Stat(ctx, id)
+		if e == nil {
+			rtt = c.lastRTT
+		}
+		return e
+	})
 	if err != nil {
 		return false, err
 	}
-	reused := c.uses > 0 || !c.idleSince.IsZero()
-	c.uses++
-	ok, err := c.Stat(ctx, id)
-	rtt := c.lastRTT
-	p.put(c, core.PriorityLive)
-	if err != nil {
-		return false, p.failed(err, reused, ctx)
-	}
-	p.brk.success()
 	if !ok {
 		p.misses.Add(1)
 	}
@@ -663,22 +726,22 @@ func (p *pool) statMany(ctx context.Context, ids []string) (map[string]bool, err
 	if len(ids) == 0 {
 		return result, nil
 	}
-	c, err := p.get(ctx, core.PriorityLive)
+	prio := commandPriority(ctx)
+	var rtt time.Duration
+	err := p.withConn(ctx, prio, func(c *Conn) error {
+		started := time.Now()
+		var e error
+		result, e = c.StatMany(ctx, ids)
+		p.statBatches.Add(1)
+		p.statBatchTime.Add(int64(time.Since(started)))
+		if e == nil {
+			rtt = c.lastRTT
+		}
+		return e
+	})
 	if err != nil {
 		return nil, err
 	}
-	reused := c.uses > 0 || !c.idleSince.IsZero()
-	c.uses++
-	started := time.Now()
-	result, err = c.StatMany(ctx, ids)
-	p.statBatches.Add(1)
-	p.statBatchTime.Add(int64(time.Since(started)))
-	rtt := c.lastRTT
-	p.put(c, core.PriorityLive)
-	if err != nil {
-		return nil, p.failed(err, reused, ctx)
-	}
-	p.brk.success()
 	for _, ok := range result {
 		if !ok {
 			p.misses.Add(1)
@@ -744,15 +807,16 @@ func (p *pool) warm(ctx context.Context, n int) error {
 	ready := make(chan acquired, n)
 	release := make(chan struct{})
 	var wg sync.WaitGroup
+	prio := commandPriority(ctx)
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, err := p.get(ctx, core.PriorityLive)
+			c, err := p.get(ctx, prio)
 			ready <- acquired{c: c, err: err}
 			if c != nil {
 				<-release
-				p.put(c, core.PriorityLive)
+				p.put(c, prio)
 			}
 		}()
 	}
@@ -774,24 +838,31 @@ func (p *pool) failed(err error, reused bool, ctx context.Context) error {
 	case ctxErr(ctx) != nil:
 		return ctxErr(ctx)
 	case errors.Is(err, ErrNoSuchArticle):
-		p.brk.success()
+		// A 430 is a completed command: the connect path works. It must
+		// not clear a cooldown earned by failed BODY commands.
 		p.misses.Add(1)
+		p.brk.connectOK()
 	case errors.Is(err, ErrInvalidMessageID):
 	default:
-		p.errs.Add(1)
-		if isNetworkError(err) || errors.Is(err, ErrServiceUnavailable) {
-			p.brk.connFailure(err)
-		} else {
-			p.brk.noteError(err)
-		}
 		// EOF or a reset on a connection that had been idle means the
-		// server dropped it, and very likely its idle siblings with it. A
-		// timeout is one slow or stalled command: the siblings are still
-		// good, and closing them on a flaky link would redial on every
-		// stall and trip the breaker.
+		// server dropped it, and very likely its idle siblings with it.
+		// That is one free retry on a fresh dial, not a provider failure:
+		// two concurrent stale reuses would otherwise trip FailThreshold.
+		// A timeout is a command that failed on an established socket. It
+		// counts on the command ladder, so idle siblings wait with it,
+		// without being closed and redialed on every stall.
 		if reused && isNetworkError(err) && !isTimeoutError(err) {
 			p.log.Debug("usenet: idle connection was dropped by the server; discarding idle connections", "err", err)
 			p.discardIdle()
+			return fmt.Errorf("%w: %w", errStaleReuse, err)
+		}
+		p.errs.Add(1)
+		if isNetworkError(err) || errors.Is(err, ErrServiceUnavailable) {
+			// The socket was already up. This is not a dial failure, so
+			// idle siblings are paused with it.
+			p.brk.commandFailure(err)
+		} else {
+			p.brk.noteError(err)
 		}
 		if errors.Is(err, ErrCorrupt) {
 			p.log.Warn("usenet: corrupt article", "err", err)

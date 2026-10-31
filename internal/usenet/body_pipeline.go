@@ -17,17 +17,18 @@ type bodyKey struct {
 	prio      core.Priority
 }
 type bodyFlight struct {
-	key         bodyKey
-	ctx         context.Context
-	cancel      context.CancelFunc
-	done        chan struct{}
-	waiters     int
-	shared      bool
-	retrySolo   bool // replay an unreceived tail without another predecessor
-	started     bool // BODY window flushed; guarded by bodyMu
-	liveWaiters int  // urgent callers sharing a transmitted speculative flight
-	part        *yenc.Part
-	err         error
+	key          bodyKey
+	ctx          context.Context
+	cancel       context.CancelFunc
+	done         chan struct{}
+	waiters      int
+	shared       bool
+	retrySolo    bool // replay an unreceived tail without another predecessor
+	staleRetried bool // one free fresh dial after a dropped idle socket
+	started      bool // BODY window flushed; guarded by bodyMu
+	liveWaiters  int  // urgent callers sharing a transmitted speculative flight
+	part         *yenc.Part
+	err          error
 }
 
 // body coalesces requests at the same priority. Live requests may also join an
@@ -252,6 +253,9 @@ func (p *pool) runBodyBatch(c *Conn, batch []*bodyFlight, prio core.Priority) {
 		if err := c.Group(ctx, group); err != nil && !errors.Is(err, ErrNoSuchGroup) {
 			err = p.failed(err, reused, ctx)
 			p.put(c, prio)
+			if p.requeueStale(batch, err, prio) {
+				return
+			}
 			for _, f := range batch {
 				p.completeBody(f, nil, err)
 			}
@@ -308,6 +312,12 @@ func (p *pool) runBodyBatch(c *Conn, batch []*bodyFlight, prio core.Priority) {
 				if network {
 					networkRecorded = true
 				}
+			}
+			if errors.Is(err, errStaleReuse) && !f.staleRetried && f.ctx.Err() == nil {
+				f.staleRetried = true
+				replay = append(replay, f)
+				lastReplayed = i == len(batch)-1
+				return
 			}
 		} else {
 			p.brk.success()
@@ -379,6 +389,29 @@ func (p *pool) cancelBodies() {
 func (p *pool) abortBodies() {
 	p.cancelBodies()
 	p.bodyWG.Wait()
+}
+
+// requeueStale gives each flight one fresh dial after a dropped idle socket.
+// Flights that already had that retry, or whose caller is gone, are completed
+// with err. It reports whether err was a stale reuse so the caller does not
+// complete the requeued flights a second time.
+func (p *pool) requeueStale(batch []*bodyFlight, err error, prio core.Priority) bool {
+	if !errors.Is(err, errStaleReuse) {
+		return false
+	}
+	var again []*bodyFlight
+	for _, f := range batch {
+		if f.staleRetried || f.ctx.Err() != nil {
+			p.completeBody(f, nil, err)
+			continue
+		}
+		f.staleRetried = true
+		again = append(again, f)
+	}
+	if len(again) > 0 {
+		p.requeueBodies(again, prio)
+	}
+	return true
 }
 
 // A speculative tail that acquired a live waiter must replay at live priority;
