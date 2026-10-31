@@ -36,6 +36,10 @@ type CertInfo struct {
 	RetryAfter      time.Duration `json:"retryAfter,omitempty"`
 	ReissueRequired bool          `json:"reissueRequired,omitempty"`
 	LastError       string        `json:"lastError,omitempty"`
+	// Verified is the last scheduled trust check, not a per-poll result.
+	Verified bool `json:"verified"`
+	// VerifyReason is chain, identity, handshake, or dates when Verified is false.
+	VerifyReason string `json:"verifyReason,omitempty"`
 }
 
 // CertManagerOptions configures a CertManager.
@@ -67,6 +71,8 @@ type CertManagerOptions struct {
 	Shared SharedCertStore
 	Logger *slog.Logger
 	Now    func() time.Time
+	// TrustRoots, when set, replaces the system roots for VerifyTrust.
+	TrustRoots *x509.CertPool
 }
 
 // CertManager obtains, stores and renews the server's TLS certificate:
@@ -81,6 +87,10 @@ type CertManager struct {
 	mu   sync.RWMutex
 	cert *tls.Certificate
 	info CertInfo
+
+	trustRoots *x509.CertPool
+	trustDial  trustDialFunc
+	trust      certTrust
 
 	// Cluster sharing (certshared.go), guarded by mu.
 	allowRenew func() bool
@@ -114,7 +124,7 @@ func NewCertManager(o CertManagerOptions) (*CertManager, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	m := &CertManager{o: o}
+	m := &CertManager{o: o, trustRoots: o.TrustRoots}
 	if o.Dir != "" {
 		if err := os.MkdirAll(o.Dir, 0o700); err != nil {
 			return nil, err
@@ -218,6 +228,10 @@ func (m *CertManager) Info() CertInfo {
 	defer m.mu.RUnlock()
 	info := m.info
 	info.DNSNames = append([]string(nil), m.info.DNSNames...)
+	if m.trust.fingerprint != "" && m.trust.fingerprint == info.Fingerprint {
+		info.Verified = m.trust.verified
+		info.VerifyReason = m.trust.reason
+	}
 	if !info.LastAttempt.IsZero() && info.LastError != "" {
 		d := info.RetryAfter
 		if d <= 0 {
