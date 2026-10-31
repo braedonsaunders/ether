@@ -30,7 +30,7 @@ function extraRoutes(route: Route) {
 it("opens an empty installation with nullable language lists and saves the defaults", async () => {
   let saved: Record<string, unknown> | undefined;
   const { fake } = renderApp(
-    "/viewers/defaults",
+    "/playback/subtitles",
     {},
     extraRoutes((method, path, body) => {
       if (path !== "/stream-preferences/0") return undefined;
@@ -54,7 +54,7 @@ it("opens an empty installation with nullable language lists and saves the defau
   await waitFor(() => expect(saved?.audioLanguages).toEqual(["en", "fr"]), WAIT);
   expect(saved?.subtitleLanguages).toEqual([]);
   expect(calls(fake, "PUT", "/stream-preferences/0")).toHaveLength(1);
-  expect(await screen.findByText("Defaults saved", {}, WAIT)).toBeInTheDocument();
+  expect(await screen.findByText("Audio and subtitles saved", {}, WAIT)).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByText("You have unsaved changes")).toBeNull());
 });
 

@@ -41,7 +41,7 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "preloading",
         title: t("Preloading"),
-        keywords: searchTerms(msg("household selection popular movies tv")),
+        keywords: searchTerms(msg("household selection popular movies tv warm arrivals")),
       },
     ],
     keywords: searchTerms(msg("disk budget storage retention prefetch warming next episode")),
@@ -72,14 +72,8 @@ export const PAGES = localized<PageDef[]>(() => [
   {
     href: "/viewers",
     title: t("Viewers"),
-    sections: [
-      { key: "people", title: t("People"), keywords: searchTerms(msg("users friends accounts")) },
-      {
-        key: "defaults",
-        title: t("Defaults"),
-        keywords: searchTerms(msg("audio subtitles language watchlist alerts policy")),
-      },
-    ],
+    sections: [],
+    keywords: searchTerms(msg("users friends accounts people")),
   },
   {
     href: "/home",
@@ -255,8 +249,8 @@ export const PAGES = localized<PageDef[]>(() => [
       },
       {
         key: "subtitles",
-        title: t("Subtitles"),
-        keywords: searchTerms(msg("timing sync opensubtitles")),
+        title: t("Audio & subtitles"),
+        keywords: searchTerms(msg("audio languages subtitles timing sync opensubtitles household")),
       },
     ],
   },
@@ -267,7 +261,7 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "channels",
         title: t("Channels"),
-        keywords: searchTerms(msg("email discord webhook push alerts")),
+        keywords: searchTerms(msg("email discord webhook push alerts watchlist")),
       },
       { key: "report", title: t("Weekly report"), keywords: searchTerms(msg("newsletter digest")) },
       { key: "deliveries", title: t("Delivery history") },

@@ -92,6 +92,8 @@ export interface FakeOptions {
   damagedDatabase?: boolean;
   /** Start with a restore report ("restored", "failed") or a scheduled restore ("pending"). */
   restore?: string;
+  /** Household audio and subtitle choices, for the Playback screen in the browser mock. */
+  householdAudio?: boolean;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -449,9 +451,20 @@ export function createFakeServer(opts: FakeOptions = {}) {
       ...opts.bootstrap,
     } as Bootstrap,
     config: defaultConfig(),
-    // Null until a caller opts in. Viewer tests still overlay these routes
-    // on a 404 from the shared fake.
-    streamDefaults: null as null | {
+    // Null until a caller opts in (the browser mock does). Viewer tests still
+    // overlay these routes on a 404 from the shared fake.
+    streamDefaults: (opts.householdAudio
+      ? {
+          audioLanguages: ["en"],
+          subtitleLanguages: ["en"],
+          preferOriginal: true,
+          subtitleMode: "foreign-only",
+          subtitleStyle: "normal",
+          loudness: false,
+          nightMode: false,
+          dialogueBoost: false,
+        }
+      : null) as null | {
       audioLanguages: string[];
       subtitleLanguages: string[];
       preferOriginal: boolean;

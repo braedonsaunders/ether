@@ -76,18 +76,11 @@ const SOURCES = localized(
         label: t("Tell me too"),
         hint: t("Also send availability alerts to your notification channels."),
       },
-      {
-        key: "prewarm",
-        label: t("Warm up new arrivals"),
-        hint: t(
-          "Fetch the opening minutes as soon as a title becomes available, so it starts quickly.",
-        ),
-      },
     ] as const,
 );
 
-/** Server-wide watchlist alerts, edited in place (Viewers › Defaults). */
-export function WatchlistDefaults() {
+/** Server-wide watchlist alerts, edited in place on Notifications. */
+export function WatchlistAlerts() {
   const s = useDiscoverySettings();
   if (s.doc.error) return <ErrorPanel error={s.doc.error} onRetry={() => void s.doc.reload()} />;
   if (!s.draft)
@@ -150,6 +143,50 @@ export function WatchlistDefaults() {
               />
               <span className="text-sm text-fg-muted">{t("hours")}</span>
             </span>
+          }
+        />
+      </SettingsSection>
+      <SaveBar
+        dirty={s.dirty}
+        saving={s.saving}
+        error={s.error}
+        onSave={() => s.save(t("Watchlist settings saved"))}
+        onDiscard={s.discard}
+      />
+    </>
+  );
+}
+
+/**
+ * Opening-minute prefetch for a watchlist title that just became playable.
+ * That is cache behaviour, so it lives on Cache rather than with the alerts.
+ */
+export function WarmNewArrivals() {
+  const s = useDiscoverySettings();
+  if (s.doc.error) return <ErrorPanel error={s.doc.error} onRetry={() => void s.doc.reload()} />;
+  if (!s.draft)
+    return (
+      <div className="py-6 text-center">
+        <Spinner size={18} label={t("Loading watchlist settings")} />
+      </div>
+    );
+  const draft = s.draft;
+  return (
+    <>
+      <SettingsSection title={t("New arrivals")}>
+        <SettingsRow
+          title={<label htmlFor="watchlist-prewarm">{t("Warm up new arrivals")}</label>}
+          description={t(
+            "Fetch the opening minutes as soon as a title becomes available, so it starts quickly. This runs only while watchlist monitoring is on.",
+          )}
+          control={
+            <Switch
+              id="watchlist-prewarm"
+              aria-label={t("Warm up new arrivals")}
+              checked={draft.prewarm}
+              disabled={!draft.enabled || s.saving}
+              onChange={(e) => s.setDraft({ ...draft, prewarm: e.currentTarget.checked })}
+            />
           }
         />
       </SettingsSection>

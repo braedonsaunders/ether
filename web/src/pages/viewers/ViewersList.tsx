@@ -3,9 +3,9 @@ import { useState } from "react";
 import { Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ErrorPanel } from "../../components/feedback";
-import { DomainPage, type PageTab } from "../../components/layout";
+import { DomainPage } from "../../components/layout";
 import { loadViewers, viewerName } from "../../components/pickers";
-import { localized, t, tn } from "../../i18n";
+import { t, tn } from "../../i18n";
 import { api } from "../../lib/api";
 import { ratingLevelLabel } from "../../lib/contentRatings";
 import type { Viewer } from "../../lib/contract";
@@ -14,20 +14,12 @@ import { useAsync } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { CreateViewer } from "./ManageViewers";
-import { ViewerDefaults } from "./Defaults";
 import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
-type Tab = "people" | "defaults";
-
-const TABS: readonly (PageTab & { key: Tab })[] = localized(() => [
-  { key: "people" as const, label: t("People") },
-  { key: "defaults" as const, label: t("Defaults") },
-]);
-
-export default function ViewersList({ tab = "people" }: { tab?: Tab } = {}) {
+export default function ViewersList() {
   return (
-    <DomainPage title={t("Viewers")} base="/viewers" tabs={TABS} active={tab}>
-      {tab === "defaults" ? <ViewerDefaults /> : <People />}
+    <DomainPage title={t("Viewers")} base="/viewers">
+      <People />
     </DomainPage>
   );
 }

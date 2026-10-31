@@ -8,6 +8,7 @@ import { StartSpeed } from "./StartSpeed";
 import { HardwareStatus } from "./Hardware";
 import { MarkerCoverage } from "./Markers";
 import { SkipButtons } from "./SkipButtons";
+import { HouseholdAudio } from "./HouseholdAudio";
 import { SubtitleTiming } from "./SubtitleTiming";
 
 const TABS = localized(
@@ -16,7 +17,7 @@ const TABS = localized(
       { key: "transcoding", label: t("Transcoding") },
       { key: "devices", label: t("App compatibility") },
       { key: "markers", label: t("Skip buttons") },
-      { key: "subtitles", label: t("Subtitles") },
+      { key: "subtitles", label: t("Audio & subtitles") },
     ] as const,
 );
 
@@ -39,6 +40,7 @@ export default function Playback() {
       {tab === "markers" ? <MarkerCoverage /> : null}
       {tab === "subtitles" ? (
         <>
+          <HouseholdAudio />
           <p className="max-w-3xl text-sm text-fg-muted">
             {tx(
               "When someone turns subtitles on and the file has none, Ether downloads them from OpenSubtitles. The account is set up in {link}.",

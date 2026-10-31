@@ -371,8 +371,10 @@ cause.
 ### Put your watchlist on Home
 
 1. Add wanted titles to your Plex Watchlist.
-2. In Ether, open **Viewers › Defaults › Watchlist alerts**, enable
-   **Watchlist monitoring** and **Plex watchlists**, then save.
+2. In Ether, open **Notifications › Watchlist alerts**, enable
+   **Watchlist monitoring** and **Plex watchlists**, then save. Opening-minute
+   warm-up for a title that just became playable is **Cache › Preloading ›
+   Warm up new arrivals**.
 3. Open **Viewers › your viewer › Watchlist**. **Sync viewer** imports the
    list; **Check availability** checks for playable releases. These actions
    are separate: importing a title does not prove it can stream.
@@ -410,7 +412,7 @@ what you want to change:
 | Inspect a failed source search | **Releases › History**, then open the attempt |
 | Inspect observed playback | **Activity › History** |
 | Change one viewer's track preferences | **Viewers › viewer › Audio & subtitles** |
-| Change defaults for viewers | **Viewers › Defaults** |
+| Change household audio and subtitles | **Playback › Audio & subtitles** |
 | Arrange rows in Plex | **Home** |
 | Change artwork providers | **Metadata › Artwork** |
 

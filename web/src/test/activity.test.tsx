@@ -98,6 +98,17 @@ function backend() {
           costs: [],
           notes: [],
         };
+      else if (url.includes("/discovery/settings"))
+        v = {
+          enabled: false,
+          plex: true,
+          trakt: true,
+          notify: false,
+          prewarm: false,
+          checkHours: 6,
+          naturalSearch: false,
+          recaps: false,
+        };
       else if (url.endsWith("/notifications/"))
         v = { channels: [], events: ["playback.error", "newsletter.weekly"], deliveries: [] };
       else if (url.endsWith("/status/hwaccel"))
@@ -312,17 +323,24 @@ describe("Hardware status", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        const value = url.endsWith("/status/sessions") ? [] : url.endsWith("/users") ? undefined : undefined;
+        const value = url.endsWith("/status/sessions")
+          ? []
+          : url.endsWith("/users")
+            ? undefined
+            : undefined;
         if (url.endsWith("/status/hwaccel")) {
           return new Response(
-            JSON.stringify({ value: { hwaccel: { name: "none", encoders: [] }, playbackError: notice } }),
+            JSON.stringify({
+              value: { hwaccel: { name: "none", encoders: [] }, playbackError: notice },
+            }),
             { status: 200 },
           );
         }
         if (url.endsWith("/status/sessions")) {
           return new Response(JSON.stringify({ value: [] }), { status: 200 });
         }
-        if (url.endsWith("/users")) return new Response(JSON.stringify({ users: [] }), { status: 200 });
+        if (url.endsWith("/users"))
+          return new Response(JSON.stringify({ users: [] }), { status: 200 });
         return new Response(JSON.stringify(value ?? { ok: true }), { status: 200 });
       }),
     );

@@ -7,6 +7,7 @@ import { localized, t, tn } from "../../i18n";
 import { useRouteTab } from "../../components/layout";
 import { CacheOverview } from "./CacheOverview";
 import { CacheExplorer } from "./CacheExplorer";
+import { WarmNewArrivals } from "../viewers/sections/WatchlistDefaults";
 const CACHE_TABS = localized(
   () =>
     [
@@ -345,6 +346,9 @@ export default function Cache() {
             </div>
           ) : (
             <div className="app-scroll mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 sm:p-5 lg:grid-cols-12 lg:overflow-hidden">
+              <div className="lg:col-span-12">
+                <WarmNewArrivals />
+              </div>
               <section className="lg:col-span-5 min-h-0 overflow-y-auto rounded-xl border border-primary/20 bg-surface">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
                   <div>

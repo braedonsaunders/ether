@@ -55,6 +55,7 @@ import {
   useLocation,
   useNavigate,
   useOutlet,
+  useParams,
   useOutletContext,
   useSearchParams,
 } from "react-router-dom";
@@ -425,9 +426,7 @@ function Shell() {
               <Route path="/setup" element={<Setup />} />
               <Route path="/activity/:tab?" element={<Activity />} />
               <Route path="/viewers" element={<ViewersList />} />
-              <Route path="/viewers/people" element={<ViewersList tab="people" />} />
-              <Route path="/viewers/defaults" element={<ViewersList tab="defaults" />} />
-              <Route path="/viewers/:id/:tab?" element={<ViewerProfile />} />
+              <Route path="/viewers/:id/:tab?" element={<ViewerById />} />
               <Route path="/home" element={<Designer />} />
               <Route path="/collections" element={<CollectionsLayout />}>
                 <Route path="new" element={<CollectionDrawer fresh />} />
@@ -455,6 +454,13 @@ function Shell() {
       </AppShell>
     </div>
   );
+}
+
+/** Viewer profiles are numeric ids. Anything else is the people list. */
+function ViewerById() {
+  const { id } = useParams();
+  if (!id || !/^[1-9]\d*$/.test(id)) return <Navigate to="/viewers" replace />;
+  return <ViewerProfile />;
 }
 
 function Gate({ onReady }: { onReady: () => void }) {

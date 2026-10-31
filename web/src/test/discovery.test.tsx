@@ -85,24 +85,40 @@ function metadataRoutes() {
   };
 }
 
-describe("Watchlist alerts (Viewers › Defaults)", () => {
+describe("Watchlist alerts (Notifications)", () => {
   it("starts monitoring and notifications off and saves opt-in settings in place", async () => {
-    const { fake } = renderAppWith("/viewers/defaults", discoveryRoutes());
+    const { fake } = renderAppWith("/notifications", discoveryRoutes());
     const enabled = await screen.findByLabelText("Watchlist monitoring", {}, WAIT);
     expect(enabled).not.toBeChecked();
     expect(screen.getByLabelText("Tell me too")).not.toBeChecked();
+    expect(screen.queryByLabelText("Warm up new arrivals")).toBeNull();
     expect(screen.queryByRole("button", { name: /Edit monitoring/ })).toBeNull();
     expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
     fireEvent.click(enabled);
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(puts(fake, "/discovery/settings")).toContainEqual(
-        expect.objectContaining({ enabled: true, notify: false, naturalSearch: false }),
+        expect.objectContaining({
+          enabled: true,
+          notify: false,
+          prewarm: false,
+          naturalSearch: false,
+        }),
       ),
     );
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull(),
     );
+  });
+});
+
+describe("Warm up new arrivals (Cache › Preloading)", () => {
+  it("keeps the prefetch toggle with the cache, off until monitoring is on", async () => {
+    renderAppWith("/cache/preloading", discoveryRoutes());
+    const warm = await screen.findByLabelText("Warm up new arrivals", {}, WAIT);
+    expect(warm).toBeDisabled();
+    expect(warm).not.toBeChecked();
+    expect(screen.queryByLabelText("Watchlist monitoring")).toBeNull();
   });
 });
 

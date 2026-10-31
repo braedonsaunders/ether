@@ -13,6 +13,7 @@ export function installMockBackend(): void {
   // seeds the Backups page's restore report.
   const fake = createFakeServer({
     latencyMs: 120,
+    householdAudio: true,
     cluster,
     startup: params.get("startup") ?? undefined,
     viewers: Number(params.get("viewers") ?? 0),

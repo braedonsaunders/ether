@@ -3,6 +3,7 @@ import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { DomainPage, useRouteTab } from "../../components/layout";
 import { apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
+import { WatchlistAlerts } from "../viewers/sections/WatchlistDefaults";
 import { Channels } from "./Channels";
 import { Deliveries } from "./Deliveries";
 import type { NotificationsData } from "./types";
@@ -43,7 +44,10 @@ export default function Notifications() {
     ) : !data ? (
       <LoadingRows rows={3} />
     ) : tab === "channels" ? (
-      <Channels data={data} onChanged={notices.reload} />
+      <>
+        <WatchlistAlerts />
+        <Channels data={data} onChanged={notices.reload} />
+      </>
     ) : (
       <Deliveries data={data} />
     );
