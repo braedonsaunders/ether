@@ -49,7 +49,7 @@ func TestTranscodeStopReleasesSourceUnlessReplacementIsActive(t *testing.T) {
 				t.Fatal("missing source binding")
 			}
 			if replacement {
-				f.srv.transcodes.put(&transcodeEntry{id: "replacement", playID: e.playID, userID: e.userID, clientID: e.clientID, started: true})
+				f.srv.transcodes.put(&transcodeEntry{id: "replacement", playID: e.playID, userID: e.userID, clientID: e.clientID, key: e.key, started: true})
 				f.trans.sessions["replacement"] = &fakeHLS{id: "replacement"}
 			}
 			stop := f.get(t, "/video/:/transcode/universal/stop?session=old")

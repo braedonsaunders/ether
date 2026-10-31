@@ -193,8 +193,21 @@ func TestOwnerActivityIncludesAndStopsLegacyAndBrokerSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := p.Prepare(ctx, &core.User{ID: 2}, core.MovieKey(1), core.ClientCaps{ClientID: "plex-tv", Protocol: "plex"})
+	plexSource, err := p.Prepare(ctx, &core.User{ID: 2}, core.MovieKey(1), core.ClientCaps{ClientID: "plex-tv", Protocol: "plex"})
 	if err != nil {
+		t.Fatal(err)
+	}
+	admitted := sessions.PlexAdmission{Source: plexSource, Decision: core.Decision{Kind: core.DecisionDirectPlay}, Media: plexSource.Info}
+	plexCtx := sessions.WithPlexAdmission(ctx, func(context.Context) (sessions.PlexAdmission, error) {
+		return admitted, nil
+	})
+	plexViewer := &core.Viewer{ID: 2}
+	plexDevice := core.Device{ID: "plex-tv"}
+	plexPlan, err := broker.Plan(plexCtx, frontend.PlanRequest{Viewer: plexViewer, Device: plexDevice, Protocol: "plex", Item: core.MovieKey(1), Caps: core.ClientCaps{ClientID: "plex-tv", Protocol: "plex"}, Intent: frontend.PlayIntent{ClientSessionID: "plex-1", Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = broker.Open(plexCtx, frontend.OpenRequest{Viewer: plexViewer, Device: plexDevice, Protocol: "plex", PlanID: plexPlan.ID}); err != nil {
 		t.Fatal(err)
 	}
 	viewer := &core.Viewer{ID: 2}
@@ -221,7 +234,7 @@ func TestOwnerActivityIncludesAndStopsLegacyAndBrokerSessions(t *testing.T) {
 		}
 		protocols[row.Client.Protocol] = row.ID
 	}
-	if protocols["plex"] != legacy.ID || protocols["jellyfin"] == "" {
+	if protocols["plex"] != plexSource.ID || protocols["jellyfin"] == "" {
 		t.Fatalf("protocol badges %+v", protocols)
 	}
 	for _, id := range []string{protocols["jellyfin"], protocols["plex"]} {

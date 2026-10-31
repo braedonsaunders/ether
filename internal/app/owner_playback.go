@@ -64,9 +64,6 @@ func (a *App) stopOwnerSession(id string) error {
 			}
 		}
 	}
-	if server := a.currentPlexServer(); server != nil && server.StopPreparedSource(id) {
-		return nil
-	}
 	if a.playback != nil {
 		a.playback.Stop(id)
 	}

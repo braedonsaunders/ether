@@ -1075,18 +1075,19 @@ func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
 		// Retire a superseded encoder without releasing that prepared source,
 		// including stops that omit the external playback identifier.
 		superseded := s.playbackOwners.Stale(e.userID, e.clientID, e.key, e.playbackID)
-		brokerOwns := false
 		// Another encoder, or a replacement decision, still owns this source.
-		// Broker Stop would release it.
+		// Broker Stop would release it. The last encoder stops the broker
+		// session that owns the source.
 		if !superseded && !shared {
 			if lookup, ok := s.playbackBroker.(plexPlaybackLookup); ok && pr.User != nil {
-				if sid, lookupErr := lookup.PlexSessionForPlayback(r.Context(), s.plexAccess(pr), e.key, pr.SessionID, id); lookupErr == nil && sid == id {
-					brokerOwns = s.playbackBroker.Stop(r.Context(), s.plexAccess(pr), id) == nil
+				sid, lookupErr := lookup.PlexSessionForPlayback(r.Context(), s.plexAccess(pr), e.key, pr.SessionID, id)
+				if lookupErr == nil && sid != "" {
+					playID, known := lookup.PlexSessionSource(sid)
+					if sid == id || (known && playID == e.playID) {
+						_ = s.playbackBroker.Stop(r.Context(), s.plexAccess(pr), sid)
+					}
 				}
 			}
-		}
-		if !brokerOwns && !superseded && !shared && e.playID != "" && s.d.Playback != nil {
-			s.d.Playback.Stop(e.playID)
 		}
 		if s.d.Transcoder != nil {
 			s.d.Transcoder.Stop(id)

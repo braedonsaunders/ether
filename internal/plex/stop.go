@@ -40,19 +40,6 @@ func (s *Server) NoteOwnerStop(id, reason string) {
 	}
 }
 
-// StopPreparedSource stops a source this server prepared that the shared
-// broker does not own. Published sessions stop through the broker.
-func (s *Server) StopPreparedSource(id string) bool {
-	if s == nil || s.d.Playback == nil || id == "" {
-		return false
-	}
-	if _, ok := s.d.Playback.Session(id); !ok {
-		return false
-	}
-	s.d.Playback.Stop(id)
-	return true
-}
-
 func (s *Server) StopPlayback(id, reason string) {
 	if s.cl == nil {
 		s.stopPlayback(id, reason)
