@@ -161,6 +161,7 @@ type Server struct {
 
 	images            *artworkservice.RemoteCache
 	streams           *streamRegistry
+	boundStreams      sessions.PlexStreamAPI
 	variantIDs        *variantIDRegistry
 	renderedVariants  *renderedVariants
 	downloads         *downloadStore

@@ -682,7 +682,7 @@ func (s *Server) buildStreams(key core.RatingKey, info core.MediaInfo, sel selec
 		subSelected = sel.subtitle
 	}
 	for i, st := range info.Streams {
-		id := s.streams.register(key, i, st)
+		id := s.assignStream(context.Background(), u, key, i, st, "")
 		ps := model.Stream{
 			ID:       id,
 			Codec:    plexCodec(st.Codec),

@@ -201,7 +201,9 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		if err != nil {
 			return nil, err
 		}
-		return handler.(*plex.Server), nil
+		srv := handler.(*plex.Server)
+		srv.UsePlexStreams(sessions.BindPlexStreams(r.broker))
+		return srv, nil
 	}, WatchState: a.state, ExplicitWatchOnly: cfg.Spike.Enabled, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		return nil, err
 	}

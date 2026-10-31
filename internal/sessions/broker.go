@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/clusterbus"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -48,7 +49,9 @@ type BrokerDeps struct {
 	// FreshPlay re-reads fenced membership and safety policy. A returned viewer
 	// replaces the cached one for the rest of the call. ErrPolicyUnconfirmed
 	// keeps the cached CanPlay decision for an unrestricted viewer.
-	FreshPlay          func(context.Context, *core.Viewer, bool, time.Time) (*core.Viewer, error)
+	FreshPlay func(context.Context, *core.Viewer, bool, time.Time) (*core.Viewer, error)
+	// ReceiptCurrent rechecks the acceptance Plex stored for this request.
+	ReceiptCurrent     func(context.Context, auth.Acceptance) error
 	BitrateLimit       func(*core.Viewer) int
 	RemoteBitrateLimit func() int
 	OnTimeline         func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string)
@@ -147,6 +150,7 @@ type Broker struct {
 	planSweepEvery      time.Duration
 	detailPlans         map[string]*detailFlight
 	cluster             *brokerCluster
+	plexStreams         *PlexStreamTable
 	historyQueue        chan sourceHistorySample
 	historyCancel       context.CancelFunc
 	historyDone         chan struct{}
@@ -173,7 +177,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if limit > 4096 {
 		return nil, errors.New("sessions: max pending starts exceeds 4096")
 	}
-	b := &Broker{sampleLimit: 100000, deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
+	b := &Broker{sampleLimit: 100000, deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent](), plexStreams: NewPlexStreamTable()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -231,6 +235,14 @@ func (b *Broker) confirm(ctx context.Context, v *core.Viewer, caps core.ClientCa
 	}
 	return v, nil
 }
+
+// ConfirmPlexAdmission is the fenced policy check a Plex plan uses.
+// planPlexAdmission already calls confirm with the request caps. This is
+// the same check when the caller has only the remote bit.
+func (b *Broker) ConfirmPlexAdmission(ctx context.Context, v *core.Viewer, remote bool) (*core.Viewer, error) {
+	return b.confirm(ctx, v, core.ClientCaps{Remote: remote})
+}
+
 func (b *Broker) publish(ctx context.Context, event frontend.Event) {
 	if err := b.deps.Events.Publish(ctx, event); err != nil && b.deps.OnEventError != nil {
 		b.deps.OnEventError(err)

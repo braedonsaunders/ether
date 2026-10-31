@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
 
@@ -121,11 +122,18 @@ func (s *Server) rememberStreamRequest(r *http.Request, user *core.User, key cor
 		var track *core.StreamInfo
 		if kind == "subtitle" && id == 0 {
 		} else {
-			ref, ok := s.streams.lookup(id)
-			if !ok || ref.key != key || ref.info.Type != kind {
+			pr := FromContext(r.Context())
+			binding, rerr := s.resolveStream(sessions.WithPlexServe(r.Context(), pr.Remote, ""), user, id)
+			if rerr != nil {
+				if !streamMiss(rerr) {
+					return
+				}
 				continue
 			}
-			track = &ref.info
+			if binding.Key != key || binding.Info.Type != kind {
+				continue
+			}
+			track = &binding.Info
 		}
 		if err = s.d.TrackPreferences.Remember(r.Context(), user.ID, key, kind, track); err != nil {
 			s.log.Warn("save stream preference", "error", err)

@@ -245,18 +245,28 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 		p.subSel, p.subSet, p.subStream = sel.subtitle, true, sel.subtitleStream
 	}
 	if id, err := strconv.ParseInt(q.Get("audioStreamID"), 10, 64); err == nil {
-		if ref, ok := s.streams.lookup(id); ok && ref.key == key && ref.info.Type == "audio" {
-			info := ref.info
-			p.audioSel, p.audioStream = ref.index, &info
+		binding, rerr := s.resolveStream(sessions.WithPlexServe(r.Context(), pr.Remote, ""), pr.User, id)
+		if rerr != nil && !streamMiss(rerr) {
+			return playRequest{}, rerr
+		}
+		if rerr == nil && binding.Key == key && binding.Info.Type == "audio" {
+			info := binding.Info
+			p.audioSel, p.audioStream = binding.Index, &info
 		}
 	}
 	if v := q.Get("subtitleStreamID"); v != "" {
 		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
 			if id == 0 {
 				p.subSel, p.subSet, p.subStream = -1, true, nil
-			} else if ref, ok := s.streams.lookup(id); ok && ref.key == key && ref.info.Type == "subtitle" {
-				info := ref.info
-				p.subSel, p.subSet, p.subStream = ref.index, true, &info
+			} else {
+				binding, rerr := s.resolveStream(sessions.WithPlexServe(r.Context(), pr.Remote, ""), pr.User, id)
+				if rerr != nil && !streamMiss(rerr) {
+					return playRequest{}, rerr
+				}
+				if rerr == nil && binding.Key == key && binding.Info.Type == "subtitle" {
+					info := binding.Info
+					p.subSel, p.subSet, p.subStream = binding.Index, true, &info
+				}
 			}
 		}
 	}
@@ -597,8 +607,11 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 	applyTranscodeMedia(&m, dec, p.protocol)
 	var kept []model.Stream
 	for _, st := range streams {
-		ref, _ := s.streams.lookup(st.ID)
-		if shaped, keep := applyStreamDecision(st, ref.info, dec, selectedOnly); keep {
+		binding, rerr := s.resolveStream(context.Background(), u, st.ID)
+		if rerr != nil && !streamMiss(rerr) {
+			continue
+		}
+		if shaped, keep := applyStreamDecision(st, binding.Info, dec, selectedOnly); keep {
 			kept = append(kept, shaped)
 		}
 	}
@@ -1261,24 +1274,48 @@ func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 		id = int64(k)
 	}
 	q := r.URL.Query()
-	s.selections.update(pr.User.ID, id, func(sel *selection) {
-		if v := q.Get("audioStreamID"); v != "" {
-			if sid, err := strconv.ParseInt(v, 10, 64); err == nil {
-				if ref, ok := s.streams.lookup(sid); ok && int64(ref.key) == id && ref.info.Type == "audio" {
-					info := ref.info
-					sel.audio, sel.audioSet, sel.audioStream = ref.index, true, &info
+	ctx := sessions.WithPlexServe(r.Context(), pr.Remote, "")
+	var audio *sessions.PlexStreamBinding
+	if v := q.Get("audioStreamID"); v != "" {
+		if sid, err := strconv.ParseInt(v, 10, 64); err == nil {
+			binding, rerr := s.resolveStream(ctx, pr.User, sid)
+			if rerr != nil && !streamMiss(rerr) {
+				writeHTTPError(w, http.StatusUnauthorized)
+				return
+			}
+			if rerr == nil && int64(binding.Key) == id && binding.Info.Type == "audio" {
+				audio = &binding
+			}
+		}
+	}
+	clearSub := false
+	var sub *sessions.PlexStreamBinding
+	if v := q.Get("subtitleStreamID"); v != "" {
+		if sid, err := strconv.ParseInt(v, 10, 64); err == nil {
+			if sid == 0 {
+				clearSub = true
+			} else {
+				binding, rerr := s.resolveStream(ctx, pr.User, sid)
+				if rerr != nil && !streamMiss(rerr) {
+					writeHTTPError(w, http.StatusUnauthorized)
+					return
+				}
+				if rerr == nil && int64(binding.Key) == id && binding.Info.Type == "subtitle" {
+					sub = &binding
 				}
 			}
 		}
-		if v := q.Get("subtitleStreamID"); v != "" {
-			if sid, err := strconv.ParseInt(v, 10, 64); err == nil {
-				if sid == 0 {
-					sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, nil
-				} else if ref, ok := s.streams.lookup(sid); ok && int64(ref.key) == id && ref.info.Type == "subtitle" {
-					info := ref.info
-					sel.subtitle, sel.subtitleSet, sel.subtitleStream = ref.index, true, &info
-				}
-			}
+	}
+	s.selections.update(pr.User.ID, id, func(sel *selection) {
+		if audio != nil {
+			info := audio.Info
+			sel.audio, sel.audioSet, sel.audioStream = audio.Index, true, &info
+		}
+		if clearSub {
+			sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, nil
+		} else if sub != nil {
+			info := sub.Info
+			sel.subtitle, sel.subtitleSet, sel.subtitleStream = sub.Index, true, &info
 		}
 	})
 	s.rememberStreamRequest(r, pr.User, core.RatingKey(id))
@@ -1308,13 +1345,41 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusUnauthorized)
 		return
 	}
+	pr := FromContext(r.Context())
+	format := subtitleFormat(r.URL.Query().Get("format"))
+	if _, ext, ok := strings.Cut(chi.URLParam(r, "stream"), "."); ok {
+		format = subtitleFormat(ext)
+	}
+	if s.boundStreams != nil {
+		receipt, _ := acceptanceFrom(r.Context())
+		reader, info, err := s.boundStreams.OpenPlexSidecar(sessions.WithPlexServe(r.Context(), pr.Remote, format), s.plexStreamAccess(pr.User), receipt, id)
+		if err != nil || reader == nil {
+			if reader != nil {
+				_ = reader.Close()
+			}
+			if errors.Is(err, core.ErrUnauthorized) {
+				writeHTTPError(w, http.StatusUnauthorized)
+				return
+			}
+			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
+		defer reader.Close()
+		ct := subtitleContentTypes[plexCodec(info.Codec)]
+		if ct == "" {
+			ct = "text/plain; charset=utf-8"
+		}
+		w.Header().Set("Content-Type", ct)
+		_, _ = io.Copy(w, io.LimitReader(reader, 32<<20))
+		return
+	}
 	ref, ok := s.streams.lookup(id)
 	if !ok || !ref.info.External || ref.info.ExternalURL == "" {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
 	title, titleErr := s.d.Catalog.Get(r.Context(), ref.key)
-	if titleErr != nil || !s.visibleTitle(r.Context(), FromContext(r.Context()).User, title) {
+	if titleErr != nil || !s.visibleTitle(r.Context(), pr.User, title) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
