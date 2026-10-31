@@ -256,6 +256,13 @@ func (s *source) matroskaPayloadContains(ctx context.Context, begin, end int64, 
 			if !seenSegment || parent.id != 0x18538067 {
 				return false
 			}
+			// Clusters before or after the gap cannot hold it. Descending into
+			// every one walks each block header and exhausts the element budget
+			// a few minutes into a real file.
+			if end <= data || begin >= limit {
+				pos = limit
+				break
+			}
 			stack = append(stack, master{end: limit, start: data, id: id})
 			pos = data
 		case 0xa0: // BlockGroup

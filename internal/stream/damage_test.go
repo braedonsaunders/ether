@@ -227,3 +227,56 @@ func TestCorruptionPreparesAlternativeButIsNeverConcealed(t *testing.T) {
 		})
 	}
 }
+
+// damageDeepMKV places one concealable frame after enough clusters that
+// walking every block header exceeds the 16384-element budget. The gap is
+// the frame payload, with a present segment on each side.
+func damageDeepMKV() (data []byte, gapBegin, gapEnd int) {
+	const clusters = 100
+	const blocks = 180
+	tiny := damageElement([]byte{0xa3}, []byte{0x81, 0, 0, 0x80, 0x11})
+	var one []byte
+	for range blocks {
+		one = append(one, tiny...)
+	}
+	early := damageElement([]byte{0x1f, 0x43, 0xb6, 0x75}, one)
+	var body []byte
+	for range clusters {
+		body = append(body, early...)
+	}
+	payload := bytes.Repeat([]byte{0x55}, 4096)
+	frame := append([]byte{0x81, 0, 0, 0x80}, payload...)
+	body = append(body, damageElement([]byte{0x1f, 0x43, 0xb6, 0x75}, damageElement([]byte{0xa3}, frame))...)
+	header := damageElement([]byte{0x1a, 0x45, 0xdf, 0xa3}, damageElement([]byte{0x42, 0x82}, []byte("matroska")))
+	file := append(header, damageElement([]byte{0x18, 0x53, 0x80, 0x67}, body)...)
+	gapEnd = len(file)
+	gapBegin = gapEnd - len(payload)
+	return append(file, []byte("tail")...), gapBegin, gapEnd
+}
+
+func TestMatroskaDamageConcealsGapDeepInFile(t *testing.T) {
+	data, gapBegin, gapEnd := damageDeepMKV()
+	if clusters := bytes.Count(data, []byte{0x1f, 0x43, 0xb6, 0x75}); clusters < 100 {
+		t.Fatalf("clusters = %d", clusters)
+	}
+	f := newFakeFetcher()
+	doc := post(t, f, 0, postFile{name: "video.mkv", data: data, parts: []int{gapBegin, gapEnd - gapBegin, len(data) - gapEnd}})
+	f.setMissing(postID("video.mkv", 2))
+	e := newTestEngine(t, f, nil, Options{ReadAheadParallel: 1})
+	src := openSource(t, e, "deep", doc).(*source)
+	var gotBegin, gotLen int64
+	src.SetDamageHandler(func(off, n int64) bool {
+		if n > 0 {
+			gotBegin, gotLen = off, n
+		}
+		return true
+	})
+	buf := make([]byte, gapEnd-gapBegin)
+	n, err := src.ReadAtContext(context.Background(), buf, int64(gapBegin))
+	if err != nil || n != len(buf) || !bytes.Equal(buf, make([]byte, len(buf))) {
+		t.Fatalf("deep gap n=%d err=%v zeroed=%v", n, err, bytes.Equal(buf, make([]byte, len(buf))))
+	}
+	if gotBegin != int64(gapBegin) || gotLen != int64(gapEnd-gapBegin) {
+		t.Fatalf("proved gap [%d,+%d), want [%d,+%d)", gotBegin, gotLen, gapBegin, gapEnd-gapBegin)
+	}
+}
