@@ -264,6 +264,7 @@ func ProbeSource(ctx context.Context, src io.ReaderAt, size int64) (*core.MediaI
 		// Statistics tags often sit after the clusters. They add bitrates
 		// without pulling tail chapters onto the play-path probe.
 		applyMKVTagBitrates(ctx, src, size, m)
+		applyMKVHeaderBitrates(ctx, src, size, m)
 		return m, nil
 	case isISOBMFF(head):
 		return s.mp4()
@@ -633,6 +634,216 @@ func applyMKVTagBitrates(ctx context.Context, src io.ReaderAt, size int64, m *co
 		return false
 	}
 	return applyParsedBitrates(m, parsed, mkvTrackBitrates(b))
+}
+
+// applyMKVHeaderBitrates fills stream bitrates the container statistics tags
+// do not carry. AC-3 publishes its bitrate in the syncframe, and Jellyfin's
+// stored video bitrate is the container rate minus the known audio rates.
+func applyMKVHeaderBitrates(ctx context.Context, src io.ReaderAt, size int64, m *core.MediaInfo) {
+	if m == nil || m.Container != "mkv" || size <= 0 {
+		return
+	}
+	needAudio := false
+	for _, stream := range m.Streams {
+		if stream.Type == "audio" && stream.Codec == "ac3" && stream.BitrateKbps == 0 {
+			needAudio = true
+		}
+	}
+	if !needAudio {
+		return
+	}
+	s := &nativeSource{ctx: ctx, src: src, size: size, left: nativeReadBudget}
+	head, err := s.read(0, int(min(size, 64<<10)))
+	if err != nil || len(head) < 4 || binary.BigEndian.Uint32(head) != mkvEBML {
+		return
+	}
+	s.head = head
+	_, _, end, err := s.header(0, size)
+	if err != nil {
+		return
+	}
+	var segStart, segEnd int64
+	for off, n := end, 0; off < size && n < 16; n++ {
+		id, start, stop, err := s.header(off, size)
+		if err != nil {
+			return
+		}
+		if id == mkvSegment {
+			segStart, segEnd = start, stop
+			break
+		}
+		off = stop
+	}
+	if segStart == 0 {
+		return
+	}
+	var tracks []byte
+	var clusterStart, clusterEnd int64
+	for off, n := segStart, 0; off < segEnd && n < 64 && clusterStart == 0; n++ {
+		id, start, stop, err := s.header(off, segEnd)
+		if err != nil || stop <= off {
+			return
+		}
+		switch id {
+		case mkvTracks:
+			if stop-start > nativeElementLimit {
+				return
+			}
+			tracks, err = s.read(start, int(stop-start))
+			if err != nil {
+				return
+			}
+		case mkvCluster:
+			clusterStart, clusterEnd = start, stop
+		}
+		off = stop
+	}
+	if tracks == nil || clusterStart == 0 {
+		return
+	}
+	parsed, err := mkvTracksOf(tracks)
+	if err != nil {
+		return
+	}
+	want := map[uint64]int{}
+	index := 0
+	for _, t := range parsed {
+		si, accepted, err := t.stream(index)
+		if err != nil || !accepted {
+			continue
+		}
+		index++
+		if si.Type == "audio" && si.Codec == "ac3" {
+			for i := range m.Streams {
+				if m.Streams[i].Index == si.Index && m.Streams[i].BitrateKbps == 0 {
+					want[t.number] = i
+				}
+			}
+		}
+	}
+	if len(want) == 0 {
+		return
+	}
+	limit := clusterEnd - clusterStart
+	if limit > 1<<20 {
+		limit = 1 << 20
+	}
+	body, err := s.read(clusterStart, int(limit))
+	if err != nil || len(body) == 0 {
+		return
+	}
+	for off := 0; off+2 < len(body) && len(want) > 0; {
+		id, ni, ok := mkvVint(body[off:], true)
+		if !ok {
+			return
+		}
+		sz, ns, ok := mkvVint(body[off+ni:], false)
+		if !ok {
+			return
+		}
+		start := off + ni + ns
+		if sz > uint64(len(body)-start) {
+			return
+		}
+		stop := start + int(sz)
+		block := []byte(nil)
+		switch id {
+		case mkvSimpleBlock, mkvBlock:
+			block = body[start:stop]
+		case mkvBlockGroup:
+			nodes, ok := mkvNodes(body[start:stop])
+			if ok {
+				for _, n := range nodes {
+					if n.id == mkvBlock {
+						block = n.body
+						break
+					}
+				}
+			}
+		}
+		if block != nil {
+			track, frame := mkvBlockFrame(block)
+			if i, ok := want[track]; ok {
+				if kbps := ac3FrameKbps(frame); kbps > 0 {
+					m.Streams[i].BitrateKbps = kbps
+					delete(want, track)
+				}
+			}
+		}
+		off = stop
+	}
+	assignContainerVideoBitrate(m)
+}
+
+// mkvBlockFrame returns the track number and the first frame of a Block or
+// SimpleBlock. Fixed-size lacing is the form mkvmerge uses for AC-3.
+func mkvBlockFrame(b []byte) (uint64, []byte) {
+	track, n, ok := mkvVint(b, false)
+	if !ok || len(b) < n+3 {
+		return 0, nil
+	}
+	flags := b[n+2]
+	payload := b[n+3:]
+	switch flags & 0x06 {
+	case 0:
+		return track, payload
+	case 0x04:
+		if len(payload) < 2 {
+			return track, nil
+		}
+		count := int(payload[0]) + 1
+		if (len(payload)-1)%count != 0 {
+			return track, nil
+		}
+		size := (len(payload) - 1) / count
+		return track, payload[1 : 1+size]
+	default:
+		return track, nil
+	}
+}
+
+func ac3FrameKbps(frame []byte) int {
+	if len(frame) < 5 || frame[0] != 0x0b || frame[1] != 0x77 || frame[4]>>6 == 3 {
+		return 0
+	}
+	code := int(frame[4] & 0x3f)
+	if code > 37 {
+		return 0
+	}
+	code >>= 1
+	if code >= len(ac3Bitrates) {
+		return 0
+	}
+	return ac3Bitrates[code]
+}
+
+// assignContainerVideoBitrate sets the only video stream to the container
+// rate minus the audio rates. That is the bitrate Jellyfin stores when the
+// video track itself has no statistics tag.
+func assignContainerVideoBitrate(m *core.MediaInfo) {
+	if m == nil || m.BitrateKbps <= 0 {
+		return
+	}
+	video := -1
+	audio := 0
+	for i, stream := range m.Streams {
+		switch stream.Type {
+		case "video":
+			if stream.BitrateKbps > 0 || video >= 0 {
+				return
+			}
+			video = i
+		case "audio":
+			if stream.BitrateKbps <= 0 {
+				return
+			}
+			audio += stream.BitrateKbps
+		}
+	}
+	if video < 0 || audio <= 0 || audio >= m.BitrateKbps {
+		return
+	}
+	m.Streams[video].BitrateKbps = m.BitrateKbps - audio
 }
 
 func applyParsedBitrates(m *core.MediaInfo, parsed []mkvTrack, bps map[uint64]int) bool {

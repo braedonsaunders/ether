@@ -628,3 +628,30 @@ func TestMatroskaLanguageMatchesLibavformat(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeSourceDerivesMKVBitratesWithoutTags(t *testing.T) {
+	avcc := fixturePrivate(t, "h264_aac_srt_chapters.mkv", "V_MPEG4/ISO/AVC")
+	tracks := el(mkvTracks,
+		el(mkvTrackEntry, elU(mkvTrackNumber, 1), elU(mkvTrackType, 1), elS(mkvCodecID, "V_MPEG4/ISO/AVC"),
+			el(mkvCodecPrivate, avcc), elU(mkvDefaultDur, 40000000), el(mkvVideo, elU(mkvPixelWidth, 128), elU(mkvPixelHeight, 72))),
+		el(mkvTrackEntry, elU(mkvTrackNumber, 2), elU(mkvTrackType, 2), elS(mkvCodecID, "A_AC3"),
+			el(mkvAudio, elF(mkvSampling, 48000), elU(mkvChannels, 6))))
+	frame := bytes.Repeat([]byte{0}, 2560)
+	copy(frame, []byte{0x0b, 0x77, 0x00, 0x00, 0x24})
+	// Track 2, timecode 0, fixed-size lacing, one frame.
+	block := append([]byte{0x82, 0x00, 0x00, 0x84, 0x00}, frame...)
+	// The void keeps the container rate above the 640 kbps audio frame.
+	cluster := el(mkvCluster, el(mkvSimpleBlock, block), el(0xec, bytes.Repeat([]byte{0}, 200<<10)))
+	info := el(mkvInfo, elF(mkvDuration, 1000))
+	data := append(el(mkvEBML, elS(mkvDocType, "matroska")), el(mkvSegment, info, tracks, cluster)...)
+	m, err := ProbeSource(context.Background(), bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Streams[1].BitrateKbps != 640 {
+		t.Fatalf("audio bitrate = %d, want 640", m.Streams[1].BitrateKbps)
+	}
+	if m.Streams[0].BitrateKbps != m.BitrateKbps-640 {
+		t.Fatalf("video bitrate = %d, container %d", m.Streams[0].BitrateKbps, m.BitrateKbps)
+	}
+}
