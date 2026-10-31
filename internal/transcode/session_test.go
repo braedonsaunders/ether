@@ -861,6 +861,18 @@ func TestSessionHEVCEncoderFallbackWarnsOncePerSession(t *testing.T) {
 	}
 }
 
+func sessionStartedCopy(fr *fakeRunner, sessionID string) bool {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	needle := "/s-" + sessionID + "-"
+	for _, args := range fr.starts {
+		if strings.Contains(strings.Join(args, " "), needle) && argValue(args, "-c:v") == "copy" {
+			return true
+		}
+	}
+	return false
+}
+
 // The transcode cap counts encoders, not decisions: a copy session whose
 // run encodes (a fast-start ramp or a lower rung) holds a slot, and a copy
 // session started at the cap plays plainly rather than encoding past it.
@@ -873,7 +885,11 @@ func TestMaxTranscodesCountsEncodingCopySessions(t *testing.T) {
 	// At the cap the copy session still starts, without the encoded ramp
 	// or lower rungs.
 	s := startSession(t, m, remuxRequest(t, "r1", 10*time.Minute))
-	mustContain(t, fr.lastStart(), "-c:v copy")
+	// t1 can chain another encode after r1 starts. The copy is r1's run,
+	// not whichever ffmpeg happened to start last.
+	if !sessionStartedCopy(fr, "r1") {
+		t.Fatalf("capped copy session did not start with -c:v copy; last %q", fr.lastStart())
+	}
 	if n := len(s.Rungs()); n != 1 {
 		t.Errorf("rungs at the cap = %d, want the primary only", n)
 	}
