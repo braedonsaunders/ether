@@ -440,18 +440,22 @@ func (m *Manager) Close() error {
 	// and it must not wait for a backend Close that is still blocked.
 	m.wg.Wait()
 	cleanupCtx, cleanupCancel := m.sourceCleanupContext()
-	if cleanupErr := m.drainSourceCleanup(cleanupCtx); cleanupErr != nil {
+	cleanupErr := m.drainSourceCleanup(cleanupCtx)
+	// Canceling the budget makes Err return Canceled even when the deadline
+	// has not fired. An expired budget is the error from before that cancel.
+	expired := cleanupCtx.Err()
+	cleanupCancel()
+	if cleanupErr != nil {
 		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", cleanupErr))
 	}
-	cleanupCancel()
 	// A background fill can drop its generation ref, and therefore enter
 	// Close, after the retirement goroutine has already released the cleanup
 	// counter. An expired budget still has to report that blocked Close.
 	// A live budget lets the fast drop finish before ownership is judged.
-	if cleanupCtx.Err() == nil {
+	if expired == nil {
 		m.waitUntilSourcesSettled(sourceCleanupShutdownWait)
-	} else if !m.sourcesSettled() && !errors.Is(err, cleanupCtx.Err()) {
-		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", cleanupCtx.Err()))
+	} else if !m.sourcesSettled() && !errors.Is(err, expired) {
+		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", expired))
 	}
 	if m.reg != nil {
 		m.reg.close()
