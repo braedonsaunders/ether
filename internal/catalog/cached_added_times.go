@@ -8,16 +8,23 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// airAddedSQL derives the catalogue date from aired episodes or release dates.
-// All seven placeholders bind the same captured Unix time.
-const airAddedSQL = `COALESCE(CASE WHEN t.type='show' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.key AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type='season' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.show_key AND e.season=t.season AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END, (SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.show_key AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), (SELECT s.released_ts FROM catalog_titles s WHERE s.key=t.show_key AND s.type='show' AND s.released_ts>0 AND s.released_ts<=?)) WHEN t.type IN ('movie','episode') AND t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END,0)`
+// airAddedSQL is the owner date-added timestamp. Movies and episodes use
+// their own release or air date. A series uses its latest episode aired at
+// or before the bound time, then its first-air date. A season uses the
+// latest episode aired in that season, then the season premiere. Episodes
+// with no air date or a future air date do not count. Catalogue insertion
+// (added_at), metadata refresh (fetched_at), publication and observation
+// times are not date added. All five placeholders bind the same Unix time.
+const airAddedSQL = `COALESCE(CASE WHEN t.type='show' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.key AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type='season' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.show_key AND e.season=t.season AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type IN ('movie','episode') AND t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END,0)`
 
 func airAddedArgs(now time.Time) []any {
-	return []any{now.Unix(), now.Unix(), now.Unix(), now.Unix(), now.Unix(), now.Unix(), now.Unix()}
+	unix := now.Unix()
+	return []any{unix, unix, unix, unix, unix}
 }
 
-// CachedAddedTimes reads air-derived dates without fetching or resolving
-// metadata. Missing, unknown and future dates are omitted.
+// CachedAddedTimes reads date added without fetching or resolving metadata.
+// Missing, unknown and future dates are omitted. A later aired episode
+// replaces a series or season premiere; an unaired episode does not.
 func (c *Catalog) CachedAddedTimes(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]time.Time, error) {
 	return cachedAirAddedTimes(ctx, c.db, keys, c.now())
 }

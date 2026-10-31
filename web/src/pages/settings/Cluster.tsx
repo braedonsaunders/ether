@@ -489,7 +489,7 @@ function NodeDrawer({
                 </Link>
               ),
               updates: (
-                <Link className="underline" to="/updates">
+                <Link className="underline" to="/maintenance/updates">
                   {t("Updates")}
                 </Link>
               ),

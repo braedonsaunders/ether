@@ -62,7 +62,7 @@ type Title struct {
 	Summary                     string        `json:"summary,omitempty"`
 	Year                        int           `json:"year,omitempty"`
 	Released                    time.Time     `json:"released,omitempty"`   // first air / release date
-	AddedAt                     time.Time     `json:"addedAt,omitzero"`     // air-derived library date, when known
+	AddedAt                     time.Time     `json:"addedAt,omitzero"`     // series/season latest aired episode, or a derived air date; not a catalogue insertion time
 	LastAirDate                 time.Time     `json:"lastAirDate,omitzero"` // last aired episode date when known
 	HomeReleaseChecked          bool          `json:"homeReleaseChecked,omitempty"`
 	HomeReleased                time.Time     `json:"homeReleased,omitempty"`
@@ -127,6 +127,9 @@ var (
 	ErrBudgetExhausted   = errors.New("indexer daily budget exhausted")
 	ErrStreamLimit       = errors.New("stream limit reached")
 	ErrUnauthorized      = errors.New("unauthorized")
+	// ErrPolicyUnconfirmed means the durable policy store could not be read.
+	// Callers may keep an unrestricted cached decision. Restricted viewers fail closed.
+	ErrPolicyUnconfirmed = errors.New("policy store unavailable")
 )
 
 // User is a Plex account with access to this server: the owner or a friend

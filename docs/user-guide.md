@@ -15,26 +15,40 @@ Start here: [libraries and the catalogue](#libraries-catalogue-and-home),
 
 Jellyfin and Emby support is in development. No app has been certified yet;
 the matrix will be filled in only after testing the listed features on the
-specified app version. A dash means not yet verified.
+specified app version. A dash means not yet verified. Direct, remux, and
+transcode are separate results. From release 0.3 onward, a minor or patch tag
+does not publish until this matrix is recertified for that minor
+(`scripts/certification-gate`). `unsupported` means the review is finished and
+the client cannot work with Ether.
 
 Downloads: not supported.
 
-| Client | Version | Browse | Play | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Jellyfin for Android TV | Pending | — | — | — | — | — | — | — | — |
-| Swiftfin | Pending | — | — | — | — | — | — | — | — |
-| Findroid | Pending | — | — | — | — | — | — | — | — |
-| Streamyfin | Pending | — | — | — | — | — | — | — | — |
-| JellyCon | Pending | — | — | — | — | — | — | — | — |
-| Jellyfin for Roku | Pending | — | — | — | — | — | — | — | — |
-| Emby Web (externally hosted) | Pending | — | — | — | — | — | — | — | — |
-| Emby for TV (Apple TV, 2.x web-shell) | 2.0.9 (unsupported) | — | — | — | — | — | — | — | — |
+<!-- certification-matrix:jellyfin -->
+| Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Jellyfin for Android TV | Pending | — | — | — | — | — | — | — | — | — | — |
+| Swiftfin | Pending | — | — | — | — | — | — | — | — | — | — |
+| Findroid | Pending | — | — | — | — | — | — | — | — | — | — |
+| Streamyfin | Pending | — | — | — | — | — | — | — | — | — | — |
+| Infuse | Pending | — | — | — | — | — | — | — | — | — | — |
+| JellyCon | Pending | — | — | — | — | — | — | — | — | — | — |
+| Jellyfin for Roku | Pending | — | — | — | — | — | — | — | — | — | — |
+<!-- /certification-matrix:jellyfin -->
+
+<!-- certification-matrix:emby -->
+| Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Emby Web (externally hosted) | Pending | — | — | — | — | — | — | — | — | — | — |
+| Emby for Android TV | Pending | — | — | — | — | — | — | — | — | — | — |
+| Emby for TV (Apple TV, 2.x web-shell) | 2.0.9 | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported |
+<!-- /certification-matrix:emby -->
 
 Jellyfin for Android phones and Jellyfin Desktop are unsupported: they wrap
 Jellyfin Web, which Ether does not ship. Ether's `/web` page gives connection
 instructions; it is not a browser media player.
 Ether does not bundle Emby Web; the externally hosted client has not yet been
-certified against Ether. Emby for TV 2.0.9 on Apple TV is unsupported: it
+certified against Ether. Emby for Android TV is in the matrix and is not
+certified yet. Emby for TV 2.0.9 on Apple TV is unsupported: it
 requests server-hosted Emby Web assets, which Ether does not ship, and reports
 that the server needs updating. For Apple TV, try Infuse or Swiftfin with
 Ether; their feature support remains subject to the test matrix above.
@@ -53,7 +67,9 @@ Silo support is in development. Ether's Silo surface uses port 8090 by default;
 if that port is occupied, check the Apps page for the actual listening address.
 Add that address in the Silo app and sign in with an Ether viewer account, or
 approve the device's code in the viewer portal. A dash means the feature has
-not yet been verified on the named client.
+not yet been verified on the named client. Direct, remux, and transcode are
+separate results. The release check includes this table.
+
 Settings beyond revision 8 are not supported.
 PQ video variants with unknown HDR10+ metadata are not offered until the
 server can determine that metadata; SDR and HLG variants remain available.
@@ -68,10 +84,12 @@ Native certification also requires verifying that Ether's stream request
 headers reach direct playback and HLS playlists and segments, including after a
 seek; this has not yet been verified on the physical devices.
 
-| Client | Version | Browse | Play | Resume | Watched | Subtitles | Device pairing |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Silo for Apple TV, iOS and macOS | Pending | — | — | — | — | — | — |
-| Silo for Android and Android TV | Pending | — | — | — | — | — | — |
+<!-- certification-matrix:silo -->
+| Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Subtitles | Device pairing |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Silo for Apple TV, iOS and macOS | Pending | — | — | — | — | — | — | — | — |
+| Silo for Android and Android TV | Pending | — | — | — | — | — | — | — | — |
+<!-- /certification-matrix:silo -->
 
 ## Apps and client support
 
@@ -82,7 +100,7 @@ certification and exact-build conformance remain pending.
 
 | Surface | Intended clients and connection | Limits |
 | --- | --- | --- |
-| Jellyfin | Android TV, Swiftfin, Findroid, Streamyfin, JellyCon, Roku; server URL and viewer sign-in | Native feature matrix above is pending; Android phone and Desktop web shells are unsupported |
+| Jellyfin | Android TV, Swiftfin, Findroid, Streamyfin, Infuse, JellyCon, Roku; server URL and viewer sign-in | Native feature matrix above is pending; Android phone and Desktop web shells are unsupported |
 | Emby | Native clients using the server URL and Ether viewer account | No bundled Web; Apple TV Emby for TV 2.x web shell is unsupported; app licensing still applies |
 | Silo | Apple and Android native apps; server URL and viewer sign-in or pairing | Versioned device acceptance pending; see Silo limits above |
 | Stremio | Install the viewer-specific addon from the viewer portal in Stremio | Addon API only; no hosted Stremio web player |
@@ -723,8 +741,8 @@ its artwork, overview, ratings, cast, directors, and catalog identity.
 **Find on TMDB** retains the broader title lookup for released titles outside
 the browsable library. **Catalog settings** contains the TMDB key and connection
 test, language, region, refresh interval, popularity and vote thresholds, adult
-content option, and catalog health. Settings apply without a restart. Existing
-links to **Metadata → Catalogue** redirect to Catalog.
+content option, and catalog health. Settings apply without a restart. Catalog
+is at **Catalog**; Metadata no longer keeps a catalogue alias.
 
 **Show scheduled episodes** in Catalog settings is off by default. When enabled,
 a season that has already started can list unaired episodes with known air dates.

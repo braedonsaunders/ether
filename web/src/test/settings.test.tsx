@@ -413,11 +413,10 @@ describe("Settings", () => {
     ).toEqual({ enabled: true, explore: 0.4 });
   });
 
-  it("redirects the old General poster editor to Metadata artwork", async () => {
+  it("does not keep a General poster alias", async () => {
     renderApp("/server/posters");
-    expect(await screen.findByRole("switch", { name: "Ether posters" }, WAIT)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Configure poster provider" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "General" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "General" }, WAIT)).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Ether posters" })).not.toBeInTheDocument();
   });
 
   it("edits downloads, personalization and trailers on General tabs without losing other edits", async () => {
@@ -499,13 +498,10 @@ describe("Settings", () => {
     });
   });
 
-  it("redirects old Connectivity links onto the Plex app", async () => {
+  it("does not keep the old Connectivity URL", async () => {
     renderApp("/remote-access/secure");
-    expect(await screen.findByRole("heading", { name: "Apps" }, WAIT)).toBeInTheDocument();
-    expect(await screen.findByRole("tab", { name: "Plex" }, WAIT)).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(await screen.findByRole("link", { name: "Home" }, WAIT)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Apps" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Connectivity" })).not.toBeInTheDocument();
   });
 
@@ -782,7 +778,7 @@ describe("Settings", () => {
   });
 
   it("labels local file playback as a troubleshooting tool", async () => {
-    renderApp("/troubleshooting");
+    renderApp("/maintenance/troubleshooting");
     expect(
       await screen.findByRole("heading", { name: "Test playback with a local file" }, WAIT),
     ).toBeInTheDocument();

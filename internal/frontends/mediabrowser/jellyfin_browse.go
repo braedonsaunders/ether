@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
@@ -211,10 +212,8 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 	}
 	if fields["datecreated"] {
 		if _, ok := item["DateCreated"]; !ok {
-			if !title.AddedAt.IsZero() {
-				item["DateCreated"] = wireTime(title.AddedAt)
-			} else if !title.Released.IsZero() {
-				item["DateCreated"] = wireTime(title.Released)
+			if added := title.DateAdded(time.Now()); !added.IsZero() {
+				item["DateCreated"] = wireTime(added)
 			}
 		}
 	}

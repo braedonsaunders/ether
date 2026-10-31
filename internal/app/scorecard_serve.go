@@ -68,6 +68,41 @@ func StartScorecard(ctx context.Context, dir, username, password string, items [
 
 type scorecardProbe func(context.Context, core.MediaSource) (*core.MediaInfo, error)
 
+// applyScorecardLabBinaries points a disposable fixture at the same ffmpeg
+// the reference lab uses. Empty values keep the normal bundled/PATH lookup.
+func applyScorecardLabBinaries(c *config.Config) {
+	if p := os.Getenv("SCORECARD_FFMPEG"); p != "" {
+		c.Transcode.FFmpegPath = p
+	}
+	if p := os.Getenv("SCORECARD_FFPROBE"); p != "" {
+		c.Transcode.FFprobePath = p
+	}
+}
+
+func scorecardExtraViewers() ([][2]string, error) {
+	raw := os.Getenv("SCORECARD_EXTRA_USERS")
+	if raw == "" {
+		return nil, nil
+	}
+	var rows []struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		return nil, fmt.Errorf("scorecard extra viewers")
+	}
+	out := make([][2]string, 0, len(rows))
+	seen := map[string]bool{}
+	for _, row := range rows {
+		if row.Username == "" || row.Password == "" || seen[row.Username] {
+			return nil, fmt.Errorf("scorecard extra viewers")
+		}
+		seen[row.Username] = true
+		out = append(out, [2]string{row.Username, row.Password})
+	}
+	return out, nil
+}
+
 func prepareScorecardFiles(ctx context.Context, files []ScorecardFile, probe scorecardProbe) error {
 	for n := range files {
 		entry := &files[n]
@@ -133,6 +168,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 			c.Quality.Profiles[i].MinSizeMBPerMin = 0
 			c.Quality.Profiles[i].MaxSizeMBPerMin = 0
 		}
+		applyScorecardLabBinaries(c)
 		return nil
 	})
 	if e != nil {
@@ -153,6 +189,15 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 	viewerID, e := local.CreateViewer(ctx, username, password)
 	if e != nil {
 		return fail(e)
+	}
+	extras, e := scorecardExtraViewers()
+	if e != nil {
+		return fail(e)
+	}
+	for _, extra := range extras {
+		if _, e = local.CreateViewer(ctx, extra[0], extra[1]); e != nil {
+			return fail(e)
+		}
 	}
 	if e = a.users.RefreshViewers(ctx); e != nil {
 		return fail(e)

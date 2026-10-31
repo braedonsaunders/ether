@@ -27,7 +27,7 @@ describe("Apps Plex placement", () => {
     expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/apps/plex");
   });
 
-  it("drops a disabled Plex route, including legacy secure, to the overview", async () => {
+  it("drops a disabled Plex route to the overview", async () => {
     renderApp("/apps/secure", {}, (fake) => {
       fake.state.config.frontends = { plex: { enabled: false } };
     });
@@ -41,10 +41,10 @@ describe("Apps Plex placement", () => {
     expect(document.querySelector('[data-app-id="plex"]')).toHaveTextContent("Off");
   });
 
-  it("opens an enabled legacy secure path inside Plex", async () => {
+  it("does not treat /apps/secure as the Plex page", async () => {
     renderApp("/apps/secure");
-    expect(await screen.findByLabelText("Secure connections", {}, WAIT)).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Plex" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("tab", { name: "Secure connections" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Apps" }, WAIT)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Secure connections")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Plex", selected: true })).not.toBeInTheDocument();
   });
 });

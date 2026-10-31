@@ -79,7 +79,7 @@ describe("Owner usability", () => {
   });
 
   it("shows newest logs first, including entries sharing a timestamp", async () => {
-    const { fake } = renderApp("/logs", {}, (f) => {
+    const { fake } = renderApp("/maintenance/logs", {}, (f) => {
       f.state.logs = [
         { time: "2026-10-19T09:00:00Z", level: "info", message: "oldest" },
         { time: "2026-10-19T10:00:00Z", level: "info", message: "first at ten" },

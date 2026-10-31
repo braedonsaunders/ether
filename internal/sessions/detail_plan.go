@@ -45,8 +45,9 @@ func (b *Broker) DetailPlan(ctx context.Context, req frontend.PlanRequest) (fron
 		}
 		return frontend.PlayPlan{}, err
 	}
-	if !b.permitted(viewer, req.Caps) {
-		return frontend.PlayPlan{}, core.ErrUnauthorized
+	viewer, err = b.confirm(ctx, viewer, req.Caps)
+	if err != nil {
+		return frontend.PlayPlan{}, err
 	}
 	lookup := b.deps.MediaLookup
 	if lookup == nil {

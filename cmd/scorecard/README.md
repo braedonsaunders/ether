@@ -279,6 +279,29 @@ It omits release names, paths, arbitrary errors and client credentials. The
 trace ring is process-wide; isolate requests before associating a trace with a
 specific test. Recording proxies must deny every `/__scorecard/*` route.
 
+## Head-to-head lab run
+
+`h2h.py` is the opt-in Jellyfin/Emby comparison against a disposable scorecard
+fixture. It reads credentials from stdin and writes aggregate JSON to stdout.
+The report is provisional unless the caller sets `provisional` to false after
+an attested same-catalogue Ether target is available. Provisional losses are
+not treated as product defects.
+Passwords, tokens and stream URLs are not included. Browse timings use the same
+nearest-rank percentile as `scorecard` (`(n*p+99)/100 - 1`). A latency winner
+is recorded only when both sides return the same `TotalRecordCount`, every
+sample succeeds, and the response is fully read. Playback timings are one
+wall-clock span from PlaybackInfo through the first media byte (direct static
+read, or the first HLS media segment). Seek is a byte-range read of the same
+verified file. Resume is a fresh PlaybackInfo at a 30-second `StartTimeTicks`
+after progress was reported. Reference and Ether must open the same SHA-256;
+otherwise the playback winner is inconclusive. The tool stops each session and
+logs out. It does not restart or reseed the reference servers.
+
+Set `SCORECARD_FFMPEG` and `SCORECARD_FFPROBE` when the fixture should use the
+lab binaries. `SCORECARD_EXTRA_USERS` is a JSON array of `{username,password}`
+objects for additional disposable viewers (the primary `SCORECARD_USER` remains
+the measured account). Keep that JSON out of the repository.
+
 The loopback-only `/__scorecard/detail-offer?handle=HANDLE` joins an
 unexpired, surface-specific detail handle to its fixture item, release,
 source revision and expected SHA-256. The caller must obtain the handle from

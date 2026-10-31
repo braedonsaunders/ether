@@ -120,6 +120,10 @@ func (w *manifestResponse) Write(b []byte) (int, error) {
 var manifestURI = regexp.MustCompile(`(URI|initialization|media)="([^"]+)"`)
 
 func (s *Server) serveStreamManifest(w http.ResponseWriter, r *http.Request, id string, serve http.HandlerFunc) {
+	if !s.acceptanceCurrent(r) {
+		writeHTTPError(w, http.StatusUnauthorized)
+		return
+	}
 	e, ok := s.transcodes.get(id)
 	if !ok {
 		writeHTTPError(w, 404)

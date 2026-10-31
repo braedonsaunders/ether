@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -84,6 +85,11 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
+	if err := s.publishBrokerPlayback(ctx, pr, &p, ps, entry.decision); err != nil {
+		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
+		writeHTTPError(w, http.StatusServiceUnavailable)
+		return
+	}
 
 	dec := entry.decision
 	if dec.Kind == core.DecisionDirectPlay {
@@ -101,6 +107,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		// start for the same decision keeps the session (and its finished
 		// segments); a new decision request starts afresh.
 		if ds, isDASH := existing.(core.DASHSession); isDASH && entry.started {
+			s.notePlexEncoder(p.sessionID, frontend.StreamDASH, dec, p.offset)
 			unlockEncoder()
 			unlockOwner()
 			s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)
@@ -130,6 +137,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
 	s.transcodes.put(entry)
+	s.notePlexEncoder(p.sessionID, frontend.StreamDASH, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()
 	s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)

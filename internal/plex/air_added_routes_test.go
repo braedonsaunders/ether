@@ -38,8 +38,15 @@ func TestSectionDateSortRoutesUseAirDates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET fetched_at=CASE WHEN key=? THEN ? ELSE ? END WHERE key IN (?,?)`, int64(a), date(2021).Unix(), date(2025).Unix(), int64(a), int64(b)); err != nil {
-		t.Fatal(err)
+	// Separate assignments keep the bound timestamps typed. A CASE over
+	// untyped parameters is text on PostgreSQL and cannot land in fetched_at.
+	for _, set := range []struct {
+		key  core.RatingKey
+		when int64
+	}{{a, date(2021).Unix()}, {b, date(2025).Unix()}} {
+		if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET fetched_at=? WHERE key=?`, set.when, int64(set.key)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	f := newFixture(func(d *Deps) { d.Catalog = c })
 	defer f.srv.Close()
@@ -77,7 +84,7 @@ func TestSectionDateSortRoutesUseAirDates(t *testing.T) {
 		})
 	}
 	rec := decode(t, f.get(t, fmt.Sprintf("/library/metadata/%s", season), jsonAccept...))
-	if len(rec.Metadata) != 1 || rec.Metadata[0].AddedAt != date(2024).Unix() {
+	if len(rec.Metadata) != 1 || rec.Metadata[0].AddedAt != date(2024).Unix() || rec.Metadata[0].OriginallyAvailableAt != "" {
 		t.Fatalf("season latest aired: %+v", rec.Metadata)
 	}
 }

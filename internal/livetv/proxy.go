@@ -181,7 +181,7 @@ func (s *Service) ServeResource(w http.ResponseWriter, r *http.Request, id, key 
 			}
 			ss.resources[resource] = raw
 			ss.mu.Unlock()
-			return withAuth("/livetv/sessions/"+id+"/0/resource/"+resource, r)
+			return withAuth("/livetv/sessions/"+id+"/0/resource/"+resource, ss.streamGrant)
 		})
 		if err != nil {
 			http.Error(w, "unsupported upstream playlist", 502)

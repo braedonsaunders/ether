@@ -130,7 +130,7 @@ describe("Overview", () => {
 
 describe("Updates settings", () => {
   it("shows update status and asks the server to install", async () => {
-    const { fake } = renderApp("/updates");
+    const { fake } = renderApp("/maintenance/updates");
     expect(await screen.findByText(/Version 0\.3\.0/, {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText(/03:00–06:00 local time/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Update now" }));

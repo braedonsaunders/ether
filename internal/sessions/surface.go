@@ -155,6 +155,45 @@ func (s surface) Events(ctx context.Context, scope frontend.EventScope) (<-chan 
 	return s.broker.Events(ctx, scope)
 }
 
+func (s surface) PlexSessionForPlayback(ctx context.Context, a frontend.SessionAccess, item frontend.RatingKey, playbackID, transcodeID string) (string, error) {
+	if s.protocol != "plex" || a.Protocol != s.protocol {
+		return "", core.ErrUnauthorized
+	}
+	b, ok := s.broker.(*Broker)
+	if !ok {
+		return "", core.ErrNotAvailable
+	}
+	return b.PlexSessionForPlayback(ctx, a, item, playbackID, transcodeID)
+}
+
+func (s surface) PlexSessionSource(id string) (string, bool) {
+	if s.protocol != "plex" {
+		return "", false
+	}
+	b, ok := s.broker.(*Broker)
+	if !ok {
+		return "", false
+	}
+	return b.PlexSessionSource(id)
+}
+
+func (s surface) NotePlexEncoder(id string, format frontend.StreamFormat, decision core.Decision, offset time.Duration) {
+	if b, ok := s.broker.(*Broker); ok {
+		b.NotePlexEncoder(id, format, decision, offset)
+	}
+}
+
+func (s surface) StopProtocol(ctx context.Context, protocol frontend.Protocol) error {
+	if protocol != s.protocol {
+		return core.ErrUnauthorized
+	}
+	b, ok := s.broker.(*Broker)
+	if !ok {
+		return core.ErrNotAvailable
+	}
+	return b.StopProtocol(ctx, protocol)
+}
+
 func (s surface) ReportSample(ctx context.Context, a frontend.SessionAccess, id string, sample frontend.ProgressSample) (frontend.ReportOutcome, error) {
 	if a.Protocol != s.protocol {
 		return "", core.ErrUnauthorized

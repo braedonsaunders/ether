@@ -281,7 +281,7 @@ func TestOpenUpdate(t *testing.T) {
 			}
 			continue
 		}
-		if len(fu.applied) != 0 || len(opened) != 1 || opened[0] != "http://127.0.0.1:32400/ether/settings/updates" {
+		if len(fu.applied) != 0 || len(opened) != 1 || opened[0] != "http://127.0.0.1:32400/ether/maintenance/updates" {
 			t.Errorf("%s/%s: applied=%v opened=%v", c.goos, c.kind, fu.applied, opened)
 		}
 	}

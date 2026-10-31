@@ -410,8 +410,7 @@ export default function Apps() {
   const apps = state.data ?? [];
   const plexInfo = apps.find((info) => info.descriptor.id === "plex");
   const plexOn = plexInfo?.enabled === true;
-  const showPlex =
-    plexOn && (routeTab === "plex" || routeTab === "remote" || routeTab === "secure");
+  const showPlex = plexOn && routeTab === "plex";
   const tabs = [
     { key: "overview", label: t("Overview") },
     ...apps
@@ -427,12 +426,6 @@ export default function Apps() {
   useEffect(() => {
     if (!state.data || !routeTab || routeTab === "overview") return;
     const plexEnabled = state.data.some((info) => info.descriptor.id === "plex" && info.enabled);
-    if (routeTab === "remote" || routeTab === "secure") {
-      navigate(plexEnabled ? `/apps/plex?section=${routeTab}` : "/apps/overview", {
-        replace: true,
-      });
-      return;
-    }
     if (routeTab === "plex") {
       if (!plexEnabled) navigate("/apps/overview", { replace: true });
       return;

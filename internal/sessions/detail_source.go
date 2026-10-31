@@ -79,8 +79,9 @@ func (b *Broker) resolveDetailSource(ctx context.Context, scope frontend.Version
 	if err != nil {
 		return out, err
 	}
-	if !b.permitted(viewer, scope.Caps) {
-		return out, core.ErrUnauthorized
+	viewer, err = b.confirm(ctx, viewer, scope.Caps)
+	if err != nil {
+		return out, err
 	}
 	var item int64
 	err = b.deps.DB.QueryRowContext(ctx, `SELECT item_id,release_id,revision FROM sessions_detail_sources WHERE handle=? AND viewer_id=? AND surface=? AND device_id=? AND expires>?`, normalizeVersionHandle(handle), viewer.ID, string(scope.Protocol), scope.Device.ID, b.deps.Now().UnixMilli()).Scan(&item, &out.release, &out.revision)

@@ -13,8 +13,8 @@ const title = {
 };
 
 describe("Catalog workspace", () => {
-  it("redirects the old destination and browses pages, filters, views and title details", async () => {
-    const { fake } = renderAppWith("/metadata/catalogue", (_method, path, _body, query) => {
+  it("browses pages, filters, views and title details", async () => {
+    const { fake } = renderAppWith("/catalog", (_method, path, _body, query) => {
       if (path === "/catalog/browse") return { items: [title], total: query.get("q") ? 1 : 107 };
       if (path === `/catalog/title/${title.key}`)
         return {

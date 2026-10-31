@@ -294,7 +294,7 @@ func TestVirtualPlayoutJoinContinuityAndOwnership(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.ServePlaylist(rec, req, info.ID, u)
 	b := rec.Body.String()
-	if rec.Code != 200 || !strings.Contains(b, "#EXT-X-DISCONTINUITY\n") || strings.Contains(b, "#EXT-X-ENDLIST") || !strings.Contains(b, "X-Plex-Token=owner-token") {
+	if rec.Code != 200 || !strings.Contains(b, "#EXT-X-DISCONTINUITY\n") || strings.Contains(b, "#EXT-X-ENDLIST") || strings.Contains(b, "X-Plex-Token=") || !strings.Contains(b, "X-Ether-Stream-Token=") {
 		t.Fatalf("invalid live playlist: %d %s", rec.Code, b)
 	}
 	if len(pb.groups) < 2 || pb.groups[0] != pb.groups[1] {
@@ -390,7 +390,7 @@ func TestIPTVRelativeManifestKeysRangesRetryAndReconnect(t *testing.T) {
 		return rec
 	}
 	master := request("index.m3u8", nil)
-	if master.Code != 200 || strings.Contains(master.Body.String(), upstream.URL) || !strings.Contains(master.Body.String(), "X-Plex-Token=view-token") {
+	if master.Code != 200 || strings.Contains(master.Body.String(), upstream.URL) || strings.Contains(master.Body.String(), "X-Plex-Token=") || !strings.Contains(master.Body.String(), "X-Ether-Stream-Token=") {
 		t.Fatalf("master rewrite failed: %d %s", master.Code, master.Body.String())
 	}
 	if attempts.Load() < 3 {

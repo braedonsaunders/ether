@@ -2,7 +2,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { createFakeServer } from "../mock/server";
-import { legacyConnectivityTarget } from "../App";
 import Setup, {
   SETUP_STEP_KEY,
   canAdvance,
@@ -777,11 +776,3 @@ describe("mergeFrontendSelection", () => {
   });
 });
 
-describe("legacy connectivity routes", () => {
-  it("lands remote and secure on the Plex page sections", () => {
-    expect(legacyConnectivityTarget("remote")).toBe("/apps/plex?section=remote");
-    expect(legacyConnectivityTarget("secure")).toBe("/apps/plex?section=secure");
-    expect(legacyConnectivityTarget("account")).toBe("/apps/plex");
-    expect(legacyConnectivityTarget(undefined)).toBe("/apps/plex");
-  });
-});

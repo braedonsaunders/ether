@@ -54,8 +54,9 @@ func (v *versionHandles) allowedOffers(ctx context.Context, scope frontend.Versi
 	caps := scope.Caps
 	caps.Protocol = v.protocol
 	caps.ClientID = clientKey(v.protocol, scope.Device)
-	if !v.broker.permitted(viewer, caps) {
-		return nil, nil, core.ErrUnauthorized
+	viewer, err = v.broker.confirm(ctx, viewer, caps)
+	if err != nil {
+		return nil, nil, err
 	}
 	if caps.Remote && v.broker.deps.RemoteBitrateLimit != nil {
 		if limit := v.broker.deps.RemoteBitrateLimit(); limit > 0 && (caps.MaxBitrateKbps == 0 || limit < caps.MaxBitrateKbps) {

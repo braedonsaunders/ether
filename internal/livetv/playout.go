@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 const segmentDuration = 4 * time.Second
@@ -67,15 +67,16 @@ type session struct {
 	failoverGate chan struct{} // initialized under mu
 	// ctx is the session lifetime, cancelled by close; preparation I/O is
 	// bound to it (bindContext) so Stop cancels a slow Prepare/probe.
-	ctx       context.Context
-	cancel    context.CancelFunc
-	info      SessionInfo
-	user      core.User
-	caps      core.ClientCaps
-	last      time.Time
-	tracks    []*track
-	resources map[string]string
-	closed    bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	info        SessionInfo
+	streamGrant string
+	user        core.User
+	caps        core.ClientCaps
+	last        time.Time
+	tracks      []*track
+	resources   map[string]string
+	closed      bool
 }
 
 // bindContext derives a context cancelled when parent ends or when the
@@ -244,7 +245,7 @@ func (s *Service) TuneWithSession(ctx context.Context, u *core.User, channelID s
 			ActivityID: liveSessionID(), ClientSessionID: clientSessionID,
 			UserID: u.ID, Channel: c, Programme: p, StartedAt: s.o.Now(),
 		},
-		user: *u, caps: caps, last: s.o.Now(), resources: map[string]string{},
+		streamGrant: randomID(), user: *u, caps: caps, last: s.o.Now(), resources: map[string]string{},
 	}
 	base := s.ctx
 	if base == nil {
@@ -730,7 +731,7 @@ func (s *Service) ServePlaylist(w http.ResponseWriter, r *http.Request, id strin
 				target = int(math.Ceil(dur.Seconds()))
 			}
 			uri := fmt.Sprintf("program/%d/%d.ts", tr.programme.Start.UnixMilli(), n)
-			uri = withAuth(uri, r)
+			uri = withAuth(uri, ss.streamGrant)
 			segments = append(segments, seg{tr.sequence + int64(n), at, dur, uri, ti > 0 && n == 0})
 		}
 		if tr.programme.End.Before(now.Add(-24 * time.Second)) {
@@ -755,21 +756,8 @@ func (s *Service) ServePlaylist(w http.ResponseWriter, r *http.Request, id strin
 		fmt.Fprint(w, b.String())
 	}
 }
-func withAuth(raw string, r *http.Request) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	q := u.Query()
-	token := r.URL.Query().Get("X-Plex-Token")
-	if token == "" {
-		token = r.Header.Get("X-Plex-Token")
-	}
-	if token != "" {
-		q.Set("X-Plex-Token", token)
-	}
-	u.RawQuery = q.Encode()
-	return u.String()
+func withAuth(raw, grant string) string {
+	return sessions.GrantURL(raw, grant)
 }
 func (s *Service) ServeSegment(w http.ResponseWriter, r *http.Request, id string, start int64, n int, u *core.User) {
 	ss, err := s.getSession(r.Context(), id, u)
@@ -992,7 +980,7 @@ func (s *Service) serveRelayPlaylist(w http.ResponseWriter, r *http.Request, ss 
 				http.Error(w, "invalid relay segment", 502)
 				return
 			}
-			lines[i] = withAuth(fmt.Sprintf("/livetv/sessions/%s/0/relay/%d.ts", ss.info.ID, n), r)
+			lines[i] = withAuth(fmt.Sprintf("/livetv/sessions/%s/0/relay/%d.ts", ss.info.ID, n), ss.streamGrant)
 		}
 	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")

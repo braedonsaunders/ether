@@ -12,7 +12,6 @@ import { ConfigSection } from "../../components/ConfigSection";
 import { ErrorPanel } from "../../components/feedback";
 import { DomainPage, useRouteTab } from "../../components/layout";
 import { SettingsRow } from "../../components/SettingsRow";
-import { RemoteDiagnostics } from "../../components/RemoteDiagnostics";
 import { localized, t } from "../../i18n";
 import { api } from "../../lib/api";
 import { humanizeKey, isPlainObject } from "../../lib/format";
@@ -23,7 +22,7 @@ import { ClusterOverview, useClustered } from "./Cluster";
 import { ConnectedServices, integrationTabs, type ServiceTab } from "./ConnectedServices";
 import { inferField, type FieldGroup } from "./SchemaForm";
 import * as S from "./schema";
-import { PlexStatus, UpdatesStatus } from "./sections";
+import { UpdatesStatus } from "./sections";
 
 /**
  * config.json sections with a home somewhere in the UI. Any other object the
@@ -225,65 +224,6 @@ function GeneralSection({
       onFieldErrors={reveal}
       onSaved={onSaved}
     />
-  );
-}
-
-/** Every tab but Status shows the S.PLEX group whose `id` matches its key. */
-const PLEX_TABS = localized(
-  () =>
-    [
-      { key: "status", label: t("Status") },
-      { key: "remote", label: t("Remote access") },
-      { key: "secure", label: t("Secure connections") },
-      { key: "account", label: t("Account") },
-      { key: "compatibility", label: t("Compatibility") },
-    ] as const,
-);
-
-/** Which Plex tab a field lives on; options this UI doesn't know sit under Account. */
-function plexTabOf(key: string) {
-  const group = S.PLEX.find((g) => g.fields.some((f) => f.key === key))?.id;
-  return PLEX_TABS.find((tab) => tab.key !== "status" && tab.key === group)?.key ?? "account";
-}
-
-export function RemoteAccessPage() {
-  const navigate = useNavigate();
-  const { dashboard, reloadBoot } = useApp();
-  const tab = useRouteTab(PLEX_TABS);
-  const reveal = useRevealErrors("/remote-access", plexTabOf);
-  const reopenSetup = async () => {
-    try {
-      await api.setupReopen();
-      await reloadBoot();
-      navigate("/setup");
-    } catch (e) {
-      toast.error(t("Couldn't reopen setup"), { description: (e as Error).message });
-    }
-  };
-  return (
-    <DomainPage
-      title={t("Connectivity")}
-      description={t("Your Plex account, remote access and secure connections.")}
-      base="/remote-access"
-      tabs={PLEX_TABS}
-      active={tab}
-    >
-      <ConfigSection
-        configKey="plex"
-        endpoint="plex"
-        groups={S.PLEX}
-        label={t("Connectivity")}
-        show={(g) => tab !== "status" && g.id === tab}
-        showAdvanced={tab === "account"}
-        onFieldErrors={reveal}
-        before={(_, c) =>
-          tab === "status" ? (
-            <PlexStatus cfg={c} remote={dashboard?.sections?.remote} onReopen={reopenSetup} />
-          ) : null
-        }
-        after={() => (tab === "status" ? <RemoteDiagnostics /> : null)}
-      />
-    </DomainPage>
   );
 }
 

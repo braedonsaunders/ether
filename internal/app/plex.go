@@ -23,13 +23,10 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if a.plexServer != nil {
+	if a.plexServer != nil && !a.plexServer.Closed() {
 		return a.plexServer, nil
 	}
-	var tc core.Transcoder
-	if a.transcoder != nil {
-		tc = a.transcoder
-	}
+	tc := a.activeTranscoder()
 	identity := plex.Identity{
 		MachineIdentifier: cfg.Server.MachineIdentifier,
 		FriendlyName:      cfg.Server.FriendlyName,

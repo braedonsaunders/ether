@@ -3,10 +3,45 @@ package sessions
 import (
 	"context"
 	"crypto/subtle"
-	"github.com/braedonsaunders/ether/internal/core"
 	"net/http"
+	"net/url"
 	"strings"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
+
+// accountQueryKeys are credentials that must never be copied into a generated
+// media URL. Playback-scoped stream grants are not in this set.
+var accountQueryKeys = map[string]struct{}{
+	"x-plex-token":         {},
+	"api_key":              {},
+	"apikey":               {},
+	"x-emby-token":         {},
+	"x-mediabrowser-token": {},
+	"access_token":         {},
+}
+
+// StripAccountCredentials removes account credentials from a media URL.
+// Relative paths and values without those keys are unchanged.
+func StripAccountCredentials(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.RawQuery == "" {
+		return raw
+	}
+	q := u.Query()
+	changed := false
+	for key := range q {
+		if _, ok := accountQueryKeys[strings.ToLower(key)]; ok {
+			q.Del(key)
+			changed = true
+		}
+	}
+	if !changed {
+		return raw
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
 
 // StreamGrantParam is the scoped media capability used by existing Plex
 // clients. It is independent of account credentials.
@@ -15,6 +50,10 @@ const StreamGrantParam = "X-Ether-Stream-Token"
 // GrantURL appends a broker-generated stream capability to a media URL.
 // Capabilities passed here must be URL-safe.
 func GrantURL(raw, token string) string {
+	raw = StripAccountCredentials(raw)
+	if token == "" {
+		return raw
+	}
 	sep := "?"
 	if strings.Contains(raw, "?") {
 		sep = "&"

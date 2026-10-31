@@ -22,45 +22,47 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 	dataDir := a.opts.DataDir
 	var err error
 	// Transcoder. A missing ffmpeg is not fatal: direct play still works.
-	a.transcoder, err = transcode.New(cfg.Transcode, log, transcode.WithRuntimeDir(filepath.Join(dataDir, "tools")), transcode.WithEncoderObserver(func(sessionID string, started bool, excerpt string) {
-		if a.support == nil {
-			return
+	// A fixture transcoder is shared by Plex and every other protocol without
+	// starting ffmpeg.
+	if a.opts.FixtureTranscoder == nil {
+		a.transcoder, err = transcode.New(cfg.Transcode, log, transcode.WithRuntimeDir(filepath.Join(dataDir, "tools")), transcode.WithEncoderObserver(func(sessionID string, started bool, excerpt string) {
+			if a.support == nil {
+				return
+			}
+			kind := diagnostics.KindEncoderFailed
+			if started {
+				kind = diagnostics.KindEncoderStarted
+			}
+			a.support.Observe(diagnostics.Event{Kind: kind, SessionKey: sessionID, FFmpegExcerpt: excerpt})
+		}), transcode.WithRunStartHandler(func(input string, from, to time.Duration) {
+			if a.playback != nil {
+				a.playback.WarmInput(input, from, to)
+			}
+		}), transcode.WithInputFailureHandler(func(id, input string, at time.Duration, failure error) {
+			if ctx.Err() != nil {
+				return
+			}
+			rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			log.Warn("recovering failed encoder input", "session", id, "at", at, "err", failure)
+			var recoverErr error
+			if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.HasBinding(id) {
+				recoverErr = a.frontends.broker.Recover(rctx, id, input, at)
+			}
+			if recoverErr != nil {
+				log.Warn("encoder recovery exhausted", "session", id, "err", recoverErr)
+			}
+		}))
+		if err != nil {
+			log.Warn("transcoder unavailable; only direct play will work", "err", err)
+			a.transcoder = nil
+		} else {
+			a.closers = append(a.closers, func() { a.transcoder.Close() })
 		}
-		kind := diagnostics.KindEncoderFailed
-		if started {
-			kind = diagnostics.KindEncoderStarted
-		}
-		a.support.Observe(diagnostics.Event{Kind: kind, SessionKey: sessionID, FFmpegExcerpt: excerpt})
-	}), transcode.WithRunStartHandler(func(input string, from, to time.Duration) {
-		if a.playback != nil {
-			a.playback.WarmInput(input, from, to)
-		}
-	}), transcode.WithInputFailureHandler(func(id, input string, at time.Duration, failure error) {
-		if ctx.Err() != nil {
-			return
-		}
-		rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		log.Warn("recovering failed encoder input", "session", id, "at", at, "err", failure)
-		var recoverErr error
-		if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.HasBinding(id) {
-			recoverErr = a.frontends.broker.Recover(rctx, id, input, at)
-		} else if server := a.currentPlexServer(); server != nil {
-			recoverErr = server.RecoverTranscode(rctx, id, input, at)
-		}
-		if recoverErr != nil {
-			log.Warn("encoder recovery exhausted", "session", id, "err", recoverErr)
-		}
-	}))
-	if err != nil {
-		log.Warn("transcoder unavailable; only direct play will work", "err", err)
-		a.transcoder = nil
-	} else {
-		a.closers = append(a.closers, func() { a.transcoder.Close() })
 	}
 	var tc core.Transcoder = directOnly{}
-	if a.transcoder != nil {
-		tc = a.transcoder
+	if got := a.activeTranscoder(); got != nil {
+		tc = got
 	}
 
 	a.trackprefs = trackprefs.New(a.db, trackprefs.Options{ShowName: func(ctx context.Context, id int64) string {
@@ -81,7 +83,7 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 			return transcode.ProbeTrailer(ctx, src, src.Size(), info)
 		},
 		Resolver:   a.resolver,
-		Engine:     parityEngine(a.media, dataDir),
+		Engine:     playbackEngine(a),
 		Transcoder: tc,
 		Catalog:    a.catalog,
 		Cache:      a.cache,
@@ -89,7 +91,7 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 		SelectProfile: func(caps core.ClientCaps, u *core.User) core.QualityProfile {
 			return resolver.SelectProfile(a.cfg.Get().Quality, caps, u)
 		},
-		FetchNZB: parityIndexer(a.sources, dataDir).FetchNZB,
+		FetchNZB: playbackFetchNZB(a, dataDir),
 		Aligner: func() core.TimelineAligner {
 			if a.subtitles == nil {
 				return nil
@@ -104,13 +106,13 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 					return hs, true
 				}
 			}
-			if server := a.currentPlexServer(); server != nil {
-				if hs, ok := server.TranscodeFor(id); ok {
+			if a.livetv != nil {
+				if hs, ok := a.livetv.TranscodeFor(id); ok {
 					return hs, true
 				}
 			}
-			if a.transcoder != nil {
-				return a.transcoder.Session(id)
+			if got := a.activeTranscoder(); got != nil {
+				return got.Session(id)
 			}
 			return nil, false
 		},
@@ -127,4 +129,28 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 	a.cache.Protect(a.protectedReleases)
 
 	return nil
+}
+
+func (a *App) activeTranscoder() core.Transcoder {
+	if a.opts.FixtureTranscoder != nil {
+		return a.opts.FixtureTranscoder
+	}
+	if a.transcoder != nil {
+		return a.transcoder
+	}
+	return nil
+}
+
+func playbackEngine(a *App) core.Engine {
+	if a.opts.FixtureMedia != nil {
+		return a.opts.FixtureMedia
+	}
+	return parityEngine(a.media, a.opts.DataDir)
+}
+
+func playbackFetchNZB(a *App, dataDir string) func(context.Context, core.Release) ([]byte, error) {
+	if a.opts.FixtureMedia != nil {
+		return a.opts.FixtureMedia.FetchNZB
+	}
+	return parityIndexer(a.sources, dataDir).FetchNZB
 }

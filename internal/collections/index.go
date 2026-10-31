@@ -363,7 +363,9 @@ func (ix *index) load(ctx context.Context) (*snapshot, error) {
 	snap := &snapshot{entries: make(map[core.RatingKey]*entry, len(items)), print: fp, builtAt: ix.now()}
 	for _, item := range items {
 		e := entryFromTitle(item.Title, in)
-		e.added = item.AddedAt
+		if added := item.Title.DateAdded(ix.now()); !added.IsZero() {
+			e.added = added.Unix()
+		}
 		e.detail = e.detail || item.Detailed
 		snap.entries[e.key] = e
 		snap.order = append(snap.order, e)

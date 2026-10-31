@@ -3,8 +3,8 @@ package plex
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"errors"
-	"github.com/braedonsaunders/ether/internal/identity"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,10 +12,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/identity"
+
+	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
+
+type acceptanceContextKey struct{}
+
+func withAcceptance(ctx context.Context, a auth.Acceptance) context.Context {
+	return context.WithValue(ctx, acceptanceContextKey{}, a)
+}
+
+func acceptanceFrom(ctx context.Context) (auth.Acceptance, bool) {
+	a, ok := ctx.Value(acceptanceContextKey{}).(auth.Acceptance)
+	return a, ok && a.Valid()
+}
 
 const corsAllowHeaders = "Accept, Accept-Language, Content-Type, Range, X-Plex-Token, X-Plex-Client-Identifier, X-Plex-Product, " +
 	"X-Plex-Version, X-Plex-Platform, X-Plex-Platform-Version, X-Plex-Device, X-Plex-Device-Name, X-Plex-Device-Vendor, " +
@@ -165,7 +179,11 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			return
 		}
 		pr := FromContext(r.Context())
-		if pr.Token == "" && s.authenticateStreamGrant(r, pr) {
+		if pr.Token == "" && (s.authenticateStreamGrant(r, pr) || s.authenticateLiveGrant(r, pr)) {
+			if !s.acceptanceCurrent(r) {
+				writeHTTPError(w, http.StatusUnauthorized)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -173,7 +191,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			writeHTTPError(w, http.StatusUnauthorized)
 			return
 		}
-		u, err := s.d.Auth.Authenticate(r.Context(), pr.Token)
+		u, receipt, err := s.acceptToken(r.Context(), pr.Token)
 		switch {
 		case err == nil && u != nil:
 			if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
@@ -191,6 +209,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				}
 			}
 			pr.User = u
+			if receipt.Valid() {
+				r = r.WithContext(withAcceptance(r.Context(), receipt))
+			}
+			if !s.acceptanceCurrent(r) {
+				writeHTTPError(w, http.StatusUnauthorized)
+				return
+			}
 			if s.d.Hooks.OnClientSeen != nil {
 				s.d.Hooks.OnClientSeen(pr.ClientID)
 			}
@@ -204,6 +229,66 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			writeHTTPError(w, http.StatusServiceUnavailable)
 		}
 	})
+}
+
+type tokenAcceptor interface {
+	Accept(context.Context, string) (*core.User, auth.Acceptance, error)
+	ReceiptCurrent(context.Context, auth.Acceptance) error
+}
+
+func (s *Server) acceptToken(ctx context.Context, token string) (*core.User, auth.Acceptance, error) {
+	if acc, ok := s.d.Auth.(tokenAcceptor); ok {
+		return acc.Accept(ctx, token)
+	}
+	u, err := s.d.Auth.Authenticate(ctx, token)
+	return u, auth.Acceptance{}, err
+}
+
+// acceptanceCurrent rechecks a receipt minted for this request. Requests that
+// did not mint one, including stream grants, stay on their own check.
+func (s *Server) acceptanceCurrent(r *http.Request) bool {
+	receipt, ok := acceptanceFrom(r.Context())
+	if !ok {
+		return true
+	}
+	checker, ok := s.d.Auth.(tokenAcceptor)
+	if !ok {
+		return false
+	}
+	return checker.ReceiptCurrent(r.Context(), receipt) == nil
+}
+
+func (s *Server) authenticateLiveGrant(r *http.Request, pr *Request) bool {
+	if s.d.LiveTV == nil {
+		return false
+	}
+	u, ok := s.d.LiveTV.AuthenticateMediaGrant(r, s.activeViewer)
+	if !ok {
+		return false
+	}
+	if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+		u = policy.UserPolicy(u)
+	}
+	if fresh, ok := s.d.AccessPolicy.(interface {
+		ConfirmPlayback(context.Context, *core.User, bool, time.Time) (*core.User, error)
+	}); ok {
+		confirmed, err := fresh.ConfirmPlayback(r.Context(), u, pr.ClientCaps(0).Remote, s.now())
+		if err != nil && !errors.Is(err, core.ErrPolicyUnconfirmed) {
+			return false
+		}
+		if err == nil {
+			if confirmed == nil || confirmed.ID != u.ID {
+				return false
+			}
+			u = confirmed
+		} else if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
+			return false
+		}
+	} else if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
+		return false
+	}
+	pr.User = u
+	return true
 }
 
 // ownerOnly restricts a handler to the server owner.

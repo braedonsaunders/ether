@@ -177,8 +177,9 @@ func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequ
 
 // experienceHomeFallback fills a cold neutral Home with policy-filtered library
 // shelves. It does not run for Plex and never resolves playback sources.
-// Ordering is the title release date (latest aired episode for a show), which
-// is the owner rule for "date added". A shelf uses the request page, defaulting
+// Ordering follows date added: a movie or episode uses its own release or
+// air date, and a series or season uses its latest aired episode. A shelf
+// uses the request page, defaulting
 // to the same 50-item page as other Home rows, capped at 100 — a full library
 // shelf, not a six-item recommendation stub.
 func (a *App) experienceHomeFallback(ctx context.Context, req frontend.RowRequest, libraries []experience.Library, visibility experience.Visibility) ([]frontend.Row, error) {

@@ -74,11 +74,24 @@ func Read(ctx context.Context, db *sql.DB) (int64, error) {
 }
 
 // Fence locks the epoch until commit. PostgreSQL policy triggers update this
-// same row; SQLite transactions already hold the database write lock.
+// same row. SQLite explicitly obtains the write lock even on connections that
+// use deferred transactions; it must not rely on a particular DSN.
 func Fence(ctx context.Context, db *sql.DB, tx *sql.Tx, expected int64) error {
 	query := `SELECT generation FROM viewer_policy_epoch WHERE id=1`
 	if store.DialectOf(db) == store.Postgres {
 		query += ` FOR SHARE`
+	} else {
+		res, err := tx.ExecContext(ctx, `UPDATE viewer_policy_epoch SET generation=generation WHERE id=1`)
+		if err != nil {
+			return err
+		}
+		count, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			return ErrChanged
+		}
 	}
 	var generation int64
 	if err := tx.QueryRowContext(ctx, query).Scan(&generation); err != nil {
