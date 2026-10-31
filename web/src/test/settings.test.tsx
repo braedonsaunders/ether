@@ -474,7 +474,7 @@ describe("Settings", () => {
   it("keeps Plex account and connection settings inside its enabled app tab", async () => {
     renderApp("/apps/plex");
     expect(await screen.findByRole("button", { name: "Sign out of Plex" }, WAIT)).toBeVisible();
-    expect(screen.getByText("Claimed by owner.")).toBeInTheDocument();
+    expect(screen.getAllByText("Claimed by the Plex account owner.").length).toBeGreaterThan(0);
     expect(screen.queryByRole("switch", { name: "Claimed" })).toBeNull();
     expect(screen.queryByLabelText("Owner token")).toBeNull();
     expect(screen.queryByLabelText("Allow remote access")).toBeNull();
@@ -516,6 +516,9 @@ describe("Settings", () => {
     const { fake } = renderApp("/apps/jellyfin", {}, (f) => {
       f.state.config.frontends = { jellyfin: { enabled: true } };
     });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More options: Find this server" }, WAIT),
+    );
     const picker = await screen.findByLabelText(
       "Show local viewer names on the sign-in screen",
       {},

@@ -113,8 +113,10 @@ describe("Apps", () => {
     expect(screen.queryByRole("button", { name: "Connect a device" })).not.toBeInTheDocument();
     expect(screen.queryByRole("spinbutton", { name: "Port" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Silo" }));
-    expect(await screen.findByText("192.168.1.2:8090")).toBeInTheDocument();
-    expect(screen.getByText(/LAN:/)).toBeInTheDocument();
+    expect(await screen.findByText(/Reachable at home/)).toBeInTheDocument();
+    expect(screen.getByText(/192\.168\.1\.2:8090/)).toBeInTheDocument();
+    expect(screen.queryByText(/LAN:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Outside access is not checked/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Connect a device" }));
     expect(screen.getByText("Certified player")).toBeInTheDocument();
     expect(screen.getByText("Open the app on your device.")).toBeInTheDocument();

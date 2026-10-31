@@ -80,7 +80,6 @@ export default function Playback() {
         endpoint="transcode"
         groups={S.TRANSCODE}
         label={t("Transcoding")}
-        showAdvanced={false}
         before={() => <HardwareStatus />}
       />
       {tab === "devices" ? <DeviceCapabilities /> : null}
@@ -91,7 +90,6 @@ export default function Playback() {
         groups={SKIP_MARKERS}
         label={t("Skip buttons")}
         omit={["apiKey"]}
-        showAdvanced={false}
         before={(draft) => <IntroDbStatus apiKey={draft.apiKey} />}
         after={tab === "markers" ? () => <MarkerCoverage /> : undefined}
       />

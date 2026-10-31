@@ -7,9 +7,10 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { ExternalLink } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../../app-context";
+import { MoreOptions } from "../../components/ConfigSection";
 import { RemoteDiagnostics } from "../../components/RemoteDiagnostics";
 import { ErrorPanel } from "../../components/feedback";
 import { SaveBar, useDraft } from "../../components/SaveBar";
@@ -22,6 +23,7 @@ import { SchemaField, type FieldDef } from "../settings/SchemaForm";
 import * as schema from "../settings/schema";
 import { PlexStatus } from "../settings/sections";
 import { plexAccountClaimed } from "./plex-account";
+import { awaySummary, claimSummary, homeSummary, type ReachabilityStatus } from "./reachability";
 
 type Obj = Record<string, unknown>;
 type PlexDraft = { port: number; bindAddress: string; plex: Obj };
@@ -73,34 +75,6 @@ function FieldList({
         />
       ))}
     </>
-  );
-}
-
-function MoreOptions({
-  label,
-  text,
-  children,
-}: {
-  label: string;
-  text: string;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="border-t border-border">
-      <button
-        type="button"
-        className="w-full px-4 py-3 text-left text-sm font-medium text-primary"
-        aria-expanded={open}
-        aria-label={label}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {text}
-      </button>
-      {open ? (
-        <div className="divide-y divide-border border-t border-border">{children}</div>
-      ) : null}
-    </div>
   );
 }
 
@@ -215,12 +189,10 @@ function PlexAccount({
     <>
       <SettingsSection title={t("Plex account")}>
         <SettingsRow
-          title={t("Plex account")}
+          title={claimed ? t("Signed in") : t("Not signed in")}
           description={
             claimed
-              ? owner
-                ? t("Claimed by {owner}.", { owner })
-                : t("Claimed by your account.")
+              ? claimSummary(true, owner)
               : t(
                   "Not signed in to plex.tv. Sign in to claim this server so Plex apps can find it.",
                 )
@@ -300,7 +272,15 @@ function confirmUnclaim() {
   });
 }
 
-export function PlexApp({ hidden, section }: { hidden: boolean; section?: string }) {
+export function PlexApp({
+  hidden,
+  section,
+  status,
+}: {
+  hidden: boolean;
+  section?: string;
+  status?: ReachabilityStatus;
+}) {
   const navigate = useNavigate();
   const { dashboard, refreshDashboard } = useApp();
   const config = useAsync(() => api.getConfig(), []);
@@ -390,9 +370,20 @@ export function PlexApp({ hidden, section }: { hidden: boolean; section?: string
     { key: "remote", label: t("Remote access") },
     { key: "compatibility", label: t("Compatibility") },
   ];
+  const plex = config.data.plex;
+  const home = homeSummary(status);
+  const away = awaySummary(status, { remoteAccess: plex.remoteAccess !== false });
 
   return (
     <>
+      <SettingsSection title={t("Status")}>
+        <SettingsRow title={home.title} description={home.detail} />
+        <SettingsRow title={away.title} description={away.detail} />
+        <SettingsRow
+          title={t("Plex account")}
+          description={claimSummary(plexAccountClaimed(plex), plex.ownerUsername)}
+        />
+      </SettingsSection>
       <SubtabNav
         ariaLabel={t("Plex settings")}
         active={active}

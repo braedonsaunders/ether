@@ -1873,6 +1873,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const mr = maintenance.handle(method, seg, body);
     if (mr) return json(mr.body, mr.status);
 
+    const mockConnectUrls = (id: string, port?: number) => {
+      if (port) return [`http://192.168.1.20:${port}`];
+      if (id === "stremio" || id === "webdav" || id === "dlna" || id === "m3u") {
+        return [`http://192.168.1.20:32550/${id}`];
+      }
+      return [];
+    };
     const protocolDefs = [
       { id: "plex", name: "Plex", defaultPort: 32400 },
       { id: "jellyfin", name: "Jellyfin", defaultPort: 8096 },
@@ -1880,6 +1887,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       { id: "silo", name: "Silo", defaultPort: 8090 },
       { id: "stremio", name: "Stremio" },
       { id: "webdav", name: "Files" },
+      { id: "m3u", name: "M3U and XMLTV" },
       { id: "dlna", name: "DLNA" },
     ];
     if (seg[0] === "frontends" && seg.length === 1 && method === "GET") {
@@ -1894,6 +1902,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
             enabled,
             status: {
               addresses: enabled && port ? [`127.0.0.1:${port}`] : [],
+              connectUrls: enabled ? mockConnectUrls(descriptor.id, port) : [],
               lan: "unknown",
               wan: "unknown",
               clients24h: 0,
@@ -1918,6 +1927,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const port = state.config.frontendPorts?.[id!] ?? descriptor.defaultPort;
         return json({
           addresses: enabled && port ? [`127.0.0.1:${port}`] : [],
+          connectUrls: enabled ? mockConnectUrls(id ?? "", port) : [],
           lan: "unknown",
           wan: "unknown",
           clients24h: 0,
