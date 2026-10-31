@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"sync"
+	"time"
 )
 
 func init() {
@@ -80,6 +81,11 @@ func (c *stmtConn) release(query string, stmt driver.Stmt) {
 func (c *stmtConn) Begin() (driver.Tx, error) { return c.inner.Begin() }
 
 func (c *stmtConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	// BEGIN IMMEDIATE is where a writer waits for SQLite's write lock.
+	if rec := recorderFrom(ctx); rec != nil {
+		start := time.Now()
+		defer func() { rec.waited(time.Since(start)) }()
+	}
 	if begin, ok := c.inner.(driver.ConnBeginTx); ok {
 		return begin.BeginTx(ctx, opts)
 	}
@@ -141,6 +147,16 @@ func (s stmtHold) Query(args []driver.Value) (driver.Rows, error) {
 }
 
 func (s stmtHold) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+	if rec := recorderFrom(ctx); rec != nil {
+		start := time.Now()
+		res, err := s.exec(ctx, args)
+		rec.record(s.query, 0, time.Since(start))
+		return res, err
+	}
+	return s.exec(ctx, args)
+}
+
+func (s stmtHold) exec(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	if exec, ok := s.inner.(driver.StmtExecContext); ok {
 		return exec.ExecContext(ctx, args)
 	}
@@ -152,6 +168,19 @@ func (s stmtHold) ExecContext(ctx context.Context, args []driver.NamedValue) (dr
 }
 
 func (s stmtHold) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+	if rec := recorderFrom(ctx); rec != nil {
+		start := time.Now()
+		rows, err := s.run(ctx, args)
+		if err != nil {
+			rec.record(s.query, 0, time.Since(start))
+			return nil, err
+		}
+		return countRows(rows, rec, s.query, time.Since(start)), nil
+	}
+	return s.run(ctx, args)
+}
+
+func (s stmtHold) run(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	if query, ok := s.inner.(driver.StmtQueryContext); ok {
 		return query.QueryContext(ctx, args)
 	}

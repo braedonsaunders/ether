@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -104,10 +105,18 @@ func (c *pgConn) Begin() (driver.Tx, error) {
 }
 
 func (c *pgConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if rec := recorderFrom(ctx); rec != nil {
+		start := time.Now()
+		defer func() { rec.waited(time.Since(start)) }()
+	}
 	return c.inner.BeginTx(ctx, opts)
 }
 
 func (c *pgConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if rec := recorderFrom(ctx); rec != nil {
+		start := time.Now()
+		defer func() { rec.record(query, 0, time.Since(start)) }()
+	}
 	res, err := c.inner.ExecContext(ctx, sharedRebind.get(query), args)
 	if err != nil {
 		return nil, err
@@ -116,7 +125,17 @@ func (c *pgConn) ExecContext(ctx context.Context, query string, args []driver.Na
 }
 
 func (c *pgConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	return c.inner.QueryContext(ctx, sharedRebind.get(query), args)
+	rec := recorderFrom(ctx)
+	if rec == nil {
+		return c.inner.QueryContext(ctx, sharedRebind.get(query), args)
+	}
+	start := time.Now()
+	rows, err := c.inner.QueryContext(ctx, sharedRebind.get(query), args)
+	if err != nil {
+		rec.record(query, 0, time.Since(start))
+		return nil, err
+	}
+	return countRows(rows, rec, query, time.Since(start)), nil
 }
 
 func (c *pgConn) Ping(ctx context.Context) error { return c.inner.Ping(ctx) }
