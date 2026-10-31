@@ -117,6 +117,11 @@ type brokerSession struct {
 	// supersede wait until those producers release; the signal does not
 	// itself free a source or capability claim.
 	servingReads []*core.ReadRetirement
+	// deliveryToken is this session's admission order. A later session can
+	// replace the durable authority; an older token cannot.
+	deliveryToken      int64
+	deliveryGeneration int64
+	deliverySession    string
 }
 
 type retiredSession struct {
@@ -489,6 +494,11 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		release = chosen.ID
 	}
 	prepareExact := req.Intent.ExactVersion
+	if remembered, rememberErr := b.rememberedDeliveryRelease(ctx, v.ID, string(req.Protocol), req.Device.ID, req.Item, req.Intent.ClientSessionID); rememberErr != nil {
+		return frontend.PlayPlan{}, rememberErr
+	} else if remembered != "" && release == "" && !prepareExact {
+		release, prepareExact = remembered, true
+	}
 	previous, existed := playback.SessionForSurface(string(req.Protocol), v.ID, req.Caps.ClientID, req.Item, release, prepareExact)
 	if detail != nil {
 		if cached := b.localDetailSource(v.ID, req.Device.ID, req.Protocol, req.Item, *detail); cached != nil {
@@ -748,7 +758,18 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if err := b.enrichCapabilities(ctx, &session); err != nil {
 		return frontend.Session{}, err
 	}
-	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding, versionHandle: p.versionHandle, exactRelease: p.exactRelease, sourcePinned: p.pinned, sourceETag: p.etag}
+	deliverySession := p.request.Intent.ClientSessionID
+	if deliverySession == "" {
+		deliverySession = id
+	}
+	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding, versionHandle: p.versionHandle, exactRelease: p.exactRelease, sourcePinned: p.pinned, sourceETag: p.etag, deliverySession: deliverySession}
+	if b.deps.DB != nil {
+		token, tokenErr := reserveDeliveryToken(ctx, b.deps.DB)
+		if tokenErr != nil {
+			return frontend.Session{}, tokenErr
+		}
+		s.deliveryToken = token
+	}
 	if b.deps.SourceHistory != nil && session.Protocol != "plex" {
 		historyCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
 		s.historyEpoch, err = b.deps.SourceHistory.BeginSourceSession(historyCtx)

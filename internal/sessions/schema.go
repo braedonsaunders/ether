@@ -90,5 +90,22 @@ CREATE UNIQUE INDEX sessions_active_device ON plex_sessions(user_id,surface,devi
 		expires BIGINT NOT NULL,
 		UNIQUE(viewer_id,surface,device_id,item_id,revision)
 	); CREATE INDEX sessions_detail_sources_expiry ON sessions_detail_sources(expires);`)
+	store.Register("sessions", 9, `
+CREATE TABLE sessions_delivery_tokens (
+	id INTEGER PRIMARY KEY AUTOINCREMENT
+);
+CREATE TABLE sessions_delivery_authority (
+	viewer_id BIGINT NOT NULL,
+	item_id BIGINT NOT NULL,
+	surface TEXT NOT NULL,
+	device_id TEXT NOT NULL,
+	session_id TEXT NOT NULL,
+	generation BIGINT NOT NULL,
+	release_id TEXT NOT NULL,
+	source_revision TEXT NOT NULL,
+	token BIGINT NOT NULL,
+	header_digest TEXT NOT NULL,
+	PRIMARY KEY (viewer_id, item_id, surface, device_id)
+);`)
 
 }

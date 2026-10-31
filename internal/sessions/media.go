@@ -103,6 +103,10 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		}
 		b.mu.Unlock()
 		b.ensureTrickplay(ctx, s, req.Position)
+		ps, _ := b.deps.Playback.Session(s.playID)
+		if err := b.bindDeliveryAuthority(ctx, s, ps); err != nil {
+			return "", err
+		}
 		return path + "file", nil
 	}
 	if b.deps.Transcoder == nil {
@@ -199,6 +203,10 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	b.mu.Unlock()
 	b.ensureTrickplay(ctx, s, req.Position)
+	if err := b.bindDeliveryAuthority(ctx, s, ps); err != nil {
+		b.deps.Transcoder.Stop(id)
+		return "", err
+	}
 	if req.Format == frontend.StreamDASH {
 		return path + "manifest.mpd", nil
 	}
