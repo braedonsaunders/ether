@@ -129,3 +129,41 @@ func TestStaticAliasChecksDetailSessionBinding(t *testing.T) {
 		}
 	}
 }
+
+func TestDirectFileAliasServesBytes(t *testing.T) {
+	var path string
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+			return &frontend.Viewer{ID: 1}, nil
+		}},
+		Sessions: frontendtest.Sessions{
+			SessionsFunc: func(context.Context, frontend.SessionAccess) ([]frontend.Session, error) {
+				return []frontend.Session{{ID: "session", Item: 5, Protocol: "jellyfin", Device: frontend.Device{ID: "device"}, MediaPath: "/sessions/media/session/grant/file"}}, nil
+			},
+			StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+				t.Fatal("direct alias restarted the stream")
+				return "", nil
+			},
+			ServeMediaFunc: func(w http.ResponseWriter, r *http.Request) {
+				path = r.URL.Path
+				if r.Header.Get("Range") != "bytes=0-3" {
+					t.Fatalf("range %q", r.Header.Get("Range"))
+				}
+				w.WriteHeader(http.StatusPartialContent)
+				_, _ = w.Write([]byte("abcd"))
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close(context.Background())
+	r := httptest.NewRequest("GET", "/Videos/"+ids.RatingKeyGUID(5)+"/stream?static=true&PlaySessionId=session", nil)
+	r.Header.Set("Authorization", `MediaBrowser Token="account-secret", DeviceId="device"`)
+	r.Header.Set("Range", "bytes=0-3")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusPartialContent || w.Body.String() != "abcd" || path != "/sessions/media/session/grant/file" {
+		t.Fatalf("status=%d body=%q path=%s", w.Code, w.Body.String(), path)
+	}
+}

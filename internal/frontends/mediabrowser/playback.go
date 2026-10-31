@@ -551,6 +551,10 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func directFilePath(path string) bool {
+	return strings.HasPrefix(path, "/sessions/media/") && strings.HasSuffix(path, "/file") && !strings.ContainsAny(path, "\r\n?#")
+}
+
 // streamAlias translates client-generated URLs into broker-owned, scoped URLs.
 func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	name := strings.ToLower(r.PathValue("name"))
@@ -692,6 +696,25 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		planner, ok := i.host.Sessions.(frontend.DetailPlanner)
 		if !ok || planner.MatchDetailSession(i.identityContext(r), versionScope, detailSource, sessionID) != nil {
 			http.NotFound(w, r)
+			return
+		}
+	}
+	// PlaybackInfo already started this direct file. Serve that URL here so
+	// the client does not pay a second round trip, or a second stream start.
+	if format == frontend.StreamDirect {
+		for _, session := range sessions {
+			if session.ID != sessionID || !directFilePath(session.MediaPath) {
+				continue
+			}
+			req := r.Clone(r.Context())
+			u := *req.URL
+			u.Path = session.MediaPath
+			u.RawPath = ""
+			req.URL = &u
+			if i.protocol == "emby" {
+				i.embyMediaHeaders(w, req)
+			}
+			i.host.Sessions.ServeMedia(w, req)
 			return
 		}
 	}
