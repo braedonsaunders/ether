@@ -239,8 +239,17 @@ func (m *Manager) RetireSource(id string, outcome core.SourceRetirement) error {
 	return nil
 }
 
+func (m *Manager) sourceCleanupContext() (context.Context, context.CancelFunc) {
+	if m.sourceCleanupBudget != nil {
+		return m.sourceCleanupBudget, func() {}
+	}
+	return context.WithTimeout(context.Background(), sourceCleanupShutdownWait)
+}
+
 // drainSourceCleanup bounds shutdown without starting a goroutine that could
 // outlive its wait. Timeout never releases a source or its accounting charge.
+// A cleanup that finished as the budget expired is success: both channels
+// can be ready together, and the blocked Close is not the wait.
 func (m *Manager) drainSourceCleanup(ctx context.Context) error {
 	m.sourceAccounting.mu.Lock()
 	pending, done := m.sourceAccounting.cleanup, m.sourceAccounting.cleanupDone
@@ -252,7 +261,12 @@ func (m *Manager) drainSourceCleanup(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		select {
+		case <-done:
+			return nil
+		default:
+			return ctx.Err()
+		}
 	}
 }
 

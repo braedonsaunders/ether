@@ -195,7 +195,13 @@ func (o *Options) defaults() {
 // Manager implements core.Playback.
 type Manager struct {
 	sourceAccounting sourceAccounting
-	events           eventBus
+	// sourceCleanupBudget, when set, is the shutdown wait for in-flight
+	// source cleanup. Production leaves it nil and uses
+	// sourceCleanupShutdownWait. Tests install an already-expired context
+	// so a blocked backend Close is detected by ordering, not by a timer
+	// that can lose to a loaded machine.
+	sourceCleanupBudget context.Context
+	events              eventBus
 	deps             Deps
 	opts             Options
 	log              *slog.Logger
@@ -416,8 +422,11 @@ func (m *Manager) Close() error {
 	}
 	m.cancel()
 	err := m.srv.Close()
+	// Loops exit on cancellation. Source cleanup is a separate budget: it
+	// must not be extended by pin reconcile, registry sync, or resume flush,
+	// and it must not wait for a backend Close that is still blocked.
 	m.wg.Wait()
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), sourceCleanupShutdownWait)
+	cleanupCtx, cleanupCancel := m.sourceCleanupContext()
 	if cleanupErr := m.drainSourceCleanup(cleanupCtx); cleanupErr != nil {
 		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", cleanupErr))
 	}

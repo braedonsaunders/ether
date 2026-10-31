@@ -163,12 +163,22 @@ func (r *registry) loop() {
 		case <-r.kick:
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		if err := r.sync(ctx); err != nil {
+		// Shutdown must not wait out this sync. stop cancels it; the loop
+		// then observes the closed stop channel and exits.
+		go func() {
+			select {
+			case <-r.stop:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		err := r.sync(ctx)
+		cancel()
+		if err != nil && !errors.Is(err, context.Canceled) {
 			r.syncFail.Fail(err)
-		} else {
+		} else if err == nil {
 			r.syncFail.OK()
 		}
-		cancel()
 	}
 }
 

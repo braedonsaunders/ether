@@ -332,17 +332,20 @@ func TestOwnedSourceRetirementShutdownRetainsBlockedClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitRetirementTest(t, e.closeEntered, "stalled shutdown Close")
-	closed := make(chan error, 1)
-	go func() { closed <- h.m.Close() }()
+	// Already expired, so Close cannot be racing a test timer against the
+	// production cleanup budget. Shutdown must report the unfinished
+	// cleanup while this Close is still blocked.
+	budget, cancelBudget := context.WithDeadline(context.Background(), time.Unix(0, 1))
+	defer cancelBudget()
+	h.m.sourceCleanupBudget = budget
+	err := h.m.Close()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close did not report unfinished cleanup: %v", err)
+	}
 	select {
-	case err := <-closed:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("Close did not report unfinished cleanup: %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		unblock()
-		<-closed
-		t.Fatal("manager shutdown waited indefinitely for backend Close")
+	case <-e.closeRelease:
+		t.Fatal("manager shutdown unblocked the backend Close")
+	default:
 	}
 	requireOwnedPending(t, outcome)
 	opens, cleanup := ownedCounts(h.m)
