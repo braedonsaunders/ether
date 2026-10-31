@@ -1,20 +1,16 @@
-import { Badge, Button, Input, confirmDialog, toast } from "@braedonsaunders/appkit-ui";
+import { Badge, Button, Input, confirmDialog } from "@braedonsaunders/appkit-ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useApp } from "../../app-context";
-import { ConfigSection } from "../../components/ConfigSection";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
 import { EmbyMark, JellyfinMark, PlexMark } from "../../components/integration-brands";
 import { DomainPage, Section, useRouteTab } from "../../components/layout";
-import { RemoteDiagnostics } from "../../components/RemoteDiagnostics";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { t } from "../../i18n";
 import { API_BASE, api, apiBlob, apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
-import * as schema from "../settings/schema";
-import { PlexStatus } from "../settings/sections";
 import { viewerStatus } from "../viewers/ViewerStatus";
+import { PlexApp } from "./PlexApp";
 import { appLabel, appPath, appPurpose } from "./catalog";
 
 type FrontendInfo = {
@@ -171,51 +167,6 @@ function ConnectDevice({ info }: { info: FrontendInfo }) {
         </div>
       )}
     </div>
-  );
-}
-
-function PlexSettings({ hidden }: { hidden: boolean }) {
-  const { dashboard, reloadBoot } = useApp();
-  const navigate = useNavigate();
-  async function reopenSetup() {
-    try {
-      await api.setupReopen();
-      await reloadBoot();
-      navigate("/setup");
-    } catch (error) {
-      toast.error(t("Couldn't reopen setup"), { description: (error as Error).message });
-    }
-  }
-  return (
-    <>
-      <ConfigSection
-        configKey="server"
-        endpoint="server"
-        label={t("Server")}
-        groups={schema.SERVER.map((group) => ({
-          ...group,
-          fields: group.fields.filter((field) => ["port", "bindAddress"].includes(field.key)),
-        })).filter((group) => group.fields.length > 0)}
-        showAdvanced={false}
-        hidden={hidden}
-      />
-      <ConfigSection
-        configKey="plex"
-        endpoint="plex"
-        groups={schema.PLEX}
-        label={t("Plex settings")}
-        hidden={hidden}
-        showAdvanced
-        before={(_, config) => (
-          <PlexStatus
-            cfg={config}
-            remote={dashboard?.sections?.remote}
-            onReopen={() => void reopenSetup()}
-          />
-        )}
-        after={() => <RemoteDiagnostics />}
-      />
-    </>
   );
 }
 
@@ -399,14 +350,12 @@ function AppDetail({ info }: { info: FrontendInfo }) {
   );
 }
 
-const PLEX_SECTIONS = new Set(["remote", "secure", "account"]);
-
 export default function Apps() {
   const state = useAsync((signal) => apiFetch<FrontendInfo[]>("/frontends", { signal }), []);
-  const routeTab = useParams().tab;
+  const { tab: routeTab, section: routeSection } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const section = searchParams.get("section");
+  const querySection = searchParams.get("section");
   const apps = state.data ?? [];
   const plexInfo = apps.find((info) => info.descriptor.id === "plex");
   const plexOn = plexInfo?.enabled === true;
@@ -434,20 +383,24 @@ export default function Apps() {
     if (!match?.enabled) navigate("/apps/overview", { replace: true });
   }, [state.data, routeTab, navigate]);
   useEffect(() => {
-    if (tab !== "plex" || !section || !PLEX_SECTIONS.has(section)) return;
-    const title =
-      section === "remote"
-        ? t("Remote access")
-        : section === "secure"
-          ? t("Secure connections")
-          : t("Account");
-    const heading = [...document.querySelectorAll("h2, h3")].find(
-      (node) => node.textContent === title,
-    );
-    if (heading && typeof heading.scrollIntoView === "function") {
-      heading.scrollIntoView({ block: "nearest" });
+    if (!state.data || routeTab !== "plex") return;
+    const plexEnabled = state.data.some((info) => info.descriptor.id === "plex" && info.enabled);
+    if (!plexEnabled) return;
+    const asked = querySection || routeSection;
+    if (asked === "remote" || asked === "secure") {
+      if (routeSection !== "remote" || querySection)
+        navigate("/apps/plex/remote", { replace: true });
+      return;
     }
-  }, [tab, section, state.data]);
+    if (asked === "compatibility") {
+      if (routeSection !== "compatibility" || querySection)
+        navigate("/apps/plex/compatibility", { replace: true });
+      return;
+    }
+    if (querySection === "account" || (routeSection && routeSection !== "account")) {
+      navigate("/apps/plex/account", { replace: true });
+    }
+  }, [state.data, routeTab, routeSection, querySection, navigate]);
   useInterval(() => void state.reload(), 10_000);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
@@ -503,7 +456,9 @@ export default function Apps() {
           </div>
         ))}
       {tab === "plex" && plexInfo ? <AppDetail info={plexInfo} /> : null}
-      {(visited.has("plex") || showPlex) && <PlexSettings hidden={tab !== "plex"} />}
+      {(visited.has("plex") || showPlex) && (
+        <PlexApp hidden={tab !== "plex"} section={routeSection} />
+      )}
       {tabs
         .filter((item) => !["overview", "plex"].includes(item.key) && visited.has(item.key))
         .map((item) => {

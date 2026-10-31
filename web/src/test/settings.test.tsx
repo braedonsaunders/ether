@@ -442,10 +442,14 @@ describe("Settings", () => {
 
   it("keeps Plex account and connection settings inside its enabled app tab", async () => {
     renderApp("/apps/plex");
+    expect(await screen.findByRole("button", { name: "Sign out of Plex" }, WAIT)).toBeVisible();
+    expect(screen.getByText("Claimed by owner.")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Claimed" })).toBeNull();
+    expect(screen.queryByLabelText("Owner token")).toBeNull();
+    expect(screen.queryByLabelText("Allow remote access")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Remote access" }));
     expect(await screen.findByRole("heading", { name: "Connection checks" }, WAIT)).toBeVisible();
-    expect(screen.getByText("Plex account")).toBeInTheDocument();
-    expect(await screen.findByLabelText("Allow remote access", {}, WAIT)).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Remote access" })).toBeNull();
+    expect(screen.getByLabelText("Allow remote access")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Secure connections" })).toBeNull();
   });
 

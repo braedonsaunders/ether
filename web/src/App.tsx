@@ -408,7 +408,7 @@ function Shell() {
             <Route path="/playback/:tab?" element={<Playback />} />
             <Route path="/notifications/:tab?" element={<Notifications />} />
             <Route path="/server/:tab?" element={<GeneralPage />} />
-            <Route path="/apps/:tab?" element={<Apps />} />
+            <Route path="/apps/:tab?/:section?" element={<Apps />} />
             <Route path="/services/:tab?" element={<ServicesPage />} />
             <Route path="/cluster" element={<ClusterPage />} />
             <Route path="/maintenance/:tab?/:backupTab?" element={<MaintenancePage />} />
