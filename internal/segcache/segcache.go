@@ -76,6 +76,14 @@ type Cache struct {
 
 	saveMu sync.Mutex // serialises pins.json writes
 
+	// pinNote asks the writer to publish the current pin set. The play path
+	// updates memory and returns; the file catches up, and Close publishes
+	// whatever memory holds so a restart still sees the last set.
+	pinNote chan struct{}
+	pinStop chan struct{}
+	pinDone chan struct{}
+	pinOnce sync.Once
+
 	evictMu sync.Mutex // serialises passes that free space; taken before floorMu
 	floorMu sync.Mutex // guards diskFn and floor; taken before mu
 	diskFn  DiskUsageFunc
@@ -147,6 +155,9 @@ func Open(dir string, budget int64, logger *slog.Logger) (*Cache, error) {
 		now:        time.Now,
 		touchEvery: defaultTouchEvery,
 		protectTTL: defaultProtectTTL,
+		pinNote:    make(chan struct{}, 1),
+		pinStop:    make(chan struct{}),
+		pinDone:    make(chan struct{}),
 	}
 	if err := os.MkdirAll(c.dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("segcache: open %s: %w", dir, err)
@@ -158,6 +169,7 @@ func Open(dir string, budget int64, logger *slog.Logger) (*Cache, error) {
 		return nil, err
 	}
 	c.evict()
+	go c.writePinsLoop()
 	used, b := c.Usage()
 	c.logger.Info("segment cache opened", "dir", dir, "segments", c.segCountSafe(),
 		"used", used, "budget", b)
@@ -362,7 +374,8 @@ func (c *Cache) Pin(releaseID string, reason string) error {
 	}
 	set[reason] = struct{}{}
 	c.mu.Unlock()
-	return c.savePins()
+	c.notePins()
+	return nil
 }
 
 // Unpin removes one pin reason. When the last reason goes the release becomes
@@ -387,9 +400,9 @@ func (c *Cache) Unpin(releaseID string, reason string) error {
 		c.parkDirty = true
 	}
 	c.mu.Unlock()
-	err := c.savePins()
+	c.notePins()
 	c.evict()
-	return err
+	return nil
 }
 
 // Pins returns a copy: releaseID -> sorted pin reasons.
@@ -517,12 +530,20 @@ func (c *Cache) Releases() []ReleaseUsage {
 	return out
 }
 
-// Close marks the cache closed. Everything is already durable (pins are
-// written eagerly), so Close only stops further use. It is idempotent.
+// Close marks the cache closed and publishes the in-memory pin set. It is
+// idempotent.
 func (c *Cache) Close() error {
 	c.mu.Lock()
 	c.closed = true
 	c.mu.Unlock()
+	if c.pinStop == nil {
+		return nil
+	}
+	c.pinOnce.Do(func() {
+		close(c.pinStop)
+		<-c.pinDone
+		_ = c.writePinsFile()
+	})
 	return nil
 }
 
@@ -806,7 +827,30 @@ func (c *Cache) pinsSnapshotLocked() map[string][]string {
 	return out
 }
 
-func (c *Cache) savePins() error {
+func (c *Cache) notePins() {
+	if c.pinNote == nil {
+		_ = c.writePinsFile()
+		return
+	}
+	select {
+	case c.pinNote <- struct{}{}:
+	default:
+	}
+}
+
+func (c *Cache) writePinsLoop() {
+	defer close(c.pinDone)
+	for {
+		select {
+		case <-c.pinStop:
+			return
+		case <-c.pinNote:
+			_ = c.writePinsFile()
+		}
+	}
+}
+
+func (c *Cache) writePinsFile() error {
 	c.saveMu.Lock()
 	defer c.saveMu.Unlock()
 	c.mu.Lock()
