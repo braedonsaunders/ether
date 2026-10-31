@@ -25,6 +25,7 @@ func (s *Service) SetViewerMaxRating(ctx context.Context, id int64, rating strin
 	if n != 1 {
 		return core.ErrUnauthorized
 	}
+	s.gen.Add(1)
 	if err = s.reload(ctx); err != nil {
 		return err
 	}

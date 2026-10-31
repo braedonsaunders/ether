@@ -146,12 +146,17 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 	}
 	if i.protocol == "jellyfin" {
 		i.jellyfinCollectionFolder(item, viewID)
+		// Every library sits under the same user root. The id is stable so
+		// ParentId does not change between responses.
+		item["ParentId"] = jellyfinRootID()
 		// ChildCount is the number of items this viewer can list in the view.
 		// A failed count stays absent rather than a fabricated zero.
 		page, err := i.host.Experience.LibraryItems(r.Context(), v, device(r), view.ID, frontend.ItemQuery{Limit: 1})
 		if err == nil {
 			item["ChildCount"] = page.Total
 		}
+		i.attachViewMediaDates(r, v, view.ID, item)
+		i.attachLibraryCollage(r, v, viewNum, viewID, item)
 	}
 	return item, true
 }
@@ -159,6 +164,10 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 func (i *instance) writeCollectionFolder(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, viewNum int64) {
 	if i.host.Experience == nil {
 		http.Error(w, "Unavailable", 503)
+		return
+	}
+	if i.protocol == "jellyfin" && viewNum == 0 {
+		i.writeUserRoot(w, r, v)
 		return
 	}
 	vs, err := i.host.Experience.Views(r.Context(), v)
@@ -227,7 +236,7 @@ func (i *instance) browseRoutes() error {
 				http.Error(w, "Unavailable", 503)
 				return
 			}
-			rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: frontend.PlacementHome})
+			rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: frontend.PlacementHome, Purpose: purpose, Limit: queryInt(r, "Limit", 0)})
 			if err != nil {
 				http.Error(w, "Unavailable", 503)
 				return
@@ -256,6 +265,33 @@ func (i *instance) browseRoutes() error {
 					spans = append(spans, rowSpan{start, len(titles), row.Handle})
 				}
 			}
+			// Jellyfin Next Up is the next episode after something the viewer
+			// watched. That episode is carried on the continue row when no
+			// home row is labeled next-up.
+			if purpose == frontend.RowNextUp && len(titles) == 0 {
+				for _, row := range rows {
+					if row.Purpose != frontend.RowContinue {
+						continue
+					}
+					start := len(titles)
+					if len(row.Entries) > 0 {
+						for _, entry := range row.Entries {
+							if entry.Kind == frontend.RowEntryTitle && entry.Title != nil && entry.Title.Type == "episode" {
+								titles = append(titles, *entry.Title)
+							}
+						}
+					} else {
+						for _, title := range row.Items {
+							if title.Type == "episode" {
+								titles = append(titles, title)
+							}
+						}
+					}
+					if row.Handle != "" && len(titles) > start {
+						spans = append(spans, rowSpan{start, len(titles), row.Handle})
+					}
+				}
+			}
 			offset := queryInt(r, "StartIndex", 0)
 			limit := queryInt(r, "Limit", 50)
 			page := paging.Slice(titles, offset, limit)
@@ -271,10 +307,33 @@ func (i *instance) browseRoutes() error {
 			items := make([]any, 0, len(page))
 			images := i.gridImagesFor(r, page)
 			paths := i.virtualPaths(r, v, keys)
+			if fieldSet(r)["mediasources"] {
+				r = i.withPageEditions(r, v, keys)
+			}
+			i.fillSeriesTitles(r, v, page)
 			for _, title := range page {
+				if purpose == frontend.RowNextUp && title.Type == "episode" && i.host.Experience != nil {
+					detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: title.Key})
+					if err == nil && detail.Title.Key == title.Key && detail.Title.Type == "episode" {
+						title = detail.Title
+					}
+				}
+				if title.ShowTitle == "" && (title.Type == "episode" || title.Type == "season") {
+					one := []frontend.Title{title}
+					i.fillSeriesTitles(r, v, one)
+					title = one[0]
+				}
 				item := i.itemDTO(title, state[title.Key])
 				if p := paths[title.Key]; p != "" {
 					item["Path"] = p
+				}
+				if fieldSet(r)["mediasources"] {
+					editions := i.jellyfinEditions(r, v, title)
+					if len(editions) == 1 {
+						setSourcePath(editions[0].source, paths[title.Key])
+						item["MediaSources"] = []any{editions[0].source}
+						applyJellyfinEditionFacts(item, editions[0].media)
+					}
 				}
 				for key, value := range images[title.Key] {
 					item[key] = value
@@ -480,6 +539,24 @@ func (i *instance) browseRoutes() error {
 	if err := add("GET", "/UserViews/GroupingOptions", i.groupingOptions); err != nil {
 		return err
 	}
+	root := func(w http.ResponseWriter, r *http.Request) {
+		if i.protocol != "jellyfin" {
+			http.NotFound(w, r)
+			return
+		}
+		v, _, err := i.viewer(r)
+		if err != nil || v == nil {
+			http.Error(w, "Unauthorized", 401)
+			return
+		}
+		i.writeUserRoot(w, r, v)
+	}
+	if err := add("GET", "/Items/Root", root); err != nil {
+		return err
+	}
+	if err := add("GET", "/Users/{userId}/Items/Root", root); err != nil {
+		return err
+	}
 	if err := add("GET", "/Library/VirtualFolders", i.virtualFolders); err != nil {
 		return err
 	}
@@ -589,6 +666,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 	images := i.gridImagesFor(r, page.Items)
 	paths := i.virtualPaths(r, v, keys)
 	r = i.withPageEditions(r, v, keys)
+	i.fillSeriesTitles(r, v, page.Items)
 	for _, title := range page.Items {
 		editions := i.jellyfinEditions(r, v, title)
 		if len(editions) > 1 {

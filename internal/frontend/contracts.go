@@ -129,6 +129,8 @@ type RowRequest struct {
 	ViewID    string
 	Item      core.RatingKey
 	Limit     int
+	// Purpose asks for one row. The zero value still returns the whole placement.
+	Purpose RowPurpose
 }
 
 // RowInteractionKind is a viewer action on an issued row or entry.
@@ -461,6 +463,11 @@ type PlanRequest struct {
 	// Version is a resolver-issued variant ID in legacy mode, or a scoped
 	// VersionHandles handle when ExactVersion is set. Empty selects automatically.
 	Version string
+	// ResolvedRelease is the release id just returned by VersionHandles.Resolve
+	// for Version, in this process. Plan checks that the handle row still names
+	// that release and does not list offers again. Callers that did not resolve
+	// leave it empty, and Plan validates the offer itself.
+	ResolvedRelease string
 	// ExpectedSourceETag binds playback to a previously offered resolved source.
 	// It is not an authorization credential. A missing or changed source fails
 	// closed instead of resolving a different release.

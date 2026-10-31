@@ -256,8 +256,8 @@ type Host struct {
 // PageFreshness is every input of a cached browse response. A change drops
 // the cached body. ArtBucket rotates image grants before they expire.
 type PageFreshness struct {
-	Catalog, Config, Watch, Favorite, Hidden, Listed, Images, Grants, Accounts uint64
-	ArtBucket                                                                  int64
+	Catalog, Config, Watch, Favorite, Hidden, Listed, Images, Grants, Accounts, Safety uint64
+	ArtBucket                                                                          int64
 }
 
 var ErrNotRegistered = errors.New("frontend not registered")

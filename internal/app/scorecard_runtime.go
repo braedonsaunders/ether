@@ -14,6 +14,11 @@ import (
 )
 
 func parityClock() func() time.Time {
+	// The soak measures idle-session expiry. A frozen clock never advances
+	// that deadline, so an abandoned session stays up for the whole run.
+	if os.Getenv("SCORECARD_LIVE_CLOCK") == "1" {
+		return time.Now
+	}
 	return func() time.Time { return time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC) }
 }
 

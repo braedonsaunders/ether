@@ -24,9 +24,36 @@ type sourceHistorySample struct {
 	source                  core.PlaybackSourceObservation
 }
 
-// recordOpenedSource stores the started file's probe facts before playback
-// start returns. Later progress samples still advance the same history.
-// An unknown source identity is left untouched.
+// publishOpenedSource records the opened file without blocking the session URL.
+// Later progress samples still advance the same history.
+func (b *Broker) publishOpenedSource(s *brokerSession) {
+	if s == nil || b.deps.SourceHistory == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	epoch, err := b.deps.SourceHistory.BeginSourceSession(ctx)
+	if err != nil {
+		if b.deps.OnEventError != nil {
+			b.deps.OnEventError(err)
+		}
+		return
+	}
+	b.mu.Lock()
+	live := b.sessions[s.public.ID]
+	if live == nil || live.playID != s.playID {
+		b.mu.Unlock()
+		return
+	}
+	live.historyEpoch = epoch
+	b.mu.Unlock()
+	s.historyEpoch = epoch
+	b.recordOpenedSource(ctx, s)
+}
+
+// recordOpenedSource stores the started file's probe facts. Later progress
+// samples still advance the same history. An unknown source identity is left
+// untouched.
 func (b *Broker) recordOpenedSource(ctx context.Context, s *brokerSession) {
 	if s == nil || s.historyEpoch <= 0 || b.deps.SourceHistory == nil {
 		return

@@ -121,12 +121,23 @@ func releaseRetirementClaim(ctx context.Context, db *sql.DB, h capability.Header
 	return tx.Commit()
 }
 
-func (b *Broker) admitSessionBarrier(ctx context.Context, viewer int64, protocol, device, playID, sessionID string) (*capability.Header, error) {
+// transferViewerCap is abuse protection for one viewer. It counts distinct
+// live streams. Repeated plays of the same title and device reuse one ticket,
+// and an idle ticket is evicted when a new stream needs the slot.
+const transferViewerCap = 256
+
+func (b *Broker) admitSessionBarrier(ctx context.Context, viewer int64, protocol, device string, item core.RatingKey, playID, sessionID string) (*capability.Header, error) {
 	if b == nil || b.deps.DB == nil || viewer <= 0 || protocol == "" || playID == "" || sessionID == "" {
 		return nil, nil
 	}
 	if len(device) > 512 {
 		return nil, core.ErrNotAvailable
+	}
+	if reused := b.liveTransferTicket(viewer, protocol, device, item); reused != nil {
+		held, err := b.renewTransferTicket(ctx, *reused)
+		if err != nil || held {
+			return reused, err
+		}
 	}
 	now := b.deps.Now()
 	h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: brokerTransferNamespace, ViewerID: viewer, Surface: protocol, DeviceID: device}, Digest: lazyHash(playID + "\x00" + sessionID), ExpiresMillis: now.Add(2 * time.Hour).UnixMilli()}
@@ -135,7 +146,10 @@ func (b *Broker) admitSessionBarrier(ctx context.Context, viewer int64, protocol
 		return nil, err
 	}
 	defer tx.Rollback()
-	if err = capability.AdmitHeadersInTx(ctx, b.deps.DB, tx, []capability.Header{h}, capability.Limits{PerScope: 256, PerShard: 4096}); err != nil {
+	if err = b.evictIdleTransferTickets(ctx, tx, viewer, protocol); err != nil {
+		return nil, err
+	}
+	if err = capability.AdmitHeadersInTx(ctx, b.deps.DB, tx, []capability.Header{h}, capability.Limits{PerScope: transferViewerCap, PerShard: 4096}); err != nil {
 		return nil, err
 	}
 	claimed, err := capability.ClaimHeaderInTx(ctx, b.deps.DB, tx, h, capability.RetirementOwnerClaim, now.UnixMilli())
@@ -154,6 +168,129 @@ func (b *Broker) admitSessionBarrier(ctx context.Context, viewer int64, protocol
 		return &h, fmt.Errorf("%w: %w", errTransferCommitUnknown, err)
 	}
 	return &h, nil
+}
+
+// liveTransferTicket is the admission ticket a live session already holds for
+// this viewer, surface, device and title. Part reads and transcode starts of
+// that stream reuse it instead of minting another.
+func (b *Broker) liveTransferTicket(viewer int64, protocol, device string, item core.RatingKey) *capability.Header {
+	if b == nil || item == 0 {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var found *capability.Header
+	var started time.Time
+	for _, s := range b.sessions {
+		if s == nil || s.transferBarrier == nil || s.transferBarrier.Digest == "" {
+			continue
+		}
+		if s.public.ViewerID != viewer || string(s.public.Protocol) != protocol || s.public.Device.ID != device || s.public.Item != item {
+			continue
+		}
+		if found == nil || s.public.StartedAt.After(started) {
+			cp := *s.transferBarrier
+			found = &cp
+			started = s.public.StartedAt
+		}
+	}
+	return found
+}
+
+func (b *Broker) transferHeld(digest string) bool {
+	if digest == "" {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, s := range b.sessions {
+		if s != nil && s.transferBarrier != nil && s.transferBarrier.Digest == digest {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Broker) liveTransferDigests() map[string]bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	live := make(map[string]bool)
+	for _, s := range b.sessions {
+		if s != nil && s.transferBarrier != nil && s.transferBarrier.Digest != "" {
+			live[s.transferBarrier.Digest] = true
+		}
+	}
+	return live
+}
+
+// renewTransferTicket extends the live ticket. held is false when the row is
+// already gone, so the caller mints a replacement.
+func (b *Broker) renewTransferTicket(ctx context.Context, h capability.Header) (bool, error) {
+	now := b.deps.Now()
+	h.ExpiresMillis = now.Add(2 * time.Hour).UnixMilli()
+	tx, err := b.deps.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	ok, err := capability.RenewHeaderInTx(ctx, b.deps.DB, tx, h, now.UnixMilli())
+	if err != nil || !ok {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+// evictIdleTransferTickets frees the oldest tickets that no live session holds
+// until this viewer has room for one more stream. A full set of live streams
+// is still refused.
+func (b *Broker) evictIdleTransferTickets(ctx context.Context, tx *sql.Tx, viewer int64, surface string) error {
+	scope := capability.HeaderScope{Namespace: brokerTransferNamespace, ViewerID: viewer, Surface: surface}
+	if err := capability.LockHeaderScopeInTx(ctx, b.deps.DB, tx, scope); err != nil {
+		return err
+	}
+	live := b.liveTransferDigests()
+	rows, err := tx.QueryContext(ctx, `SELECT digest, device_id FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=? ORDER BY expires ASC, digest ASC`, brokerTransferNamespace, viewer%capability.HeaderShardCount, viewer, surface)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type ticket struct{ digest, device string }
+	var all, idle []ticket
+	for rows.Next() {
+		var row ticket
+		if err = rows.Scan(&row.digest, &row.device); err != nil {
+			return err
+		}
+		all = append(all, row)
+		if !live[row.digest] {
+			idle = append(idle, row)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	excess := len(all) + 1 - transferViewerCap
+	if excess <= 0 {
+		return nil
+	}
+	if len(idle) < excess {
+		return &capability.CapacityError{Scope: "viewer"}
+	}
+	byDevice := make(map[string][]string)
+	for _, row := range idle[:excess] {
+		byDevice[row.device] = append(byDevice[row.device], row.digest)
+	}
+	for device, digests := range byDevice {
+		dropScope := scope
+		dropScope.DeviceID = device
+		for start := 0; start < len(digests); start += capability.HeaderBatchMax {
+			end := min(start+capability.HeaderBatchMax, len(digests))
+			if err = capability.DropHeadersInTx(ctx, tx, dropScope, digests[start:end]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // beginLazyFlight protects the source capability for the duration of this
@@ -288,6 +425,10 @@ func (b *Broker) settleRetirement(ctx context.Context, s *brokerSession, ok bool
 	// Stop must return while a stalled database still holds its only
 	// connection. Loss of the drop leaves the claim in place.
 	go func() {
+		// A replacement session for this title already holds the ticket.
+		if b.transferHeld(header.Digest) {
+			return
+		}
 		if err := dropTransferHeader(context.WithoutCancel(ctx), db, header); err != nil && report != nil {
 			report(err)
 		}

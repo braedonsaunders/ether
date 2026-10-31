@@ -40,7 +40,8 @@ type Source struct {
 	URLImages     interface {
 		GetUntrustedURL(context.Context, string) ([]byte, string, error)
 	}
-	Raster *artwork.SVGRasterizer
+	Raster   *artwork.SVGRasterizer
+	Collages *LibraryCollageCache
 }
 type artworkVirtualSeasonKey struct{}
 

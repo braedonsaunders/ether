@@ -43,7 +43,7 @@ func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityR
 	if len(declared.DVProfiles) == 0 {
 		declared.DVProfiles = append([]int(nil), policy.DolbyVisionProfiles...)
 	}
-	result := frontend.CapabilityResult{Client: declared, Quality: resolver.SelectProfile(s.app.cfg.Get().Quality, declared, req.Viewer)}
+	result := frontend.CapabilityResult{Client: declared, Quality: resolver.SelectProfile(s.app.cfg.Read().Quality, declared, req.Viewer)}
 	if req.Viewer != nil && s.surface != "plex" {
 		s.app.recordFrontendFamily(ctx, s.surface, declared)
 	}
@@ -69,16 +69,24 @@ func (a *App) recordFrontendFamily(ctx context.Context, surface frontend.Protoco
 	if err != nil {
 		return
 	}
+	key := string(surface) + "\x00" + policy.Family
+	if prev, ok := a.seenFamilies.Load(key); ok && prev.(string) == string(data) {
+		return
+	}
 	// Bound the number of client-provided family names stored per surface.
 	var count int
 	if err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_client_families WHERE surface=?`, string(surface)).Scan(&count); err != nil {
 		return
 	}
 	if count >= 256 {
-		_, _ = a.db.ExecContext(ctx, `UPDATE frontend_client_families SET policy=?,last_seen=? WHERE surface=? AND family=?`, string(data), time.Now().Unix(), string(surface), policy.Family)
+		if _, err = a.db.ExecContext(ctx, `UPDATE frontend_client_families SET policy=?,last_seen=? WHERE surface=? AND family=?`, string(data), time.Now().Unix(), string(surface), policy.Family); err == nil {
+			a.seenFamilies.Store(key, string(data))
+		}
 		return
 	}
-	_, _ = a.db.ExecContext(ctx, `INSERT INTO frontend_client_families(surface,family,policy,last_seen) VALUES(?,?,?,?) ON CONFLICT(surface,family) DO UPDATE SET policy=excluded.policy,last_seen=excluded.last_seen`, string(surface), policy.Family, string(data), time.Now().Unix())
+	if _, err = a.db.ExecContext(ctx, `INSERT INTO frontend_client_families(surface,family,policy,last_seen) VALUES(?,?,?,?) ON CONFLICT(surface,family) DO UPDATE SET policy=excluded.policy,last_seen=excluded.last_seen`, string(surface), policy.Family, string(data), time.Now().Unix()); err == nil {
+		a.seenFamilies.Store(key, string(data))
+	}
 }
 func (a *App) clientPolicies(ctx context.Context) ([]protocolClientPolicy, error) {
 	defaults := transcode.ClientPolicies()

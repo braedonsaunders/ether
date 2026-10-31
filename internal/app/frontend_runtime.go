@@ -281,8 +281,23 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 }
 
 func (a *App) frontendClientIP(req *http.Request) (netip.Addr, bool) {
-	ip, _ := identity.ClientNet(req, identity.ProxyPrefixes(a.cfg.Get().Server.TrustedProxyCIDRs)...)
+	ip, _ := identity.ClientNet(req, a.trustedProxyPrefixes()...)
 	return ip, ip.IsValid()
+}
+
+// trustedProxyPrefixes caches the parsed trusted-proxy list. Reading it
+// used to clone the whole configuration, and a play does that several times.
+func (a *App) trustedProxyPrefixes() []netip.Prefix {
+	gen := a.cfg.Generation()
+	a.proxyMu.Lock()
+	defer a.proxyMu.Unlock()
+	if a.proxyReady && a.proxyGen == gen {
+		return a.proxyPrefixes
+	}
+	a.proxyPrefixes = identity.ProxyPrefixes(a.cfg.TrustedProxyCIDRs())
+	a.proxyGen = gen
+	a.proxyReady = true
+	return a.proxyPrefixes
 }
 func (r *frontendRuntime) plexHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -516,6 +531,9 @@ func (a *App) browseFreshness() frontend.PageFreshness {
 	}
 	if a.users != nil {
 		f.Accounts = a.users.Generation()
+	}
+	if a.safety != nil {
+		f.Safety = a.safety.Generation()
 	}
 	return f
 }

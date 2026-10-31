@@ -18,6 +18,13 @@ func (a Source) Read(ctx context.Context, req frontend.ArtworkRequest, img front
 	if transform.Width < 0 || transform.Width > 4000 || transform.Height < 0 || transform.Height > 4000 || (transform.Format != "" && transform.Format != "jpeg" && transform.Format != "png") {
 		return nil, "", core.ErrNotAvailable
 	}
+	if strings.HasPrefix(img.Path, frontend.LibraryCollagePrefix) {
+		data, err := a.readLibraryCollage(img.Path)
+		if err != nil {
+			return nil, "", err
+		}
+		return a.transform(ctx, img.Path, data, "image/jpeg", transform)
+	}
 	entries, _, err := a.entries(ctx, req)
 	if err != nil {
 		return nil, "", err

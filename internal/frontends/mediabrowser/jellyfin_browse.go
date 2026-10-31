@@ -112,9 +112,42 @@ func jellyfinSeriesStatus(status string) string {
 	}
 }
 
+// attachViewMediaDates sets the library's earliest and latest real date-added
+// values. Both are redacted in conformance. An empty library leaves them absent.
+func (i *instance) attachViewMediaDates(r *http.Request, viewer *frontend.Viewer, viewID string, item map[string]any) {
+	if i == nil || i.host.Experience == nil || r == nil || item == nil {
+		return
+	}
+	page, err := i.host.Experience.LibraryItems(r.Context(), viewer, device(r), viewID, frontend.ItemQuery{})
+	if err != nil {
+		return
+	}
+	var earliest, latest time.Time
+	now := time.Now()
+	for _, title := range page.Items {
+		added := title.DateAdded(now)
+		if added.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || added.Before(earliest) {
+			earliest = added
+		}
+		if latest.IsZero() || added.After(latest) {
+			latest = added
+		}
+	}
+	if !earliest.IsZero() {
+		item["DateCreated"] = wireTime(earliest)
+	}
+	if !latest.IsZero() {
+		item["DateLastMediaAdded"] = wireTime(latest)
+	}
+}
+
 // jellyfinCollectionFolder fills the CollectionFolder shell Jellyfin 12.4
-// returns for every user view. Dates, paths and artwork stay absent. ChildCount
-// is the viewer's visible library total, set by the views handler.
+// returns for every user view. Dates and paths stay absent. Artwork is attached
+// separately when a library collage can be issued. ChildCount is the viewer's
+// visible library total, set by the views handler.
 func (i *instance) jellyfinCollectionFolder(item map[string]any, id string) {
 	item["ChannelId"] = nil
 	item["BackdropImageTags"] = []string{}
@@ -181,6 +214,7 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 		}
 		if !title.LastAirDate.IsZero() {
 			setMissing(item, "EndDate", wireTime(title.LastAirDate))
+			setMissing(item, "DateLastMediaAdded", wireTime(title.LastAirDate))
 		}
 	case "season":
 		setMissing(item, "MediaType", "Unknown")
@@ -190,8 +224,9 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 		for _, key := range []string{"ParentBackdropItemId", "ParentLogoImageTag", "ParentLogoItemId", "ParentPrimaryImageItemId", "ParentPrimaryImageTag", "SeriesPrimaryImageTag"} {
 			setMissing(item, key, nil)
 		}
-		i.attachParentArtwork(r, item, title)
+		i.attachParentArtwork(r, viewer, item, title)
 	}
+	i.attachViewParentArtwork(r, viewer, item)
 	if title.ChildCount > 0 {
 		setMissing(item, "ChildCount", title.ChildCount)
 	}
@@ -450,6 +485,55 @@ func (i *instance) attachLibraryParent(r *http.Request, viewer *frontend.Viewer,
 	item["ParentId"] = viewID
 }
 
+// fillSeriesTitles copies each episode or season's show title onto the row
+// when the list item did not carry it. The show id comes from ShowKey or
+// from the episode key. One lookup is shared by every row of that show.
+func (i *instance) fillSeriesTitles(r *http.Request, viewer *frontend.Viewer, titles []frontend.Title) {
+	if i == nil || r == nil || viewer == nil || i.host.Experience == nil {
+		return
+	}
+	names := map[frontend.RatingKey]string{}
+	for n := range titles {
+		title := &titles[n]
+		if title.ShowTitle != "" || (title.Type != "episode" && title.Type != "season") {
+			continue
+		}
+		show := title.ShowKey
+		if show == 0 && (title.Key.Kind() == frontend.KindEpisode || title.Key.Kind() == frontend.KindSeason) {
+			show = frontend.ShowKey(title.Key.TMDB())
+		}
+		if show == 0 {
+			continue
+		}
+		name, ok := names[show]
+		if !ok {
+			name = i.showTitle(r, viewer, show)
+			names[show] = name
+		}
+		if name == "" {
+			continue
+		}
+		title.ShowTitle = name
+		if title.ShowKey == 0 {
+			title.ShowKey = show
+		}
+	}
+}
+
+func (i *instance) showTitle(r *http.Request, viewer *frontend.Viewer, show frontend.RatingKey) string {
+	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: show})
+	if err != nil || detail.Title.Title == "" {
+		return ""
+	}
+	if detail.Title.Type != "" && detail.Title.Type != "show" {
+		return ""
+	}
+	if detail.Title.Key != 0 && detail.Title.Key != show {
+		return ""
+	}
+	return detail.Title.Title
+}
+
 // nameChildSeries copies the parent show's title onto children that do not
 // already carry it. Season rows often omit the series label that detail fills.
 func (i *instance) nameChildSeries(r *http.Request, viewer *frontend.Viewer, parent frontend.RatingKey, page *frontend.Page) {
@@ -502,23 +586,43 @@ func attachParentIdentity(m map[string]any, t frontend.Title) {
 			m["SeriesName"] = t.ShowTitle
 		}
 	}
-	if t.Type == "episode" || t.Type == "season" {
-		if name := seasonDisplayName(t); name != "" {
+	seasonNumber, episodeNumber := t.Season, t.Episode
+	if seasonNumber == 0 {
+		if n := t.Key.Season(); n > 0 {
+			seasonNumber = n
+		}
+	}
+	if episodeNumber == 0 && t.Key.Kind() == frontend.KindEpisode {
+		if n := t.Key.Episode(); n > 0 {
+			episodeNumber = n
+		}
+	}
+	labeled := t
+	labeled.Season = seasonNumber
+	// Lab season rows put "Season N" in Name and omit SeasonName. Episodes
+	// carry SeasonName alongside the episode title.
+	if t.Type == "season" && t.Title == "" {
+		if name := seasonDisplayName(labeled); name != "" {
+			m["Name"] = name
+		}
+	}
+	if t.Type == "episode" {
+		if name := seasonDisplayName(labeled); name != "" {
 			m["SeasonName"] = name
 		}
 	}
 	if t.Type == "episode" {
 		season := t.Key.Parent()
-		if season == 0 && show.Kind() == frontend.KindShow && (t.Season > 0 || t.SeasonTitle != "") {
-			season = frontend.SeasonKey(show.TMDB(), t.Season)
+		if season == 0 && show.Kind() == frontend.KindShow && (seasonNumber > 0 || t.SeasonTitle != "") {
+			season = frontend.SeasonKey(show.TMDB(), seasonNumber)
 		}
 		if season != 0 {
 			id := ids.RatingKeyGUID(season)
 			m["SeasonId"] = id
 			m["ParentId"] = id
 		}
-		m["ParentIndexNumber"] = t.Season
-		m["IndexNumber"] = t.Episode
+		m["ParentIndexNumber"] = seasonNumber
+		m["IndexNumber"] = episodeNumber
 	}
 	if t.Type == "season" {
 		parent := t.Key.Parent()
@@ -528,7 +632,7 @@ func attachParentIdentity(m map[string]any, t frontend.Title) {
 		if parent != 0 {
 			m["ParentId"] = ids.RatingKeyGUID(parent)
 		}
-		m["IndexNumber"] = t.Season
+		m["IndexNumber"] = seasonNumber
 	}
 }
 
@@ -719,6 +823,87 @@ func (i *instance) jellyfinKnownVersionFacts(dto map[string]any, versions []fron
 	}
 }
 
+// jellyfinRootID is the user root folder. View numbers 1 and 2 are the
+// movie and show libraries, so 0 stays the root and does not move when a
+// library is renamed.
+func jellyfinRootID() string {
+	id, _ := ids.GUID(ids.View, 0)
+	return id
+}
+
+// writeUserRoot serves the folder user views name as ParentId. The lab
+// returns this object as a UserRootFolder named "Media Folders" from
+// /Items/Root and from /Items/{id}.
+func (i *instance) writeUserRoot(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer) {
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	views, err := i.host.Experience.Views(r.Context(), viewer)
+	if err != nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id := jellyfinRootID()
+	item := map[string]any{
+		"Id": id, "Name": "Media Folders", "Type": "UserRootFolder", "IsFolder": true,
+		"ServerId": i.info.ID, "DisplayPreferencesId": id, "ParentId": nil,
+	}
+	i.jellyfinCollectionFolder(item, id)
+	item["Type"] = "UserRootFolder"
+	item["Name"] = "Media Folders"
+	item["ParentId"] = nil
+	item["ChildCount"] = len(views)
+	jsonReply(w, item)
+}
+
+// jellyfinLibraryOptions describes this server's libraries. Chapters and
+// trickplay come from playback probes, not a library-scan image extractor.
+// Subtitles already in the file are served when a client asks; nothing is
+// downloaded or written back. Fields Ether does not have keep Jellyfin's
+// schema default. PathInfos stays empty: libraries are virtual.
+func jellyfinLibraryOptions() map[string]any {
+	return map[string]any{
+		"Enabled":                                 true,
+		"EnablePhotos":                            true,
+		"EnableRealtimeMonitor":                   false,
+		"EnableInternetProviders":                 false,
+		"EnableAutomaticSeriesGrouping":           true,
+		"EnableChapterImageExtraction":            false,
+		"ExtractChapterImagesDuringLibraryScan":   false,
+		"EnableTrickplayImageExtraction":          false,
+		"ExtractTrickplayImagesDuringLibraryScan": false,
+		"SaveTrickplayWithMedia":                  false,
+		"EnableEmbeddedTitles":                    false,
+		"EnableEmbeddedEpisodeInfos":              false,
+		"EnableEmbeddedExtrasTitles":              false,
+		"EnableLUFSScan":                          false,
+		"SaveLocalMetadata":                       false,
+		"SaveLyricsWithMedia":                     false,
+		"SaveSubtitlesWithMedia":                  false,
+		"AllowEmbeddedSubtitles":                  "AllowAll",
+		"RequirePerfectSubtitleMatch":             true,
+		"SkipSubtitlesIfAudioTrackMatches":        true,
+		"SkipSubtitlesIfEmbeddedSubtitlesPresent": false,
+		"AutomaticRefreshIntervalDays":            0,
+		"AutomaticallyAddToCollection":            false,
+		"PreferNonstandardArtistsTag":             false,
+		"UseCustomTagDelimiters":                  false,
+		"SeasonZeroDisplayName":                   "Specials",
+		"PathInfos":                               []any{},
+		"DisabledLocalMetadataReaders":            []any{},
+		"DisabledLyricFetchers":                   []any{},
+		"DisabledMediaSegmentProviders":           []any{},
+		"DisabledSubtitleFetchers":                []any{},
+		"LyricFetcherOrder":                       []any{},
+		"MediaSegmentProviderOrder":               []any{},
+		"SubtitleFetcherOrder":                    []any{},
+		"TypeOptions":                             []any{},
+		"DelimiterWhitelist":                      []any{},
+		"CustomTagDelimiters":                     []any{"/", "|", ";", "\\"},
+	}
+}
+
 func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 	viewer, _, err := i.viewer(r)
 	if err != nil || viewer == nil {
@@ -745,6 +930,10 @@ func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		entry := map[string]any{"Name": view.Name, "ItemId": viewID}
+		if i.protocol == "jellyfin" {
+			entry["LibraryOptions"] = jellyfinLibraryOptions()
+			entry["RefreshStatus"] = "Idle"
+		}
 		if i.protocol == "jellyfin" && view.Virtual {
 			entry["Locations"] = []string{}
 		}
@@ -944,10 +1133,13 @@ func withSeriesStudioCache(r *http.Request) *http.Request {
 	if _, ok := r.Context().Value(seriesStudioCacheKey{}).(map[frontend.RatingKey]string); !ok {
 		r = r.WithContext(context.WithValue(r.Context(), seriesStudioCacheKey{}, map[frontend.RatingKey]string{}))
 	}
-	if _, ok := r.Context().Value(showArtworkCacheKey{}).(map[frontend.RatingKey]map[string]any); ok {
+	if _, ok := r.Context().Value(showArtworkCacheKey{}).(map[frontend.RatingKey]map[string]any); !ok {
+		r = r.WithContext(context.WithValue(r.Context(), showArtworkCacheKey{}, map[frontend.RatingKey]map[string]any{}))
+	}
+	if _, ok := r.Context().Value(libraryCollageCacheKey{}).(map[string]libraryCollageHit); ok {
 		return r
 	}
-	return r.WithContext(context.WithValue(r.Context(), showArtworkCacheKey{}, map[frontend.RatingKey]map[string]any{}))
+	return r.WithContext(context.WithValue(r.Context(), libraryCollageCacheKey{}, map[string]libraryCollageHit{}))
 }
 
 type showArtworkCacheKey struct{}
@@ -955,7 +1147,7 @@ type showArtworkCacheKey struct{}
 // attachParentArtwork copies the show's issued image tags onto an episode or
 // season. The tags are grants for the parent item, not copies of the tag text
 // from another server.
-func (i *instance) attachParentArtwork(r *http.Request, item map[string]any, title frontend.Title) {
+func (i *instance) attachParentArtwork(r *http.Request, viewer *frontend.Viewer, item map[string]any, title frontend.Title) {
 	if i == nil || r == nil || item == nil {
 		return
 	}
@@ -966,7 +1158,7 @@ func (i *instance) attachParentArtwork(r *http.Request, item map[string]any, tit
 	if show == 0 {
 		return
 	}
-	images := i.cachedShowArtwork(r, show)
+	images := i.cachedShowArtwork(r, viewer, show)
 	seriesID := ids.RatingKeyGUID(show)
 	if tags, _ := images["ImageTags"].(map[string]string); len(tags) > 0 {
 		if logo := tags["Logo"]; logo != "" {
@@ -985,7 +1177,7 @@ func (i *instance) attachParentArtwork(r *http.Request, item map[string]any, tit
 	}
 }
 
-func (i *instance) cachedShowArtwork(r *http.Request, show frontend.RatingKey) map[string]any {
+func (i *instance) cachedShowArtwork(r *http.Request, viewer *frontend.Viewer, show frontend.RatingKey) map[string]any {
 	cache, _ := r.Context().Value(showArtworkCacheKey{}).(map[frontend.RatingKey]map[string]any)
 	if cache != nil {
 		if art, ok := cache[show]; ok {
@@ -993,11 +1185,102 @@ func (i *instance) cachedShowArtwork(r *http.Request, show frontend.RatingKey) m
 		}
 	}
 	art := map[string]any{}
-	if row := i.gridImages(r, []frontend.RatingKey{show})[show]; row != nil {
+	if row := i.gridImagesFor(r, []frontend.Title{{Key: show}})[show]; row != nil {
 		art = row
+	}
+	if len(art) == 0 && viewer != nil && i.host.Experience != nil {
+		detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: show})
+		if err == nil && detail.Title.Key == show {
+			if row := i.gridImagesFor(r, []frontend.Title{detail.Title})[show]; row != nil {
+				art = row
+			}
+		}
 	}
 	if cache != nil {
 		cache[show] = art
 	}
 	return art
+}
+
+type libraryCollageCacheKey struct{}
+
+type libraryCollageHit struct {
+	secret string
+	image  frontend.Image
+	ok     bool
+}
+
+func (i *instance) attachLibraryCollage(r *http.Request, viewer *frontend.Viewer, viewNum int64, viewID string, item map[string]any) {
+	secret, img, ok := i.libraryCollageGrant(r, viewer, viewNum, viewID)
+	if !ok || item == nil {
+		return
+	}
+	tags, _ := item["ImageTags"].(map[string]string)
+	if tags == nil {
+		tags = map[string]string{}
+		item["ImageTags"] = tags
+	}
+	tags["Primary"] = secret
+	i.addImageMetadata(item, "Primary", secret, img)
+}
+
+func (i *instance) attachViewParentArtwork(r *http.Request, viewer *frontend.Viewer, item map[string]any) {
+	if item == nil {
+		return
+	}
+	if tag, _ := item["ParentPrimaryImageTag"].(string); tag != "" {
+		return
+	}
+	parent, _ := item["ParentId"].(string)
+	if parent == "" || parent == jellyfinRootID() {
+		return
+	}
+	viewNum, err := ids.ParseGUID(ids.View, parent)
+	if err != nil {
+		return
+	}
+	secret, _, ok := i.libraryCollageGrant(r, viewer, viewNum, parent)
+	if !ok {
+		return
+	}
+	item["ParentPrimaryImageTag"] = secret
+	item["ParentPrimaryImageItemId"] = parent
+}
+
+func (i *instance) libraryCollageGrant(r *http.Request, viewer *frontend.Viewer, viewNum int64, viewID string) (string, frontend.Image, bool) {
+	if i == nil || i.protocol != "jellyfin" || r == nil || viewer == nil || viewNum == 0 || viewID == "" || i.host.Experience == nil || i.host.ImageGrants == nil {
+		return "", frontend.Image{}, false
+	}
+	if cache, _ := r.Context().Value(libraryCollageCacheKey{}).(map[string]libraryCollageHit); cache != nil {
+		if hit, ok := cache[viewID]; ok {
+			return hit.secret, hit.image, hit.ok
+		}
+	}
+	source, ok := i.host.Experience.(frontend.LibraryCollageSource)
+	if !ok {
+		i.rememberLibraryCollage(r, viewID, "", frontend.Image{}, false)
+		return "", frontend.Image{}, false
+	}
+	img, err := source.LibraryCollage(r.Context(), viewer, device(r), viewID)
+	if err != nil || !strings.HasPrefix(img.Path, frontend.LibraryCollagePrefix) || img.Path != img.Tag || img.Subject != viewID {
+		i.rememberLibraryCollage(r, viewID, "", frontend.Image{}, false)
+		return "", frontend.Image{}, false
+	}
+	secret, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{
+		Credential: authhdr.MediaBrowserToken(r), Device: device(r), Item: frontend.RatingKey(viewNum), Image: img,
+	})
+	if err != nil || secret == "" {
+		i.rememberLibraryCollage(r, viewID, "", frontend.Image{}, false)
+		return "", frontend.Image{}, false
+	}
+	i.rememberLibraryCollage(r, viewID, secret, img, true)
+	return secret, img, true
+}
+
+func (i *instance) rememberLibraryCollage(r *http.Request, viewID, secret string, img frontend.Image, ok bool) {
+	cache, _ := r.Context().Value(libraryCollageCacheKey{}).(map[string]libraryCollageHit)
+	if cache == nil {
+		return
+	}
+	cache[viewID] = libraryCollageHit{secret: secret, image: img, ok: ok}
 }

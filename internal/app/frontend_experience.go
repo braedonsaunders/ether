@@ -11,6 +11,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
 type experienceSituationKey struct{}
@@ -27,7 +28,7 @@ func situationFor(req frontend.RowRequest) core.HomeSituation {
 func (a *App) configuredLibraries() []experience.Library {
 	movies, shows := "Movies", "TV Shows"
 	if a.cfg != nil {
-		c := a.cfg.Get()
+		c := a.cfg.Read()
 		if n := strings.TrimSpace(c.Server.MoviesLibraryName); n != "" {
 			movies = n
 		}
@@ -287,6 +288,27 @@ func (s *surfaceExperience) ResolveRowView(ctx context.Context, req frontend.Row
 		return frontend.RowViewPage{}, core.ErrUnauthorized
 	}
 	return s.rowViews.ResolveRowView(ctx, req)
+}
+
+func (s *surfaceExperience) LibraryCollage(ctx context.Context, viewer *frontend.Viewer, device frontend.Device, viewID string) (frontend.Image, error) {
+	if s == nil || s.Service == nil || s.artwork == nil || viewer == nil || viewID == "" {
+		return frontend.Image{}, core.ErrNotAvailable
+	}
+	n, err := ids.ParseGUID(ids.View, viewID)
+	if err != nil {
+		return frontend.Image{}, err
+	}
+	builder, ok := s.artwork.(interface {
+		LibraryCollage(context.Context, *core.Viewer, core.Device, string, []core.Title) (frontend.Image, error)
+	})
+	if !ok {
+		return frontend.Image{}, core.ErrNotAvailable
+	}
+	page, err := s.LibraryItems(ctx, viewer, device, strconv.FormatInt(n, 10), frontend.ItemQuery{Limit: 24})
+	if err != nil {
+		return frontend.Image{}, err
+	}
+	return builder.LibraryCollage(ctx, viewer, device, viewID, page.Items)
 }
 
 func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {

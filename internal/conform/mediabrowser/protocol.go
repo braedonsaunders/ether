@@ -510,6 +510,14 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 	if p.Dialect == "jellyfin" {
 		for n := range report.Differences {
 			d := &report.Differences[n]
+			if (d.Kind == conform.KindExtra || d.Kind == conform.KindMissing) && jellyfinFilesystemPath(d.Path) {
+				// Libraries are virtual and sources are often remote. Infuse
+				// plays with GET /Videos/{id}/stream?Static=true. A server
+				// path is used only by its optional direct-share mode.
+				d.Kind = conform.KindValue
+				d.Blocking = false
+				d.Reason = "no filesystem path: libraries are virtual and Infuse streams through the server"
+			}
 			if (d.Kind == conform.KindExtra || d.Kind == conform.KindMissing) && jellyfinBlurHashKey.MatchString(d.Path) {
 				// ImageBlurHashes maps are keyed by the image tag. The tag is
 				// content, like an array index, not a field the schema names.
@@ -548,6 +556,16 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 		}
 	}
 	return report
+}
+
+// jellyfinFilesystemPath is an item Path, a media-source Path, a virtual
+// folder location, or the path list inside library options. None of those
+// is a host path Ether can publish.
+func jellyfinFilesystemPath(path string) bool {
+	if strings.HasSuffix(path, "/Locations[]") || strings.Contains(path, "/PathInfos") {
+		return true
+	}
+	return path == "$/Path" || strings.HasSuffix(path, "/Path")
 }
 
 // Image tags under these image types are not schema fields.

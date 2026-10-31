@@ -285,6 +285,32 @@ func TestRedactURL(t *testing.T) {
 	}
 }
 
+func TestFileSQLiteKeepsWarmConnections(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	held := make([]*sql.Conn, 4)
+	for i := range held {
+		c, err := db.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held[i] = c
+	}
+	for _, c := range held {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stats := db.Stats()
+	if stats.MaxIdleClosed != 0 || stats.Idle < 4 {
+		t.Fatalf("warm pool idle=%d closed=%d", stats.Idle, stats.MaxIdleClosed)
+	}
+}
+
 func TestDialectOfNonStoreDB(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

@@ -177,9 +177,9 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	}
 	now := g.now().UnixMilli()
 	var stored string
-	var id int64
+	var id, lastUsed, expires int64
 	var owner int
-	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id,u.is_owner FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, hash, surface, now).Scan(&stored, &id, &owner)
+	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id,u.is_owner,g.last_used,g.expires FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, hash, surface, now).Scan(&stored, &id, &owner, &lastUsed, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, core.ErrUnauthorized
 	}
@@ -198,6 +198,13 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	copyViewer := *viewer
 	copyViewer.IsOwner = owner == 1
 	viewer = &copyViewer
+	// The SELECT already rejected a revoked, expired, or inactive grant.
+	// Extending a grant that was touched moments ago is bookkeeping, and a
+	// play must not take a write lock to do it.
+	window := int64((30 * time.Second).Milliseconds())
+	if now-lastUsed < window && expires >= now+g.ttl.Milliseconds()-window {
+		return viewer, nil
+	}
 	res, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET last_used=?,expires=? WHERE hash=? AND surface=? AND revoked=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (origin<>'dlna_guest' OR ?='dlna'))`, now, now+g.ttl.Milliseconds(), hash, surface, now, id, surface)
 	if err != nil {
 		return nil, err

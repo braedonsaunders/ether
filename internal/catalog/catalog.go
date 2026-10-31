@@ -107,6 +107,7 @@ CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, sea
 CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND released_ts>0 AND adult=0;`)
 	store.Register("catalog", 11, `ALTER TABLE catalog_titles ADD COLUMN last_air_ts INTEGER NOT NULL DEFAULT 0;`)
 	store.Register("catalog", 12, `CREATE TABLE catalog_people (person_tmdb INTEGER PRIMARY KEY, imdb TEXT NOT NULL DEFAULT '');`)
+	store.Register("catalog", 13, `ALTER TABLE catalog_credits ADD COLUMN provider_id TEXT NOT NULL DEFAULT '';`)
 	store.Register("catalog", 7, `
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC);
 CREATE INDEX catalog_titles_browse_warm ON catalog_titles(browsable, detail, adult, popularity DESC, vote_count DESC);
@@ -206,6 +207,7 @@ type Catalog struct {
 	titleCache  map[core.RatingKey]cachedStoredTitle
 	countCache  map[string]cachedCount
 	browseCache map[string]cachedBrowse
+	grandCache  map[core.RatingKey]cachedBrowse
 	facetCache  map[string]cachedFacet
 	statsCache  cachedStats
 
@@ -295,7 +297,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 		staleAfter: stale, listTTL: 15 * time.Minute,
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
-		browseCache: map[string]cachedBrowse{}, facetCache: map[string]cachedFacet{},
+		browseCache: map[string]cachedBrowse{}, grandCache: map[core.RatingKey]cachedBrowse{}, facetCache: map[string]cachedFacet{},
 		personHydrated: map[int64]time.Time{}}
 	c.SetTMDB(client)
 	for _, fn := range opts {

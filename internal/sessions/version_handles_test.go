@@ -232,3 +232,52 @@ func TestExactVersionHandlePlanOpenAndSessionBinding(t *testing.T) {
 		t.Fatal("incorrect source was left open")
 	}
 }
+
+func TestResolvedReleasePlanDoesNotListOffers(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	bus := NewEventBus(nil, active)
+	defer bus.Close()
+	playback := &exactVersionPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 4}}
+	variantCalls := 0
+	broker, err := NewBroker(BrokerDeps{DB: db, Events: bus, Playback: playback, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, Variants: func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error) {
+		variantCalls++
+		return []core.ReleaseVariant{{ID: "release-secret"}}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	service, err := NewVersionHandles(db, broker, "emby")
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, device := &core.Viewer{ID: 1}, core.Device{ID: "tv"}
+	scope := frontend.VersionScope{Viewer: viewer, Device: device, Protocol: "emby"}
+	item := core.MovieKey(7)
+	handle, err := service.Issue(ctx, scope, item, "release-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Resolve(ctx, scope, handle); err != nil {
+		t.Fatal(err)
+	}
+	before := variantCalls
+	req := frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "emby", Item: item, Version: handle, ResolvedRelease: "release-secret", Intent: frontend.PlayIntent{ExactVersion: true, Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}}
+	if _, err = broker.Plan(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if variantCalls != before {
+		t.Fatalf("resolved release listed offers again: %d to %d", before, variantCalls)
+	}
+	req.ResolvedRelease = "other-release"
+	if _, err = broker.Plan(ctx, req); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("mismatched release planned: %v", err)
+	}
+	if variantCalls != before {
+		t.Fatal("mismatched release listed offers")
+	}
+}

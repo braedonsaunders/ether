@@ -37,6 +37,28 @@ func TestExtraETagIsInformationalOnlyForDirectRangeStreams(t *testing.T) {
 	}
 }
 
+func TestJellyfinFilesystemPathsAreInformational(t *testing.T) {
+	p := &Protocol{Dialect: "jellyfin"}
+	// Infuse's captured playback is GET /Videos/{id}/stream?Static=true after
+	// PlaybackInfo. It does not open a server path. Direct-share mode, which
+	// would, is not in that capture.
+	reference := conform.Response{Status: 200, Body: []byte(`{"Path":"/media/Movies/film.mp4","Items":[{"Path":"/media/TV/show.mp4","MediaSources":[{"Path":"/media/TV/show.mp4"}]}],"Locations":["/media/Movies"],"LibraryOptions":{"PathInfos":[{"Path":"/media/Movies"}]}}`)}
+	target := conform.Response{Status: 200, Body: []byte(`{"Items":[{"MediaSources":[{}]}],"Locations":[],"LibraryOptions":{"PathInfos":[]}}`)}
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/Items"}, reference, target)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+	for _, diff := range report.Differences {
+		if diff.Reason == "" {
+			t.Fatal(diff)
+		}
+	}
+	kept := p.CompareRequest(conform.Request{Method: "GET", Path: "/UserViews"}, conform.Response{Status: 200, Body: []byte(`{"Items":[{"ParentId":"root"}]}`)}, conform.Response{Status: 200, Body: []byte(`{"Items":[{}]}`)})
+	if kept.Blocking() == 0 {
+		t.Fatal("ParentId was treated as a path")
+	}
+}
+
 func TestLoadFetchAlignAndRedact(t *testing.T) {
 	dir := t.TempDir()
 	profile := `{"protocol":"jellyfin","client":"tv","headers":{"Accept":"application/json"},"flows":{"home":[{"name":"items","method":"GET","path":"/Items"}]}}`

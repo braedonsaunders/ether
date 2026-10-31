@@ -273,3 +273,29 @@ func TestArtworkMetadataKeepsExistingBlurHashWhenUpgradeFails(t *testing.T) {
 		}
 	}
 }
+
+func TestArtworkMetadataHashesInsideTheRequestBudget(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db := store.OpenTest(t)
+	img := image.NewNRGBA(image.Rect(0, 0, 8, 6))
+	for y := 0; y < 6; y++ {
+		for x := 0; x < 8; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{R: 255, A: 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	q := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+		return encoded.Bytes(), "image/png", nil
+	})
+	req := frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}
+	ref := frontend.Image{Kind: "poster", Path: "opaque", Tag: "v1"}
+	budget := frontend.WithSynchronousArtworkMetadata(ctx, time.Second)
+	got := q.Get(budget, req, ref)
+	if got.Width != 8 || got.Height != 6 || len(got.BlurHash) != 28 || got.ThumbHash == "" {
+		t.Fatalf("request budget did not hash the poster: %+v", got)
+	}
+}

@@ -74,6 +74,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -113,12 +114,19 @@ type Options struct {
 
 // App is a running Ether server.
 type App struct {
-	availability *availability.Service
-	opts         Options
-	log          *slog.Logger
-	logs         *admin.LogBuffer
-	support      *diagnostics.Recorder
-	cfg          *config.Store
+	availability  *availability.Service
+	opts          Options
+	log           *slog.Logger
+	logs          *admin.LogBuffer
+	support       *diagnostics.Recorder
+	cfg           *config.Store
+	proxyMu       sync.Mutex
+	proxyGen      uint64
+	proxyReady    bool
+	proxyPrefixes []netip.Prefix
+	// seenFamilies records a client family policy once per process. Playback
+	// does not take a write lock to refresh last_seen.
+	seenFamilies sync.Map
 	db           *sql.DB
 	// databaseURL is the cluster database, placed in join tokens
 	// (cluster_settings.go); empty on a standalone server.
@@ -211,6 +219,8 @@ type App struct {
 	instanceLock      *instanceLock
 	closers           []func()
 	closeOnce         sync.Once
+	stopPrewarm       context.CancelFunc
+	prewarmDone       chan struct{}
 }
 
 // New builds every component. Nothing listens until Run.
@@ -384,7 +394,56 @@ func (a *App) build(ctx context.Context, cfg config.Config) error {
 			return err
 		}
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.stopPrewarm = cancel
+	a.prewarmDone = make(chan struct{})
+	go func() {
+		defer close(a.prewarmDone)
+		a.prewarmBrowse(ctx)
+	}()
 	return nil
+}
+
+// prewarmBrowse fills the catalog, statement and title caches before the first
+// viewer request. It does not block startup and a request during the warm-up
+// still reads the same data.
+func (a *App) prewarmBrowse(ctx context.Context) {
+	if a == nil || a.catalog == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			movies, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortAdded, Desc: true, Limit: 16, Filter: core.Filter{Type: core.TypeMovie, KnownAddedDate: true}})
+			shows, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortTitle, Limit: 16, Filter: core.Filter{Type: core.TypeShow}})
+			keys := make([]core.RatingKey, 0, len(movies.Items)+len(shows.Items))
+			var show core.RatingKey
+			for _, title := range movies.Items {
+				keys = append(keys, title.Key)
+			}
+			for _, title := range shows.Items {
+				keys = append(keys, title.Key)
+				if show == 0 && title.Type == core.TypeShow {
+					show = title.Key
+				}
+			}
+			if show != 0 {
+				if episodes, err := a.catalog.Grandchildren(ctx, show); err == nil {
+					for _, episode := range episodes {
+						keys = append(keys, episode.Key)
+					}
+				}
+			}
+			if len(keys) > 0 {
+				_, _ = a.catalog.CachedGetMany(ctx, keys)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // applyConfig pushes an edited config into the running components.
@@ -430,6 +489,26 @@ func (a *App) protectedReleases() map[string]bool {
 
 // Handler is the combined Plex + owner UI handler (tests).
 func (a *App) Handler() http.Handler { return a.handler }
+
+// settleBeforeListen finishes startup database work that would otherwise
+// hold the write lock across the first play. The listener is not open yet.
+func (a *App) settleBeforeListen(ctx context.Context) {
+	var waitingFor string
+	a.credentialPass(ctx, &waitingFor)
+	if a.safety != nil && a.users != nil {
+		owner, err := a.users.Owner(ctx)
+		if err == nil && owner != nil {
+			if _, err := a.safety.ConfirmPlayback(ctx, owner, false, time.Now()); err != nil && !errors.Is(err, core.ErrPolicyUnconfirmed) && !errors.Is(err, core.ErrUnauthorized) {
+				a.log.Debug("playback confirm warm-up", "err", err)
+			}
+		}
+	}
+	if a.db != nil && store.DialectOf(a.db) == store.SQLite {
+		if _, err := a.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			a.log.Warn("startup checkpoint", "err", err)
+		}
+	}
+}
 
 // Config is the settings store.
 func (a *App) Config() *config.Store { return a.cfg }
@@ -509,6 +588,9 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.runBudgets(ctx) })
 	background.start(func() { a.runEgress(ctx) })
 	background.start(func() { a.runCredentialUpgrade(ctx) })
+	// Credential sealing and the startup WAL checkpoint finish before the
+	// listener accepts a play. A play must not wait on that write.
+	a.settleBeforeListen(ctx)
 
 	ln, err := a.listen(cfg)
 	if err != nil {
@@ -642,6 +724,12 @@ func (a *App) housekeeping(ctx context.Context) {
 // Close releases every component in reverse order of construction.
 func (a *App) Close() {
 	a.closeOnce.Do(func() {
+		if a.stopPrewarm != nil {
+			a.stopPrewarm()
+		}
+		if a.prewarmDone != nil {
+			<-a.prewarmDone
+		}
 		for i := len(a.closers) - 1; i >= 0; i-- {
 			a.closers[i]()
 		}

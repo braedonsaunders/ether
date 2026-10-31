@@ -1,6 +1,7 @@
 package transcode
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"strconv"
@@ -132,6 +133,21 @@ func mp4Info(b []byte, size int64) (*core.MediaInfo, error) {
 	return m, nil
 }
 
+// mp4HandlerName reads the hdlr name. QuickTime stores a Pascal string
+// (length byte equals the remaining byte count). ISO BMFF stores a C string.
+func mp4HandlerName(payload []byte) string {
+	if len(payload) < 25 {
+		return ""
+	}
+	raw := payload[24:]
+	if len(raw) > 0 && int(raw[0]) == len(raw)-1 {
+		raw = raw[1:]
+	} else if i := bytes.IndexByte(raw, 0); i >= 0 {
+		raw = raw[:i]
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 // fullBoxTime reads timescale and duration from an mvhd/mdhd payload.
 func fullBoxTime(p []byte) (scale uint32, dur uint64) {
 	if len(p) < 4 {
@@ -178,6 +194,11 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 			si.Title = strings.TrimRight(string(name.payload(b)), "\x00")
 		}
 	}
+	// An audio track with no name uses the handler string ffprobe puts in
+	// tags.handler_name. Generic names (SoundHandler) stay empty.
+	if si.Title == "" && handler == "soun" {
+		si.Title = descriptiveAudioHandler(mp4HandlerName(hdlr.payload(b)))
+	}
 	stbl, ok := path(b, trak, "mdia", "minf", "stbl")
 	if !ok {
 		return si, false, incomplete("track without sample table")
@@ -195,7 +216,7 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 	}
 	entry := entries[0]
 	// The sample-entry fourcc is the codec tag ffprobe reports. A title is
-	// only the udta name already copied above, not the handler name.
+	// the udta name, or a descriptive audio handler name when that is empty.
 	si.CodecTag = entry.typ
 	if scale > 0 {
 		si.TimeBase = "1/" + strconv.FormatUint(uint64(scale), 10)

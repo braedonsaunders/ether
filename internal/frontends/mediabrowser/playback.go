@@ -193,7 +193,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			version = sourceID
 		}
 	}
-	detailSource, expectedETag := "", ""
+	detailSource, expectedETag, resolvedRelease := "", "", ""
 	if version != "" {
 		if channel != "" {
 			http.NotFound(w, r)
@@ -208,9 +208,10 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			detailSource, expectedETag, version = version, tag, ""
 		} else {
 			intent.ExactVersion = true
+			resolvedRelease = tag
 		}
 	}
-	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: intent}
+	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, ResolvedRelease: resolvedRelease, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: intent}
 	plan, err := i.host.Sessions.Plan(r.Context(), planRequest)
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)

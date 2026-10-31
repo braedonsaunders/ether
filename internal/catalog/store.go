@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -179,136 +181,221 @@ func (c *Catalog) hydrateSlice(ctx context.Context, items []core.Title) error {
 		}
 		idx[items[i].Key] = append(idx[items[i].Key], i)
 	}
-	if err := c.hydrateHomeRelease(ctx, items); err != nil {
-		return err
+	for i := range items {
+		items[i].HomeReleaseChecked = false
+		items[i].HomeReleased = time.Time{}
+		items[i].HomeReleaseFallbackAdmitted = false
 	}
 	// Bound SQLite parameters independently of the caller's page size
-	// (same 200 as hydrateHomeRelease/titlesByKeys).
+	// (same 200 as titlesByKeys). One statement covers genres, keywords,
+	// studios, countries, credits and home-release dates.
 	const batch = 200
 	for start := 0; start < len(keys); start += batch {
-		args := keys[start:min(start+batch, len(keys))]
-		ph := placeholders(len(args))
-		// genres
-		if err := c.scanPairs(ctx, `SELECT key,genre FROM catalog_genres WHERE key IN (`+ph+`) ORDER BY genre`, args, func(i int, v string) {
-			items[i].Genres = append(items[i].Genres, v)
-		}, idx); err != nil {
-			return err
-		}
-		if err := c.scanPairs(ctx, `SELECT key,keyword FROM catalog_keywords WHERE key IN (`+ph+`) ORDER BY keyword`, args, func(i int, v string) {
-			items[i].Keywords = append(items[i].Keywords, v)
-		}, idx); err != nil {
-			return err
-		}
-		if err := c.scanPairs(ctx, `SELECT key,studio FROM catalog_studios WHERE key IN (`+ph+`) ORDER BY studio`, args, func(i int, v string) {
-			items[i].Studios = append(items[i].Studios, v)
-		}, idx); err != nil {
-			return err
-		}
-		if err := c.scanPairs(ctx, `SELECT key,country FROM catalog_countries WHERE key IN (`+ph+`) ORDER BY country`, args, func(i int, v string) {
-			items[i].Countries = append(items[i].Countries, v)
-		}, idx); err != nil {
-			return err
-		}
-		if err := func() error {
-			rows, err := c.db.QueryContext(ctx, `SELECT c.key,c.person_tmdb,c.name,c.role,c.kind,c.thumb,COALESCE(p.imdb,'') FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (`+ph+`) ORDER BY c.kind,c.ord`, args...)
-			if err != nil {
-				return err
-			}
-			defer rows.Close()
-			for rows.Next() {
-				var k, pid int64
-				var name, role, kind, thumb, imdb string
-				if err := rows.Scan(&k, &pid, &name, &role, &kind, &thumb, &imdb); err != nil {
-					return err
-				}
-				p := core.Person{TMDB: pid, IMDB: imdb, Name: name, Role: role, ThumbPath: thumb}
-				for _, i := range idx[core.RatingKey(k)] {
-					switch kind {
-					case "director":
-						items[i].Directors = append(items[i].Directors, p)
-					case "writer":
-						items[i].Writers = append(items[i].Writers, p)
-					case "crew":
-						items[i].Crew = append(items[i].Crew, p)
-					default:
-						items[i].Cast = append(items[i].Cast, p)
-					}
-				}
-			}
-			return rows.Err()
-		}(); err != nil {
+		if err := c.hydrateFactBatch(ctx, items, idx, keys[start:min(start+batch, len(keys))]); err != nil {
 			return err
 		}
 	}
-	// Series identity for seasons/episodes, including its original name and
-	// keywords: one batched read for every show in this slice rather than
-	// repeating the lookups for every episode.
-	type seriesIdentity struct {
-		imdb, original string
-		tvdb           int64
-		year           int
-		keywords       []string
+	if err := c.hydrateShows(ctx, items); err != nil {
+		return err
 	}
-	shows := make(map[core.RatingKey]*seriesIdentity)
+	return c.applyHydratedAdded(ctx, items)
+}
+
+type seriesIdentity struct {
+	imdb, original string
+	tvdb           int64
+	year           int
+	keywords       []string
+}
+
+type creditFact struct {
+	person core.Person
+	kind   string
+	ord    int64
+}
+
+func (c *Catalog) hydrateFactBatch(ctx context.Context, items []core.Title, idx map[core.RatingKey][]int, args []any) error {
+	ph := placeholders(len(args))
+	q := `SELECT key, tag, a, b, c, d, e, f, g, extra FROM (
+SELECT key, 'genre' AS tag, genre AS a, '' AS b, '' AS c, '' AS d, '' AS e, '' AS f, '' AS g, '' AS extra FROM catalog_genres WHERE key IN (` + ph + `)
+UNION ALL
+SELECT key, 'keyword', keyword, '', '', '', '', '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
+UNION ALL
+SELECT key, 'studio', studio, '', '', '', '', '', '', '' FROM catalog_studios WHERE key IN (` + ph + `)
+UNION ALL
+SELECT key, 'country', country, '', '', '', '', '', '', '' FROM catalog_countries WHERE key IN (` + ph + `)
+UNION ALL
+SELECT c.key, 'credit', c.kind, c.name, c.role, c.thumb, CAST(c.person_tmdb AS TEXT), COALESCE(p.imdb,''), CAST(c.ord AS TEXT), c.provider_id FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (` + ph + `)
+UNION ALL
+SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST(h.fallback_admitted AS TEXT), CAST(t.released_ts AS TEXT), CAST(t.year AS TEXT), '', '', '' FROM catalog_home_release h JOIN catalog_titles t ON t.key=h.key WHERE h.key IN (` + ph + `)
+)`
+	bound := make([]any, 0, len(args)*6)
+	for i := 0; i < 6; i++ {
+		bound = append(bound, args...)
+	}
+	rows, err := c.db.QueryContext(ctx, q, bound...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	credits := map[core.RatingKey][]creditFact{}
+	touched := map[core.RatingKey]bool{}
+	for rows.Next() {
+		var key int64
+		var tag, a, b, ccol, d, e, f, g, extra string
+		if err := rows.Scan(&key, &tag, &a, &b, &ccol, &d, &e, &f, &g, &extra); err != nil {
+			return err
+		}
+		k := core.RatingKey(key)
+		touched[k] = true
+		switch tag {
+		case "genre":
+			for _, i := range idx[k] {
+				items[i].Genres = append(items[i].Genres, a)
+			}
+		case "keyword":
+			for _, i := range idx[k] {
+				items[i].Keywords = append(items[i].Keywords, a)
+			}
+		case "studio":
+			for _, i := range idx[k] {
+				items[i].Studios = append(items[i].Studios, a)
+			}
+		case "country":
+			for _, i := range idx[k] {
+				items[i].Countries = append(items[i].Countries, a)
+			}
+		case "credit":
+			pid, _ := strconv.ParseInt(e, 10, 64)
+			ord, _ := strconv.ParseInt(g, 10, 64)
+			credits[k] = append(credits[k], creditFact{kind: a, ord: ord, person: core.Person{TMDB: pid, IMDB: f, ID: extra, Name: b, Role: ccol, ThumbPath: d}})
+		case "home":
+			checked, _ := strconv.Atoi(a)
+			earliest, _ := strconv.ParseInt(b, 10, 64)
+			admitted, _ := strconv.Atoi(ccol)
+			released, _ := strconv.ParseInt(d, 10, 64)
+			year, _ := strconv.Atoi(e)
+			for _, i := range idx[k] {
+				items[i].Released = time.Time{}
+				if released != 0 {
+					items[i].Released = time.Unix(released, 0).UTC()
+				}
+				items[i].Year = year
+				items[i].HomeReleaseChecked = checked != 0
+				items[i].HomeReleaseFallbackAdmitted = admitted != 0
+				if earliest != 0 {
+					items[i].HomeReleased = time.Unix(earliest, 0).UTC()
+				}
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for key := range touched {
+		for _, i := range idx[key] {
+			sort.Strings(items[i].Genres)
+			sort.Strings(items[i].Keywords)
+			sort.Strings(items[i].Studios)
+			sort.Strings(items[i].Countries)
+		}
+	}
+	for key, list := range credits {
+		sort.SliceStable(list, func(i, j int) bool {
+			if list[i].kind != list[j].kind {
+				return list[i].kind < list[j].kind
+			}
+			return list[i].ord < list[j].ord
+		})
+		for _, fact := range list {
+			for _, i := range idx[key] {
+				switch fact.kind {
+				case "director":
+					items[i].Directors = append(items[i].Directors, fact.person)
+				case "writer":
+					items[i].Writers = append(items[i].Writers, fact.person)
+				case "crew":
+					items[i].Crew = append(items[i].Crew, fact.person)
+				default:
+					items[i].Cast = append(items[i].Cast, fact.person)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (c *Catalog) hydrateShows(ctx context.Context, items []core.Title) error {
+	shows := map[core.RatingKey]*seriesIdentity{}
 	var showArgs []any
 	for i := range items {
 		if k := items[i].ShowKey; k != 0 && shows[k] == nil {
 			shows[k] = &seriesIdentity{}
 			showArgs = append(showArgs, int64(k))
 		}
+		if items[i].Type == core.TypeEpisode && items[i].Season == 1 && items[i].Episode > 0 {
+			items[i].AbsoluteEpisode = items[i].Episode
+		}
 	}
 	if len(shows) == 0 {
-		return applyAirAddedTimes(ctx, c.db, items, c.now())
+		return nil
 	}
-	// showArgs is already deduplicated above; chunk it like keys. Each
-	// show lands in exactly one chunk, so identities/keywords accumulate
-	// without duplication.
+	counts := map[core.RatingKey]map[int]int{}
+	const batch = 200
 	for start := 0; start < len(showArgs); start += batch {
-		partArgs := showArgs[start:min(start+batch, len(showArgs))]
-		showPH := placeholders(len(partArgs))
-		if err := func() error {
-			srows, err := c.db.QueryContext(ctx, `SELECT key,imdb,tvdb,year,original_title FROM catalog_titles WHERE key IN (`+showPH+`)`, partArgs...)
-			if err != nil {
-				return err
-			}
-			defer srows.Close()
-			for srows.Next() {
-				var k int64
-				var id seriesIdentity
-				if err := srows.Scan(&k, &id.imdb, &id.tvdb, &id.year, &id.original); err != nil {
-					return err
-				}
-				if show := shows[core.RatingKey(k)]; show != nil {
-					*show = id
-				}
-			}
-			return srows.Err()
-		}(); err != nil {
+		part := showArgs[start:min(start+batch, len(showArgs))]
+		ph := placeholders(len(part))
+		q := `SELECT tag, key, a, b, c, d FROM (
+SELECT 'id' AS tag, key, imdb AS a, CAST(tvdb AS TEXT) AS b, CAST(year AS TEXT) AS c, original_title AS d FROM catalog_titles WHERE key IN (` + ph + `)
+UNION ALL
+SELECT 'kw', key, keyword, '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
+UNION ALL
+SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', '' FROM catalog_titles WHERE type='season' AND season>0 AND show_key IN (` + ph + `)
+)`
+		bound := make([]any, 0, len(part)*3)
+		for i := 0; i < 3; i++ {
+			bound = append(bound, part...)
+		}
+		rows, err := c.db.QueryContext(ctx, q, bound...)
+		if err != nil {
 			return err
 		}
-		// Seasons and episodes carry the show's keywords (as they do its genres
-		// and rating) so keyword policies and rules that hide a show also hide
-		// its children.
-		if err := func() error {
-			krows, err := c.db.QueryContext(ctx, `SELECT key,keyword FROM catalog_keywords WHERE key IN (`+showPH+`) ORDER BY keyword`, partArgs...)
-			if err != nil {
+		for rows.Next() {
+			var key int64
+			var tag, a, b, ccol, d string
+			if err := rows.Scan(&tag, &key, &a, &b, &ccol, &d); err != nil {
+				rows.Close()
 				return err
 			}
-			defer krows.Close()
-			for krows.Next() {
-				var k int64
-				var v string
-				if err := krows.Scan(&k, &v); err != nil {
-					return err
+			k := core.RatingKey(key)
+			switch tag {
+			case "id":
+				if show := shows[k]; show != nil {
+					tvdb, _ := strconv.ParseInt(b, 10, 64)
+					year, _ := strconv.Atoi(ccol)
+					show.imdb, show.tvdb, show.year, show.original = a, tvdb, year, d
 				}
-				if show := shows[core.RatingKey(k)]; show != nil {
-					show.keywords = append(show.keywords, v)
+			case "kw":
+				if show := shows[k]; show != nil {
+					show.keywords = append(show.keywords, a)
 				}
+			case "season":
+				season, _ := strconv.Atoi(a)
+				n, _ := strconv.Atoi(b)
+				if counts[k] == nil {
+					counts[k] = map[int]int{}
+				}
+				counts[k][season] = n
 			}
-			return krows.Err()
-		}(); err != nil {
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
 			return err
 		}
+	}
+	for show := range shows {
+		sort.Strings(shows[show].keywords)
 	}
 	for i := range items {
 		show := shows[items[i].ShowKey]
@@ -330,61 +417,10 @@ func (c *Catalog) hydrateSlice(ctx context.Context, items []core.Title) error {
 		if items[i].ShowIDs.TVDB == 0 {
 			items[i].ShowIDs.TVDB = show.tvdb
 		}
-	}
-	if err := c.hydrateAbsoluteEpisodes(ctx, items); err != nil {
-		return err
-	}
-	return applyAirAddedTimes(ctx, c.db, items, c.now())
-}
-
-// hydrateAbsoluteEpisodes numbers episodes from the series start (anime
-// releases name them so): the episode plus every earlier regular season's
-// episode count. An episode stays unnumbered when an earlier season is
-// missing from the mirror or has no known count: a guessed number would
-// match the wrong release.
-func (c *Catalog) hydrateAbsoluteEpisodes(ctx context.Context, items []core.Title) error {
-	var showArgs []any
-	seen := map[core.RatingKey]bool{}
-	for i := range items {
+		// Number episodes from the series start. An episode stays unnumbered
+		// when an earlier season is missing or has no known count.
+		seasons := counts[items[i].ShowKey]
 		t := &items[i]
-		if t.Type == core.TypeEpisode && t.ShowKey != 0 && t.Season > 1 && t.Episode > 0 && !seen[t.ShowKey] {
-			seen[t.ShowKey] = true
-			showArgs = append(showArgs, int64(t.ShowKey))
-		}
-		if t.Type == core.TypeEpisode && t.Season == 1 && t.Episode > 0 {
-			t.AbsoluteEpisode = t.Episode
-		}
-	}
-	counts := map[core.RatingKey]map[int]int{}
-	const batch = 200
-	for start := 0; start < len(showArgs); start += batch {
-		part := showArgs[start:min(start+batch, len(showArgs))]
-		if err := func() error {
-			rows, err := c.db.QueryContext(ctx, `SELECT show_key,season,child_count FROM catalog_titles WHERE type='season' AND season > 0 AND show_key IN (`+placeholders(len(part))+`)`, part...)
-			if err != nil {
-				return err
-			}
-			defer rows.Close()
-			for rows.Next() {
-				var show int64
-				var season, n int
-				if err := rows.Scan(&show, &season, &n); err != nil {
-					return err
-				}
-				k := core.RatingKey(show)
-				if counts[k] == nil {
-					counts[k] = map[int]int{}
-				}
-				counts[k][season] = n
-			}
-			return rows.Err()
-		}(); err != nil {
-			return err
-		}
-	}
-	for i := range items {
-		t := &items[i]
-		seasons := counts[t.ShowKey]
 		if t.Type != core.TypeEpisode || t.Season <= 1 || t.Episode <= 0 || seasons == nil {
 			continue
 		}
@@ -401,6 +437,25 @@ func (c *Catalog) hydrateAbsoluteEpisodes(ctx context.Context, items []core.Titl
 		}
 	}
 	return nil
+}
+
+func (c *Catalog) applyHydratedAdded(ctx context.Context, items []core.Title) error {
+	now := c.now()
+	needsAir := false
+	for i := range items {
+		switch items[i].Type {
+		case core.TypeShow, core.TypeSeason:
+			needsAir = true
+		default:
+			if !items[i].Released.IsZero() && !items[i].Released.After(now) {
+				items[i].AddedAt = items[i].Released
+			}
+		}
+	}
+	if !needsAir {
+		return nil
+	}
+	return applyAirAddedTimes(ctx, c.db, items, now)
 }
 
 // scanPairs applies each (key, value) row to every slice index registered
@@ -620,8 +675,8 @@ ON CONFLICT(key) DO UPDATE SET
 		}
 		insert := func(ps []core.Person, kind string) error {
 			for i, p := range ps {
-				if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_credits(key,person_tmdb,name,role,kind,ord,thumb) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
-					int64(t.Key), p.TMDB, p.Name, p.Role, kind, i, p.ThumbPath); err != nil {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_credits(key,person_tmdb,name,role,kind,ord,thumb,provider_id) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+					int64(t.Key), p.TMDB, p.Name, p.Role, kind, i, p.ThumbPath, p.ID); err != nil {
 					return err
 				}
 				if p.TMDB > 0 && validPersonIMDB(p.IMDB) {
@@ -683,6 +738,8 @@ func (c *Catalog) queryTitles(ctx context.Context, q string, args ...any) ([]cor
 	if err := c.admitFallbacks(ctx); err != nil {
 		return nil, err
 	}
+	gen := c.writeGen.Load()
+	minute := c.minuteBucket()
 	rows, err := c.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -704,8 +761,25 @@ func (c *Catalog) queryTitles(ctx context.Context, q string, args ...any) ([]cor
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if err := c.hydrateSlice(ctx, out); err != nil {
-		return nil, err
+	needAt := make([]int, 0, len(out))
+	for i := range out {
+		if cached, ok := c.cachedStored(out[i].Key, gen, minute); ok {
+			out[i] = cached
+			continue
+		}
+		needAt = append(needAt, i)
+	}
+	if len(needAt) > 0 {
+		need := make([]core.Title, len(needAt))
+		for j, i := range needAt {
+			need[j] = out[i]
+		}
+		if err := c.hydrateSlice(ctx, need); err != nil {
+			return nil, err
+		}
+		for j, i := range needAt {
+			out[i] = need[j]
+		}
 	}
 	visible := out[:0]
 	for _, t := range out {
@@ -713,6 +787,7 @@ func (c *Catalog) queryTitles(ctx context.Context, q string, args ...any) ([]cor
 			visible = append(visible, t)
 		}
 	}
+	c.rememberTitles(gen, minute, visible)
 	return visible, nil
 }
 

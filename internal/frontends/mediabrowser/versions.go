@@ -22,15 +22,23 @@ func (i *instance) versionScope(r *http.Request, viewer *frontend.Viewer) (front
 }
 
 func (i *instance) resolveSource(r *http.Request, scope frontend.VersionScope, handle string) (frontend.RatingKey, string, string, error) {
+	// Item lists hand out version handles. Check those before detail handles so
+	// a play does not pay for a detail-source miss on every start.
+	var versionErr error
+	if i.host.VersionHandles != nil {
+		if target, err := i.host.VersionHandles.Resolve(i.identityContext(r), scope, handle); err == nil && target.Item != 0 {
+			return target.Item, "version", target.Release, nil
+		} else {
+			versionErr = err
+		}
+	}
 	if planner, ok := i.host.Sessions.(frontend.DetailPlanner); ok {
 		if target, err := planner.ResolveDetailSource(i.identityContext(r), scope, handle); err == nil && target.Item != 0 && target.ETag != "" {
 			return target.Item, "detail", target.ETag, nil
 		}
 	}
-	if i.host.VersionHandles != nil {
-		if target, err := i.host.VersionHandles.Resolve(i.identityContext(r), scope, handle); err == nil && target.Item != 0 {
-			return target.Item, "version", "", nil
-		}
+	if versionErr != nil {
+		return 0, "", "", versionErr
 	}
 	return 0, "", "", frontend.ErrNotFound
 }

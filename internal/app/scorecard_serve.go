@@ -37,9 +37,10 @@ type ScorecardItem struct {
 	IndexNumber, ParentIndexNumber, ProductionYear                                            int
 	RunTimeTicks                                                                              int64
 	CommunityRating                                                                           float64
-	Genres, ProductionLocations, Taglines                                                     []string
+	Status, EndDate                                                                           string
+	Genres, ProductionLocations, Taglines, Tags                                               []string
 	Studios                                                                                   []struct{ Name string }
-	People                                                                                    []struct{ Name, Role, Type string }
+	People                                                                                    []struct{ Id, Name, Role, Type string }
 	UserData                                                                                  struct {
 		Played                bool
 		PlaybackPositionTicks int64
@@ -283,7 +284,12 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		}
 		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
 		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
-		title.Genres, title.Countries = x.Genres, x.ProductionLocations
+		title.Genres, title.Countries, title.Keywords, title.Status = x.Genres, x.ProductionLocations, x.Tags, x.Status
+		if x.EndDate != "" {
+			if aired, err := time.Parse(time.RFC3339Nano, x.EndDate); err == nil {
+				title.LastAirDate = aired
+			}
+		}
 		if len(x.Taglines) > 0 {
 			title.Tagline = x.Taglines[0]
 		}
@@ -291,7 +297,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 			title.Studios = append(title.Studios, s.Name)
 		}
 		for _, p := range x.People {
-			person := core.Person{Name: p.Name, Role: p.Role}
+			person := core.Person{ID: p.Id, Name: p.Name, Role: p.Role}
 			switch p.Type {
 			case "Actor":
 				title.Cast = append(title.Cast, person)

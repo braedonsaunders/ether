@@ -56,8 +56,20 @@ func TestSourceHistoryRealStateAdvancesOnlyOnAcceptedSamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := history.LastSource(ctx, viewer.ID, key); err != nil || got == nil || got.VideoCodec != "h264" {
-		t.Fatalf("playback start did not record probe facts: %+v %v", got, err)
+	deadline := time.Now().Add(3 * time.Second)
+	var got *core.PlaybackSourceHistory
+	for time.Now().Before(deadline) {
+		got, err = history.LastSource(ctx, viewer.ID, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != nil && got.VideoCodec == "h264" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got == nil || got.VideoCodec != "h264" {
+		t.Fatalf("playback start did not record probe facts: %+v", got)
 	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: dev, Protocol: "silo"}
 	if _, err = b.StartStream(ctx, access, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect}); err != nil {
@@ -101,7 +113,7 @@ func TestSourceHistoryRealStateAdvancesOnlyOnAcceptedSamples(t *testing.T) {
 	if sequence != 3 {
 		t.Fatalf("replay reserved source sequence %d", sequence)
 	}
-	got, err := history.LastSource(ctx, viewer.ID, key)
+	got, err = history.LastSource(ctx, viewer.ID, key)
 	if err != nil || got == nil || got.VideoCodec != "hevc" {
 		t.Fatalf("replay changed durable source: %+v %v", got, err)
 	}

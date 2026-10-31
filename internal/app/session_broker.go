@@ -35,6 +35,12 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	// kinds, including virtual entries.
 	visibility.SectionFor = brokerSectionFor(visibility.SectionFor)
 
+	playback := core.Playback(a.playback)
+	if a.spikeLibrary != nil {
+		// Spike is the library, not a side path. The broker has to see the
+		// same sessions the Plex adapter prepares.
+		playback = a.spikeLibrary.Playback()
+	}
 	return sessions.NewBroker(sessions.BrokerDeps{
 		Trickplay:           a.trickplay.Borrow(),
 		Coordination:        a.sessionCoordination,
@@ -69,19 +75,12 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 			return selectBrokerTracks(ctx, prefs, viewer, title, info, opts, audioSet, subtitleSet, func(err error) { a.log.Warn("track preferences unavailable", "err", err) })
 		},
 		Lookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
-			title, err := a.catalog.Get(ctx, key)
-			if err != nil {
-				return nil, err
-			}
-			if title == nil || !visibility.Playable(ctx, v, title) {
-				return nil, core.ErrNotFound
-			}
-			return title, nil
+			return a.sessionTitle(ctx, v, key, visibility, false)
 		},
 		MediaLookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
-			return cachedSessionTitle(ctx, v, key, a.catalog.CachedGet, visibility)
+			return a.sessionTitle(ctx, v, key, visibility, true)
 		},
-		Playback: a.playback, Transcoder: tc, Progress: a.state, SourceHistory: a.state,
+		Playback: playback, Transcoder: tc, Progress: a.state, SourceHistory: a.state,
 		ActiveViewer: func(ctx context.Context, id int64) (*core.Viewer, error) {
 			v, err := a.users.ActiveUser(ctx, id)
 			if err != nil || v == nil {
@@ -124,6 +123,33 @@ func brokerSectionFor(other func(core.MediaType) (int, bool)) func(core.MediaTyp
 			return other(kind)
 		}
 	}
+}
+
+// sessionTitle resolves a playable title. Spike-library keys live outside
+// the TMDB catalog; both the live and cached lookups have to find them or
+// broker publish reports the title missing.
+func (a *App) sessionTitle(ctx context.Context, viewer *core.Viewer, key core.RatingKey, visibility experience.Visibility, cached bool) (*core.Title, error) {
+	if a.spikeLibrary != nil && key.Kind() == core.KindLocal {
+		title, err := a.spikeLibrary.Catalog().Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if title == nil || title.Key != key || !visibility.Playable(ctx, viewer, title) {
+			return nil, core.ErrNotFound
+		}
+		return title, nil
+	}
+	if cached {
+		return cachedSessionTitle(ctx, viewer, key, a.catalog.CachedGet, visibility)
+	}
+	title, err := a.catalog.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if title == nil || !visibility.Playable(ctx, viewer, title) {
+		return nil, core.ErrNotFound
+	}
+	return title, nil
 }
 
 // cachedSessionTitle checks both the item and inherited show using only the

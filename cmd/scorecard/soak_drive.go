@@ -423,15 +423,25 @@ func (run *soakRun) faultStep(ctx context.Context, action string, hold time.Dura
 				return err
 			}
 		}
-		go run.operate(ctx, "plex", "transcode", "encoder-hold")
-		_ = run.waitFFmpeg(ctx, minDuration(hold*2/3, 8*time.Second))
+		// A kill posted before ffmpeg's guardian exists is rejected. Start
+		// the transcode again until the process is visible, then signal it.
+		started := false
+		for attempt := 0; attempt < 4; attempt++ {
+			client := "encoder-hold"
+			if attempt > 0 {
+				client = fmt.Sprintf("encoder-retry-%d", attempt)
+			}
+			go run.operate(ctx, "plex", "transcode", client)
+			if run.waitFFmpeg(ctx, minDuration(hold*2/3, 8*time.Second)) {
+				started = true
+				break
+			}
+		}
+		if !started {
+			return fmt.Errorf("%s: encoder never started", action)
+		}
 	}
 	fault, err := run.postFault(ctx, action, delay, durationMS)
-	if err != nil && (action == "encoder_crash" || action == "encoder_kill") {
-		go run.operate(ctx, "plex", "transcode", "encoder-retry")
-		_ = run.waitFFmpeg(ctx, minDuration(hold*2/3, 8*time.Second))
-		fault, err = run.postFault(ctx, action, delay, durationMS)
-	}
 	run.mu.Lock()
 	run.manifest.Faults = append(run.manifest.Faults, fault)
 	run.mu.Unlock()

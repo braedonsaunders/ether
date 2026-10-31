@@ -3,7 +3,6 @@ package playback
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -103,8 +102,8 @@ func (s *resumeStore) observedMedia(ctx context.Context, userID int64, key core.
 	if len(raw) > maxPersistedProbeBytes {
 		return nil, nil
 	}
-	var info core.MediaInfo
-	if json.Unmarshal([]byte(raw), &info) != nil {
+	info, ok := decodePersistedProbe(raw)
+	if !ok {
 		return nil, nil
 	}
 	facts, ok := persistedProbeFacts(info)

@@ -57,6 +57,17 @@ func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequ
 	if req.Viewer == nil || a.personalize == nil {
 		return nil, core.ErrNotFound
 	}
+	if req.Purpose == frontend.RowNextUp && !a.personalize.ModelReady(req.Viewer.ID) {
+		limit := req.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		items, err := a.experienceContinue(ctx, req.Viewer, libraries, limit)
+		if err != nil {
+			return nil, err
+		}
+		return []experience.RankedCandidate{{ID: "home.upnext", Purpose: frontend.RowNextUp, Items: items}}, nil
+	}
 	sit, ok := ctx.Value(experienceSituationKey{}).(core.HomeSituation)
 	if !ok {
 		return nil, core.ErrNotFound

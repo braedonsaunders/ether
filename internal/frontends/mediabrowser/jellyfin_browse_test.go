@@ -92,7 +92,7 @@ func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
 		},
 		LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, id string, q frontend.ItemQuery) (frontend.Page, error) {
-			if v == nil || v.ID != 1 || id != "1" || q.Limit != 1 {
+			if v == nil || v.ID != 1 || id != "1" || (q.Limit != 1 && q.Limit != 0) {
 				t.Fatalf("library count query viewer=%v id=%s limit=%d", v, id, q.Limit)
 			}
 			return frontend.Page{Total: 6}, nil
@@ -225,6 +225,35 @@ func TestJellyfinBrowseFiltersReachTheLibrary(t *testing.T) {
 	}
 }
 
+func TestJellyfinNextUpUsesContinueEpisodes(t *testing.T) {
+	episode := frontend.Title{Key: core.EpisodeKey(5, 1, 2), Type: "episode", Title: "Two", Season: 1, Episode: 2}
+	movie := frontend.Title{Key: 3, Type: "movie", Title: "Film"}
+	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+		return []frontend.Row{{Purpose: frontend.RowContinue, Items: []frontend.Title{movie, episode}}}, nil
+	}, ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if req.Key == core.ShowKey(5) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: req.Key, Type: "show", Title: "The Scene"}}, nil
+		}
+		if req.Key != episode.Key {
+			t.Fatalf("next up item %v", req.Key)
+		}
+		full := episode
+		full.ShowTitle = "The Scene"
+		return frontend.ItemDetail{Title: full}, nil
+	}, UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+		return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+	}}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Shows/NextUp", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var body struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 || body.Items[0]["Name"] != "Two" || body.Items[0]["SeriesName"] != "The Scene" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
 func TestJellyfinEpisodeShellKeepsParentImageSlots(t *testing.T) {
 	title := frontend.Title{Key: 8, Type: "episode", Title: "Pilot", ShowTitle: "Show", Season: 1, Episode: 1, Year: 2016, ShowKey: 4}
 	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
@@ -345,7 +374,7 @@ func TestJellyfinUnplayedCountUsesEpisodeWatchState(t *testing.T) {
 
 func TestJellyfinEpisodeParentsComeFromTheTitle(t *testing.T) {
 	i := &instance{protocol: "jellyfin"}
-	encoded := i.itemDTO(frontend.Title{Key: core.EpisodeKey(42, 1, 3), Type: "episode", Title: "Pilot", Season: 1, Episode: 3}, frontend.WatchStatus{})
+	encoded := i.itemDTO(frontend.Title{Key: core.EpisodeKey(42, 1, 3), Type: "episode", Title: "Pilot"}, frontend.WatchStatus{})
 	showID := ids.RatingKeyGUID(core.ShowKey(42))
 	seasonID := ids.RatingKeyGUID(core.SeasonKey(42, 1))
 	if encoded["SeriesId"] != showID || encoded["SeasonId"] != seasonID || encoded["ParentId"] != seasonID || encoded["SeasonName"] != "Season 1" {
@@ -418,8 +447,11 @@ func TestJellyfinSeasonListUsesParentSeriesName(t *testing.T) {
 	var page struct {
 		Items []map[string]any
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 || page.Items[0]["SeriesName"] != "The Scene" {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 || page.Items[0]["SeriesName"] != "The Scene" || page.Items[0]["Name"] != "Season 1" {
 		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := page.Items[0]["SeasonName"]; ok {
+		t.Fatal(page.Items[0]["SeasonName"])
 	}
 }
 
@@ -526,6 +558,50 @@ func TestJellyfinNamedPeopleProviderLinksAndRuntime(t *testing.T) {
 	requireJellyfinSpec(t, http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), w)
 }
 
+func TestJellyfinUserRootParentsEveryView(t *testing.T) {
+	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
+	}})
+	call := func(path string) map[string]any {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.Header.Set("X-Emby-Token", "grant")
+		inst.Handler().ServeHTTP(w, r)
+		var body map[string]any
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil {
+			t.Fatal(path, w.Code, w.Body.String())
+		}
+		return body
+	}
+	root := call("/Items/Root")
+	if root["Type"] != "UserRootFolder" || root["Name"] != "Media Folders" || root["Id"] != jellyfinRootID() || root["ChildCount"] != float64(2) || root["ParentId"] != nil {
+		t.Fatal(root["Type"], root["Name"], root["Id"], root["ChildCount"], root["ParentId"])
+	}
+	if _, ok := root["Path"]; ok {
+		t.Fatal(root["Path"])
+	}
+	userID, err := ids.GUID(ids.User, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again := call("/Users/" + userID + "/Items/Root")
+	if again["Id"] != root["Id"] {
+		t.Fatal(again["Id"])
+	}
+	byID := call("/Items/" + jellyfinRootID())
+	if byID["Id"] != root["Id"] || byID["Type"] != "UserRootFolder" {
+		t.Fatal(byID["Id"], byID["Type"])
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var page struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 2 || page.Items[0]["ParentId"] != root["Id"] || page.Items[1]["ParentId"] != root["Id"] {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
 func TestJellyfinVirtualFolders(t *testing.T) {
 	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
 		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
@@ -547,8 +623,15 @@ func TestJellyfinVirtualFolders(t *testing.T) {
 	if _, ok := folders[0]["Locations"]; ok {
 		t.Fatal("invented library path")
 	}
-	if _, ok := folders[0]["LibraryOptions"]; ok {
-		t.Fatal("copied library options")
+	options, _ := folders[0]["LibraryOptions"].(map[string]any)
+	if _, ok := options["PreferredMetadataLanguage"]; ok || options["MetadataCountryCode"] != nil || options["EnableChapterImageExtraction"] != false || options["EnableTrickplayImageExtraction"] != false || options["EnableInternetProviders"] != false || options["SaveSubtitlesWithMedia"] != false {
+		t.Fatal(options)
+	}
+	if paths, ok := options["PathInfos"].([]any); !ok || len(paths) != 0 {
+		t.Fatal(options["PathInfos"])
+	}
+	if folders[0]["RefreshStatus"] != "Idle" {
+		t.Fatal(folders[0]["RefreshStatus"])
 	}
 	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
 }
@@ -572,11 +655,9 @@ func TestJellyfinVirtualLibraryHasEmptyLocations(t *testing.T) {
 	if _, ok := folders[1]["Locations"]; ok {
 		t.Fatal("non-virtual library gained locations")
 	}
-	if _, ok := folders[0]["LibraryOptions"]; ok {
-		t.Fatal(folders[0]["LibraryOptions"])
-	}
-	if _, ok := folders[0]["RefreshStatus"]; ok {
-		t.Fatal(folders[0]["RefreshStatus"])
+	options, _ := folders[0]["LibraryOptions"].(map[string]any)
+	if paths, ok := options["PathInfos"].([]any); !ok || len(paths) != 0 || folders[0]["RefreshStatus"] != "Idle" {
+		t.Fatal(folders[0]["LibraryOptions"], folders[0]["RefreshStatus"])
 	}
 	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
 }
@@ -778,5 +859,69 @@ func TestJellyfinEpisodeInheritsShowArtwork(t *testing.T) {
 	i.shapeJellyfinItem(r, &frontend.Viewer{ID: 1}, map[string]any{}, frontend.Title{Key: core.EpisodeKey(42, 1, 4), Type: "episode", Season: 1, Episode: 4})
 	if grants.calls != 1 {
 		t.Fatal(grants.calls)
+	}
+}
+
+type collageGrantFake struct{ calls int }
+
+func (f *collageGrantFake) Issue(_ context.Context, r frontend.ImageGrantRequest) (string, error) {
+	if r.Credential != "grant" || r.Item == 0 || !strings.HasPrefix(r.Image.Path, frontend.LibraryCollagePrefix) || r.Image.Path != r.Image.Tag {
+		return "", errors.New("denied")
+	}
+	f.calls++
+	return "collage-secret", nil
+}
+func (*collageGrantFake) Revoke(context.Context, string, string) error { return nil }
+func (*collageGrantFake) Serve(http.ResponseWriter, *http.Request, string) {
+}
+
+type collageExperience struct {
+	frontendtest.Experience
+	image frontend.Image
+	calls int
+}
+
+func (c *collageExperience) LibraryCollage(context.Context, *frontend.Viewer, frontend.Device, string) (frontend.Image, error) {
+	c.calls++
+	return c.image, nil
+}
+
+func TestJellyfinLibraryCollagePublishesPrimaryAndParentTag(t *testing.T) {
+	viewID, err := ids.GUID(ids.View, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := frontend.LibraryCollagePrefix + strings.Repeat("ab", 32)
+	exp := &collageExperience{
+		Experience: frontendtest.Experience{
+			ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+				return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+			},
+			LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+				return frontend.Page{Total: 2}, nil
+			},
+		},
+		image: frontend.Image{Kind: frontend.ImagePoster, Path: ref, Tag: ref, Subject: viewID, Width: 640, Height: 640, BlurHash: "LGF5"},
+	}
+	grants := &collageGrantFake{}
+	i := &instance{protocol: "jellyfin", host: frontend.Host{Experience: exp, ImageGrants: grants}}
+	r := withSeriesStudioCache(httptest.NewRequest(http.MethodGet, "/UserViews", nil))
+	r.Header.Set("X-Emby-Token", "grant")
+	folder, ok := i.collectionFolder(r, &frontend.Viewer{ID: 1}, frontend.View{ID: "1", Name: "Movies", Type: "movie"})
+	if !ok {
+		t.Fatal("folder")
+	}
+	tags := folder["ImageTags"].(map[string]string)
+	hashes := folder["ImageBlurHashes"].(map[string]any)["Primary"].(map[string]string)
+	if tags["Primary"] != "collage-secret" || hashes["collage-secret"] != "LGF5" || folder["PrimaryImageAspectRatio"] != float64(1) {
+		t.Fatal(folder["ImageTags"], folder["ImageBlurHashes"], folder["PrimaryImageAspectRatio"])
+	}
+	movie := map[string]any{}
+	i.shapeJellyfinItem(r, &frontend.Viewer{ID: 1}, movie, frontend.Title{Key: core.MovieKey(5), Type: "movie", Title: "Movie"})
+	if movie["ParentId"] != viewID || movie["ParentPrimaryImageTag"] != "collage-secret" || movie["ParentPrimaryImageItemId"] != viewID {
+		t.Fatal(movie["ParentId"], movie["ParentPrimaryImageTag"], movie["ParentPrimaryImageItemId"])
+	}
+	if grants.calls != 1 || exp.calls != 1 {
+		t.Fatalf("grants %d collages %d", grants.calls, exp.calls)
 	}
 }

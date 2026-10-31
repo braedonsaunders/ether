@@ -105,7 +105,11 @@ func TestMP4ProbePublishesContainerFacts(t *testing.T) {
 		} else if s.AverageFrameRate == nil || s.ReferenceFrameRate == nil || *s.AverageFrameRate != rate || *s.ReferenceFrameRate != rate {
 			t.Fatalf("%s stream %d rates %v %v", name, index, s.AverageFrameRate, s.ReferenceFrameRate)
 		}
-		if s.ReferenceFrames != nil {
+		if index == 0 {
+			if s.ReferenceFrames == nil || *s.ReferenceFrames < 1 {
+				t.Fatalf("%s video missing reference frames", name)
+			}
+		} else if s.ReferenceFrames != nil {
 			t.Fatalf("%s stream %d invented ref frames %d", name, index, *s.ReferenceFrames)
 		}
 	}
@@ -246,6 +250,10 @@ func normalizeForNative(want, got *core.MediaInfo) {
 			}
 			if g.ReferenceFrames == nil {
 				w.ReferenceFrames = nil
+			} else if w.ReferenceFrames == nil {
+				// ffprobe 8.1.3 omits refs. SPS reference frames are checked
+				// on the container-fact fixtures instead of this recording.
+				g.ReferenceFrames = nil
 			}
 			if g.BitsPerRawSample == nil {
 				w.BitsPerRawSample = nil

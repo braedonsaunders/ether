@@ -30,6 +30,7 @@ type IDs struct {
 type Person struct {
 	TMDB      int64  `json:"tmdb,omitempty"`
 	IMDB      string `json:"imdb,omitempty"`
+	ID        string `json:"id,omitempty"` // catalogue person id when there is no TMDB id
 	Name      string `json:"name"`
 	Role      string `json:"role,omitempty"` // character for cast, job for crew
 	ThumbPath string `json:"thumbPath,omitempty"`

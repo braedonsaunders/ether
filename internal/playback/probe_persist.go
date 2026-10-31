@@ -24,6 +24,22 @@ func init() {
 );`)
 }
 
+// probeFactsRecord is the on-disk shape of playback_probe.info_json.
+// Rows written before facts were versioned do not carry FactsVersion and
+// are treated as misses so the next open probes again.
+type probeFactsRecord struct {
+	FactsVersion int            `json:"factsVersion"`
+	Info         core.MediaInfo `json:"info"`
+}
+
+func decodePersistedProbe(raw string) (core.MediaInfo, bool) {
+	var rec probeFactsRecord
+	if json.Unmarshal([]byte(raw), &rec) != nil || rec.FactsVersion != core.ProbeFactsVersion {
+		return core.MediaInfo{}, false
+	}
+	return rec.Info, true
+}
+
 // Bounds on a persisted probe. Stream/chapter counts of real containers
 // are far below these; anything larger is not a probe worth trusting.
 const (
@@ -73,7 +89,7 @@ func saveProbeWith(ctx context.Context, exec resumeExecer, userID int64, key cor
 	if !ok || releaseID == "" || len(nzb) == 0 {
 		return nil
 	}
-	b, err := json.Marshal(facts)
+	b, err := json.Marshal(probeFactsRecord{FactsVersion: core.ProbeFactsVersion, Info: facts})
 	if err != nil {
 		return err
 	}
@@ -113,9 +129,9 @@ func (s *resumeStore) loadProbe(ctx context.Context, userID int64, key core.Rati
 	if len(raw) > maxPersistedProbeBytes {
 		return nil, nil
 	}
-	var info core.MediaInfo
-	if err := json.Unmarshal([]byte(raw), &info); err != nil {
-		return nil, nil // a corrupt cache row is a cache miss, never an error
+	info, ok := decodePersistedProbe(raw)
+	if !ok {
+		return nil, nil // a corrupt or old-generation row is a cache miss
 	}
 	facts, ok := persistedProbeFacts(info)
 	if !ok || facts.Size != size {

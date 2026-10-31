@@ -91,12 +91,13 @@ func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, im
 		return img
 	}
 	q.mu.Unlock()
-	// A crew photo is part of the first item response. Posters can wait for
-	// the background worker; a person image is hashed before it is granted.
-	if img.Kind == frontend.ImagePerson {
+	// A crew photo is part of the first item response. A caller that publishes
+	// blurhashes on that response sets a budget; everything else waits for
+	// the background worker. A person image is always hashed before it is granted.
+	if wait, ok := synchronousArtworkWait(ctx, img); ok {
 		job := artworkMetadataJob{key: key, request: req, image: img}
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := q.compute(ctx, job)
+		waitCtx, cancel := context.WithTimeout(ctx, wait)
+		err := q.compute(waitCtx, job)
 		cancel()
 		if err == nil {
 			if metadata, loadErr := q.load(context.Background(), key); loadErr == nil && metadata.thumbhash != "" {
@@ -134,6 +135,24 @@ func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, im
 	default:
 	}
 	return img
+}
+
+func synchronousArtworkWait(ctx context.Context, img frontend.Image) (time.Duration, bool) {
+	if img.Kind == frontend.ImagePerson {
+		return 2 * time.Second, true
+	}
+	deadline, ok := frontend.SynchronousArtworkDeadline(ctx)
+	if !ok {
+		return 0, false
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return 0, false
+	}
+	if remaining > 2*time.Second {
+		remaining = 2 * time.Second
+	}
+	return remaining, true
 }
 
 func (q *MetadataQueue) run() {
