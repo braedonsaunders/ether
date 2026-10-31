@@ -46,12 +46,12 @@ func (a *App) viewerCapabilities(local *identity.Local, experience frontend.Expe
 			rating := a.safety.UserPolicy(v).MaxContentRating // the stricter of account and policy
 			out.MaxRating = &rating
 			cap := a.safety.BitrateLimit(v)
-			if remoteCap := a.cfg.Get().Transcode.RemoteMaxBitrateKbps; remoteCap > 0 && (cap == 0 || remoteCap < cap) {
+			if remoteCap := a.cfg.Read().Transcode.RemoteMaxBitrateKbps; remoteCap > 0 && (cap == 0 || remoteCap < cap) {
 				cap = remoteCap
 			}
 			out.RemoteBitrateKbps = &cap
 		}
-		limit := playback.UserStreamLimit(a.cfg.Get(), v)
+		limit := playback.UserStreamLimit(a.cfg.Read(), v)
 		out.MaxActiveSessions = &limit
 		transcode := a.transcoder != nil
 		out.CanTranscode = &transcode

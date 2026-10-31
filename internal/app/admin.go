@@ -205,7 +205,7 @@ func (a *App) debridStatus(context.Context) any {
 
 func (a *App) cacheStatus(context.Context) any {
 	used, budget := a.cache.Usage()
-	return map[string]any{"used": used, "budget": budget, "mode": a.cfg.Get().Cache.Mode}
+	return map[string]any{"used": used, "budget": budget, "mode": a.cfg.Read().Cache.Mode}
 }
 
 // plexAuth adapts the plex.tv PIN sign-in and claim flow to the wizard.

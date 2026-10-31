@@ -20,7 +20,7 @@ func (s *Server) titleAllowed(u *core.User, t *core.Title) bool {
 
 func (s *Server) visibility() experience.Visibility {
 	v := experience.Visibility{Policy: s.d.AccessPolicy, FilterAvailable: s.d.FilterAvailable,
-		SectionFor: func(t core.MediaType) (int, bool) { sec, ok := s.sectionFor(t); return sec.ID, ok }}
+		SectionFor: func(t core.MediaType) (int, bool) { sec, ok := s.untitledSectionFor(t); return sec.ID, ok }}
 	if s.d.Catalog != nil {
 		v.GetTitle = s.artworkTitle
 	}

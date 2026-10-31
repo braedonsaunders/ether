@@ -680,7 +680,7 @@ func (a *App) Run(ctx context.Context) error {
 		a.log.Warn("publish local tray endpoint", "err", err)
 	}
 	front.setTLS(a.certs.TLSConfig)
-	front.setProxies(func() []string { return a.cfg.Get().Server.TrustedProxyCIDRs })
+	front.setProxies(a.cfg.TrustedProxyCIDRs)
 	// A restore applied at this start counts from here: the server is
 	// about to serve on it. If it cannot be recorded, nothing is served
 	// and Serve puts the original data back.

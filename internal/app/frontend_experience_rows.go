@@ -87,7 +87,7 @@ func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequ
 			return nil, core.ErrNotFound
 		}
 		var postPlay func(context.Context, int) []core.PostPlayPick
-		if a.cfg.Get().Personalize.PostPlay {
+		if a.cfg.Read().Personalize.PostPlay {
 			postPlay = func(ctx context.Context, limit int) []core.PostPlayPick {
 				picks, err := a.personalize.PostPlay(ctx, req.Viewer, req.Item, hc, limit)
 				if err != nil {

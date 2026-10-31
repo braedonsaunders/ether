@@ -28,7 +28,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	if a.livetv != nil {
 		live = sessionLive{service: a.livetv, cached: a.catalog.CachedGet}
 	}
-	visibility := experienceVisibility(a.safety, a.catalog.Get, nil, nil, serverLibraries(a.cfg.Get()))
+	visibility := experienceVisibility(a.safety, a.catalog.Get, nil, nil, serverLibraries(a.cfg.Read()))
 	// Section IDs are stable even when Spike does not expose a TV library.
 	// Missing a presented library must not exempt a known title from the
 	// viewer's section restriction. Preserve the existing fallback for other
@@ -89,7 +89,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 			return a.safety.UserPolicy(v), nil
 		},
 		CanPlay: a.safety.CanPlay, FreshPlay: a.safety.ConfirmPlayback, ReceiptCurrent: a.users.ReceiptCurrent, BitrateLimit: a.safety.BitrateLimit,
-		RemoteBitrateLimit: func() int { return a.cfg.Get().Transcode.RemoteMaxBitrateKbps },
+		RemoteBitrateLimit: func() int { return a.cfg.Read().Transcode.RemoteMaxBitrateKbps },
 		OnTimeline: func(v *core.Viewer, key core.RatingKey, pos, dur time.Duration, playState string) {
 			if playState == "playing" && a.personalize != nil {
 				a.personalize.NotePlayback(v, key)

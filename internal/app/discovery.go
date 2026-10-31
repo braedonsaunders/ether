@@ -125,7 +125,7 @@ func (a *App) discoveryToken(ctx context.Context, id int64) (string, error) {
 		return "", err
 	}
 	if u.IsOwner {
-		return a.cfg.Get().Plex.Token, nil
+		return a.cfg.Read().Plex.Token, nil
 	}
 	users, err := a.users.AllUsers(ctx)
 	if err != nil {
@@ -133,7 +133,7 @@ func (a *App) discoveryToken(ctx context.Context, id int64) (string, error) {
 	}
 	for _, record := range users {
 		if record.ID == id && record.Active && record.Home && record.Restricted {
-			return a.plextv.HomeUserToken(ctx, a.cfg.Get().Plex.Token, u.PlexID, "")
+			return a.plextv.HomeUserToken(ctx, a.cfg.Read().Plex.Token, u.PlexID, "")
 		}
 	}
 	return "", core.ErrUnauthorized

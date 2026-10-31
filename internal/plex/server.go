@@ -425,12 +425,23 @@ func (s *Server) sectionByID(id int) (Section, bool) {
 
 // sectionFor returns the section an item of type t lives in.
 func (s *Server) sectionFor(t core.MediaType) (Section, bool) {
+	sec, ok := s.untitledSectionFor(t)
+	if !ok {
+		return Section{}, false
+	}
+	return s.withLibraryTitles([]Section{sec})[0], true
+}
+
+// untitledSectionFor is sectionFor without the configured title. A
+// visibility check needs only the section id, and runs for every title a
+// page shows, so it reads no configuration.
+func (s *Server) untitledSectionFor(t core.MediaType) (Section, bool) {
 	want := core.TypeMovie
 	switch t {
 	case core.TypeShow, core.TypeSeason, core.TypeEpisode:
 		want = core.TypeShow
 	}
-	for _, sec := range s.withLibraryTitles(s.sections) {
+	for _, sec := range s.sections {
 		if sec.Type == want {
 			return sec, true
 		}
@@ -454,9 +465,9 @@ func (s *Server) userSections(u *core.User) []Section {
 }
 
 func (s *Server) canSeeSection(u *core.User, id int) bool {
-	for _, sec := range s.userSections(u) {
+	for _, sec := range s.sections {
 		if sec.ID == id {
-			return true
+			return u == nil || len(u.AllowedSections) == 0 || u.IsOwner || experience.SectionAllowed(u, sec.ID)
 		}
 	}
 	return false

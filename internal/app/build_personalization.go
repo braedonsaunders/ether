@@ -122,7 +122,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 			a.recommend = recommend.New(recommend.Options{Catalog: a.catalog, State: a.state, LLM: a.llm, Scorer: scorer, Logger: log.With("component", "recommend")})
 			return a.recommend, a.collections, nil
 		},
-		ServerName: func() string { return a.cfg.Get().Server.FriendlyName },
+		ServerName: func() string { return a.cfg.Read().Server.FriendlyName },
 		Logger:     log.With("component", "personalize"),
 		OnBuilt:    a.refreshPersonalHomes,
 		// Background training waits while anyone is streaming.
@@ -133,7 +133,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 			return a.livetv != nil && len(a.livetv.ViewingSessions()) > 0
 		},
 		// Netflix-style hooks (#31/#32) follow the owner's live switches.
-		IntentEnabled: func() bool { return a.cfg.Get().Personalize.SessionIntent },
+		IntentEnabled: func() bool { return a.cfg.Read().Personalize.SessionIntent },
 		ClockFormat: func() string {
 			c := a.cfg.Get()
 			if c.Personalize.ClockFormat != "" {

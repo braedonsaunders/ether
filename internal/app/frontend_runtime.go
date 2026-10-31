@@ -169,7 +169,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			}
 			name := "Ether"
 			if a.cfg != nil {
-				if trimmed := strings.TrimSpace(a.cfg.Get().Server.FriendlyName); trimmed != "" {
+				if trimmed := strings.TrimSpace(a.cfg.Read().Server.FriendlyName); trimmed != "" {
 					name = trimmed
 				}
 			}

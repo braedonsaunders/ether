@@ -41,7 +41,7 @@ func (a *App) buildCalendar() {
 			return out, nil
 		},
 		Allowed: func(ctx context.Context, u *core.User, t *core.Title) bool {
-			return experienceVisibility(a.safety, a.catalog.StoredTitle, nil, nil, serverLibraries(a.cfg.Get())).Playable(ctx, u, t)
+			return experienceVisibility(a.safety, a.catalog.StoredTitle, nil, nil, serverLibraries(a.cfg.Read())).Playable(ctx, u, t)
 		},
 		UpcomingMovies: func(ctx context.Context) error {
 			_, err := a.catalog.List(ctx, "upcoming", core.TypeMovie, 100)

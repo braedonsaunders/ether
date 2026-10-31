@@ -48,7 +48,7 @@ func (a *App) widgetStatus(context.Context) any {
 		}
 	}
 	used, budget := a.cache.Usage()
-	return map[string]any{"server": a.cfg.Get().Server.FriendlyName, "version": a.opts.Version, "streams": len(groups), "providers": len(providers), "healthyProviders": healthy, "cacheUsed": used, "cacheBudget": budget}
+	return map[string]any{"server": a.cfg.Read().Server.FriendlyName, "version": a.opts.Version, "streams": len(groups), "providers": len(providers), "healthyProviders": healthy, "cacheUsed": used, "cacheBudget": budget}
 }
 
 // WatchNotifications is enabled by the executable, never by embedded/test apps.

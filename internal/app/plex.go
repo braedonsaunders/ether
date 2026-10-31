@@ -74,7 +74,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	}
 	deps.Variants = a.resolver // "Play Version" release picker (cache-only)
 	deps.PlexGUID = plexguid.New(a.db, plexguid.Options{
-		Token:      func() string { return a.cfg.Get().Plex.Token },
+		Token:      func() string { return a.cfg.Read().Plex.Token },
 		Background: true,
 	})
 	a.plexGUID = deps.PlexGUID
@@ -104,7 +104,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	a.wirePlexPolicy(&deps)
 	deps.FavoriteShows = a.favoriteShows
 	deps.Now = parityClock()
-	deps.Config = a.cfg.Get
+	deps.Config = a.cfg.Read
 	deps.ApplyClientRules = resolver.ApplyClientRules
 	deps.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
 	deps.DirectHTTP = &http.Client{Transport: egress.Transport(egress.CapDirect)}

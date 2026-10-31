@@ -56,7 +56,7 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 		source.Catalog, _ = a.spikeLibrary.Catalog().(core.StoredTitleLookup)
 		source.Collections = a.spikeLibrary.Collections()
 		source.Playlists = a.spikeLibrary.Playlists()
-		source.Visibility = experienceVisibility(a.safety, nil, nil, a.spikeLibrary.Playback().Sessions, serverLibraries(a.cfg.Get()))
+		source.Visibility = experienceVisibility(a.safety, nil, nil, a.spikeLibrary.Playback().Sessions, serverLibraries(a.cfg.Read()))
 	}
 	if a.episodeorder != nil {
 		source.VirtualSeason = a.episodeorder.CachedVirtualSeason

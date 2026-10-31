@@ -75,7 +75,7 @@ func (f *frontendControl) Settings(_ context.Context, id frontend.Protocol) (fro
 	if _, ok := f.descriptor(id); !ok {
 		return nil, frontend.ErrNotRegistered
 	}
-	cfg := f.config.Get()
+	cfg := f.config.Read()
 	if id == "plex" {
 		return frontend.Settings{"port": float64(cfg.Server.Port)}, nil
 	}

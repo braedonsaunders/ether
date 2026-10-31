@@ -63,7 +63,7 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	a.frontendClients = newFrontendClients(a.db, a.log.With("component", "frontend-clients"), nil)
 	a.closers = append(a.closers, a.frontendClients.Close)
 	if cfg.Spike.Enabled {
-		a.spikeLibrary, err = spike.New(ctx, a.cfg.Get, spike.Options{Logger: a.log.With("component", "spike")})
+		a.spikeLibrary, err = spike.New(ctx, a.cfg.Read, spike.Options{Logger: a.log.With("component", "spike")})
 		if err != nil {
 			return fmt.Errorf("local library: %w", err)
 		}
@@ -83,7 +83,7 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	a.closers = append(a.closers, a.frontends.close)
 	a.cfg.Subscribe(a.frontends.reconcile)
 	mux := http.NewServeMux()
-	mux.Handle("/ether/", a.perf.wrap("console", lanOnly(a.buildAdmin(), func() []string { return a.cfg.Get().Server.TrustedProxyCIDRs })))
+	mux.Handle("/ether/", a.perf.wrap("console", lanOnly(a.buildAdmin(), a.cfg.TrustedProxyCIDRs)))
 	mux.HandleFunc("/ether", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ether/", http.StatusFound)
 	})

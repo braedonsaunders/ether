@@ -11,7 +11,7 @@ import (
 )
 
 func (a *App) dlnaViewer(ctx context.Context, req *http.Request, settings frontend.Settings) (*core.Viewer, error) {
-	_, lan := identity.ClientNet(req, identity.ProxyPrefixes(a.cfg.Get().Server.TrustedProxyCIDRs)...)
+	_, lan := identity.ClientNet(req, identity.ProxyPrefixes(a.cfg.Read().Server.TrustedProxyCIDRs)...)
 	if !lan {
 		return nil, core.ErrUnauthorized
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 func (a *App) refreshCompatibility(ctx context.Context) {
-	if !a.cfg.Get().Plex.TrackLatestVersion {
+	if !a.cfg.Read().Plex.TrackLatestVersion {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -18,7 +18,7 @@ func (a *App) refreshCompatibility(ctx context.Context) {
 		a.log.Debug("PMS compatibility release check", "err", err)
 		return
 	}
-	current := a.cfg.Get().Plex.LatestCompatibilityVersion
+	current := a.cfg.Read().Plex.LatestCompatibilityVersion
 	if current == version || current != "" && !plextv.NewerPMSVersion(version, current) {
 		return
 	}
