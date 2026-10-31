@@ -120,6 +120,61 @@ func (s *Service) Has(ctx context.Context, v *core.User, key core.RatingKey) (bo
 	return err == nil, err
 }
 
+// HasMany reads membership for keys the caller already authorized. It checks
+// the viewer once and issues one query per chunk.
+func (s *Service) HasMany(ctx context.Context, v *core.User, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
+	out := make(map[core.RatingKey]bool, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	active, err := s.viewer(ctx, v)
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range keys {
+		if !valid(key) {
+			return nil, ErrForbidden
+		}
+	}
+	for start := 0; start < len(keys); start += 400 {
+		chunk := keys[start:min(start+400, len(keys))]
+		args := make([]any, 0, len(chunk)+1)
+		args = append(args, active.ID)
+		query := `SELECT title_key FROM notinterested_titles WHERE viewer_id=? AND title_key IN (`
+		for i, key := range chunk {
+			if i > 0 {
+				query += ","
+			}
+			query += "?"
+			args = append(args, key.String())
+		}
+		query += ")"
+		rows, err := s.o.DB.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var raw string
+			if err := rows.Scan(&raw); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			key, err := core.ParseRatingKey(raw)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[key] = true
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return out, nil
+}
+
 // List filters before applying limit; hidden titles never appear in the undo UI.
 // A nonpositive limit returns all permitted entries.
 func (s *Service) List(ctx context.Context, v *core.User, limit int) ([]Entry, error) {

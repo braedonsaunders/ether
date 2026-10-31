@@ -163,6 +163,46 @@ func (s *Service) Contains(ctx context.Context, userID int64, key core.RatingKey
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM watchlist_items WHERE user_id=? AND item_key=?)`, userID, key).Scan(&present)
 	return present, err
 }
+
+// ContainsMany reads membership for a page in one query per chunk.
+func (s *Service) ContainsMany(ctx context.Context, userID int64, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
+	out := make(map[core.RatingKey]bool, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	for start := 0; start < len(keys); start += 400 {
+		chunk := keys[start:min(start+400, len(keys))]
+		args := make([]any, 0, len(chunk)+1)
+		args = append(args, userID)
+		query := `SELECT item_key FROM watchlist_items WHERE user_id=? AND item_key IN (`
+		for i, key := range chunk {
+			if i > 0 {
+				query += ","
+			}
+			query += "?"
+			args = append(args, key)
+		}
+		query += ")"
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key int64
+			if err := rows.Scan(&key); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[core.RatingKey(key)] = true
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return out, nil
+}
 func (s *Service) Remove(ctx context.Context, userID int64, key core.RatingKey) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM watchlist_items WHERE user_id=? AND item_key=?`, userID, key)
 	return err
