@@ -107,6 +107,10 @@ type Options struct {
 	MaxAttempts int
 	// MaxFailovers per session before giving up (default 6).
 	MaxFailovers int
+	// PayloadReplayGrace keeps a just-released source protected in memory so the
+	// next open of the same payload does not commit a new ownership row. Zero
+	// retires ownership before Open's finish returns.
+	PayloadReplayGrace time.Duration
 	// ChunkSize is the copy buffer size (default 1 MiB); ReadAhead the number
 	// of chunks read ahead of the writer (default 4).
 	ChunkSize int

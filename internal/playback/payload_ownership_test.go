@@ -45,6 +45,40 @@ func payloadRows(t *testing.T, p *payloadStore, table, incarnation string) int {
 	}
 	return n
 }
+func TestPayloadReplayGraceDoesNotRecommit(t *testing.T) {
+	p := payloadFixture(t)
+	var commits int
+	p.afterOwnerCommit = func() error {
+		commits++
+		return nil
+	}
+	hash := nzbHash([]byte("replay"))
+	first := payloadReserve(t, p, hash)
+	if commits != 1 {
+		t.Fatalf("first commit = %d", commits)
+	}
+	if err := p.releaseLater(context.Background(), first, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	second := payloadReserve(t, p, hash)
+	if commits != 1 {
+		t.Fatalf("replay committed again: %d", commits)
+	}
+	if payloadRows(t, p, "playback_payload_owners", p.incarnation) != 1 {
+		t.Fatal("parked owner was retired")
+	}
+	if err := p.release(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	if payloadRows(t, p, "playback_payload_owners", p.incarnation) != 1 {
+		t.Fatal("park ref was dropped with the replay")
+	}
+	p.close()
+	if payloadRows(t, p, "playback_payload_owners", p.incarnation) != 0 {
+		t.Fatal("close left the parked owner")
+	}
+}
+
 func TestPayloadSharedAnchorAcquireAndLastRelease(t *testing.T) {
 	p := payloadFixture(t)
 	ctx := context.Background()

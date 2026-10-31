@@ -148,7 +148,7 @@ func (m *Manager) openSource(ctx context.Context, s *sourceLifetime, res *core.R
 				return
 			}
 			if m.resume != nil {
-				if err := m.resume.payload.release(context.Background(), owner); err != nil {
+				if err := m.resume.payload.releaseLater(context.Background(), owner, m.opts.PayloadReplayGrace); err != nil {
 					// The exact owner was admitted before Open; it has one bounded
 					// callback slot. Rejection/shutdown never settles this ticket.
 					m.resume.payload.queueReleaseAfter(owner, func() { ticket.settle(nil) })

@@ -37,11 +37,17 @@ type payloadAnchor struct {
 	retiring bool
 }
 
+type payloadPark struct {
+	owner payloadOwner
+	timer *time.Timer
+}
+
 type payloadStore struct {
 	recoveryRunning          bool
 	recoveryCancel           context.CancelFunc
 	gate                     chan struct{}
 	anchors                  map[string]*payloadAnchor
+	parks                    map[string]*payloadPark
 	retired                  map[string]payloadOwner
 	releasedAfter            map[string]func()
 	releaseDone              chan struct{}
@@ -53,6 +59,7 @@ type payloadStore struct {
 	mu                       sync.Mutex
 	active                   int
 	closing                  bool
+	draining                 bool
 	cursor                   int
 	afterOwnerCommit         func() error
 	afterRemove              func() error
@@ -151,7 +158,7 @@ func openPayloadStore(ctx context.Context, db *sql.DB, dir string) (*payloadStor
 	}
 	// The domain lock only serializes identity creation, not backend lifetimes.
 	domainFile.Close()
-	p := &payloadStore{gate: make(chan struct{}, 1), anchors: make(map[string]*payloadAnchor), releaseStop: make(chan struct{}), db: db, dir: dir, domain: domain, incarnation: randomID(32)}
+	p := &payloadStore{gate: make(chan struct{}, 1), anchors: make(map[string]*payloadAnchor), parks: map[string]*payloadPark{}, releaseStop: make(chan struct{}), db: db, dir: dir, domain: domain, incarnation: randomID(32)}
 	recovery := 0
 	for slot := 0; slot < payloadWitnessSlots; slot++ {
 		f, err := os.OpenFile(filepath.Join(locks, fmt.Sprintf("%03d.lock", slot)), os.O_CREATE|os.O_RDWR, 0600)
@@ -218,6 +225,17 @@ func openPayloadStore(ctx context.Context, db *sql.DB, dir string) (*payloadStor
 }
 
 func (p *payloadStore) close() {
+	p.mu.Lock()
+	p.draining = true
+	parks := p.parks
+	p.parks = map[string]*payloadPark{}
+	p.mu.Unlock()
+	for _, park := range parks {
+		if park.timer != nil {
+			park.timer.Stop()
+		}
+		_ = p.release(context.Background(), park.owner)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.closing {
@@ -340,6 +358,64 @@ func (p *payloadStore) reserve(ctx context.Context, user int64, surface, device,
 	owner.state = &payloadOwnerState{id: randomID(32), anchor: anchor}
 	p.anchors[hash] = anchor
 	return owner, nil
+}
+
+// share adds an in-memory ref to a live anchor. The caller must release it.
+// It does not commit. A retiring or unknown hash is not shared.
+func (p *payloadStore) share(ctx context.Context, hash string) (payloadOwner, bool) {
+	if err := p.enter(ctx); err != nil {
+		return payloadOwner{}, false
+	}
+	defer p.leave()
+	if err := p.begin(); err != nil {
+		return payloadOwner{}, false
+	}
+	anchor := p.anchors[hash]
+	if anchor == nil || anchor.retiring {
+		p.finish()
+		return payloadOwner{}, false
+	}
+	anchor.refs++
+	ref := anchor.owner
+	ref.state = &payloadOwnerState{id: randomID(32), anchor: anchor}
+	return ref, true
+}
+
+// releaseLater keeps the payload protected for delay after o is dropped, so a
+// replay can share the committed anchor instead of inserting another row.
+// A zero delay, or a hash that cannot be shared, retires o immediately.
+func (p *payloadStore) releaseLater(ctx context.Context, o payloadOwner, delay time.Duration) error {
+	if delay <= 0 || o.state == nil {
+		return p.release(ctx, o)
+	}
+	hold, ok := p.share(ctx, o.hash)
+	if !ok {
+		return p.release(ctx, o)
+	}
+	if err := p.release(ctx, o); err != nil {
+		_ = p.release(context.Background(), hold)
+		return err
+	}
+	park := &payloadPark{owner: hold}
+	p.mu.Lock()
+	if p.closing || p.draining {
+		p.mu.Unlock()
+		return p.release(context.Background(), hold)
+	}
+	p.parks[hold.state.id] = park
+	park.timer = time.AfterFunc(delay, func() {
+		p.mu.Lock()
+		current := p.parks[hold.state.id]
+		if current != park {
+			p.mu.Unlock()
+			return
+		}
+		delete(p.parks, hold.state.id)
+		p.mu.Unlock()
+		_ = p.release(context.Background(), hold)
+	})
+	p.mu.Unlock()
+	return nil
 }
 func dropPayloadOwner(ctx context.Context, db *sql.DB, tx *sql.Tx, o payloadOwner) (string, error) {
 	if err := capability.LockHeaderScopeInTx(ctx, db, tx, o.header.HeaderScope); err != nil {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -140,6 +141,9 @@ type resumeStore struct {
 	held *store.Outbox[resumeKey, resumeWrite]
 
 	payload *payloadStore
+
+	nzbMu    sync.Mutex
+	nzbCache map[string][]byte
 }
 
 type resumeKey struct {
@@ -206,6 +210,9 @@ func (s *resumeStore) put(ctx context.Context, rec resumeRecord, nzb []byte, poi
 func (s *resumeStore) putWithProbe(ctx context.Context, rec resumeRecord, nzb []byte, points []core.KeyframePoint, probe core.MediaInfo) error {
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
+	}
+	if s.resumeCurrent(ctx, rec, nzbHash(nzb), probe, len(points)) {
+		return nil
 	}
 	lease, err := s.acquireNZB(ctx, rec, nzb)
 	if err != nil {
@@ -342,9 +349,66 @@ func (s *resumeStore) readNZB(hash string) ([]byte, error) {
 	return b, nil
 }
 
+// resumeCurrent reports that this resume row, and any persistable probe or
+// keyframe index, is already stored. A matching row with no probe yet must
+// still be written so the next start can skip the container probe.
+func (s *resumeStore) resumeCurrent(ctx context.Context, rec resumeRecord, hash string, probe core.MediaInfo, points int) bool {
+	got, err := s.get(ctx, rec.userID, rec.key)
+	if err != nil || got == nil || got.release.ID == "" {
+		return false
+	}
+	if got.nzbHash != hash || got.release.ID != rec.release.ID || got.profile != rec.profile || got.originalLanguage != rec.originalLanguage || got.size != rec.size || got.duration != rec.duration {
+		return false
+	}
+	if _, ok := persistedProbeFacts(probe); ok {
+		var n int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_probe WHERE user_id=? AND rating_key=? AND release_id=? AND nzb_hash=?`, rec.userID, int64(rec.key), rec.release.ID, hash).Scan(&n); err != nil || n == 0 {
+			return false
+		}
+	}
+	if points > 0 {
+		var n int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_index WHERE user_id=? AND rating_key=? AND release_id=?`, rec.userID, int64(rec.key), rec.release.ID).Scan(&n); err != nil || n == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *resumeStore) cachedNZB(hash string) ([]byte, bool) {
+	s.nzbMu.Lock()
+	defer s.nzbMu.Unlock()
+	b, ok := s.nzbCache[hash]
+	if !ok {
+		return nil, false
+	}
+	return append([]byte(nil), b...), true
+}
+
+func (s *resumeStore) rememberNZB(hash string, b []byte) {
+	if hash == "" || len(b) == 0 || len(b) > 1<<20 {
+		return
+	}
+	s.nzbMu.Lock()
+	defer s.nzbMu.Unlock()
+	if s.nzbCache == nil {
+		s.nzbCache = map[string][]byte{}
+	}
+	if len(s.nzbCache) >= 32 {
+		for key := range s.nzbCache {
+			delete(s.nzbCache, key)
+			break
+		}
+	}
+	s.nzbCache[hash] = append([]byte(nil), b...)
+}
+
 // readResumeNZB retains the actual payload across the filesystem read. A
 // concurrent retention/invalidation delete cannot reclaim an admitted read.
 func (s *resumeStore) readResumeNZB(ctx context.Context, rec *resumeRecord) ([]byte, error) {
+	if b, ok := s.cachedNZB(rec.nzbHash); ok {
+		return b, nil
+	}
 	owner, err := s.payload.reserve(ctx, rec.userID, "resume", "", fmt.Sprintf("%d/%d", rec.userID, rec.key), rec.nzbHash, "resume-read")
 	if err != nil {
 		return nil, err
@@ -352,6 +416,9 @@ func (s *resumeStore) readResumeNZB(ctx context.Context, rec *resumeRecord) ([]b
 	b, readErr := s.readNZB(rec.nzbHash)
 	if err := s.payload.release(context.Background(), owner); err != nil {
 		s.payload.queueRelease(owner)
+	}
+	if readErr == nil {
+		s.rememberNZB(rec.nzbHash, b)
 	}
 	return b, readErr
 }
