@@ -117,6 +117,31 @@ func TestNextEpisode(t *testing.T) {
 	}
 }
 
+func TestNextStoredEpisodeDoesNotLeaveTheCatalogue(t *testing.T) {
+	ctx := context.Background()
+	c := newTestCatalog(t, fakeTMDB(t))
+	for _, key := range []core.RatingKey{core.ShowKey(100), core.EpisodeKey(100, 0, 1), core.EpisodeKey(100, 1, 1), core.EpisodeKey(100, 1, 2), core.EpisodeKey(100, 2, 1)} {
+		if _, err := c.Get(ctx, key); err != nil {
+			t.Fatal(key, err)
+		}
+	}
+	next, err := c.NextStoredEpisode(ctx, core.EpisodeKey(100, 1, 1))
+	if err != nil || next.Key != core.EpisodeKey(100, 1, 2) {
+		t.Fatalf("stored next: %+v %v", next, err)
+	}
+	next, err = c.NextStoredEpisode(ctx, core.EpisodeKey(100, 1, 2))
+	if err != nil || next.Key != core.EpisodeKey(100, 2, 1) {
+		t.Fatalf("stored cross season: %+v %v", next, err)
+	}
+	next, err = c.NextStoredEpisode(ctx, core.EpisodeKey(100, 0, 1))
+	if err != nil || next.Key != core.EpisodeKey(100, 1, 1) {
+		t.Fatalf("stored after special: %+v %v", next, err)
+	}
+	if _, err := c.NextStoredEpisode(ctx, core.EpisodeKey(100, 2, 1)); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("stored last: %v", err)
+	}
+}
+
 func TestSyncBuildsBrowsableSet(t *testing.T) {
 	ctx := context.Background()
 	c := newTestCatalog(t, fakeTMDB(t))

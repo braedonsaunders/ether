@@ -15,13 +15,7 @@ func (a *App) favoriteAllowed(ctx context.Context, u *core.User, subject favorit
 	var sources experience.FavoriteSources
 	if a.catalog != nil {
 		sources.Title = a.catalog.Get
-		sources.PersonPage = func(ctx context.Context, person int64, offset, limit int) ([]core.Title, error) {
-			page, err := a.catalog.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Person: person}, Offset: offset, Limit: limit})
-			if err != nil {
-				return nil, err
-			}
-			return page.Items, nil
-		}
+		sources.PersonPage = a.favoritePersonPage
 	}
 	if a.collections != nil {
 		sources.Collection = a.collections.Get
@@ -32,6 +26,35 @@ func (a *App) favoriteAllowed(ctx context.Context, u *core.User, subject favorit
 		}
 	}
 	return experience.FavoriteAllowed(ctx, u, experience.FavoriteSubject{Kind: experience.FavoriteKind(subject.Kind), ID: subject.ID}, visibility, sources)
+}
+
+// favoriteAllowedStored is the row-receipt admission check. It reads the
+// catalogue mirror and does not refresh a season or show from a provider,
+// so issuing home receipts cannot wait on the network.
+func (a *App) favoriteAllowedStored(ctx context.Context, u *core.User, subject favorites.Subject, visibility experience.Visibility) bool {
+	var sources experience.FavoriteSources
+	if a.catalog != nil {
+		sources.Title = a.catalog.CachedGet
+		sources.PersonPage = a.favoritePersonPage
+		visibility.GetTitle = a.catalog.CachedGet
+	}
+	if a.collections != nil {
+		sources.Collection = a.collections.Get
+	}
+	if a.livetv != nil && subject.Kind == favorites.KindChannel {
+		sources.ChannelAllowed = func(ctx context.Context, viewer *core.User, id string) (bool, error) {
+			return a.livetv.ChannelPermitted(ctx, viewer, id)
+		}
+	}
+	return experience.FavoriteAllowed(ctx, u, experience.FavoriteSubject{Kind: experience.FavoriteKind(subject.Kind), ID: subject.ID}, visibility, sources)
+}
+
+func (a *App) favoritePersonPage(ctx context.Context, person int64, offset, limit int) ([]core.Title, error) {
+	page, err := a.catalog.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Person: person}, Offset: offset, Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
 }
 
 // favoriteTitlesCached rechecks current policy through the local catalogue

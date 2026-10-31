@@ -118,24 +118,23 @@ func (a *App) experienceContinue(ctx context.Context, viewer *core.User, librari
 	if a.playback != nil {
 		sessions = a.playback.Sessions
 	}
-	visibility := experienceVisibility(a.safety, a.catalog.Get, filter, sessions, libraries)
+	visibility := experienceVisibility(a.safety, a.catalog.CachedGet, filter, sessions, libraries)
 	getTitles := func(ctx context.Context, keys []core.RatingKey) []core.Title {
 		if len(keys) == 0 {
 			return nil
 		}
-		got, err := a.catalog.CachedGetMany(ctx, keys)
+		found, err := a.catalog.CachedGetMany(ctx, keys)
 		if err != nil {
-			out := make([]core.Title, 0, len(keys))
-			for _, key := range keys {
-				if t, err := a.catalog.Get(ctx, key); err == nil && t != nil {
-					out = append(out, *t)
-				}
-			}
-			return out
+			return nil
 		}
-		out := make([]core.Title, 0, len(got))
+		out := make([]core.Title, 0, len(found))
+		seen := map[core.RatingKey]bool{}
 		for _, key := range keys {
-			if t, ok := got[key]; ok && t.Key == key {
+			if seen[key] {
+				continue
+			}
+			if t, ok := found[key]; ok && t.Key == key {
+				seen[key] = true
 				out = append(out, t)
 			}
 		}
@@ -148,7 +147,7 @@ func (a *App) experienceContinue(ctx context.Context, viewer *core.User, librari
 		return a.catalog.Grandchildren(ctx, key)
 	}
 	var loadErr error
-	c := experience.Continue{State: a.state, Now: time.Now, FavoriteShows: a.favoriteShows, GetTitles: getTitles, Grandchildren: grandchildren, NextEpisode: a.catalog.NextEpisode, Visible: visibility.Visible,
+	c := experience.Continue{State: a.state, Now: time.Now, FavoriteShows: a.favoriteShows, GetTitles: getTitles, Grandchildren: grandchildren, NextEpisode: a.catalog.NextStoredEpisode, Visible: visibility.Visible,
 		SameDayUnavailable: func(ctx context.Context, title *core.Title) bool {
 			var source core.AvailabilitySource
 			if a.resolver != nil {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,19 +87,22 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		}
 		return a.playback.Sessions()
 	}
-	vis := experienceVisibility(a.safety, a.catalog.Get, filter, sessions, libs)
+	// Home, library rows, and card user-data read the mirror. Refreshing a
+	// show from a provider stays on the single-title detail and playback path.
+	vis := experienceVisibility(a.safety, a.catalog.CachedGet, filter, sessions, libs)
+	rowVis := vis
 	source := experience.CandidateRowSource{Kind: a.personalize.SemanticRowKind, Load: func(ctx context.Context, req frontend.RowRequest) ([]experience.RankedCandidate, error) {
-		return a.productionExperienceRows(ctx, req, libs, vis)
+		return a.productionExperienceRows(ctx, req, libs, rowVis)
 	}, Additional: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-		return a.experienceAdditionalRows(ctx, req, a.playlists, vis)
+		return a.experienceAdditionalRows(ctx, req, a.playlists, rowVis)
 	}}
-	entryPolicy := experience.RowEntryPolicy{Visibility: vis, Favorite: func(ctx context.Context, u *core.User, subject experience.FavoriteSubject) bool {
-		return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.Kind(subject.Kind), ID: subject.ID}, vis)
+	entryPolicy := experience.RowEntryPolicy{Visibility: rowVis, Favorite: func(ctx context.Context, u *core.User, subject experience.FavoriteSubject) bool {
+		return a.favoriteAllowedStored(ctx, u, favorites.Subject{Kind: favorites.Kind(subject.Kind), ID: subject.ID}, rowVis)
 	}, Playlist: func(ctx context.Context, u *core.User, key core.RatingKey) bool {
 		_, err := a.playlists.Get(ctx, u.ID, key)
 		return err == nil
 	}}
-	interactions := experience.RowInteractionPolicy{Libraries: libs, Visibility: vis, Get: a.catalog.Get, AllowEntry: entryPolicy.Subject, CollectionMembers: func(ctx context.Context, u *core.User, key core.RatingKey, entries []core.NeutralEntryRef) bool {
+	interactions := experience.RowInteractionPolicy{Libraries: libs, Visibility: rowVis, Get: a.catalog.CachedGet, AllowEntry: entryPolicy.Subject, CollectionMembers: func(ctx context.Context, u *core.User, key core.RatingKey, entries []core.NeutralEntryRef) bool {
 		return rowViewCollectionMembers(ctx, a.collections, u, key, entries)
 	}, Impression: a.personalize.RecordNeutralImpression, DetailOpen: a.personalize.RecordDetailOpen}
 	receipts, err := experience.NewReceipts(experience.ReceiptOptions{DB: a.db, PolicyLease: a.cfg.AcquirePolicy, Active: a.users.PolicyUser, TTL: 30 * time.Minute, MaxPerDevice: 10000, Allowed: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject) bool {
@@ -111,8 +115,8 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
-	rows, err := experience.NewRowsService(experience.RowServiceDeps{Source: source, Visibility: vis, Receipts: receipts, RankedSource: true, HomeFallback: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-		return a.experienceHomeFallback(ctx, req, libs, vis)
+	rows, err := experience.NewRowsService(experience.RowServiceDeps{Source: source, Visibility: rowVis, Receipts: receipts, RankedSource: true, HomeFallback: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+		return a.experienceHomeFallback(ctx, req, libs, rowVis)
 	}, Active: func(ctx context.Context, u *core.User) bool {
 		v, e := a.users.ActiveUser(ctx, u.ID)
 		return e == nil && v != nil
@@ -321,6 +325,8 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			return nil, core.ErrNotAvailable
 		}
 		return a.catalog.LibraryPosters(ctx, typ, limit)
+	}, modelReady: func(id int64) bool {
+		return a.personalize != nil && a.personalize.ModelReady(id)
 	}}, nil
 }
 
@@ -336,6 +342,9 @@ type surfaceExperience struct {
 	generation  func(context.Context) (int64, error)
 	catalogGen  func() uint64
 	posters     func(context.Context, core.MediaType, int) ([]core.Title, error)
+	modelReady  func(int64) bool
+	rowMu       sync.Mutex
+	rowCache    map[string]rowCacheSlot
 	collageMu   sync.Mutex
 	collage     map[string]collageSlot
 }
@@ -524,40 +533,167 @@ func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) 
 	return detail, nil
 }
 
+type rowCacheSlot struct {
+	gen   uint64
+	at    time.Time
+	rows  []frontend.Row
+	ready bool
+	busy  bool
+}
+
+const homeRowCacheTTL = 15 * time.Second
+
 func (s *surfaceExperience) SnapshotRows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-	ctx = livetv.WithChannelMemo(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)))
-	return s.Service.SnapshotRows(ctx, req)
+	return s.cachedRows(ctx, req, false)
 }
 
 func (s *surfaceExperience) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-	ctx = livetv.WithChannelMemo(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)))
-	rows, err := s.Service.Rows(ctx, req)
-	if err == nil {
-		var active *core.User
-		if req.Viewer != nil {
-			active, _ = s.active(ctx, req.Viewer.ID)
+	return s.cachedRows(ctx, req, true)
+}
+
+func (s *surfaceExperience) cachedRows(ctx context.Context, req frontend.RowRequest, issue bool) ([]frontend.Row, error) {
+	// Issued rows mint receipts. A cached success would skip that transaction,
+	// so a later bind failure could not roll back and the client would keep
+	// handles whose receipts were never written. Snapshots are safe to reuse.
+	if issue || (req.Placement != frontend.PlacementHome && req.Placement != frontend.PlacementLibrary) {
+		return s.loadRows(ctx, req, issue)
+	}
+	key, gen := s.rowCacheKey(req)
+	s.rowMu.Lock()
+	slot := s.rowCache[key]
+	fresh := slot.ready && slot.gen == gen && time.Since(slot.at) < homeRowCacheTTL
+	if fresh || (slot.ready && slot.gen == gen && slot.busy) {
+		rows := cloneHomeRows(slot.rows)
+		s.rowMu.Unlock()
+		return rows, nil
+	}
+	stale := slot.ready && slot.gen == gen
+	if stale {
+		slot.busy = true
+		s.rowCache[key] = slot
+		rows := cloneHomeRows(slot.rows)
+		s.rowMu.Unlock()
+		go s.refreshRows(key, gen, req, issue)
+		return rows, nil
+	}
+	s.rowMu.Unlock()
+	rows, err := s.loadRows(ctx, req, issue)
+	if err != nil {
+		return nil, err
+	}
+	s.storeRows(key, gen, rows)
+	return rows, nil
+}
+
+func (s *surfaceExperience) refreshRows(key string, gen uint64, req frontend.RowRequest, issue bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	defer func() {
+		s.rowMu.Lock()
+		slot := s.rowCache[key]
+		slot.busy = false
+		s.rowCache[key] = slot
+		s.rowMu.Unlock()
+	}()
+	rows, err := s.loadRows(ctx, req, issue)
+	if err != nil {
+		return
+	}
+	s.storeRows(key, gen, rows)
+}
+
+func (s *surfaceExperience) storeRows(key string, gen uint64, rows []frontend.Row) {
+	s.rowMu.Lock()
+	defer s.rowMu.Unlock()
+	if s.rowCache == nil {
+		s.rowCache = map[string]rowCacheSlot{}
+	}
+	s.rowCache[key] = rowCacheSlot{gen: gen, at: time.Now(), rows: cloneHomeRows(rows), ready: true}
+}
+
+func (s *surfaceExperience) rowCacheKey(req frontend.RowRequest) (string, uint64) {
+	viewer := int64(0)
+	ready := false
+	if req.Viewer != nil {
+		viewer = req.Viewer.ID
+		if s.modelReady != nil {
+			ready = s.modelReady(viewer)
 		}
-		for _, row := range rows {
-			s.warmArtwork(row.Items, req.Device)
-			for _, entry := range row.Entries {
-				if entry.Title != nil {
-					s.warmArtwork([]core.Title{*entry.Title}, req.Device)
-				}
-				if channel := entry.LiveChannel; channel != nil {
-					// An upstream logo may carry provider credentials. Only return
-					// a policy-scoped descriptor to non-Plex front ends.
-					channel.Logo = ""
-					if active != nil && s.artwork != nil {
-						images, complete, e := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: active, Device: req.Device, Channel: channel.ID})
-						if e == nil && complete {
-							channel.Images = images
-						}
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	key := fmt.Sprintf("%s\n%d\n%s\n%s\n%s\n%s\n%d\n%t", s.protocol, viewer, req.Device.ID, req.Placement, req.ViewID, req.Purpose, limit, ready)
+	// Home stays cached for the TTL. Catalogue write generation is not part of
+	// the key: a background title refresh bumps it on every provider hydrate
+	// and was forcing the next Home to rebuild.
+	return key, 0
+}
+
+func cloneHomeRows(in []frontend.Row) []frontend.Row {
+	out := make([]frontend.Row, len(in))
+	for i, row := range in {
+		out[i] = row
+		out[i].Entries = cloneRowEntries(row.Entries)
+		if row.Items != nil {
+			out[i].Items = append([]core.Title(nil), row.Items...)
+		}
+	}
+	return out
+}
+
+func cloneRowEntries(in []frontend.RowEntry) []frontend.RowEntry {
+	if in == nil {
+		return nil
+	}
+	out := make([]frontend.RowEntry, len(in))
+	for i, entry := range in {
+		out[i] = entry
+		if entry.Title != nil {
+			title := *entry.Title
+			out[i].Title = &title
+		}
+	}
+	return out
+}
+
+func (s *surfaceExperience) loadRows(ctx context.Context, req frontend.RowRequest, issue bool) ([]frontend.Row, error) {
+	ctx = livetv.WithChannelMemo(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)))
+	var rows []frontend.Row
+	var err error
+	if issue {
+		rows, err = s.Service.Rows(ctx, req)
+	} else {
+		rows, err = s.Service.SnapshotRows(ctx, req)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var active *core.User
+	if req.Viewer != nil {
+		active, _ = s.active(ctx, req.Viewer.ID)
+	}
+	for _, row := range rows {
+		s.warmArtwork(row.Items, req.Device)
+		for _, entry := range row.Entries {
+			if entry.Title != nil {
+				s.warmArtwork([]core.Title{*entry.Title}, req.Device)
+			}
+			if channel := entry.LiveChannel; channel != nil {
+				// An upstream logo may carry provider credentials. Only return
+				// a policy-scoped descriptor to non-Plex front ends.
+				channel.Logo = ""
+				if active != nil && s.artwork != nil {
+					images, complete, e := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: active, Device: req.Device, Channel: channel.ID})
+					if e == nil && complete {
+						channel.Images = images
 					}
 				}
 			}
 		}
 	}
-	return rows, err
+	return rows, nil
 }
 
 func (s *surfaceExperience) warmArtwork(items []core.Title, device core.Device) {

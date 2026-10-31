@@ -14,6 +14,13 @@ func (s *Server) continueExperience(pr *Request) experience.Continue {
 		},
 		Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) },
 		NextEpisode: func(ctx context.Context, k core.RatingKey) (*core.Title, error) {
+			// Home continue uses the episode already in the catalogue. The
+			// provider lookup stays on post-play, which is one show.
+			if local, ok := s.d.Catalog.(interface {
+				NextStoredEpisode(context.Context, core.RatingKey) (*core.Title, error)
+			}); ok {
+				return local.NextStoredEpisode(ctx, k)
+			}
 			return s.d.Catalog.NextEpisode(ctx, k)
 		}, Visible: s.visibleTitle,
 		SameDayUnavailable: func(ctx context.Context, t *core.Title) bool { return s.sameDayUnavailable(ctx, pr, t) },

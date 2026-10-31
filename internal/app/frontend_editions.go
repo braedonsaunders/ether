@@ -17,7 +17,7 @@ func (s surfaceEditions) Editions(ctx context.Context, _ *core.Viewer, _ core.De
 	if s.app == nil {
 		return nil, nil
 	}
-	title, err := s.app.catalog.Get(ctx, key)
+	title, err := s.app.catalog.CachedGet(ctx, key)
 	if err != nil || title == nil {
 		return nil, nil
 	}

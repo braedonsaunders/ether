@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
@@ -73,6 +74,9 @@ type instance struct {
 	host   frontend.Host
 	id     string
 	router *route.Router
+
+	sectionsMu    sync.Mutex
+	sectionsCache map[string]siloSectionPage
 }
 
 func (i *instance) Handler() http.Handler {

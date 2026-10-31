@@ -687,6 +687,16 @@ func (s *Service) Guide(ctx context.Context, u *core.User, from, until time.Time
 // OnNow is the bounded guide used to build a live row: one policy read, then
 // at most the current and next programme for each enabled channel.
 func (s *Service) OnNow(ctx context.Context, u *core.User, now, until time.Time) ([]Channel, []Programme, error) {
+	return s.onNow(ctx, u, now, until, 0)
+}
+
+// OnNowN stops after limit allowed channels. Home uses it so a large guide
+// does not query a programme window for every channel on the request.
+func (s *Service) OnNowN(ctx context.Context, u *core.User, now, until time.Time, limit int) ([]Channel, []Programme, error) {
+	return s.onNow(ctx, u, now, until, limit)
+}
+
+func (s *Service) onNow(ctx context.Context, u *core.User, now, until time.Time, limit int) ([]Channel, []Programme, error) {
 	if u == nil || !until.After(now) {
 		return nil, nil, fmt.Errorf("invalid on-now window")
 	}
@@ -719,6 +729,9 @@ func (s *Service) OnNow(ctx context.Context, u *core.User, now, until time.Time)
 		c.StreamSources = nil
 		channels = append(channels, c)
 		programmes = append(programmes, ps...)
+		if limit > 0 && len(channels) >= limit {
+			break
+		}
 	}
 	return channels, programmes, nil
 }

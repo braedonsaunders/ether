@@ -224,6 +224,7 @@ type Engine struct {
 
 	mu            sync.Mutex
 	closed        bool
+	coldDeadline  time.Time // non-zero after the first cold-model wait starts
 	models        map[int64]*userModel
 	users         map[int64]core.User
 	lastCtx       map[int64]core.HubContext

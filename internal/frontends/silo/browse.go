@@ -121,6 +121,12 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	r = r.WithContext(frontend.WithRequestMemo(r.Context()))
+	cacheKey := siloSectionKey(v, device(r), r.URL.RequestURI())
+	if cached, ok := i.cachedSections(cacheKey); ok {
+		reply(w, 200, map[string]any{"sections": cached})
+		return
+	}
 	placement := frontend.PlacementHome
 	view := r.PathValue("library")
 	if view != "" && view != nowAvailableLibraryID {
@@ -173,7 +179,51 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		}
 		sections = append(sections, section)
 	}
+	i.storeSections(cacheKey, sections)
 	reply(w, 200, map[string]any{"sections": sections})
+}
+
+const siloSectionTTL = 15 * time.Second
+
+type siloSectionPage struct {
+	at       time.Time
+	sections []any
+}
+
+func siloSectionKey(v *frontend.Viewer, dev frontend.Device, uri string) string {
+	id := int64(0)
+	if v != nil {
+		id = v.ID
+	}
+	return strconv.FormatInt(id, 10) + "\n" + dev.ID + "\n" + uri
+}
+
+func (i *instance) cachedSections(key string) ([]any, bool) {
+	if i == nil {
+		return nil, false
+	}
+	i.sectionsMu.Lock()
+	defer i.sectionsMu.Unlock()
+	page, ok := i.sectionsCache[key]
+	if !ok || time.Since(page.at) >= siloSectionTTL {
+		return nil, false
+	}
+	return page.sections, true
+}
+
+func (i *instance) storeSections(key string, sections []any) {
+	if i == nil {
+		return
+	}
+	i.sectionsMu.Lock()
+	defer i.sectionsMu.Unlock()
+	if i.sectionsCache == nil {
+		i.sectionsCache = map[string]siloSectionPage{}
+	}
+	if len(i.sectionsCache) > 64 {
+		i.sectionsCache = map[string]siloSectionPage{}
+	}
+	i.sectionsCache[key] = siloSectionPage{at: time.Now(), sections: sections}
 }
 func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	v, credential, err := i.viewer(r)

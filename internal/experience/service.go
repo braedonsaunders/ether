@@ -606,6 +606,47 @@ func (s *Service) SnapshotRows(ctx context.Context, req frontend.RowRequest) ([]
 	req.Viewer = v
 	return s.d.Rows.SnapshotRows(ctx, req, s.d.Protocol)
 }
+
+// StoredItem reads a title already in the catalogue. Resume, Next Up, and
+// other lists use it so one stale show cannot refresh from a provider.
+func (s *Service) StoredItem(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+	v, err := s.viewer(ctx, req.Viewer)
+	if err != nil {
+		return frontend.ItemDetail{}, err
+	}
+	if s.d.CachedGet == nil {
+		return frontend.ItemDetail{}, core.ErrNotAvailable
+	}
+	title, err := s.d.CachedGet(ctx, req.Key)
+	if err != nil || title == nil || title.Key != req.Key {
+		return frontend.ItemDetail{}, core.ErrNotFound
+	}
+	visibility := s.d.Visibility
+	visibility.GetTitle = s.d.CachedGet
+	if visibility.SectionFor == nil {
+		return frontend.ItemDetail{}, core.ErrNotFound
+	}
+	section, ok := visibility.SectionFor(title.Type)
+	if !ok || !SectionAllowed(v, section) || !visibility.Visible(ctx, v, title) {
+		return frontend.ItemDetail{}, core.ErrNotFound
+	}
+	if title.ShowKey != 0 && title.ShowTitle == "" {
+		show, e := s.d.CachedGet(ctx, title.ShowKey)
+		if e == nil && show != nil && show.Key == title.ShowKey {
+			showSection, showOK := visibility.SectionFor(show.Type)
+			if showOK && SectionAllowed(v, showSection) && visibility.Visible(ctx, v, show) {
+				copy := *title
+				copy.ShowTitle = show.Title
+				if copy.ShowYear == 0 {
+					copy.ShowYear = show.Year
+				}
+				title = &copy
+			}
+		}
+	}
+	return frontend.ItemDetail{Title: *title}, nil
+}
+
 func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
 	v, err := s.viewer(ctx, req.Viewer)
 	if err != nil {
@@ -745,6 +786,47 @@ func (s *Service) AuthorizeArtwork(ctx context.Context, viewer *core.Viewer, dev
 	}
 	return v, nil
 }
+
+// LocalEpisodes lists aired episodes already stored for a show or season.
+// The bool is false when the catalogue page was capped, so a caller that
+// needs every episode can omit a count instead of inventing one. It does
+// not refresh the show or its seasons.
+func (s *Service) LocalEpisodes(ctx context.Context, viewer *core.Viewer, key core.RatingKey) ([]core.Title, bool, error) {
+	if s == nil || s.d.AiredEpisodes == nil {
+		return nil, false, core.ErrNotFound
+	}
+	v, err := s.viewer(ctx, viewer)
+	if err != nil {
+		return nil, false, err
+	}
+	show := key
+	season := 0
+	switch key.Kind() {
+	case core.KindShow:
+	case core.KindSeason:
+		show = core.ShowKey(key.TMDB())
+		season = key.Season()
+	default:
+		return nil, false, core.ErrNotFound
+	}
+	page, err := s.d.AiredEpisodes(ctx, show, 0, 500)
+	if err != nil {
+		return nil, false, err
+	}
+	complete := page.Total == len(page.Items)
+	out := make([]core.Title, 0, len(page.Items))
+	for i := range page.Items {
+		title := page.Items[i]
+		if season != 0 && title.Season != season {
+			continue
+		}
+		if title.Type == core.TypeEpisode && s.visible(ctx, v, &title) {
+			out = append(out, title)
+		}
+	}
+	return out, complete, nil
+}
+
 func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
 	if q.StartAt != 0 && q.AdjacentTo != 0 {
 		return core.Page{}, errors.New("experience: incompatible item anchors")

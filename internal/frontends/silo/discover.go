@@ -150,6 +150,7 @@ func (i *instance) sectionCards(r *http.Request, v *frontend.Viewer, credential 
 	if err != nil {
 		return nil, err
 	}
+	overlays, batched := i.editionOverlays(r, v, keys)
 	home := !strings.Contains(r.URL.Path, "/library/")
 	items := make([]any, 0, len(titles))
 	for _, t := range titles {
@@ -162,11 +163,39 @@ func (i *instance) sectionCards(r *http.Request, v *frontend.Viewer, credential 
 		} else if row.Purpose == frontend.RowContinue && states[t.Key].ViewOffset > 0 {
 			item["item_source"] = "in_progress"
 		}
-		i.artwork(r, v, credential, t.Key, item)
-		i.applyEditionOverlay(r, v, t.Key, item)
+		i.storedCardArtwork(r, credential, t, item)
+		if summary := overlays[t.Key]; len(summary) > 0 {
+			item["overlay_summary"] = summary
+		} else if !batched {
+			i.applyEditionOverlay(r, v, t.Key, item)
+		}
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (i *instance) editionOverlays(r *http.Request, v *frontend.Viewer, keys []frontend.RatingKey) (map[frontend.RatingKey]map[string]any, bool) {
+	out := map[frontend.RatingKey]map[string]any{}
+	if i == nil || i.host.Editions == nil || len(keys) == 0 {
+		return out, false
+	}
+	type many interface {
+		EditionsMany(context.Context, *frontend.Viewer, frontend.Device, []frontend.RatingKey) (map[frontend.RatingKey][]frontend.Version, error)
+	}
+	batch, ok := i.host.Editions.(many)
+	if !ok {
+		return out, false
+	}
+	versions, err := batch.EditionsMany(r.Context(), v, device(r), keys)
+	if err != nil {
+		return out, false
+	}
+	for key, list := range versions {
+		if summary := bestSiloOverlay(list); len(summary) > 0 {
+			out[key] = summary
+		}
+	}
+	return out, true
 }
 
 func (i *instance) discover(w http.ResponseWriter, r *http.Request) {

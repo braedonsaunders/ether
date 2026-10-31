@@ -55,22 +55,37 @@ type LiveGuideSource interface {
 // The caller supplies the guide horizon; stream and provider URLs never leave
 // this projection. Image is an optional server-controlled logo resolver.
 func LiveEntries(ctx context.Context, viewer *core.User, source LiveGuideSource, now, until time.Time, image func(livetv.Channel) string) ([]frontend.RowEntry, error) {
+	return liveEntries(ctx, viewer, source, now, until, image, 0)
+}
+
+func liveEntries(ctx context.Context, viewer *core.User, source LiveGuideSource, now, until time.Time, image func(livetv.Channel) string, limit int) ([]frontend.RowEntry, error) {
 	if viewer == nil || source == nil || !until.After(now) {
 		return nil, errors.New("experience: invalid live guide request")
 	}
 	var channels []livetv.Channel
 	var programmes []livetv.Programme
 	var err error
-	if nowSource, ok := source.(interface {
-		OnNow(context.Context, *core.User, time.Time, time.Time) ([]livetv.Channel, []livetv.Programme, error)
-	}); ok {
-		channels, programmes, err = nowSource.OnNow(ctx, viewer, now, until)
-	} else {
-		channels, err = source.AllowedChannels(ctx, viewer)
-		if err != nil {
-			return nil, err
+	loaded := false
+	if limit > 0 {
+		if limited, ok := source.(interface {
+			OnNowN(context.Context, *core.User, time.Time, time.Time, int) ([]livetv.Channel, []livetv.Programme, error)
+		}); ok {
+			channels, programmes, err = limited.OnNowN(ctx, viewer, now, until, limit)
+			loaded = true
 		}
-		programmes, err = source.Guide(ctx, viewer, now, until)
+	}
+	if !loaded {
+		if nowSource, ok := source.(interface {
+			OnNow(context.Context, *core.User, time.Time, time.Time) ([]livetv.Channel, []livetv.Programme, error)
+		}); ok {
+			channels, programmes, err = nowSource.OnNow(ctx, viewer, now, until)
+		} else {
+			channels, err = source.AllowedChannels(ctx, viewer)
+			if err != nil {
+				return nil, err
+			}
+			programmes, err = source.Guide(ctx, viewer, now, until)
+		}
 	}
 	if err != nil {
 		return nil, err

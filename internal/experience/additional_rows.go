@@ -59,12 +59,20 @@ func (a AdditionalRows) Rows(ctx context.Context, req frontend.RowRequest) ([]fr
 	}
 	if a.Live != nil {
 		now := a.Now()
-		entries, err := LiveEntries(ctx, req.Viewer, a.Live, now, now.Add(24*time.Hour), nil)
+		capN := req.Limit
+		if capN <= 0 {
+			capN = 50
+		}
+		entries, err := liveEntries(ctx, req.Viewer, a.Live, now, now.Add(24*time.Hour), nil, capN+1)
 		if err != nil {
 			return nil, err
 		}
+		more := len(entries) > capN
+		if more {
+			entries = entries[:capN]
+		}
 		if len(entries) > 0 {
-			rows = append(rows, frontend.Row{ID: "live", Title: "On Now", Purpose: frontend.RowLive, Entries: entries})
+			rows = append(rows, frontend.Row{ID: "live", Title: "On Now", Purpose: frontend.RowLive, Entries: entries, More: more})
 		}
 	}
 	return rows, nil

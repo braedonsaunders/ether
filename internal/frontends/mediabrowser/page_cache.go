@@ -96,7 +96,13 @@ func cacheableBrowse(r *http.Request) bool {
 	if strings.Contains(p, "/Images/") || strings.Contains(p, "/Playback") || strings.Contains(p, "/Download") || strings.Contains(p, "/Subtitles/") || strings.Contains(p, "/Videos/") {
 		return false
 	}
-	return strings.Contains(p, "/Items") || strings.HasSuffix(p, "/Views") || strings.HasSuffix(p, "/UserViews") || strings.HasSuffix(p, "/NextUp") || strings.HasSuffix(p, "/Search/Hints")
+	// Library lists fill personalized shelves after the first response. Caching
+	// that first body would keep serving Movies and TV Shows after the warm
+	// finished, because personal identity is not part of page freshness.
+	if strings.HasSuffix(p, "/Views") || strings.HasSuffix(p, "/UserViews") {
+		return false
+	}
+	return strings.Contains(p, "/Items") || strings.HasSuffix(p, "/NextUp") || strings.HasSuffix(p, "/Search/Hints")
 }
 
 func browseCacheKey(f frontend.PageFreshness, r *http.Request) string {

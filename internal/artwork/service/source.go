@@ -141,6 +141,43 @@ func artworkReference(req frontend.ArtworkRequest, kind, source string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+// oneChannel authorizes a single guide row. Home asks for a logo per
+// channel; scanning every channel for each logo held the request for seconds.
+func (a Source) oneChannel(ctx context.Context, viewer *core.User, id string) (livetv.Channel, error) {
+	if a.LiveTV == nil || viewer == nil || id == "" {
+		return livetv.Channel{}, core.ErrNotFound
+	}
+	if permit, ok := a.LiveTV.(interface {
+		ChannelPermitted(context.Context, *core.User, string) (bool, error)
+		Channel(context.Context, string) (livetv.Channel, error)
+	}); ok {
+		allowed, err := permit.ChannelPermitted(ctx, viewer, id)
+		if err != nil {
+			return livetv.Channel{}, err
+		}
+		if !allowed {
+			return livetv.Channel{}, core.ErrNotFound
+		}
+		channel, err := permit.Channel(ctx, id)
+		if err != nil {
+			return livetv.Channel{}, err
+		}
+		channel.StreamURL = ""
+		channel.StreamSources = nil
+		return channel, nil
+	}
+	channels, err := a.LiveTV.AllowedChannels(ctx, viewer)
+	if err != nil {
+		return livetv.Channel{}, err
+	}
+	for _, channel := range channels {
+		if channel.ID == id {
+			return channel, nil
+		}
+	}
+	return livetv.Channel{}, core.ErrNotFound
+}
+
 // ChannelImage describes a channel already filtered through AllowedChannels.
 // The reference is not an authorization credential; List rechecks policy.
 func (a Source) ChannelImage(viewer *core.Viewer, channel livetv.Channel) frontend.Image {
@@ -167,20 +204,11 @@ func (a Source) entries(ctx context.Context, req frontend.ArtworkRequest) ([]fro
 	}
 
 	if req.Channel != "" {
-		if s.LiveTV == nil {
-			return nil, false, core.ErrNotFound
-		}
-		channels, err := s.LiveTV.AllowedChannels(ctx, req.Viewer)
+		channel, err := s.oneChannel(ctx, req.Viewer, req.Channel)
 		if err != nil {
 			return nil, false, err
 		}
-		for _, channel := range channels {
-			if channel.ID != req.Channel {
-				continue
-			}
-			return []frontendArtworkEntry{{image: a.ChannelImage(req.Viewer, channel), channel: true, channelLogo: channel.Logo, channelNumber: channel.Number, channelName: channel.Name}}, true, nil
-		}
-		return nil, false, core.ErrNotFound
+		return []frontendArtworkEntry{{image: a.ChannelImage(req.Viewer, channel), channel: true, channelLogo: channel.Logo, channelNumber: channel.Number, channelName: channel.Name}}, true, nil
 	}
 	var title *core.Title
 	var virtualSeason *core.Title

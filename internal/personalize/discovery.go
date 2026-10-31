@@ -134,41 +134,46 @@ func (d *Discovery) yearInReview(ctx context.Context, u *core.User, year, limit 
 	if e != nil {
 		return hub, e
 	}
-	keys := make([]core.RatingKey, 0, len(entries)*2)
-	for _, h := range entries {
-		if h.Completed && !h.ViewedAt.Before(start) && h.ViewedAt.Before(end) {
-			keys = append(keys, h.Key, tasteKey(h.Key))
-		}
-	}
-	cached := mirroredTitles(ctx, d.catalog, keys)
 	seen := map[core.RatingKey]bool{}
-	for _, h := range entries {
-		if !h.Completed || h.ViewedAt.Before(start) || !h.ViewedAt.Before(end) {
-			continue
+	// Hydrate a window at a time. The row stops at limit, so the rest of a
+	// long year is not loaded onto the home request.
+	for startAt := 0; startAt < len(entries) && len(hub.Items) < limit; startAt += 64 {
+		window := entries[startAt:min(startAt+64, len(entries))]
+		keys := make([]core.RatingKey, 0, len(window)*2)
+		for _, h := range window {
+			if h.Completed && !h.ViewedAt.Before(start) && h.ViewedAt.Before(end) && !seen[tasteKey(h.Key)] {
+				keys = append(keys, h.Key, tasteKey(h.Key))
+			}
 		}
-		// Episode keys already identify their show. Once that show is in the
-		// row, do not hydrate every remaining watched episode just to discard it.
-		if seen[tasteKey(h.Key)] {
-			continue
-		}
-		t, e := historyTitle(ctx, d.catalog, cached, h.Key)
-		if e != nil || !d.visible(u, t) || excluded.contains(t) {
-			continue
-		}
-		k := discoveryIdentity(t)
-		if seen[k] {
-			continue
-		}
-		if k != t.Key {
-			t, e = historyTitle(ctx, d.catalog, cached, k)
+		cached := mirroredTitles(ctx, d.catalog, keys)
+		for _, h := range window {
+			if !h.Completed || h.ViewedAt.Before(start) || !h.ViewedAt.Before(end) {
+				continue
+			}
+			// Episode keys already identify their show. Once that show is in the
+			// row, do not hydrate every remaining watched episode just to discard it.
+			if seen[tasteKey(h.Key)] {
+				continue
+			}
+			t, e := historyTitle(ctx, d.catalog, cached, h.Key)
 			if e != nil || !d.visible(u, t) || excluded.contains(t) {
 				continue
 			}
-		}
-		seen[k] = true
-		hub.Items = append(hub.Items, *t)
-		if len(hub.Items) >= limit {
-			break
+			k := discoveryIdentity(t)
+			if seen[k] {
+				continue
+			}
+			if k != t.Key {
+				t, e = historyTitle(ctx, d.catalog, cached, k)
+				if e != nil || !d.visible(u, t) || excluded.contains(t) {
+					continue
+				}
+			}
+			seen[k] = true
+			hub.Items = append(hub.Items, *t)
+			if len(hub.Items) >= limit {
+				break
+			}
 		}
 	}
 	return hub, nil

@@ -643,6 +643,34 @@ func (c *Catalog) loadSeasons(ctx context.Context, showID int64, seasons []core.
 	return errors.Join(errs...)
 }
 
+// NextStoredEpisode is the next regular episode already in the catalogue.
+// It does not refresh the show or season from a provider. Home, library
+// rows, and model builds use it so one stale show cannot stall the request.
+// A special still jumps to the first regular episode, matching NextEpisode.
+func (c *Catalog) NextStoredEpisode(ctx context.Context, episode core.RatingKey) (*core.Title, error) {
+	if c == nil || c.db == nil || episode.Kind() != core.KindEpisode {
+		return nil, core.ErrNotFound
+	}
+	showKey := int64(core.ShowKey(episode.TMDB()))
+	var query string
+	var args []any
+	if episode.Season() <= 0 {
+		query = `SELECT ` + titleCols + ` FROM catalog_titles WHERE type='episode' AND show_key=? AND season>0 ORDER BY season ASC, episode ASC LIMIT 8`
+		args = []any{showKey}
+	} else {
+		query = `SELECT ` + titleCols + ` FROM catalog_titles WHERE type='episode' AND show_key=? AND season>0 AND (season>? OR (season=? AND episode>?)) ORDER BY season ASC, episode ASC LIMIT 8`
+		args = []any{showKey, episode.Season(), episode.Season(), episode.Episode()}
+	}
+	rows, err := c.queryTitles(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, core.ErrNotFound
+	}
+	return &rows[0], nil
+}
+
 // NextEpisode returns the next regular episode (specials, season 0, are skipped
 // as a target; calling it on a special jumps to S1E1-order sequence).
 func (c *Catalog) NextEpisode(ctx context.Context, episode core.RatingKey) (*core.Title, error) {

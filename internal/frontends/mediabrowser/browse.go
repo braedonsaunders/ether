@@ -333,9 +333,8 @@ func (i *instance) browseRoutes() error {
 			i.fillSeriesTitles(r, v, page)
 			for _, title := range page {
 				if purpose == frontend.RowNextUp && title.Type == "episode" && i.host.Experience != nil {
-					detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: title.Key})
-					if err == nil && detail.Title.Key == title.Key && detail.Title.Type == "episode" {
-						title = detail.Title
+					if stored, ok := i.storedListTitle(r, v, title.Key); ok && stored.Type == "episode" {
+						title = stored
 					}
 				}
 				if title.ShowTitle == "" && (title.Type == "episode" || title.Type == "season") {

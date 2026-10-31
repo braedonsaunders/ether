@@ -215,9 +215,33 @@ func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *user
 	if g != nil {
 		return g
 	}
-	// First requests after startup: wait briefly for the generic model.
+	// One page calls this several times. Only the first caller waits for
+	// the generic model; a later call returns whatever is already stored
+	// so a slow build cannot hold Home for a multiple of ColdWait. A fast
+	// build still unblocks that first caller through gf.done.
 	gf := e.request(genericID)
-	t := time.NewTimer(e.opts.ColdWait)
+	e.mu.Lock()
+	first := e.coldDeadline.IsZero()
+	if first {
+		e.coldDeadline = time.Unix(1, 0)
+	}
+	e.mu.Unlock()
+	if !wait && !first {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if m := e.models[user.ID]; m != nil && revisionOK && (e.opts.NotInterestedSnapshot == nil || m.preferenceSignature == signature) {
+			return m
+		}
+		return e.models[genericID]
+	}
+	waitFor := e.opts.ColdWait
+	// Home (wait == false) must not sit out a full ColdWait while the
+	// generic build is blocked on a provider. A model that is actually
+	// ready still arrives through gf.done before this cap.
+	if !wait && waitFor > 50*time.Millisecond {
+		waitFor = 50 * time.Millisecond
+	}
+	t := time.NewTimer(waitFor)
 	defer t.Stop()
 	select {
 	case <-gf.done:
@@ -754,11 +778,10 @@ func (e *Engine) ownerRows(ctx context.Context, user *core.User, hc core.HubCont
 	}
 	done, have := ent.done, !ent.at.IsZero()
 	e.mu.Unlock()
-	if !have && done != nil {
-		delay := e.opts.OwnerRowsWait
-		if wait {
-			delay = e.opts.SourceTimeout
-		}
+	// Home does not block on the first owner-row fetch. The preview path
+	// still waits, and the next home uses the rows once they are stored.
+	if !have && done != nil && wait {
+		delay := e.opts.SourceTimeout
 		t := time.NewTimer(delay)
 		select {
 		case <-done:

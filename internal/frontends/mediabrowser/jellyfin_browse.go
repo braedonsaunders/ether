@@ -268,22 +268,41 @@ func (i *instance) attachUnplayedCount(r *http.Request, viewer *frontend.Viewer,
 	if title.Type != "show" && title.Type != "season" {
 		return
 	}
-	q := frontend.ItemQuery{}
-	if title.Type == "show" {
-		q.Recursive = true
-	}
-	page, err := i.host.Experience.Children(r.Context(), viewer, device(r), title.Key, q)
-	if err != nil || page.Total > len(page.Items) {
-		return
-	}
-	episodes := make([]frontend.RatingKey, 0, len(page.Items))
-	for _, child := range page.Items {
-		if child.Type == "episode" {
-			episodes = append(episodes, child.Key)
+	var episodes []frontend.RatingKey
+	if local, ok := i.host.Experience.(interface {
+		LocalEpisodes(context.Context, *frontend.Viewer, frontend.RatingKey) ([]frontend.Title, bool, error)
+	}); ok {
+		listed, complete, err := local.LocalEpisodes(r.Context(), viewer, title.Key)
+		if err != nil || !complete {
+			return
 		}
-	}
-	if len(page.Items) > 0 && len(episodes) == 0 {
-		return
+		episodes = make([]frontend.RatingKey, 0, len(listed))
+		for _, child := range listed {
+			if child.Type == "episode" {
+				episodes = append(episodes, child.Key)
+			}
+		}
+		if len(listed) > 0 && len(episodes) == 0 {
+			return
+		}
+	} else {
+		q := frontend.ItemQuery{}
+		if title.Type == "show" {
+			q.Recursive = true
+		}
+		page, err := i.host.Experience.Children(r.Context(), viewer, device(r), title.Key, q)
+		if err != nil || page.Total > len(page.Items) {
+			return
+		}
+		episodes = make([]frontend.RatingKey, 0, len(page.Items))
+		for _, child := range page.Items {
+			if child.Type == "episode" {
+				episodes = append(episodes, child.Key)
+			}
+		}
+		if len(page.Items) > 0 && len(episodes) == 0 {
+			return
+		}
 	}
 	states, err := i.host.Experience.UserData(r.Context(), viewer, episodes)
 	if err != nil {
@@ -493,19 +512,35 @@ func (i *instance) fillSeriesTitles(r *http.Request, viewer *frontend.Viewer, ti
 	}
 }
 
+func (i *instance) storedListTitle(r *http.Request, viewer *frontend.Viewer, key frontend.RatingKey) (frontend.Title, bool) {
+	if i == nil || i.host.Experience == nil || r == nil || viewer == nil || key == 0 {
+		return frontend.Title{}, false
+	}
+	req := frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: key}
+	type stored interface {
+		StoredItem(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error)
+	}
+	if source, ok := i.host.Experience.(stored); ok {
+		detail, err := source.StoredItem(r.Context(), req)
+		if err != nil || detail.Title.Key != key {
+			return frontend.Title{}, false
+		}
+		return detail.Title, true
+	}
+	detail, err := i.host.Experience.Item(r.Context(), req)
+	if err != nil || detail.Title.Key != key {
+		return frontend.Title{}, false
+	}
+	return detail.Title, true
+}
+
 func (i *instance) showTitle(r *http.Request, viewer *frontend.Viewer, show frontend.RatingKey) string {
-	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: show})
-	if err != nil || detail.Title.Title == "" {
+	title, ok := i.storedListTitle(r, viewer, show)
+	if !ok || title.Title == "" || (title.Type != "" && title.Type != "show") {
 		return ""
 	}
-	if detail.Title.Type != "" && detail.Title.Type != "show" {
-		return ""
-	}
-	if detail.Title.Key != 0 && detail.Title.Key != show {
-		return ""
-	}
-	i.rememberSeriesStudio(r, show, detail.Title.Studios)
-	return detail.Title.Title
+	i.rememberSeriesStudio(r, show, title.Studios)
+	return title.Title
 }
 
 // nameChildSeries copies the parent show's title onto children that do not
@@ -774,12 +809,12 @@ func (i *instance) jellyfinResumeParents(r *http.Request, viewer *frontend.Viewe
 			if seen[key] {
 				continue
 			}
-			detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: key})
-			if err != nil || detail.Title.Key != key {
+			title, ok := i.storedListTitle(r, viewer, key)
+			if !ok {
 				continue
 			}
 			seen[key] = true
-			extra = append(extra, detail.Title)
+			extra = append(extra, title)
 		}
 	}
 	if len(extra) == 0 {
@@ -1240,9 +1275,8 @@ func (i *instance) fillSeriesStudio(r *http.Request, viewer *frontend.Viewer, it
 	// A list that already shaped the show reuses that name. An episode detail
 	// has not, so load the show once and keep it for the rest of the request.
 	if name == "" && title.ShowKey != 0 && r != nil && viewer != nil && i.host.Experience != nil {
-		detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: title.ShowKey})
-		if err == nil && (detail.Title.Key == 0 || detail.Title.Key == title.ShowKey) {
-			i.rememberSeriesStudio(r, title.ShowKey, detail.Title.Studios)
+		if show, ok := i.storedListTitle(r, viewer, title.ShowKey); ok {
+			i.rememberSeriesStudio(r, title.ShowKey, show.Studios)
 			name = i.cachedSeriesStudio(r, title.ShowKey)
 		}
 	}

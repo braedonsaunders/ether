@@ -46,6 +46,34 @@ func (i *instance) creditPortraits(r *http.Request, viewer *frontend.Viewer, cre
 	return urls
 }
 
+// storedCardArtwork grants poster, backdrop, and logo URLs from paths already
+// on the row title. Home and library sections use it so a card does not
+// refresh the title from a provider.
+func (i *instance) storedCardArtwork(r *http.Request, credential string, title frontend.Title, out map[string]any) {
+	if i.host.ImageGrants == nil {
+		return
+	}
+	for _, img := range []frontend.Image{
+		{Kind: "poster", Path: title.PosterPath},
+		{Kind: "backdrop", Path: title.BackdropPath},
+		{Kind: "logo", Path: title.LogoPath},
+	} {
+		field := map[string]string{"poster": "poster_url", "backdrop": "backdrop_url", "logo": "logo_url"}[img.Kind]
+		if field == "" || img.Path == "" {
+			continue
+		}
+		token, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: credential, Device: device(r), Item: title.Key, Image: img})
+		if err != nil {
+			continue
+		}
+		prefix := ""
+		if r.Context().Value(sharedPrefix{}) != nil {
+			prefix = "/silo"
+		}
+		out[field] = prefix + "/api/v2/images/" + token
+	}
+}
+
 func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential string, key frontend.RatingKey, out map[string]any) {
 	if i.host.Experience == nil || i.host.ImageGrants == nil {
 		return

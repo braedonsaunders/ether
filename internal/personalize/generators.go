@@ -146,6 +146,20 @@ func (e *Engine) continueFrom(ctx context.Context, sts []core.WatchStatus) []can
 	return out
 }
 
+// nextStoredEpisode reads the catalogue copy. The provider refresh stays on
+// NextEpisode for detail and playback, where one show is the whole request.
+func nextStoredEpisode(ctx context.Context, catalog core.Catalog, key core.RatingKey) (*core.Title, error) {
+	if catalog == nil {
+		return nil, core.ErrNotFound
+	}
+	if local, ok := catalog.(interface {
+		NextStoredEpisode(context.Context, core.RatingKey) (*core.Title, error)
+	}); ok {
+		return local.NextStoredEpisode(ctx, key)
+	}
+	return catalog.NextEpisode(ctx, key)
+}
+
 func (b *builder) genUpNext() []*candRow {
 	if b.generic || b.e.state == nil {
 		return nil
@@ -166,7 +180,7 @@ func (b *builder) genUpNext() []*candRow {
 			continue
 		}
 		seenShow[h.Key.TMDB()] = true
-		next, err := b.e.catalog.NextEpisode(b.ctx, h.Key)
+		next, err := nextStoredEpisode(b.ctx, b.e.catalog, h.Key)
 		if err != nil || next == nil {
 			continue
 		}

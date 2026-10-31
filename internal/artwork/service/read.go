@@ -140,17 +140,13 @@ func (a Source) remote(ctx context.Context, path string, width int) ([]byte, str
 func (a Source) readEntry(ctx context.Context, req frontend.ArtworkRequest, entry frontendArtworkEntry, width int) ([]byte, string, error) {
 	switch {
 	case entry.channel:
-		// Recheck channel membership, matching the former authenticated handler.
-		channels, err := a.LiveTV.AllowedChannels(ctx, req.Viewer)
+		// Recheck this channel only. Listing every channel here made a home
+		// row reread the whole guide once per logo.
+		c, err := a.oneChannel(ctx, req.Viewer, req.Channel)
 		if err != nil {
 			return nil, "", err
 		}
-		for _, c := range channels {
-			if c.ID == req.Channel {
-				return []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><rect width="640" height="360" rx="24" fill="#182d45"/><text x="40" y="125" fill="#64dfc7" font-size="68" font-family="sans-serif">%s</text><text x="40" y="220" fill="white" font-size="30" font-family="sans-serif">%s</text></svg>`, html.EscapeString(c.Number), html.EscapeString(c.Name))), "image/svg+xml", nil
-			}
-		}
-		return nil, "", core.ErrNotFound
+		return []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><rect width="640" height="360" rx="24" fill="#182d45"/><text x="40" y="125" fill="#64dfc7" font-size="68" font-family="sans-serif">%s</text><text x="40" y="220" fill="white" font-size="30" font-family="sans-serif">%s</text></svg>`, html.EscapeString(c.Number), html.EscapeString(c.Name))), "image/svg+xml", nil
 	case entry.remotePath != "":
 		return a.remote(ctx, entry.remotePath, width)
 	case entry.discovery:
