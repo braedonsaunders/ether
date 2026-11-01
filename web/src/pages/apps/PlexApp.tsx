@@ -3,6 +3,7 @@ import {
   SettingsSection,
   Spinner,
   SubtabNav,
+  Switch,
   confirmDialog,
   toast,
 } from "@braedonsaunders/appkit-ui";
@@ -16,7 +17,7 @@ import { ErrorPanel } from "../../components/feedback";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
 import { t, tx } from "../../i18n";
-import { ApiError, api } from "../../lib/api";
+import { ApiError, api, errorMessage } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import type { EtherConfig } from "../../lib/types";
 import { SchemaField, type FieldDef } from "../settings/SchemaForm";
@@ -351,7 +352,9 @@ export function PlexApp({
           message: translatePlexFieldError(field.message),
         }));
         setError(new ApiError(err.status, err.code, err.message, translatedFields));
-        setErrors(Object.fromEntries(translatedFields.map((field) => [field.field, field.message])));
+        setErrors(
+          Object.fromEntries(translatedFields.map((field) => [field.field, field.message])),
+        );
         const keys = translatedFields.map((field) => field.field);
         if (keys.some((key) => key.startsWith("server.") || key.startsWith("plex."))) {
           const compatibility = keys.every((key) =>
@@ -425,13 +428,16 @@ export function PlexApp({
         tabs={tabs}
       />
       {active === "account" ? (
-        <PlexAccount
-          config={config.data}
-          onChanged={async () => {
-            await config.reload();
-            void refreshDashboard();
-          }}
-        />
+        <>
+          <PlexAccount
+            config={config.data}
+            onChanged={async () => {
+              await config.reload();
+              void refreshDashboard();
+            }}
+          />
+          <PlexMetadata claimed={plexAccountClaimed(plex)} />
+        </>
       ) : null}
       {active === "remote" ? (
         <>
@@ -518,6 +524,42 @@ function OptionGroup({
           />
         </MoreOptions>
       ) : null}
+    </SettingsSection>
+  );
+}
+
+/** Plex's own metadata for Plex apps. It needs a claimed server and saves on change. */
+function PlexMetadata({ claimed }: { claimed: boolean }) {
+  const doc = useAsync(async () => (await api.getConfig()).plex, []);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<boolean>();
+  const on = saved ?? Boolean(doc.data?.usePlexMetadata);
+  return (
+    <SettingsSection title={t("Metadata")}>
+      <SettingsRow
+        title={t("Use Plex's metadata for Plex apps")}
+        description={
+          claimed
+            ? t("Plex apps use Plex's details when a title is matched. Other apps stay on TMDB.")
+            : t("Claim this server to turn this on.")
+        }
+        control={
+          <Switch
+            aria-label={t("Use Plex's metadata for Plex apps")}
+            checked={on}
+            disabled={!claimed || saving || !doc.data}
+            onChange={(e) => {
+              const next = e.currentTarget.checked;
+              setSaving(true);
+              void api
+                .putSection("plex", { usePlexMetadata: next })
+                .then(() => setSaved(next))
+                .catch((err) => toast.error(t("Couldn't save"), { description: errorMessage(err) }))
+                .finally(() => setSaving(false));
+            }}
+          />
+        }
+      />
     </SettingsSection>
   );
 }

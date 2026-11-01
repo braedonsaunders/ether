@@ -309,9 +309,14 @@ describe("Metadata artwork studio", () => {
     );
   });
 
-  it("saves the Plex metadata toggle for a claimed server", async () => {
-    const { fake } = renderAppWith("/metadata/artwork", () => undefined);
+  it("keeps the Plex metadata switch off the Artwork page", async () => {
+    renderAppWith("/metadata/artwork", () => undefined);
     await screen.findByLabelText("Ether posters", {}, WAIT);
+    expect(screen.queryByLabelText("Use Plex's metadata for Plex apps")).toBeNull();
+  });
+
+  it("saves the Plex metadata switch from Apps › Plex › Account", async () => {
+    const { fake } = renderAppWith("/apps/plex/account", () => undefined);
     const toggle = await screen.findByLabelText("Use Plex's metadata for Plex apps", {}, WAIT);
     expect(toggle).not.toBeChecked();
     fireEvent.click(toggle);
