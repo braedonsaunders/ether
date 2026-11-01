@@ -125,9 +125,9 @@ export function UsenetProviders({
   const { dashboard, refreshDashboard } = useApp();
   const config = useAsync(() => api.getConfig(), []);
   const seenAdd = useRef(0);
-  const [repairDraft, setRepairDraft] = useState<
-    NonNullable<EtherConfig["usenet"]["repair"]> | null
-  >(null);
+  const [repairDraft, setRepairDraft] = useState<NonNullable<
+    EtherConfig["usenet"]["repair"]
+  > | null>(null);
   const [editing, setEditing] = useState<{ index: number; draft: UsenetProvider } | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState<unknown>(null);

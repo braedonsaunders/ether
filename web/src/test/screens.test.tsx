@@ -165,7 +165,9 @@ describe("Getting started", () => {
       fake.state.config.debrid = { ...fake.state.config.debrid!, providers: [] };
       fake.state.config.usenet.providers = [];
       fake.state.config.quality.default = "1080p";
-      fake.state.config.frontends = { jellyfin: { enabled: true } } as typeof fake.state.config.frontends;
+      fake.state.config.frontends = {
+        jellyfin: { enabled: true },
+      } as typeof fake.state.config.frontends;
       const original = fake.fetch;
       fake.fetch = async (input, init) => {
         const response = await original(input, init);
@@ -186,7 +188,10 @@ describe("Getting started", () => {
       };
     });
     const steps = await screen.findByRole("region", { name: "Next steps" }, WAIT);
-    expect(within(steps).getByRole("link", { name: "Add a source" })).toHaveAttribute("href", "/sources");
+    expect(within(steps).getByRole("link", { name: "Add a source" })).toHaveAttribute(
+      "href",
+      "/sources",
+    );
     expect(screen.getByRole("link", { name: "Connect a device" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add viewers" })).toHaveAttribute("href", "/viewers");
     expect(

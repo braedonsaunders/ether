@@ -361,7 +361,9 @@ export function ClientRulesTab() {
               control={
                 <Switch
                   checked={Boolean(draft.convertSurroundAudio)}
-                  onChange={(e) => set({ convertSurroundAudio: e.currentTarget.checked || undefined })}
+                  onChange={(e) =>
+                    set({ convertSurroundAudio: e.currentTarget.checked || undefined })
+                  }
                   aria-label={t("Convert Dolby and DTS audio to AAC")}
                 />
               }

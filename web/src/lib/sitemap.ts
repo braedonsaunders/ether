@@ -187,7 +187,9 @@ export const PAGES = localized<PageDef[]>(() => [
         key: "profiles",
         title: t("Profiles"),
         keywords: searchTerms(
-          msg("quality profiles resolution 4k 1080p remote cam scoring trash custom formats rules ranking"),
+          msg(
+            "quality profiles resolution 4k 1080p remote cam scoring trash custom formats rules ranking",
+          ),
         ),
       },
       {

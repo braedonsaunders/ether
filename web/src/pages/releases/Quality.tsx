@@ -6,7 +6,7 @@ import {
   SettingsSection,
   Switch,
   Textarea,
-   toast,
+  toast,
   confirmDialog,
 } from "@braedonsaunders/appkit-ui";
 import { ChevronDown, Download, Plus, SlidersHorizontal } from "lucide-react";
@@ -221,9 +221,7 @@ function ImportedSection({
               value={scoring?.formats ?? "[]"}
               onChange={(e) =>
                 setScoring((s) =>
-                  s
-                    ? { ...s, formats: e.target.value }
-                    : { formats: e.target.value, scores: "{}" },
+                  s ? { ...s, formats: e.target.value } : { formats: e.target.value, scores: "{}" },
                 )
               }
             />
@@ -236,9 +234,7 @@ function ImportedSection({
               value={scoring?.scores ?? "{}"}
               onChange={(e) =>
                 setScoring((s) =>
-                  s
-                    ? { ...s, scores: e.target.value }
-                    : { formats: "[]", scores: e.target.value },
+                  s ? { ...s, scores: e.target.value } : { formats: "[]", scores: e.target.value },
                 )
               }
             />
@@ -300,10 +296,7 @@ function WhatMattersMostSection({
 
   function renderBuiltinStep(step: string, handle: DragHandleProps, index: number) {
     const fixed = step === "connection" || step === "verified";
-    const stepMeta: Record<
-      string,
-      { title: string; summary: string; expandable?: boolean }
-    > = {
+    const stepMeta: Record<string, { title: string; summary: string; expandable?: boolean }> = {
       language: {
         title: t("Audio language"),
         summary: draft.preferredLanguages?.length
@@ -955,11 +948,7 @@ function ProfileList({
               />
             </SettingsSection>
 
-            <WhatMattersMostSection
-              draft={draft}
-              patch={patch}
-              rankingError={errors.ranking}
-            />
+            <WhatMattersMostSection draft={draft} patch={patch} rankingError={errors.ranking} />
 
             <TieBreakerSection
               value={sourcePref}

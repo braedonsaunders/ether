@@ -22,11 +22,10 @@ describe("Sources › Debrid", () => {
     });
     renderApp("/sources/debrid");
     expect(await screen.findByRole("heading", { name: "Sources" }, WAIT)).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Debrid" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(await screen.findByRole("region", { name: "Debrid providers" }, WAIT)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Debrid" })).toHaveAttribute("aria-selected", "true");
+    expect(
+      await screen.findByRole("region", { name: "Debrid providers" }, WAIT),
+    ).toBeInTheDocument();
   });
 
   it.each([

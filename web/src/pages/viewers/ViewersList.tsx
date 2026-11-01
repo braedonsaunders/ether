@@ -1,4 +1,11 @@
-import { Avatar, Button, EmptyState, PagedTable, Select, Skeleton } from "@braedonsaunders/appkit-ui";
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  PagedTable,
+  Select,
+  Skeleton,
+} from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
 import { Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";

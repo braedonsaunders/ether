@@ -127,7 +127,6 @@ function protocolLabel(value: string) {
   }
 }
 
-
 function deviceNote(note: string) {
   switch (note) {
     case "Text is served separately; image subtitles require explicit client support.":
@@ -259,7 +258,6 @@ function CapabilityBadges({ row }: { row: CompatDevice }) {
     </span>
   );
 }
-
 
 function applyCapabilityDiff(
   override: CapabilityOverride,

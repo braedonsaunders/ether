@@ -1,13 +1,6 @@
 import { Badge, Button, Input, Label, cn } from "@braedonsaunders/appkit-ui";
 import { CheckCircle2, Eye, EyeOff, PlugZap, XCircle } from "lucide-react";
-import {
-  forwardRef,
-  useEffect,
-  useId,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from "react";
+import { forwardRef, useEffect, useId, useState, type ComponentProps, type ReactNode } from "react";
 import { t } from "../i18n";
 import { REDACTED } from "../lib/types";
 
@@ -297,8 +290,7 @@ export function Segmented<T extends string>({
                 onChange(next.value);
                 (
                   e.currentTarget.parentElement?.children[options.indexOf(next)] as
-                    | HTMLElement
-                    | undefined
+                    HTMLElement | undefined
                 )?.focus();
               }
             }}

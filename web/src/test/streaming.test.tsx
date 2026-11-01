@@ -2,7 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { EtherConfig, UsenetProvider } from "../lib/types";
-import { choiceLabel, normalizeTraces, resolutionCeilings, TraceDetail } from "../pages/releases/History";
+import {
+  choiceLabel,
+  normalizeTraces,
+  resolutionCeilings,
+  TraceDetail,
+} from "../pages/releases/History";
 import { calls, renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
@@ -324,12 +329,12 @@ describe("Source routing", () => {
     const { fake } = renderApp("/releases/profiles");
     fireEvent.click(await screen.findByRole("button", { name: "Edit 1080p" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "1080p" }, WAIT);
-    expect(await within(drawer).findByText(/debrid 410 ms \(22 plays\)/, {}, WAIT)).toBeInTheDocument();
+    expect(
+      await within(drawer).findByText(/debrid 410 ms \(22 plays\)/, {}, WAIT),
+    ).toBeInTheDocument();
     expect(within(drawer).getByText(/Usenet 2\.1 s \(37 plays\)/)).toBeInTheDocument();
     expect(within(drawer).getByText("Applies to all profiles.")).toBeInTheDocument();
-    fireEvent.click(
-      within(drawer).getByRole("button", { name: "When two releases are equal" }),
-    );
+    fireEvent.click(within(drawer).getByRole("button", { name: "When two releases are equal" }));
     fireEvent.click(await screen.findByRole("option", { name: "Usenet first" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/resolver")[0]!.body).toMatchObject({

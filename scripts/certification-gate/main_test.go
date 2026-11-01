@@ -15,12 +15,14 @@ func TestPublishedMatrixMatchesTheUserGuide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tag := range []string{"v0.2.48", "v0.2.0", "v0.2.0-beta.1"} {
+	// The published matrix is reviewed for 0.3 (every app waived with a
+	// reason), so 0.2 and 0.3 tags pass and later minors need a new review.
+	for _, tag := range []string{"v0.2.48", "v0.2.0", "v0.2.0-beta.1", "v0.3.0", "v0.3.1", "v0.3.0-beta.1"} {
 		if err := evaluate(tag, doc, guide); err != nil {
 			t.Fatalf("%s: %v", tag, err)
 		}
 	}
-	for _, tag := range []string{"v0.3.0", "v0.3.1", "v0.3.0-beta.1", "v0.10.0", "v1.0.0"} {
+	for _, tag := range []string{"v0.4.0", "v0.10.0", "v1.0.0"} {
 		err := evaluate(tag, doc, guide)
 		if err == nil || !strings.Contains(err.Error(), "recertified_for") {
 			t.Fatalf("%s: %v", tag, err)
@@ -104,6 +106,7 @@ func reviewedDoc() matrixDoc {
 				continue
 			}
 			client.Version = "1.0.0"
+			client.Support, client.Waiver = "", ""
 			for feature := range client.Results {
 				client.Results[feature] = "pass"
 			}

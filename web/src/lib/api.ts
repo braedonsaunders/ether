@@ -407,7 +407,8 @@ export const api = {
 
   // ---- Collection Studio ------------------------------------------------------
   collections: async () =>
-    (await apiFetch<{ collections: CollectionSpec[] | null } | null>("/collections"))?.collections ?? [],
+    (await apiFetch<{ collections: CollectionSpec[] | null } | null>("/collections"))
+      ?.collections ?? [],
   collection: (id: string) => apiFetch<CollectionSpec>(`/collections/${encodeURIComponent(id)}`),
   createCollection: (spec: CollectionSpec) => post<CollectionSpec>("/collections", spec),
   updateCollection: (id: string, spec: CollectionSpec) =>

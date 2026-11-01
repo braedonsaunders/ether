@@ -284,10 +284,7 @@ export function SourceUsage() {
             t("Article success"),
             pct(
               (data.providerMonth ?? []).reduce((n, p) => n + p.articles, 0),
-              (data.providerMonth ?? []).reduce(
-                (n, p) => n + p.articles + p.misses + p.errors,
-                0,
-              ),
+              (data.providerMonth ?? []).reduce((n, p) => n + p.articles + p.misses + p.errors, 0),
             ),
           ],
         ].map(([label, value]) => (
@@ -475,9 +472,7 @@ export function SourceUsage() {
                       })}
                     </Stat>
                     <Stat label={t("Search speed")}>
-                      {v.searches
-                        ? t("{ms} ms", { ms: fixed(v.latencyMs / v.searches, 0) })
-                        : "—"}
+                      {v.searches ? t("{ms} ms", { ms: fixed(v.latencyMs / v.searches, 0) }) : "—"}
                     </Stat>
                     <Stat label={t("Average release age")}>
                       {v.ageSamples

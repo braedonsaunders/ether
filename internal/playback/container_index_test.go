@@ -231,7 +231,6 @@ func TestMP4EditListShiftsPresentationTime(t *testing.T) {
 	}
 }
 
-
 func TestMatroskaSeekHeadJumpsPastManyClustersWithoutScanningPayload(t *testing.T) {
 	info := elementBytes(0x1549a966, elementBytes(0x2ad7b1, words(1000000)))
 	tracks := elementBytes(0x1654ae6b, elementBytes(0xae, elementBytes(0xd7, []byte{1}), elementBytes(0x83, []byte{1})))

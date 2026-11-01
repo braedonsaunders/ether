@@ -105,57 +105,58 @@ export function PosterAccounts({
   const service = SERVICES.find((item) => item.id === draft?.source);
   return (
     <>
-      {children(SERVICES.map((item) => {
-        const on = active(posters, item.id);
-        const keyed =
-          secretConfigured(posters.apiKey) || secretConfigured(posters.urlTemplate);
-        return (
-          <IntegrationAppCard
-            key={item.id}
-            identity={{ id: item.id, name: item.name }}
-            description={item.description}
-            enabled={on}
-            busy={saving}
-            disabled={locked || saving}
-            status={
-              !on ? (
-                <Badge variant="secondary">{t("Off")}</Badge>
-              ) : keyed || !item.key ? (
-                <Badge variant="success">{keyed ? t("Key saved") : t("On")}</Badge>
-              ) : (
-                <Badge variant="warning">{t("Needs an API key")}</Badge>
-              )
-            }
-            onToggle={(next) => {
-              if (!next) {
-                void save({ ...posters, enabled: false });
-                return;
+      {children(
+        SERVICES.map((item) => {
+          const on = active(posters, item.id);
+          const keyed = secretConfigured(posters.apiKey) || secretConfigured(posters.urlTemplate);
+          return (
+            <IntegrationAppCard
+              key={item.id}
+              identity={{ id: item.id, name: item.name }}
+              description={item.description}
+              enabled={on}
+              busy={saving}
+              disabled={locked || saving}
+              status={
+                !on ? (
+                  <Badge variant="secondary">{t("Off")}</Badge>
+                ) : keyed || !item.key ? (
+                  <Badge variant="success">{keyed ? t("Key saved") : t("On")}</Badge>
+                ) : (
+                  <Badge variant="warning">{t("Needs an API key")}</Badge>
+                )
               }
-              setError(null);
-              setDraft({
-                ...posters,
-                enabled: true,
-                source: item.id,
-                apiKey: posters.source === item.id ? posters.apiKey : "",
-                urlTemplate: posters.source === item.id ? posters.urlTemplate : "",
-              });
-            }}
-            configureLabel={on ? t("Manage") : t("Set up")}
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setError(null);
-                  setDraft({ ...posters, source: item.id, enabled: true });
-                }}
-              >
-                {on ? t("Manage") : t("Set up")}
-              </Button>
-            }
-          />
-        );
-      }))}
+              onToggle={(next) => {
+                if (!next) {
+                  void save({ ...posters, enabled: false });
+                  return;
+                }
+                setError(null);
+                setDraft({
+                  ...posters,
+                  enabled: true,
+                  source: item.id,
+                  apiKey: posters.source === item.id ? posters.apiKey : "",
+                  urlTemplate: posters.source === item.id ? posters.urlTemplate : "",
+                });
+              }}
+              configureLabel={on ? t("Manage") : t("Set up")}
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setError(null);
+                    setDraft({ ...posters, source: item.id, enabled: true });
+                  }}
+                >
+                  {on ? t("Manage") : t("Set up")}
+                </Button>
+              }
+            />
+          );
+        }),
+      )}
       <Drawer
         open={draft !== null}
         onClose={() => {
@@ -163,7 +164,9 @@ export function PosterAccounts({
           setDraft(null);
         }}
         title={service?.name ?? t("Poster service")}
-        description={t("This key is used when this poster service is the one Artwork has selected.")}
+        description={t(
+          "This key is used when this poster service is the one Artwork has selected.",
+        )}
         footer={
           <div className="flex w-full flex-wrap items-center gap-2">
             <span className="flex-1" />

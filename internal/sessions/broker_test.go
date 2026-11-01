@@ -658,7 +658,9 @@ func TestBrokerReportItemProgressStoppedAndIdleSessionsVisibility(t *testing.T) 
 		active:       map[string]bool{},
 		stopped:      map[string]bool{},
 	}
-	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id, IsOwner: true}, nil }
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		return &core.Viewer{ID: id, IsOwner: true}, nil
+	}
 	events := NewEventBus(nil, active)
 	defer events.Close()
 	b, err := NewBroker(BrokerDeps{

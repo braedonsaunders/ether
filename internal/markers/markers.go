@@ -119,6 +119,7 @@ func offer(in []Marker, intro, credits bool) []Marker {
 	}
 	return out
 }
+
 // dropMovieBumpers removes an intro that only covers the studio cards at
 // the head of a movie. TheIntroDB's row for The Matrix is one submission
 // from the start of the file to 40s; the film has no title sequence, and

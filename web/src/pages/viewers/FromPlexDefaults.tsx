@@ -89,7 +89,13 @@ export function FromPlexDefaults({
   const d = data.data;
   if (!d) return null;
   if (show === "tracks" && !d.hasProfile && !d.audioLanguage && !d.subtitleLanguage) return null;
-  if (show === "share" && !d.hasSettings && !d.filterMovies && !d.filterTelevision && d.allowSync == null)
+  if (
+    show === "share" &&
+    !d.hasSettings &&
+    !d.filterMovies &&
+    !d.filterTelevision &&
+    d.allowSync == null
+  )
     return null;
   return (
     <SettingsSection
@@ -98,13 +104,22 @@ export function FromPlexDefaults({
     >
       {show === "tracks" ? (
         <>
-          <SettingsRow title={t("Audio language")} control={<span>{d.audioLanguage || t("None")}</span>} />
-          <SettingsRow title={t("Auto-select audio")} control={<span>{yesNo(d.autoSelectAudio)}</span>} />
+          <SettingsRow
+            title={t("Audio language")}
+            control={<span>{d.audioLanguage || t("None")}</span>}
+          />
+          <SettingsRow
+            title={t("Auto-select audio")}
+            control={<span>{yesNo(d.autoSelectAudio)}</span>}
+          />
           <SettingsRow
             title={t("Subtitle language")}
             control={<span>{d.subtitleLanguage || t("None")}</span>}
           />
-          <SettingsRow title={t("Subtitle mode")} control={<span>{modeLabel(d.subtitleMode)}</span>} />
+          <SettingsRow
+            title={t("Subtitle mode")}
+            control={<span>{modeLabel(d.subtitleMode)}</span>}
+          />
         </>
       ) : (
         <>

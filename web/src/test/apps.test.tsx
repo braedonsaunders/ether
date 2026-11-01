@@ -13,7 +13,7 @@ vi.mock("../lib/api", async (importOriginal) => {
   };
 });
 vi.mock("../app-context", () => ({
-    useApp: () => ({
+  useApp: () => ({
     dashboard: { sections: { remote: {} } },
     reloadBoot: vi.fn(),
     boot: { serverName: "Living Room Ether" },
@@ -119,8 +119,12 @@ describe("Apps", () => {
     expect(screen.queryByText(/LAN:/)).not.toBeInTheDocument();
     expect(screen.getByText(/Outside access is not checked/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "How people sign in" })).toBeInTheDocument();
-    expect(screen.getByText(/Quick Connect: approve the code at .*\/ether\/me/)).toBeInTheDocument();
-    expect(screen.getByText(/App password: from Connect apps at .*\/ether\/me/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Quick Connect: approve the code at .*\/ether\/me/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/App password: from Connect apps at .*\/ether\/me/),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Infuse needs an app password. The Emby for TV app isn't supported."),
     ).toBeInTheDocument();
@@ -168,7 +172,10 @@ describe("Apps", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Jellyfin" }));
     expect(await screen.findByRole("spinbutton", { name: "Port" })).toBeInTheDocument();
     expect(screen.getByText("Living Room Ether")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "General settings" })).toHaveAttribute("href", "/server");
+    expect(screen.getByRole("link", { name: "General settings" })).toHaveAttribute(
+      "href",
+      "/server",
+    );
     expect(screen.queryByRole("textbox", { name: "Server name" })).not.toBeInTheDocument();
   });
 

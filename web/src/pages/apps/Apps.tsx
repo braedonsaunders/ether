@@ -210,9 +210,7 @@ function ConnectDevice({
   if (!url) return null;
   return (
     <div>
-      {open ? null : (
-        <Button onClick={() => setOpen(true)}>{t("Connect a device")}</Button>
-      )}
+      {open ? null : <Button onClick={() => setOpen(true)}>{t("Connect a device")}</Button>}
       {open ? (
         <div className="space-y-2 pt-3">
           <p>{t("Enter this server address in a supported app:")}</p>

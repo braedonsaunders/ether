@@ -88,14 +88,14 @@ type Row struct {
 	// passes. A pass may or may not be answered by a cache, so the gate
 	// compares the large library's least work with the small one's most.
 	QueriesMin, QueriesMax, RowsMin, RowsMax int64
-	DBTime, LockWait                       time.Duration
-	Status                                 string
-	Fails                                  []string
-	Skipped                                string
-	Errors                                 []string
-	samples                                map[string][]time.Duration
-	queries, writes, rowsRead              []int64
-	dbTimes, lockWaits                     []time.Duration
+	DBTime, LockWait                         time.Duration
+	Status                                   string
+	Fails                                    []string
+	Skipped                                  string
+	Errors                                   []string
+	samples                                  map[string][]time.Duration
+	queries, writes, rowsRead                []int64
+	dbTimes, lockWaits                       []time.Duration
 }
 
 func percentile(ds []time.Duration, p float64) time.Duration {

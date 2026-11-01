@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { SettingsRow } from "../../components/SettingsRow";
 import { t } from "../../i18n";
-import { chosenAddress, homeSummary, usableAddresses, type ReachabilityStatus } from "./reachability";
+import {
+  chosenAddress,
+  homeSummary,
+  usableAddresses,
+  type ReachabilityStatus,
+} from "./reachability";
 
 /** The At home line names the address the owner is using, and keeps the rest behind a disclosure. */
 export function HomeStatusRow({

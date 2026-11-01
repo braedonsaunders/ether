@@ -136,33 +136,33 @@ export function RuleRow({
         </Button>
       </div>
       {inline ? null : (
-      <div className="mt-2">
-        {meta ? (
-          <ValueEditor
-            rule={rule}
-            meta={meta}
-            onChange={onChange}
-            mediaType={mediaType}
-            region={region}
-            label={label}
-          />
-        ) : (
-          <RawValue rule={rule} onChange={onChange} label={label} />
-        )}
-      </div>
+        <div className="mt-2">
+          {meta ? (
+            <ValueEditor
+              rule={rule}
+              meta={meta}
+              onChange={onChange}
+              mediaType={mediaType}
+              region={region}
+              label={label}
+            />
+          ) : (
+            <RawValue rule={rule} onChange={onChange} label={label} />
+          )}
+        </div>
       )}
       {inline && complete ? null : (
-      <p
-        className={cn(
-          "mt-2 flex items-center gap-1.5 text-xs",
-          complete ? "text-fg-muted" : "text-warning",
-        )}
-      >
-        {complete ? null : <AlertCircle size={12} aria-hidden />}
-        {complete
-          ? describeRule(rule)
-          : t("Pick a value to apply this rule. It's left out of the preview until then.")}
-      </p>
+        <p
+          className={cn(
+            "mt-2 flex items-center gap-1.5 text-xs",
+            complete ? "text-fg-muted" : "text-warning",
+          )}
+        >
+          {complete ? null : <AlertCircle size={12} aria-hidden />}
+          {complete
+            ? describeRule(rule)
+            : t("Pick a value to apply this rule. It's left out of the preview until then.")}
+        </p>
       )}
     </div>
   );

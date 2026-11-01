@@ -26,8 +26,10 @@ type Preview = {
   visible?: number;
   movies: number;
   shows: number;
-  items?: { key: string; title: string; year?: number; poster?: string; posterPath?: string }[] | null;
-  shown?: { key: string; title: string; year?: number; poster?: string; posterPath?: string }[] | null;
+  items?:
+    { key: string; title: string; year?: number; poster?: string; posterPath?: string }[] | null;
+  shown?:
+    { key: string; title: string; year?: number; poster?: string; posterPath?: string }[] | null;
   rules?: { movies: number; shows: number }[] | null;
 };
 
@@ -136,8 +138,7 @@ export function RulesPanel({
   const hiddenItems = preview.data?.items ?? [];
   const shownItems = preview.data?.shown ?? [];
   const visible =
-    preview.data?.visible ??
-    Math.max(0, (preview.data?.total ?? 0) - (preview.data?.hidden ?? 0));
+    preview.data?.visible ?? Math.max(0, (preview.data?.total ?? 0) - (preview.data?.hidden ?? 0));
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="space-y-2">
@@ -276,7 +277,9 @@ export function RulesPanel({
             <p className="text-sm text-fg-muted">{t("Preview isn't available.")}</p>
           ) : (
             <>
-              <p className="text-3xl font-semibold">{preview.loading ? "…" : formatNumber(visible)}</p>
+              <p className="text-3xl font-semibold">
+                {preview.loading ? "…" : formatNumber(visible)}
+              </p>
               <p className="text-sm text-fg-muted">
                 {tn(visible, "{count} title visible", "{count} titles visible")}
               </p>

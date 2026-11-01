@@ -47,7 +47,11 @@ describe("plex claim actions", () => {
     const claim = vi
       .spyOn(api, "claim")
       .mockRejectedValueOnce(
-        new ApiError(502, "plex_claim_failed", "Plex couldn't link this server. Try again in a minute."),
+        new ApiError(
+          502,
+          "plex_claim_failed",
+          "Plex couldn't link this server. Try again in a minute.",
+        ),
       );
     renderApp("/apps/plex", {}, (server) => {
       server.state.config.plex.claimed = false;

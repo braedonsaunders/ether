@@ -101,7 +101,6 @@ func TestSharedCDNPauseDoesNotInterruptAnEstablishedHealthyFile(t *testing.T) {
 	}
 }
 
-
 func TestRateLimitedSourceDisablesDirectPlayRetryAndReadAhead(t *testing.T) {
 	r := newEngineRig(t, 4<<20, -1)
 	src, err := r.eng.Open(t.Context(), r.rel.ID, r.pl)

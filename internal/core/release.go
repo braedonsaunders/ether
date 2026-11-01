@@ -267,7 +267,7 @@ func (p QualityProfile) EffectiveRanking() []string {
 		mentioned[step] = true
 		filtered = append(filtered, step)
 	}
-	out := make([]string, 0, len(preferOrder)+len( DefaultRankingSteps))
+	out := make([]string, 0, len(preferOrder)+len(DefaultRankingSteps))
 	for _, key := range preferOrder {
 		if !mentioned[key] {
 			mentioned[key] = true

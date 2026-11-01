@@ -36,7 +36,9 @@ const BUILTIN_SET = new Set<string>(DEFAULT_BUILTIN_RANKING);
  * Mirrors internal/core.NormalizeProfileRanking: Prefer rules sit at the top
  * by default in their rule order, followed by the built-in steps.
  */
-export function normalizeRanking(profile: Pick<QualityProfile, "ranking" | "releaseRules">): string[] {
+export function normalizeRanking(
+  profile: Pick<QualityProfile, "ranking" | "releaseRules">,
+): string[] {
   const rules = profile.releaseRules ?? [];
   const preferSteps: string[] = [];
   const validPrefer = new Set<string>();
@@ -437,12 +439,7 @@ export function RuleEditorCard({
           checked={!r.disabled}
           onChange={(e) => onChange({ disabled: !e.currentTarget.checked })}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("Remove rule")}
-          onClick={onRemove}
-        >
+        <Button variant="ghost" size="icon" aria-label={t("Remove rule")} onClick={onRemove}>
           <Trash2 size={14} />
         </Button>
       </div>
@@ -531,10 +528,7 @@ export function RuleEditorCard({
           </div>
           <div className="space-y-2">
             <p className="text-sm font-medium">{t("Except when any matches")}</p>
-            <ConditionGroup
-              values={r.unless ?? []}
-              onChange={(unless) => onChange({ unless })}
-            />
+            <ConditionGroup values={r.unless ?? []} onChange={(unless) => onChange({ unless })} />
           </div>
           {r.action === "require" && (
             <div className="space-y-2">
@@ -631,9 +625,7 @@ export function FilterRulesEditor({
     const nextRules = [...rules, added];
     const currentRanking = normalizeRanking(profile);
     const nextRanking =
-      action === "prefer"
-        ? insertPreferRuleInRanking(currentRanking, added.id)
-        : currentRanking;
+      action === "prefer" ? insertPreferRuleInRanking(currentRanking, added.id) : currentRanking;
     onChange({
       releaseRules: syncRulesWithRanking(nextRules, nextRanking),
       ranking: nextRanking,
@@ -928,9 +920,7 @@ export function RulePreview({ profile }: { profile: QualityProfile }) {
       )}
       <p className="text-xs text-fg-muted">
         {mode === "names"
-          ? t(
-              "Filename preview checks rules only. Search a title to include full profile ranking.",
-            )
+          ? t("Filename preview checks rules only. Search a title to include full profile ranking.")
           : t(
               "Uses your indexers. No settings are saved and no media is downloaded. Device limits apply when playing.",
             )}
