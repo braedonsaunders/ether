@@ -154,7 +154,7 @@ function navigation(): SidebarNavGroup[] {
       ],
     },
     {
-      label: t("Playback"),
+      label: t("Streaming"),
       items: [
         { href: "/sources", label: t("Sources"), icon: <Network size={icon} /> },
         { href: "/releases", label: t("Releases"), icon: <ListFilter size={icon} /> },
