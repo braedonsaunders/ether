@@ -14,7 +14,7 @@ import (
 var prismCandidateMigrations = map[string]int{
 	"sessions":              9,
 	"sessions_samples":      1,
-	"viewer_policy":         4,
+	"viewer_policy":         5,
 	"availability":          5,
 	"capability_tickets":    1,
 	"capability_headers":    3,
@@ -25,6 +25,7 @@ var prismCandidateMigrations = map[string]int{
 	"plexwatch":             4,
 	"state_plexwatch":       4,
 	"watchsend":             1,
+	"plexmeta":              2,
 }
 
 func assertPrismCandidateBoundary(t *testing.T) {
