@@ -100,7 +100,11 @@ type Service struct {
 
 type knownState struct {
 	cached bool
-	until  time.Time
+	// refused marks a hash the provider refused (Real-Debrid's
+	// infringing_file, a file it will not serve): it is not offered there
+	// again, not even as a download, until the memory expires.
+	refused bool
+	until   time.Time
 }
 
 // entry is one configured provider with its breaker and counters.
@@ -735,6 +739,7 @@ func (s *Service) Acquire(ctx context.Context, rel core.Release) ([]byte, error)
 	var errs []error
 	var knownUncached []*entry
 	notCached, tried := 0, 0
+	downloading := false // a provider was asked and did not refuse the torrent
 	for _, e := range entries {
 		if err := e.blocked(s.now()); err != nil {
 			errs = append(errs, err)
@@ -742,7 +747,9 @@ func (s *Service) Acquire(ctx context.Context, rel core.Release) ([]byte, error)
 		}
 		if cached, ok, _ := s.knownFor(ctx, e.cfg.ID, hash); ok && !cached {
 			notCached++
-			knownUncached = append(knownUncached, e)
+			if !s.refusedFor(e.cfg.ID, hash) {
+				knownUncached = append(knownUncached, e)
+			}
 			continue
 		}
 		tried++
@@ -758,6 +765,7 @@ func (s *Service) Acquire(ctx context.Context, rel core.Release) ([]byte, error)
 		switch {
 		case errors.Is(err, core.ErrNotCached):
 			notCached++
+			downloading = downloading || !refusal(err)
 		case errors.Is(err, core.ErrReleaseRejected):
 			return nil, err // the torrent itself has no playable file
 		default:
@@ -778,9 +786,10 @@ func (s *Service) Acquire(ctx context.Context, rel core.Release) ([]byte, error)
 		}
 	}
 	notCachedErr := core.ErrNotCached
-	if tried > 0 && !s.Config().CachedOnly && !core.IsBackgroundCheck(ctx) {
+	if downloading && !s.Config().CachedOnly && !core.IsBackgroundCheck(ctx) {
 		// Providers without an availability check were asked to add the
-		// torrent, which (cached-only off) leaves it downloading.
+		// torrent, which (cached-only off) leaves it downloading. One that
+		// refused it left nothing downloading.
 		notCachedErr = core.ErrDownloadQueued
 	}
 	if len(errs) == 0 {
@@ -992,17 +1001,23 @@ func (s *Service) acquireOn(ctx context.Context, e *entry, base Payload, choose 
 	}
 	observe(err)
 	if errors.Is(err, ErrAddRefused) {
-		// Not evidence about the torrent: skip it briefly, in memory only.
+		// Not evidence about the torrent (it may be the account's add
+		// throttle): skip it briefly, in memory only, and do not queue it
+		// on this provider as a download meanwhile.
 		e.count(func(st *ProviderStats) { st.Blocked++ })
-		s.knownMu.Lock()
-		s.known[knownKey(e.cfg.ID, hash)] = knownState{until: s.now().Add(addRefusedTTL)}
-		s.knownMu.Unlock()
+		s.markRefused(e.cfg.ID, hash, addRefusedTTL)
 		return Payload{}, err
 	}
 	if err != nil {
 		if errors.Is(err, core.ErrNotCached) {
 			e.count(func(st *ProviderStats) { st.NotCached++ })
 			s.setKnown(ctx, e.cfg.ID, hash, "", false)
+		}
+		if errors.Is(err, ErrBlocked) {
+			// The provider will not take this torrent (Real-Debrid's
+			// infringing_file): other accounts are asked, and this one is
+			// not asked again, not even to download it.
+			s.markRefused(e.cfg.ID, hash, s.opts.UncachedTTL)
 		}
 		return Payload{}, err
 	}
@@ -1202,7 +1217,29 @@ func (s *Service) blockedFile(ctx context.Context, e *entry, hash, torrentID str
 		cancel()
 	}
 	s.setKnown(ctx, e.cfg.ID, hash, "", false)
+	s.markRefused(e.cfg.ID, hash, s.opts.UncachedTTL)
 	s.log.Info("debrid provider blocks file", "provider", displayName(e.cfg), "hash", hash)
+}
+
+// refusal reports an outcome that left nothing downloading on the
+// provider: it refused the torrent or its file, or its adds are paused.
+func refusal(err error) bool {
+	return errors.Is(err, ErrAddRefused) || errors.Is(err, ErrBlocked) || errors.Is(err, errAddsPaused)
+}
+
+// markRefused remembers, in memory, that the provider refused this hash.
+func (s *Service) markRefused(providerID, hash string, ttl time.Duration) {
+	s.knownMu.Lock()
+	s.known[knownKey(providerID, strings.ToLower(hash))] = knownState{refused: true, until: s.now().Add(ttl)}
+	s.knownMu.Unlock()
+}
+
+// refusedFor reports a remembered refusal of the hash by the provider.
+func (s *Service) refusedFor(providerID, hash string) bool {
+	s.knownMu.Lock()
+	k, ok := s.known[knownKey(providerID, strings.ToLower(hash))]
+	s.knownMu.Unlock()
+	return ok && k.refused && s.now().Before(k.until)
 }
 
 func (s *Service) forgetTorrent(ctx context.Context, providerID, hash string) {
