@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -86,6 +87,27 @@ func TestPerformanceGate(t *testing.T) {
 			t.Logf("%s stayed flat this run: remove it from %s once it does so reliably", key, perfDebtFile)
 		}
 	}
+}
+
+// restrictedListings is the Plex Apple TV client's whole-library listing
+// steps under its own name, for the restricted viewer's pass.
+func restrictedListings(cs []perfharness.Client) []perfharness.Client {
+	for _, c := range cs {
+		if c.Name != "plex-appletv" {
+			continue
+		}
+		c.Name = "plex-appletv restricted"
+		var steps []perfharness.Step
+		for _, st := range c.Steps {
+			switch st.Name {
+			case "/library/sections", "shows allLeaves p1", "shows allLeaves deep", "shows all type=4 p1", "shows all type=3 p1":
+				steps = append(steps, st)
+			}
+		}
+		c.Steps = steps
+		return []perfharness.Client{c}
+	}
+	return nil
 }
 
 var perfGateFlag = flag.String("perf-gate", "", "run TestPerformanceGate (1, or quick for a smaller pair)")
@@ -228,7 +250,7 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	if err = perfharness.Generate(ctx, db, scale, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	viewers, err := perfharness.MintCredentials(ctx, db, 3)
+	viewers, err := perfharness.MintCredentials(ctx, db, perfharness.RestrictedViewer+1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +304,23 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 		r.Sequential(ctx, "warm", viewers[:1], cs)
 	}
 	r.Sequential(ctx, "warm", viewers[1:2], viewing)
+	// A restricted viewer's whole-library episode and season listings page
+	// in SQL with their rating cap and plex.tv share filter, not by walking
+	// the library.
+	restricted := restrictedListings(cs)
+	if len(viewers) > perfharness.RestrictedViewer && len(restricted) > 0 {
+		r.Sequential(ctx, "warm", viewers[perfharness.RestrictedViewer:perfharness.RestrictedViewer+1], restricted)
+		cs = append(cs, restricted...)
+		for _, res := range r.Results() {
+			if res.Client != restricted[0].Name {
+				continue
+			}
+			t.Logf("%s: restricted %s: %d, %d bytes", name, res.Step, res.Status, res.Bytes)
+			if res.Status != http.StatusOK {
+				t.Errorf("%s: restricted viewer %s answered %d", name, res.Step, res.Status)
+			}
+		}
+	}
 	if fi, err := os.Stat(filepath.Join(dir, "ether.db-wal")); err == nil {
 		// Every page read searches the WAL index, so a WAL that cannot
 		// restart slows every query.
