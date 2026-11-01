@@ -53,9 +53,11 @@ type fakeRunner struct {
 	dashHold bool // keep the bounded producer alive until Stop, to test cleanup before exit
 
 	// Chunked HLS simulation (keyframe-planned sessions): source keyframe
-	// interval (default 2.5s) and end of input (0 = never).
-	chunkGOP time.Duration
-	chunkEnd time.Duration
+	// interval (default 2.5s), end of video input (0 = never) and end of
+	// trailing audio in the final Matroska chunk (0 = same as chunkEnd).
+	chunkGOP      time.Duration
+	chunkEnd      time.Duration
+	chunkAudioEnd time.Duration
 }
 
 func newFakeRunner() *fakeRunner {
@@ -236,7 +238,7 @@ func (f *fakeRunner) Start(cmd Command) (Process, error) {
 	} else if argValue(cmd.Args, "-f") == "dash" {
 		go p.simulateDASH(cmd, f.segDelay, f.dashEnd, f.dashHold, f.failAfter, fail, stderr)
 	} else if fakeChunked(cmd.Args) {
-		go p.simulateChunks(cmd, f.segDelay, f.chunkGOP, f.chunkEnd, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
+		go p.simulateChunks(cmd, f.segDelay, f.chunkGOP, f.chunkEnd, f.chunkAudioEnd, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
 	} else {
 		go p.simulate(cmd, f.segDelay, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
 	}
@@ -481,7 +483,7 @@ const fakeChunkSeg = 4 * time.Second
 // at end (or after legacy segment lastSeg); failAfter fails the run after
 // that many chunks. Chunks carry real timestamps (MPEG-TS PTS, fMP4 tfdt,
 // Matroska Cluster) and a text marker "segment N args-ss=... input=...".
-func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, lastSeg, failAfter, eofAfter, emptyAt int, failStart bool, stderr string) {
+func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end, audioEnd time.Duration, lastSeg, failAfter, eofAfter, emptyAt int, failStart bool, stderr string) {
 	defer close(p.done)
 	args := cmd.Args
 	playlist := args[len(args)-1]
@@ -575,6 +577,9 @@ func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, la
 		switch {
 		case mkv:
 			b = testMKVChunk(t, marker)
+			if end > 0 && t+d >= end && audioEnd > end {
+				b = append(b, emptyCluster(audioEnd+matroskaOrigin-time.Millisecond)...)
+			}
 		case strings.HasSuffix(name, ".m4s"):
 			b = testChunk(uint32(n+1), int64(t*90000/time.Second), 3750, int(d*24/time.Second), []byte(marker))
 		default:

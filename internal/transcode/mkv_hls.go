@@ -146,6 +146,27 @@ func mkvLastVideo(path string, video uint64) (last time.Duration, ok bool, err e
 	return last, ok, err
 }
 
+// mkvChunkEnd is the latest presentation time of any Cluster or block in a
+// segmented Matroska chunk, less the output origin matroskaHLSMuxArgs adds;
+// false when it has none. The segment muxer computes a chunk's playlist
+// duration from the video reference stream and only cuts on video keyframes,
+// so when audio outlasts the video stream at the end of a title the final
+// chunk holds all of the trailing audio Clusters past the video duration.
+func mkvChunkEnd(path string) (last time.Duration, ok bool, err error) {
+	err = mkvWalk(path, func(at time.Duration) bool {
+		if !ok || at > last {
+			last, ok = at, true
+		}
+		return true
+	}, func(b mkvFrame) bool {
+		if !ok || b.at > last {
+			last, ok = b.at, true
+		}
+		return true
+	})
+	return last, ok, err
+}
+
 // mkvWalk reads the Clusters a segmented Matroska file consists of, in
 // order: cluster gets each Cluster's Timestamp and block each block;
 // either stops the walk by returning false. Frames are skipped, not read.

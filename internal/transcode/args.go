@@ -354,7 +354,13 @@ func buildCodecArgs(s runSpec) []string {
 				// video keyframe. Drop audio preroll without re-encoding or
 				// discarding the video keyframe required to decode a copy
 				// rendition. amount=0 explicitly leaves retained bytes intact.
-				args = append(args, "-bsf:a", "noise=amount=0:drop='lt(pts*tb,"+secs(s.Start)+")'")
+				// Without -copyts, input -ss rebases packet timestamps to the
+				// seek point before bitstream filters run.
+				dropAt := "0"
+				if len(inputTimestampArgs(s)) > 0 {
+					dropAt = secs(s.Start)
+				}
+				args = append(args, "-bsf:a", "noise=amount=0:drop='lt(pts*tb,"+dropAt+")'")
 			}
 			if container == ContainerFMP4 {
 				tag := "0"
