@@ -54,6 +54,11 @@ type Options struct {
 	// skips periodic provider snapshots while the database is down; their
 	// counters are cumulative, so nothing is lost. Nil writes synchronously.
 	Availability *store.Availability
+	// MetadataType maps a rating key to a Plex metadata type number for
+	// Dashboard media rows. Zero or nil skips the play.
+	MetadataType func(core.RatingKey) int
+	// AccountName labels a user on Dashboard media rows.
+	AccountName func(int64) string
 }
 type Service struct {
 	db       *sql.DB
@@ -62,6 +67,7 @@ type Service struct {
 	previous map[string]usenet.ProviderStats
 	// plays holds play records through a database outage (clustered).
 	plays *store.Outbox[string, playRecord]
+	dash  *Dashboard
 }
 
 // playRecord is one observation of a play, captured when it was made.
@@ -91,7 +97,7 @@ func New(db *sql.DB, opts Options) *Service {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	svc := &Service{db: db, opts: opts, previous: map[string]usenet.ProviderStats{}}
+	svc := &Service{db: db, opts: opts, previous: map[string]usenet.ProviderStats{}, dash: NewDashboard(DashboardOptions{Now: opts.Now})}
 	if opts.Availability != nil {
 		svc.plays = store.NewOutbox(store.OutboxOptions[string, playRecord]{
 			Name: "playback stats", Availability: opts.Availability, Logger: opts.Logger, Merge: mergePlay,
@@ -198,7 +204,19 @@ func (s *Service) ObserveState(ev state.Event) {
 	if err != nil {
 		s.opts.Logger.Warn("record timeline stats", "err", err)
 	}
+	if ev.Completed && s.dash != nil && s.opts.MetadataType != nil {
+		if typ := s.opts.MetadataType(ev.Key); typ > 0 {
+			name := ""
+			if s.opts.AccountName != nil {
+				name = s.opts.AccountName(ev.UserID)
+			}
+			s.dash.RecordPlay(ev.UserID, name, ev.Origin.ClientID, typ)
+		}
+	}
 }
+
+// Dashboard is the in-memory Plex Dashboard store for this node.
+func (s *Service) Dashboard() *Dashboard { return s.dash }
 
 // Run samples active bandwidth and provider counters until cancellation.
 func (s *Service) Run(ctx context.Context) {
