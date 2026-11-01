@@ -584,7 +584,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	if fc := strings.TrimSpace(f.FirstCharacter); fc != "" {
 		switch {
 		case fc == "#" || fc == "0":
-			conds = append(conds, "t.sort_title<>'' AND t.sort_title < 'a'")
+			conds = append(conds, "t.sort_title < 'a'")
 		case fc == "~" || fc == "…":
 			conds = append(conds, "t.sort_title >= '{'")
 		case len(fc) == 1 && ((fc[0] >= 'a' && fc[0] <= 'z') || (fc[0] >= 'A' && fc[0] <= 'Z')):
@@ -777,7 +777,7 @@ func (c *Catalog) countFacet(ctx context.Context, f core.Filter, facet string) (
 		// Titles per contentrating.Level ("0" is unrated), mildest first.
 		q = `SELECT CAST(t.content_rating_rank AS TEXT), COUNT(*) FROM catalog_titles t WHERE ` + base + ` GROUP BY t.content_rating_rank ORDER BY t.content_rating_rank ASC`
 	case "firstCharacter":
-		q = `SELECT CASE WHEN t.sort_title < 'a' THEN '#' WHEN SUBSTR(t.sort_title, 1, 1) BETWEEN 'a' AND 'z' THEN UPPER(SUBSTR(t.sort_title, 1, 1)) ELSE '~' END, COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.sort_title<>'' GROUP BY 1 ORDER BY 1 ASC`
+		q = `SELECT CASE WHEN t.sort_title < 'a' THEN '#' WHEN t.sort_title >= 'a' AND t.sort_title < '{' THEN UPPER(SUBSTR(t.sort_title, 1, 1)) ELSE '~' END, COUNT(*) FROM catalog_titles t WHERE ` + base + ` GROUP BY 1 ORDER BY 1 ASC`
 	default:
 		return nil, fmt.Errorf("catalog: unknown facet %q", facet)
 	}

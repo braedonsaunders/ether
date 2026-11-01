@@ -63,7 +63,34 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 		add("An "+letter+"elta "+letter, "en")
 		add(letter+" Hidden Hindi", "hi")
 	}
+	add("À Nous la Liberté", "fr")
+	add("Æon Flux", "en")
+	add("Ça brûle", "fr")
+	add("Český Honza", "fr")
 	add("Été 85", "fr")
+	add("Léolo", "fr")
+	add("Léon Morin, Priest", "fr")
+	add("Léon: The Professional", "en")
+	add("Líneas cruzadas", "fr")
+	add("Lögnens pris", "fr")
+	add("Lymelife", "en")
+	add("Ödipussi", "fr")
+	add("Yucatán", "fr")
+	add("Yummy", "en")
+	add("Yuppies", "en")
+	add("Yves Saint Laurent", "fr")
+	if err := c.UpsertTitle(ctx, core.Title{
+		Key:       core.MovieKey(nextID),
+		Type:      core.TypeMovie,
+		Title:     "L'Éclisse",
+		SortTitle: "ÉCLISSE",
+		Language:  "fr",
+		Released:  rel,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	nextID++
+	add("½ Revolution", "en")
 	add("七人の侍", "ja")
 	add("Солярис", "ru")
 
@@ -160,8 +187,26 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 	if offset != *all.TotalSize-1 {
 		t.Fatalf("sum of jump-bar counts (%d) != title-sorted total minus the trailing title (%d)", offset, *all.TotalSize-1)
 	}
-	if got := all.Metadata[len(all.Metadata)-1].Title; got != "Été 85" {
+	if got := all.Metadata[len(all.Metadata)-1].Title; got != "½ Revolution" {
 		t.Fatalf("expected the non-ASCII title after Z, last item %q", got)
+	}
+	// Verify every bucket's cumulative offset equals the exact index of its first title in /all,
+	// and accented L titles sort before Lymelife (so M never lands on Lögnens pris).
+	indexByTitle := map[string]int{}
+	for i, m := range all.Metadata {
+		if _, exists := indexByTitle[m.Title]; !exists {
+			indexByTitle[m.Title] = i
+		}
+	}
+	lymelifeIdx, ok := indexByTitle["Lymelife"]
+	if !ok {
+		t.Fatal("Lymelife missing from /all")
+	}
+	for _, acc := range []string{"Léolo", "Léon Morin, Priest", "Léon: The Professional", "Líneas cruzadas", "Lögnens pris"} {
+		idx, ok := indexByTitle[acc]
+		if !ok || idx >= lymelifeIdx {
+			t.Fatalf("expected %q (idx=%d) before Lymelife (idx=%d) in /all", acc, idx, lymelifeIdx)
+		}
 	}
 }
 

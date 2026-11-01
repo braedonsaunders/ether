@@ -6,20 +6,127 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
+// SortTitle returns the normalized lowercase sort key for a display title:
+// strips invisible format characters, removes a leading English article
+// ("the ", "a ", "an "), and folds Latin accents/diacritics and ligatures to
+// their base ASCII letters so titleSort and firstCharacter share one collation.
+func SortTitle(s string) string {
+	return sortTitle(s)
+}
+
 func sortTitle(s string) string {
-	l := strings.ToLower(strings.TrimSpace(s))
+	l := strings.ToLower(strings.TrimSpace(stripFormatRunes(s)))
 	for _, p := range []string{"the ", "a ", "an "} {
 		if strings.HasPrefix(l, p) {
-			return strings.TrimSpace(l[len(p):])
+			if rest := strings.TrimSpace(l[len(p):]); rest != "" {
+				l = rest
+			}
+			break
 		}
 	}
-	return l
+	return foldSortTitle(l)
+}
+
+func stripFormatRunes(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// FoldSortTitle normalizes an explicit sort title to lowercase with Latin
+// diacritics and ligatures folded to their base ASCII letters.
+func FoldSortTitle(s string) string {
+	return foldSortTitle(s)
+}
+
+func foldSortTitle(s string) string {
+	s = strings.ToLower(strings.TrimSpace(stripFormatRunes(s)))
+	if s == "" {
+		return ""
+	}
+	ascii := true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	lastLatin := false
+	for _, r := range s {
+		if unicode.Is(unicode.Cf, r) {
+			continue
+		}
+		if lastLatin && (unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)) {
+			continue
+		}
+		switch r {
+		case 'æ':
+			b.WriteString("ae")
+			lastLatin = true
+			continue
+		case 'œ':
+			b.WriteString("oe")
+			lastLatin = true
+			continue
+		case 'ß':
+			b.WriteString("ss")
+			lastLatin = true
+			continue
+		case 'ø':
+			b.WriteByte('o')
+			lastLatin = true
+			continue
+		case 'ł':
+			b.WriteByte('l')
+			lastLatin = true
+			continue
+		case 'đ', 'ð':
+			b.WriteByte('d')
+			lastLatin = true
+			continue
+		case 'þ':
+			b.WriteString("th")
+			lastLatin = true
+			continue
+		case 'ı':
+			b.WriteByte('i')
+			lastLatin = true
+			continue
+		}
+		if unicode.Is(unicode.Latin, r) {
+			lastLatin = true
+			if r < 0x80 {
+				b.WriteByte(byte(r))
+				continue
+			}
+			for _, d := range norm.NFD.String(string(r)) {
+				if unicode.Is(unicode.Mn, d) || unicode.Is(unicode.Mc, d) || unicode.Is(unicode.Me, d) {
+					continue
+				}
+				b.WriteRune(unicode.ToLower(d))
+			}
+			continue
+		}
+		lastLatin = false
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (c *Catalog) genreNames(ctx context.Context, mediaType string, ids []int, full []tmdb.Genre) []string {

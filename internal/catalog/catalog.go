@@ -399,6 +399,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	for _, fn := range opts {
 		fn(c)
 	}
+	c.ensureSortTitlesFolded(context.Background())
 	return c, nil
 }
 

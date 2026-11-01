@@ -661,6 +661,8 @@ func upsertOne(ctx context.Context, tx *sql.Tx, t core.Title, o upsertOpts, now 
 	}
 	if t.SortTitle == "" {
 		t.SortTitle = sortTitle(t.Title)
+	} else {
+		t.SortTitle = foldSortTitle(t.SortTitle)
 	}
 	showTMDB := t.ShowIDs.TMDB
 	if showTMDB == 0 && t.ShowKey != 0 {
@@ -1039,4 +1041,73 @@ func (c *Catalog) getMeta(ctx context.Context, k string) string {
 func (c *Catalog) setMeta(ctx context.Context, k, v string) error {
 	_, err := c.db.ExecContext(ctx, `INSERT INTO catalog_meta(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`, k, v)
 	return err
+}
+
+const (
+	sortTitleFoldedKey     = "sort_title_folded"
+	sortTitleFoldedVersion = "1"
+)
+
+// ensureSortTitlesFolded normalizes any pre-existing catalog_titles.sort_title
+// rows once so /all (ORDER BY sort_title) and /firstCharacter bucket counts
+// share the same folded collation on existing databases.
+func (c *Catalog) ensureSortTitlesFolded(ctx context.Context) {
+	if c.getMeta(ctx, sortTitleFoldedKey) == sortTitleFoldedVersion {
+		return
+	}
+	rows, err := c.db.QueryContext(ctx, `SELECT key, title, sort_title FROM catalog_titles`)
+	if err != nil {
+		return
+	}
+	type update struct {
+		key  int64
+		sort string
+	}
+	var updates []update
+	totalRows := 0
+	for rows.Next() {
+		var key int64
+		var title, stored string
+		if err := rows.Scan(&key, &title, &stored); err != nil {
+			rows.Close()
+			return
+		}
+		totalRows++
+		want := sortTitle(title)
+		if stored != "" && foldSortTitle(stored) != want {
+			// If stored was not simply the unfolded sortTitle(title), fold the custom sort_title.
+			want = foldSortTitle(stored)
+		}
+		if want != stored {
+			updates = append(updates, update{key: key, sort: want})
+		}
+	}
+	rows.Close()
+	if rows.Err() != nil || totalRows == 0 {
+		return
+	}
+	if len(updates) > 0 {
+		tx, err := c.db.BeginTx(ctx, nil)
+		if err != nil {
+			return
+		}
+		stmt, err := tx.PrepareContext(ctx, `UPDATE catalog_titles SET sort_title=? WHERE key=?`)
+		if err != nil {
+			_ = tx.Rollback()
+			return
+		}
+		for _, u := range updates {
+			if _, err := stmt.ExecContext(ctx, u.sort, u.key); err != nil {
+				_ = stmt.Close()
+				_ = tx.Rollback()
+				return
+			}
+		}
+		_ = stmt.Close()
+		if err := tx.Commit(); err != nil {
+			return
+		}
+		c.writeGen.Add(1)
+	}
+	_ = c.setMeta(ctx, sortTitleFoldedKey, sortTitleFoldedVersion)
 }

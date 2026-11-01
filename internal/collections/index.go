@@ -96,6 +96,8 @@ func entryFromTitle(t core.Title, in *interner) *entry {
 	}
 	if e.sortTitle == "" {
 		e.sortTitle = sortKey(t.Title)
+	} else {
+		e.sortTitle = catalog.FoldSortTitle(e.sortTitle)
 	}
 	if e.year == 0 && !t.Released.IsZero() {
 		e.year = t.Released.Year()
@@ -137,13 +139,7 @@ func (e *entry) finish() {
 }
 
 func sortKey(s string) string {
-	l := strings.ToLower(strings.TrimSpace(s))
-	for _, p := range []string{"the ", "a ", "an "} {
-		if strings.HasPrefix(l, p) {
-			return strings.TrimSpace(l[len(p):])
-		}
-	}
-	return l
+	return catalog.SortTitle(s)
 }
 
 // interner shares the many repeated strings (genres, studios, languages).
