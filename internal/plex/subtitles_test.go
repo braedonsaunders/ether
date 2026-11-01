@@ -130,6 +130,20 @@ func (f *fakeSubtitles) DownloadSubtitle(_ context.Context, t *core.Title, _ *co
 	return core.StreamInfo{}, core.ErrNotFound
 }
 
+func (f *fakeSubtitles) UploadSubtitle(_ context.Context, t *core.Title, _ *core.User, filename, format, language string, body []byte) (core.StreamInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if language == "" {
+		language = "en"
+	}
+	st := sidecar(language, "ether-subtitle:upload-"+filename)
+	st.Title = filename
+	st.Codec = format
+	f.picks[t.Key] = append(f.picks[t.Key], st)
+	f.files[st.ExternalURL] = string(body)
+	return st, nil
+}
+
 var (
 	// estimateInfo is what playback.Estimate gives before a session: a
 	// video and an audio stream, no subtitle tracks.
@@ -387,6 +401,75 @@ func TestSubtitleSearchAndPick(t *testing.T) {
 	}
 	if rec := f.get(t, "/library/metadata/1000000000999999/subtitles?language=eng"); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown title: %d", rec.Code)
+	}
+}
+
+func (f *fixture) requestBody(t *testing.T, method, target string, body []byte, hdr map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, target, strings.NewReader(string(body)))
+	req.RemoteAddr = "192.168.1.50:51000"
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	if _, ok := hdr["X-Plex-Token"]; !ok && !strings.Contains(target, "X-Plex-Token") {
+		req.Header.Set("X-Plex-Token", ownerToken)
+	}
+	if _, ok := hdr["X-Plex-Client-Identifier"]; !ok {
+		req.Header.Set("X-Plex-Client-Identifier", "client-1")
+	}
+	rec := httptest.NewRecorder()
+	f.srv.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestSubtitleUpload(t *testing.T) {
+	// Status grammar measured on PMS 1.43.4 (rex-ref/docs/findings.md
+	// cycle 11 / protocol-traps.md): empty body is 406 before title or
+	// format; no title and a title with no extension are 500; format is
+	// case-sensitive (SRT=400, srt=200); srt/ass/ssa/smi/txt/psb pass,
+	// vtt is accepted here as an Ether extra.
+	f, subs := newSubtitleFixture(t)
+	key := fightClub.Key.String()
+	body := []byte("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=srt", body, map[string]string{"X-Plex-Token": friendToken}); rec.Code != http.StatusForbidden {
+		t.Fatalf("friend upload: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=srt", body, nil); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("upload: %d %q", rec.Code, rec.Body.String())
+	}
+	uploadID := externalID(fightClub.Key, "ether-subtitle:upload-movie.en.srt")
+	found := false
+	for _, tag := range subtitleTags(f.get(t, "/library/metadata/"+key).Body.String()) {
+		if strings.Contains(tag, fmt.Sprintf(`id="%d"`, uploadID)) {
+			found = true
+			if !strings.Contains(tag, `selected="1"`) || !strings.Contains(tag, `external="1"`) {
+				t.Fatalf("uploaded track not selected: %s", tag)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("uploaded track not listed; files=%v", subs.files)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=SRT", body, nil); rec.Code != http.StatusBadRequest {
+		t.Fatalf("uppercase format: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=srt", nil, nil); rec.Code != http.StatusNotAcceptable {
+		t.Fatalf("empty body: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles", nil, nil); rec.Code != http.StatusNotAcceptable {
+		t.Fatalf("empty body before title: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?format=srt", body, nil); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("missing title: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie&format=srt", body, nil); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("title without extension: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.psb&format=psb", body, nil); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("psb: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.vtt&format=vtt", body, nil); rec.Code != http.StatusOK {
+		t.Fatalf("vtt: %d", rec.Code)
 	}
 }
 

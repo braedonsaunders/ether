@@ -59,6 +59,7 @@ var (
 	_ plex.SubtitleCatalog  = plexSubtitles{}
 	_ plex.SubtitleSearch   = plexSubtitles{}
 	_ plex.SubtitleTimeline = plexSubtitles{}
+	_ plex.SubtitleUpload   = plexSubtitles{}
 )
 
 func (p plexSubtitles) OpenFormat(id, format string) (io.ReadCloser, string, error) {
@@ -119,6 +120,10 @@ func (p plexSubtitles) DownloadSubtitle(ctx context.Context, t *core.Title, user
 		}
 	}
 	return p.a.subtitles.DownloadOnDemand(ctx, t, id)
+}
+
+func (p plexSubtitles) UploadSubtitle(_ context.Context, t *core.Title, _ *core.User, filename, format, language string, body []byte) (core.StreamInfo, error) {
+	return p.a.subtitles.StoreUpload(t, filename, format, language, body)
 }
 
 // markerDialogue is markers.Options.Dialogue: cue times from subtitle text

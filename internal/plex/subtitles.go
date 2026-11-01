@@ -382,6 +382,83 @@ func (s *Server) handleSubtitlePick(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// SubtitleUpload is optionally implemented by Deps.Subtitles: Plex Web's
+// "Upload Subtitles" (POST /library/metadata/{key}/subtitles).
+type SubtitleUpload interface {
+	UploadSubtitle(ctx context.Context, t *core.Title, u *core.User, filename, format, language string, body []byte) (core.StreamInfo, error)
+}
+
+const maxUploadBytes = 16 << 20
+
+// handleSubtitleUpload is POST /library/metadata/{key}/subtitles?title=&format=
+// with the file as the body. Matches the Plex Web player modal: empty body
+// is 406, a missing title or a title with no extension is 500, an
+// unaccepted format is 400, and a successful store is 200 with an empty
+// body. The sidecar is selected for the viewer.
+func (s *Server) handleSubtitleUpload(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	pr := FromContext(ctx)
+	t, ok := s.subtitleTitle(r)
+	if !ok || pr.User == nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	// rex-ref has no measurement that shared or managed users can upload
+	// (findings.md "Upload Subtitle modal", protocol-traps.md). Owner only
+	// so a friend cannot change anyone else's pick.
+	if !pr.User.IsOwner {
+		writeHTTPError(w, http.StatusForbidden)
+		return
+	}
+	uploader, ok := s.d.Subtitles.(SubtitleUpload)
+	if !ok {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxUploadBytes+1))
+	if err != nil {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	// PMS: empty body is 406 before the title or format checks.
+	if len(body) == 0 {
+		writeHTTPError(w, http.StatusNotAcceptable)
+		return
+	}
+	if len(body) > maxUploadBytes {
+		writeHTTPError(w, http.StatusRequestEntityTooLarge)
+		return
+	}
+	q := r.URL.Query()
+	title := strings.TrimSpace(q.Get("title"))
+	format := q.Get("format")
+	if title == "" || !strings.Contains(title, ".") {
+		writeHTTPError(w, http.StatusInternalServerError)
+		return
+	}
+	if !subtitles.AcceptsUploadFormat(format) {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	st, err := uploader.UploadSubtitle(ctx, t, pr.User, title, format, q.Get("language"), body)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("subtitle upload failed", "key", t.Key, "err", err)
+		}
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	s.selections.update(pr.User.ID, int64(t.Key), func(sel *selection) {
+		sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, &st
+	})
+	if s.d.TrackPreferences != nil {
+		if err := s.d.TrackPreferences.Remember(ctx, pr.User.ID, t.Key, "subtitle", &st); err != nil {
+			s.log.Warn("save stream preference", "error", err)
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleTranscodeSubtitles is /video/:/transcode/universal/subtitles: the
 // selected subtitle of a transcode session. External sidecars are served
 // with their cues moved back by the session's start offset (the HLS
