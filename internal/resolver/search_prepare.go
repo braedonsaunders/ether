@@ -86,7 +86,7 @@ func (p *searchPreparation) arrived(batch []core.Release) {
 	if err != nil {
 		return
 	}
-	p.ranked = p.svc.orderCandidates(append(p.ranked, ranked...), p.req.Title, nil)
+	p.ranked = p.svc.orderCandidates(append(p.ranked, ranked...), p.profile, p.req.Title, nil)
 	p.pumpLocked()
 }
 

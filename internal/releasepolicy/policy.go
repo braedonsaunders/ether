@@ -36,6 +36,22 @@ type Result struct {
 	Explanations []Explanation `json:"explanations"`
 }
 
+// PreferRule returns 1 when the prefer rule with id matched, 0 otherwise.
+func (r Result) PreferRule(id string) int {
+	for i, e := range r.Explanations {
+		if e.ID == id {
+			if i < len(r.Preferences) {
+				return r.Preferences[i]
+			}
+			if e.Action == "prefer" && e.Outcome == "prefer" {
+				return 1
+			}
+			return 0
+		}
+	}
+	return 0
+}
+
 // Context is evidence that belongs to the title, not the release.
 // OriginalLanguage is the catalogue title's original language
 // (Title.Language) when the caller has that title. An empty value means
@@ -208,6 +224,27 @@ func Better(a, b Result) bool {
 		if a.Preferences[i] != b.Preferences[i] {
 			return a.Preferences[i] > b.Preferences[i]
 		}
+	}
+	return false
+}
+
+// BetterByRanking compares policy results using the rule:<id> order in ranking,
+// falling back to Better when ranking carries no rule entries.
+func BetterByRanking(a, b Result, ranking []string) bool {
+	if a.Fallback != b.Fallback {
+		return a.Fallback < b.Fallback
+	}
+	hasRules := false
+	for _, step := range ranking {
+		if id, ok := strings.CutPrefix(step, core.RankRulePrefix); ok && id != "" {
+			hasRules = true
+			if pa, pb := a.PreferRule(id), b.PreferRule(id); pa != pb {
+				return pa > pb
+			}
+		}
+	}
+	if !hasRules {
+		return Better(a, b)
 	}
 	return false
 }
