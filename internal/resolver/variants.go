@@ -72,32 +72,62 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 		}
 	}
 	vs := pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max, allowTaller)
-	labelPlayedAuto(vs, req.PlayedRelease, results, s.LookupRelease)
+	labelPlayedAuto(req.Title, vs, req.PlayedRelease, results, s.LookupRelease)
 	return vs, nil
 }
 
-// labelPlayedAuto names Auto after the release this viewer actually played
-// (the one a resume opens) when that is not one of the explicit versions:
-// Auto resolved past its first candidate, or an earlier pick ranks
-// differently now. The played release is looked up in the cached results,
-// then among recently seen releases; unknown leaves Auto's own label.
-func labelPlayedAuto(vs []core.ReleaseVariant, played string, results []core.Release, lookup func(string) (core.Release, bool)) {
-	if played == "" || len(vs) == 0 || !vs[0].Auto {
+// labelPlayedAuto aligns Auto with the release this viewer actually played
+// when Auto resolved past its first candidate (including onto a same-quality
+// alternative row in Auto's own tier) or an earlier Auto pick ranks
+// differently now. Explicit versions in another quality tier or cut keep
+// Auto's own label and attributes.
+func labelPlayedAuto(t *core.Title, vs []core.ReleaseVariant, played string, results []core.Release, lookup func(string) (core.Release, bool)) {
+	if played == "" || len(vs) == 0 || !vs[0].Auto || vs[0].Release.ID == played {
 		return
 	}
-	for _, v := range vs {
+	for _, v := range vs[1:] {
 		if v.Release.ID == played {
-			return // Auto itself, or an explicit version the client marks as played
+			if variantKey(v.Release.Info) != variantKey(vs[0].Release.Info) {
+				return // an explicit tier or cut version the client marks as played
+			}
+			vs[0] = core.ReleaseVariant{
+				ID:      v.Release.ID,
+				Label:   autoLabel(v.Release),
+				Edition: v.Release.Info.Edition,
+				Auto:    true,
+				Release: v.Release,
+				Info:    v.Info,
+			}
+			return
+		}
+	}
+	apply := func(r core.Release) {
+		info := estimateVariantInfo(t, sizedForEpisode(r))
+		for _, v := range vs[1:] {
+			if strings.EqualFold(strings.TrimSpace(v.Release.Name), strings.TrimSpace(r.Name)) && v.Release.Name != "" {
+				info = v.Info
+				break
+			}
+		}
+		vs[0] = core.ReleaseVariant{
+			ID:      r.ID,
+			Label:   autoLabel(r),
+			Edition: r.Info.Edition,
+			Auto:    true,
+			Release: r,
+			Info:    info,
 		}
 	}
 	for _, r := range results {
 		if r.ID == played {
-			vs[0].Label = autoLabel(r)
+			apply(r)
 			return
 		}
 	}
-	if r, ok := lookup(played); ok {
-		vs[0].Label = autoLabel(r)
+	if lookup != nil {
+		if r, ok := lookup(played); ok {
+			apply(r)
+		}
 	}
 }
 
@@ -461,8 +491,12 @@ func sizePhrase(size int64) string {
 func qualityPhrase(info core.ReleaseInfo) string {
 	res := "SD"
 	switch {
-	case info.Height >= 2160:
+	case info.Height >= 1800:
 		res = "4K"
+	case info.Height >= 1000:
+		res = "1080p"
+	case info.Height >= 700:
+		res = "720p"
 	case info.Height > 0:
 		res = strconv.Itoa(info.Height) + "p"
 	}

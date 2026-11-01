@@ -881,11 +881,11 @@ func videoResolution(w, h int) string {
 		return "1080"
 	case w >= 1200 || h >= 700:
 		return "720"
-	case h >= 560:
+	case w >= 960 || h >= 560:
 		return "576"
-	case h >= 400:
+	case w >= 640 || h >= 400:
 		return "480"
-	case h > 0:
+	case w > 0 || h > 0:
 		return "sd"
 	}
 	return ""

@@ -532,7 +532,21 @@ func TestAutoLabelFollowsPlayedRelease(t *testing.T) {
 	if vs[0].Label != want || vs[0].Label == base[0].Label {
 		t.Fatalf("auto label after a play of %s: %q, want %q", played, vs[0].Label, want)
 	}
-	explicit := base[1].Release.ID
+	// When Auto played the second-row same-tier alternative (base[1]),
+	// Auto's label, release, and bitrate/attributes follow that row.
+	sameTierAlt := base[1]
+	vs, err = svc.Variants(ctx, core.ResolveRequest{Title: matrixTitle(), Client: appleTVCaps(), PlayedRelease: sameTierAlt.Release.ID}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAltLabel := autoLabel(sameTierAlt.Release)
+	if vs[0].Label != wantAltLabel || vs[0].Info.BitrateKbps != sameTierAlt.Info.BitrateKbps || vs[0].Release.ID != sameTierAlt.Release.ID {
+		t.Fatalf("auto after playing second-row alternative %s: label=%q (want %q) bitrate=%d (want %d) id=%s",
+			sameTierAlt.Release.ID, vs[0].Label, wantAltLabel, vs[0].Info.BitrateKbps, sameTierAlt.Info.BitrateKbps, vs[0].Release.ID)
+	}
+
+	// An explicit version in another tier or cut keeps Auto's own name.
+	explicit := base[2].Release.ID
 	vs, err = svc.Variants(ctx, core.ResolveRequest{Title: matrixTitle(), Client: appleTVCaps(), PlayedRelease: explicit}, 4)
 	if err != nil || vs[0].Label != base[0].Label {
 		t.Fatalf("auto relabelled for an explicit version: %q (err %v)", vs[0].Label, err)

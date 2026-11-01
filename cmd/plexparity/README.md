@@ -130,11 +130,15 @@ jump-to-letter by that count. `/firstCharacter/~` still filters those titles.
 This note does not allowlist any response.
 
 Play Version: an unparsed release no longer advertises 1080p H.264 or E-AC-3
-5.1. After playback, when the probed file's resolution class or audio codec
-disagrees with Auto's estimate, Auto's media title follows the probe
-(`Auto · SD · AAC`). A known 1080p candidate is still tried before a known
-SD file; the downgrade trace is unchanged. This note does not allowlist any
-response.
+5.1. Resolution class is derived from both width and height (so scope-aspect
+`1920x800` is 1080p, not `800p`). After playback or warm-up, when the probed
+file's resolution class or audio codec disagrees with Auto's estimate, Auto's
+media title preserves the parsed release metadata (source, group, matching
+audio details) and replaces only what the probe proves wrong (falling back to
+`Auto · SD · AAC` when unparsed); when Auto plays a same-tier alternative,
+Auto's label and Media bitrate/attributes match the chosen release row. A
+known 1080p candidate is still tried before a known SD file; the downgrade
+trace is unchanged. This note does not allowlist any response.
 
 Scrobble and watch refresh (`23d9fffb2`, #6): the `80208da4d` versus
 `0901e52df` run differed only here. Both worlds produced the same 129

@@ -383,7 +383,7 @@ func (e *warmEntry) facts() warmFacts {
 		f.size, f.duration = info.Size, info.Duration
 		f.bitrate = info.BitrateKbps
 		if v := info.Video(); v != nil {
-			f.height, f.codec = v.Height, v.Codec
+			f.height, f.codec = warmResolutionHeight(v.Width, v.Height), v.Codec
 			f.hdr = v.ColorTransfer == "smpte2084" || v.ColorTransfer == "arib-std-b67"
 			f.dv = v.DolbyVision
 		}
@@ -686,4 +686,20 @@ func (m *Manager) hasActivePlaybackLocked() bool {
 		}
 	}
 	return false
+}
+
+// warmResolutionHeight normalizes cinemascope/anamorphic dimensions (e.g.
+// 1920x800 or 3840x1600) to their nominal vertical tier so profile MinHeight
+// checks (such as 1080p) do not reject wide-aspect 1080p/4K releases.
+func warmResolutionHeight(w, h int) int {
+	switch {
+	case (w >= 3200 || h >= 1800) && h < 2160:
+		return 2160
+	case (w >= 1700 || h >= 1000) && h < 1080:
+		return 1080
+	case (w >= 1200 || h >= 700) && h < 720:
+		return 720
+	default:
+		return h
+	}
 }

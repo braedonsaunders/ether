@@ -277,14 +277,22 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 	}
 	s.renderedVariants.put(renderedVariantKey{userID: pr.User.ID, clientID: pr.ClientID, key: t.Key}, ids, s.now())
 
+	alignPlayedAutoVariant(vs, probedRelease)
 	probedReady := !probed.Estimated && len(probed.Streams) > 0 && probed.Video() != nil
 	matchedNonAuto := false
-	if probedRelease != "" && probedReady {
+	if probedRelease != "" && probedReady && probedRelease != vs[0].Release.ID {
 		for _, v := range vs {
 			if !v.Auto && v.Release.ID == probedRelease {
 				matchedNonAuto = true
 				break
 			}
+		}
+	}
+	autoDuplicatesRow := false
+	for _, v := range vs[1:] {
+		if sameVariantRelease(v.Release, vs[0].Release) {
+			autoDuplicatesRow = true
+			break
 		}
 	}
 	out := make([]model.Media, 0, len(vs))
@@ -296,11 +304,14 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		// is selected; when the resumed release is not one of the explicit
 		// non-Auto picks (e.g. Auto resolved past an uncached top candidate),
 		// it belongs to Auto.
-		played := probedRelease != "" && probedReady && (v.Release.ID == probedRelease || (v.Auto && !matchedNonAuto))
+		played := probedRelease != "" && probedReady && ((v.Auto && !matchedNonAuto) || (!v.Auto && matchedNonAuto && v.Release.ID == probedRelease))
 		warmAuto := probedRelease == "" && probedReady && v.Auto
 		variant := v
 		if played || warmAuto {
-			variant.Info = probed
+			keepReleaseBitrate := !probeDisagrees(v.Info, probed) && v.Info.BitrateKbps > 0 && (probedRelease != "" || autoDuplicatesRow || probed.BitrateKbps <= 0)
+			variant.Info = mergeProbedVariantInfo(v.Info, probed, keepReleaseBitrate)
+		} else if !v.Auto && sameVariantRelease(v.Release, vs[0].Release) && probedReady && !matchedNonAuto && !probeDisagrees(v.Info, probed) {
+			variant.Info = mergeProbedVariantInfo(v.Info, probed, v.Info.BitrateKbps > 0)
 		}
 		m := buildMediaVariant(t, variant, stamp, s.variantIDs)
 		if s.d.Trickplay != nil && s.d.Trickplay.TrickplayAvailable(v.Release.ID) {
@@ -321,10 +332,11 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 			m.Part[0].Selected = model.Ptr(true)
 		}
 		// Auto's title is the release-name estimate. When the file that
-		// actually played is a different resolution or codec, the label has
-		// to follow the probe or Play Version still says 1080p EAC3.
-		if v.Auto && played && probeDisagrees(v.Info, probed) {
-			m.Extra = []model.Attr{model.A("title", playedAutoTitle(probed))}
+		// actually played or warmed is a different resolution or codec,
+		// keep the parsed release metadata (source, group) and replace only
+		// what the probe proves wrong.
+		if v.Auto && (played || warmAuto) && probeDisagrees(v.Info, probed) {
+			m.Extra = []model.Attr{model.A("title", probedAutoTitle(v.Release, v.Info, probed))}
 		}
 		out = append(out, m)
 	}
@@ -447,37 +459,120 @@ func (s *Server) resolveVariantSelection(ctx context.Context, pr *Request, p *pl
 	return vs[p.mediaIndex].Release.ID
 }
 
+// alignPlayedAutoVariant updates Auto in place when the played release is a
+// same-tier alternative in vs[1:] and the VariantResolver did not already
+// align vs[0] (e.g. a static test stub).
+func alignPlayedAutoVariant(vs []core.ReleaseVariant, playedRelease string) {
+	if playedRelease == "" || len(vs) < 2 || !vs[0].Auto || vs[0].Release.ID == playedRelease {
+		return
+	}
+	autoClass := streamResolutionClass(vs[0].Info)
+	for _, v := range vs[1:] {
+		if v.Release.ID != playedRelease {
+			continue
+		}
+		if v.Edition != vs[0].Edition || streamResolutionClass(v.Info) != autoClass || hasDolbyVision(v.Info) != hasDolbyVision(vs[0].Info) || hasHDR10(v.Info) != hasHDR10(vs[0].Info) {
+			return
+		}
+		lbl := v.Label
+		if v.Release.Name != "" || v.Release.Info.Height > 0 || v.Release.Info.Source != "" {
+			lbl = plexAutoLabel(v.Release.Info)
+		} else if lbl != "" && !strings.HasPrefix(lbl, "Auto") {
+			lbl = "Auto · " + lbl
+		}
+		vs[0] = core.ReleaseVariant{
+			ID:      v.Release.ID,
+			Label:   lbl,
+			Edition: v.Edition,
+			Auto:    true,
+			Release: v.Release,
+			Info:    v.Info,
+		}
+		return
+	}
+}
+
+func sameVariantRelease(a, b core.Release) bool {
+	if a.ID != "" && a.ID == b.ID {
+		return true
+	}
+	na := strings.TrimSpace(a.Name)
+	nb := strings.TrimSpace(b.Name)
+	return na != "" && strings.EqualFold(na, nb)
+}
+
+func mergeProbedVariantInfo(claimed, probed core.MediaInfo, keepReleaseBitrate bool) core.MediaInfo {
+	out := probed
+	if keepReleaseBitrate && claimed.BitrateKbps > 0 {
+		out.BitrateKbps = claimed.BitrateKbps
+	}
+	if out.Size <= 0 && claimed.Size > 0 {
+		out.Size = claimed.Size
+	}
+	if out.Duration <= 0 && claimed.Duration > 0 {
+		out.Duration = claimed.Duration
+	}
+	return out
+}
+
+func hasDolbyVision(info core.MediaInfo) bool {
+	v := info.Video()
+	return v != nil && v.DolbyVision
+}
+
+func hasHDR10(info core.MediaInfo) bool {
+	v := info.Video()
+	return v != nil && (v.ColorTransfer == "smpte2084" || v.ColorTransfer == "arib-std-b67")
+}
+
 // probeDisagrees reports that the file which played is not the picture or
 // audio the release name (or its stand-in) described.
 func probeDisagrees(claimed, probed core.MediaInfo) bool {
 	if probed.Video() == nil {
 		return false
 	}
-	if resolutionClass(streamHeight(claimed)) != resolutionClass(probed.Video().Height) {
+	if streamResolutionClass(claimed) != streamResolutionClass(probed) {
 		return true
 	}
-	return primaryAudioCodec(claimed) != primaryAudioCodec(probed)
+	return audioCodecFamily(primaryAudioCodec(claimed)) != audioCodecFamily(primaryAudioCodec(probed))
 }
 
-func streamHeight(info core.MediaInfo) int {
+func streamResolutionClass(info core.MediaInfo) int {
 	if v := info.Video(); v != nil {
-		return v.Height
+		return resolutionClass(v.Width, v.Height)
 	}
 	return 0
 }
 
-func resolutionClass(h int) int {
+func resolutionClass(w, h int) int {
 	switch {
-	case h >= 1800:
+	case w >= 3200 || h >= 1800:
 		return 2160
-	case h >= 1000:
+	case w >= 1700 || h >= 1000:
 		return 1080
-	case h >= 700:
+	case w >= 1200 || h >= 700:
 		return 720
-	case h > 0:
+	case w > 0 || h > 0:
 		return 480
 	default:
 		return 0
+	}
+}
+
+func audioCodecFamily(c string) string {
+	switch strings.ToLower(strings.TrimSpace(c)) {
+	case "e-ac3", "ec3", "eac3":
+		return "eac3"
+	case "ac-3", "ac3":
+		return "ac3"
+	case "dca", "dts", "dtshd", "dts-hd", "dca-ma":
+		return "dts"
+	case "truehd", "mlp":
+		return "truehd"
+	case "mp4a", "aac":
+		return "aac"
+	default:
+		return strings.ToLower(strings.TrimSpace(c))
 	}
 }
 
@@ -497,20 +592,102 @@ func primaryAudioCodec(info core.MediaInfo) string {
 	return fallback
 }
 
-// playedAutoTitle names Auto from the probe, not the release-name estimate.
-func playedAutoTitle(info core.MediaInfo) string {
-	h := streamHeight(info)
+// probedAutoTitle keeps the release-name metadata (source, group, audio
+// details that still match) and replaces only what the probe proves wrong.
+func probedAutoTitle(rel core.Release, claimed, probed core.MediaInfo) string {
+	info := rel.Info
+	probedClass := streamResolutionClass(probed)
+	if streamResolutionClass(claimed) != probedClass || info.Height <= 0 {
+		switch probedClass {
+		case 2160, 1080, 720:
+			info.Height = probedClass
+		default:
+			info.Height = 0
+		}
+		if v := probed.Video(); v != nil {
+			info.DolbyVision = v.DolbyVision
+			info.HDR10 = v.ColorTransfer == "smpte2084" || v.ColorTransfer == "arib-std-b67"
+		}
+	}
+	probedAudio := primaryAudioCodec(probed)
+	if audioCodecFamily(primaryAudioCodec(claimed)) != audioCodecFamily(probedAudio) || info.AudioCodec == "" {
+		info.AudioCodec = audioCodecFamily(probedAudio)
+		info.Atmos = false
+		info.Channels = ""
+	}
+	return plexAutoLabel(info)
+}
+
+func plexAutoLabel(info core.ReleaseInfo) string {
+	parts := []string{"Auto", plexQualityPhrase(info)}
+	if a := plexAudioPhrase(info); a != "" {
+		parts = append(parts, a)
+	}
+	if g := strings.TrimSpace(info.Group); g != "" {
+		parts = append(parts, g)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func plexQualityPhrase(info core.ReleaseInfo) string {
 	res := "SD"
 	switch {
-	case h >= 1800:
+	case info.Height >= 1800:
 		res = "4K"
-	case h >= 700:
-		res = strconv.Itoa(h) + "p"
+	case info.Height >= 1000:
+		res = "1080p"
+	case info.Height >= 700:
+		res = "720p"
+	case info.Height > 0:
+		res = strconv.Itoa(info.Height) + "p"
 	}
-	if a := strings.ToUpper(primaryAudioCodec(info)); a != "" {
-		return "Auto · " + res + " · " + a
+	parts := []string{res}
+	switch {
+	case info.DolbyVision:
+		parts = append(parts, "Dolby Vision")
+	case info.HDR10:
+		parts = append(parts, "HDR10")
 	}
-	return "Auto · " + res
+	switch info.Source {
+	case core.SourceRemux:
+		parts = append(parts, "Remux")
+	case core.SourceWEBDL:
+		parts = append(parts, "WEB-DL")
+	case core.SourceBluRay:
+		parts = append(parts, "Blu-ray")
+	case core.SourceWEBRip:
+		parts = append(parts, "WEBRip")
+	case core.SourceHDTV:
+		parts = append(parts, "HDTV")
+	case core.SourceDVD:
+		parts = append(parts, "DVD")
+	case core.SourceScreener:
+		parts = append(parts, "Screener")
+	case core.SourceCam:
+		parts = append(parts, "CAM")
+	}
+	return strings.Join(parts, " ")
+}
+
+func plexAudioPhrase(info core.ReleaseInfo) string {
+	codec := map[string]string{
+		"aac": "AAC", "ac3": "DD", "eac3": "DD+", "truehd": "TrueHD",
+		"dts": "DTS", "dtshd": "DTS-HD", "flac": "FLAC", "opus": "Opus", "mp3": "MP3",
+	}[info.AudioCodec]
+	if codec == "" {
+		codec = strings.ToUpper(info.AudioCodec)
+	}
+	parts := []string{}
+	if codec != "" {
+		parts = append(parts, codec)
+	}
+	if info.Atmos {
+		parts = append(parts, "Atmos")
+	}
+	if info.Channels != "" {
+		parts = append(parts, info.Channels)
+	}
+	return strings.Join(parts, " ")
 }
 
 // preparePlayback prepares a play session, honouring a "Play Version"

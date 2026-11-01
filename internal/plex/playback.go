@@ -719,7 +719,11 @@ func applyTranscodeMedia(m *model.Media, dec core.Decision, protocol string) {
 				m.Width = m.Width * dec.MaxHeight / m.Height
 			}
 			m.Height = dec.MaxHeight
-			m.VideoResolution = videoResolution(m.Width, m.Height) + "p"
+			if res := videoResolution(m.Width, m.Height); res != "" && res != "4k" && res != "sd" {
+				m.VideoResolution = res + "p"
+			} else {
+				m.VideoResolution = res
+			}
 		}
 		if dec.BitrateKbps > 0 {
 			m.Bitrate = dec.BitrateKbps

@@ -116,6 +116,7 @@ func (s *Service) prepareSources(ctx context.Context, cands []candidate, title *
 				cands[i].rel.InfoHash, cands[i].rel.MagnetURL = r.InfoHash, r.MagnetURL
 			}
 		}
+		s.cachePreparedSources(title, byID)
 		return s.routeSources(cands, title, tr)
 	}
 	// A healthy hedge may proceed without the preparation outcome only
@@ -200,4 +201,54 @@ func (s *Service) prepareSources(ctx context.Context, cands []candidate, title *
 			return cands
 		}
 	}
+}
+
+// cachePreparedSources persists torrent hashes and magnets discovered during
+// PrepareSources back into the in-memory search cache and recent-release index
+// so subsequent Variants() calls see the same cached state and rank the same
+// release first.
+func (s *Service) cachePreparedSources(title *core.Title, byID map[string]core.Release) {
+	if len(byID) == 0 {
+		return
+	}
+	if title != nil {
+		key := searchCacheKey(searchRequestFor(title))
+		s.mu.Lock()
+		if e, ok := s.searchCache[key]; ok {
+			updated := make([]core.Release, len(e.results))
+			copy(updated, e.results)
+			changed := false
+			for i := range updated {
+				if p, ok := byID[updated[i].ID]; ok {
+					if updated[i].InfoHash == "" && p.InfoHash != "" {
+						updated[i].InfoHash = p.InfoHash
+						changed = true
+					}
+					if updated[i].MagnetURL == "" && p.MagnetURL != "" {
+						updated[i].MagnetURL = p.MagnetURL
+						changed = true
+					}
+				}
+			}
+			if changed {
+				e.results = updated
+				s.searchCache[key] = e
+			}
+		}
+		s.mu.Unlock()
+	}
+	c := &s.con
+	c.mu.Lock()
+	for id, p := range byID {
+		if r, ok := c.recent[id]; ok {
+			if r.rel.InfoHash == "" && p.InfoHash != "" {
+				r.rel.InfoHash = p.InfoHash
+			}
+			if r.rel.MagnetURL == "" && p.MagnetURL != "" {
+				r.rel.MagnetURL = p.MagnetURL
+			}
+			c.recent[id] = r
+		}
+	}
+	c.mu.Unlock()
 }

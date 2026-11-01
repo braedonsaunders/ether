@@ -653,3 +653,116 @@ func TestAutoLabelFollowsPlayedProbe(t *testing.T) {
 		t.Fatalf("played media still hides the SD probe:\n%s", body)
 	}
 }
+
+// Scope-ratio 1080p (1920x800), probe-corrected SD fallback preserving
+// release metadata, and Auto matching the second-row release's label and
+// bitrate/attributes (Send Help 2026 regression).
+func TestAutoScope1080pAndSecondRowReleaseConsistency(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+
+	row1Rel := core.Release{
+		ID:   "rel-row1",
+		Name: "Send.Help.2026.1080p.WEB-DL.DDP5.1.H.264-FLUX",
+		Info: core.ReleaseInfo{
+			Title: "Send Help", Year: 2026, Height: 1080,
+			Source: core.SourceWEBDL, VideoCodec: "h264", AudioCodec: "eac3",
+			Channels: "5.1", Group: "FLUX",
+		},
+	}
+	scopeRel := core.Release{
+		ID:   "rel-scope",
+		Name: "Send.Help.2026.1080p.AMZN.WEB-DL.DDP5.1.Atmos.H.264-SCOPE",
+		Info: core.ReleaseInfo{
+			Title: "Send Help", Year: 2026, Height: 1080,
+			Source: core.SourceWEBDL, VideoCodec: "h264", AudioCodec: "eac3",
+			Atmos: true, Channels: "5.1", Group: "SCOPE",
+		},
+	}
+	rbbRel := core.Release{
+		ID:   "rel-rbb",
+		Name: "Send.Help.2026.BDRip.x264-rbb",
+		Info: core.ReleaseInfo{
+			Title: "Send Help", Year: 2026, Height: 0,
+			Source: core.SourceBluRay, VideoCodec: "h264", Group: "rbb",
+		},
+	}
+
+	vAuto := mkVariant(row1Rel.ID, "Auto · 1080p WEB-DL · DD+ 5.1 · FLUX", "", true, 1080, "h264", "eac3", false, 9400)
+	vAuto.Release = row1Rel
+	vRow2 := mkVariant(scopeRel.ID, "1080p WEB-DL · DD+ Atmos 5.1 · 6.8 GB · SCOPE", "", false, 1080, "h264", "eac3", false, 8200)
+	vRow2.Release = scopeRel
+	v720 := mkVariant("rel-720", "720p WEB-DL", "", false, 720, "h264", "aac", false, 3800)
+	vSD := mkVariant(rbbRel.ID, "SD Blu-ray · rbb", "", false, 480, "h264", "aac", false, 1100)
+	vSD.Release = rbbRel
+
+	f.resolver.byKey[fightClub.Key] = []core.ReleaseVariant{vAuto, vRow2, v720, vSD}
+
+	// 1. Scope-aspect 1920x800 probe when Auto picked the second row (SCOPE):
+	// Auto must read "Auto · 1080p WEB-DL · DD+ Atmos 5.1 · SCOPE" (never "800p · EAC3"),
+	// videoResolution="1080", and carry the chosen second row's bitrate (8200 kbps).
+	scopeProbe := core.MediaInfo{
+		Container:   "mkv",
+		Duration:    139 * time.Minute,
+		Size:        6_800_000_000,
+		BitrateKbps: 9400, // probe container header disagrees with release size estimate
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 800, FrameRate: 23.976, Default: true},
+			{Index: 1, Type: "audio", Codec: "eac3", Language: "en", Channels: 6, SampleRate: 48000, Default: true},
+		},
+	}
+	pb.mu.Lock()
+	pb.resumed = map[resumedFactKey]resumedFact{{ownerUser.ID, fightClub.Key}: {info: scopeProbe, release: scopeRel.ID}}
+	pb.mu.Unlock()
+
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "800p") {
+		t.Fatalf("scope 1920x800 mislabelled as 800p:\n%s", body)
+	}
+	wantAutoTitle := `title="Auto · 1080p WEB-DL · DD+ Atmos 5.1 · SCOPE"`
+	if !strings.Contains(body, wantAutoTitle) {
+		t.Fatalf("auto title did not match second-row release (%s):\n%s", wantAutoTitle, body)
+	}
+	mediaTags := regexp.MustCompile(`<Media\b[^>]*>`).FindAllString(body, -1)
+	if len(mediaTags) != 4 {
+		t.Fatalf("media count %d, want 4:\n%s", len(mediaTags), body)
+	}
+	for _, idx := range []int{0, 1} {
+		if !strings.Contains(mediaTags[idx], `bitrate="8200"`) || !strings.Contains(mediaTags[idx], `videoResolution="1080"`) || !strings.Contains(mediaTags[idx], `width="1920"`) || !strings.Contains(mediaTags[idx], `height="800"`) {
+			t.Fatalf("media[%d] attributes out of sync with chosen release: %s", idx, mediaTags[idx])
+		}
+	}
+	if !strings.Contains(mediaTags[0], `selected="1"`) || strings.Contains(mediaTags[1], `selected="1"`) {
+		t.Fatalf("expected only Auto media[0] selected:\nmedia[0]=%s\nmedia[1]=%s", mediaTags[0], mediaTags[1])
+	}
+
+	// 2. Probe-corrected SD fallback on a parsed 1080p release preserves
+	// release source and group while correcting resolution and audio codec.
+	sdProbe := core.MediaInfo{
+		Container:   "mkv",
+		BitrateKbps: 1100,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 720, Height: 300, Default: true},
+			{Index: 1, Type: "audio", Codec: "aac", Channels: 2, Default: true},
+		},
+	}
+	f.resolver.byKey[fightClub.Key] = []core.ReleaseVariant{vAuto, vRow2, v720, vSD}
+	pb.mu.Lock()
+	pb.resumed = map[resumedFactKey]resumedFact{{ownerUser.ID, fightClub.Key}: {info: sdProbe, release: "rel-fallback-sd"}}
+	pb.mu.Unlock()
+
+	rec = f.get(t, "/library/metadata/"+fightClub.Key.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail sd fallback %d: %s", rec.Code, rec.Body.String())
+	}
+	body = rec.Body.String()
+	if !strings.Contains(body, `title="Auto · SD WEB-DL · AAC · FLUX"`) {
+		t.Fatalf("probe-corrected SD fallback dropped release source/group:\n%s", body)
+	}
+	if !strings.Contains(body, `videoResolution="480"`) {
+		t.Fatalf("scope SD 720x300 should classify as 480 by width:\n%s", body)
+	}
+}
