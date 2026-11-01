@@ -122,10 +122,22 @@ func TestSelectProfile(t *testing.T) {
 	if p.Name != "1080p" || p.MaxHeight != 1080 || p.AllowHDR || len(p.PreferredCodecs) != 1 || p.PreferredCodecs[0] != "h264" {
 		t.Fatalf("web profile %+v", p)
 	}
+	// Away from home a device rule still wins (Apple TV → 4K); the remote
+	// profile covers remote clients no rule names.
 	remote := appleTVCaps()
 	remote.Remote = true
-	if p = SelectProfile(q, remote, nil); p.Name != "1080p" {
-		t.Fatalf("remote profile %q want 1080p", p.Name)
+	if p = SelectProfile(q, remote, nil); p.Name != "4K" {
+		t.Fatalf("remote Apple TV profile %q want the rule's 4K", p.Name)
+	}
+	remoteWeb := webCaps()
+	remoteWeb.Remote = true
+	if p = SelectProfile(q, remoteWeb, nil); p.Name != "1080p" {
+		t.Fatalf("remote web profile %q want the remote profile", p.Name)
+	}
+	q720 := q
+	q720.Remote = "720p"
+	if p = SelectProfile(q720, remoteWeb, nil); p.Name != "720p" {
+		t.Fatalf("remote web profile %q want the remote 720p", p.Name)
 	}
 	// 4K profile clamped to a 1080p Apple TV (rule still matches).
 	small := appleTVCaps()

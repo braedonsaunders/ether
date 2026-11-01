@@ -127,6 +127,7 @@ func TestRemoteProfileCeilingRecordedInHistory(t *testing.T) {
 	q := config.DefaultQuality()
 	q.Default = "4K"  // 2160 configured for local/default clients
 	q.Remote = "720p" // 720 configured for remote clients: distinct ceiling
+	q.Rules = nil     // a device rule would win over the remote profile
 	cfg.Quality = q
 
 	// Direct selection: Remote picks q.Remote and snapshots its ceiling.

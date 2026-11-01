@@ -217,15 +217,20 @@ func TestResolvePreferWinsOverRanking(t *testing.T) {
 		t.Error("alternates kept empty on preferred resolve")
 	}
 	// A 4K pick on the 1080p remote profile stays inside the ceiling unless
-	// the owner opted in. Remote Apple TV selects 1080p; the client can
-	// play HEVC, so the only gate is height.
+	// the owner opted in. With no device rule, remote Apple TV selects
+	// 1080p; the client can play HEVC, so the only gate is height.
+	noRules := testCfg()
+	noRules.Quality.Rules = nil
+	remoteSvc := New(idx, fakeHealth{}, nil, noRules, Options{})
+	defer remoteSvc.Close()
 	remote := appleTVCaps()
 	remote.Remote = true
-	res, err = svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: remote, Prefer: "uhd"})
+	res, err = remoteSvc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: remote, Prefer: "uhd"})
 	if err != nil || res.Release.ID != "hd" {
 		t.Fatalf("prefer above profile height res=%+v err=%v", res, err)
 	}
 	cfg := testCfg()
+	cfg.Quality.Rules = nil
 	cfg.Resolver.OfferHigherVersions = true
 	opted := New(idx, fakeHealth{}, nil, cfg, Options{})
 	defer opted.Close()

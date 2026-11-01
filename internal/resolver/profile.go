@@ -141,11 +141,6 @@ func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) c
 	}
 	var selected core.QualityProfile
 	var hasSelected bool
-	if caps.Remote && q.Remote != "" {
-		if p, ok := byName[q.Remote]; ok {
-			selected, hasSelected = p, true
-		}
-	}
 	var matchedRule config.QualityRule
 	var hasRule bool
 	for _, rule := range q.Rules {
@@ -183,6 +178,13 @@ func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) c
 	if hasRule && matchedRule.ConvertSurroundAudio {
 		caps = stripSurroundAudioCaps(caps)
 	}
+	// A rule names this device or viewer; the remote profile is only the
+	// fallback for remote clients no rule covers.
+	if !hasSelected && caps.Remote && q.Remote != "" {
+		if p, ok := byName[q.Remote]; ok {
+			selected, hasSelected = p, true
+		}
+	}
 	if !hasSelected && q.Default != "" {
 		if p, ok := byName[q.Default]; ok {
 			selected, hasSelected = p, true
@@ -202,9 +204,10 @@ func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) c
 // to what the client can direct-play. Playback uses it for
 // pre-resolution estimates; the resolver uses it for ranking.
 //
-// Selection order: remote clients get q.Remote (when set); otherwise
-// the first rule whose non-empty matchers all match; otherwise
-// q.Default; otherwise the first profile. Clamping: MaxHeight is
+// Selection order: the first rule whose non-empty matchers all match;
+// otherwise q.Remote for a remote client (when set); otherwise q.Default;
+// otherwise the first profile. A rule for a device or viewer is more
+// specific than "away from home", so it wins there too. Clamping: MaxHeight is
 // capped at caps.MaxHeight, HDR/DV are only allowed when the client
 // supports them, and preferred codecs the client cannot decode are
 // dropped.
@@ -226,17 +229,16 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 		}
 		return false
 	}
-	switch {
-	case caps.Remote && pick(q.Remote):
-	default:
-		for _, rule := range q.Rules {
-			if ruleMatches(rule, caps, user) && pick(rule.Profile) {
-				break
-			}
+	for _, rule := range q.Rules {
+		if ruleMatches(rule, caps, user) && pick(rule.Profile) {
+			break
 		}
-		if !found {
-			pick(q.Default)
-		}
+	}
+	if !found && caps.Remote {
+		pick(q.Remote)
+	}
+	if !found {
+		pick(q.Default)
 	}
 	if !found {
 		if len(q.Profiles) > 0 {

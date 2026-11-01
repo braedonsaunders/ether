@@ -105,6 +105,7 @@ func TestFlightKeyIncludesBandwidthAndCodecs(t *testing.T) {
 }
 func TestRemoteBandwidthFitWins(t *testing.T) {
 	cfg := testCfg()
+	cfg.Quality.Rules = nil // the remote profile applies, not the Apple TV rule
 	idx := &fakeIndexer{releases: movieReleases()}
 	svc := New(idx, nil, nil, cfg, Options{})
 	defer svc.Close()
