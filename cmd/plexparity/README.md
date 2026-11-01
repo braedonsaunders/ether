@@ -95,7 +95,7 @@ exact pairs in `approved_v0258.json` and `approved_v0258_token.json`:
 - Child and teen search and postplay, which also carry addedAt: 80 and 80
   (`c82a7830+77af603e`).
 - Content-rating label text, Play Version labels, timeout playback (#198),
-  and pre-1970 date strings: 0.
+  pre-1970 date strings, and section filter operators (`bd55103ff`): 0.
 
 This note does not allowlist a route.
 
@@ -159,6 +159,18 @@ compare it to drop a cached lineup, and a guide reload advances it. The
 (five viewers, five clients, XML and JSON, both paths). Both worlds hashed
 the same pairs, now in `approved_livetv.json`. Every other byte of those
 bodies matches. This note does not allowlist a route.
+
+Section filters (`bd55103ff`): `GET /library/sections/{id}/all` and
+`GET /library/all` honour operators those routes used to ignore or invert.
+Negations are `genre!=`, `country!=`, `contentRating!=`, `collection!=`,
+`director!=`, `writer!=`, and `actor!=`. A person filter stays on the role
+it names. Title and studio accept `=`, `!=`, `==`, `!==`, `<=`, and `>=`.
+Year, decade, duration, audienceRating, and originallyAvailableAt accept
+numeric and date operators, including relative dates. `unwatched!=` and
+`inProgress` select watched progress instead of being dropped or flipped.
+A request that does not send one of those operators is unchanged. The
+v0.2.58 corpus does not send them, so that fixture has 0 pairs and there
+is no signature to store. This note does not allowlist any response.
 
 Movie intros (`766c16dcd`): a movie intro that starts at the head of the file
 (within one second) and ends within 90 seconds is not offered as Skip Intro.
