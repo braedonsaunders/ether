@@ -64,9 +64,10 @@ type BrokerDeps struct {
 	// only; the callback receives no media, identity or client-supplied data.
 	OnProfileDiagnostic func(ProfileDiagnostic)
 	// SourceMarkers returns a complete marker set for the exact source revision.
-	SourceMarkers   func(context.Context, *core.Viewer, core.RatingKey, string, core.MediaInfo) ([]frontend.Marker, bool, error)
-	OpenSubtitle    func(string, string) (io.ReadCloser, string, error)
-	ExtractSubtitle func(context.Context, string, int, string, io.Writer) error
+	SourceMarkers    func(context.Context, *core.Viewer, core.RatingKey, string, core.MediaInfo) ([]frontend.Marker, bool, error)
+	OpenSubtitle     func(string, string) (io.ReadCloser, string, error)
+	OpenSubtitleFrom func(string, string, string) (io.ReadCloser, string, error)
+	ExtractSubtitle  func(context.Context, string, int, string, io.Writer) error
 	// Trickplay is borrowed from the runtime owner (internal/app/trickplay_owner.go).
 	// It is the same provider Plex uses. The broker releases its own leases;
 	// only the runtime owner may Close the provider.

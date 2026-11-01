@@ -14,10 +14,9 @@ import (
 )
 
 // Difference kinds. Missing, extra, type, status, header, parse and
-// request_error differences are blocking; value differences (including child
-// order, reported at ".../#order" paths) are
-// informational (the two servers hold different titles, so many values
-// legitimately differ).
+// request_error differences are blocking. Value differences stay
+// informational here so Jellyfin/Emby/Silo are not gated on the Plex
+// load-bearing list. plex.Compare promotes those values (and hub #order).
 const (
 	KindMissing      = "missing"
 	KindExtra        = "extra"
@@ -85,8 +84,8 @@ func (r Report) WithRequest(client, format, endpoint string) Report {
 	return r
 }
 
-func blockingKind(kind string) bool {
-	return kind != KindValue
+func differenceBlocking(d Difference) bool {
+	return d.Kind != KindValue
 }
 
 // Compare checks status, selected headers and the response schema. Bodies
@@ -95,9 +94,10 @@ func blockingKind(kind string) bool {
 // order), so two listings of different titles compare by shape: an
 // attribute that PMS emits on some items but the target never emits is
 // "missing", the reverse is "extra", and a JSON number where PMS sends a
-// string is a "type" mismatch. Values that legitimately differ between
-// servers (titles, ids, keys, timestamps, counts, versions, redacted
-// fields) are compared by type only.
+// string is a "type" mismatch. VolatileFields (titles, timestamps,
+// versions, redacted fields) are compared by type only.
+// LoadBearingFields still emit value diffs (including multi-value sets);
+// plex.Compare promotes those to blocking.
 func Compare(a, b Response) Report {
 	return CompareHeaders(a, b, []string{"Content-Type", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers", "Access-Control-Allow-Methods"})
 }
@@ -106,7 +106,7 @@ func Compare(a, b Response) Report {
 func CompareHeaders(a, b Response, headers []string) Report {
 	r := Report{}
 	add := func(d Difference) {
-		d.Blocking = blockingKind(d.Kind)
+		d.Blocking = differenceBlocking(d)
 		r.Differences = append(r.Differences, d)
 	}
 	if a.Status != b.Status {
@@ -140,8 +140,9 @@ func errString(e error) any {
 	return nil
 }
 
-// maxValues bounds the distinct values remembered per path.
-const maxValues = 16
+// maxValues bounds the distinct values remembered per path. Home /hubs
+// recordings send ~25 hubIdentifiers; the bound must keep that set.
+const maxValues = 64
 
 type schemaNode struct {
 	count    int
@@ -387,14 +388,6 @@ func leafName(path string) string {
 	return strings.TrimSuffix(leaf, "[]")
 }
 
-// volatileRE matches names whose values differ between servers and
-// libraries: they are compared by type (and URL shape) only.
-var volatileRE = regexp.MustCompile(`(?i)^(.*title.*|.*summary|tagline|.*name|machineIdentifier|.*token|.*timestamp|.*At|username|email|.*guid|.*ratingKey|.*key|id|.*ID|.*Id|.*thumb|.*art|banner|.*logo|.*theme|.*url|uri|size|totalSize|offset|.*count|.*year|duration|.*index|.*rating|viewOffset|.*version|platform.*|.*slug|alt|.*studio|tag|file|uuid|.*bitrate|width|height|address|.*port|host|composite|filter|ownerFeatures|countryCode|score|.*Image|image|value|default|location|path|.*Color|topLeft|topRight|bottomLeft|bottomRight|originallyAvailableAt|contentRating|role|.*Rating|reason.*|.*Text|.*Code|.*Size|.*Length|.*Offset|.*Count|.*Bitrates|.*Qualities|.*Resolutions|.*Sessions|subscription.*|.*features|.*Features|.*Address|.*Port|minYear|maxYear|tagKey|.*ItemID|playQueue.*|sessionKey|throttled|progress|speed|frameRate|aspectRatio|channels|samplingRate|bitDepth|level|refFrames|codec|.*Codec|profile|.*Profile|container|videoResolution|videoFrameRate|audioChannels|audioChannelLayout|chroma.*|color.*|language.*|languageTag|languageCode|displayTitle|extendedDisplayTitle|scanType|DOVI.*|has64bitOffsets|optimizedForStreaming|selected|default|forced|hidden|canDownload.*|.*Lock|loudness.*|peak|gain|lra|indexes|hearingImpaired|original|external|userID|librarySectionID|collectionSort|enumValues|leafCount|childCount|viewCount|skipCount|viewedLeafCount|myPlex.*|pushNotifications|transcoderActive.*|livetv|readOnlyLibraries|audienceRatingImage|ratingImage|primaryExtraKey|chapterSource|subtype|extraType|parentStudio|grandparentStudio|context)$`)
-
-func volatile(path string) bool {
-	return volatileRE.MatchString(leafName(path))
-}
-
 // freeTextRE matches names whose XML values are free text (a title can be
 // "1917"), so XML type inference is meaningless for them.
 var freeTextRE = regexp.MustCompile(`(?i)^(videoResolution|.*title.*|.*summary|tagline|tag|.*name|studio|key|.*key|value|default|enumValues|contentRating|filter|role|.*slug|alt|top.*|bottom.*|.*studio|.*contentRating|path|file|uri|.*Text|label|hubIdentifier|id|guid|.*guid)$`)
@@ -513,26 +506,85 @@ func valueDiff(p string, x, y *schemaNode) (Difference, bool) {
 	if x.element || y.element || x.anyRedacted() {
 		return Difference{}, false
 	}
+	leaf := leafName(p)
+	shape := keyShapeLeaf(leaf)
+	bearing := loadBearingLeaf(leaf) || shape
+	norm := func(v string) string {
+		if shape {
+			return IdentifierShape(v)
+		}
+		return v
+	}
 	xv, xok := x.singleValue()
 	yv, yok := y.singleValue()
-	if !xok || !yok || xv == yv {
-		return Difference{}, false
-	}
-	leaf := leafName(p)
-	if volatile(p) {
-		// Keys and URLs are still compared by shape when PMS always uses
-		// one ("/library/metadata/{id}/children").
-		if strings.HasPrefix(xv, "/") && strings.HasPrefix(yv, "/") && regexp.MustCompile(`(?i)(key|url|thumb|art)$`).MatchString(leaf) {
-			if xs, ys := urlShape(xv), urlShape(yv); xs != ys {
-				return Difference{Path: p, Kind: KindValue, Reference: xs, Target: ys, Count: x.count}, true
-			}
+	if xok && yok {
+		xn, yn := norm(xv), norm(yv)
+		if xn == yn {
+			return Difference{}, false
 		}
+		if shape {
+			return Difference{Path: p, Kind: KindValue, Reference: xn, Target: yn, Count: x.count, Reason: "key/ratingKey shape"}, true
+		}
+		if volatile(p) && !loadBearingLeaf(leaf) {
+			// Keys and URLs are still compared by shape when PMS always uses
+			// one ("/library/metadata/{id}/children").
+			if strings.HasPrefix(xv, "/") && strings.HasPrefix(yv, "/") && regexp.MustCompile(`(?i)(key|url|thumb|art)$`).MatchString(leaf) {
+				if xs, ys := urlShape(xv), urlShape(yv); xs != ys {
+					return Difference{Path: p, Kind: KindValue, Reference: xs, Target: ys, Count: x.count}, true
+				}
+			}
+			return Difference{}, false
+		}
+		if boolEquivalent(xv, yv) {
+			return Difference{}, false
+		}
+		return Difference{Path: p, Kind: KindValue, Reference: truncate(xv, 80), Target: truncate(yv, 80), Count: x.count}, true
+	}
+	if !bearing {
 		return Difference{}, false
 	}
-	if boolEquivalent(xv, yv) {
+	xs, ys := valueSet(x, norm), valueSet(y, norm)
+	if setsEqual(xs, ys) {
 		return Difference{}, false
 	}
-	return Difference{Path: p, Kind: KindValue, Reference: truncate(xv, 80), Target: truncate(yv, 80), Count: x.count}, true
+	reason := "value set"
+	if shape {
+		reason = "key/ratingKey shape set"
+	}
+	return Difference{Path: p, Kind: KindValue, Reference: joinSet(xs), Target: joinSet(ys), Count: x.count, Reason: reason}, true
+}
+
+func valueSet(n *schemaNode, norm func(string) string) []string {
+	seen := map[string]bool{}
+	for v := range n.values {
+		seen[norm(v)] = true
+	}
+	out := make([]string, 0, len(seen))
+	for v := range seen {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func setsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] && !boolEquivalent(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func joinSet(v []string) string {
+	parts := make([]string, len(v))
+	for i, s := range v {
+		parts[i] = truncate(s, 40)
+	}
+	return strings.Join(parts, ",")
 }
 
 func boolEquivalent(x, y string) bool {

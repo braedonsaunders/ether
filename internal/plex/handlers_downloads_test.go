@@ -230,6 +230,12 @@ func TestDownloadQueueLifecycle(t *testing.T) {
 	if len(reqs) != 1 || !strings.Contains(reqs[0].InputURL, "phone-1/download") {
 		t.Fatalf("remux requests = %+v", reqs)
 	}
+	if reqs[0].ViewerID == 0 || !reqs[0].Caps.Download {
+		t.Fatalf("convert fields missing: %+v", reqs[0])
+	}
+	if reqs[0].Options.BurnSubtitles {
+		t.Fatalf("default add burned subtitles: %+v", reqs[0].Options)
+	}
 	f.playback.mu.Lock()
 	stopped := len(f.playback.stopped) > 0
 	f.playback.mu.Unlock()
@@ -288,6 +294,23 @@ func TestDownloadQueueLifecycle(t *testing.T) {
 	rec = f.do(t, http.MethodGet, media, ownerToken, nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("media after delete: %d", rec.Code)
+	}
+}
+
+func TestDownloadQueueBurnsWhenRequested(t *testing.T) {
+	f := newDownloadFixture(t, true)
+	qid := f.queue(t)
+	key := "/library/metadata/" + fightClub.Key.String()
+	rec := f.do(t, http.MethodPost, "/downloadQueue/"+itoa(qid)+"/add?keys="+key+"&subtitles=burn", ownerToken, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
+	}
+	f.waitStatus(t, qid, downloadAvailable)
+	f.remux.mu.Lock()
+	reqs := f.remux.requests
+	f.remux.mu.Unlock()
+	if len(reqs) != 1 || !reqs[0].Options.BurnSubtitles {
+		t.Fatalf("burn request not passed: %+v", reqs)
 	}
 }
 

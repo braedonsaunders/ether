@@ -485,6 +485,56 @@ describe("Settings", () => {
     expect(screen.queryByRole("tab", { name: "Secure connections" })).toBeNull();
   });
 
+  it("rejects non-URL junk in Custom server URLs with a translated message while accepting Tailscale CGNAT URLs", async () => {
+    const { fake } = renderApp("/apps/plex");
+    fireEvent.click(await screen.findByRole("tab", { name: "Remote access" }, WAIT));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More options: Remote access" }, WAIT),
+    );
+    const input = await screen.findByLabelText("Custom server URLs", {}, WAIT);
+    fireEvent.change(input, {
+      target: { value: "[http://10.0.0.43:32450](http://10.0.0.43:32450/)" },
+    });
+    expect(
+      (
+        await screen.findAllByText(
+          "Enter full http:// or https:// server URLs, separated by commas.",
+          {},
+          WAIT,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    expect(calls(fake, "PUT", "/config/plex")).toHaveLength(0);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Display language" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Deutsch/ }, WAIT));
+    expect(
+      (
+        await screen.findAllByText(
+          german("Enter full http:// or https:// server URLs, separated by commas."),
+          {},
+          WAIT,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.change(await screen.findByLabelText(german("Custom server URLs"), {}, WAIT), {
+      target: { value: "http://100.100.1.2:32400, https://plex.example.com:8443" },
+    });
+    expect(
+      screen.queryByText(
+        german("Enter full http:// or https:// server URLs, separated by commas."),
+      ),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(german("Save changes")) }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/plex")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/plex")[0]!.body).toMatchObject({
+      customUrls: ["http://100.100.1.2:32400", "https://plex.example.com:8443"],
+    });
+  });
+
   it("returns disabled Plex settings to the overview without changing the saved account", async () => {
     const { fake } = renderApp("/apps/plex", {}, (f) => {
       f.state.config.frontends = { plex: { enabled: false } };

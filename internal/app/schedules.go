@@ -1,6 +1,9 @@
 package app
 
-import "github.com/braedonsaunders/ether/internal/catalog"
+import (
+	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
+)
 
 // Leader-only schedules in a cluster restart on every leadership handoff.
 // Catalogue sync and watchlist passes therefore continue the schedule
@@ -16,5 +19,6 @@ func (a *App) catalogOptions() []catalog.Option {
 	if a.clustered() {
 		opts = append(opts, catalog.WithResumeSchedule())
 	}
+	opts = append(opts, catalog.WithSaferRatingSQL(plexmeta.RatingSQL{}))
 	return opts
 }

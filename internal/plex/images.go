@@ -15,6 +15,7 @@ import (
 	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 )
 
 // setArtworkHeaders keeps remote SVG (or an upstream HTML error page) from
@@ -99,6 +100,9 @@ func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key core
 			t, e = s.scheduledEpisode(r.Context(), FromContext(r.Context()), key)
 		}
 		if e != nil {
+			if s.servePlexOverlayImage(w, r, key, element) {
+				return
+			}
 			writeHTTPError(w, http.StatusNotFound)
 			return
 		}
@@ -113,6 +117,9 @@ func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key core
 			path = ""
 		}
 		if path == "" {
+			if s.servePlexOverlayImage(w, r, key, element) {
+				return
+			}
 			writeHTTPError(w, http.StatusNotFound)
 			return
 		}
@@ -132,9 +139,27 @@ func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key core
 	s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
 }
 
+// servePlexOverlayImage is the last-resort artwork path: only when the owner
+// toggle is on and this key already has a cached overlay URL for the element.
+func (s *Server) servePlexOverlayImage(w http.ResponseWriter, r *http.Request, key core.RatingKey, element string) bool {
+	remote := s.plexMetaRemoteImage(r.Context(), key, element)
+	if remote == "" {
+		return false
+	}
+	// This runs when the catalogue art path refused or had nothing, which
+	// includes titles this viewer may not see: check before serving.
+	t, err := s.d.Catalog.Get(r.Context(), key)
+	if err != nil || t == nil || t.Adult || !t.IsReleased(s.now()) || !s.visibleTitle(r.Context(), FromContext(r.Context()).User, t) {
+		return false
+	}
+	if err := s.writeRemoteImage(w, r, remote); err != nil {
+		writeHTTPError(w, http.StatusNotFound)
+	}
+	return true
+}
+
 func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u string) {
-	img, err := s.images.Get(r.Context(), u, s.now())
-	if err != nil {
+	if err := s.writeRemoteImage(w, r, u); err != nil {
 		if errors.Is(err, errImageNotFound) {
 			writeHTTPError(w, http.StatusNotFound)
 			return
@@ -143,7 +168,13 @@ func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u stri
 			s.log.Debug("image fetch failed", "url", u, "err", err)
 		}
 		writeHTTPError(w, http.StatusBadGateway)
-		return
+	}
+}
+
+func (s *Server) writeRemoteImage(w http.ResponseWriter, r *http.Request, u string) error {
+	img, err := s.images.Get(r.Context(), u, s.now())
+	if err != nil {
+		return err
 	}
 	h := w.Header()
 	setArtworkHeaders(h, img.ContentType)
@@ -154,6 +185,7 @@ func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u stri
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(img.Data)
 	}
+	return nil
 }
 
 // Person artwork is scoped to one title so authorization requires one catalog lookup.
@@ -191,7 +223,21 @@ func (s *Server) servePersonImage(w http.ResponseWriter, r *http.Request, key co
 		}
 	}
 	if imagePath == "" {
+		if ov, ok := s.plexMetaCached(r.Context(), key); ok {
+			for _, person := range overlayPeople(ov, kind) {
+				if person.Thumb == string(raw) {
+					imagePath = person.Thumb
+					break
+				}
+			}
+		}
+	}
+	if imagePath == "" {
 		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	if plexImageURL(imagePath) {
+		s.serveRemoteImage(w, r, imagePath)
 		return
 	}
 	// Keep the same w185 profile URL emitted by metadata before proxying; poster widths are not profile configuration. Width and height are intentionally ignored.
@@ -319,6 +365,9 @@ func (s *Server) isSelfHost(r *http.Request, host string) bool {
 // allowedImageHost limits the proxy to the artwork CDN, so it is not an
 // open proxy.
 func (s *Server) allowedImageHost(host string) bool {
+	if plexmeta.ImageHost(host) {
+		return true
+	}
 	ref, err := url.Parse(s.d.ImageURL("/x.jpg", "original"))
 	if err != nil {
 		return false

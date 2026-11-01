@@ -528,8 +528,32 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		if level := contentrating.LevelOf(f.MaxContentRating); level != contentrating.Unrated {
 			conds = append(conds, "t.content_rating_rank>0 AND t.content_rating_rank<=?")
 			args = append(args, int(level))
+			if f.SaferPlexRating && c.saferRating != nil {
+				conds = append(conds, c.saferRating.HideExceeding("t.key"))
+				args = append(args, int(level))
+			}
 		} else {
 			conds = append(conds, "0=1")
+		}
+	}
+	if f.MinContentRating != "" {
+		if level := contentrating.LevelOf(f.MinContentRating); level != contentrating.Unrated {
+			conds = append(conds, "t.content_rating_rank>0 AND t.content_rating_rank>=?")
+			args = append(args, int(level))
+		} else {
+			conds = append(conds, "0=1")
+		}
+	}
+	if len(f.IncludeCollectionNames) > 0 {
+		conds = append(conds, "(t.collection_name='' OR LOWER(t.collection_name) IN ("+placeholders(len(f.IncludeCollectionNames))+"))")
+		for _, v := range f.IncludeCollectionNames {
+			args = append(args, strings.ToLower(strings.TrimSpace(v)))
+		}
+	}
+	if len(f.ExcludeCollectionNames) > 0 {
+		conds = append(conds, "(t.collection_name='' OR LOWER(t.collection_name) NOT IN ("+placeholders(len(f.ExcludeCollectionNames))+"))")
+		for _, v := range f.ExcludeCollectionNames {
+			args = append(args, strings.ToLower(strings.TrimSpace(v)))
 		}
 	}
 	if f.Collection > 0 && len(f.Collections) == 0 {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 )
 
 type hiddenKeyCache struct {
@@ -18,16 +19,18 @@ type hiddenKeyCache struct {
 // newLibraryPageExclusions caches discovery exclusions for a few seconds and
 // reads blocked genres and keywords from the viewer's policy. The indexed
 // library page pushes the result into SQL instead of scanning the catalogue.
-func newLibraryPageExclusions(a *App) func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string) {
+func newLibraryPageExclusions(a *App) func(context.Context, *core.User) experience.LibraryPageExclusions {
 	var mu sync.Mutex
 	var cached hiddenKeyCache
-	return func(ctx context.Context, viewer *core.User) ([]core.RatingKey, []string, []string, string) {
-		var genres, keywords []string
-		var rating string
+	return func(ctx context.Context, viewer *core.User) experience.LibraryPageExclusions {
+		var out experience.LibraryPageExclusions
+		out.Keys = discoveryExclusions(ctx, a, &mu, &cached)
 		if a != nil && a.safety != nil {
-			genres, keywords, rating = a.safety.BrowseBlocks(viewer)
+			out.ExcludeGenres, out.ExcludeKeywords, out.MaxContentRating = a.safety.BrowseBlocks(viewer)
+			out.Movie = a.safety.BrowseShareFilter(viewer, core.TypeMovie)
+			out.Television = a.safety.BrowseShareFilter(viewer, core.TypeShow)
 		}
-		return discoveryExclusions(ctx, a, &mu, &cached), genres, keywords, rating
+		return out
 	}
 }
 

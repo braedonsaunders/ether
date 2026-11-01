@@ -344,6 +344,9 @@ type browseRequest struct {
 	lastViewedAfter  int64
 	lastViewedBefore int64
 	limit            int // "limit" param; 0 = none
+	// none: the viewer's plex.tv share and the request's own filter admit
+	// no rating in common, so the listing is empty.
+	none bool
 }
 
 func stripFieldTypePrefix(key string) string {
@@ -544,6 +547,7 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 	if u != nil {
 		f.MaxContentRating = u.MaxContentRating
 	}
+
 	if blocks, ok := s.d.AccessPolicy.(interface {
 		BrowseBlocks(*core.User) ([]string, []string, string)
 	}); ok {
@@ -554,6 +558,7 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 			f.MaxContentRating = rating
 		}
 	}
+	f.SaferPlexRating = s.plexMetaOn()
 	splitVals := func(v string) []string {
 		var out []string
 		for _, p := range strings.Split(v, ",") {
@@ -849,6 +854,13 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 		}
 	}
 	br.applySortParam(q.Get("sort"), t)
+	if share, ok := s.d.AccessPolicy.(interface {
+		BrowseShareFilter(*core.User, core.MediaType) core.Filter
+	}); ok && u != nil {
+		// The plex.tv share predicate goes into the SQL, so pages fill
+		// and totals count only what this viewer may see.
+		f, br.none = experience.MergeShareFilter(f, share.BrowseShareFilter(u, t))
+	}
 	br.q.Filter = f
 	return br
 }
@@ -1005,6 +1017,9 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 	offset, size := pr.pageOf(br.limit)
 	if br.invalidSort {
 		return nil, 0, offset, fmt.Errorf("plex: unknown sort")
+	}
+	if br.none {
+		return nil, 0, offset, nil
 	}
 	_, hasBrowseBlocks := s.d.AccessPolicy.(interface {
 		BrowseBlocks(*core.User) ([]string, []string, string)
@@ -1441,7 +1456,7 @@ func (s *Server) sectionOnDeck(w http.ResponseWriter, r *http.Request, sec Secti
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	_, size := pr.pageOf(0)
-	items, state := s.inProgressTitles(ctx, pr, sec.Type, min(size, 50))
+	items, state := s.inProgressTitles(ctx, pr, sec.Type, s.saferFetchCount(pr.User, min(size, 50)))
 	mc := s.sectionContainer(sec)
 	mc.Title2 = "On Deck"
 	mc.Mixed = model.Ptr(true)
@@ -1454,7 +1469,7 @@ func (s *Server) handleOnDeck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	_, size := pr.pageOf(0)
-	items, state := s.inProgressTitles(ctx, pr, "", min(size, 50))
+	items, state := s.inProgressTitles(ctx, pr, "", s.saferFetchCount(pr.User, min(size, 50)))
 	mc := libraryContainer()
 	mc.Mixed = model.Ptr(true)
 	mc.Metadata = s.onDeckItems(ctx, pr, items, state)
@@ -1468,7 +1483,8 @@ func (s *Server) handleOnDeck(w http.ResponseWriter, r *http.Request) {
 func (s *Server) onDeckItems(ctx context.Context, pr *Request, items []core.Title, state map[core.RatingKey]core.WatchStatus) []model.Metadata {
 	// Filter first: renderTitles drops hidden titles, and the loop below
 	// pairs its output with items by index.
-	items = s.visibleTitles(pr.User, items)
+	_, size := pr.pageOf(0)
+	items = s.takeVisible(pr.User, items, min(size, 50))
 	md := s.renderTitles(ctx, pr, items, renderOpts{media: true, detailEpisodes: true, state: state})
 	for i := range md {
 		md[i].AllowSync = model.Ptr(s.downloadsAllowed(pr.User) && isPlayable(items[i].Type))
@@ -1515,11 +1531,11 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 		if wantSection > 0 && sec.ID != wantSection || wantType != "" && wantType != sec.Type {
 			continue
 		}
-		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: size}
+		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type, KnownAddedDate: true, SaferPlexRating: s.plexMetaOn()}, Sort: core.SortAdded, Desc: true, Limit: size}
 		if pr.User != nil {
 			q.Filter.MaxContentRating = pr.User.MaxContentRating
 		}
-		page, err := s.d.Catalog.Browse(ctx, q)
+		page, err := s.catalogBrowse(ctx, q)
 		if err != nil {
 			s.writeErr(w, r, err)
 			return

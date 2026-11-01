@@ -17,7 +17,9 @@ const (
 	ProtocolUnstated = "unstated"
 	// ProtocolHTTP is a stream URL a Stremio addon resolved itself (often
 	// through the addon owner's own debrid account), read with HTTP range
-	// requests. It needs no debrid account in Ether (additive).
+	// requests. It needs no debrid account in Ether (additive). The same
+	// name is Plex for Mac / Desktop's protocol=http conversion (a chunked
+	// Matroska stream on /video/:/transcode/universal/start).
 	ProtocolHTTP = "http"
 )
 

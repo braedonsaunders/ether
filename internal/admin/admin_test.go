@@ -15,6 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plextv"
 )
 
 const ownerToken = "owner-secret-token"
@@ -421,7 +422,10 @@ func TestSectionPatchPreservesUnsetAndSecrets(t *testing.T) {
 	}
 }
 
-type fakePlex struct{ polled bool }
+type fakePlex struct {
+	polled   bool
+	claimErr error
+}
 
 func (f *fakePlex) StartPIN(context.Context) (string, string, string, error) {
 	return "pin-1", "ABCD", "https://plex.tv/claim", nil
@@ -430,12 +434,13 @@ func (f *fakePlex) PollPIN(_ context.Context, id string) (bool, error) {
 	f.polled = true
 	return id == "pin-1", nil
 }
-func (f *fakePlex) Claim(context.Context) error { return nil }
+func (f *fakePlex) Claim(context.Context) error { return f.claimErr }
 func (f *fakePlex) Status() any                 { return map[string]any{"claimed": true} }
 
 func TestPlexPINFlow(t *testing.T) {
 	store := newStore(t, nil)
-	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store), PlexAuth: &fakePlex{}})
+	fp := &fakePlex{}
+	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store), PlexAuth: fp})
 	rec := serve(h, req(http.MethodPost, "/ether/api/plex/pin", `{}`))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"ABCD"`) {
 		t.Fatalf("pin start: %d %s", rec.Code, rec.Body)
@@ -447,6 +452,11 @@ func TestPlexPINFlow(t *testing.T) {
 	rec = serve(h, req(http.MethodGet, "/ether/api/plex/status", ""))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"detail":{"claimed":true}`) {
 		t.Fatalf("plex status: %d %s", rec.Code, rec.Body)
+	}
+	fp.claimErr = &plextv.ClaimExchangeError{Err: errors.New("422 unprocessable")}
+	rec = serve(h, req(http.MethodPost, "/ether/api/plex/claim", `{}`))
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "Plex couldn't link this server. Try again in a minute.") {
+		t.Fatalf("claim exchange failure: %d %s", rec.Code, rec.Body)
 	}
 }
 

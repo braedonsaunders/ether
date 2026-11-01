@@ -59,14 +59,23 @@ var (
 	_ plex.SubtitleCatalog  = plexSubtitles{}
 	_ plex.SubtitleSearch   = plexSubtitles{}
 	_ plex.SubtitleTimeline = plexSubtitles{}
+	_ plex.SubtitleUpload   = plexSubtitles{}
 )
 
 func (p plexSubtitles) OpenFormat(id, format string) (io.ReadCloser, string, error) {
 	return p.a.subtitles.OpenFormat(id, format)
 }
 
+func (p plexSubtitles) OpenFormatFrom(id, format, source string) (io.ReadCloser, string, error) {
+	return p.a.subtitles.OpenFormatFrom(id, format, source)
+}
+
 func (p plexSubtitles) OpenFormatAt(id, format string, offset time.Duration) (io.ReadCloser, string, error) {
 	return p.a.subtitles.OpenFormatAt(id, format, offset)
+}
+
+func (p plexSubtitles) OpenFormatAtFrom(id, format string, offset time.Duration, source string) (io.ReadCloser, string, error) {
+	return p.a.subtitles.OpenFormatAtFrom(id, format, offset, source)
 }
 
 func (p plexSubtitles) CachedSidecars(ctx context.Context, t *core.Title, u *core.User, embedded []core.StreamInfo) []core.StreamInfo {
@@ -118,7 +127,97 @@ func (p plexSubtitles) DownloadSubtitle(ctx context.Context, t *core.Title, user
 			return st, err
 		}
 	}
-	return p.a.subtitles.DownloadOnDemand(ctx, t, id)
+	st, err := p.a.subtitles.DownloadOnDemand(ctx, t, id)
+	if err != nil {
+		return st, err
+	}
+	clientID := ""
+	if pr := plex.FromContext(ctx); pr != nil {
+		clientID = pr.ClientID
+	}
+	p.a.startSubtitleCorrection(ctx, t, st.ExternalURL, p.a.playSession(user, t, clientID))
+	return st, nil
+}
+
+func (a *App) playSession(user *core.User, title *core.Title, clientID string) *core.PlaySession {
+	if user == nil || title == nil {
+		return nil
+	}
+	return a.playSessionOn("", user.ID, clientID, title.Key)
+}
+
+type playSessionFinder interface {
+	SessionFor(int64, string, core.RatingKey) (*core.PlaySession, bool)
+	SessionForSurfaceClient(string, int64, string, core.RatingKey) (*core.PlaySession, bool)
+}
+
+func (a *App) playSessionOn(surface string, userID int64, clientID string, key core.RatingKey) *core.PlaySession {
+	if a == nil || a.playback == nil {
+		return nil
+	}
+	return lookupPlaySession(a.playback, surface, userID, clientID, key)
+}
+
+// lookupPlaySession finds the live session for this pick. Plex identities
+// have an empty surface; Jellyfin/Emby register with surface=protocol and
+// a variant, so SessionFor (no surface, no variant) always misses them.
+func lookupPlaySession(p playSessionFinder, surface string, userID int64, clientID string, key core.RatingKey) *core.PlaySession {
+	if p == nil || clientID == "" {
+		return nil
+	}
+	if surface != "" && surface != "plex" {
+		if sess, ok := p.SessionForSurfaceClient(surface, userID, clientID, key); ok {
+			return sess
+		}
+		return nil
+	}
+	if sess, ok := p.SessionFor(userID, clientID, key); ok {
+		return sess
+	}
+	return nil
+}
+
+func (a *App) startSubtitleCorrection(ctx context.Context, t *core.Title, id string, sess *core.PlaySession) {
+	if a.subtitles == nil {
+		return
+	}
+	if sess != nil {
+		if sctx := a.playback.SessionContext(sess.ID); sctx != nil {
+			ctx = sctx
+		}
+	}
+	a.subtitles.StartCorrection(ctx, t, id, a.liveReleaseAccess(sess))
+}
+
+func (a *App) liveReleaseAccess(sess *core.PlaySession) subtitles.ReleaseAccess {
+	if sess == nil || a.playback == nil {
+		return subtitles.ReleaseAccess{}
+	}
+	src := a.playback.SourceKey(sess.ID)
+	if src == "" && sess.Resolution != nil {
+		src = sess.Resolution.Release.ID
+	}
+	if src == "" {
+		return subtitles.ReleaseAccess{}
+	}
+	id := sess.ID
+	access := subtitles.ReleaseAccess{
+		URL:      a.playback.InputURL(id),
+		Duration: sess.Info.Duration,
+		Info:     &sess.Info,
+		Source:   src,
+		Hold: func() (io.ReaderAt, int64, func(), bool) {
+			return a.playback.SourceReader(id)
+		},
+	}
+	if a.transcoder != nil {
+		access.FFmpeg = a.transcoder.FFmpegPath()
+	}
+	return access
+}
+
+func (p plexSubtitles) UploadSubtitle(_ context.Context, t *core.Title, _ *core.User, filename, format, language string, body []byte) (core.StreamInfo, error) {
+	return p.a.subtitles.StoreUpload(t, filename, format, language, body)
 }
 
 // markerDialogue is markers.Options.Dialogue: cue times from subtitle text

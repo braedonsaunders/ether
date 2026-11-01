@@ -33,6 +33,11 @@ func (d StoredEpisodeDeps) complete() bool {
 // storedEpisodeBatch is the episodes read per step.
 const storedEpisodeBatch = 500
 
+// maxStoredEpisodeBatches bounds the reads behind one page. The SQL already
+// carries the viewer's exclusions, so the in-process check drops little; a
+// page it thins out ends short instead of walking the library.
+const maxStoredEpisodeBatches = 8
+
 // episodeCursorTTL bounds how long a page end is remembered for the next
 // page of the same listing.
 const episodeCursorTTL = 5 * time.Minute
@@ -80,14 +85,32 @@ func (c *episodeCursors) put(key string, after core.RatingKey) {
 // with no season refresh or provider lookup for series the page never
 // reaches. It applies only where that order is the sorted order (popularity,
 // which no episode has, ties by key) and the episode set is the
-// catalogue's: no custom episode order, no per-viewer policy the total could
-// not count, and a filter-free query. ok is false otherwise.
+// catalogue's: no custom episode order and a filter-free query. A restricted
+// viewer's exclusions go into the series predicate, so the total counts only
+// what they may see. ok is false otherwise.
 func (s *Service) storedEpisodePage(ctx context.Context, v *core.User, library *Library, q frontend.ItemQuery) (core.Page, bool, error) {
 	d := s.d.StoredEpisodes
 	if !d.complete() || library == nil || library.Type != core.TypeShow || !q.Recursive || len(q.Types) != 1 || q.Types[0] != core.TypeEpisode ||
 		q.Watched != nil || q.Favorite != nil || q.Season != nil || q.AdjacentTo != 0 || q.StartAt != 0 || q.Limit <= 0 ||
-		q.Sort != core.SortPopularity || !plainItemFilter(q.Filter) || ViewerRestricted(s.d.Visibility.Policy, v) || s.d.ParentTitles == nil {
+		q.Sort != core.SortPopularity || !plainItemFilter(q.Filter) || s.d.ParentTitles == nil {
 		return core.Page{}, false, nil
+	}
+	show := core.Filter{Type: core.TypeShow, MaxContentRating: v.MaxContentRating}
+	if ViewerRestricted(s.d.Visibility.Policy, v) {
+		if s.d.PageExclusions == nil {
+			return core.Page{}, false, nil
+		}
+		if id, ok := s.d.Visibility.SectionFor(core.TypeEpisode); !ok || !SectionAllowed(v, id) {
+			return core.Page{Items: []core.Title{}}, true, nil
+		}
+		var fits, none bool
+		show, fits, none = viewerBrowseFilter(show, v, s.d.PageExclusions(ctx, v), core.TypeShow)
+		if !fits {
+			return core.Page{}, false, nil
+		}
+		if none {
+			return core.Page{Items: []core.Title{}}, true, nil
+		}
 	}
 	if unranked, err := d.Unranked(ctx); err != nil || !unranked {
 		return core.Page{}, false, err
@@ -95,7 +118,6 @@ func (s *Service) storedEpisodePage(ctx context.Context, v *core.User, library *
 	if custom, err := d.Customized(ctx, v); err != nil || custom {
 		return core.Page{}, false, err
 	}
-	show := core.Filter{Type: core.TypeShow, MaxContentRating: v.MaxContentRating}
 	total, err := d.Count(ctx, show)
 	if err != nil {
 		return core.Page{}, false, err
@@ -110,7 +132,7 @@ func (s *Service) storedEpisodePage(ctx context.Context, v *core.User, library *
 		}
 	}
 	items := make([]core.Title, 0, q.Limit)
-	for len(items) < q.Limit {
+	for reads := 0; len(items) < q.Limit && reads < maxStoredEpisodeBatches; reads++ {
 		batch, err := d.Page(ctx, show, after, storedEpisodeBatch)
 		if err != nil {
 			return core.Page{}, false, err

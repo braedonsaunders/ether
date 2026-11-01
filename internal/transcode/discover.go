@@ -19,6 +19,15 @@ import (
 // the configured path, the bundled locations or PATH.
 var ErrFFmpegNotFound = errors.New("transcode: ffmpeg not found")
 
+// LookPath finds bundled or PATH ffmpeg the same way Manager does.
+func LookPath() string {
+	p, err := defaultFinder().find("ffmpeg", "", "")
+	if err != nil {
+		return ""
+	}
+	return p
+}
+
 // finder locates bundled executables. Fields are injectable for tests.
 type finder struct {
 	exeDir   string // directory of the running executable

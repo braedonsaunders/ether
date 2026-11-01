@@ -289,6 +289,9 @@ func (s *Server) parseExtraPlayRequest(r *http.Request, key core.RatingKey) play
 // handleExtraPlayback hooks the universal decision/start endpoints for
 // KindExtra keys, like handleLiveTVPlayback does for live sessions.
 func (s *Server) handleExtraPlayback(w http.ResponseWriter, r *http.Request) bool {
+	if s.refuseCapability(w, r) {
+		return true
+	}
 	key, isExtra := extraKeyFromRequest(r)
 	if !isExtra {
 		return false
@@ -328,6 +331,10 @@ func (s *Server) handleExtraPlayback(w http.ResponseWriter, r *http.Request) boo
 	case strings.HasSuffix(r.URL.Path, "/start.mpd"):
 		p.protocol = core.ProtocolDASH
 		s.extraStart(w, r, pr, p, e, parent, true)
+	case strings.HasSuffix(r.URL.Path, "/start"):
+		p.protocol = core.ProtocolHTTP
+		p.opts.Protocol = core.ProtocolHTTP
+		s.extraStart(w, r, pr, p, e, parent, false)
 	default:
 		s.extraStart(w, r, pr, p, e, parent, false)
 	}
@@ -475,6 +482,11 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 					s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)
 					return
 				}
+			} else if p.protocol == core.ProtocolHTTP {
+				if hs, ok := existing.(core.HTTPSession); ok {
+					hs.ServeHTTP(w, r)
+					return
+				}
 			} else {
 				s.writeMasterPlaylist(w, r, p.sessionID, existing, sess.info, dec)
 				return
@@ -485,6 +497,9 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 	proto := ""
 	if dash {
 		proto = core.ProtocolDASH
+	} else if p.protocol == core.ProtocolHTTP {
+		proto = core.ProtocolHTTP
+		dec.Container = transcode.ContainerMatroska
 	}
 	hs, err := s.d.Transcoder.StartHLS(context.WithoutCancel(ctx), core.HLSRequest{
 		SessionID: p.sessionID, InputURL: sess.resolved.Input(),
@@ -501,8 +516,7 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 		s.extraPlay.put(sess)
 	}
 	if entry, ok := s.transcodes.get(p.sessionID); ok {
-		entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-		s.transcodes.put(entry)
+		s.bindTranscodeStarted(entry, dec, p.offset)
 	}
 	if dash {
 		ds, ok := hs.(core.DASHSession)
@@ -512,6 +526,16 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 			return
 		}
 		s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)
+		return
+	}
+	if p.protocol == core.ProtocolHTTP {
+		stream, ok := hs.(core.HTTPSession)
+		if !ok {
+			s.d.Transcoder.Stop(p.sessionID)
+			writeHTTPError(w, http.StatusInternalServerError)
+			return
+		}
+		stream.ServeHTTP(w, r)
 		return
 	}
 	s.writeMasterPlaylist(w, r, p.sessionID, hs, sess.info, dec)

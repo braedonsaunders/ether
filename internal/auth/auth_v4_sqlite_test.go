@@ -59,7 +59,7 @@ func TestSQLiteAuthV4PreservesDeliveredSessions(t *testing.T) {
 	if after.token != 1 || after.delegation != 1 {
 		t.Fatalf("token %d delegation %d", after.token, after.delegation)
 	}
-	if after.authVersion != 7 || after.sessionVersion != 1 {
+	if after.authVersion != 8 || after.sessionVersion != 1 {
 		t.Fatalf("versions auth=%d sessions=%d", after.authVersion, after.sessionVersion)
 	}
 	var fkParent, onDelete string

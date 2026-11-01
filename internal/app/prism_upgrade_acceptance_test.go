@@ -141,8 +141,8 @@ func TestPrismUpgradeFromDelivered9503(t *testing.T) {
 	if got := maxMigration(t, snap, "auth"); got != 3 {
 		t.Fatalf("snapshot auth version %d, want the 9503 schema (3)", got)
 	}
-	if got := maxMigration(t, db, "auth"); got != 7 {
-		t.Fatalf("upgraded auth version %d, want 7", got)
+	if got := maxMigration(t, db, "auth"); got != 8 {
+		t.Fatalf("upgraded auth version %d, want 8", got)
 	}
 	// afdcb3f7 rejected capability_headers because that slice's base had not
 	// landed it. b7049abd is the reviewed inventory: capability_headers v3 is
@@ -414,7 +414,7 @@ func assertUpgradeBoundary(t *testing.T) {
 	if known["plexwatch"] != 4 || known["state_plexwatch"] != 4 || known["watchsend"] != 1 {
 		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d watchsend=%d", known["plexwatch"], known["state_plexwatch"], known["watchsend"])
 	}
-	if known["auth"] != 7 || known["auth_sessions"] != 1 {
+	if known["auth"] != 8 || known["auth_sessions"] != 1 {
 		t.Fatalf("landed auth inventory auth=%d auth_sessions=%d", known["auth"], known["auth_sessions"])
 	}
 }

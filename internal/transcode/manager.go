@@ -203,10 +203,12 @@ type Manager struct {
 	// graphErr is the latest owner-visible reason a graph could not be built.
 	graphErr string
 
-	mu       sync.Mutex
-	cfg      config.Transcode
-	sessions map[string]*Session
-	closed   bool
+	mu              sync.Mutex
+	cfg             config.Transcode
+	sessions        map[string]*Session
+	httpSessions    map[string]*httpSession
+	downloadEncodes int
+	closed          bool
 
 	stop chan struct{}
 	wg   sync.WaitGroup
@@ -227,13 +229,14 @@ func New(cfg config.Transcode, logger *slog.Logger, opts ...Option) (*Manager, e
 		fn(&o)
 	}
 	m := &Manager{
-		log:        logger.With("component", "transcode"),
-		opts:       o,
-		runner:     o.runner,
-		cfg:        cfg,
-		sessions:   map[string]*Session{},
-		stop:       make(chan struct{}),
-		reaperDone: make(chan struct{}),
+		log:          logger.With("component", "transcode"),
+		opts:         o,
+		runner:       o.runner,
+		cfg:          cfg,
+		sessions:     map[string]*Session{},
+		httpSessions: map[string]*httpSession{},
+		stop:         make(chan struct{}),
+		reaperDone:   make(chan struct{}),
 	}
 	f := defaultFinder()
 	if o.finder != nil {
@@ -338,7 +341,7 @@ func (m *Manager) cleanStale() {
 	}
 	for _, e := range entries {
 		switch {
-		case e.IsDir() && strings.HasPrefix(e.Name(), "s-"):
+		case e.IsDir() && (strings.HasPrefix(e.Name(), "s-") || strings.HasPrefix(e.Name(), "http-")):
 			path := filepath.Join(m.tempDir, e.Name())
 			if _, protected := encoderCleanup.dirs.Load(path); !protected {
 				_ = os.RemoveAll(path)
@@ -561,7 +564,7 @@ func randomHex(n int) string {
 // encoder: transcodes, and copy sessions while their fast-start ramp, a
 // governor clamp or a lower rung is being encoded. Caller holds m.mu.
 func (m *Manager) encodingLocked(except string) int {
-	n := 0
+	n := m.downloadEncodes
 	for life := range m.encoders {
 		if current := m.sessions[except]; except != "" && current != nil && current.encoder == life {
 			continue // planning a replacement; admission still requires old Close
@@ -609,7 +612,7 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 	switch proto {
 	case "":
 		proto = core.ProtocolHLS
-	case core.ProtocolHLS, core.ProtocolDASH:
+	case core.ProtocolHLS, core.ProtocolDASH, core.ProtocolHTTP:
 	default:
 		return nil, fmt.Errorf("transcode: StartHLS: unknown protocol %q", req.Protocol)
 	}
@@ -643,6 +646,17 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 	}
 	if a := findStream(req.Info, d.AudioStream, "audio"); a != nil && d.AudioCopy && d.AudioCodec == "" {
 		d.AudioCodec = a.Codec
+	}
+	if proto == core.ProtocolHTTP {
+		d.Container = ContainerMatroska
+		if a := findStream(req.Info, d.AudioStream, "audio"); a != nil && d.AudioCopy && strings.EqualFold(a.Codec, "aac") {
+			// ADTS AAC cannot be copied into a piped Matroska header.
+			d.AudioCopy = false
+			d.AudioCodec = "aac"
+		}
+		req.Decision = d
+		req.Protocol = proto
+		return m.startHTTP(ctx, req, life)
 	}
 	if proto == core.ProtocolDASH {
 		d.Container = ContainerFMP4
@@ -885,6 +899,9 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 func (m *Manager) Session(id string) (core.HLSSession, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if h, ok := m.httpSessions[id]; ok {
+		return h, true
+	}
 	s, ok := m.sessions[id]
 	if !ok {
 		return nil, false
@@ -906,8 +923,12 @@ func (m *Manager) Sessions() []*Session {
 // Stop implements core.Transcoder.
 func (m *Manager) Stop(id string) {
 	m.mu.Lock()
+	h := m.httpSessions[id]
 	s := m.sessions[id]
 	m.mu.Unlock()
+	if h != nil {
+		_ = h.Close()
+	}
 	if s != nil {
 		_ = s.Close()
 	}
@@ -954,6 +975,35 @@ func (m *Manager) reapIdle(now time.Time) {
 			_ = s.Close()
 		}
 	}
+	m.mu.Lock()
+	httpIdle := make([]*httpSession, 0, len(m.httpSessions))
+	for _, h := range m.httpSessions {
+		httpIdle = append(httpIdle, h)
+	}
+	m.mu.Unlock()
+	for _, h := range httpIdle {
+		if h.busy() {
+			continue
+		}
+		if idle := now.Sub(h.LastAccess()); idle > m.opts.idleTimeout {
+			h.log.Info("closing idle http session", "idle", idle.Round(time.Second))
+			_ = h.Close()
+		}
+	}
+}
+
+func (m *Manager) acquireTranscodeSlot() (func(), error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cfg.MaxTranscodes > 0 && m.encodingLocked("") >= m.cfg.MaxTranscodes {
+		return nil, fmt.Errorf("%w (%d running)", ErrTooManyTranscodes, m.encodingLocked(""))
+	}
+	m.downloadEncodes++
+	return func() {
+		m.mu.Lock()
+		m.downloadEncodes--
+		m.mu.Unlock()
+	}, nil
 }
 
 // Close stops every session and the reaper.
@@ -966,6 +1016,10 @@ func (m *Manager) Close() error {
 		}
 		close(m.stop)
 	}
+	https := make([]*httpSession, 0, len(m.httpSessions))
+	for _, h := range m.httpSessions {
+		https = append(https, h)
+	}
 	lives := make([]*encoderLifetime, 0, len(m.encoders))
 	for life := range m.encoders {
 		lives = append(lives, life)
@@ -976,6 +1030,9 @@ func (m *Manager) Close() error {
 		setupDone = m.rtxSetup.done
 	}
 	m.mu.Unlock()
+	for _, h := range https {
+		_ = h.Close()
+	}
 	for _, life := range lives {
 		life.seal()
 	}

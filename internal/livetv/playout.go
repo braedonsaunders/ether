@@ -50,6 +50,10 @@ type session struct {
 	relayCancel     context.CancelFunc
 	relayInfo       *core.MediaInfo
 	dash            core.DASHSession
+	http            core.HTTPSession
+	// httpStart is closed when an in-flight ensureHTTP StartHLS finishes.
+	// Waiters re-check liveHTTP instead of starting a second encoder.
+	httpStart chan struct{}
 	// mu guards the fields above and below it. It is never held across
 	// Playback.Prepare/Failover, HLS SwapInput, programme lookups, probing
 	// or upstream I/O: preparers work on a staged
@@ -139,6 +143,9 @@ func (ss *session) close(s *Service) {
 	relay := ss.relay
 	relayCancel := ss.relayCancel
 	dash := ss.dash
+	httpStream := ss.http
+	ss.dash = nil
+	ss.http = nil
 	reserved := ss.reserved
 	ss.mu.Unlock()
 	s.revokeInput(ss)
@@ -150,6 +157,9 @@ func (ss *session) close(s *Service) {
 	}
 	if dash != nil {
 		dash.Close()
+	}
+	if httpStream != nil {
+		httpStream.Close()
 	}
 	for _, t := range tracks {
 		s.stopTrack(t)

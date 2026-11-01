@@ -656,6 +656,17 @@ func (h *fakeHLS) ServeRungSegment(w http.ResponseWriter, r *http.Request, rung 
 func (h *fakeHLS) SwapInput(context.Context, string, core.MediaInfo, time.Duration) error { return nil }
 func (h *fakeHLS) LastAccess() time.Time                                                  { return fixedNow }
 func (h *fakeHLS) Close() error                                                           { return nil }
+func (h *fakeHLS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "video/x-matroska")
+	w.Header().Set("Accept-Ranges", "none")
+	w.Header().Set("Connection", "close")
+	if r.Method == http.MethodHead {
+		return
+	}
+	fmt.Fprintf(w, "mkv-%s-%s", h.id, h.req.StartOffset)
+}
+
+var _ core.HTTPSession = (*fakeHLS)(nil)
 
 type fakeTranscoder struct {
 	mu       sync.Mutex

@@ -459,7 +459,9 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 		if items[i].ShowTitle == "" && show.title != "" {
 			items[i].ShowTitle = show.title
 		}
-		if items[i].ContentRating == "" && show.contentRating != "" && items[i].Type == core.TypeEpisode {
+		// Seasons and episodes take their series' rating, so a rating cap
+		// (content_rating_rank) admits them as it admits the series.
+		if items[i].ContentRating == "" && show.contentRating != "" && (items[i].Type == core.TypeEpisode || items[i].Type == core.TypeSeason) {
 			items[i].ContentRating = show.contentRating
 		}
 		if items[i].ShowYear == 0 {

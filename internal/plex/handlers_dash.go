@@ -27,6 +27,9 @@ import (
 
 // handleStartDASH is /video/:/transcode/universal/start.mpd.
 func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	if s.handleLiveTVPlayback(w, r) {
 		return
 	}
@@ -136,8 +139,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError)
 		return
 	}
-	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-	s.transcodes.put(entry)
+	s.bindTranscodeStarted(entry, dec, p.offset)
 	s.notePlexEncoder(p.sessionID, frontend.StreamDASH, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()
@@ -182,7 +184,9 @@ func (s *Server) handleDASHSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ds, rep, ok := s.dashSession(w, r); ok {
-		ds.ServeMedia(w, r, rep, n)
+		cw := s.newCountWriter(w, r)
+		ds.ServeMedia(cw, r, rep, n)
+		cw.finish()
 	}
 }
 

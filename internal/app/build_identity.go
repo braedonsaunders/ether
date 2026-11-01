@@ -8,8 +8,10 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/remote"
+	"github.com/braedonsaunders/ether/internal/safety"
 )
 
 func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
@@ -31,6 +33,24 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
 		if err := a.users.BootstrapOwner(context.Background(), cfg.Plex); err != nil {
 			log.Warn("owner bootstrap", "err", err)
 		}
+	}
+	if a.safety != nil {
+		a.safety.SetPlexShare(func(u *core.User) safety.PlexShare {
+			if a.users == nil || u == nil {
+				return safety.PlexShare{}
+			}
+			d, ok := a.users.PlexDefaults(u.ID)
+			if !ok {
+				return safety.PlexShare{}
+			}
+			return safety.PlexShare{FilterMovies: d.FilterMovies, FilterTelevision: d.FilterTelevision, AllowSync: d.AllowSync}
+		})
+		a.safety.SetFriendsDownloads(func() bool {
+			if a.cfg == nil {
+				return false
+			}
+			return a.cfg.Get().Downloads.AllowFriends
+		})
 	}
 	if a.certs, err = plextv.NewCertManager(plextv.CertManagerOptions{
 		Dir:            filepath.Join(dataDir, "certs"),
@@ -56,6 +76,7 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
 	if a.registrar, err = plextv.NewRegistrar(ropts); err != nil {
 		return fmt.Errorf("registrar: %w", err)
 	}
+	a.users.SetUnknownTokenRefresher(a.registrar.SyncFriendsOnUnknownToken)
 	if cfg.Plex.Token != "" {
 		rctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := a.registrar.RefreshOwner(rctx); err != nil {

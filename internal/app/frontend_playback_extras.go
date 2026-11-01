@@ -116,8 +116,9 @@ func (s cinemaSurface) candidates(ctx context.Context, viewer *core.Viewer, devi
 }
 
 type subtitleSurface struct {
-	app *App
-	exp frontend.Experience
+	app     *App
+	exp     frontend.Experience
+	surface string
 }
 
 func (s subtitleSurface) Enabled() bool {
@@ -134,7 +135,7 @@ func (s subtitleSurface) Search(ctx context.Context, viewer *core.Viewer, device
 	}
 	release := ""
 	if s.app.playback != nil && viewer != nil && device.ID != "" {
-		if session, ok := s.app.playback.SessionFor(viewer.ID, device.ID, key); ok && session != nil && session.Resolution != nil {
+		if session := s.app.playSessionOn(s.surface, viewer.ID, device.ID, key); session != nil && session.Resolution != nil {
 			release = session.Resolution.Release.Name
 		}
 	}
@@ -178,6 +179,11 @@ func (s subtitleSurface) Download(ctx context.Context, viewer *core.Viewer, devi
 	if err != nil {
 		return 0, err
 	}
+	var sess *core.PlaySession
+	if viewer != nil {
+		sess = s.app.playSessionOn(s.surface, viewer.ID, device.ID, key)
+	}
+	s.app.startSubtitleCorrection(ctx, &detail.Title, info.ExternalURL, sess)
 	embedded := []core.StreamInfo{}
 	if s.app.playback != nil {
 		embedded = s.app.playback.Estimate(ctx, &detail.Title, core.ClientCaps{ClientID: device.ID, Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, Version: device.Version}).Streams

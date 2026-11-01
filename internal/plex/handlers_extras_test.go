@@ -214,6 +214,21 @@ func TestExtraPlaybackDecisionStartPrewarm(t *testing.T) {
 	}
 }
 
+func TestExtraStartHTTP(t *testing.T) {
+	f, ex, _ := extrasFixture(t)
+	path := "/library/metadata/" + fightClubTrailer.Key.String()
+	rec := f.get(t, "/video/:/transcode/universal/start?path="+urlEsc(path)+"&session=ex-http&protocol=http&directPlay=0&directStream=1")
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "video/x-matroska" || !strings.Contains(rec.Body.String(), "mkv-ex-http") {
+		t.Fatalf("http start: %d %s", rec.Code, rec.Body.String())
+	}
+	f.trans.mu.Lock()
+	hs := f.trans.sessions["ex-http"]
+	f.trans.mu.Unlock()
+	if hs == nil || hs.req.Protocol != core.ProtocolHTTP || hs.req.InputURL != ex.resolved.URL {
+		t.Fatalf("http extra session %+v", hs)
+	}
+}
+
 func TestExtraPartProxyRange(t *testing.T) {
 	f, ex, _ := extrasFixture(t)
 	data := []byte("0123456789abcdef")

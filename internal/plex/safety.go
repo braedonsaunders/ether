@@ -10,12 +10,60 @@ import (
 // AccessPolicy adds owner-defined restrictions to the mandatory title guard.
 type AccessPolicy = experience.AccessPolicy
 
+func (s *Server) saferFetchCount(u *core.User, want int) int {
+	if want <= 0 || !s.needPlexRatingFilter(u) {
+		return want
+	}
+	n := want * 2
+	if extra := want + 24; n > extra {
+		n = extra
+	}
+	if n > 200 {
+		n = 200
+	}
+	return n
+}
+
+func (s *Server) takeVisible(u *core.User, ts []core.Title, want int) []core.Title {
+	out := s.visibleTitles(u, ts)
+	if want > 0 && len(out) > want {
+		return out[:want]
+	}
+	return out
+}
+
+func (s *Server) catalogBrowse(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
+	if s.plexMetaOn() {
+		q.Filter.SaferPlexRating = true
+	}
+	return s.d.Catalog.Browse(ctx, q)
+}
+
 func (s *Server) visibleTitles(u *core.User, ts []core.Title) []core.Title {
-	return s.visibility().TitlesAllowed(u, ts)
+	out := s.visibility().TitlesAllowed(u, ts)
+	if !s.needPlexRatingFilter(u) || s.d.PlexMeta == nil {
+		return out
+	}
+	keys := make([]core.RatingKey, 0, len(out))
+	for i := range out {
+		keys = append(keys, out[i].Key)
+	}
+	rows := s.d.PlexMeta.CachedMany(context.Background(), keys)
+	var guids map[core.RatingKey]string
+	if s.d.PlexGUID != nil {
+		guids = s.d.PlexGUID.CachedMany(context.Background(), keys)
+	}
+	kept := out[:0]
+	for i := range out {
+		if s.plexMetaRatingAllowedCached(u, &out[i], rows, guids) {
+			kept = append(kept, out[i])
+		}
+	}
+	return kept
 }
 
 func (s *Server) titleAllowed(u *core.User, t *core.Title) bool {
-	return experience.TitleAllowed(s.d.AccessPolicy, u, t)
+	return experience.TitleAllowed(s.d.AccessPolicy, u, t) && s.plexMetaRatingAllowed(u, t)
 }
 
 func (s *Server) visibility() experience.Visibility {
@@ -31,10 +79,10 @@ func (s *Server) visibility() experience.Visibility {
 }
 
 func (s *Server) visibleTitle(ctx context.Context, u *core.User, t *core.Title) bool {
-	return s.visibility().Visible(ctx, u, t)
+	return s.visibility().Visible(ctx, u, t) && s.plexMetaRatingAllowed(u, t)
 }
 func (s *Server) playableTitle(ctx context.Context, u *core.User, t *core.Title) bool {
-	return s.visibility().Playable(ctx, u, t)
+	return s.visibility().Playable(ctx, u, t) && s.plexMetaRatingAllowed(u, t)
 }
 func (s *Server) availableForViewer(ctx context.Context, u *core.User, ts []core.Title) []core.Title {
 	return s.visibility().Available(ctx, u, ts)

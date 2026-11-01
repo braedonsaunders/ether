@@ -26,9 +26,12 @@ import (
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/hoststat"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/stats"
 	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
@@ -87,6 +90,7 @@ type Deps struct {
 	PrioritizeAvailable func(context.Context, []core.Title) []core.Title
 	EpisodeOrder        *episodeorder.Service
 	PlexGUID            *plexguid.Service
+	PlexMeta            *plexmeta.Service
 	Discovery           *DiscoveryFeatures
 	LiveTV              *livetv.Service
 	AccessPolicy        AccessPolicy
@@ -154,6 +158,12 @@ type Deps struct {
 	SessionHeartbeat time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
+	// Dashboard is this node's in-memory Plex Web Dashboard store. Nil is
+	// replaced with a process-local store at NewServer. Statistics are not
+	// clustered; a client reads the node it connected to.
+	Dashboard *stats.Dashboard
+	// Resources is this node's host sample ring for /statistics/resources.
+	Resources *hoststat.Resources
 	// Support records neutral request and playback facts. Nil leaves playback unchanged.
 	Support *diagnostics.Recorder
 	// TracePlayback logs HLS/transcode requests when ETHER_TRACE_PLAYBACK=1.
@@ -184,6 +194,7 @@ type Server struct {
 	playbackOwners    *sessions.PlaybackOwners
 	playbackLifecycle *sessions.Lifecycle
 	transcodes        *transcodeTable
+	readCaps          *readCapabilityStore
 	extraPlay         *extraPlayStore
 	selections        *selectionStore
 	notifier          *notifier
@@ -227,6 +238,12 @@ func NewServer(d Deps) *Server {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
+	if d.Dashboard == nil {
+		d.Dashboard = stats.NewDashboard(stats.DashboardOptions{Now: d.Now})
+	}
+	if d.Resources == nil {
+		d.Resources = hoststat.NewResources(hoststat.Options{Now: d.Now})
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	coord := d.SessionCoordination
 	if coord == nil || coord.Owners == nil || coord.Gates == nil {
@@ -244,6 +261,7 @@ func NewServer(d Deps) *Server {
 		playbackOwners:    coord.Owners,
 		playbackLifecycle: coord.Gates,
 		transcodes:        newTranscodeTable(),
+		readCaps:          newReadCapabilityStore(),
 		extraPlay:         newExtraPlayStore(d.DirectHTTP),
 		selections:        newSelectionStore(),
 		notifier:          newNotifier(),
@@ -476,6 +494,12 @@ func (s *Server) canSeeSection(u *core.User, id int) bool {
 	return false
 }
 
+func (s *Server) expireTranscodes(now time.Time, ttl time.Duration) {
+	for _, id := range s.transcodes.expire(now, ttl) {
+		s.revokeReadCapability(id)
+	}
+}
+
 // janitor expires idle play queues, sessions and transcode bindings.
 func (s *Server) janitor() {
 	defer s.wg.Done()
@@ -491,7 +515,7 @@ func (s *Server) janitor() {
 			s.expireDownloads(now)
 			s.queues.expire(now, 6*time.Hour)
 			s.renderedVariants.expire(now, renderedVariantsTTL)
-			s.transcodes.expire(now, 2*time.Hour)
+			s.expireTranscodes(now, 2*time.Hour)
 			s.playbackOwners.Expire(now, 2*time.Hour)
 			s.extraPlay.expire(now, 2*time.Hour)
 			s.expireTerminations(now, terminationTTL)
@@ -536,7 +560,7 @@ func (s *Server) releaseMountedPlayback() {
 		if s.d.Transcoder != nil {
 			s.d.Transcoder.Stop(id)
 		}
-		s.transcodes.remove(id)
+		s.dropTranscode(id)
 	}
 	s.releaseTrickplayHolders()
 	s.releaseAllDownloads()

@@ -12,6 +12,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/resolver"
 )
@@ -74,11 +75,31 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	}
 	deps.Variants = a.resolver       // "Play Version" release picker (cache-only)
 	deps.DecisionTraces = a.resolver // latest resolution, for the support capture
+	clientID := func() string {
+		cfg := a.cfg.Read()
+		return plexguid.ClientIdentifier(cfg.Plex.ClientIdentifier, cfg.Server.MachineIdentifier)
+	}
 	deps.PlexGUID = plexguid.New(a.db, plexguid.Options{
-		Token:      func() string { return a.cfg.Read().Plex.Token },
-		Background: true,
+		Token:            func() string { return a.cfg.Read().Plex.Token },
+		ClientIdentifier: clientID,
+		Background:       true,
 	})
 	a.plexGUID = deps.PlexGUID
+	deps.PlexMeta = plexmeta.New(a.db, plexmeta.Options{
+		Token:            func() string { return a.cfg.Read().Plex.Token },
+		ClientIdentifier: clientID,
+		GUID: func(ctx context.Context, k core.RatingKey) string {
+			if deps.PlexGUID == nil {
+				return ""
+			}
+			return deps.PlexGUID.Cached(ctx, k)
+		},
+		Enabled: func() bool {
+			cfg := a.cfg.Read()
+			return cfg.Plex.Claimed && cfg.Plex.UsePlexMetadata
+		},
+		Background: true,
+	})
 	if err := a.buildPlexWatch(); err != nil {
 		return nil, fmt.Errorf("plex watch state: %w", err)
 	}
@@ -117,6 +138,12 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		return st.PlexPass, st.OwnerFeatures
 	}
 	deps.Hooks = hooks
+	if a.stats != nil {
+		deps.Dashboard = a.stats.Dashboard()
+	}
+	if a.hostResources != nil {
+		deps.Resources = a.hostResources
+	}
 	if node := a.clusterNode(); node != nil && deps.DB != nil {
 		deps.Cluster = node
 	}
@@ -133,7 +160,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	// Frontend unmount closes the server and the GUID worker. Server.Close is
 	// idempotent, so the app closer may run as well. Watch refresh stays on
 	// the Plex mount (ExplicitWatchOnly in spike), not a second subscription.
-	a.plexClose = func() { srv.Close(); deps.PlexGUID.Close() }
+	a.plexClose = func() { srv.Close(); deps.PlexGUID.Close(); deps.PlexMeta.Close() }
 	a.closers = append(a.closers, func() { srv.Close() })
 	return srv, nil
 }

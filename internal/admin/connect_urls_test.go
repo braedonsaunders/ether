@@ -2,6 +2,7 @@ package admin
 
 import (
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -82,6 +83,37 @@ func TestConsoleConnectURLsPreferLANOverLoopback(t *testing.T) {
 	}
 	if got[len(got)-1] == "http://192.168.68.66:8096" {
 		t.Fatal("loopback should not outrank the LAN address")
+	}
+}
+
+func TestValidateCustomURLsRejectsJunkAndKeepsCGNAT(t *testing.T) {
+	base := config.Defaults(os.TempDir())
+	base.Plex.CustomURLs = []string{
+		"http://100.100.1.2:32400",
+		"https://plex.example.com:8443",
+	}
+	if errs := ValidateConfig(base); len(errs) != 0 {
+		t.Fatalf("expected valid custom URLs (including Tailscale CGNAT), got %+v", errs)
+	}
+
+	for _, junk := range []string{
+		"[http://10.0.0.43:32450](http://10.0.0.43:32450/)",
+		"plex.example.com:32400",
+		"http://plex.example.com:32400/web",
+	} {
+		cfg := base
+		cfg.Plex.CustomURLs = []string{junk}
+		errs := ValidateConfig(cfg)
+		var found *FieldError
+		for i := range errs {
+			if errs[i].Field == "plex.customUrls" {
+				found = &errs[i]
+				break
+			}
+		}
+		if found == nil || found.Message != "Enter full http:// or https:// server URLs, separated by commas." {
+			t.Fatalf("ValidateConfig(%q) = %+v, want plex.customUrls field error", junk, errs)
+		}
 	}
 }
 

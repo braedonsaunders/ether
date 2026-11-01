@@ -519,6 +519,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
     } as HomeLayout,
     logs: [] as LogEntry[],
     calls: [] as { method: string; path: string; body: unknown }[],
+    plexDefaults: {} as Record<number, Record<string, unknown>>,
     llm: opts.llm ?? true,
     clustered: opts.cluster ?? false,
     joinTokens: [] as JoinTokenInfo[],
@@ -1918,6 +1919,20 @@ export function createFakeServer(opts: FakeOptions = {}) {
 
   async function handle(method: string, url: URL, body: unknown): Promise<Response> {
     const p = url.pathname.replace(/^\/ether\/api/, "");
+    if (method === "GET" && p.startsWith("/viewer-plex-defaults/")) {
+      const id = Number(p.split("/").pop());
+      return json({
+        hasProfile: false,
+        hasSettings: false,
+        audioLanguage: "",
+        subtitleLanguage: "",
+        subtitleMode: "off",
+        filterMovies: "",
+        filterTelevision: "",
+        allowSync: null,
+        ...(state.plexDefaults[id] ?? {}),
+      });
+    }
     if (
       state.streamDefaults &&
       p === "/stream-preferences/0" &&

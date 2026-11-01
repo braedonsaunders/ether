@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/egress"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/schedule"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -54,19 +55,20 @@ type Settings struct {
 	OverviewTranslate bool `json:"overviewTranslate"`
 }
 type Options struct {
-	Logger       *slog.Logger
-	Catalog      core.Catalog
-	Resolver     core.Resolver
-	Engine       core.Engine
-	Trakt        Source
-	Tokens       func(context.Context, int64) (string, error)
-	Users        func(context.Context) ([]core.User, error)
-	Allowed      func(*core.User, *core.Title) bool
-	Notifier     Notifier
-	Client       *http.Client
-	PlexBaseURL  string
-	Now          func() time.Time
-	PrewarmBytes int64
+	Logger           *slog.Logger
+	Catalog          core.Catalog
+	Resolver         core.Resolver
+	Engine           core.Engine
+	Trakt            Source
+	Tokens           func(context.Context, int64) (string, error)
+	Users            func(context.Context) ([]core.User, error)
+	Allowed          func(*core.User, *core.Title) bool
+	Notifier         Notifier
+	Client           *http.Client
+	PlexBaseURL      string
+	ClientIdentifier string
+	Now              func() time.Time
+	PrewarmBytes     int64
 	// SyncInterval is how often Run passes over every viewer (30m).
 	SyncInterval time.Duration
 	// ResumeSchedule makes Run wait until SyncInterval has passed since the
@@ -114,6 +116,9 @@ func New(db *sql.DB, o Options) *Service {
 	}
 	if o.PlexBaseURL == "" {
 		o.PlexBaseURL = "https://discover.provider.plex.tv"
+	}
+	if o.ClientIdentifier == "" {
+		o.ClientIdentifier = plexguid.ClientIdentifier("", "")
 	}
 	if o.PrewarmBytes <= 0 {
 		o.PrewarmBytes = 8 << 20

@@ -135,6 +135,14 @@ func filterAddrs(ifs []ifaceInfo, opts LANOptions) []InterfaceAddr {
 	return out
 }
 
+// IsCGNAT reports whether ip is in the 100.64.0.0/10 Shared Address Space
+// (RFC 6598, also used by Tailscale). plex.tv refuses device updates that
+// include a 100.64.0.0/10 connection URI.
+func IsCGNAT(ip net.IP) bool {
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 100 && v4[1]&0xC0 == 64
+}
+
 // UsableLANIP reports whether ip can be published as a LAN connection.
 func UsableLANIP(ip net.IP) bool {
 	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() ||
@@ -143,7 +151,7 @@ func UsableLANIP(ip net.IP) bool {
 	}
 	if v4 := ip.To4(); v4 != nil {
 		// 100.64.0.0/10 (CGNAT, also Tailscale) and 198.18.0.0/15 (benchmarking).
-		if v4[0] == 100 && v4[1]&0xC0 == 64 {
+		if IsCGNAT(v4) {
 			return false
 		}
 		if v4[0] == 198 && (v4[1] == 18 || v4[1] == 19) {

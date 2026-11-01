@@ -36,6 +36,9 @@ type Policy struct {
 	// AllowedHours is empty for any time, otherwise hours 0..23 in Timezone.
 	AllowedHours []int  `json:"allowedHours"`
 	Timezone     string `json:"timezone"`
+	// AllowDownloads is an owner override of plex.tv allowSync. Nil means
+	// the plex.tv default (and the server AllowFriends setting) still apply.
+	AllowDownloads *bool `json:"allowDownloads,omitempty"`
 }
 
 type Service struct {
@@ -47,6 +50,10 @@ type Service struct {
 	invalMu sync.Mutex
 	inval   *clusterbus.Invalidator // nil on a standalone server
 	gen     atomic.Uint64
+
+	plexShare        func(*core.User) PlexShare
+	friendsDownloads func() bool
+	shareCache       map[int64]cachedShare
 
 	playbackMu    sync.Mutex
 	playbackEpoch map[int64]playbackConfirm
@@ -193,7 +200,17 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 	if u == nil {
 		return true
 	}
-	return AllowedWithPolicy(u, t, s.ForUser(u))
+	if !AllowedWithPolicy(u, t, s.ForUser(u)) {
+		return false
+	}
+	compiled := shareFilterFor(t, s.compiledFor(u))
+	if ownerSetsRating(u, s.Get(u.ID)) {
+		compiled.allowRatings = nil
+		compiled.denyRatings = nil
+		compiled.maxRating = ""
+		compiled.minRating = ""
+	}
+	return sharePassesCompiled(t, compiled)
 }
 
 // AllowedWithPolicy evaluates caller-owned policy facts. The caller must
@@ -340,6 +357,21 @@ func (s *Service) BrowseBlocks(u *core.User) (genres, keywords []string, maxRati
 	return append([]string(nil), p.BlockedGenres...), append([]string(nil), p.BlockedKeywords...), p.MaxContentRating
 }
 
+// BrowseShareFilter is the parsed plex.tv share predicate for one library
+// type, ready to push into catalog SQL. Owner rating caps drop plex.tv
+// rating clauses and keep label clauses.
+func (s *Service) BrowseShareFilter(u *core.User, typ core.MediaType) core.Filter {
+	if s == nil || u == nil {
+		return core.Filter{}
+	}
+	c := s.compiledFor(u)
+	f := c.movies
+	if typ == core.TypeShow || typ == core.TypeSeason || typ == core.TypeEpisode {
+		f = c.tv
+	}
+	return f.forType(typ, ownerSetsRating(u, s.Get(u.ID)))
+}
+
 // ForUser is u's policy.
 func (s *Service) ForUser(u *core.User) Policy {
 	if u == nil {
@@ -372,5 +404,7 @@ func (s *Service) Restricted(u *core.User) bool {
 		return true
 	}
 	p := s.ForUser(u)
-	return u.MaxContentRating != "" || len(u.AllowedSections) > 0 || p.MaxContentRating != "" || len(p.BlockedGenres) > 0 || len(p.BlockedKeywords) > 0
+	share := s.shareFor(u)
+	return u.MaxContentRating != "" || len(u.AllowedSections) > 0 || p.MaxContentRating != "" || len(p.BlockedGenres) > 0 || len(p.BlockedKeywords) > 0 ||
+		share.FilterMovies != "" || share.FilterTelevision != ""
 }

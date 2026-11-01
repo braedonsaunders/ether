@@ -17,6 +17,7 @@ import (
 // and CSRF boundaries as the existing admin API.
 func (a *App) extensionHandlers() map[string]http.Handler {
 	m := map[string]http.Handler{"safety/policies": a.safety.Handler()}
+	m["viewer-plex-defaults"] = a.users.PlexDefaultsHandler()
 	m["simkl"] = simkl.Handler(simkl.HandlerDeps{Device: a.simklDevice, Service: a.simklService, Enabled: func() bool { c := a.cfg.Get().Simkl; return c.Enabled && c.ClientID != "" }, Viewer: func(ctx context.Context, id int64) bool {
 		users, err := a.users.Users(ctx)
 		if err != nil {

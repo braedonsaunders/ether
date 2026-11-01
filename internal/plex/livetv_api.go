@@ -170,7 +170,9 @@ func (s *Server) registerLiveTVRoutes(r chi.Router) {
 			writeHTTPError(w, 404)
 			return
 		}
-		s.d.LiveTV.ServeRelaySegment(w, r, chi.URLParam(r, "session"), n, FromContext(r.Context()).User)
+		cw := s.newCountWriter(w, r)
+		s.d.LiveTV.ServeRelaySegment(cw, r, chi.URLParam(r, "session"), n, FromContext(r.Context()).User)
+		cw.finish()
 	})
 
 	get("/livetv/sessions/{session}/{consumer}/resource/{resource}", func(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +185,9 @@ func (s *Server) registerLiveTVRoutes(r chi.Router) {
 			writeHTTPError(w, 404)
 			return
 		}
-		s.d.LiveTV.ServeSegment(w, r, chi.URLParam(r, "session"), start, n, FromContext(r.Context()).User)
+		cw := s.newCountWriter(w, r)
+		s.d.LiveTV.ServeSegment(cw, r, chi.URLParam(r, "session"), start, n, FromContext(r.Context()).User)
+		cw.finish()
 	})
 }
 func (s *Server) liveDevices(r *http.Request) ([]liveDevice, error) {
@@ -582,6 +586,9 @@ func (s *Server) handleLiveSession(w http.ResponseWriter, r *http.Request) {
 // handleLiveTVPlayback hooks the universal decision/start endpoints before the
 // catalogue parser. Plex passes the tune response's /livetv/sessions key here.
 func (s *Server) handleLiveTVPlayback(w http.ResponseWriter, r *http.Request) bool {
+	if s.refuseCapability(w, r) {
+		return true
+	}
 	path := r.URL.Query().Get("path")
 	if !strings.HasPrefix(path, "/livetv/sessions/") {
 		return false
@@ -612,6 +619,12 @@ func (s *Server) handleLiveTVPlayback(w http.ResponseWriter, r *http.Request) bo
 	if strings.HasSuffix(r.URL.Path, "/start.mpd") {
 		if err := s.d.LiveTV.ServeDASH(w, r, id, pr.User); err != nil {
 			s.writeLiveDASHError(w, r, info, err)
+		}
+		return true
+	}
+	if strings.HasSuffix(r.URL.Path, "/start") && r.URL.Query().Get("protocol") == core.ProtocolHTTP {
+		if err := s.d.LiveTV.ServeHTTP(w, r, id, pr.User); err != nil {
+			s.writeErr(w, r, err)
 		}
 		return true
 	}

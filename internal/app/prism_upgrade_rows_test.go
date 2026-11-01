@@ -152,7 +152,7 @@ func TestPrismUpgradeSQLiteLateFailureRecovery(t *testing.T) {
 	}
 	raw := openSQLiteRW(t, path)
 	assertUpgradeTables(t, raw, before)
-	if got := maxMigration(t, raw, "auth"); got != 7 {
+	if got := maxMigration(t, raw, "auth"); got != 8 {
 		t.Fatalf("completed auth steps lost: %d", got)
 	}
 	if got := maxMigration(t, raw, "catalog"); got != 9 {

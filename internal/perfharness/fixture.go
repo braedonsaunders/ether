@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -63,6 +64,9 @@ func Generate(ctx context.Context, db *sql.DB, s Scale, now time.Time) error {
 	}
 	if err := g.titles(s); err != nil {
 		return fmt.Errorf("titles: %w", err)
+	}
+	if err := g.ratings(); err != nil {
+		return fmt.Errorf("ratings: %w", err)
 	}
 	if err := g.viewers(s); err != nil {
 		return fmt.Errorf("viewers: %w", err)
@@ -324,11 +328,48 @@ func (g *generator) viewers(s Scale) error {
 		if err := g.db.QueryRowContext(g.ctx, `INSERT INTO auth_users(username,title,is_owner,origin,active,created_at,updated_at) VALUES(?,?,?,?,1,?,?) RETURNING id`, name, name, owner, "local", now, now).Scan(&id); err != nil {
 			return err
 		}
+		if v == RestrictedViewer {
+			if err := g.restrict(id, now); err != nil {
+				return err
+			}
+		}
 		if err := g.history(id, s); err != nil {
 			return err
 		}
 	}
 	return g.flush()
+}
+
+// ratings finishes what the catalogue derives: seasons and episodes take
+// their series' rating, and every rated title stores its rank, which the
+// rating-cap SQL compares.
+func (g *generator) ratings() error {
+	if err := g.flush(); err != nil {
+		return err
+	}
+	if _, err := g.db.ExecContext(g.ctx, `UPDATE catalog_titles SET content_rating=(SELECT s.content_rating FROM catalog_titles s WHERE s.key=catalog_titles.show_key)
+		WHERE type IN ('season','episode') AND content_rating=''`); err != nil {
+		return err
+	}
+	for _, r := range []string{"G", "PG", "PG-13", "R", "TV-G", "TV-PG", "TV-14", "TV-MA"} {
+		if _, err := g.db.ExecContext(g.ctx, `UPDATE catalog_titles SET content_rating_rank=? WHERE content_rating=?`, int(contentrating.LevelOf(r)), r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RestrictedViewer is the fixture viewer with a rating cap and a plex.tv
+// share filter, so restricted listings are measured on a full library.
+const RestrictedViewer = 2
+
+func (g *generator) restrict(user, now int64) error {
+	if _, err := g.db.ExecContext(g.ctx, `UPDATE auth_users SET max_content_rating='TV-14' WHERE id=?`, user); err != nil {
+		return err
+	}
+	_, err := g.db.ExecContext(g.ctx, `INSERT INTO auth_plex_defaults(user_id,plex_id,payload,updated_at) VALUES(?,?,?,?)`, user, 9000+user,
+		`{"filterMovies":"contentRating!=NC-17","filterTelevision":"contentRating!=TV-MA%2CNC-17|label!=Hidden","hasSettings":true}`, now)
+	return err
 }
 
 func (g *generator) history(user int64, s Scale) error {

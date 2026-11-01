@@ -53,17 +53,6 @@ func accountB() Account {
 	return Account{ID: 43, UUID: "uuid-43", Username: "other", Title: "Other Owner", Email: "b@example.com"}
 }
 
-// signIn is what a PIN sign-in stores before claiming (app plexAuth.PollPIN).
-func signIn(t *testing.T, store ConfigStore, token string, id int64) {
-	t.Helper()
-	if err := store.Update(func(c *config.Config) error {
-		c.Plex.Token, c.Plex.OwnerPlexID = token, id
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestReclaimByAnotherAccountReleasesTheDevice(t *testing.T) {
 	f := newFakePlexTV(t, testMachineID)
 	f.addUser("user-token", owner())
@@ -96,7 +85,6 @@ func TestReclaimByAnotherAccountReleasesTheDevice(t *testing.T) {
 	}
 
 	// Account B signs in and claims: publishing works under B.
-	signIn(t, store, "user-b", 43)
 	if _, err := r.Claim(ctx, "user-b"); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +105,6 @@ func TestReclaimReportsATokenPlexRejects(t *testing.T) {
 	r := newReclaimRegistrar(t, f, store)
 	ctx := context.Background()
 
-	signIn(t, store, "user-b", 43)
 	if _, err := r.Claim(ctx, "user-b"); err != nil {
 		t.Fatal(err)
 	}

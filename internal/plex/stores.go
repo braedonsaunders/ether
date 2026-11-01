@@ -118,7 +118,9 @@ func (t *transcodeTable) remove(id string)               { t.table.Remove(id) }
 func (t *transcodeTable) forClient(userID int64, clientID string, key core.RatingKey) []string {
 	return t.table.ForClient(userID, clientID, key)
 }
-func (t *transcodeTable) expire(now time.Time, ttl time.Duration) { t.table.Expire(now, ttl) }
+func (t *transcodeTable) expire(now time.Time, ttl time.Duration) []string {
+	return t.table.Expire(now, ttl)
+}
 
 // ---------------------------------------------------------------------------
 // Facet cache: genre/country keys -> titles for filter resolution.

@@ -231,7 +231,9 @@ func (f *fakeRunner) Start(cmd Command) (Process, error) {
 		f.emptyOnceDone = true
 		emptyAt = startNum
 	}
-	if argValue(cmd.Args, "-f") == "dash" {
+	if argValue(cmd.Args, "-f") == "matroska" {
+		go p.simulateHTTP(cmd)
+	} else if argValue(cmd.Args, "-f") == "dash" {
 		go p.simulateDASH(cmd, f.segDelay, f.dashEnd, f.dashHold, f.failAfter, fail, stderr)
 	} else if fakeChunked(cmd.Args) {
 		go p.simulateChunks(cmd, f.segDelay, f.chunkGOP, f.chunkEnd, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
@@ -317,6 +319,18 @@ func (p *fakeProc) Resume() error {
 		close(p.resumed)
 	}
 	return nil
+}
+
+func (p *fakeProc) simulateHTTP(cmd Command) {
+	defer close(p.done)
+	if cmd.Stdout != nil {
+		_, _ = io.WriteString(cmd.Stdout, "\x1aE\xdf\xa3fake-matroska")
+	}
+	select {
+	case <-p.kill:
+		p.err = errors.New("signal: killed")
+	default:
+	}
 }
 
 func (p *fakeProc) isPaused() bool {

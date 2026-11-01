@@ -129,6 +129,46 @@ func TestBuildConnections(t *testing.T) {
 	}
 }
 
+func TestParseCustomURLAndCGNATFilter(t *testing.T) {
+	cgnat, err := ParseCustomURL("http://100.100.1.2:32400/")
+	if err != nil {
+		t.Fatalf("ParseCustomURL CGNAT: %v", err)
+	}
+	if !cgnat.Local || !cgnat.Custom || cgnat.URI != "http://100.100.1.2:32400" {
+		t.Fatalf("CGNAT custom connection = %+v", cgnat)
+	}
+	if IsPublishableURI("http://100.100.1.2:32400") || IsPublishableURI("https://100-64-0-1.abcdef0123.plex.direct:32400") || IsPublishableURI("http://100.127.255.254:32400") {
+		t.Fatal("CGNAT 100.64.0.0/10 URI reported publishable to plex.tv")
+	}
+	if !IsPublishableURI("http://100.63.255.254:32400") || !IsPublishableURI("http://100.128.0.1:32400") || !IsPublishableURI("http://192.168.1.5:32400") || !IsPublishableURI("https://plex.example.com") {
+		t.Fatal("non-CGNAT URI reported unpublishable")
+	}
+
+	for _, junk := range []string{
+		"",
+		"[http://192.168.88.244:32420](http://192.168.88.244:32420)",
+		"[plex](https://plex.example.com)",
+		"http://192.168.88.244:32420](http://192.168.88.244:32420)",
+		"192.168.88.244:32420",
+		"ftp://plex.example.com",
+		"http://user:pass@plex.example.com:32400",
+		"https://plex.example.com/some/path",
+		"https://plex.example.com?token=1",
+		"https://plex.example.com#section",
+		"http://192.168.1.999:32400",
+		"http://..bad..:32400",
+		"http://plex.example.com:70000",
+		"http://plex.example.com:",
+	} {
+		if _, err := ParseCustomURL(junk); err == nil {
+			t.Errorf("ParseCustomURL(%q) succeeded, want error", junk)
+		}
+		if IsPublishableURI(junk) {
+			t.Errorf("IsPublishableURI(%q) = true, want false", junk)
+		}
+	}
+}
+
 func TestWANDetector(t *testing.T) {
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nope", 500)

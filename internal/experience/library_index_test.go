@@ -13,8 +13,8 @@ func TestIndexedLibraryPagePushesOffsetIntoOneBrowse(t *testing.T) {
 	const n = 3000
 	calls := 0
 	var got core.BrowseQuery
-	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, PageExclusions: func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string) {
-		return []core.RatingKey{core.MovieKey(2)}, []string{"Horror"}, []string{"gore"}, "PG"
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, PageExclusions: func(context.Context, *core.User) LibraryPageExclusions {
+		return LibraryPageExclusions{Keys: []core.RatingKey{core.MovieKey(2)}, ExcludeGenres: []string{"Horror"}, ExcludeKeywords: []string{"gore"}, MaxContentRating: "PG"}
 	}, Browse: func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
 		calls++
 		got = q
@@ -59,8 +59,8 @@ func TestIndexedLibraryPagePushesRecursiveSortNameIntoSQL(t *testing.T) {
 			return 2, true
 		}
 		return 1, true
-	}}, PageExclusions: func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string) {
-		return nil, nil, nil, ""
+	}}, PageExclusions: func(context.Context, *core.User) LibraryPageExclusions {
+		return LibraryPageExclusions{}
 	}, Browse: func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
 		calls++
 		got = q
@@ -100,8 +100,8 @@ func TestIndexedLibraryPageFallsBackWhenARowIsHidden(t *testing.T) {
 	viewer := &core.User{ID: 1, IsOwner: true}
 	calls := 0
 	titles := []core.Title{{Key: core.MovieKey(1), Type: core.TypeMovie}, {Key: core.MovieKey(2), Type: core.TypeMovie, Adult: true}, {Key: core.MovieKey(3), Type: core.TypeMovie}}
-	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, PageExclusions: func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string) {
-		return nil, nil, nil, ""
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, PageExclusions: func(context.Context, *core.User) LibraryPageExclusions {
+		return LibraryPageExclusions{}
 	}, Browse: func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
 		calls++
 		start := min(max(q.Offset, 0), len(titles))

@@ -18,6 +18,7 @@ import type { Viewer } from "../../lib/contract";
 import { canonicalRating } from "../../lib/contentRatings";
 import { useAsync } from "../../lib/hooks";
 import { PlexWatchSync } from "./sections/PlexWatchSync";
+import { FromPlexDefaults } from "./FromPlexDefaults";
 import { ViewerLiveTVAccess } from "./sections/ViewerLiveTV";
 import { KID_PRESETS, ListText, normalizePolicy, type SafetyPolicy } from "./shared";
 
@@ -306,6 +307,8 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
           </SettingsSection>
         </>
       )}
+
+      <FromPlexDefaults viewerId={id} show="share" />
 
       <ViewerLiveTVAccess viewerId={id} />
 

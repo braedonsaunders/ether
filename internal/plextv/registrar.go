@@ -104,14 +104,15 @@ type RegistrarOptions struct {
 	Certs   *CertManager // nil disables certificate management
 
 	// Intervals (defaults in parentheses).
-	Tick                 time.Duration // loop granularity (15s)
-	AddressInterval      time.Duration // LAN/WAN re-check (30s)
-	PublishInterval      time.Duration // unconditional re-publish (1h)
-	FriendSyncInterval   time.Duration // access token sync (1m, observed)
-	MappingInterval      time.Duration // UPnP/NAT-PMP renew check (5m)
-	CertInterval         time.Duration // certificate expiry check (1w, observed when not near expiry)
-	ReachabilityInterval time.Duration // remote self-test (1h, observed)
-	OwnerInterval        time.Duration // owner account / Plex Pass re-check (6h)
+	Tick                       time.Duration // loop granularity (15s)
+	AddressInterval            time.Duration // LAN/WAN re-check (30s)
+	PublishInterval            time.Duration // unconditional re-publish (1h)
+	FriendSyncInterval         time.Duration // access token sync (30m; pubsub events trigger immediate sync)
+	UnknownTokenSyncMinSpacing time.Duration // minimum spacing between unknown-token friend re-reads (15s)
+	MappingInterval            time.Duration // UPnP/NAT-PMP renew check (5m)
+	CertInterval               time.Duration // certificate expiry check (1w, observed when not near expiry)
+	ReachabilityInterval       time.Duration // remote self-test (1h, observed)
+	OwnerInterval              time.Duration // owner account / Plex Pass re-check (6h)
 
 	// PeerURIs, when set (clustered servers), returns the other live
 	// nodes' connection URIs in publication order. PublishNow appends them,
@@ -157,19 +158,20 @@ type Registrar struct {
 	addrMu      sync.Mutex // serialises address refreshes
 	addrRefresh time.Time  // last refreshAddresses
 
-	mu            sync.Mutex
-	st            Status
-	lastLAN       []string
-	lastWAN       string
-	next          map[string]time.Time
-	pubFail       int
-	pubGeneration uint64 // advances whenever fresh connections must be published
-	forcePub      bool
-	mappingOn     bool
-	trustAt       time.Time
-	trustFP       string
-	asyncID       string // outstanding connectivity request
-	libraries     []LibrarySection
+	mu                   sync.Mutex
+	st                   Status
+	lastLAN              []string
+	lastWAN              string
+	next                 map[string]time.Time
+	lastUnknownTokenSync time.Time
+	pubFail              int
+	pubGeneration        uint64 // advances whenever fresh connections must be published
+	forcePub             bool
+	mappingOn            bool
+	trustAt              time.Time
+	trustFP              string
+	asyncID              string // outstanding connectivity request
+	libraries            []LibrarySection
 
 	presence *Presence
 
@@ -210,7 +212,8 @@ func NewRegistrar(o RegistrarOptions) (*Registrar, error) {
 	def(&o.Tick, 15*time.Second)
 	def(&o.AddressInterval, 30*time.Second)
 	def(&o.PublishInterval, time.Hour)
-	def(&o.FriendSyncInterval, time.Minute)
+	def(&o.FriendSyncInterval, 30*time.Minute)
+	def(&o.UnknownTokenSyncMinSpacing, 15*time.Second)
 	def(&o.MappingInterval, 5*time.Minute)
 	def(&o.CertInterval, 7*24*time.Hour)
 	def(&o.ReachabilityInterval, time.Hour)
@@ -712,14 +715,22 @@ func (r *Registrar) connections(cfg config.Config) []remote.Connection {
 // local, and synthesises the https plex.direct variants (https only when
 // httpsRequired is set). A published plex.direct hostname is stored as a
 // non-local address, so clients would list a LAN server as Remote.
+// CGNAT (100.64.0.0/10, including Tailscale) addresses are never published to
+// plex.tv because plex.tv rejects the whole device update when one is present.
 func publishable(cs []remote.Connection, includePlexDirect bool) []string {
 	var out []string
 	add := func(uri string) {
+		if !remote.IsPublishableURI(uri) {
+			return
+		}
 		if !slices.Contains(out, uri) {
 			out = append(out, uri)
 		}
 	}
 	for _, c := range cs {
+		if ip := net.ParseIP(c.Address); ip != nil && remote.IsCGNAT(ip) {
+			continue
+		}
 		if c.Protocol == "https" && !c.Custom {
 			if c.Address != "" && c.Port > 0 {
 				add("http://" + net.JoinHostPort(c.Address, strconv.Itoa(c.Port)))
@@ -839,11 +850,16 @@ func (r *Registrar) PublishNow(ctx context.Context) error {
 	}
 	conns, uris := r.publishSet(cfg)
 	if r.o.PeerURIs != nil {
-		uris = mergeURIs(uris, r.o.PeerURIs())
+		for _, peerURI := range r.o.PeerURIs() {
+			if remote.IsPublishableURI(peerURI) {
+				uris = mergeURIs(uris, []string{peerURI})
+			}
+		}
 	}
 	if len(uris) == 0 {
 		err := errors.New("plextv: no connection addresses to publish")
 		r.mu.Lock()
+		r.st.Connections = conns
 		r.st.LastPublish = r.o.Now()
 		r.st.LastPublishError = err.Error()
 		r.mu.Unlock()
@@ -897,17 +913,23 @@ func (r *Registrar) PublishNow(ctx context.Context) error {
 	} else {
 		mapping = "unmapped"
 	}
+	var localAddrs []string
+	for _, addr := range lan {
+		if ip := net.ParseIP(addr); ip != nil && !remote.IsCGNAT(ip) {
+			localAddrs = append(localAddrs, addr)
+		}
+	}
 	reg := ServerRegistration{
-		Name: cfg.Server.FriendlyName, Version: r.o.Version, LocalAddresses: mergeURIs(lan, r.peerLANAddrs()), MappingState: mapping,
+		Name: cfg.Server.FriendlyName, Version: r.o.Version, LocalAddresses: mergeURIs(localAddrs, r.peerLANAddrs()), MappingState: mapping,
 		PrivatePort: serverPort(cfg),
 		Libraries:   libraries,
 	}
-	if len(lan) > 0 {
-		reg.PrivateAddress = lan[0]
+	if len(localAddrs) > 0 {
+		reg.PrivateAddress = localAddrs[0]
 	}
 	if cfg.Plex.RemoteAccess {
 		reg.Port = r.wanPort(cfg)
-		if net.ParseIP(wan) != nil {
+		if ip := net.ParseIP(wan); ip != nil && !remote.IsCGNAT(ip) {
 			reg.Address = wan
 		}
 	}
@@ -975,6 +997,20 @@ func (r *Registrar) SyncFriendsNow(ctx context.Context) error {
 	r.st.Friends = n
 	r.st.FriendSyncError = ""
 	return nil
+}
+
+// SyncFriendsOnUnknownToken re-reads friends and access tokens when an
+// unrecognised token arrives, rate-limited by UnknownTokenSyncMinSpacing.
+func (r *Registrar) SyncFriendsOnUnknownToken(ctx context.Context) error {
+	now := r.o.Now()
+	r.mu.Lock()
+	if !r.lastUnknownTokenSync.IsZero() && now.Round(0).Sub(r.lastUnknownTokenSync.Round(0)) < r.o.UnknownTokenSyncMinSpacing {
+		r.mu.Unlock()
+		return nil
+	}
+	r.lastUnknownTokenSync = now
+	r.mu.Unlock()
+	return r.SyncFriendsNow(ctx)
 }
 
 // CheckReachability probes the WAN connections and records the result.
@@ -1188,7 +1224,7 @@ func (r *Registrar) Claim(ctx context.Context, userToken string) (*ClaimResult, 
 		r.mu.Unlock()
 	}
 	r.refreshConfigStatus(r.o.Config.Get())
-	r.log.Info("server claimed", "owner", res.Owner.Username, "method", res.Method)
+	r.log.Info("server claimed", "owner", res.Owner.Username)
 	r.Trigger()
 	return res, nil
 }
@@ -1358,7 +1394,7 @@ func (r *Registrar) onPubsub(m PubsubMessage) {
 	case "refreshCertificate":
 		r.schedule(taskCert, time.Time{})
 		r.Trigger()
-	case "notifyResetToken", "notifyAccountChange":
+	case "notifyResetToken", "notifyAccountChange", "notifySharingChange", "notifyHomeChange":
 		r.schedule(taskFriends, time.Time{})
 		r.Trigger()
 	default:

@@ -40,6 +40,29 @@ func routeSessionID(r *http.Request) (string, bool) {
 	return id, true
 }
 
+// capabilityPathOK reports whether a capability credential (stream grant
+// or a live session id) may be considered for this request. Encoded
+// paths are refused: chi routes on RawPath while transcodeSessionID
+// reads the decoded Path, so an encoded slash can authorize one
+// binding and then reach decision/start as that viewer.
+func capabilityPathOK(r *http.Request) bool {
+	if r.URL.RawPath != "" {
+		return false
+	}
+	if strings.Contains(r.URL.EscapedPath(), "%") {
+		return false
+	}
+	return true
+}
+
+func (s *Server) refuseCapability(w http.ResponseWriter, r *http.Request) bool {
+	if !FromContext(r.Context()).Capability {
+		return false
+	}
+	writeHTTPError(w, http.StatusUnauthorized)
+	return true
+}
+
 func (s *Server) activeViewer(ctx context.Context, id int64) *core.User {
 	if s.d.Auth == nil {
 		return nil
@@ -70,6 +93,9 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
+	if !capabilityPathOK(r) {
+		return false
+	}
 	id := transcodeSessionID(r.URL.Path)
 	if id == "" {
 		return false
@@ -90,6 +116,48 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	}
 
 	pr.User = u
+	pr.Capability = true
+	return true
+}
+
+// authenticateSessionRead authorizes playlist and segment GET/HEAD by a
+// server-minted read capability bound to the starting device. The
+// client-chosen session id in the path is not a credential. Native
+// loaders that drop headers keep using stream grants.
+func (s *Server) authenticateSessionRead(r *http.Request, pr *Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if !capabilityPathOK(r) {
+		return false
+	}
+	cap, ok := s.readCaps.lookup(readCapFrom(r))
+	if !ok {
+		return false
+	}
+	id := transcodeSessionID(r.URL.Path)
+	if id == "" || id != cap.sessionID {
+		return false
+	}
+	if pr.ClientID == "" || cap.clientID == "" || pr.ClientID != cap.clientID {
+		return false
+	}
+	e, ok := s.transcodes.get(cap.sessionID)
+	if !ok || !e.started || e.userID != cap.userID || e.clientID != cap.clientID {
+		return false
+	}
+	u := s.activeViewer(r.Context(), cap.userID)
+	if u == nil {
+		return false
+	}
+	if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+		u = policy.UserPolicy(u)
+	}
+	if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
+		return false
+	}
+	pr.User = u
+	pr.Capability = true
 	return true
 }
 
@@ -143,7 +211,7 @@ func (s *Server) serveStreamManifest(w http.ResponseWriter, r *http.Request, id 
 			if xml {
 				raw = html.UnescapeString(raw)
 			}
-			raw = streamGrantURL(raw, e.streamToken)
+			raw = s.mediaURL(raw, e.id, e.streamToken)
 			if xml {
 				raw = html.EscapeString(raw)
 			}
@@ -153,7 +221,7 @@ func (s *Server) serveStreamManifest(w http.ResponseWriter, r *http.Request, id 
 			lines := strings.Split(body, "\n")
 			for i, line := range lines {
 				if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
-					lines[i] = streamGrantURL(line, e.streamToken)
+					lines[i] = s.mediaURL(line, e.id, e.streamToken)
 				}
 			}
 			body = strings.Join(lines, "\n")

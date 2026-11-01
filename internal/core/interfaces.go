@@ -65,10 +65,10 @@ type Filter struct {
 	// counting and pagination. Matching is case-insensitive.
 	ExcludeGenres         []string        `json:"-"`
 	ExcludeKeywords       []string        `json:"-"`
-	AddedAfter            int64           `json:"-"` // inclusive Unix timestamp bound on added/release time
-	AddedBefore           int64           `json:"-"` // inclusive Unix timestamp bound on added/release time
-	UpdatedAfter          int64           `json:"-"` // inclusive Unix timestamp bound on metadata update time
-	UpdatedBefore         int64           `json:"-"` // inclusive Unix timestamp bound on metadata update time
+	AddedAfter            int64           `json:"-"`              // inclusive Unix timestamp bound on added/release time
+	AddedBefore           int64           `json:"-"`              // inclusive Unix timestamp bound on added/release time
+	UpdatedAfter          int64           `json:"-"`              // inclusive Unix timestamp bound on metadata update time
+	UpdatedBefore         int64           `json:"-"`              // inclusive Unix timestamp bound on metadata update time
 	Type                  MediaType       `json:"type,omitempty"` // movie or show
 	Genres                []string        `json:"genres,omitempty"`
 	Keywords              []string        `json:"keywords,omitempty"` // every keyword must match (case-insensitive)
@@ -88,17 +88,29 @@ type Filter struct {
 	ContentRatings        []string        `json:"contentRatings,omitempty"`
 	ExcludeContentRatings []string        `json:"excludeContentRatings,omitempty"`
 	MaxContentRating      string          `json:"maxContentRating,omitempty"` // per-user limit
-	Collection            int64           `json:"collection,omitempty"`
-	Collections           []int64         `json:"collections,omitempty"`
-	ExcludeCollections    []int64         `json:"excludeCollections,omitempty"`
-	Person                int64           `json:"person,omitempty"` // cast or crew TMDB id
-	Credits               []CreditFilter  `json:"credits,omitempty"`
-	Studio                string          `json:"studio,omitempty"`
-	StudioFilters         []StringFilter  `json:"studioFilters,omitempty"`
-	FirstCharacter        string          `json:"firstCharacter,omitempty"`
-	Query                 string          `json:"query,omitempty"` // title substring
-	TitleFilters          []StringFilter  `json:"titleFilters,omitempty"`
-	ReleasedFilters       []DateFilter    `json:"releasedFilters,omitempty"`
+	// SaferPlexRating applies cached Plex content-rating levels in SQL
+	// together with MaxContentRating so paging and counts stay correct.
+	SaferPlexRating bool `json:"-"`
+
+	Collection         int64          `json:"collection,omitempty"`
+	Collections        []int64        `json:"collections,omitempty"`
+	ExcludeCollections []int64        `json:"excludeCollections,omitempty"`
+	Person             int64          `json:"person,omitempty"` // cast or crew TMDB id
+	Credits            []CreditFilter `json:"credits,omitempty"`
+	Studio             string         `json:"studio,omitempty"`
+	StudioFilters      []StringFilter `json:"studioFilters,omitempty"`
+	FirstCharacter     string         `json:"firstCharacter,omitempty"`
+	Query              string         `json:"query,omitempty"` // title substring
+	TitleFilters       []StringFilter `json:"titleFilters,omitempty"`
+	ReleasedFilters    []DateFilter   `json:"releasedFilters,omitempty"`
+	// MinContentRating is an additive share-policy predicate (plex.tv share
+	// filters). It does not replace MaxContentRating or ContentRatings.
+	MinContentRating string `json:"-"`
+	// IncludeCollectionNames / ExcludeCollectionNames match
+	// Title.CollectionName (plex.tv share label filters). An empty
+	// collection name is unmappable and is not excluded.
+	IncludeCollectionNames []string `json:"-"`
+	ExcludeCollectionNames []string `json:"-"`
 }
 
 type BrowseQuery struct {

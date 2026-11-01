@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,10 @@ func pinTestApp(t *testing.T, accountID int64) *App {
 			fmt.Fprint(w, `{"id":1,"code":"fixture","authToken":"approved-token","expiresIn":600}`)
 		case "/api/v2/user":
 			fmt.Fprintf(w, `{"id":%d,"username":"approved"}`, accountID)
+		case "/api/claim/token.json":
+			fmt.Fprint(w, `{"token":"claim-42"}`)
+		case "/api/claim/exchange":
+			w.WriteHeader(http.StatusUnprocessableEntity)
 		default:
 			t.Errorf("unexpected request %s", r.URL)
 			http.NotFound(w, r)
@@ -112,6 +117,28 @@ func TestWizardPINCannotReplaceExistingOwner(t *testing.T) {
 				t.Fatal("PIN reauthorization changed non-Plex settings")
 			}
 		})
+	}
+}
+
+func TestWizardClaimExchangeFailureStoresNoServerToken(t *testing.T) {
+	ctx := context.Background()
+	a := pinTestApp(t, 42)
+	p := &plexAuth{app: a, pins: map[string]*plextv.PIN{"1": {ID: 1, Code: "fixture", ExpiresAt: time.Now().Add(time.Minute)}}}
+	ok, err := p.PollPIN(ctx, "1")
+	if err != nil || !ok {
+		t.Fatalf("PollPIN: ok=%v err=%v", ok, err)
+	}
+	err = p.Claim(ctx)
+	var exchangeErr *plextv.ClaimExchangeError
+	if !errors.Is(err, plextv.ErrClaimExchangeFailed) || !errors.As(err, &exchangeErr) {
+		t.Fatalf("Claim error = %v, want *ClaimExchangeError", err)
+	}
+	got := a.cfg.Get().Plex
+	if got.Claimed || got.Token != "" {
+		t.Fatalf("failed claim stored server token or claimed flag: %+v", got)
+	}
+	if _, err := a.users.Authenticate(ctx, "approved-token"); err == nil {
+		t.Fatal("owner PIN token was stored as a server token")
 	}
 }
 

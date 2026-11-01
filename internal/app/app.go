@@ -30,6 +30,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/handles/capability"
+	"github.com/braedonsaunders/ether/internal/hoststat"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/langfeat"
 	"github.com/braedonsaunders/ether/internal/livetv"
@@ -218,6 +219,7 @@ type App struct {
 	discoveryPersonal *personalize.Discovery
 	discoveryFeatures *discovery.Features
 	stats             *stats.Service
+	hostResources     *hoststat.Resources
 	notifications     *notify.Service
 	livetv            *livetv.Service
 	calendar          *calendar.Service
@@ -634,6 +636,9 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.checkpointWAL(ctx) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "database maintenance", a.maintainDB) })
 	background.start(func() { a.stats.Run(ctx) })
+	if a.hostResources != nil {
+		background.start(func() { a.hostResources.Run(ctx) })
+	}
 	background.start(func() { a.cluster.RunAsLeader(ctx, "notification delivery", a.notifications.Run) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "favorite episode alerts", a.runFavoriteEpisodeAlerts) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "viewer push delivery", a.runViewerPush) })

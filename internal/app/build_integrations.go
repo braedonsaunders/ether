@@ -57,6 +57,9 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	}
 	a.buildExtras()
 	if a.transcoder != nil {
+		if a.subtitles != nil {
+			a.subtitles.SetFFmpeg(a.transcoder.FFmpegPath())
+		}
 		a.trickplay = trickplay.New(transcode.NewThumbnails(transcode.ThumbOptions{FFmpeg: a.transcoder.FFmpegPath(), Logger: a.log}))
 		a.closers = append(a.closers, func() { _ = a.trickplay.Close() })
 	}

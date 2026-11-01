@@ -151,7 +151,8 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 	if v == cwSection {
 		t = sec.Type
 	}
-	items, state, more := s.continueExperience(pr).Shelf(ctx, pr.User, t, count)
+	items, state, more := s.continueExperience(pr).Shelf(ctx, pr.User, t, s.saferFetchCount(pr.User, count))
+	items = s.takeVisible(pr.User, items, count)
 	hs := hubSpec{Hub: core.Hub{Title: "Continue Watching", Style: "hero", Promoted: true}, state: state}
 	switch v {
 	case cwHome:
@@ -176,7 +177,7 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 
 func (s *Server) recentlyAddedHub(ctx context.Context, pr *Request, sec Section, count int) (hubSpec, error) {
 	recent := experience.Recent{Visibility: s.visibility(), Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) }}
-	items, more, err := recent.Added(ctx, pr.User, sec.Type, count, s.d.Catalog.Browse)
+	items, more, err := recent.Added(ctx, pr.User, sec.Type, count, s.catalogBrowse)
 	if err != nil {
 		return hubSpec{}, err
 	}
@@ -228,7 +229,7 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	var hubs []core.Hub
 	if s.d.Recommender != nil {
 		var err error
-		if hubs, err = s.recommendHome(ctx, pr, hc, count); err != nil {
+		if hubs, err = s.recommendHome(ctx, pr, hc, s.saferFetchCount(pr.User, count)); err != nil {
 			s.log.Warn("home hubs", "err", err)
 		}
 	}
@@ -491,7 +492,7 @@ func (s *Server) handleSectionHubs(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("recently added hub", "section", sec.ID, "err", err)
 	}
 	if s.d.Recommender != nil {
-		hubs, err := s.recommendSection(ctx, pr, sec.Type, pc, count)
+		hubs, err := s.recommendSection(ctx, pr, sec.Type, pc, s.saferFetchCount(pr.User, count))
 		if err != nil {
 			s.log.Warn("section hubs", "section", sec.ID, "err", err)
 		}
@@ -1067,7 +1068,8 @@ func (s *Server) searchExperience() experience.Search {
 }
 
 func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
-	result, err := s.searchExperience().Resolve(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), limit, false)
+	result, err := s.searchExperience().Resolve(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), s.saferFetchCount(pr.User, limit), false)
+	result.Items = s.takeVisible(pr.User, result.Items, limit)
 	return result.Items, err
 }
 
@@ -1096,7 +1098,8 @@ func (s *Server) handleHubSearch(w http.ResponseWriter, r *http.Request) {
 		limit = min(n, 100)
 	}
 	sectionID, _ := strconv.Atoi(q.Get("sectionId"))
-	result, err := s.searchExperience().Resolve(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), limit*2, true)
+	fetch := max(limit*2, s.saferFetchCount(pr.User, limit))
+	result, err := s.searchExperience().Resolve(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), fetch, true)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
