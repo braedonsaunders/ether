@@ -61,6 +61,8 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 		Logger:         log.With("component", "newznab"),
 		SearchCacheTTL: cfg.Resolver.SearchCacheTTL.D(),
 		NZBDir:         filepath.Join(dataDir, "nzb"),
+		Version:        a.opts.Version,
+		Identity:       cfg.ClientIdentity,
 		Backend: func(ix config.Indexer) (newznab.Backend, error) {
 			if ix.IsStremio() {
 				return a.addons.Backend(ix)

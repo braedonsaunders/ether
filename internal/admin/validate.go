@@ -9,6 +9,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/libraryfilter"
+	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
 
@@ -94,6 +95,8 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if a.ReservePercent < 0 || a.ReservePercent > 99 {
 		v.add("availability.reservePercent", "must be between 0 and 99")
 	}
+
+	validateClientIdentity(v, cfg)
 
 	if cfg.SharedCache != nil {
 		shared := cfg
@@ -425,4 +428,54 @@ func ValidateConfig(cfg config.Config) []FieldError {
 		v.add("updates.maxDrain", "must not be negative")
 	}
 	return v.errs
+}
+
+// validateClientIdentity checks the global indexer identity policy and each
+// indexer's override. Values are scoped: "same" is only a global grab value,
+// an empty value inherits (or means ether), and a custom pair must be safe
+// to put on the wire before it can be saved.
+func validateClientIdentity(v *validator, cfg config.Config) {
+	p := cfg.ClientIdentity
+	identityValue(v, "clientIdentity.searchTv", p.SearchTV, false)
+	identityValue(v, "clientIdentity.searchMovies", p.SearchMovies, false)
+	identityValue(v, "clientIdentity.grabTv", p.GrabTV, true)
+	identityValue(v, "clientIdentity.grabMovies", p.GrabMovies, true)
+	pUsesCustom := p.SearchTV == newznab.IdentityCustom || p.SearchMovies == newznab.IdentityCustom ||
+		p.GrabTV == newznab.IdentityCustom || p.GrabMovies == newznab.IdentityCustom
+	validateCustomIdentity(v, "clientIdentity", p.UserAgent, p.Headers, pUsesCustom)
+	for i, ix := range cfg.Indexers {
+		f := fmt.Sprintf("indexers[%d]", i)
+		identityValue(v, f+".searchIdentity", ix.SearchIdentity, false)
+		identityValue(v, f+".grabIdentity", ix.GrabIdentity, false)
+		usesCustom := ix.SearchIdentity == newznab.IdentityCustom || ix.GrabIdentity == newznab.IdentityCustom
+		validateCustomIdentity(v, f, ix.UserAgent, ix.Headers, usesCustom)
+	}
+}
+
+func identityValue(v *validator, field, name string, allowSame bool) {
+	switch {
+	case name == "":
+	case name == config.IdentitySame:
+		if !allowSame {
+			v.add(field, "must be a preset; \"same\" is only valid for the global grab values")
+		}
+	case !newznab.ValidIdentity(name):
+		v.oneOf(field, name, newznab.IdentityPresets()...)
+	}
+}
+
+func validateCustomIdentity(v *validator, field, userAgent string, headers map[string]string, required bool) {
+	if !required && userAgent == "" && len(headers) == 0 {
+		return
+	}
+	// A user agent is required only by a selected custom identity; headers
+	// kept from an earlier selection stay dormant until it is selected again.
+	if required || userAgent != "" {
+		if err := newznab.ValidateIdentityUserAgent(userAgent); err != nil {
+			v.add(field+".userAgent", "%s", err)
+		}
+	}
+	if err := newznab.ValidateIdentityHeaders(headers); err != nil {
+		v.add(field+".headers", "%s", err)
+	}
 }

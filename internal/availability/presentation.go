@@ -41,6 +41,10 @@ type Status struct {
 	Counts  map[string]int   `json:"counts"`
 	Recent  []Observation    `json:"recent"`
 	Day     string           `json:"day"`
+	// FeedRequestsRequired and FeedRequestsAllowance expose the scheduled
+	// head-poll demand and the configured daily allowance.
+	FeedRequestsRequired  int `json:"feedRequestsRequired,omitempty"`
+	FeedRequestsAllowance int `json:"feedRequestsAllowance,omitempty"`
 }
 
 func (s *Service) Status(ctx context.Context) (Status, error) {
@@ -59,6 +63,10 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	}
 	if s.d.Active != nil && s.d.Active() && c.Verify {
 		out.Message = "Source checks are paused while playback is active; feed monitoring can continue."
+	}
+	if required, allowance, shortfall := feedAllowance(s.d.Feeds.FeedSources(), c.IndexerIDs, c); shortfall > 0 {
+		out.FeedRequestsRequired, out.FeedRequestsAllowance = required, allowance
+		out.Message += " " + feedAllowanceWarning(required, allowance)
 	}
 	for _, f := range s.d.Feeds.FeedSources() {
 		x := FeedStatus{ReleaseFeed: f, Selected: selected(c.IndexerIDs, f.ID)}

@@ -99,7 +99,7 @@ func collectProtected(v any, parent string, out *[]string) {
 		sort.Strings(keys)
 		for _, k := range keys {
 			value := x[k]
-			if inner, ok := value.(map[string]any); ok && k == "secretSettings" {
+			if inner, ok := value.(map[string]any); ok && (k == "secretSettings" || k == "headers") {
 				for _, sk := range sortedKeys(inner) {
 					if text, ok := inner[sk].(string); ok && text != "" {
 						*out = append(*out, text)
@@ -243,9 +243,9 @@ func (w *credentialWalker) walk(v any, path []string, parent string) error {
 		for _, k := range keys {
 			value := x[k]
 			p := appendPath(path, k)
-			if inner, ok := value.(map[string]any); ok && k == "secretSettings" {
-				// Every value of a secret-settings map is a credential,
-				// bound to the indexer that owns the map.
+			if inner, ok := value.(map[string]any); ok && (k == "secretSettings" || k == "headers") {
+				// Every value of a secret-settings or custom-header map is
+				// a credential, bound to the object that owns the map.
 				for _, sk := range sortedKeys(inner) {
 					text, ok := inner[sk].(string)
 					if !ok || text == "" {

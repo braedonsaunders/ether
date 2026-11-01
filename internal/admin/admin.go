@@ -283,6 +283,7 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("DELETE /api/auth/session", h.limitAuth(h.handleSessionDelete))
 
 	api("GET /api/config", h.handleGetConfig)
+	api("GET /api/config/identity", h.handleGetIdentity)
 	api("PUT /api/config", h.handlePutConfig)
 	api("GET /api/config/{section}", h.handleGetSection)
 	api("PUT /api/config/{section}", h.handlePutSection)

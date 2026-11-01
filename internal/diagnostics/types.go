@@ -153,6 +153,9 @@ type Settings struct {
 	RemoteAccess          bool   `json:"remoteAccess,omitempty"`
 	CertificateConfigured bool   `json:"certificateConfigured,omitempty"`
 	CacheBudgetBytes      int64  `json:"cacheBudgetBytes,omitempty"`
+	// IndexerIdentity is the indexer client-identity policy and each
+	// indexer's effective identity; preset names only, never header values.
+	IndexerIdentity string `json:"indexerIdentity,omitempty"`
 }
 
 // SessionFact is one playback session before projection. DeviceKey selects

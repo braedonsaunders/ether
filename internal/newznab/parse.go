@@ -66,7 +66,7 @@ func (r rawItem) toRelease(indexer string) core.Release {
 	rel := core.Release{
 		GUID: r.guid, Indexer: indexer, Name: name, NZBURL: nzbURL,
 		Size: r.size, PubDate: pub, Grabs: r.grabs, Password: r.password, Category: r.category,
-		TitleIDs: r.ids,
+		TitleIDs: r.ids, MediaType: categoryMedia(r.category),
 	}
 	rel.ID = releaseID(indexer, r.guid, nzbURL+name)
 	if name != "" {

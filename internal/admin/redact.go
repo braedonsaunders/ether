@@ -33,6 +33,7 @@ func RedactConfig(cfg config.Config) config.Config {
 	out.Simkl.ClientSecret = redact(out.Simkl.ClientSecret)
 	out.OpenSubtitles = redactOpenSubtitles(out.OpenSubtitles)
 	out.LLM = redactLLM(out.LLM)
+	out.ClientIdentity.Headers = redactMap(out.ClientIdentity.Headers)
 	out.Database = out.Database.Redacted()
 	if cfg.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(cfg.Usenet.Providers))
@@ -46,6 +47,7 @@ func RedactConfig(cfg config.Config) config.Config {
 		for i, ix := range cfg.Indexers {
 			ix.APIKey = redact(ix.APIKey)
 			ix.SecretSettings = redactMap(ix.SecretSettings)
+			ix.Headers = redactMap(ix.Headers)
 			out.Indexers[i] = ix
 		}
 	}
@@ -210,6 +212,7 @@ func UnredactConfig(next, prev config.Config) (config.Config, []FieldError) {
 	out.Simkl.ClientSecret = errs.restore("simkl.clientSecret", next.Simkl.ClientSecret, prev.Simkl.ClientSecret, strings.TrimSpace(next.Simkl.ClientID) == strings.TrimSpace(prev.Simkl.ClientID))
 	out.OpenSubtitles = errs.unredactOpenSubtitles(next.OpenSubtitles, prev.OpenSubtitles)
 	out.LLM = errs.unredactLLM(next.LLM, prev.LLM)
+	out.ClientIdentity.Headers = errs.restoreMap("clientIdentity.headers", next.ClientIdentity.Headers, prev.ClientIdentity.Headers, true)
 	if next.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(next.Usenet.Providers))
 		for i, p := range next.Usenet.Providers {
@@ -275,6 +278,7 @@ func (e *placeholderErrors) unredactIndexer(field string, ix config.Indexer, fla
 	}
 	ix.APIKey = e.restore(field+".apiKey", ix.APIKey, old.APIKey, bound)
 	ix.SecretSettings = e.restoreMap(field+".secretSettings", ix.SecretSettings, old.SecretSettings, bound)
+	ix.Headers = e.restoreMap(field+".headers", ix.Headers, old.Headers, bound)
 	return ix
 }
 

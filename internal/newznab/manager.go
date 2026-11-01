@@ -90,9 +90,14 @@ func (m *Manager) Reload(cfgs []config.Indexer) {
 // ApplyConfig reloads indexers and the search-cache TTL from a full
 // config snapshot; subscribe it to config.Store changes.
 func (m *Manager) ApplyConfig(cfg config.Config) {
-	if d := cfg.Resolver.SearchCacheTTL.D(); d > 0 {
+	m.opts.Identity = cfg.ClientIdentity
+	d := cfg.Resolver.SearchCacheTTL.D()
+	if d > 0 {
 		m.opts.SearchCacheTTL = d
-		for _, cl := range m.Clients() {
+	}
+	for _, cl := range m.Clients() {
+		cl.SetIdentityPolicy(cfg.ClientIdentity)
+		if d > 0 {
 			cl.SetCacheTTL(d)
 		}
 	}

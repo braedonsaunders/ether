@@ -25,27 +25,31 @@ type Config struct {
 	Posters      Posters      `json:"posters"`
 	Availability Availability `json:"availability"`
 	// SharedCache is the cluster-wide NAS policy. Mount paths stay in Cache.
-	SharedCache   *Cache        `json:"sharedCache,omitempty"`
-	Server        Server        `json:"server"`
-	Plex          Plex          `json:"plex"`
-	Usenet        Usenet        `json:"usenet"`
-	Indexers      []Indexer     `json:"indexers"`
-	Cache         Cache         `json:"cache"`
-	Catalog       Catalog       `json:"catalog"`
-	Resolver      Resolver      `json:"resolver"`
-	Quality       Quality       `json:"quality"`
-	Transcode     Transcode     `json:"transcode"`
-	Trakt         Trakt         `json:"trakt"`
-	Simkl         Simkl         `json:"simkl"`
-	OpenSubtitles OpenSubtitles `json:"openSubtitles"`
-	LLM           LLM           `json:"llm"`
-	Updates       Updates       `json:"updates"`
-	Spike         Spike         `json:"spike"`
-	Downloads     Downloads     `json:"downloads"`
-	Markers       Markers       `json:"markers"`
-	Personalize   Personalize   `json:"personalize"`
-	Extras        Extras        `json:"extras"`
-	Debrid        Debrid        `json:"debrid"`
+	SharedCache *Cache    `json:"sharedCache,omitempty"`
+	Server      Server    `json:"server"`
+	Plex        Plex      `json:"plex"`
+	Usenet      Usenet    `json:"usenet"`
+	Indexers    []Indexer `json:"indexers"`
+	// ClientIdentity is the global policy for how Ether identifies itself
+	// to Newznab and Torznab indexers. Indexers inherit it unless they
+	// override a purpose.
+	ClientIdentity ClientIdentity `json:"clientIdentity"`
+	Cache          Cache          `json:"cache"`
+	Catalog        Catalog        `json:"catalog"`
+	Resolver       Resolver       `json:"resolver"`
+	Quality        Quality        `json:"quality"`
+	Transcode      Transcode      `json:"transcode"`
+	Trakt          Trakt          `json:"trakt"`
+	Simkl          Simkl          `json:"simkl"`
+	OpenSubtitles  OpenSubtitles  `json:"openSubtitles"`
+	LLM            LLM            `json:"llm"`
+	Updates        Updates        `json:"updates"`
+	Spike          Spike          `json:"spike"`
+	Downloads      Downloads      `json:"downloads"`
+	Markers        Markers        `json:"markers"`
+	Personalize    Personalize    `json:"personalize"`
+	Extras         Extras         `json:"extras"`
+	Debrid         Debrid         `json:"debrid"`
 	// Database is node-local storage selection (SQLite or PostgreSQL).
 	Database      Database     `json:"database"`
 	IndexerSites  IndexerSites `json:"indexerSites"`
@@ -179,6 +183,14 @@ type Indexer struct {
 	// SecretSettings are the definition's password-type settings. They are
 	// sealed at rest and redacted in API responses like API keys.
 	SecretSettings map[string]string `json:"secretSettings,omitempty"`
+	// SearchIdentity and GrabIdentity override the global policy for this
+	// indexer. Empty inherits; an override applies to both TV and movies.
+	SearchIdentity string `json:"searchIdentity,omitempty"`
+	GrabIdentity   string `json:"grabIdentity,omitempty"`
+	// UserAgent and Headers form this indexer's custom identity, used only
+	// when one of its overrides is "custom".
+	UserAgent string            `json:"userAgent,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
 }
 
 // Indexer kinds (Indexer.Kind).

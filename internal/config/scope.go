@@ -32,22 +32,23 @@ func (s Scope) String() string {
 // sectionScopes classifies every top-level key of Config whose whole value
 // shares one scope.
 var sectionScopes = map[string]Scope{
-	"posters":       Shared,
-	"sharedCache":   Shared,
-	"availability":  Shared,
-	"usenet":        Shared,
-	"indexers":      Shared,
-	"catalog":       Shared,
-	"resolver":      Shared,
-	"quality":       Shared,
-	"trakt":         Shared,
-	"simkl":         Shared,
-	"openSubtitles": Shared,
-	"llm":           Shared,
-	"updates":       Shared, // incl. maxDrain: every node drains the same way
-	"markers":       Shared,
-	"personalize":   Shared,
-	"setupComplete": Shared,
+	"posters":        Shared,
+	"sharedCache":    Shared,
+	"availability":   Shared,
+	"usenet":         Shared,
+	"indexers":       Shared,
+	"clientIdentity": Shared,
+	"catalog":        Shared,
+	"resolver":       Shared,
+	"quality":        Shared,
+	"trakt":          Shared,
+	"simkl":          Shared,
+	"openSubtitles":  Shared,
+	"llm":            Shared,
+	"updates":        Shared, // incl. maxDrain: every node drains the same way
+	"markers":        Shared,
+	"personalize":    Shared,
+	"setupComplete":  Shared,
 	// Spike serves files from this node's disk.
 	"spike": Local,
 	// Each node holds its own connection settings; the URL is sealed.
