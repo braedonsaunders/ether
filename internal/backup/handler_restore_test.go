@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
 type restartCall struct {
@@ -23,6 +24,9 @@ type restartCall struct {
 func guidedServer(t *testing.T) (*Service, string, *[]restartCall) {
 	t.Helper()
 	s := standalone(t)
+	if store.DialectOf(s.db) == store.Postgres {
+		t.Skip("one-click restore is SQLite only; PostgreSQL restores through the guided cluster flow")
+	}
 	if err := os.WriteFile(s.configPath, []byte(`{"server":{"port":32455,"bindAddress":"10.0.0.5"},"plex":{"token":"private"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
