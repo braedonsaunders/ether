@@ -66,7 +66,13 @@ type Service struct {
 	node atomic.Pointer[Node]
 	// restoring serialises uploaded restores (Handler).
 	restoring sync.Mutex
+	// restart restarts the server to apply a requested restore, at once or
+	// once nobody is watching (SetRestart).
+	restart func(reason string, whenIdle bool) error
 }
+
+// SetRestart wires the server restart a guided restore needs.
+func (s *Service) SetRestart(fn func(reason string, whenIdle bool) error) { s.restart = fn }
 
 // Node identifies the cluster node a Service runs on.
 type Node struct {

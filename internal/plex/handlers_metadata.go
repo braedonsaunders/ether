@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -56,17 +58,45 @@ func (s *Server) itemContainer(t core.MediaType) *model.MediaContainer {
 
 // titleVisible reports whether the user may see the title's section.
 func (s *Server) titleVisible(u *core.User, t *core.Title) bool {
-	if !s.titleAllowed(u, t) {
-		return false
+	return s.visibility().TitleAllowed(u, t) && s.plexMetaRatingAllowed(u, t)
+}
+
+// metadataKeys parses a detail key. Numeric rating keys stay as they are.
+// A plex:// guid (More Ways to Watch keeps the discover identity and asks
+// this server for it) resolves through the local mapping. A variant part id
+// resolves to the title that owns that part, so a re-read of the part the
+// client just selected still shows the subtitle.
+func (s *Server) metadataKeys(ctx context.Context, raw string) ([]core.RatingKey, error) {
+	raw = strings.TrimSpace(raw)
+	if decoded, err := url.PathUnescape(raw); err == nil && decoded != "" {
+		raw = decoded
 	}
-	sec, ok := s.sectionFor(t.Type)
-	return !ok || s.canSeeSection(u, sec.ID)
+	if strings.Contains(raw, "://") {
+		if s.d.PlexGUID == nil {
+			return nil, errors.New("no keys")
+		}
+		k, err := s.d.PlexGUID.ExactKey(ctx, raw)
+		if err != nil {
+			return nil, err
+		}
+		return []core.RatingKey{k}, nil
+	}
+	keys, err := parseKeys(raw)
+	if err != nil {
+		return nil, err
+	}
+	for i, k := range keys {
+		if mapped, rel, ok := s.partTitle(int64(k)); ok && rel != "" {
+			keys[i] = mapped
+		}
+	}
+	return keys, nil
 }
 
 func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
-	keys, err := parseKeys(chi.URLParam(r, "key"))
+	keys, err := s.metadataKeys(ctx, chi.URLParam(r, "key"))
 	if err != nil {
 		writeHTTPError(w, http.StatusNotFound)
 		return
@@ -202,7 +232,7 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 		}
 	}
 	if related && s.d.Recommender != nil {
-		if hubs, err := s.d.Recommender.Related(ctx, pr.User, t.Key, 12); err == nil {
+		if hubs, err := s.detailRelated(ctx, pr).Rows(ctx, pr.User, t.Key, 12); err == nil {
 			md.Related = &model.Related{Hub: s.renderHubs(ctx, pr, hubs, hubCtx{related: t.Key})}
 		} else {
 			s.log.Debug("related hubs", "key", t.Key, "err", err)
@@ -225,20 +255,9 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 // sameDayUnavailable is a local visibility lookup. Merely browsing must never
 // spend search quota trying to discover an upload.
 func (s *Server) sameDayUnavailable(ctx context.Context, pr *Request, t *core.Title) bool {
-	if t == nil || t.Type != core.TypeEpisode || t.Released.IsZero() {
-		return false
-	}
-	if s.d.FilterAvailable != nil {
-		return len(s.d.FilterAvailable(ctx, []core.Title{*t})) == 0
-	}
-	if age := s.now().Sub(t.Released); age < 0 || age >= 24*time.Hour {
-		return false
-	}
-	if av, ok := s.d.Variants.(core.AvailabilitySource); ok {
-		known, available := av.Available(ctx, t.Key)
-		return known && !available
-	}
-	return false
+	var source core.AvailabilitySource
+	source, _ = s.d.Variants.(core.AvailabilitySource)
+	return experience.SameDayUnavailable(ctx, t, s.now(), s.d.FilterAvailable, source)
 }
 
 // showOnDeck picks the episode to resume or start next.
@@ -248,29 +267,7 @@ func (s *Server) showOnDeck(ctx context.Context, pr *Request, show core.RatingKe
 		return nil, nil
 	}
 	st := s.stateFor(ctx, pr, eps)
-	lastWatched := -1
-	for i, e := range eps {
-		ws := st[e.Key]
-		if ws.ViewOffset > 0 && ws.ViewCount == 0 {
-			return &eps[i], st
-		}
-		if ws.ViewCount > 0 {
-			lastWatched = i
-		}
-	}
-	for i := lastWatched + 1; i < len(eps); i++ {
-		if eps[i].Season > 0 && st[eps[i].Key].ViewCount == 0 && !s.sameDayUnavailable(ctx, pr, &eps[i]) {
-			return &eps[i], st
-		}
-	}
-	if lastWatched < 0 {
-		for i := range eps {
-			if eps[i].Season > 0 && !s.sameDayUnavailable(ctx, pr, &eps[i]) {
-				return &eps[i], st
-			}
-		}
-	}
-	return nil, nil
+	return experience.ShowOnDeck(eps, st, func(t *core.Title) bool { return s.sameDayUnavailable(ctx, pr, t) }), st
 }
 
 const detailWarmWaitBudget = 4 * time.Second
@@ -587,7 +584,9 @@ func (s *Server) handleSimilar(w http.ResponseWriter, r *http.Request) {
 	if n, _ := strconv.Atoi(r.URL.Query().Get("count")); n > 0 {
 		limit = min(n, 100)
 	}
-	items, err := s.d.Catalog.Similar(ctx, k, limit)
+	items, err := s.recommendationCandidates(ctx, pr.User, limit, func(ctx context.Context, fetch int) ([]core.Title, error) {
+		return s.d.Catalog.Similar(ctx, k, fetch)
+	})
 	if err != nil && !errors.Is(err, core.ErrNotFound) {
 		s.writeErr(w, r, err)
 		return
@@ -630,110 +629,46 @@ func (s *Server) handleItemOnDeck(w http.ResponseWriter, r *http.Request) {
 // Collections
 
 func (s *Server) collection(ctx context.Context, u *core.User, k core.RatingKey) (*core.Collection, error) {
-	c, err := s.collectionRaw(ctx, u, k)
-	if err != nil {
-		return nil, err
-	}
-	if c.Upcoming {
-		items, err := s.scopedCollectionItems(ctx, u, k)
-		if err != nil {
-			return nil, err
-		}
-		c.ChildCount = len(items)
-	}
-	return c, nil
+	return s.collectionSelection().Get(ctx, u, k, collectionDevice(ctx), true)
 }
 
 func (s *Server) collectionRaw(ctx context.Context, u *core.User, k core.RatingKey) (*core.Collection, error) {
-	if s.d.Collections == nil {
-		return nil, core.ErrNotFound
-	}
-	c, err := s.d.Collections.Get(ctx, u, k)
-	if err != nil {
-		return nil, err
-	}
-	if !s.collectionVisible(u, c) {
-		return nil, core.ErrNotFound
-	}
-	return c, nil
+	return s.collectionSelection().Get(ctx, u, k, "", false)
+}
+
+func collectionDevice(ctx context.Context) string {
+	pr := FromContext(ctx)
+	return core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)
+}
+
+func (s *Server) collectionSelection() experience.ScopedCollection {
+	return experience.ScopedCollection{Collections: s.d.Collections, Visibility: s.visibility(), Now: s.now, Unrestricted: func(viewer *core.User) bool { return !s.viewerRestricted(viewer) }}
 }
 
 func (s *Server) scopedCollectionItems(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
-	pr := FromContext(ctx)
-	p, ok := s.d.Collections.(core.CollectionPlaceholder)
-	if !ok || !p.AllowsPlaceholders(ctx, u, k, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)) {
-		return nil, core.ErrNotFound
-	}
-	page, err := s.d.Collections.Items(ctx, u, k, 0, 5000)
-	if err != nil {
-		return nil, err
-	}
-	allowed := make([]core.Title, 0, len(page.Items))
-	for _, t := range page.Items {
-		if !s.titleVisible(u, &t) || t.Released.IsZero() {
-			continue
-		}
-		if t.Released.After(s.now()) {
-			if _, ok := s.d.Collections.(core.CollectionPlaceholder); !ok {
-				continue
-			}
-		} else if len(s.availableForViewer(ctx, u, []core.Title{t})) == 0 {
-			continue
-		}
-		allowed = append(allowed, t)
-	}
-	return allowed, nil
+	return s.collectionSelection().Items(ctx, u, k, collectionDevice(ctx))
 }
 
 func (s *Server) lookupPlaceholder(ctx context.Context, pr *Request, key core.RatingKey, raw string) (*core.Title, core.RatingKey, error) {
-	p, ok := s.d.Collections.(core.CollectionPlaceholder)
-	if !ok {
-		return nil, 0, core.ErrNotFound
-	}
-	device := core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)
-	var title *core.Title
-	var ck core.RatingKey
-	var err error
+	var requested *core.RatingKey
 	if raw != "" {
-		ck, err = core.ParseRatingKey(raw)
-		if err == nil {
-			title, err = p.Placeholder(ctx, pr.User, ck, key, device)
+		collection, err := core.ParseRatingKey(raw)
+		if err != nil {
+			return nil, 0, core.ErrNotFound
 		}
-	} else {
-		title, ck, err = p.FindPlaceholder(ctx, pr.User, key, device)
+		requested = &collection
 	}
-	if err != nil || title == nil || !s.titleVisible(pr.User, title) {
-		return nil, 0, core.ErrNotFound
-	}
-	if _, err = s.collectionRaw(ctx, pr.User, ck); err != nil {
-		return nil, 0, core.ErrNotFound
-	}
-	return title, ck, nil
+	return s.collectionSelection().Placeholder(ctx, pr.User, key, requested, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device))
 }
 
 func (s *Server) scopedCollectionCounts(ctx context.Context, u *core.User, cs []core.Collection) []core.Collection {
-	out := make([]core.Collection, 0, len(cs))
-	for _, c := range cs {
-		if c.Upcoming {
-			items, err := s.scopedCollectionItems(ctx, u, c.Key)
-			if err != nil || len(items) == 0 {
-				continue
-			}
-			c.ChildCount = len(items)
-		}
-		out = append(out, c)
-	}
-	return out
+	return s.collectionSelection().Counts(ctx, u, cs, collectionDevice(ctx))
 }
 
 // collectionVisible reports whether u may see the section a movie or show
 // collection belongs to (mixed collections have no single section).
 func (s *Server) collectionVisible(u *core.User, c *core.Collection) bool {
-	if c.Type != core.TypeMovie && c.Type != core.TypeShow {
-		return true
-	}
-	sec, ok := s.sectionFor(c.Type)
-	return !ok || s.canSeeSection(u, sec.ID)
+	return s.visibility().CollectionAllowed(u, c)
 }
 
 func (s *Server) collectionMetadata(c *core.Collection) model.Metadata {
@@ -857,19 +792,7 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request, k core.
 		return
 	}
 	offset, size := pr.pageOf(0)
-	var page core.Page
-	if c.Upcoming {
-		items, e := s.scopedCollectionItems(ctx, pr.User, k)
-		if e != nil {
-			s.writeErr(w, r, e)
-			return
-		}
-		start := min(offset, len(items))
-		end := min(start+size, len(items))
-		page = core.Page{Items: items[start:end], Total: len(items)}
-	} else {
-		page, err = s.d.Collections.Items(ctx, pr.User, k, offset, size)
-	}
+	page, err := s.collectionSelection().Page(ctx, pr.User, c, k, collectionDevice(ctx), offset, size)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return

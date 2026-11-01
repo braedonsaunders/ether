@@ -28,18 +28,19 @@ type SyncProgress struct {
 
 // Stats is the admin-UI snapshot of the mirror.
 type Stats struct {
-	Trending           []TrendStatus `json:"trending"`
-	Movies             int           `json:"movies"`
-	Shows              int           `json:"shows"`
-	Seasons            int           `json:"seasons"`
-	Episodes           int           `json:"episodes"`
-	HomeReleaseChecked int           `json:"homeReleaseChecked"`
-	HomeReleasePending int           `json:"homeReleasePending"`
-	BrowsableMovies    int           `json:"browsableMovies"`
-	BrowsableShows     int           `json:"browsableShows"`
-	Collections        int           `json:"collections"`
-	LastSync           time.Time     `json:"lastSync,omitempty"`
-	Sync               SyncProgress  `json:"sync"`
+	Trending           []TrendStatus     `json:"trending"`
+	Movies             int               `json:"movies"`
+	Shows              int               `json:"shows"`
+	Seasons            int               `json:"seasons"`
+	Episodes           int               `json:"episodes"`
+	HomeReleaseChecked int               `json:"homeReleaseChecked"`
+	HomeReleasePending int               `json:"homeReleasePending"`
+	BrowsableMovies    int               `json:"browsableMovies"`
+	BrowsableShows     int               `json:"browsableShows"`
+	Collections        int               `json:"collections"`
+	LastSync           time.Time         `json:"lastSync,omitempty"`
+	Sync               SyncProgress      `json:"sync"`
+	YearCorrection     MovieYearProgress `json:"yearCorrection"`
 }
 
 func cloneStats(s Stats) Stats {
@@ -64,8 +65,21 @@ func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
 
 	if cached.ready && ((cached.gen == gen && cached.minute == minBucket) || (syncing && !cached.fetchedAt.IsZero() && now.Sub(cached.fetchedAt) < 2*time.Second)) {
 		s := cloneStats(cached.stats)
-		s.Sync = c.SyncProgress()
-		return s, nil
+		return c.finishStats(ctx, s), nil
+	}
+	if cached.ready && cached.stats.Movies+cached.stats.Shows+cached.stats.Seasons+cached.stats.Episodes >= staleCountMin {
+		// The counts walk the whole catalogue. Serve the last ones and
+		// recount behind the read, at most once per recountEvery, as browse
+		// totals and facets do.
+		if now.Sub(cached.fetchedAt) >= recountEvery {
+			_ = c.hydrate(ctx, "stats", 0, func(ctx context.Context) error {
+				_, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
+					return c.loadStats(ctx)
+				})
+				return err
+			})
+		}
+		return c.finishStats(ctx, cloneStats(cached.stats)), nil
 	}
 
 	s, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
@@ -77,14 +91,17 @@ func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
 		c.cacheMu.RUnlock()
 		if fallback.ready {
 			out := cloneStats(fallback.stats)
-			out.Sync = c.SyncProgress()
-			return out, nil
+			return c.finishStats(ctx, out), nil
 		}
 		return s, err
 	}
-	out := cloneStats(s)
-	out.Sync = c.SyncProgress()
-	return out, nil
+	return c.finishStats(ctx, cloneStats(s)), nil
+}
+
+func (c *Catalog) finishStats(ctx context.Context, s Stats) Stats {
+	s.Sync = c.SyncProgress()
+	s.YearCorrection = c.movieYearProgress(ctx)
+	return s
 }
 
 func (c *Catalog) loadStats(ctx context.Context) (Stats, error) {
@@ -121,7 +138,7 @@ func (c *Catalog) loadStats(ctx context.Context) (Stats, error) {
 		       COALESCE(SUM(CASE WHEN h.checked IS NULL OR h.checked=0 THEN 1 ELSE 0 END), 0)
 		FROM catalog_titles t
 		LEFT JOIN catalog_home_release h ON h.key=t.key
-		WHERE t.type='movie' AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=?`, c.now().Unix()).Scan(&s.HomeReleaseChecked, &s.HomeReleasePending); err != nil {
+		WHERE t.type='movie' AND t.adult=0 AND t.release_known=1 AND t.released_ts<=?`, c.now().Unix()).Scan(&s.HomeReleaseChecked, &s.HomeReleasePending); err != nil {
 		return s, err
 	}
 	if v := c.getMeta(ctx, "last_sync"); v != "" {
@@ -161,6 +178,16 @@ func (c *Catalog) SyncProgress() SyncProgress {
 // WithResumeSchedule the initial sync waits until the interval has passed
 // since the last recorded sync.
 func (c *Catalog) Run(ctx context.Context) {
+	if err := c.rankRatings(ctx); err != nil && ctx.Err() == nil {
+		c.log.Error("catalog: re-rank content ratings", "err", err)
+	}
+	go func() {
+		if err := c.backfillChildRatings(ctx); err != nil && ctx.Err() == nil {
+			c.log.Warn("catalog: season and episode ratings", "err", err)
+		}
+	}()
+	go c.refreshRatingsLoop(ctx)
+	go c.correctMovieYears(ctx)
 	full := schedule.New(c.now(), c.untilDue(ctx))
 	// Preserve the existing resume behavior while the gate is off. If the
 	// owner enables it during the wait, start background backfill promptly.
@@ -242,7 +269,7 @@ func (c *Catalog) untilDue(ctx context.Context) time.Duration {
 var ErrSyncInProgress = fmt.Errorf("catalog: sync already in progress")
 
 func (c *Catalog) Sync(ctx context.Context) error {
-	if c.client == nil {
+	if c.tmdb() == nil {
 		return fmt.Errorf("catalog: sync: no TMDB client")
 	}
 	if !c.syncing.CompareAndSwap(false, true) {
@@ -347,7 +374,7 @@ func (c *Catalog) syncSlice(ctx context.Context, tv bool, params tmdb.DiscoverPa
 		var titles []core.Title
 		totalPages := 0
 		if tv {
-			res, err := c.client.DiscoverTV(ctx, p)
+			res, err := c.tmdb().DiscoverTV(ctx, p)
 			if err != nil {
 				return 0, err
 			}
@@ -359,7 +386,7 @@ func (c *Catalog) syncSlice(ctx context.Context, tv bool, params tmdb.DiscoverPa
 				titles = append(titles, c.tvToTitle(ctx, s))
 			}
 		} else {
-			res, err := c.client.DiscoverMovies(ctx, p)
+			res, err := c.tmdb().DiscoverMovies(ctx, p)
 			if err != nil {
 				return 0, err
 			}
@@ -429,7 +456,7 @@ func (c *Catalog) qualifiesNewRelease(t core.Title) bool {
 // long-term vote counts to accumulate. Errors on optional endpoints are
 // ignored so minimal test fixtures are unaffected.
 func (c *Catalog) syncNewReleases(ctx context.Context) {
-	if c.client == nil || ctx.Err() != nil {
+	if c.tmdb() == nil || ctx.Err() != nil {
 		return
 	}
 	var batch []core.Title
@@ -465,7 +492,7 @@ func (c *Catalog) syncNewReleases(ctx context.Context) {
 // followed by the most popular and most-voted titles. Settled titles are
 // marked detail=1 and never re-queried.
 func (c *Catalog) WarmDetails(ctx context.Context, limit int) (int, error) {
-	if c.client == nil || limit <= 0 {
+	if c.tmdb() == nil || limit <= 0 {
 		return 0, nil
 	}
 	now := c.now()
@@ -474,7 +501,7 @@ func (c *Catalog) WarmDetails(ctx context.Context, limit int) (int, error) {
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT key FROM catalog_titles
 		WHERE browsable=1 AND adult=0 AND type IN ('movie','show')
-		  AND released_ts<>0 AND released_ts<=?
+		  AND release_known=1 AND released_ts<=?
 		  AND (detail=0 OR (type='show' AND status='Returning Series' AND detail_at>0 AND detail_at<?))
 		ORDER BY CASE WHEN detail=0 AND released_ts>=? THEN 0 WHEN detail=0 THEN 1 ELSE 2 END ASC,
 		         popularity DESC, vote_count DESC, key ASC
@@ -515,10 +542,11 @@ type personCreditsTMDB interface {
 // /person/{id}/combined_credits on first browse when the local mirror holds
 // only a few detail-enriched titles for them.
 func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
-	if personID <= 0 || c.client == nil {
+	client := c.tmdb()
+	if personID <= 0 || client == nil {
 		return
 	}
-	pc, ok := c.client.(personCreditsTMDB)
+	pc, ok := client.(personCreditsTMDB)
 	if !ok {
 		return
 	}
@@ -552,12 +580,15 @@ func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
 	if err != nil || credits == nil {
 		return
 	}
-	var personName, personThumb string
+	var personName, personThumb, personIMDB string
 	_ = c.db.QueryRowContext(ctx, `SELECT name, thumb FROM catalog_credits WHERE person_tmdb=? AND name<>'' LIMIT 1`, personID).Scan(&personName, &personThumb)
 	if personName == "" {
-		if pd, ok := c.client.(personDetailsSource); ok {
+		if pd, ok := client.(personDetailsSource); ok {
 			if p, err := pd.PersonDetails(bctx, personID); err == nil && p != nil {
 				personName, personThumb = p.Name, p.ProfilePath
+				if p.ID == personID && validPersonIMDB(p.IMDBID) {
+					personIMDB = p.IMDBID
+				}
 			}
 		}
 	}
@@ -610,18 +641,24 @@ func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
 	if len(summaries) > 0 {
 		_ = c.upsertMany(ctx, summaries, upsertOpts{browsable: true})
 	}
-	if len(links) == 0 {
+	if len(links) == 0 && personIMDB == "" {
 		// Hydration succeeded but there was nothing to persist.
 		stampHydrated()
 	}
-	if len(links) > 0 {
+	if len(links) > 0 || personIMDB != "" {
 		tx, err := c.db.BeginTx(ctx, nil)
 		if err != nil {
 			c.log.Warn("catalog: begin person credits", "person", personID, "err", err)
 		} else {
 			defer tx.Rollback() // after Commit this returns ErrTxDone, ignorable
 			var insertErr error
+			if personIMDB != "" {
+				_, insertErr = tx.ExecContext(ctx, `INSERT INTO catalog_people(person_tmdb,imdb) VALUES(?,?) ON CONFLICT(person_tmdb) DO UPDATE SET imdb=excluded.imdb`, personID, personIMDB)
+			}
 			for _, l := range links {
+				if insertErr != nil {
+					break
+				}
 				if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_credits(key,person_tmdb,name,role,kind,ord,thumb) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
 					int64(l.key), personID, personName, l.role, l.kind, l.ord, personThumb); err != nil {
 					insertErr = err
@@ -638,4 +675,18 @@ func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
 			}
 		}
 	}
+}
+
+func validPersonIMDB(id string) bool {
+	if len(id) < 9 || len(id) > 14 || !strings.HasPrefix(id, "nm") {
+		return false
+	}
+	nonzero := false
+	for _, c := range id[2:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+		nonzero = nonzero || c != '0'
+	}
+	return nonzero
 }

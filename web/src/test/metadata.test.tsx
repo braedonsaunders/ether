@@ -309,8 +309,23 @@ describe("Metadata artwork studio", () => {
     );
   });
 
-  it("preserves the old Home URL and points navigation to /home", async () => {
-    renderAppWith("/home-screens", () => undefined);
+  it("keeps the Plex metadata switch off the Artwork page", async () => {
+    renderAppWith("/metadata/artwork", () => undefined);
+    await screen.findByLabelText("Ether posters", {}, WAIT);
+    expect(screen.queryByLabelText("Use Plex's metadata for Plex apps")).toBeNull();
+  });
+
+  it("saves the Plex metadata switch from Apps › Plex › Account", async () => {
+    const { fake } = renderAppWith("/apps/plex/account", () => undefined);
+    const toggle = await screen.findByLabelText("Use Plex's metadata for Plex apps", {}, WAIT);
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(calls(fake, "PUT", "/config/plex")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/plex")[0]!.body).toEqual({ usePlexMetadata: true });
+  });
+
+  it("opens Home at /home", async () => {
+    renderAppWith("/home", () => undefined);
     expect(await screen.findByRole("heading", { name: "Home" }, WAIT)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/home");
   });

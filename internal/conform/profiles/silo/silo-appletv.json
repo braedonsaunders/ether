@@ -1,0 +1,4905 @@
+{
+  "protocol": "silo",
+  "client": "silo-appletv",
+  "source": "captured",
+  "headers": {},
+  "flows": {
+    "captured": [
+      {
+        "name": "captured-000001",
+        "method": "GET",
+        "path": "/api/v2/theme/branding",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        }
+      },
+      {
+        "name": "captured-000002",
+        "method": "GET",
+        "path": "/api/v2/system/identity",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        }
+      },
+      {
+        "name": "captured-000003",
+        "method": "GET",
+        "path": "/api/v2/auth/providers",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        }
+      },
+      {
+        "name": "captured-000004",
+        "method": "GET",
+        "path": "/api/v2/auth/oauth/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        }
+      },
+      {
+        "name": "captured-000005",
+        "method": "GET",
+        "path": "/api/v2/auth/device/capability",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000006",
+        "method": "GET",
+        "path": "/api/v2/system/info",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        }
+      },
+      {
+        "name": "captured-000008",
+        "method": "POST",
+        "path": "/api/v2/auth/device/start",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "device_name": "Apple TV",
+          "device_platform": "tvOS"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000010",
+        "method": "POST",
+        "path": "/api/v2/auth/device/poll",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "device_code": "${redacted}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000089",
+        "method": "POST",
+        "path": "/api/v2/auth/login",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "password": "${password}",
+          "username": "${username}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000090",
+        "method": "POST",
+        "path": "/api/v2/auth/device/cancel",
+        "headers": {
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "device_code": "${redacted}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000091",
+        "method": "GET",
+        "path": "/api/v2/account/me",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000092",
+        "method": "GET",
+        "path": "/api/v2/profiles",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000093",
+        "method": "GET",
+        "path": "/api/v2/capabilities/metadata-ai",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000094",
+        "method": "GET",
+        "path": "/api/v2/settings/overlay-config",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000095",
+        "method": "GET",
+        "path": "/api/v2/subtitles/ai/status",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000096",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=playback.preferred_quality&keys=playback.max_bitrate_kbps&keys=playback.audio_language&keys=playback.intro_skip_mode&keys=playback.auto_skip_credits&keys=playback.auto_play_next&keys=playback.next_up_prompt_seconds&keys=playback.subtitle_appearance&keys=player.hdr_enabled&keys=player.dolby_vision_enabled&keys=player.seek_cache_enabled&keys=player.playback_speed&keys=player.subtitle_sync_ms&keys=player.video_gravity&keys=player.orientation_mode&keys=playback.auto_skip_recap",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000097",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=ui.card_overlays&keys=ui.card_overlays_enabled",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000098",
+        "method": "GET",
+        "path": "/api/v2/user/libraries",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000099",
+        "method": "GET",
+        "path": "/api/v2/recommendations/discover?backdrop_width=2688&image_size=medium&logo_width=1760",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000100",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=ui.disabled_library_ids",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000101",
+        "method": "GET",
+        "path": "/api/v2/home/sections?backdrop_width=2688&image_size=medium&item_limit=20&logo_width=1760",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000102",
+        "method": "GET",
+        "path": "/api/v2/images/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000103",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=playback.buffering_quality_mode",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000104",
+        "method": "GET",
+        "path": "/api/v2/catalog?backdrop_width=2688&library_id=${id_2}&limit=100&match=all&poster_width=520&sort=title&source=query&type=series",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000105",
+        "method": "GET",
+        "path": "/api/v2/library/1/sections?backdrop_width=2688&image_size=medium&item_limit=20&logo_width=1760",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000106",
+        "method": "GET",
+        "path": "/api/v2/catalog?backdrop_width=2688&library_id=${id_3}&limit=100&match=all&poster_width=520&sort=title&source=query&type=movie",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000107",
+        "method": "GET",
+        "path": "/api/v2/library/2/sections?backdrop_width=2688&image_size=medium&item_limit=20&logo_width=1760",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000108",
+        "method": "GET",
+        "path": "/api/v2/requests/status",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000109",
+        "method": "GET",
+        "path": "/api/v2/settings/contract/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000110",
+        "method": "GET",
+        "path": "/api/v2/home/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000113",
+        "method": "GET",
+        "path": "/api/v2/catalog/items/movie-tmdb-45745?backdrop_width=2688&logo_width=1760&photo_width=400&poster_width=920",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000114",
+        "method": "GET",
+        "path": "/api/v2/catalog/items/movie-tmdb-10378?backdrop_width=2688&logo_width=1760&photo_width=400&poster_width=920",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000115",
+        "method": "GET",
+        "path": "/api/v2/shuffles/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000117",
+        "method": "GET",
+        "path": "/api/v2/playback/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000118",
+        "method": "GET",
+        "path": "/api/v2/watch-together/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000121",
+        "method": "GET",
+        "path": "/api/v2/subtitles/providers/status",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000122",
+        "method": "GET",
+        "path": "/api/v2/catalog/items/series-tvdb-78927?backdrop_width=2688&logo_width=1760&photo_width=400&poster_width=920",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000131",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=nav.primary_menu&keys=nav.shortcuts&keys=ui.card_presentation",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000133",
+        "method": "GET",
+        "path": "/api/v2/playback/connection",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000134",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=player.video_skip_back_seconds&keys=player.video_skip_forward_seconds&keys=player.audiobook_skip_back_seconds&keys=player.audiobook_skip_forward_seconds",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000135",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=catalog.hide_unwatched_episode_images&keys=catalog.hide_unwatched_episode_overviews",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000136",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=ui.theme_music_enabled&keys=ui.theme_music_loop",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000138",
+        "method": "GET",
+        "path": "/api/v2/settings/values/effective?keys=ui.title_art",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000149",
+        "method": "GET",
+        "path": "/api/v2/watch/movie-tmdb-45745",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000150",
+        "method": "GET",
+        "path": "/api/v2/recommendations/similar/movie-tmdb-45745?backdrop_width=2688&limit=12&poster_width=440",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000158",
+        "method": "POST",
+        "path": "/api/v2/playback/start",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "audio_track_id": "file:3:audio:0",
+          "audio_track_index": 0,
+          "bandwidth_estimate_kbps": 89223,
+          "bandwidth_estimate_source": "probe",
+          "client_capabilities": {
+            "audio_evidence": "declared",
+            "codecs_audio": [
+              "aac",
+              "ac3",
+              "eac3",
+              "mp3",
+              "mp2",
+              "flac",
+              "opus",
+              "vorbis",
+              "alac",
+              "truehd",
+              "mlp",
+              "dts",
+              "dca",
+              "dts-hd",
+              "dtshd",
+              "pcm",
+              "pcm_s16le",
+              "pcm_s24le",
+              "pcm_f32le",
+              "pcm_bluray"
+            ],
+            "codecs_video": [
+              "h264",
+              "hevc",
+              "av1",
+              "vp9",
+              "vp8",
+              "mpeg4",
+              "mpeg2video",
+              "vc1",
+              "qtrle",
+              "msmpeg4v1",
+              "msmpeg4v2",
+              "msmpeg4v3",
+              "wmv1",
+              "wmv2",
+              "wmv3"
+            ],
+            "codecs_video_hardware": [
+              "h264",
+              "hevc"
+            ],
+            "containers": [
+              "mp4",
+              "m4v",
+              "mov",
+              "mkv",
+              "matroska",
+              "avi",
+              "mpegts",
+              "ts",
+              "m2ts",
+              "mts",
+              "3gp",
+              "3g2",
+              "mpeg",
+              "vob",
+              "ogg",
+              "webm",
+              "flv",
+              "mp3",
+              "aac",
+              "m4a",
+              "m4b",
+              "flac",
+              "alac",
+              "wav",
+              "opus"
+            ],
+            "hdr": true,
+            "hdr_details": {
+              "dolby_vision_profiles": [],
+              "hdr10": true,
+              "hdr10_plus": false,
+              "hlg": false
+            },
+            "max_resolution": "2160p",
+            "video_decode": [],
+            "video_evidence": "declared"
+          },
+          "client_features": [
+            "playback_plan_v3",
+            "client_video_transformations_v1",
+            "playback_route_diagnostics",
+            "device_quirks_v1",
+            "seek_reanchor_v1",
+            "output_change_v1",
+            "direct_stream_resume_v1",
+            "header_authenticated_media_v1",
+            "software_video_decode_v1",
+            "embedded_subtitles_v1",
+            "hls_subtitle_renditions_v1",
+            "authorized_media_origins_v1",
+            "buffering_quality_v1"
+          ],
+          "client_playback_context": {
+            "app_build": "1",
+            "app_channel": "dev",
+            "app_version": "1.0.0",
+            "deliveries": {
+              "hls": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "hls",
+                  "mpegts",
+                  "fmp4",
+                  "mp4"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              },
+              "original_http": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "mp3",
+                  "mp2",
+                  "flac",
+                  "opus",
+                  "vorbis",
+                  "alac",
+                  "truehd",
+                  "mlp",
+                  "dts",
+                  "dca",
+                  "dts-hd",
+                  "dtshd",
+                  "pcm",
+                  "pcm_s16le",
+                  "pcm_s24le",
+                  "pcm_f32le",
+                  "pcm_bluray"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "m4v",
+                  "mov",
+                  "mkv",
+                  "matroska",
+                  "avi",
+                  "mpegts",
+                  "ts",
+                  "m2ts",
+                  "mts",
+                  "3gp",
+                  "3g2",
+                  "mpeg",
+                  "vob",
+                  "ogg",
+                  "webm",
+                  "flv",
+                  "mp3",
+                  "aac",
+                  "m4a",
+                  "m4b",
+                  "flac",
+                  "alac",
+                  "wav",
+                  "opus"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": true,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "native_embedded": [
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mp4",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "m4v",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mov",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "subrip",
+                        "ass",
+                        "ssa",
+                        "webvtt",
+                        "hdmv_pgs_subtitle",
+                        "dvd_subtitle",
+                        "dvb_subtitle"
+                      ],
+                      "container": "mkv",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "webvtt"
+                      ],
+                      "container": "webm",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    }
+                  ],
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_dv81",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "profile7_rpu_converted_to_profile81",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  },
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_hdr10",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "dolby_vision_metadata_removed",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  }
+                ],
+                "validated_claims": [
+                  "authenticated_stream_headers",
+                  "client_subtitle_overlay",
+                  "client_managed_dynamic_range_v1",
+                  "client_selected_audio_track_v1"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc",
+                  "av1",
+                  "vp9",
+                  "vp8",
+                  "mpeg4",
+                  "mpeg2video",
+                  "vc1",
+                  "qtrle",
+                  "msmpeg4v1",
+                  "msmpeg4v2",
+                  "msmpeg4v3",
+                  "wmv1",
+                  "wmv2",
+                  "wmv3"
+                ]
+              },
+              "progressive": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "alac",
+                  "mp3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "mov",
+                  "m4v"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              }
+            },
+            "device": {
+              "manufacturer": "Apple",
+              "model": "AppleTV14,1",
+              "os_version": "27.2.0",
+              "platform": "tvos",
+              "platform_details": {
+                "machine": "AppleTV14,1",
+                "os_name": "tvos"
+              }
+            },
+            "form_factor": "tv",
+            "output": {
+              "current_sink": "${id_12}",
+              "hdr_details": {
+                "dolby_vision_profiles": [],
+                "hdr10": true,
+                "hdr10_plus": false,
+                "hlg": false
+              },
+              "output_context_id": "${id_13}",
+              "sink_type": "HDMIOutput"
+            },
+            "protocol_version": 3
+          },
+          "file_id": "${id_8}",
+          "installation_id": "${id_10}",
+          "metered": false,
+          "playback_attempt_id": "apple:${id_14}",
+          "profile_id": "${id_1}",
+          "protocol_version": 3,
+          "quality_preference": "auto",
+          "start_position": 236.711453,
+          "subtitle_fidelity_preference": "preserve",
+          "subtitle_track_id": "file:3:subtitle:1",
+          "subtitle_track_index": 1
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000161",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=0-33554431",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000162",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=-65536",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000163",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=319110291-352664722",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000165",
+        "method": "GET",
+        "path": "/api/v2/playback/sessions/${id_18}/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000167",
+        "method": "POST",
+        "path": "/api/v2/playback/sessions/${id_17}/control/ws-ticket",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000168",
+        "method": "GET",
+        "path": "/api/v2/playback/sessions/${id_17}/control/ws",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "Upgrade",
+          "Sec-Websocket-Extensions": "permessage-deflate",
+          "Sec-Websocket-Key": "${websocket_key}",
+          "Sec-Websocket-Protocol": "silo.playback-control.v2, silo.ticket.${ticket}",
+          "Sec-Websocket-Version": "13",
+          "Upgrade": "websocket",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "fixture_only": true,
+        "expected_status": 101
+      },
+      {
+        "name": "captured-000170",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=33554432-67108863",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000171",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=67108864-100663295",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000175",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {},
+          "event": "first_frame",
+          "event_id": "${id_20}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_19}",
+          "plan_attempt_key": "${id_15}",
+          "plan_id": "plan:${id_16}",
+          "playback_attempt_id": "apple:${id_14}",
+          "protocol_version": 3,
+          "session_id": "${id_17}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000177",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=352664723-386219154",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000182",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=386219155-419773586",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000183",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 245.882089209,
+          "sequence": 1
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000184",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=419773587-453328018",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000187",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=453328019-486882450",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000188",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 256.282213126,
+          "sequence": 2
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000190",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=486882451-520436882",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000191",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=520436883-553991314",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000192",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 266.98218829300004,
+          "sequence": 3
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000193",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=553991315-587545746",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000194",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=587545747-621100178",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000195",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=621100179-654654610",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000196",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 277.18216437599995,
+          "sequence": 4
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000197",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=654654611-688209042",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000198",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=688209043-721763474",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000199",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=721763475-755317906",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000200",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=755317907-788872338",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000201",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 287.382366584,
+          "sequence": 5
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000202",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=788872339-822426770",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000203",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=822426771-855981202",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000204",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=855981203-889535634",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000205",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 297.682149376,
+          "sequence": 6
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000206",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=889535635-923090066",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000207",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=923090067-956644498",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000208",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=956644499-990198930",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000209",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 307.982158959,
+          "sequence": 7
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000210",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=990198931-1023753362",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000211",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=1023753363-1057307794",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000212",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=1057307795-1090862226",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000213",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 318.28214071,
+          "sequence": 8
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000214",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=1090862227-1124416658",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000215",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=1124416659-1157971090",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000216",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=1157971091-1180090589",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000217",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 328.98217566799997,
+          "sequence": 9
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000218",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 339.38216925100005,
+          "sequence": 10
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000219",
+        "method": "PUT",
+        "path": "/api/v2/subtitle-prefs/movie-tmdb-45745",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "external_subtitle_path": "${redacted}",
+          "subtitle_language": "nl",
+          "subtitle_mode": "always",
+          "subtitle_track_index": 7,
+          "track_signature": {
+            "codec": "subrip",
+            "forced": false,
+            "hearing_impaired": false,
+            "label": "SUBRIP",
+            "language": "nl",
+            "source": "embedded"
+          }
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000223",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 349.582675333,
+          "sequence": 11
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000229",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 359.78221758300003,
+          "sequence": 12
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000230",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_17}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=100663296-134217727",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000235",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 369.98217995899995,
+          "sequence": 13
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000239",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 380.28217341699997,
+          "sequence": 14
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000242",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 390.58217325,
+          "sequence": 15
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000243",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 403.28218745900006,
+          "sequence": 16
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000244",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 413.382167,
+          "sequence": 17
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000245",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 423.38214883399996,
+          "sequence": 18
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000246",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 433.782145333,
+          "sequence": 19
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000247",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 443.882170084,
+          "sequence": 20
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000248",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 453.882144585,
+          "sequence": 21
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000249",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 464.182167167,
+          "sequence": 22
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000250",
+        "method": "PUT",
+        "path": "/api/v2/subtitle-prefs/movie-tmdb-45745",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "external_subtitle_path": "${redacted}",
+          "subtitle_language": "en",
+          "subtitle_mode": "always",
+          "subtitle_track_index": 3,
+          "track_signature": {
+            "codec": "subrip",
+            "forced": false,
+            "hearing_impaired": false,
+            "label": "SUBRIP",
+            "language": "en",
+            "source": "embedded"
+          }
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000255",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 474.18219483400003,
+          "sequence": 23
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000260",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 484.48213495899995,
+          "sequence": 24
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000266",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 494.68213625,
+          "sequence": 25
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000271",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 504.88212491800004,
+          "sequence": 26
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000273",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_17}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 515.282130626,
+          "sequence": 27
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000275",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "bandwidth_estimate_kbps": "89223",
+            "buffering_action": "none",
+            "buffering_mode": "always",
+            "delivered_kbps": "10631",
+            "played_ms": "286319",
+            "stall_count": "1",
+            "stall_longest_ms": "5751",
+            "stall_total_ms": "5751"
+          },
+          "event": "plan_summary",
+          "event_id": "${id_21}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_19}",
+          "plan_attempt_key": "${id_15}",
+          "plan_id": "plan:${id_16}",
+          "playback_attempt_id": "apple:${id_14}",
+          "protocol_version": 3,
+          "session_id": "${id_17}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000277",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "target_source_position_seconds": "523.1821300849999"
+          },
+          "event": "stopped",
+          "event_id": "${id_22}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_19}",
+          "plan_attempt_key": "${id_15}",
+          "plan_id": "plan:${id_16}",
+          "playback_attempt_id": "apple:${id_14}",
+          "protocol_version": 3,
+          "session_id": "${id_17}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000278",
+        "method": "DELETE",
+        "path": "/api/v2/playback/${id_17}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": true,
+          "position": 523.1821300849999,
+          "sequence": 28,
+          "stop_id": "${id_23}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000284",
+        "method": "GET",
+        "path": "/api/v2/catalog/items/movie-tmdb-9761?backdrop_width=2688&logo_width=1760&photo_width=400&poster_width=920",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000285",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/people/43646/profile/w500.8807d38407d9ea2e0072236c23b5ec7676192c0eef3042122bfdceeddbfe68da.webp?exp=1793332800&sig=TNCzOhl7nZzr6k8TiQh_zQ",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000286",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/people/43648/profile/w500.4c6c2d8480b83bcae3ff00ba01ae34f6bb7e56e3c1ef34e998b1806e515707cc.webp?exp=1793332800&sig=n-oFLywYbFV6GO17GRA_8w",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000288",
+        "method": "GET",
+        "path": "/api/v2/watch/movie-tmdb-9761",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000289",
+        "method": "GET",
+        "path": "/api/v2/recommendations/similar/movie-tmdb-9761?backdrop_width=2688&limit=12&poster_width=440",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000296",
+        "method": "POST",
+        "path": "/api/v2/playback/start",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "audio_track_id": "file:1:audio:0",
+          "audio_track_index": 0,
+          "bandwidth_estimate_kbps": 89223,
+          "bandwidth_estimate_source": "probe",
+          "client_capabilities": {
+            "audio_evidence": "declared",
+            "codecs_audio": [
+              "aac",
+              "ac3",
+              "eac3",
+              "mp3",
+              "mp2",
+              "flac",
+              "opus",
+              "vorbis",
+              "alac",
+              "truehd",
+              "mlp",
+              "dts",
+              "dca",
+              "dts-hd",
+              "dtshd",
+              "pcm",
+              "pcm_s16le",
+              "pcm_s24le",
+              "pcm_f32le",
+              "pcm_bluray"
+            ],
+            "codecs_video": [
+              "h264",
+              "hevc",
+              "av1",
+              "vp9",
+              "vp8",
+              "mpeg4",
+              "mpeg2video",
+              "vc1",
+              "qtrle",
+              "msmpeg4v1",
+              "msmpeg4v2",
+              "msmpeg4v3",
+              "wmv1",
+              "wmv2",
+              "wmv3"
+            ],
+            "codecs_video_hardware": [
+              "h264",
+              "hevc"
+            ],
+            "containers": [
+              "mp4",
+              "m4v",
+              "mov",
+              "mkv",
+              "matroska",
+              "avi",
+              "mpegts",
+              "ts",
+              "m2ts",
+              "mts",
+              "3gp",
+              "3g2",
+              "mpeg",
+              "vob",
+              "ogg",
+              "webm",
+              "flv",
+              "mp3",
+              "aac",
+              "m4a",
+              "m4b",
+              "flac",
+              "alac",
+              "wav",
+              "opus"
+            ],
+            "hdr": true,
+            "hdr_details": {
+              "dolby_vision_profiles": [],
+              "hdr10": true,
+              "hdr10_plus": false,
+              "hlg": false
+            },
+            "max_resolution": "2160p",
+            "video_decode": [],
+            "video_evidence": "declared"
+          },
+          "client_features": [
+            "playback_plan_v3",
+            "client_video_transformations_v1",
+            "playback_route_diagnostics",
+            "device_quirks_v1",
+            "seek_reanchor_v1",
+            "output_change_v1",
+            "direct_stream_resume_v1",
+            "header_authenticated_media_v1",
+            "software_video_decode_v1",
+            "embedded_subtitles_v1",
+            "hls_subtitle_renditions_v1",
+            "authorized_media_origins_v1",
+            "buffering_quality_v1"
+          ],
+          "client_playback_context": {
+            "app_build": "1",
+            "app_channel": "dev",
+            "app_version": "1.0.0",
+            "deliveries": {
+              "hls": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "hls",
+                  "mpegts",
+                  "fmp4",
+                  "mp4"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              },
+              "original_http": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "mp3",
+                  "mp2",
+                  "flac",
+                  "opus",
+                  "vorbis",
+                  "alac",
+                  "truehd",
+                  "mlp",
+                  "dts",
+                  "dca",
+                  "dts-hd",
+                  "dtshd",
+                  "pcm",
+                  "pcm_s16le",
+                  "pcm_s24le",
+                  "pcm_f32le",
+                  "pcm_bluray"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "m4v",
+                  "mov",
+                  "mkv",
+                  "matroska",
+                  "avi",
+                  "mpegts",
+                  "ts",
+                  "m2ts",
+                  "mts",
+                  "3gp",
+                  "3g2",
+                  "mpeg",
+                  "vob",
+                  "ogg",
+                  "webm",
+                  "flv",
+                  "mp3",
+                  "aac",
+                  "m4a",
+                  "m4b",
+                  "flac",
+                  "alac",
+                  "wav",
+                  "opus"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": true,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "native_embedded": [
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mp4",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "m4v",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mov",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "subrip",
+                        "ass",
+                        "ssa",
+                        "webvtt",
+                        "hdmv_pgs_subtitle",
+                        "dvd_subtitle",
+                        "dvb_subtitle"
+                      ],
+                      "container": "mkv",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "webvtt"
+                      ],
+                      "container": "webm",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    }
+                  ],
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_dv81",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "profile7_rpu_converted_to_profile81",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  },
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_hdr10",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "dolby_vision_metadata_removed",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  }
+                ],
+                "validated_claims": [
+                  "authenticated_stream_headers",
+                  "client_subtitle_overlay",
+                  "client_managed_dynamic_range_v1",
+                  "client_selected_audio_track_v1"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc",
+                  "av1",
+                  "vp9",
+                  "vp8",
+                  "mpeg4",
+                  "mpeg2video",
+                  "vc1",
+                  "qtrle",
+                  "msmpeg4v1",
+                  "msmpeg4v2",
+                  "msmpeg4v3",
+                  "wmv1",
+                  "wmv2",
+                  "wmv3"
+                ]
+              },
+              "progressive": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "alac",
+                  "mp3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "mov",
+                  "m4v"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              }
+            },
+            "device": {
+              "manufacturer": "Apple",
+              "model": "AppleTV14,1",
+              "os_version": "27.2.0",
+              "platform": "tvos",
+              "platform_details": {
+                "machine": "AppleTV14,1",
+                "os_name": "tvos"
+              }
+            },
+            "form_factor": "tv",
+            "output": {
+              "current_sink": "${id_12}",
+              "hdr_details": {
+                "dolby_vision_profiles": [],
+                "hdr10": true,
+                "hdr10_plus": false,
+                "hlg": false
+              },
+              "output_context_id": "${id_13}",
+              "sink_type": "HDMIOutput"
+            },
+            "protocol_version": 3
+          },
+          "file_id": "${id_3}",
+          "installation_id": "${id_10}",
+          "metered": false,
+          "playback_attempt_id": "apple:${id_26}",
+          "profile_id": "${id_1}",
+          "protocol_version": 3,
+          "quality_preference": "auto",
+          "subtitle_fidelity_preference": "preserve"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000299",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=0-33554431",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000300",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=-65536",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000302",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {},
+          "event": "first_frame",
+          "event_id": "${id_31}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_30}",
+          "plan_attempt_key": "${id_29}",
+          "plan_id": "plan:${id_28}",
+          "playback_attempt_id": "apple:${id_26}",
+          "protocol_version": 3,
+          "session_id": "${id_27}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000303",
+        "method": "POST",
+        "path": "/api/v2/playback/sessions/${id_27}/control/ws-ticket",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000304",
+        "method": "GET",
+        "path": "/api/v2/playback/sessions/${id_27}/control/ws",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "Upgrade",
+          "Sec-Websocket-Extensions": "permessage-deflate",
+          "Sec-Websocket-Key": "${websocket_key}",
+          "Sec-Websocket-Protocol": "silo.playback-control.v2, silo.ticket.${ticket}",
+          "Sec-Websocket-Version": "13",
+          "Upgrade": "websocket",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "fixture_only": true,
+        "expected_status": 101
+      },
+      {
+        "name": "captured-000306",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=33554432-67108863",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000307",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=67108864-100663295",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000308",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=100663296-134217727",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000309",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_27}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 9.800141405,
+          "sequence": 1
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000310",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=134217728-167772159",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000311",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=167772160-201326591",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000312",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=201326592-234881023",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000313",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_27}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 20.000223119,
+          "sequence": 2
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000314",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=234881024-268435455",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000315",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=268435456-301989887",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000316",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_27}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=301989888-326632466",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000317",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "bandwidth_estimate_kbps": "89223",
+            "buffering_action": "none",
+            "buffering_mode": "always",
+            "delivered_kbps": "3798",
+            "played_ms": "26200",
+            "stall_count": "0",
+            "stall_longest_ms": "0",
+            "stall_total_ms": "0",
+            "throughput_kbps": "91462"
+          },
+          "event": "plan_summary",
+          "event_id": "${id_32}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_30}",
+          "plan_attempt_key": "${id_29}",
+          "plan_id": "plan:${id_28}",
+          "playback_attempt_id": "apple:${id_26}",
+          "protocol_version": 3,
+          "session_id": "${id_27}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000319",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "target_source_position_seconds": "26.300144382"
+          },
+          "event": "stopped",
+          "event_id": "${id_33}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_30}",
+          "plan_attempt_key": "${id_29}",
+          "plan_id": "plan:${id_28}",
+          "playback_attempt_id": "apple:${id_26}",
+          "protocol_version": 3,
+          "session_id": "${id_27}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000321",
+        "method": "DELETE",
+        "path": "/api/v2/playback/${id_27}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": true,
+          "position": 26.300144382,
+          "sequence": 3,
+          "stop_id": "${id_34}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000326",
+        "method": "GET",
+        "path": "/api/v2/catalog/items/movie-tmdb-133701?backdrop_width=2688&logo_width=1760&photo_width=400&poster_width=920",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000328",
+        "method": "GET",
+        "path": "/api/v2/watch/movie-tmdb-10378",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000329",
+        "method": "GET",
+        "path": "/api/v2/recommendations/similar/movie-tmdb-10378?backdrop_width=2688&limit=12&poster_width=440",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000330",
+        "method": "PUT",
+        "path": "/api/v2/audio-prefs/movie-tmdb-10378",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "audio_language": "und",
+          "audio_track_index": 0,
+          "track_signature": {
+            "channels": 2,
+            "codec": "mp3",
+            "default": true,
+            "language": "und",
+            "layout": "stereo",
+            "title": "MP3 (MPEG audio layer 3)"
+          }
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000337",
+        "method": "POST",
+        "path": "/api/v2/playback/start",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "audio_track_id": "file:5:audio:0",
+          "audio_track_index": 0,
+          "bandwidth_estimate_kbps": 89223,
+          "bandwidth_estimate_source": "probe",
+          "client_capabilities": {
+            "audio_evidence": "declared",
+            "codecs_audio": [
+              "aac",
+              "ac3",
+              "eac3",
+              "mp3",
+              "mp2",
+              "flac",
+              "opus",
+              "vorbis",
+              "alac",
+              "truehd",
+              "mlp",
+              "dts",
+              "dca",
+              "dts-hd",
+              "dtshd",
+              "pcm",
+              "pcm_s16le",
+              "pcm_s24le",
+              "pcm_f32le",
+              "pcm_bluray"
+            ],
+            "codecs_video": [
+              "h264",
+              "hevc",
+              "av1",
+              "vp9",
+              "vp8",
+              "mpeg4",
+              "mpeg2video",
+              "vc1",
+              "qtrle",
+              "msmpeg4v1",
+              "msmpeg4v2",
+              "msmpeg4v3",
+              "wmv1",
+              "wmv2",
+              "wmv3"
+            ],
+            "codecs_video_hardware": [
+              "h264",
+              "hevc"
+            ],
+            "containers": [
+              "mp4",
+              "m4v",
+              "mov",
+              "mkv",
+              "matroska",
+              "avi",
+              "mpegts",
+              "ts",
+              "m2ts",
+              "mts",
+              "3gp",
+              "3g2",
+              "mpeg",
+              "vob",
+              "ogg",
+              "webm",
+              "flv",
+              "mp3",
+              "aac",
+              "m4a",
+              "m4b",
+              "flac",
+              "alac",
+              "wav",
+              "opus"
+            ],
+            "hdr": true,
+            "hdr_details": {
+              "dolby_vision_profiles": [],
+              "hdr10": true,
+              "hdr10_plus": false,
+              "hlg": false
+            },
+            "max_resolution": "2160p",
+            "video_decode": [],
+            "video_evidence": "declared"
+          },
+          "client_features": [
+            "playback_plan_v3",
+            "client_video_transformations_v1",
+            "playback_route_diagnostics",
+            "device_quirks_v1",
+            "seek_reanchor_v1",
+            "output_change_v1",
+            "direct_stream_resume_v1",
+            "header_authenticated_media_v1",
+            "software_video_decode_v1",
+            "embedded_subtitles_v1",
+            "hls_subtitle_renditions_v1",
+            "authorized_media_origins_v1",
+            "buffering_quality_v1"
+          ],
+          "client_playback_context": {
+            "app_build": "1",
+            "app_channel": "dev",
+            "app_version": "1.0.0",
+            "deliveries": {
+              "hls": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "hls",
+                  "mpegts",
+                  "fmp4",
+                  "mp4"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              },
+              "original_http": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "mp3",
+                  "mp2",
+                  "flac",
+                  "opus",
+                  "vorbis",
+                  "alac",
+                  "truehd",
+                  "mlp",
+                  "dts",
+                  "dca",
+                  "dts-hd",
+                  "dtshd",
+                  "pcm",
+                  "pcm_s16le",
+                  "pcm_s24le",
+                  "pcm_f32le",
+                  "pcm_bluray"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "m4v",
+                  "mov",
+                  "mkv",
+                  "matroska",
+                  "avi",
+                  "mpegts",
+                  "ts",
+                  "m2ts",
+                  "mts",
+                  "3gp",
+                  "3g2",
+                  "mpeg",
+                  "vob",
+                  "ogg",
+                  "webm",
+                  "flv",
+                  "mp3",
+                  "aac",
+                  "m4a",
+                  "m4b",
+                  "flac",
+                  "alac",
+                  "wav",
+                  "opus"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": true,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "native_embedded": [
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mp4",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "m4v",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mov",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "subrip",
+                        "ass",
+                        "ssa",
+                        "webvtt",
+                        "hdmv_pgs_subtitle",
+                        "dvd_subtitle",
+                        "dvb_subtitle"
+                      ],
+                      "container": "mkv",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "webvtt"
+                      ],
+                      "container": "webm",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    }
+                  ],
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_dv81",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "profile7_rpu_converted_to_profile81",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  },
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_hdr10",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "dolby_vision_metadata_removed",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  }
+                ],
+                "validated_claims": [
+                  "authenticated_stream_headers",
+                  "client_subtitle_overlay",
+                  "client_managed_dynamic_range_v1",
+                  "client_selected_audio_track_v1"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc",
+                  "av1",
+                  "vp9",
+                  "vp8",
+                  "mpeg4",
+                  "mpeg2video",
+                  "vc1",
+                  "qtrle",
+                  "msmpeg4v1",
+                  "msmpeg4v2",
+                  "msmpeg4v3",
+                  "wmv1",
+                  "wmv2",
+                  "wmv3"
+                ]
+              },
+              "progressive": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "alac",
+                  "mp3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "mov",
+                  "m4v"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              }
+            },
+            "device": {
+              "manufacturer": "Apple",
+              "model": "AppleTV14,1",
+              "os_version": "27.2.0",
+              "platform": "tvos",
+              "platform_details": {
+                "machine": "AppleTV14,1",
+                "os_name": "tvos"
+              }
+            },
+            "form_factor": "tv",
+            "output": {
+              "current_sink": "${id_12}",
+              "hdr_details": {
+                "dolby_vision_profiles": [],
+                "hdr10": true,
+                "hdr10_plus": false,
+                "hlg": false
+              },
+              "output_context_id": "${id_13}",
+              "sink_type": "HDMIOutput"
+            },
+            "protocol_version": 3
+          },
+          "file_id": "${id_5}",
+          "installation_id": "${id_10}",
+          "metered": false,
+          "playback_attempt_id": "apple:${id_37}",
+          "profile_id": "${id_1}",
+          "protocol_version": 3,
+          "quality_preference": "auto",
+          "start_position": 296.8668087936667,
+          "subtitle_fidelity_preference": "preserve"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000340",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=-65536",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000341",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=0-33554431",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000343",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=265405231-298959662",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000344",
+        "method": "POST",
+        "path": "/api/v2/playback/sessions/${id_38}/control/ws-ticket",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000345",
+        "method": "GET",
+        "path": "/api/v2/playback/sessions/${id_38}/control/ws",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "Upgrade",
+          "Sec-Websocket-Extensions": "permessage-deflate",
+          "Sec-Websocket-Key": "${websocket_key}",
+          "Sec-Websocket-Protocol": "silo.playback-control.v2, silo.ticket.${ticket}",
+          "Sec-Websocket-Version": "13",
+          "Upgrade": "websocket",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "fixture_only": true,
+        "expected_status": 101
+      },
+      {
+        "name": "captured-000347",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {},
+          "event": "first_frame",
+          "event_id": "${id_41}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_42}",
+          "plan_attempt_key": "${id_39}",
+          "plan_id": "plan:${id_40}",
+          "playback_attempt_id": "apple:${id_37}",
+          "protocol_version": 3,
+          "session_id": "${id_38}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000348",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=298959663-332514094",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000349",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=332514095-366068526",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000350",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=366068527-399622958",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000351",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_38}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 306.66848409944447,
+          "sequence": 1
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000352",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=399622959-433177390",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000353",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=433177391-466731822",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000354",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=466731823-500286254",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000355",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_38}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 317.46849647944447,
+          "sequence": 2
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000356",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=500286255-533840686",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000357",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_38}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=533840687-567395118",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000359",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "bandwidth_estimate_kbps": "89223",
+            "buffering_action": "none",
+            "buffering_mode": "always",
+            "delivered_kbps": "7498",
+            "played_ms": "25719",
+            "stall_count": "0",
+            "stall_longest_ms": "0",
+            "stall_total_ms": "0",
+            "throughput_kbps": "83177"
+          },
+          "event": "plan_summary",
+          "event_id": "${id_43}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_42}",
+          "plan_attempt_key": "${id_39}",
+          "plan_id": "plan:${id_40}",
+          "playback_attempt_id": "apple:${id_37}",
+          "protocol_version": 3,
+          "session_id": "${id_38}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000360",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "target_source_position_seconds": "322.4684362344444"
+          },
+          "event": "stopped",
+          "event_id": "${id_44}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_42}",
+          "plan_attempt_key": "${id_39}",
+          "plan_id": "plan:${id_40}",
+          "playback_attempt_id": "apple:${id_37}",
+          "protocol_version": 3,
+          "session_id": "${id_38}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000362",
+        "method": "DELETE",
+        "path": "/api/v2/playback/${id_38}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": true,
+          "position": 322.4684362344444,
+          "sequence": 3,
+          "stop_id": "${id_45}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000368",
+        "method": "GET",
+        "path": "/api/v2/catalog/search/capabilities",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000369",
+        "method": "GET",
+        "path": "/api/v2/catalog/people?limit=20&media_scope=video_with_episodes&q=The+Scene",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000370",
+        "method": "GET",
+        "path": "/api/v2/catalog?backdrop_width=2688&limit=60&match=all&poster_width=520&q=The+Scene&source=query&type=video_with_episodes",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000372",
+        "method": "GET",
+        "path": "/api/v2/catalog/series/series-tvdb-78927/seasons?include_artwork=false&poster_width=520",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000373",
+        "method": "GET",
+        "path": "/api/v2/catalog/series/series-tvdb-78927/seasons/1/episodes?still_width=720",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000374",
+        "method": "GET",
+        "path": "/api/v2/catalog/series/series-tvdb-78927/seasons/2/episodes?still_width=720",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000375",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/series/91461/backdrop/w1280.ddae7b18d7a22f4e9e449e9811e494966d91c30c0178fdd32fd442660befbfe2.webp?exp=1793332800&sig=ZTCaSV_EIdLe0MpOcbFH-g",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000376",
+        "method": "GET",
+        "path": "/api/v2/recommendations/similar/series-tvdb-78927?backdrop_width=2688&limit=12&poster_width=440",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000377",
+        "method": "GET",
+        "path": "/api/v2/watch/episode-tvdb-78927-1-1",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000378",
+        "method": "GET",
+        "path": "/api/v2/catalog/items/episode-tvdb-78927-1-1?backdrop_width=2688&logo_width=1760&photo_width=400&poster_width=920",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000379",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/series/91461/seasons/1/episodes/3/still/w1280.bc938375c923739cf9f709c347956cbdf7e19aafcf30702055c535f2ebde2e11.webp?exp=1793332800&sig=Ok_20TyRhzkoZ4yvNBW4bg",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000380",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/series/91461/seasons/1/episodes/5/still/w1280.a3ac0cfe808a82a28fdaff8cb39e530b90f8d4288e34e21df8cf0cdb2bf877e3.webp?exp=1793332800&sig=2vsz-m3SlpCE23m4aT0Etw",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000381",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/series/91461/seasons/1/episodes/1/still/w1280.cf7ee33f4153d6c4e8ad8d54fdee45f35722bb8f4482a6683fe622a174a9d1ff.webp?exp=1793332800&sig=Nxl6W7XgQvFJAHWeeZdRWw",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000382",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/series/91461/seasons/1/episodes/4/still/w1280.c446fdb55531560258efe39a4ec6075bb1377e03afa5dd29f6f7845555f1ab02.webp?exp=1793332800&sig=miBCfEgmRrs8OLWLI6VK5Q",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000383",
+        "method": "GET",
+        "path": "/api/v2/artwork/tmdb/series/91461/seasons/1/episodes/2/still/w1280.a93c1b0485947d8e81fb4b0c50f5e2084eada889e499560d99e36d5bd9ce4c76.webp?exp=1793332800&sig=LsuQKK9kGDeKM2JKkfdE6w",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000384",
+        "method": "GET",
+        "path": "/api/v2/catalog/items/episode-tvdb-78927-1-2?backdrop_width=2688&logo_width=1760&photo_width=400&poster_width=920",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000385",
+        "method": "GET",
+        "path": "/api/v2/watch/episode-tvdb-78927-1-2",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        }
+      },
+      {
+        "name": "captured-000392",
+        "method": "POST",
+        "path": "/api/v2/playback/start",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "audio_track_id": "file:8:audio:0",
+          "audio_track_index": 0,
+          "bandwidth_estimate_kbps": 89223,
+          "bandwidth_estimate_source": "probe",
+          "client_capabilities": {
+            "audio_evidence": "declared",
+            "codecs_audio": [
+              "aac",
+              "ac3",
+              "eac3",
+              "mp3",
+              "mp2",
+              "flac",
+              "opus",
+              "vorbis",
+              "alac",
+              "truehd",
+              "mlp",
+              "dts",
+              "dca",
+              "dts-hd",
+              "dtshd",
+              "pcm",
+              "pcm_s16le",
+              "pcm_s24le",
+              "pcm_f32le",
+              "pcm_bluray"
+            ],
+            "codecs_video": [
+              "h264",
+              "hevc",
+              "av1",
+              "vp9",
+              "vp8",
+              "mpeg4",
+              "mpeg2video",
+              "vc1",
+              "qtrle",
+              "msmpeg4v1",
+              "msmpeg4v2",
+              "msmpeg4v3",
+              "wmv1",
+              "wmv2",
+              "wmv3"
+            ],
+            "codecs_video_hardware": [
+              "h264",
+              "hevc"
+            ],
+            "containers": [
+              "mp4",
+              "m4v",
+              "mov",
+              "mkv",
+              "matroska",
+              "avi",
+              "mpegts",
+              "ts",
+              "m2ts",
+              "mts",
+              "3gp",
+              "3g2",
+              "mpeg",
+              "vob",
+              "ogg",
+              "webm",
+              "flv",
+              "mp3",
+              "aac",
+              "m4a",
+              "m4b",
+              "flac",
+              "alac",
+              "wav",
+              "opus"
+            ],
+            "hdr": true,
+            "hdr_details": {
+              "dolby_vision_profiles": [],
+              "hdr10": true,
+              "hdr10_plus": false,
+              "hlg": false
+            },
+            "max_resolution": "2160p",
+            "video_decode": [],
+            "video_evidence": "declared"
+          },
+          "client_features": [
+            "playback_plan_v3",
+            "client_video_transformations_v1",
+            "playback_route_diagnostics",
+            "device_quirks_v1",
+            "seek_reanchor_v1",
+            "output_change_v1",
+            "direct_stream_resume_v1",
+            "header_authenticated_media_v1",
+            "software_video_decode_v1",
+            "embedded_subtitles_v1",
+            "hls_subtitle_renditions_v1",
+            "authorized_media_origins_v1",
+            "buffering_quality_v1"
+          ],
+          "client_playback_context": {
+            "app_build": "1",
+            "app_channel": "dev",
+            "app_version": "1.0.0",
+            "deliveries": {
+              "hls": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "hls",
+                  "mpegts",
+                  "fmp4",
+                  "mp4"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              },
+              "original_http": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "mp3",
+                  "mp2",
+                  "flac",
+                  "opus",
+                  "vorbis",
+                  "alac",
+                  "truehd",
+                  "mlp",
+                  "dts",
+                  "dca",
+                  "dts-hd",
+                  "dtshd",
+                  "pcm",
+                  "pcm_s16le",
+                  "pcm_s24le",
+                  "pcm_f32le",
+                  "pcm_bluray"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "m4v",
+                  "mov",
+                  "mkv",
+                  "matroska",
+                  "avi",
+                  "mpegts",
+                  "ts",
+                  "m2ts",
+                  "mts",
+                  "3gp",
+                  "3g2",
+                  "mpeg",
+                  "vob",
+                  "ogg",
+                  "webm",
+                  "flv",
+                  "mp3",
+                  "aac",
+                  "m4a",
+                  "m4b",
+                  "flac",
+                  "alac",
+                  "wav",
+                  "opus"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": true,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "native_embedded": [
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mp4",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "m4v",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "mov_text"
+                      ],
+                      "container": "mov",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "subrip",
+                        "ass",
+                        "ssa",
+                        "webvtt",
+                        "hdmv_pgs_subtitle",
+                        "dvd_subtitle",
+                        "dvb_subtitle"
+                      ],
+                      "container": "mkv",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    },
+                    {
+                      "ass_styling": true,
+                      "codecs": [
+                        "webvtt"
+                      ],
+                      "container": "webm",
+                      "font_attachments": true,
+                      "track_identity": "ffmpeg_stream_index"
+                    }
+                  ],
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_dv81",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "profile7_rpu_converted_to_profile81",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  },
+                  {
+                    "executor": "client",
+                    "name": "client_dv7_to_hdr10",
+                    "recipe_version": "1",
+                    "validated_claims": [
+                      "dolby_vision_metadata_removed",
+                      "hdr10_base_layer_preserved",
+                      "enhancement_layer_discarded"
+                    ]
+                  }
+                ],
+                "validated_claims": [
+                  "authenticated_stream_headers",
+                  "client_subtitle_overlay",
+                  "client_managed_dynamic_range_v1",
+                  "client_selected_audio_track_v1"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc",
+                  "av1",
+                  "vp9",
+                  "vp8",
+                  "mpeg4",
+                  "mpeg2video",
+                  "vc1",
+                  "qtrle",
+                  "msmpeg4v1",
+                  "msmpeg4v2",
+                  "msmpeg4v3",
+                  "wmv1",
+                  "wmv2",
+                  "wmv3"
+                ]
+              },
+              "progressive": {
+                "audio_decode_codecs": [
+                  "aac",
+                  "ac3",
+                  "eac3",
+                  "alac",
+                  "mp3"
+                ],
+                "audio_passthrough_codecs": [],
+                "auth_header_refresh": false,
+                "containers": [
+                  "mp4",
+                  "mov",
+                  "m4v"
+                ],
+                "enabled": true,
+                "features": [],
+                "hdr_details": {
+                  "dolby_vision_profiles": [],
+                  "hdr10": true,
+                  "hdr10_plus": false,
+                  "hlg": false
+                },
+                "max_channels": 8,
+                "subtitles": {
+                  "ass_styling": true,
+                  "embedded_bitmap": false,
+                  "embedded_text": true,
+                  "font_attachments": true,
+                  "sidecar_bitmap": false,
+                  "sidecar_text": true
+                },
+                "supported_on_device": true,
+                "transformations": [],
+                "validated_claims": [
+                  "authenticated_stream_headers"
+                ],
+                "video_codecs": [
+                  "h264",
+                  "hevc"
+                ]
+              }
+            },
+            "device": {
+              "manufacturer": "Apple",
+              "model": "AppleTV14,1",
+              "os_version": "27.2.0",
+              "platform": "tvos",
+              "platform_details": {
+                "machine": "AppleTV14,1",
+                "os_name": "tvos"
+              }
+            },
+            "form_factor": "tv",
+            "output": {
+              "current_sink": "${id_12}",
+              "hdr_details": {
+                "dolby_vision_profiles": [],
+                "hdr10": true,
+                "hdr10_plus": false,
+                "hlg": false
+              },
+              "output_context_id": "${id_13}",
+              "sink_type": "HDMIOutput"
+            },
+            "protocol_version": 3
+          },
+          "file_id": "${id_67}",
+          "installation_id": "${id_10}",
+          "metered": false,
+          "playback_attempt_id": "apple:${id_89}",
+          "profile_id": "${id_1}",
+          "protocol_version": 3,
+          "quality_preference": "auto",
+          "subtitle_fidelity_preference": "preserve"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000397",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_91}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=-65536",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000398",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_91}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=0-33554431",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000401",
+        "method": "POST",
+        "path": "/api/v2/playback/sessions/${id_91}/control/ws-ticket",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000402",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {},
+          "event": "first_frame",
+          "event_id": "${id_94}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_93}",
+          "plan_attempt_key": "${id_90}",
+          "plan_id": "plan:${id_92}",
+          "playback_attempt_id": "apple:${id_89}",
+          "protocol_version": 3,
+          "session_id": "${id_91}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000403",
+        "method": "GET",
+        "path": "/api/v2/playback/sessions/${id_91}/control/ws",
+        "headers": {
+          "Accept": "*/*",
+          "Connection": "Upgrade",
+          "Sec-Websocket-Extensions": "permessage-deflate",
+          "Sec-Websocket-Key": "${websocket_key}",
+          "Sec-Websocket-Protocol": "silo.playback-control.v2, silo.ticket.${ticket}",
+          "Sec-Websocket-Version": "13",
+          "Upgrade": "websocket",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "fixture_only": true,
+        "expected_status": 101
+      },
+      {
+        "name": "captured-000405",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_91}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=33554432-67108863",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000406",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_91}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=67108864-100663295",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000407",
+        "method": "GET",
+        "path": "/api/v2/stream/${id_91}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Range": "bytes=100663296-113025385",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000408",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_91}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 9.700130015,
+          "sequence": 1
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000409",
+        "method": "POST",
+        "path": "/api/v2/playback/${id_91}/progress",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": false,
+          "position": 19.800143978,
+          "sequence": 2
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000412",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "bandwidth_estimate_kbps": "89223",
+            "buffering_action": "none",
+            "buffering_mode": "always",
+            "delivered_kbps": "696",
+            "played_ms": "27532",
+            "stall_count": "0",
+            "stall_longest_ms": "0",
+            "stall_total_ms": "0",
+            "throughput_kbps": "96853"
+          },
+          "event": "plan_summary",
+          "event_id": "${id_96}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_93}",
+          "plan_attempt_key": "${id_90}",
+          "plan_id": "plan:${id_92}",
+          "playback_attempt_id": "apple:${id_89}",
+          "protocol_version": 3,
+          "session_id": "${id_91}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000414",
+        "method": "POST",
+        "path": "/api/v2/playback/route-events",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "applied_quirk_ids": [],
+          "diagnostics": {
+            "target_source_position_seconds": "27.700055031"
+          },
+          "event": "stopped",
+          "event_id": "${id_95}",
+          "installation_id": "${id_10}",
+          "output_context_id": "${id_13}",
+          "plan_attempt_id": "apple-plan:${id_93}",
+          "plan_attempt_key": "${id_90}",
+          "plan_id": "plan:${id_92}",
+          "playback_attempt_id": "apple:${id_89}",
+          "protocol_version": 3,
+          "session_id": "${id_91}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000415",
+        "method": "GET",
+        "path": "/api/v2/watchlist/episode-tvdb-78927-1-1",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "fixture_only": true,
+        "expected_status": 404
+      },
+      {
+        "name": "captured-000417",
+        "method": "GET",
+        "path": "/api/v2/favorites/episode-tvdb-78927-1-1",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "fixture_only": true,
+        "expected_status": 404
+      },
+      {
+        "name": "captured-000418",
+        "method": "DELETE",
+        "path": "/api/v2/playback/${id_91}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${access_token}",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "SiloTV/1 CFNetwork/3896.200.61 Darwin/27.2.0",
+          "X-Silo-Client": "Silo Apple TV",
+          "X-Silo-Client-Version": "1.0"
+        },
+        "body": {
+          "installation_id": "${id_10}",
+          "is_paused": true,
+          "position": 27.700055031,
+          "sequence": 3,
+          "stop_id": "${id_97}"
+        },
+        "fixture_only": true
+      }
+    ]
+  },
+  "provenance": {
+    "client": "silo-apple",
+    "source_revision": "6fb7075889c3a655ec75c659d416492c87c2c07a",
+    "client_header_version": "1.0",
+    "build_version": "1.0.0 (1)",
+    "device": "Apple TV 4K third generation",
+    "os": "Darwin 27.2.0",
+    "reference": "Silo native v2 on LAN",
+    "actions": [
+      "password sign-in",
+      "home and search",
+      "movie and episode detail",
+      "direct playback and resume",
+      "subtitle selection",
+      "audio selection",
+      "stop"
+    ]
+  },
+  "limitations": [
+    "Reference playback control websocket handshake observed; frames are not captured.",
+    "Reference HLS requests and unknown media size or duration were not observed.",
+    "Ether front-end certification remains pending."
+  ]
+}

@@ -102,6 +102,65 @@ CREATE TABLE catalog_home_release (key INTEGER PRIMARY KEY, checked INTEGER NOT 
 CREATE INDEX catalog_home_release_pending ON catalog_home_release(checked,earliest_ts,fallback_admitted);
 CREATE TABLE catalog_home_release_dates (key INTEGER NOT NULL, country TEXT NOT NULL, kind INTEGER NOT NULL, released_ts INTEGER NOT NULL, PRIMARY KEY(key,country,kind,released_ts));
 `)
+	store.Register("catalog", 10, `CREATE INDEX catalog_titles_episode_aired ON catalog_titles(show_key, released_ts DESC) WHERE type='episode' AND released_ts>0;
+CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, season, released_ts DESC) WHERE type='episode' AND released_ts>0;
+CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND released_ts>0 AND adult=0;`)
+	store.Register("catalog", 11, `ALTER TABLE catalog_titles ADD COLUMN last_air_ts INTEGER NOT NULL DEFAULT 0;`)
+	store.Register("catalog", 12, `CREATE TABLE catalog_people (person_tmdb INTEGER PRIMARY KEY, imdb TEXT NOT NULL DEFAULT '');`)
+	store.Register("catalog", 13, `ALTER TABLE catalog_credits ADD COLUMN provider_id TEXT NOT NULL DEFAULT '';`)
+	store.Register("catalog", 14, `CREATE TABLE catalog_remote_trailers (key INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '', url TEXT NOT NULL);`)
+	// Alternative titles (altTitles) for release-name matching, from the
+	// detail fetch; at most maxAltTitles per title, keyed for hydration.
+	store.Register("catalog", 15, `CREATE TABLE catalog_alt_titles (key INTEGER NOT NULL, title TEXT NOT NULL, PRIMARY KEY(key, title));`)
+	// content_rating_source records where content_rating came from; see
+	// rating.go. content_rating_rank now holds contentrating.Level, re-ranked
+	// once at startup (rankRatings).
+	store.Register("catalog", 19, `ALTER TABLE catalog_titles ADD COLUMN content_rating_source TEXT NOT NULL DEFAULT '';`)
+	// release_known is 1 when released_ts is a real Unix instant and 0 when
+	// the date is unknown. Zero stays the unknown sentinel: a date before
+	// 1970 is negative, so "released_ts>0" is not "has a date". The column
+	// is generated so every writer of released_ts keeps the flag, including
+	// rows already stored. SQLite cannot ALTER in a STORED generated column,
+	// so the flag is VIRTUAL there. PostgreSQL stores it. The aired indexes
+	// use the flag and therefore include those historical instants.
+	const releaseKnownSQLite = `
+ALTER TABLE catalog_titles ADD COLUMN release_known INTEGER GENERATED ALWAYS AS (CASE WHEN released_ts<>0 THEN 1 ELSE 0 END) VIRTUAL;
+DROP INDEX IF EXISTS catalog_titles_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_season_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_episode_global_aired;
+CREATE INDEX catalog_titles_episode_aired ON catalog_titles(show_key, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, season, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
+`
+	store.Register("catalog", 20, releaseKnownSQLite)
+	// Catalog migration 21 is the recent-episodes index, owned elsewhere.
+	// primary_released_ts is TMDB's primary release_date. year_source says
+	// which date produced year (empty until this correction has seen the
+	// row). year_checked_at cools down a failed refresh. The pending index
+	// is the background queue: detailed movies whose primary date was never
+	// stored, browsable and most popular first.
+	store.Register("catalog", 22, `
+ALTER TABLE catalog_titles ADD COLUMN primary_released_ts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE catalog_titles ADD COLUMN year_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE catalog_titles ADD COLUMN year_checked_at INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX catalog_titles_movie_year_pending ON catalog_titles(browsable DESC, popularity DESC, key) WHERE type='movie' AND year_source='';
+`)
+	store.RegisterDialect("catalog", 20, store.Postgres, `
+ALTER TABLE catalog_titles ADD COLUMN release_known BIGINT GENERATED ALWAYS AS (CASE WHEN released_ts<>0 THEN 1 ELSE 0 END) STORED;
+DROP INDEX IF EXISTS catalog_titles_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_season_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_episode_global_aired;
+CREATE INDEX catalog_titles_episode_aired ON catalog_titles(show_key, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, season, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
+`)
+	store.Register("catalog", 23, `
+CREATE INDEX catalog_titles_type_browse_updated ON catalog_titles(type, browsable, adult, fetched_at DESC, key ASC);
+CREATE INDEX catalog_titles_episode_updated ON catalog_titles(fetched_at DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
+CREATE INDEX catalog_titles_season_key ON catalog_titles(key ASC) WHERE type='season' AND adult=0;
+CREATE INDEX catalog_titles_season_updated ON catalog_titles(fetched_at DESC, key ASC) WHERE type='season' AND adult=0;
+CREATE INDEX catalog_titles_season_released ON catalog_titles(released_ts DESC, key ASC) WHERE type='season' AND release_known=1 AND adult=0;
+`)
 	store.Register("catalog", 7, `
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC);
 CREATE INDEX catalog_titles_browse_warm ON catalog_titles(browsable, detail, adult, popularity DESC, vote_count DESC);
@@ -150,19 +209,24 @@ type TMDB interface {
 var _ TMDB = (*tmdb.Client)(nil)
 var _ core.Catalog = (*Catalog)(nil)
 
+// tmdbRef is the swappable metadata client. The pointer is what concurrent
+// readers and SetTMDB publish.
+type tmdbRef struct{ client TMDB }
+
 // Catalog implements core.Catalog.
 type Catalog struct {
 	visibility     *libraryfilter.Filter
 	db             *sql.DB
-	client         TMDB
+	remote         atomic.Pointer[tmdbRef]
 	configUpdateMu sync.Mutex // serializes transitions without blocking config readers
 	// Retry a failed preservation on the next config transition. The saved
 	// settings still take effect immediately, even when the database fails.
 	admissionsPending bool
 	cfgMu             sync.RWMutex
 	cfg               config.Catalog
+	cfgVersion        *configVersion
 	log               *slog.Logger
-	now               func() time.Time
+	clock             atomic.Value // func() time.Time
 
 	staleAfter time.Duration
 	listTTL    time.Duration
@@ -174,6 +238,16 @@ type Catalog struct {
 	genreMu sync.Mutex
 	genres  map[string]map[int]string // mediaType -> id -> name
 
+	// refreshMiss remembers a failed metadata read so one library list does
+	// not repeat it for every row. A later read retries after refreshMissTTL.
+	refreshMissMu sync.Mutex
+	refreshMiss   map[string]time.Time
+
+	// hydrating holds the TMDB refreshes running behind reads (hydrate.go).
+	hydrateMu    sync.Mutex
+	hydrating    map[string]*hydration
+	hydrateSlots chan struct{}
+
 	trendFlights flight.Group[string, trendSnapshot]
 	statsFlights flight.Group[string, Stats]
 	listMu       sync.Mutex
@@ -183,7 +257,16 @@ type Catalog struct {
 	syncing    atomic.Bool
 	progress   SyncProgress
 	progressMu sync.RWMutex
-	syncYears  [2]int // 0,0 = 1900..now+2
+
+	yearMu         sync.RWMutex
+	yearRunning    atomic.Bool
+	yearState      MovieYearProgress
+	yearGap        time.Duration
+	yearAhead      chan core.RatingKey
+	yearInflight   sync.Map
+	yearInflightN  atomic.Int32
+	yearPauseUntil atomic.Int64
+	syncYears      [2]int // 0,0 = 1900..now+2
 
 	// High-speed in-memory read caches, invalidated atomically on writes.
 	writeGen    atomic.Uint64
@@ -191,6 +274,7 @@ type Catalog struct {
 	titleCache  map[core.RatingKey]cachedStoredTitle
 	countCache  map[string]cachedCount
 	browseCache map[string]cachedBrowse
+	grandCache  map[core.RatingKey]cachedBrowse
 	facetCache  map[string]cachedFacet
 	statsCache  cachedStats
 
@@ -201,6 +285,17 @@ type Catalog struct {
 
 	personMu       sync.Mutex
 	personHydrated map[int64]time.Time
+
+	saferRating SaferRatingSQL
+}
+
+// SaferRatingSQL is the optional Plex overlay predicate for viewer limits.
+type SaferRatingSQL interface {
+	HideExceeding(keyColumn string) string
+}
+
+func WithSaferRatingSQL(f SaferRatingSQL) Option {
+	return func(c *Catalog) { c.saferRating = f }
 }
 
 type cachedStoredTitle struct {
@@ -210,9 +305,10 @@ type cachedStoredTitle struct {
 }
 
 type cachedCount struct {
-	total  int
-	gen    uint64
-	minute int64
+	total   int
+	gen     uint64
+	minute  int64
+	counted time.Time // when the count ran; zero for a synchronous count
 }
 
 type cachedBrowse struct {
@@ -222,9 +318,10 @@ type cachedBrowse struct {
 }
 
 type cachedFacet struct {
-	vals   []core.FacetValue
-	gen    uint64
-	minute int64
+	vals    []core.FacetValue
+	gen     uint64
+	minute  int64
+	counted time.Time
 }
 
 type cachedStats struct {
@@ -243,7 +340,33 @@ type listEntry struct {
 // Option customises a Catalog.
 type Option func(*Catalog)
 
-func WithNow(fn func() time.Time) Option { return func(c *Catalog) { c.now = fn } }
+func WithNow(fn func() time.Time) Option {
+	return func(c *Catalog) { c.setNow(fn) }
+}
+
+// SetNow replaces the clock used for release checks and the minute snapshot.
+// The swap is atomic so a background browse can keep reading it.
+func (c *Catalog) SetNow(now func() time.Time) {
+	if c == nil {
+		return
+	}
+	c.setNow(now)
+}
+
+func (c *Catalog) setNow(fn func() time.Time) {
+	if fn == nil {
+		fn = time.Now
+	}
+	c.clock.Store(fn)
+}
+
+func (c *Catalog) now() time.Time {
+	fn, _ := c.clock.Load().(func() time.Time)
+	if fn == nil {
+		return time.Now()
+	}
+	return fn()
+}
 func WithStaleAfter(d time.Duration) Option {
 	return func(c *Catalog) { c.staleAfter = d }
 }
@@ -267,6 +390,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	if log == nil {
 		log = slog.Default()
 	}
+	cfg = cloneCatalogConfig(cfg)
 	visibility, err := libraryfilter.Compile(cfg.Exclusions)
 	if err != nil {
 		return nil, err
@@ -275,15 +399,18 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	if stale <= 0 {
 		stale = 24 * time.Hour
 	}
-	c := &Catalog{visibility: visibility, db: db, client: client, cfg: cfg, log: log, now: time.Now,
-		staleAfter: stale, listTTL: 15 * time.Minute,
+	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log, hydrateSlots: make(chan struct{}, hydrateLimit),
+		staleAfter: stale, listTTL: 15 * time.Minute, yearGap: 100 * time.Millisecond, yearAhead: make(chan core.RatingKey, 256),
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
-		browseCache: map[string]cachedBrowse{}, facetCache: map[string]cachedFacet{},
+		browseCache: map[string]cachedBrowse{}, grandCache: map[core.RatingKey]cachedBrowse{}, facetCache: map[string]cachedFacet{},
 		personHydrated: map[int64]time.Time{}}
+	c.setNow(time.Now)
+	c.SetTMDB(client)
 	for _, fn := range opts {
 		fn(c)
 	}
+	c.ensureSortTitlesFolded(context.Background())
 	return c, nil
 }
 
@@ -295,6 +422,7 @@ func (e *simpleError) Error() string { return e.s }
 
 // UpdateConfig swaps the catalogue config (wire to config.Store.Subscribe).
 func (c *Catalog) UpdateConfig(cfg config.Catalog) {
+	cfg = cloneCatalogConfig(cfg)
 	f, err := libraryfilter.Compile(cfg.Exclusions)
 	if err != nil {
 		c.log.Error("catalog: invalid visibility rules")
@@ -304,7 +432,7 @@ func (c *Catalog) UpdateConfig(cfg config.Catalog) {
 	defer c.configUpdateMu.Unlock()
 	previous := c.config()
 	if c.admissionsPending || (previous.GateMoviesByHomeRelease && !cfg.GateMoviesByHomeRelease) {
-		if _, err := c.db.Exec(`UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.released_ts<>0 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds())); err != nil {
+		if _, err := c.db.Exec(`UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.release_known=1 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds())); err != nil {
 			c.log.Error("catalog: preserve fallback admissions", "err", err)
 			c.admissionsPending = true
 		} else {
@@ -314,6 +442,7 @@ func (c *Catalog) UpdateConfig(cfg config.Catalog) {
 	c.cfgMu.Lock()
 	c.cfg = cfg
 	c.visibility = f
+	c.cfgVersion = &configVersion{}
 	c.writeGen.Add(1)
 	c.cfgMu.Unlock()
 	c.listMu.Lock()
@@ -353,4 +482,30 @@ func MeetsThreshold(cfg config.Catalog, t core.Title, now time.Time) bool {
 
 func (c *Catalog) meetsThreshold(t core.Title) bool {
 	return MeetsThreshold(c.config(), t, c.now())
+}
+
+// SetTMDB replaces the remote metadata client. Nil answers from the local catalogue only.
+func (c *Catalog) SetTMDB(client TMDB) {
+	if c != nil {
+		c.remote.Store(&tmdbRef{client: client})
+	}
+}
+
+func (c *Catalog) tmdb() TMDB {
+	if c == nil {
+		return nil
+	}
+	ref := c.remote.Load()
+	if ref == nil {
+		return nil
+	}
+	return ref.client
+}
+
+// WriteGeneration changes when a catalogue write drops the read caches.
+func (c *Catalog) WriteGeneration() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.writeGen.Load()
 }

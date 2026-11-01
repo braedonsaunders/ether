@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -212,6 +214,7 @@ type fakeResolver struct {
 	calls      int
 	excludes   [][]string
 	prefers    []string
+	exactHEVC  []bool
 	delay      time.Duration
 	started    chan struct{} // closed on first Resolve, if set
 }
@@ -229,6 +232,7 @@ func (r *fakeResolver) Resolve(ctx context.Context, req core.ResolveRequest) (*c
 	r.calls++
 	r.excludes = append(r.excludes, slices.Clone(req.Exclude))
 	r.prefers = append(r.prefers, req.Prefer)
+	r.exactHEVC = append(r.exactHEVC, req.ExactHEVCTranscode)
 	delay := r.delay
 	if r.started != nil && r.calls == 1 {
 		close(r.started)
@@ -592,6 +596,8 @@ type harness struct {
 
 	nativeProbe   func(context.Context, core.MediaSource) (*core.MediaInfo, error)
 	nativeTrailer func(context.Context, core.MediaSource, *core.MediaInfo) bool
+	testEngine    core.Engine
+	testTranscode core.Transcoder
 }
 
 var (
@@ -625,7 +631,7 @@ func newHarness(t *testing.T, rels []*fakeRelease, ids []string, opts ...harness
 		cache:   newFakeCache(),
 		state:   newFakeState(),
 		clock:   &fakeClock{t: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)},
-		dataDir: t.TempDir(),
+		dataDir: payloadTempDir(t),
 	}
 	h.tr = newFakeTranscoder(h.engine)
 	h.cfg = config.Defaults(h.dataDir)
@@ -648,10 +654,18 @@ func newHarness(t *testing.T, rels []*fakeRelease, ids []string, opts ...harness
 	if h.noCache {
 		cache = nil
 	}
+	var engine core.Engine = h.engine
+	if h.testEngine != nil {
+		engine = h.testEngine
+	}
+	var transcoder core.Transcoder = h.tr
+	if h.testTranscode != nil {
+		transcoder = h.testTranscode
+	}
 	m, err := New(Deps{
 		Resolver:   h.resolver,
-		Engine:     h.engine,
-		Transcoder: h.tr,
+		Engine:     engine,
+		Transcoder: transcoder,
 		Catalog:    h.catalog,
 		Cache:      cache,
 		State:      h.state,
@@ -681,6 +695,9 @@ func (h *harness) prepare(user *core.User, key core.RatingKey, client string) *c
 	if err != nil {
 		h.t.Fatalf("Prepare(%s, %s): %v", user.Username, key, err)
 	}
+	// The durable resume row is written after Prepare returns. Tests that
+	// read it, or restart from it, wait for that save.
+	h.m.waitResumeSaves()
 	return ps
 }
 
@@ -690,4 +707,21 @@ func mkv(id string, size int64, dur time.Duration) *fakeRelease {
 
 func (r *fakeResolver) ReleaseBlocked(_ context.Context, id string) (bool, error) {
 	return r.isBad(id), nil
+}
+
+// payloadTempDir is a data directory for tests that leave a payload owner
+// lock held on purpose (unknown cleanup responsibility survives the
+// Manager). Windows cannot delete that open lock file, so cleanup there is
+// best effort instead of failing the test.
+func payloadTempDir(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return t.TempDir()
+	}
+	dir, err := os.MkdirTemp("", "ether-payload-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

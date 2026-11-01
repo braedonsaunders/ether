@@ -30,7 +30,7 @@ function extraRoutes(route: Route) {
 it("opens an empty installation with nullable language lists and saves the defaults", async () => {
   let saved: Record<string, unknown> | undefined;
   const { fake } = renderApp(
-    "/viewers/defaults",
+    "/playback/subtitles",
     {},
     extraRoutes((method, path, body) => {
       if (path !== "/stream-preferences/0") return undefined;
@@ -54,7 +54,7 @@ it("opens an empty installation with nullable language lists and saves the defau
   await waitFor(() => expect(saved?.audioLanguages).toEqual(["en", "fr"]), WAIT);
   expect(saved?.subtitleLanguages).toEqual([]);
   expect(calls(fake, "PUT", "/stream-preferences/0")).toHaveLength(1);
-  expect(await screen.findByText("Defaults saved", {}, WAIT)).toBeInTheDocument();
+  expect(await screen.findByText("Audio and subtitles saved", {}, WAIT)).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByText("You have unsaved changes")).toBeNull());
 });
 
@@ -126,9 +126,23 @@ it("saves a custom override for one viewer", async () => {
     }),
   );
   expect(await screen.findByText("Uses default", {}, WAIT)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Show subtitles" })).toHaveTextContent(
+    "Off unless I turn them on",
+  );
   fireEvent.change(screen.getByLabelText("Subtitle languages"), { target: { value: "es" } });
+  fireEvent.click(screen.getByRole("button", { name: "Show subtitles" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Only for foreign audio" }));
+  fireEvent.click(screen.getByRole("button", { name: "Size" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Small" }));
+  fireEvent.change(screen.getByLabelText("Text colour"), { target: { value: "#ffffff" } });
   fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
   await waitFor(() => expect(saved?.subtitleLanguages).toEqual(["es"]), WAIT);
+  expect(saved?.subtitleMode).toBe("foreign-only");
+  expect(saved?.subtitleAppearance).toMatchObject({
+    fontSize: "small",
+    fontColor: "#ffffff",
+    position: "bottom",
+  });
   expect(saved?.audioLanguages).toEqual(["en"]);
   expect(await screen.findByText("Custom for this viewer", {}, WAIT)).toBeInTheDocument();
 });

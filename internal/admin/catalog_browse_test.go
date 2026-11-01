@@ -69,3 +69,35 @@ func TestCatalogBrowse(t *testing.T) {
 		t.Fatalf("bad defaults: %+v", q)
 	}
 }
+
+func TestCatalogBrowseWaitingFilter(t *testing.T) {
+	store := newStore(t, func(c *config.Config) { seededConfig(c); c.SetupComplete = true })
+	helper := &browseHelper{}
+	waiting := []core.RatingKey{core.MovieKey(7), core.MovieKey(8)}
+	h := admin.New(admin.Deps{
+		Config:             store,
+		IsOwnerToken:       storedOwner(store),
+		CatalogHelper:      helper,
+		WaitingReleaseKeys: func(context.Context) []core.RatingKey { return waiting },
+	})
+	rec := serve(h, authed(req(http.MethodGet, "/ether/api/catalog/browse?waiting=1", "")))
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if len(helper.queries) != 1 {
+		t.Fatalf("queries: %v", helper.queries)
+	}
+	q := helper.queries[0]
+	if q.Filter.Type != core.TypeMovie || len(q.Filter.IncludeKeys) != 2 || q.Filter.IncludeKeys[0] != waiting[0] {
+		t.Fatalf("waiting query: %+v", q)
+	}
+	empty := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store), CatalogHelper: helper})
+	rec = serve(empty, authed(req(http.MethodGet, "/ether/api/catalog/browse?waiting=1&type=show", "")))
+	if rec.Code != 200 {
+		t.Fatal(rec.Code)
+	}
+	q = helper.queries[1]
+	if q.Filter.Type != core.TypeMovie || q.Filter.IncludeKeys == nil || len(q.Filter.IncludeKeys) != 0 {
+		t.Fatalf("empty waiting: %+v", q)
+	}
+}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // ---------------------------------------------------------------------------
@@ -40,158 +40,171 @@ type playEntry struct {
 	remoteTS *model.TranscodeSess
 }
 
-type sessionTracker struct {
-	mu      sync.Mutex
-	next    int
-	entries map[string]*playEntry
+// sessionActivities reads and writes the mounted broker. A server that is
+// not mounted keeps the rows itself so an in-flight request still sees them
+// after unmount drops the broker binding.
+type sessionActivities struct {
+	mu     sync.Mutex
+	local  map[string]playEntry
+	next   int
+	broker *sessions.Broker
 }
 
-func newSessionTracker() *sessionTracker { return &sessionTracker{entries: map[string]*playEntry{}} }
+func newSessionActivities() *sessionActivities {
+	return &sessionActivities{local: map[string]playEntry{}}
+}
 
 func trackID(userID int64, clientID, sessionID string) string {
 	return fmt.Sprintf("%d/%s/%s", userID, clientID, sessionID)
 }
-
-// has reports whether id is tracked.
-func (t *sessionTracker) has(id string) bool {
+func (t *sessionActivities) bind(b *sessions.Broker) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.broker = b
+	t.mu.Unlock()
+}
+func (t *sessionActivities) mounted() *sessions.Broker {
+	if t == nil {
+		return nil
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_, ok := t.entries[id]
+	return t.broker
+}
+func (t *sessionActivities) has(id string) bool {
+	if t == nil {
+		return false
+	}
+	if b := t.mounted(); b != nil {
+		return b.HasPlexActivity(id)
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.local[id]
 	return ok
 }
-
-// ensure starts tracking id with sessionKey key (allocated cluster-wide);
-// key 0, or an id already tracked, leaves numbering to update.
-func (t *sessionTracker) ensure(id string, key int) {
-	if key <= 0 {
+func (t *sessionActivities) ensure(id string, key int) {
+	if t == nil {
+		return
+	}
+	if b := t.mounted(); b != nil {
+		b.EnsurePlexActivity(id, key)
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if _, ok := t.entries[id]; !ok {
-		t.entries[id] = &playEntry{id: id, sessionKey: key}
+	if _, ok := t.local[id]; !ok && key > 0 {
+		t.local[id] = playEntry{id: id, sessionKey: key}
 	}
 }
-
-// update records a timeline event and returns a copy of the entry.
-func (t *sessionTracker) update(id string, fn func(e *playEntry)) playEntry {
+func (t *sessionActivities) update(id string, fn func(*playEntry)) playEntry {
+	if t == nil {
+		var zero playEntry
+		if fn != nil {
+			fn(&zero)
+		}
+		return zero
+	}
+	if b := t.mounted(); b != nil {
+		act := b.UpsertPlexActivity(id, func(a *sessions.PlexActivity) {
+			e := activityEntry(*a)
+			fn(&e)
+			*a = entryActivity(e)
+		})
+		return activityEntry(act)
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	e, ok := t.entries[id]
+	e, ok := t.local[id]
 	if !ok {
 		t.next++
-		e = &playEntry{id: id, sessionKey: t.next}
-		t.entries[id] = e
+		e = playEntry{id: id, sessionKey: t.next}
 	}
-	fn(e)
-	return *e
+	fn(&e)
+	t.local[id] = e
+	return e
 }
-
-func (t *sessionTracker) remove(id string) (playEntry, bool) {
+func (t *sessionActivities) remove(id string) (playEntry, bool) {
+	if t == nil {
+		return playEntry{}, false
+	}
+	if b := t.mounted(); b != nil {
+		act, ok := b.RemovePlexActivity(id)
+		if !ok {
+			return playEntry{}, false
+		}
+		return activityEntry(act), true
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	e, ok := t.entries[id]
+	e, ok := t.local[id]
 	if !ok {
 		return playEntry{}, false
 	}
-	delete(t.entries, id)
-	return *e, true
+	delete(t.local, id)
+	return e, true
 }
-
-func (t *sessionTracker) list() []playEntry {
+func (t *sessionActivities) list() []playEntry {
+	if t == nil {
+		return nil
+	}
+	if b := t.mounted(); b != nil {
+		acts := b.ListPlexActivities()
+		out := make([]playEntry, 0, len(acts))
+		for _, a := range acts {
+			out = append(out, activityEntry(a))
+		}
+		return out
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	out := make([]playEntry, 0, len(t.entries))
-	for _, e := range t.entries {
-		out = append(out, *e)
+	out := make([]playEntry, 0, len(t.local))
+	for _, e := range t.local {
+		out = append(out, e)
 	}
 	return out
 }
-
-// expire drops entries without a timeline update for ttl and returns them.
-func (t *sessionTracker) expire(now time.Time, ttl time.Duration) []playEntry {
+func (t *sessionActivities) expire(now time.Time, ttl time.Duration) []playEntry {
+	if t == nil {
+		return nil
+	}
+	if b := t.mounted(); b != nil {
+		acts := b.ExpirePlexActivities(now, ttl)
+		out := make([]playEntry, 0, len(acts))
+		for _, a := range acts {
+			out = append(out, activityEntry(a))
+		}
+		return out
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var out []playEntry
-	for id, e := range t.entries {
+	for id, e := range t.local {
 		if now.Sub(e.updatedAt) > ttl {
-			out = append(out, *e)
-			delete(t.entries, id)
+			out = append(out, e)
+			delete(t.local, id)
 		}
 	}
 	return out
 }
 
-// playbackOwners records explicit playback identifiers observed on source requests.
-// Only a known superseded identifier is stale: clients can omit identifiers or
-// use different identifiers on their timeline and media requests.
-type playbackOwners struct {
-	mu      sync.Mutex
-	entries map[playbackOwnerKey]*playbackOwner
-}
-type playbackOwnerKey struct {
-	user   int64
-	client string
-	key    core.RatingKey
-}
-type playbackOwner struct {
-	current string
-	playID  string
-	prior   []string
-	updated time.Time
+func activityEntry(a sessions.PlexActivity) playEntry {
+	e := playEntry{id: a.ID, sessionKey: a.SessionKey, user: a.User, key: a.Key, state: a.State, offset: a.Offset, duration: a.Duration, playQueueItemID: a.PlayQueueItemID, transcodeID: a.TranscodeID, startedAt: a.StartedAt, updatedAt: a.UpdatedAt}
+	e.client = Request{ClientID: a.ClientID, Product: a.Product, Version: a.Version, Platform: a.Platform, PlatformVersion: a.PlatformVersion, Device: a.Device, DeviceName: a.DeviceName, Model: a.Model, Vendor: a.Vendor, SessionID: a.SessionID, Remote: a.Remote}
+	if a.RemoteIP != "" {
+		e.client.RemoteIP = parseAddr(a.RemoteIP)
+	}
+	return e
 }
 
-func newPlaybackOwners() *playbackOwners {
-	return &playbackOwners{entries: make(map[playbackOwnerKey]*playbackOwner)}
-}
-
-// A decision is an authoritative handoff. A part request can establish direct
-// playback, but an old range on the same source cannot undo that handoff.
-const playbackOwnerHistoryLimit = 32
-
-func (o *playbackOwners) bind(user int64, client string, key core.RatingKey, id, playID string, decision bool, now time.Time) {
-	if id == "" {
-		return
+func entryActivity(e playEntry) sessions.PlexActivity {
+	a := sessions.PlexActivity{ID: e.id, SessionKey: e.sessionKey, User: e.user, ClientID: e.client.ClientID, Product: e.client.Product, Version: e.client.Version, Platform: e.client.Platform, PlatformVersion: e.client.PlatformVersion, Device: e.client.Device, DeviceName: e.client.DeviceName, Model: e.client.Model, Vendor: e.client.Vendor, SessionID: e.client.SessionID, Remote: e.client.Remote, Key: e.key, State: e.state, Offset: e.offset, Duration: e.duration, PlayQueueItemID: e.playQueueItemID, TranscodeID: e.transcodeID, StartedAt: e.startedAt, UpdatedAt: e.updatedAt}
+	if e.client.RemoteIP.IsValid() {
+		a.RemoteIP = e.client.RemoteIP.String()
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	k := playbackOwnerKey{user, client, key}
-	e := o.entries[k]
-	if e == nil {
-		e = &playbackOwner{}
-		o.entries[k] = e
-	}
-	if !decision && e.playID == playID && e.current != id && slices.Contains(e.prior, id) {
-		return
-	}
-	e.prior = slices.DeleteFunc(e.prior, func(v string) bool { return v == id || v == e.current })
-	if e.current != "" && e.current != id {
-		e.prior = append(e.prior, e.current)
-		if len(e.prior) > playbackOwnerHistoryLimit {
-			e.prior = e.prior[len(e.prior)-playbackOwnerHistoryLimit:]
-		}
-	}
-	e.current = id
-	e.playID = playID
-	e.updated = now
-}
-func (o *playbackOwners) stale(user int64, client string, key core.RatingKey, id string) bool {
-	if id == "" {
-		return false
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	e := o.entries[playbackOwnerKey{user, client, key}]
-	return e != nil && e.current != "" && e.current != id && slices.Contains(e.prior, id)
-}
-func (o *playbackOwners) expire(now time.Time, ttl time.Duration) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	for k, e := range o.entries {
-		if now.Sub(e.updated) > ttl {
-			delete(o.entries, k)
-		}
-	}
+	return a
 }
 
 // ---------------------------------------------------------------------------
@@ -506,20 +519,26 @@ func (s *Server) notifyTimeline(key core.RatingKey, t core.MediaType, title stri
 		parent, root = key.Parent().String(), core.ShowKey(key.TMDB()).String()
 	case core.KindSeason:
 		parent = key.Parent().String()
+	case core.KindMovie:
+		// An open movie detail is the item itself. Episodes refresh because
+		// the season and show ids are on the entry; a movie with only itemID
+		// leaves the toolbar on "Mark as Watched" until the page is reopened.
+		root = key.String()
 	}
 	s.publishNotification(model.NotificationContainer{
 		Type: "timeline",
 		Size: 1,
 		TimelineEntry: []model.TimelineEntry{{
-			Identifier:   model.LibraryIdentifier,
-			SectionID:    fmt.Sprint(sec.ID),
-			ItemID:       key.String(),
-			ParentItemID: parent,
-			RootItemID:   root,
-			Type:         typeNum,
-			Title:        title,
-			State:        5,
-			UpdatedAt:    s.now().Unix(),
+			Identifier:    model.LibraryIdentifier,
+			SectionID:     fmt.Sprint(sec.ID),
+			ItemID:        key.String(),
+			ParentItemID:  parent,
+			RootItemID:    root,
+			Type:          typeNum,
+			Title:         title,
+			State:         5,
+			MetadataState: "created",
+			UpdatedAt:     s.now().Unix(),
 		}},
 	}, userID)
 }

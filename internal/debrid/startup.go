@@ -16,10 +16,13 @@ func (s *Service) reusablePayload(ctx context.Context, rel core.Release) (Payloa
 	if !ok || p.ReleaseID != rel.ID || s.entryByID(p.Provider) == nil {
 		return Payload{}, false
 	}
+	if s.checkMediaPaused(p.Provider, p.URL) != nil {
+		return Payload{}, false
+	}
 	if hash := strings.ToLower(rel.InfoHash); hash != "" && hash != p.InfoHash {
 		return Payload{}, false
 	}
-	if !fileIdentityMatches(File{Path: p.Path}, rel.Target) {
+	if !fileIdentityMatches(File{Path: p.Path}, rel.Target) || !chosenFileMatchesTarget(p.Path, rel.Target) {
 		return Payload{}, false
 	}
 	p.Target = rel.Target

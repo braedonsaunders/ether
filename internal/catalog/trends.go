@@ -73,7 +73,7 @@ func (c *Catalog) refreshTrend(ctx context.Context, name string, typ core.MediaT
 		if !c.trendDue(old) {
 			return old, nil
 		}
-		if c.client == nil {
+		if c.tmdb() == nil {
 			return old, errors.New("TMDB is not configured")
 		}
 		parent := ctx
@@ -193,7 +193,7 @@ func (c *Catalog) TrendStatus(ctx context.Context) []TrendStatus {
 			if !s.attempted.IsZero() {
 				st.AttemptedAt = &s.attempted
 			}
-			if c.client == nil {
+			if c.tmdb() == nil {
 				st.State = "unconfigured"
 			}
 			out = append(out, st)

@@ -1,0 +1,21 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "private, no-cache"
+    ],
+    "Content-Type": [
+      "application/json"
+    ],
+    "Date": [
+      "Thu, 29 Oct 2026 [REDACTED_IP] GMT"
+    ],
+    "Vary": [
+      "Accept-Encoding"
+    ],
+    "X-Request-Id": [
+      "d234c3997d0a5eaae051c3b6"
+    ]
+  },
+  "body": "eyJhcGlfbWFqb3IiOjIsImNvbnRyYWN0X2RpZ2VzdCI6IjdiZDkzMGYzNjY0MDU0MTMxNWQ2MzFiNzIxNTkzOTQyMDE5Y2I4MzMzZjliMGJjNWMyMTQ4ZDQ1ZGQyYWNjMDciLCJsaW5rcyI6eyJjYXBhYmlsaXRpZXMiOiIvYXBpL3YyL2NhcGFiaWxpdGllcyIsImlkZW50aXR5IjoiL2FwaS92Mi9zeXN0ZW0vaWRlbnRpdHkiLCJvcGVuYXBpIjoiL2FwaS92Mi9vcGVuYXBpLmpzb24ifSwicmVxdWVzdF9vcmlnaW4iOiJodHRwOi8vW1JFREFDVEVEX0lQXToxODA5OCIsInNlcnZlcl92ZXJzaW9uIjoiNDRhMzQ1ZGIifQ=="
+}

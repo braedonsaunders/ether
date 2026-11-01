@@ -22,7 +22,13 @@ func (m *Manager) FeedSources() []core.ReleaseFeed {
 		}
 		raw, _ := json.Marshal(cfg)
 		sum := sha256.Sum256(raw)
-		f := core.ReleaseFeed{ID: c.indexerID(), Name: c.Name(), Generation: hex.EncodeToString(sum[:]), Protocol: cfg.Protocol, Categories: recentCategories(cfg), Supported: !cfg.UsesBackend()}
+		c.capsMu.Lock()
+		page := 0
+		if c.caps != nil {
+			page = c.caps.LimitMax
+		}
+		c.capsMu.Unlock()
+		f := core.ReleaseFeed{ID: c.indexerID(), Name: c.Name(), Generation: hex.EncodeToString(sum[:]), Protocol: cfg.Protocol, Categories: recentCategories(cfg), Supported: !cfg.UsesBackend(), DailyLimit: cfg.DailyLimit, PageMax: page}
 		if !f.Supported {
 			f.Reason = "This site does not expose a paginated recent-release feed; on-demand search remains available."
 		}

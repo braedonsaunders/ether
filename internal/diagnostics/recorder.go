@@ -121,7 +121,7 @@ func (r *Recorder) Observe(e Event) {
 		r.rememberSessionLocked(e.SessionKey, e.DeviceKey)
 	}
 	if (e.Kind == KindEncoderStarted || e.Kind == KindEncoderFailed) && e.DeviceKey == "" && e.SessionKey != "" {
-		if dev, ok := r.sessions[e.SessionKey]; ok {
+		if dev, ok := r.sessions[e.SessionKey]; ok && r.devices[dev] != nil {
 			e.DeviceKey = dev
 			e.Uncorrelated = false
 		}
@@ -143,7 +143,7 @@ func (r *Recorder) touchDeviceLocked(e Event) {
 		if len(r.devices) >= maxDevices && len(r.devOrder) > 0 {
 			old := r.devOrder[0]
 			r.devOrder = r.devOrder[1:]
-			delete(r.devices, old)
+			r.dropDeviceLocked(old)
 		}
 		d = &device{info: DeviceInfo{ID: devicePublicID(e.DeviceKey)}}
 		r.devices[e.DeviceKey] = d
@@ -197,7 +197,11 @@ func (r *Recorder) noteDiscoveryLocked(e Event) {
 	if e.DeviceKey == "" {
 		return
 	}
-	info := r.devices[e.DeviceKey].info
+	d := r.devices[e.DeviceKey]
+	if d == nil {
+		return
+	}
+	info := d.info
 	for _, c := range r.captures {
 		if c.state != "recording" || c.confirmed || e.Time.Before(c.started) {
 			continue
@@ -470,12 +474,28 @@ func (r *Recorder) deviceKeyLocked(id string) (string, bool) {
 	return "", false
 }
 
+// dropDeviceLocked removes a device and every session still attributed to it.
+// An encoder event carries no device of its own and must not follow a stale
+// session onto a missing device.
+func (r *Recorder) dropDeviceLocked(key string) {
+	delete(r.devices, key)
+	for i := 0; i < len(r.sesOrder); {
+		sid := r.sesOrder[i]
+		if r.sessions[sid] != key {
+			i++
+			continue
+		}
+		delete(r.sessions, sid)
+		r.sesOrder = append(r.sesOrder[:i], r.sesOrder[i+1:]...)
+	}
+}
+
 func (r *Recorder) pruneDevicesLocked(now time.Time) {
 	for i := 0; i < len(r.devOrder); {
 		k := r.devOrder[i]
 		d := r.devices[k]
 		if d == nil || !d.info.LastSeen.Add(deviceRecent).After(now) {
-			delete(r.devices, k)
+			r.dropDeviceLocked(k)
 			r.devOrder = append(r.devOrder[:i], r.devOrder[i+1:]...)
 			continue
 		}
@@ -748,6 +768,7 @@ func cloneEvent(e Event) Event {
 		m := *e.Media
 		e.Media = &m
 	}
+	e.Playback = clonePlayback(e.Playback)
 	return e
 }
 
@@ -841,7 +862,7 @@ func identityPreview(events []Event, titles, users, addrs bool) IdentityPreview 
 		p.Explanation = "Usernames are not in the ZIP. Addresses are not in the ZIP."
 	}
 	if !titles {
-		p.Explanation += " Titles and source names are not in the ZIP."
+		p.Explanation += " Titles and source names are not in the ZIP. Release names in playback decisions are replaced with resolution, source, group, size, and a per-capture hash."
 	} else {
 		p.Explanation += " Titles and source names are in the ZIP."
 	}

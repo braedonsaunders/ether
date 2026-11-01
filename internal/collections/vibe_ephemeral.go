@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/lru"
 )
@@ -438,7 +438,7 @@ func vibeTitleMatches(t core.Title, f core.Filter) bool {
 	if len(f.Countries) > 0 && len(t.Countries) > 0 && !anyIn(t.Countries, f.Countries) {
 		return false
 	}
-	if f.MaxContentRating != "" && catalog.RatingExceeds(t.ContentRating, f.MaxContentRating) {
+	if f.MaxContentRating != "" && contentrating.Exceeds(t.ContentRating, f.MaxContentRating) {
 		return false
 	}
 	return true

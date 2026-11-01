@@ -4,7 +4,11 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/identity"
 )
 
 // tokenFromRequest extracts the owner credential from headers. Cookies are
@@ -26,22 +30,25 @@ func tokenFromRequest(r *http.Request) string {
 }
 
 func (h *Handler) isOwner(r *http.Request, token string) bool {
-	return token != "" && h.deps.IsOwnerToken(r.Context(), token)
-}
-
-// isLocalOrLAN reports whether the direct peer is loopback, RFC-1918
-// private, link-local, or a ULA address. Forwarded headers are ignored:
-// the peer that opened the connection is what matters.
-func isLocalOrLAN(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	if ip == nil {
+	if token == "" {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+	if h.deps.IdentityGrants != nil {
+		u, err := h.deps.IdentityGrants.Resolve(r.Context(), "owner", token)
+		if err == nil {
+			return u.IsOwner
+		}
+	}
+	if core.IsGrantCredential(token) {
+		return false
+	}
+	return h.deps.IsOwnerToken != nil && h.deps.IsOwnerToken(r.Context(), token)
+}
+
+// isLocalOrLAN classifies the real client behind a trusted proxy.
+func isLocalOrLAN(r *http.Request, trusted ...netip.Prefix) bool {
+	ip, _ := identity.ClientNet(r, trusted...)
+	return ip.IsValid() && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified())
 }
 
 // localSetupHosts are DNS suffixes that only resolve on the local network.
@@ -73,19 +80,27 @@ func localHost(r *http.Request) bool {
 	return false
 }
 
+// SetupOpen is setupOpen for handlers outside the admin API (a failed
+// start's recovery page): whether r gets tokenless local-network access
+// to a server whose setup is not complete.
+func SetupOpen(setupComplete bool, r *http.Request, trusted ...netip.Prefix) bool {
+	return setupOpen(setupComplete, r, trusted...)
+}
+
 // setupOpen reports whether r gets tokenless access: setup is not complete
 // and the browser is on the local network, addressing this server by a
 // local name.
-func setupOpen(cfgSetupComplete bool, r *http.Request) bool {
-	return !cfgSetupComplete && isLocalOrLAN(r) && localHost(r)
+func setupOpen(cfgSetupComplete bool, r *http.Request, trusted ...netip.Prefix) bool {
+	return !cfgSetupComplete && isLocalOrLAN(r, trusted...) && localHost(r)
 }
 
 // requireAuth implements the admin access policy:
 //
 //   - A valid owner token always passes, from anywhere.
-//   - Before setup is complete, requests from localhost/LAN pass without a
-//     token (there is no owner credential yet); remote requests do not.
-//   - After setup, a valid owner token is mandatory.
+//   - Before setup is closed, requests from localhost/LAN that address a
+//     local hostname pass without a token. Setup closes when it is complete
+//     or a local owner exists. Remote requests and public DNS names do not.
+//   - After setup is closed, a valid owner credential is mandatory.
 //   - Mutating requests additionally must pass the CSRF header check.
 func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -99,12 +114,12 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			next.ServeHTTP(w, withAccess(r, Access{Owner: true, SetupComplete: setupComplete}))
 			return
 		}
-		if !setupComplete {
-			if setupOpen(setupComplete, r) {
+		if !h.setupClosed(r) {
+			if setupOpen(false, r, h.proxyPrefixes()...) {
 				next.ServeHTTP(w, withAccess(r, Access{}))
 				return
 			}
-			if isLocalOrLAN(r) {
+			if isLocalOrLAN(r, h.proxyPrefixes()...) {
 				writeError(w, http.StatusForbidden, "setup_local_host", "open setup at this server's IP address or local hostname (for example http://192.168.1.10:32400/ether/) until it is complete")
 				return
 			}
@@ -112,7 +127,7 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="ether-admin"`)
-		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid owner X-Plex-Token is required")
+		writeError(w, http.StatusUnauthorized, "unauthorized", "sign in with an owner account")
 	}
 }
 
@@ -145,13 +160,34 @@ func RequestAccess(ctx context.Context) (a Access, ok bool) {
 func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	cfg := h.deps.Config.Get()
 	token := tokenFromRequest(r)
-	authed := h.isOwner(r, token) || setupOpen(cfg.SetupComplete, r)
+	authRequired := h.setupClosed(r)
+	authed := h.isOwner(r, token) || setupOpen(authRequired, r, h.proxyPrefixes()...)
+	signInMethods := []string{}
+	if h.deps.LocalIdentity != nil && h.deps.IdentityGrants != nil && h.deps.IdentityLimiter != nil {
+		signInMethods = append(signInMethods, "local")
+	}
+	if h.deps.SignIn != nil && cfg.Plex.Claimed {
+		signInMethods = append(signInMethods, "plex")
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":            true,
-		"version":       h.version,
-		"setupComplete": cfg.SetupComplete,
-		"authenticated": authed,
-		"authRequired":  cfg.SetupComplete,
-		"serverName":    cfg.Server.FriendlyName,
+		"ok":              true,
+		"version":         h.version,
+		"setupComplete":   cfg.SetupComplete,
+		"ownerConfigured": h.deps.OwnerConfigured != nil && h.deps.OwnerConfigured(r.Context()),
+		"authenticated":   authed,
+		"authRequired":    authRequired,
+		"signInMethods":   signInMethods,
+		"serverName":      cfg.Server.FriendlyName,
+		"plexEnabled":     cfg.Frontends == nil || cfg.Frontends["plex"].Enabled,
 	})
+}
+
+func (h *Handler) proxyPrefixes() []netip.Prefix {
+	return identity.ProxyPrefixes(h.deps.Config.Get().Server.TrustedProxyCIDRs)
+}
+
+// setupClosed closes tokenless access immediately once a local owner exists,
+// while leaving Plex's existing claim wizard behavior unchanged.
+func (h *Handler) setupClosed(r *http.Request) bool {
+	return h.deps.Config.Get().SetupComplete || (h.deps.LocalOwnerConfigured != nil && h.deps.LocalOwnerConfigured(r.Context()))
 }

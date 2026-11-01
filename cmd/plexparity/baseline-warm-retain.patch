@@ -1,0 +1,38 @@
+diff --git a/internal/playback/preresolve.go b/internal/playback/preresolve.go
+--- a/internal/playback/preresolve.go
++++ b/internal/playback/preresolve.go
+@@ -12,6 +12,15 @@
+ )
+ 
+ const preResolveTTL = 60 * time.Minute
++
++// parityRetainWarm is nil in production, so warm-up eviction is unchanged.
++// A plexparity build points it at a function that keeps fixture probes, which
++// otherwise get dropped once the warm map reaches its 128-entry cap.
++var parityRetainWarm func(identity) bool
++
++func warmRetained(id identity) bool {
++	return parityRetainWarm != nil && parityRetainWarm(id)
++}
+ 
+ const (
+ 	detailPrefetchBytes  = 2 << 20
+@@ -126,7 +135,7 @@
+ 		return false
+ 	}
+ 	for ident, e := range m.warm {
+-		if !now.Before(e.expires) {
++		if !now.Before(e.expires) && !warmRetained(ident) {
+ 			delete(m.warm, ident)
+ 		}
+ 	}
+@@ -160,6 +169,9 @@
+ 		var oldest identity
+ 		var expiry time.Time
+ 		for ident, e := range m.warm {
++			if warmRetained(ident) {
++				continue
++			}
+ 			select {
+ 			case <-e.done:
+ 				if expiry.IsZero() || e.expires.Before(expiry) {

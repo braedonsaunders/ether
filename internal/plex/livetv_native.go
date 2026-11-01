@@ -3,11 +3,11 @@ package plex
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // PMS's channel-tune route serializes a rolling subscription, rather than an
@@ -43,9 +43,12 @@ type nativeLiveContainer struct {
 
 func nativeLiveRequest(r *http.Request) bool {
 	pr := FromContext(r.Context())
-	platform := strings.ToLower(pr.Platform)
-	return strings.Contains(strings.ToLower(pr.Product), "apple") ||
-		platform == "tvos" || platform == "ios" || platform == "android"
+	// PMS serves Apple, iOS and Android a channel-tune payload instead of the
+	// web bootstrap. The match is the registry quirk plex-native-live-tune.
+	if pr == nil {
+		return false
+	}
+	return transcode.HasQuirk(pr.Product, pr.Platform, pr.Device, pr.Model, pr.Version, "plex-native-live-tune")
 }
 
 func (s *Server) nativeLiveSubscriptionFor(info livetv.SessionInfo) nativeLiveSubscription {

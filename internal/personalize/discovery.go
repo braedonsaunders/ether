@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 	"time"
@@ -21,6 +21,8 @@ type Discovery struct {
 	state   core.State
 	allowed func(*core.User, *core.Title) bool
 	now     func() time.Time
+	// NotInterested applies only to recommendation rows, never Continue.
+	NotInterested func(context.Context, *core.User) ([]NotInterestedSignal, error)
 }
 
 func NewDiscovery(db *sql.DB, cat core.Catalog, st core.State, allowed func(*core.User, *core.Title) bool) *Discovery {
@@ -36,7 +38,7 @@ func discoveryIdentity(t *core.Title) core.RatingKey {
 	return t.Key
 }
 func (d *Discovery) visible(u *core.User, t *core.Title) bool {
-	if u == nil || t == nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
+	if u == nil || t == nil || t.Adult || contentrating.Exceeds(t.ContentRating, u.MaxContentRating) {
 		return false
 	}
 	section := 1
@@ -100,6 +102,12 @@ func (d *Discovery) FilterContinue(ctx context.Context, u *core.User, titles []c
 	return out
 }
 func (d *Discovery) YearInReview(ctx context.Context, u *core.User, year, limit int) (core.Hub, error) {
+	return d.yearInReview(ctx, u, year, limit, false)
+}
+
+// yearInReview applies exclusions only when this history is suggested as a
+// discovery row; direct collection access continues to show viewing history.
+func (d *Discovery) yearInReview(ctx context.Context, u *core.User, year, limit int, recommendation bool) (core.Hub, error) {
 	hub := core.Hub{ID: fmt.Sprintf("discovery.review.%d", year), Title: fmt.Sprintf("Your %d in Review", year), Context: "hub.home.yearinreview", Promoted: true}
 	if u == nil || d.state == nil {
 		return hub, nil
@@ -110,6 +118,14 @@ func (d *Discovery) YearInReview(ctx context.Context, u *core.User, year, limit 
 	if limit <= 0 {
 		limit = 20
 	}
+	var excluded excludedTitles
+	if recommendation {
+		var err error
+		excluded, _, err = loadExclusions(ctx, u, d.NotInterested)
+		if err != nil {
+			return hub, err
+		}
+	}
 	// The year is the server's calendar year (d.now's zone), not UTC's: a
 	// film finished on New Year's Eve evening belongs to that year.
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, d.now().Location())
@@ -118,41 +134,46 @@ func (d *Discovery) YearInReview(ctx context.Context, u *core.User, year, limit 
 	if e != nil {
 		return hub, e
 	}
-	keys := make([]core.RatingKey, 0, len(entries)*2)
-	for _, h := range entries {
-		if h.Completed && !h.ViewedAt.Before(start) && h.ViewedAt.Before(end) {
-			keys = append(keys, h.Key, tasteKey(h.Key))
-		}
-	}
-	cached := mirroredTitles(ctx, d.catalog, keys)
 	seen := map[core.RatingKey]bool{}
-	for _, h := range entries {
-		if !h.Completed || h.ViewedAt.Before(start) || !h.ViewedAt.Before(end) {
-			continue
-		}
-		// Episode keys already identify their show. Once that show is in the
-		// row, do not hydrate every remaining watched episode just to discard it.
-		if seen[tasteKey(h.Key)] {
-			continue
-		}
-		t, e := historyTitle(ctx, d.catalog, cached, h.Key)
-		if e != nil || !d.visible(u, t) {
-			continue
-		}
-		k := discoveryIdentity(t)
-		if seen[k] {
-			continue
-		}
-		if k != t.Key {
-			t, e = historyTitle(ctx, d.catalog, cached, k)
-			if e != nil || !d.visible(u, t) {
-				continue
+	// Hydrate a window at a time. The row stops at limit, so the rest of a
+	// long year is not loaded onto the home request.
+	for startAt := 0; startAt < len(entries) && len(hub.Items) < limit; startAt += 64 {
+		window := entries[startAt:min(startAt+64, len(entries))]
+		keys := make([]core.RatingKey, 0, len(window)*2)
+		for _, h := range window {
+			if h.Completed && !h.ViewedAt.Before(start) && h.ViewedAt.Before(end) && !seen[tasteKey(h.Key)] {
+				keys = append(keys, h.Key, tasteKey(h.Key))
 			}
 		}
-		seen[k] = true
-		hub.Items = append(hub.Items, *t)
-		if len(hub.Items) >= limit {
-			break
+		cached := mirroredTitles(ctx, d.catalog, keys)
+		for _, h := range window {
+			if !h.Completed || h.ViewedAt.Before(start) || !h.ViewedAt.Before(end) {
+				continue
+			}
+			// Episode keys already identify their show. Once that show is in the
+			// row, do not hydrate every remaining watched episode just to discard it.
+			if seen[tasteKey(h.Key)] {
+				continue
+			}
+			t, e := historyTitle(ctx, d.catalog, cached, h.Key)
+			if e != nil || !d.visible(u, t) || excluded.contains(t) {
+				continue
+			}
+			k := discoveryIdentity(t)
+			if seen[k] {
+				continue
+			}
+			if k != t.Key {
+				t, e = historyTitle(ctx, d.catalog, cached, k)
+				if e != nil || !d.visible(u, t) || excluded.contains(t) {
+					continue
+				}
+			}
+			seen[k] = true
+			hub.Items = append(hub.Items, *t)
+			if len(hub.Items) >= limit {
+				break
+			}
 		}
 	}
 	return hub, nil
@@ -164,6 +185,10 @@ func (d *Discovery) Rediscover(ctx context.Context, u *core.User, limit int) (co
 	}
 	if limit <= 0 {
 		limit = 12
+	}
+	excluded, _, err := loadExclusions(ctx, u, d.NotInterested)
+	if err != nil {
+		return hub, err
 	}
 	entries, e := d.state.InProgress(ctx, u.ID, 200)
 	if e != nil {
@@ -178,7 +203,7 @@ func (d *Discovery) Rediscover(ctx context.Context, u *core.User, limit int) (co
 			continue
 		}
 		t, e := d.catalog.Get(ctx, st.Key)
-		if e != nil || !d.visible(u, t) {
+		if e != nil || !d.visible(u, t) || excluded.contains(t) {
 			continue
 		}
 		k := discoveryIdentity(t)
@@ -187,7 +212,7 @@ func (d *Discovery) Rediscover(ctx context.Context, u *core.User, limit int) (co
 		}
 		if k != t.Key {
 			t, e = d.catalog.Get(ctx, k)
-			if e != nil || !d.visible(u, t) {
+			if e != nil || !d.visible(u, t) || excluded.contains(t) {
 				continue
 			}
 		}
@@ -212,7 +237,7 @@ func (d *Discovery) Hubs(ctx context.Context, u *core.User, limit int) ([]core.H
 	if d.now().Month() < time.December {
 		year--
 	}
-	review, e := d.YearInReview(ctx, u, year, limit)
+	review, e := d.yearInReview(ctx, u, year, limit, true)
 	if e != nil {
 		return out, e
 	}

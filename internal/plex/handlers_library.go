@@ -1,7 +1,9 @@
 package plex
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -13,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -44,7 +47,7 @@ func typeFromParam(s string) core.MediaType {
 		return core.TypeMovie
 	case "2", "show", "shows", "tv":
 		return core.TypeShow
-	case "3", "season":
+	case "3", "season", "seasons":
 		return core.TypeSeason
 	case "4", "episode", "episodes":
 		return core.TypeEpisode
@@ -312,9 +315,9 @@ func (s *Server) meta(sec Section, t core.MediaType, activeSort string) *model.M
 	}
 }
 
-func parseSortParam(s string) (key, dir string) {
-	first, _, _ := strings.Cut(s, ",")
-	key, opts, _ := strings.Cut(first, ":")
+func parseSortTerm(term string) (key, dir string) {
+	key, opts, _ := strings.Cut(strings.TrimSpace(term), ":")
+	key = stripFieldTypePrefix(key)
 	for _, o := range strings.Split(opts, ":") {
 		if o == "desc" || o == "asc" {
 			dir = o
@@ -323,13 +326,218 @@ func parseSortParam(s string) (key, dir string) {
 	return key, dir
 }
 
+func parseSortParam(s string) (key, dir string) {
+	first, _, _ := strings.Cut(s, ",")
+	return parseSortTerm(first)
+}
+
 // ---------------------------------------------------------------------------
 // Browse
 
 type browseRequest struct {
-	q         core.BrowseQuery
-	unwatched bool
-	limit     int // "limit" param; 0 = none
+	q                core.BrowseQuery
+	unwatched        *bool // true = unwatched (ViewCount == 0), false = watched (ViewCount > 0)
+	inProgress       *bool // true = in progress (ViewOffset > 0), false = not in progress (ViewOffset == 0)
+	sortLastViewed   bool
+	lastViewedDesc   bool
+	invalidSort      bool
+	lastViewedAfter  int64
+	lastViewedBefore int64
+	limit            int // "limit" param; 0 = none
+	// none: the viewer's plex.tv share and the request's own filter admit
+	// no rating in common, so the listing is empty.
+	none bool
+}
+
+func stripFieldTypePrefix(key string) string {
+	if key == "title.query" {
+		return key
+	}
+	if prefix, rest, ok := strings.Cut(key, "."); ok && rest != "" && typeFromParam(prefix) != "" {
+		return rest
+	}
+	return key
+}
+
+// parseFilterKeyOp extracts the field name, comparison operator ("=", "!=",
+// "==", "!==", "<=", ">=", "<<", ">>", "<", ">"), and value from a URL query
+// entry. Plex media queries encode the operator before the "=" key-value
+// delimiter (e.g. "genre!=Drama" parses as key "genre!", value "Drama";
+// "title==Foo" parses as key "title", value "=Foo"; "title!==Foo" parses as
+// key "title!", value "=Foo").
+func parseFilterKeyOp(rawKey, rawVal string) (key, op, val string) {
+	if rawVal == "" {
+		for _, sep := range []string{"!==", "==", ">>=", "<<=", ">=", "<=", "!=", ">>", "<<", ">", "<"} {
+			if k, v, ok := strings.Cut(rawKey, sep); ok && k != "" && v != "" {
+				switch sep {
+				case ">>=":
+					sep = ">>"
+				case "<<=":
+					sep = "<<"
+				}
+				return stripFieldTypePrefix(k), sep, v
+			}
+		}
+	}
+	key, op, val = rawKey, "=", rawVal
+	switch {
+	case strings.HasSuffix(rawKey, "!=="):
+		key, op = strings.TrimSuffix(rawKey, "!=="), "!=="
+	case strings.HasSuffix(rawKey, "=="):
+		key, op = strings.TrimSuffix(rawKey, "=="), "=="
+	case strings.HasSuffix(rawKey, ">>="):
+		key, op = strings.TrimSuffix(rawKey, ">>="), ">>"
+	case strings.HasSuffix(rawKey, "<<="):
+		key, op = strings.TrimSuffix(rawKey, "<<="), "<<"
+	case strings.HasSuffix(rawKey, ">="):
+		key, op = strings.TrimSuffix(rawKey, ">="), ">="
+	case strings.HasSuffix(rawKey, "<="):
+		key, op = strings.TrimSuffix(rawKey, "<="), "<="
+	case strings.HasSuffix(rawKey, "!="):
+		key, op = strings.TrimSuffix(rawKey, "!="), "!="
+	case strings.HasSuffix(rawKey, ">>"):
+		key, op = strings.TrimSuffix(rawKey, ">>"), ">>"
+	case strings.HasSuffix(rawKey, "<<"):
+		key, op = strings.TrimSuffix(rawKey, "<<"), "<<"
+	case strings.HasSuffix(rawKey, ">"):
+		key, op = strings.TrimSuffix(rawKey, ">"), ">="
+	case strings.HasSuffix(rawKey, "<"):
+		key, op = strings.TrimSuffix(rawKey, "<"), "<="
+	case strings.HasSuffix(rawKey, "!"):
+		key = strings.TrimSuffix(rawKey, "!")
+		if strings.HasPrefix(rawVal, "=") {
+			op, val = "!==", rawVal[1:]
+		} else {
+			op = "!="
+		}
+	case strings.HasSuffix(rawKey, "="):
+		key, op = strings.TrimSuffix(rawKey, "="), "=="
+	default:
+		if strings.HasPrefix(rawVal, "=") {
+			op, val = "==", rawVal[1:]
+		} else {
+			for _, pfx := range []string{">>=", "<<=", ">=", "<=", ">>", "<<", ">", "<"} {
+				if strings.HasPrefix(rawVal, pfx) {
+					op, val = pfx, strings.TrimPrefix(rawVal, pfx)
+					switch op {
+					case ">>=":
+						op = ">>"
+					case "<<=":
+						op = "<<"
+					}
+					break
+				}
+			}
+		}
+	}
+	return stripFieldTypePrefix(key), op, val
+}
+
+func parseBoolFilter(op, val string) (bool, bool) {
+	v := strings.TrimSpace(val)
+	var b bool
+	switch {
+	case v == "1" || strings.EqualFold(v, "true"):
+		b = true
+	case v == "0" || strings.EqualFold(v, "false"):
+		b = false
+	default:
+		return false, false
+	}
+	if op == "!=" || op == "!==" {
+		b = !b
+	}
+	return b, true
+}
+
+func parseDateFilter(op, raw string, now time.Time) (core.DateFilter, bool) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return core.DateFilter{}, false
+	}
+	if strings.HasPrefix(v, "-") {
+		rel := v[1:]
+		for _, unit := range []string{"mon", "s", "m", "h", "d", "w", "y"} {
+			if strings.HasSuffix(rel, unit) {
+				n, err := strconv.Atoi(strings.TrimSuffix(rel, unit))
+				if err != nil || n < 0 {
+					return core.DateFilter{}, false
+				}
+				var ts int64
+				switch unit {
+				case "s":
+					ts = now.Add(-time.Duration(n) * time.Second).Unix()
+				case "m":
+					ts = now.Add(-time.Duration(n) * time.Minute).Unix()
+				case "h":
+					ts = now.Add(-time.Duration(n) * time.Hour).Unix()
+				case "d":
+					ts = now.AddDate(0, 0, -n).Unix()
+				case "w":
+					ts = now.AddDate(0, 0, -7*n).Unix()
+				case "mon":
+					ts = now.AddDate(0, -n, 0).Unix()
+				case "y":
+					ts = now.AddDate(-n, 0, 0).Unix()
+				}
+				return core.DateFilter{Op: op, Unix: ts}, true
+			}
+		}
+	}
+	if tm, err := time.Parse("2006-01-02", v); err == nil {
+		return core.DateFilter{Op: op, Unix: tm.UTC().Unix(), SpanDay: true}, true
+	}
+	if tm, err := time.Parse(time.RFC3339, v); err == nil {
+		return core.DateFilter{Op: op, Unix: tm.UTC().Unix()}, true
+	}
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return core.DateFilter{Op: op, Unix: n}, true
+	}
+	return core.DateFilter{}, false
+}
+
+func parseFilterTime(v string, now time.Time) (ts int64, dateOnly bool, ok bool) {
+	df, ok := parseDateFilter("=", v, now)
+	if !ok {
+		return 0, false, false
+	}
+	return df.Unix, df.SpanDay, true
+}
+
+func applyTimeFilter(op string, ts int64, dateOnly bool, after, before *int64) {
+	switch op {
+	case ">=", ">>", ">>=":
+		if ts > *after {
+			*after = ts
+		}
+	case ">":
+		if ts+1 > *after {
+			*after = ts + 1
+		}
+	case "<=", "<<", "<<=":
+		end := ts
+		if dateOnly {
+			end += 86399
+		}
+		if *before == 0 || end < *before {
+			*before = end
+		}
+	case "<":
+		if *before == 0 || ts-1 < *before {
+			*before = ts - 1
+		}
+	case "=", "==":
+		if ts > *after {
+			*after = ts
+		}
+		end := ts
+		if dateOnly {
+			end += 86399
+		}
+		if *before == 0 || end < *before {
+			*before = end
+		}
+	}
 }
 
 // parseBrowse converts Plex filter/sort params into a catalogue query.
@@ -339,6 +547,18 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 	if u != nil {
 		f.MaxContentRating = u.MaxContentRating
 	}
+
+	if blocks, ok := s.d.AccessPolicy.(interface {
+		BrowseBlocks(*core.User) ([]string, []string, string)
+	}); ok {
+		genres, keywords, rating := blocks.BrowseBlocks(u)
+		f.ExcludeGenres = genres
+		f.ExcludeKeywords = keywords
+		if rating != "" {
+			f.MaxContentRating = rating
+		}
+	}
+	f.SaferPlexRating = s.plexMetaOn()
 	splitVals := func(v string) []string {
 		var out []string
 		for _, p := range strings.Split(v, ",") {
@@ -349,132 +569,392 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 		return out
 	}
 	atoi := func(v string) int { n, _ := strconv.Atoi(strings.TrimSpace(v)); return n }
-	for rawKey, vals := range q {
-		if len(vals) == 0 {
-			continue
+	minPos := func(cur, n int) int {
+		if cur == 0 || n < cur {
+			return n
 		}
-		v := vals[0]
-		// Media-query operators arrive inside the key: "year>>=2000" parses
-		// as key "year>>", value "2000".
-		key, op := rawKey, "="
-		for _, suf := range []string{"!==", "==", "!=", ">>", "<<", ">", "<", "!"} {
-			if strings.HasSuffix(rawKey, suf) {
-				key, op = strings.TrimSuffix(rawKey, suf), suf
-				break
-			}
-		}
-		switch key {
-		case "genre":
-			for _, g := range splitVals(v) {
-				f.Genres = append(f.Genres, s.facetTitle(ctx, t, "genre", g))
-			}
-		case "country":
-			for _, c := range splitVals(v) {
-				f.Countries = append(f.Countries, s.facetTitle(ctx, t, "country", c))
-			}
-		case "contentRating":
-			for _, c := range splitVals(v) {
-				f.ContentRatings = append(f.ContentRatings, s.facetTitle(ctx, t, "contentRating", c))
-			}
-		case "studio":
-			f.Studio = s.facetTitle(ctx, t, "studio", v)
-		case "firstCharacter":
-			f.FirstCharacter = v
-		case "language":
-			f.Languages = splitVals(v)
-		case "year":
-			ys := splitVals(v)
-			switch op {
-			case ">>":
-				f.YearFrom = atoi(v) + 1
-			case ">":
-				f.YearFrom = atoi(v)
-			case "<<":
-				f.YearTo = atoi(v) - 1
-			case "<":
-				f.YearTo = atoi(v)
-			default:
-				for _, y := range ys {
-					n := atoi(y)
-					if n == 0 {
-						continue
-					}
-					if f.YearFrom == 0 || n < f.YearFrom {
-						f.YearFrom = n
-					}
-					if n > f.YearTo {
-						f.YearTo = n
+		return cur
+	}
+	now := s.now()
+	rawKeys := make([]string, 0, len(q))
+	for k := range q {
+		rawKeys = append(rawKeys, k)
+	}
+	sort.Strings(rawKeys)
+	for _, rawKey := range rawKeys {
+		for _, rawVal := range q[rawKey] {
+			key, op, v := parseFilterKeyOp(rawKey, rawVal)
+			isNeg := op == "!=" || op == "!=="
+			switch key {
+			case "genre":
+				for _, g := range splitVals(v) {
+					name := s.facetTitle(ctx, t, "genre", g)
+					if isNeg {
+						f.ExcludeGenres = append(f.ExcludeGenres, name)
+					} else {
+						f.Genres = append(f.Genres, name)
 					}
 				}
-			}
-		case "decade":
-			n := atoi(v)
-			if n > 0 {
-				f.YearFrom, f.YearTo = n, n+9
-			}
-		case "collection":
-			if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-				if rk := core.RatingKey(id); rk.Kind() == core.KindCollection {
-					id = rk.TMDB()
+			case "country":
+				for _, c := range splitVals(v) {
+					name := s.facetTitle(ctx, t, "country", c)
+					if isNeg {
+						f.ExcludeCountries = append(f.ExcludeCountries, name)
+					} else {
+						f.Countries = append(f.Countries, name)
+					}
 				}
-				f.Collection = id
-			}
-		case "actor", "director", "writer", "producer":
-			if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-				f.Person = id
-			}
-		case "title":
-			f.Query = v
-		case "audienceRating", "rating":
-			if x, err := strconv.ParseFloat(v, 64); err == nil && (op == ">>" || op == ">") {
-				f.MinRating = x
-			}
-		case "duration":
-			if n := atoi(v); n > 0 {
+			case "contentRating":
+				for _, c := range splitVals(v) {
+					name := s.facetTitle(ctx, t, "contentRating", c)
+					if isNeg {
+						f.ExcludeContentRatings = append(f.ExcludeContentRatings, name)
+					} else {
+						f.ContentRatings = append(f.ContentRatings, name)
+					}
+				}
+			case "studio":
+				name := s.facetTitle(ctx, t, "studio", v)
+				if op == "=" && f.Studio == "" && len(f.StudioFilters) == 0 {
+					f.Studio = name
+				}
+				f.StudioFilters = append(f.StudioFilters, core.StringFilter{Op: op, Value: name})
+			case "firstCharacter":
+				f.FirstCharacter = v
+			case "language":
+				f.Languages = append(f.Languages, splitVals(v)...)
+			case "year":
 				switch op {
-				case "<<", "<":
-					f.MaxRuntime = time.Duration(n) * time.Millisecond
 				case ">>", ">":
-					f.MinRuntime = time.Duration(n) * time.Millisecond
+					if n := atoi(v); n > 0 {
+						f.YearFrom = max(f.YearFrom, n+1)
+					}
+				case ">=":
+					if n := atoi(v); n > 0 {
+						f.YearFrom = max(f.YearFrom, n)
+					}
+				case "<<", "<":
+					if n := atoi(v); n > 1 {
+						f.YearTo = minPos(f.YearTo, n-1)
+					}
+				case "<=":
+					if n := atoi(v); n > 0 {
+						f.YearTo = minPos(f.YearTo, n)
+					}
+				case "!=", "!==":
+					for _, y := range splitVals(v) {
+						if n := atoi(y); n > 0 {
+							f.ExcludeYears = append(f.ExcludeYears, n)
+						}
+					}
+				default:
+					var ns []int
+					for _, y := range splitVals(v) {
+						if n := atoi(y); n > 0 {
+							ns = append(ns, n)
+						}
+					}
+					if len(ns) == 1 && len(f.Years) == 0 && f.YearFrom == 0 && f.YearTo == 0 {
+						f.YearFrom, f.YearTo = ns[0], ns[0]
+					} else if len(ns) > 0 {
+						if f.YearFrom > 0 && f.YearFrom == f.YearTo && len(f.Years) == 0 {
+							f.Years = append(f.Years, f.YearFrom)
+							f.YearFrom, f.YearTo = 0, 0
+						}
+						f.Years = append(f.Years, ns...)
+					}
 				}
+			case "decade":
+				switch op {
+				case ">>", ">":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearFrom = max(f.YearFrom, d+10)
+					}
+				case ">=":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearFrom = max(f.YearFrom, d)
+					}
+				case "<<", "<":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearTo = minPos(f.YearTo, d-1)
+					}
+				case "<=":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearTo = minPos(f.YearTo, d+9)
+					}
+				case "!=", "!==":
+					for _, p := range splitVals(v) {
+						if d := (atoi(p) / 10) * 10; d > 0 {
+							for y := d; y <= d+9; y++ {
+								f.ExcludeYears = append(f.ExcludeYears, y)
+							}
+						}
+					}
+				default:
+					var decs []int
+					for _, p := range splitVals(v) {
+						if d := (atoi(p) / 10) * 10; d > 0 {
+							decs = append(decs, d)
+						}
+					}
+					if len(decs) == 1 && len(f.Years) == 0 {
+						f.YearFrom = max(f.YearFrom, decs[0])
+						f.YearTo = minPos(f.YearTo, decs[0]+9)
+					} else if len(decs) > 1 {
+						for _, d := range decs {
+							for y := d; y <= d+9; y++ {
+								f.Years = append(f.Years, y)
+							}
+						}
+					}
+				}
+			case "originallyAvailableAt":
+				if df, ok := parseDateFilter(op, v, now); ok {
+					f.ReleasedFilters = append(f.ReleasedFilters, df)
+				}
+			case "addedAt":
+				if ts, dateOnly, ok := parseFilterTime(v, now); ok {
+					applyTimeFilter(op, ts, dateOnly, &f.AddedAfter, &f.AddedBefore)
+				}
+			case "updatedAt":
+				if ts, dateOnly, ok := parseFilterTime(v, now); ok {
+					applyTimeFilter(op, ts, dateOnly, &f.UpdatedAfter, &f.UpdatedBefore)
+				}
+			case "lastViewedAt":
+				if ts, dateOnly, ok := parseFilterTime(v, now); ok {
+					applyTimeFilter(op, ts, dateOnly, &br.lastViewedAfter, &br.lastViewedBefore)
+				}
+			case "collection":
+				var ids []int64
+				for _, p := range splitVals(v) {
+					if id, err := strconv.ParseInt(p, 10, 64); err == nil && id > 0 {
+						if rk := core.RatingKey(id); rk.Kind() == core.KindCollection {
+							id = rk.TMDB()
+						}
+						ids = append(ids, id)
+					}
+				}
+				if len(ids) > 0 {
+					if isNeg {
+						f.ExcludeCollections = append(f.ExcludeCollections, ids...)
+					} else {
+						if len(ids) == 1 && f.Collection == 0 && len(f.Collections) == 0 {
+							f.Collection = ids[0]
+						}
+						f.Collections = append(f.Collections, ids...)
+					}
+				}
+			case "actor", "director", "writer", "producer":
+				kind := "cast"
+				switch key {
+				case "director":
+					kind = "director"
+				case "writer":
+					kind = "writer"
+				case "producer":
+					kind = "crew"
+				}
+				var ids []int64
+				for _, p := range splitVals(v) {
+					if id, err := strconv.ParseInt(p, 10, 64); err == nil && id > 0 {
+						ids = append(ids, id)
+					}
+				}
+				if len(ids) > 0 {
+					if isNeg {
+						f.Credits = append(f.Credits, core.CreditFilter{People: ids, Kind: kind, Exclude: true})
+					} else {
+						if len(ids) == 1 && f.Person == 0 {
+							f.Person = ids[0]
+						}
+						f.Credits = append(f.Credits, core.CreditFilter{People: ids, Kind: kind})
+					}
+				}
+			case "title":
+				if op == "=" && f.Query == "" && len(f.TitleFilters) == 0 {
+					f.Query = v
+				} else {
+					f.TitleFilters = append(f.TitleFilters, core.StringFilter{Op: op, Value: v})
+				}
+			case "audienceRating", "rating":
+				switch op {
+				case ">>", ">=", ">":
+					if x, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && x > 0 {
+						f.MinRating = max(f.MinRating, x)
+					}
+				case "<<", "<=", "<":
+					if x, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && x > 0 {
+						if f.MaxRating == 0 || x < f.MaxRating {
+							f.MaxRating = x
+						}
+					}
+				case "=", "==":
+					if x, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && x > 0 {
+						f.MinRating = max(f.MinRating, x)
+						if f.MaxRating == 0 || x < f.MaxRating {
+							f.MaxRating = x
+						}
+					}
+				case "!=", "!==":
+					for _, p := range splitVals(v) {
+						if x, err := strconv.ParseFloat(p, 64); err == nil && x > 0 {
+							f.ExcludeRatings = append(f.ExcludeRatings, x)
+						}
+					}
+				}
+			case "duration":
+				switch op {
+				case "<<", "<=", "<":
+					if n := atoi(v); n > 0 {
+						d := time.Duration(n) * time.Millisecond
+						if f.MaxRuntime == 0 || d < f.MaxRuntime {
+							f.MaxRuntime = d
+						}
+					}
+				case ">>", ">=", ">":
+					if n := atoi(v); n > 0 {
+						d := time.Duration(n) * time.Millisecond
+						if d > f.MinRuntime {
+							f.MinRuntime = d
+						}
+					}
+				case "=", "==":
+					if n := atoi(v); n > 0 {
+						d := time.Duration(n) * time.Millisecond
+						f.MinRuntime, f.MaxRuntime = d, d
+					}
+				case "!=", "!==":
+					for _, p := range splitVals(v) {
+						if n := atoi(p); n > 0 {
+							f.ExcludeRuntimes = append(f.ExcludeRuntimes, time.Duration(n)*time.Millisecond)
+						}
+					}
+				}
+			case "unwatched":
+				if want, ok := parseBoolFilter(op, v); ok {
+					br.unwatched = &want
+				}
+			case "inProgress":
+				if want, ok := parseBoolFilter(op, v); ok {
+					br.inProgress = &want
+				}
+			case "viewCount":
+				n := atoi(v)
+				switch {
+				case (op == "=" || op == "==" || op == "<=" || op == "<") && strings.TrimSpace(v) == "0", (op == "<<" || op == "<") && n == 1:
+					want := true
+					br.unwatched = &want
+				case (op == "!=" || op == "!==" || op == ">>" || op == ">") && strings.TrimSpace(v) == "0", (op == "=" || op == "==" || op == ">=" || op == ">>" || op == ">") && n > 0:
+					want := false
+					br.unwatched = &want
+				}
+			case "limit":
+				br.limit = atoi(v)
 			}
-		case "unwatched":
-			br.unwatched = v == "1" || v == "true"
-		case "viewCount":
-			br.unwatched = v == "0" && op == "="
-		case "limit":
-			br.limit = atoi(v)
 		}
 	}
-	key, dir := parseSortParam(q.Get("sort"))
-	br.q.Sort, br.q.Desc = sortFor(key, dir)
+	br.applySortParam(q.Get("sort"), t)
+	if share, ok := s.d.AccessPolicy.(interface {
+		BrowseShareFilter(*core.User, core.MediaType) core.Filter
+	}); ok && u != nil {
+		// The plex.tv share predicate goes into the SQL, so pages fill
+		// and totals count only what this viewer may see.
+		f, br.none = experience.MergeShareFilter(f, share.BrowseShareFilter(u, t))
+	}
 	br.q.Filter = f
 	return br
 }
 
+func (br *browseRequest) applySortParam(raw string, t core.MediaType) {
+	if strings.TrimSpace(raw) == "" {
+		if t == core.TypeEpisode || t == core.TypeSeason {
+			br.q.Sort, br.q.Desc = "", false
+		} else {
+			br.q.Sort, br.q.Desc = core.SortTitle, false
+		}
+		return
+	}
+	terms := strings.Split(raw, ",")
+	for i, term := range terms {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		key, dir := parseSortTerm(term)
+		so, desc, lastViewed, ok := sortSpecFor(key, dir)
+		if !ok {
+			br.invalidSort = true
+			return
+		}
+		if i == 0 {
+			if lastViewed {
+				br.sortLastViewed = true
+				br.lastViewedDesc = desc
+				if t == core.TypeEpisode || t == core.TypeSeason {
+					br.q.Sort, br.q.Desc = "", false
+				} else {
+					br.q.Sort, br.q.Desc = core.SortTitle, false
+				}
+			} else {
+				br.q.Sort, br.q.Desc = so, desc
+			}
+		} else if !lastViewed {
+			br.q.SecondarySorts = append(br.q.SecondarySorts, core.SortSpec{Sort: so, Desc: desc})
+		}
+	}
+	if len(br.q.SecondarySorts) > 0 && t != core.TypeEpisode && t != core.TypeSeason {
+		hasTitle := br.q.Sort == core.SortTitle
+		for _, s := range br.q.SecondarySorts {
+			if s.Sort == core.SortTitle {
+				hasTitle = true
+				break
+			}
+		}
+		if !hasTitle {
+			br.q.SecondarySorts = append(br.q.SecondarySorts, core.SortSpec{Sort: core.SortTitle, Desc: false})
+		}
+	}
+}
+
 // sortFor maps a Plex sort key to a catalogue sort.
 func sortFor(key, dir string) (core.SortOrder, bool) {
-	var so core.SortOrder
+	so, desc, _, _ := sortSpecFor(key, dir)
+	return so, desc
+}
+
+func sortSpecFor(key, dir string) (so core.SortOrder, desc, lastViewed, valid bool) {
 	def := true // desc
+	valid = true
 	switch key {
 	case "titleSort", "title", "":
 		so, def = core.SortTitle, false
-	case "originallyAvailableAt", "year", "releaseDate":
+	case "originallyAvailableAt", "releaseDate":
 		so = core.SortReleased
+	case "year":
+		so = core.SortYear
 	case "rating", "audienceRating", "userRating":
 		so = core.SortRating
-	case "addedAt", "updatedAt", "lastViewedAt":
+	case "addedAt", "createdAt":
 		so = core.SortAdded
+	case "lastViewedAt", "viewCount":
+		so, lastViewed = core.SortTitle, true
+	case "updatedAt":
+		so = core.SortUpdated
+	case "duration":
+		so = core.SortDuration
+	case "popularity", "random":
+		so = core.SortPopularity
 	default:
 		so = core.SortPopularity
+		valid = false
 	}
 	switch dir {
 	case "desc":
-		return so, true
+		return so, true, lastViewed, valid
 	case "asc":
-		return so, false
+		return so, false, lastViewed, valid
 	}
-	return so, def
+	return so, def, lastViewed, valid
 }
 
 // maxPageSize bounds an explicit X-Plex-Container-Size handed to backends:
@@ -499,10 +979,54 @@ func (pr *Request) pageOf(limit int) (offset, size int) {
 	return offset, size
 }
 
-// browse runs a catalogue query honouring paging and the unwatched filter.
+func titleSortKey(t core.Title) string {
+	if t.SortTitle != "" {
+		return strings.ToLower(t.SortTitle)
+	}
+	return strings.ToLower(t.Title)
+}
+
+func compareTitlesBySpec(a, b core.Title, spec core.SortSpec, now time.Time) int {
+	var c int
+	switch spec.Sort {
+	case core.SortTitle:
+		c = cmp.Compare(titleSortKey(a), titleSortKey(b))
+	case core.SortYear:
+		c = cmp.Compare(a.Year, b.Year)
+	case core.SortReleased:
+		c = cmp.Compare(a.Released.Unix(), b.Released.Unix())
+	case core.SortAdded:
+		c = cmp.Compare(a.DateAdded(now).Unix(), b.DateAdded(now).Unix())
+	case core.SortUpdated:
+		c = cmp.Compare(a.UpdatedAt.Unix(), b.UpdatedAt.Unix())
+	case core.SortRating:
+		c = cmp.Compare(a.Rating, b.Rating)
+	case core.SortDuration:
+		c = cmp.Compare(a.Runtime, b.Runtime)
+	default:
+		c = cmp.Compare(a.Popularity, b.Popularity)
+	}
+	if spec.Desc {
+		return -c
+	}
+	return c
+}
+
+// browse runs a catalogue query honouring paging and watch-state filters.
 func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]core.Title, int, int, error) {
 	offset, size := pr.pageOf(br.limit)
-	if !br.unwatched {
+	if br.invalidSort {
+		return nil, 0, offset, fmt.Errorf("plex: unknown sort")
+	}
+	if br.none {
+		return nil, 0, offset, nil
+	}
+	_, hasBrowseBlocks := s.d.AccessPolicy.(interface {
+		BrowseBlocks(*core.User) ([]string, []string, string)
+	})
+	needsPostPolicy := s.d.AccessPolicy != nil && !hasBrowseBlocks && s.viewerRestricted(pr.User)
+	needsStateScan := br.unwatched != nil || br.inProgress != nil || br.sortLastViewed || br.lastViewedAfter > 0 || br.lastViewedBefore > 0
+	if !needsStateScan && !needsPostPolicy {
 		q := br.q
 		q.Offset, q.Limit = offset, size
 		if size == 0 {
@@ -522,9 +1046,11 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 		}
 		return items, total, offset, nil
 	}
-	// Unwatched: scan the catalogue in chunks, filtering by watch state.
+	// State-filtered or custom-policy browse: scan the catalogue in chunks.
 	const chunk, maxScan = 200, 5000
 	var out []core.Title
+	var allMatched []core.Title
+	viewTimes := map[core.RatingKey]int64{}
 	matched, scanned, total := 0, 0, 0
 	for scanned < maxScan {
 		q := br.q
@@ -537,24 +1063,86 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 		if len(page.Items) == 0 {
 			break
 		}
-		st := s.stateFor(ctx, pr, page.Items)
+		var st map[core.RatingKey]core.WatchStatus
+		if needsStateScan {
+			st = s.stateFor(ctx, pr, page.Items)
+		}
 		for _, t := range page.Items {
-			if st[t.Key].ViewCount > 0 {
+			if needsPostPolicy && !s.visibleTitle(ctx, pr.User, &t) {
 				total--
 				continue
 			}
-			if matched >= offset && len(out) < size {
+			ws := st[t.Key]
+			if br.unwatched != nil {
+				isUnwatched := ws.ViewCount == 0
+				if isUnwatched != *br.unwatched {
+					total--
+					continue
+				}
+			}
+			if br.inProgress != nil {
+				isInProgress := ws.ViewOffset > 0
+				if isInProgress != *br.inProgress {
+					total--
+					continue
+				}
+			}
+			if br.lastViewedAfter > 0 || br.lastViewedBefore > 0 {
+				lv := unixOrZero(ws.LastViewedAt)
+				if lv <= 0 || (br.lastViewedAfter > 0 && lv < br.lastViewedAfter) || (br.lastViewedBefore > 0 && lv > br.lastViewedBefore) {
+					total--
+					continue
+				}
+			}
+			if br.sortLastViewed {
+				viewTimes[t.Key] = unixOrZero(ws.LastViewedAt)
+				allMatched = append(allMatched, t)
+			} else if matched >= offset && len(out) < size {
 				out = append(out, t)
 			}
 			matched++
 		}
 		scanned += len(page.Items)
-		if scanned >= page.Total || (len(out) >= size && matched > offset+size) {
+		if scanned >= page.Total || (!br.sortLastViewed && !needsPostPolicy && len(out) >= size && matched > offset+size) {
 			break
 		}
 	}
+	if br.sortLastViewed {
+		now := s.now()
+		isChildType := br.q.Filter.Type == core.TypeEpisode || br.q.Filter.Type == core.TypeSeason
+		sort.SliceStable(allMatched, func(i, j int) bool {
+			vi, vj := viewTimes[allMatched[i].Key], viewTimes[allMatched[j].Key]
+			if vi != vj {
+				if br.lastViewedDesc {
+					return vi > vj
+				}
+				return vi < vj
+			}
+			for _, spec := range br.q.SecondarySorts {
+				if c := compareTitlesBySpec(allMatched[i], allMatched[j], spec, now); c != 0 {
+					return c < 0
+				}
+			}
+			if !isChildType {
+				if c := cmp.Compare(titleSortKey(allMatched[i]), titleSortKey(allMatched[j])); c != 0 {
+					return c < 0
+				}
+			}
+			return allMatched[i].Key < allMatched[j].Key
+		})
+		total = len(allMatched)
+		if br.limit > 0 && total > br.limit {
+			total = br.limit
+		}
+		lo := min(offset, len(allMatched))
+		hi := min(lo+size, len(allMatched))
+		return allMatched[lo:hi], total, offset, nil
+	}
 	if total < matched {
 		total = matched
+	}
+	if br.limit > 0 && total > br.limit {
+		total = br.limit
 	}
 	return out, total, offset, nil
 }
@@ -567,7 +1155,7 @@ func (s *Server) handleSectionSub(w http.ResponseWriter, r *http.Request) {
 	}
 	sub := chi.URLParam(r, "sub")
 	switch sub {
-	case "all", "unwatched", "newest", "recentlyAdded", "search", "autocomplete":
+	case "all", "allLeaves", "unwatched", "newest", "recentlyAdded", "search", "autocomplete":
 		s.sectionList(w, r, sec, sub)
 	case "onDeck":
 		s.sectionOnDeck(w, r, sec)
@@ -632,7 +1220,11 @@ func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section
 	q := r.URL.Query()
 	t := typeFromParam(q.Get("type"))
 	if t == "" {
-		t = sec.Type
+		if sub == "allLeaves" && sec.Type == core.TypeShow {
+			t = core.TypeEpisode
+		} else {
+			t = sec.Type
+		}
 	}
 	_, allTitle := sectionTypeTitle(sec)
 	mc := s.sectionContainer(sec)
@@ -642,8 +1234,13 @@ func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section
 		s.sectionCollections(w, r, sec, "collections")
 		return
 	}
-	// Seasons/episodes are not browsable as flat section lists.
-	if t != sec.Type {
+	switch {
+	case t == sec.Type:
+	case sec.Type == core.TypeShow && t == core.TypeSeason:
+		mc.Title2 = "All Seasons"
+	case sec.Type == core.TypeShow && t == core.TypeEpisode:
+		mc.Title2 = "All Episodes"
+	default:
 		mc.SetPage(0, 0)
 		s.write(w, r, mc)
 		return
@@ -651,13 +1248,19 @@ func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section
 	br := s.parseBrowse(ctx, sec, t, pr.User, q)
 	switch sub {
 	case "unwatched":
-		br.unwatched = true
+		want := true
+		br.unwatched = &want
 		mc.Title2 = "Unwatched"
 	case "newest":
 		br.q.Sort, br.q.Desc = core.SortReleased, true
+		br.q.SecondarySorts = nil
+		br.sortLastViewed = false
 		mc.Title2 = "Recently Released"
 	case "recentlyAdded":
 		br.q.Sort, br.q.Desc = core.SortAdded, true
+		br.q.SecondarySorts = nil
+		br.sortLastViewed = false
+		br.q.Filter.KnownAddedDate = true
 		mc.Title2 = "Recently Added"
 	case "search", "autocomplete":
 		query := q.Get("query")
@@ -675,7 +1278,16 @@ func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section
 		s.writeErr(w, r, err)
 		return
 	}
-	mc.Metadata = s.renderTitles(ctx, pr, items, renderOpts{media: true, inSection: true})
+	storedOnly := t == core.TypeSeason || t == core.TypeEpisode
+	mc.Metadata = s.renderTitles(ctx, pr, items, renderOpts{
+		media:      true,
+		inSection:  true,
+		guids:      q.Get("includeGuids") == "1",
+		storedOnly: storedOnly,
+	})
+	if len(mc.Metadata) < len(items) && offset+len(items) >= total {
+		total = max(offset+len(mc.Metadata), 0)
+	}
 	mc.Size = len(mc.Metadata)
 	mc.SetPage(offset, total)
 	if q.Get("includeMeta") == "1" {
@@ -693,12 +1305,13 @@ func (s *Server) sectionSearch(w http.ResponseWriter, r *http.Request, sec Secti
 		if n, _ := strconv.Atoi(r.URL.Query().Get("limit")); n > 0 {
 			limit = min(n, 200)
 		}
-		res, err := s.d.Catalog.Search(ctx, query, []core.MediaType{t}, limit)
+		search := s.searchExperience()
+		res, err := search.Keyword(ctx, pr.User, query, []core.MediaType{t}, limit)
 		if err != nil {
 			s.writeErr(w, r, err)
 			return
 		}
-		items = s.filterAllowed(pr.User, res)
+		items = res
 	}
 	mc.Title2 = "Search for '" + query + "'"
 	mc.Metadata = s.renderTitles(ctx, pr, items, renderOpts{media: true, inSection: true})
@@ -728,7 +1341,17 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 	mc.ViewGroup = "secondary"
 	titles := map[string]string{"genre": "By Genre", "year": "By Year", "decade": "By Decade", "contentRating": "By Content Rating", "country": "By Country", "studio": "By Studio", "firstCharacter": "By First Letter", "categories": ""}
 	mc.Title2 = titles[sub]
-	vals, err := s.facet(ctx, t, facet)
+	var (
+		vals []core.FacetValue
+		err  error
+	)
+	if sub == "firstCharacter" {
+		pr := FromContext(ctx)
+		br := s.parseBrowse(ctx, sec, t, pr.User, r.URL.Query())
+		vals, err = s.firstCharacter(ctx, br.q.Filter)
+	} else {
+		vals, err = s.facet(ctx, t, facet)
+	}
 	if err != nil {
 		// Catalogues may not support every facet (e.g. firstCharacter);
 		// an empty list is what PMS returns for an empty library.
@@ -737,6 +1360,13 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 	}
 	id := strconv.Itoa(sec.ID)
 	for _, v := range vals {
+		// Titles that sort after Z stay in the library, but they are not a
+		// second jump-bar "#". Plex tvOS adds every directory titled "#" into
+		// the offset of A–Z, so a trailing bucket titled "#" lands that many
+		// titles past the letter. PMS lists one "#" (the prefix before "a").
+		if sub == "firstCharacter" && v.Key == "~" {
+			continue
+		}
 		var d model.Directory
 		switch sub {
 		case "firstCharacter":
@@ -770,66 +1400,34 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 
 // inProgressTitles loads the user's in-progress items and next episodes.
 func (s *Server) inProgressTitles(ctx context.Context, pr *Request, t core.MediaType, limit int) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
-	if s.d.State == nil || pr.User == nil {
-		return nil, nil
-	}
-	sts, err := s.d.State.InProgress(ctx, pr.User.ID, limit*2+10)
-	if err != nil {
-		s.log.Warn("load in-progress", "err", err)
-		return nil, nil
-	}
-	keys := make([]core.RatingKey, 0, len(sts))
-	state := make(map[core.RatingKey]core.WatchStatus, len(sts))
-	for _, st := range sts {
-		keys = append(keys, st.Key)
-		state[st.Key] = st
-	}
-	titles := s.getTitles(ctx, keys)
-	// Resume unfinished media and advance recently completed series. A
-	// completed episode has no offset, so InProgress alone loses the show.
-	if t != core.TypeMovie {
-		titles = s.appendNextContinue(ctx, pr, titles, state, limit)
-	}
-	sort.SliceStable(titles, func(i, j int) bool {
-		a, b := state[titles[i].Key].LastViewedAt, state[titles[j].Key].LastViewedAt
-		if !a.Equal(b) {
-			return a.After(b)
-		}
-		return titles[i].Key < titles[j].Key
-	})
-	seenShows := map[int64]bool{}
-	out := titles[:0:0]
-	for _, ti := range titles {
-		if t != "" {
-			want := t
-			if t == core.TypeShow {
-				want = core.TypeEpisode
-			}
-			if ti.Type != want {
-				continue
-			}
-		}
-		sec, ok := s.sectionFor(ti.Type)
-		if ok && !s.canSeeSection(pr.User, sec.ID) {
-			continue
-		}
-		if ti.Type == core.TypeEpisode {
-			if seenShows[ti.Key.TMDB()] {
-				continue
-			}
-			seenShows[ti.Key.TMDB()] = true
-		}
-		out = append(out, ti)
-		if limit > 0 && len(out) >= limit {
-			break
-		}
-	}
-	return out, state
+	return s.continueExperience(pr).InProgress(ctx, pr.User, t, limit)
 }
 
 // getTitles fetches titles concurrently, preserving order and skipping
 // failures.
 func (s *Server) getTitles(ctx context.Context, keys []core.RatingKey) []core.Title {
+	if ctx != nil && ctx.Value(storedPolicyKey{}) != nil {
+		if cached, ok := s.d.Catalog.(interface {
+			CachedGetMany(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
+		}); ok {
+			got, err := cached.CachedGetMany(ctx, keys)
+			if err != nil || len(got) == 0 {
+				return nil
+			}
+			out := make([]core.Title, 0, len(got))
+			seen := map[core.RatingKey]bool{}
+			for _, k := range keys {
+				if seen[k] {
+					continue
+				}
+				seen[k] = true
+				if t, ok := got[k]; ok {
+					out = append(out, t)
+				}
+			}
+			return out
+		}
+	}
 	res := make([]*core.Title, len(keys))
 	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup
@@ -858,7 +1456,7 @@ func (s *Server) sectionOnDeck(w http.ResponseWriter, r *http.Request, sec Secti
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	_, size := pr.pageOf(0)
-	items, state := s.inProgressTitles(ctx, pr, sec.Type, min(size, 50))
+	items, state := s.inProgressTitles(ctx, pr, sec.Type, s.saferFetchCount(pr.User, min(size, 50)))
 	mc := s.sectionContainer(sec)
 	mc.Title2 = "On Deck"
 	mc.Mixed = model.Ptr(true)
@@ -871,7 +1469,7 @@ func (s *Server) handleOnDeck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	_, size := pr.pageOf(0)
-	items, state := s.inProgressTitles(ctx, pr, "", min(size, 50))
+	items, state := s.inProgressTitles(ctx, pr, "", s.saferFetchCount(pr.User, min(size, 50)))
 	mc := libraryContainer()
 	mc.Mixed = model.Ptr(true)
 	mc.Metadata = s.onDeckItems(ctx, pr, items, state)
@@ -885,7 +1483,8 @@ func (s *Server) handleOnDeck(w http.ResponseWriter, r *http.Request) {
 func (s *Server) onDeckItems(ctx context.Context, pr *Request, items []core.Title, state map[core.RatingKey]core.WatchStatus) []model.Metadata {
 	// Filter first: renderTitles drops hidden titles, and the loop below
 	// pairs its output with items by index.
-	items = s.visibleTitles(pr.User, items)
+	_, size := pr.pageOf(0)
+	items = s.takeVisible(pr.User, items, min(size, 50))
 	md := s.renderTitles(ctx, pr, items, renderOpts{media: true, detailEpisodes: true, state: state})
 	for i := range md {
 		md[i].AllowSync = model.Ptr(s.downloadsAllowed(pr.User) && isPlayable(items[i].Type))
@@ -902,22 +1501,12 @@ func (s *Server) sectionRecentlyViewed(w http.ResponseWriter, r *http.Request, s
 	mc := s.sectionContainer(sec)
 	mc.Title2 = "Recently Viewed"
 	if s.d.State != nil && pr.User != nil {
-		hist, err := s.d.State.History(ctx, pr.User.ID, time.Time{}, 100)
+		recent := experience.Recent{Visibility: s.visibility(), Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) }}
+		items, err := recent.Viewed(ctx, pr.User, sec.ID, s.d.State.History, s.getTitles, func(t core.MediaType) (int, bool) {
+			section, ok := s.sectionFor(t)
+			return section.ID, ok
+		})
 		if err == nil {
-			seen := map[core.RatingKey]bool{}
-			var keys []core.RatingKey
-			for _, h := range hist {
-				if !seen[h.Key] {
-					seen[h.Key] = true
-					keys = append(keys, h.Key)
-				}
-			}
-			var items []core.Title
-			for _, t := range s.getTitles(ctx, keys) {
-				if sct, ok := s.sectionFor(t.Type); ok && sct.ID == sec.ID {
-					items = append(items, t)
-				}
-			}
 			mc.Metadata = s.renderTitles(ctx, pr, items, renderOpts{media: true})
 		}
 	}
@@ -932,24 +1521,30 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 	size = min(size, 50)
 	var items []core.Title
 	rq := r.URL.Query()
+	// Plex leaves an unknown or combined type unfiltered, and it does not
+	// apply contentDirectoryID or pinnedContentDirectoryID on this route.
+	// sectionID still selects one library. KnownAddedDate drops titles whose
+	// release or air date is missing or still in the future.
 	wantType := typeFromParam(rq.Get("type"))
 	wantSection, _ := strconv.Atoi(rq.Get("sectionID"))
 	for _, sec := range s.userSections(pr.User) {
 		if wantSection > 0 && sec.ID != wantSection || wantType != "" && wantType != sec.Type {
 			continue
 		}
-		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type}, Sort: core.SortAdded, Desc: true, Limit: size}
+		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type, KnownAddedDate: true, SaferPlexRating: s.plexMetaOn()}, Sort: core.SortAdded, Desc: true, Limit: size}
 		if pr.User != nil {
 			q.Filter.MaxContentRating = pr.User.MaxContentRating
 		}
-		page, err := s.d.Catalog.Browse(ctx, q)
+		page, err := s.catalogBrowse(ctx, q)
 		if err != nil {
 			s.writeErr(w, r, err)
 			return
 		}
 		items = append(items, page.Items...)
 	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].DateAdded(s.now()).After(items[j].DateAdded(s.now()))
+	})
 	if len(items) > size {
 		items = items[:size]
 	}

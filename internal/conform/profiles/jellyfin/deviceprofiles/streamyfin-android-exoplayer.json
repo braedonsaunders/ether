@@ -1,0 +1,83 @@
+{
+  "client": "Streamyfin",
+  "source": "https://github.com/streamyfin/streamyfin/blob/284d5527f3aa0f099a7124b6e9d7fb8321ccd51c/utils/profiles/native.ts",
+  "source_commit": "284d5527f3aa0f099a7124b6e9d7fb8321ccd51c",
+  "configuration": "Android ExoPlayer, automatic audio mode (6 channels), no Dolby Vision Profile 5 decoder",
+  "device_profile": {
+    "Name": "1. ExoPlayer",
+    "MaxStaticBitrate": 999999999,
+    "MaxStreamingBitrate": 999999999,
+    "CodecProfiles": [
+      {
+        "Type": "Video",
+        "Codec": "h263,h264,vp8,vp9,av1"
+      },
+      {
+        "Type": "Video",
+        "Codec": "hevc,h265",
+        "Conditions": [
+          {
+            "Condition": "NotEquals",
+            "Property": "VideoRangeType",
+            "Value": "DOVI",
+            "IsRequired": true
+          }
+        ]
+      },
+      {
+        "Type": "Audio",
+        "Codec": "vorbis,opus,flac,alac,pcm,mp3,aac,ac3,eac3,dts,dtshd,truehd"
+      }
+    ],
+    "DirectPlayProfiles": [
+      {
+        "Type": "Video",
+        "Container": "mp4,mkv,webm,ts,mpegts,mov",
+        "VideoCodec": "h263,h264,hevc,vp8,vp9,av1",
+        "AudioCodec": "vorbis,opus,flac,alac,pcm,mp3,aac,ac3,eac3,dts,dtshd,truehd"
+      },
+      {
+        "Type": "Audio",
+        "Container": "mp3,m4a,aac,ogg,flac,wav,webm,mka",
+        "AudioCodec": "vorbis,opus,flac,alac,pcm,mp3,aac"
+      }
+    ],
+    "TranscodingProfiles": [
+      {
+        "Type": "Video",
+        "Context": "Streaming",
+        "Protocol": "hls",
+        "Container": "ts",
+        "VideoCodec": "h264,hevc",
+        "AudioCodec": "aac,mp3,ac3",
+        "MaxAudioChannels": "6"
+      },
+      {
+        "Type": "Audio",
+        "Context": "Streaming",
+        "Protocol": "http",
+        "Container": "mp3",
+        "AudioCodec": "mp3",
+        "MaxAudioChannels": "2"
+      }
+    ],
+    "SubtitleProfiles": [
+      {
+        "Format": "srt",
+        "Method": "External"
+      },
+      {
+        "Format": "vtt",
+        "Method": "External"
+      },
+      {
+        "Format": "ttml",
+        "Method": "External"
+      },
+      {
+        "Format": "pgssub",
+        "Method": "Encode"
+      }
+    ]
+  }
+}

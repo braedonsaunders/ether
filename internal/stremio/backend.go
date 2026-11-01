@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/animemap"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/safefetch"
@@ -101,10 +102,10 @@ func NewService(client *http.Client) *Service {
 // NewServiceWithOptions returns a Service built from o.
 func NewServiceWithOptions(o Options) *Service {
 	if o.Client == nil {
-		o.Client = &http.Client{Timeout: defaultTimeout}
+		o.Client = egress.Client(egress.CapStremio, defaultTimeout)
 	}
 	if o.NZBClient == nil {
-		o.NZBClient = (&safefetch.Guard{}).Client(&http.Client{Timeout: nzbTimeout})
+		o.NZBClient = (&safefetch.Guard{}).Client(egress.Client(egress.CapStremio, nzbTimeout))
 	}
 	return &Service{client: o.Client, nzb: o.NZBClient, anime: o.Anime, backends: map[string]*Backend{}}
 }
@@ -686,6 +687,13 @@ func pickName(req core.SearchRequest, file, torrent string) string {
 		n := 0
 		if releaseparse.TitleMatches(info, req.Title) || (req.OriginalTitle != "" && releaseparse.TitleMatches(info, req.OriginalTitle)) {
 			n += 4
+		} else {
+			for _, alt := range req.AlternativeTitles {
+				if releaseparse.TitleMatches(info, alt) {
+					n += 4
+					break
+				}
+			}
 		}
 		if req.Type != core.TypeMovie && req.Episode > 0 && releaseparse.EpisodeMatches(info, req.Season, req.Episode) {
 			n += 2

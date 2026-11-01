@@ -285,6 +285,27 @@ func TestDownloadAndApplyBinary(t *testing.T) {
 	}
 }
 
+func TestApplyBinaryRefusesAppBundle(t *testing.T) {
+	dir := t.TempDir()
+	bundle := filepath.Join(dir, "Ether.app")
+	if err := os.Mkdir(bundle, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(dir, "new")
+	if err := os.WriteFile(payload, []byte("new"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplyBinary(payload, bundle); err == nil {
+		t.Fatal("replacing an app bundle must fail")
+	}
+	if st, err := os.Stat(bundle); err != nil || !st.IsDir() {
+		t.Fatal("bundle was removed")
+	}
+	if err := CleanupOld(bundle); err == nil {
+		t.Fatal("cleanup must refuse an app bundle")
+	}
+}
+
 func TestDownloadRejectsWrongChecksum(t *testing.T) {
 	f := newFeed(t, func(m *Manifest) {
 		m.Artifacts[0].SHA256 = shaHex([]byte("not the payload"))

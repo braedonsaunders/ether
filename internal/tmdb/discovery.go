@@ -2,11 +2,14 @@ package tmdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/core"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 var languageRE = regexp.MustCompile(`^[A-Za-z]{2}(-[A-Za-z]{2})?$`)
@@ -82,15 +85,57 @@ func discoveryPath(t *core.Title) (string, error) {
 	return "", fmt.Errorf("unsupported localization type")
 }
 func (c *Client) ArtworkVariants(ctx context.Context, t *core.Title, language string) (*Images, error) {
-	p, e := discoveryPath(t)
+	p, q, e := artworkVariantsRequest(t, language)
 	if e != nil {
 		return nil, e
+	}
+	var out Images
+	e = c.getJSON(ctx, p, q, &out)
+	return &out, e
+}
+
+func artworkVariantsRequest(t *core.Title, language string) (string, url.Values, error) {
+	if t == nil {
+		return "", nil, fmt.Errorf("tmdb: missing title")
+	}
+	p, e := discoveryPath(t)
+	if e != nil {
+		return "", nil, e
 	}
 	lang := strings.Split(language, "-")[0]
 	if lang == "" {
 		lang = "en"
 	}
+	return p + "/images", url.Values{"include_image_language": {lang + ",null"}}, nil
+}
+
+// CachedArtworkVariants returns only fresh cached data. It never contacts
+// TMDB, waits for an in-flight fetch, or exposes stale data as authoritative.
+// A miss can be filled separately using ArtworkVariants.
+func (c *Client) CachedArtworkVariants(t *core.Title, language string) (*Images, bool) {
+	p, q, err := artworkVariantsRequest(t, language)
+	if err != nil {
+		return nil, false
+	}
+	cfg := c.settings()
+	if cfg.key == "" {
+		return nil, false
+	}
+	key := strconv.FormatUint(cfg.generation, 10) + ":" + c.buildURL(p, q, cfg)
+	c.mu.Lock()
+	entry, ok := c.cache.get(key)
+	if ok && c.generation == cfg.generation && time.Now().Before(entry.expires) {
+		entry.body = append([]byte(nil), entry.body...)
+	} else {
+		ok = false
+	}
+	c.mu.Unlock()
+	if !ok {
+		return nil, false
+	}
 	var out Images
-	e = c.getJSON(ctx, p+"/images", url.Values{"include_image_language": {lang + ",null"}}, &out)
-	return &out, e
+	if json.Unmarshal(entry.body, &out) != nil {
+		return nil, false
+	}
+	return &out, true
 }

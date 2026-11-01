@@ -40,7 +40,6 @@ const (
 	DefaultBackoffMin        = time.Second
 	DefaultBackoffMax        = 2 * time.Minute
 	DefaultFailThreshold     = 2
-	DefaultLimitCooloff      = 5 * time.Minute
 	DefaultAuthRetryMin      = 15 * time.Minute
 	DefaultAuthRetryMax      = 6 * time.Hour
 )
@@ -91,9 +90,6 @@ type Options struct {
 	// probe up to AuthRetryMax, so transient auth outages self-heal.
 	AuthRetryMin time.Duration
 	AuthRetryMax time.Duration
-	// LimitCooloff: when a server refuses connections beyond some number
-	// while others work, the pool shrinks to that number for this long.
-	LimitCooloff time.Duration
 	// TLSConfig is the base TLS client configuration (custom roots, e.g. in
 	// tests). Nil uses the system roots.
 	TLSConfig *tls.Config
@@ -106,6 +102,10 @@ type Options struct {
 	MaxArticleSize int64
 	// TraceProtocol emits raw NNTP status lines at debug level.
 	TraceProtocol bool
+
+	// limits paces connection-limit learning and handshake backoff
+	// (defaults in limit.go; tests shorten them).
+	limits limitTiming
 }
 
 func (o *Options) withDefaults() {
@@ -154,9 +154,7 @@ func (o *Options) withDefaults() {
 	if o.FailThreshold <= 0 {
 		o.FailThreshold = DefaultFailThreshold
 	}
-	if o.LimitCooloff <= 0 {
-		o.LimitCooloff = DefaultLimitCooloff
-	}
+	o.limits.withDefaults()
 	if o.AuthRetryMin <= 0 {
 		o.AuthRetryMin = DefaultAuthRetryMin
 	}
@@ -174,7 +172,8 @@ func (o *Options) withDefaults() {
 // sharing a Priority form a tier and share load (the least busy is tried
 // first). Only when every non-backfill provider answered 430 are backfill
 // (block) providers tried, in the same way. Transient errors are retried on
-// fresh connections and then on the next provider.
+// fresh connections and then on the next provider. A live fetch that stalls
+// is raced by one duplicate on spare capacity (see hedge.go).
 type Fetcher struct {
 	o   Options
 	log *slog.Logger
@@ -186,14 +185,17 @@ type Fetcher struct {
 	closed  bool
 	// share maps a provider's configured connections to this node's part
 	// of them (clustered); nil uses every configured connection.
-	share func(configured int) int
-	gen   atomic.Uint64
-	rr    atomic.Uint64
+	share   func(configured int) int
+	gen     atomic.Uint64
+	dialGen uint64 // bumped when the outbound dialer must drop warm connections
+	rr      atomic.Uint64
 	// minIdle is the fetcher-wide warm floor (already defaulted);
 	// UpdateConfig changes it live.
 	minIdle atomic.Int32
 
 	misses *missCache
+	// live tracks live BODY fetches for head-of-line hedging (hedge.go).
+	live *liveHedger
 }
 
 var _ core.ArticleFetcher = (*Fetcher)(nil)
@@ -207,10 +209,32 @@ func New(providers []config.UsenetProvider, opts Options) *Fetcher {
 		o:      opts,
 		log:    opts.Logger,
 		misses: newMissCache(opts.MissTTL, opts.MissCacheSize, time.Now),
+		live:   newLiveHedger(),
 	}
 	f.minIdle.Store(int32(opts.MinIdle))
 	f.Update(providers)
 	return f
+}
+
+// Redial drops warm connections so the next dial uses the current
+// outbound proxy. Existing pools compare equal by provider settings, so
+// a proxy change would otherwise keep sockets opened on the old route.
+func (f *Fetcher) Redial() {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return
+	}
+	f.dialGen++
+	cfgs := make([]config.UsenetProvider, len(f.pools))
+	for i, p := range f.pools {
+		cfgs[i] = p.cfg
+	}
+	f.mu.Unlock()
+	f.Update(cfgs)
 }
 
 // UpdateConfig applies an edited Usenet config: the provider list (see
@@ -256,7 +280,7 @@ func (f *Fetcher) Update(providers []config.UsenetProvider) {
 		}
 		var p *pool
 		for _, op := range old {
-			if op.cfg == cfg && !reused[op] {
+			if op.cfg == cfg && op.dialGen == f.dialGen && !reused[op] {
 				p = op
 				break
 			}
@@ -264,6 +288,7 @@ func (f *Fetcher) Update(providers []config.UsenetProvider) {
 		if p == nil {
 			key := cmp.Or(cfg.ID, cfg.Host) + "#" + strconv.FormatUint(f.gen.Add(1), 10)
 			p = newPool(key, cfg, &f.o, f.log, int(f.minIdle.Load()))
+			p.dialGen = f.dialGen
 			p.setShare(shareFor(f.share, p.size))
 		}
 		reused[p] = true
@@ -321,8 +346,10 @@ func buildTiers(pools []*pool) [][]*pool {
 	return tiers
 }
 
-// order returns the providers to try, tier by tier, least loaded first
-// within a tier (ties rotate so equal providers share work).
+// order returns the providers in strict tier order, least loaded first
+// within a tier (then soonest expected delivery; exact ties rotate so equal
+// providers share work). Requests use route, which may spill past a
+// saturated tier.
 func (f *Fetcher) order() []*pool {
 	f.mu.RLock()
 	tiers := f.tiers
@@ -338,7 +365,8 @@ func (f *Fetcher) order() []*pool {
 		for i := range tier {
 			t[i] = tier[(i+rot)%len(tier)]
 		}
-		loads := make(map[*pool]float64, len(t))
+		type load struct{ share, delivery float64 }
+		loads := make(map[*pool]load, len(t))
 		for _, p := range t {
 			s := p.sem.stats()
 			w := s.Waiting[0] + s.Waiting[1] + s.Waiting[2]
@@ -347,9 +375,17 @@ func (f *Fetcher) order() []*pool {
 				w += len(q)
 			}
 			p.bodyMu.Unlock()
-			loads[p] = float64(s.InUse+w) / float64(s.Size)
+			loads[p] = load{
+				share:    float64(s.InUse+w) / float64(s.Size),
+				delivery: float64(s.InUse+w+1) * float64(p.avgFetch()),
+			}
 		}
-		slices.SortStableFunc(t, func(a, b *pool) int { return cmp.Compare(loads[a], loads[b]) })
+		// Least loaded first; equally loaded providers go to the one that
+		// should deliver soonest (work ahead of this request times its
+		// measured fetch time), and exact ties keep the rotation.
+		slices.SortStableFunc(t, func(a, b *pool) int {
+			return cmp.Or(cmp.Compare(loads[a].share, loads[b].share), cmp.Compare(loads[a].delivery, loads[b].delivery))
+		})
 		out = append(out, t...)
 	}
 	return out
@@ -372,17 +408,11 @@ func (f *Fetcher) BodyPart(ctx context.Context, messageID string, groups []strin
 		return nil, ap, err
 	}
 	var part *yenc.Part
-	err = f.each(ctx, id, "fetch-body", func(ctx context.Context, p *pool) error {
-		var e error
-		if core.IsBackgroundCheck(ctx) {
-			prio = core.PriorityPrefetch
-			if e = core.SpendBackground(ctx, "bytes", "usenet", 2*p.o.MaxArticleSize+(64<<10)); e != nil {
-				return e
-			}
-		}
-		part, e = p.body(ctx, id, groups, prio)
-		return e
-	})
+	if clampPriority(prio) == core.PriorityLive && !core.IsBackgroundCheck(ctx) {
+		part, err = f.bodyLive(ctx, id, groups)
+	} else {
+		part, err = f.bodyChain(ctx, id, groups, prio, nil)
+	}
 	if err != nil {
 		return nil, ap, err
 	}
@@ -392,6 +422,33 @@ func (f *Fetcher) BodyPart(ctx context.Context, messageID string, groups []strin
 		ap.Part, ap.Total = 1, max(h.Total, 1)
 	}
 	return part.Data, ap, nil
+}
+
+// bodyChain fetches one article through the ordinary coalesced provider
+// chain. serving, when set, tracks the provider currently being asked.
+func (f *Fetcher) bodyChain(ctx context.Context, id string, groups []string, prio core.Priority, serving *atomic.Pointer[pool]) (*yenc.Part, error) {
+	var part *yenc.Part
+	rprio := routePriority(ctx, prio)
+	req := routeReq{prio: rprio, joinable: func(p *pool) bool { return p.joinable(id, groups, rprio) }}
+	err := f.each(ctx, id, "fetch-body", req, func(ctx context.Context, p *pool) error {
+		var e error
+		if core.IsBackgroundCheck(ctx) {
+			prio = core.PriorityPrefetch
+			if e = core.SpendBackground(ctx, "bytes", "usenet", 2*p.o.MaxArticleSize+(64<<10)); e != nil {
+				return e
+			}
+		}
+		if serving != nil {
+			serving.Store(p)
+		}
+		start := time.Now()
+		part, e = p.body(ctx, id, groups, prio)
+		if e == nil && prio == core.PriorityLive {
+			p.noteLiveFetch(time.Since(start))
+		}
+		return e
+	})
+	return part, err
 }
 
 // Stat reports whether any provider has the article. A foreground health
@@ -404,7 +461,7 @@ func (f *Fetcher) Stat(ctx context.Context, messageID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	err = f.each(ctx, id, "stat", func(ctx context.Context, p *pool) error {
+	err = f.each(ctx, id, "stat", routeReq{prio: commandPriority(ctx)}, func(ctx context.Context, p *pool) error {
 		ok, e := p.stat(ctx, id)
 		if e == nil && !ok {
 			return ErrNoSuchArticle
@@ -458,7 +515,7 @@ func (f *Fetcher) StatStream(ctx context.Context, messageIDs []string, fn func(i
 			order = append(order, normalized)
 		}
 	}
-	all := f.order()
+	all, spill := f.route(ctx, routeReq{prio: commandPriority(ctx)}, nil)
 	if len(all) == 0 {
 		return ErrNoProviders
 	}
@@ -538,6 +595,10 @@ func (f *Fetcher) StatStream(ctx context.Context, messageIDs []string, fn func(i
 					}
 				}
 				continue
+			}
+			if p == spill {
+				p.spillovers.Add(1)
+				spill = nil // one spill per pass, however many chunks
 			}
 			for id, ok := range a.values {
 				st, still := pend[id]
@@ -659,13 +720,13 @@ func (f *Fetcher) Warm(ctx context.Context, perProvider int) error {
 
 // each runs op against providers in order until one succeeds, and turns the
 // collected failures into the right error.
-func (f *Fetcher) each(ctx context.Context, id, kind string, op func(context.Context, *pool) error) error {
+func (f *Fetcher) each(ctx context.Context, id, kind string, req routeReq, op func(context.Context, *pool) error) error {
 	var swapped bool
-	err := f.eachOnce(ctx, id, kind, op, &swapped)
+	err := f.eachOnce(ctx, id, kind, req, op, &swapped)
 	if swapped && err != nil && !errors.Is(err, core.ErrArticleMissing) && ctxErr(ctx) == nil {
 		// A pool was replaced by Update while we were using it: go again
 		// over the current providers.
-		err = f.eachOnce(ctx, id, kind, op, &swapped)
+		err = f.eachOnce(ctx, id, kind, req, op, &swapped)
 	}
 	// Only after every provider was tried may a BODY wait for recovery. Healthy
 	// backfill remains immediate; missing/corrupt/auth failures never enter this
@@ -691,7 +752,7 @@ func (f *Fetcher) each(ctx context.Context, id, kind string, op func(context.Con
 			if candidate == nil || candidate.brk.waitReady(recovery) != nil {
 				break
 			}
-			err = f.eachOnce(recovery, id, kind, op, &swapped)
+			err = f.eachOnce(recovery, id, kind, req, op, &swapped)
 		}
 		if ctxErr(ctx) != nil {
 			return ctxErr(ctx)
@@ -703,14 +764,14 @@ func (f *Fetcher) each(ctx context.Context, id, kind string, op func(context.Con
 	return err
 }
 
-// eachOnce is one pass over the providers. It sets *swapped when a pool
-// turned out to be closed by a concurrent Update.
-func (f *Fetcher) eachOnce(ctx context.Context, id, kind string, op func(context.Context, *pool) error, swapped *bool) error {
-	pools := f.order()
+// eachOnce is one pass over the providers, in route order for req. It sets
+// *swapped when a pool turned out to be closed by a concurrent Update.
+func (f *Fetcher) eachOnce(ctx context.Context, id, kind string, req routeReq, op func(context.Context, *pool) error, swapped *bool) error {
+	known := f.misses.get(id)
+	pools, spill := f.route(ctx, req, known)
 	if len(pools) == 0 {
 		return ErrNoProviders
 	}
-	known := f.misses.get(id)
 	var (
 		answered, missing int
 		lastErr, corrupt  error
@@ -736,6 +797,9 @@ func (f *Fetcher) eachOnce(ctx context.Context, id, kind string, op func(context
 		for attempt := 0; attempt <= f.o.Retries; attempt++ {
 			err := op(ctx, p)
 			if err == nil {
+				if p == spill {
+					p.spillovers.Add(1)
+				}
 				if (kind == "body" || kind == "fetch-body") && p.cfg.Backfill && missing > 0 {
 					p.backfillSaves.Add(1)
 				}
@@ -775,6 +839,14 @@ func (f *Fetcher) eachOnce(ctx context.Context, id, kind string, op func(context
 				if errors.As(err, &ne) && ne.Timeout() {
 					break attempts
 				}
+				// This failure may have just opened the breaker. Observe that
+				// here: the next attempt can outlive a short backoff and send
+				// another command whose error is not backoff, which ends the
+				// fixed recovery budget early.
+				if aerr := p.brk.allow(); errors.Is(aerr, ErrProviderBackoff) {
+					lastErr = fmt.Errorf("%s: %w", providerLabel(p.cfg), aerr)
+					break attempts
+				}
 				f.log.Debug("usenet: transient error; retrying", "provider", providerLabel(p.cfg), "msgid", id, "attempt", attempt+1, "err", err)
 			}
 		}
@@ -796,6 +868,23 @@ func (f *Fetcher) eachOnce(ctx context.Context, id, kind string, op func(context
 		return errors.Join(corrupt, lastErr)
 	}
 	return lastErr
+}
+
+// HasUsableProvider reports whether at least one enabled Usenet provider is
+// not locked out after an authentication failure.
+func (f *Fetcher) HasUsableProvider() bool {
+	if f == nil {
+		return false
+	}
+	f.mu.RLock()
+	pools := f.pools
+	f.mu.RUnlock()
+	for _, p := range pools {
+		if !errors.Is(p.brk.allow(), ErrProviderDisabled) {
+			return true
+		}
+	}
+	return false
 }
 
 // Stats returns a snapshot per enabled provider, in configuration order.
@@ -899,7 +988,7 @@ func (f *Fetcher) CheckBodyPart(ctx context.Context, messageID string, groups []
 	if err != nil {
 		return err
 	}
-	return f.each(ctx, id, "body", func(ctx context.Context, p *pool) error {
+	return f.each(ctx, id, "body", routeReq{prio: routePriority(ctx, prio)}, func(ctx context.Context, p *pool) error {
 		if core.IsBackgroundCheck(ctx) {
 			prio = core.PriorityPrefetch
 			if err := core.SpendBackground(ctx, "bytes", "usenet", 2*p.o.MaxArticleSize+(64<<10)); err != nil {

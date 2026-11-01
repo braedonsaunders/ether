@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/ipv4"
@@ -104,6 +105,8 @@ type GDMOptions struct {
 
 	// rejoinInterval overrides gdmRejoinInterval (tests).
 	rejoinInterval time.Duration
+	// listen overrides socket creation for lifecycle tests; nil uses listenGDM.
+	listen func(int) (*net.UDPConn, error)
 }
 
 // gdmRejoinInterval is how often each multicast socket is reopened, which
@@ -150,6 +153,9 @@ func NewGDMResponder(o GDMOptions) *GDMResponder {
 	if o.rejoinInterval <= 0 {
 		o.rejoinInterval = gdmRejoinInterval
 	}
+	if o.listen == nil {
+		o.listen = listenGDM
+	}
 	return &GDMResponder{o: o}
 }
 
@@ -183,7 +189,7 @@ func (g *GDMResponder) Start(ctx context.Context) error {
 		}
 	} else {
 		for _, p := range g.o.Ports {
-			c, err := listenGDM(p)
+			c, err := g.o.listen(p)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("port %d: %w", p, err))
 				continue
@@ -225,10 +231,16 @@ func (g *GDMResponder) Start(ctx context.Context) error {
 // multicast (239.0.0.250), broadcast (255.255.255.255 / subnet) and unicast
 // M-SEARCH queries on Linux, macOS and Windows.
 func listenGDM(port int) (*net.UDPConn, error) {
-	c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: port})
+	// Reuse lets rejoin open the replacement while the current socket is still
+	// answering. The old socket is closed only after the new one is installed.
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+		return c.Control(setGDMReuseAddr)
+	}}
+	pc, err := lc.ListenPacket(context.Background(), "udp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
 	if err != nil {
 		return nil, err
 	}
+	c := pc.(*net.UDPConn)
 	joinGDMMulticast(c)
 	return c, nil
 }
@@ -270,10 +282,9 @@ func (g *GDMResponder) rejoin(ctx context.Context, i int, old *net.UDPConn) (*ne
 	}
 	g.mu.Unlock()
 	port := old.LocalAddr().(*net.UDPAddr).Port
-	_ = old.Close()
-	c, err := listenGDM(port)
+	c, err := g.o.listen(port)
 	if err != nil {
-		g.o.Logger.Debug("gdm rejoin failed", "port", port, "err", err)
+		g.o.Logger.Debug("gdm rejoin failed; keeping the current socket", "port", port, "err", err)
 		return old, ctx.Err() == nil
 	}
 	g.mu.Lock()
@@ -284,6 +295,7 @@ func (g *GDMResponder) rejoin(ctx context.Context, i int, old *net.UDPConn) (*ne
 	}
 	g.conns[i] = c
 	g.mu.Unlock()
+	_ = old.Close()
 	return c, true
 }
 

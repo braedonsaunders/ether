@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/transcode"
@@ -59,11 +60,14 @@ type extraPlayStore struct {
 	client   *http.Client // part proxy; no total timeout (trailers stream)
 }
 
-func newExtraPlayStore() *extraPlayStore {
+func newExtraPlayStore(client *http.Client) *extraPlayStore {
+	if client == nil {
+		client = &http.Client{Transport: http.DefaultTransport}
+	}
 	return &extraPlayStore{
 		sessions: map[string]*extraSession{},
 		warmed:   map[string]time.Time{},
-		client:   &http.Client{Transport: http.DefaultTransport},
+		client:   client,
 	}
 }
 
@@ -125,33 +129,18 @@ func (s *Server) viewerLanguage(pr *Request) string {
 // extrasFor lists a title's playable extras, honouring the extraTypes
 // filter (comma-separated Plex numeric types) when present.
 func (s *Server) extrasFor(ctx context.Context, pr *Request, parent *core.Title, extraTypes string) []extras.Extra {
-	if s.d.Extras == nil || parent == nil || !s.d.Extras.Enabled() {
-		return nil
+	want := map[int]bool{}
+	for _, part := range strings.Split(extraTypes, ",") {
+		if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
+			want[n] = true
+		}
 	}
-	list, err := s.d.Extras.List(ctx, parent, s.viewerLanguage(pr))
+	list, err := experience.DetailExtras(ctx, s.d.Extras, parent, s.viewerLanguage(pr), want)
 	if err != nil {
 		s.log.Debug("extras list", "key", parent.Key, "err", err)
 		return nil
 	}
-	if strings.TrimSpace(extraTypes) == "" {
-		return list
-	}
-	want := map[int]bool{}
-	for _, p := range strings.Split(extraTypes, ",") {
-		if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
-			want[n] = true
-		}
-	}
-	if len(want) == 0 {
-		return list
-	}
-	out := list[:0:0]
-	for _, e := range list {
-		if want[e.ExtraType] {
-			out = append(out, e)
-		}
-	}
-	return out
+	return list
 }
 
 // extraEstimateInfo is the virtual media info of an extra before (or
@@ -300,6 +289,9 @@ func (s *Server) parseExtraPlayRequest(r *http.Request, key core.RatingKey) play
 // handleExtraPlayback hooks the universal decision/start endpoints for
 // KindExtra keys, like handleLiveTVPlayback does for live sessions.
 func (s *Server) handleExtraPlayback(w http.ResponseWriter, r *http.Request) bool {
+	if s.refuseCapability(w, r) {
+		return true
+	}
 	key, isExtra := extraKeyFromRequest(r)
 	if !isExtra {
 		return false
@@ -339,6 +331,10 @@ func (s *Server) handleExtraPlayback(w http.ResponseWriter, r *http.Request) boo
 	case strings.HasSuffix(r.URL.Path, "/start.mpd"):
 		p.protocol = core.ProtocolDASH
 		s.extraStart(w, r, pr, p, e, parent, true)
+	case strings.HasSuffix(r.URL.Path, "/start"):
+		p.protocol = core.ProtocolHTTP
+		p.opts.Protocol = core.ProtocolHTTP
+		s.extraStart(w, r, pr, p, e, parent, false)
 	default:
 		s.extraStart(w, r, pr, p, e, parent, false)
 	}
@@ -486,6 +482,11 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 					s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)
 					return
 				}
+			} else if p.protocol == core.ProtocolHTTP {
+				if hs, ok := existing.(core.HTTPSession); ok {
+					hs.ServeHTTP(w, r)
+					return
+				}
 			} else {
 				s.writeMasterPlaylist(w, r, p.sessionID, existing, sess.info, dec)
 				return
@@ -496,6 +497,9 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 	proto := ""
 	if dash {
 		proto = core.ProtocolDASH
+	} else if p.protocol == core.ProtocolHTTP {
+		proto = core.ProtocolHTTP
+		dec.Container = transcode.ContainerMatroska
 	}
 	hs, err := s.d.Transcoder.StartHLS(context.WithoutCancel(ctx), core.HLSRequest{
 		SessionID: p.sessionID, InputURL: sess.resolved.Input(),
@@ -512,8 +516,7 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 		s.extraPlay.put(sess)
 	}
 	if entry, ok := s.transcodes.get(p.sessionID); ok {
-		entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-		s.transcodes.put(entry)
+		s.bindTranscodeStarted(entry, dec, p.offset)
 	}
 	if dash {
 		ds, ok := hs.(core.DASHSession)
@@ -523,6 +526,16 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 			return
 		}
 		s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)
+		return
+	}
+	if p.protocol == core.ProtocolHTTP {
+		stream, ok := hs.(core.HTTPSession)
+		if !ok {
+			s.d.Transcoder.Stop(p.sessionID)
+			writeHTTPError(w, http.StatusInternalServerError)
+			return
+		}
+		stream.ServeHTTP(w, r)
 		return
 	}
 	s.writeMasterPlaylist(w, r, p.sessionID, hs, sess.info, dec)
@@ -667,15 +680,18 @@ func (s *Server) cinemaTrailerKeys(ctx context.Context, pr *Request, feature cor
 	if n > extras.MaxExtras {
 		n = extras.MaxExtras
 	}
-	candidates, err := s.d.Catalog.Similar(ctx, feature, 24)
-	if err != nil || len(candidates) == 0 {
-		page, perr := s.d.Catalog.Browse(ctx, core.BrowseQuery{
-			Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortPopularity, Desc: true, Limit: 24,
-		})
-		if perr != nil {
-			return nil
+	candidates, err := s.recommendationCandidates(ctx, pr.User, 24, func(ctx context.Context, fetch int) ([]core.Title, error) {
+		items, err := s.d.Catalog.Similar(ctx, feature, fetch)
+		if err == nil && len(items) > 0 {
+			return items, nil
 		}
-		candidates = page.Items
+		page, err := s.d.Catalog.Browse(ctx, core.BrowseQuery{
+			Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortPopularity, Desc: true, Limit: fetch,
+		})
+		return page.Items, err
+	})
+	if err != nil {
+		return nil
 	}
 	candidates = s.visibleTitles(pr.User, candidates)
 	state := s.stateFor(ctx, pr, candidates)

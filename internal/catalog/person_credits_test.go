@@ -22,6 +22,9 @@ import (
 // SQLite-only: exercita o caminho via trigger RAISE(ABORT) (store.OpenMemory).
 func installSecondCreditFailure(t *testing.T, db *sql.DB) {
 	t.Helper()
+	if store.DialectOf(db) == store.Postgres {
+		t.Skip("credit-insert failure is injected with a SQLite trigger")
+	}
 	if _, err := db.ExecContext(context.Background(), `CREATE TRIGGER fail_second_person_credit BEFORE INSERT ON catalog_credits WHEN NEW.person_tmdb=777 AND NEW.ord=1 BEGIN SELECT RAISE(ABORT, 'stub: second credit insert fails'); END`); err != nil {
 		t.Fatalf("install credit failure trigger: %v", err)
 	}

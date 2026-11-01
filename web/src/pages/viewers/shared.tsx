@@ -54,12 +54,37 @@ export function ListText({
 
 // ---- Audio & subtitle rules (/stream-preferences/:user; user 0 is the default) ----
 
+export type SubtitleAppearance = {
+  fontSize: string;
+  fontFamily: string;
+  fontColor: string;
+  backgroundColor: string;
+  backgroundStyle: string;
+  backgroundOpacity: number;
+  textOutline: boolean;
+  textOutlineColor: string;
+  position: string;
+};
+
+export const DEFAULT_SUBTITLE_APPEARANCE: SubtitleAppearance = {
+  fontSize: "large",
+  fontFamily: "sans-serif",
+  fontColor: "#ffffff",
+  backgroundColor: "#000000",
+  backgroundStyle: "box",
+  backgroundOpacity: 75,
+  textOutline: false,
+  textOutlineColor: "#000000",
+  position: "bottom",
+};
+
 export type StreamRules = {
   audioLanguages: string[];
   subtitleLanguages: string[];
   preferOriginal: boolean;
   subtitleMode: string;
   subtitleStyle: string;
+  subtitleAppearance: SubtitleAppearance;
   loudness: boolean;
   nightMode: boolean;
   dialogueBoost: boolean;
@@ -78,6 +103,7 @@ const INITIAL_RULES: StreamRules = {
   preferOriginal: false,
   subtitleMode: "off",
   subtitleStyle: "normal",
+  subtitleAppearance: DEFAULT_SUBTITLE_APPEARANCE,
   loudness: false,
   nightMode: false,
   dialogueBoost: false,
@@ -90,6 +116,7 @@ export function normalizeRules(r: Partial<StreamRules> | null | undefined): Stre
     ...r,
     audioLanguages: r?.audioLanguages ?? [],
     subtitleLanguages: r?.subtitleLanguages ?? [],
+    subtitleAppearance: { ...DEFAULT_SUBTITLE_APPEARANCE, ...r?.subtitleAppearance },
   };
 }
 
@@ -99,10 +126,26 @@ export function sameRules(a: StreamRules, b: StreamRules): boolean {
 }
 
 const SUBTITLE_MODES = localized(() => [
-  { value: "off", label: t("Off") },
+  { value: "off", label: t("Off unless I turn them on") },
   { value: "forced-only", label: t("Forced tracks only") },
-  { value: "foreign-only", label: t("When the audio is in another language") },
-  { value: "always", label: t("Always") },
+  { value: "foreign-only", label: t("Only for foreign audio") },
+  { value: "always", label: t("Always on") },
+]);
+const SUBTITLE_SIZES = localized(() => [
+  { value: "small", label: t("Small") },
+  { value: "medium", label: t("Medium") },
+  { value: "large", label: t("Large") },
+]);
+const SUBTITLE_BACKGROUNDS = localized(() => [
+  { value: "none", label: t("None") },
+  { value: "shadow", label: t("Shadow") },
+  { value: "box", label: t("Box") },
+  { value: "outline", label: t("Outline") },
+]);
+const SUBTITLE_POSITIONS = localized(() => [
+  { value: "bottom", label: t("Bottom") },
+  { value: "center", label: t("Center") },
+  { value: "top", label: t("Top") },
 ]);
 const SUBTITLE_STYLES = localized(() => [
   { value: "normal", label: t("Normal") },
@@ -122,6 +165,9 @@ export function StreamRulesFields({
 }) {
   const set = <K extends keyof StreamRules>(k: K, v: StreamRules[K]) =>
     onChange({ ...value, [k]: v });
+  const appearance = value.subtitleAppearance ?? DEFAULT_SUBTITLE_APPEARANCE;
+  const setAppearance = (patch: Partial<SubtitleAppearance>) =>
+    set("subtitleAppearance", { ...DEFAULT_SUBTITLE_APPEARANCE, ...appearance, ...patch });
   return (
     <>
       <SettingsSection
@@ -202,6 +248,92 @@ export function StreamRulesFields({
                 onChange={(e) => set("subtitleStyle", e.target.value)}
               >
                 {SUBTITLE_STYLES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          }
+        />
+      </SettingsSection>
+      <SettingsSection
+        title={t("Subtitle appearance")}
+        description={t(
+          "Size, colour, background, and position follow this viewer in apps that can style subtitles. Jellyfin and Emby use the language and when subtitles turn on.",
+        )}
+      >
+        <SettingsRow
+          title={t("Size")}
+          control={
+            <div className="w-64">
+              <Select
+                aria-label={t("Size")}
+                value={appearance.fontSize}
+                disabled={disabled}
+                onChange={(e) => setAppearance({ fontSize: e.target.value })}
+              >
+                {SUBTITLE_SIZES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          }
+        />
+        <SettingsRow
+          title={t("Text colour")}
+          description={t("A hex colour, such as #ffffff.")}
+          control={
+            <div className="w-40">
+              <Input
+                aria-label={t("Text colour")}
+                value={appearance.fontColor}
+                disabled={disabled}
+                placeholder="#ffffff"
+                onChange={(e) => setAppearance({ fontColor: e.target.value })}
+              />
+            </div>
+          }
+        />
+        <SettingsRow
+          title={t("Background")}
+          control={
+            <div className="flex w-72 items-center gap-2">
+              <Select
+                aria-label={t("Background")}
+                value={appearance.backgroundStyle}
+                disabled={disabled}
+                onChange={(e) => setAppearance({ backgroundStyle: e.target.value })}
+              >
+                {SUBTITLE_BACKGROUNDS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                aria-label={t("Background colour")}
+                value={appearance.backgroundColor}
+                disabled={disabled}
+                placeholder="#000000"
+                onChange={(e) => setAppearance({ backgroundColor: e.target.value })}
+              />
+            </div>
+          }
+        />
+        <SettingsRow
+          title={t("Position")}
+          control={
+            <div className="w-64">
+              <Select
+                aria-label={t("Position")}
+                value={appearance.position}
+                disabled={disabled}
+                onChange={(e) => setAppearance({ position: e.target.value })}
+              >
+                {SUBTITLE_POSITIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>

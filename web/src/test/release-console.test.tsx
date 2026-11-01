@@ -173,6 +173,7 @@ describe("Release history", () => {
       await within(drawer).findByText("above profile max height", {}, WAIT),
     ).toBeInTheDocument();
     expect(within(drawer).getAllByText("Picked").length).toBeGreaterThan(0);
+    expect(within(drawer).getAllByText("Auto").length).toBeGreaterThan(0);
     expect(within(drawer).getAllByText("Pinned").length).toBeGreaterThan(0);
     expect(calls(fake, "GET", "/releases/history/1")).toHaveLength(1);
     expect(screen.getAllByText("Failover").length).toBeGreaterThan(0);
@@ -191,10 +192,9 @@ describe("Release history", () => {
     ).toBeInTheDocument();
   });
 
-  it("redirects legacy /releases/search deep links to /releases/pinned with query params", async () => {
+  it("does not keep a /releases/search page", async () => {
     const { fake } = renderApp("/releases/search?key=1000000000000550&title=Fight%20Club%20(1999)");
-    await waitFor(() =>
-      expect(calls(fake, "GET", "/releases/search?key=1000000000000550")).toHaveLength(1),
-    );
+    expect(await screen.findByRole("tab", { name: "Profiles" }, WAIT)).toBeInTheDocument();
+    expect(calls(fake, "GET", "/releases/search?key=1000000000000550")).toHaveLength(0);
   });
 });

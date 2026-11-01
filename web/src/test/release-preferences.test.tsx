@@ -7,32 +7,31 @@ import { releaseRuleConflict } from "../pages/releases/ReleasePreferences";
 const WAIT = { timeout: 4000 };
 
 async function openProfile() {
-  const { fake } = renderApp("/releases/quality");
+  const { fake } = renderApp("/releases/profiles");
   fireEvent.click(await screen.findByRole("button", { name: "Edit 1080p" }, WAIT));
   const drawer = await screen.findByRole("dialog", { name: "1080p" }, WAIT);
   return { fake, drawer };
 }
 
-async function addPreference(
+async function addRule(
   drawer: HTMLElement,
   term: string,
   field: string,
-  action: "Require" | "Prefer" | "Avoid",
+  action: "Only play" | "Prefer" | "Never play",
 ) {
-  fireEvent.change(within(drawer).getByLabelText("Add preference"), { target: { value: term } });
+  fireEvent.change(within(drawer).getByLabelText("Add rule"), { target: { value: term } });
   fireEvent.click(within(drawer).getAllByRole("button", { name: "What it describes" })[0]!);
   fireEvent.click(await screen.findByRole("option", { name: field }, WAIT));
   fireEvent.click(within(drawer).getAllByRole("button", { name: "Action" })[0]!);
   fireEvent.click(await screen.findByRole("option", { name: action }, WAIT));
-  fireEvent.click(within(drawer).getByRole("button", { name: "Add preference" }));
+  fireEvent.click(within(drawer).getByRole("button", { name: "Add rule" }));
 }
 
-describe("release preferences", () => {
-  it("builds an arbitrary term, orders it, and saves the draft", async () => {
+describe("profile rules and ranking ladder", () => {
+  it("adds Prefer rules into the What matters most ladder, reorders them, and saves", async () => {
     const { fake, drawer } = await openProfile();
-    expect(within(drawer).queryByText("No AI required")).not.toBeInTheDocument();
-    await addPreference(drawer, "KORSUB", "Release name", "Prefer");
-    await addPreference(drawer, "SPARKS", "Release group", "Prefer");
+    await addRule(drawer, "KORSUB", "Release name", "Prefer");
+    await addRule(drawer, "SPARKS", "Release group", "Prefer");
     expect(within(drawer).getAllByDisplayValue("KORSUB")).toHaveLength(2);
 
     fireEvent.click(within(drawer).getAllByRole("button", { name: "Advanced" })[1]!);
@@ -42,7 +41,7 @@ describe("release preferences", () => {
 
     fireEvent.click(within(drawer).getAllByRole("button", { name: "Move up" })[1]!);
     const names = within(drawer)
-      .getAllByLabelText("Preference name")
+      .getAllByLabelText("Rule name")
       .map((el) => (el as HTMLInputElement).value);
     expect(names).toEqual(["SPARKS", "KORSUB"]);
 
@@ -50,6 +49,10 @@ describe("release preferences", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument(), WAIT);
     const saved = fake.state.config.quality.profiles!.find((p) => p.name === "1080p")!;
     expect(saved.releaseRules?.map((r) => r.name)).toEqual(["SPARKS", "KORSUB"]);
+    expect(saved.ranking?.slice(0, 2)).toEqual([
+      `rule:${saved.releaseRules![0]!.id}`,
+      `rule:${saved.releaseRules![1]!.id}`,
+    ]);
     expect(saved.releaseRules?.[0]?.conditions[0]).toMatchObject({
       field: "group",
       operator: "equals",
@@ -62,10 +65,29 @@ describe("release preferences", () => {
     expect(within(again).getAllByDisplayValue("KORSUB").length).toBeGreaterThan(0);
   });
 
+  it("moves a Prefer rule below Resolution in the ranking ladder", async () => {
+    const { fake, drawer } = await openProfile();
+    await addRule(drawer, "SPARKS", "Release group", "Prefer");
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(within(drawer).getByRole("button", { name: "Move down" }));
+    }
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument(), WAIT);
+    const saved = fake.state.config.quality.profiles!.find((p) => p.name === "1080p")!;
+    const ruleStep = `rule:${saved.releaseRules![0]!.id}`;
+    expect(saved.ranking?.slice(0, 5)).toEqual([
+      "language",
+      "connection",
+      "resolution",
+      ruleStep,
+      "releaseType",
+    ]);
+  });
+
   it("shows a conflict, previews filenames, and drops a stale result when the source changes", async () => {
     const { fake, drawer } = await openProfile();
-    await addPreference(drawer, "hevc", "Video codec", "Require");
-    await addPreference(drawer, "h264", "Video codec", "Require");
+    await addRule(drawer, "hevc", "Video codec", "Only play");
+    await addRule(drawer, "h264", "Video codec", "Only play");
     expect(within(drawer).getByRole("alert")).toHaveTextContent("cannot match the same release");
     const pinsBefore = calls(fake, "POST", "/releases/pins").length;
 
@@ -88,7 +110,7 @@ describe("release preferences", () => {
 
   it("imports a rules file onto the unsaved draft", async () => {
     const { drawer } = await openProfile();
-    const input = within(drawer).getByLabelText("Import preferences", { selector: "input" });
+    const input = within(drawer).getByLabelText("Import rules", { selector: "input" });
     const file = new File(
       [
         JSON.stringify([
@@ -107,7 +129,7 @@ describe("release preferences", () => {
     await waitFor(() => {
       const alert = within(drawer).queryByRole("alert");
       if (!within(drawer).queryByDisplayValue("Arbitrary tag")) {
-        throw new Error(alert?.textContent || "import did not add the preference");
+        throw new Error(alert?.textContent || "import did not add the rule");
       }
     }, WAIT);
   });
@@ -133,7 +155,7 @@ describe("release preferences", () => {
 
   it("adds original-language audio without a typed value", async () => {
     const { drawer } = await openProfile();
-    await addPreference(drawer, "Original audio", "Original-language audio", "Prefer");
+    await addRule(drawer, "Original audio", "Original-language audio", "Prefer");
     expect(within(drawer).getAllByDisplayValue("Original audio")).toHaveLength(1);
     expect(
       within(drawer).getAllByText(

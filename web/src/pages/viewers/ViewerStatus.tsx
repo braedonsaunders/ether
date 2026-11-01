@@ -1,4 +1,5 @@
 import { Badge } from "@braedonsaunders/appkit-ui";
+import { useAppOptional } from "../../app-context";
 import { localized, t, tx } from "../../i18n";
 import type { Viewer, ViewerAccessStatus } from "../../lib/contract";
 
@@ -17,7 +18,10 @@ export function ViewerStatus({ viewer }: { viewer: Viewer }) {
   return <Badge variant={status === "active" ? "success" : "default"}>{LABELS[status]}</Badge>;
 }
 export function PlexAccessNote({ viewer }: { viewer?: Viewer }) {
+  const plexOn = useAppOptional()?.boot.plexEnabled !== false;
   const status = viewer ? viewerStatus(viewer) : undefined;
+  if (!plexOn || (viewer && !viewer.plexId))
+    return <p className="text-sm text-fg-muted">{t("Access is managed by the owner.")}</p>;
   return (
     <p className="text-sm text-fg-muted">
       {status === "imported"
@@ -25,7 +29,7 @@ export function PlexAccessNote({ viewer }: { viewer?: Viewer }) {
         : status === "inactive"
           ? `${t("This viewer no longer has server access. Their history is retained.")} `
           : ""}
-      {tx("Sharing and server access are managed on {link}.", {
+      {tx("Plex sharing is managed on {link}.", {
         link: (
           <a
             href={PLEX_ACCESS_URL}

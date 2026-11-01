@@ -43,10 +43,10 @@ func (l *homeLead) holds(rowID string, k core.RatingKey) bool {
 // homeLeadFor computes the Home lead for a section request: the Home
 // assembly for the same viewer and context (memoised, or the draft layout
 // in a preview), arranged for the Home's page length.
-func (e *Engine) homeLeadFor(ctx context.Context, user *core.User, hc core.HubContext, layout core.HomeLayout, limit int, wait bool) *homeLead {
+func (e *Engine) homeLeadFor(ctx context.Context, user *core.User, hc core.HubContext, layout core.HomeLayout, limit int, wait bool, allow func(context.Context, *core.User, *core.Title) bool) *homeLead {
 	hhc := hc
 	hhc.SectionID = 0
-	p := e.home(ctx, user, hhc, "", limit, wait)
+	p := e.homeWithPolicy(ctx, user, hhc, "", limit, wait, allow)
 	rows := arrangeLayout(p.Rows, layout, userID(user), hhc, surfHome, e.opts.MaxHomeRows)
 	return leadFromRows(rows, min(limit, leadItems))
 }
@@ -62,7 +62,7 @@ func leadFromRows(rows []core.HomeRow, items int) *homeLead {
 		if discoveryPriority(r.Kind) >= 5 {
 			seen++
 		}
-		if r.Source == core.RowSourcePlex {
+		if !behaviorForRowSource(r.Source).participatesInLead {
 			continue // Continue Watching: in-progress titles never recur as picks
 		}
 		id := strings.TrimPrefix(r.HubID, "home.")
@@ -122,7 +122,7 @@ func leadFromRows(rows []core.HomeRow, items int) *homeLead {
 // nothing of its own would only repeat the Home and is dropped (unless the
 // owner placed it).
 func (a *assembly) holdBackHomeLead(c *candRow, items []candItem) (kept, held []candItem, demoted bool) {
-	if a.lead == nil || len(a.lead.keys) == 0 && len(a.lead.same[c.id]) == 0 || c.source == core.RowSourcePlex {
+	if a.lead == nil || len(a.lead.keys) == 0 && len(a.lead.same[c.id]) == 0 || !behaviorForRowSource(c.source).participatesInLead {
 		return items, nil, false
 	}
 	// Each page must offer its best picks and timely discovery even when

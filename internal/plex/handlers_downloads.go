@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -46,17 +47,12 @@ func (s *Server) downloadsEnabled() bool {
 // allowSync="1"): the owner always, friends only with the owner's
 // AllowFriends setting unless the access policy decides per user.
 func (s *Server) downloadsAllowed(u *core.User) bool {
-	if u == nil || !s.downloadsEnabled() {
-		return false
-	}
-	if u.IsOwner {
-		return true
-	}
-	if p, ok := s.d.AccessPolicy.(core.DownloadAccessPolicy); ok {
-		return p.AllowDownloads(u)
-	}
-	return s.cfg().Downloads.AllowFriends
+	return experience.DownloadsAllowed(u, s.downloadsEnabled(), s.cfg().Downloads.AllowFriends, s.d.AccessPolicy)
 }
+
+// DownloadsAllowed exposes the same admission decision for informational
+// frontend capability reporting; the download handler still enforces it.
+func (s *Server) DownloadsAllowed(u *core.User) bool { return s.downloadsAllowed(u) }
 
 func (s *Server) requireDownloads(w http.ResponseWriter, r *http.Request) bool {
 	if !s.downloadsEnabled() {
@@ -99,6 +95,7 @@ type downloadItem struct {
 	audioCodec string
 	duration   time.Duration
 	bandwidth  int // requested maxVideoBitrate, kbps
+	burn       bool
 }
 
 type downloadQueue struct {
@@ -336,7 +333,7 @@ var syncVideoQualities = []struct{ kbps, height int }{
 
 // downloadCaps builds the caps an add request asked for.
 func (s *Server) downloadCaps(r *http.Request, pr *Request) core.ClientCaps {
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.declaredCaps(pr)
 	q := r.URL.Query()
 	if v := q.Get("videoResolution"); v != "" {
 		if _, h, ok := strings.Cut(v, "x"); ok {
@@ -430,6 +427,7 @@ func (s *Server) handleDownloadQueueAdd(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	caps := s.downloadCaps(r, pr)
+	burn := r.URL.Query().Get("subtitles") == "burn"
 	added := []addedQueueItemModel{}
 	for _, k := range keys {
 		titles, err := s.expandDownloadKey(ctx, pr.User, k)
@@ -438,7 +436,7 @@ func (s *Server) handleDownloadQueueAdd(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		for _, t := range titles {
-			it := s.addDownloadItem(q, pr.User, t, caps)
+			it := s.addDownloadItem(q, pr.User, t, caps, burn)
 			added = append(added, addedQueueItemModel{ID: it.id, Key: keyPath(t.Key)})
 		}
 	}
@@ -448,12 +446,12 @@ func (s *Server) handleDownloadQueueAdd(w http.ResponseWriter, r *http.Request) 
 
 // addDownloadItem appends an item, or returns the existing one when the
 // same title is already queued with the same parameters (PMS dedupes).
-func (s *Server) addDownloadItem(q *downloadQueue, u *core.User, t core.Title, caps core.ClientCaps) *downloadItem {
+func (s *Server) addDownloadItem(q *downloadQueue, u *core.User, t core.Title, caps core.ClientCaps, burn bool) *downloadItem {
 	s.downloads.mu.Lock()
 	defer s.downloads.mu.Unlock()
 	for _, it := range q.items {
 		if it.key == t.Key && it.caps.MaxHeight == caps.MaxHeight &&
-			it.caps.MaxBitrateKbps == caps.MaxBitrateKbps &&
+			it.caps.MaxBitrateKbps == caps.MaxBitrateKbps && it.burn == burn &&
 			it.status != downloadError && it.status != downloadExpired {
 			return it
 		}
@@ -462,6 +460,7 @@ func (s *Server) addDownloadItem(q *downloadQueue, u *core.User, t core.Title, c
 	it := &downloadItem{
 		id: s.downloads.nextItem, queueID: q.id, key: t.Key, title: t.Title,
 		caps: caps, user: u, status: downloadDeciding, bandwidth: caps.MaxBitrateKbps,
+		burn: burn,
 	}
 	q.items = append(q.items, it)
 	return it
@@ -714,7 +713,9 @@ func (s *Server) handleDownloadItemMedia(w http.ResponseWriter, r *http.Request)
 	name := downloadFilename(title)
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Disposition", contentDisposition(name))
-	http.ServeContent(w, r, name, readyAt, f)
+	cw := s.newCountWriter(w, r)
+	http.ServeContent(cw, r, name, readyAt, f)
+	cw.finish()
 }
 
 // downloadFilename is the client-visible file name for a download.
@@ -856,10 +857,21 @@ func (s *Server) processDownloadItem(ctx context.Context, it *downloadItem, run 
 	}
 	s.downloads.mu.Unlock()
 
+	var viewerID int64
+	if it.user != nil {
+		viewerID = it.user.ID
+	}
 	p, size, err := s.d.Downloads.RemuxDownload(ctx, core.DownloadRemuxRequest{
 		InputURL:    s.d.Playback.InputURL(ps.ID),
 		Info:        ps.Info,
 		AudioStream: -1,
+		ViewerID:    viewerID,
+		Caps:        caps,
+		Options: core.DecideOptions{
+			DirectPlay: false, DirectStream: true,
+			MaxBitrateKbps: it.bandwidth, AudioStream: -1, SubtitleStream: -1,
+			BurnSubtitles: it.burn,
+		},
 	}, func(f float64) {
 		s.downloads.mu.Lock()
 		if ctx.Err() != nil {
@@ -877,7 +889,7 @@ func (s *Server) processDownloadItem(ctx context.Context, it *downloadItem, run 
 		case ctx.Err() != nil:
 			// Deleted, restarted or shutting down; state already reset.
 		case errors.Is(err, core.ErrDownloadNeedsTranscode):
-			fail("This title cannot be downloaded: its codecs cannot be copied to MP4.")
+			fail("This title cannot be downloaded: it cannot be converted to a playable MP4.")
 		case errors.Is(err, core.ErrDownloadBudget):
 			fail("Not enough temporary disk space on the server for this download.")
 		default:

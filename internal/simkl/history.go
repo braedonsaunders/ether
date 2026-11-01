@@ -90,7 +90,7 @@ func (c AuthClient) IsOrdinaryTV(ctx context.Context, tmdb int64) (bool, error) 
 	req.Header.Set("User-Agent", "Ether/1.0")
 	hc := c.HTTP
 	if hc == nil {
-		hc = http.DefaultClient
+		hc = metadataClient()
 	}
 	safe := *hc
 	safe.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

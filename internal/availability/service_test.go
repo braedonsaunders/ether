@@ -107,6 +107,7 @@ func setup(t *testing.T) *fixture {
 	x := &fixture{c: config.Defaults(t.TempDir()), now: time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)}
 	x.c.Availability.Monitor = true
 	x.c.Availability.Verify = true
+	x.c.Availability.CatchUp = true
 	x.c.Usenet.Providers = []config.UsenetProvider{{Enabled: true, Host: "fake"}}
 	x.f = &fakeFeeds{sources: []core.ReleaseFeed{{ID: "f", Name: "Fake", Generation: "one", Supported: true}}}
 	title := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Film", Year: 2020, Released: x.now.Add(-time.Hour)}
@@ -162,6 +163,33 @@ func TestFeedLifecycleAndNoEvidenceGate(t *testing.T) {
 		t.Fatal("stale evidence promoted")
 	}
 }
+func TestConcurrentPageSpendStaysInsideTheAllowance(t *testing.T) {
+	x := setup(t)
+	var wg sync.WaitGroup
+	var success atomic.Int32
+	for i := 0; i < 40; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := x.s.spend(t.Context(), "feedRequests", 3, 10)
+			if err == nil {
+				success.Add(1)
+			} else if !errors.Is(err, core.ErrBudgetExhausted) {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	st, err := x.s.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := st.Usage["feedRequests"]
+	if used != int64(success.Load())*3 || used > 10 || used%3 != 0 {
+		t.Fatalf("overspent: admitted %d stored %d", success.Load(), used)
+	}
+}
+
 func TestAtomicBudgetAndUTCReset(t *testing.T) {
 	x := setup(t)
 	var wg sync.WaitGroup

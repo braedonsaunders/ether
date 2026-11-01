@@ -24,8 +24,10 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/flight"
 	"github.com/braedonsaunders/ether/internal/lru"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
 var (
@@ -81,8 +83,9 @@ type ImagesOptions struct {
 // Images is a caching TMDB image store. Concurrent requests for the same
 // image share one fetch. Safe for concurrent use.
 type Images struct {
-	o   ImagesOptions
-	log *slog.Logger
+	o             ImagesOptions
+	log           *slog.Logger
+	guardedClient *http.Client
 
 	mu       sync.Mutex
 	items    *lru.Cache[string, *memImage]
@@ -109,7 +112,7 @@ func NewImages(o ImagesOptions) *Images {
 		o.DiskBytes = 512 << 20
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
 	}
 	if o.ImageURL == nil {
 		o.ImageURL = func(path, size string) string { return "https://image.tmdb.org/t/p/" + size + path }
@@ -120,7 +123,7 @@ func NewImages(o ImagesOptions) *Images {
 	if o.Dir != "" {
 		_ = os.MkdirAll(o.Dir, 0o755)
 	}
-	return &Images{posterSlots: make(chan struct{}, 2), o: o, log: o.Logger, items: lru.New(lru.Options[string, *memImage]{MaxCost: o.MemoryBytes, Cost: func(_ string, img *memImage) int64 {
+	return &Images{posterSlots: make(chan struct{}, 2), o: o, log: o.Logger, guardedClient: (&safefetch.Guard{}).Client(o.HTTPClient), items: lru.New(lru.Options[string, *memImage]{MaxCost: o.MemoryBytes, Cost: func(_ string, img *memImage) int64 {
 		return int64(len(img.data))
 	}})}
 }
@@ -145,6 +148,19 @@ func (im *Images) GetURL(ctx context.Context, rawURL string) ([]byte, string, er
 	sum := sha1.Sum([]byte(rawURL))
 	return im.get(ctx, "url/"+hex.EncodeToString(sum[:]), func(ctx context.Context) ([]byte, string, error) {
 		return im.download(ctx, rawURL)
+	})
+}
+
+// GetUntrustedURL fetches a URL supplied by a remote feed, preventing it from
+// reaching private addresses or rebinding across redirects. Owner-configured
+// collection URLs continue to use GetURL and retain their existing behavior.
+func (im *Images) GetUntrustedURL(ctx context.Context, rawURL string) ([]byte, string, error) {
+	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
+		return nil, "", ErrInvalidPath
+	}
+	sum := sha1.Sum([]byte(rawURL))
+	return im.get(ctx, "untrusted-url/"+hex.EncodeToString(sum[:]), func(ctx context.Context) ([]byte, string, error) {
+		return im.downloadWithClient(ctx, im.guardedClient, rawURL)
 	})
 }
 
@@ -186,12 +202,16 @@ func (im *Images) loadShared(ctx context.Context, key string, load func(context.
 }
 
 func (im *Images) download(ctx context.Context, u string) ([]byte, string, error) {
+	return im.downloadWithClient(ctx, im.o.HTTPClient, u)
+}
+
+func (im *Images) downloadWithClient(ctx context.Context, client *http.Client, u string) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, "", err
 	}
 	req.Header.Set("User-Agent", "Ether (+https://github.com/braedonsaunders/ether)")
-	resp, err := im.o.HTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", err
 	}

@@ -22,6 +22,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/retryafter"
 )
 
@@ -156,7 +157,7 @@ func New(o Options) (*Client, error) {
 		o.AuthAppURL = DefaultAuthAppURL
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 30 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapDirect, 30*time.Second)
 	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()

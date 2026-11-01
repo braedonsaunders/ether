@@ -204,14 +204,227 @@
     transform: scaleX(1);
   }
 }
+.ether-approve {
+  position: relative;
+  display: grid;
+  height: 12rem;
+  place-items: center;
+}
+.ether-approve-pop {
+  filter: drop-shadow(0 0 18px color-mix(in srgb, currentColor 45%, transparent));
+  animation: ether-approve-pop 640ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ether-approve-check {
+  stroke-dasharray: 120;
+  stroke-dashoffset: 120;
+  animation: ether-approve-draw 700ms 160ms ease-out forwards;
+}
+.ether-approve-glow {
+  transform-origin: 80px 80px;
+  animation: ether-approve-glow 700ms ease-out both;
+}
+.ether-approve-ring {
+  position: absolute;
+  width: 10rem;
+  height: 10rem;
+  border: 3px solid currentColor;
+  border-radius: 9999px;
+  opacity: 0;
+  animation: ether-approve-ring 900ms 80ms ease-out both;
+}
+.ether-approve-burst {
+  position: absolute;
+  inset: 0;
+}
+.ether-approve-burst span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin: -0.225rem;
+  background: currentColor;
+  border-radius: 9999px;
+  opacity: 0;
+  animation: ether-approve-burst 780ms 120ms ease-out both;
+}
+.ether-approve-burst span:nth-child(even) {
+  width: 0.3rem;
+  height: 0.3rem;
+  margin: -0.15rem;
+  background: color-mix(in srgb, currentColor 55%, white);
+}
+@keyframes ether-approve-pop {
+  0% {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+  62% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes ether-approve-draw {
+  from {
+    stroke-dashoffset: 120;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ether-approve-glow {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes ether-approve-ring {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+@keyframes ether-approve-burst {
+  0% {
+    transform: rotate(var(--ether-burst)) translateY(1.5rem) scale(0.3);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--ether-burst)) translateY(6.25rem) scale(0.15);
+    opacity: 0;
+  }
+}
+
+/* Setup completion moment: full-viewport Continuum ribbon assembly + welcome hero.
+ * All layers use GPU-composited opacity/transform on a single WAAPI timeline
+ * with pre-rendered multi-stop radial gradients (no CSS blur filter repaints). */
+.ether-ready-atmosphere {
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgb(8 127 118 / 0.08) 0%,
+    rgb(8 127 118 / 0.025) 38%,
+    transparent 70%
+  );
+}
+.dark .ether-ready-atmosphere {
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgb(82 223 197 / 0.1) 0%,
+    rgb(82 223 197 / 0.03) 40%,
+    transparent 72%
+  );
+}
+.ether-ready-pulse {
+  background: radial-gradient(
+    circle,
+    rgb(8 127 118 / 0.22) 0%,
+    rgb(8 127 118 / 0.12) 28%,
+    rgb(8 127 118 / 0.04) 52%,
+    transparent 74%
+  );
+  opacity: 0;
+  transform: scale3d(0.76, 0.76, 1);
+  will-change: transform, opacity;
+}
+.dark .ether-ready-pulse {
+  background: radial-gradient(
+    circle,
+    rgb(82 223 197 / 0.28) 0%,
+    rgb(82 223 197 / 0.15) 28%,
+    rgb(82 223 197 / 0.05) 52%,
+    transparent 74%
+  );
+}
+.ether-ready-bloom {
+  filter: blur(10px);
+  opacity: 0;
+  transform: scale3d(0.92, 0.92, 1);
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+.ether-ready-title,
+.ether-ready-subtitle,
+.ether-ready-cta,
+.ether-ready-pills {
+  will-change: transform, opacity;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ether-logo .ether-trace,
   .ether-logo .ether-signal,
   .ether-splash-center p,
-  .ether-splash-progress::after {
+  .ether-splash-progress::after,
+  .ether-approve-pop,
+  .ether-approve-check,
+  .ether-approve-glow,
+  .ether-approve-ring,
+  .ether-approve-burst span,
+  .ether-settle {
     animation: none !important;
+  }
+  .ether-ready-pulse {
+    animation: none !important;
+    opacity: 0.48;
+    transform: scale3d(1, 1, 1);
+  }
+  .ether-ready-bloom {
+    animation: none !important;
+    opacity: 0.34;
+    transform: scale3d(1, 1, 1);
+  }
+  .ether-approve-check {
+    stroke-dashoffset: 0;
+  }
+  .ether-approve-ring,
+  .ether-approve-burst {
+    display: none;
   }
   .ether-splash {
     transition: none;
   }
+}
+
+/* The desktop rail is its own full-height column. AppKit draws the top bar's
+   rule under the logo; without that rule the logo, navigation and version
+   read as one column. */
+.ether-setup aside {
+  display: none;
+}
+.ether-settle {
+  animation: ether-settle-in 0.55s ease both;
+}
+@keyframes ether-settle-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ether-shell aside > div:first-child {
+  height: auto;
+  min-height: 3.5rem;
+  align-items: flex-start;
+  border-bottom-width: 0;
+  padding-top: 1rem;
+  padding-bottom: 0.25rem;
 }

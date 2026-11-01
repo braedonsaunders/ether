@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // generator proposes candidate rows of one kind.
@@ -21,6 +21,7 @@ type generator struct {
 // generators run in this order; order only matters for logging, since
 // assembly ranks rows.
 var generators = []generator{
+	{KindFavorites, (*builder).genFavorites},
 	{KindContinue, (*builder).genContinue},
 	{KindUpNext, (*builder).genUpNext},
 	{KindTop10Today, (*builder).genTop10Today},
@@ -72,6 +73,35 @@ func newRow(kind, id, title, reason string, items []candItem) *candRow {
 		items: items, minItems: 4, scale: 1}
 }
 
+// genFavorites is owner-placeable only and retains the source's newest-first order.
+func (b *builder) genFavorites() []*candRow {
+	if b.generic || b.e.opts.Favorites == nil {
+		return nil
+	}
+	favorites, err := b.e.opts.Favorites(b.ctx, &b.user)
+	if err != nil {
+		return nil
+	}
+	var items []candItem
+	for _, favorite := range favorites {
+		if favorite.Key == 0 {
+			continue
+		}
+		title, err := b.e.catalog.Get(b.ctx, favorite.Key)
+		if err != nil || title == nil || title.Adult || (b.e.opts.Allowed != nil && !b.e.opts.Allowed(&b.user, title)) {
+			continue
+		}
+		items = append(items, candItem{t: *title, base: rankScore(len(items), len(favorites)), qual: quality(title), reason: "A favorite"})
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	row := newRow(KindFavorites, "favorites", "Favorites", "Titles marked as favorites.", items)
+	row.minItems = 1
+	row.keepOrder = true
+	return []*candRow{row}
+}
+
 // ---- Continue Watching and Up Next --------------------------------------------
 
 // genContinue mirrors the Plex front end's Continue Watching so the engine
@@ -116,6 +146,20 @@ func (e *Engine) continueFrom(ctx context.Context, sts []core.WatchStatus) []can
 	return out
 }
 
+// nextStoredEpisode reads the catalogue copy. The provider refresh stays on
+// NextEpisode for detail and playback, where one show is the whole request.
+func nextStoredEpisode(ctx context.Context, catalog core.Catalog, key core.RatingKey) (*core.Title, error) {
+	if catalog == nil {
+		return nil, core.ErrNotFound
+	}
+	if local, ok := catalog.(interface {
+		NextStoredEpisode(context.Context, core.RatingKey) (*core.Title, error)
+	}); ok {
+		return local.NextStoredEpisode(ctx, key)
+	}
+	return catalog.NextEpisode(ctx, key)
+}
+
 func (b *builder) genUpNext() []*candRow {
 	if b.generic || b.e.state == nil {
 		return nil
@@ -124,6 +168,11 @@ func (b *builder) genUpNext() []*candRow {
 	if err != nil {
 		return nil
 	}
+	if b.e.opts.Favorites != nil {
+		if favorites, e := b.e.opts.Favorites(b.ctx, &b.user); e == nil {
+			prioritizeFavoriteHistory(hist, favorites)
+		}
+	}
 	seenShow := map[int64]bool{}
 	var items []candItem
 	for _, h := range hist {
@@ -131,7 +180,7 @@ func (b *builder) genUpNext() []*candRow {
 			continue
 		}
 		seenShow[h.Key.TMDB()] = true
-		next, err := b.e.catalog.NextEpisode(b.ctx, h.Key)
+		next, err := nextStoredEpisode(b.ctx, b.e.catalog, h.Key)
 		if err != nil || next == nil {
 			continue
 		}
@@ -141,7 +190,7 @@ func (b *builder) genUpNext() []*candRow {
 		if ws, err := b.e.state.Get(b.ctx, b.user.ID, next.Key); err == nil && (ws.ViewCount > 0 || ws.ViewOffset > 0) {
 			continue
 		}
-		if !recommend.ContentRatingAllowed(next.ContentRating, b.user.MaxContentRating) {
+		if !contentrating.Allowed(next.ContentRating, b.user.MaxContentRating) {
 			continue
 		}
 		show := next.ShowTitle
@@ -767,7 +816,7 @@ func (b *builder) genComfort() []*candRow {
 		if b.now.Sub(e.At) < 45*24*time.Hour {
 			continue // still fresh in memory
 		}
-		if !recommend.ContentRatingAllowed(e.Title.ContentRating, b.user.MaxContentRating) {
+		if !contentrating.Allowed(e.Title.ContentRating, b.user.MaxContentRating) {
 			continue
 		}
 		reason := "One of your favourites"
@@ -938,7 +987,7 @@ func (b *builder) genFranchise() []*candRow {
 				watched++
 				continue
 			}
-			if !recommend.ContentRatingAllowed(m.ContentRating, b.user.MaxContentRating) {
+			if !contentrating.Allowed(m.ContentRating, b.user.MaxContentRating) {
 				continue
 			}
 			fit, _ := b.fit(&m)
@@ -1055,7 +1104,7 @@ func (b *builder) genTrakt() []*candRow {
 		var items []candItem
 		for _, t := range wl {
 			ws := b.statuses[t.Key]
-			if ws.ViewCount > 0 || !recommend.ContentRatingAllowed(t.ContentRating, b.user.MaxContentRating) {
+			if ws.ViewCount > 0 || !contentrating.Allowed(t.ContentRating, b.user.MaxContentRating) {
 				continue
 			}
 			items = append(items, candItem{t: t, base: rankScore(len(items), len(wl)), qual: quality(&t), reason: "On your Trakt watchlist"})
@@ -1333,4 +1382,22 @@ func (b *builder) genShowcase() []*candRow {
 
 func genreSlug(g string) string {
 	return strings.ReplaceAll(strings.ToLower(strings.ReplaceAll(g, "&", "and")), " ", "-")
+}
+
+func prioritizeFavoriteHistory(hist []core.HistoryEntry, favorites []FavoriteSignal) {
+	shows := map[core.RatingKey]bool{}
+	for _, f := range favorites {
+		if f.Key.Kind() == core.KindShow {
+			shows[f.Key] = true
+		}
+	}
+	if len(shows) == 0 {
+		return
+	}
+	sort.SliceStable(hist, func(i, j int) bool {
+		isFavorite := func(h core.HistoryEntry) bool {
+			return h.Key.Kind() == core.KindEpisode && shows[core.ShowKey(h.Key.TMDB())]
+		}
+		return isFavorite(hist[i]) && !isFavorite(hist[j])
+	})
 }

@@ -1,0 +1,1482 @@
+{
+  "protocol": "jellyfin",
+  "client": "infuse-jellyfin",
+  "source": "captured",
+  "headers": {},
+  "flows": {
+    "captured": [
+      {
+        "name": "captured-000001",
+        "method": "GET",
+        "path": "/System/Info/Public",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000002",
+        "method": "GET",
+        "path": "/Users/${id_1}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000003",
+        "method": "GET",
+        "path": "/UserItems/Resume?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&limit=40&mediaTypes=Video&recursive=true&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000004",
+        "method": "GET",
+        "path": "/Shows/NextUp?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&limit=20&startIndex=0&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000005",
+        "method": "GET",
+        "path": "/Items/Latest?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&limit=20&parentId=${id_2}&startIndex=0&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000006",
+        "method": "GET",
+        "path": "/Items/Latest?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&limit=20&parentId=${id_3}&startIndex=0&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000007",
+        "method": "GET",
+        "path": "/UserViews?includeExternalContent=false&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000008",
+        "method": "GET",
+        "path": "/Shows/${id_5}/Seasons?excludeLocationTypes=Virtual&fields=Genres%2CParentId&limit=200&startIndex=0&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000009",
+        "method": "GET",
+        "path": "/UserViews/GroupingOptions?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000011",
+        "method": "GET",
+        "path": "/Library/VirtualFolders?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "fixture_only": true,
+        "expected_status": 403
+      },
+      {
+        "name": "captured-000012",
+        "method": "GET",
+        "path": "/DisplayPreferences/usersettings?client=emby&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000030",
+        "method": "GET",
+        "path": "/Items/${id_2}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000032",
+        "method": "GET",
+        "path": "/Items?excludeLocationTypes=Virtual&fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&includeItemTypes=Movie&limit=50&parentId=${id_2}&recursive=true&sortBy=SortName&sortOrder=Ascending&startIndex=0&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000033",
+        "method": "GET",
+        "path": "/Items/${id_49}/Images/Logo?tag=${id_50}&userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000034",
+        "method": "GET",
+        "path": "/Items/${id_49}/LocalTrailers?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000035",
+        "method": "GET",
+        "path": "/Items/${id_49}/SpecialFeatures?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000036",
+        "method": "GET",
+        "path": "/MediaSegments/${id_49}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000037",
+        "method": "POST",
+        "path": "/Items/${id_49}/PlaybackInfo?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AutoOpenLiveStream": true,
+          "DeviceProfile": {
+            "MaxStaticBitrate": 200000000,
+            "MaxStreamingBitrate": 200000000,
+            "MusicStreamingTranscodingBitrate": 192000,
+            "SubtitleProfiles": [
+              {
+                "AllowChunkedResponse": true,
+                "Format": "vtt",
+                "Method": "External"
+              },
+              {
+                "Format": "ass",
+                "Method": "External"
+              },
+              {
+                "Format": "ssa",
+                "Method": "External"
+              }
+            ],
+            "TranscodingProfiles": [
+              {
+                "AudioCodec": "aac",
+                "BreakOnNonKeyFrames": true,
+                "Container": "aac",
+                "Context": "Streaming",
+                "MaxAudioChannels": "2",
+                "MinSegments": 1,
+                "Protocol": "hls",
+                "Type": "Audio"
+              },
+              {
+                "AudioCodec": "aac",
+                "BreakOnNonKeyFrames": true,
+                "Container": "ts",
+                "Context": "Streaming",
+                "ManifestSubtitles": "vtt",
+                "MaxAudioChannels": "2",
+                "MinSegments": 1,
+                "Protocol": "hls",
+                "Type": "Video",
+                "VideoCodec": "hevc,h264,av1"
+              }
+            ]
+          },
+          "DirectPlayProtocols": [
+            "Http"
+          ],
+          "EnableDirectPlay": true,
+          "IsPlayback": true,
+          "MaxStreamingBitrate": 200000000,
+          "MediaSourceId": "${id_49}",
+          "UserId": "${id_1}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000038",
+        "method": "GET",
+        "path": "/MediaSegments/${id_27}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000039",
+        "method": "GET",
+        "path": "/Items/${id_49}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000040",
+        "method": "GET",
+        "path": "/MediaSegments/${id_57}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000041",
+        "method": "GET",
+        "path": "/MediaSegments/${id_38}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000042",
+        "method": "GET",
+        "path": "/Videos/${id_49}/stream?MediaSourceId=${id_49}&Static=true&UserId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Range": "bytes=0-",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000043",
+        "method": "GET",
+        "path": "/MediaSegments/${id_42}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000044",
+        "method": "GET",
+        "path": "/Videos/${id_49}/stream?MediaSourceId=${id_49}&Static=true&UserId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Range": "bytes=633016391-",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000045",
+        "method": "POST",
+        "path": "/Sessions/Playing?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 0,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000046",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "TimeUpdate",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 100677244,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000047",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "TimeUpdate",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 205688277,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000049",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "Unpause",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 330034678,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000051",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "Unpause",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 430045184,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000052",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "Unpause",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 530055667,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000054",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "Unpause",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 630066197,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000055",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "TimeUpdate",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 722075866,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000058",
+        "method": "POST",
+        "path": "/Sessions/Playing/Stopped?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "Failed": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlaySessionId": "${id_79}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 727076392
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000071",
+        "method": "GET",
+        "path": "/Videos/${id_49}/stream?MediaSourceId=${id_49}&Static=true&UserId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Range": "bytes=64737825-",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000072",
+        "method": "POST",
+        "path": "/Sessions/Playing?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_85}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 727076392,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000073",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "Pause",
+          "IsMuted": false,
+          "IsPaused": true,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_85}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 769080796,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 6346000000,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000074",
+        "method": "POST",
+        "path": "/Sessions/Playing/Stopped?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "Failed": false,
+          "ItemId": "${id_49}",
+          "MediaSourceId": "${id_49}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_49}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlaySessionId": "${id_85}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 769080796
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000088",
+        "method": "POST",
+        "path": "/Users/AuthenticateByName",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "Password": "${password}",
+          "Pw": "${password}",
+          "Username": "${username}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000089",
+        "method": "GET",
+        "path": "/System/Info/Public?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000098",
+        "method": "GET",
+        "path": "/Items//?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true,
+        "expected_status": 404
+      },
+      {
+        "name": "captured-000124",
+        "method": "GET",
+        "path": "/Items?excludeLocationTypes=Virtual&fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&limit=24&recursive=true&searchTerm=Sintel&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000125",
+        "method": "GET",
+        "path": "/Persons?imageTypeLimit=1&includeArtists=false&includeGenres=false&includeMedia=false&includePeople=true&includeStudios=false&limit=24&recursive=true&searchTerm=Sintel&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000126",
+        "method": "GET",
+        "path": "/Items/${id_42}/LocalTrailers?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000127",
+        "method": "GET",
+        "path": "/Items/${id_42}/SpecialFeatures?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000128",
+        "method": "GET",
+        "path": "/Items/${id_88}/Images/Primary?tag=${id_89}&userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000134",
+        "method": "GET",
+        "path": "/Items/${id_5}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000135",
+        "method": "GET",
+        "path": "/Shows/${id_5}/Seasons?excludeLocationTypes=Virtual&fields=Genres%2CParentId&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000136",
+        "method": "GET",
+        "path": "/Shows/${id_5}/Episodes?excludeLocationTypes=Virtual&fields=Etag%2CMediaSources%2CAlternateMediaSources%2CGenres%2COverview%2CParentId%2CProviderIds&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000137",
+        "method": "GET",
+        "path": "/Items/${id_5}/LocalTrailers?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000138",
+        "method": "GET",
+        "path": "/Items/${id_4}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000140",
+        "method": "GET",
+        "path": "/Items/${id_5}/SpecialFeatures?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000143",
+        "method": "GET",
+        "path": "/Items/${id_8}/LocalTrailers?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000145",
+        "method": "GET",
+        "path": "/Items/${id_8}/SpecialFeatures?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000147",
+        "method": "GET",
+        "path": "/Items/${id_4}/LocalTrailers?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000149",
+        "method": "GET",
+        "path": "/Items/${id_106}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000150",
+        "method": "GET",
+        "path": "/Items/${id_4}/SpecialFeatures?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000152",
+        "method": "GET",
+        "path": "/Items/${id_110}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000154",
+        "method": "GET",
+        "path": "/Items/${id_113}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000155",
+        "method": "GET",
+        "path": "/Items/${id_117}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000156",
+        "method": "GET",
+        "path": "/Items/${id_121}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000157",
+        "method": "POST",
+        "path": "/Items/${id_4}/PlaybackInfo?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AutoOpenLiveStream": true,
+          "DeviceProfile": {
+            "MaxStaticBitrate": 200000000,
+            "MaxStreamingBitrate": 200000000,
+            "MusicStreamingTranscodingBitrate": 192000,
+            "SubtitleProfiles": [
+              {
+                "AllowChunkedResponse": true,
+                "Format": "vtt",
+                "Method": "External"
+              },
+              {
+                "Format": "ass",
+                "Method": "External"
+              },
+              {
+                "Format": "ssa",
+                "Method": "External"
+              }
+            ],
+            "TranscodingProfiles": [
+              {
+                "AudioCodec": "aac",
+                "BreakOnNonKeyFrames": true,
+                "Container": "aac",
+                "Context": "Streaming",
+                "MaxAudioChannels": "2",
+                "MinSegments": 1,
+                "Protocol": "hls",
+                "Type": "Audio"
+              },
+              {
+                "AudioCodec": "aac",
+                "BreakOnNonKeyFrames": true,
+                "Container": "ts",
+                "Context": "Streaming",
+                "ManifestSubtitles": "vtt",
+                "MaxAudioChannels": "2",
+                "MinSegments": 1,
+                "Protocol": "hls",
+                "Type": "Video",
+                "VideoCodec": "hevc,h264,av1"
+              }
+            ]
+          },
+          "DirectPlayProtocols": [
+            "Http"
+          ],
+          "EnableDirectPlay": true,
+          "IsPlayback": true,
+          "MaxStreamingBitrate": 200000000,
+          "MediaSourceId": "${id_4}",
+          "UserId": "${id_1}"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000158",
+        "method": "GET",
+        "path": "/MediaSegments/${id_4}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000160",
+        "method": "GET",
+        "path": "/Videos/${id_4}/stream?MediaSourceId=${id_4}&Static=true&UserId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Range": "bytes=0-",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000161",
+        "method": "GET",
+        "path": "/MediaSegments/${id_106}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000162",
+        "method": "GET",
+        "path": "/MediaSegments/${id_110}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000163",
+        "method": "GET",
+        "path": "/MediaSegments/${id_113}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000164",
+        "method": "GET",
+        "path": "/MediaSegments/${id_117}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000165",
+        "method": "POST",
+        "path": "/Sessions/Playing?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_4}",
+          "MediaSourceId": "${id_4}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_4}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_262}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 0,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 10854472630,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000166",
+        "method": "GET",
+        "path": "/Items/${id_5}/Images/Primary?tag=${id_6}&userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000168",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "TimeUpdate",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_4}",
+          "MediaSourceId": "${id_4}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_4}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_262}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 104138851,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 10854472630,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000169",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "TimeUpdate",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_4}",
+          "MediaSourceId": "${id_4}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_4}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_262}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 204272368,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 10854472630,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000170",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "TimeUpdate",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_4}",
+          "MediaSourceId": "${id_4}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_4}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_262}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 303738307,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 10854472630,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000171",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "AudioStreamIndex": 1,
+          "CanSeek": true,
+          "EventName": "TimeUpdate",
+          "IsMuted": false,
+          "IsPaused": false,
+          "ItemId": "${id_4}",
+          "MediaSourceId": "${id_4}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_4}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlayMethod": "DirectStream",
+          "PlaySessionId": "${id_262}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 412550050,
+          "RepeatMode": "RepeatNone",
+          "RunTimeTicks": 10854472630,
+          "SubtitleStreamIndex": -1
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000172",
+        "method": "POST",
+        "path": "/Sessions/Playing/Stopped?userId=${id_1}",
+        "headers": {
+          "Accept": "*/*",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "Content-Type": "application/json",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "body": {
+          "Failed": false,
+          "ItemId": "${id_4}",
+          "MediaSourceId": "${id_4}",
+          "NowPlayingQueue": [
+            {
+              "Id": "${id_4}",
+              "PlaylistItemId": "playlistItem0"
+            }
+          ],
+          "PlaySessionId": "${id_262}",
+          "PlaylistIndex": 0,
+          "PlaylistLength": 1,
+          "PositionTicks": 487316409
+        },
+        "range_kind": "captured",
+        "binary": true,
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000186",
+        "method": "POST",
+        "path": "/UserPlayedItems/${id_4}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "fixture_only": true
+      },
+      {
+        "name": "captured-000187",
+        "method": "GET",
+        "path": "/Items/${id_5}?fields=DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount&recursive=true&userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        }
+      },
+      {
+        "name": "captured-000189",
+        "method": "DELETE",
+        "path": "/UserPlayedItems/${id_4}?userId=${id_1}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
+          "Connection": "keep-alive",
+          "User-Agent": "Infuse-Direct/8.5.9"
+        },
+        "fixture_only": true
+      }
+    ]
+  },
+  "limitations": [
+    "Sintel playback and subtitle selection require Infuse Pro.",
+    "Big Buck Bunny Dolby audio switching and some 4K playback require Infuse Pro.",
+    "Watching row resume verified at 1:13, with playback observed at 1:17."
+  ]
+}

@@ -5,8 +5,8 @@ import (
 	"math"
 	"sort"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // assembly turns a precomputed userModel into the rows one request
@@ -15,6 +15,7 @@ import (
 type assembly struct {
 	visit    int64 // fixed for this browsing visit; new visits vary discovery rows
 	hidden   map[core.RatingKey]bool
+	excluded excludedTitles
 	previous []presentedRow // currently browsed positions; never bypass eligibility
 	model    *userModel
 	owner    []*candRow // owner collection rows for this context
@@ -215,7 +216,7 @@ const minRowItems = 12
 // rowFloor is the minimum for a row kind. Continue Watching and Up Next are
 // utility rows: one in-progress title is still worth showing.
 func (a *assembly) rowFloor(kind string) int {
-	if kind == KindContinue || kind == KindUpNext {
+	if kind == KindContinue || kind == KindUpNext || kind == KindFavorites {
 		return 0
 	}
 	return a.minRow
@@ -260,7 +261,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			if excluded[r] {
 				continue
 			}
-			if r.c.source != core.RowSourcePlex {
+			if behaviorForRowSource(r.c.source).countsInBudget {
 				if maxRows > 0 && counted >= maxRows {
 					continue
 				}
@@ -272,7 +273,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 		picked := make(map[*rankedRow][]candItem, len(sel))
 		claimed := map[core.RatingKey]bool{}
 		for _, r := range sel {
-			if r.c.source == core.RowSourcePlex {
+			if behaviorForRowSource(r.c.source).claimsFirst {
 				items := r.items
 				if n := a.rowCap(r.c); len(items) > n {
 					items = items[:n]
@@ -283,6 +284,20 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 				}
 			}
 		}
+		// Favorites are an explicit personal collection. Keep the full ordered
+		// shelf even when another visible row already contains those titles.
+		for _, r := range sel {
+			if r.c.kind != KindFavorites {
+				continue
+			}
+			for _, it := range r.items {
+				if len(picked[r]) >= a.rowCap(r.c) {
+					break
+				}
+				picked[r] = append(picked[r], it)
+				claimed[it.t.Key] = true
+			}
+		}
 		draftOrder := append([]*rankedRow(nil), sel...)
 		sort.SliceStable(draftOrder, func(i, j int) bool { return anchored(draftOrder[i].c) && !anchored(draftOrder[j].c) })
 		for _, phase := range []bool{true, false} {
@@ -290,7 +305,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			// Ordered utility/collection rows retain their live order and priority.
 			if len(a.previous) > 0 {
 				for _, r := range sel {
-					if r.c.source == core.RowSourcePlex || (r.c.source == core.RowSourceEngine && !r.c.keepOrder) || !draftsFirst(r.c) || !inPhase(r) {
+					if r.c.kind == KindFavorites || !behaviorForRowSource(r.c.source).participatesInDraft || (r.c.source == core.RowSourceEngine && !r.c.keepOrder) || !draftsFirst(r.c) || !inPhase(r) {
 						continue
 					}
 					for _, it := range r.items {
@@ -306,7 +321,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 				a.retainItems(sel, picked, claimed, inPhase)
 			}
 			for _, r := range draftOrder {
-				if r.c.source == core.RowSourcePlex || !draftsFirst(r.c) || !inPhase(r) {
+				if r.c.kind == KindFavorites || !behaviorForRowSource(r.c.source).participatesInDraft || !draftsFirst(r.c) || !inPhase(r) {
 					continue
 				}
 				for _, it := range r.items {
@@ -323,7 +338,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			for progress := true; progress; {
 				progress = false
 				for _, r := range sel {
-					if r.c.source == core.RowSourcePlex || draftsFirst(r.c) || !inPhase(r) || len(picked[r]) >= a.rowCap(r.c) {
+					if !behaviorForRowSource(r.c.source).participatesInDraft || draftsFirst(r.c) || !inPhase(r) || len(picked[r]) >= a.rowCap(r.c) {
 						continue
 					}
 					for cursor[r] < len(r.items) {
@@ -346,7 +361,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 		short := map[*rankedRow]bool{}
 		var drop *rankedRow
 		for _, r := range sel {
-			if r.c.source == core.RowSourcePlex {
+			if !behaviorForRowSource(r.c.source).requiresMinimum {
 				continue
 			}
 			min := r.c.minItems
@@ -388,7 +403,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 		out := make([]core.HomeRow, 0, len(sel))
 		for _, r := range sel {
 			items := picked[r]
-			if r.c.source != core.RowSourcePlex && (len(items) == 0 || short[r]) {
+			if behaviorForRowSource(r.c.source).requiresMinimum && (len(items) == 0 || short[r]) {
 				continue
 			}
 			out = append(out, a.homeRow(r, items, len(r.items) > len(items)))
@@ -480,7 +495,7 @@ func (a *assembly) typeOK(t *core.Title) bool {
 			return false
 		}
 	}
-	return recommend.ContentRatingAllowed(t.ContentRating, a.user.MaxContentRating)
+	return contentrating.Allowed(t.ContentRating, a.user.MaxContentRating)
 }
 
 // contextItems filters a row's items for this screen and viewer, scores
@@ -499,7 +514,7 @@ func (a *assembly) contextItems(c *candRow) []candItem {
 	}
 	out := make([]candItem, 0, len(src))
 	for _, it := range src {
-		if a.hidden[it.t.Key] || !a.typeOK(&it.t) {
+		if a.hidden[it.t.Key] || !a.typeOK(&it.t) || (c.kind != KindContinue && c.kind != KindUpNext && c.kind != KindFavorites && c.source == core.RowSourceEngine && a.excluded.contains(&it.t)) {
 			continue
 		}
 		if c.kind == KindShortOnTime && !isShort(&it.t) {

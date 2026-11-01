@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestIsPublicIP(t *testing.T) {
@@ -448,9 +449,39 @@ func TestGuardedClientSelectsProxyRouteOnce(t *testing.T) {
 	}
 }
 
-// Proxy não-http (socks5) não pode ser amarrado ao IP validado neste
-// desenho: erro claro ErrUnsupportedTransport, sem tocar em destino.
-func TestGuardedClientRejectsNonHTTPProxy(t *testing.T) {
+func TestGuardedClientPinsSOCKSToValidatedIP(t *testing.T) {
+	got := make(chan byte, 1)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		buf := make([]byte, 64)
+		if _, err := io.ReadFull(c, buf[:2]); err != nil {
+			return
+		}
+		if _, err := io.ReadFull(c, buf[:buf[1]]); err != nil {
+			return
+		}
+		_, _ = c.Write([]byte{5, 0})
+		if _, err := io.ReadFull(c, buf[:4]); err != nil {
+			return
+		}
+		got <- buf[3]
+		if buf[3] == 1 {
+			_, _ = io.ReadFull(c, buf[:4])
+			if net.IP(buf[:4]).String() != "93.184.216.34" {
+				got <- 0
+			}
+		}
+		_, _ = c.Write([]byte{5, 5, 0, 1, 0, 0, 0, 0, 0, 0})
+	}()
 	var directDials atomic.Int32
 	guard := &Guard{
 		LookupIP: func(_ context.Context, host string) ([]netip.Addr, error) {
@@ -461,13 +492,32 @@ func TestGuardedClientRejectsNonHTTPProxy(t *testing.T) {
 			return nil, errors.New("must not dial")
 		},
 	}
-	socks, _ := url.Parse("socks5://127.0.0.1:1080")
+	socks, _ := url.Parse("socks5://" + ln.Addr().String())
 	client := guard.Client(&http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(socks)}})
-	if _, err := client.Get("http://public.test/ok"); !errors.Is(err, ErrUnsupportedTransport) {
-		t.Fatalf("socks5 proxy err = %v, want ErrUnsupportedTransport", err)
+	if _, err := client.Get("http://public.test/ok"); err == nil {
+		t.Fatal("refused socks tunnel succeeded")
+	}
+	select {
+	case atyp := <-got:
+		if atyp != 1 {
+			t.Fatalf("socks address type %#x, want IPv4", atyp)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("socks proxy was not contacted")
 	}
 	if got := directDials.Load(); got != 0 {
 		t.Fatalf("direct dials = %d, want 0", got)
+	}
+}
+
+func TestGuardedClientRejectsUnknownProxyScheme(t *testing.T) {
+	guard := &Guard{LookupIP: func(_ context.Context, host string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+	}}
+	ftp, _ := url.Parse("ftp://127.0.0.1:21")
+	client := guard.Client(&http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(ftp)}})
+	if _, err := client.Get("http://public.test/ok"); !errors.Is(err, ErrUnsupportedTransport) {
+		t.Fatalf("ftp proxy err = %v, want ErrUnsupportedTransport", err)
 	}
 }
 

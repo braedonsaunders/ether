@@ -106,13 +106,8 @@ export function PageSettings({
         </h2>
         <p className="mt-0.5 text-xs text-fg-muted">
           {layer !== "global"
-            ? t(
-                "All rows on {section}, including Plex and discovery rows. Empty fields follow Global.",
-                { section: sectionLabel },
-              )
-            : t("All rows on {section}, including Plex and discovery rows.", {
-                section: sectionLabel,
-              })}
+            ? t("All rows on {section}. Empty fields follow Global.", { section: sectionLabel })
+            : t("All rows on {section}.", { section: sectionLabel })}
         </p>
       </div>
       <div className="space-y-1.5 rounded-lg border border-border bg-surface p-2.5">

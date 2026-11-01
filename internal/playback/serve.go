@@ -34,6 +34,11 @@ func (m *Manager) ServeRange(w http.ResponseWriter, r *http.Request, sessionID s
 		http.Error(w, "unknown playback session", http.StatusNotFound)
 		return
 	}
+	s.activeReads.Add(1)
+	defer func() {
+		s.activeReads.Add(-1)
+		s.touch(m.now())
+	}()
 	s.touch(m.now())
 	s.markDirectPlay()
 	if !s.directRangeCompatible() {
@@ -47,14 +52,21 @@ func (m *Manager) ServeRange(w http.ResponseWriter, r *http.Request, sessionID s
 	w = newStallWriter(w, m.opts.WriteStallTimeout)
 	s.mu.Lock()
 	rep := representation{
-		size:        s.virtual.Size,
-		etag:        s.etag,
-		modTime:     s.modTime,
-		contentType: s.contentType,
+		size:                  s.virtual.Size,
+		etag:                  s.etag,
+		modTime:               s.modTime,
+		contentType:           s.contentType,
+		deferStatusOnZeroRead: true,
 	}
 	s.mu.Unlock()
 	rep.body = func(w io.Writer, start, length int64) error {
-		return m.streamClient(r.Context(), w, s, start, length)
+		began := time.Now()
+		err := m.streamClient(r.Context(), w, s, start, length)
+		if m.opts.TracePlayback {
+			m.log.Info("direct range", "session", s.id, "offset", start, "length", length,
+				"took", time.Since(began), "err", err)
+		}
+		return err
 	}
 	if err := serveRepresentation(w, r, rep); err != nil && r.Context().Err() == nil {
 		m.log.Debug("direct play response ended early", "session", s.id, "err", err)
@@ -184,6 +196,13 @@ type chunk struct {
 	err error
 }
 
+// A cancelled request may leave a non-cooperative ReaderAt or Close running.
+// Keep its slot until the producer actually exits, across all Managers using
+// request retirement. Untracked callers preserve their existing admission.
+const maxReadProducers = 128
+
+var readProducers = make(chan struct{}, maxReadProducers)
+
 // copyFrom copies up to length bytes of g's source starting at off into w,
 // reading ahead of the writer in ChunkSize pieces. It returns the bytes
 // written, the read error that stopped it (nil when length was copied) and
@@ -196,14 +215,64 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 	if !background {
 		m.installDamageHandler(g)
 	}
+	var retired func()
+	tracker := core.ReadRetirementFrom(ctx)
+	input, _ := ctx.Value(encoderInputKey{}).(*encoderInputScope)
+	if tracker != nil || input != nil {
+		if err := ctx.Err(); err != nil {
+			return 0, err, nil
+		}
+		select {
+		case readProducers <- struct{}{}:
+		default:
+			return 0, core.ErrNotAvailable, nil
+		}
+		var requestDone, inputDone func()
+		if tracker != nil {
+			var ok bool
+			requestDone, ok = tracker.Begin()
+			if !ok {
+				<-readProducers
+				return 0, errRetired, nil
+			}
+		}
+		if input != nil {
+			var ok bool
+			inputDone, ok = input.begin(g)
+			if !ok {
+				<-readProducers
+				if requestDone != nil {
+					requestDone()
+				}
+				return 0, errRetired, nil
+			}
+		}
+		retired = func() {
+			<-readProducers
+			if requestDone != nil {
+				requestDone()
+			}
+			if inputDone != nil {
+				inputDone()
+			}
+		}
+	}
 	if !g.acquire() {
+		if retired != nil {
+			retired()
+		}
 		return 0, errRetired, nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	ch := make(chan chunk, m.opts.ReadAhead)
 	go func() {
-		defer g.release()
+		defer func() {
+			g.release()
+			if retired != nil {
+				retired()
+			}
+		}()
 		defer close(ch)
 		pos, rem := off, length
 		for rem > 0 {
@@ -307,6 +376,12 @@ func (m *Manager) serveLoopback(w http.ResponseWriter, r *http.Request) {
 	m.mu.Unlock()
 	if g == nil {
 		http.Error(w, "gone", http.StatusGone)
+		return
+	}
+	var inputErr error
+	r, inputErr = m.encoderInputRequest(r, g)
+	if inputErr != nil {
+		http.Error(w, "unverified input", http.StatusForbidden)
 		return
 	}
 	s := g.sess

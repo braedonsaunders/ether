@@ -201,6 +201,31 @@ func TestDecide(t *testing.T) {
 				container: "mkv", maxHeight: 800, audioIdx: 1},
 		},
 		{
+			name: "plex web burns PGS and direct plays text",
+			info: pgs, caps: plexWebModern,
+			opts: func(o *core.DecideOptions) { o.SubtitleStream = 2 },
+			want: want{kind: core.DecisionTranscode, audioCopy: true, videoCodec: "h264", audioCodec: "aac",
+				container: ContainerMPEGTS, maxHeight: 800, burn: true, audioIdx: 1, reason: []string{"pgs subtitles must be burned in"}},
+		},
+		{
+			name: "plex web text subtitle stays a direct-play sidecar",
+			info: pgs, caps: plexWebModern,
+			opts: func(o *core.DecideOptions) { o.SubtitleStream = 5 },
+			want: want{kind: core.DecisionDirectPlay, videoCopy: true, audioCopy: true, videoCodec: "h264", audioCodec: "aac",
+				container: "mkv", maxHeight: 800, audioIdx: 1},
+		},
+		{
+			name: "android burns PGS",
+			info: pgs, caps: core.ClientCaps{
+				Product: "Plex for Android (Mobile)", Platform: "Android", MaxHeight: 1080,
+				VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3", "eac3"},
+				Containers: []string{"mp4", "mkv", "mpegts"},
+			},
+			opts: func(o *core.DecideOptions) { o.SubtitleStream = 2 },
+			want: want{kind: core.DecisionTranscode, audioCopy: true, videoCodec: "h264", audioCodec: "aac",
+				container: ContainerMPEGTS, maxHeight: 800, burn: true, audioIdx: 1, reason: []string{"pgs subtitles must be burned in"}},
+		},
+		{
 			name: "legacy text burn request stays sidecar",
 			info: pgs, caps: appleTV,
 			opts: func(o *core.DecideOptions) { o.SubtitleStream = 5; o.BurnSubtitles = true },

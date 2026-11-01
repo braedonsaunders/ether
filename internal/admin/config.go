@@ -17,7 +17,7 @@ var configSections = map[string]string{
 	"cache": "cache", "catalog": "catalog", "resolver": "resolver", "quality": "quality",
 	"transcode": "transcode", "trakt": "trakt", "simkl": "simkl", "opensubtitles": "openSubtitles",
 	"openSubtitles": "openSubtitles", "llm": "llm", "updates": "updates", "spike": "spike",
-	"debrid": "debrid", "indexerSites": "indexerSites",
+	"debrid": "debrid", "indexerSites": "indexerSites", "outbound": "outbound", "clients": "clients",
 }
 
 func (h *Handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +87,7 @@ func (h *Handler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		writeValidationError(w, perrs)
 		return
 	}
+	next.Availability.ApplyMode()
 	next.SetCachePolicy(next.Cache)
 	errs, err := h.saveConfig(next)
 	switch {
@@ -178,6 +179,9 @@ func (h *Handler) handlePutSection(w http.ResponseWriter, r *http.Request) {
 	if len(perrs) > 0 {
 		writeValidationError(w, perrs)
 		return
+	}
+	if field == "availability" {
+		next.Availability.ApplyMode()
 	}
 	if field == "cache" {
 		next.SetCachePolicy(next.Cache)

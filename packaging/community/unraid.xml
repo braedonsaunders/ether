@@ -7,7 +7,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/braedonsaunders/ether/issues</Support>
   <Project>https://github.com/braedonsaunders/ether</Project>
-  <Overview>Plex-compatible TMDB catalogue and on-demand Usenet streaming. Supply your own providers and indexers. Optional local libraries. Open the web UI to configure Ether.</Overview>
+  <Overview>TMDB catalogue and on-demand Usenet and debrid streaming. Supply your own providers and indexers. Optional local libraries. Open the web UI to configure Ether.</Overview>
   <Category>MediaApp:Video MediaServer:Video</Category>
   <WebUI>http://[IP]:[PORT:32400]/ether/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/braedonsaunders/ether/main/packaging/community/unraid.xml</TemplateURL>

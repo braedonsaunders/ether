@@ -2,7 +2,9 @@
 # discover servers on the LAN via GDM (UDP 32410-32414) and remote access
 # configures the router with UPnP — both need the host network namespace.
 # Bridge mode works for Plex Web / claimed remote access if you remove
-# `network_mode: host` and uncomment the ports mapping.
+# `network_mode: host` and uncomment the ports mapping. Docker Desktop on
+# Mac and Windows does not provide host networking. Do not publish 8096;
+# other apps are on the console port at /jellyfin, /emby, and /silo.
 services:
   ether:
     image: ghcr.io/braedonsaunders/ether:latest
@@ -14,7 +16,7 @@ services:
       # ETHER_DATA_DIR: /config   # default in the image
     volumes:
       - ./config:/config          # config.json, database, identity
-      - ./cache:/cache            # segment cache: select /cache in setup (default is /config/cache)
+      - ./cache:/cache            # used automatically on a fresh install (otherwise /config/cache)
     # Intel/AMD VAAPI or QuickSync transcoding (optional); the render
     # node's group is added automatically:
     # devices:
@@ -27,6 +29,11 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+    # Already running Plex on 32400? Drop network_mode and use bridge:
+    # environment:
+    #   ETHER_PORT: "32800"
+    # ports:
+    #   - "32800:32800"
     # ports:                      # bridge-mode only; drop network_mode above
     #   - "32400:32400/tcp"
     #   - "32410-32414:32410-32414/udp"

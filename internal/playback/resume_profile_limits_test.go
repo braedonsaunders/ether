@@ -248,3 +248,36 @@ func TestWarmCatalogueLanguageIsContextNotAProfileFact(t *testing.T) {
 		t.Fatal("original-audio rule did not change the profile selection key")
 	}
 }
+
+func TestNonPlexResumeSkipsUnsupportedAV1Release(t *testing.T) {
+	h := newHarness(t, []*fakeRelease{mkv("av1-rel", 10_000, time.Minute), mkv("hevc-rel", 10_000, time.Minute)}, []string{"hevc-rel", "av1-rel"})
+	ctx := context.Background()
+	configured := core.QualityProfile{Name: "Auto", MaxHeight: 2160, MinHeight: 720, PreferredCodecs: []string{"av1", "hevc", "h264"}}
+	key := configured.ComputeSelectionKey()
+	h.m.deps.SelectProfile = func(caps core.ClientCaps, _ *core.User) core.QualityProfile {
+		p := configured
+		p.SelectionKey = key
+		return p
+	}
+	siloCaps := core.ClientCaps{Protocol: "silo", Product: "Silo Web", ClientID: "silo-web", VideoCodecs: []string{"av1", "hevc", "h264"}}
+	infuseCaps := core.ClientCaps{Protocol: "jellyfin", Product: "Infuse-Direct", DeviceName: "AppleTV", ClientID: "8:jellyfinappletv", VideoCodecs: []string{"h264", "hevc"}}
+
+	av1Res := &core.Resolution{Release: core.Release{ID: "av1-rel", Info: core.ReleaseInfo{Height: 1080, VideoCodec: "av1"}}, NZB: []byte("nzb-av1")}
+	if err := h.m.Remember(ctx, owner, movieKey, siloCaps, av1Res); err != nil {
+		t.Fatal(err)
+	}
+	if rp, err := h.m.ResumeFor(ctx, owner, movieKey, siloCaps); err != nil || rp == nil || rp.ReleaseID() != "av1-rel" {
+		t.Fatalf("Silo ResumeFor = %+v, %v; want av1-rel", rp, err)
+	}
+	if rp, err := h.m.ResumeFor(ctx, owner, movieKey, infuseCaps); err != nil || rp != nil {
+		t.Fatalf("Infuse ResumeFor with remembered AV1 = %+v, %v; want nil", rp, err)
+	}
+	ps, err := h.m.PrepareSurface(ctx, owner, movieKey, infuseCaps, "jellyfin", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ps.Resolution.Release.ID != "hevc-rel" {
+		t.Fatalf("Infuse PrepareSurface resumed %s, want hevc-rel", ps.Resolution.Release.ID)
+	}
+	h.m.Stop(ps.ID)
+}

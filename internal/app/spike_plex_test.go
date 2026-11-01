@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/plextv"
@@ -116,5 +117,45 @@ func TestSpikePlexMetadataUsesSpikeCatalog(t *testing.T) {
 	uri := url.QueryEscape(fmt.Sprintf("server://spike/com.plexapp.plugins.library/library/metadata/%s", key))
 	if code, _ := do(http.MethodPost, "/playQueues?type=video&uri="+uri); code != http.StatusOK {
 		t.Fatalf("POST /playQueues for %s: status %d, want 200", key, code)
+	}
+
+	item := metadata[0].(map[string]any)
+	media, _ := item["Media"].([]any)
+	if len(media) == 0 {
+		t.Fatal("spike item has no media")
+	}
+	parts, _ := media[0].(map[string]any)["Part"].([]any)
+	if len(parts) == 0 {
+		t.Fatal("spike item has no part")
+	}
+	part, _ := parts[0].(map[string]any)["key"].(string)
+	if part == "" {
+		t.Fatal("spike part has no key")
+	}
+	req, err := http.NewRequest(http.MethodGet, ts.URL+part, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Plex-Token", "owner-token")
+	req.Header.Set("X-Plex-Client-Identifier", "spike-test")
+	req.Header.Set("X-Plex-Product", "Plex Web")
+	req.Header.Set("Range", "bytes=0-31")
+	started := time.Now()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Fatalf("GET %s immediately after ready: status %d, body %s", part, resp.StatusCode, body)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("play immediately after ready took %s", elapsed)
+	} else {
+		t.Logf("play immediately after ready took %s", elapsed)
+	}
+	if len(body) == 0 {
+		t.Fatal("play returned no bytes")
 	}
 }

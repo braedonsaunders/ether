@@ -13,7 +13,7 @@ const rankedSourceGrace = 2 * time.Second
 func equivalentHedge(lead, backup candidate, margin float64) bool {
 	return releasepolicy.Equivalent(lead.policy, backup.policy) &&
 		!lead.verified && backup.bandwidth >= lead.bandwidth &&
-		qualityTier(backup.rel.Info) == qualityTier(lead.rel.Info) &&
+		sameTier(backup, lead) &&
 		backup.rel.Info.Edition == lead.rel.Info.Edition &&
 		backup.rel.Score >= lead.rel.Score-margin
 }

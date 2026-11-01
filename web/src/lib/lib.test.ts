@@ -5,6 +5,7 @@ import {
   cacheHealth,
   catalogHealth,
   computeHealth,
+  transcodeHealth,
   countsOverall,
   indexersHealth,
   normalizeSessions,
@@ -370,6 +371,7 @@ const LIVE = {
     presence: { connected: true },
     cert: {
       present: true,
+      verified: true,
       subject: "*.x.plex.direct",
       notBefore: "2026-01-17T04:36:33Z",
       notAfter: "2027-01-17T04:36:33Z",
@@ -387,18 +389,34 @@ describe("health", () => {
       ["cache", "ok"],
       ["catalog", "ok"],
       ["remote", "off"],
-      ["plexdirect", "unknown"],
+      ["plexdirect", "ok"],
     ]);
     expect(usenetHealth(LIVE.providers).fill).toBeCloseTo(4 / 32);
     expect(indexersHealth(LIVE.indexers).summary).toBe("1 of 2 indexers out of searches today");
     expect(cacheHealth(LIVE.cache).summary).toBe("925.4 MiB of 20.0 GiB");
     expect(worstLevel(h.map((x) => x.level))).toBe("warn");
-    expect(h.find((x) => x.id === "plexdirect")?.countsOverall).toBe(false);
+    expect(h.find((x) => x.id === "plexdirect")?.statusLabel).toBe("Valid");
     expect(overallLevel(h)).toBe("warn");
+    expect(transcodeHealth(undefined)).toBeNull();
+    const tone = transcodeHealth({
+      playbackError: "This FFmpeg cannot tone-map HDR video to SDR",
+      notice: "filter list unread",
+    });
+    expect(tone?.level).toBe("warn");
+    expect(tone?.summary).toContain("tone-map");
+    expect(tone?.details).toEqual(["filter list unread"]);
+    expect(
+      computeHealth({ ...LIVE, hwaccel: { notice: "no colours" } }, now).some(
+        (x) => x.id === "transcode",
+      ),
+    ).toBe(true);
   });
   it("accepts debrid in place of Usenet", () => {
     expect(usenetHealth([], { enabled: true }).level).toBe("off");
-    expect(usenetHealth([], { enabled: false }).level).toBe("error");
+    const emptySources = usenetHealth([], { enabled: false });
+    expect(emptySources.setupGap).toBe(true);
+    expect(emptySources.level).toBe("unknown");
+    expect(emptySources.countsOverall).toBe(false);
   });
   it("warns when debrid has no torrent indexer or nothing is enabled", () => {
     const nzb = { indexer: "NZBgeek", hitsLimit: 0, enabled: true, torrent: false };
@@ -421,10 +439,57 @@ describe("health", () => {
     ).toBe("warn");
   });
   it("flags real problems", () => {
-    expect(usenetHealth([]).level).toBe("error");
+    expect(usenetHealth([]).setupGap).toBe(true);
     expect(usenetHealth({ error: "boom" }).summary).toBe("boom");
     expect(catalogHealth({ lastSync: "2026-10-01T00:00:00Z" }, now).level).toBe("warn");
+    const correcting = catalogHealth(
+      {
+        lastSync: "2026-10-30T00:00:00Z",
+        yearCorrection: { running: true, pending: 12, stored: 3, refreshed: 1 },
+      },
+      now,
+    );
+    expect(correcting.level).toBe("ok");
+    expect(correcting.details.some((line) => line.includes("12") && line.includes("4"))).toBe(true);
+    const finished = catalogHealth(
+      {
+        lastSync: "2026-10-30T00:00:00Z",
+        yearCorrection: { finished: true, pending: 0, stored: 30, refreshed: 4 },
+      },
+      now,
+    );
+    expect(finished.details.some((line) => line.includes("movie years"))).toBe(false);
     expect(remoteHealth({ claimed: false }).level).toBe("error");
+    const unclaimed = computeHealth({ remote: { claimed: false } }, now);
+    expect(unclaimed.filter((item) => item.id === "remote" || item.id === "plexdirect")).toEqual([
+      expect.objectContaining({
+        id: "remote",
+        summary: "Sign in to finish connecting",
+        href: "/apps/plex/account",
+        setupGap: true,
+        level: "unknown",
+      }),
+    ]);
+    const fresh = computeHealth(
+      {
+        providers: [],
+        debrid: { enabled: false },
+        indexers: [{ indexer: "Torrentio", enabled: true, hitsLimit: 0 }],
+        cache: { used: 0, budget: 32 * 1024 ** 3 },
+        catalog: { movies: 0, shows: 0 },
+        database: { integrity: { ok: true, checked: now.toISOString() } },
+      },
+      now,
+      { plexEnabled: false },
+    );
+    expect(fresh.filter((item) => item.setupGap).map((item) => item.id)).toEqual([
+      "usenet",
+      "catalog",
+    ]);
+    expect(fresh.find((item) => item.id === "usenet")?.summary).toBe(
+      "Torrentio finds releases; add a debrid or Usenet account to play.",
+    );
+    expect(overallLevel(fresh)).toBe("ok");
     expect(
       remoteHealth({ claimed: true, remoteAccess: true, presence: { connected: false } }).level,
     ).toBe("warn");
@@ -461,6 +526,7 @@ describe("health", () => {
       {
         cert: {
           present: true,
+          verified: true,
           notBefore: "2026-01-01T00:00:00Z",
           notAfter: "2028-01-01T00:00:00Z",
         },
@@ -468,12 +534,53 @@ describe("health", () => {
       now,
     );
     expect(installed.summary).toMatch(/^Expires /);
-    expect(installed.level).toBe("unknown");
-    expect(installed.statusLabel).toBe("Not verified");
-    expect(installed.note).toMatch(/does not verify/);
-    expect(installed.countsOverall).toBe(false);
-    expect(countsOverall(installed)).toBe(false);
-    expect(countsOverall({ ...installed, level: "error" })).toBe(true);
+    expect(installed.level).toBe("ok");
+    expect(installed.statusLabel).toBe("Valid");
+    expect(installed.note).toBe("Trusted by Plex apps");
+    expect(installed.details).toContain("Trusted by Plex apps");
+    expect(countsOverall(installed)).toBe(true);
+    const untrusted = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          verified: false,
+          verifyReason: "chain",
+          notBefore: "2026-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect(untrusted.summary).toBe("Chain not trusted");
+    expect(untrusted.level).toBe("warn");
+    expect(untrusted.note).toMatch(/plex.direct certificate/);
+    const mismatch = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          verified: false,
+          verifyReason: "identity",
+          notBefore: "2026-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect(mismatch.summary).toBe("Doesn't match this server");
+    const pending = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          notBefore: "2026-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect(pending.statusLabel).toBe("Checking certificate");
+    expect(pending.countsOverall).toBe(false);
+    expect(countsOverall(pending)).toBe(false);
+    expect(countsOverall({ ...pending, level: "error" })).toBe(true);
     const missingExpiry = plexDirectHealth(
       { cert: { present: true, notBefore: "2026-01-01T00:00:00Z" } },
       now,

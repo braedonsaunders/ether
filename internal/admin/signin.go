@@ -2,6 +2,7 @@ package admin
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -21,8 +22,9 @@ type pinHandles struct {
 }
 
 type pinHandle struct {
-	pinID   string
-	expires time.Time
+	viewerID int64
+	pinID    string
+	expires  time.Time
 }
 
 const pinHandleTTL = 15 * time.Minute
@@ -106,6 +108,13 @@ func (h *Handler) handleSignInPoll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "not_owner", "That Plex account doesn't own this server. Sign in as the owner.")
 		return
 	}
+	// This is a completed external owner sign-in, not ordinary token use.
+	// Record it before exchanging the plex.tv credential for a console session.
+	if h.deps.IdentityGrants != nil && h.deps.AuthenticatePlex != nil {
+		if viewer, e := h.deps.AuthenticatePlex(r.Context(), token); e == nil && viewer != nil {
+			_ = h.deps.IdentityGrants.ViewerTimes().RecordOwnerLogin(r.Context(), viewer.ID)
+		}
+	}
 	if !h.writeSession(w, r, token) {
 		return
 	}
@@ -133,6 +142,24 @@ func (h *Handler) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
 	if !csrfOK(r) {
 		writeError(w, http.StatusForbidden, "csrf", "mutating requests require the X-Ether-Request: 1 header and a JSON content type")
+		return
+	}
+	// Prism local-owner logins use scoped identity grants. Revoke only the
+	// presented owner grant; independent viewer/device grants stay active.
+	if token := tokenFromRequest(r); core.IsGrantCredential(token) && h.deps.IdentityGrants != nil {
+		viewer, err := h.deps.IdentityGrants.Resolve(r.Context(), "owner", token)
+		if err != nil && !errors.Is(err, core.ErrUnauthorized) {
+			writeError(w, http.StatusServiceUnavailable, "session", "Could not sign out.")
+			return
+		}
+		if err == nil && viewer.IsOwner {
+			sum := sha256.Sum256([]byte(token))
+			if err := h.deps.IdentityGrants.RevokeGrant(r.Context(), viewer.ID, hex.EncodeToString(sum[:])); err != nil {
+				writeError(w, http.StatusServiceUnavailable, "session", "Could not sign out: "+err.Error())
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 	if h.deps.Sessions == nil {
@@ -167,4 +194,23 @@ func (h *Handler) writeSession(w http.ResponseWriter, r *http.Request, credentia
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"done": true, "token": token, "expiresAt": expires.Unix()})
 	return true
+}
+
+func (p *pinHandles) addLinked(pinID string, viewerID int64) string {
+	handle := p.add(pinID)
+	p.mu.Lock()
+	v := p.m[handle]
+	v.viewerID = viewerID
+	p.m[handle] = v
+	p.mu.Unlock()
+	return handle
+}
+func (p *pinHandles) linked(handle string, viewerID int64) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	v, ok := p.m[handle]
+	if !ok || v.viewerID != viewerID || time.Now().After(v.expires) {
+		return "", false
+	}
+	return v.pinID, true
 }

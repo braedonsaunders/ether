@@ -10,19 +10,28 @@ import (
 // Handler is intentionally unauthenticated: mount inside the owner's authenticated router.
 func (s *Service) Handler() http.Handler {
 	m := http.NewServeMux()
-	reply := func(w http.ResponseWriter, v any, e error) {
-		w.Header().Set("Content-Type", "application/json")
-		if e != nil {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "invalid_request", "message": e.Error()}})
+	writeJSON := func(w http.ResponseWriter, status int, v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"code":"encode_failed","message":"failed to encode response"}}` + "\n"))
 			return
 		}
-		json.NewEncoder(w).Encode(v)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(b)
+		_, _ = w.Write([]byte("\n"))
+	}
+	reply := func(w http.ResponseWriter, v any, e error) {
+		if e != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_request", "message": e.Error()}})
+			return
+		}
+		writeJSON(w, http.StatusOK, v)
 	}
 	replyMissing := func(w http.ResponseWriter) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "not_found", "message": "preview not found"}})
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]string{"code": "not_found", "message": "preview not found"}})
 	}
 	// Preview scans the whole library. A large one outlives this POST, so the
 	// handler starts a job and the owner polls it. Mount stays owner-only.

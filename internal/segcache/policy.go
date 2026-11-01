@@ -63,15 +63,11 @@ func (c *Cache) RecordPlay(id, title string, size int64) {
 	r.experience.LastPlayed = c.now()
 	b, err := json.Marshal(r.experience)
 	c.mu.Unlock()
-	if err == nil {
-		err = os.MkdirAll(r.dir, 0755)
-	}
-	if err == nil {
-		err = writeFileAtomic(filepath.Join(r.dir, "experience.json"), b, true)
-	}
 	if err != nil {
 		c.logger.Warn("save cache playback metadata", "err", err)
+		return
 	}
+	c.queueExperience(r.dir, b)
 }
 
 // Describe records a source's display metadata without counting a play.
@@ -98,7 +94,7 @@ func (c *Cache) Describe(id, title string, size int64) {
 		err = os.MkdirAll(r.dir, 0755)
 	}
 	if err == nil {
-		err = writeFileAtomic(filepath.Join(r.dir, "experience.json"), b, true)
+		err = writeFileAtomic(filepath.Join(r.dir, "experience.json"), b, false)
 	}
 	if err != nil {
 		c.logger.Warn("save source metadata", "err", err)
@@ -108,6 +104,64 @@ func (c *Cache) Describe(id, title string, size int64) {
 // Sweep expires idle releases, retaining live streams and owner/resume pins.
 // Dropping entries and choosing victims happen under the index lock; unlinking
 // uses the same striped locks as budget eviction, so concurrent Puts survive.
+func (c *Cache) queueExperience(dir string, body []byte) {
+	if c.expCond == nil {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			c.logger.Warn("save cache playback metadata", "err", err)
+			return
+		}
+		if err := writeFileAtomic(filepath.Join(dir, "experience.json"), body, false); err != nil {
+			c.logger.Warn("save cache playback metadata", "err", err)
+		}
+		return
+	}
+	c.expMu.Lock()
+	if c.expPending == nil {
+		c.expPending = map[string][]byte{}
+	}
+	c.expPending[dir] = append([]byte(nil), body...)
+	if !c.expWriting {
+		c.expWriting = true
+		go c.drainExperience()
+	}
+	c.expMu.Unlock()
+}
+
+func (c *Cache) drainExperience() {
+	for {
+		c.expMu.Lock()
+		batch := c.expPending
+		c.expPending = nil
+		if len(batch) == 0 {
+			c.expWriting = false
+			c.expCond.Broadcast()
+			c.expMu.Unlock()
+			return
+		}
+		c.expMu.Unlock()
+		for dir, body := range batch {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				c.logger.Warn("save cache playback metadata", "err", err)
+				continue
+			}
+			if err := writeFileAtomic(filepath.Join(dir, "experience.json"), body, false); err != nil {
+				c.logger.Warn("save cache playback metadata", "err", err)
+			}
+		}
+	}
+}
+
+func (c *Cache) flushExperience() {
+	if c.expCond == nil {
+		return
+	}
+	c.expMu.Lock()
+	for c.expWriting {
+		c.expCond.Wait()
+	}
+	c.expMu.Unlock()
+}
+
 func (c *Cache) Sweep() {
 	if c.shared != nil {
 		c.shared.sweep(true)

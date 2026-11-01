@@ -440,6 +440,7 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
         failover: i === 4,
         pinned: i === 0 ? rels[2]!.id : undefined,
         pinStatus: i === 0 ? "used" : undefined,
+        chooser: i === 3 ? undefined : "auto",
         candidates: rels.map((r) => {
           const j = judge(r, "1080p");
           const won = i !== 3 && r.id === winner.id;
@@ -478,6 +479,8 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
       error: trace.err,
       failover: trace.failover,
       pinned: trace.pinStatus === "used",
+      chooser: trace.chooser,
+      chosenVersion: trace.chosenVersion,
       candidates: trace.candidates?.length ?? 0,
       trace,
     };

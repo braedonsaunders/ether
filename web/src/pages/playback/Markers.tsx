@@ -48,7 +48,7 @@ export function MarkerCoverage() {
     <Section
       title={t("Intro & credits coverage")}
       description={t(
-        "Counts include episodes seen in the local marker cache. Skip buttons depend on the Plex app.",
+        "Episodes already stored on this server. The times come from IntroDB, chapter titles, and subtitle dialogue.",
       )}
     >
       <div className="flex flex-wrap items-start gap-3">

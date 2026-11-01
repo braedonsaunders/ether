@@ -81,7 +81,10 @@ type queryer interface {
 }
 
 func listTables(ctx context.Context, q queryer, d Dialect) ([]string, error) {
-	query := `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY name`
+	// Ordinary tables only: a virtual table (a full-text index) and its
+	// shadow tables are derived from the tables they index and are rebuilt
+	// by their triggers as rows are restored.
+	query := `SELECT name FROM pragma_table_list WHERE schema='main' AND type='table' AND name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY name`
 	if d == Postgres {
 		query = `SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_type='BASE TABLE' ORDER BY table_name`
 	}
@@ -206,7 +209,7 @@ func ExportLogical(ctx context.Context, db *sql.DB, w io.Writer) error {
 	}
 	var total int64
 	for _, t := range tables {
-		n, err := exportTable(ctx, tx, enc, t)
+		n, err := exportTable(ctx, tx, enc, d, t)
 		if err != nil {
 			return fmt.Errorf("export %s: %w", t, err)
 		}
@@ -218,7 +221,35 @@ func ExportLogical(ctx context.Context, db *sql.DB, w io.Writer) error {
 	return bw.Flush()
 }
 
-func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, table string) (int64, error) {
+func generatedColumns(ctx context.Context, q queryer, d Dialect, table string) (map[string]bool, error) {
+	query := `SELECT name FROM pragma_table_xinfo(?) WHERE hidden IN (2, 3)`
+	if d == Postgres {
+		query = `SELECT a.attname FROM pg_attribute a
+			JOIN pg_class c ON c.oid=a.attrelid
+			JOIN pg_namespace n ON n.oid=c.relnamespace
+			WHERE n.nspname=current_schema() AND c.relname=? AND a.attgenerated<>'' AND a.attnum>0 AND NOT a.attisdropped`
+	}
+	rows, err := q.QueryContext(ctx, query, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
+}
+
+func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, d Dialect, table string) (int64, error) {
+	generated, err := generatedColumns(ctx, tx, d, table)
+	if err != nil {
+		return 0, err
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT * FROM `+quoteIdent(table))
 	if err != nil {
 		return 0, err
@@ -232,9 +263,15 @@ func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, table strin
 	if err != nil {
 		return 0, err
 	}
-	head := logicalTable{Table: table, Columns: cols, Types: make([]string, len(cols))}
-	for i, ct := range cts {
-		head.Types[i] = columnKind(ct.DatabaseTypeName())
+	keep := make([]int, 0, len(cols))
+	head := logicalTable{Table: table}
+	for i, name := range cols {
+		if generated[name] {
+			continue
+		}
+		keep = append(keep, i)
+		head.Columns = append(head.Columns, name)
+		head.Types = append(head.Types, columnKind(cts[i].DatabaseTypeName()))
 	}
 	if err := enc.Encode(head); err != nil {
 		return 0, err
@@ -244,14 +281,14 @@ func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, table strin
 	for i := range vals {
 		ptrs[i] = &vals[i]
 	}
-	out := make([]any, len(cols))
+	out := make([]any, len(head.Columns))
 	var n int64
 	for rows.Next() {
 		if err := rows.Scan(ptrs...); err != nil {
 			return n, err
 		}
-		for i, v := range vals {
-			out[i] = encodeValue(v, head.Types[i])
+		for i, src := range keep {
+			out[i] = encodeValue(vals[src], head.Types[i])
 		}
 		if err := enc.Encode(out); err != nil {
 			return n, err
@@ -355,11 +392,28 @@ func ImportLogical(ctx context.Context, db *sql.DB, r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
+		generated, err := generatedColumns(ctx, tx, d, head.Table)
+		if err != nil {
+			return err
+		}
+		keep := make([]int, 0, len(head.Columns))
+		keptCols := make([]string, 0, len(head.Columns))
+		keptKinds := make([]string, 0, len(kinds))
+		for i, name := range head.Columns {
+			if generated[name] {
+				continue
+			}
+			keep = append(keep, i)
+			keptCols = append(keptCols, name)
+			keptKinds = append(keptKinds, kinds[i])
+		}
+		width := len(head.Columns)
+		head.Columns = keptCols
 		// Seed rows written by migrations (singleton settings) are replaced.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+quoteIdent(head.Table)); err != nil {
 			return err
 		}
-		n, err := importRows(ctx, tx, dec, head, kinds)
+		n, err := importRows(ctx, tx, dec, head, keptKinds, width, keep, d)
 		if err != nil {
 			return fmt.Errorf("restore %s: %w", head.Table, err)
 		}
@@ -428,14 +482,23 @@ func targetKinds(ctx context.Context, tx *sql.Tx, table string, cols []string) (
 	return out, nil
 }
 
-func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logicalTable, kinds []string) (int64, error) {
+func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logicalTable, kinds []string, width int, keep []int, d Dialect) (int64, error) {
 	quoted := make([]string, len(head.Columns))
 	marks := make([]string, len(head.Columns))
 	for i, c := range head.Columns {
 		quoted[i] = quoteIdent(c)
 		marks[i] = "?"
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO `+quoteIdent(head.Table)+`(`+strings.Join(quoted, ",")+`) VALUES(`+strings.Join(marks, ",")+`)`)
+	// A GENERATED ALWAYS identity column rejects an explicit id (428C9).
+	// The dump carries the ids the rest of the backup points at, so the
+	// restore supplies them. OVERRIDING SYSTEM VALUE is a no-op for columns
+	// that are not generated that way.
+	insert := `INSERT INTO ` + quoteIdent(head.Table) + `(` + strings.Join(quoted, ",") + `) `
+	if d == Postgres {
+		insert += `OVERRIDING SYSTEM VALUE `
+	}
+	insert += `VALUES(` + strings.Join(marks, ",") + `)`
+	stmt, err := tx.PrepareContext(ctx, insert)
 	if err != nil {
 		return 0, err
 	}
@@ -450,11 +513,11 @@ func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logi
 		if !ok {
 			return n, nil
 		}
-		if len(row) != len(head.Columns) {
-			return n, fmt.Errorf("row %d has %d values, want %d", n+1, len(row), len(head.Columns))
+		if len(row) != width {
+			return n, fmt.Errorf("row %d has %d values, want %d", n+1, len(row), width)
 		}
-		for i, raw := range row {
-			if args[i], err = decodeValue(raw, kinds[i]); err != nil {
+		for i, src := range keep {
+			if args[i], err = decodeValue(row[src], kinds[i]); err != nil {
 				return n, fmt.Errorf("row %d column %s: %w", n+1, head.Columns[i], err)
 			}
 		}
@@ -509,10 +572,19 @@ func decodeValue(raw json.RawMessage, kind string) (any, error) {
 	}
 }
 
-// resetIdentities moves every identity sequence past the restored ids.
+// resetIdentities moves identity sequences past restored IDs without ever
+// rewinding a sequence whose higher values have already been issued.
 func resetIdentities(ctx context.Context, tx *sql.Tx) error {
+	return advanceIdentities(ctx, tx, nil)
+}
+
+// advanceIdentities handles every identity column, or only the named tables
+// when selected is non-nil. Table locks serialize ordinary inserts with the
+// MAX/MIN check; sequences themselves are only moved forward. This matters
+// because setval is not rolled back with the surrounding transaction.
+func advanceIdentities(ctx context.Context, tx *sql.Tx, selected map[string]bool) error {
 	rows, err := tx.QueryContext(ctx, `SELECT table_name, column_name FROM information_schema.columns
-		WHERE table_schema=current_schema() AND is_identity='YES' ORDER BY table_name`)
+		WHERE table_schema=current_schema() AND is_identity='YES' ORDER BY table_name, column_name`)
 	if err != nil {
 		return err
 	}
@@ -524,16 +596,49 @@ func resetIdentities(ctx context.Context, tx *sql.Tx) error {
 			rows.Close()
 			return err
 		}
-		cols = append(cols, c)
+		if selected == nil || selected[c.table] {
+			cols = append(cols, c)
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	for _, c := range cols {
-		q := `SELECT setval(pg_get_serial_sequence(?, ?), COALESCE(MAX(` + quoteIdent(c.column) + `), 0) + 1, false) FROM ` + quoteIdent(c.table)
-		if _, err := tx.ExecContext(ctx, q, quoteIdent(c.table), c.column); err != nil {
-			return fmt.Errorf("reset identity %s.%s: %w", c.table, c.column, err)
+		if _, err := tx.ExecContext(ctx, `LOCK TABLE `+quoteIdent(c.table)+` IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+			return fmt.Errorf("lock identity table %s: %w", c.table, err)
+		}
+		var schema, sequence string
+		var increment int64
+		err := tx.QueryRowContext(ctx, `SELECT n.nspname,c.relname,s.seqincrement FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_sequence s ON s.seqrelid=c.oid WHERE c.oid=CAST(pg_get_serial_sequence(?, ?) AS regclass)`, quoteIdent(c.table), c.column).Scan(&schema, &sequence, &increment)
+		if err != nil {
+			return fmt.Errorf("find identity %s.%s: %w", c.table, c.column, err)
+		}
+		if increment == 0 {
+			return fmt.Errorf("invalid identity increment %s.%s", c.table, c.column)
+		}
+		sequenceName := quoteIdent(schema) + "." + quoteIdent(sequence)
+		var last int64
+		var called bool
+		if err := tx.QueryRowContext(ctx, `SELECT last_value,is_called FROM `+sequenceName).Scan(&last, &called); err != nil {
+			return fmt.Errorf("read identity %s.%s: %w", c.table, c.column, err)
+		}
+		aggregate := "MAX"
+		if increment < 0 {
+			aggregate = "MIN"
+		}
+		var extreme sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `SELECT `+aggregate+`(`+quoteIdent(c.column)+`) FROM `+quoteIdent(c.table)).Scan(&extreme); err != nil {
+			return fmt.Errorf("read identity values %s.%s: %w", c.table, c.column, err)
+		}
+		if !extreme.Valid {
+			continue
+		}
+		needsAdvance := increment > 0 && (extreme.Int64 > last || extreme.Int64 == last && !called) || increment < 0 && (extreme.Int64 < last || extreme.Int64 == last && !called)
+		if needsAdvance {
+			if _, err := tx.ExecContext(ctx, `SELECT setval(CAST(? AS regclass), ?, true)`, sequenceName, extreme.Int64); err != nil {
+				return fmt.Errorf("advance identity %s.%s: %w", c.table, c.column, err)
+			}
 		}
 	}
 	return nil

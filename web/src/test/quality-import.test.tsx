@@ -17,7 +17,7 @@ async function openImport() {
 
 describe("Quality profile import from TRaSH Guides", () => {
   it("previews a TRaSH profile and adds it with its custom format scores", async () => {
-    const { fake } = renderApp("/releases/quality");
+    const { fake } = renderApp("/releases/profiles");
     const drawer = await openImport();
     const add = within(drawer).getByRole("button", { name: "Add profile" });
     expect(add).toBeDisabled();
@@ -65,13 +65,13 @@ describe("Quality profile import from TRaSH Guides", () => {
     // The profile's drawer shows what the import carried over.
     fireEvent.click(screen.getByRole("button", { name: "Edit UHD (TRaSH)" }));
     const editor = await screen.findByRole("dialog", { name: "UHD (TRaSH)" }, WAIT);
-    expect(within(editor).getByText("Imported rules")).toBeInTheDocument();
+    expect(within(editor).getByText("Imported from TRaSH / Radarr / Sonarr")).toBeInTheDocument();
     expect(within(editor).getByText("WEB-DL 4K")).toBeInTheDocument();
     expect(within(editor).getByLabelText("Minimum format score")).toHaveValue(1000);
   });
 
   it("previews and imports a Profilarr (Dictionarry) quality profile", async () => {
-    const { fake } = renderApp("/releases/quality");
+    const { fake } = renderApp("/releases/profiles");
     const drawer = await openImport();
     fireEvent.click(within(drawer).getByRole("radio", { name: "Profilarr (Dictionarry)" }));
 
@@ -97,7 +97,7 @@ describe("Quality profile import from TRaSH Guides", () => {
   });
 
   it("previews pasted profile JSON for the app its qualities name", async () => {
-    const { fake } = renderApp("/releases/quality");
+    const { fake } = renderApp("/releases/profiles");
     const drawer = await openImport();
     fireEvent.click(within(drawer).getByRole("radio", { name: "Paste JSON" }));
     const preview = within(drawer).getByRole("button", { name: "Preview" });

@@ -32,10 +32,13 @@ Installers and the Docker image bundle `ffmpeg` and `ffprobe` from the
 | `github.com/jackc/pgx/v5` (+ `github.com/jackc/pgpassfile`, `github.com/jackc/pgservicefile`, `github.com/jackc/puddle/v2`) | Pure-Go PostgreSQL driver (database/sql adapter) for clustered mode, `internal/store` | MIT (© Jack Christensen) |
 | `github.com/kardianos/service` | OS service (systemd/launchd/Windows SCM), `internal/service` | Zlib-style (“as-is”, © Daniel Theophanes) |
 | `github.com/ulikunitz/xz` | 7z header LZMA decoding, `internal/archive` | BSD-3-Clause |
+| `golang.org/x/crypto` (`argon2`) | Local password hashing, `internal/identity` | BSD-3-Clause |
 | `golang.org/x/text` | Legacy subtitle code pages, `internal/subtitles`; language names, `internal/collections` | BSD-3-Clause |
 | `golang.org/x/image` | Collection poster rendering (scaling, WebP decoding, OpenType text), `internal/artwork` | BSD-3-Clause |
+| `github.com/srwiley/oksvg` and `github.com/srwiley/rasterx` | Bounded pure-Go SVG rasterization, `internal/artwork` | BSD-3-Clause |
 | Go fonts (`golang.org/x/image/font/gofont`: Go Bold, Go Medium), embedded | Title text on generated collection posters, `internal/artwork` | BSD-3-Clause-style (© 2016 Bigelow & Holmes Inc., distributed by the Go Authors; see `golang.org/x/image/font/gofont/ttfs/README`) |
 | `github.com/dlclark/regexp2` | Bounded native custom-format expressions, `internal/resolver` | MIT (© Doug Clark) |
+| `github.com/skip2/go-qrcode` | Pure-Go QR code generation for device connection instructions | MIT (© Tom Harwood) |
 | `github.com/go-chi/chi/v5` | HTTP routing (wired by other packages) | MIT |
 | `github.com/PuerkitoBio/goquery` | HTML/XML selection for built-in indexer definitions, `internal/cardigann` | BSD-3-Clause (© Martin Angers and contributors) |
 | `github.com/andybalholm/cascadia` | CSS selector engine used with goquery, `internal/cardigann` | BSD-2-Clause (© Andy Balholm) |
@@ -167,6 +170,12 @@ MIT License text:
 
 - Metadata and artwork come from **TMDB**. This product uses the TMDB
   API but is not endorsed or certified by TMDB.
+- Content-rating labels in `internal/contentrating` are the per-country
+  certification lists TMDB publishes (`/certification/movie/list`,
+  `/certification/tv/list`); their age levels follow each classification
+  board's published definitions. Jellyfin's rating files
+  (GPL-2.0, github.com/jellyfin/jellyfin) were consulted as a cross-check
+  only; no Jellyfin data or code is copied.
 - Watch sync (optional): **Trakt**. Subtitles (optional):
   **OpenSubtitles**. Both are off until the owner configures accounts.
 - Collection sources (optional): public **Trakt**, **Letterboxd** and
@@ -260,3 +269,13 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+## Conformance API descriptions
+
+Jellyfin OpenAPI 12.4 is published at `https://repo.jellyfin.org/files/openapi/stable/`;
+Emby.SDK publishes OpenAPI documents from `MediaBrowser/Emby.SDK`. The upstream
+redistribution license for these generated descriptions was not explicit in the
+reviewed sources, so Ether does not vendor them. Fetch current Jellyfin 12.4 and
+pinned Emby.SDK snapshots with `internal/conform/specs/fetch.sh` when needed.
+Silo reference route names/shapes in the conformance notes are independently
+recorded observations, not copied AGPL source.

@@ -1,0 +1,47 @@
+name: Reference recording drift
+on:
+  pull_request:
+    paths:
+      - 'testdata/conform/**'
+      - 'internal/conform/profiles/**'
+      - 'cmd/conformdiff/**'
+      - 'scripts/reference-drift.sh'
+      - '.github/workflows/reference-drift.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: .reference-base
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build offline comparer
+        run: go build -o "$RUNNER_TEMP/conformdiff" ./cmd/conformdiff
+      - name: Compare recordings without reference access
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/reference-drift"
+          failed=0
+          for protocol in jellyfin emby silo; do
+            "$RUNNER_TEMP/conformdiff" drift -protocol "$protocol" \
+              -fixtures ".reference-base/testdata/conform/$protocol" \
+              -candidate "testdata/conform/$protocol" \
+              > "$RUNNER_TEMP/reference-drift/$protocol.json" \
+              2> "$RUNNER_TEMP/reference-drift/$protocol.log" || failed=1
+          done
+          exit "$failed"
+      - name: Preserve every report including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-drift-${{ github.sha }}
+          path: ${{ runner.temp }}/reference-drift
+          if-no-files-found: error

@@ -23,6 +23,51 @@ function renderApp() {
 }
 
 describe("sign-in", () => {
+  it("requires local-owner sign-in before setup is complete", async () => {
+    const fake = createFakeServer();
+    vi.stubGlobal("fetch", vi.fn(fake.fetch));
+    const pendingSetup = {
+      ...remoteBoot,
+      setupComplete: false,
+      ownerConfigured: true,
+      signInMethods: ["local" as const],
+    };
+    vi.spyOn(api, "bootstrap")
+      .mockResolvedValueOnce(pendingSetup)
+      .mockResolvedValue({ ...pendingSetup, authenticated: true });
+    const localSignIn = vi
+      .spyOn(api, "localSignIn")
+      .mockResolvedValue({ token: "local-owner-token" });
+    const config = vi.spyOn(api, "getConfig");
+    renderApp();
+    expect(await screen.findByLabelText("Username")).toBeInTheDocument();
+    expect(screen.getByText("Sign in to Ether")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign in with Plex" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Use a Plex token instead")).not.toBeInTheDocument();
+    expect(config).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
+    const password = screen.getByLabelText("Password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveAttribute("autocomplete", "current-password");
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    expect(screen.getByRole("button", { name: "Hide password" })).toBeInTheDocument();
+    fireEvent.change(password, { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Sign in$/ }));
+    await waitFor(() => expect(localSignIn).toHaveBeenCalledWith("owner", "test-password"));
+    expect(await screen.findByRole("button", { name: /Sign out/ })).toBeInTheDocument();
+    expect(screen.getByText("Library")).toBeInTheDocument();
+    expect(screen.queryByText("In Plex")).not.toBeInTheDocument();
+    expect(getToken()).toBe("local-owner-token");
+  });
+
+  it("keeps Plex sign-in available for a configured Plex owner", async () => {
+    vi.spyOn(api, "bootstrap").mockResolvedValue({ ...remoteBoot, signInMethods: ["plex"] });
+    renderApp();
+    expect(await screen.findByRole("button", { name: "Sign in with Plex" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
+  });
+
   it("offers Sign in with Plex, with the token form tucked away", async () => {
     vi.spyOn(api, "bootstrap").mockResolvedValue(remoteBoot);
     renderApp();

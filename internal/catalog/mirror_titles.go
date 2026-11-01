@@ -38,20 +38,20 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 		ph := placeholders(len(part))
 		rows, err := m.db.QueryContext(ctx, `SELECT key,type,tmdb_id,imdb,tvdb,title,original_title,sort_title,tagline,summary,year,
 			released_ts,runtime_sec,status,language,content_rating,rating,vote_count,popularity,poster,backdrop,logo,
-			collection_id,collection_name,child_count,leaf_count,fetched_at,adult
+			collection_id,collection_name,child_count,leaf_count,fetched_at,adult,last_air_ts
 			FROM catalog_titles WHERE key IN (`+ph+`)`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var t core.Title
-			var key, released, runtime, fetched int64
+			var key, released, runtime, fetched, lastAir int64
 			var adult int
 			var typ string
 			if err := rows.Scan(&key, &typ, &t.IDs.TMDB, &t.IDs.IMDB, &t.IDs.TVDB, &t.Title, &t.OriginalTitle, &t.SortTitle,
 				&t.Tagline, &t.Summary, &t.Year, &released, &runtime, &t.Status, &t.Language, &t.ContentRating,
 				&t.Rating, &t.VoteCount, &t.Popularity, &t.PosterPath, &t.BackdropPath, &t.LogoPath,
-				&t.CollectionID, &t.CollectionName, &t.ChildCount, &t.LeafCount, &fetched, &adult); err != nil {
+				&t.CollectionID, &t.CollectionName, &t.ChildCount, &t.LeafCount, &fetched, &adult, &lastAir); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -60,6 +60,9 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 			t.Adult = adult != 0
 			if released != 0 {
 				t.Released = time.Unix(released, 0).UTC()
+			}
+			if lastAir != 0 {
+				t.LastAirDate = time.Unix(lastAir, 0).UTC()
 			}
 			t.Runtime = time.Duration(runtime) * time.Second
 			if fetched != 0 {
@@ -102,14 +105,14 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 		if err := pair(`SELECT key,country FROM catalog_countries WHERE key IN (`+ph+`) ORDER BY country`, func(t *core.Title, v string) { t.Countries = append(t.Countries, v) }); err != nil {
 			return nil, err
 		}
-		crows, err := m.db.QueryContext(ctx, `SELECT key,person_tmdb,name,role,kind,thumb FROM catalog_credits WHERE key IN (`+ph+`) ORDER BY kind,ord`, args...)
+		crows, err := m.db.QueryContext(ctx, `SELECT c.key,c.person_tmdb,c.name,c.role,c.kind,c.thumb,COALESCE(p.imdb,''),c.provider_id FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (`+ph+`) ORDER BY c.kind,c.ord`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for crows.Next() {
 			var k, pid int64
-			var name, role, kind, thumb string
-			if err := crows.Scan(&k, &pid, &name, &role, &kind, &thumb); err != nil {
+			var name, role, kind, thumb, imdb, provider string
+			if err := crows.Scan(&k, &pid, &name, &role, &kind, &thumb, &imdb, &provider); err != nil {
 				crows.Close()
 				return nil, err
 			}
@@ -117,7 +120,7 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 			if t == nil {
 				continue
 			}
-			p := core.Person{TMDB: pid, Name: name, Role: role, ThumbPath: thumb}
+			p := core.Person{TMDB: pid, IMDB: imdb, ID: provider, Name: name, Role: role, ThumbPath: thumb}
 			switch kind {
 			case "director":
 				t.Directors = append(t.Directors, p)
@@ -146,6 +149,9 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 		if t := byKey[k]; t != nil && !t.Adult && (t.IsReleased(m.now()) || includeFuture && !t.Released.IsZero()) {
 			out = append(out, *t)
 		}
+	}
+	if err := applyAirAddedTimes(ctx, m.db, out, m.now()); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

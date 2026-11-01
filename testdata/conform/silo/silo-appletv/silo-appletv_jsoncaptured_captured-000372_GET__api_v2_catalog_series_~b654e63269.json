@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "no-store"
+    ],
+    "Content-Type": [
+      "application/json"
+    ]
+  },
+  "body": "eyJpdGVtcyI6W3siYWlyX2RhdGUiOiJbUkVEQUNURURdIiwiY29udGVudF9pZCI6InNlYXNvbi10dmRiLTc4OTI3LTEiLCJlcGlzb2RlX2NvdW50IjoyMCwicGxheV9jb250ZW50X2lkIjoiZXBpc29kZS10dmRiLTc4OTI3LTEtMSIsInNlYXNvbl9udW1iZXIiOjEsInRpdGxlIjoiU2Vhc29uIDEiLCJ1c2VyX2RhdGEiOnsiaW5fcHJvZ3Jlc3NfY291bnQiOjAsInBsYXllZCI6ZmFsc2UsInVucGxheWVkX2NvdW50IjoyMCwid2F0Y2hlZF9jb3VudCI6MH19LHsiYWlyX2RhdGUiOiJbUkVEQUNURURdIiwiY29udGVudF9pZCI6InNlYXNvbi10dmRiLTc4OTI3LTIiLCJlcGlzb2RlX2NvdW50IjoyMCwicGxheV9jb250ZW50X2lkIjoiZXBpc29kZS10dmRiLTc4OTI3LTItMSIsInNlYXNvbl9udW1iZXIiOjIsInRpdGxlIjoiU2Vhc29uIDIiLCJ1c2VyX2RhdGEiOnsiaW5fcHJvZ3Jlc3NfY291bnQiOjAsInBsYXllZCI6ZmFsc2UsInVucGxheWVkX2NvdW50IjoyMCwid2F0Y2hlZF9jb3VudCI6MH19XX0="
+}

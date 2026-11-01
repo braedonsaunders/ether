@@ -3,39 +3,28 @@ package app
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 )
 
 func (a *App) extraHomeRows(ctx context.Context, u *core.User, hc core.HubContext, section string, limit int) []core.Hub {
-	var out []core.Hub
+	rows := experience.PreviewRows{}
 	if a.availability != nil {
-		out = append(out, a.availability.Hubs(ctx, limit)...)
+		rows.Availability = a.availability.Hubs
+	}
+	if a.personalize != nil {
+		rows.Filter = a.personalize.FilterRecommendations
 	}
 	if a.watchlist != nil {
-		rows, _ := a.watchlist.Hubs(ctx, u, limit)
-		out = append(out, rows...)
+		rows.Watchlist = a.watchlist.Hubs
 	}
 	if a.discoveryPersonal != nil {
-		rows, _ := a.discoveryPersonal.Hubs(ctx, u, limit)
-		out = append(out, rows...)
+		rows.Personal = a.discoveryPersonal.Hubs
 	}
-	if section == "home" && a.livetv != nil && a.registrar != nil && a.registrar.Status().PlexPass {
-		row, err := a.livetv.HomeHub(ctx, u, limit)
-		if err == nil && len(row.Items) > 0 {
-			out = append(out, row)
-		}
+	if a.livetv != nil {
+		rows.Live = a.livetv.HomeHub
 	}
-	if section == "movies" || section == "shows" {
-		typ := core.TypeMovie
-		if section == "shows" {
-			typ = core.TypeShow
-		}
-		filtered := out[:0]
-		for _, h := range out {
-			if v, ok := core.SectionView(h, typ); ok {
-				filtered = append(filtered, v)
-			}
-		}
-		out = filtered
+	if a.registrar != nil {
+		rows.LiveEnabled = func() bool { return a.registrar.Status().PlexPass }
 	}
-	return out
+	return rows.Rows(ctx, u, hc, section, limit)
 }

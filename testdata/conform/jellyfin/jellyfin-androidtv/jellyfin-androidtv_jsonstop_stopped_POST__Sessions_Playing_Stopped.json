@@ -1,0 +1,18 @@
+{
+  "status": 204,
+  "headers": {
+    "Content-Language": [
+      "en-US"
+    ],
+    "Date": [
+      "Thu, 29 Oct 2026 [REDACTED_IP] GMT"
+    ],
+    "Server": [
+      "Kestrel"
+    ],
+    "X-Response-Time-Ms": [
+      "7.0639"
+    ]
+  },
+  "body": ""
+}

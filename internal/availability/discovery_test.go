@@ -201,3 +201,60 @@ func TestConfigurableMovieWindow(t *testing.T) {
 		t.Fatal("gate did not resume")
 	}
 }
+
+func TestCurrentDiscoveryBypassesRemoteObservationMemo(t *testing.T) {
+	x := setup(t)
+	title := x.cat.titles[core.MovieKey(1)]
+	if err := x.s.remember(t.Context(), x.f.sources[0], title, x.release("remote"), x.s.policy()); err != nil {
+		t.Fatal(err)
+	}
+	if got := x.s.FilterDiscovery(t.Context(), []core.Title{title}); len(got) != 1 {
+		t.Fatal("fixture not visible")
+	}
+	// Another node updates durable observations without clearing this node's memo.
+	if _, err := x.s.db.Exec(`UPDATE availability_releases SET state='unavailable'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := x.s.FilterDiscovery(t.Context(), []core.Title{title}); len(got) != 1 {
+		t.Fatal("fixture did not retain cached observation")
+	}
+	if got := x.s.FilterDiscoveryCurrent(t.Context(), []core.Title{title}); len(got) != 0 {
+		t.Fatal("current preflight reused stale availability")
+	}
+}
+
+func TestFilterDiscoveryReadsConfigOncePerBatch(t *testing.T) {
+	x := setup(t)
+	var calls int
+	x.s.cfg = func() config.Config {
+		calls++
+		return x.c
+	}
+	titles := make([]core.Title, 8)
+	for i := range titles {
+		titles[i] = core.Title{Key: core.MovieKey(int64(100 + i)), Type: core.TypeMovie, Title: "Old", Released: x.now.Add(-400 * 24 * time.Hour)}
+	}
+	calls = 0
+	if got := x.s.FilterDiscovery(t.Context(), titles); len(got) != len(titles) || calls != 1 {
+		t.Fatalf("batch reads=%d visible=%d", calls, len(got))
+	}
+	var gen uint64 = 1
+	x.s.d.ConfigGeneration = func() uint64 { return gen }
+	calls = 0
+	x.s.FilterDiscovery(t.Context(), titles)
+	if calls != 1 {
+		t.Fatalf("first generation read config %d times", calls)
+	}
+	calls = 0
+	if got := x.s.FilterDiscovery(t.Context(), titles); len(got) != len(titles) || calls != 1 {
+		t.Fatalf("fresh snapshot reads=%d visible=%d", calls, len(got))
+	}
+	before := x.s.policy()
+	calls = 0
+	gen++
+	x.c.Quality.Default = "bench-changed"
+	after := x.s.policy()
+	if calls != 1 || before == after {
+		t.Fatalf("generation bump reads=%d before=%s after=%s", calls, before, after)
+	}
+}

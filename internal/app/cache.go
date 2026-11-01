@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/segcache"
-	"strings"
 )
 
 // cacheNodeID identifies the NAS writer. Standalone metadata stays in this
@@ -21,6 +22,26 @@ func (a *App) cacheNodeID() string {
 		return id
 	}
 	return "standalone"
+}
+
+// adoptMountedCache points a fresh install at the Docker /cache volume before
+// the cache opens, so the wizard does not ask for a restart to use it.
+func (a *App) adoptMountedCache(cfg config.Config) config.Config {
+	if !admin.ShouldAdoptCacheVolume(cfg.SetupComplete, cfg.Cache.Storage, cfg.Cache.Dir, a.opts.DataDir, admin.CacheVolumeMounted()) {
+		return cfg
+	}
+	if err := a.cfg.Update(func(c *config.Config) error {
+		if admin.ShouldAdoptCacheVolume(c.SetupComplete, c.Cache.Storage, c.Cache.Dir, a.opts.DataDir, true) {
+			c.Cache.Dir = "/cache"
+		}
+		return nil
+	}); err != nil {
+		a.log.Warn("cache: could not adopt the /cache volume", "err", err)
+		return cfg
+	}
+	next := a.cfg.Get()
+	next.Cache = next.EffectiveCache()
+	return next
 }
 
 func (a *App) configureCache(c config.Cache) {

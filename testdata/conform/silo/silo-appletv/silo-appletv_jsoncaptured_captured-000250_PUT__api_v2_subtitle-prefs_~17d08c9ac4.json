@@ -1,0 +1,12 @@
+{
+  "status": 204,
+  "headers": {
+    "Cache-Control": [
+      "no-store"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "captured",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

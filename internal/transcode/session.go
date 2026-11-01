@@ -24,22 +24,27 @@ import (
 // track per representation (video, audio); ffmpeg's dash muxer writes short
 // chunks that the session regroups into numbered segments by timestamp.
 type Session struct {
-	id         string
-	m          *Manager
-	dir        string
-	watchers   sync.WaitGroup // running watch goroutines; Close waits for them
-	removals   pendingRemovals
-	segDur     time.Duration
-	base       time.Duration
-	total      int // segments in the playlist; 0 = unknown duration
-	container  string
-	proto      string // core.ProtocolHLS or core.ProtocolDASH
-	log        *slog.Logger
-	created    time.Time
-	lastAccess atomic.Int64 // unix nanos
-	pauseUntil atomic.Int64 // bounded authenticated player pause
-	mu         sync.Mutex
-	closed     bool
+	encoder                 *encoderLifetime
+	id                      string
+	m                       *Manager
+	dir                     string
+	watchers                sync.WaitGroup // running watch goroutines; Close waits for them
+	removals                pendingRemovals
+	segDur                  time.Duration
+	base                    time.Duration
+	total                   int // segments in the playlist; 0 = unknown duration
+	container               string
+	proto                   string // core.ProtocolHLS or core.ProtocolDASH
+	requireIndependentProof bool
+	// False until the packager can prove all segments across all rungs,
+	// including copies, switches, and failovers, are independently decodable.
+	segmentsIndependent bool
+	log                 *slog.Logger
+	created             time.Time
+	lastAccess          atomic.Int64 // unix nanos
+	pauseUntil          atomic.Int64 // bounded authenticated player pause
+	mu                  sync.Mutex
+	closed              bool
 	// Coordinated state transitions use mu; blocking process reaping releases it.
 	sessionInput
 	sessionEncoding
@@ -47,12 +52,17 @@ type Session struct {
 	sessionAdaptation
 }
 
+// IndependentSegments implements core.HLSIndependentSegments. It reports
+// a proven all-renditions guarantee, not the legacy playlist convention.
+func (s *Session) IndependentSegments() bool { return s.segmentsIndependent }
+
 // sessionInput owns one aspect of the session. Fields are guarded by Session.mu.
 type sessionInput struct {
 	rtxConfig          config.RTXVideo
 	rtxTimeline        bool
 	rtxDiscontinuities map[int]bool
 	liveInput          bool
+	inputLease         core.EncoderInputLease
 	inputHeaders       map[string]string
 	input              string
 	info               core.MediaInfo
@@ -70,23 +80,41 @@ type sessionInput struct {
 
 // sessionEncoding owns one aspect of the session. Fields are guarded by Session.mu.
 type sessionEncoding struct {
+	starting <-chan struct{}
 	reaping  <-chan struct{} // previous encoder exit barrier; waited without mu
 	resumeAt int             // segment to restart at after a throttle stop; -1 none
 	cur      *run
 	runSeq   int
 	endSeg   int // last segment of the input once a run hit EOF; -1 unknown
-	failures int // consecutive runs that failed without output
-	failErr  error
+	// lastReal is the last segment a run actually produced (not a GOP
+	// alias). emptyAt is the startSeg of the last run that published
+	// nothing. emptyRuns counts those in a row so a seek that lands on
+	// the previous keyframe cannot restart at the same n (lab: 143× at 695).
+	lastReal  int
+	emptyAt   int
+	emptyRuns int
+	failures  int // consecutive runs that failed without output
+	failErr   error
+	// deniedFilters are names ffmpeg reported missing. The next graph is
+	// built without them. Unknown filters are never assumed present.
+	deniedFilters   map[string]bool
+	filterFallbacks int
+	graphReported   bool
 	// hevcFallbackWarned latches the HEVC->libx264 fallback warning to
 	// at most once per session (warned from startRunLocked, under mu).
 	hevcFallbackWarned bool
+	// traceCause and traceStop are log labels for the next ffmpeg start or
+	// stop. They are read only when ETHER_TRACE_PLAYBACK is on.
+	traceCause string
+	traceStop  string
 }
 
 // sessionDelivery owns one aspect of the session. Fields are guarded by Session.mu.
 type sessionDelivery struct {
 	completedDeliveries map[int]map[int]bool // bounded by the rolling segment window
 	done                []map[int]bool       // finished segments per track
-	lastReq             int
+	inflight            map[int]int          // video segment -> in-flight GETs
+	lastReq             int                  // playhead: oldest fetch still inside the restart window
 	recoverySeekAt      time.Time
 	mkvDelivery         map[int]mkvDelivery // last response per track, including retries of a seek
 	// Published Matroska data segment path -> the video stream that
@@ -142,22 +170,25 @@ type run struct {
 	rtx          bool
 	rtxConfirmed atomic.Bool
 
-	seq      int
-	startSeg int
-	spec     runSpec
-	proc     Process
-	hw       bool
-	maxDone  int // last segment finished (DASH: on every track)
-	produced int // segments finished (DASH: on the slowest track)
-	finished bool
-	stopped  bool // stopped deliberately, not a failure
-	paused   bool
-	err      error
-	stderr   *tailBuffer
-	started  time.Time
-	mode     SegMode // plan mode this run produces
-	planEnd  int     // first segment NOT produced by this run (mode change); -1 none
-	track    int     // session track (HLS rung / DASH video rep) encoded
+	seq        int
+	startSeg   int
+	spec       runSpec
+	proc       Process
+	watchWork  *encoderWork
+	stopWork   *encoderWork
+	hw         bool
+	maxDone    int // last segment finished (DASH: on every track)
+	produced   int // segments finished (DASH: on the slowest track)
+	finished   bool
+	stopped    bool // stopped deliberately, not a failure
+	paused     bool
+	pausedDone int // maxDone when Pause was applied; later growth means it did not hold
+	err        error
+	stderr     *tailBuffer
+	started    time.Time
+	mode       SegMode // plan mode this run produces
+	planEnd    int     // first segment NOT produced by this run (mode change); -1 none
+	track      int     // session track (HLS rung / DASH video rep) encoded
 
 	progressMu sync.Mutex
 	progress   Progress
@@ -312,20 +343,15 @@ func (s *Session) broadcastLocked() {
 
 // Close implements core.HLSSession: kill ffmpeg and delete the segments.
 func (s *Session) Close() error {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil
+	if err := s.RetireEncoder(); err != nil {
+		return err
 	}
-	s.closed = true
-	s.stopRunLocked()
-	s.broadcastLocked()
-	s.mu.Unlock()
-	// The watcher may still be assembling segment files; on Windows open
-	// files can't be deleted and late writes would outlive RemoveAll.
-	waitTimeout(&s.watchers, 10*time.Second)
-	err := removeAllRetry(s.dir)
-	s.m.forget(s)
-	s.log.Info("session closed", "age", time.Since(s.created).Round(time.Second))
-	return err
+	timer := time.NewTimer(s.m.encoderWait())
+	defer timer.Stop()
+	select {
+	case <-s.encoder.done:
+		return s.encoder.legacyResult()
+	case <-timer.C:
+		return core.ErrEncoderPending
+	}
 }

@@ -15,18 +15,21 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// Offline downloads: a resolved source is stream-copied into a standalone
-// faststart MP4 under the transcode temp dir. faststart moves the moov
-// atom to the front, which needs a seekable output, so downloads cannot
-// be a pure pipe: the remux lands in a temp file first and is then served
-// with Range + exact Content-Length (which is also what lets clients
-// resume). Files are bounded by a disk budget and deleted on release,
-// expiry or startup — never permanent storage.
+// Offline downloads: a resolved source is copied, or converted when a
+// copy cannot produce an MP4 the requesting client's download profile
+// plays, into a standalone faststart MP4 under the transcode temp dir.
+// faststart moves the moov atom to the front, which needs a seekable
+// output, so downloads cannot be a pure pipe: the file lands in a temp
+// first and is then served with Range + exact Content-Length (which is
+// also what lets clients resume). Files are bounded by a disk budget
+// and deleted on release, expiry or startup — never permanent storage.
+// Converting downloads reuse the streaming hardware pipeline and take
+// one encode slot per viewer (in addition to the remuxer's global cap).
 
 // mp4CopyVideo / mp4CopyAudio are the codecs that copy into an MP4 every
 // current mobile Plex client plays. Anything else (AV1, VP9, TrueHD,
-// DTS, image subtitles) makes the download decision fail honestly rather
-// than trigger an offline transcode Ether does not do.
+// DTS) is converted to the profile's H.264/HEVC + AAC/AC3 target.
+// Image subtitles are burned when the request asks, otherwise dropped.
 var (
 	mp4CopyVideo = map[string]bool{"h264": true, "hevc": true}
 	mp4CopyAudio = map[string]bool{"aac": true, "ac3": true, "eac3": true, "mp3": true, "alac": true}
@@ -34,14 +37,23 @@ var (
 
 // DownloadCopyable reports whether info's video (and chosen audio) can be
 // stream-copied to MP4, returning the streams a remux would keep.
-func DownloadCopyable(info core.MediaInfo, audioStream int) (video, audio *core.StreamInfo, ok bool) {
+func DownloadCopyable(info core.MediaInfo, audioStream int, caps core.ClientCaps) (video, audio *core.StreamInfo, ok bool) {
 	v := info.Video()
 	if v == nil || !mp4CopyVideo[strings.ToLower(v.Codec)] {
 		return nil, nil, false
 	}
-	a := pickAudio(info, audioStream)
-	if a != nil && !mp4CopyAudio[strings.ToLower(a.Codec)] {
+	if len(caps.VideoCodecs) > 0 && !caps.SupportsVideo(strings.ToLower(v.Codec)) {
 		return nil, nil, false
+	}
+	a := pickAudio(info, audioStream)
+	if a != nil {
+		ac := strings.ToLower(a.Codec)
+		if !mp4CopyAudio[ac] {
+			return nil, nil, false
+		}
+		if len(caps.AudioCodecs) > 0 && !caps.SupportsAudio(ac) {
+			return nil, nil, false
+		}
 	}
 	return v, a, true
 }
@@ -61,7 +73,8 @@ type DownloadRemuxer struct {
 	// startup (see adoptOrphans): a subset of files. Only adopted files
 	// expire by age at runtime (expireStaleAdopted); files this process
 	// remuxed itself are freed only by ReleaseDownload.
-	adopted map[string]time.Time
+	adopted   map[string]time.Time
+	viewerEnc map[int64]chan struct{}
 }
 
 var _ core.DownloadRemuxer = (*DownloadRemuxer)(nil)
@@ -90,8 +103,10 @@ func (m *Manager) NewDownloadRemuxer(cfg config.Downloads) (*DownloadRemuxer, er
 	}
 	d := &DownloadRemuxer{
 		m: m, dir: dir, budget: budget,
-		sem:   make(chan struct{}, n),
-		files: map[string]int64{}, adopted: map[string]time.Time{},
+		sem:       make(chan struct{}, n),
+		files:     map[string]int64{},
+		adopted:   map[string]time.Time{},
+		viewerEnc: map[int64]chan struct{}{},
 	}
 	d.adoptOrphans()
 	return d, nil
@@ -203,6 +218,95 @@ func downloadArgs(input string, video, audio *core.StreamInfo, out string) []str
 	return append(args, "-movflags", "+faststart", "-f", "mp4", out)
 }
 
+// downloadProfile constrains a client's caps to the MP4 download target:
+// H.264/HEVC + AAC/AC3. Empty codecs use that full set.
+func downloadProfile(caps core.ClientCaps) core.ClientCaps {
+	out := caps
+	out.Download = true
+	var v []string
+	for _, c := range caps.VideoCodecs {
+		switch strings.ToLower(c) {
+		case "h264", "hevc":
+			v = append(v, strings.ToLower(c))
+		}
+	}
+	if len(v) == 0 {
+		v = []string{"h264", "hevc"}
+	}
+	out.VideoCodecs = v
+	audio := out.TranscodeAudioCodecs
+	if len(audio) == 0 {
+		audio = out.AudioCodecs
+	}
+	var a []string
+	for _, c := range audio {
+		switch strings.ToLower(c) {
+		case "aac", "ac3":
+			a = append(a, strings.ToLower(c))
+		}
+	}
+	if len(a) == 0 {
+		a = []string{"aac", "ac3"}
+	}
+	out.AudioCodecs = a
+	out.TranscodeAudioCodecs = a
+	if len(out.Containers) == 0 {
+		out.Containers = []string{"mp4"}
+	}
+	return out
+}
+
+func downloadConvertArgs(input string, info core.MediaInfo, dec core.Decision, accel core.HWAccel, feat features, out string) []string {
+	dec.Container = ContainerFMP4
+	spec := runSpec{Input: input, Info: info, Decision: dec, Accel: accel, Features: feat}
+	args := buildCodecArgs(spec)
+	codec := dec.VideoCodec
+	if dec.VideoCopy {
+		if v := info.Video(); v != nil {
+			codec = v.Codec
+		}
+	}
+	if strings.EqualFold(codec, "hevc") {
+		tagged := false
+		for i := 0; i < len(args)-1; i++ {
+			if args[i] == "-tag:v" {
+				tagged = true
+				break
+			}
+		}
+		if !tagged {
+			args = append(args, "-tag:v", "hvc1")
+		}
+	}
+	return append(args, "-movflags", "+faststart", "-f", "mp4", out)
+}
+
+func estimateConvertBytes(info core.MediaInfo, d core.Decision) int64 {
+	if d.BitrateKbps > 0 && info.Duration > 0 {
+		return int64(d.BitrateKbps) * 1000 / 8 * int64(info.Duration.Seconds())
+	}
+	return estimateBytes(info)
+}
+
+func (d *DownloadRemuxer) acquireViewerEncode(ctx context.Context, viewerID int64) (func(), error) {
+	if viewerID == 0 {
+		return func() {}, nil
+	}
+	d.mu.Lock()
+	ch, ok := d.viewerEnc[viewerID]
+	if !ok {
+		ch = make(chan struct{}, 1)
+		d.viewerEnc[viewerID] = ch
+	}
+	d.mu.Unlock()
+	select {
+	case ch <- struct{}{}:
+		return func() { <-ch }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func estimateBytes(info core.MediaInfo) int64 {
 	if info.Size > 0 {
 		return info.Size
@@ -218,10 +322,74 @@ func (d *DownloadRemuxer) RemuxDownload(ctx context.Context, req core.DownloadRe
 	if req.InputURL == "" {
 		return "", 0, errors.New("transcode: download: empty input URL")
 	}
-	video, audio, ok := DownloadCopyable(req.Info, req.AudioStream)
-	if !ok {
+	video, audio, ok := DownloadCopyable(req.Info, req.AudioStream, req.Caps)
+	if ok && !downloadBurnsImage(req) {
+		return d.runDownload(ctx, req, progress, estimateBytes(req.Info), "remux",
+			func(part string) []string { return downloadArgs(req.InputURL, video, audio, part) })
+	}
+	return d.convertDownload(ctx, req, progress)
+}
+
+func firstImageSubtitle(info core.MediaInfo) *core.StreamInfo {
+	for i := range info.Streams {
+		s := &info.Streams[i]
+		if s.Type == "subtitle" && IsImageSubtitle(s.Codec) {
+			return s
+		}
+	}
+	return nil
+}
+
+// downloadBurnsImage is true when the request asked to burn and the
+// source has a bitmap subtitle. Those cannot ride along in the MP4
+// remux, so the download converts and burns (or, without this flag,
+// remux/convert drop them).
+func downloadBurnsImage(req core.DownloadRemuxRequest) bool {
+	sub := pickSubtitle(req.Info, req.Options.SubtitleStream)
+	if sub == nil && req.Options.BurnSubtitles {
+		sub = firstImageSubtitle(req.Info)
+	}
+	return sub != nil && IsImageSubtitle(sub.Codec) &&
+		(req.Options.BurnSubtitles || req.Options.SubtitleStream >= 0)
+}
+
+func (d *DownloadRemuxer) convertDownload(ctx context.Context, req core.DownloadRemuxRequest, progress func(float64)) (string, int64, error) {
+	if req.Info.Video() == nil {
 		return "", 0, core.ErrDownloadNeedsTranscode
 	}
+	release, err := d.acquireViewerEncode(ctx, req.ViewerID)
+	if err != nil {
+		return "", 0, err
+	}
+	defer release()
+
+	opts := req.Options
+	opts.DirectPlay = false
+	opts.DirectStream = true
+	opts.AudioStream = req.AudioStream
+	if downloadBurnsImage(req) {
+		opts.BurnSubtitles = true
+		if pickSubtitle(req.Info, opts.SubtitleStream) == nil {
+			if sub := firstImageSubtitle(req.Info); sub != nil {
+				opts.SubtitleStream = sub.Index
+			}
+		}
+	} else if opts.SubtitleStream == 0 {
+		opts.SubtitleStream = -1
+	}
+	dec := d.m.Decide(req.Info, downloadProfile(req.Caps), opts)
+	if dec.Kind == core.DecisionDirectPlay {
+		dec.Kind = core.DecisionRemux
+		dec.VideoCopy, dec.AudioCopy = true, true
+	}
+	dec.Container = ContainerFMP4
+	return d.runDownload(ctx, req, progress, estimateConvertBytes(req.Info, dec), "convert",
+		func(part string) []string {
+			return downloadConvertArgs(req.InputURL, req.Info, dec, d.m.hw, d.m.feat, part)
+		})
+}
+
+func (d *DownloadRemuxer) runDownload(ctx context.Context, req core.DownloadRemuxRequest, progress func(float64), est int64, kind string, argsFn func(part string) []string) (string, int64, error) {
 	// Reclaim adopted orphans that crossed staleDownloadAge before
 	// handing out more budget (runtime expiry; see expireStaleAdopted).
 	d.expireStaleAdopted(time.Now())
@@ -231,8 +399,14 @@ func (d *DownloadRemuxer) RemuxDownload(ctx context.Context, req core.DownloadRe
 	case <-ctx.Done():
 		return "", 0, ctx.Err()
 	}
+	if kind == "convert" {
+		slot, err := d.m.acquireTranscodeSlot()
+		if err != nil {
+			return "", 0, err
+		}
+		defer slot()
+	}
 
-	est := estimateBytes(req.Info)
 	d.mu.Lock()
 	if est > 0 && d.used+est > d.budget {
 		d.mu.Unlock()
@@ -251,32 +425,31 @@ func (d *DownloadRemuxer) RemuxDownload(ctx context.Context, req core.DownloadRe
 	var stderr bytes.Buffer
 	cmd := Command{
 		Path:   d.m.ffmpeg,
-		Args:   downloadArgs(req.InputURL, video, audio, part),
+		Args:   argsFn(part),
 		Stderr: &stderr,
 	}
 	if progress != nil && req.Info.Duration > 0 {
 		cmd.Stdout = &progressWriter{dur: req.Info.Duration, fn: progress}
 	}
-	d.m.log.Info("download remux starting", "input", req.InputURL,
-		"video", video.Codec, "estimateBytes", est)
+	d.m.log.Info("download "+kind+" starting", "input", req.InputURL, "estimateBytes", est)
 	if err := d.m.runner.Run(ctx, cmd); err != nil {
 		_ = os.Remove(part)
 		releaseEstimate()
 		if ctx.Err() != nil {
 			return "", 0, ctx.Err()
 		}
-		return "", 0, fmt.Errorf("transcode: download remux: %w: %s",
-			err, strings.TrimSpace(stderr.String()))
+		return "", 0, fmt.Errorf("transcode: download %s: %w: %s",
+			kind, err, strings.TrimSpace(stderr.String()))
 	}
 	st, err := os.Stat(part)
 	if err != nil {
 		releaseEstimate()
-		return "", 0, fmt.Errorf("transcode: download remux output: %w", err)
+		return "", 0, fmt.Errorf("transcode: download %s output: %w", kind, err)
 	}
 	if err := os.Rename(part, final); err != nil {
 		_ = os.Remove(part)
 		releaseEstimate()
-		return "", 0, fmt.Errorf("transcode: download remux rename: %w", err)
+		return "", 0, fmt.Errorf("transcode: download %s rename: %w", kind, err)
 	}
 	d.mu.Lock()
 	d.used += st.Size() - est

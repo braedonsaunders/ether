@@ -1,0 +1,28 @@
+{
+  "status": 206,
+  "headers": {
+    "Accept-Ranges": [
+      "bytes"
+    ],
+    "Cache-Control": [
+      "private, no-transform"
+    ],
+    "Content-Length": [
+      "65536"
+    ],
+    "Content-Range": [
+      "bytes 0-65535/633016449"
+    ],
+    "Content-Type": [
+      "video/mp4"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "start",
+  "bodyLength": 65536,
+  "sha256": "5034693b88db77f68fe0e88b37f7a2aeae57e5cd4ce04961b38499a9ac71f855"
+}

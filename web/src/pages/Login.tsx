@@ -2,6 +2,7 @@ import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsau
 import { ChevronRight, KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EtherLogo } from "../components/brand";
+import { PasswordInput } from "../components/fields";
 import { t, tx } from "../i18n";
 import { LanguagePicker } from "../i18n/react";
 import { api, ApiError, errorMessage, setToken } from "../lib/api";
@@ -14,9 +15,31 @@ const POLL_MS = 2000;
  * Owner sign-in is required on every connection, including localhost.
  */
 export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () => void }) {
+  // Older servers omit this field; retain their available sign-in paths.
+  const methods = boot.signInMethods ?? ["local", "plex"];
+  const localEnabled = methods.includes("local");
+  const plexEnabled = methods.includes("plex");
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState<{ code: string; authUrl: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const localSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const result = await api.localSignIn(username, password);
+      if (!cancelled.current) {
+        setToken(result.token);
+        onReady();
+      }
+    } catch (err) {
+      if (!cancelled.current) setError(err);
+    } finally {
+      if (!cancelled.current) setBusy(false);
+    }
+  };
   const cancelled = useRef(false);
   const popupRef = useRef<Window | null>(null);
   useEffect(() => {
@@ -84,43 +107,77 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
         <div className="mb-6 flex flex-col items-center text-center">
           <EtherLogo className="w-48" />
           <h1 className="sr-only">{boot.serverName || "Ether"}</h1>
-          <p className="mt-4 text-sm text-fg-muted">
-            {t("Sign in with the Plex account that owns this server.")}
-          </p>
+          <p className="mt-4 text-sm text-fg-muted">{t("Sign in to Ether")}</p>
         </div>
         {error ? (
           <Alert variant="destructive" className="mb-4" role="alert">
             <AlertDescription>{errorMessage(error)}</AlertDescription>
           </Alert>
         ) : null}
-        <Button
-          type="button"
-          size="lg"
-          className="w-full"
-          onClick={() => void signIn()}
-          disabled={busy}
-        >
-          {busy ? t("Waiting for Plex…") : t("Sign in with Plex")}
-        </Button>
-        {pending ? (
-          <p className="mt-3 text-center text-xs text-fg-muted">
-            {tx("Finish signing in in the Plex window. No window? {link}.", {
-              link: (
-                <a
-                  className="font-medium text-primary underline-offset-4 hover:underline"
-                  href={pending.authUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {t("Open the Plex sign-in page")}
-                </a>
-              ),
-            })}
+        {localEnabled ? (
+          <form onSubmit={(e) => void localSignIn(e)} className="mt-5 space-y-3">
+            <Label htmlFor="local-username">{t("Username")}</Label>
+            <Input
+              id="local-username"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.currentTarget.value)}
+            />
+            <Label htmlFor="local-password">{t("Password")}</Label>
+            <PasswordInput
+              id="local-password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.currentTarget.value)}
+            />
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled={busy || !username || !password}
+            >
+              {t("Sign in")}
+            </Button>
+          </form>
+        ) : null}
+        {plexEnabled ? (
+          <>
+            <Button
+              type="button"
+              size="lg"
+              variant={localEnabled ? "outline" : undefined}
+              className="mt-5 w-full"
+              onClick={() => void signIn()}
+              disabled={busy}
+            >
+              {pending ? t("Waiting for Plex…") : t("Sign in with Plex")}
+            </Button>
+            {pending ? (
+              <p className="mt-3 text-center text-xs text-fg-muted">
+                {tx("Finish signing in in the Plex window. No window? {link}.", {
+                  link: (
+                    <a
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      href={pending.authUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t("Open the Plex sign-in page")}
+                    </a>
+                  ),
+                })}
+              </p>
+            ) : null}
+            <TokenFallback onReady={onReady} />
+          </>
+        ) : null}
+        {!localEnabled && !plexEnabled ? (
+          <p className="mt-5 text-sm text-fg-muted">
+            {t("No sign-in method is available. Contact the server owner.")}
           </p>
         ) : null}
-        <TokenFallback onReady={onReady} />
         <p className="mt-6 text-center text-xs text-fg-subtle">
-          {t("Your Plex account must own this Ether server.")}
+          {t("Only the owner can access this console.")}
         </p>
       </Card>
     </main>
@@ -177,9 +234,8 @@ function TokenFallback({ onReady }: { onReady: () => void }) {
           <Label htmlFor="owner-token" className="text-xs">
             {t("Owner token (X-Plex-Token)")}
           </Label>
-          <Input
+          <PasswordInput
             id="owner-token"
-            type="password"
             value={value}
             onChange={(e) => setValue(e.currentTarget.value)}
             autoComplete="off"

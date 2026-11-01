@@ -1,0 +1,1128 @@
+package silo
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/contentrating"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+)
+
+func notFound(w http.ResponseWriter) {
+	problem(w, http.StatusNotFound, "https://siloserver.org/docs/api/v2/problems/not_found", "Not Found", "The requested resource was not found.")
+}
+
+func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
+	id := ids.RatingKeyGUID(t.Key)
+	kind := map[frontend.MediaType]string{"movie": "movie", "show": "series", "season": "season", "episode": "episode"}[t.Type]
+	out := map[string]any{"content_id": id, "title": t.Title, "type": kind, "overview": t.Summary, "year": t.Year, "runtime": int(t.Runtime.Minutes()), "genres": nonNil(t.Genres), "keywords": nonNil(t.Keywords), "studios": nonNil(t.Studios), "rating_tmdb": t.Rating, "status": "matched", "user_state": map[string]any{"played": state.ViewCount > 0, "is_favorite": state.IsFavorite, "in_watchlist": state.InWatchlist, "not_interested": state.IsNotInterested}}
+	if t.ContentRating != "" {
+		out["content_rating"] = contentrating.Prefixed(t.ContentRating)
+	}
+	if t.Language != "" {
+		out["original_language"] = t.Language
+	}
+	if !t.Released.IsZero() {
+		out["release_date"] = t.Released.Format("2006-01-02")
+	}
+	if t.Type == "show" && t.Status != "" {
+		out["show_status"] = strings.ReplaceAll(strings.ToLower(t.Status), " ", "_")
+	}
+	if t.Type == "show" && !t.LastAirDate.IsZero() {
+		out["last_air_date"] = t.LastAirDate.Format("2006-01-02")
+	}
+	if t.Type == "movie" || t.Type == "episode" {
+		out["play_content_id"] = id
+	}
+	// Captured silo-apple and silo-android home cards carry progress only in
+	// user_state. Position and duration belong on the item user_data rollup.
+	if t.ShowKey != 0 {
+		out["series_id"] = ids.RatingKeyGUID(t.ShowKey)
+		out["series_title"] = t.ShowTitle
+	}
+	if t.Type == "season" || t.Type == "episode" {
+		out["season_number"] = t.Season
+	}
+	if t.Type == "episode" {
+		out["episode_number"] = t.Episode
+	}
+	return out
+}
+
+const (
+	maxSourceOfferFileID int64 = 1<<53 - 1
+	liveChannelFileBit   int64 = 1 << 54
+	liveChannelFileMask  int64 = 1<<53 - 1
+)
+
+type liveChannelCardMeta struct {
+	title    string
+	overview string
+	runtime  int
+}
+
+func liveChannelFileID(channelGUID string) (string, error) {
+	raw, err := ids.ParseGUID(ids.Channel, channelGUID)
+	if err != nil {
+		return "", err
+	}
+	n := liveChannelFileBit | (raw & liveChannelFileMask)
+	return strconv.FormatInt(n, 10), nil
+}
+
+func isLiveChannelFileID(fileID string) bool {
+	n, err := ids.ParseDecimal(fileID)
+	if err != nil || n <= maxSourceOfferFileID {
+		return false
+	}
+	return n&liveChannelFileBit != 0 && n&^(liveChannelFileBit|liveChannelFileMask) == 0
+}
+
+func (i *instance) rememberLiveChannel(channelGUID string, meta liveChannelCardMeta) (string, error) {
+	raw, err := ids.ParseGUID(ids.Channel, channelGUID)
+	if err != nil {
+		return "", err
+	}
+	canonical, err := ids.GUID(ids.Channel, raw)
+	if err != nil {
+		return "", err
+	}
+	fileID, err := liveChannelFileID(canonical)
+	if err != nil {
+		return "", err
+	}
+	if i == nil {
+		return fileID, nil
+	}
+	i.liveMu.Lock()
+	defer i.liveMu.Unlock()
+	if i.liveChannels == nil || len(i.liveChannels) > 4096 {
+		i.liveChannels = map[string]string{}
+	}
+	i.liveChannels[fileID] = canonical
+	if meta.title != "" || meta.overview != "" || meta.runtime > 0 {
+		if i.liveCards == nil || len(i.liveCards) > 4096 {
+			i.liveCards = map[string]liveChannelCardMeta{}
+		}
+		i.liveCards[canonical] = meta
+	}
+	return fileID, nil
+}
+
+func (i *instance) rememberedLiveChannel(fileID string) string {
+	if i == nil {
+		return ""
+	}
+	i.liveMu.Lock()
+	defer i.liveMu.Unlock()
+	return i.liveChannels[fileID]
+}
+
+func (i *instance) rememberedLiveCard(channelGUID string) (liveChannelCardMeta, bool) {
+	if i == nil {
+		return liveChannelCardMeta{}, false
+	}
+	i.liveMu.Lock()
+	defer i.liveMu.Unlock()
+	meta, ok := i.liveCards[channelGUID]
+	return meta, ok
+}
+
+// liveChannelCards is the On Now shelf. Experience rows carry channels, not
+// catalogue titles, so the home builder cannot reuse title cards. The item
+// uses the catalogue card shape: the programme is the title and the channel
+// is the series line. content_id is the channel the client tunes.
+func liveChannelCards(row frontend.Row) []any {
+	return (*instance)(nil).buildLiveChannelCards(row)
+}
+
+func (i *instance) buildLiveChannelCards(row frontend.Row) []any {
+	items := make([]any, 0, len(row.Entries))
+	for _, entry := range row.Entries {
+		if entry.Kind != frontend.RowEntryLiveChannel || entry.LiveChannel == nil {
+			continue
+		}
+		ch := entry.LiveChannel
+		id, err := ids.StringGUID(ids.Channel, ch.ID)
+		if err != nil {
+			continue
+		}
+		title := ch.Name
+		channel := ch.Name
+		if ch.Number != "" {
+			channel = strings.TrimSpace(ch.Number + " " + ch.Name)
+		}
+		runtime := 0
+		if ch.Current != nil {
+			if ch.Current.Title != "" {
+				title = ch.Current.Title
+			}
+			if ch.Current.End.After(ch.Current.Start) {
+				runtime = int(ch.Current.End.Sub(ch.Current.Start).Minutes())
+			}
+		}
+		_, _ = i.rememberLiveChannel(id, liveChannelCardMeta{title: title, overview: channel, runtime: runtime})
+		items = append(items, map[string]any{
+			"content_id": id, "play_content_id": id, "title": title, "type": "episode",
+			"overview": channel, "year": 0, "runtime": runtime,
+			"genres": []string{}, "keywords": []string{}, "studios": []string{},
+			"rating_tmdb": float64(0), "status": "matched", "series_title": channel,
+			"item_source": "live",
+			"user_state":  map[string]any{"played": false, "is_favorite": false, "in_watchlist": false, "not_interested": false},
+		})
+	}
+	return items
+}
+
+func siloKeywordRow(title string) bool {
+	return strings.EqualFold(title, "Top Rated") || strings.HasPrefix(strings.ToLower(title), "top rated ")
+}
+
+func streamTitle(stream frontend.StreamInfo) string {
+	if stream.Title != "" {
+		return stream.Title
+	}
+	return stream.CodecLongName
+}
+
+// siloAudioLanguage is Silo's wire form of a probed audio language. The
+// shared probe leaves undetermined and rejected tags empty so it matches
+// ffprobe; Silo still reports that untagged stream as "und".
+func siloAudioLanguage(language string) string {
+	if language == "" {
+		return "und"
+	}
+	return language
+}
+
+// audioPreference is the shared no-choice chain: the viewer's saved
+// languages (their row, otherwise user 0), then the catalog language, then
+// the title original. PreferOriginal ranks the original first. The file
+// default is only the last resort inside PickAudio. A nil host hook leaves
+// the caller on the file default flag.
+func (i *instance) audioPreference(ctx context.Context, v *frontend.Viewer, original string) ([]string, bool) {
+	if i.host.AudioOrder == nil {
+		return nil, false
+	}
+	var audio []string
+	preferOriginal := false
+	if i.host.TrackPreferences != nil && v != nil {
+		if prefs, err := i.host.TrackPreferences.Get(ctx, v); err == nil {
+			audio = prefs.AudioLanguages
+			preferOriginal = prefs.PreferOriginal
+		}
+	}
+	server := ""
+	if i.host.MetadataLanguage != nil {
+		server = i.host.MetadataLanguage()
+	}
+	return i.host.AudioOrder(audio, server, original, preferOriginal), true
+}
+
+func nonNil(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
+}
+func (i *instance) views(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	views, err := i.host.Experience.Views(r.Context(), v)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	items := make([]any, 0, len(views)+1)
+	published := false
+	for n, view := range views {
+		if view.ID == nowAvailableLibraryID || view.Name == nowAvailableTitle {
+			published = true
+		}
+		kind := "movies"
+		if view.Type == "show" {
+			kind = "series"
+		}
+		items = append(items, map[string]any{"id": view.ID, "name": view.Name, "type": kind, "sort_order": n + 1})
+	}
+	if !published {
+		if _, ok := i.nowAvailableTitles(r, v); ok {
+			items = append([]any{map[string]any{"id": nowAvailableLibraryID, "name": nowAvailableTitle, "type": "mixed", "sort_order": 0}}, items...)
+		}
+	}
+	reply(w, 200, map[string]any{"items": items})
+}
+func (i *instance) logSectionError(stage string, placement frontend.Placement, view, row string, err error) {
+	if i.host.Log != nil {
+		i.host.Log.Warn("silo section unavailable", "stage", stage, "placement", placement, "view", view, "row", row, "err", err)
+	}
+}
+
+func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
+	v, credential, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	r = r.WithContext(frontend.WithRequestMemo(r.Context()))
+	cacheKey := siloSectionKey(v, device(r), r.URL.RequestURI())
+	if cached, ok := i.cachedSections(cacheKey); ok {
+		reply(w, 200, map[string]any{"sections": cached})
+		return
+	}
+	placement := frontend.PlacementHome
+	view := r.PathValue("library")
+	if view != "" && view != nowAvailableLibraryID {
+		placement = frontend.PlacementLibrary
+	}
+	limit := 0
+	if text := r.URL.Query().Get("item_limit"); text != "" {
+		limit, err = strconv.Atoi(text)
+		if err != nil || limit < 1 || limit > 100 {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+	}
+	var rows []frontend.Row
+	if view == nowAvailableLibraryID {
+		rows, err = i.snapshotHome(r, v, limit)
+	} else {
+		rows, err = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: placement, ViewID: view, Limit: limit})
+	}
+	if err != nil {
+		i.logSectionError("rows", placement, view, "", err)
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	if view == nowAvailableLibraryID {
+		rows = onlyNowAvailable(rows)
+	}
+	var pageTitles []frontend.Title
+	for _, row := range rows {
+		pageTitles = append(pageTitles, rowTitles(row)...)
+	}
+	pageKeys := make([]frontend.RatingKey, 0, len(pageTitles))
+	seenKey := map[frontend.RatingKey]bool{}
+	for _, title := range pageTitles {
+		if !seenKey[title.Key] {
+			seenKey[title.Key] = true
+			pageKeys = append(pageKeys, title.Key)
+		}
+	}
+	if states, e := i.host.Experience.UserData(r.Context(), v, pageKeys); e != nil {
+		i.logSectionError("user-data", placement, view, "", e)
+	} else {
+		overlays, batched := i.editionOverlays(r, v, pageKeys)
+		artwork := i.sectionArtwork(r, v, credential, pageTitles)
+		r = r.WithContext(context.WithValue(r.Context(), sectionPrepKey{}, sectionPrep{states: states, artwork: artwork, overlays: overlays, batched: batched}))
+	}
+	sections := make([]any, 0, len(rows))
+	seen := map[string]int{}
+	used := map[string]bool{}
+	partial := false
+	for _, row := range rows {
+		var items []any
+		var e error
+		if row.Purpose == frontend.RowLive {
+			items = i.buildLiveChannelCards(row)
+			if len(items) == 0 {
+				continue
+			}
+		} else {
+			items, e = i.sectionCards(r, v, credential, row)
+		}
+		if e != nil {
+			if r.Context().Err() != nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			// One row that cannot be built must not take the whole page
+			// down: the home still opens with the rows that did build.
+			i.logSectionError("row", placement, view, row.ID, e)
+			partial = true
+			continue
+		}
+		kind := siloSectionType(row, strings.Contains(r.URL.Path, "/library/"))
+		id := row.ID
+		if id == "" {
+			id = "row"
+		}
+		base := id
+		for used[id] {
+			seen[base]++
+			id = base + ":" + strconv.Itoa(seen[base])
+		}
+		used[id] = true
+		section := map[string]any{"id": id, "title": row.Title, "section_type": kind, "customized": false, "featured": row.Promoted, "is_custom": kind == "custom", "item_limit": len(items), "items": items}
+		if !row.More {
+			section["total_count"] = len(items)
+		}
+		sections = append(sections, section)
+	}
+	if !partial {
+		i.storeSections(cacheKey, sections)
+	}
+	reply(w, 200, map[string]any{"sections": sections})
+}
+
+const siloSectionTTL = 15 * time.Second
+
+type siloSectionPage struct {
+	at       time.Time
+	sections []any
+}
+
+func siloSectionKey(v *frontend.Viewer, dev frontend.Device, uri string) string {
+	id := int64(0)
+	if v != nil {
+		id = v.ID
+	}
+	return strconv.FormatInt(id, 10) + "\n" + dev.ID + "\n" + uri
+}
+
+func (i *instance) cachedSections(key string) ([]any, bool) {
+	if i == nil {
+		return nil, false
+	}
+	i.sectionsMu.Lock()
+	defer i.sectionsMu.Unlock()
+	page, ok := i.sectionsCache[key]
+	if !ok || time.Since(page.at) >= siloSectionTTL {
+		return nil, false
+	}
+	return page.sections, true
+}
+
+func (i *instance) storeSections(key string, sections []any) {
+	if i == nil {
+		return
+	}
+	i.sectionsMu.Lock()
+	defer i.sectionsMu.Unlock()
+	if i.sectionsCache == nil {
+		i.sectionsCache = map[string]siloSectionPage{}
+	}
+	if len(i.sectionsCache) > 64 {
+		i.sectionsCache = map[string]siloSectionPage{}
+	}
+	i.sectionsCache[key] = siloSectionPage{at: time.Now(), sections: sections}
+}
+
+func (i *instance) liveChannelDetail(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, credential, channelGUID string) {
+	if i.host.LiveTV == nil {
+		notFound(w)
+		return
+	}
+	ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, channelGUID)
+	if err != nil || ch.ID == "" {
+		if errors.Is(err, frontend.ErrNotFound) || errors.Is(err, frontend.ErrUnauthorized) || ch.ID == "" {
+			notFound(w)
+			return
+		}
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	fileID, err := i.rememberLiveChannel(channelGUID, liveChannelCardMeta{})
+	if err != nil {
+		notFound(w)
+		return
+	}
+	channelLabel := ch.Name
+	if ch.Number != "" {
+		channelLabel = strings.TrimSpace(ch.Number + " " + ch.Name)
+	}
+	title := ch.Name
+	overview := channelLabel
+	runtime := 0
+	var durationSeconds int64
+	var addedAt time.Time
+	contentRating := ch.Rating
+	if card, ok := i.rememberedLiveCard(channelGUID); ok {
+		if card.title != "" {
+			title = card.title
+		}
+		if card.overview != "" {
+			overview = card.overview
+		}
+		if card.runtime > 0 {
+			runtime = card.runtime
+		}
+	}
+	now := time.Now().UTC()
+	var currentProgramme *frontend.LiveProgramme
+	if programmes, gErr := i.host.LiveTV.Guide(r.Context(), v, frontend.LiveGuideQuery{
+		From:     now.Add(-6 * time.Hour),
+		Until:    now.Add(6 * time.Hour),
+		Channels: []string{ch.ID},
+		Limit:    50,
+		Device:   device(r),
+	}); gErr == nil {
+		for idx := range programmes {
+			p := &programmes[idx]
+			if p.ChannelID != "" && p.ChannelID != ch.ID {
+				continue
+			}
+			if !p.Start.After(now) && p.End.After(now) {
+				currentProgramme = p
+				break
+			}
+			if currentProgramme == nil {
+				currentProgramme = p
+			}
+		}
+	}
+	if currentProgramme != nil {
+		if currentProgramme.Title != "" {
+			title = currentProgramme.Title
+		}
+		if currentProgramme.Summary != "" {
+			overview = currentProgramme.Summary
+		}
+		if currentProgramme.End.After(currentProgramme.Start) {
+			runtime = int(currentProgramme.End.Sub(currentProgramme.Start).Minutes())
+			durationSeconds = int64(currentProgramme.End.Sub(currentProgramme.Start).Seconds())
+		}
+		if !currentProgramme.Start.IsZero() {
+			addedAt = currentProgramme.Start.UTC()
+		}
+		if currentProgramme.Rating != "" {
+			contentRating = currentProgramme.Rating
+		}
+	}
+	if durationSeconds == 0 && runtime > 0 {
+		durationSeconds = int64(runtime) * 60
+	}
+	if addedAt.IsZero() {
+		addedAt = time.Unix(0, 0).UTC()
+	}
+	version := map[string]any{
+		"file_id":     fileID,
+		"resolution":  "",
+		"codec_video": "",
+		"codec_audio": "",
+		"hdr":         false,
+		"container":   "hls",
+		"duration":    durationSeconds,
+		"file_size":   int64(0),
+		"bitrate":     0,
+		"added_at":    addedAt.Format("2006-01-02T15:04:05.000Z"),
+	}
+	part := map[string]any{"part_index": 1, "default_file_id": fileID, "versions": []any{version}}
+	group := map[string]any{"variant_id": fileID, "default_file_id": fileID, "part_count": 1, "parts": []any{part}}
+	if durationSeconds > 0 {
+		part["total_duration"], group["total_duration"] = durationSeconds, durationSeconds
+	}
+	rollup := map[string]any{
+		"played":            false,
+		"watched_count":     0,
+		"unplayed_count":    1,
+		"in_progress_count": 0,
+		"is_in_progress":    false,
+	}
+	if durationSeconds > 0 {
+		rollup["duration_seconds"] = float64(durationSeconds)
+	}
+	out := map[string]any{
+		"content_id":        channelGUID,
+		"play_content_id":   channelGUID,
+		"title":             title,
+		"type":              "movie",
+		"overview":          overview,
+		"year":              0,
+		"runtime":           runtime,
+		"genres":            []string{},
+		"keywords":          []string{},
+		"studios":           []string{},
+		"rating_tmdb":       float64(0),
+		"status":            "matched",
+		"series_title":      channelLabel,
+		"user_state":        map[string]any{"played": false, "is_favorite": ch.Favorite, "in_watchlist": false, "not_interested": false},
+		"user_data":         rollup,
+		"cast":              []any{},
+		"crew":              []any{},
+		"themes":            map[string]any{"owner_id": channelGUID, "items": []any{}},
+		"versions":          []any{version},
+		"playback_variants": []any{group},
+		"ratings":           []any{},
+		"subtitles":         []any{},
+	}
+	if contentRating != "" {
+		out["content_rating"] = contentrating.Prefixed(contentRating)
+	}
+	if i.host.ImageGrants != nil {
+		prefix := ""
+		if r.Context().Value(sharedPrefix{}) != nil {
+			prefix = "/silo"
+		}
+		for _, img := range ch.Images {
+			if img.Path == "" {
+				continue
+			}
+			grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: credential, Device: device(r), Channel: ch.ID, Image: img})
+			if err != nil || grant == "" {
+				continue
+			}
+			path := prefix + "/api/v2/images/" + grant
+			if _, ok := out["poster_url"]; !ok {
+				out["poster_url"] = path
+			}
+			if _, ok := out["backdrop_url"]; !ok {
+				out["backdrop_url"] = path
+				out["backdrop_urls"] = []string{path}
+			}
+		}
+	}
+	i.finishDetailResponse(w, r, v, frontend.ItemDetail{}, map[string][]frontend.Marker{}, out)
+}
+
+func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
+	v, credential, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if rawChannel, err := ids.ParseGUID(ids.Channel, r.PathValue("id")); err == nil {
+		channelGUID, _ := ids.GUID(ids.Channel, rawChannel)
+		i.liveChannelDetail(w, r, v, credential, channelGUID)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		notFound(w)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	d, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
+	if err != nil {
+		notFound(w)
+		return
+	}
+	out := titleDTO(d.Title, d.UserData)
+	if d.Title.OriginalTitle != "" {
+		out["original_title"] = d.Title.OriginalTitle
+	}
+	if len(d.Title.Countries) > 0 {
+		out["countries"] = d.Title.Countries
+	}
+	if d.Title.IDs.TMDB > 0 {
+		out["tmdb_id"] = strconv.FormatInt(d.Title.IDs.TMDB, 10)
+	}
+	if d.Title.IDs.IMDB != "" {
+		out["imdb_id"] = d.Title.IDs.IMDB
+	}
+	if d.Title.IDs.TVDB > 0 {
+		out["tvdb_id"] = strconv.FormatInt(d.Title.IDs.TVDB, 10)
+	}
+	portraits := i.creditPortraits(r, v, credential, d)
+	personIDs := i.creditIDs(r, v, d)
+	cast := make([]any, 0, len(d.Title.Cast))
+	for n, p := range d.Title.Cast {
+		credit := map[string]any{"name": p.Name, "character": p.Role, "order": n}
+		if p.IMDB != "" {
+			credit["imdb_id"] = p.IMDB
+		}
+		if id := personIDs[p.TMDB]; id != "" {
+			credit["person_id"] = id
+		}
+		if p.TMDB > 0 {
+			credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
+			if portrait := portraits[p.TMDB]; portrait.url != "" {
+				credit["photo_url"] = portrait.url
+				if portrait.thumbHash != "" {
+					credit["photo_thumbhash"] = portrait.thumbHash
+				}
+			}
+		}
+		cast = append(cast, credit)
+	}
+	crew := make([]any, 0, len(d.Title.Crew)+len(d.Title.Directors)+len(d.Title.Writers))
+	for _, people := range [][]frontend.Person{d.Title.Crew, d.Title.Directors, d.Title.Writers} {
+		for _, p := range people {
+			credit := map[string]any{"name": p.Name, "job": p.Role}
+			if p.IMDB != "" {
+				credit["imdb_id"] = p.IMDB
+			}
+			if id := personIDs[p.TMDB]; id != "" {
+				credit["person_id"] = id
+			}
+			if p.TMDB > 0 {
+				credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
+				if portrait := portraits[p.TMDB]; portrait.url != "" {
+					credit["photo_url"] = portrait.url
+					if portrait.thumbHash != "" {
+						credit["photo_thumbhash"] = portrait.thumbHash
+					}
+				}
+			}
+			crew = append(crew, credit)
+		}
+	}
+	out["cast"] = cast
+	out["crew"] = crew
+	// Plex metadata has a theme attribute, and nothing in Ether fills or
+	// serves that audio. The set stays empty until a theme file exists.
+	out["themes"] = map[string]any{"owner_id": out["content_id"], "items": []any{}}
+	// The captured catalog item sends an empty keyword list. Library rows
+	// keep the title keywords.
+	out["keywords"] = []string{}
+	if len(d.Extras) > 0 {
+		videos := make([]any, 0, len(d.Extras))
+		for _, extra := range d.Extras {
+			if extra.Source == "" || extra.SourceID == "" {
+				continue
+			}
+			videos = append(videos, map[string]any{"name": extra.Title, "kind": extra.Kind, "site": strings.ToLower(extra.Source), "site_key": extra.SourceID, "language": extra.Language, "is_official": extra.Official})
+		}
+		if len(videos) > 0 {
+			out["videos"] = videos
+		}
+	}
+	out["versions"] = []any{}
+	out["ratings"] = []any{}
+	out["subtitles"] = []any{}
+	if d.Title.Rating > 0 && d.Title.Rating <= 10 {
+		score := d.Title.Rating * 10
+		out["ratings"] = []any{map[string]any{"source": "tmdb", "name": "TMDB", "score": score, "display": strconv.FormatFloat(d.Title.Rating, 'f', 1, 64)}}
+		source := map[string]any{"source": "tmdb", "score": score}
+		if d.Title.VoteCount > 0 {
+			source["votes"] = d.Title.VoteCount
+		}
+		out["rating_sources"] = []any{source}
+	}
+	i.applyDetailFacts(r, v, d.Title, out)
+	var playedSource *frontend.PlaybackSourceHistory
+	fileMarkers := map[string][]frontend.Marker{}
+	if d.Title.Type == "movie" || d.Title.Type == "episode" {
+		played := d.UserData.ViewCount > 0
+		watched, unplayed, inProgress := 0, 1, 0
+		if played {
+			watched, unplayed = 1, 0
+		}
+		if d.UserData.ViewOffset > 0 {
+			inProgress = 1
+		}
+		rollup := map[string]any{"played": played, "watched_count": watched, "unplayed_count": unplayed, "in_progress_count": inProgress, "is_in_progress": inProgress > 0}
+		if d.UserData.ViewOffset > 0 {
+			rollup["position_seconds"] = d.UserData.ViewOffset.Seconds()
+		}
+		switch {
+		case d.UserData.Duration > 0:
+			rollup["duration_seconds"] = d.UserData.Duration.Seconds()
+		case d.Title.Runtime > 0:
+			rollup["duration_seconds"] = d.Title.Runtime.Seconds()
+		}
+		if i.host.LastPlayedSource != nil {
+			if source, err := i.host.LastPlayedSource.LastPlayedSource(r.Context(), v, device(r), key); err == nil && source != nil {
+				playedSource = source
+				addLastPlayedFacts(rollup, source)
+			}
+		}
+		out["user_data"] = rollup
+	}
+	i.artwork(r, v, credential, key, out)
+	out["versions"] = []any{}
+	if (d.Title.Type == "movie" || d.Title.Type == "episode") && i.host.Sessions != nil && i.host.Capabilities != nil {
+		dev := device(r)
+		capability, e := i.host.Capabilities.Build(i.identityContext(r), frontend.CapabilityRequest{Viewer: v, Device: caps.DeviceInfo{Protocol: "silo", ClientID: dev.ID, Product: dev.Client, Version: dev.Version}, UserAgent: r.UserAgent()})
+		if e == nil {
+			versions, offers, e := i.sourceVersions(r, frontend.VersionScope{Viewer: v, Device: dev, Protocol: "silo", Caps: capability.Client}, d)
+			if e != nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			items := make([]any, 0, len(versions))
+			groups := make([]any, 0, len(versions))
+			for n, version := range versions {
+				id := offers[n].ID
+				fileMarkers[id] = version.Markers
+				resolution, video, audio := "", "", ""
+				hdr := false
+				audioTracks := []any{}
+				videoTracks := []any{}
+				audioOrdinal, chosenAudio := 0, -1
+				chosenLanguage := ""
+				choseDefault := false
+				// An unresolved estimate is not a probed source. Required Silo
+				// numbers stay zero and strings stay empty until playback resolves it.
+				estimated := version.Media.Estimated
+				streams := version.Media.Streams
+				if estimated {
+					streams = nil
+				}
+				langs, ordered := i.audioPreference(r.Context(), v, d.Title.Language)
+				wantedAudio := -1
+				if ordered && i.host.PickAudio != nil {
+					wantedAudio = i.host.PickAudio(frontend.MediaInfo{Streams: streams}, langs)
+				}
+				for si, stream := range streams {
+					if stream.Type == "video" {
+						video = stream.Codec
+						if stream.Height > 0 {
+							resolution = strconv.Itoa(stream.Height) + "p"
+						}
+						rangeName := siloObservedRange(version.Media, stream)
+						hdr = rangeName != "" && rangeName != "sdr"
+						track := map[string]any{"codec": stream.Codec, "color_range": "unknown", "dv_enhancement_layer": "unknown"}
+						if stream.ColorRange != "" {
+							track["color_range"] = stream.ColorRange
+						}
+						if stream.HDR10Plus != nil {
+							track["hdr10_plus"] = *stream.HDR10Plus
+						} else if stream.ColorTransfer != "smpte2084" {
+							track["hdr10_plus"] = false
+						}
+						if stream.DolbyVisionELPresent != nil && !*stream.DolbyVisionELPresent {
+							track["dv_enhancement_layer"] = "none"
+						}
+						if stream.Width > 0 {
+							track["width"] = stream.Width
+						}
+						if stream.Height > 0 {
+							track["height"] = stream.Height
+						}
+						if stream.BitDepth > 0 {
+							track["bit_depth"] = stream.BitDepth
+						}
+						if stream.BitrateKbps > 0 {
+							track["bitrate"] = stream.BitrateKbps
+						}
+						if stream.Profile != "" {
+							track["profile"] = stream.Profile
+						}
+						if stream.Level > 0 {
+							track["level"] = stream.Level
+						}
+						if title := streamTitle(stream); title != "" {
+							track["title"] = title
+						}
+						if stream.FrameRate > 0 {
+							track["frame_rate"] = strconv.FormatFloat(stream.FrameRate, 'f', 3, 64)
+						}
+						if stream.DisplayAspectRatio != "" {
+							track["aspect_ratio"] = stream.DisplayAspectRatio
+						}
+						if stream.PixelFormat != "" {
+							track["pixel_format"] = stream.PixelFormat
+						}
+						if stream.ColorPrimaries != "" {
+							track["color_primaries"] = stream.ColorPrimaries
+						}
+						if stream.ColorSpace != "" {
+							track["color_space"] = stream.ColorSpace
+						}
+						if stream.ColorTransfer != "" {
+							track["color_transfer"] = stream.ColorTransfer
+						}
+						if stream.ReferenceFrames != nil {
+							track["reference_frames"] = *stream.ReferenceFrames
+						}
+						if stream.ProbedLevel != nil {
+							track["level"] = *stream.ProbedLevel
+						}
+						if stream.ProbedDolbyVisionProfile != nil {
+							track["dv_profile"] = *stream.ProbedDolbyVisionProfile
+						}
+						if stream.ProbedDolbyVisionLevel != nil {
+							track["dv_level"] = *stream.ProbedDolbyVisionLevel
+						}
+						if stream.DolbyVisionBLPresent != nil {
+							track["dv_bl_present"] = *stream.DolbyVisionBLPresent
+						}
+						if stream.DolbyVisionELPresent != nil {
+							track["dv_el_present"] = *stream.DolbyVisionELPresent
+						}
+						if stream.DolbyVisionRPUPresent != nil {
+							track["dv_rpu_present"] = *stream.DolbyVisionRPUPresent
+						}
+						if stream.DolbyVisionBLCompatibilityIDPresent != nil && *stream.DolbyVisionBLCompatibilityIDPresent {
+							track["dv_bl_compat_id"] = stream.DolbyVisionCompatibilityID
+						}
+						switch rangeName {
+						case "sdr":
+							track["video_range_type"] = "SDR"
+						case "hdr10":
+							track["video_range_type"] = "HDR10"
+						case "hlg":
+							track["video_range_type"] = "HLG"
+						}
+						// These booleans are mandatory in Silo's track DTO. Only
+						// publish a track when their presence is established by
+						// the probe; missing metadata is not proof of absence.
+						config, compat, interlaced := stream.DolbyVisionConfigurationPresent, stream.DolbyVisionBLCompatibilityIDPresent, stream.ProbedInterlaced
+						positive := true
+						if config == nil && stream.DolbyVisionVersion != "" {
+							config = &positive
+						}
+						if compat == nil && stream.DolbyVisionCompatibilityID > 0 {
+							compat = &positive
+						}
+						if interlaced == nil && stream.Interlaced {
+							interlaced = &positive
+						}
+						if !version.Media.Estimated && config != nil && compat != nil && interlaced != nil {
+							track["dv_config_present"] = *config
+							track["dv_bl_compat_id_present"] = *compat
+							track["interlaced"] = *interlaced
+							videoTracks = append(videoTracks, track)
+						}
+					}
+					if stream.Type == "audio" && audio == "" {
+						audio = stream.Codec
+					}
+					if stream.Type == "audio" {
+						if ordered && i.host.PickAudio != nil {
+							if si == wantedAudio {
+								chosenAudio = audioOrdinal
+								chosenLanguage = siloAudioLanguage(stream.Language)
+							}
+						} else if chosenAudio < 0 || (stream.Default && !choseDefault) {
+							chosenAudio = audioOrdinal
+							chosenLanguage = siloAudioLanguage(stream.Language)
+							choseDefault = stream.Default
+						}
+						audioOrdinal++
+						track := map[string]any{"default": stream.Default}
+						if stream.Codec != "" {
+							track["codec"] = stream.Codec
+						}
+						track["language"] = siloAudioLanguage(stream.Language)
+						if title := streamTitle(stream); title != "" {
+							track["title"] = title
+						}
+						if stream.Channels > 0 {
+							track["channels"] = stream.Channels
+						}
+						if stream.ChannelLayout != "" {
+							track["layout"] = stream.ChannelLayout
+						}
+						if stream.SampleRate > 0 {
+							track["sample_rate"] = stream.SampleRate
+						}
+						if stream.BitrateKbps > 0 {
+							track["bitrate"] = stream.BitrateKbps
+						}
+						if stream.BitDepth > 0 {
+							track["bit_depth"] = stream.BitDepth
+						}
+						if stream.Profile != "" {
+							track["profile"] = stream.Profile
+						}
+						audioTracks = append(audioTracks, track)
+					}
+				}
+				container, duration, size, bitrate := version.Media.Container, int64(version.Media.Duration.Seconds()), version.Media.Size, version.Media.BitrateKbps
+				if estimated {
+					container, duration, size, bitrate = "", 0, 0, 0
+				}
+				item := map[string]any{"file_id": id, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": container, "duration": duration, "file_size": size, "bitrate": bitrate, "added_at": d.Title.DateAdded(time.Now()).UTC().Format("2006-01-02T15:04:05.000Z")}
+				if d.Title.DateAdded(time.Now()).IsZero() {
+					delete(item, "added_at")
+				}
+				if version.FileName != "" {
+					item["file_name"] = version.FileName
+				}
+				if playedSource != nil && playedSource.ReleaseDigest != "" {
+					sum := sha256.Sum256([]byte(version.ID))
+					if hex.EncodeToString(sum[:]) == playedSource.ReleaseDigest {
+						if facts, ok := out["user_data"].(map[string]any); ok {
+							facts["last_file_id"] = id
+						}
+					}
+				}
+				if chosenAudio >= 0 {
+					item["effective_audio_track_index"] = chosenAudio
+					if chosenLanguage != "" {
+						item["effective_audio_language"] = chosenLanguage
+					}
+				}
+				if len(audioTracks) > 0 {
+					item["audio_tracks"] = audioTracks
+				}
+				if len(videoTracks) > 0 {
+					item["video_tracks"] = videoTracks
+				}
+				items = append(items, item)
+				if version.PartCount != nil && *version.PartCount == 1 {
+					part := map[string]any{"part_index": 1, "default_file_id": id, "versions": []any{item}}
+					group := map[string]any{"variant_id": id, "default_file_id": id, "part_count": 1, "parts": []any{part}}
+					if duration > 0 {
+						part["total_duration"], group["total_duration"] = duration, duration
+					}
+					groups = append(groups, group)
+				}
+			}
+			out["versions"] = items
+			if summary := bestSiloOverlay(versions); len(summary) > 0 {
+				out["overlay_summary"] = summary
+			}
+			if len(groups) > 0 {
+				out["playback_variants"] = groups
+			}
+		}
+	}
+	i.finishDetailResponse(w, r, v, d, fileMarkers, out)
+}
+
+func (i *instance) finishDetailResponse(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, d frontend.ItemDetail, fileMarkers map[string][]frontend.Marker, out map[string]any) {
+	if strings.HasPrefix(r.URL.Path, "/api/v2/watch/") {
+		watch := map[string]any{"content_id": out["content_id"], "type": out["type"], "title": out["title"], "versions": []any{}, "subtitles": []any{}}
+		for _, name := range []string{"overview", "year", "poster_url", "backdrop_url", "series_id", "series_title", "season_number", "episode_number"} {
+			if value, ok := out[name]; ok {
+				watch[name] = value
+			}
+		}
+		probedFiles := 0
+		for _, entry := range out["versions"].([]any) {
+			if sec, ok := entry.(map[string]any)["duration"].(int64); ok && sec > 0 {
+				probedFiles++
+			}
+		}
+		versions := []any{}
+		for _, entry := range out["versions"].([]any) {
+			source := entry.(map[string]any)
+			item := map[string]any{}
+			for k, v := range source {
+				if k != "duration" {
+					item[k] = v
+				}
+			}
+			item["duration_seconds"] = source["duration"]
+			if kbps, ok := source["bitrate"].(int); ok && kbps > 0 && int64(kbps) <= (1<<63-1)/1000 {
+				item["bitrate"] = int64(kbps) * 1000
+			}
+			item["trickplay_available"] = false
+			// Each probed file carries the ranges for its own timeline.
+			// A single-file response can still use the detail marker set when
+			// that file has not been given its own ranges.
+			segments := []any{}
+			fileID, _ := source["file_id"].(string)
+			markers := fileMarkers[fileID]
+			if len(markers) == 0 && probedFiles == 1 {
+				markers = d.Markers
+			}
+			if sec, ok := source["duration"].(int64); ok && sec > 0 {
+				segments = fileMarkerSegments(markers, time.Duration(sec)*time.Second)
+			}
+			segments = i.withoutSkippedIntros(r, v, segments)
+			item["marker_segments"] = segments
+			attachWatchMarkers(item, segments)
+			versions = append(versions, item)
+		}
+		watch["versions"] = versions
+		if profile, e := i.profileData(r, v); e == nil {
+			for _, pair := range [][2]string{{"subtitle_language", "effective_subtitle_language"}, {"subtitle_mode", "effective_subtitle_mode"}, {"show_forced_subtitles", "effective_show_forced_subtitles"}} {
+				if value, ok := profile[pair[0]]; ok {
+					watch[pair[1]] = value
+				}
+			}
+		}
+		if groups, ok := out["playback_variants"].([]any); ok {
+			watchGroups := make([]any, 0, len(groups))
+			for _, raw := range groups {
+				group := raw.(map[string]any)
+				id := group["default_file_id"]
+				for _, rawVersion := range versions {
+					version := rawVersion.(map[string]any)
+					if version["file_id"] != id {
+						continue
+					}
+					part := map[string]any{"part_index": 1, "default_file_id": id, "versions": []any{version}}
+					entry := map[string]any{"variant_id": group["variant_id"], "part_count": 1, "default_file_id": id, "parts": []any{part}}
+					if duration, ok := group["total_duration"]; ok {
+						part["total_duration_seconds"], entry["total_duration_seconds"] = duration, duration
+					}
+					watchGroups = append(watchGroups, entry)
+				}
+			}
+			if len(watchGroups) > 0 {
+				watch["playback_variants"] = watchGroups
+			}
+		}
+		st := d.UserData
+		if st.ViewOffset > 0 || st.ViewCount > 0 {
+			inProgress := 0
+			if st.ViewOffset > 0 {
+				inProgress = 1
+			}
+			watch["user_data"] = map[string]any{"played": st.ViewCount > 0, "watched_count": st.ViewCount, "unplayed_count": 0, "in_progress_count": inProgress, "is_in_progress": st.ViewOffset > 0, "position_seconds": st.ViewOffset.Seconds(), "duration_seconds": st.Duration.Seconds()}
+		}
+		reply(w, 200, watch)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/versions") {
+		reply(w, 200, map[string]any{"items": out["versions"], "page": map[string]any{"has_more": false}})
+		return
+	}
+	reply(w, 200, out)
+}
+
+func fileMarkerSegments(markers []frontend.Marker, duration time.Duration) []any {
+	out := make([]any, 0, len(markers))
+	for _, marker := range markers {
+		switch marker.Type {
+		case "intro", "credits", "recap", "preview":
+		default:
+			continue
+		}
+		if marker.Start < 0 || marker.End <= marker.Start || marker.End > duration {
+			continue
+		}
+		out = append(out, map[string]any{"kind": marker.Type, "start_seconds": marker.Start.Seconds(), "end_seconds": marker.End.Seconds()})
+	}
+	return out
+}
+
+// addLastPlayedFacts only exposes facts measured on the opened source. Missing
+// probe values stay absent instead of being inferred from a selected version.
+func addLastPlayedFacts(out map[string]any, source *frontend.PlaybackSourceHistory) {
+	if source.VideoCodec != "" {
+		out["last_codec_video"] = source.VideoCodec
+	}
+	if source.Height > 0 {
+		out["last_resolution"] = strconv.Itoa(source.Height) + "p"
+	}
+	if source.HDR != nil {
+		out["last_hdr"] = *source.HDR
+	}
+}
+func (i *instance) homeCapabilities(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	reply(w, 200, map[string]any{"state": "available", "allowed": true, "section_item_limit_max": 100})
+}
+func (i *instance) browseRoutes() error {
+	for _, entry := range []struct {
+		path string
+		h    http.HandlerFunc
+	}{{"/api/v2/home/capabilities", i.homeCapabilities}, {"/api/v2/user/libraries", i.views}, {"/api/v2/home/sections", i.sections}, {"/api/v2/library/{library}/sections", i.sections}, {"/api/v2/recommendations/discover", i.discover}, {"/api/v2/recommendations/similar/{id}", i.similar}, {"/api/v2/watch/{id}", i.detail}, {"/api/v2/catalog/items/{id}/versions", i.detail}, {"/api/v2/catalog/items/{id}", i.detail}} {
+		if err := i.router.Handle("GET", entry.path, entry.h); err != nil {
+			return err
+		}
+	}
+	return nil
+}

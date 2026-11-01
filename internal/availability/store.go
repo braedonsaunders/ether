@@ -10,6 +10,18 @@ import (
 )
 
 func init() {
+	store.Register("availability", 5, `
+ALTER TABLE availability_budget ADD COLUMN ceiling INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE availability_feeds ADD COLUMN catchup_oldest INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE availability_feeds ADD COLUMN catchup_started INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE availability_title_checks (
+ rating_key INTEGER PRIMARY KEY,
+ checked_at INTEGER NOT NULL DEFAULT 0,
+ next_check INTEGER NOT NULL DEFAULT 0,
+ state TEXT NOT NULL DEFAULT '',
+ reason TEXT NOT NULL DEFAULT ''
+);`)
+	store.Register("availability", 4, `ALTER TABLE availability_releases ADD COLUMN policy_digest TEXT NOT NULL DEFAULT ''; ALTER TABLE availability_feed_items ADD COLUMN policy_digest TEXT NOT NULL DEFAULT '';`)
 	store.Register("availability", 3, `
  ALTER TABLE availability_feeds ADD COLUMN catchup_target TEXT NOT NULL DEFAULT '';
  ALTER TABLE availability_feeds ADD COLUMN catchup_tail TEXT NOT NULL DEFAULT '';
@@ -57,7 +69,10 @@ func (s *Service) spend(ctx context.Context, kind string, n, limit int64) error 
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO availability_budget(day,resource) VALUES(?,?) ON CONFLICT(day,resource) DO NOTHING`, day, kind); err != nil {
 		return err
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE availability_budget SET used=used+? WHERE day=? AND resource=? AND used<=?`, n, day, kind, limit-n)
+	// ceiling remembers the highest allowance that admitted a request today.
+	// Lowering the allowance later leaves used above the new number; it does
+	// not mean the cap was bypassed.
+	result, err := s.db.ExecContext(ctx, `UPDATE availability_budget SET used=used+?, ceiling=CASE WHEN ceiling>=? THEN ceiling ELSE ? END WHERE day=? AND resource=? AND used<=?`, n, limit, limit, day, kind, limit-n)
 	if err != nil {
 		return err
 	}
@@ -93,7 +108,7 @@ func (s *Service) budgetContext(ctx context.Context, feed bool) context.Context 
 		}
 		bucket, limit := "checkRequests", live.CheckRequests
 		if feed {
-			bucket, limit = "feedRequests", live.FeedRequests
+			bucket, limit = "feedRequests", s.budgets().FeedRequests
 		}
 		return s.spend(ctx, bucket, n, int64(limit))
 	})
@@ -105,13 +120,13 @@ func (s *Service) remember(ctx context.Context, f core.ReleaseFeed, t core.Title
 		return err
 	}
 	now := s.now().Unix()
-	_, err = s.db.ExecContext(ctx, `INSERT INTO availability_releases(id,rating_key,source_id,generation,payload,title,name,protocol,first_seen,last_seen,priority,policy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
- ON CONFLICT(id,rating_key,source_id) DO UPDATE SET last_seen=excluded.last_seen,payload=excluded.payload,priority=excluded.priority,
+	_, err = s.db.ExecContext(ctx, `INSERT INTO availability_releases(id,rating_key,source_id,generation,payload,title,name,protocol,first_seen,last_seen,priority,policy,policy_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+ ON CONFLICT(id,rating_key,source_id) DO UPDATE SET last_seen=excluded.last_seen,payload=CASE WHEN availability_releases.policy_digest=excluded.policy_digest THEN availability_releases.payload ELSE excluded.payload END,policy_digest=excluded.policy_digest,priority=excluded.priority,
  verified_at=CASE WHEN availability_releases.generation<>excluded.generation THEN 0 ELSE availability_releases.verified_at END,
  first_verified=CASE WHEN availability_releases.generation<>excluded.generation THEN 0 ELSE availability_releases.first_verified END,
  next_check=CASE WHEN availability_releases.generation<>excluded.generation THEN 0 ELSE availability_releases.next_check END,
  state=CASE WHEN availability_releases.generation<>excluded.generation THEN 'observed' ELSE availability_releases.state END,
- generation=excluded.generation`, r.ID, t.Key, f.ID, f.Generation, raw, t.Title, r.Name, r.Protocol, now, now, t.Popularity, policy)
+ generation=excluded.generation`, r.ID, t.Key, f.ID, f.Generation, raw, t.Title, r.Name, r.Protocol, now, now, t.Popularity, policy, releasePolicyDigest(r))
 	return err
 }
 func (s *Service) prune(ctx context.Context) error {

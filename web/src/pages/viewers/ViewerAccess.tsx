@@ -15,8 +15,10 @@ import { viewerName } from "../../components/pickers";
 import { t } from "../../i18n";
 import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer } from "../../lib/contract";
+import { canonicalRating } from "../../lib/contentRatings";
 import { useAsync } from "../../lib/hooks";
 import { PlexWatchSync } from "./sections/PlexWatchSync";
+import { FromPlexDefaults } from "./FromPlexDefaults";
 import { ViewerLiveTVAccess } from "./sections/ViewerLiveTV";
 import { KID_PRESETS, ListText, normalizePolicy, type SafetyPolicy } from "./shared";
 
@@ -120,7 +122,7 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
           <SettingsSection
             title={t("Account languages")}
             description={t(
-              "Preferred languages reported to Plex apps for this account. Track selection rules live on the Audio & subtitles tab.",
+              "Preferred languages for this account. Track rules are on the Audio & subtitles tab.",
             )}
           >
             <SettingsRow
@@ -191,10 +193,10 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
             <SettingsRow
               title={t("Maximum content rating")}
               control={
-                <div className="w-44">
+                <div className="w-56">
                   <Select
                     aria-label={t("Maximum content rating")}
-                    value={p.maxContentRating}
+                    value={canonicalRating(p.maxContentRating)}
                     onChange={(e) => patchPolicy({ maxContentRating: e.target.value })}
                   >
                     {CONTENT_RATINGS.map((r) => (
@@ -305,6 +307,8 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
           </SettingsSection>
         </>
       )}
+
+      <FromPlexDefaults viewerId={id} show="share" />
 
       <ViewerLiveTVAccess viewerId={id} />
 

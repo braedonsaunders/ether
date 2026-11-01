@@ -37,6 +37,11 @@ type features struct {
 	encoders             map[string]bool
 	hwaccels             map[string]bool
 	filters              map[string]bool
+	// filtersProbed is true only after -filters parsed at least one filter.
+	// A nil or empty map means those filters are unavailable, never that
+	// every filter exists.
+	filtersProbed bool
+	probeDetail   string
 }
 
 func (f features) hasEncoder(n string) bool { return f.encoders[n] }
@@ -109,20 +114,32 @@ func probeFeatures(ctx context.Context, r Runner, ffmpeg string) (features, erro
 		}
 		return out.Bytes(), nil
 	}
-	var f features
-	b, err := run("-encoders")
+	f := features{
+		encoders: map[string]bool{},
+		hwaccels: map[string]bool{},
+		filters:  map[string]bool{},
+	}
+	enc, err := probeList(run, "-encoders", parseEncoders)
 	if err != nil {
-		return f, err
+		return f, fmt.Errorf("transcode: ffmpeg encoders: %w", err)
 	}
-	f.encoders = parseEncoders(b)
-	if b, err = run("-hwaccels"); err != nil {
-		return f, err
+	f.encoders = enc
+	if hw, hwErr := probeList(run, "-hwaccels", parseHWAccels); hwErr != nil {
+		f.probeDetail = hwErr.Error()
+	} else {
+		f.hwaccels = hw
 	}
-	f.hwaccels = parseHWAccels(b)
-	if b, err = run("-filters"); err != nil {
-		return f, err
+	filters, filtersErr := probeList(run, "-filters", parseFilters)
+	if filtersErr != nil {
+		// Degrade: an unreadable filter list is empty, not "everything".
+		if f.probeDetail != "" {
+			f.probeDetail += "; "
+		}
+		f.probeDetail += filtersErr.Error()
+	} else {
+		f.filters = filters
+		f.filtersProbed = true
 	}
-	f.filters = parseFilters(b)
 	if f.hasFilter("scale_vt") {
 		// Optional probing cannot make a formerly usable build fail startup.
 		if help, helpErr := run("-h", "filter=scale_vt"); helpErr == nil {
@@ -130,6 +147,27 @@ func probeFeatures(ctx context.Context, r Runner, ffmpeg string) (features, erro
 		}
 	}
 	return f, nil
+}
+
+// probeList runs one ffmpeg query up to three times. An empty parse is a
+// failed read, not an empty feature set that callers may treat as unknown.
+func probeList(run func(...string) ([]byte, error), flag string, parse func([]byte) map[string]bool) (map[string]bool, error) {
+	var last error
+	for attempt := 0; attempt < 3; attempt++ {
+		b, err := run(flag)
+		if err != nil {
+			last = err
+			continue
+		}
+		if m := parse(b); len(m) > 0 {
+			return m, nil
+		}
+		last = fmt.Errorf("ffmpeg %s produced no entries", flag)
+	}
+	if last == nil {
+		last = fmt.Errorf("ffmpeg %s produced no entries", flag)
+	}
+	return nil, last
 }
 
 func filterHasOption(help []byte, option string) bool {

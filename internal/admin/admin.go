@@ -33,6 +33,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/diagnostics"
+	"github.com/braedonsaunders/ether/internal/identity"
 )
 
 //go:embed all:dist
@@ -49,7 +50,7 @@ type PlexAuth interface {
 	// 4-character code shown to the owner, authURL is the plex.tv page to open.
 	StartPIN(ctx context.Context) (id, code, authURL string, err error)
 	// PollPIN reports whether the owner has approved the PIN yet. When done
-	// is true the implementation has stored the owner token in config.
+	// is true the implementation has recorded the owner account for Claim.
 	PollPIN(ctx context.Context, id string) (done bool, err error)
 	// Claim claims this server to the signed-in account.
 	Claim(ctx context.Context) error
@@ -99,6 +100,31 @@ type StatusFuncE func(ctx context.Context) (any, error)
 // tuning knobs, Logger/Logs, the dashboard status providers, Extensions,
 // ValidateExtra and DiskUsage have defaults or may be left empty.
 type Deps struct {
+	Frontends        FrontendAdmin
+	FavoritesMirror  FavoritesMirror
+	NotInterested    NotInterestedPortal
+	ViewerAlerts     ViewerAlertPreferences
+	ActiveViewer     func(context.Context, int64) (*core.User, error)
+	ViewerPortalURL  func(context.Context, *http.Request) (string, error)
+	StremioPortalURL func(context.Context, *http.Request) (string, error)
+	CreateDLNAGuest  func(context.Context) (*core.Viewer, error)
+	LocalIdentity    *identity.Local
+	IdentityGrants   *identity.Grants
+	IdentityLimiter  *identity.LoginLimiter
+	// OwnerCredentialChanged runs after an owner local sign-in, setup and
+	// any local password change (the app refreshes the owner's recovery
+	// sign-in from it). Nil does nothing.
+	OwnerCredentialChanged func(context.Context)
+	PollLimiter            *identity.LoginLimiter
+	QuickConnect           *identity.QuickConnect
+	Invites                *identity.Invite
+	RefreshViewers         func(context.Context) error
+	OwnerConfigured        func(context.Context) bool
+	LocalOwnerConfigured   func(context.Context) bool
+	SetViewerActive        func(context.Context, int64, bool) error
+	AuthenticatePlex       func(context.Context, string) (*core.User, error)
+	LinkPlex               func(context.Context, int64, string) error
+
 	// Extensions are owner-authenticated API subtrees keyed by relative path.
 	Extensions    map[string]http.Handler
 	ValidateExtra func(config.Config) []FieldError
@@ -142,6 +168,9 @@ type Deps struct {
 	// LLMModels lists the models the provider in cfg offers.
 	LLMModels func(ctx context.Context, cfg config.LLM) ([]LLMModel, error)
 	TestTrakt func(ctx context.Context, cfg config.Trakt) error
+	// TestIntroDB probes TheIntroDB with the posted key, or the stored key
+	// when the post is empty or still redacted.
+	TestIntroDB func(ctx context.Context, apiKey string) error
 
 	// Dashboard status providers. Each non-nil provider appears on the
 	// dashboard and at /ether/api/status/{name}.
@@ -193,7 +222,10 @@ type Deps struct {
 	Collections CollectionStudio
 	// CatalogHelper backs /api/catalog/*.
 	CatalogHelper     CatalogHelper
-	CatalogVisibility func(context.Context, []core.LibraryExclusion) (any, error)
+	CatalogVisibility func(context.Context, []core.LibraryExclusion, string) (any, error)
+	// WaitingReleaseKeys are in-window movies still hidden from viewers.
+	// Nil leaves the waiting catalog filter empty.
+	WaitingReleaseKeys func(context.Context) []core.RatingKey
 	// Images backs the TMDB image proxy at /api/image.
 	Images ImageProxy
 
@@ -205,13 +237,15 @@ type Deps struct {
 // Handler is the admin HTTP handler. Use NewHandler when you need access
 // to the log buffer the handler created.
 type Handler struct {
-	deps      Deps
-	log       *slog.Logger
-	logs      *LogBuffer
-	mux       *http.ServeMux
-	version   string
-	pins      *pinHandles
-	authLimit *authLimiter
+	deps       Deps
+	log        *slog.Logger
+	logs       *LogBuffer
+	mux        *http.ServeMux
+	version    string
+	pins       *pinHandles
+	portalPins *pinHandles
+	linkPins   *pinHandles
+	authLimit  *authLimiter
 }
 
 // New returns the admin handler per the work-package contract.
@@ -238,7 +272,7 @@ func NewHandler(deps Deps) *Handler {
 	if version == "" {
 		version = "dev"
 	}
-	h := &Handler{deps: deps, log: deps.Logger, logs: deps.Logs, version: version, pins: newPINHandles(), authLimit: newAuthLimiter()}
+	h := &Handler{deps: deps, log: deps.Logger, logs: deps.Logs, version: version, pins: newPINHandles(), portalPins: newPINHandles(), linkPins: newPINHandles(), authLimit: newAuthLimiter()}
 	h.mux = h.routes()
 	return h
 }
@@ -275,6 +309,27 @@ func (h *Handler) routes() *http.ServeMux {
 	// Public bootstrap: minimal, non-sensitive; the SPA needs it before auth.
 	mux.HandleFunc("GET /api/bootstrap", h.handleBootstrap)
 	mux.HandleFunc("GET /api/health", h.handleBootstrap)
+	mux.HandleFunc("POST /api/auth/local", h.handleLocalOwnerLogin)
+	mux.HandleFunc("POST /api/setup/local", h.handleLocalSetup)
+	mux.HandleFunc("POST /api/me/login", h.handleLocalViewerLogin)
+	mux.HandleFunc("GET /api/me", h.handleMe)
+	mux.HandleFunc("GET /api/me/favorite-episode-alert", h.portalFavoriteEpisodeAlert)
+	mux.HandleFunc("POST /api/me/favorite-episode-alert", h.portalFavoriteEpisodeAlert)
+	mux.HandleFunc("GET /api/me/favorites-mirror", h.portalFavoritesMirror)
+	mux.HandleFunc("POST /api/me/favorites-mirror", h.portalFavoritesMirror)
+	mux.HandleFunc("GET /api/me/apps", h.portalConnectApps)
+	mux.HandleFunc("POST /api/me/apps/{surface}", h.portalConnectApps)
+	mux.HandleFunc("POST /api/me/link/plex", h.limitIdentityAuth(h.handlePlexLinkStart))
+	mux.HandleFunc("GET /api/me/link/plex/{handle}", h.limitIdentityPoll(h.handlePlexLinkPoll))
+	mux.HandleFunc("POST /api/me/invite", h.handleInviteCreate)
+	mux.HandleFunc("POST /api/me/invite/redeem", h.handleInviteRedeem)
+	mux.HandleFunc("GET /api/me/identities", h.handleMeIdentities)
+	mux.HandleFunc("POST /api/me/password", h.handleMePassword)
+	mux.HandleFunc("GET /api/me/devices", h.handleMeDevices)
+	mux.HandleFunc("POST /api/me/devices/revoke", h.handleMeRevoke)
+	mux.HandleFunc("POST /api/me/pin", h.limitIdentityAuth(h.handlePortalPIN))
+	mux.HandleFunc("GET /api/me/pin/{handle}", h.limitIdentityPoll(h.handlePortalPINPoll))
+	mux.HandleFunc("POST /api/me/quickconnect", h.handleApproveQuickConnect)
 	// Public sign-in: yields a console session only to the browser that
 	// started the PIN, and only if the account owns the server.
 	mux.HandleFunc("POST /api/auth/pin", h.limitAuth(h.handleSignInStart))
@@ -282,6 +337,22 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/auth/session", h.limitAuth(h.handleSessionCreate))
 	mux.HandleFunc("DELETE /api/auth/session", h.limitAuth(h.handleSessionDelete))
 
+	api("POST /api/viewers/{id}/quickconnect", h.handleOwnerQuickConnect)
+	api("GET /api/viewers/{id}/not-interested", h.ownerNotInterested)
+	api("POST /api/viewers/{id}/not-interested/restore", h.ownerNotInterested)
+	api("GET /api/viewers/{id}/favorite-episode-alert", h.ownerFavoriteEpisodeAlert)
+	api("GET /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
+	api("POST /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
+	api("GET /api/viewers/{id}/apps", h.ownerConnectApps)
+	api("POST /api/viewers/{id}/apps/{surface}", h.ownerConnectApps)
+	api("POST /api/frontends/dlna/guest", h.ownerCreateDLNAGuest)
+	api("GET /api/frontends", h.frontendList)
+	api("GET /api/frontends/qr", h.frontendQR)
+	api("GET /api/frontends/{id}/status", h.frontendStatus)
+	api("GET /api/frontends/{id}/health", h.frontendHealth)
+	api("GET /api/frontends/{id}/settings", h.frontendSettings)
+	api("PUT /api/frontends/{id}/settings", h.frontendSettings)
+	api("PUT /api/frontends/{id}/enabled", h.frontendToggle)
 	api("GET /api/config", h.handleGetConfig)
 	api("PUT /api/config", h.handlePutConfig)
 	api("GET /api/config/{section}", h.handleGetSection)
@@ -306,6 +377,8 @@ func (h *Handler) routes() *http.ServeMux {
 	api("GET /api/llm/providers", h.handleLLMProviders)
 	api("POST /api/llm/models", h.handleLLMModels)
 	api("POST /api/test/trakt", h.handleTestTrakt)
+	api("POST /api/test/introdb", h.handleTestIntroDB)
+	api("POST /api/outbound/check", h.handleOutboundCheck)
 
 	api("GET /api/dashboard", h.handleDashboard)
 	api("GET /api/system/load", h.handleSystemLoad)
@@ -314,6 +387,14 @@ func (h *Handler) routes() *http.ServeMux {
 	api("GET /api/traces", h.handleTraces)
 	api("GET /api/disk", h.handleDisk)
 
+	api("GET /api/users/{id}/identities", h.ownerIdentityManagement)
+	api("POST /api/users/{id}/password", h.ownerIdentityManagement)
+	api("GET /api/users/{id}/devices", h.ownerIdentityManagement)
+	api("POST /api/users/{id}/devices/revoke", h.ownerIdentityManagement)
+	api("POST /api/users/{id}/invite", h.ownerIdentityManagement)
+	api("POST /api/users/local", h.handleCreateLocalViewer)
+	api("POST /api/users/invite", h.handleCreateInviteViewer)
+	api("PATCH /api/users/{id}/membership", h.handleViewerMembership)
 	api("GET /api/users", h.handleListUsers)
 	api("PUT /api/users/{id}", h.handleUpdateUser)
 	api("PATCH /api/users/{id}", h.handleUpdateUser)

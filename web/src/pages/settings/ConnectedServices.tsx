@@ -1,6 +1,7 @@
 import { Badge, Button, SettingsSection, Spinner, toast } from "@braedonsaunders/appkit-ui";
 import {
   Children,
+  Fragment,
   isValidElement,
   useCallback,
   useEffect,
@@ -13,15 +14,18 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, MutationError } from "../../components/feedback";
-import { TestButton, type TestState } from "../../components/fields";
+import { PasswordInput, TestButton, type TestState } from "../../components/fields";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
+import { secretConfigured } from "../../components/IntegrationAccount";
 import { SimklMark, TraktMark } from "../../components/integration-brands";
 import { SaveBar } from "../../components/SaveBar";
+import { LevelBadge } from "../../components/status";
 import { localized, t } from "../../i18n";
 import { api, apiFetch, ApiError, type TestFn } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import type { EtherConfig } from "../../lib/types";
 import { MarkerCoverage } from "../playback/Markers";
+import { PosterAccounts } from "./PosterAccounts";
 import { RatingSources, type RatingSettings } from "../metadata/Ratings";
 import { SimklIntegration, type SimklSettings } from "./SimklIntegration";
 import { LanguageFeatures } from "./LanguageFeatures";
@@ -32,10 +36,11 @@ import * as S from "./schema";
 type Obj = Record<string, unknown>;
 
 export type ServiceTab =
-  "overview" | "trakt" | "simkl" | "llm" | "opensubtitles" | "ratings" | "introdb";
+  "overview" | "tmdb" | "trakt" | "simkl" | "llm" | "opensubtitles" | "ratings" | "introdb";
 
 const TAB_ORDER: ServiceTab[] = [
   "overview",
+  "tmdb",
   "trakt",
   "simkl",
   "llm",
@@ -50,6 +55,7 @@ export function integrationTabs(
 ): { key: ServiceTab; label: string }[] {
   const labels: Record<ServiceTab, string> = {
     overview: t("Overview"),
+    tmdb: "TMDB",
     trakt: "Trakt",
     simkl: "Simkl",
     llm: t("Language model"),
@@ -57,7 +63,9 @@ export function integrationTabs(
     ratings: t("Ratings"),
     introdb: "TheIntroDB",
   };
-  return TAB_ORDER.filter((key) => key === "overview" || enabled[key]).map((key) => ({
+  return TAB_ORDER.filter(
+    (key) => key === "overview" || key === "tmdb" || key === "introdb" || enabled[key],
+  ).map((key) => ({
     key,
     label: labels[key],
   }));
@@ -150,6 +158,8 @@ const SERVICES: Service[] = localized(() => [
     flag: "theIntroDb",
     label: "TheIntroDB",
     groups: S.MARKERS,
+    testLabel: t("Test TheIntroDB"),
+    test: (v) => api.testIntroDB(String(v.apiKey ?? "")),
   },
 ]);
 
@@ -235,13 +245,36 @@ function textField(section: Obj, key: string, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
 
+/** A saved language model can translate and answer search. */
+export function languageModelReady(section: Obj | undefined): boolean {
+  if (!section || section.enabled !== true) return false;
+  const model = textField(section, "model", "").trim();
+  if (!model) return false;
+  const provider = textField(section, "provider", "");
+  const base = textField(section, "baseUrl", "").trim();
+  return base !== "" || (provider !== "" && provider !== "custom");
+}
+
+/** Speech-to-text is a separate endpoint from the chat model. */
+export function speechToTextReady(section: Obj | undefined): boolean {
+  if (!section) return false;
+  return (
+    textField(section, "speechBaseUrl", "").trim() !== "" &&
+    textField(section, "speechModel", "").trim() !== ""
+  );
+}
+
 function boolField(section: Obj, key: string, fallback: boolean): boolean {
   const value = section[key];
   return typeof value === "boolean" ? value : fallback;
 }
 
 /** Overlay a saved section onto the loaded config. Missing fields keep the loaded values. */
-function mergeSection(base: EtherConfig, key: Service["configKey"], section: Obj): EtherConfig {
+function mergeSection(
+  base: EtherConfig,
+  key: Service["configKey"] | "catalog",
+  section: Obj,
+): EtherConfig {
   switch (key) {
     case "trakt":
       return {
@@ -276,6 +309,9 @@ function mergeSection(base: EtherConfig, key: Service["configKey"], section: Obj
           baseUrl: textField(section, "baseUrl", base.llm.baseUrl),
           apiKey: textField(section, "apiKey", base.llm.apiKey),
           model: textField(section, "model", base.llm.model),
+          speechBaseUrl: textField(section, "speechBaseUrl", base.llm.speechBaseUrl ?? ""),
+          speechApiKey: textField(section, "speechApiKey", base.llm.speechApiKey ?? ""),
+          speechModel: textField(section, "speechModel", base.llm.speechModel ?? ""),
         },
       };
     case "openSubtitles":
@@ -298,6 +334,14 @@ function mergeSection(base: EtherConfig, key: Service["configKey"], section: Obj
         },
       };
     }
+    case "catalog":
+      return {
+        ...base,
+        catalog: {
+          ...base.catalog,
+          tmdbKey: textField(section, "tmdbKey", base.catalog.tmdbKey),
+        },
+      };
   }
 }
 
@@ -335,9 +379,10 @@ export function ConnectedServices({
   const stored = useMemo(() => {
     if (!cfg) return null;
     const raw = cfg as unknown as Obj;
-    return Object.fromEntries(
-      SERVICES.map((s) => [s.configKey, asObj(raw[s.configKey])]),
-    ) as Record<string, Obj>;
+    return {
+      ...Object.fromEntries(SERVICES.map((s) => [s.configKey, asObj(raw[s.configKey])])),
+      catalog: { tmdbKey: cfg.catalog?.tmdbKey ?? "" },
+    } as Record<string, Obj>;
   }, [cfg]);
   const { draft, setDraft, dirty, reset } = useSectionDrafts(stored);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -380,6 +425,8 @@ export function ConnectedServices({
       flags[service.tab] = flagOf(stored?.[service.configKey], service.flag);
     }
     flags.ratings = ratings.data?.enabled === true;
+    flags.tmdb = true;
+    flags.introdb = true;
     return flags;
   }, [stored, ratings.data?.enabled]);
 
@@ -434,7 +481,7 @@ export function ConnectedServices({
   }, []);
 
   const applySection = (
-    key: Service["configKey"],
+    key: Service["configKey"] | "catalog",
     section: Obj,
     draftNext: Record<string, Obj>,
   ) => {
@@ -472,12 +519,25 @@ export function ConnectedServices({
           !s.custom &&
           JSON.stringify(draftNow[s.configKey]) !== JSON.stringify(storedNow[s.configKey]),
       );
-      if (!changed.length) return;
+      const catalogChanged = JSON.stringify(draftNow.catalog) !== JSON.stringify(storedNow.catalog);
+      if (!changed.length && !catalogChanged) return;
       setSaving(true);
       setError(null);
       setErrors({});
       const savedLabels: string[] = [];
       try {
+        if (catalogChanged && config.data) {
+          const sent = draftNow.catalog ?? {};
+          const res = await api.putSection("catalog", { ...config.data.catalog, ...sent });
+          const latest = model.current.draft ?? draftNow;
+          const section = {
+            tmdbKey: textField(asObj(res.value), "tmdbKey", String(sent.tmdbKey ?? "")),
+          };
+          const editedSinceSend = JSON.stringify(latest.catalog) !== JSON.stringify(sent);
+          const draftNext = editedSinceSend ? latest : { ...latest, catalog: section };
+          applySection("catalog", section, draftNext);
+          savedLabels.push("TMDB");
+        }
         for (const s of changed) {
           const sent = draftNow[s.configKey]!;
           const res = await api.putSection(s.endpoint, sent);
@@ -735,23 +795,23 @@ export function ConnectedServices({
                     {sectionSetup.errors[`${setupService.configKey}.clientId`]}
                   </p>
                 ) : null}
-                <label className="block">
-                  {t("Client secret")}{" "}
-                  <input
-                    className="w-full rounded border border-border bg-surface px-2 py-1"
-                    type="password"
-                    value={String(sectionSetup.draft.clientSecret ?? "")}
-                    onChange={(e) =>
-                      setSectionSetup({
-                        ...sectionSetup,
-                        draft: {
-                          ...sectionSetup.draft,
-                          clientSecret: e.target.value,
-                        },
-                      })
-                    }
-                  />
+                <label className="block" htmlFor="setup-client-secret">
+                  {t("Client secret")}
                 </label>
+                <PasswordInput
+                  id="setup-client-secret"
+                  autoComplete="off"
+                  value={String(sectionSetup.draft.clientSecret ?? "")}
+                  onChange={(e) =>
+                    setSectionSetup({
+                      ...sectionSetup,
+                      draft: {
+                        ...sectionSetup.draft,
+                        clientSecret: e.target.value,
+                      },
+                    })
+                  }
+                />
               </div>
             ) : setupService.form ? (
               <setupService.form
@@ -822,6 +882,52 @@ export function ConnectedServices({
           </div>
         ) : null}
       </Drawer>
+      {tab === "tmdb" || visited.has("tmdb") ? (
+        <div hidden={tab !== "tmdb"}>
+          <SettingsSection
+            title="TMDB"
+            description={t(
+              "Ether uses this key to name titles, fetch artwork and fill the catalogue.",
+            )}
+            footer={
+              <TestButton
+                label={t("Test TMDB key")}
+                state={tests.catalog ?? { status: "idle" }}
+                onTest={() => {
+                  setTests((prev) => ({ ...prev, catalog: { status: "running" } }));
+                  api.testTMDB(String(draft.catalog?.tmdbKey ?? "")).then(
+                    (r) =>
+                      setTests((prev) => ({
+                        ...prev,
+                        catalog: r.ok
+                          ? { status: "ok", durationMs: r.durationMs }
+                          : { status: "fail", message: r.error ?? t("failed") },
+                      })),
+                    (e) =>
+                      setTests((prev) => ({
+                        ...prev,
+                        catalog: { status: "fail", message: (e as Error).message },
+                      })),
+                  );
+                }}
+              />
+            }
+          >
+            <SchemaField
+              def={{
+                key: "tmdbKey",
+                label: t("TMDB API key"),
+                kind: "secret",
+                help: t("Your personal TMDB v3 API key or v4 read-access token."),
+              }}
+              value={draft.catalog?.tmdbKey}
+              path="catalog.tmdbKey"
+              error={errors["catalog.tmdbKey"]}
+              onChange={(v) => setDraft({ ...draft, catalog: { ...draft.catalog, tmdbKey: v } })}
+            />
+          </SettingsSection>
+        </div>
+      ) : null}
       <div hidden={tab !== "overview"}>
         <ServiceOverview
           draft={draft}
@@ -864,7 +970,12 @@ export function ConnectedServices({
                 footer={testButton}
               />
             )}
-            {s.tab === "llm" ? <LanguageFeatures /> : null}
+            {s.tab === "llm" ? (
+              <LanguageFeatures
+                textModelReady={languageModelReady(stored?.llm)}
+                speechReady={speechToTextReady(stored?.llm)}
+              />
+            ) : null}
             {s.tab === "introdb" ? <MarkerCoverage /> : null}
           </div>
         );
@@ -985,94 +1096,142 @@ function ServiceOverview({
   onToggle: (service: Service, next: boolean) => void;
   onToggleRatings: (next: boolean) => void;
 }) {
+  const { health } = useApp();
+  const catalogHealth = health.find((item) => item.id === "catalog");
   const service = (tab: Service["tab"]) => SERVICES.find((s) => s.tab === tab)!;
   const saved = (tab: Service["tab"]) => stored?.[service(tab).configKey] ?? {};
   const on = (tab: Service["tab"]) => flagOf(saved(tab), service(tab).flag);
   const switchesHeld = locked || busyId !== null;
+  const tmdbKey = stored?.catalog?.tmdbKey;
 
   return (
-    <IntegrationGroup
-      title={t("Optional")}
-      description={t("Extras that make Ether smarter. Everything works without them.")}
-    >
-      <IntegrationAppCard
-        identity={{ id: "trakt", name: "Trakt" }}
-        logo={<TraktMark />}
-        description={t("Sync watch history and lists with Trakt.")}
-        status={switchStatus(on("trakt"), Boolean(saved("trakt").clientId), t("Needs a client ID"))}
-        enabled={on("trakt")}
-        busy={locked || busyId === "trakt"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("trakt"), next)}
-        configureHref="/services/trakt"
-        configureLabel={on("trakt") ? t("Manage Trakt") : t("Set up Trakt")}
-      />
-      <IntegrationAppCard
-        identity={{ id: "simkl", name: "Simkl" }}
-        logo={<SimklMark />}
-        description={t(
-          "Connect a viewer's Simkl account to import watched history and send completed playback.",
+    <>
+      <IntegrationGroup title={t("Required")}>
+        <IntegrationAppCard
+          identity={{ id: "tmdb", name: "TMDB" }}
+          description={t("Names titles, fetches artwork and fills the catalogue.")}
+          status={
+            secretConfigured(tmdbKey) ? (
+              catalogHealth ? (
+                <LevelBadge level={catalogHealth.level} />
+              ) : (
+                <Badge variant="success">{t("Key saved")}</Badge>
+              )
+            ) : (
+              <Badge variant="warning">{t("Needs an API key")}</Badge>
+            )
+          }
+          configureHref="/services/tmdb"
+          configureLabel={secretConfigured(tmdbKey) ? t("Manage TMDB") : t("Set up TMDB")}
+        />
+      </IntegrationGroup>
+      <IntegrationGroup title={t("Watch tracking")}>
+        <IntegrationAppCard
+          identity={{ id: "trakt", name: "Trakt" }}
+          logo={<TraktMark />}
+          description={t("Sync watch history and lists with Trakt.")}
+          status={switchStatus(
+            on("trakt"),
+            Boolean(saved("trakt").clientId),
+            t("Needs a client ID"),
+          )}
+          enabled={on("trakt")}
+          busy={locked || busyId === "trakt"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("trakt"), next)}
+          configureHref="/services/trakt"
+          configureLabel={on("trakt") ? t("Manage Trakt") : t("Set up Trakt")}
+        />
+        <IntegrationAppCard
+          identity={{ id: "simkl", name: "Simkl" }}
+          logo={<SimklMark />}
+          description={t(
+            "Connect a viewer's Simkl account to import watched history and send completed playback.",
+          )}
+          status={switchStatus(
+            on("simkl"),
+            Boolean(saved("simkl").clientId),
+            t("Needs a client ID"),
+          )}
+          enabled={on("simkl")}
+          busy={locked || busyId === "simkl"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("simkl"), next)}
+          configureHref="/services/simkl"
+          configureLabel={on("simkl") ? t("Manage Simkl") : t("Set up Simkl")}
+        />
+      </IntegrationGroup>
+      <PosterAccounts locked={switchesHeld}>
+        {(cards) => (
+          <IntegrationGroup title={t("Artwork and ratings")}>
+            {cards}
+            <IntegrationAppCard
+              identity={{ id: "ratings", name: t("OMDb and MDBList") }}
+              description={t("IMDb, Rotten Tomatoes and other rating badges.")}
+              status={ratingsStatus(ratings)}
+              enabled={ratings?.enabled}
+              busy={locked || busyId === "ratings"}
+              disabled={switchesHeld || !ratings}
+              onToggle={ratings ? onToggleRatings : undefined}
+              configureHref="/services/ratings"
+              configureLabel={t("Ratings")}
+            />
+          </IntegrationGroup>
         )}
-        status={switchStatus(on("simkl"), Boolean(saved("simkl").clientId), t("Needs a client ID"))}
-        enabled={on("simkl")}
-        busy={locked || busyId === "simkl"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("simkl"), next)}
-        configureHref="/services/simkl"
-        configureLabel={on("simkl") ? t("Manage Simkl") : t("Set up Simkl")}
-      />
-      <IntegrationAppCard
-        identity={{ id: "llm", name: t("Language model") }}
-        description={t(
-          "Describe-it collections, themed Home rows, natural-language search and recaps.",
-        )}
-        status={switchStatus(on("llm"), Boolean(saved("llm").model), t("Needs a model"))}
-        enabled={on("llm")}
-        busy={locked || busyId === "llm"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("llm"), next)}
-        configureHref="/services/llm"
-        configureLabel={on("llm") ? t("Manage language model") : t("Set up a language model")}
-      />
-      <IntegrationAppCard
-        identity={{ id: "opensubtitles", name: "OpenSubtitles" }}
-        description={t("Fetch subtitles when a release doesn't include them.")}
-        status={switchStatus(
-          on("opensubtitles"),
-          Boolean(saved("opensubtitles").apiKey),
-          t("Needs an API key"),
-        )}
-        enabled={on("opensubtitles")}
-        busy={locked || busyId === "opensubtitles"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("opensubtitles"), next)}
-        configureHref="/services/opensubtitles"
-        configureLabel={on("opensubtitles") ? t("Manage OpenSubtitles") : t("Set up OpenSubtitles")}
-      />
-      <IntegrationAppCard
-        identity={{ id: "ratings", name: t("OMDb and MDBList") }}
-        description={t("IMDb, Rotten Tomatoes and other rating badges in Plex.")}
-        status={ratingsStatus(ratings)}
-        enabled={ratings?.enabled}
-        busy={locked || busyId === "ratings"}
-        disabled={switchesHeld || !ratings}
-        onToggle={ratings ? onToggleRatings : undefined}
-        configureHref="/services/ratings"
-        configureLabel={t("Ratings")}
-      />
-      <IntegrationAppCard
-        identity={{ id: "introdb", name: "TheIntroDB" }}
-        description={t("Intro and credits markers so viewers can skip them.")}
-        status={switchStatus(on("introdb"), true, t("Off"))}
-        enabled={on("introdb")}
-        busy={locked || busyId === "introdb"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("introdb"), next)}
-        configureHref="/services/introdb"
-        configureLabel={t("Markers")}
-      />
-    </IntegrationGroup>
+      </PosterAccounts>
+      <IntegrationGroup title={t("Playback extras")}>
+        <IntegrationAppCard
+          identity={{ id: "opensubtitles", name: "OpenSubtitles" }}
+          description={t("Fetch subtitles when a release doesn't include them.")}
+          status={switchStatus(
+            on("opensubtitles"),
+            Boolean(saved("opensubtitles").apiKey),
+            t("Needs an API key"),
+          )}
+          enabled={on("opensubtitles")}
+          busy={locked || busyId === "opensubtitles"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("opensubtitles"), next)}
+          configureHref="/services/opensubtitles"
+          configureLabel={
+            on("opensubtitles") ? t("Manage OpenSubtitles") : t("Set up OpenSubtitles")
+          }
+        />
+        <IntegrationAppCard
+          identity={{ id: "introdb", name: "TheIntroDB" }}
+          description={t("Intro and credits markers so viewers can skip them.")}
+          status={introStatus(on("introdb"), saved("introdb").apiKey)}
+          enabled={on("introdb")}
+          busy={locked || busyId === "introdb"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("introdb"), next)}
+          configureHref="/services/introdb"
+          configureLabel={t("Markers")}
+        />
+      </IntegrationGroup>
+      <IntegrationGroup title={t("Smart features")}>
+        <IntegrationAppCard
+          identity={{ id: "llm", name: t("Language model") }}
+          description={t(
+            "Describe-it collections, themed Home rows, natural-language search and recaps.",
+          )}
+          status={switchStatus(on("llm"), Boolean(saved("llm").model), t("Needs a model"))}
+          enabled={on("llm")}
+          busy={locked || busyId === "llm"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("llm"), next)}
+          configureHref="/services/llm"
+          configureLabel={on("llm") ? t("Manage language model") : t("Set up a language model")}
+        />
+      </IntegrationGroup>
+    </>
   );
+}
+
+function introStatus(enabled: boolean, apiKey: unknown) {
+  if (!enabled) return <Badge variant="secondary">{t("Off")}</Badge>;
+  if (secretConfigured(apiKey)) return <Badge variant="success">{t("Key saved")}</Badge>;
+  return <Badge variant="secondary">{t("Public lookup")}</Badge>;
 }
 
 function ratingsStatus(ratings: RatingSettings | undefined) {
@@ -1082,33 +1241,39 @@ function ratingsStatus(ratings: RatingSettings | undefined) {
   return <Badge variant="success">{t("Configured")}</Badge>;
 }
 
-function IntegrationGroup({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
+function flattenCards(children: ReactNode): ReactNode[] {
+  const out: ReactNode[] = [];
+  Children.forEach(children, (child) => {
+    if (isValidElement<{ children?: ReactNode }>(child) && child.type === Fragment)
+      out.push(...flattenCards(child.props.children));
+    else out.push(child);
+  });
+  return out;
+}
+
+function IntegrationGroup({ title, children }: { title: string; children: ReactNode }) {
+  const cards = flattenCards(children).filter(
+    (child) => isValidElement<{ identity?: { name?: string } }>(child) && child.props.identity,
+  );
+  const rest = flattenCards(children).filter(
+    (child) => !(isValidElement<{ identity?: { name?: string } }>(child) && child.props.identity),
+  );
   return (
-    <section aria-label={title} className="space-y-3">
-      <div>
-        <h2 className="text-sm font-semibold text-fg">{title}</h2>
-        <p className="text-sm text-fg-muted">{description}</p>
-      </div>
+    <section aria-label={title} className="space-y-3 pt-6 first:pt-0">
+      <h2 className="text-sm font-semibold text-fg">{title}</h2>
       <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {Children.map(children, (child) => {
+        {cards.map((child) => {
           const name = isValidElement<{ identity?: { name?: string } }>(child)
             ? child.props.identity?.name
             : undefined;
           return (
-            <li aria-label={name} className="h-full">
+            <li key={name} aria-label={name} className="h-full">
               {child}
             </li>
           );
         })}
       </ul>
+      {rest}
     </section>
   );
 }

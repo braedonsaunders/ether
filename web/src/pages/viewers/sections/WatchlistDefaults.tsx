@@ -18,6 +18,9 @@ export type DiscoverySettings = {
   checkHours: number;
   naturalSearch: boolean;
   recaps: boolean;
+  subtitleTranslate?: boolean;
+  speechToText?: boolean;
+  overviewTranslate?: boolean;
 };
 
 /**
@@ -60,7 +63,7 @@ const SOURCES = localized(
         key: "plex",
         label: t("Plex watchlists"),
         hint: t(
-          "You and your Plex Home members. A friend's server access doesn't include their Plex watchlist.",
+          "Plex Home members only. A friend's server access does not include their watchlist.",
         ),
       },
       {
@@ -73,18 +76,11 @@ const SOURCES = localized(
         label: t("Tell me too"),
         hint: t("Also send availability alerts to your notification channels."),
       },
-      {
-        key: "prewarm",
-        label: t("Warm up new arrivals"),
-        hint: t(
-          "Fetch the opening minutes as soon as a title becomes available, so it starts quickly.",
-        ),
-      },
     ] as const,
 );
 
-/** Server-wide watchlist alerts, edited in place (Viewers › Defaults). */
-export function WatchlistDefaults() {
+/** Server-wide watchlist alerts, edited in place on Notifications. */
+export function WatchlistAlerts() {
   const s = useDiscoverySettings();
   if (s.doc.error) return <ErrorPanel error={s.doc.error} onRetry={() => void s.doc.reload()} />;
   if (!s.draft)
@@ -99,7 +95,7 @@ export function WatchlistDefaults() {
       <SettingsSection
         title={t("Watchlist alerts")}
         description={t(
-          "When a title on a viewer's watchlist can be streamed, it appears on their Plex Home. A release date alone isn't enough: Ether waits for a healthy release.",
+          "A streamable watchlist title shows on their Home. A release date alone is not enough.",
         )}
       >
         <SettingsRow
@@ -147,6 +143,50 @@ export function WatchlistDefaults() {
               />
               <span className="text-sm text-fg-muted">{t("hours")}</span>
             </span>
+          }
+        />
+      </SettingsSection>
+      <SaveBar
+        dirty={s.dirty}
+        saving={s.saving}
+        error={s.error}
+        onSave={() => s.save(t("Watchlist settings saved"))}
+        onDiscard={s.discard}
+      />
+    </>
+  );
+}
+
+/**
+ * Opening-minute prefetch for a watchlist title that just became playable.
+ * That is cache behaviour, so it lives on Cache rather than with the alerts.
+ */
+export function WarmNewArrivals() {
+  const s = useDiscoverySettings();
+  if (s.doc.error) return <ErrorPanel error={s.doc.error} onRetry={() => void s.doc.reload()} />;
+  if (!s.draft)
+    return (
+      <div className="py-6 text-center">
+        <Spinner size={18} label={t("Loading watchlist settings")} />
+      </div>
+    );
+  const draft = s.draft;
+  return (
+    <>
+      <SettingsSection title={t("New arrivals")}>
+        <SettingsRow
+          title={<label htmlFor="watchlist-prewarm">{t("Warm up new arrivals")}</label>}
+          description={t(
+            "Fetch the opening minutes as soon as a title becomes available, so it starts quickly. This runs only while watchlist monitoring is on.",
+          )}
+          control={
+            <Switch
+              id="watchlist-prewarm"
+              aria-label={t("Warm up new arrivals")}
+              checked={draft.prewarm}
+              disabled={!draft.enabled || s.saving}
+              onChange={(e) => s.setDraft({ ...draft, prewarm: e.currentTarget.checked })}
+            />
           }
         />
       </SettingsSection>

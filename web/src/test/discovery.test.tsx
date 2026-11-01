@@ -16,6 +16,9 @@ function discoveryRoutes(opts: { enabled?: boolean; items?: unknown[] } = {}) {
     checkHours: 6,
     naturalSearch: false,
     recaps: false,
+    subtitleTranslate: false,
+    speechToText: false,
+    overviewTranslate: false,
   };
   let items = opts.items ?? [];
   return (method: string, path: string, body: unknown) => {
@@ -82,24 +85,40 @@ function metadataRoutes() {
   };
 }
 
-describe("Watchlist alerts (Viewers › Defaults)", () => {
+describe("Watchlist alerts (Notifications)", () => {
   it("starts monitoring and notifications off and saves opt-in settings in place", async () => {
-    const { fake } = renderAppWith("/viewers/defaults", discoveryRoutes());
+    const { fake } = renderAppWith("/notifications", discoveryRoutes());
     const enabled = await screen.findByLabelText("Watchlist monitoring", {}, WAIT);
     expect(enabled).not.toBeChecked();
     expect(screen.getByLabelText("Tell me too")).not.toBeChecked();
+    expect(screen.queryByLabelText("Warm up new arrivals")).toBeNull();
     expect(screen.queryByRole("button", { name: /Edit monitoring/ })).toBeNull();
     expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull();
     fireEvent.click(enabled);
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(puts(fake, "/discovery/settings")).toContainEqual(
-        expect.objectContaining({ enabled: true, notify: false, naturalSearch: false }),
+        expect.objectContaining({
+          enabled: true,
+          notify: false,
+          prewarm: false,
+          naturalSearch: false,
+        }),
       ),
     );
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull(),
     );
+  });
+});
+
+describe("Warm up new arrivals (Cache › Preloading)", () => {
+  it("keeps the prefetch toggle with the cache, off until monitoring is on", async () => {
+    renderAppWith("/cache/preloading", discoveryRoutes());
+    const warm = await screen.findByLabelText("Warm up new arrivals", {}, WAIT);
+    expect(warm).toBeDisabled();
+    expect(warm).not.toBeChecked();
+    expect(screen.queryByLabelText("Watchlist monitoring")).toBeNull();
   });
 });
 
@@ -136,11 +155,26 @@ describe("Language model features (Integrations)", () => {
     const { fake } = renderAppWith("/services/llm", discoveryRoutes());
     const search = await screen.findByLabelText("Natural-language search", {}, WAIT);
     expect(search).not.toBeChecked();
+    expect(screen.getByText(/A viewer runs that search/)).toBeInTheDocument();
+    expect(screen.getAllByText("Uses your language model — connected ✓").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Needs speech-to-text → Set up" })).toHaveAttribute(
+      "href",
+      "/services/llm#speech-to-text",
+    );
+    expect(screen.queryByText(/Nothing here runs on a schedule/)).toBeNull();
     fireEvent.click(search);
+    fireEvent.click(screen.getByLabelText("Translate subtitles"));
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(puts(fake, "/discovery/settings")).toContainEqual(
-        expect.objectContaining({ naturalSearch: true, recaps: false, enabled: false }),
+        expect.objectContaining({
+          naturalSearch: true,
+          recaps: false,
+          subtitleTranslate: true,
+          speechToText: false,
+          overviewTranslate: false,
+          enabled: false,
+        }),
       ),
     );
   });
@@ -154,16 +188,24 @@ describe("Metadata › Ratings", () => {
     expect(screen.queryByLabelText("Viewer")).toBeNull();
     fireEvent.click(toggle);
     fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "mdblist" } });
-    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "owner-key" } });
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Integrations" })
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/services/ratings");
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(calls(fake, "PUT", "/discovery/ratings/settings").at(-1)?.body).toMatchObject({
         enabled: true,
         provider: "mdblist",
-        apiKey: "owner-key",
+        apiKey: "",
       }),
     );
-    expect(await screen.findByText(/Saved\. Leave as is to keep it/)).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "OMDb and MDBList connected" })).toHaveAttribute(
+      "href",
+      "/services/ratings",
+    );
 
     const name = fake.catalog[0]!.title;
     const badges = screen.getByRole("region", { name: "Title badges" });

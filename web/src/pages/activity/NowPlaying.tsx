@@ -37,6 +37,7 @@ function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onSt
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
+          <Badge variant="secondary">{s.protocol}</Badge>
           <Badge variant={s.decision === "transcode" ? "warning" : "success"}>
             {decisionLabel(s.decision)}
           </Badge>
@@ -76,7 +77,10 @@ function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onSt
 /** Live sessions with a stop control for each. */
 export function NowPlaying({ state }: { state: AsyncState<Stream[]> }) {
   const [stopping, setStopping] = useState<string | null>(null);
+  const [protocol, setProtocol] = useState("");
   const streams = state.data ?? [];
+  const filtered = protocol ? streams.filter((stream) => stream.protocol === protocol) : streams;
+  const protocols = [...new Set(streams.map((stream) => stream.protocol))].sort();
 
   const stop = async (id: string) => {
     setStopping(id);
@@ -110,11 +114,24 @@ export function NowPlaying({ state }: { state: AsyncState<Stream[]> }) {
         ) : null
       }
     >
+      {state.data && streams.length > 0 && (
+        <label className="flex items-center gap-2 text-sm">
+          {t("Protocol")}
+          <select value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}>
+            <option value="">{t("All protocols")}</option>
+            {protocols.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {!state.data ? (
         <LoadingRows rows={2} />
-      ) : streams.length ? (
+      ) : filtered.length ? (
         <ul className="divide-y divide-border">
-          {streams.map((s) => (
+          {filtered.map((s) => (
             <StreamRow
               key={s.id || s.key}
               s={s}
@@ -123,6 +140,8 @@ export function NowPlaying({ state }: { state: AsyncState<Stream[]> }) {
             />
           ))}
         </ul>
+      ) : streams.length ? (
+        <p>{t("No streams match this protocol.")}</p>
       ) : (
         <EmptyState
           icon={<Radio />}

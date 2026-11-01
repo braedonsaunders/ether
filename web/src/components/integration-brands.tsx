@@ -1,6 +1,9 @@
+import { Cast, FolderOpen, ListVideo } from "lucide-react";
+import type { ReactNode } from "react";
 import emby from "../assets/brands/emby.svg?no-inline";
 import jellyfin from "../assets/brands/jellyfin.svg?no-inline";
 import plex from "../assets/brands/plex.svg?no-inline";
+import silo from "../assets/brands/silo.png?no-inline";
 import simkl from "../assets/brands/simkl.svg?no-inline";
 import tmdb from "../assets/brands/themoviedatabase.svg?no-inline";
 import trakt from "../assets/brands/trakt.svg?no-inline";
@@ -38,6 +41,24 @@ export function JellyfinMark() {
 }
 export function EmbyMark() {
   return <BrandMark src={emby} color="#52b54b" />;
+}
+/** Silo's own full-colour app icon, so it is an image rather than a mask. */
+export function SiloMark() {
+  return <img src={silo} alt="" aria-hidden className="block size-7 rounded-md" />;
+}
+
+/** DLNA, Files, and M3U have no vendored mark. These are icons, not letter tiles. */
+export function householdIcon(id: string): ReactNode | undefined {
+  switch (id) {
+    case "dlna":
+      return <Cast size={22} aria-hidden />;
+    case "webdav":
+      return <FolderOpen size={22} aria-hidden />;
+    case "m3u":
+      return <ListVideo size={22} aria-hidden />;
+    default:
+      return undefined;
+  }
 }
 export function SimklMark() {
   return <BrandMark src={simkl} color="currentColor" />;

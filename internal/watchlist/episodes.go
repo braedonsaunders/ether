@@ -158,6 +158,9 @@ func (s *Service) newEpisode(ctx context.Context, cfg Settings, u *core.User, sh
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	if s.o.OnAvailable != nil {
+		s.o.OnAvailable(ctx, u.ID, episode.Key)
+	}
 	if alert {
 		if err := s.sendAlert(ctx, episode.Key, episodeLabel(show, episode), now); err != nil {
 			return err

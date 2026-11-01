@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,22 +19,29 @@ type identity struct {
 	userID   int64
 	clientID string
 	key      core.RatingKey
+	surface  string
+	variant  string
+	exact    bool
 }
 
 // generation is one opened source of a session. A failover creates a new
 // generation; the old one is retired and closed once in-flight reads end.
 type generation struct {
-	reads    pendingSourceReads
-	standby  standbyState
-	recovery recoveryState
-	damage   damageState
-	sess     *session
-	n        int
-	token    string // loopback path component; unguessable
-	src      core.MediaSource
-	res      *core.Resolution
-	info     core.MediaInfo
-	tmap     TimeMap
+	observation  core.PlaybackSourceObservation
+	reads        pendingSourceReads
+	standby      standbyState
+	recovery     recoveryState
+	damage       damageState
+	sess         *session
+	n            int
+	token        string // loopback path component; unguessable
+	src          core.MediaSource
+	share        core.MediaSource // refcount wrapper; nil when src is the backend
+	sharedClose  func() error
+	finishSource func(error)
+	res          *core.Resolution
+	info         core.MediaInfo
+	tmap         TimeMap
 
 	// indexReady is closed once the container keyframe index has been
 	// read (or given up on); the prewarm path waits for it, Play does not.
@@ -101,8 +109,17 @@ func (g *generation) retire() {
 }
 
 func (g *generation) closeSource() {
-	if g.src != nil {
-		_ = g.src.Close()
+	if g.src == nil && g.sharedClose == nil {
+		return
+	}
+	var err error
+	if g.sharedClose != nil {
+		err = g.sharedClose()
+	} else if g.src != nil {
+		err = g.src.Close()
+	}
+	if g.finishSource != nil {
+		g.finishSource(err)
 	}
 }
 
@@ -129,9 +146,24 @@ func (g *generation) setIndex(points []IndexPoint) {
 func (g *generation) infoSnapshot() core.MediaInfo {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	info := g.info
-	info.Keyframes = append([]core.KeyframePoint(nil), g.info.Keyframes...)
-	return info
+	return core.CloneMediaInfo(g.info)
+}
+
+// publishInfo takes a detached copy before exposing probe/augmentation facts.
+// The producer owns info exclusively during this call; retained inputs may be
+// mutated after it returns. Later generation updates and snapshots use g.mu.
+func (g *generation) publishInfo(info core.MediaInfo, observation core.PlaybackSourceObservation, tmap TimeMap) {
+	info = core.CloneMediaInfo(info)
+	if observation.HDR != nil {
+		hdr := *observation.HDR
+		observation.HDR = &hdr
+	}
+	tmap.Points = slices.Clone(tmap.Points)
+	g.mu.Lock()
+	g.info = info
+	g.observation = observation
+	g.tmap = tmap
+	g.mu.Unlock()
 }
 
 // timeMapSnapshot copies the generation's TimeMap under its lock.
@@ -152,6 +184,7 @@ func (g *generation) releaseID() string {
 
 // session is the internal, mutable form of a core.PlaySession.
 type session struct {
+	sources          *sourceLifetime
 	reserve          reserveState
 	viewerPosition   time.Duration // guarded by mu, from authenticated Plex timeline
 	viewerAt         time.Time
@@ -180,23 +213,33 @@ type session struct {
 
 	// stopCtx cancels background recovery when playback ends. Unlike a
 	// generation context, it survives retiring an input during a healthy swap.
-	stopCtx    context.Context
-	stopCancel context.CancelFunc
-	failSem    chan struct{} // serialises failovers
-	bytes      atomic.Int64
-	rate       rateMeter
+	stopCtx     context.Context
+	stopCancel  context.CancelFunc
+	failSem     chan struct{} // serialises failovers
+	bytes       atomic.Int64
+	activeReads atomic.Int32
+	rate        rateMeter
 
-	mu             sync.Mutex
-	cur            *generation
-	virtualGen     *generation // generation whose layout virtual mirrors
-	gens           int
-	tried          []string
-	alternates     []core.Release
-	failovers      int
-	downFailovers  int
+	mu               sync.Mutex
+	preparedOnly     bool
+	stoppedBySurface bool
+	sourcePins       int
+	cur              *generation
+	virtualGen       *generation // generation whose layout virtual mirrors
+	gens             int
+	tried            []string
+	alternates       []core.Release
+	failovers        int
+	downFailovers    int
+	// downMisses counts speed-driven down-failovers that found no
+	// lower-bitrate release. They count toward MaxDownFailovers so a
+	// source that stays too slow cannot retry forever.
+	downMisses     int
 	requiresRemux  bool
 	prefer         string // release ID the viewer picked (PrepareVariant); read-only after creation
+	exact          bool   // exact selection must never switch releases
 	lastActive     time.Time
+	lastRead       time.Time
 	stopAt         time.Time // set by a "stopped" timeline; expiry after a grace
 	decision       core.DecisionKind
 	decisionReason string
@@ -218,6 +261,7 @@ func newSession(id string, ident identity, user *core.User, caps core.ClientCaps
 	stopCtx, stopCancel := context.WithCancel(context.Background())
 	return &session{
 		id:               id,
+		sources:          newSourceLifetime(user.ID, string(caps.Protocol), caps.ClientID),
 		stopCtx:          stopCtx,
 		stopCancel:       stopCancel,
 		ident:            ident,
@@ -229,6 +273,7 @@ func newSession(id string, ident identity, user *core.User, caps core.ClientCaps
 		originalLanguage: titleLanguage(title),
 		startedAt:        now,
 		lastActive:       now,
+		lastRead:         now,
 		failSem:          make(chan struct{}, 1),
 		rate:             rateMeter{},
 		genSince:         now,
@@ -288,7 +333,22 @@ func (s *session) isClosed() bool {
 func (s *session) touch(now time.Time) {
 	s.mu.Lock()
 	s.lastActive = now
+	s.lastRead = now
 	s.stopAt = time.Time{}
+	s.stoppedBySurface = false
+	if s.viewerState == "stopped" {
+		s.viewerState = ""
+	}
+	s.mu.Unlock()
+}
+
+func (s *session) touchTimeline(now time.Time) {
+	s.mu.Lock()
+	s.lastActive = now
+	s.stopAt = time.Time{}
+	if s.viewerState == "stopped" {
+		s.viewerState = ""
+	}
 	s.mu.Unlock()
 }
 
@@ -323,6 +383,7 @@ func (s *session) snapshot(now time.Time) *core.PlaySession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ps := &core.PlaySession{
+		PreparedOnly:   s.preparedOnly,
 		ID:             s.id,
 		UserID:         s.ident.userID,
 		ClientID:       s.ident.clientID,

@@ -15,38 +15,114 @@ const (
 	SortPopularity SortOrder = "popularity"
 	SortTitle      SortOrder = "title"
 	SortReleased   SortOrder = "released"
+	SortYear       SortOrder = "year"
 	SortRating     SortOrder = "rating"
-	SortAdded      SortOrder = "added" // when it joined the browsable set
+	SortDuration   SortOrder = "duration"
+	SortAdded      SortOrder = "added"   // movie/episode release or air date; series and seasons use the latest aired episode, then the premiere
+	SortUpdated    SortOrder = "updated" // actual catalogue metadata update time
 )
+
+// SortSpec pairs a catalogue sort column with its direction.
+type SortSpec struct {
+	Sort SortOrder `json:"sort,omitempty"`
+	Desc bool      `json:"desc,omitempty"`
+}
+
+// StringFilter narrows a string column with a Plex string operator
+// ("=", "!=", "==", "!==", "<=", ">=").
+type StringFilter struct {
+	Op    string `json:"op,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+// DateFilter narrows a release timestamp with a comparison operator
+// ("=", "!=", "<<", "<=", ">>", ">="). SpanDay is true when the value was
+// parsed from a calendar day (YYYY-MM-DD), so "=" and "!=" cover the 24-hour
+// UTC day.
+type DateFilter struct {
+	Op      string `json:"op,omitempty"`
+	Unix    int64  `json:"unix,omitempty"`
+	SpanDay bool   `json:"spanDay,omitempty"`
+}
+
+// CreditFilter narrows by credited person TMDB IDs and optional credit kind
+// ("cast", "director", "writer", "crew", or "" for any).
+type CreditFilter struct {
+	People  []int64 `json:"people,omitempty"`
+	Kind    string  `json:"kind,omitempty"`
+	Exclude bool    `json:"exclude,omitempty"`
+}
 
 // Filter narrows a browse or a smart collection. Zero values mean "any".
 type Filter struct {
+	KnownAddedDate bool `json:"-"` // only released/aired titles, before pagination
 	// ExcludeKeys applies local visibility policy before counting and pagination.
-	ExcludeKeys      []RatingKey   `json:"-"`
-	Type             MediaType     `json:"type,omitempty"` // movie or show
-	Genres           []string      `json:"genres,omitempty"`
-	YearFrom         int           `json:"yearFrom,omitempty"`
-	YearTo           int           `json:"yearTo,omitempty"`
-	MinRating        float64       `json:"minRating,omitempty"`
-	MaxRuntime       time.Duration `json:"maxRuntime,omitempty"`
-	MinRuntime       time.Duration `json:"minRuntime,omitempty"`
-	Languages        []string      `json:"languages,omitempty"`
-	Countries        []string      `json:"countries,omitempty"`
-	ContentRatings   []string      `json:"contentRatings,omitempty"`
-	MaxContentRating string        `json:"maxContentRating,omitempty"` // per-user limit
-	Collection       int64         `json:"collection,omitempty"`
-	Person           int64         `json:"person,omitempty"` // cast or crew TMDB id
-	Studio           string        `json:"studio,omitempty"`
-	FirstCharacter   string        `json:"firstCharacter,omitempty"`
-	Query            string        `json:"query,omitempty"` // title substring
+	ExcludeKeys []RatingKey `json:"-"`
+	// IncludeKeys, when set, restricts the page to these keys before
+	// counting and pagination. An empty list matches nothing.
+	IncludeKeys []RatingKey `json:"-"`
+	// ExcludeGenres and ExcludeKeywords remove viewer-blocked facts before
+	// counting and pagination. Matching is case-insensitive.
+	ExcludeGenres         []string        `json:"-"`
+	ExcludeKeywords       []string        `json:"-"`
+	AddedAfter            int64           `json:"-"`              // inclusive Unix timestamp bound on added/release time
+	AddedBefore           int64           `json:"-"`              // inclusive Unix timestamp bound on added/release time
+	UpdatedAfter          int64           `json:"-"`              // inclusive Unix timestamp bound on metadata update time
+	UpdatedBefore         int64           `json:"-"`              // inclusive Unix timestamp bound on metadata update time
+	Type                  MediaType       `json:"type,omitempty"` // movie or show
+	Genres                []string        `json:"genres,omitempty"`
+	Keywords              []string        `json:"keywords,omitempty"` // every keyword must match (case-insensitive)
+	YearFrom              int             `json:"yearFrom,omitempty"`
+	YearTo                int             `json:"yearTo,omitempty"`
+	Years                 []int           `json:"years,omitempty"`
+	ExcludeYears          []int           `json:"excludeYears,omitempty"`
+	MinRating             float64         `json:"minRating,omitempty"`
+	MaxRating             float64         `json:"maxRating,omitempty"`
+	ExcludeRatings        []float64       `json:"excludeRatings,omitempty"`
+	MaxRuntime            time.Duration   `json:"maxRuntime,omitempty"`
+	MinRuntime            time.Duration   `json:"minRuntime,omitempty"`
+	ExcludeRuntimes       []time.Duration `json:"excludeRuntimes,omitempty"`
+	Languages             []string        `json:"languages,omitempty"`
+	Countries             []string        `json:"countries,omitempty"`
+	ExcludeCountries      []string        `json:"excludeCountries,omitempty"`
+	ContentRatings        []string        `json:"contentRatings,omitempty"`
+	ExcludeContentRatings []string        `json:"excludeContentRatings,omitempty"`
+	MaxContentRating      string          `json:"maxContentRating,omitempty"` // per-user limit
+	// SaferPlexRating applies cached Plex content-rating levels in SQL
+	// together with MaxContentRating so paging and counts stay correct.
+	SaferPlexRating bool `json:"-"`
+
+	Collection         int64          `json:"collection,omitempty"`
+	Collections        []int64        `json:"collections,omitempty"`
+	ExcludeCollections []int64        `json:"excludeCollections,omitempty"`
+	Person             int64          `json:"person,omitempty"` // cast or crew TMDB id
+	Credits            []CreditFilter `json:"credits,omitempty"`
+	Studio             string         `json:"studio,omitempty"`
+	StudioFilters      []StringFilter `json:"studioFilters,omitempty"`
+	FirstCharacter     string         `json:"firstCharacter,omitempty"`
+	Query              string         `json:"query,omitempty"` // title substring
+	TitleFilters       []StringFilter `json:"titleFilters,omitempty"`
+	ReleasedFilters    []DateFilter   `json:"releasedFilters,omitempty"`
+	// MinContentRating is an additive share-policy predicate (plex.tv share
+	// filters). It does not replace MaxContentRating or ContentRatings.
+	MinContentRating string `json:"-"`
+	// IncludeCollectionNames / ExcludeCollectionNames match
+	// Title.CollectionName (plex.tv share label filters). An empty
+	// collection name is unmappable and is not excluded.
+	IncludeCollectionNames []string `json:"-"`
+	ExcludeCollectionNames []string `json:"-"`
 }
 
 type BrowseQuery struct {
-	Filter Filter
-	Sort   SortOrder
-	Desc   bool
-	Offset int
-	Limit  int
+	Filter         Filter
+	Sort           SortOrder
+	Desc           bool
+	SecondarySorts []SortSpec
+	Offset         int
+	Limit          int
+	// NoTotal skips counting the filter's matches, which reads every title
+	// the filter admits. Page.Total is then offset plus the items returned.
+	NoTotal bool
 }
 
 type Page struct {
@@ -93,9 +169,13 @@ type StoredTitleLookup interface {
 }
 
 type FacetValue struct {
+	ID    string `json:"id,omitempty"` // Stable namespace-aware neutral identifier.
 	Key   string `json:"key"`
 	Title string `json:"title"`
 	Count int    `json:"count"`
+	// Labels are the equivalent values Key stands for, where a facet groups
+	// them (content-rating levels list every board's label).
+	Labels []string `json:"labels,omitempty"`
 }
 
 // ImageURL returns a full TMDB image URL for a path and size ("w500", "original").
@@ -168,13 +248,16 @@ type Recommender interface {
 // Watch state (internal/state)
 
 type WatchStatus struct {
-	Key          RatingKey     `json:"key"`
-	ViewOffset   time.Duration `json:"viewOffset"`
-	ViewCount    int           `json:"viewCount"`
-	LastViewedAt time.Time     `json:"lastViewedAt,omitempty"`
-	UserRating   float64       `json:"userRating,omitempty"` // 0-10
-	Duration     time.Duration `json:"duration,omitempty"`
-	UpdatedAt    time.Time     `json:"updatedAt"`
+	Key             RatingKey     `json:"key"`
+	ViewOffset      time.Duration `json:"viewOffset"`
+	ViewCount       int           `json:"viewCount"`
+	LastViewedAt    time.Time     `json:"lastViewedAt,omitempty"`
+	UserRating      float64       `json:"userRating,omitempty"` // 0-10
+	InWatchlist     bool          `json:"inWatchlist,omitempty"`
+	IsFavorite      bool          `json:"isFavorite,omitempty"`      // Derived from the viewer’s favorites set.
+	IsNotInterested bool          `json:"isNotInterested,omitempty"` // Derived from the viewer’s recommendation exclusions.
+	Duration        time.Duration `json:"duration,omitempty"`
+	UpdatedAt       time.Time     `json:"updatedAt"`
 }
 
 type HistoryEntry struct {
@@ -247,6 +330,10 @@ type SearchRequest struct {
 	// commonly numbered that way (additive).
 	AbsoluteEpisode int
 	Anime           bool
+	// AlternativeTitles are other names of the movie or series (TMDB
+	// alternative titles) a release name may use; matching only, never
+	// part of a query or cache key (additive).
+	AlternativeTitles []string `json:"-"`
 }
 
 type Indexer interface {
@@ -259,12 +346,19 @@ type ResolveRequest struct {
 	Title  *Title
 	Client ClientCaps
 	User   *User
+	// PlayedRelease is the release this viewer last played of the title
+	// (the one a resume opens); Variants names Auto after it (additive).
+	PlayedRelease string
 	// Exclude releases already tried (failover).
 	Exclude []string
 	// Prefer is a release ID to try first (the viewer picked a version in
 	// Plex's "Play Version" picker). It is health-checked like any other
 	// candidate; when it is unavailable, normal ranking applies (additive).
 	Prefer string
+	// ExactHEVCTranscode permits the explicitly preferred HEVC source to reach
+	// playback admission for an H.264 encode. The broker must still validate
+	// the probed source and the client's complete output profile.
+	ExactHEVCTranscode bool
 }
 
 type Resolver interface {
@@ -393,20 +487,42 @@ type StreamInfo struct {
 	Interlaced        bool `json:"interlaced,omitempty"`
 	VariableFrameRate bool `json:"variableFrameRate,omitempty"`
 
-	Index         int     `json:"index"`
-	Type          string  `json:"type"` // video, audio, subtitle
-	Codec         string  `json:"codec"`
-	Profile       string  `json:"profile,omitempty"`
-	Level         int     `json:"level,omitempty"`
-	Language      string  `json:"language,omitempty"`
-	Title         string  `json:"title,omitempty"`
-	Default       bool    `json:"default,omitempty"`
-	Forced        bool    `json:"forced,omitempty"`
-	Width         int     `json:"width,omitempty"`
-	Height        int     `json:"height,omitempty"`
-	FrameRate     float64 `json:"frameRate,omitempty"`
-	BitDepth      int     `json:"bitDepth,omitempty"`
-	ColorTransfer string  `json:"colorTransfer,omitempty"` // smpte2084 = HDR10, arib-std-b67 = HLG
+	Index         int    `json:"index"`
+	Type          string `json:"type"` // video, audio, subtitle
+	Codec         string `json:"codec"`
+	Profile       string `json:"profile,omitempty"`
+	Level         int    `json:"level,omitempty"`
+	Language      string `json:"language,omitempty"`
+	Title         string `json:"title,omitempty"`
+	CodecLongName string `json:"codecLongName,omitempty"`
+	Default       bool   `json:"default,omitempty"`
+	Forced        bool   `json:"forced,omitempty"`
+	// Nil means the source did not report this ffprobe disposition.
+	DefaultDisposition *bool   `json:"defaultDisposition,omitempty"`
+	ForcedDisposition  *bool   `json:"forcedDisposition,omitempty"`
+	HearingImpaired    *bool   `json:"hearingImpaired,omitempty"`
+	Original           *bool   `json:"original,omitempty"`
+	VisualImpaired     *bool   `json:"visualImpaired,omitempty"`
+	Commentary         *bool   `json:"commentary,omitempty"`
+	Dub                *bool   `json:"dub,omitempty"`
+	Width              int     `json:"width,omitempty"`
+	Height             int     `json:"height,omitempty"`
+	FrameRate          float64 `json:"frameRate,omitempty"`
+	// Optional probe facts are nil/empty when the source did not report them.
+	AverageFrameRate   *float64 `json:"averageFrameRate,omitempty"`
+	ReferenceFrameRate *float64 `json:"referenceFrameRate,omitempty"`
+	DisplayAspectRatio string   `json:"displayAspectRatio,omitempty"`
+	PixelFormat        string   `json:"pixelFormat,omitempty"`
+	CodecTag           string   `json:"codecTag,omitempty"`
+	TimeBase           string   `json:"timeBase,omitempty"`
+	NALLengthSize      *int     `json:"nalLengthSize,omitempty"`
+	ReferenceFrames    *int     `json:"referenceFrames,omitempty"`
+	BitsPerRawSample   *int     `json:"bitsPerRawSample,omitempty"`
+	ProbedLevel        *int     `json:"probedLevel,omitempty"`
+	FieldOrder         string   `json:"fieldOrder,omitempty"`
+	ProbedInterlaced   *bool    `json:"probedInterlaced,omitempty"`
+	BitDepth           int      `json:"bitDepth,omitempty"`
+	ColorTransfer      string   `json:"colorTransfer,omitempty"` // smpte2084 = HDR10, arib-std-b67 = HLG
 	// Signalled picture format, in ffprobe's names; empty when the stream
 	// and container leave it unspecified (decoders then assume square
 	// pixels and limited range).
@@ -415,12 +531,14 @@ type StreamInfo struct {
 	ColorPrimaries    string `json:"colorPrimaries,omitempty"`    // bt709, bt2020, smpte170m...
 	ColorSpace        string `json:"colorSpace,omitempty"`        // matrix: bt709, bt2020nc, smpte170m...
 	DolbyVision       bool   `json:"dolbyVision,omitempty"`
-	Channels          int    `json:"channels,omitempty"`
-	ChannelLayout     string `json:"channelLayout,omitempty"`
-	SampleRate        int    `json:"sampleRate,omitempty"`
-	BitrateKbps       int    `json:"bitrateKbps,omitempty"`
-	External          bool   `json:"external,omitempty"` // sidecar subtitle (OpenSubtitles)
-	ExternalURL       string `json:"externalUrl,omitempty"`
+	// HDR10Plus is nil unless the probe provides affirmative or explicit negative evidence.
+	HDR10Plus     *bool  `json:"hdr10Plus,omitempty"`
+	Channels      int    `json:"channels,omitempty"`
+	ChannelLayout string `json:"channelLayout,omitempty"`
+	SampleRate    int    `json:"sampleRate,omitempty"`
+	BitrateKbps   int    `json:"bitrateKbps,omitempty"`
+	External      bool   `json:"external,omitempty"` // sidecar subtitle (OpenSubtitles)
+	ExternalURL   string `json:"externalUrl,omitempty"`
 
 	// DolbyVisionProfile is the DV profile (5, 7, 8...) from the DOVI
 	// configuration record; 0 when unknown or not Dolby Vision.
@@ -429,12 +547,17 @@ type StreamInfo struct {
 	DolbyVisionCompatibilityID int    `json:"dolbyVisionCompatibilityId,omitempty"`
 	CodecString                string `json:"codecString,omitempty"` // RFC 6381, derived from the codec configuration
 
-	// Configuration-record facts are optional: codec tags alone do not
-	// establish whether the enhancement/base layers or RPU are present.
-	DolbyVisionVersion    string `json:"dolbyVisionVersion,omitempty"`
-	DolbyVisionBLPresent  *bool  `json:"dolbyVisionBLPresent,omitempty"`
-	DolbyVisionELPresent  *bool  `json:"dolbyVisionELPresent,omitempty"`
-	DolbyVisionRPUPresent *bool  `json:"dolbyVisionRPUPresent,omitempty"`
+	// Configuration presence is known from a completed MP4/Matroska container
+	// probe; nil means unprobed, unsupported or ambiguous. Codec tags alone do
+	// not establish whether enhancement/base layers or RPU are present.
+	DolbyVisionConfigurationPresent     *bool  `json:"dolbyVisionConfigurationPresent,omitempty"`
+	DolbyVisionBLCompatibilityIDPresent *bool  `json:"dolbyVisionBLCompatibilityIdPresent,omitempty"`
+	ProbedDolbyVisionProfile            *int   `json:"probedDolbyVisionProfile,omitempty"`
+	ProbedDolbyVisionLevel              *int   `json:"probedDolbyVisionLevel,omitempty"`
+	DolbyVisionVersion                  string `json:"dolbyVisionVersion,omitempty"`
+	DolbyVisionBLPresent                *bool  `json:"dolbyVisionBLPresent,omitempty"`
+	DolbyVisionELPresent                *bool  `json:"dolbyVisionELPresent,omitempty"`
+	DolbyVisionRPUPresent               *bool  `json:"dolbyVisionRPUPresent,omitempty"`
 }
 
 type Chapter struct {
@@ -443,6 +566,11 @@ type Chapter struct {
 	Start time.Duration `json:"start"`
 	End   time.Duration `json:"end"`
 }
+
+// ProbeFactsVersion is the generation of facts a probe is expected to carry,
+// including H.264/HEVC reference frames and descriptive audio handler titles.
+// Persisted probes from an older generation are cache misses.
+const ProbeFactsVersion = 2
 
 type MediaInfo struct {
 	Chapters    []Chapter     `json:"chapters,omitempty"`
@@ -479,19 +607,24 @@ const (
 type Decision struct {
 	Enhancement VideoEnhancement `json:"enhancement,omitempty"`
 
-	Kind           DecisionKind `json:"kind"`
-	VideoCopy      bool         `json:"videoCopy"`
-	AudioCopy      bool         `json:"audioCopy"`
-	VideoCodec     string       `json:"videoCodec"` // target codec when transcoding
-	AudioCodec     string       `json:"audioCodec"`
-	Container      string       `json:"container"` // "mpegts" (HLS) or original
-	MaxHeight      int          `json:"maxHeight"`
-	BitrateKbps    int          `json:"bitrateKbps"`
-	AudioStream    int          `json:"audioStream"`
-	SubtitleStream int          `json:"subtitleStream"` // -1 none
-	BurnSubtitles  bool         `json:"burnSubtitles"`
-	Reason         string       `json:"reason"`
-	AudioFilters   []string     `json:"audioFilters,omitempty"`
+	Kind       DecisionKind `json:"kind"`
+	VideoCopy  bool         `json:"videoCopy"`
+	AudioCopy  bool         `json:"audioCopy"`
+	VideoCodec string       `json:"videoCodec"` // target codec when transcoding
+	AudioCodec string       `json:"audioCodec"`
+	Container  string       `json:"container"` // "mpegts" (HLS) or original
+	MaxHeight  int          `json:"maxHeight"`
+	// H264Level is a verified output level_idc for a constrained H.264 encode.
+	// Zero retains the encoder's existing automatic selection.
+	H264Level int `json:"h264Level,omitempty"`
+	// H264FrameRate bounds the selected encoder output rate for that level.
+	H264FrameRate  float64  `json:"h264FrameRate,omitempty"`
+	BitrateKbps    int      `json:"bitrateKbps"`
+	AudioStream    int      `json:"audioStream"`
+	SubtitleStream int      `json:"subtitleStream"` // -1 none
+	BurnSubtitles  bool     `json:"burnSubtitles"`
+	Reason         string   `json:"reason"`
+	AudioFilters   []string `json:"audioFilters,omitempty"`
 	// AudioChannels and AudioSampleRate keep the already negotiated audio
 	// decoder configuration across a source change. Zero uses the normal
 	// encoder defaults.

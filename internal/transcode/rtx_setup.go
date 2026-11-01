@@ -14,6 +14,7 @@ import (
 // current attempt and replace queued work; no install goroutine outlives Close.
 // Fields except ctx/wake are protected by Manager.mu.
 type rtxSetupWorker struct {
+	done    chan struct{}
 	ctx     context.Context
 	cancel  context.CancelFunc
 	wake    chan struct{}
@@ -38,7 +39,7 @@ func (m *Manager) startRTXSetup(goos string) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &rtxSetupWorker{ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
+	w := &rtxSetupWorker{done: make(chan struct{}), ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
 	resolver := rtxSetupResolver{goos: goos, goarch: runtime.GOARCH,
 		probe: func(ctx context.Context, path string) (string, core.VideoEnhancementSupport) {
 			return probeRTX(ctx, m.runner, goos, path)
@@ -56,6 +57,9 @@ func (m *Manager) startRTXSetup(goos string) {
 
 func (m *Manager) runRTXSetup(w *rtxSetupWorker) {
 	defer m.wg.Done()
+	if w.done != nil {
+		defer close(w.done)
+	}
 	for {
 		select {
 		case <-w.ctx.Done():

@@ -155,6 +155,8 @@ describe("Server › Cluster", () => {
     expect(screen.getByText(/different public addresses/)).toBeInTheDocument();
 
     expect(screen.getByRole("heading", { name: "Shared settings" })).toBeInTheDocument();
+    expect(screen.queryByText("v42")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More options: Shared settings" }));
     expect(await screen.findByText("v42", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("3f9c2a71d04be6a8")).toBeInTheDocument();
   });
@@ -277,6 +279,19 @@ describe("cluster helpers", () => {
       "Nodes differ",
       "Couldn't read the cluster's nodes from the database: connection refused",
     ]);
+    expect(
+      clusterWarnings(
+        {
+          ...base,
+          warnings: [
+            "nodes reach providers from different public addresses (198.51.100.2: b; 203.0.113.1: a); a debrid account can be limited when it is used from more than one address",
+          ],
+        },
+        now,
+      )[0],
+    ).toBe(
+      "These computers reach indexers and debrid from different public addresses (198.51.100.2: b; 203.0.113.1: a). One debrid account can be limited when it is used from more than one address.",
+    );
   });
 
   it("builds safe links to peer managers", () => {
@@ -305,6 +320,9 @@ describe("cluster helpers", () => {
 describe("Cluster details elsewhere", () => {
   it("edits node weight on General only on a cluster node", async () => {
     const { fake } = renderApp("/server", { cluster: true });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More options: This computer" }, WAIT),
+    );
     const weight = await screen.findByLabelText("Node weight", {}, WAIT);
     fireEvent.change(weight, { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
@@ -319,7 +337,7 @@ describe("Cluster details elsewhere", () => {
   });
 
   it("shows which node holds each backup and saves a shared folder", async () => {
-    const { fake } = renderApp("/backups", { cluster: true });
+    const { fake } = renderApp("/maintenance/backups", { cluster: true });
     const snaps = await screen.findByRole("region", { name: "Snapshots" }, WAIT);
     expect(await within(snaps).findByText("den (this node)", {}, WAIT)).toBeInTheDocument();
     expect(within(snaps).getByText("attic")).toBeInTheDocument();
@@ -340,7 +358,7 @@ describe("Cluster details elsewhere", () => {
   });
 
   it("has no shared folder or location column on a standalone server", async () => {
-    renderApp("/backups");
+    renderApp("/maintenance/backups");
     const snaps = await screen.findByRole("region", { name: "Snapshots" }, WAIT);
     await within(snaps).findByRole("button", { name: /^Download/ }, WAIT);
     expect(within(snaps).queryByText("Location")).toBeNull();

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 func TestLibrarySectionTitlesFromConfig(t *testing.T) {
@@ -64,5 +65,26 @@ func TestLibrarySectionTitlesDefaultWhenEmpty(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, `title="Movies"`) || !strings.Contains(body, `title="TV Shows"`) {
 		t.Fatalf("defaults missing: %s", body)
+	}
+}
+
+func TestNilConfigLibraryTitlesKeepIDsAndDefaults(t *testing.T) {
+	s := &Server{sections: []Section{
+		{ID: 1, Type: core.TypeMovie, UUID: "11111111-1111-1111-1111-111111111111", Title: "stored"},
+		{ID: 2, Type: core.TypeShow, UUID: "22222222-2222-2222-2222-222222222222", Title: "stored"},
+	}}
+	got := s.LibrarySections()
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 2 || got[0].UUID != s.sections[0].UUID || got[1].UUID != s.sections[1].UUID {
+		t.Fatalf("stable ids: %+v", got)
+	}
+	if got[0].Title != "Movies" || got[1].Title != "TV Shows" {
+		t.Fatalf("nil config titles = %+v", got)
+	}
+	if s.sections[0].Title != "stored" || s.sections[1].Title != "stored" {
+		t.Fatal("LibrarySections mutated stored titles")
+	}
+	sec, ok := s.sectionFor(core.TypeMovie)
+	if !ok || sec.ID != 1 || sec.UUID != s.sections[0].UUID || sec.Title != "Movies" {
+		t.Fatalf("sectionFor = %+v %v", sec, ok)
 	}
 }

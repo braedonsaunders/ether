@@ -98,7 +98,7 @@ func (c *Catalog) ShowTrajectories(ctx context.Context, shows []core.RatingKey) 
 
 		rows, err := c.db.QueryContext(ctx, `
 			SELECT show_key, season, rating FROM catalog_titles
-			WHERE type='season' AND season>0 AND rating>0 AND released_ts<>0 AND released_ts<=? AND show_key IN (`+ph+`)
+			WHERE type='season' AND season>0 AND rating>0 AND release_known=1 AND released_ts<=? AND show_key IN (`+ph+`)
 			ORDER BY show_key ASC, season ASC`, append([]any{nowTS}, part...)...)
 		if err != nil {
 			return nil, err
@@ -122,7 +122,7 @@ func (c *Catalog) ShowTrajectories(ctx context.Context, shows []core.RatingKey) 
 		// Fallback/augmentation from mirrored episode ratings when season ratings are 0.
 		erows, err := c.db.QueryContext(ctx, `
 			SELECT show_key, season, AVG(rating) FROM catalog_titles
-			WHERE type='episode' AND season>0 AND rating>0 AND released_ts<>0 AND released_ts<=? AND show_key IN (`+ph+`)
+			WHERE type='episode' AND season>0 AND rating>0 AND release_known=1 AND released_ts<=? AND show_key IN (`+ph+`)
 			GROUP BY show_key, season
 			ORDER BY show_key ASC, season ASC`, append([]any{nowTS}, part...)...)
 		if err == nil {
@@ -211,7 +211,7 @@ func (c *Catalog) StandaloneEpisodes(ctx context.Context, minRating float64, lim
 	q := `SELECT ` + prefixedCols("e") + ` FROM catalog_titles e
 		JOIN catalog_titles s ON s.key = e.show_key
 		WHERE e.type='episode' AND e.season>0 AND e.adult=0
-		  AND e.released_ts<>0 AND e.released_ts<=?
+		  AND e.release_known=1 AND e.released_ts<=?
 		  AND e.rating>=?
 		  AND s.browsable=1 AND s.adult=0
 		  AND (
@@ -261,6 +261,204 @@ func (c *Catalog) CachedDiscoveryEpisodes(ctx context.Context, shows []core.Rati
 		rows.Close()
 		if err != nil {
 			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// CachedGetMany applies CachedGet's visibility gates to bounded local reads.
+// Missing or hidden titles are omitted. It never refreshes or admits fallbacks.
+func (c *Catalog) cachedListVisible(t *core.Title) bool {
+	return !t.Adult && t.IsReleased(c.now()) && (!c.config().GateMoviesByHomeRelease || homeReleaseVisible(t, c.now())) && (t.Type != core.TypeSeason || listableSeason(t, c.now()))
+}
+
+func (c *Catalog) cachedStored(key core.RatingKey, gen uint64, minute int64) (core.Title, bool) {
+	if !cacheStoredTitle(key.Kind()) {
+		return core.Title{}, false
+	}
+	c.cacheMu.RLock()
+	ent, ok := c.titleCache[key]
+	c.cacheMu.RUnlock()
+	if !ok || ent.gen != gen || ent.minute != minute {
+		return core.Title{}, false
+	}
+	return cloneTitle(ent.st.t), true
+}
+
+func (c *Catalog) rememberTitles(gen uint64, minute int64, items []core.Title) {
+	if c.writeGen.Load() != gen {
+		return
+	}
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	if c.titleCache == nil {
+		c.titleCache = map[core.RatingKey]cachedStoredTitle{}
+	}
+	for i := range items {
+		c.putSnapshotLocked(items[i].Key, gen, minute, storedTitle{t: cloneTitle(items[i])})
+	}
+}
+
+// putSnapshotLocked records the first title seen for this generation and
+// minute. The caller holds cacheMu. A later hydrate must not replace it:
+// a background browse can read a credit row another writer just changed.
+func (c *Catalog) putSnapshotLocked(key core.RatingKey, gen uint64, minute int64, st storedTitle) {
+	if !cacheStoredTitle(key.Kind()) {
+		return
+	}
+	if c.titleCache == nil {
+		c.titleCache = map[core.RatingKey]cachedStoredTitle{}
+	}
+	if ent, ok := c.titleCache[key]; ok && ent.gen == gen && ent.minute == minute {
+		return
+	}
+	if len(c.titleCache) >= 8192 {
+		c.titleCache = map[core.RatingKey]cachedStoredTitle{}
+	}
+	c.titleCache[key] = cachedStoredTitle{st: st, gen: gen, minute: minute}
+}
+
+func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	return c.cachedGetMany(ctx, keys, true)
+}
+
+// cachedGetMany reads local titles. reuse serves the minute snapshot, which a
+// foreign credit write does not invalidate. People credit proofs pass reuse
+// false so they hydrate the current credit rows and leave that snapshot alone.
+func (c *Catalog) cachedGetMany(ctx context.Context, keys []core.RatingKey, reuse bool) (map[core.RatingKey]core.Title, error) {
+	out := make(map[core.RatingKey]core.Title, len(keys))
+	gen := c.writeGen.Load()
+	minute := c.minuteBucket()
+	missing := make([]core.RatingKey, 0, len(keys))
+	for _, key := range keys {
+		if reuse {
+			if title, ok := c.cachedStored(key, gen, minute); ok {
+				if c.cachedListVisible(&title) {
+					out[key] = title
+				}
+				continue
+			}
+		}
+		missing = append(missing, key)
+	}
+	for start := 0; start < len(missing); start += 200 {
+		part := missing[start:min(start+200, len(missing))]
+		args := make([]any, len(part))
+		for i, key := range part {
+			args[i] = int64(key)
+		}
+		rows, err := c.db.QueryContext(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE key IN (`+placeholders(len(part))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		var items []core.Title
+		for rows.Next() {
+			st, e := scanTitle(rows)
+			if e != nil {
+				rows.Close()
+				return nil, e
+			}
+			items = append(items, st.t)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		if err := c.hydrateSlice(ctx, items); err != nil {
+			return nil, err
+		}
+		visible := make([]core.Title, 0, len(items))
+		for i := range items {
+			if c.cachedListVisible(&items[i]) {
+				out[items[i].Key] = items[i]
+				visible = append(visible, items[i])
+			}
+		}
+		if reuse {
+			c.rememberTitles(gen, minute, visible)
+		}
+	}
+	return out, nil
+}
+
+// ResolveShowParents batches fresh mirrored shows and falls back to Get for
+// stale, missing, or non-show keys. Individual Get failures are omitted, as
+// inherited visibility treats them as inaccessible.
+func (c *Catalog) ResolveShowParents(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	out := make(map[core.RatingKey]core.Title, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	fallback := func(part []core.RatingKey) {
+		for _, key := range part {
+			title, err := c.Get(ctx, key)
+			if err == nil && title != nil && title.Key == key {
+				out[key] = *title
+			}
+		}
+	}
+	if err := c.admitFallbacks(ctx); err != nil {
+		fallback(keys)
+		return out, nil
+	}
+	for start := 0; start < len(keys); start += 200 {
+		part := keys[start:min(start+200, len(keys))]
+		args := make([]any, len(part))
+		for i, k := range part {
+			args[i] = int64(k)
+		}
+		rows, err := c.db.QueryContext(ctx, `SELECT `+titleCols+`,detail_at FROM catalog_titles WHERE key IN (`+placeholders(len(part))+`)`, args...)
+		if err != nil {
+			fallback(part)
+			continue
+		}
+		stored := map[core.RatingKey]*storedTitle{}
+		for rows.Next() {
+			var detail int64
+			st, e := scanTitle(extraScan{rows, []any{&detail}})
+			if e != nil {
+				err = e
+				break
+			}
+			if detail != 0 {
+				st.detailAt = time.Unix(detail, 0).UTC()
+			}
+			stored[st.t.Key] = st
+		}
+		if err == nil {
+			err = rows.Err()
+		}
+		rows.Close()
+		if err != nil {
+			fallback(part)
+			continue
+		}
+		var warm []core.Title
+		for _, key := range part {
+			st := stored[key]
+			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.tmdb() == nil) {
+				warm = append(warm, st.t)
+			}
+		}
+		if err := c.hydrateSlice(ctx, warm); err != nil {
+			fallback(part)
+			continue
+		}
+		for i := range warm {
+			if c.visibleTitle(&warm[i]) {
+				out[warm[i].Key] = warm[i]
+			}
+		}
+		for _, key := range part {
+			st := stored[key]
+			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.tmdb() == nil) {
+				continue
+			}
+			title, e := c.Get(ctx, key)
+			if e == nil && title != nil && title.Key == key {
+				out[key] = *title
+			}
 		}
 	}
 	return out, nil

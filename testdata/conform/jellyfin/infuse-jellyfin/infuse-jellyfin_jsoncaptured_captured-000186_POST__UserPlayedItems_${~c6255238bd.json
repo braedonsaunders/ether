@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "headers": {
+    "Content-Type": [
+      "application/json; charset=utf-8"
+    ]
+  },
+  "body": "eyJJc0Zhdm9yaXRlIjpmYWxzZSwiSXRlbUlkIjoiJHtpZF80fSIsIktleSI6Ijc4OTI3MDAxMDAxIiwiTGFzdFBsYXllZERhdGUiOiJbUkVEQUNURURdIiwiUGxheUNvdW50IjozLCJQbGF5YmFja1Bvc2l0aW9uVGlja3MiOjAsIlBsYXllZCI6dHJ1ZX0="
+}

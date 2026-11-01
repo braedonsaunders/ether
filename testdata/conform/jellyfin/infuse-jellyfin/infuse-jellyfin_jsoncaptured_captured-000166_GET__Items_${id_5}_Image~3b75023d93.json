@@ -1,0 +1,23 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "public, max-age=31536000, immutable"
+    ],
+    "Content-Length": [
+      "80321"
+    ],
+    "Content-Type": [
+      "image/jpeg"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "captured",
+  "bodyLength": 80321,
+  "sha256": "f4d1c35e7520662bb52c19cb922e5c9814719221f8434d4dac8224308fa4a186",
+  "truncated": true
+}

@@ -1,0 +1,166 @@
+{
+  "protocol": "jellyfin",
+  "client": "Findroid",
+  "source": {
+    "repo": "jellyfin/Findroid",
+    "commit": "9e6c84d6ef8a83ae225dc4c2934ade2b2d6834ce",
+    "files": [
+      "core/network/"
+    ]
+  },
+  "headers": {
+    "Authorization": "MediaBrowser Client=\"Findroid\", Device=\"Android\", DeviceId=\"${device_id}\", Version=\"0.15.0\"",
+    "Accept": "application/json",
+    "Content-Type": "application/json"
+  },
+  "authorization": {
+    "format": "MediaBrowser auth parameters; authenticate then use access token",
+    "example": "Authorization: MediaBrowser Client=\"Findroid\", Device=\"Android\", DeviceId=\"${device_id}\", Version=\"0.15.0\", Token=\"${access_token}\""
+  },
+  "flows": {
+    "connect": [
+      {
+        "name": "system info",
+        "method": "GET",
+        "path": "/System/Info/Public"
+      },
+      {
+        "name": "public users",
+        "method": "GET",
+        "path": "/Users/Public"
+      }
+    ],
+    "sign_in": [
+      {
+        "name": "authenticate",
+        "method": "POST",
+        "path": "/Users/AuthenticateByName",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "Username": "${username}",
+          "Pw": "${password}"
+        }
+      }
+    ],
+    "home": [
+      {
+        "name": "user views",
+        "method": "GET",
+        "path": "/Users/${user_id}/Views"
+      },
+      {
+        "name": "resume",
+        "method": "GET",
+        "path": "/Users/${user_id}/Items/Resume"
+      },
+      {
+        "name": "next up",
+        "method": "GET",
+        "path": "/Shows/NextUp?UserId=${user_id}"
+      }
+    ],
+    "library_browse": [
+      {
+        "name": "items",
+        "method": "GET",
+        "path": "/Users/${user_id}/Items?ParentId=${parent_id}&SortBy=SortName"
+      }
+    ],
+    "item_detail": [
+      {
+        "name": "item",
+        "method": "GET",
+        "path": "/Users/${user_id}/Items/${item_id}"
+      },
+      {
+        "name": "similar",
+        "method": "GET",
+        "path": "/Items/${item_id}/Similar"
+      }
+    ],
+    "play_direct": [
+      {
+        "name": "playback info",
+        "method": "POST",
+        "path": "/Items/${item_id}/PlaybackInfo",
+        "body": {
+          "UserId": "${user_id}",
+          "IsPlayback": true,
+          "AutoOpenLiveStream": true,
+          "StartTimeTicks": 0
+        }
+      },
+      {
+        "name": "stream",
+        "method": "GET",
+        "path": "/Videos/${item_id}/stream?Static=true"
+      }
+    ],
+    "play_transcode": [
+      {
+        "name": "playback info",
+        "method": "POST",
+        "path": "/Items/${item_id}/PlaybackInfo",
+        "body": {
+          "UserId": "${user_id}",
+          "IsPlayback": true,
+          "AutoOpenLiveStream": true,
+          "StartTimeTicks": 0
+        }
+      },
+      {
+        "name": "HLS master",
+        "method": "GET",
+        "path": "/Videos/${item_id}/master.m3u8?DeviceId=${device_id}&MediaSourceId=${media_source_id}&PlaySessionId=${play_session_id}"
+      }
+    ],
+    "progress_reporting": [
+      {
+        "name": "playing",
+        "method": "POST",
+        "path": "/Sessions/Playing",
+        "body": {
+          "ItemId": "${item_id}",
+          "PositionTicks": "${position_ticks}",
+          "PlaySessionId": "${play_session_id}",
+          "CanSeek": true
+        }
+      },
+      {
+        "name": "progress",
+        "method": "POST",
+        "path": "/Sessions/Playing/Progress",
+        "body": {
+          "ItemId": "${item_id}",
+          "PositionTicks": "${position_ticks}",
+          "PlaySessionId": "${play_session_id}",
+          "CanSeek": true
+        }
+      }
+    ],
+    "mark_watched": [
+      {
+        "name": "played",
+        "method": "POST",
+        "path": "/Users/${user_id}/PlayedItems/${item_id}",
+        "body": {}
+      }
+    ],
+    "stop": [
+      {
+        "name": "stopped",
+        "method": "POST",
+        "path": "/Sessions/Playing/Stopped",
+        "body": {
+          "ItemId": "${item_id}",
+          "PositionTicks": "${position_ticks}",
+          "PlaySessionId": "${play_session_id}",
+          "CanSeek": true
+        }
+      }
+    ]
+  },
+  "profile_status": "source-derived-template; not captured traffic"
+}

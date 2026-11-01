@@ -87,6 +87,7 @@ type Conn struct {
 	idleSince time.Time
 	uses      int           // requests served (maintained by the pool)
 	lastRTT   time.Duration // command-to-status-line latency of the last command
+	wire      *atomic.Int64 // bytes read off this socket, including TLS framing
 }
 
 // aLongTimeAgo is a deadline in the past, used to interrupt blocked I/O.
@@ -130,10 +131,8 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 	if tc, ok := raw.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
 	}
-	var nc net.Conn = raw
-	if o.BytesRead != nil {
-		nc = &countingConn{Conn: raw, n: o.BytesRead}
-	}
+	wire := new(atomic.Int64)
+	var nc net.Conn = &countingConn{Conn: raw, n: o.BytesRead, own: wire}
 	if o.TLS {
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 		if o.TLSConfig != nil {
@@ -155,11 +154,16 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 		nc = tc
 	}
 
-	if o.IdleReadTimeout == 0 {
-		o.IdleReadTimeout = DefaultIdleReadTimeout
+	commandIdle := o.IdleReadTimeout
+	if commandIdle == 0 {
+		commandIdle = DefaultIdleReadTimeout
 	}
-	if o.IdleReadTimeout > 0 {
-		nc = &idleReadConn{Conn: nc, idle: o.IdleReadTimeout}
+	// The welcome shares the dial deadline. A short idle window would
+	// expire that read when the suite is busy, before any command runs.
+	var paced *idleReadConn
+	if commandIdle > 0 {
+		paced = &idleReadConn{Conn: nc, idle: o.Timeout}
+		nc = paced
 	}
 	now := time.Now()
 	c := &Conn{
@@ -172,17 +176,25 @@ func Dial(ctx context.Context, o DialOptions) (*Conn, error) {
 		onCommand:      o.OnCommand,
 		created:        now,
 		used:           now,
+		wire:           wire,
 	}
 	if err := c.handshake(dctx, o.Username, o.Password); err != nil {
 		c.Close()
 		return nil, err
+	}
+	if paced != nil {
+		paced.mu.Lock()
+		paced.idle = commandIdle
+		paced.mu.Unlock()
 	}
 	return c, nil
 }
 
 func (c *Conn) handshake(ctx context.Context, user, pass string) error {
 	phaseStart := time.Now()
-	end, err := c.begin(ctx, c.commandTimeout)
+	// begin keeps the earlier context deadline. Dial set that from
+	// DialOptions.Timeout, so the greeting does not use CommandTimeout.
+	end, err := c.begin(ctx, time.Hour)
 	if err != nil {
 		return err
 	}
@@ -214,7 +226,7 @@ func (c *Conn) handshake(ctx context.Context, user, pass string) error {
 }
 
 func (c *Conn) auth(ctx context.Context, user, pass string) error {
-	code, msg, err := c.cmd(ctx, "AUTHINFO", "AUTHINFO USER "+user)
+	code, msg, err := c.cmdTimeout(ctx, "AUTHINFO", "AUTHINFO USER "+user, time.Hour)
 	if err != nil {
 		return err
 	}
@@ -225,7 +237,7 @@ func (c *Conn) auth(ctx context.Context, user, pass string) error {
 	default:
 		return &ProtocolError{Cmd: "AUTHINFO USER", Code: code, Msg: msg}
 	}
-	code, msg, err = c.cmd(ctx, "AUTHINFO", "AUTHINFO PASS "+pass)
+	code, msg, err = c.cmdTimeout(ctx, "AUTHINFO", "AUTHINFO PASS "+pass, time.Hour)
 	if err != nil {
 		return err
 	}
@@ -284,10 +296,16 @@ func (c *Conn) begin(ctx context.Context, timeout time.Duration) (func(error) er
 
 // cmd sends one command line and reads the status reply.
 func (c *Conn) cmd(ctx context.Context, verb, line string) (int, string, error) {
+	return c.cmdTimeout(ctx, verb, line, c.commandTimeout)
+}
+
+// cmdTimeout is cmd with an explicit deadline ceiling. Handshake passes a
+// long ceiling so AUTHINFO keeps the dial context's deadline.
+func (c *Conn) cmdTimeout(ctx context.Context, verb, line string, timeout time.Duration) (int, string, error) {
 	if c.inBody {
 		return 0, "", fmt.Errorf("nntp: %s while a body is being read", verb)
 	}
-	end, err := c.begin(ctx, c.commandTimeout)
+	end, err := c.begin(ctx, timeout)
 	if err != nil {
 		return 0, "", err
 	}
@@ -673,16 +691,24 @@ func (b *BodyReader) Close() error {
 	return b.ioErr
 }
 
-// countingConn counts bytes read for provider statistics.
+// wireBytes is how many bytes this connection has read off the wire.
+func (c *Conn) wireBytes() int64 { return c.wire.Load() }
+
+// countingConn counts bytes read for provider statistics (n, optional) and
+// for this connection alone (own).
 type countingConn struct {
 	net.Conn
-	n *atomic.Int64
+	n   *atomic.Int64
+	own *atomic.Int64
 }
 
 func (c *countingConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
-		c.n.Add(int64(n))
+		if c.n != nil {
+			c.n.Add(int64(n))
+		}
+		c.own.Add(int64(n))
 	}
 	return n, err
 }

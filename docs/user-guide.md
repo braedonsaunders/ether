@@ -1,16 +1,123 @@
 # Using Ether
 
 Open <http://localhost:32400/ether/> on the server to manage Ether. Use your
-normal Plex apps to browse and watch. If Ether uses another port, such as
+chosen media apps to browse and watch, subject to the support notes below.
+[Ether's multi-app support](apps.md) is the shared server containing
+the Plex, Jellyfin, Emby and Silo frontends.
+If Ether uses another port, such as
 32450 alongside an existing Plex server, use that port instead.
 
 Start here: [libraries and the catalogue](#libraries-catalogue-and-home),
 [put your watchlist on Home](#put-your-watchlist-on-home), or
 [choose Home rows](#choose-home-rows).
 
+## Jellyfin and Emby apps
+
+Jellyfin, Emby and Silo support ships in 0.3.0 without per-app certification.
+Every app below is marked `waived` for 0.3.0: Swiftfin, Infuse and Silo passed
+Apple TV checks for browsing, direct play, resume and sign-in, and the others
+have not been device-tested yet. The reason for each waiver is in
+`docs/certification/matrix.json`. Direct, remux, and transcode are separate
+results. A release tag does not publish until this matrix is reviewed for that
+minor (`scripts/certification-gate`). `unsupported` means the review is finished
+and the app cannot work with Ether.
+
+Downloads: not supported.
+
+<!-- certification-matrix:jellyfin -->
+| Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Jellyfin for Android TV | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Swiftfin | tvOS, Nov 2026 | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Findroid | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Streamyfin | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Infuse | 8.5.9 | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| JellyCon | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Jellyfin for Roku | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+<!-- /certification-matrix:jellyfin -->
+
+<!-- certification-matrix:emby -->
+| Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Emby Web (externally hosted) | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Emby for Android TV | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Emby for TV (Apple TV, 2.x web-shell) | 2.0.9 | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported |
+<!-- /certification-matrix:emby -->
+
+Jellyfin for Android phones and Jellyfin Desktop are unsupported: they wrap
+Jellyfin Web, which Ether does not ship. Ether's `/web` page gives connection
+instructions; it is not a browser media player.
+Ether does not bundle Emby Web; the externally hosted client has not yet been
+certified against Ether. Emby for Android TV is in the matrix and is not
+certified yet. Emby for TV 2.0.9 on Apple TV is unsupported: it
+requests server-hosted Emby Web assets, which Ether does not ship, and reports
+that the server needs updating. For Apple TV, try Infuse or Swiftfin with
+Ether; their feature support remains subject to the test matrix above.
+
+Emby's own app restrictions still apply. Its [Premiere feature matrix](https://support.emby.media/support/articles/Premiere-Feature-Matrix.html)
+lists full playback in the iOS and Android mobile apps as requiring an App
+Unlock or Premiere; Windows, Linux, macOS and game-console apps require
+Premiere for full playback. It lists free full playback for Roku, Apple TV and
+LG/Samsung TVs, and up to five TV devices for Android TV or Fire TV; Live TV
+requires Premiere. Availability and device limits can change, so consult Emby's
+matrix. Ether does not provide or emulate an Emby Premiere entitlement.
+
+## Silo apps
+
+Silo support is in development. Ether's Silo surface uses port 8090 by default;
+if that port is occupied, check the Apps page for the actual listening address.
+Add that address in the Silo app and sign in with an Ether viewer account, or
+approve the device's code in the viewer portal. A dash means the feature has
+not yet been verified on the named client. Direct, remux, and transcode are
+separate results. The release check includes this table.
+Settings follow the pinned contract through revision 24.
+A PQ video variant with unknown HDR10+ metadata stays available as HDR10 and
+does not claim HDR10+. SDR and HLG variants remain available. For media with
+an unknown transfer function, an omitted HDR10+ boolean means HDR10+ has not
+been positively identified; the media remains playable.
+Watch details include marker ranges only when the response has one probed file
+those ranges fit. Every other file reports an empty marker set.
+For an unresolved version, Silo's required size, duration and bitrate use zero
+and required codec, container and resolution strings are empty. Playback resolves
+the source and reports the known values when it starts.
+Last-played codec, resolution and HDR describe the last recorded playback
+sample and can briefly lag if storing a newer sample fails. The last-played
+file identifier is omitted until it can be matched to an authorized version.
+Native certification also requires verifying that Ether's stream request
+headers reach direct playback and HLS playlists and segments, including after a
+seek; this has not yet been verified on the physical devices.
+
+<!-- certification-matrix:silo -->
+| Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Subtitles | Device pairing |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Silo for Apple TV, iOS and macOS | tvOS, Nov 2026 | waived | waived | waived | waived | waived | waived | waived | waived |
+| Silo for Android and Android TV | Not tested | waived | waived | waived | waived | waived | waived | waived | waived |
+<!-- /certification-matrix:silo -->
+
+## Apps and client support
+
+Enable an app on **Apps**, then edit its configuration in its enabled app tab.
+Use the listening address shown there rather than assuming a default port.
+Client names below identify intended connection methods; native-device
+certification and exact-build conformance remain pending.
+
+| Surface | Intended clients and connection | Limits |
+| --- | --- | --- |
+| Jellyfin | Android TV, Swiftfin, Findroid, Streamyfin, Infuse, JellyCon, Roku; server URL and viewer sign-in | Native feature matrix above is pending; Android phone and Desktop web shells are unsupported |
+| Emby | Native clients using the server URL and Ether viewer account | No bundled Web; Apple TV Emby for TV 2.x web shell is unsupported; app licensing still applies |
+| Silo | Apple and Android native apps; server URL and viewer sign-in or pairing | Versioned device acceptance pending; see Silo limits above |
+| Stremio | Install the viewer-specific addon from the viewer portal in Stremio | Addon API only; no hosted Stremio web player |
+| Files (WebDAV) | Infuse, VLC or Kodi with the viewer’s WebDAV credentials | Read-only virtual files; client playback and resume behavior require verification |
+| M3U/XMLTV | Channels DVR or TiviMate with viewer-specific playlist and guide links | Live TV export; treat connection links as secrets |
+| DLNA | LAN televisions and players with a ContentDirectory browser | Uses the owner-selected guest viewer’s policy; no per-device login; device compatibility pending |
+
 ## Set up
 
-The setup wizard signs you in to Plex, then asks where Ether streams from: a
+The setup wizard starts with app selection and owner-account setup. If you
+select Plex, sign in with Plex and claim the server; otherwise, create a local
+Ether owner account. Jellyfin, Emby and Silo do not require a Plex account;
+use Ether viewer accounts and the connection instructions on the Apps page.
+Then choose where Ether streams from: a
 debrid account (Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or
 Offcloud), a Usenet provider, or both, each tested before you continue. Next add at least one
 indexer: a Stremio stream addon's install link or a Torznab URL for debrid,
@@ -265,8 +372,10 @@ cause.
 ### Put your watchlist on Home
 
 1. Add wanted titles to your Plex Watchlist.
-2. In Ether, open **Viewers › Defaults › Watchlist alerts**, enable
-   **Watchlist monitoring** and **Plex watchlists**, then save.
+2. In Ether, open **Notifications › Watchlist alerts**, enable
+   **Watchlist monitoring** and **Plex watchlists**, then save. Opening-minute
+   warm-up for a title that just became playable is **Cache › Preloading ›
+   Warm up new arrivals**.
 3. Open **Viewers › your viewer › Watchlist**. **Sync viewer** imports the
    list; **Check availability** checks for playable releases. These actions
    are separate: importing a title does not prove it can stream.
@@ -304,7 +413,7 @@ what you want to change:
 | Inspect a failed source search | **Releases › History**, then open the attempt |
 | Inspect observed playback | **Activity › History** |
 | Change one viewer's track preferences | **Viewers › viewer › Audio & subtitles** |
-| Change defaults for viewers | **Viewers › Defaults** |
+| Change household audio and subtitles | **Playback › Audio & subtitles** |
 | Arrange rows in Plex | **Home** |
 | Change artwork providers | **Metadata › Artwork** |
 
@@ -480,12 +589,14 @@ characters, then choose **Download**. The downloaded `.etherbackup` file is
 encrypted. Ether does not keep this password; save it somewhere safe because
 it is needed to restore the file.
 
-To restore, enter the same password and select the `.etherbackup` file. Ether
-validates it and stages a new data folder; uploading a backup does not replace
-the running server. Follow the displayed instructions to stop Ether and start
-it with that folder. An older, unencrypted `.tar.gz` backup requires an owner
-sign-in and explicit confirmation. See [installation and restoration](install.md#backups)
-for service and database considerations.
+To restore, choose **Restore** next to a snapshot, or **Choose backup file**
+and enter the password a download was made with. Ether checks the backup,
+shows what will change and who is watching, then restores it and restarts by
+itself; the page follows along until your server is back. Your current data
+is kept, so the report on the Backups page offers **Undo restore**. An older,
+unencrypted `.tar.gz` backup requires an owner sign-in and explicit
+confirmation. See [installation and restoration](install.md#backups) for
+clusters and how restarts work.
 
 Keep server-side snapshots and shared backup folders private: scheduled and
 internal snapshots remain unencrypted on disk and include the credentials and
@@ -564,8 +675,10 @@ Revocation alone does not contain a leak.
 **Manage this node** adjusts its provider capacity weight or pauses/resumes new
 streams while existing streams keep playing. A pause ends after a restart.
 Pausing the only available node prevents new playback until you resume it.
-**Open manager** opens a peer node’s own settings; **Updates** handles rolling
-cluster updates.
+**Open manager** opens a peer node’s own settings; **Updates** handles cluster
+software updates. The first upgrade onto multi-app support requires stopping and fencing all old
+writers, upgrading all nodes, then serving traffic. Follow the
+[mandatory upgrade runbook](acceptance/upgrade.md).
 
 Elsewhere, **Backups & import** shows which node holds each backup and offers
 a shared backup folder, the Usenet and Debrid pages show this node's share of
@@ -588,12 +701,33 @@ not every possible secret.
 
 ## Owner sign-in and playback access
 
-After setup, sign in with the Plex account that owns Ether, including when you
-open the owner UI on localhost. Viewers access shared libraries through their
-own Plex accounts. Refreshing Plex sharing removes revoked viewers' access;
-stream links stop working when the viewer is inactive or the session ends.
+After setup, sign in with the owner account configured during setup, including
+when you open the owner UI on localhost: the Plex owner account for Plex setup,
+or the local Ether owner account for setup without Plex. Jellyfin, Emby and
+Silo viewers use Ether viewer accounts through their frontend’s sign-in or
+device-approval flow.
+
+Plex viewers access shared libraries through their own Plex accounts. Refreshing
+Plex sharing removes revoked viewers' access. Stream links stop working when
+the viewer is inactive or the session ends.
 
 ## Source interruptions
+
+Usenet providers are tried in priority order. When every connection of a
+higher-priority provider is busy, a viewer's request goes to the next provider
+that has a free connection instead of waiting. Background work does this only
+when that provider is otherwise idle. Backfill (block) accounts are used only
+for articles the other providers lack, so a busy primary never spends block
+data. **Sources › Usage** shows how many requests each provider took over from
+a busy one this month.
+
+If a server refuses connections because the account is at its limit, Ether
+learns that limit by itself. The provider list then shows, for example,
+"using 47 of 50 connections (server limit learned)". When the server states its
+limit, Ether stays just below it. Otherwise Ether adds connections back one at a
+time while requests succeed. A refusal right after Ether closed a connection is
+not treated as a limit: the server is still releasing the old connection. There
+is nothing to configure.
 
 Ether tries other providers before changing a release. Copy-only HLS or DASH
 can restart on another release at the current media time. Direct-play MKV and MP4
@@ -644,8 +778,8 @@ its artwork, overview, ratings, cast, directors, and catalog identity.
 **Find on TMDB** retains the broader title lookup for released titles outside
 the browsable library. **Catalog settings** contains the TMDB key and connection
 test, language, region, refresh interval, popularity and vote thresholds, adult
-content option, and catalog health. Settings apply without a restart. Existing
-links to **Metadata → Catalogue** redirect to Catalog.
+content option, and catalog health. Settings apply without a restart. Catalog
+is at **Catalog**; Metadata no longer keeps a catalogue alias.
 
 **Show scheduled episodes** in Catalog settings is off by default. When enabled,
 a season that has already started can list unaired episodes with known air dates.
@@ -800,10 +934,46 @@ visibility subject to the normal release, availability and viewer restrictions.
 Country matches TMDB's origin/production country metadata, including
 co-productions, separately from original language. For example, a country rule
 for India also matches an English-language Indian production. Unknown country,
-genre, year and language never match an exclusion. A content rating rule set
-to "is none of" also hides titles with no rating, so a rating allowlist cannot
-be bypassed by a missing certification. The preview reports country coverage.
-Existing normal metadata refreshes fill gaps without a quota-consuming bulk lookup.
+genre, year and language never match an exclusion. The preview reports country
+coverage. Existing normal metadata refreshes fill gaps without a quota-consuming
+bulk lookup.
+
+#### Content ratings
+
+Ether compares content ratings by **age level**, everywhere: library
+visibility, collections, viewer rating caps, Live TV limits and
+recommendations. Film, TV and other countries' ratings at the same level are
+one choice, so the picker offers levels rather than individual labels:
+
+| Level | US film · US TV | Other boards, for example |
+| --- | --- | --- |
+| All ages | G · TV-G · TV-Y | U (UK), 0 (DE), L (BR), G (CA) |
+| Parental guidance | PG · TV-PG · TV-Y7 | PG (UK, CA, AU), 6 (DE), 7 (SE), 10 (BR, FR) |
+| Teens 13+ | PG-13 · TV-14 | 12A (UK), 12 (DE), 14A (CA), M (AU) |
+| Mature 16+ | R · TV-MA | 15 (UK), 16 (DE), MA15+ (AU), 18A (CA) |
+| Adults 18+ | NC-17 | 18 (UK, DE), R18+ (AU), R (CA) |
+| Not rated | NR, or no rating at all | |
+
+An allowlist such as "Content rating is none of G · TV-G · TV-Y, PG · TV-PG ·
+TV-Y7" therefore keeps a Hallmark movie certified G, a TV-G series, a UK PG
+film and a TV movie only Germany rates 6. Kids' 7+ ratings share PG's level, so
+choosing G and PG never hides something milder than PG.
+"Is none of" hides titles without a rating unless you also choose **Not
+rated**. To keep family titles without a rating but hide unrated adult ones,
+add a second group: Content rating is Not rated, and Genre is any of Horror,
+Thriller. Rules can also use **is at least** and **is at most** a level; these
+never match unrated titles. A viewer's rating cap admits everything at or
+below its level and always hides unrated titles.
+
+Ether picks each title's rating from TMDB: your catalogue region first, then
+the US, considering theatrical, digital, physical and TV releases in that
+order (TV movies are usually certified on their TV premiere). When neither
+has one, another country's rating is kept with its country (shown as
+"G (CA)", sent to Plex as `ca/G`), never passed off as a US rating. If you
+configure an OMDb or MDBList key under Metadata, IMDb's US certificate fills
+titles TMDB leaves unrated, as Plex Media Server does; Ether looks up a few
+unrated titles every ten minutes so your provider quota stays mostly for
+badges. The title inspector shows where each rating came from.
 
 Library collections and discovery rows are independent. Ether ships movie
 collections by genre and TV collections by locally known networks/studios.
@@ -825,3 +995,48 @@ changes. A new client session or five minutes without browsing starts a fresh
 selection. Clients that do not send a session identifier use the idle boundary;
 Ether cannot distinguish an immediate app reopen from an ordinary refresh on
 those clients. Continue Watching remains live throughout.
+
+## Stremio addon
+
+An owner can enable Stremio under **Apps**. Each viewer can then open the
+viewer portal, choose **Connect an app**, and create an individual Stremio
+install link. Open the link in Stremio or copy it to the device running the
+app. Keep this link private: it gives access to that viewer's permitted media.
+The viewer can revoke the connection under **Devices** and create another one
+if needed.
+
+Stremio requires an HTTPS address. If the portal cannot create an install
+link, add a certificate under **Apps → Secure connections** and try again.
+Catalogue items and streams follow the viewer's library and safety settings.
+
+## Read-only WebDAV
+
+After an owner enables **Files** under **Apps**, a viewer can create a WebDAV
+app password in the viewer portal under **Connect an app**. Copy the address,
+username and password into a WebDAV client such as Infuse, VLC, Kodi or rclone.
+The password is shown once; revoke the connection under **Devices** if it is
+lost or no longer needed. Each viewer sees only media allowed by their account.
+The Movies, TV and Collections folders are read-only. Opening a file starts a
+normal Ether playback session and counts toward the viewer's stream limits.
+
+## DLNA on the local network
+
+The owner can enable **DLNA** under **Apps** and select the viewer whose library
+and safety settings apply to shared devices. DLNA stays unavailable until a
+viewer is selected, and accepts requests only from the local network. The owner
+can also create a living-room guest in the DLNA settings. It starts with the
+Kids preset (PG) and can be edited like other viewers. Browse for Ether in a
+DLNA-compatible player after saving the selection.
+
+## M3U and XMLTV
+
+When an owner enables **M3U and XMLTV** under **Apps**, each viewer can create
+an individual playlist address in the viewer portal under **Connect an app**.
+Add that address to a compatible IPTV client. Keep it private: it grants access
+to the channels allowed for that viewer. For the matching XMLTV guide address,
+replace `playlist.m3u` at the end of the address with `guide.xml`. Revoke the
+connection under **Devices** when it is no longer needed.
+
+Revoking a connection blocks its new playback requests immediately. An existing
+download or playback response is checked again while it is transferring, so it
+may continue briefly before stopping; that interruption is not instantaneous.

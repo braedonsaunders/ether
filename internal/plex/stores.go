@@ -2,85 +2,19 @@ package plex
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/json"
-	"hash/fnv"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
-// ---------------------------------------------------------------------------
-// Stream ids
+// slotHash is the visible id for a subtitle search offer. Offers are not
+// stream bindings; playback ids come from the broker.
+func slotHash(key core.RatingKey, slot string) int64 { return sessions.PlexWireID(key, slot) }
 
-// streamRef is what a Stream id points at.
-type streamRef struct {
-	key   core.RatingKey
-	index int // position in MediaInfo.Streams when last rendered
-	info  core.StreamInfo
-	slot  string // identity within the title (see streamSlot)
-}
-
-// streamRegistry hands out stable Stream IDs. Audio/subtitle IDs include
-// their identity as well as title and position, so a cached ID cannot change
-// language after a new release, registry eviction, or server restart. Video
-// IDs retain position identity; external subtitles retain source identity.
-// Hash collisions are resolved by probing without overwriting old references.
-type streamRegistry struct {
-	mu   sync.Mutex
-	byID map[int64]streamRef
-}
-
-const maxStreamRefs = 200_000
-
-func newStreamRegistry() *streamRegistry { return &streamRegistry{byID: map[int64]streamRef{}} }
-
-func slotHash(key core.RatingKey, slot string) int64 {
-	h := fnv.New64a()
-	h.Write([]byte(strconv.FormatInt(int64(key), 10) + "/" + slot))
-	// Keep ids small and positive so every client parses them as int32.
-	return int64(h.Sum64()%2_000_000_000) + 1
-}
-
-// streamSlot is a stream's stable identity within its title.
 func streamSlot(index int, info core.StreamInfo) string {
-	if info.External && info.ExternalURL != "" {
-		return "external/" + info.ExternalURL
-	}
-	if info.Type == "audio" || info.Type == "subtitle" {
-		// JSON avoids ambiguous separators in arbitrary track titles. Probe-only
-		// hints and default flags do not change a track's identity.
-		raw, _ := json.Marshal([]any{index, info.Type, info.Language, info.Codec, info.Channels, info.Title, info.Forced, info.External, info.ExternalURL})
-		return "track-v2/" + string(raw)
-	}
-	return strconv.Itoa(index)
-}
-
-func (r *streamRegistry) register(key core.RatingKey, index int, info core.StreamInfo) int64 {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.byID) >= maxStreamRefs {
-		r.byID = map[int64]streamRef{}
-	}
-	slot := streamSlot(index, info)
-	id := slotHash(key, slot)
-	for {
-		ref, ok := r.byID[id]
-		if !ok || (ref.key == key && ref.slot == slot && sameStreamIdentity(ref.info, info)) {
-			r.byID[id] = streamRef{key: key, index: index, info: info, slot: slot}
-			return id
-		}
-		id++ // hash collision or changed identity: preserve the old reference
-	}
-}
-
-func (r *streamRegistry) lookup(id int64) (streamRef, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	ref, ok := r.byID[id]
-	return ref, ok
+	return sessions.PlexStreamSlot(index, info)
 }
 
 // ---------------------------------------------------------------------------
@@ -89,48 +23,28 @@ func (r *streamRegistry) lookup(id int64) (streamRef, bool) {
 // Selection identity excludes mutable probe/default hints. It includes the
 // distinguishing audio/subtitle metadata so an old ID cannot change language
 // when a later release reuses the same stream position.
-func sameStreamIdentity(a, b core.StreamInfo) bool {
-	return a.Type == b.Type && a.Codec == b.Codec && a.Language == b.Language &&
-		a.Channels == b.Channels && a.Title == b.Title && a.Forced == b.Forced &&
-		a.External == b.External && a.ExternalURL == b.ExternalURL
-}
-
 type selection struct {
 	audio       int // position in MediaInfo.Streams
 	audioSet    bool
 	audioStream *core.StreamInfo
 	subtitle    int // position, -1 = none
 	subtitleSet bool
-	// subtitleStream is the chosen subtitle when it was picked by stream
-	// id, so the choice is found again in a differently shaped MediaInfo
-	// (the estimate before play, the probed release after); see
-	// resolveSubtitle.
+	// subtitleStream is the chosen subtitle's identity (language, codec,
+	// and source), not its position. A later variant order can put a
+	// different track in the old slot; resolveSubtitle finds this one.
 	subtitleStream *core.StreamInfo
 }
 
 type selectionStore struct {
-	mu sync.Mutex
-	m  map[[2]int64]selection
+	store *sessions.Selections[selection]
 }
 
-func newSelectionStore() *selectionStore { return &selectionStore{m: map[[2]int64]selection{}} }
-
-func (s *selectionStore) get(userID, partID int64) selection {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.m[[2]int64{userID, partID}]
+func newSelectionStore() *selectionStore {
+	return &selectionStore{store: sessions.NewSelections[selection]()}
 }
-
+func (s *selectionStore) get(userID, partID int64) selection { return s.store.Get(userID, partID) }
 func (s *selectionStore) update(userID, partID int64, fn func(*selection)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.m) > 100_000 {
-		s.m = map[[2]int64]selection{}
-	}
-	k := [2]int64{userID, partID}
-	sel := s.m[k]
-	fn(&sel)
-	s.m[k] = sel
+	s.store.Update(userID, partID, fn)
 }
 
 // ---------------------------------------------------------------------------
@@ -166,117 +80,46 @@ type transcodeEntry struct {
 const decisionFailureTTL = 15 * time.Second
 
 type transcodeTable struct {
-	mu sync.Mutex
-	m  map[string]*transcodeEntry
+	table *sessions.BindingTable[playRequest]
 }
 
-func newTranscodeTable() *transcodeTable { return &transcodeTable{m: map[string]*transcodeEntry{}} }
-
+func newTranscodeTable() *transcodeTable {
+	return &transcodeTable{table: sessions.NewBindingTable[playRequest]()}
+}
+func (e *transcodeEntry) binding() *sessions.Binding[playRequest] {
+	return &sessions.Binding[playRequest]{ID: e.id, StreamToken: e.streamToken, PlayID: e.playID, PlaybackID: e.playbackID, UserID: e.userID, ClientID: e.clientID, Key: e.key, Requested: e.requested, Decision: e.decision, Info: e.info, Subtitle: e.subtitle, Caps: e.caps, Opts: e.opts, Offset: e.offset, Started: e.started, UpdatedAt: e.updatedAt, FailKey: e.failKey, FailErr: e.failErr, FailedAt: e.failedAt}
+}
+func plexBinding(b *sessions.Binding[playRequest]) *transcodeEntry {
+	return &transcodeEntry{id: b.ID, streamToken: b.StreamToken, playID: b.PlayID, playbackID: b.PlaybackID, userID: b.UserID, clientID: b.ClientID, key: b.Key, requested: b.Requested, decision: b.Decision, info: b.Info, subtitle: b.Subtitle, caps: b.Caps, opts: b.Opts, offset: b.Offset, started: b.Started, updatedAt: b.UpdatedAt, failKey: b.FailKey, failErr: b.FailErr, failedAt: b.FailedAt}
+}
 func (t *transcodeTable) put(e *transcodeEntry) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if old, ok := t.m[e.id]; ok {
-		if old.userID != e.userID || old.clientID != e.clientID {
-			return
-		}
-		e.streamToken = old.streamToken
-	}
-	if e.streamToken == "" {
-		e.streamToken = rand.Text()
-	}
-	cp := *e
-	t.m[e.id] = &cp
+	b := e.binding()
+	t.table.Put(b)
+	e.streamToken = b.StreamToken
 }
-
-// claim reserves a client-chosen ID before any playback/transcoder work. A
-// different viewer or device cannot replace, reuse, stop, or probe that binding.
 func (t *transcodeTable) claim(id string, userID int64, clientID string, now time.Time) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if e, ok := t.m[id]; ok {
-		return e.userID == userID && e.clientID == clientID
-	}
-	t.m[id] = &transcodeEntry{id: id, userID: userID, clientID: clientID, streamToken: rand.Text(), updatedAt: now}
-	return true
+	return t.table.Claim(id, userID, clientID, now)
 }
-
 func (t *transcodeTable) get(id string) (*transcodeEntry, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.m[id]
+	b, ok := t.table.Get(id)
 	if !ok {
 		return nil, false
 	}
-	cp := *e
-	return &cp, true
+	return plexBinding(b), true
 }
-
-// fail records a failed decision on the binding the decision claimed. A
-// binding owned by another viewer or device is left alone.
 func (t *transcodeTable) fail(id string, userID int64, clientID string, key core.RatingKey, err error, now time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.m[id]
-	if !ok || e.userID != userID || e.clientID != clientID || err == nil {
-		return
-	}
-	e.failKey, e.failErr, e.failedAt, e.updatedAt = key, err, now, now
+	t.table.Fail(id, userID, clientID, key, err, now)
 }
-
-// takeFailure returns and clears a recent failed decision for this viewer's
-// binding and title.
 func (t *transcodeTable) takeFailure(id string, userID int64, key core.RatingKey, now time.Time) (error, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.m[id]
-	if !ok || e.failErr == nil {
-		return nil, false
-	}
-	err, match := e.failErr, e.userID == userID && e.failKey == key && now.Sub(e.failedAt) < decisionFailureTTL
-	if e.userID == userID {
-		e.failKey, e.failErr, e.failedAt = 0, nil, time.Time{}
-	}
-	if !match {
-		return nil, false
-	}
-	return err, true
+	return t.table.TakeFailure(id, userID, key, now)
 }
-
-func (t *transcodeTable) touch(id string, now time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if e, ok := t.m[id]; ok {
-		e.updatedAt = now
-	}
-}
-
-func (t *transcodeTable) remove(id string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.m, id)
-}
-
-// forClient lists the transcode sessions of a client for a title.
+func (t *transcodeTable) touch(id string, now time.Time) { t.table.Touch(id, now) }
+func (t *transcodeTable) remove(id string)               { t.table.Remove(id) }
 func (t *transcodeTable) forClient(userID int64, clientID string, key core.RatingKey) []string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	var out []string
-	for id, e := range t.m {
-		if e.userID == userID && e.clientID == clientID && (key == 0 || e.key == key) {
-			out = append(out, id)
-		}
-	}
-	return out
+	return t.table.ForClient(userID, clientID, key)
 }
-
-func (t *transcodeTable) expire(now time.Time, ttl time.Duration) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for id, e := range t.m {
-		if now.Sub(e.updatedAt) > ttl {
-			delete(t.m, id)
-		}
-	}
+func (t *transcodeTable) expire(now time.Time, ttl time.Duration) []string {
+	return t.table.Expire(now, ttl)
 }
 
 // ---------------------------------------------------------------------------
@@ -296,9 +139,21 @@ func newFacetCache() *facetCache { return &facetCache{m: map[string]facetEntry{}
 
 const facetTTL = 10 * time.Minute
 
+type facetFilterCatalog interface {
+	FacetFilter(ctx context.Context, f core.Filter, facet string) ([]core.FacetValue, error)
+}
+
+func (s *Server) firstCharacter(ctx context.Context, f core.Filter) ([]core.FacetValue, error) {
+	f.FirstCharacter = ""
+	if fc, ok := s.d.Catalog.(facetFilterCatalog); ok {
+		return fc.FacetFilter(ctx, f, "firstCharacter")
+	}
+	return s.d.Catalog.Facet(ctx, f.Type, "firstCharacter")
+}
+
 func (s *Server) facet(ctx context.Context, t core.MediaType, name string) ([]core.FacetValue, error) {
 	if name == "firstCharacter" {
-		return s.d.Catalog.Facet(ctx, t, name)
+		return s.firstCharacter(ctx, core.Filter{Type: t})
 	}
 	k := string(t) + "/" + name
 	s.facets.mu.Lock()
@@ -333,14 +188,5 @@ func (s *Server) facetTitle(ctx context.Context, t core.MediaType, name, value s
 }
 
 // byPlayID returns the transcode session ids fed by a playback session.
-func (t *transcodeTable) byPlayID(playID string) []string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	var ids []string
-	for id, e := range t.m {
-		if e.playID == playID && e.started {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
+func (t *transcodeTable) byPlayID(playID string) []string { return t.table.ByPlayID(playID) }
+func (t *transcodeTable) ids() []string                   { return t.table.IDs() }

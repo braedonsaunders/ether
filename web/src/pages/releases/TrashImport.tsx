@@ -77,7 +77,7 @@ const STATUS: Record<
   ImportFormat["status"],
   { label: string; variant: "secondary" | "success" | "warning" }
 > = localized(() => ({
-  present: { label: t("Already in Custom scoring"), variant: "secondary" },
+  present: { label: t("Already saved"), variant: "secondary" },
   add: { label: t("Added"), variant: "success" },
   unsupported: { label: t("Can't import"), variant: "warning" },
   missing: { label: t("Not found"), variant: "warning" },
@@ -416,9 +416,7 @@ function ImportPreview({
   const skipped = (counts.unsupported ?? 0) + (counts.missing ?? 0);
   const formatSummary = [
     counts.add ? tn(counts.add, "{count} added", "{count} added") : "",
-    counts.present
-      ? tn(counts.present, "{count} already in Custom scoring", "{count} already in Custom scoring")
-      : "",
+    counts.present ? tn(counts.present, "{count} already saved", "{count} already saved") : "",
     skipped ? tn(skipped, "{count} can't be imported", "{count} can't be imported") : "",
   ]
     .filter(Boolean)

@@ -23,9 +23,9 @@ import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { Workspace } from "../../components/workspace";
 import { localized, t, tn } from "../../i18n";
 import { api } from "../../lib/api";
+import { formatRating } from "../../lib/contentRatings";
 import { fixed, formatNumber } from "../../lib/format";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
-import { LibraryVisibility } from "./LibraryVisibility";
 import { CatalogSettings } from "./CatalogSettings";
 import { TitleInspector } from "./TitleInspector";
 import "./catalog.css";
@@ -45,12 +45,13 @@ export default function Catalog() {
   const [params, setParams] = useSearchParams();
   const settings = tab === "settings";
   const visibility = tab === "visibility";
+  const onSettings = settings || visibility;
   const { health, refreshDashboard } = useApp();
   const status = health.find((h) => h.id === "catalog");
+  const catalogPath = `/catalog${params.size ? `?${params}` : ""}`;
   return (
     <Workspace
       title={t("Catalog")}
-      subtitle={t("The movies and shows behind your Plex library.")}
       actions={
         <>
           {status ? (
@@ -61,34 +62,21 @@ export default function Catalog() {
               />
             </span>
           ) : null}
-          <Button
-            size="sm"
-            variant={visibility ? "secondary" : "outline"}
-            onClick={() => navigate(visibility ? "/catalog" : "/catalog/visibility")}
-          >
-            <SlidersHorizontal size={14} />
-            {t("Library visibility")}
-          </Button>
-          <Button
-            size="sm"
-            variant={settings ? "secondary" : "outline"}
-            onClick={() =>
-              navigate(
-                settings
-                  ? `/catalog${params.size ? `?${params}` : ""}`
-                  : `/catalog/settings${params.size ? `?${params}` : ""}`,
-              )
-            }
-          >
-            {settings ? <ArrowLeft size={14} /> : <Settings2 size={14} />}
-            {settings ? t("Back to catalog") : t("Catalog settings")}
-          </Button>
+          {onSettings ? (
+            <Button size="sm" variant="outline" onClick={() => navigate(catalogPath)}>
+              <ArrowLeft size={14} />
+              {t("Back to catalog")}
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => navigate("/catalog/settings")}>
+              <Settings2 size={14} />
+              {t("Settings")}
+            </Button>
+          )}
         </>
       }
     >
-      {visibility ? (
-        <LibraryVisibility />
-      ) : settings ? (
+      {visibility || settings ? (
         <CatalogSettings />
       ) : (
         <CatalogBrowser params={params} setParams={setParams} refreshHealth={refreshDashboard} />
@@ -111,6 +99,7 @@ function CatalogBrowser({
   const type = ["movie", "show"].includes(params.get("type") ?? "") ? params.get("type")! : "";
   const genre = params.get("genre") ?? "";
   const decade = params.get("decade") ?? "";
+  const waiting = params.get("waiting") === "1";
   const sort = SORTS.some((s) => s.value === params.get("sort"))
     ? params.get("sort")!
     : "popularity";
@@ -146,13 +135,14 @@ function CatalogBrowser({
           type,
           genre,
           decade,
+          waiting: waiting ? "1" : "",
           sort,
           offset: (page - 1) * PAGE_SIZE,
           limit: PAGE_SIZE,
         },
         signal,
       ),
-    [debouncedQuery, type, genre, decade, sort, page],
+    [debouncedQuery, type, genre, decade, waiting, sort, page],
   );
   const facets = useAsync(async () => {
     const [genres, decades] = await Promise.all([
@@ -164,10 +154,10 @@ function CatalogBrowser({
   const busy = results.loading || query !== debouncedQuery;
   const total = results.data?.total ?? 0;
   const items = results.data?.items ?? [];
-  const hasFilters = Boolean(query || genre || decade);
+  const hasFilters = Boolean(query || genre || decade || waiting);
   const reset = () => {
     const next = new URLSearchParams(latestParams.current);
-    ["q", "genre", "decade", "page"].forEach((k) => next.delete(k));
+    ["q", "genre", "decade", "waiting", "page"].forEach((k) => next.delete(k));
     latestParams.current = next;
     setParams(next);
   };
@@ -264,6 +254,16 @@ function CatalogBrowser({
             />
           </div>
           <div className="catalog-filter-field">
+            <button
+              type="button"
+              className={`catalog-waiting-chip${waiting ? " is-on" : ""}`}
+              aria-pressed={waiting}
+              onClick={() => update("waiting", waiting ? "" : "1")}
+            >
+              {t("Waiting for a release")}
+            </button>
+          </div>
+          <div className="catalog-filter-field">
             <span className="catalog-field-label">{t("Decade")}</span>
             <ToolbarPicker
               className="w-full justify-between"
@@ -285,12 +285,7 @@ function CatalogBrowser({
             <h4>{t("Ready for discovery")}</h4>
             <p>
               {t(
-                "Only released titles appear here. Popularity and vote thresholds are managed in Catalog settings.",
-              )}
-            </p>
-            <p>
-              {t(
-                "This is a metadata library. Playback sources are resolved when a viewer presses play.",
+                "Only released titles appear here. Popularity and vote thresholds are in Catalog settings.",
               )}
             </p>
           </div>
@@ -299,13 +294,15 @@ function CatalogBrowser({
           <div className="catalog-results-head">
             <div>
               <h3>
-                {query
-                  ? t("Results for “{query}”", { query })
-                  : type === "movie"
-                    ? t("Movies")
-                    : type === "show"
-                      ? t("TV shows")
-                      : t("Movies & TV shows")}
+                {waiting
+                  ? t("Waiting for a release")
+                  : query
+                    ? t("Results for “{query}”", { query })
+                    : type === "movie"
+                      ? t("Movies")
+                      : type === "show"
+                        ? t("TV shows")
+                        : t("Movies & TV shows")}
               </h3>
               <p role="status">
                 {busy
@@ -342,6 +339,7 @@ function CatalogBrowser({
                 ["q", query],
                 ["genre", genre],
                 ["decade", decade ? t("{decade}s", { decade }) : ""],
+                ["waiting", waiting ? t("Waiting for a release") : ""],
               ]
                 .filter(([, v]) => v)
                 .map(([key, label]) => (
@@ -376,7 +374,7 @@ function CatalogBrowser({
                   : page > 1
                     ? t("The catalog may have changed since your last visit.")
                     : t(
-                        "Add a TMDB key in Catalog settings. Released movies and shows will appear after the catalog syncs.",
+                        "The library is empty until the catalogue syncs. That needs a TMDB key. Playback also needs a debrid account or a Usenet provider.",
                       )
               }
               action={
@@ -434,7 +432,9 @@ function CatalogBrowser({
                     ) : null}
                     {list ? (
                       <>
-                        <Badge variant="secondary">{title.contentRating || t("Unrated")}</Badge>
+                        <Badge variant="secondary">
+                          {title.contentRating ? formatRating(title.contentRating) : t("Unrated")}
+                        </Badge>
                         <ArrowRight size={15} className="text-fg-subtle" />
                       </>
                     ) : null}

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // validateRanked validates candidates in rank order with a sliding window:
@@ -27,9 +29,12 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 	defer cancelBudget()
 	workCtx, cancelWork := context.WithCancel(ctx)
 	var wg sync.WaitGroup
+	var results chan validation
 	defer func() {
 		cancelWork()
 		wg.Wait()
+		// Checks cut off by the budget may have fetched their NZB.
+		drainValidations(ctx, cands, results)
 	}()
 	margin := s.resolverCfg().SourceScoreMargin
 	if margin <= 0 {
@@ -37,7 +42,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 	}
 	const width, wideWidth = 2, 4
 	limit := min(len(cands), maxHealthAttempts)
-	results := make(chan validation, limit)
+	results = make(chan validation, limit)
 	startedAt := make([]time.Time, limit)
 	done := make([]*validation, limit)
 	next, inflight, confirmed := 0, 0, 0
@@ -102,6 +107,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 	}
 	var transient error
 	record := func(v validation) {
+		noteValidation(ctx, cands[v.index].rel, v)
 		inflight--
 		done[v.index] = &v
 		ct := &tr.Candidates[cands[v.index].trace]
@@ -152,6 +158,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 			select {
 			case v := <-results:
 				if ctx.Err() != nil {
+					noteValidation(ctx, cands[v.index].rel, v)
 					return -1, nil, ctx.Err()
 				}
 				record(v)
@@ -176,12 +183,15 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 		// A healthy later candidate may overtake a lead still checking.
 		age := time.Since(startedAt[lead])
 		var wait time.Duration = -1
+		leadUncachedTorrent := protocolOf(cands[lead].rel) == core.ProtocolTorrent && !s.knownCached(cands[lead].rel)
 		for k := lead + 1; k < limit; k++ {
 			v := done[k]
 			if v == nil || !v.healthy || v.err != nil {
 				continue
 			}
 			switch {
+			case leadUncachedTorrent && s.knownCached(cands[k].rel) && cands[k].policy.Fallback <= cands[lead].policy.Fallback:
+				return win(*v, lead)
 			case equivalentHedge(cands[lead], cands[k], margin):
 				if age >= rankedSourceGrace {
 					return win(*v, lead)
@@ -206,6 +216,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 		select {
 		case v := <-results:
 			if ctx.Err() != nil {
+				noteValidation(ctx, cands[v.index].rel, v)
 				return -1, nil, ctx.Err()
 			}
 			record(v)

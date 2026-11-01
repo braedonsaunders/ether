@@ -11,8 +11,12 @@ import (
 // Transcoder (internal/transcode)
 
 type HLSRequest struct {
-	SessionID string
-	InputURL  string // ffmpeg input; Ether serves sources on loopback HTTP with range support
+	// RequireIndependentProof emits HLS independence tags only when the
+	// session can guarantee every advertised segment is independently decodable.
+	// Zero preserves the legacy playlist contract for existing callers.
+	RequireIndependentProof bool
+	SessionID               string
+	InputURL                string // ffmpeg input; Ether serves sources on loopback HTTP with range support
 	// LiveInput permits playlist demuxers for owner-configured live sources.
 	// Ordinary resolved media must leave this false, even if duration is unknown.
 	LiveInput bool
@@ -20,14 +24,20 @@ type HLSRequest struct {
 	// InputURL (e.g. for resolved trailer URLs). Transcoders that cannot
 	// send headers ignore them; most resolved URLs need none (additive).
 	InputHeaders map[string]string
-	Info         MediaInfo
-	Decision     Decision
-	StartOffset  time.Duration
+	// InputLease is trusted host composition only, never decoded from wire
+	// requests. A caller retains an unclaimed lease if admission fails early.
+	InputLease  EncoderInputLease `json:"-"`
+	Info        MediaInfo
+	Decision    Decision
+	StartOffset time.Duration
 	// SegmentDuration defaults to 4s when zero (5s for DASH).
 	SegmentDuration time.Duration
-	// Protocol is ProtocolHLS (default when empty) or ProtocolDASH. A DASH
-	// session also implements DASHSession; Transcoder.Session returns it as
-	// an HLSSession, so type-assert to reach the DASH methods.
+	// Protocol is ProtocolHLS (default when empty), ProtocolDASH, or
+	// ProtocolHTTP (Plex for Mac / Desktop's chunked Matroska stream;
+	// the constant lives with the other "http" protocol name in debrid.go).
+	// A DASH session also implements DASHSession; an HTTP session also
+	// implements HTTPSession. Transcoder.Session returns either as an
+	// HLSSession, so type-assert to reach the protocol methods.
 	Protocol string
 }
 
@@ -52,6 +62,15 @@ type DASHSession interface {
 	ServeMedia(w http.ResponseWriter, r *http.Request, rep, n int)
 }
 
+// HTTPSession is a running ffmpeg remux or transcode writing one
+// streamable Matroska to the client (Plex for Mac protocol=http).
+// ServeHTTP writes the chunked body; a later start with offset is a
+// new StartHLS of the same session id.
+type HTTPSession interface {
+	HLSSession
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
 // HLSSession is one running ffmpeg remux or transcode producing HLS (or
 // DASH; see DASHSession).
 type HLSSession interface {
@@ -71,8 +90,9 @@ type HLSSession interface {
 type Transcoder interface {
 	Probe(ctx context.Context, inputURL string) (*MediaInfo, error)
 	Decide(info MediaInfo, caps ClientCaps, opts DecideOptions) Decision
-	// StartHLS starts an HLS session, or a DASH session (a DASHSession)
-	// when req.Protocol is ProtocolDASH.
+	// StartHLS starts an HLS session, a DASH session (a DASHSession)
+	// when req.Protocol is ProtocolDASH, or an HTTP Matroska session
+	// (an HTTPSession) when req.Protocol is ProtocolHTTP.
 	StartHLS(ctx context.Context, req HLSRequest) (HLSSession, error)
 	Session(id string) (HLSSession, bool)
 	Stop(id string)
@@ -100,6 +120,9 @@ type DecideOptions struct {
 	SubtitleStream int      // -1 none
 	AudioFilters   []string // trusted owner/viewer audio processing; forces audio encoding
 	BurnSubtitles  bool
+	// Protocol is the conversion protocol the client asked for (hls, dash,
+	// http). Empty keeps the HLS target. Additive.
+	Protocol string
 }
 
 // ---------------------------------------------------------------------------
@@ -108,14 +131,17 @@ type DecideOptions struct {
 // PlaySession binds a user, a title and a client to a resolved, open source.
 type PlaySession struct {
 	PlaybackGroup string `json:"playbackGroup,omitempty"`
-	ID            string
-	UserID        int64
-	ClientID      string
-	Key           RatingKey
-	Resolution    *Resolution
-	Source        MediaSource // swaps on failover; read through Playback.Source
-	Info          MediaInfo
-	StartedAt     time.Time
+	// PreparedOnly marks a source reserved for planning but not opened by a
+	// frontend. Cluster snapshots carry it for owner Activity.
+	PreparedOnly bool `json:"preparedOnly,omitempty"`
+	ID           string
+	UserID       int64
+	ClientID     string
+	Key          RatingKey
+	Resolution   *Resolution
+	Source       MediaSource // swaps on failover; read through Playback.Source
+	Info         MediaInfo
+	StartedAt    time.Time
 
 	// Status for the admin dashboard and /status/sessions, filled on the
 	// snapshots Playback returns.
@@ -165,4 +191,45 @@ type Playback interface {
 	Failover(ctx context.Context, sessionID string, at time.Duration) (*PlaySession, error)
 	Stop(sessionID string)
 	Sessions() []*PlaySession
+}
+
+// SurfaceScopedPlayback separates client identifiers by their authenticated
+// protocol surface, even when different clients supply identical IDs.
+type SurfaceScopedPlayback interface {
+	PrepareSurface(ctx context.Context, user *User, key RatingKey, caps ClientCaps, releaseID string, exact bool) (*PlaySession, error)
+	SessionForSurface(surface string, userID int64, clientID string, key RatingKey, releaseID string, exact bool) (*PlaySession, bool)
+	MarkSurfaceOpened(id string) bool
+	MarkSurfacePrepared(id string) bool
+}
+
+// PlaybackRevisionPin keeps an opened generation from silently failing over
+// while a client consumes metadata bound to its source revision.
+type PlaybackRevisionPin interface {
+	PinSourceRevision(ctx context.Context, id, revision string) error
+	UnpinSourceRevision(id string)
+}
+
+// PlaybackSourceObservation contains scalar facts from one opened source
+// generation. Empty Revision means its identity cannot be established safely;
+// nil HDR and empty codec/zero height remain unknown.
+type PlaybackSourceObservation struct {
+	Revision, ReleaseID string
+	VideoCodec          string
+	Height              int
+	HDR                 *bool
+}
+
+// PlaybackSourceHistory contains persisted source facts without raw release
+// identifiers. A digest can only be matched against authorized candidates.
+type PlaybackSourceHistory struct {
+	Revision, ReleaseDigest, VideoCodec string
+	Height                              int
+	HDR                                 *bool
+}
+
+// PlaybackSourceSnapshot copies immutable facts validated at source open/probe
+// for the current generation. It performs no filesystem I/O and is not fresh
+// authorization or a claim that a local path has remained unchanged.
+type PlaybackSourceSnapshot interface {
+	CurrentSource(context.Context, string) (PlaybackSourceObservation, error)
 }

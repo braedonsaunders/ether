@@ -4,7 +4,6 @@ import {
   EmptyState,
   Input,
   Skeleton,
-  SubtabNav,
   confirmDialog,
   toast,
   cn,
@@ -193,7 +192,6 @@ export default function CollectionsGallery({
     <>
       <Workspace
         title={t("Collections")}
-        subtitle={t("Library collections and discovery rows, independently curated.")}
         actions={
           <>
             {tab !== "templates" ? (
@@ -238,6 +236,39 @@ export default function CollectionsGallery({
         aside={
           <>
             <PanelHead>
+              <ToolbarPicker
+                ariaLabel={t("Collection views")}
+                value={tab}
+                onChange={(key) => setTab(key)}
+                className="mb-2 h-10 w-full px-3 [&>span:nth-child(2)]:flex-1 [&>span:nth-child(2)]:text-left"
+                matchWidth
+                options={[
+                  {
+                    value: "mine",
+                    label: t("Library collections"),
+                    icon: <Layers size={15} />,
+                    meta: <ViewCount n={collections.data ? mine.length : undefined} />,
+                  },
+                  {
+                    value: "rows",
+                    label: t("Home & library rows"),
+                    icon: <LayoutGrid size={15} />,
+                    meta: <ViewCount n={rowSources.length} />,
+                  },
+                  {
+                    value: "templates",
+                    label: t("Templates"),
+                    icon: <LayoutTemplate size={15} />,
+                    meta: <ViewCount n={templates.data?.length} />,
+                  },
+                  {
+                    value: "builtin",
+                    label: t("Discovery sources"),
+                    icon: <Globe2 size={15} />,
+                    meta: <ViewCount n={collections.data ? builtIn.length : undefined} />,
+                  },
+                ]}
+              />
               <div className="flex items-center gap-1.5">
                 <div className="relative min-w-0 flex-1">
                   <Search
@@ -280,25 +311,6 @@ export default function CollectionsGallery({
                   />
                 ) : null}
               </div>
-              <SubtabNav
-                ariaLabel={t("Collection views")}
-                active={tab}
-                onSelect={(key) => setTab(key as Tab)}
-                tabs={[
-                  {
-                    key: "mine",
-                    label: t("Library collections"),
-                    count: collections.data ? mine.length : undefined,
-                  },
-                  { key: "rows", label: t("Home & library rows"), count: rowSources.length },
-                  { key: "templates", label: t("Templates"), count: templates.data?.length },
-                  {
-                    key: "builtin",
-                    label: t("Discovery sources"),
-                    count: collections.data ? builtIn.length : undefined,
-                  },
-                ]}
-              />
             </PanelHead>
             <div className="app-scroll min-h-0 flex-1 space-y-4 overflow-y-auto p-2 sm:p-3">
               {tab === "mine" && drafts.length ? (
@@ -431,7 +443,7 @@ export default function CollectionsGallery({
                 to="/home"
                 className="flex items-center justify-between gap-2 text-xs font-medium text-fg-muted hover:text-primary"
               >
-                <span>{t("Arrange your Plex Home rows")}</span>
+                <span>{t("Arrange Home rows")}</span>
                 <ArrowRight size={13} />
               </Link>
             </div>
@@ -454,11 +466,7 @@ export default function CollectionsGallery({
                   {tab === "builtin" ? t("Built-in collections") : t("Your collections")}
                 </h2>
                 <span className="text-xs text-fg-muted">
-                  {tn(
-                    items.length,
-                    "{count} collection · Artwork shown in Plex",
-                    "{count} collections · Artwork shown in Plex",
-                  )}
+                  {tn(items.length, "{count} collection", "{count} collections")}
                 </span>
               </div>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-6">
@@ -647,5 +655,11 @@ function mediaLabel(c: CollectionSpec) {
 function ListEmpty() {
   return (
     <p className="px-3 py-8 text-center text-xs text-fg-muted">{t("No collections to show.")}</p>
+  );
+}
+
+function ViewCount({ n }: { n?: number }) {
+  return n === undefined ? null : (
+    <span className="shrink-0 tabular-nums text-xs text-fg-subtle">{n}</span>
   );
 }

@@ -10,6 +10,13 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 )
 
+// sameProwlarrURL reports whether two Prowlarr base URLs name the same
+// saved connection. A trailing slash does not make a new destination, so
+// the stored API key can be restored. Any other change requires the key again.
+func sameProwlarrURL(a, b string) bool {
+	return strings.TrimRight(strings.TrimSpace(a), "/") == strings.TrimRight(strings.TrimSpace(b), "/")
+}
+
 func redact(s string) string {
 	if s == "" {
 		return ""
@@ -33,6 +40,8 @@ func RedactConfig(cfg config.Config) config.Config {
 	out.Simkl.ClientSecret = redact(out.Simkl.ClientSecret)
 	out.OpenSubtitles = redactOpenSubtitles(out.OpenSubtitles)
 	out.LLM = redactLLM(out.LLM)
+	out.Outbound.Password = redact(out.Outbound.Password)
+	out.Prowlarr.APIKey = redact(out.Prowlarr.APIKey)
 	out.Database = out.Database.Redacted()
 	if cfg.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(cfg.Usenet.Providers))
@@ -61,6 +70,7 @@ func RedactConfig(cfg config.Config) config.Config {
 
 func redactLLM(l config.LLM) config.LLM {
 	l.APIKey = redact(l.APIKey)
+	l.SpeechAPIKey = redact(l.SpeechAPIKey)
 	return l
 }
 
@@ -210,6 +220,8 @@ func UnredactConfig(next, prev config.Config) (config.Config, []FieldError) {
 	out.Simkl.ClientSecret = errs.restore("simkl.clientSecret", next.Simkl.ClientSecret, prev.Simkl.ClientSecret, strings.TrimSpace(next.Simkl.ClientID) == strings.TrimSpace(prev.Simkl.ClientID))
 	out.OpenSubtitles = errs.unredactOpenSubtitles(next.OpenSubtitles, prev.OpenSubtitles)
 	out.LLM = errs.unredactLLM(next.LLM, prev.LLM)
+	out.Outbound.Password = errs.restore("outbound.password", next.Outbound.Password, prev.Outbound.Password, strings.TrimSpace(next.Outbound.URL) == strings.TrimSpace(prev.Outbound.URL))
+	out.Prowlarr.APIKey = errs.restore("prowlarr.apiKey", next.Prowlarr.APIKey, prev.Prowlarr.APIKey, sameProwlarrURL(next.Prowlarr.URL, prev.Prowlarr.URL))
 	if next.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(next.Usenet.Providers))
 		for i, p := range next.Usenet.Providers {
@@ -246,7 +258,12 @@ func (e *placeholderErrors) unredactOpenSubtitles(next, prev config.OpenSubtitle
 
 func (e *placeholderErrors) unredactLLM(next, prev config.LLM) config.LLM {
 	next.APIKey = e.restore("llm.apiKey", next.APIKey, prev.APIKey, llmIdentity(next) == llmIdentity(prev))
+	next.SpeechAPIKey = e.restore("llm.speechApiKey", next.SpeechAPIKey, prev.SpeechAPIKey, speechIdentity(next) == speechIdentity(prev))
 	return next
+}
+
+func speechIdentity(l config.LLM) string {
+	return normURL(l.SpeechBaseURL) + "\x00" + strings.TrimSpace(l.SpeechModel)
 }
 
 func (e *placeholderErrors) unredactProvider(field string, p config.UsenetProvider, prev []config.UsenetProvider) config.UsenetProvider {

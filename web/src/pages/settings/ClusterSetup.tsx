@@ -404,13 +404,10 @@ function SetupWizard({
               </li>
               <li>
                 {create
-                  ? t(
-                      "Move your data to {database} on {host}. Keep the same server identity in Plex.",
-                      {
-                        database,
-                        host,
-                      },
-                    )
+                  ? t("Move your data to {database} on {host}. Keep the same server identity.", {
+                      database,
+                      host,
+                    })
                   : t(
                       "Adopt the cluster’s identity, viewers and settings. This server’s existing history is not merged.",
                     )}

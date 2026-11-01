@@ -42,3 +42,44 @@ type VariantResolver interface {
 type VariantPlayback interface {
 	PrepareVariant(ctx context.Context, user *User, key RatingKey, caps ClientCaps, releaseID string) (*PlaySession, error)
 }
+
+// ExactVariantPlayback never substitutes a different release, including
+// during later failover. The requested release may instead become unavailable.
+type ExactVariantPlayback interface {
+	PrepareExactVariant(ctx context.Context, user *User, key RatingKey, caps ClientCaps, releaseID string) (*PlaySession, error)
+}
+
+// DecisionTrace is the privacy-safe shape of the latest resolution for a
+// title: ceilings, who chose, and a bounded candidate list. It has no
+// username, address, or stream URL. Release names are the file names the
+// resolver ranked.
+type DecisionTrace struct {
+	Profile            string
+	ProfileMaxHeight   int
+	ClientMaxHeight    int
+	EffectiveMaxHeight int
+	AllowHDR           bool
+	AllowDolbyVision   bool
+	Chooser            string
+	ChosenVersion      string
+	Candidates         []DecisionCandidate
+}
+
+// DecisionCandidate is one ranked or rejected release in a DecisionTrace.
+type DecisionCandidate struct {
+	ReleaseID     string
+	Name          string
+	Height        int
+	Size          int64
+	Score         float64
+	Rejected      bool
+	Reason        string
+	Healthy       bool
+	HealthChecked bool
+}
+
+// DecisionTraceSource is the latest resolution for a title. Plex reads it
+// for the support capture and stays outside the resolver package.
+type DecisionTraceSource interface {
+	LatestDecision(key RatingKey) (DecisionTrace, bool)
+}

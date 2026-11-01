@@ -13,8 +13,8 @@ const title = {
 };
 
 describe("Catalog workspace", () => {
-  it("redirects the old destination and browses pages, filters, views and title details", async () => {
-    const { fake } = renderAppWith("/metadata/catalogue", (_method, path, _body, query) => {
+  it("browses pages, filters, views and title details", async () => {
+    const { fake } = renderAppWith("/catalog", (_method, path, _body, query) => {
       if (path === "/catalog/browse") return { items: [title], total: query.get("q") ? 1 : 107 };
       if (path === `/catalog/title/${title.key}`)
         return {
@@ -60,14 +60,20 @@ describe("Catalog workspace", () => {
     const language = await screen.findByLabelText("Language");
     expect(screen.getByLabelText("Region")).toBeInTheDocument();
     expect(screen.getByLabelText("Minimum popularity")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Test TMDB key" })).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Integrations" })
+        .map((link) => link.getAttribute("href")),
+    ).toContain("/services/tmdb");
+    expect(screen.queryByLabelText("Your TMDB API key")).not.toBeInTheDocument();
     const gate = screen.getByLabelText("Wait for digital or physical release");
     expect(gate).not.toBeChecked();
     fireEvent.click(gate);
     const upcoming = screen.getByLabelText("Show scheduled episodes");
     expect(upcoming).not.toBeChecked();
     fireEvent.click(upcoming);
-    fireEvent.change(language, { target: { value: "fr-FR" } });
+    fireEvent.click(language);
+    fireEvent.click(await screen.findByRole("option", { name: "French (France)" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/catalog").length).toBe(1));
     expect(calls(fake, "PUT", "/config/catalog")[0]?.body).toMatchObject({
@@ -75,6 +81,22 @@ describe("Catalog workspace", () => {
       gateMoviesByHomeRelease: true,
       showUpcomingEpisodes: true,
     });
+    expect(screen.getByRole("radio", { name: /When they can play/ })).toBeVisible();
+  });
+
+  it("filters the catalog to titles waiting for a release", async () => {
+    const { fake } = renderAppWith("/catalog?waiting=1", (_method, path) => {
+      if (path === "/catalog/browse") return { items: [title], total: 1 };
+    });
+    expect(await screen.findByRole("heading", { name: "Waiting for a release" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Waiting for a release", pressed: true }),
+    ).toBeVisible();
+    expect(calls(fake, "GET", "/catalog/browse").at(-1)?.path).toContain("waiting=1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Waiting for a release filter" }));
+    await waitFor(() =>
+      expect(calls(fake, "GET", "/catalog/browse").at(-1)?.path).not.toContain("waiting=1"),
+    );
   });
 
   it("shows errors with retry and provides an empty-result reset", async () => {

@@ -1,0 +1,19 @@
+{
+  "protocol": "emby",
+  "client": "Emby SDK OpenAPI v2/v3 request contract; native app headers vary by platform",
+  "source": {"repo":"MediaBrowser/Emby.SDK","commit":"45e73012eddf985dcfe878ca031b500085e16496","files":["Resources/OpenApi/openapi_v2.json","Resources/OpenApi/openapi_v3.json","Documentation/Download/openapi_v2_noversion.json"]},
+  "headers": {"X-Emby-Authorization":"MediaBrowser Client=\"{client}\", Device=\"{device}\", DeviceId=\"{device-id}\", Version=\"{version}\"","X-Emby-Token":"{access-token}","Accept":"application/json"},
+  "authorization": {"format":"X-Emby-Authorization carries client/device identity; authentication returns an access token sent as X-Emby-Token (some clients use Authorization: MediaBrowser ...) ","example":"X-Emby-Authorization: MediaBrowser Client=\"Emby SDK\", Device=\"Device\", DeviceId=\"redacted\", Version=\"x.y\""},
+  "flows": {
+    "connect":[{"name":"system info","method":"GET","path":"/System/Info/Public"},{"name":"public users","method":"GET","path":"/Users/Public"}],
+    "sign_in":[{"name":"authenticate","method":"POST","path":"/Users/AuthenticateByName","headers":{"Content-Type":"application/json"}}],
+    "home":[{"name":"views","method":"GET","path":"/Users/{userId}/Views"},{"name":"resume","method":"GET","path":"/Users/{userId}/Items/Resume"},{"name":"next up","method":"GET","path":"/Shows/NextUp?UserId={userId}"}],
+    "library_browse":[{"name":"items","method":"GET","path":"/Users/{userId}/Items?ParentId={parentId}"}],
+    "item_detail":[{"name":"item","method":"GET","path":"/Users/{userId}/Items/{itemId}"}],
+    "play_direct":[{"name":"playback info","method":"POST","path":"/Items/{itemId}/PlaybackInfo"},{"name":"direct stream","method":"GET","path":"/Videos/{itemId}/stream?Static=true"}],
+    "play_transcode":[{"name":"playback info","method":"POST","path":"/Items/{itemId}/PlaybackInfo"},{"name":"HLS playlist","method":"GET","path":"/Videos/{itemId}/master.m3u8?DeviceId={deviceId}"}],
+    "progress_reporting":[{"name":"playing","method":"POST","path":"/Sessions/Playing"},{"name":"progress","method":"POST","path":"/Sessions/Playing/Progress"}],
+    "mark_watched":[{"name":"played","method":"POST","path":"/Users/{userId}/PlayedItems/{itemId}"}],
+    "stop":[{"name":"stopped","method":"POST","path":"/Sessions/Playing/Stopped"}]
+  }
+}

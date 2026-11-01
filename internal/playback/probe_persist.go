@@ -24,6 +24,22 @@ func init() {
 );`)
 }
 
+// probeFactsRecord is the on-disk shape of playback_probe.info_json.
+// Rows written before facts were versioned do not carry FactsVersion and
+// are treated as misses so the next open probes again.
+type probeFactsRecord struct {
+	FactsVersion int            `json:"factsVersion"`
+	Info         core.MediaInfo `json:"info"`
+}
+
+func decodePersistedProbe(raw string) (core.MediaInfo, bool) {
+	var rec probeFactsRecord
+	if json.Unmarshal([]byte(raw), &rec) != nil || rec.FactsVersion != core.ProbeFactsVersion {
+		return core.MediaInfo{}, false
+	}
+	return rec.Info, true
+}
+
 // Bounds on a persisted probe. Stream/chapter counts of real containers
 // are far below these; anything larger is not a probe worth trusting.
 const (
@@ -66,18 +82,21 @@ func persistedProbeFacts(info core.MediaInfo) (core.MediaInfo, bool) {
 // digest of the NZB payload they were probed from. Without a payload
 // there is nothing to bind to, so nothing is stored.
 func (s *resumeStore) saveProbe(ctx context.Context, userID int64, key core.RatingKey, releaseID string, nzb []byte, info core.MediaInfo, at time.Time) error {
+	return saveProbeWith(ctx, s.db, userID, key, releaseID, nzb, info, at)
+}
+func saveProbeWith(ctx context.Context, exec resumeExecer, userID int64, key core.RatingKey, releaseID string, nzb []byte, info core.MediaInfo, at time.Time) error {
 	facts, ok := persistedProbeFacts(info)
 	if !ok || releaseID == "" || len(nzb) == 0 {
 		return nil
 	}
-	b, err := json.Marshal(facts)
+	b, err := json.Marshal(probeFactsRecord{FactsVersion: core.ProbeFactsVersion, Info: facts})
 	if err != nil {
 		return err
 	}
 	if len(b) > maxPersistedProbeBytes {
 		return nil
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO playback_probe(user_id,rating_key,release_id,nzb_hash,size,info_json,updated_at) VALUES(?,?,?,?,?,?,?)
+	_, err = exec.ExecContext(ctx, `INSERT INTO playback_probe(user_id,rating_key,release_id,nzb_hash,size,info_json,updated_at) VALUES(?,?,?,?,?,?,?)
 ON CONFLICT(user_id,rating_key,release_id) DO UPDATE SET nzb_hash=excluded.nzb_hash, size=excluded.size, info_json=excluded.info_json, updated_at=excluded.updated_at`,
 		userID, int64(key), releaseID, nzbHash(nzb), facts.Size, string(b), at.UnixMilli())
 	return err
@@ -110,9 +129,9 @@ func (s *resumeStore) loadProbe(ctx context.Context, userID int64, key core.Rati
 	if len(raw) > maxPersistedProbeBytes {
 		return nil, nil
 	}
-	var info core.MediaInfo
-	if err := json.Unmarshal([]byte(raw), &info); err != nil {
-		return nil, nil // a corrupt cache row is a cache miss, never an error
+	info, ok := decodePersistedProbe(raw)
+	if !ok {
+		return nil, nil // a corrupt or old-generation row is a cache miss
 	}
 	facts, ok := persistedProbeFacts(info)
 	if !ok || facts.Size != size {
@@ -135,6 +154,9 @@ func (s *resumeStore) loadProbe(ctx context.Context, userID int64, key core.Rati
 func (m *Manager) persistedProbe(ctx context.Context, userID int64, key core.RatingKey, releaseID string, nzb []byte) *probeCache {
 	if m.resume == nil || releaseID == "" {
 		return nil
+	}
+	if live := m.resume.liveProbe(userID, key, releaseID, nzb); live != nil {
+		return live
 	}
 	facts, err := m.resume.loadProbe(ctx, userID, key, releaseID, nzb)
 	if err != nil {

@@ -246,11 +246,35 @@ func (f *fakeHLS) SwapInput(_ context.Context, _ string, _ core.MediaInfo, at ti
 	f.offset = at
 	return nil
 }
+func (f *fakeHLS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "video/x-matroska")
+	fmt.Fprint(w, "live-mkv")
+}
+
+type fakeDASH struct {
+	fakeHLS
+	media []string
+}
+
+func (f *fakeDASH) ServeManifest(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `<MPD><SegmentTemplate initialization="session/%s/$RepresentationID$/header" media="session/%s/$RepresentationID$/$Number$.m4s"/></MPD>`, f.id, f.id)
+}
+func (f *fakeDASH) ServeInit(w http.ResponseWriter, r *http.Request, rep int) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "init:%s:%d", f.id, rep)
+}
+func (f *fakeDASH) ServeMedia(w http.ResponseWriter, r *http.Request, rep, n int) {
+	f.media = append(f.media, fmt.Sprintf("%d:%d", rep, n))
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "media:%s:%d:%d", f.id, rep, n)
+}
 
 type fakeTranscoder struct {
 	core.Transcoder
 	requests []core.HLSRequest
 	hls      []*fakeHLS
+	dash     []*fakeDASH
 }
 
 func (f *fakeTranscoder) Decide(_ core.MediaInfo, _ core.ClientCaps, o core.DecideOptions) core.Decision {
@@ -262,6 +286,17 @@ func (f *fakeTranscoder) Decide(_ core.MediaInfo, _ core.ClientCaps, o core.Deci
 }
 func (f *fakeTranscoder) StartHLS(_ context.Context, r core.HLSRequest) (core.HLSSession, error) {
 	f.requests = append(f.requests, r)
+	if r.Protocol == core.ProtocolHTTP {
+		h := &fakeHLS{id: r.SessionID}
+		f.hls = append(f.hls, h)
+		return h, nil
+	}
+	if r.Protocol == core.ProtocolDASH {
+		h := &fakeDASH{fakeHLS: fakeHLS{id: r.SessionID}}
+		f.dash = append(f.dash, h)
+		f.hls = append(f.hls, &h.fakeHLS)
+		return h, nil
+	}
 	h := &fakeHLS{id: r.SessionID}
 	f.hls = append(f.hls, h)
 	return h, nil
@@ -294,7 +329,7 @@ func TestVirtualPlayoutJoinContinuityAndOwnership(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.ServePlaylist(rec, req, info.ID, u)
 	b := rec.Body.String()
-	if rec.Code != 200 || !strings.Contains(b, "#EXT-X-DISCONTINUITY\n") || strings.Contains(b, "#EXT-X-ENDLIST") || !strings.Contains(b, "X-Plex-Token=owner-token") {
+	if rec.Code != 200 || !strings.Contains(b, "#EXT-X-DISCONTINUITY\n") || strings.Contains(b, "#EXT-X-ENDLIST") || strings.Contains(b, "X-Plex-Token=") || !strings.Contains(b, "X-Ether-Stream-Token=") {
 		t.Fatalf("invalid live playlist: %d %s", rec.Code, b)
 	}
 	if len(pb.groups) < 2 || pb.groups[0] != pb.groups[1] {
@@ -337,6 +372,136 @@ func TestVirtualPlayoutJoinContinuityAndOwnership(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveHTTPMatroska(t *testing.T) {
+	now := time.Unix(7, 0).UTC()
+	pb := &fakePlayback{}
+	tc := &fakeTranscoder{}
+	s := testService(t, Options{Now: func() time.Time { return now }, Playback: pb, Transcoder: tc})
+	c := testChannel()
+	if _, e := s.SaveChannel(context.Background(), c); e != nil {
+		t.Fatal(e)
+	}
+	u := &core.User{ID: 1, StreamLimit: 1}
+	info, e := s.Tune(context.Background(), u, c.ID, core.ClientCaps{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/start?protocol=http", nil)
+	if err := s.ServeHTTP(rec, req, info.ID, u); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "video/x-matroska" || rec.Body.String() != "live-mkv" {
+		t.Fatalf("http start: %d %s %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+	}
+	var sawHTTP bool
+	for _, r := range tc.requests {
+		if r.Protocol == core.ProtocolHTTP {
+			sawHTTP = true
+			if r.LiveInput {
+				t.Fatal("virtual-channel HTTP must not permit live playlist input")
+			}
+		}
+	}
+	if !sawHTTP {
+		t.Fatal("ServeHTTP did not start an HTTP session")
+	}
+	if e = s.Stop(context.Background(), info.ID, u); e != nil {
+		t.Fatal(e)
+	}
+	for _, h := range tc.hls {
+		if !h.closed {
+			t.Fatal("http session left open")
+		}
+	}
+}
+
+type gateHTTPTranscoder struct {
+	fakeTranscoder
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *gateHTTPTranscoder) StartHLS(ctx context.Context, r core.HLSRequest) (core.HLSSession, error) {
+	if r.Protocol == core.ProtocolHTTP {
+		select {
+		case g.entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-g.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return g.fakeTranscoder.StartHLS(ctx, r)
+}
+
+func TestLiveHTTPConcurrentEnsureSingleFlight(t *testing.T) {
+	now := time.Unix(7, 0).UTC()
+	pb := &fakePlayback{}
+	tc := &gateHTTPTranscoder{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	s := testService(t, Options{Now: func() time.Time { return now }, Playback: pb, Transcoder: tc})
+	c := testChannel()
+	if _, e := s.SaveChannel(context.Background(), c); e != nil {
+		t.Fatal(e)
+	}
+	u := &core.User{ID: 1, StreamLimit: 1}
+	info, e := s.Tune(context.Background(), u, c.ID, core.ClientCaps{})
+	if e != nil {
+		t.Fatal(e)
+	}
+
+	errc := make(chan error, 2)
+	recs := [2]*httptest.ResponseRecorder{httptest.NewRecorder(), httptest.NewRecorder()}
+	for i := 0; i < 2; i++ {
+		go func(i int) {
+			req := httptest.NewRequest("GET", "/start?protocol=http", nil)
+			errc <- s.ServeHTTP(recs[i], req, info.ID, u)
+		}(i)
+	}
+	select {
+	case <-tc.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartHLS did not run")
+	}
+	// The second ServeHTTP must be waiting on the starting channel, not
+	// claiming a second livetv-http encoder.
+	time.Sleep(20 * time.Millisecond)
+	close(tc.release)
+	for i := 0; i < 2; i++ {
+		if err := <-errc; err != nil {
+			t.Fatalf("ServeHTTP %d: %v", i, err)
+		}
+	}
+	if n := httpStarts(tc.requests); n != 1 {
+		t.Fatalf("HTTP StartHLS calls = %d, want 1", n)
+	}
+	for i, rec := range recs {
+		if rec.Code != 200 || rec.Body.String() != "live-mkv" {
+			t.Fatalf("client %d: %d %q", i, rec.Code, rec.Body.String())
+		}
+	}
+	rec := httptest.NewRecorder()
+	if err := s.ServeHTTP(rec, httptest.NewRequest("GET", "/start?protocol=http", nil), info.ID, u); err != nil || rec.Code != 200 {
+		t.Fatalf("follow-up GET: %v %d", err, rec.Code)
+	}
+	if n := httpStarts(tc.requests); n != 1 {
+		t.Fatalf("follow-up started another HTTP encoder: %d", n)
+	}
+}
+
+func httpStarts(reqs []core.HLSRequest) int {
+	n := 0
+	for _, r := range reqs {
+		if r.Protocol == core.ProtocolHTTP {
+			n++
+		}
+	}
+	return n
+}
+
 func TestIPTVRelativeManifestKeysRangesRetryAndReconnect(t *testing.T) {
 	var attempts atomic.Int32
 	var upstream *httptest.Server
@@ -390,7 +555,7 @@ func TestIPTVRelativeManifestKeysRangesRetryAndReconnect(t *testing.T) {
 		return rec
 	}
 	master := request("index.m3u8", nil)
-	if master.Code != 200 || strings.Contains(master.Body.String(), upstream.URL) || !strings.Contains(master.Body.String(), "X-Plex-Token=view-token") {
+	if master.Code != 200 || strings.Contains(master.Body.String(), upstream.URL) || strings.Contains(master.Body.String(), "X-Plex-Token=") || !strings.Contains(master.Body.String(), "X-Ether-Stream-Token=") {
 		t.Fatalf("master rewrite failed: %d %s", master.Code, master.Body.String())
 	}
 	if attempts.Load() < 3 {

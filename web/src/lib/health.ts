@@ -12,7 +12,15 @@ import {
 export type HealthLevel = "ok" | "warn" | "error" | "off" | "unknown";
 
 export interface HealthItem {
-  id: "usenet" | "indexers" | "cache" | "catalog" | "remote" | "plexdirect";
+  id:
+    | "usenet"
+    | "indexers"
+    | "cache"
+    | "catalog"
+    | "database"
+    | "remote"
+    | "plexdirect"
+    | "transcode";
   label: string;
   level: HealthLevel;
   summary: string;
@@ -30,6 +38,8 @@ export interface HealthItem {
    * the row was checked and found healthy.
    */
   countsOverall?: boolean;
+  /** Expected on a new server: something to set up, not a failure. */
+  setupGap?: boolean;
 }
 
 const RANK: Record<HealthLevel, number> = { error: 4, warn: 3, unknown: 2, ok: 1, off: 0 };
@@ -64,7 +74,28 @@ function errorOf(v: unknown): string {
   return isPlainObject(v) && typeof v.error === "string" ? v.error : "";
 }
 
-export function usenetHealth(v: unknown, debrid?: unknown): HealthItem {
+/** A missing first-run choice. It stays visible and does not raise an alarm. */
+function toSetUp(item: HealthItem): HealthItem {
+  return {
+    ...item,
+    level: "unknown",
+    countsOverall: false,
+    setupGap: true,
+    statusLabel: t("To set up"),
+  };
+}
+
+function torrentioReady(indexers: unknown): boolean {
+  if (!Array.isArray(indexers)) return false;
+  return indexers.some((row) => {
+    if (!isPlainObject(row) || row.enabled === false) return false;
+    const name = `${str(row.indexer)} ${str(row.name)}`.toLowerCase();
+    const url = str(row.url).toLowerCase();
+    return name.includes("torrentio") || url.includes("torrentio.strem.fun");
+  });
+}
+
+export function usenetHealth(v: unknown, debrid?: unknown, indexers?: unknown): HealthItem {
   const base = {
     id: "usenet" as const,
     label: "Usenet",
@@ -78,7 +109,16 @@ export function usenetHealth(v: unknown, debrid?: unknown): HealthItem {
   if (providers.length === 0)
     return debridOn(debrid)
       ? { ...base, level: "off", summary: t("Not used · streaming through debrid"), details: [] }
-      : { ...base, level: "error", summary: t("No providers configured"), details: [] };
+      : toSetUp({
+          ...base,
+          label: t("Sources"),
+          href: "/sources",
+          level: "error",
+          summary: torrentioReady(indexers)
+            ? t("Torrentio finds releases; add a debrid or Usenet account to play.")
+            : t("No debrid account or Usenet provider yet"),
+          details: [],
+        });
   const primary = providers.filter((p) => !p.backfill);
   const bad = providers.filter((p) => str(p.state) && str(p.state) !== "ok");
   const primaryBad = primary.filter((p) => str(p.state) && str(p.state) !== "ok");
@@ -146,7 +186,7 @@ export function indexersHealth(v: unknown, debrid?: unknown): HealthItem {
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };
   const rows = v.filter(isPlainObject);
   if (rows.length === 0)
-    return { ...base, level: "error", summary: t("No indexers configured"), details: [] };
+    return toSetUp({ ...base, level: "error", summary: t("No indexers configured"), details: [] });
   const enabled = rows.filter((r) => r.enabled !== false);
   if (enabled.length === 0)
     return {
@@ -238,6 +278,19 @@ export function cacheHealth(v: unknown): HealthItem {
   };
 }
 
+function yearCorrectionDetail(v: unknown): string {
+  if (!isPlainObject(v)) return "";
+  const pending = num(v.pending);
+  const done = num(v.stored) + num(v.refreshed);
+  if (v.running === true || pending > 0) {
+    return t("Correcting movie years · {done} done · {pending} left", {
+      done: formatNumber(done),
+      pending: formatNumber(pending),
+    });
+  }
+  return "";
+}
+
 export function catalogHealth(v: unknown, now = new Date()): HealthItem {
   const base = {
     id: "catalog" as const,
@@ -259,6 +312,8 @@ export function catalogHealth(v: unknown, now = new Date()): HealthItem {
     }),
     t("Last sync {when}", { when: relativeTime(last, now) }),
   ];
+  const yearLine = yearCorrectionDetail(v.yearCorrection);
+  if (yearLine) details.push(yearLine);
   if (typeof sync.error === "string" && sync.error)
     details.push(t("Last sync error: {error}", { error: sync.error }));
   if (sync.running === true) {
@@ -269,7 +324,7 @@ export function catalogHealth(v: unknown, now = new Date()): HealthItem {
       details,
     };
   }
-  if (!last) return { ...base, level: "warn", summary: t("Not synced yet"), details };
+  if (!last) return toSetUp({ ...base, level: "warn", summary: t("Not synced yet"), details });
   const ageDays = (now.getTime() - last.getTime()) / 86400000;
   const level: HealthLevel =
     typeof sync.error === "string" && sync.error ? "warn" : ageDays > 3 ? "warn" : "ok";
@@ -288,16 +343,17 @@ export function remoteHealth(v: unknown): HealthItem {
   const base = {
     id: "remote" as const,
     label: t("Remote access"),
-    href: "/remote-access",
+    href: "/apps/plex/remote",
   };
   if (!isPlainObject(v))
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };
   if (v.claimed === false)
     return {
       ...base,
+      href: "/apps/plex/account",
       level: "error",
       summary: t("Server is not claimed"),
-      details: [t("Finish the setup wizard to link Ether to your Plex account.")],
+      details: [t("Sign in and claim this server on the Plex page.")],
     };
   const presence = isPlainObject(v.presence) ? v.presence : {};
   const details: string[] = [];
@@ -406,7 +462,7 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
   const base = {
     id: "plexdirect" as const,
     label: "plex.direct",
-    href: "/remote-access",
+    href: "/apps/plex/remote",
   };
   if (!isPlainObject(v))
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };
@@ -441,67 +497,192 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
     return { ...base, level: "error", summary: t("Certificate expired"), details };
   if (starts && starts.getTime() > now.getTime())
     return { ...base, level: "warn", summary: t("Certificate is not valid yet"), details };
-  if (expires && (expires.getTime() - now.getTime()) / 86400000 < 14)
+  const trusted = t("Trusted by Plex apps");
+  if (expires && (expires.getTime() - now.getTime()) / 86400000 < 14) {
+    if (cert.verified === true) details.push(trusted);
     return {
       ...base,
       level: "warn",
       summary: t("Certificate renews {when}", { when: relativeTime(expires, now) }),
       details,
     };
+  }
   if (!expires || !starts) {
     details.push(t("Both a start and an expiry have to be reported."));
     return { ...base, level: "unknown", summary: t("Certificate dates are incomplete"), details };
   }
-  const note = t("Expiry alone does not verify certificate trust or device association.");
-  details.push(note);
-  return unverifiedCertificate(
-    base,
-    t("Expires {date}", { date: formatDate(expires) }),
-    details,
-    note,
-  );
-}
-
-/**
- * Installed, currently inside its dates, and not failing. Trust was not
- * checked. Shown as Not verified and kept out of the overall rank. Missing
- * dates do not use this path. Not a healthy or trusted result.
- */
-function unverifiedCertificate(
-  base: { id: "plexdirect"; label: string; href: string },
-  summary: string,
-  details: string[],
-  note: string,
-): HealthItem {
+  if (cert.verified === true) {
+    details.push(trusted);
+    return {
+      ...base,
+      level: "ok",
+      summary: t("Expires {date}", { date: formatDate(expires) }),
+      details,
+      statusLabel: t("Valid"),
+      note: trusted,
+    };
+  }
+  const reason = str(cert.verifyReason);
+  if (reason === "chain" || reason === "identity" || reason === "handshake") {
+    return certificateTrustProblem(base, reason, details);
+  }
   return {
     ...base,
     level: "unknown",
-    summary,
+    summary: t("Expires {date}", { date: formatDate(expires) }),
     details,
-    statusLabel: t("Not verified"),
-    note,
+    statusLabel: t("Checking certificate"),
     countsOverall: false,
+    note: t("Ether checks this certificate on a schedule, not on every refresh."),
   };
+}
+
+function certificateTrustProblem(
+  base: { id: "plexdirect"; label: string; href: string },
+  reason: string,
+  details: string[],
+): HealthItem {
+  const summary =
+    reason === "identity"
+      ? t("Doesn't match this server")
+      : reason === "handshake"
+        ? t("This server did not accept a secure connection")
+        : t("Chain not trusted");
+  const hint =
+    reason === "identity"
+      ? t(
+          "The certificate names a different server. Let Ether request a new plex.direct certificate.",
+        )
+      : reason === "handshake"
+        ? t("Check that Ether is running, then look again after the next certificate check.")
+        : t("Let Ether request a new plex.direct certificate. Plex apps trust that one.");
+  return {
+    ...base,
+    level: "warn",
+    summary,
+    details: [...details, hint],
+    statusLabel: summary,
+    note: hint,
+  };
+}
+
+/** Shown only when this ffmpeg cannot convert or tone-map, or a playback just failed for that reason. */
+export function transcodeHealth(v: unknown): HealthItem | null {
+  if (!isPlainObject(v)) return null;
+  const playback = str(v.playbackError);
+  const notice = str(v.notice);
+  const text = playback || notice;
+  if (!text) return null;
+  const details = playback && notice && playback !== notice ? [notice] : [];
+  return {
+    id: "transcode",
+    label: t("Transcoding"),
+    href: "/playback/transcoding",
+    level: "warn",
+    summary: text,
+    details,
+  };
+}
+
+/**
+ * The database from the "database" status section: a SQLite file's
+ * integrity (checked after start and daily) or, on a cluster, the shared
+ * database's reachability. Damage links to Backups to restore. Null until
+ * there is something to report.
+ */
+export function databaseHealth(v: unknown, now = new Date()): HealthItem | null {
+  const base = { id: "database" as const, label: t("Database"), href: "/maintenance/backups" };
+  if (!isPlainObject(v)) return null;
+  if (v.clustered === true) {
+    const held = num(v.held);
+    if (v.state === "degraded")
+      return {
+        ...base,
+        href: "/cluster",
+        level: "error",
+        summary: t("Shared database unreachable"),
+        details: [str(v.message), str(v.lastError)].filter(Boolean),
+      };
+    if (v.state === "recovering")
+      return {
+        ...base,
+        href: "/cluster",
+        level: "warn",
+        summary: tn(held, "Writing {count} held update", "Writing {count} held updates"),
+        details: [],
+      };
+    return {
+      ...base,
+      href: "/cluster",
+      level: "ok",
+      summary: t("Shared PostgreSQL database reachable"),
+      details: [],
+    };
+  }
+  // The first check runs a couple of minutes after start; until then there
+  // is nothing to report (and nothing to hold the overall status back).
+  const integrity = isPlainObject(v.integrity) ? v.integrity : null;
+  if (!integrity) return null;
+  const checked = parseTime(integrity.checked);
+  if (integrity.ok === true)
+    return {
+      ...base,
+      level: "ok",
+      summary: t("No damage found · checked {when}", { when: relativeTime(checked, now) }),
+      details: [],
+    };
+  const findings = Array.isArray(integrity.findings)
+    ? integrity.findings.filter((f): f is string => typeof f === "string").slice(0, 3)
+    : [];
+  return {
+    ...base,
+    level: "error",
+    summary: t("The database file is damaged"),
+    details: [t("Restore a backup to recover. Ether keeps running so you can."), ...findings],
+  };
+}
+
+/** One Plex row until the server is claimed. The certificate check is the same missing sign-in. */
+function plexConnectionHealth(remote: unknown, now: Date): HealthItem[] {
+  if (isPlainObject(remote) && remote.claimed === false) {
+    return [
+      toSetUp({
+        id: "remote",
+        label: t("Plex"),
+        href: "/apps/plex/account",
+        level: "error",
+        summary: t("Sign in to finish connecting"),
+        details: [t("Plex is on, and this server is not claimed yet.")],
+      }),
+    ];
+  }
+  return [remoteHealth(remote), plexDirectHealth(remote, now)];
 }
 
 export function computeHealth(
   sections: Record<string, unknown> | undefined,
   now = new Date(),
+  opts?: { plexEnabled?: boolean },
 ): HealthItem[] {
   const s = sections ?? {};
-  return [
-    usenetHealth(s.providers, s.debrid),
+  const plexOn = opts?.plexEnabled !== false;
+  const items: HealthItem[] = [
+    usenetHealth(s.providers, s.debrid, s.indexers),
     indexersHealth(s.indexers, s.debrid),
     cacheHealth(s.cache),
     catalogHealth(s.catalog, now),
-    remoteHealth(s.remote),
-    plexDirectHealth(s.remote, now),
-  ];
+    databaseHealth(s.database, now),
+    ...(plexOn ? plexConnectionHealth(s.remote, now) : []),
+  ].filter((item): item is HealthItem => item !== null);
+  const transcode = transcodeHealth(s.hwaccel);
+  if (transcode) items.push(transcode);
+  return items;
 }
 
 // ---- Now playing --------------------------------------------------------------
 
 export interface NowPlaying {
+  protocol: string;
   id: string;
   key: string;
   title: string;
@@ -547,6 +728,7 @@ export function normalizeSessions(v: unknown): NowPlaying[] {
     else if (typeof offsetMs === "number" && Number.isFinite(offsetMs) && durationMs > 0)
       progress = Math.max(0, Math.min(1, offsetMs / durationMs));
     return {
+      protocol: str(pick(client, "protocol", "Protocol")) || "plex",
       id: str(pick(s, "ID", "id")),
       key: String(pick(s, "Key", "key") ?? ""),
       title: str(pick(s, "TitleName", "titleName", "title")) || t("Untitled"),

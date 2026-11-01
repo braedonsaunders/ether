@@ -18,8 +18,9 @@ type hookState struct {
 }
 
 type postplayKey struct {
-	user int64
-	key  core.RatingKey // taste key of the just-watched title
+	user       int64
+	key        core.RatingKey // taste key of the just-watched title
+	exclusions string
 }
 
 type postplayEntry struct {

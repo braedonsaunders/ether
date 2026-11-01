@@ -15,6 +15,7 @@ import {
 import { Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { MoreOptions } from "../../components/ConfigSection";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Field, Segmented } from "../../components/fields";
@@ -69,10 +70,21 @@ export function transcodeLabel(n: ClusterNode): string {
   return hw && hw !== "none" ? hw : t("Software");
 }
 
+function translateClusterWarning(w: string): string {
+  const m = /^nodes reach providers from different public addresses \(([^)]*)\)/.exec(w);
+  if (m) {
+    return t(
+      "These computers reach indexers and debrid from different public addresses ({detail}). One debrid account can be limited when it is used from more than one address.",
+      { detail: m[1] ?? "" },
+    );
+  }
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 /** Server warnings plus conditions this node's own health reports. */
 export function clusterWarnings(s: ClusterStatus, now: Date = new Date()): string[] {
   // Server warnings are log-style sentences; capitalise them for the banner.
-  const out = (s.warnings ?? []).map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  const out = (s.warnings ?? []).map(translateClusterWarning);
   if (s.error)
     out.push(t("Couldn't read the cluster's nodes from the database: {error}", { error: s.error }));
   const h = s.health;
@@ -380,8 +392,15 @@ function Nodes({
           },
           {
             key: "ip",
-            header: t("Public IP"),
-            cell: (n) => <code className="text-xs text-fg-muted">{n.caps?.egressIp || "—"}</code>,
+            header: t("Source address"),
+            cell: (n) => (
+              <code
+                className="text-xs text-fg-muted"
+                title={t("The public address this computer uses for indexers, debrid and Usenet.")}
+              >
+                {n.caps?.egressIp || "—"}
+              </code>
+            ),
           },
         ]}
       />
@@ -441,7 +460,7 @@ function NodeDrawer({
           label={t("Node weight")}
           htmlFor="cluster-weight"
           hint={t(
-            "Relative share of account-wide provider connections and request budgets. A weight of 2 gets twice the share of a node with weight 1.",
+            "This computer's share of each provider's connections and request limits, relative to the others. 2 gets twice the share of a computer at 1; 0 means 1.",
           )}
         >
           <Input
@@ -489,7 +508,7 @@ function NodeDrawer({
                 </Link>
               ),
               updates: (
-                <Link className="underline" to="/updates">
+                <Link className="underline" to="/maintenance/updates">
                   {t("Updates")}
                 </Link>
               ),
@@ -517,24 +536,26 @@ function SharedSettings({ status, settings }: { status: ClusterStatus; settings:
         }
         control={<Badge variant="info">{nodeName(self)}</Badge>}
       />
-      <SettingsRow
-        title={t("Settings version")}
-        description={t(
-          "Settings are stored in the database. A change on any node reaches the others within 30 seconds.",
-        )}
-        control={
-          st?.sharedVersion !== undefined ? (
-            <span className="tabular-nums text-sm text-fg">v{st.sharedVersion}</span>
-          ) : null
-        }
-      />
-      <SettingsRow
-        title={t("Credential key")}
-        description={t(
-          "Fingerprint of the key that encrypts stored credentials. It's the same on every node.",
-        )}
-        control={st?.keyFingerprint ? <code className="text-xs">{st.keyFingerprint}</code> : null}
-      />
+      <MoreOptions label={t("More options: {title}", { title: t("Shared settings") })}>
+        <SettingsRow
+          title={t("Settings version")}
+          description={t(
+            "Settings are stored in the database. A change on any node reaches the others within 30 seconds.",
+          )}
+          control={
+            st?.sharedVersion !== undefined ? (
+              <span className="tabular-nums text-sm text-fg">v{st.sharedVersion}</span>
+            ) : null
+          }
+        />
+        <SettingsRow
+          title={t("Credential key")}
+          description={t(
+            "Fingerprint of the key that encrypts stored credentials. It's the same on every node.",
+          )}
+          control={st?.keyFingerprint ? <code className="text-xs">{st.keyFingerprint}</code> : null}
+        />
+      </MoreOptions>
       <SettingsRow
         title={t("Settings each node keeps")}
         description={tx(

@@ -24,7 +24,7 @@ func TestFutureTitleNeverReachesResolver(t *testing.T) {
 	}
 	if h.m.PreResolve(context.Background(), owner, movieKey, defaultCaps("future-warm")) {
 		h.m.mu.Lock()
-		e := h.m.warm[identity{owner.ID, "future-warm", movieKey}]
+		e := h.m.warm[identity{userID: owner.ID, clientID: "future-warm", key: movieKey}]
 		h.m.mu.Unlock()
 		if e != nil {
 			<-e.done

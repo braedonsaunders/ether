@@ -2,90 +2,92 @@ package plex
 
 import (
 	"context"
-	"github.com/braedonsaunders/ether/internal/catalog"
+
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 )
 
 // AccessPolicy adds owner-defined restrictions to the mandatory title guard.
-type AccessPolicy interface {
-	Allowed(*core.User, *core.Title) bool
+type AccessPolicy = experience.AccessPolicy
+
+func (s *Server) saferFetchCount(u *core.User, want int) int {
+	if want <= 0 || !s.needPlexRatingFilter(u) {
+		return want
+	}
+	n := want * 2
+	if extra := want + 24; n > extra {
+		n = extra
+	}
+	if n > 200 {
+		n = 200
+	}
+	return n
+}
+
+func (s *Server) takeVisible(u *core.User, ts []core.Title, want int) []core.Title {
+	out := s.visibleTitles(u, ts)
+	if want > 0 && len(out) > want {
+		return out[:want]
+	}
+	return out
+}
+
+func (s *Server) catalogBrowse(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
+	if s.plexMetaOn() {
+		q.Filter.SaferPlexRating = true
+	}
+	return s.d.Catalog.Browse(ctx, q)
 }
 
 func (s *Server) visibleTitles(u *core.User, ts []core.Title) []core.Title {
-	out := make([]core.Title, 0, len(ts))
-	for i := range ts {
-		if s.titleVisible(u, &ts[i]) {
-			out = append(out, ts[i])
+	out := s.visibility().TitlesAllowed(u, ts)
+	if !s.needPlexRatingFilter(u) || s.d.PlexMeta == nil {
+		return out
+	}
+	keys := make([]core.RatingKey, 0, len(out))
+	for i := range out {
+		keys = append(keys, out[i].Key)
+	}
+	rows := s.d.PlexMeta.CachedMany(context.Background(), keys)
+	var guids map[core.RatingKey]string
+	if s.d.PlexGUID != nil {
+		guids = s.d.PlexGUID.CachedMany(context.Background(), keys)
+	}
+	kept := out[:0]
+	for i := range out {
+		if s.plexMetaRatingAllowedCached(u, &out[i], rows, guids) {
+			kept = append(kept, out[i])
 		}
 	}
-	return out
+	return kept
 }
 
 func (s *Server) titleAllowed(u *core.User, t *core.Title) bool {
-	if t == nil || t.Adult {
-		return false
-	}
-	if u != nil && catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
-		return false
-	}
-	return s.d.AccessPolicy == nil || s.d.AccessPolicy.Allowed(u, t)
+	return experience.TitleAllowed(s.d.AccessPolicy, u, t) && s.plexMetaRatingAllowed(u, t)
 }
 
-// visibleTitle also checks section and inherited show policy for artwork and
-// child items whose summaries have not yet inherited the certification.
+func (s *Server) visibility() experience.Visibility {
+	v := experience.Visibility{Policy: s.d.AccessPolicy, FilterAvailable: s.d.FilterAvailable,
+		SectionFor: func(t core.MediaType) (int, bool) { sec, ok := s.untitledSectionFor(t); return sec.ID, ok }}
+	if s.d.Catalog != nil {
+		v.GetTitle = s.artworkTitle
+	}
+	if s.d.Playback != nil {
+		v.Sessions = s.d.Playback.Sessions
+	}
+	return v
+}
+
 func (s *Server) visibleTitle(ctx context.Context, u *core.User, t *core.Title) bool {
-	if !s.titleVisible(u, t) {
-		return false
-	}
-	if len(s.availableForViewer(ctx, u, []core.Title{*t})) == 0 {
-		return false
-	}
-	return s.playableTitle(ctx, u, t)
+	return s.visibility().Visible(ctx, u, t) && s.plexMetaRatingAllowed(u, t)
 }
-
-// playableTitle is visibleTitle without the availability-discovery filter:
-// content policy, section access and the show's inherited policy only.
-// Discovery evidence hides recent titles from lists, but it is a guess about
-// releases, not a permission: a viewer who presses Play on such a title still
-// gets a resolve attempt and a readable decision instead of a bare 404.
 func (s *Server) playableTitle(ctx context.Context, u *core.User, t *core.Title) bool {
-	if !s.titleVisible(u, t) {
-		return false
-	}
-	if t.ShowKey != 0 {
-		show, err := s.d.Catalog.Get(ctx, t.ShowKey)
-		if err != nil || !s.titleVisible(u, show) {
-			return false
-		}
-	}
-	return true
+	return s.visibility().Playable(ctx, u, t) && s.plexMetaRatingAllowed(u, t)
+}
+func (s *Server) availableForViewer(ctx context.Context, u *core.User, ts []core.Title) []core.Title {
+	return s.visibility().Available(ctx, u, ts)
 }
 
-// Discovery evidence must not revoke a source that this viewer already has
-// open. Membership/content guards still run independently; source failure uses
-// playback's normal failover path.
-func (s *Server) availableForViewer(ctx context.Context, u *core.User, ts []core.Title) []core.Title {
-	if s.d.FilterAvailable == nil {
-		return ts
-	}
-	filtered := s.d.FilterAvailable(ctx, ts)
-	if len(filtered) == len(ts) || u == nil || s.d.Playback == nil {
-		return filtered
-	}
-	keep := map[core.RatingKey]bool{}
-	for _, t := range filtered {
-		keep[t.Key] = true
-	}
-	for _, ps := range s.d.Playback.Sessions() {
-		if ps != nil && ps.UserID == u.ID {
-			keep[ps.Key] = true
-		}
-	}
-	out := make([]core.Title, 0, len(ts))
-	for _, t := range ts {
-		if keep[t.Key] {
-			out = append(out, t)
-		}
-	}
-	return out
+func (s *Server) viewerRestricted(u *core.User) bool {
+	return experience.ViewerRestricted(s.d.AccessPolicy, u)
 }

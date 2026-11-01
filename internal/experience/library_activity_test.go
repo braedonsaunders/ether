@@ -1,0 +1,165 @@
+package experience
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+type activityState struct {
+	core.State
+	statuses []core.WatchStatus
+}
+
+func (s activityState) InProgress(context.Context, int64, int) ([]core.WatchStatus, error) {
+	return s.statuses, nil
+}
+
+func (s activityState) GetMany(_ context.Context, _ int64, keys []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
+	out := make(map[core.RatingKey]core.WatchStatus, len(keys))
+	for _, key := range keys {
+		out[key] = core.WatchStatus{Key: key}
+	}
+	for _, status := range s.statuses {
+		if _, ok := out[status.Key]; ok {
+			out[status.Key] = status
+		}
+	}
+	return out, nil
+}
+
+func TestLibraryActivityDoesNotDependOnHomeAndFiltersBeforeLimit(t *testing.T) {
+	ctx := context.Background()
+	v := &core.User{ID: 1, MaxContentRating: "PG", AllowedSections: []int{1}}
+	movie1 := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Hidden", ContentRating: "R"}
+	movie2 := core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, Title: "Visible", ContentRating: "PG"}
+	movie3 := core.Title{Key: core.MovieKey(3), Type: core.TypeMovie, Title: "Older", ContentRating: "G"}
+	show := core.Title{Key: core.ShowKey(1), Type: core.TypeShow, ContentRating: "TV-MA"}
+	episode := core.Title{Key: core.EpisodeKey(1, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key, ContentRating: "TV-G"}
+	titles := map[core.RatingKey]*core.Title{movie1.Key: &movie1, movie2.Key: &movie2, movie3.Key: &movie3, show.Key: &show, episode.Key: &episode}
+	get := func(_ context.Context, key core.RatingKey) (*core.Title, error) {
+		if t := titles[key]; t != nil {
+			return t, nil
+		}
+		return nil, core.ErrNotFound
+	}
+	var browseCalls int
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return v, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}, {ID: 2, Type: core.TypeShow}}, CachedGet: get, State: activityState{statuses: []core.WatchStatus{{Key: movie1.Key}, {Key: episode.Key}, {Key: movie2.Key}, {Key: movie3.Key}}}, AddedTimes: func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+		return map[core.RatingKey]time.Time{movie2.Key: time.Unix(20, 0), movie3.Key: time.Unix(10, 0)}, nil
+	}, Visibility: Visibility{GetTitle: get, SectionFor: func(typ core.MediaType) (int, bool) {
+		if typ == core.TypeMovie {
+			return 1, true
+		}
+		return 2, true
+	}}, Browse: func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
+		browseCalls++
+		if q.Filter.Type != core.TypeMovie || q.Sort != core.SortAdded || !q.Desc {
+			t.Fatalf("unexpected browse %+v", q)
+		}
+		return core.Page{Items: []core.Title{movie1, movie2, movie3}, Total: 3}, nil
+	}}}
+	latest, err := s.LatestAdded(ctx, v, core.Device{}, "1", 1)
+	if err != nil || len(latest) != 1 || latest[0].Title.Key != movie2.Key || latest[0].AddedAt == nil || latest[0].AddedAt.Unix() != 20 || browseCalls != 1 {
+		t.Fatalf("latest %+v %v", latest, err)
+	}
+	if _, err := s.LatestAddedGrouped(ctx, v, core.Device{}, "1", 1, false); err != nil {
+		t.Fatalf("movie grouping incorrectly rejected: %v", err)
+	}
+	resume, err := s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 0, 1, false)
+	if err != nil || len(resume.Items) != 1 || resume.Items[0].Key != movie2.Key || !resume.More || resume.TotalExact {
+		t.Fatalf("resume %+v %v", resume, err)
+	}
+	resume, err = s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 0, 1, true)
+	if err != nil || !resume.TotalExact || resume.Total != 2 || !resume.More {
+		t.Fatalf("exact resume count %+v %v", resume, err)
+	}
+	resume, err = s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 1, 1, false)
+	if err != nil || len(resume.Items) != 1 || resume.Items[0].Key != movie3.Key || resume.More || !resume.TotalExact || resume.Total != 2 {
+		t.Fatalf("resume next page %+v %v", resume, err)
+	}
+	if _, err = s.LatestAdded(ctx, v, core.Device{}, "2", 1); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("restricted view: %v", err)
+	}
+	if _, err = s.Resume(ctx, v, core.Device{}, "2", nil, 0, 1, false); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("restricted resume view: %v", err)
+	}
+	// The same child remains hidden by inherited show policy when the section is allowed.
+	v.AllowedSections = []int{1, 2}
+	s.d.AiredEpisodes = func(context.Context, core.RatingKey, int, int) (core.Page, error) {
+		return core.Page{Items: []core.Title{episode}, Total: 1}, nil
+	}
+	if got, err := s.LatestAddedGrouped(ctx, v, core.Device{}, "2", 1, false); err != nil || len(got) != 0 {
+		t.Fatalf("restricted episode leaked in ungrouped latest: %+v %v", got, err)
+	}
+	resume, err = s.Resume(ctx, v, core.Device{}, "2", []core.MediaType{core.TypeEpisode}, 0, 5, false)
+	if err != nil || len(resume.Items) != 0 || !resume.TotalExact {
+		t.Fatalf("restricted parent leaked episode: %+v %v", resume, err)
+	}
+}
+
+func TestLatestHidesPlayedWhenTheQueryOmitsIsPlayed(t *testing.T) {
+	v := &core.User{ID: 1}
+	played := core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, Title: "Played"}
+	fresh := core.Title{Key: core.MovieKey(3), Type: core.TypeMovie, Title: "Fresh"}
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return v, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, State: activityState{statuses: []core.WatchStatus{{Key: played.Key, ViewCount: 1}}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, Browse: func(context.Context, core.BrowseQuery) (core.Page, error) {
+		return core.Page{Items: []core.Title{played, fresh}, Total: 2}, nil
+	}, AddedTimes: func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+		return map[core.RatingKey]time.Time{played.Key: time.Unix(30, 0), fresh.Key: time.Unix(10, 0)}, nil
+	}}}
+	hidden, err := s.LatestAdded(frontend.WithLatestPlayed(context.Background(), false), v, core.Device{}, "1", 16)
+	if err != nil || len(hidden) != 1 || hidden[0].Title.Key != fresh.Key {
+		t.Fatalf("unplayed latest %+v %v", hidden, err)
+	}
+	onlyPlayed, err := s.LatestAdded(frontend.WithLatestPlayed(context.Background(), true), v, core.Device{}, "1", 16)
+	if err != nil || len(onlyPlayed) != 1 || onlyPlayed[0].Title.Key != played.Key {
+		t.Fatalf("played latest %+v %v", onlyPlayed, err)
+	}
+}
+
+func TestLatestAddedGlobalMergesRealAddedTimes(t *testing.T) {
+	v := &core.User{ID: 1}
+	movie := core.Title{Key: core.MovieKey(4), Type: core.TypeMovie}
+	show := core.Title{Key: core.ShowKey(5), Type: core.TypeShow}
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return v, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}, {ID: 2, Type: core.TypeShow}}, Visibility: Visibility{SectionFor: func(typ core.MediaType) (int, bool) {
+		if typ == core.TypeMovie {
+			return 1, true
+		}
+		return 2, true
+	}}, Browse: func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
+		if q.Filter.Type == core.TypeMovie {
+			return core.Page{Items: []core.Title{movie}, Total: 1}, nil
+		}
+		return core.Page{Items: []core.Title{show}, Total: 1}, nil
+	}, AddedTimes: func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+		return map[core.RatingKey]time.Time{movie.Key: time.Unix(10, 0), show.Key: time.Unix(20, 0)}, nil
+	}}}
+	got, err := s.LatestAdded(context.Background(), v, core.Device{}, "", 2)
+	if err != nil || len(got) != 2 || got[0].Title.Key != show.Key || got[0].AddedAt == nil || got[0].AddedAt.Unix() != 20 || got[1].Title.Key != movie.Key {
+		t.Fatalf("global latest %+v %v", got, err)
+	}
+}
+
+func TestLatestUngroupedTVFiltersBeforeLimit(t *testing.T) {
+	v := &core.User{ID: 1, AllowedSections: []int{2}, MaxContentRating: "TV-PG"}
+	show := core.Title{Key: core.ShowKey(5), Type: core.TypeShow, ContentRating: "TV-PG"}
+	hidden := core.Title{Key: core.EpisodeKey(5, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key, ContentRating: "TV-MA"}
+	unknown := core.Title{Key: core.EpisodeKey(5, 1, 2), Type: core.TypeEpisode, ShowKey: show.Key, ContentRating: "TV-PG"}
+	visible := core.Title{Key: core.EpisodeKey(5, 1, 3), Type: core.TypeEpisode, ShowKey: show.Key, ContentRating: "TV-PG"}
+	air := time.Unix(1700000000, 0).UTC()
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return v, nil }, Libraries: []Library{{ID: 2, Type: core.TypeShow}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 2, true }, GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) { return &show, nil }}, Browse: func(context.Context, core.BrowseQuery) (core.Page, error) {
+		t.Fatal("ungrouped TV used series browse")
+		return core.Page{}, nil
+	}, AiredEpisodes: func(context.Context, core.RatingKey, int, int) (core.Page, error) {
+		return core.Page{Items: []core.Title{hidden, unknown, visible}, Total: 3}, nil
+	}, AddedTimes: func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+		return map[core.RatingKey]time.Time{hidden.Key: air.Add(time.Hour), visible.Key: air}, nil
+	}}}
+	got, err := s.LatestAddedGrouped(context.Background(), v, core.Device{}, "2", 1, false)
+	if err != nil || len(got) != 1 || got[0].Title.Key != visible.Key || got[0].AddedAt == nil || !got[0].AddedAt.Equal(air) {
+		t.Fatalf("ungrouped latest %+v %v", got, err)
+	}
+}

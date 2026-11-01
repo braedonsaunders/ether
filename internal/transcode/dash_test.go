@@ -1,6 +1,7 @@
 package transcode
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -38,8 +39,9 @@ func checkGolden(t *testing.T, name string, got []byte) {
 	}
 }
 
-// The MPD matches, byte for byte, what a real PMS returned from start.mpd
-// for a 3m37.866s 1080p H.264 episode with E-AC-3 audio converted to Opus.
+// Ether's static MPD matches a real PMS start.mpd except minBufferTime:
+// PMS advertises two segments (PT10S for a 5 s grid); Shaka waits for
+// max(minBufferTime, 2s), so Ether advertises one segment.
 func TestRenderMPDMatchesPMS(t *testing.T) {
 	init, media := PlexDASHURLs("ethercapdash01")
 	got := renderMPD(217866*time.Millisecond, 5*time.Second, init, media, []dashRep{
@@ -50,8 +52,12 @@ func TestRenderMPDMatchesPMS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	want = bytes.Replace(want, []byte(`minBufferTime="PT10S"`), []byte(`minBufferTime="PT5S"`), 1)
 	if string(got) != string(want) {
-		t.Errorf("MPD differs from PMS capture\n--- got ---\n%s\n--- want ---\n%s", got, want)
+		t.Errorf("MPD differs from PMS capture (one-segment buffer)\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if !strings.Contains(string(got), `minBufferTime="PT5S"`) || strings.Contains(string(got), `minBufferTime="PT10S"`) {
+		t.Fatalf("static MPD must advertise one segment of buffer: %s", got)
 	}
 }
 
@@ -192,6 +198,30 @@ func TestSlotterFirstChunkOfRun(t *testing.T) {
 	// 154.95 is within the rounding tolerance of 155: segment 31.
 	if sl.slot != 31 {
 		t.Errorf("pending slot %d", sl.slot)
+	}
+}
+
+// A resume at 11:36 is playlist segment 175 (two 2s ramp segments, then 4s).
+// Chunk timestamps are that title clock, which is what -ss plus the Matroska
+// origin produces after the origin is removed. They must not be numbered as
+// if the run's output clock started at zero.
+func TestResumeChunkIndexMatchesSeek(t *testing.T) {
+	tl := buildTimeline(90*time.Minute+28*time.Second, 4*time.Second, timelineOptions{
+		fastStart: true, rampSegs: 2, rampDur: 2 * time.Second, steadyMode: ModeTranscode,
+	})
+	const seg = 175
+	at := tl.Start(seg)
+	if at != 11*time.Minute+36*time.Second {
+		t.Fatalf("segment %d starts at %s, want 11m36s", seg, at)
+	}
+	if tl.IndexAt(at) != seg || tl.IndexAt(at+4*time.Second) != seg+1 {
+		t.Fatalf("IndexAt(%s)=%d IndexAt(+4s)=%d", at, tl.IndexAt(at), tl.IndexAt(at+4*time.Second))
+	}
+	sl := newSlotter(0, 4*time.Second, tl.Total(), seg)
+	sl.index = func(ts time.Duration) int { return tl.IndexAt(ts) }
+	got := feed(sl, [2]float64{at.Seconds(), at.Seconds() + 4}, [2]float64{at.Seconds() + 4, at.Seconds() + 8})
+	if got != "175:[696.000] 176:[700.000]" {
+		t.Fatalf("slotted %s, want segments 175 and 176", got)
 	}
 }
 
@@ -733,13 +763,28 @@ func TestLiveMPDOnlyAdvertisesCompletedWindow(t *testing.T) {
 	start := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 	init, media := PlexDASHURLs("live")
 	b := string(renderLiveMPD(start, start.Add(time.Hour), 4*time.Second, 100, init, media, []dashRep{{ID: 0, Kind: "video", Codecs: "avc1.640028", Bandwidth: 4000000}}))
-	for _, want := range []string{`type="dynamic"`, `startNumber="71"`, `<S t="284000" d="4000" r="29"/>`, `minimumUpdatePeriod="PT2S"`} {
+	for _, want := range []string{`type="dynamic"`, `startNumber="71"`, `<S t="284000" d="4000" r="29"/>`, `minimumUpdatePeriod="PT2S"`, `minBufferTime="PT4S"`, `timeShiftBufferDepth="PT120S"`} {
 		if !strings.Contains(b, want) {
 			t.Fatalf("missing %s in %s", want, b)
 		}
 	}
 	if strings.Contains(b, "mediaPresentationDuration") {
 		t.Fatal("live stream has an invented end")
+	}
+}
+
+func TestLiveMPDBufferIsOneSegment(t *testing.T) {
+	start := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	init, media := PlexDASHURLs("live")
+	early := string(renderLiveMPD(start, start.Add(10*time.Second), 4*time.Second, 2, init, media, []dashRep{{ID: 0, Kind: "video", Codecs: "avc1.640028", Bandwidth: 4000000}}))
+	for _, want := range []string{`minBufferTime="PT4S"`, `timeShiftBufferDepth="PT120S"`} {
+		if !strings.Contains(early, want) {
+			t.Fatalf("missing %s in %s", want, early)
+		}
+	}
+	encoded := string(renderLiveMPD(start, start.Add(time.Minute), 2*time.Second, 20, init, media, []dashRep{{ID: 0, Kind: "video", Codecs: "avc1.640028", Bandwidth: 4000000}}))
+	if !strings.Contains(encoded, `minBufferTime="PT2S"`) || !strings.Contains(encoded, `timeShiftBufferDepth="PT120S"`) {
+		t.Fatalf("encoded live MPD must keep the PMS rewind window and one 2s start buffer: %s", encoded)
 	}
 }
 

@@ -99,9 +99,7 @@ export function PlayHistory({
   return (
     <Section
       title={t("Play history")}
-      description={t(
-        "The latest 500 plays in this period, in your device's time zone. Viewing time comes from what Plex apps report.",
-      )}
+      description={t("The latest 500 plays in this period, in your device's time zone.")}
     >
       {!history ? (
         <LoadingRows rows={4} />

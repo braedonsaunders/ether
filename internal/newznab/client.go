@@ -24,6 +24,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/safefetch"
 )
@@ -36,6 +37,10 @@ const (
 	// capsRetry spaces caps requests after a failure. Every caps request
 	// spends a daily API hit, and searches work (ungated) without caps.
 	capsRetry = time.Hour
+	// nzbFlightTimeout caps one shared NZB fetch. The fetch runs detached
+	// from its callers so one cancelled caller cannot fail the others;
+	// this bound keeps an indexer that never answers from pinning it.
+	nzbFlightTimeout = 90 * time.Second
 )
 
 var errCapsUnavailable = errors.New("newznab: capabilities unavailable; retrying later")
@@ -111,7 +116,24 @@ type Client struct {
 	nzbSaveMu    sync.Mutex
 	nzbSaveLocks map[string]*nzbSaveLock
 
+	// nzbFlights coalesces concurrent FetchNZB calls per release id, so
+	// racing warm-up, playback and validation spend one grab.
+	nzbFlightMu sync.Mutex
+	nzbFlights  map[string]*nzbFlight
+
 	cfgMu sync.RWMutex
+}
+
+// nzbFlight is one shared in-flight NZB fetch. done is closed after body
+// and err are set. waiters counts callers that joined it (tests); readers
+// counts those still to take the result. Both are guarded by nzbFlightMu.
+type nzbFlight struct {
+	done       chan struct{}
+	body       []byte
+	err        error
+	background bool // started by a background check (smaller grab share)
+	waiters    int
+	readers    int
 }
 
 // nzbSaveLock is a refcounted per-key mutex (see lockNZB).
@@ -155,7 +177,7 @@ func New(cfg config.Indexer, db *sql.DB, opts Options) *Client {
 	c := &Client{cfg: cfg, db: db, nzbDir: opts.NZBDir, backends: opts.Backend}
 	c.http = opts.HTTPClient
 	if c.http == nil {
-		c.http = &http.Client{Timeout: defaultHTTPTimeout}
+		c.http = egress.Client(egress.CapIndexers, defaultHTTPTimeout)
 	}
 	c.guarded = (&safefetch.Guard{}).Client(c.http)
 	c.log = opts.Logger
@@ -1054,7 +1076,8 @@ func (c *Client) nzbDiskPath(releaseID string) string {
 	return filepath.Join(c.nzbDir, safe+".nzb")
 }
 
-// FetchNZB implements core.Indexer.
+// FetchNZB implements core.Indexer. Every call returns a slice of its own,
+// which the caller may keep or modify.
 func (c *Client) FetchNZB(ctx context.Context, r core.Release) ([]byte, error) {
 	if r.Protocol == core.ProtocolTorrent {
 		return nil, fmt.Errorf("newznab: %q is a torrent release; it streams through a debrid provider", r.Name)
@@ -1064,6 +1087,87 @@ func (c *Client) FetchNZB(ctx context.Context, r core.Release) ([]byte, error) {
 			return b, nil
 		}
 	}
+	if r.ID == "" {
+		return c.fetchNZB(ctx, r)
+	}
+	for {
+		f, leader := c.joinNZBFlight(ctx, r)
+		select {
+		case <-f.done:
+		case <-ctx.Done():
+			// The shared fetch carries on for the other callers and
+			// still lands in the disk cache.
+			c.leaveNZB(f)
+			return nil, ctx.Err()
+		}
+		body := c.takeNZB(f)
+		// A background check runs on a reduced grab share; a foreground
+		// caller must not inherit its budget refusal.
+		if !leader && f.background && !core.IsBackgroundCheck(ctx) && errors.Is(f.err, core.ErrBudgetExhausted) {
+			continue
+		}
+		if f.err != nil {
+			return nil, f.err
+		}
+		return body, nil
+	}
+}
+
+// takeNZB gives one caller of f, after f.done, its own copy of the
+// fetched body. Copies are made under the lock, and only the last caller
+// to take one gets the original, so a caller may modify what it got: no
+// other caller is still reading it. A lone caller (the usual case) pays no
+// copy.
+func (c *Client) takeNZB(f *nzbFlight) []byte {
+	c.nzbFlightMu.Lock()
+	defer c.nzbFlightMu.Unlock()
+	f.readers--
+	if f.readers > 0 {
+		return bytes.Clone(f.body)
+	}
+	return f.body
+}
+
+// leaveNZB gives up a caller's turn without reading the body, which may
+// still be in flight.
+func (c *Client) leaveNZB(f *nzbFlight) {
+	c.nzbFlightMu.Lock()
+	f.readers--
+	c.nzbFlightMu.Unlock()
+}
+
+// joinNZBFlight attaches to the in-flight fetch for r.ID, or starts one.
+// The shared fetch keeps ctx's values (budget class, trust) but not its
+// cancellation, and is bounded by nzbFlightTimeout. The flight is
+// forgotten as soon as it ends, so errors are not cached past it.
+func (c *Client) joinNZBFlight(ctx context.Context, r core.Release) (*nzbFlight, bool) {
+	c.nzbFlightMu.Lock()
+	defer c.nzbFlightMu.Unlock()
+	if f, ok := c.nzbFlights[r.ID]; ok {
+		f.waiters++
+		f.readers++
+		return f, false
+	}
+	if c.nzbFlights == nil {
+		c.nzbFlights = map[string]*nzbFlight{}
+	}
+	f := &nzbFlight{done: make(chan struct{}), background: core.IsBackgroundCheck(ctx), waiters: 1, readers: 1}
+	c.nzbFlights[r.ID] = f
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), nzbFlightTimeout)
+	go func() {
+		defer cancel()
+		f.body, f.err = c.fetchNZB(fctx, r)
+		c.nzbFlightMu.Lock()
+		delete(c.nzbFlights, r.ID)
+		c.nzbFlightMu.Unlock()
+		close(f.done)
+	}()
+	return f, true
+}
+
+// fetchNZB downloads r's NZB from the indexer, spending one grab, and
+// keeps it on disk.
+func (c *Client) fetchNZB(ctx context.Context, r core.Release) ([]byte, error) {
 	if c.Config().UsesBackend() {
 		b, err := c.backend()
 		if err != nil {

@@ -18,7 +18,18 @@ type visibilityEntry struct {
 // New observations and invalidations clear it immediately. Other cluster nodes
 // see changes within fifteen seconds, without a provider request.
 func (s *Service) FilterDiscovery(ctx context.Context, items []core.Title) []core.Title {
-	return s.filterDiscoverySnapshot(ctx, items, s.discoverySnapshot())
+	if len(items) == 0 {
+		return items
+	}
+	snap := s.snapshotFor(ctx)
+	for _, t := range items {
+		if evidenceWindow(t, snap.now, snap.availability) {
+			return s.filterDiscoverySnapshot(ctx, items, snap)
+		}
+	}
+	out := make([]core.Title, len(items))
+	copy(out, items)
+	return out
 }
 
 func (s *Service) filterDiscoverySnapshot(ctx context.Context, items []core.Title, input discoverySnapshot) []core.Title {
@@ -75,5 +86,14 @@ func (s *Service) clearVisibility() {
 	s.visibilityMu.Lock()
 	s.visibilityRevision++
 	s.visibilityCache = nil
+	s.hiddenCache = nil
 	s.visibilityMu.Unlock()
+}
+
+type currentPolicyKey struct{}
+
+// FilterDiscoveryCurrent bypasses node-local visibility and resolver memos for
+// one bounded policy preflight batch. It performs no provider lookup.
+func (s *Service) FilterDiscoveryCurrent(ctx context.Context, items []core.Title) []core.Title {
+	return s.filterDiscovery(context.WithValue(ctx, currentPolicyKey{}, true), items, s.discoverySnapshot())
 }

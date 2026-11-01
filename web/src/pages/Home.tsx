@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Table2,
   TrendingUp,
+  X,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -36,7 +37,7 @@ import { ServerPanel } from "../components/ServerPanel";
 import { LevelBadge, StatusDot } from "../components/status";
 import { getLocale, localized, t, tn, tx } from "../i18n";
 import { api } from "../lib/api";
-import type { ActivityDay, RowInsight } from "../lib/contract";
+import type { ActivityDay, RowInsight, Viewer } from "../lib/contract";
 import { formatNumber, formatPercent, formatRate, relativeTime } from "../lib/format";
 import {
   countsOverall,
@@ -47,7 +48,97 @@ import {
 } from "../lib/health";
 import { useAsync } from "../lib/hooks";
 import { useTitle } from "../lib/titles";
+import type { EtherConfig } from "../lib/types";
 import { useLocale } from "../i18n/react";
+import { connectDevicePath } from "./setup/connect-path";
+
+const GETTING_STARTED_KEY = "ether.getting-started.dismissed";
+
+function sourceReady(cfg: EtherConfig): boolean {
+  const debrid = (cfg.debrid?.providers ?? []).some(
+    (provider) => provider.enabled && provider.apiKey.trim() !== "",
+  );
+  const usenet = (cfg.usenet?.providers ?? []).some(
+    (provider) => provider.enabled && provider.host.trim() !== "",
+  );
+  return debrid || usenet;
+}
+
+function GettingStarted({ sessions }: { sessions: NowPlaying[] }) {
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(GETTING_STARTED_KEY) === "1",
+  );
+  const config = useAsync(() => api.getConfig(), []);
+  const viewers = useAsync(() => api.viewers(), []);
+  if (dismissed) return null;
+  const cfg = config.data;
+  const people = viewers.data;
+  if (!cfg || !people) return null;
+  const apps = Object.entries(cfg.frontends ?? {})
+    .filter(([, row]) => row?.enabled)
+    .map(([id]) => id);
+  const profile = cfg.quality?.default?.trim() || "1080p";
+  const steps = [
+    { id: "source", todo: !sourceReady(cfg), label: t("Add a source"), to: "/sources" },
+    {
+      id: "plex",
+      todo: apps.includes("plex") && !(cfg.plex?.claimed || cfg.plex?.token),
+      label: t("Connect Plex"),
+      to: "/apps/plex/account",
+    },
+    {
+      id: "device",
+      todo:
+        apps.length > 0 &&
+        sessions.length === 0 &&
+        !people.some((viewer: Viewer) => !viewer.isOwner && Boolean(viewer.lastActive)),
+      label: t("Connect a device"),
+      to: connectDevicePath(cfg.frontends),
+    },
+    {
+      id: "viewers",
+      todo: !people.some((viewer) => !viewer.isOwner),
+      label: t("Add viewers"),
+      to: "/viewers",
+    },
+    {
+      id: "quality",
+      todo: profile === "1080p",
+      label: t("Playback quality: {profile} at home · change", { profile }),
+      to: "/releases/profiles",
+    },
+  ].filter((step) => step.todo);
+  if (steps.length === 0) return <span hidden data-testid="getting-started-clear" />;
+  return (
+    <section
+      aria-label={t("Next steps")}
+      className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-border bg-surface py-1.5 pl-3 pr-1.5"
+    >
+      <span className="text-xs font-medium text-fg-muted">{t("Next steps")}</span>
+      {steps.map((step) => (
+        <Link
+          key={step.id}
+          to={step.to}
+          className="rounded-full border border-border px-3 py-1 text-xs font-medium text-fg transition hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          {step.label}
+        </Link>
+      ))}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="ml-auto size-7"
+        aria-label={t("Dismiss")}
+        onClick={() => {
+          localStorage.setItem(GETTING_STARTED_KEY, "1");
+          setDismissed(true);
+        }}
+      >
+        <X size={14} aria-hidden />
+      </Button>
+    </section>
+  );
+}
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
@@ -77,17 +168,20 @@ export default function Home() {
   );
   const hw = dashboard?.sections.hwaccel as
     { hwaccel?: { name?: string }; ffmpeg?: string; error?: string } | undefined;
-  const problems = health.filter((h) => h.level === "error" || h.level === "warn");
+  const problems = health.filter((h) => !h.setupGap && (h.level === "error" || h.level === "warn"));
+  const setupGaps = health.filter((h) => h.setupGap);
 
   const status = !dashboard
     ? null
     : problems.length
       ? tn(problems.length, "{count} thing needs attention", "{count} things need attention")
-      : health.some((h) => h.level === "unknown" && countsOverall(h))
-        ? t("Status incomplete")
-        : hasExemptDiagnostic(health)
-          ? t("Operational")
-          : t("Everything is healthy");
+      : setupGaps.length
+        ? tn(setupGaps.length, "{count} thing to set up", "{count} things to set up")
+        : health.some((h) => h.level === "unknown" && countsOverall(h))
+          ? t("Status incomplete")
+          : hasExemptDiagnostic(health)
+            ? t("Operational")
+            : t("Everything is healthy");
 
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
@@ -124,7 +218,7 @@ export default function Home() {
             <Alert variant="warning" className="shrink-0">
               <AlertTitle>{t("Setup isn't finished")}</AlertTitle>
               <AlertDescription>
-                {tx("Plex apps can't find Ether until setup is complete. {link}", {
+                {tx("Apps can't find this server until setup is complete. {link}", {
                   link: (
                     <Link className="font-medium underline" to="/setup">
                       {t("Continue setup")}
@@ -133,7 +227,9 @@ export default function Home() {
                 })}
               </AlertDescription>
             </Alert>
-          ) : null}
+          ) : (
+            <GettingStarted sessions={sessions} />
+          )}
           {dashboardError && !dashboard ? (
             <div className="shrink-0">
               <ErrorPanel error={dashboardError} onRetry={() => void refreshDashboard()} />
@@ -206,7 +302,7 @@ function NowPlayingPanel({
         <EmptyState
           icon={<MonitorPlay />}
           title={t("Nothing playing")}
-          description={t("Streams appear here the moment someone presses play in Plex.")}
+          description={t("Streams appear here when someone presses play.")}
           className="py-6"
         />
       ) : (
@@ -294,8 +390,9 @@ function HealthPanel({
   items: HealthItem[];
   className?: string;
 }) {
-  const problems = items.filter((h) => h.level === "error" || h.level === "warn");
-  const rest = items.filter((h) => !problems.includes(h));
+  const problems = items.filter((h) => !h.setupGap && (h.level === "error" || h.level === "warn"));
+  const setupGaps = items.filter((h) => h.setupGap);
+  const rest = items.filter((h) => !problems.includes(h) && !h.setupGap);
   const severe = problems.some((h) => h.level === "error");
   return (
     <DashboardPanel
@@ -303,24 +400,29 @@ function HealthPanel({
       icon={<HeartPulse size={16} />}
       className={className}
       bodyClassName={cn("px-3 py-2", scrollBody)}
-      actions={
-        loading ? null : problems.length ? (
-          <Badge variant={severe ? "destructive" : "warning"}>
-            {tn(problems.length, "{count} to fix", "{count} to fix")}
-          </Badge>
-        ) : items.some((h) => h.level === "unknown" && countsOverall(h)) ? (
-          <LevelBadge level="unknown" label={t("Status incomplete")} />
-        ) : hasExemptDiagnostic(items) ? (
-          <LevelBadge level="ok" label={t("Operational")} />
-        ) : (
-          <LevelBadge level="ok" label={t("All healthy")} />
-        )
-      }
+      actions={null}
     >
       {loading ? (
         <LoadingRows rows={4} />
       ) : (
         <>
+          <div className="mb-2">
+            {problems.length ? (
+              <Badge variant={severe ? "destructive" : "warning"} className="whitespace-nowrap">
+                {tn(problems.length, "{count} to fix", "{count} to fix")}
+              </Badge>
+            ) : setupGaps.length ? (
+              <Badge variant="secondary" className="whitespace-nowrap">
+                {tn(setupGaps.length, "{count} thing to set up", "{count} things to set up")}
+              </Badge>
+            ) : items.some((h) => h.level === "unknown" && countsOverall(h)) ? (
+              <LevelBadge level="unknown" label={t("Status incomplete")} />
+            ) : hasExemptDiagnostic(items) ? (
+              <LevelBadge level="ok" label={t("Operational")} />
+            ) : (
+              <LevelBadge level="ok" label={t("All healthy")} />
+            )}
+          </div>
           {problems.length ? (
             <section
               role="region"
@@ -336,6 +438,13 @@ function HealthPanel({
                 ))}
               </ul>
             </section>
+          ) : null}
+          {setupGaps.length ? (
+            <ul className="mb-2 space-y-0.5">
+              {setupGaps.map((h) => (
+                <HealthRow key={h.id} h={h} />
+              ))}
+            </ul>
           ) : null}
           <ul className="space-y-0.5">
             {rest.map((h) => (
@@ -397,7 +506,7 @@ function HealthRow({ h, fix = false }: { h: HealthItem; fix?: boolean }) {
             </span>
           )}
         </span>
-        <span className="block truncate text-xs text-fg-muted">{h.summary}</span>
+        <span className="block text-pretty text-xs text-fg-muted">{h.summary}</span>
         {h.note ? <span className="mt-1 block text-xs text-fg-subtle">{h.note}</span> : null}
       </span>
     </li>
@@ -598,7 +707,9 @@ function RowsPanel({
         <EmptyState
           icon={<Film />}
           title={t("No row data yet")}
-          description={t("Once viewers browse Plex Home, the rows that lead to plays rank here.")}
+          description={t(
+            "No plays yet. The library stays empty until a TMDB key syncs the catalogue, and a debrid account or a Usenet provider can play it.",
+          )}
           className="py-6"
         />
       ) : (

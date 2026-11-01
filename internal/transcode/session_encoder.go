@@ -25,7 +25,7 @@ func (s *Session) throttleLocked() {
 		if s.resumeAt >= 0 && s.endSeg < 0 && s.resumeAt-s.lastReq <= limit/2 && !s.closed {
 			at := s.resumeAt
 			s.log.Debug("throttle: restarting ffmpeg", "segment", at)
-			if err := s.startRunLocked(at, false); err != nil {
+			if err := s.startRunForLocked(at, false, "throttle resume"); err != nil {
 				s.log.Warn("throttle: restart failed", "err", err)
 			}
 		}
@@ -35,13 +35,21 @@ func (s *Session) throttleLocked() {
 	if r.produced == 0 {
 		ahead = 0
 	}
+	// SIGSTOP on the ffmpeg pid does not always stop a VideoToolbox encode.
+	// One extra segment can land after the signal; a run that keeps
+	// publishing has to be stopped or it reaches the eviction window.
+	if r.paused && r.maxDone > r.pausedDone+2 {
+		s.stopForLeadLocked(r, ahead)
+		return
+	}
 	switch {
 	case !r.paused && ahead > limit:
 		if !s.noPause {
 			err := r.proc.Pause()
 			if err == nil {
 				r.paused = true
-				s.log.Debug("throttle: paused ffmpeg", "ahead", ahead)
+				r.pausedDone = r.maxDone
+				s.log.Debug("throttle: paused ffmpeg", "ahead", ahead, "playhead", s.lastReq)
 				return
 			}
 			if !errors.Is(err, ErrPauseUnsupported) {
@@ -50,7 +58,7 @@ func (s *Session) throttleLocked() {
 			s.noPause = true
 		}
 		resume := r.maxDone + 1
-		s.stopRunLocked()
+		s.stopRunForLocked("pause unsupported")
 		s.resumeAt = resume
 		s.log.Debug("throttle: stopped ffmpeg", "ahead", ahead, "resumeAt", resume)
 	case r.paused && ahead <= limit/2:
@@ -59,6 +67,29 @@ func (s *Session) throttleLocked() {
 			s.log.Debug("throttle: resumed ffmpeg", "ahead", ahead)
 		}
 	}
+}
+
+// stopForLeadLocked stops a run that got ahead of the playhead and resumes
+// inside the throttle window, not at the encoder head.
+func (s *Session) stopForLeadLocked(r *run, ahead int) {
+	resume := s.lastReq + s.aheadLimit()
+	if r != nil && r.maxDone+1 < resume {
+		resume = r.maxDone + 1
+	}
+	if resume < 0 {
+		resume = 0
+	}
+	s.stopRunForLocked("lead cap")
+	s.resumeAt = resume
+	s.log.Info("transcode lead capped", "ahead", ahead, "playhead", s.lastReq, "resumeAt", resume)
+}
+
+// leadOverLocked reports that this run has published past the throttle window.
+func (s *Session) leadOverLocked(r *run) bool {
+	if s.m == nil || s.m.opts.maxAhead <= 0 || s.segDur <= 0 || r == nil || r.produced == 0 {
+		return false
+	}
+	return r.maxDone-s.lastReq > s.aheadLimit()
 }
 
 // aheadLimit is how many segments ffmpeg may run ahead of the player.
@@ -70,9 +101,12 @@ func (s *Session) aheadLimit() int {
 	return limit
 }
 
-// pruneLocked deletes finished segments well behind the play position (and,
-// when throttling bounds the encoder, stale ones far ahead of it) to bound
-// disk use.
+// pruneLocked deletes finished segments well behind the playhead (and, when
+// throttling bounds the encoder, stale ones far ahead of it) to bound disk
+// use. The playhead is the client's oldest outstanding fetch inside the
+// restart window, advanced as those segments are delivered. A prefetch of
+// the encoder's newest segment does not move it, so the segment the client
+// is still waiting on is not evicted to make room for the encoder head.
 func (s *Session) pruneLocked() {
 	if s.m.opts.keepBehind <= 0 {
 		return
@@ -97,35 +131,78 @@ func (s *Session) pruneLocked() {
 }
 
 // startRunLocked stops the current run and starts ffmpeg at segment seg.
+func (s *Session) traceOn() bool {
+	return s != nil && s.log != nil && s.m != nil && s.m.opts.tracePlayback
+}
+
+// startRunForLocked starts a run and, when playback tracing is on, records why.
+func (s *Session) startRunForLocked(seg int, bigProbe bool, reason string) error {
+	s.traceCause = reason
+	return s.startRunLocked(seg, bigProbe)
+}
+
+// stopRunForLocked stops the current run and, when playback tracing is on, records why.
+func (s *Session) stopRunForLocked(reason string) {
+	s.traceStop = reason
+	s.stopRunLocked()
+}
+
 func (s *Session) startRunLocked(seg int, bigProbe bool) error {
+	cause := s.traceCause
+	s.traceCause = ""
 	if s.closed {
 		return errors.New("transcode: session closed")
 	}
 	if s.inputFailed {
 		return errInputExhausted
 	}
+	s.encoder.decisionEncoding(!s.decision.VideoCopy)
 	s.stopRunLocked()
+	// This start replaces any throttle resume. Clear it before waiting on
+	// the old process: a collector can take the lock during that wait and
+	// would otherwise start the old lead as a second run.
+	s.resumeAt = -1
 	// Reserve this transition before dropping the lock. A later seek or swap
 	// supersedes it; only the newest transition may start another encoder.
 	s.runSeq++
 	sequence := s.runSeq
-	for s.reaping != nil {
-		reaped := s.reaping
+	for s.reaping != nil || s.starting != nil {
+		barrier := s.reaping
+		if s.starting != nil {
+			barrier = s.starting
+		}
+		var canceled <-chan struct{}
+		if s.encoder != nil {
+			canceled = s.encoder.cancel
+		}
 		s.mu.Unlock()
-		<-reaped
+		select {
+		case <-barrier:
+		case <-canceled:
+		}
 		s.mu.Lock()
-		if s.closed {
+		if s.closed || (s.encoder != nil && s.encoder.isSealed()) {
 			return errors.New("transcode: session closed")
 		}
 		if sequence != s.runSeq {
 			return nil
 		}
-		if s.reaping == reaped {
+		if s.reaping == barrier {
 			s.reaping = nil
 		}
+		if s.starting == barrier {
+			s.starting = nil
+		}
 	}
-	s.resumeAt = -1
+	if s.emptyRuns > 0 && s.emptyAt >= 0 && seg <= s.emptyAt {
+		s.log.Info("skipping restart at empty segment", "segment", seg, "advance", s.emptyAt+1, "emptyRestarts", s.emptyRuns)
+		seg = s.emptyAt + 1
+	}
 	if s.total > 0 && seg >= s.total {
+		if s.emptyRuns > 0 && s.lastReal >= 0 {
+			s.endSeg = s.lastReal
+			return nil
+		}
 		seg = s.total - 1
 	}
 	if seg < 0 {
@@ -153,7 +230,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		Playlist:     fmt.Sprintf("run-%d.m3u8", s.runSeq),
 		InitName:     fmt.Sprintf("init-%d.mp4", s.runSeq),
 		Accel:        accel,
-		Features:     s.m.feat,
+		Features:     s.featuresLocked(),
 		BigProbe:     bigProbe,
 		Protocol:     s.proto,
 		FastStart:    rp.fastStart,
@@ -166,9 +243,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		spec.Target = s.contract
 		spec.PictureCrop = s.inputCrop
 	}
-	if err := os.MkdirAll(spec.Dir, 0o755); err != nil {
-		return fmt.Errorf("transcode: run dir: %w", err)
-	}
 	var dr *dashRun
 	if s.isDASH() {
 		spec.Dir = filepath.Join(s.dir, fmt.Sprintf("run-%d", s.runSeq))
@@ -176,9 +250,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		spec.ChunkDur = dashChunkDuration
 		if spec.ChunkDur > s.segDur/2 {
 			spec.ChunkDur = s.segDur / 2
-		}
-		if err := os.MkdirAll(spec.Dir, 0o755); err != nil {
-			return fmt.Errorf("transcode: run dir: %w", err)
 		}
 		// The muxer produces video (the wanted rung) then audio; map
 		// those to their session tracks.
@@ -199,9 +270,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	if s.chunkedLocked(spec.Decision) {
 		spec.ChunkDir = filepath.Join(spec.Dir, fmt.Sprintf("c-%d", s.runSeq))
 		spec.ChunkCut = chunkCutFor(s.segDur)
-		if err := os.MkdirAll(spec.ChunkDir, 0o755); err != nil {
-			return fmt.Errorf("transcode: chunk dir: %w", err)
-		}
 		if !spec.Decision.VideoCopy {
 			// Force keyframes at the plan's boundaries (through the one
 			// the run stops at), in the run's output clock.
@@ -223,6 +291,10 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		}
 		sl := newSlotter(s.base, s.segDur, s.total, seg)
 		plan, base := s.plan, s.base // boundaries never change after StartHLS
+		// Chunk times are title time. The Matroska muxer adds -ss plus the
+		// 10s origin, and mkvChunkStart removes only the origin, so the
+		// playlist index matches -ss and -segment_start_number. A run-relative
+		// clock would pile every chunk onto the run's first segment.
 		sl.index = func(t time.Duration) int { return plan.IndexAt(t - base) }
 		cr = &chunkRun{dir: spec.ChunkDir, container: s.container,
 			initPath: filepath.Join(spec.Dir, spec.InitName), startAt: spec.Start, sl: sl}
@@ -241,15 +313,14 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		planEnd:  rp.planEnd,
 		track:    s.wantTrack,
 	}
-	if hint := s.m.opts.onRunStart; hint != nil {
-		// The first segment needs its whole span, and a GOP either side.
-		go hint(spec.Input, spec.Start, spec.Start+2*s.segDur)
+	if err := graphFailure(spec); err != nil {
+		return s.reportGraphLocked(err)
 	}
 	if !spec.Decision.VideoCopy && !s.hevcFallbackWarned {
 		// Caller holds s.mu (startRunLocked), guarding hevcFallbackWarned.
 		s.hevcFallbackWarned = warnVideoEncoderFallback(s.log, spec.Decision.VideoCodec, spec.Accel, spec.Features)
 	}
-	args := buildArgs(spec)
+	var args []string
 	runLog := s.log.With("run", r.seq)
 	var pp progressParser
 	lastLog := time.Time{}
@@ -269,51 +340,126 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		}
 	}}
 	stderr := &lineWriter{fn: func(l string) {
-		l = redactRTXLine(l, spec.Input, spec.InputHeaders)
+		l = redactRTXLine(l, spec.Input, spec.commandHeaders())
 		if strings.Contains(strings.ToLower(l), "resize: ngx-vsr ") {
 			r.rtxConfirmed.Store(true)
 		}
 		r.stderr.add(l)
 		runLog.Debug("ffmpeg", "line", l)
 	}}
-	var proc Process
-	var err error
-	if enhancementSelected(spec.Decision) {
-		proc, args, err = s.startRTXRunLocked(spec, stdout, stderr)
-		if err != nil {
-			s.fallbackRTXLocked(err.Error(), seg)
-			spec.Decision = s.trackDecisionLocked(s.wantTrack)
-			r.spec = spec
-			args = buildArgs(spec)
-		} else {
-			r.rtx = true
-			r.hw = true
-		}
-	}
-	if proc == nil {
-		proc, err = s.m.runner.Start(Command{Path: s.m.ffmpeg, Args: args, Dir: s.dir, Stdout: stdout, Stderr: stderr})
-	}
+	work, err := s.encoder.runWork(!s.decision.VideoCopy || rp.mode != ModeCopy || s.wantTrack != 0)
 	if err != nil {
-		if dr != nil {
-			_ = os.RemoveAll(dr.dir)
+		return err
+	}
+	r.watchWork, r.stopWork = work[0], work[1]
+	var hintWork *encoderWork
+	if s.m.opts.onRunStart != nil {
+		reserved, reserveErr := s.encoder.reserve(1)
+		if reserveErr != nil {
+			r.watchWork.finish()
+			r.stopWork.finish()
+			return reserveErr
 		}
-		if cr != nil {
-			_ = os.RemoveAll(cr.dir)
+		hintWork = reserved[0]
+	}
+	starting := make(chan struct{})
+	s.starting = starting
+	rtxConfig, runDir, inputLease := s.rtxConfig, s.dir, s.inputLease
+	hint := s.m.opts.onRunStart
+	hintEnd := spec.Start + 2*s.segDur
+	s.mu.Unlock()
+	var proc Process
+	spec.InputScopeHeaders, err = encoderScopeHeaders(inputLease, spec.Input)
+	if err == nil {
+		args = buildArgs(spec)
+		r.spec = spec
+		err = os.MkdirAll(spec.Dir, 0o755)
+	}
+	if err == nil && spec.ChunkDir != "" {
+		err = os.MkdirAll(spec.ChunkDir, 0o755)
+	}
+	if err == nil && hint != nil {
+		go func() {
+			defer hintWork.finish()
+			hint(spec.Input, spec.Start, hintEnd)
+		}()
+	} else {
+		hintWork.finish()
+	}
+	if err == nil && enhancementSelected(spec.Decision) {
+		proc, args, err = s.m.startRTXRun(spec, rtxConfig, runDir, stdout, stderr)
+		if err != nil && proc == nil {
+			s.mu.Lock()
+			if !s.closed && sequence == s.runSeq && (s.encoder == nil || !s.encoder.isSealed()) {
+				s.fallbackRTXLocked(err.Error(), seg)
+				spec.Decision = s.trackDecisionLocked(s.wantTrack)
+				r.spec = spec
+				args = buildArgs(spec)
+				err = nil
+			}
+			s.mu.Unlock()
+		} else if err == nil {
+			r.rtx, r.hw = true, true
 		}
-		s.noteEncoder(false, args)
-		return fmt.Errorf("transcode: start ffmpeg: %w", err)
+	}
+	if err == nil && proc == nil {
+		proc, err = s.m.runner.Start(Command{Path: s.m.ffmpeg, Args: args, Dir: runDir, Stdout: stdout, Stderr: stderr})
+	}
+	err = redactScopedCommandError(err, spec)
+	s.mu.Lock()
+	if s.starting == starting {
+		s.starting = nil
+	}
+	close(starting)
+	stale := s.closed || sequence != s.runSeq || (s.encoder != nil && s.encoder.isSealed())
+	if proc != nil {
+		s.encoder.markStarted()
+	}
+	if err != nil || stale || proc == nil {
+		if proc != nil {
+			s.reapUnpublishedLocked(r, proc)
+		} else {
+			r.watchWork.finish()
+			r.stopWork.finish()
+		}
+		if err != nil {
+			if dr != nil {
+				_ = os.RemoveAll(dr.dir)
+			}
+			if cr != nil {
+				_ = os.RemoveAll(cr.dir)
+			}
+			s.noteEncoder(false, args)
+			return fmt.Errorf("transcode: start ffmpeg: %w", err)
+		}
+		// A newer seek or swap owns the session. Match the wait above: this
+		// start is not a failure, and the caller keeps serving the new run.
+		if sequence != s.runSeq && !s.closed && (s.encoder == nil || !s.encoder.isSealed()) {
+			return nil
+		}
+		return errors.New("transcode: start superseded or returned no process")
+	}
+	if r.rtx {
+		s.decision.Enhancement = spec.Decision.Enhancement
+		s.decision.Enhancement.State = "starting"
+		s.decision.Enhancement.Reason = "waiting for enhanced segments from NVEncC/NGX"
 	}
 	r.proc = proc
 	s.cur = r
-	if s.isDASH() {
-		// A prior seek may have ended on an empty trailing audio/video
-		// fragment. Its EOF is not a bound on another rendition: the new
-		// run must finish and publish its own rounded-up final alias.
-		s.endSeg = -1
-	}
+	// A previous run's EOF does not bound the replacement. The copy of a
+	// short title can finish before a governor clamp restarts at an earlier
+	// segment, and a DASH seek can end on an empty trailing fragment. The
+	// new run publishes its own end.
+	s.endSeg = -1
 	s.deliveredCount = 0
 	runLog.Info("ffmpeg started", "segment", seg, "at", spec.Start, "kind", s.decision.Kind,
 		"videoCopy", s.decision.VideoCopy, "audioCopy", s.decision.AudioCopy, "hw", r.hw)
+	if s.traceOn() {
+		if cause == "" {
+			cause = "unspecified"
+		}
+		runLog.Info("ffmpeg run", "event", "start", "reason", cause, "segment", seg, "playhead", s.lastReq, "oldest", s.oldestFetchLocked())
+	}
 	runLog.Debug("ffmpeg args", "args", strings.Join(redactedRTXArgs(args), " "))
 	s.noteEncoder(true, args)
 	s.watchers.Add(1)
@@ -346,9 +492,17 @@ func (s *Session) chunkedLocked(d core.Decision) bool {
 // stopRunLocked detaches the current run immediately. Process reaping happens
 // outside the session lock and is included in Close's watcher barrier.
 func (s *Session) stopRunLocked() {
+	reason := s.traceStop
+	s.traceStop = ""
 	r := s.cur
 	if r == nil {
 		return
+	}
+	if s.traceOn() && !r.finished {
+		if reason == "" {
+			reason = "superseded"
+		}
+		s.log.Info("ffmpeg run", "event", "stop", "reason", reason, "run", r.seq, "segment", r.startSeg, "maxDone", r.maxDone, "playhead", s.lastReq, "oldest", s.oldestFetchLocked())
 	}
 	s.cur = nil
 	if r.rtx && enhancementSelected(s.decision) {
@@ -360,16 +514,64 @@ func (s *Session) stopRunLocked() {
 		reaped := make(chan struct{})
 		previous := s.reaping
 		s.reaping = reaped
+		stopWork := r.stopWork
+		r.stopWork = nil
 		s.watchers.Add(1)
 		go func() {
+			defer stopWork.finish()
 			defer s.watchers.Done()
 			defer close(reaped)
 			r.proc.Stop()
+			if stopWork != nil {
+				<-r.proc.Done()
+			}
 			if previous != nil {
 				<-previous
 			}
 		}()
 	}
+}
+
+// A process returned together with an error, or after seal, still owns both
+// pre-reserved tickets. It never publishes segments or starts a fallback.
+func (s *Session) reapUnpublishedLocked(r *run, proc Process) {
+	reaped := make(chan struct{})
+	previous := s.reaping
+	s.reaping = reaped
+	s.watchers.Add(2)
+	go func() {
+		defer r.watchWork.finish()
+		defer s.watchers.Done()
+		<-proc.Done()
+	}()
+	go func() {
+		defer r.stopWork.finish()
+		defer s.watchers.Done()
+		defer close(reaped)
+		proc.Stop()
+		<-proc.Done()
+		if previous != nil {
+			<-previous
+		}
+	}()
+}
+
+func (s *Session) featuresLocked() features {
+	if s == nil || s.m == nil {
+		return features{}
+	}
+	f := s.m.feat
+	if len(s.deniedFilters) == 0 {
+		return f
+	}
+	cloned := f
+	cloned.filters = map[string]bool{}
+	for name, ok := range f.filters {
+		if ok && !s.deniedFilters[name] {
+			cloned.filters[name] = true
+		}
+	}
+	return cloned
 }
 
 func (s *Session) noteEncoder(started bool, args []string) {

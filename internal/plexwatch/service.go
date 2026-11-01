@@ -75,6 +75,31 @@ CREATE TABLE plexwatch_permit (
   until_at INTEGER NOT NULL
 );
 CREATE INDEX plexwatch_permit_live ON plexwatch_permit(user_id, until_at);`)
+	// Applies after state_plexwatch; standalone state need not import account sync.
+	store.Register("watchsend", 1, `CREATE TABLE plexwatch_attempt (
+  attempt_id TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  rating_key INTEGER NOT NULL,
+  plex_id INTEGER NOT NULL,
+  generation INTEGER NOT NULL,
+  guid TEXT NOT NULL,
+  aspect TEXT NOT NULL,
+  occurred_at INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  admitted_at INTEGER NOT NULL,
+  receipt_at INTEGER NOT NULL DEFAULT 0,
+  reconcile_attempts INTEGER NOT NULL DEFAULT 0,
+  next_reconcile INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX plexwatch_attempt_conflict ON plexwatch_attempt(plex_id,guid,aspect)
+  WHERE receipt_at=0 AND guid<>'';
+CREATE INDEX plexwatch_attempt_local ON plexwatch_attempt(user_id,rating_key,aspect,receipt_at);
+INSERT INTO plexwatch_attempt(attempt_id,seq,user_id,rating_key,plex_id,generation,guid,aspect,occurred_at,payload,admitted_at,next_reconcile)
+ SELECT 'legacy:' || CAST(seq AS TEXT), seq, user_id, rating_key,
+ COALESCE((SELECT plex_id FROM plexwatch_account a WHERE a.user_id=state_sync_journal.user_id),0),
+ consent_generation, '', aspect, occurred_at, '', 0, 0 FROM state_sync_journal WHERE delivered_at=0 AND never_sent=0;
+UPDATE state_sync_journal SET dead=1, last_error='uncertain_legacy', claimed_by='', claimed_at=0 WHERE delivered_at=0 AND never_sent=0;`)
 }
 
 // GUIDMap resolves a local title to a verified plex:// GUID and the reverse
@@ -125,6 +150,12 @@ type Service struct {
 	// afterFenceRead, when set by a test, runs after the fence row is locked
 	// and the intent is eligible, and before the permit insert.
 	afterFenceRead func()
+	// Fault hooks exercise crash boundaries; production leaves them unset.
+	afterAdmission  func() error
+	receiptFault    func(string) error
+	admissionCommit func(*sql.Tx) error
+	receiptCommit   func(*sql.Tx) error
+	afterPost       func() error
 }
 
 // New starts nothing. Call Run to deliver, or DeliverOnce from tests.
@@ -178,6 +209,8 @@ type Status struct {
 	Eligibility  string `json:"eligibility"`
 	Revoked      bool   `json:"revoked"`
 	Pending      int    `json:"pending"`
+	Held         int    `json:"held"`
+	HeldLegacy   int    `json:"heldLegacy"`
 	Dead         int    `json:"dead"`
 	InFlight     bool   `json:"inFlight"`
 	Skipped      int    `json:"skipped"`
@@ -227,6 +260,13 @@ func (s *Service) Status(ctx context.Context, userID, plexID int64) (Status, err
 		return Status{}, err
 	}
 	st.Pending, st.Dead = pending, dead
+
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_attempt WHERE user_id=? AND receipt_at=0`, userID).Scan(&st.Held); err != nil {
+		return Status{}, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_attempt WHERE user_id=? AND receipt_at=0 AND guid=''`, userID).Scan(&st.HeldLegacy); err != nil {
+		return Status{}, err
+	}
 	var inflight int
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_permit WHERE user_id=? AND until_at>?`, userID, s.now().UnixNano()).Scan(&inflight); err != nil {
 		return Status{}, err
@@ -332,6 +372,9 @@ func (s *Service) FinishPIN(ctx context.Context, userID, plexID int64) (Status, 
 	if err != nil {
 		return Status{}, err
 	}
+	if eligibility == "allowed" {
+		_ = s.reconcileUser(ctx, userID, false)
+	}
 	st, err := s.Status(ctx, userID, plexID)
 	st.Restricted = acct.Restricted
 	return st, err
@@ -378,6 +421,7 @@ func (s *Service) SetEnabled(ctx context.Context, userID, plexID int64, on bool)
 		if err != nil {
 			return Status{}, err
 		}
+		_ = s.reconcileUser(ctx, userID, false)
 	} else if err := s.rotateDisabled(ctx, userID, plexID, "disabled"); err != nil {
 		return Status{}, err
 	}
@@ -447,19 +491,43 @@ func (s *Service) Disconnect(ctx context.Context, userID, plexID int64) (Status,
 	return s.Status(ctx, userID, plexID)
 }
 
-// Retry rechecks eligibility and makes missing-GUID rows claimable again.
+// Retry rechecks eligibility, revives retryable rows, and reconciles holds.
 func (s *Service) Retry(ctx context.Context, userID, plexID int64) (Status, error) {
 	row, err := s.requireMatch(ctx, userID, plexID)
 	if err != nil {
 		return Status{}, err
 	}
-	if err := s.refreshEligibility(ctx, userID, row); err != nil && !errors.Is(err, ErrNotEligible) && !errors.Is(err, ErrRevoked) {
-		return Status{}, err
+	eligErr := s.refreshEligibility(ctx, userID, row)
+	if eligErr != nil && !errors.Is(eligErr, ErrNotEligible) && !errors.Is(eligErr, ErrRevoked) {
+		return Status{}, eligErr
 	}
-	if err := s.state.RetryDeadSync(ctx, userID, []string{"missing_guid"}); err != nil {
+	reasons := []string{"missing_guid"}
+	if eligErr == nil {
+		reasons = append(reasons, "not_eligible")
+	}
+	if err := s.state.RetryDeadSync(ctx, userID, reasons); err != nil {
 		return Status{}, err
 	}
 	if err := s.retryUnmapped(ctx, userID); err != nil {
+		return Status{}, err
+	}
+	if eligErr == nil {
+		_ = s.reconcileUser(ctx, userID, false)
+	}
+	return s.Status(ctx, userID, plexID)
+}
+
+// Resolve reads Plex's current watch state and reconciles held sends for this
+// viewer without blindly re-POSTing.
+func (s *Service) Resolve(ctx context.Context, userID, plexID int64) (Status, error) {
+	row, err := s.requireMatch(ctx, userID, plexID)
+	if err != nil {
+		return Status{}, err
+	}
+	if err := s.refreshEligibility(ctx, userID, row); err != nil {
+		return Status{}, err
+	}
+	if err := s.reconcileUser(ctx, userID, true); err != nil {
 		return Status{}, err
 	}
 	return s.Status(ctx, userID, plexID)

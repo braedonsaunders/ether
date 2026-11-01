@@ -400,6 +400,10 @@ func (e *Engine) surfaceOf(hc core.HubContext, hubs []core.Hub) string {
 // LogRows rows × LogItems items that have a feature snapshot from the
 // assembly that built them. Called from RecordImpressions; never blocks.
 func (e *Engine) rankerRecordServe(user *core.User, hc core.HubContext, hubs []core.Hub, at time.Time) {
+	e.rankerRecordServeNeutral(user, hc, hubs, at, nil, 0)
+}
+
+func (e *Engine) rankerRecordServeNeutral(user *core.User, hc core.HubContext, hubs []core.Hub, at time.Time, explicitKinds map[string]string, positionOffset int) {
 	rs := e.rk
 	if rs == nil || user == nil || len(hubs) == 0 {
 		return
@@ -412,11 +416,15 @@ func (e *Engine) rankerRecordServe(user *core.User, hc core.HubContext, hubs []c
 	rec := &serveRec{userID: user.ID, at: at, surface: surface, hc: hc}
 	sig := fnv.New64a()
 	sig.Write([]byte(hc.Bucket()))
-	for rowPos, h := range hubs {
+	for rowIndex, h := range hubs {
+		rowPos := rowIndex + positionOffset
 		if rowPos >= rs.opts.LogRows {
 			break
 		}
 		kind := e.kindOfHub(h.ID)
+		if k := explicitKinds[h.ID]; k != "" {
+			kind = k
+		}
 		if kind == KindContinue || kind == KindUpNext {
 			continue
 		}

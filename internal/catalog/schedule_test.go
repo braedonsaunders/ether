@@ -3,6 +3,7 @@ package catalog_test
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"testing"
 	"time"
 
@@ -94,7 +95,7 @@ func TestRunSyncsAtStartByDefault(t *testing.T) {
 
 func TestRunBoundsFutureRecordedSyncAfterClockCorrection(t *testing.T) {
 	db := store.OpenTest(t)
-	_, err := db.Exec(`INSERT INTO catalog_meta(k,v) VALUES('last_sync',?)`, time.Now().Add(72*time.Hour).Unix())
+	_, err := db.Exec(`INSERT INTO catalog_meta(k,v) VALUES('last_sync',?)`, strconv.FormatInt(time.Now().Add(72*time.Hour).Unix(), 10))
 	if err != nil {
 		t.Fatal(err)
 	}

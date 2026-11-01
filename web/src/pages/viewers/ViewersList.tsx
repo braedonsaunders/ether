@@ -1,37 +1,47 @@
-import { Avatar, EmptyState, PagedTable, Select, Skeleton } from "@braedonsaunders/appkit-ui";
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  PagedTable,
+  Select,
+  Skeleton,
+} from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
-import { Users } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ErrorPanel } from "../../components/feedback";
-import { DomainPage, type PageTab } from "../../components/layout";
+import { DomainPage } from "../../components/layout";
 import { loadViewers, viewerName } from "../../components/pickers";
-import { localized, t, tn } from "../../i18n";
+import { t, tn } from "../../i18n";
 import { api } from "../../lib/api";
+import { ratingLevelLabel } from "../../lib/contentRatings";
 import type { Viewer } from "../../lib/contract";
 import { formatDateTime, formatNumber, parseTime, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
-import { ViewerDefaults } from "./Defaults";
+import { AddViewerDrawer } from "./ManageViewers";
 import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
-type Tab = "people" | "defaults";
-
-const TABS: readonly (PageTab & { key: Tab })[] = localized(() => [
-  { key: "people" as const, label: t("People") },
-  { key: "defaults" as const, label: t("Defaults") },
-]);
-
-export default function ViewersList({ tab = "people" }: { tab?: Tab } = {}) {
+export default function ViewersList() {
+  const [adding, setAdding] = useState(false);
+  const [version, setVersion] = useState(0);
   return (
     <DomainPage
       title={t("Viewers")}
-      description={t("Current viewers and imported history, with access synced from Plex.")}
       base="/viewers"
-      tabs={TABS}
-      active={tab}
+      actions={
+        <Button size="sm" onClick={() => setAdding(true)}>
+          <Plus size={14} /> {t("Add viewer")}
+        </Button>
+      }
     >
-      {tab === "defaults" ? <ViewerDefaults /> : <People />}
+      <People key={version} />
+      <AddViewerDrawer
+        open={adding}
+        onClose={() => setAdding(false)}
+        onCreated={() => setVersion((v) => v + 1)}
+      />
     </DomainPage>
   );
 }
@@ -42,7 +52,11 @@ function limitsSummary(u: EtherUser | undefined): string {
   const parts: string[] = [];
   if (u.streamLimit > 0) parts.push(tn(u.streamLimit, "{count} stream", "{count} streams"));
   if (u.maxContentRating && !u.isOwner)
-    parts.push(t("Up to {rating}", { rating: u.maxContentRating }));
+    parts.push(
+      t("Up to {rating}", {
+        rating: ratingLevelLabel(u.maxContentRating).split(" · ").join("/"),
+      }),
+    );
   return parts.length ? parts.join(" · ") : t("Server defaults");
 }
 

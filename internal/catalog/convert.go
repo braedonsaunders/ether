@@ -4,28 +4,160 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode"
 
+	"golang.org/x/text/unicode/norm"
+
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
+// SortTitle returns the normalized lowercase sort key for a display title:
+// strips invisible format characters, removes a leading English article
+// ("the ", "a ", "an "), and folds Latin accents/diacritics and ligatures to
+// their base ASCII letters so titleSort and firstCharacter share one collation.
+func SortTitle(s string) string {
+	return sortTitle(s)
+}
+
 func sortTitle(s string) string {
+	l := strings.ToLower(strings.TrimSpace(stripFormatRunes(s)))
+	for _, p := range []string{"the ", "a ", "an "} {
+		if strings.HasPrefix(l, p) {
+			if rest := strings.TrimSpace(l[len(p):]); rest != "" {
+				l = rest
+			}
+			break
+		}
+	}
+	return foldSortTitle(l)
+}
+
+func legacySortTitle(s string) string {
 	l := strings.ToLower(strings.TrimSpace(s))
 	for _, p := range []string{"the ", "a ", "an "} {
 		if strings.HasPrefix(l, p) {
-			return strings.TrimSpace(l[len(p):])
+			if rest := strings.TrimSpace(l[len(p):]); rest != "" {
+				return rest
+			}
 		}
 	}
 	return l
+}
+
+func foldedSortTitleForRow(title, stored string) string {
+	want := sortTitle(title)
+	if stored != "" && stored != want && stored != legacySortTitle(title) {
+		if folded := foldSortTitle(stored); folded != "" {
+			return folded
+		}
+	}
+	return want
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func stripFormatRunes(s string) string {
+	if isASCII(s) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// FoldSortTitle normalizes an explicit sort title to lowercase with Latin
+// diacritics and ligatures folded to their base ASCII letters.
+func FoldSortTitle(s string) string {
+	return foldSortTitle(s)
+}
+
+func foldSortTitle(s string) string {
+	s = strings.ToLower(strings.TrimSpace(stripFormatRunes(s)))
+	if s == "" || isASCII(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	lastLatin := false
+	for _, r := range s {
+		if unicode.Is(unicode.Cf, r) {
+			continue
+		}
+		if lastLatin && (unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)) {
+			continue
+		}
+		switch r {
+		case 'æ':
+			b.WriteString("ae")
+			lastLatin = true
+			continue
+		case 'œ':
+			b.WriteString("oe")
+			lastLatin = true
+			continue
+		case 'ß':
+			b.WriteString("ss")
+			lastLatin = true
+			continue
+		case 'ø':
+			b.WriteByte('o')
+			lastLatin = true
+			continue
+		case 'ł':
+			b.WriteByte('l')
+			lastLatin = true
+			continue
+		case 'đ', 'ð':
+			b.WriteByte('d')
+			lastLatin = true
+			continue
+		case 'þ':
+			b.WriteString("th")
+			lastLatin = true
+			continue
+		case 'ı':
+			b.WriteByte('i')
+			lastLatin = true
+			continue
+		}
+		if unicode.Is(unicode.Latin, r) {
+			lastLatin = true
+			if r < 0x80 {
+				b.WriteByte(byte(r))
+				continue
+			}
+			for _, d := range norm.NFD.String(string(r)) {
+				if unicode.Is(unicode.Mn, d) || unicode.Is(unicode.Mc, d) || unicode.Is(unicode.Me, d) {
+					continue
+				}
+				b.WriteRune(unicode.ToLower(d))
+			}
+			continue
+		}
+		lastLatin = false
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (c *Catalog) genreNames(ctx context.Context, mediaType string, ids []int, full []tmdb.Genre) []string {
 	if len(full) > 0 {
 		out := make([]string, 0, len(full))
 		for _, g := range full {
-			if g.Name != "" {
-				out = append(out, g.Name)
-			}
+			out = appendUnique(out, g.Name)
 		}
 		return out
 	}
@@ -49,8 +181,8 @@ func (c *Catalog) genreMap(ctx context.Context, mediaType string) map[int]string
 		return m
 	}
 	m := map[int]string{}
-	if c.client != nil {
-		if gs, err := c.client.Genres(ctx, mediaType); err == nil {
+	if c.tmdb() != nil {
+		if gs, err := c.tmdb().Genres(ctx, mediaType); err == nil {
 			for _, g := range gs {
 				m[g.ID] = g.Name
 			}
@@ -167,27 +299,78 @@ func (c *Catalog) movieToTitle(ctx context.Context, m tmdb.Movie) core.Title {
 	return t
 }
 
-func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails) core.Title {
-	t := c.movieToTitle(ctx, d.Movie)
-	// Ignore festival premieres and home-video windows when theatrical dates exist.
-	if d.ReleaseDates != nil {
-		var theatrical time.Time
-		for _, country := range d.ReleaseDates.Results {
-			for _, release := range country.ReleaseDate {
-				if release.Type != 2 && release.Type != 3 {
-					continue
-				}
-				date := tmdb.ParseDate(strings.SplitN(release.ReleaseDate, "T", 2)[0])
-				if !date.IsZero() && (theatrical.IsZero() || date.Before(theatrical)) {
-					theatrical = date
-				}
+// earliestDatedRelease is the earliest calendar day among the given TMDB
+// release types. Type 1 is a premiere, 2 a limited theatrical release and 3
+// a theatrical release. Home-video types are not title years or date added.
+func earliestDatedRelease(dates *tmdb.ReleaseDates, kinds ...int) time.Time {
+	if dates == nil {
+		return time.Time{}
+	}
+	want := map[int]bool{}
+	for _, kind := range kinds {
+		want[kind] = true
+	}
+	var earliest time.Time
+	for _, country := range dates.Results {
+		for _, release := range country.ReleaseDate {
+			if !want[release.Type] {
+				continue
+			}
+			date := tmdb.ParseDate(strings.SplitN(release.ReleaseDate, "T", 2)[0])
+			if !date.IsZero() && (earliest.IsZero() || date.Before(earliest)) {
+				earliest = date
 			}
 		}
-		if !theatrical.IsZero() {
-			t.Released, t.Year = theatrical, theatrical.Year()
-		}
 	}
+	return earliest
+}
+
+const (
+	yearSourcePrimary  = "primary"
+	yearSourcePremiere = "premiere"
+	yearSourceReleased = "released"
+	yearSourceNone     = "none"
+	yearSourceMissing  = "missing"
+)
+
+// applyMovieYear sets the title year from the primary release_date, then
+// the earliest premiere, then the date already chosen as date added. It
+// records that choice so a later summary cannot put the theatrical year
+// back, and so an upgrade does not fetch the movie again.
+func applyMovieYear(t *core.Title, primary time.Time, dates *tmdb.ReleaseDates) {
+	if !primary.IsZero() {
+		t.Year = primary.Year()
+		t.PrimaryReleased = primary
+		t.YearSource = yearSourcePrimary
+		return
+	}
+	t.PrimaryReleased = time.Time{}
+	if premiere := earliestDatedRelease(dates, 1); !premiere.IsZero() {
+		t.Year = premiere.Year()
+		t.YearSource = yearSourcePremiere
+		return
+	}
+	if !t.Released.IsZero() {
+		t.Year = t.Released.Year()
+		t.YearSource = yearSourceReleased
+		return
+	}
+	t.Year = 0
+	t.YearSource = yearSourceNone
+}
+
+func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails) core.Title {
+	t := c.movieToTitle(ctx, d.Movie)
+	// Date added is the earliest theatrical date. The title year is the
+	// primary release_date, which is what TMDB, IMDb and Plex match on.
+	// A later regional theatrical date must not move that year. With no
+	// primary date, the earliest premiere supplies the year.
+	if theatrical := earliestDatedRelease(d.ReleaseDates, 2, 3); !theatrical.IsZero() {
+		t.Released = theatrical
+	}
+	applyMovieYear(&t, tmdb.ParseDate(d.ReleaseDate), d.ReleaseDates)
 	t.Keywords = keywordNames(d.Keywords)
+	t.AlternativeTitles = altTitles(d.AlternativeTitles, t.Title, t.OriginalTitle)
 	t.Tagline = d.Tagline
 	t.Status = d.Status
 	if d.Runtime > 0 {
@@ -208,50 +391,9 @@ func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails)
 		t.CollectionID = d.BelongsTo.ID
 		t.CollectionName = d.BelongsTo.Name
 	}
-	t.ContentRating = c.movieCertification(d)
+	sel := contentrating.Select(movieCertifications(d.ReleaseDates), c.config().Region)
+	t.ContentRating, t.ContentRatingSource = sel.Value, sel.Source
 	return t
-}
-
-func (c *Catalog) movieCertification(d *tmdb.MovieDetails) string {
-	if d.ReleaseDates == nil {
-		return ""
-	}
-	region := strings.ToUpper(c.config().Region)
-	pick := func(want string) string {
-		for _, r := range d.ReleaseDates.Results {
-			if strings.ToUpper(r.ISO3166) != want {
-				continue
-			}
-			// Prefer theatrical (type 3), then any non-empty.
-			for _, e := range r.ReleaseDate {
-				if e.Type == 3 && e.Certification != "" {
-					return e.Certification
-				}
-			}
-			for _, e := range r.ReleaseDate {
-				if e.Certification != "" {
-					return e.Certification
-				}
-			}
-		}
-		return ""
-	}
-	if region != "" {
-		if v := pick(region); v != "" {
-			return v
-		}
-	}
-	if v := pick("US"); v != "" {
-		return v
-	}
-	for _, r := range d.ReleaseDates.Results {
-		for _, e := range r.ReleaseDate {
-			if e.Certification != "" {
-				return e.Certification
-			}
-		}
-	}
-	return ""
 }
 
 func (c *Catalog) tvToTitle(ctx context.Context, s tmdb.TVShow) core.Title {
@@ -273,8 +415,10 @@ func (c *Catalog) tvToTitle(ctx context.Context, s tmdb.TVShow) core.Title {
 func (c *Catalog) tvDetailsToTitle(ctx context.Context, d *tmdb.TVDetails) core.Title {
 	t := c.tvToTitle(ctx, d.TVShow)
 	t.Keywords = keywordNames(d.Keywords)
+	t.AlternativeTitles = altTitles(d.AlternativeTitles, t.Title, t.OriginalTitle)
 	t.Tagline = d.Tagline
 	t.Status = d.Status
+	t.LastAirDate = tmdb.ParseDate(d.LastAirDate)
 	if len(d.EpisodeRunTime) > 0 && d.EpisodeRunTime[0] > 0 {
 		t.Runtime = time.Duration(d.EpisodeRunTime[0]) * time.Minute
 	}
@@ -329,31 +473,9 @@ func (c *Catalog) tvDetailsToTitle(ctx context.Context, d *tmdb.TVDetails) core.
 	t.LogoPath = logoPath(d.Images)
 	t.ChildCount = d.NumberOfSeasons
 	t.LeafCount = d.NumberOfEpisodes
-	t.ContentRating = c.tvContentRating(d)
+	sel := contentrating.Select(tvCertifications(d.ContentRatings), c.config().Region)
+	t.ContentRating, t.ContentRatingSource = sel.Value, sel.Source
 	return t
-}
-
-func (c *Catalog) tvContentRating(d *tmdb.TVDetails) string {
-	if d.ContentRatings == nil {
-		return ""
-	}
-	region := strings.ToUpper(c.config().Region)
-	for _, want := range []string{region, "US"} {
-		if want == "" {
-			continue
-		}
-		for _, r := range d.ContentRatings.Results {
-			if strings.ToUpper(r.ISO3166) == want && r.Rating != "" {
-				return r.Rating
-			}
-		}
-	}
-	for _, r := range d.ContentRatings.Results {
-		if r.Rating != "" {
-			return r.Rating
-		}
-	}
-	return ""
 }
 
 func seasonToTitle(show core.Title, s tmdb.SeasonSummary) core.Title {
@@ -372,7 +494,7 @@ func seasonToTitle(show core.Title, s tmdb.SeasonSummary) core.Title {
 		SeasonTitle: name, Season: s.SeasonNumber, Title: name, SortTitle: sortTitle(name),
 		Summary: s.Overview, Released: rel, PosterPath: s.PosterPath, BackdropPath: show.BackdropPath,
 		ChildCount: s.EpisodeCount, Rating: s.VoteAverage,
-		Genres: show.Genres, ContentRating: show.ContentRating, Language: show.Language, Adult: show.Adult,
+		Genres: show.Genres, ContentRating: show.ContentRating, ContentRatingSource: show.ContentRatingSource, Language: show.Language, Adult: show.Adult,
 	}
 	if t.PosterPath == "" {
 		t.PosterPath = show.PosterPath
@@ -396,7 +518,7 @@ func episodeToTitle(show core.Title, seasonName string, e tmdb.Episode) core.Tit
 		Title: title, SortTitle: sortTitle(title), Summary: e.Overview, Released: rel,
 		StillPath: e.StillPath, PosterPath: e.StillPath, BackdropPath: show.BackdropPath,
 		Rating: e.VoteAverage, VoteCount: e.VoteCount,
-		Genres: show.Genres, ContentRating: show.ContentRating, Language: show.Language, Adult: show.Adult,
+		Genres: show.Genres, ContentRating: show.ContentRating, ContentRatingSource: show.ContentRatingSource, Language: show.Language, Adult: show.Adult,
 	}
 	if e.Runtime != nil && *e.Runtime > 0 {
 		t.Runtime = time.Duration(*e.Runtime) * time.Minute
@@ -444,6 +566,59 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
+// maxAltTitles bounds the alternative titles kept per title; maxAltTitleLen
+// bounds each one. Popular titles list a hundred or more.
+const (
+	maxAltTitles   = 24
+	maxAltTitleLen = 200
+)
+
+// altTitles keeps the alternative titles release names can use: written in
+// Latin script (a release name's script), not the title or original title
+// again, unique after normalization, in TMDB's order, at most maxAltTitles.
+// Romanized originals ("Sousou no Frieren") are what anime and foreign
+// releases are named by. Non-nil when TMDB sent the block, so an empty list
+// replaces stale rows.
+func altTitles(a *tmdb.AltTitles, title, original string) []string {
+	if a == nil {
+		return nil
+	}
+	out := []string{}
+	seen := map[string]bool{releaseparse.NormalizeTitle(title): true, releaseparse.NormalizeTitle(original): true}
+	for _, list := range [][]tmdb.AltTitle{a.Titles, a.Results} {
+		for _, alt := range list {
+			name := strings.TrimSpace(alt.Title)
+			if name == "" || len(name) > maxAltTitleLen || !latinScript(name) {
+				continue
+			}
+			norm := releaseparse.NormalizeTitle(name)
+			if norm == "" || seen[norm] {
+				continue
+			}
+			seen[norm] = true
+			out = append(out, name)
+			if len(out) == maxAltTitles {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+// latinScript reports a name whose letters are all Latin.
+func latinScript(s string) bool {
+	letters := 0
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			if !unicode.Is(unicode.Latin, r) {
+				return false
+			}
+			letters++
+		}
+	}
+	return letters > 0
+}
+
 // keywordNames flattens TMDB keywords (movies use "keywords", TV "results").
 // It returns a non-nil slice when TMDB sent the block, so an empty list
 // still replaces stale rows.
@@ -454,9 +629,7 @@ func keywordNames(k *tmdb.Keywords) []string {
 	out := []string{}
 	for _, list := range [][]tmdb.Keyword{k.Keywords, k.Results} {
 		for _, kw := range list {
-			if kw.Name != "" {
-				out = append(out, kw.Name)
-			}
+			out = appendUnique(out, kw.Name)
 		}
 	}
 	return out

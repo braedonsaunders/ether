@@ -44,9 +44,10 @@ func (s *Session) span() time.Duration {
 // of the player (spike governor) or SwapInput; governed sessions render
 // an EVENT playlist fresh each time so reloads see re-planned segments.
 func (s *Session) renderPlaylistLocked(t int) []byte {
+	independent := !s.requireIndependentProof || s.segmentsIndependent
 	if s.plan == nil {
 		if s.total > 0 {
-			return mediaPlaylist(s.span(), s.segDur, s.container, s.segName)
+			return mediaPlaylistWithIndependence(s.span(), s.segDur, s.container, s.segName, independent)
 		}
 		done := make([]int, 0, len(s.done[0]))
 		for n := range s.done[0] {
@@ -58,18 +59,18 @@ func (s *Session) renderPlaylistLocked(t int) []byte {
 	discont := func(n int) bool { return s.discontBeforeLocked(t, n) }
 	if s.total > 0 {
 		if s.governorOn && t == 0 {
-			return planPlaylist(s.plan, s.container, s.segName, discont, true, s.endSeg >= 0, 0)
+			return planPlaylist(s.plan, s.container, s.segName, discont, true, s.endSeg >= 0, 0, independent)
 		}
 		if t == 0 {
 			if s.playlist == nil {
-				s.playlist = planPlaylist(s.plan, s.container, s.segName, discont, false, true, 0)
+				s.playlist = planPlaylist(s.plan, s.container, s.segName, discont, false, true, 0, independent)
 			}
 			return s.playlist
 		}
-		return planPlaylist(s.plan, s.container, s.segName, discont, false, true, 0)
+		return planPlaylist(s.plan, s.container, s.segName, discont, false, true, 0, independent)
 	}
 	// Unknown duration: list the contiguous completed prefix.
-	return planPlaylist(s.plan, s.container, s.segName, discont, true, s.endSeg >= 0, s.listedLocked(t))
+	return planPlaylist(s.plan, s.container, s.segName, discont, true, s.endSeg >= 0, s.listedLocked(t), independent)
 }
 
 // listedLocked advances and returns how many segments track t's

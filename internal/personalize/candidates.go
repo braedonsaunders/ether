@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // candItem is one title in a candidate row with its context-free score.
@@ -78,7 +78,9 @@ type userModel struct {
 	builtAt time.Time
 	took    time.Duration
 	// version identifies the build (memo keys).
-	version uint64
+	version             uint64
+	preferenceRevision  uint64
+	preferenceSignature string
 }
 
 // builder builds one userModel.
@@ -158,6 +160,9 @@ func (b *builder) browse(q core.BrowseQuery) []core.Title {
 	if b.user.MaxContentRating != "" {
 		q.Filter.MaxContentRating = b.user.MaxContentRating
 	}
+	// Rows use the items only; counting each filter's matches read the
+	// whole catalogue once per row.
+	q.NoTotal = true
 	return b.memoized(fmt.Sprintf("browse:%+v", q), func() ([]core.Title, error) {
 		page, err := b.e.catalog.Browse(b.ctx, q)
 		return page.Items, err
@@ -215,7 +220,7 @@ func (b *builder) fresh(t *core.Title) bool {
 	if !t.Released.IsZero() && t.Released.After(b.now) {
 		return false
 	}
-	if !recommend.ContentRatingAllowed(t.ContentRating, b.user.MaxContentRating) {
+	if !contentrating.Allowed(t.ContentRating, b.user.MaxContentRating) {
 		return false
 	}
 	if b.touched[tasteKey(t.Key)] {

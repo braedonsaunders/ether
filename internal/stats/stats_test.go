@@ -94,6 +94,17 @@ func TestProviderCounterDeltasAndIndexerOperations(t *testing.T) {
 	if err := db.QueryRow(`SELECT SUM(bytes) FROM stats_provider_days`).Scan(&n); err != nil || n != 2000 {
 		t.Fatalf("reset delta got %d %v", n, err)
 	}
+	for _, spills := range []int64{3, 7} {
+		p.Spillovers = spills
+		if err := s.SnapshotProviders(ctx, []usenet.ProviderStats{p}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/infrastructure", nil))
+	if !strings.Contains(w.Body.String(), `"spillovers":7`) {
+		t.Fatalf("spillovers not in provider usage: %s", w.Body.String())
+	}
 	if err := s.RecordIndexer(ctx, newznab.Event{Indexer: "ix", Kind: "search", Success: true, Duration: 100 * time.Millisecond, AverageAge: 24 * time.Hour}); err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +113,37 @@ func TestProviderCounterDeltasAndIndexerOperations(t *testing.T) {
 		t.Fatalf("indexer usage: %+v %v", usage, err)
 	}
 }
+func TestInfrastructureIncludesDailySeriesAndPlayFailures(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	s := New(db, Options{Now: func() time.Time { return now }})
+	if _, err := db.Exec(`INSERT INTO stats_provider_days(provider,day,bytes,articles,misses,errors) VALUES('primary','2026-10-18',100,4,1,0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO stats_indexer_days(indexer,day,searches,successes,grabs,latency_ms) VALUES('ix','2026-10-18',3,2,1,90)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Record(ctx, &core.PlaySession{ID: "play", UserID: 1, StartedAt: now, Failovers: 2}, true, "source failed"); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/infrastructure", nil))
+	if w.Code != 200 {
+		t.Fatalf("status %d %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, needle := range []string{`"providerDays"`, `"2026-10-18"`, `"indexerDays"`, `"failovers":2`, `"failedPlays":1`, `"monthPlays":1`} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("missing %s in %s", needle, body)
+		}
+	}
+}
+
 func TestEmptyStatsAndCostValidation(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.OpenMemory(ctx)

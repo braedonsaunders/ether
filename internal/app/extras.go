@@ -10,7 +10,7 @@ import (
 func (a *App) buildExtras() {
 	a.extras = extras.New(extras.Options{
 		Videos: a.tmdb,
-		Config: func() config.Extras { return a.cfg.Get().Extras },
+		Config: func() config.Extras { return a.cfg.Read().Extras },
 		Logger: a.log.With("component", "extras"),
 	})
 	if reason := a.extras.DisabledReason(); reason != "" {

@@ -92,7 +92,7 @@ func OpenTestPostgres(ctx context.Context, rawURL string) (*sql.DB, error) {
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(2)
 	db.SetConnMaxIdleTime(2 * time.Second)
-	if err := preparePostgres(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), nil); err != nil {
+	if err := preparePostgres(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil); err != nil {
 		db.Close()
 		return nil, err
 	}

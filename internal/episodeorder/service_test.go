@@ -2,12 +2,14 @@ package episodeorder
 
 import (
 	"context"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeSource struct{ group tmdb.EpisodeGroup }
@@ -22,11 +24,16 @@ func (f fakeSource) EpisodeGroup(context.Context, string) (*tmdb.EpisodeGroup, e
 
 type fakeCatalog struct {
 	core.Catalog
-	eps []core.Title
+	eps  []core.Title
+	show *core.Title
 }
 
 func (f fakeCatalog) Get(_ context.Context, k core.RatingKey) (*core.Title, error) {
 	if k.Kind() == core.KindShow {
+		if f.show != nil {
+			value := *f.show
+			return &value, nil
+		}
 		return &core.Title{Key: k, Type: core.TypeShow, Title: "Fixture"}, nil
 	}
 	for _, ep := range f.eps {
@@ -64,6 +71,42 @@ func fixture(t *testing.T) *Service {
 	cat := fakeCatalog{eps: []core.Title{ep(0, 1), ep(1, 1), ep(1, 2), ep(1, 3)}}
 	src := fakeSource{tmdb.EpisodeGroup{EpisodeGroupSummary: tmdb.EpisodeGroupSummary{ID: "dvd", Name: "DVD", Type: 3}, Groups: []tmdb.EpisodeSubgroup{{ID: "one", Name: "Disc 1", Order: 0, Episodes: []tmdb.OrderedEpisode{{Episode: tmdb.Episode{SeasonNumber: 1, EpisodeNumber: 2}, Order: 0}, {Episode: tmdb.Episode{SeasonNumber: 0, EpisodeNumber: 1}, Order: 1}, {Episode: tmdb.Episode{SeasonNumber: 1, EpisodeNumber: 1}, Order: 2}}}}}}
 	return New(db, src, cat)
+}
+
+func TestCachedVirtualSeasonIsViewerScopedAndNeverRefreshes(t *testing.T) {
+	s := fixture(t)
+	ctx := context.Background()
+	viewer := &core.User{ID: 42}
+	key := core.SeasonKey(10, 9000)
+	if _, err := s.CachedVirtualSeason(ctx, viewer, key); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("cold cache: %v", err)
+	}
+	if err := s.Save(ctx, viewer.ID, core.ShowKey(10), Preference{GroupID: "dvd", Specials: "last"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Children(ctx, viewer, core.ShowKey(10)); err != nil {
+		t.Fatal(err)
+	}
+	title, err := s.CachedVirtualSeason(ctx, viewer, key)
+	if err != nil || title.Key != key || title.Title != "Disc 1" {
+		t.Fatalf("cached season: %+v %v", title, err)
+	}
+	title.Title = "changed"
+	if again, _ := s.CachedVirtualSeason(ctx, viewer, key); again.Title != "Disc 1" {
+		t.Fatal("caller changed cached title")
+	}
+	if _, err = s.CachedVirtualSeason(ctx, &core.User{ID: 43}, key); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("other viewer: %v", err)
+	}
+	s.mu.Lock()
+	for key, cached := range s.cache {
+		cached.expires = time.Now().Add(-time.Second)
+		s.cache[key] = cached
+	}
+	s.mu.Unlock()
+	if _, err = s.CachedVirtualSeason(ctx, viewer, key); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("expired cache: %v", err)
+	}
 }
 func TestOrderingPreservesCanonicalIdentityAndSpecials(t *testing.T) {
 	s := fixture(t)
@@ -171,5 +214,61 @@ func TestGroupedResolvesViewerOverOwnerDefault(t *testing.T) {
 	}
 	if got, e = s.Grouped(ctx, nil, nil); e != nil || len(got) != 0 {
 		t.Fatalf("empty: %v %v", got, e)
+	}
+}
+
+func TestVirtualSeasonAddedDateUsesLatestAiredChild(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		aired  bool
+		series time.Time
+		want   int64
+	}{
+		{"latest aired", true, time.Unix(1704067200, 0).UTC(), 1072915200},
+		{"series fallback", false, time.Unix(1704067200, 0).UTC(), 1704067200},
+		{"unknown", false, time.Time{}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := fixture(t)
+			cat := s.catalog.(fakeCatalog)
+			cat.show = &core.Title{Key: core.ShowKey(10), Type: core.TypeShow, Title: "Fixture", AddedAt: tc.series}
+			for i := range cat.eps {
+				cat.eps[i].Released = time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC)
+			}
+			if tc.aired {
+				cat.eps[1].Released = time.Unix(946684800, 0).UTC()
+				cat.eps[2].Released = time.Unix(1072915200, 0).UTC()
+			}
+			s.catalog = cat
+			ctx := context.Background()
+			viewer := &core.User{ID: 42}
+			if err := s.Save(ctx, viewer.ID, core.ShowKey(10), Preference{GroupID: "dvd", Specials: "last"}); err != nil {
+				t.Fatal(err)
+			}
+			seasons, err := s.Children(ctx, viewer, core.ShowKey(10))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var found bool
+			for _, season := range seasons {
+				if season.Key != core.SeasonKey(10, 9000) {
+					continue
+				}
+				found = true
+				if !season.Released.IsZero() {
+					t.Fatalf("invented premiere: %s", season.Released)
+				}
+				if tc.want == 0 {
+					if !season.AddedAt.IsZero() {
+						t.Fatal(season.AddedAt)
+					}
+				} else if season.AddedAt.Unix() != tc.want {
+					t.Fatalf("addedAt=%d want=%d", season.AddedAt.Unix(), tc.want)
+				}
+			}
+			if !found {
+				t.Fatal("missing virtual season")
+			}
+		})
 	}
 }

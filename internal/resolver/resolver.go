@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -8,6 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -87,6 +90,7 @@ type CandidateTrace struct {
 	Rejected       bool          `json:"rejected"`
 	Reason         string        `json:"reason,omitempty"`
 	Size           int64         `json:"size,omitempty"`
+	Height         int           `json:"height,omitempty"`    // parsed resolution, 0 unknown
 	Pinned         bool          `json:"pinned,omitempty"`    // the owner's pin for the title
 	Attempted      bool          `json:"attempted,omitempty"` // fetch or health validation actually ran
 	HealthChecked  bool          `json:"healthChecked"`
@@ -119,6 +123,21 @@ type Trace struct {
 	Omitted int `json:"omitted,omitempty"`
 	// Routing summarises the source-routing decision (routing.go).
 	Routing string `json:"routing,omitempty"`
+	// Downgrade explains a winner well below the best quality on offer
+	// (failover.go): what failed and what plays instead.
+	Downgrade string `json:"downgrade,omitempty"`
+	// Ceiling explains a winner below 4K (explain.go): the profile or
+	// client limit, or why each 4K release lost.
+	Ceiling string `json:"ceiling,omitempty"`
+	// Chooser is who selected the winner: "auto" (Ether's ranking) or
+	// "viewer" (an explicit Play Version pick that played). Empty on
+	// traces recorded before this field, and when nothing was picked.
+	Chooser string `json:"chooser,omitempty"`
+	// ChosenVersion is the release name when Chooser is "viewer".
+	ChosenVersion string `json:"chosenVersion,omitempty"`
+	// Unverified marks a winner played after every health check timed
+	// out without a confirmed failure (unverified.go).
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // DiscoveryTrace records only the origin and number of returned releases.
@@ -139,6 +158,11 @@ type TraceLimits struct {
 	ProfileConfiguredMaxHeight *int `json:"profileConfiguredMaxHeight,omitempty"`
 	ClientMaxHeight            int  `json:"clientMaxHeight"`
 	ClientMaxBitrateKbps       int  `json:"clientMaxBitrateKbps"`
+	// AllowHDR and AllowDolbyVision are the profile's HDR policy after
+	// the client clamp. A support capture uses them to show an SDR-only
+	// ceiling without reading the owner's settings file.
+	AllowHDR         bool `json:"allowHdr,omitempty"`
+	AllowDolbyVision bool `json:"allowDolbyVision,omitempty"`
 }
 
 type searchCacheEntry struct {
@@ -168,6 +192,7 @@ type Service struct {
 	cfgMu            sync.RWMutex
 	rcfg             config.Resolver
 	quality          config.Quality
+	catalogLang      string // catalogue metadata language ("en-US"): the server's language
 	debridCachedOnly bool
 	scorer           *FormatScorer
 	scorerErr        error
@@ -253,6 +278,7 @@ func (s *Service) UpdateConfig(cfg config.Config) {
 	s.cfgMu.Lock()
 	s.rcfg = cfg.Resolver
 	s.quality = cfg.Quality
+	s.catalogLang = cfg.Catalog.Language
 	s.debridCachedOnly = cfg.Debrid.CachedOnly
 	s.scorer, s.scorerErr = NewFormatScorer(cfg.Resolver.CustomFormats, cfg.Resolver.CustomFormatScores)
 	changed := s.sources != "" && s.sources != key
@@ -311,6 +337,16 @@ func (s *Service) qualityCfg() config.Quality {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
 	return s.quality
+}
+
+// profileAllowsCam reports whether any quality profile plays cinema recordings.
+func (s *Service) profileAllowsCam() bool {
+	for _, p := range s.qualityCfg().Profiles {
+		if p.AllowCam {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) cachedOnly() bool {
@@ -462,9 +498,9 @@ func searchRequestFor(t *core.Title) core.SearchRequest {
 			title = t.Title
 		}
 		return core.SearchRequest{Type: core.TypeEpisode, IDs: ids, Title: title, OriginalTitle: t.ShowOriginalTitle, Year: t.ShowYear, Season: season, Episode: episode, EpisodeTitle: t.Title,
-			AbsoluteEpisode: t.AbsoluteEpisode, Anime: isAnime(t)}
+			AbsoluteEpisode: t.AbsoluteEpisode, Anime: isAnime(t), AlternativeTitles: t.ShowAlternativeTitles}
 	}
-	return core.SearchRequest{Type: core.TypeMovie, IDs: t.IDs, Title: t.Title, OriginalTitle: t.OriginalTitle, Year: t.Year, Anime: isAnime(t)}
+	return core.SearchRequest{Type: core.TypeMovie, IDs: t.IDs, Title: t.Title, OriginalTitle: t.OriginalTitle, Year: t.Year, Anime: isAnime(t), AlternativeTitles: t.AlternativeTitles}
 }
 
 // isAnime reports a title whose releases follow anime conventions
@@ -505,7 +541,13 @@ func flightKey(req core.ResolveRequest, profile core.QualityProfile) string {
 	sort.Strings(ex)
 	capsJSON, _ := json.Marshal(req.Client)
 	profileJSON, _ := json.Marshal(profile)
-	return fmt.Sprintf("%d|%s|%s|%s|%s|%s", req.Title.Key, profile.Name, strings.Join(ex, ","), capsJSON, profileJSON, req.Prefer)
+	// Without profile languages the viewer's own audio languages decide
+	// which releases are acceptable (acceptedAudio), so they key the flight.
+	var audio []string
+	if len(profile.PreferredLanguages) == 0 && req.User != nil {
+		audio = req.User.AudioLanguages
+	}
+	return fmt.Sprintf("%d|%s|%s|%s|%s|%s|%t|%s", req.Title.Key, profile.Name, strings.Join(ex, ","), capsJSON, profileJSON, req.Prefer, req.ExactHEVCTranscode, strings.Join(audio, ","))
 }
 
 // Resolve implements core.Resolver. Concurrent calls for the same
@@ -557,9 +599,14 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	started := time.Now()
 	t := req.Title
 	trace := Trace{TitleKey: t.Key, TitleName: consoleTitleName(t), Profile: profile.Name, At: s.now(), Failover: len(req.Exclude) > 0}
-	trace.Limits = &TraceLimits{ProfileMinHeight: profile.MinHeight, ProfileMaxHeight: profile.MaxHeight, ProfileConfiguredMaxHeight: traceConfiguredMaxHeight(profile), ClientMaxHeight: req.Client.MaxHeight, ClientMaxBitrateKbps: req.Client.MaxBitrateKbps}
+	trace.Limits = &TraceLimits{ProfileMinHeight: profile.MinHeight, ProfileMaxHeight: profile.MaxHeight, ProfileConfiguredMaxHeight: traceConfiguredMaxHeight(profile), ClientMaxHeight: req.Client.MaxHeight, ClientMaxBitrateKbps: req.Client.MaxBitrateKbps, AllowHDR: profile.AllowHDR, AllowDolbyVision: profile.AllowDolbyVision}
 	defer func() {
 		trace.TotalDuration = time.Since(started)
+		trace.Ceiling = s.explainCeiling(&trace, profile, req)
+		noteChooser(&trace, req)
+		if trace.Ceiling != "" {
+			s.log.Info("resolver: below 4K", "title", trace.TitleName, "profile", profile.Name, "why", trace.Ceiling)
+		}
 		s.addTrace(trace)
 		s.recordHistory(ctx, trace)
 	}()
@@ -574,6 +621,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		trace.Pinned = pinID
 	}
 
+	ctx, inconclusive := withUnverifiedPool(ctx)
 	sreq := searchRequestFor(t)
 	early := newSearchPreparation(ctx, s, req, sreq, profile, pinID)
 	defer early.close()
@@ -669,10 +717,20 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 
 	searchStart := time.Now()
 	results, cached, searchErr := s.searchCached(ctx, sreq, forceFresh)
+	if os.Getenv("ETHER_TRACE_PLAYBACK") != "" {
+		s.log.Info("playback trace: resolver.searchCached",
+			"key", t.Key,
+			"title", t.Title,
+			"cached", cached,
+			"results", len(results),
+			"search_ms", time.Since(searchStart).Milliseconds(),
+			"err", searchErr,
+		)
+	}
 	path := "live-complete"
 	if cached {
 		path = "cache"
-	} else if early.partial {
+	} else if early.partial.Load() {
 		path = "live-early"
 	}
 	if searchErr == nil {
@@ -750,8 +808,19 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		return nil, failed(fmt.Errorf("%q: %w", t.Title, core.ErrNotAvailable))
 	}
 
+	// resolvePreferred drops the preferred release from cands in place.
+	var preferredCand *candidate
+	if prefer := cmp.Or(req.Prefer, pinID); prefer != "" {
+		if i := slices.IndexFunc(cands, func(c candidate) bool { return c.rel.ID == prefer }); i >= 0 {
+			c := cands[i]
+			preferredCand = &c
+		}
+	}
 	preferred, err := s.resolvePreferred(ctx, req, pin, cands, &trace, rcfg.HealthRace)
 	if err != nil {
+		if res := s.lastResort(ctx, inconclusive, t.Key, preferred.candidates, &trace); res != nil {
+			return res, nil
+		}
 		if len(preferred.candidates) == 0 {
 			return nil, failed(err)
 		}
@@ -759,6 +828,12 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	}
 	if preferred.resolution != nil {
 		return preferred.resolution, nil
+	}
+	// lead is the preferred release when it was tried: it heads the last
+	// resort when no health check verifies.
+	var lead []candidate
+	if preferred.attempted && preferredCand != nil {
+		lead = append(lead, *preferredCand)
 	}
 	cands = preferred.candidates
 	early.attach(cands)
@@ -792,15 +867,27 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		}
 		cands = cands[1:]
 	}
-	index, nzb, err := s.validateCandidates(ctx, cands, &trace, rcfg.HealthRace)
-	if err != nil {
-		trace.Err = err.Error()
-		return nil, err
-	}
-	if index >= 0 {
-		return s.acceptResolution(ctx, t.Key, cands, index, nzb, &trace), nil
+	// A drastic step down (to SD or an unknown resolution when 1080p or
+	// better was on offer, here or in a release this failover excludes)
+	// waits until everything comparable, a rescue search included, has
+	// failed. Then it plays, and the trace says why.
+	reference := s.referenceHeight(cands, req.Exclude)
+	primary, downgrades := splitDowngrades(cands, reference)
+	if len(primary) > 0 {
+		index, nzb, err := s.validateCandidates(ctx, primary, &trace, rcfg.HealthRace)
+		if err != nil {
+			if res := s.lastResort(ctx, inconclusive, t.Key, concat(lead, primary, downgrades), &trace); res != nil {
+				return res, nil
+			}
+			trace.Err = err.Error()
+			return nil, err
+		}
+		if index >= 0 {
+			return s.acceptResolution(ctx, t.Key, primary, index, nzb, &trace), nil
+		}
 	}
 
+	var rescuePrimary []candidate
 	// Retry discovery once after the initially ranked releases failed health.
 	if !rescueTried && searchErr == nil && ctx.Err() == nil {
 		rescueCands, _, rejected, rerr := s.rescueCandidates(ctx, req, sreq, profile, results, &trace, pinID)
@@ -811,14 +898,38 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 			at := time.Now()
 			rescueCands = s.prepareSources(ctx, rescueCands, req.Title, &trace, &rescueChecks)
 			trace.SourcePreparationDuration += time.Since(at)
-			index, nzb, verr := s.validateCandidates(ctx, rescueCands, &trace, rcfg.HealthRace)
-			if verr == nil && index >= 0 {
-				return s.acceptResolution(ctx, t.Key, rescueCands, index, nzb, &trace), nil
+			var rescueDowngrades []candidate
+			rescuePrimary, rescueDowngrades = splitDowngrades(rescueCands, reference)
+			if len(rescuePrimary) > 0 {
+				index, nzb, verr := s.validateCandidates(ctx, rescuePrimary, &trace, rcfg.HealthRace)
+				if verr == nil && index >= 0 {
+					return s.acceptResolution(ctx, t.Key, rescuePrimary, index, nzb, &trace), nil
+				}
 			}
+			downgrades = append(downgrades, rescueDowngrades...)
 			cands = append(cands, rescueCands...)
 		}
 	}
+	if len(downgrades) > 0 && ctx.Err() == nil {
+		sort.SliceStable(downgrades, func(i, j int) bool {
+			return compareCandidates(downgrades[i], downgrades[j], profile)
+		})
+		index, nzb, verr := s.validateCandidates(ctx, downgrades, &trace, rcfg.HealthRace)
+		if verr == nil && index >= 0 {
+			trace.Downgrade = downgradeNote(reference, downgrades[index].rel, len(primary) > 0)
+			s.log.Info("resolver: playing a lower quality", "title", t.Title, "release", downgrades[index].rel.Name, "reason", trace.Downgrade)
+			return s.acceptResolution(ctx, t.Key, downgrades, index, nzb, &trace), nil
+		}
+	}
 
+	// The resolver's own order: comparable quality (rescue included)
+	// before any drastic downgrade, which are already sorted by quality.
+	if res := s.lastResort(ctx, inconclusive, t.Key, concat(lead, primary, rescuePrimary, downgrades), &trace); res != nil {
+		if slices.ContainsFunc(downgrades, func(c candidate) bool { return c.rel.ID == res.Release.ID }) {
+			trace.Downgrade = downgradeNote(reference, res.Release, len(primary) > 0)
+		}
+		return res, nil
+	}
 	if optimisticErr != nil {
 		return nil, optimisticErr
 	}
@@ -957,7 +1068,22 @@ func (s *Service) searchCached(ctx context.Context, req core.SearchRequest, fres
 	if err != nil {
 		return nil, false, err
 	}
-	// Ensure Info is populated for indexers that don't parse names.
+	s.normalizeSearchResults(req, results)
+	if partial {
+		return results, false, nil
+	} // Never cache an incomplete fleet answer.
+	s.storeSearchCache(req, results)
+	return results, false, nil
+}
+
+// rememberSearchResults normalizes a completed fleet answer and writes the
+// search cache. Used when a progressive Play start left discovery running.
+func (s *Service) rememberSearchResults(req core.SearchRequest, results []core.Release) {
+	s.normalizeSearchResults(req, results)
+	s.storeSearchCache(req, results)
+}
+
+func (s *Service) normalizeSearchResults(req core.SearchRequest, results []core.Release) {
 	for i := range results {
 		if results[i].Info.Title == "" && results[i].Info.Height == 0 && results[i].Info.Source == core.SourceUnknown {
 			results[i].Info = releaseparse.Parse(results[i].Name)
@@ -967,10 +1093,10 @@ func (s *Service) searchCached(ctx context.Context, req core.SearchRequest, fres
 		// sees the same per-episode release ID.
 		results[i] = withTarget(results[i], req)
 	}
-	if partial {
-		return results, false, nil
-	} // Never cache an incomplete fleet answer.
+}
 
+func (s *Service) storeSearchCache(req core.SearchRequest, results []core.Release) {
+	key := searchCacheKey(req)
 	s.mu.Lock()
 	now := s.now()
 	boundMap(s.searchCache, maxSearchCache, func(e searchCacheEntry) bool { return !now.Before(e.expires) })
@@ -980,7 +1106,6 @@ func (s *Service) searchCached(ctx context.Context, req core.SearchRequest, fres
 	}
 	s.searchCache[key] = searchCacheEntry{results: append([]core.Release(nil), results...), expires: now.Add(ttl)}
 	s.mu.Unlock()
-	return results, false, nil
 }
 
 // scoreCandidates filters and ranks search results for a request and
@@ -1005,11 +1130,13 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 		exclude[id] = true
 	}
 	rcfg := s.resolverCfg()
+	accepted := acceptedAudio(profile, req.User, s.catalogLanguage(), t)
+	upscales := presumedUpscales(results, isAnime(t))
 	var cands []candidate
 	clientRejected := false
-	for _, rel := range results {
+	for ri, rel := range results {
 		rel = withTarget(rel, sreq)
-		ct := CandidateTrace{ReleaseID: rel.ID, Name: rel.Name, Indexer: rel.Indexer, Size: rel.Size}
+		ct := CandidateTrace{ReleaseID: rel.ID, Name: rel.Name, Indexer: rel.Indexer, Size: rel.Size, Height: rel.Info.Height}
 		pinned := pinID != "" && rel.ID == pinID
 		ct.Pinned = pinned
 		// Catalogue language is applied here, after the search cache.
@@ -1027,6 +1154,13 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 			reason = preferenceReason(policyResult)
 		} else {
 			reason = s.rejectReason(rel, t, sreq, profile, rcfg, req.Client, exclude, preferred)
+			if reason == "video codec unsupported by client" && req.ExactHEVCTranscode && !req.Client.Download && req.Prefer != "" && rel.ID == req.Prefer && strings.EqualFold(rel.Info.VideoCodec, "hevc") {
+				// Only relax the codec gate for the explicitly selected source;
+				// every other policy and the final probed output decision still apply.
+				caps := req.Client
+				caps.VideoCodecs = append(slices.Clone(caps.VideoCodecs), rel.Info.VideoCodec)
+				reason = s.rejectReason(rel, t, sreq, profile, rcfg, caps, exclude, preferred)
+			}
 		}
 		if reason != "" {
 			if strings.HasPrefix(reason, "release preference:") {
@@ -1040,8 +1174,11 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 				"size too small for runtime", "size too large for runtime":
 				clientRejected = true
 			case "cam not allowed":
-				// Another profile may allow cams when the owner does.
-				clientRejected = clientRejected || rcfg.AllowCam
+				// Another profile may allow cinema recordings. When none
+				// do, the title is unavailable for everyone.
+				if s.profileAllowsCam() {
+					clientRejected = true
+				}
 			}
 			ct.Reason = reason
 			if trace != nil {
@@ -1087,30 +1224,37 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 			trace.Candidates = append(trace.Candidates, ct)
 			tr = len(trace.Candidates) - 1
 		}
-		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, bandwidth: s.deliveryFit(sizedForEpisode(rel), req.Client, t)})
+		langOK := audioAcceptable(rel.Info, accepted)
+		lowBitrate := bitrateScore(sizedForEpisode(rel), t) < 0
+		starved := lowBitrate || upscales[ri]
+		bandwidth := s.deliveryFit(sizedForEpisode(rel), req.Client, t)
+		if trace != nil {
+			note := func(n string) {
+				trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; "+n, "; ")
+			}
+			switch {
+			case upscales[ri]:
+				note("presumed upscale: ranked one resolution lower")
+			case lowBitrate:
+				note("too little bitrate for its resolution: ranked one resolution lower")
+			}
+			if bandwidth < 0 {
+				note("larger than the client's connection carries")
+			}
+		}
+		if !langOK && trace != nil {
+			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; ranked after releases in an accepted audio language", "; ")
+		}
+		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth})
 	}
-	return s.orderCandidates(cands, req.Title, trace), clientRejected, nil
+	return s.orderCandidates(cands, profile, req.Title, trace), clientRejected, nil
 }
 
-func (s *Service) orderCandidates(cands []candidate, title *core.Title, trace *Trace) []candidate {
+func (s *Service) orderCandidates(cands []candidate, profile core.QualityProfile, title *core.Title, trace *Trace) []candidate {
 	sort.SliceStable(cands, func(i, j int) bool {
-		// A previously working LAN remux must not outrank a source that
-		// fits this client's slower connection. Unknown sizes remain usable
-		// and an oversized source can still be transcoded as a fallback.
-		if cands[i].bandwidth != cands[j].bandwidth {
-			return cands[i].bandwidth > cands[j].bandwidth
-		}
-		// Availability wins over soft quality preferences, after all hard
-		// profile/client gates above. Keep ranking within each group.
-		if cands[i].verified != cands[j].verified {
-			return cands[i].verified
-		}
-		return cands[i].rel.Score > cands[j].rel.Score
+		return compareCandidates(cands[i], cands[j], profile)
 	})
-	cands = s.routeSources(cands, title, trace)
-	// Explicit ordered preferences and fallback tiers override soft source ranking.
-	sort.SliceStable(cands, func(i, j int) bool { return releasepolicy.Better(cands[i].policy, cands[j].policy) })
-	return cands
+	return s.routeSources(cands, title, trace)
 }
 
 // releaseScore is one release's total ranking score and its parts.
@@ -1161,10 +1305,11 @@ func minFormatScore(rcfg config.Resolver, profile core.QualityProfile) *int {
 }
 
 // rejectReason returns "" to accept, or the reason to drop a release.
-// preferred (the viewer's explicit Play Version pick) bypasses the
-// profile-policy gates — resolution bounds, DV policy, imported quality gates,
-// per-profile size range — but never the hard client gates or the
-// identity/absolute-size sanity checks.
+// preferred (the viewer's explicit Play Version pick) may go below the
+// profile floor (a 720p pick on a 1080p minimum). Releases above the
+// ceiling — height, HDR policy, imported qualities, maximum size — stay
+// rejected unless the owner has opted in to offering higher versions.
+// Hard client gates and the identity/absolute-size checks always apply.
 func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.SearchRequest,
 	profile core.QualityProfile, rcfg config.Resolver, caps core.ClientCaps, exclude map[string]bool, preferred bool) string {
 	// Usenet passwords are supplied by NZB metadata and validated by the engine.
@@ -1191,7 +1336,7 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 			return "blocked group: " + g
 		}
 	}
-	if reason := sourceSuitability(rel, t, profile, rcfg, preferred); reason != "" {
+	if reason := sourceSuitability(rel, t, profile, preferred); reason != "" {
 		return reason
 	}
 	// Samples ("...Sample.mkv", "-sample" parts).
@@ -1202,14 +1347,15 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 			return "sample"
 		}
 	}
-	if reason := rejectIdentity(rel, t, sreq); reason != "" {
+	if reason := rejectIdentity(rel, t, sreq, s.catalogLanguage()); reason != "" {
 		return reason
 	}
-	return rejectPolicy(rel, t, profile, caps, preferred)
+	return rejectPolicy(rel, t, profile, caps, preferred, preferred && s.resolverCfg().OfferHigherVersions)
 }
 
 // rejectIdentity checks the result's reported identity without client policy.
-func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest) string {
+// catalogLang is the language catalogue episode titles are in ("en-US").
+func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest, catalogLang string) string {
 	isEpisode := sreq.Type == core.TypeEpisode
 	idMatch, idConflict := releaseparse.CompareTitleIDs(rel.TitleIDs, sreq.IDs)
 	if idConflict {
@@ -1238,7 +1384,8 @@ func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest) st
 	titleOK := miniseriesPart > 0 ||
 		releaseparse.TitleMatches(rel.Info, wantTitle) ||
 		(!isEpisode && t.OriginalTitle != "" && releaseparse.TitleMatches(rel.Info, t.OriginalTitle)) ||
-		(isEpisode && t.ShowOriginalTitle != "" && releaseparse.TitleMatches(rel.Info, t.ShowOriginalTitle))
+		(isEpisode && t.ShowOriginalTitle != "" && releaseparse.TitleMatches(rel.Info, t.ShowOriginalTitle)) ||
+		matchesAlternativeTitle(rel.Info, sreq.AlternativeTitles)
 	if titleOK && !idMatch && regionTagConflicts(rel.Info.Title, wantTitle, t.Countries) {
 		titleOK = false
 	}
@@ -1257,7 +1404,7 @@ func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest) st
 		if !releaseparse.SeriesYearMatches(releaseYear, sreq.Year) {
 			return "series year mismatch"
 		}
-		if releaseYear == 0 && !idMatch && !releaseparse.EpisodeTitleMatches(rel.Name, sreq.EpisodeTitle) {
+		if releaseYear == 0 && !idMatch && !localizedEpisodeTitle(rel.Info, t, catalogLang) && !releaseparse.EpisodeTitleMatches(rel.Name, sreq.EpisodeTitle) {
 			return "episode title mismatch"
 		}
 		if rel.Info.FullSeason {
@@ -1303,11 +1450,11 @@ func preferenceReason(result releasepolicy.Result) string {
 
 // rejectPolicy applies client support and quality/size policy in rejection order.
 // Release rules are judged once in rankCandidates; this does not compile them again.
-func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, caps core.ClientCaps, preferred bool) string {
-	// Client / profile hard gates. The viewer's explicit pick bypasses the
-	// profile-policy gates (an explicit 4K pick on a 1080p profile must
-	// still resolve), never the client's codec support.
-	if !preferred && len(profile.AllowedQualities) > 0 {
+// preferred lets an explicit pick go below the profile floor. ceilingBypass,
+// set only when the owner opted in to higher versions, is what lets that
+// pick exceed the ceiling. Codec support is never bypassed.
+func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, caps core.ClientCaps, preferred, ceilingBypass bool) string {
+	if !ceilingBypass && len(profile.AllowedQualities) > 0 {
 		allowed := false
 		for _, q := range profile.AllowedQualities {
 			if q == releaseQuality(rel.Info) {
@@ -1318,7 +1465,7 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 			return "quality excluded by imported profile"
 		}
 	}
-	if !preferred && profile.MaxHeight > 0 && rel.Info.Height > profile.MaxHeight {
+	if !ceilingBypass && profile.MaxHeight > 0 && rel.Info.Height > profile.MaxHeight {
 		// The effective ceiling is min(configured profile, client caps):
 		// name the strictly lower one as the limiter. An unlimited
 		// configured profile leaves the client as the only limiter. A
@@ -1333,7 +1480,7 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 	if h := floorHeight(rel.Info); !preferred && profile.MinHeight > 0 && h > 0 && h < profile.MinHeight {
 		return "below profile min height"
 	}
-	if !preferred && rel.Info.DolbyVision && !profile.AllowDolbyVision && !(rel.Info.HDR10 && profile.AllowHDR) {
+	if !ceilingBypass && rel.Info.DolbyVision && !profile.AllowDolbyVision && !(rel.Info.HDR10 && profile.AllowHDR) {
 		return "dolby vision not allowed for client"
 	}
 	if rel.Info.VideoCodec != "" && len(caps.VideoCodecs) > 0 && !caps.SupportsVideo(rel.Info.VideoCodec) {
@@ -1341,23 +1488,26 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 			return "video codec unsupported by client"
 		}
 	}
-	// Size sanity against runtime. The per-profile size range is policy
-	// (a 4K remux exceeds a 1080p profile's ceiling), so an explicit pick
-	// bypasses it; the absolute implausibility floor below still applies.
-	// A season pack's size is the whole season's, so it is not checked.
+	// Size sanity against runtime. An explicit pick may be smaller than
+	// the profile floor. The maximum is a ceiling: it holds unless the
+	// owner opted in to higher versions. The absolute implausibility
+	// floor always applies. A season pack's size is the whole season's,
+	// so it is not checked.
 	size := sizedForEpisode(rel).Size
 	if size > 0 && size < 5<<20 {
 		return "implausibly small"
 	}
-	if !preferred && size > 0 && t.Runtime > 0 {
+	if size > 0 && t.Runtime > 0 {
 		mbPerMin := float64(size) / (1 << 20) / t.Runtime.Minutes()
 		cfgMin, cfgMax := profile.SizeBoundsFor(t)
 		minMBPerMin := effectiveMinSizeMBPerMin(cfgMin, rel.Info)
-		if minMBPerMin > 0 && mbPerMin < minMBPerMin {
+		if !preferred && minMBPerMin > 0 && mbPerMin < minMBPerMin {
 			return "size too small for runtime"
 		}
-		if cfgMax > 0 && mbPerMin > cfgMax {
-			return "size too large for runtime"
+		if !ceilingBypass {
+			if maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, rel.Info); maxMBPerMin > 0 && mbPerMin > maxMBPerMin {
+				return "size too large for runtime"
+			}
 		}
 	}
 	return ""
@@ -1617,8 +1767,9 @@ func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.T
 	cfgMin, cfgMax := profile.SizeBoundsFor(t)
 	if rel.Size > 0 && t.Runtime > 0 {
 		mbPerMin := float64(rel.Size) / (1 << 20) / t.Runtime.Minutes()
+		maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, info)
 		if (cfgMin == 0 || mbPerMin >= cfgMin) &&
-			(cfgMax == 0 || mbPerMin <= cfgMax) {
+			(maxMBPerMin == 0 || mbPerMin <= maxMBPerMin) {
 			sc += 5
 		}
 	}
@@ -1644,6 +1795,7 @@ func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.T
 			sc += 100 * min(gb/80, 1)
 		}
 	}
+	sc += bitrateScore(rel, t)
 	// Age penalty.
 	if !rel.PubDate.IsZero() {
 		ageDays := s.now().Sub(rel.PubDate).Hours() / 24

@@ -43,14 +43,19 @@ type Deps struct {
 	Seal       func(string) (string, error)
 	Open       func(string) (string, error)
 	CacheCheck func(context.Context, []string) (map[string]bool, bool)
-	Active     func() bool
-	Now        func() time.Time
-	Logger     *slog.Logger
+	// Search is a budgeted id search across indexers and configured addons.
+	Search           func(context.Context, core.SearchRequest) ([]core.Release, error)
+	Watchlist        func(context.Context) (map[core.RatingKey]bool, error)
+	Active           func() bool
+	Now              func() time.Time
+	Logger           *slog.Logger
+	ConfigGeneration func() uint64
 }
 type Service struct {
 	visibilityMu       sync.Mutex
 	visibilityRevision uint64
 	visibilityCache    map[string]visibilityEntry
+	hiddenCache        map[string]hiddenEntry
 	db                 *sql.DB
 	cfg                func() config.Config
 	d                  Deps
@@ -58,6 +63,17 @@ type Service struct {
 	log                *slog.Logger
 	runMu              sync.Mutex
 	cacheSeeded        bool
+	snapMu             sync.RWMutex
+	snap               discoverySnap
+}
+
+// discoverySnap is the policy hash and availability settings for one config
+// generation. Browse checks reuse it instead of cloning the whole config.
+type discoverySnap struct {
+	gen    uint64
+	policy string
+	avail  config.Availability
+	ready  bool
 }
 
 func New(d Deps) (*Service, error) {
@@ -95,7 +111,43 @@ func (s *Service) decode(raw string) (core.Release, error) {
 	return r, err
 }
 func (s *Service) policy() string {
-	return settingsPolicy(s.cfg())
+	stamp, _ := s.discoverySnap()
+	return stamp
+}
+
+// discoverySnap reads the config once per generation. A browse of many rows
+// used to clone it on every visibility check.
+func (s *Service) discoverySnap() (string, config.Availability) {
+	if s.d.ConfigGeneration == nil {
+		c := s.cfg()
+		return policyOf(c), c.Availability
+	}
+	gen := s.d.ConfigGeneration()
+	s.snapMu.RLock()
+	if s.snap.ready && s.snap.gen == gen {
+		stamp, avail := s.snap.policy, s.snap.avail
+		s.snapMu.RUnlock()
+		return stamp, avail
+	}
+	s.snapMu.RUnlock()
+	c := s.cfg()
+	if s.d.ConfigGeneration() != gen {
+		return policyOf(c), c.Availability
+	}
+	stamp := policyOf(c)
+	s.snapMu.Lock()
+	if !(s.snap.ready && s.snap.gen == gen) {
+		s.snap = discoverySnap{gen: gen, policy: stamp, avail: c.Availability, ready: true}
+	} else {
+		stamp = s.snap.policy
+		c.Availability = s.snap.avail
+	}
+	s.snapMu.Unlock()
+	return stamp, c.Availability
+}
+
+func policyOf(c config.Config) string {
+	return settingsPolicy(c)
 }
 
 func settingsPolicy(c config.Config) string {
@@ -103,6 +155,20 @@ func settingsPolicy(c config.Config) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
+func (s *Service) budgets() config.Availability {
+	raw := s.cfg().Availability
+	var caps []config.IndexerCap
+	if s.d.Feeds != nil {
+		for _, f := range s.d.Feeds.FeedSources() {
+			if !selected(raw.IndexerIDs, f.ID) {
+				continue
+			}
+			caps = append(caps, config.IndexerCap{ID: f.ID, DailyLimit: f.DailyLimit, PageMax: f.PageMax})
+		}
+	}
+	return raw.Resolved(caps)
+}
+
 func selected(ids []string, id string) bool {
 	if len(ids) == 0 {
 		return true
@@ -165,6 +231,7 @@ func (s *Service) Cycle(ctx context.Context) error {
 		s.cacheSeeded = true
 	}
 	if cfg.Monitor {
+		live := s.budgets()
 		feeds := s.d.Feeds.FeedSources()
 		type due struct {
 			f  core.ReleaseFeed
@@ -175,11 +242,17 @@ func (s *Service) Cycle(ctx context.Context) error {
 			if !f.Supported || !selected(cfg.IndexerIDs, f.ID) {
 				continue
 			}
-			_, at, _, err := s.feedState(ctx, f)
+			_, at, gap, err := s.feedState(ctx, f)
 			if err != nil {
 				return err
 			}
-			if at == 0 || schedule.Due(s.now(), time.Unix(at, 0), time.Duration(max(5, cfg.PollMinutes))*time.Minute) {
+			interval := time.Duration(max(5, live.PollMinutes)) * time.Minute
+			// An open catch-up continues every minute. Head polls stay on the
+			// normal interval once the recent window has been walked.
+			if cfg.CatchUp && gap {
+				interval = time.Minute
+			}
+			if at == 0 || schedule.Due(s.now(), time.Unix(at, 0), interval) {
 				work = append(work, due{f, at})
 			}
 		}
@@ -203,6 +276,9 @@ func (s *Service) Cycle(ctx context.Context) error {
 		if err := s.verify(ctx); err != nil && !benign(err) {
 			return err
 		}
+	}
+	if err := s.probeDue(ctx); err != nil && !benign(err) {
+		s.log.Warn("availability title probe failed", "error", err)
 	}
 	return s.prune(ctx)
 }
@@ -478,4 +554,13 @@ func (s *Service) Invalidate(ctx context.Context, id string) {
 	if err != nil {
 		s.log.Debug("availability invalidation failed", "error", err)
 	}
+}
+
+// Empty digests on upgraded observations are unknown, never trusted as a
+// match. Their first ordinary write computes the canonical digest while policy
+// triggers continue fencing their payload changes throughout the upgrade.
+func releasePolicyDigest(r core.Release) string {
+	b, _ := json.Marshal(r)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }

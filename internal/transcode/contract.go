@@ -216,8 +216,10 @@ func (c *videoContract) check(info core.MediaInfo, f features) error {
 	case c.tonemaps(v) && !c.pic.sameColour(picture{prim: "bt709", matrix: "bt709"}):
 		// The tone mappers emit limited-range BT.709 only.
 		return fmt.Errorf("%w: tone mapping cannot produce %s", ErrIncompatibleSwap, c)
-	case c.convertsColour(v) && !hasZscale(f):
-		return fmt.Errorf("%w: converting %s to %s needs zscale", ErrIncompatibleSwap, encodedRange(v), c)
+	case c.tonemaps(v) && !canToneMap(f):
+		return fmt.Errorf("%w: %s", ErrIncompatibleSwap, toneMapUnavailableMessage())
+	case c.convertsColour(v) && !canConvertColour(v, c, f):
+		return fmt.Errorf("%w: %s", ErrIncompatibleSwap, colourUnavailableMessage())
 	}
 	return nil
 }
@@ -228,17 +230,16 @@ func (c *videoContract) tonemaps(v *core.StreamInfo) bool {
 	return c.rng == rangeSDR && encodedRange(v) != rangeSDR
 }
 
-// convertsColour reports whether an encode of v needs a zscale colour
+// convertsColour reports whether an encode of v needs a colour
 // conversion: SDR into PQ/HLG, between PQ and HLG, or other primaries,
-// matrix or range at the same dynamic range.
+// matrix or range at the same dynamic range. zscale does this when the
+// build has it; otherwise an SDR conversion uses colorspace or scale.
 func (c *videoContract) convertsColour(v *core.StreamInfo) bool {
 	if c.tonemaps(v) {
 		return false
 	}
 	return encodedRange(v) != c.rng || !pictureOf(v).sameColour(c.pic)
 }
-
-func hasZscale(f features) bool { return f.filters == nil || f.hasFilter("zscale") }
 
 // fit is the size v's picture scales to inside the contract's frame,
 // keeping its display aspect ratio. The remainder is padded; nothing is

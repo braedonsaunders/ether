@@ -16,7 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -103,9 +105,26 @@ type Event struct {
 	Completed bool
 	At        time.Time
 	Imported  bool // reviewed history import; never an active playback timeline
+	Origin    Origin
 	// Account is a manual Plex-account import. Local clients refresh from it.
 	// It is not journaled and is not a Trakt or Simkl export.
 	Account bool
+}
+
+// Origin identifies the surface and client that made a watch-state change.
+type Origin struct {
+	Surface             core.Protocol
+	SessionID, ClientID string
+}
+type originKey struct{}
+
+// WithOrigin attaches the authenticated request origin to committed events.
+func WithOrigin(ctx context.Context, origin Origin) context.Context {
+	return context.WithValue(ctx, originKey{}, origin)
+}
+func originFrom(ctx context.Context) Origin {
+	origin, _ := ctx.Value(originKey{}).(Origin)
+	return origin
 }
 
 // Options tune a State. Now is injectable for tests.
@@ -142,6 +161,7 @@ type State struct {
 	// progress holds timeline writes through a database outage (nil when
 	// Options.Availability is nil).
 	progress *store.Outbox[progressKey, progressWrite]
+	gen      atomic.Uint64
 
 	// journalGate, when set, decides whether a watch commit also records an
 	// account-sync intent. Nil records every viewer. journalFault, when set,
@@ -149,6 +169,14 @@ type State struct {
 	// State, for production wiring and tests.
 	journalGate  func(ctx context.Context, tx *sql.Tx, userID int64) (generation int64, ok bool, err error)
 	journalFault func() error
+}
+
+// Generation changes when watch progress, played state, or a rating is saved.
+func (s *State) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
 }
 
 // State implements core.State; State.Playlists() returns the core.Playlists
@@ -213,6 +241,7 @@ type progressWrite struct {
 	state            string
 	at               time.Time
 	before           *progressWrite
+	origin           Origin
 }
 
 func (w progressWrite) completes() bool {
@@ -411,6 +440,89 @@ func (s *State) GetMany(ctx context.Context, userID int64, keys []core.RatingKey
 	return out, nil
 }
 
+// PageUserData reads watch progress and the page's favorite, not-interested
+// and watchlist flags in one query. Keys the caller has not authorized must
+// not be passed in.
+func (s *State) PageUserData(ctx context.Context, userID int64, keys []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
+	out := make(map[core.RatingKey]core.WatchStatus, len(keys))
+	for _, key := range keys {
+		out[key] = core.WatchStatus{Key: key}
+	}
+	if s == nil || s.db == nil || userID <= 0 || len(keys) == 0 {
+		return out, nil
+	}
+	for start := 0; start < len(keys); start += 200 {
+		chunk := keys[start:min(start+200, len(keys))]
+		var b strings.Builder
+		args := make([]any, 0, 4+len(chunk)*4)
+		writeIn := func(prefix string, asText bool, extra ...any) {
+			b.WriteString(prefix)
+			args = append(args, extra...)
+			for i, key := range chunk {
+				if i > 0 {
+					b.WriteByte(',')
+				}
+				b.WriteByte('?')
+				if asText {
+					args = append(args, key.String())
+				} else {
+					args = append(args, int64(key))
+				}
+			}
+			b.WriteByte(')')
+		}
+		writeIn(`SELECT 'w', rating_key, view_offset_ns, duration_ns, view_count, last_viewed_at, user_rating, updated_at FROM state_watch WHERE user_id=? AND rating_key IN (`, false, userID)
+		// Rating keys are kind*10^15 plus a payload, so they do not fit in
+		// PostgreSQL INTEGER (int4). SQLite INTEGER is already 64-bit;
+		// BIGINT keeps both engines on that width.
+		writeIn(` UNION ALL SELECT 'f', CAST(subject_id AS BIGINT), 0, 0, 0, 0, 0, 0 FROM favorites_items WHERE viewer_id=? AND kind=? AND subject_id IN (`, true, userID, "title")
+		writeIn(` UNION ALL SELECT 'n', CAST(title_key AS BIGINT), 0, 0, 0, 0, 0, 0 FROM notinterested_titles WHERE viewer_id=? AND title_key IN (`, true, userID)
+		writeIn(` UNION ALL SELECT 'l', item_key, 0, 0, 0, 0, 0, 0 FROM watchlist_items WHERE user_id=? AND item_key IN (`, false, userID)
+		rows, err := s.db.QueryContext(ctx, b.String(), args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var kind string
+			var key, off, dur, last, upd int64
+			var views int
+			var rating float64
+			if err := rows.Scan(&kind, &key, &off, &dur, &views, &last, &rating, &upd); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			status := out[core.RatingKey(key)]
+			status.Key = core.RatingKey(key)
+			switch kind {
+			case "w":
+				status.ViewOffset = time.Duration(off)
+				status.Duration = time.Duration(dur)
+				status.ViewCount = views
+				status.UserRating = rating
+				if last > 0 {
+					status.LastViewedAt = time.Unix(0, last).UTC()
+				}
+				if upd > 0 {
+					status.UpdatedAt = time.Unix(0, upd).UTC()
+				}
+			case "f":
+				status.IsFavorite = true
+			case "n":
+				status.IsNotInterested = true
+			case "l":
+				status.InWatchlist = true
+			}
+			out[status.Key] = status
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return out, nil
+}
+
 // update runs one read-modify-write of watch rows: fn mutates the loaded
 // row and reports whether to log history (and whether that history entry is
 // a completion). The rows and history are written in one transaction. When
@@ -444,7 +556,9 @@ func (s *State) updateAt(ctx context.Context, userID int64, keys []core.RatingKe
 	if err != nil {
 		return err
 	}
+	s.gen.Add(1)
 	for _, ev := range events {
+		ev.Origin = originFrom(ctx)
 		s.emit(ev)
 	}
 	return nil
@@ -467,6 +581,11 @@ func (s *State) updateTx(ctx context.Context, userID int64, keys []core.RatingKe
 		return nil, err
 	}
 	defer tx.Rollback()
+	if receipt, ok := ctx.Value(progressReceiptKey{}).(func(*sql.Tx) error); ok {
+		if err := receipt(tx); err != nil {
+			return nil, err
+		}
+	}
 	var events []Event
 	for _, key := range keys {
 		cur, err := loadTx(ctx, tx, userID, key)
@@ -534,7 +653,7 @@ func unixTime(ns int64) time.Time {
 
 // Progress records a timeline update. state is Plex's timeline state
 // ("playing", "paused", "stopped", "buffering"). See the package doc for the
-// 5%/90% rules. A duration of 0 keeps the previously known duration; with no
+// 5% start and 90% completion rules. A duration of 0 keeps the previously known duration; with no
 // known duration the offset is kept as a resume point and nothing is ever
 // marked watched by progress alone.
 //
@@ -545,7 +664,7 @@ func (s *State) Progress(ctx context.Context, userID int64, key core.RatingKey, 
 	if offset < 0 {
 		offset = 0
 	}
-	w := progressWrite{offset: offset, duration: duration, state: state}
+	w := progressWrite{offset: offset, duration: duration, state: state, origin: originFrom(ctx)}
 	if s.progress == nil {
 		return s.progressAt(ctx, userID, key, w)
 	}
@@ -556,6 +675,7 @@ func (s *State) Progress(ctx context.Context, userID int64, key core.RatingKey, 
 
 // progressAt applies one timeline update (at zero: now).
 func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey, w progressWrite) error {
+	ctx = WithOrigin(ctx, w.origin)
 	reported, duration, state := w.offset, w.duration, w.state
 	return s.updateAt(ctx, userID, []core.RatingKey{key}, w.at, func(cur *row, now time.Time) (bool, bool, []Event) {
 		offset := reported // fn may be re-run after a conflict
@@ -766,6 +886,49 @@ func (s *State) WatchedEpisodes(ctx context.Context, userID int64) ([]core.Ratin
 		out = append(out, core.RatingKey(k))
 	}
 	return out, rows.Err()
+}
+
+// WatchedEpisodesOf lists userID's watched episode keys (view_count > 0)
+// belonging to shows (TMDB ids). Each show's episodes are one key range of
+// the (user_id, rating_key) primary key, so a list page reads only its own
+// shows' history, however long the viewer's history is.
+func (s *State) WatchedEpisodesOf(ctx context.Context, userID int64, shows []int64) ([]core.RatingKey, error) {
+	var out []core.RatingKey
+	const chunk = 200
+	for start := 0; start < len(shows); start += chunk {
+		part := shows[start:min(start+chunk, len(shows))]
+		ranges := make([]string, 0, len(part))
+		args := make([]any, 0, 1+2*len(part))
+		args = append(args, userID)
+		for _, show := range part {
+			if show <= 0 {
+				continue
+			}
+			ranges = append(ranges, "rating_key BETWEEN ? AND ?")
+			args = append(args, int64(core.EpisodeKey(show, 0, 0)), int64(core.EpisodeKey(show, 999, 9999)))
+		}
+		if len(ranges) == 0 {
+			continue
+		}
+		rows, err := s.db.QueryContext(ctx, `SELECT rating_key FROM state_watch WHERE user_id=? AND view_count>0 AND (`+strings.Join(ranges, " OR ")+`) ORDER BY rating_key`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var k int64
+			if err := rows.Scan(&k); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out = append(out, core.RatingKey(k))
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // Rollup summarises the watched state of a set of children (the episodes of

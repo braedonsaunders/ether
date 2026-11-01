@@ -19,7 +19,7 @@ import (
 // duplicates, while bounding full settings copies independently of item count.
 func recordedHome(tb testing.TB) []core.Title {
 	tb.Helper()
-	raw, err := os.ReadFile("../../testdata/pms/web/web_json_hubs.json")
+	raw, err := os.ReadFile("../../testdata/conform/plex/web/web_json_hubs.json")
 	if err != nil {
 		tb.Fatal(err)
 	}

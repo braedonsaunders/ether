@@ -31,6 +31,29 @@ func TestTimelineUniformMatchesHistoric(t *testing.T) {
 	}
 }
 
+func TestRemuxAudioTranscodeUsesShortOpeningSegments(t *testing.T) {
+	adapt := adaptiveFromConfig(config.Transcode{FastStart: true, FastStartSegment: config.Duration(2 * time.Second)})
+	v := &core.StreamInfo{Codec: "hevc", Height: 1080}
+	d := core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: false, Container: ContainerMatroska}
+	if got := remuxOpenSegment(adapt, d, v); got != 2*time.Second {
+		t.Fatalf("remux+audio transcode open = %v, want 2s", got)
+	}
+	d.AudioCopy = true
+	if got := remuxOpenSegment(adapt, d, v); got != 0 {
+		t.Fatalf("pure copy remux must keep 4s segments (long-GOP replay), got %v", got)
+	}
+	d.AudioCopy = false
+	d.Container = ContainerMPEGTS
+	if got := remuxOpenSegment(adapt, d, v); got != 0 {
+		t.Fatalf("MPEG-TS remux keeps the encoded FastStart ramp, got %v", got)
+	}
+	adapt.FastStart = false
+	d.Container = ContainerMatroska
+	if got := remuxOpenSegment(adapt, d, v); got != 0 {
+		t.Fatalf("FastStart off must not change remux segments, got %v", got)
+	}
+}
+
 func TestTimelineFastStartRamp(t *testing.T) {
 	tl := buildTimeline(10*time.Minute, 4*time.Second, timelineOptions{
 		steadyMode: ModeCopy, fastStart: true, rampSegs: 2, rampDur: 2 * time.Second,

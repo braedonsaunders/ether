@@ -9,14 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -33,12 +34,16 @@ type Service struct {
 	inputRelay       inputRelay // loopback ffmpeg input relay (input_relay.go)
 	probeMu          sync.Mutex
 	probeCache       map[string]liveProbeEntry
+	probeWait        map[string]*liveProbeFlight
 	sourceMu         sync.Mutex
 	sourceHealth     map[string]streamSourceHealth
 	transMu          sync.RWMutex
 	transcodes       map[string]core.HLSSession
 	o                Options
+	policyReads      atomic.Uint64
 	mu               sync.Mutex
+	lineupUnix       int64
+	onChange         func()
 	sessions         map[string]*session
 	nextSubscription int64 // guarded by mu
 	ctx              context.Context
@@ -54,10 +59,10 @@ func New(o Options) (*Service, error) {
 		o.Now = time.Now
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapDirect, 20*time.Second)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{o: o, sessions: map[string]*session{}, transcodes: map[string]core.HLSSession{}, ctx: ctx, cancel: cancel}
+	s := &Service{o: o, sessions: map[string]*session{}, transcodes: map[string]core.HLSSession{}, ctx: ctx, cancel: cancel, lineupUnix: o.Now().Unix()}
 	s.wg.Add(2)
 	go s.maintain()
 	go s.refreshLoop()
@@ -238,27 +243,109 @@ func (s *Service) Channel(ctx context.Context, id string) (Channel, error) {
 	return c, err
 }
 func itemFromTitle(t core.Title) Item {
-	return Item{Key: t.Key, Title: t.Title, DurationMS: t.Runtime.Milliseconds(), Summary: t.Summary, Rating: t.ContentRating, Thumb: t.PosterPath}
+	var released int64
+	if !t.Released.IsZero() {
+		released = t.Released.UnixMilli()
+	}
+	return Item{Key: t.Key, Title: t.Title, DurationMS: t.Runtime.Milliseconds(), Summary: t.Summary, Rating: t.ContentRating, Thumb: t.PosterPath, ShowKey: t.ShowKey, Season: t.Season, Episode: t.Episode, ReleasedMS: released}
 }
 func (s *Service) expand(ctx context.Context, c *Channel) error {
-	if c.Collection == 0 && c.Filter == nil {
-		return nil
+	items, err := s.resolveProgramming(ctx, c.Items, c.Collection, c.Filter, c.Sources, c.Watched)
+	if err != nil {
+		return err
 	}
+	if c.Collection != 0 || c.Filter != nil || len(c.Sources) > 0 || c.Watched != "" {
+		c.Items = items
+	}
+	for i := range c.Blocks {
+		b := &c.Blocks[i]
+		if b.Collection == 0 && b.Filter == nil && len(b.Sources) == 0 && b.Watched == "" {
+			continue
+		}
+		blockItems, err := s.resolveProgramming(ctx, b.Items, b.Collection, b.Filter, b.Sources, b.Watched)
+		if err != nil {
+			return err
+		}
+		b.Items = blockItems
+	}
+	return nil
+}
+
+// resolveProgramming turns a collection, smart filter or weighted mix into
+// a stable item list. With none of those set, items pass through (watched
+// still applies when asked). Shows become their episodes, in catalogue order.
+func (s *Service) resolveProgramming(ctx context.Context, existing []Item, collection core.RatingKey, filter *core.Filter, sources []ProgramSource, watched string) ([]Item, error) {
+	var items []Item
+	var err error
+	switch {
+	case len(sources) > 0:
+		parts := make([][]Item, len(sources))
+		weights := make([]int, len(sources))
+		for i, src := range sources {
+			parts[i], err = s.resolveProgramming(ctx, src.Items, src.Collection, src.Filter, nil, src.Watched)
+			if err != nil {
+				return nil, err
+			}
+			weights[i] = src.Weight
+			if weights[i] <= 0 {
+				weights[i] = 1
+			}
+			if weights[i] > 20 {
+				weights[i] = 20
+			}
+		}
+		items = interleave(parts, weights)
+	case collection != 0 || filter != nil:
+		items, err = s.expandQuery(ctx, collection, filter)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		items = append([]Item(nil), existing...)
+	}
+	if watched == "" {
+		return items, nil
+	}
+	return s.filterWatched(ctx, items, watched)
+}
+
+func interleave(parts [][]Item, weights []int) []Item {
+	idx := make([]int, len(parts))
+	var out []Item
+	for len(out) < 10000 {
+		progressed := false
+		for i, p := range parts {
+			for n := 0; n < weights[i] && idx[i] < len(p); n++ {
+				out = append(out, p[idx[i]])
+				idx[i]++
+				progressed = true
+				if len(out) >= 10000 {
+					return out
+				}
+			}
+		}
+		if !progressed {
+			break
+		}
+	}
+	return out
+}
+
+func (s *Service) expandQuery(ctx context.Context, collection core.RatingKey, filter *core.Filter) ([]Item, error) {
 	var page core.Page
 	var err error
-	if c.Collection != 0 {
+	if collection != 0 {
 		if s.o.Collections == nil {
-			return fmt.Errorf("collections unavailable")
+			return nil, fmt.Errorf("collections unavailable")
 		}
-		page, err = s.o.Collections.Items(ctx, &core.User{IsOwner: true}, c.Collection, 0, 2000)
+		page, err = s.o.Collections.Items(ctx, &core.User{IsOwner: true}, collection, 0, 2000)
 	} else {
-		if s.o.Catalog == nil {
-			return fmt.Errorf("catalogue unavailable")
+		if s.o.Catalog == nil || filter == nil {
+			return nil, fmt.Errorf("catalogue unavailable")
 		}
-		// The catalogue caps one Browse page well below 2000; page through.
 		for len(page.Items) < 2000 {
 			var p core.Page
-			if p, err = s.o.Catalog.Browse(ctx, core.BrowseQuery{Filter: *c.Filter, Sort: core.SortTitle, Offset: len(page.Items), Limit: 2000 - len(page.Items)}); err != nil {
+			if p, err = s.o.Catalog.Browse(ctx, core.BrowseQuery{Filter: *filter, Sort: core.SortTitle, Offset: len(page.Items), Limit: 2000 - len(page.Items)}); err != nil {
 				break
 			}
 			page.Total = p.Total
@@ -269,31 +356,108 @@ func (s *Service) expand(ctx context.Context, c *Channel) error {
 		}
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	c.Items = nil
+	var items []Item
 	for _, t := range page.Items {
 		ts := []core.Title{t}
 		if t.Type == core.TypeShow {
 			if s.o.Catalog == nil {
-				return fmt.Errorf("catalogue unavailable")
+				return nil, fmt.Errorf("catalogue unavailable")
 			}
 			ts, err = s.o.Catalog.Grandchildren(ctx, t.Key)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 		for _, t := range ts {
 			if !t.Adult && t.Runtime > 0 && (t.Type == core.TypeMovie || t.Type == core.TypeEpisode) {
-				c.Items = append(c.Items, itemFromTitle(t))
+				items = append(items, itemFromTitle(t))
 			}
-			if len(c.Items) >= 10000 {
-				return fmt.Errorf("channel exceeds 10000 programmes")
+			if len(items) >= 10000 {
+				return nil, fmt.Errorf("channel exceeds 10000 programmes")
 			}
 		}
 	}
+	return items, nil
+}
+
+func (s *Service) filterWatched(ctx context.Context, items []Item, watched string) ([]Item, error) {
+	if watched != "watched" && watched != "unwatched" {
+		return nil, fmt.Errorf("watched must be watched or unwatched")
+	}
+	if s.o.DB == nil {
+		return nil, fmt.Errorf("watch history unavailable")
+	}
+	rows, err := s.o.DB.QueryContext(ctx, `SELECT DISTINCT rating_key FROM state_history WHERE completed=1`)
+	if err != nil {
+		return nil, fmt.Errorf("watch history unavailable")
+	}
+	defer rows.Close()
+	seen := map[core.RatingKey]struct{}{}
+	for rows.Next() {
+		var key int64
+		if err = rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		seen[core.RatingKey(key)] = struct{}{}
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []Item
+	for _, it := range items {
+		_, hit := seen[it.Key]
+		if watched == "watched" && hit || watched == "unwatched" && !hit {
+			out = append(out, it)
+		}
+	}
+	return out, nil
+}
+func checkPlay(mode, align, fit string, repeat int, watched string) error {
+	switch mode {
+	case "", "order", "shuffle", "random", "marathon", "newest":
+	default:
+		return fmt.Errorf("unknown playout")
+	}
+	switch align {
+	case "", "hour", "half":
+	default:
+		return fmt.Errorf("alignment must be hour or half hour")
+	}
+	switch fit {
+	case "", "cut", "pad":
+	default:
+		return fmt.Errorf("fit must be cut or pad")
+	}
+	if repeat < 0 || repeat > 30 {
+		return fmt.Errorf("repeat window must be 0–30 days")
+	}
+	switch watched {
+	case "", "watched", "unwatched":
+	default:
+		return fmt.Errorf("watched must be watched or unwatched")
+	}
 	return nil
 }
+
+func blocksOverlap(a, b Block) bool {
+	if a.End <= b.Start || b.End <= a.Start {
+		return false
+	}
+	if len(a.Days) == 0 || len(b.Days) == 0 {
+		return true
+	}
+	for _, d := range a.Days {
+		for _, e := range b.Days {
+			if d == e {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func validateChannel(c *Channel) error {
 	c.Name = strings.TrimSpace(c.Name)
 	c.Number = strings.TrimSpace(c.Number)
@@ -308,8 +472,16 @@ func validateChannel(c *Channel) error {
 			return err
 		}
 	}
-	if c.Kind == "virtual" && len(c.Items) == 0 {
+	if c.Kind == "virtual" && len(c.Items) == 0 && !c.OffAir && len(c.Fallback) == 0 {
 		return fmt.Errorf("virtual channel needs base programming")
+	}
+	if err := checkPlay(c.Mode, c.Align, c.Fit, c.RepeatDays, c.Watched); err != nil {
+		return err
+	}
+	if c.Timezone != "" {
+		if _, err := time.LoadLocation(c.Timezone); err != nil {
+			return fmt.Errorf("unknown timezone")
+		}
 	}
 	check := func(items []Item) error {
 		if len(items) > 10000 {
@@ -325,17 +497,38 @@ func validateChannel(c *Channel) error {
 	if err := check(c.Items); err != nil {
 		return err
 	}
-	blocks := append([]Block(nil), c.Blocks...)
-	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Start < blocks[j].Start })
-	prev := 0
-	for _, b := range blocks {
-		if b.Start < prev || b.Start < 0 || b.End <= b.Start || b.End > 1440 || len(b.Items) == 0 {
+	for i, b := range c.Blocks {
+		if b.Start < 0 || b.End <= b.Start || b.End > 1440 {
+			return fmt.Errorf("time blocks must be within 00:00–24:00")
+		}
+		if len(b.Items) == 0 && len(c.Fallback) == 0 && !c.OffAir {
 			return fmt.Errorf("UTC time blocks must be nonoverlapping, within 00:00–24:00, and contain programming")
 		}
 		if err := check(b.Items); err != nil {
 			return err
 		}
-		prev = b.End
+		if err := check(b.Filler); err != nil {
+			return err
+		}
+		if err := checkPlay(b.Mode, b.Align, b.Fit, b.RepeatDays, b.Watched); err != nil {
+			return err
+		}
+		for _, d := range b.Days {
+			if d < 0 || d > 6 {
+				return fmt.Errorf("time block day must be 0–6")
+			}
+		}
+		for j := i + 1; j < len(c.Blocks); j++ {
+			if blocksOverlap(b, c.Blocks[j]) {
+				return fmt.Errorf("UTC time blocks must be nonoverlapping, within 00:00–24:00, and contain programming")
+			}
+		}
+	}
+	if err := check(c.Filler); err != nil {
+		return err
+	}
+	if err := check(c.Fallback); err != nil {
+		return err
 	}
 	if c.Epoch.IsZero() {
 		c.Epoch = time.Unix(0, 0).UTC()
@@ -359,6 +552,7 @@ func (s *Service) SaveChannel(ctx context.Context, c Channel) (Channel, error) {
 	_, err = s.o.DB.ExecContext(ctx, `INSERT INTO livetv_channels(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, c.ID, b)
 	if err == nil {
 		s.invalidate(c.ID, "")
+		s.bumpLineup()
 	}
 	return c, err
 }
@@ -366,10 +560,45 @@ func (s *Service) DeleteChannel(ctx context.Context, id string) error {
 	_, err := s.o.DB.ExecContext(ctx, `DELETE FROM livetv_channels WHERE id=?`, id)
 	if err == nil {
 		s.invalidate(id, "")
+		s.bumpLineup()
 	}
 	return err
 }
+
+// SetOnChange registers the Plex lineup refresh. Save, delete and source
+// import call it after the database commit.
+func (s *Service) SetOnChange(fn func()) {
+	s.mu.Lock()
+	s.onChange = fn
+	s.mu.Unlock()
+}
+
+// LineupChanged is the DVR refreshedAt clients poll. It moves whenever the
+// channel set changes, including twice in the same wall-clock second.
+func (s *Service) LineupChanged() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lineupUnix == 0 {
+		return time.Time{}
+	}
+	return time.Unix(s.lineupUnix, 0).UTC()
+}
+
+func (s *Service) bumpLineup() {
+	s.mu.Lock()
+	now := s.o.Now().Unix()
+	if now <= s.lineupUnix {
+		now = s.lineupUnix + 1
+	}
+	s.lineupUnix = now
+	fn := s.onChange
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
 func (s *Service) Policy(ctx context.Context, userID int64) (Policy, error) {
+	s.policyReads.Add(1)
 	p := Policy{UserID: userID}
 	var b []byte
 	err := s.o.DB.QueryRowContext(ctx, `SELECT data FROM livetv_policies WHERE user_id=?`, userID).Scan(&b)
@@ -409,10 +638,41 @@ func containsString(ids []string, id string) bool {
 	return false
 }
 func (s *Service) allowed(ctx context.Context, u *core.User, c Channel, p *Programme) bool {
+	var lookup func(context.Context, core.RatingKey) (*core.Title, error)
+	if s.o.Catalog != nil {
+		lookup = s.o.Catalog.Get
+	}
+	return s.allowedWithLookup(ctx, u, c, p, lookup, false)
+}
+
+type loadedPolicyKey struct{}
+
+type loadedPolicy struct {
+	id  int64
+	pol Policy
+}
+
+// withPolicy reads the viewer's Live TV policy once and reuses it for every
+// channel check on this request.
+func (s *Service) withPolicy(ctx context.Context, u *core.User) (context.Context, Policy, error) {
+	if u == nil {
+		return ctx, Policy{}, nil
+	}
+	if loaded, ok := ctx.Value(loadedPolicyKey{}).(loadedPolicy); ok && loaded.id == u.ID {
+		return ctx, loaded.pol, nil
+	}
+	pol, err := s.Policy(ctx, u.ID)
+	if err != nil {
+		return ctx, Policy{}, err
+	}
+	return context.WithValue(ctx, loadedPolicyKey{}, loadedPolicy{id: u.ID, pol: pol}), pol, nil
+}
+
+func (s *Service) allowedWithLookup(ctx context.Context, u *core.User, c Channel, p *Programme, lookup func(context.Context, core.RatingKey) (*core.Title, error), strict bool) bool {
 	if u == nil || !c.Enabled {
 		return false
 	}
-	pol, err := s.Policy(ctx, u.ID)
+	_, pol, err := s.withPolicy(ctx, u)
 	if err != nil {
 		return false
 	}
@@ -426,51 +686,93 @@ func (s *Service) allowed(ctx context.Context, u *core.User, c Channel, p *Progr
 			rating = c.Rating
 		}
 	}
-	if catalog.RatingExceeds(rating, u.MaxContentRating) || catalog.RatingExceeds(rating, pol.MaxRating) {
+	if contentrating.Exceeds(rating, u.MaxContentRating) || contentrating.Exceeds(rating, pol.MaxRating) {
 		return false
 	}
-	if p != nil && p.Item.Key != 0 && s.o.Catalog != nil {
-		t, err := s.o.Catalog.Get(ctx, p.Item.Key)
-		if err != nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, pol.MaxRating) {
+	if p != nil && p.Item.Key != 0 && (lookup != nil || strict) {
+		if lookup == nil {
 			return false
 		}
-		if len(u.AllowedSections) > 0 {
-			section := 1
-			if t.Type != core.TypeMovie {
-				section = 2
-			}
-			ok := false
-			for _, id := range u.AllowedSections {
-				if id == section {
-					ok = true
-				}
-			}
-			if !ok {
+		checkTitle := func(t *core.Title) bool {
+			if t == nil || t.Adult || contentrating.Exceeds(t.ContentRating, u.MaxContentRating) || contentrating.Exceeds(t.ContentRating, pol.MaxRating) {
 				return false
 			}
+			if len(u.AllowedSections) > 0 {
+				section := 1
+				if t.Type != core.TypeMovie {
+					section = 2
+				}
+				ok := false
+				for _, id := range u.AllowedSections {
+					if id == section {
+						ok = true
+					}
+				}
+				if !ok {
+					return false
+				}
+			}
+			if s.o.Allowed != nil && !s.o.Allowed(u, t) {
+				return false
+			}
+			return true
 		}
-		if s.o.Allowed != nil && !s.o.Allowed(u, t) {
+		t, err := lookup(ctx, p.Item.Key)
+		if err != nil || !checkTitle(t) || (strict && t.Key != p.Item.Key) {
 			return false
+		}
+		if strict && t.ShowKey != 0 {
+			show, err := lookup(ctx, t.ShowKey)
+			if err != nil || show == nil || show.Key != t.ShowKey || !checkTitle(show) {
+				return false
+			}
 		}
 	}
 	return true
 }
+
+// AllowedChannelCached checks one channel and its current programme using
+// local title facts only. Missing programme title or inherited show facts fail
+// closed. The supplied lookup must not perform network or release resolution.
+func (s *Service) AllowedChannelCached(ctx context.Context, u *core.User, id string, cached func(context.Context, core.RatingKey) (*core.Title, error)) error {
+	c, err := s.Channel(ctx, id)
+	if err != nil {
+		return err
+	}
+	now := s.o.Now()
+	programmes, err := s.programmes(ctx, c, now, now.Add(time.Second))
+	if err != nil {
+		return err
+	}
+	var current *Programme
+	if len(programmes) > 0 {
+		current = &programmes[0]
+	}
+	if !s.allowedWithLookup(ctx, u, c, current, cached, true) {
+		return core.ErrNotFound
+	}
+	return nil
+}
 func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel, error) {
+	ctx, _, err := s.withPolicy(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	cs, err := s.Channels(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := []Channel{}
 	for _, c := range cs {
-		ps, err := s.programmes(ctx, c, s.o.Now(), s.o.Now().Add(time.Second))
+		p, ok, err := s.programmeAt(ctx, c, s.o.Now())
 		if err != nil {
 			return nil, err
 		}
-		var p *Programme
-		if len(ps) > 0 {
-			p = &ps[0]
+		var current *Programme
+		if ok {
+			current = &p
 		}
-		if s.allowed(ctx, u, c, p) {
+		if s.allowed(ctx, u, c, current) {
 			c.StreamURL = ""
 			c.StreamSources = nil
 			out = append(out, c)
@@ -478,11 +780,141 @@ func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel,
 	}
 	return out, nil
 }
+
+// ChannelPermitted decides one channel. A memo on ctx, when present, answers
+// repeat checks for the same channel without another guide read. Callers that
+// are not looking at a live channel must not call this.
+func (s *Service) ChannelPermitted(ctx context.Context, u *core.User, id string) (bool, error) {
+	if u == nil || id == "" {
+		return false, nil
+	}
+	if memo, ok := channelMemoFrom(ctx); ok {
+		if decided, hit := memo.get(id); hit {
+			return decided, nil
+		}
+	}
+	c, err := s.Channel(ctx, id)
+	if err != nil {
+		if errors.Is(err, core.ErrNotFound) {
+			rememberChannel(ctx, id, false)
+			return false, nil
+		}
+		return false, err
+	}
+	p, ok, err := s.programmeAt(ctx, c, s.o.Now())
+	if err != nil {
+		return false, err
+	}
+	var current *Programme
+	if ok {
+		current = &p
+	}
+	allowed := s.allowed(ctx, u, c, current)
+	rememberChannel(ctx, id, allowed)
+	return allowed, nil
+}
+
+// programmeAt reads the single programme airing at a time. The primary key
+// is (source, channel, start), so the latest start at or before that time is
+// one indexed row rather than a walk of the channel's guide.
+func (s *Service) programmeAt(ctx context.Context, c Channel, at time.Time) (Programme, bool, error) {
+	if c.Kind == "virtual" {
+		ps := Schedule(c, at, at.Add(time.Second))
+		if len(ps) == 0 {
+			return Programme{}, false, nil
+		}
+		return ps[0], true, nil
+	}
+	var b []byte
+	err := s.o.DB.QueryRowContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND start_ms<=? ORDER BY start_ms DESC LIMIT 1`, guideSource(c), c.GuideID, at.UnixMilli()).Scan(&b)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Programme{}, false, nil
+	}
+	if err != nil {
+		return Programme{}, false, err
+	}
+	var p Programme
+	if err = json.Unmarshal(b, &p); err != nil {
+		return Programme{}, false, err
+	}
+	if !p.End.After(at) {
+		return Programme{}, false, nil
+	}
+	p.ChannelID = c.ID
+	p.ID = fmt.Sprintf("%s-%d", c.ID, p.Start.UnixMilli())
+	return p, true, nil
+}
+
+// guideChannel drops titles the resolver already knows cannot play. Unknown
+// titles keep their saved order, so a channel with no availability cache
+// schedules exactly as it did before.
+func (s *Service) guideChannel(ctx context.Context, c Channel) Channel {
+	src := s.o.Availability
+	if src == nil {
+		return c
+	}
+	items, itemsChanged := omitUnavailable(ctx, src, c.Items)
+	fallback, fallbackChanged := omitUnavailable(ctx, src, c.Fallback)
+	filler, fillerChanged := omitUnavailable(ctx, src, c.Filler)
+	blocks := c.Blocks
+	blocksChanged := false
+	if len(c.Blocks) > 0 {
+		next := make([]Block, len(c.Blocks))
+		copy(next, c.Blocks)
+		for i := range next {
+			bi, ch := omitUnavailable(ctx, src, next[i].Items)
+			bf, ch2 := omitUnavailable(ctx, src, next[i].Filler)
+			if ch || ch2 {
+				blocksChanged = true
+				next[i].Items = bi
+				next[i].Filler = bf
+			}
+		}
+		if blocksChanged {
+			blocks = next
+		}
+	}
+	if !itemsChanged && !fallbackChanged && !fillerChanged && !blocksChanged {
+		return c
+	}
+	c.Items, c.Fallback, c.Filler, c.Blocks = items, fallback, filler, blocks
+	return c
+}
+
+func omitUnavailable(ctx context.Context, src core.AvailabilitySource, items []Item) ([]Item, bool) {
+	if len(items) == 0 {
+		return items, false
+	}
+	out := make([]Item, 0, len(items))
+	dropped := false
+	for _, it := range items {
+		if it.Key != 0 && it.Slate == "" {
+			if known, ok := src.Available(ctx, it.Key); known && !ok {
+				dropped = true
+				continue
+			}
+		}
+		out = append(out, it)
+	}
+	if !dropped {
+		return items, false
+	}
+	return out, true
+}
+
 func (s *Service) programmes(ctx context.Context, c Channel, from, until time.Time) ([]Programme, error) {
 	if c.Kind == "virtual" {
-		return Schedule(c, from, until), nil
+		return Schedule(s.guideChannel(ctx, c), from, until), nil
 	}
-	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND start_ms<? AND end_ms>? ORDER BY start_ms`, guideSource(c), c.GuideID, until.UnixMilli(), from.UnixMilli())
+	if until.Sub(from) <= time.Second {
+		p, ok, err := s.programmeAt(ctx, c, from)
+		if err != nil || !ok {
+			return nil, err
+		}
+		return []Programme{p}, nil
+	}
+	// end_ms leads so the guide index can skip programmes that have already ended.
+	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND end_ms>? AND start_ms<? ORDER BY start_ms`, guideSource(c), c.GuideID, from.UnixMilli(), until.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
@@ -507,6 +939,11 @@ func (s *Service) Guide(ctx context.Context, u *core.User, from, until time.Time
 	if !until.After(from) || until.Sub(from) > 7*24*time.Hour {
 		return nil, fmt.Errorf("guide window must be positive and at most 7 days")
 	}
+	var err error
+	ctx, _, err = s.withPolicy(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	cs, err := s.Channels(ctx)
 	if err != nil {
 		return nil, err
@@ -529,6 +966,92 @@ func (s *Service) Guide(ctx context.Context, u *core.User, from, until time.Time
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
 	return out, nil
 }
+
+// OnNow is the bounded guide used to build a live row: one policy read, then
+// at most the current and next programme for each enabled channel.
+func (s *Service) OnNow(ctx context.Context, u *core.User, now, until time.Time) ([]Channel, []Programme, error) {
+	return s.onNow(ctx, u, now, until, 0)
+}
+
+// OnNowN stops after limit allowed channels. Home uses it so a large guide
+// does not query a programme window for every channel on the request.
+func (s *Service) OnNowN(ctx context.Context, u *core.User, now, until time.Time, limit int) ([]Channel, []Programme, error) {
+	return s.onNow(ctx, u, now, until, limit)
+}
+
+func (s *Service) onNow(ctx context.Context, u *core.User, now, until time.Time, limit int) ([]Channel, []Programme, error) {
+	if u == nil || !until.After(now) {
+		return nil, nil, fmt.Errorf("invalid on-now window")
+	}
+	ctx, _, err := s.withPolicy(ctx, u)
+	if err != nil {
+		return nil, nil, err
+	}
+	cs, err := s.Channels(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	channels := make([]Channel, 0, len(cs))
+	programmes := make([]Programme, 0, len(cs)*2)
+	for _, c := range cs {
+		if !c.Enabled {
+			continue
+		}
+		ps, err := s.programmesLimit(ctx, c, now, until, 2)
+		if err != nil {
+			return nil, nil, err
+		}
+		var current *Programme
+		if len(ps) > 0 {
+			current = &ps[0]
+		}
+		if !s.allowed(ctx, u, c, current) {
+			continue
+		}
+		c.StreamURL = ""
+		c.StreamSources = nil
+		channels = append(channels, c)
+		programmes = append(programmes, ps...)
+		if limit > 0 && len(channels) >= limit {
+			break
+		}
+	}
+	return channels, programmes, nil
+}
+
+func (s *Service) programmesLimit(ctx context.Context, c Channel, from, until time.Time, limit int) ([]Programme, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	if c.Kind == "virtual" {
+		ps := Schedule(s.guideChannel(ctx, c), from, until)
+		if len(ps) > limit {
+			ps = ps[:limit]
+		}
+		return ps, nil
+	}
+	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_programmes WHERE source_id=? AND channel_id=? AND end_ms>? AND start_ms<? ORDER BY start_ms LIMIT ?`, guideSource(c), c.GuideID, from.UnixMilli(), until.UnixMilli(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Programme, 0, limit)
+	for rows.Next() {
+		var b []byte
+		var p Programme
+		if err = rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		if err = json.Unmarshal(b, &p); err != nil {
+			return nil, err
+		}
+		p.ChannelID = c.ID
+		p.ID = fmt.Sprintf("%s-%d", c.ID, p.Start.UnixMilli())
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (s *Service) Sources(ctx context.Context) ([]Source, error) {
 	rows, err := s.o.DB.QueryContext(ctx, `SELECT data FROM livetv_sources ORDER BY id`)
 	if err != nil {
@@ -694,6 +1217,7 @@ func (s *Service) ImportSource(ctx context.Context, src Source) (Source, error) 
 	}
 	err = tx.Commit()
 	if err == nil {
+		s.bumpLineup()
 		// Only tunes whose stream changed or disappeared are interrupted, so
 		// a scheduled refresh does not cut off viewers.
 		for _, id := range changedStreams(oldByID, stored) {
@@ -863,6 +1387,7 @@ func (s *Service) DeleteSource(ctx context.Context, id string) error {
 	err = tx.Commit()
 	if err == nil {
 		s.invalidate("", id)
+		s.bumpLineup()
 	}
 	return err
 }

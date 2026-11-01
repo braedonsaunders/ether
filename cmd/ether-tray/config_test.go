@@ -37,7 +37,7 @@ func TestTrayFollowsChangedServerPort(t *testing.T) {
 	if code := a.openUI(); code != 0 || opened != "http://127.0.0.1:32450/ether/" {
 		t.Fatalf("shortcut code=%d URL=%s", code, opened)
 	}
-	if got := a.updatePageURL(); got != "http://127.0.0.1:32450/ether/settings/updates" {
+	if got := a.updatePageURL(); got != "http://127.0.0.1:32450/ether/maintenance/updates" {
 		t.Fatalf("update URL = %s", got)
 	}
 }

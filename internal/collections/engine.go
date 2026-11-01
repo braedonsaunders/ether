@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/libraryfilter"
 )
@@ -939,23 +940,29 @@ func (s *Service) translate(ctx context.Context, r *rule, kind string, q url.Val
 		if kind != "movie" {
 			return false
 		}
-		q.Set("certification_country", "US")
-		switch r.op {
-		case "lte", "gte":
-			q.Set("certification."+r.op, strings.ToUpper(r.tags[0]))
-		case "is", "in":
-			if r.op == "is" && len(r.tags) > 1 {
+		// TMDB discover filters US film certifications, so a level is
+		// pushed down as its US film label (its key). "Not rated" is
+		// evaluated locally only.
+		var labels []string
+		for _, t := range r.tags {
+			l := contentrating.LevelOf(t)
+			if l == contentrating.Unrated {
 				return false
 			}
-			var up []string
-			for _, t := range r.tags {
-				up = append(up, strings.ToUpper(t))
+			labels = append(labels, l.Key())
+		}
+		switch r.op {
+		case "lte", "gte":
+			q.Set("certification."+r.op, labels[0])
+		case "is", "in":
+			if r.op == "is" && len(labels) > 1 {
+				return false
 			}
-			q.Set("certification", strings.Join(up, "|"))
+			q.Set("certification", strings.Join(labels, "|"))
 		default:
-			q.Del("certification_country")
 			return false
 		}
+		q.Set("certification_country", "US")
 		return true
 	case "watchProvider":
 		if r.op != "is" && r.op != "in" {
@@ -1039,8 +1046,9 @@ func (s *Service) filterForUser(ctx context.Context, keys []core.RatingKey, pr p
 	personal := len(include)+len(exclude) > 0
 	var exposure *libraryfilter.Filter
 	if s.catCfg != nil {
-		if rules := s.catCfg().Exclusions; len(rules) > 0 {
-			exposure, _ = libraryfilter.Compile(rules)
+		cfg := s.catCfg()
+		if f, err := libraryfilter.CompilePolicy(cfg.Exclusions, cfg.VisibilityDefault); err == nil && !f.Passive() {
+			exposure = f
 		}
 	}
 	if max == "" && !personal && exposure == nil {
@@ -1072,7 +1080,7 @@ func (s *Service) filterForUser(ctx context.Context, keys []core.RatingKey, pr p
 		}
 		// A member the index no longer knows has no known rating, and an
 		// unknown rating exceeds every limit.
-		if max != "" && (e == nil || catalog.RatingExceeds(e.crating, max)) {
+		if max != "" && (e == nil || contentrating.Exceeds(e.crating, max)) {
 			continue
 		}
 		if personal {

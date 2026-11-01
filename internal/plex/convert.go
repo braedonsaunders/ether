@@ -12,8 +12,11 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // renderOpts controls how much of an item is rendered.
@@ -31,6 +34,9 @@ type renderOpts struct {
 	state map[core.RatingKey]core.WatchStatus
 	// skipLeafCounts skips applyListLeafCounts when the caller calls applyLeafCounts itself.
 	skipLeafCounts bool
+	// storedOnly renders from stored catalogue rows only without scheduling
+	// background TMDB detail, show-children, or Plex GUID refreshes.
+	storedOnly bool
 }
 
 // metadataKey is the item's "key": children list for containers, the item
@@ -113,19 +119,47 @@ func imageStamp(t *core.Title) string {
 	return "1"
 }
 
+func artIdentityStamp(u string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(u))
+	return strconv.FormatUint(uint64(h.Sum32()), 10)
+}
+
+func overlayThumbStamp(t *core.Title, row plexmeta.Cached, ok bool) string {
+	if ok && row.ThumbURL != "" && (t.PosterPath == plexmeta.RemoteArt || t.StillPath == plexmeta.RemoteArt) {
+		return artIdentityStamp(row.ThumbURL)
+	}
+	return imageStamp(t)
+}
+
+func overlayArtStamp(t *core.Title, row plexmeta.Cached, ok bool) string {
+	if ok && row.ArtURL != "" && t.BackdropPath == plexmeta.RemoteArt {
+		return artIdentityStamp(row.ArtURL)
+	}
+	return imageStamp(t)
+}
+
 // thumbURL / artURL are our own artwork endpoints for an item.
 func thumbURL(t *core.Title) string {
+	return stampedThumbURL(t, imageStamp(t))
+}
+
+func stampedThumbURL(t *core.Title, stamp string) string {
 	if t.PosterPath == "" && t.StillPath == "" {
 		return ""
 	}
-	return "/library/metadata/" + t.Key.String() + "/thumb/" + imageStamp(t)
+	return "/library/metadata/" + t.Key.String() + "/thumb/" + stamp
 }
 
 func artURL(t *core.Title) string {
+	return stampedArtURL(t, imageStamp(t))
+}
+
+func stampedArtURL(t *core.Title, stamp string) string {
 	if t.BackdropPath == "" {
 		return ""
 	}
-	return "/library/metadata/" + t.Key.String() + "/art/" + imageStamp(t)
+	return "/library/metadata/" + t.Key.String() + "/art/" + stamp
 }
 
 func seasonTitle(t *core.Title) string {
@@ -140,8 +174,18 @@ func seasonTitle(t *core.Title) string {
 
 // metadata renders one title.
 func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o renderOpts) model.Metadata {
-	t = s.enrich(t)
-	show := s.showOf(t)
+	if !o.storedOnly {
+		t = s.enrich(t)
+	}
+	added := t.DateAdded(s.now())
+	ov, hasPlex := s.plexMetaOverlay(ctx, t.Key)
+	tmdbRating := t.Rating
+	if hasPlex {
+		t = applyPlexMetaTitle(t, ov.Overlay)
+	}
+	thumbStamp := overlayThumbStamp(t, ov, hasPlex)
+	artStamp := overlayArtStamp(t, ov, hasPlex)
+	show := s.showOfOpts(t, o.storedOnly)
 	m := model.Metadata{
 		RatingKey:     t.Key.String(),
 		Key:           metadataKey(t.Key, t.Type),
@@ -152,9 +196,9 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		Tagline:       t.Tagline,
 		Year:          t.Year,
 		ContentRating: t.ContentRating,
-		Thumb:         thumbURL(t),
-		Art:           artURL(t),
-		AddedAt:       unixOrZero(t.UpdatedAt),
+		Thumb:         stampedThumbURL(t, thumbStamp),
+		Art:           stampedArtURL(t, artStamp),
+		AddedAt:       unixOrZero(added),
 		UpdatedAt:     unixOrZero(t.UpdatedAt),
 	}
 	if t.SortTitle != "" && t.SortTitle != t.Title {
@@ -165,9 +209,6 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	}
 	if !t.Released.IsZero() {
 		m.OriginallyAvailableAt = t.Released.Format("2006-01-02")
-		if m.AddedAt == 0 {
-			m.AddedAt = t.Released.Unix()
-		}
 		if m.Year == 0 {
 			m.Year = t.Released.Year()
 		}
@@ -175,9 +216,16 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	if t.Runtime > 0 {
 		m.Duration = ms(t.Runtime)
 	}
-	if t.Rating > 0 {
-		m.AudienceRating = math.Round(t.Rating*10) / 10
+	if hasPlex && ov.AudienceRating > 0 {
+		m.AudienceRating = math.Round(ov.AudienceRating*10) / 10
+		m.AudienceRatingImage = ov.AudienceRatingImage
+	} else if tmdbRating > 0 {
+		m.AudienceRating = math.Round(tmdbRating*10) / 10
 		m.AudienceRatingImage = "themoviedb://image.rating"
+	}
+	if hasPlex && ov.Rating > 0 {
+		m.Rating = ov.Rating
+		m.RatingImage = ov.RatingImage
 	}
 	if len(t.Studios) > 0 {
 		m.Studio = t.Studios[0]
@@ -233,6 +281,9 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 				m.ParentSlug = slugify(show.Title)
 			}
 		}
+		if m.ParentYear == 0 && t.ShowYear > 0 {
+			m.ParentYear = t.ShowYear
+		}
 		m.LeafCount = model.Ptr(t.ChildCount)
 		m.ViewedLeafCount = model.Ptr(0)
 		m.Year, m.OriginallyAvailableAt, m.TitleSort = 0, "", ""
@@ -272,6 +323,13 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		}
 		m.GrandparentSlug = slugify(m.GrandparentTitle)
 		m.Year, m.TitleSort, m.Studio = 0, "", ""
+	}
+	if hasPlex {
+		applyPlexMetaDates(t, &m, ov.Overlay)
+		if ov.Rating > 0 && t.Type != core.TypeSeason && t.Type != core.TypeEpisode {
+			m.Rating = ov.Rating
+			m.RatingImage = ov.RatingImage
+		}
 	}
 
 	// Per-user state.
@@ -340,13 +398,13 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		m.GuidLead = externalGuids(t)
 	}
 	if detail {
-		if t.Rating > 0 {
-			m.Rating_ = []model.RatingTag{{Image: "themoviedb://image.rating", Value: math.Round(t.Rating*10) / 10, Type: "audience"}}
+		if m.AudienceRating > 0 && m.AudienceRatingImage != "" {
+			m.Rating_ = []model.RatingTag{{Image: m.AudienceRatingImage, Value: m.AudienceRating, Type: "audience"}}
 		}
 	}
 	// PMS sends Image (and, for movies and shows, UltraBlurColors) on
 	// every item, in listings and hubs as well as detail pages.
-	m.Image = s.imageTags(t, show)
+	m.Image = s.imageTags(t, show, thumbStamp, artStamp)
 	if ultraBlurType(t.Type) {
 		m.UltraBlurColors = s.ultraBlurFor(t.Key, t.BackdropPath)
 	}
@@ -365,7 +423,7 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 			m.Duration = m.Media[0].Duration
 		}
 	}
-	s.decorateDiscoveryMetadata(ctx, pr, t, &m)
+	s.decorateDiscoveryMetadata(ctx, pr, t, &m, o.detail)
 	return m
 }
 
@@ -377,13 +435,18 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 //
 // Only artwork Ether can serve is listed; the show's clear logo needs the
 // show's detail (show), which may not be cached on the first render.
-func (s *Server) imageTags(t *core.Title, show *core.Title) []model.Image {
+func (s *Server) imageTags(t *core.Title, show *core.Title, thumbStamp, artStamp string) []model.Image {
 	alt := t.Title
 	if alt == "" && t.Type == core.TypeSeason {
 		alt = seasonTitle(t)
 	}
 	img := func(typ, url string) model.Image { return model.Image{Alt: alt, Type: typ, URL: url} }
-	stamp := imageStamp(t)
+	if thumbStamp == "" {
+		thumbStamp = imageStamp(t)
+	}
+	if artStamp == "" {
+		artStamp = imageStamp(t)
+	}
 	var out []model.Image
 	switch t.Type {
 	case core.TypeSeason, core.TypeEpisode:
@@ -396,34 +459,34 @@ func (s *Server) imageTags(t *core.Title, show *core.Title) []model.Image {
 		}
 		showPath := "/library/metadata/" + showKey.String()
 		if t.Type == core.TypeSeason {
-			if th := thumbURL(t); th != "" {
+			if th := stampedThumbURL(t, thumbStamp); th != "" {
 				out = append(out, img("coverPoster", th))
 			} else {
-				out = append(out, img("coverPoster", showPath+"/thumb/"+stamp))
+				out = append(out, img("coverPoster", showPath+"/thumb/"+thumbStamp))
 			}
 		} else {
-			out = append(out, img("coverPoster", showPath+"/thumb/"+stamp))
-			if th := thumbURL(t); th != "" {
+			out = append(out, img("coverPoster", showPath+"/thumb/"+thumbStamp))
+			if th := stampedThumbURL(t, thumbStamp); th != "" {
 				out = append(out, img("snapshot", th))
 			}
 		}
-		if a := artURL(t); a != "" {
+		if a := stampedArtURL(t, artStamp); a != "" {
 			out = append(out, img("background", a))
 		} else {
-			out = append(out, img("background", showPath+"/art/"+stamp))
+			out = append(out, img("background", showPath+"/art/"+artStamp))
 		}
 		if show != nil && show.LogoPath != "" {
-			out = append(out, img("clearLogo", showPath+"/clearLogo/"+stamp))
+			out = append(out, img("clearLogo", showPath+"/clearLogo/"+imageStamp(t)))
 		}
 	default:
-		if th := thumbURL(t); th != "" {
+		if th := stampedThumbURL(t, thumbStamp); th != "" {
 			out = append(out, img("coverPoster", th))
 		}
-		if a := artURL(t); a != "" {
+		if a := stampedArtURL(t, artStamp); a != "" {
 			out = append(out, img("background", a))
 		}
 		if t.LogoPath != "" {
-			out = append(out, img("clearLogo", "/library/metadata/"+t.Key.String()+"/clearLogo/"+stamp))
+			out = append(out, img("clearLogo", "/library/metadata/"+t.Key.String()+"/clearLogo/"+imageStamp(t)))
 		}
 	}
 	return out
@@ -465,8 +528,12 @@ func (s *Server) personTags(key core.RatingKey, ps []core.Person, kind string, m
 // real tracks must be rendered there: the estimate invents a single
 // audio track and no subtitles.
 func (s *Server) mediaInfoWithSource(ctx context.Context, pr *Request, t *core.Title) (core.MediaInfo, *core.PlaySession, bool) {
-	if s.d.Playback == nil {
-		return core.MediaInfo{Estimated: true, Duration: t.Runtime}, nil, false
+	if s.d.Playback == nil || pr == nil {
+		dur := time.Duration(0)
+		if t != nil {
+			dur = t.Runtime
+		}
+		return core.MediaInfo{Estimated: true, Duration: dur}, nil, false
 	}
 	if pr.User != nil {
 		if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, t.Key); ok && ps != nil {
@@ -482,8 +549,10 @@ func (s *Server) mediaInfoWithSource(ctx context.Context, pr *Request, t *core.T
 			}
 		}
 	}
-	caps := s.clientCaps(pr)
-	return s.d.Playback.Estimate(ctx, t, caps), nil, false
+	info, ps := sessions.Estimate(ctx, s.d.Playback, pr.User, pr.ClientID, t, func() core.ClientCaps {
+		return s.clientCaps(pr)
+	})
+	return info, ps, false
 }
 
 func (s *Server) mediaInfoFor(ctx context.Context, pr *Request, t *core.Title) (core.MediaInfo, *core.PlaySession) {
@@ -558,7 +627,11 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *core.Title, withS
 		if pr.User != nil {
 			userID = pr.User.ID
 		}
-		sel := resolveSelection(s.selections.get(userID, int64(t.Key)), info)
+		stored := s.selections.get(userID, int64(t.Key))
+		if stored.subtitleSet {
+			info = infoWithSelectedSidecar(info, stored.subtitleStream)
+		}
+		sel := resolveSelection(stored, info)
 		sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 		m.Part[0].Stream = s.buildStreams(t.Key, info, sel, pr.User)
 	}
@@ -577,7 +650,7 @@ func partFileName(t *core.Title, ext string) string {
 		}
 	}
 	name = strings.Map(func(r rune) rune {
-		if strings.ContainsRune(`/\:*?"<>|`, r) {
+		if strings.ContainsRune(`/\\:*?"<>|`, r) {
 			return -1
 		}
 		return r
@@ -688,7 +761,7 @@ func (s *Server) buildStreams(key core.RatingKey, info core.MediaInfo, sel selec
 		subSelected = sel.subtitle
 	}
 	for i, st := range info.Streams {
-		id := s.streams.register(key, i, st)
+		id := s.assignStream(context.Background(), u, key, i, st, "")
 		ps := model.Stream{
 			ID:       id,
 			Codec:    plexCodec(st.Codec),
@@ -787,36 +860,7 @@ func extendedTitle(st core.StreamInfo, display, codec string) string {
 // (see Server.audioLanguages), then the stream flagged default, then the
 // first. Multi-language releases often flag a dub as default.
 func pickAudio(info core.MediaInfo, langs []string) int {
-	for _, lang := range langs {
-		// Within one wanted language the best tier wins (exact before
-		// generic-want×regional before regional-want×generic); preference
-		// order across languages still dominates.
-		best, bestTier := -1, 0
-		for i, st := range info.Streams {
-			if st.Type != "audio" {
-				continue
-			}
-			if tier := langtag.MatchTier(lang, st.Language); tier > bestTier {
-				best, bestTier = i, tier
-			}
-		}
-		if best >= 0 {
-			return best
-		}
-	}
-	first := -1
-	for i, st := range info.Streams {
-		if st.Type != "audio" {
-			continue
-		}
-		if st.Default {
-			return i
-		}
-		if first < 0 {
-			first = i
-		}
-	}
-	return first
+	return experience.PickAudio(info, langs)
 }
 
 func boolPtrIf(b bool) *bool {
@@ -893,11 +937,11 @@ func videoResolution(w, h int) string {
 		return "1080"
 	case w >= 1200 || h >= 700:
 		return "720"
-	case h >= 560:
+	case w >= 960 || h >= 560:
 		return "576"
-	case h >= 400:
+	case w >= 640 || h >= 400:
 		return "480"
-	case h > 0:
+	case w > 0 || h > 0:
 		return "sd"
 	}
 	return ""
@@ -1093,6 +1137,7 @@ func languageTag(code string) string {
 
 // renderTitles renders a list, loading the user's watch state in one call.
 func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []core.Title, o renderOpts) []model.Metadata {
+	ctx = withStoredPolicy(ctx)
 	ts = s.visibleTitles(pr.User, ts)
 	ts = s.availableForViewer(ctx, pr.User, ts)
 	if len(ts) == 0 {
@@ -1112,29 +1157,35 @@ func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []core.Title,
 	s.preloadUltraBlur(ctx, ts)
 	var guids map[core.RatingKey]string
 	var missingGUIDs []core.RatingKey
-	if s.d.PlexGUID != nil {
-		lookup := make([]core.RatingKey, 0, len(ts)*2)
-		for i := range ts {
-			k := ts[i].Key
-			lookup = append(lookup, k)
-			switch ts[i].Type {
-			case core.TypeSeason:
-				if k.TMDB() > 0 {
-					lookup = append(lookup, core.ShowKey(k.TMDB()))
-				}
-			case core.TypeEpisode:
-				if k.TMDB() > 0 {
-					lookup = append(lookup, core.ShowKey(k.TMDB()), core.SeasonKey(k.TMDB(), ts[i].Season))
-				}
+	lookup := make([]core.RatingKey, 0, len(ts)*2)
+	for i := range ts {
+		k := ts[i].Key
+		lookup = append(lookup, k)
+		switch ts[i].Type {
+		case core.TypeSeason:
+			if k.TMDB() > 0 {
+				lookup = append(lookup, core.ShowKey(k.TMDB()))
+			}
+		case core.TypeEpisode:
+			if k.TMDB() > 0 {
+				lookup = append(lookup, core.ShowKey(k.TMDB()), core.SeasonKey(k.TMDB(), ts[i].Season))
 			}
 		}
+	}
+	if s.d.PlexGUID != nil {
 		guids = s.d.PlexGUID.CachedMany(ctx, lookup)
 	}
-	order := s.episodeOrderList(ctx, pr, ts, o.detail)
+	ctx = s.withPlexMeta(ctx, lookup, guids)
+	var order episodeOrderView
+	if !o.storedOnly {
+		order = s.episodeOrderList(ctx, pr, ts, o.detail)
+	}
 	out := make([]model.Metadata, 0, len(ts))
 	for i := range ts {
 		m := s.metadata(ctx, pr, &ts[i], o)
-		s.applyEpisodeOrder(ctx, pr, &ts[i], &m, order)
+		if !o.storedOnly {
+			s.applyEpisodeOrder(ctx, pr, &ts[i], &m, order)
+		}
 		if s.d.PlexGUID != nil {
 			k := ts[i].Key
 			if guid := guids[k]; guid != "" {
@@ -1164,11 +1215,11 @@ func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []core.Title,
 		}
 		out = append(out, m)
 	}
-	if s.d.PlexGUID != nil && len(missingGUIDs) > 0 {
+	if s.d.PlexGUID != nil && len(missingGUIDs) > 0 && !o.storedOnly {
 		s.d.PlexGUID.Schedule(missingGUIDs...)
 	}
 	if !o.detail && !o.skipLeafCounts {
-		s.applyListLeafCounts(ctx, pr, out, ts)
+		s.applyListLeafCountsOpts(ctx, pr, out, ts, o.storedOnly)
 	}
 	return out
 }
@@ -1177,10 +1228,19 @@ type watchedEpisodesReader interface {
 	WatchedEpisodes(ctx context.Context, userID int64) ([]core.RatingKey, error)
 }
 
+// watchedEpisodesOfReader reads only the given shows' watched episodes.
+type watchedEpisodesOfReader interface {
+	WatchedEpisodesOf(ctx context.Context, userID int64, shows []int64) ([]core.RatingKey, error)
+}
+
 // applyListLeafCounts populates viewedLeafCount (and viewCount when all
 // episodes are watched) on shows and seasons in list/search/hub responses,
 // touching only shows that have at least one watched episode for the user.
 func (s *Server) applyListLeafCounts(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title) {
+	s.applyListLeafCountsOpts(ctx, pr, items, ts, false)
+}
+
+func (s *Server) applyListLeafCountsOpts(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title, storedOnly bool) {
 	if s.d.State == nil || pr.User == nil || len(items) == 0 {
 		return
 	}
@@ -1194,11 +1254,24 @@ func (s *Server) applyListLeafCounts(ctx context.Context, pr *Request, items []m
 	if !hasShowOrSeason {
 		return
 	}
-	reader, ok := s.d.State.(watchedEpisodesReader)
-	if !ok {
+	var watched []core.RatingKey
+	var err error
+	if reader, ok := s.d.State.(watchedEpisodesOfReader); ok {
+		// Only the listed shows' history: a page never reads all of it.
+		seen := map[int64]bool{}
+		var shows []int64
+		for i := range ts {
+			if tmdb := ts[i].Key.TMDB(); (ts[i].Type == core.TypeShow || ts[i].Type == core.TypeSeason) && tmdb > 0 && !seen[tmdb] {
+				seen[tmdb] = true
+				shows = append(shows, tmdb)
+			}
+		}
+		watched, err = reader.WatchedEpisodesOf(ctx, pr.User.ID, shows)
+	} else if reader, ok := s.d.State.(watchedEpisodesReader); ok {
+		watched, err = reader.WatchedEpisodes(ctx, pr.User.ID)
+	} else {
 		return
 	}
-	watched, err := reader.WatchedEpisodes(ctx, pr.User.ID)
 	if err != nil || len(watched) == 0 {
 		return
 	}
@@ -1220,14 +1293,17 @@ func (s *Server) applyListLeafCounts(ctx context.Context, pr *Request, items []m
 	if len(subset) == 0 {
 		return
 	}
-	s.applyLeafCounts(ctx, pr, items, subset, nil)
+	if !storedOnly {
+		memo, states := s.prefetchListEpisodes(ctx, pr, subset)
+		s.applyLeafCountsWith(ctx, pr, items, subset, memo, states)
+	}
 	byKey := make(map[string]int, len(items))
 	for i := range items {
 		byKey[items[i].RatingKey] = i
 	}
 	for _, title := range subset {
 		i, ok := byKey[title.Key.String()]
-		if !ok || items[i].ViewedLeafCount != nil {
+		if !ok || (!storedOnly && items[i].ViewedLeafCount != nil && *items[i].ViewedLeafCount > 0) {
 			continue
 		}
 		viewed := 0
@@ -1272,6 +1348,76 @@ func (s *Server) stateFor(ctx context.Context, pr *Request, ts []core.Title) map
 // their episodes' watch state. Used on detail and children pages only. memo
 // (may be nil) shares show episodes with the rest of the response.
 func (s *Server) applyLeafCounts(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title, memo showEpisodes) {
+	s.applyLeafCountsWith(ctx, pr, items, ts, memo, nil)
+}
+
+// listEpisodeStore answers many shows' episodes from the mirror at once,
+// exactly as Grandchildren would, for the shows it can (catalog).
+type listEpisodeStore interface {
+	StoredGrandchildren(context.Context, []core.RatingKey) (map[core.RatingKey][]core.Title, error)
+}
+
+// prefetchListEpisodes loads, in a few batched reads, the episodes and
+// watch state a list's shows need for their leaf counts, so the counts do
+// not load each show's episodes and state one show at a time. It covers
+// shows listed without their seasons whose episode order is the catalogue's
+// (an episode group changes the episode set); the rest keep the per-show
+// path. states holds every prefetched episode's watch state.
+func (s *Server) prefetchListEpisodes(ctx context.Context, pr *Request, ts []core.Title) (showEpisodes, map[core.RatingKey]core.WatchStatus) {
+	store, ok := s.d.Catalog.(listEpisodeStore)
+	if !ok || s.d.State == nil || pr.User == nil {
+		return nil, nil
+	}
+	withSeasons := map[core.RatingKey]bool{}
+	for i := range ts {
+		if ts[i].Type == core.TypeSeason {
+			withSeasons[core.ShowKey(ts[i].Key.TMDB())] = true
+		}
+	}
+	var shows []core.RatingKey
+	for i := range ts {
+		if ts[i].Type == core.TypeShow && !withSeasons[ts[i].Key] {
+			shows = append(shows, ts[i].Key)
+		}
+	}
+	if len(shows) == 0 {
+		return nil, nil
+	}
+	if s.d.EpisodeOrder != nil {
+		grouped, err := s.d.EpisodeOrder.Grouped(ctx, pr.User, shows)
+		if err != nil {
+			return nil, nil
+		}
+		kept := shows[:0]
+		for _, k := range shows {
+			if !grouped[k] {
+				kept = append(kept, k)
+			}
+		}
+		shows = kept
+	}
+	found, err := store.StoredGrandchildren(ctx, shows)
+	if err != nil || len(found) == 0 {
+		return nil, nil
+	}
+	memo := showEpisodes{}
+	var keys []core.RatingKey
+	for show, eps := range found {
+		memo[show] = showEpisodeList{eps: eps}
+		for _, e := range eps {
+			keys = append(keys, e.Key)
+		}
+	}
+	states, err := s.d.State.GetMany(ctx, pr.User.ID, keys)
+	if err != nil {
+		return memo, nil
+	}
+	return memo, states
+}
+
+// applyLeafCountsWith is applyLeafCounts with prefetched watch state for the
+// episodes of the shows memo already holds.
+func (s *Server) applyLeafCountsWith(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title, memo showEpisodes, states map[core.RatingKey]core.WatchStatus) {
 	if s.d.State == nil || pr.User == nil {
 		return
 	}
@@ -1336,7 +1482,12 @@ func (s *Server) applyLeafCounts(ctx context.Context, pr *Request, items []model
 				continue
 			}
 		}
-		st := s.stateFor(ctx, pr, eps)
+		var st map[core.RatingKey]core.WatchStatus
+		if _, prefetched := memo[title.Key]; prefetched && states != nil && title.Type == core.TypeShow {
+			st = states
+		} else {
+			st = s.stateFor(ctx, pr, eps)
+		}
 		viewed := 0
 		for _, e := range eps {
 			if st[e.Key].ViewCount > 0 {
@@ -1356,8 +1507,10 @@ func (s *Server) applyLeafCounts(ctx context.Context, pr *Request, items []model
 	}
 }
 
-// audioLanguages is the user's audio preference, falling back to the
-// server's catalogue language (e.g. "en-US" -> "en").
+// audioLanguages is the access-limit audio list, then the catalog language.
+// Playback selection does not read it. That chain is trackprefs: the viewer's
+// audioLanguages, otherwise user 0, then catalog.language, then the title
+// original, then the file default flag.
 func (s *Server) audioLanguages(u *core.User) []string {
 	var langs []string
 	if u != nil {

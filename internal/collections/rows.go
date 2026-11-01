@@ -17,6 +17,14 @@ const rowItems = 24
 // personal rules, personal order and rotation applied. Each row says
 // whether it belongs on Home, in section hubs, or both; Hub.Type tells the
 // caller which section ("" for mixed collections).
+// homeIndexWait bounds how long a home waits for the catalogue index's
+// first build before it skips the live rows that need it.
+const homeIndexWait = 300 * time.Millisecond
+
+// homeRowWait bounds how long a single collection row may block Home or
+// section row assembly before its build finishes in the background.
+const homeRowWait = 500 * time.Millisecond
+
 func (s *Service) HomeRowsFor(ctx context.Context, user *core.User, hc core.HubContext) ([]core.CollectionRow, error) {
 	rows, err := s.loadRows(ctx)
 	if err != nil {
@@ -27,7 +35,11 @@ func (s *Service) HomeRowsFor(ctx context.Context, user *core.User, hc core.HubC
 		now = s.now()
 	}
 	var out []core.CollectionRow
+	var indexReady *bool
 	for _, row := range rows {
+		if ctx.Err() != nil {
+			break
+		}
 		sp := row.spec
 		if !visible(row, user) || (!sp.Targets.HomeRow && !sp.Targets.SectionRow) {
 			continue
@@ -35,7 +47,20 @@ func (s *Service) HomeRowsFor(ctx context.Context, user *core.User, hc core.HubC
 		if !scheduleAllows(sp.Targets.Schedule, hc.Device, now) {
 			continue
 		}
-		keys, err := s.serve(ctx, row, user, sp.Refresh == RefreshLive)
+		// A live row is evaluated on request, but a home does not wait out
+		// the catalogue index's first build, which reads the whole
+		// catalogue: past homeIndexWait it skips the row until it is ready.
+		live := false
+		if sp.Refresh == RefreshLive {
+			if indexReady == nil {
+				ready := s.idx.readyWithin(ctx, homeIndexWait) != nil
+				indexReady = &ready
+			}
+			live = *indexReady
+		}
+		rctx, rcancel := context.WithTimeout(ctx, homeRowWait)
+		keys, err := s.serve(rctx, row, user, live)
+		rcancel()
 		if err != nil {
 			if !errors.Is(err, errNotBuilt) {
 				s.log.Debug("collections: row", "id", row.publicID(), "err", err)
@@ -142,7 +167,9 @@ func (s *Service) LayoutRow(ctx context.Context, user *core.User, hc core.HubCon
 	if !row.enabled || row.owner != 0 && (user == nil || row.owner != user.ID) {
 		return nil, core.ErrNotFound
 	}
-	keys, err := s.serve(ctx, row, user, true)
+	rctx, rcancel := context.WithTimeout(ctx, homeRowWait)
+	keys, err := s.serve(rctx, row, user, true)
+	rcancel()
 	if err != nil {
 		return nil, err
 	}

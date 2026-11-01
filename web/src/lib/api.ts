@@ -272,6 +272,10 @@ export type TestFn = () => Promise<TestResult>;
 export const api = {
   // ---- Bootstrap, sign-in, setup -----------------------------------------
   bootstrap: () => apiFetch<Bootstrap>("/bootstrap"),
+  localSignIn: (username: string, password: string) =>
+    post<{ token: string }>("/auth/local", { username, password }),
+  localSetup: (username: string, password: string) =>
+    post<{ token: string }>("/setup/local", { username, password }),
   signInStart: () => post<{ handle: string; code: string; authUrl: string }>("/auth/pin"),
   signInPoll: (handle: string) =>
     apiFetch<{ done: boolean; token?: string }>(`/auth/pin/${encodeURIComponent(handle)}`),
@@ -302,6 +306,7 @@ export const api = {
   testIndexer: (ix: Indexer) => post<TestResult>("/test/indexer", ix),
   testDebrid: (p: DebridProvider) => post<TestResult>("/test/debrid", p),
   testTMDB: (key: string) => post<TestResult>("/test/tmdb", { key }),
+  testIntroDB: (apiKey: string) => post<TestResult>("/test/introdb", { apiKey }),
   testOpenSubtitles: (cfg: EtherConfig["openSubtitles"]) =>
     post<TestResult>("/test/opensubtitles", cfg),
   testLLM: (cfg: EtherConfig["llm"]) => post<TestResult>("/test/llm", cfg),
@@ -311,6 +316,15 @@ export const api = {
   llmModels: (cfg: EtherConfig["llm"], signal?: AbortSignal) =>
     post<{ models: LLMModel[]; error?: string }>("/llm/models", cfg, signal),
   testTrakt: (cfg: EtherConfig["trakt"]) => post<TestResult>("/test/trakt", cfg),
+  checkOutbound: (cfg: EtherConfig["outbound"]) =>
+    post<{
+      sourceIp?: string;
+      sourceError?: string;
+      publishedIp?: string;
+      publishedError?: string;
+      remoteAccess?: boolean;
+      proxyEnabled?: boolean;
+    }>("/outbound/check", cfg),
 
   // ---- Built-in indexer sites ------------------------------------------------------
   sites: {
@@ -393,7 +407,8 @@ export const api = {
 
   // ---- Collection Studio ------------------------------------------------------
   collections: async () =>
-    (await apiFetch<{ collections: CollectionSpec[] | null }>("/collections")).collections ?? [],
+    (await apiFetch<{ collections: CollectionSpec[] | null } | null>("/collections"))
+      ?.collections ?? [],
   collection: (id: string) => apiFetch<CollectionSpec>(`/collections/${encodeURIComponent(id)}`),
   createCollection: (spec: CollectionSpec) => post<CollectionSpec>("/collections", spec),
   updateCollection: (id: string, spec: CollectionSpec) =>
@@ -424,6 +439,7 @@ export const api = {
       type?: string;
       genre?: string;
       decade?: string;
+      waiting?: string;
       sort?: string;
       offset?: number;
       limit?: number;
@@ -493,6 +509,10 @@ export function newId(prefix: string): string {
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 401) return t("Your session has expired. Sign in again.");
+    if (err.code === "setup_incomplete" || err.message.includes('{"force":true}'))
+      return t("You can finish now and add sources later.");
+    if (err.code === "plex_required")
+      return t("Create an owner account, or connect Plex, before finishing.");
     return err.message;
   }
   if (err instanceof Error) return err.message;

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"strings"
@@ -198,5 +199,15 @@ func TestEncodeXMLDedupesAttributes(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `title1="`+got.MediaContainer["title1"].(string)+`"`) {
 		t.Errorf("XML and JSON keep different values: %s vs %s", b, j)
+	}
+}
+
+func TestEncodeDoesNotWriteOnFailure(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Encode(&buf, 42, JSON); err == nil {
+		t.Fatal("expected error encoding non-struct root")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("Encode wrote %d bytes before failing: %q", buf.Len(), buf.String())
 	}
 }

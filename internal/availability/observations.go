@@ -94,7 +94,7 @@ func (s *Service) retainFeed(ctx context.Context, f core.ReleaseFeed, rs []core.
 		if err != nil {
 			return err
 		}
-		_, err = s.db.ExecContext(ctx, `INSERT INTO availability_feed_items(id,source_id,generation,match_title,payload,seen_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id,source_id) DO UPDATE SET generation=excluded.generation,match_title=excluded.match_title,payload=excluded.payload,seen_at=excluded.seen_at`, r.ID, f.ID, f.Generation, name, raw, s.now().Unix())
+		_, err = s.db.ExecContext(ctx, `INSERT INTO availability_feed_items(id,source_id,generation,match_title,payload,seen_at,policy_digest) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id,source_id) DO UPDATE SET generation=excluded.generation,match_title=excluded.match_title,payload=CASE WHEN availability_feed_items.policy_digest=excluded.policy_digest THEN availability_feed_items.payload ELSE excluded.payload END,seen_at=excluded.seen_at,policy_digest=excluded.policy_digest`, r.ID, f.ID, f.Generation, name, raw, s.now().Unix(), releasePolicyDigest(r))
 		if err != nil {
 			return err
 		}
@@ -179,7 +179,7 @@ func (s *Service) attachRetained(ctx context.Context, titles map[core.RatingKey]
 				continue
 			}
 			// Same-generation observations preserve invalidation and their original date.
-			_, _ = s.db.ExecContext(ctx, `INSERT INTO availability_releases(id,rating_key,source_id,generation,payload,title,name,protocol,first_seen,last_seen,priority,policy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id,rating_key,source_id) DO UPDATE SET generation=excluded.generation,payload=excluded.payload,first_seen=excluded.first_seen,last_seen=excluded.last_seen,state='observed',verified_at=0,first_verified=0,next_check=0,revision=availability_releases.revision+1 WHERE availability_releases.generation<>excluded.generation`, r.ID, t.Key, f.ID, f.Generation, p.raw, t.Title, r.Name, r.Protocol, p.seen, p.seen, t.Popularity, policy)
+			_, _ = s.db.ExecContext(ctx, `INSERT INTO availability_releases(id,rating_key,source_id,generation,payload,title,name,protocol,first_seen,last_seen,priority,policy,policy_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id,rating_key,source_id) DO UPDATE SET generation=excluded.generation,payload=excluded.payload,policy_digest=excluded.policy_digest,first_seen=excluded.first_seen,last_seen=excluded.last_seen,state='observed',verified_at=0,first_verified=0,next_check=0,revision=availability_releases.revision+1 WHERE availability_releases.generation<>excluded.generation`, r.ID, t.Key, f.ID, f.Generation, p.raw, t.Title, r.Name, r.Protocol, p.seen, p.seen, t.Popularity, policy, releasePolicyDigest(r))
 		}
 	}
 }

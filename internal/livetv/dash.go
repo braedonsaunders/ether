@@ -2,6 +2,7 @@ package livetv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -14,34 +15,49 @@ import (
 
 var dashURL = regexp.MustCompile(`(initialization|media)="([^"]+)"`)
 
-func (s *Service) ServeDASH(w http.ResponseWriter, r *http.Request, id string, u *core.User) {
+func (s *Service) ServeDASH(w http.ResponseWriter, r *http.Request, id string, u *core.User) error {
 	ss, err := s.getSession(r.Context(), id, u)
 	if err != nil {
 		writeStreamError(w, err)
-		return
+		return nil
 	}
 	ds, err := s.ensureDASH(r.Context(), ss, id)
 	if err != nil {
+		var dashErr *VirtualDASHError
+		if errors.As(err, &dashErr) {
+			return err
+		}
 		writeStreamError(w, err)
-		return
+		return nil
 	}
 	rec := httptest.NewRecorder()
 	ds.ServeManifest(rec, r)
 	if rec.Code != 200 {
+		if _, virtual := ds.(*virtualDASH); virtual {
+			switch rec.Code {
+			case http.StatusNotFound:
+				return core.ErrNotFound
+			case http.StatusForbidden:
+				return &VirtualDASHError{Err: core.ErrUnauthorized}
+			default:
+				return &VirtualDASHError{Err: core.ErrNotAvailable}
+			}
+		}
 		http.Error(w, "Live stream unavailable", rec.Code)
-		return
+		return nil
 	}
 	prefix := "session/livetv-dash-" + id + "/"
 	body := dashURL.ReplaceAllStringFunc(rec.Body.String(), func(attr string) string {
 		parts := dashURL.FindStringSubmatch(attr)
 		target := strings.Replace(parts[2], prefix, "/livetv/sessions/"+id+"/0/dash/", 1)
-		return parts[1] + `="` + html.EscapeString(withAuth(target, r)) + `"`
+		return parts[1] + `="` + html.EscapeString(withAuth(target, ss.streamGrant)) + `"`
 	})
 	w.Header().Set("Content-Type", "application/dash+xml")
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != "HEAD" {
 		fmt.Fprint(w, body)
 	}
+	return nil
 }
 
 // ensureDASH returns the session's DASH transcoder, starting it on first
@@ -49,14 +65,26 @@ func (s *Service) ServeDASH(w http.ResponseWriter, r *http.Request, id string, u
 // run and would never stop a transcoder started now.
 func (s *Service) ensureDASH(ctx context.Context, ss *session, id string) (core.DASHSession, error) {
 	ss.mu.Lock()
-	defer ss.mu.Unlock()
 	if ss.closed {
+		ss.mu.Unlock()
 		return nil, core.ErrNotFound
 	}
 	ss.consumed = true
 	if ss.dash != nil {
-		return ss.dash, nil
+		ds := ss.dash
+		ss.mu.Unlock()
+		return ds, nil
 	}
+	if ss.info.Channel.Kind == "virtual" {
+		if s.o.Transcoder == nil {
+			ss.mu.Unlock()
+			return nil, &VirtualDASHError{Err: core.ErrNotAvailable}
+		}
+		gen := ss.generation
+		ss.mu.Unlock()
+		return s.publishVirtualDASH(ctx, ss, id, gen)
+	}
+	defer ss.mu.Unlock()
 	if ss.info.Channel.Kind != "iptv" || s.o.Transcoder == nil {
 		return nil, core.ErrNotAvailable
 	}

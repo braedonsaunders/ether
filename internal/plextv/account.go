@@ -140,18 +140,19 @@ func (c *Client) AuthURL(pin *PIN, forwardURL string) string {
 
 // Account is a plex.tv user (GET /api/v2/user).
 type Account struct {
-	ID           int64        `json:"id"`
-	UUID         string       `json:"uuid"`
-	Username     string       `json:"username"`
-	Title        string       `json:"title"`
-	FriendlyName string       `json:"friendlyName"`
-	Email        string       `json:"email"`
-	Thumb        string       `json:"thumb"`
-	AuthToken    string       `json:"authToken"`
-	Home         bool         `json:"home"`
-	HomeAdmin    bool         `json:"homeAdmin"`
-	Restricted   bool         `json:"restricted"`
-	Subscription Subscription `json:"subscription"`
+	ID           int64         `json:"id"`
+	UUID         string        `json:"uuid"`
+	Username     string        `json:"username"`
+	Title        string        `json:"title"`
+	FriendlyName string        `json:"friendlyName"`
+	Email        string        `json:"email"`
+	Thumb        string        `json:"thumb"`
+	AuthToken    string        `json:"authToken"`
+	Home         bool          `json:"home"`
+	HomeAdmin    bool          `json:"homeAdmin"`
+	Restricted   bool          `json:"restricted"`
+	Subscription Subscription  `json:"subscription"`
+	Track        TrackDefaults `json:"profile,omitempty"`
 }
 
 // Subscription is the account's Plex Pass state.
@@ -201,8 +202,19 @@ func (c *Client) User(ctx context.Context, token string) (*Account, error) {
 				}
 			}
 		}
+		if profile := n.find("profile"); profile != nil {
+			a.Track = profileDefaults(profile)
+		} else if n.attr("defaultAudioLanguage") != "" || n.attr("defaultSubtitleLanguage") != "" || n.attr("autoSelectAudio") != "" || n.attr("autoSelectSubtitle") != "" {
+			a.Track = profileDefaults(n)
+		}
 	} else if err := json.Unmarshal(resp.body, &a); err != nil {
 		return nil, fmt.Errorf("plextv: decode user: %w", err)
+	} else if parsed := trackDefaultsFromJSON(resp.body); parsed.HasProfile {
+		a.Track = parsed
+	} else if a.Track.AudioLanguage != "" || a.Track.SubtitleLanguage != "" || a.Track.AutoSelectAudio || a.Track.SubtitleMode != 0 {
+		// Keep the first decode when the profile object used a shape
+		// trackDefaultsFromJSON does not accept.
+		a.Track.HasProfile = true
 	}
 	if a.ID == 0 {
 		return nil, errors.New("plextv: user response without id")
@@ -280,25 +292,37 @@ func extractAuthToken(body []byte) string {
 	return ""
 }
 
-// Claim methods reported in ClaimResult.
-const (
-	ClaimExchange   = "claim-exchange"
-	ClaimOwnerToken = "owner-token"
-)
+// ErrClaimExchangeFailed matches any *ClaimExchangeError via errors.Is.
+var ErrClaimExchangeFailed = errors.New("plextv: claim exchange failed")
+
+// ClaimExchangeError reports that plex.tv refused or failed the claim-token
+// exchange that mints a server-specific token.
+type ClaimExchangeError struct {
+	Err error
+}
+
+func (e *ClaimExchangeError) Error() string {
+	return fmt.Sprintf("plextv: claim exchange failed: %v", e.Err)
+}
+
+func (e *ClaimExchangeError) Unwrap() error {
+	return e.Err
+}
+
+func (e *ClaimExchangeError) Is(target error) bool {
+	return target == ErrClaimExchangeFailed
+}
 
 // ClaimResult is the outcome of claiming the server.
 type ClaimResult struct {
 	ServerToken string
 	Owner       Account
-	Method      string
 }
 
 // Claim claims this server for the user behind userToken, the way a fresh
 // PMS install is claimed: fetch a claim token for the user, exchange it
 // under the server identity for the server's own token, then confirm the
-// owner. If the exchange is refused for a reason other than a bad user
-// token, it falls back to using the owner's token directly (how PMS worked
-// before claim tokens existed) and reports Method = ClaimOwnerToken.
+// owner.
 //
 // c must carry the server identity.
 func (c *Client) Claim(ctx context.Context, userToken string) (*ClaimResult, error) {
@@ -307,23 +331,25 @@ func (c *Client) Claim(ctx context.Context, userToken string) (*ClaimResult, err
 		return nil, fmt.Errorf("plextv: claim: verify user: %w", err)
 	}
 	claim, err := c.ClaimToken(ctx, userToken)
-	if err == nil {
-		var serverToken string
-		serverToken, err = c.ExchangeClaim(ctx, claim)
-		if err == nil {
-			acct, verr := c.User(ctx, serverToken)
-			if verr == nil && acct.ID != owner.ID {
-				return nil, fmt.Errorf("plextv: claim: server token belongs to account %d, not %d", acct.ID, owner.ID)
-			}
-			if verr != nil {
-				c.log.Warn("could not verify server token owner", "err", verr)
-			}
-			return &ClaimResult{ServerToken: serverToken, Owner: *owner, Method: ClaimExchange}, nil
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
+		return nil, &ClaimExchangeError{Err: err}
 	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	serverToken, err := c.ExchangeClaim(ctx, claim)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, &ClaimExchangeError{Err: err}
 	}
-	c.log.Warn("claim token exchange failed; using owner token as server token", "err", err)
-	return &ClaimResult{ServerToken: userToken, Owner: *owner, Method: ClaimOwnerToken}, nil
+	acct, verr := c.User(ctx, serverToken)
+	if verr == nil && acct.ID != owner.ID {
+		return nil, fmt.Errorf("plextv: claim: server token belongs to account %d, not %d", acct.ID, owner.ID)
+	}
+	if verr != nil {
+		c.log.Warn("could not verify server token owner", "err", verr)
+	}
+	return &ClaimResult{ServerToken: serverToken, Owner: *owner}, nil
 }

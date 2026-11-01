@@ -42,21 +42,35 @@ const POLICY = {
   timezone: "UTC",
 };
 
+const withPlexDefaults = (server: FakeServer) => {
+  server.state.plexDefaults[3] = {
+    hasProfile: true,
+    hasSettings: true,
+    audioLanguage: "ja",
+    autoSelectAudio: true,
+    subtitleLanguage: "en",
+    subtitleMode: "always",
+    filterMovies: "contentRating<=PG-13",
+    filterTelevision: "label!=Hidden",
+    filterMoviesParts: [{ kind: "rating-max", values: ["PG-13"] }],
+    filterTelevisionParts: [{ kind: "label-deny", values: ["Hidden"] }],
+    allowSync: false,
+  };
+};
+
 describe("Viewers", () => {
   it("lists viewers with activity and opens a profile", async () => {
     renderApp("/viewers");
     const row = await screen.findByText("Sam Rivera", {}, WAIT);
     expect(screen.getByText("The Kids")).toBeInTheDocument();
     // The kids' rating cap shows in the limits summary.
-    expect(await screen.findByText("Up to PG", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("Up to PG/TV-PG/TV-Y7", {}, WAIT)).toBeInTheDocument();
     fireEvent.click(row);
     expect(await screen.findByRole("heading", { name: /Sam Rivera/ }, WAIT)).toBeInTheDocument();
     expect(await screen.findByText("What Ether has learned", {}, WAIT)).toBeInTheDocument();
-    expect(
-      await screen.findByText("Up First — What They'll Want to Watch Right Now", {}, WAIT),
-    ).toBeInTheDocument();
-    expect(await screen.findByText("#1 Pick Right Now", {}, WAIT)).toBeInTheDocument();
-    expect(await screen.findByText("#2 Pick Right Now", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("Up next", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("Pick 1", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("Pick 2", {}, WAIT)).toBeInTheDocument();
   });
 
   it("corrects taste from the genre chart and saves overrides", async () => {
@@ -153,6 +167,30 @@ describe("Viewers", () => {
     expect(calls(fake, "PATCH", "/users/3")).toHaveLength(0);
     await waitFor(() => expect(screen.queryByText("You have unsaved changes")).toBeNull());
   });
+
+  it("shows read-only plex.tv share defaults on Access", async () => {
+    renderApp("/viewers/3/access", {}, withPlexDefaults);
+    expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("Up to PG-13")).toBeInTheDocument();
+    expect(screen.getByText("Hides collection Hidden")).toBeInTheDocument();
+  });
+
+  it("shows read-only plex.tv track defaults on Playback", async () => {
+    renderApp("/viewers/3/playback", { householdAudio: true }, (fake) => {
+      withPlexDefaults(fake);
+      // Viewer 3 has no stream override of their own.
+      extraRoutes((_method, path) => {
+        if (path === "/stream-preferences/3") return { audioLanguages: [], subtitleLanguages: [] };
+        if (path === "/stream-preferences/3/shows") return [];
+        return undefined;
+      })(fake);
+    });
+    expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("ja", {}, WAIT)).toBeInTheDocument();
+    // The Playback page also offers "Always on" as a subtitle-mode option;
+    // the From Plex row renders it as plain text.
+    expect(screen.getAllByText("Always on").some((el) => el.tagName === "SPAN")).toBe(true);
+  });
 });
 
 it("filters imported history without changing Plex access", async () => {
@@ -190,4 +228,26 @@ it("filters imported history without changing Plex access", async () => {
   expect(
     fake.state.calls.filter((c) => ["POST", "PUT", "PATCH", "DELETE"].includes(c.method)),
   ).toHaveLength(0);
+});
+
+it("hides server-only tabs for a viewer kept for imported history", async () => {
+  renderApp("/viewers/2/watchlist", {}, (server) => {
+    const base = server.fetch;
+    server.fetch = async (input, init) => {
+      const res = await base(input, init);
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname !== "/ether/api/viewers/2") return res;
+      const body = await res.json();
+      if (body.viewer) body.viewer.accessStatus = "imported";
+      else body.accessStatus = "imported";
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+  });
+  const tabs = await screen.findByRole("tablist", { name: "Viewer sections" }, WAIT);
+  expect(within(tabs).queryByRole("tab", { name: "Watchlist" })).toBeNull();
+  expect(within(tabs).queryByRole("tab", { name: "Alerts" })).toBeNull();
+  expect(within(tabs).getByRole("tab", { name: "Taste" })).toHaveAttribute("aria-selected", "true");
 });

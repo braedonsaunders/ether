@@ -57,7 +57,7 @@ func TestWarmReadyAndPlayDoNotWaitForSeekIndex(t *testing.T) {
 		t.Fatal("index not started")
 	}
 	h.m.mu.Lock()
-	entry := h.m.warm[identity{owner.ID, caps.ClientID, movieKey}]
+	entry := h.m.warm[identity{userID: owner.ID, clientID: caps.ClientID, key: movieKey}]
 	h.m.mu.Unlock()
 	select {
 	case <-entry.done:

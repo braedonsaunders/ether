@@ -9,7 +9,7 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { ArrowLeft, CheckCircle2, History, LayoutTemplate, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
 import { Meter } from "../../components/charts";
@@ -17,7 +17,13 @@ import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { titleSubtitle } from "../../components/Poster";
 import { viewerName } from "../../components/pickers";
 import { t, tn } from "../../i18n";
-import { api, errorMessage } from "../../lib/api";
+import SignInMethods from "../me/SignInMethods";
+import { FavoritesMirror } from "../me/FavoritesMirror";
+import { ConnectApps } from "../me/ConnectApps";
+import { FavoriteEpisodeAlerts } from "../me/FavoriteEpisodeAlerts";
+import { NotInterested, type NotInterestedEntry } from "../me/NotInterested";
+import { getToken } from "../../lib/api";
+import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer, ViewerDetail } from "../../lib/contract";
 import { formatDateTime, formatNumber, formatPercent, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
@@ -28,9 +34,19 @@ import { ViewerWatchlist } from "./sections/ViewerWatchlist";
 import { TasteView } from "./TasteView";
 import { ViewerAccess } from "./ViewerAccess";
 import { ViewerPlayback } from "./ViewerPlayback";
-import { PlexAccessNote, ViewerStatus } from "./ViewerStatus";
+import { Membership } from "./ManageViewers";
+import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
-const TABS = ["taste", "activity", "home", "access", "playback", "watchlist"] as const;
+const TABS = [
+  "taste",
+  "activity",
+  "home",
+  "access",
+  "playback",
+  "watchlist",
+  "alerts",
+  "sign-in",
+] as const;
 type Tab = (typeof TABS)[number];
 function asTab(raw: string | undefined): Tab | undefined {
   return raw && (TABS as readonly string[]).includes(raw) ? (raw as Tab) : undefined;
@@ -45,6 +61,42 @@ export default function ViewerProfile() {
   const viewer = useAsync<ViewerDetail | null>(() => api.viewer(id), [id]);
   const taste = useAsync(() => api.taste(id), [id]);
   const [refreshing, setRefreshing] = useState(false);
+  const loadFavorites = useCallback(
+    () => apiFetch<{ enabled: boolean }>(`/viewers/${id}/favorites-mirror`),
+    [id],
+  );
+  const saveFavorites = useCallback(
+    (enabled: boolean) =>
+      apiFetch(`/viewers/${id}/favorites-mirror`, {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      }),
+    [id],
+  );
+  const loadAlerts = useCallback(
+    () => apiFetch<{ enabled: boolean }>(`/viewers/${id}/favorite-episode-alert`),
+    [id],
+  );
+  const loadHidden = useCallback(async (): Promise<NotInterestedEntry[]> => {
+    const result = await apiFetch<{ items: { handle: string; title?: string }[] }>(
+      `/viewers/${id}/not-interested`,
+    );
+    return (result.items ?? []).map((item) => ({
+      handle: item.handle,
+      title: item.title,
+      unavailable: !item.title,
+    }));
+  }, [id]);
+  const restoreHidden = useCallback(
+    async (handle: string) => {
+      const result = await apiFetch<{ restored: boolean }>(
+        `/viewers/${id}/not-interested/restore`,
+        { method: "POST", body: JSON.stringify({ handle }) },
+      );
+      if (!result.restored) throw new Error("restore failed");
+    },
+    [id],
+  );
 
   const v = viewer.data;
   const setTab = (next: string) => navigate(`/viewers/${id}/${next}`);
@@ -53,7 +105,7 @@ export default function ViewerProfile() {
     setRefreshing(true);
     try {
       await api.refreshViewer(id);
-      toast.success(t("Rows rebuilt"), { description: t("Their Plex Home is up to date.") });
+      toast.success(t("Rows rebuilt"), { description: t("Their Home is up to date.") });
     } catch (e) {
       toast.error(t("Couldn't rebuild rows"), { description: errorMessage(e) });
     } finally {
@@ -75,6 +127,10 @@ export default function ViewerProfile() {
       </div>
     );
   const name = viewerName(v);
+  // Watchlist, alerts and connected apps need server access; a viewer kept
+  // for imported history (or whose access ended) has none of them.
+  const serverAccess = v.isOwner || viewerStatus(v) === "active";
+  const view: Tab = !serverAccess && (tab === "watchlist" || tab === "alerts") ? "taste" : tab;
 
   return (
     <DetailPageLayout
@@ -120,7 +176,7 @@ export default function ViewerProfile() {
       subtabs={
         <SubtabNav
           ariaLabel={t("Viewer sections")}
-          active={tab}
+          active={view}
           onSelect={setTab}
           tabs={[
             { key: "taste", label: t("Taste") },
@@ -128,12 +184,18 @@ export default function ViewerProfile() {
             { key: "home", label: t("Their Home") },
             { key: "access", label: t("Limits & preferences") },
             { key: "playback", label: t("Audio & subtitles") },
-            { key: "watchlist", label: t("Watchlist") },
+            ...(serverAccess
+              ? [
+                  { key: "watchlist", label: t("Watchlist") },
+                  { key: "alerts", label: t("Alerts") },
+                ]
+              : []),
+            { key: "sign-in", label: t("Sign-in methods & devices") },
           ]}
         />
       }
     >
-      {tab === "taste" ? (
+      {view === "taste" ? (
         taste.error ? (
           <ErrorPanel error={taste.error} onRetry={() => void taste.reload()} />
         ) : !taste.data ? (
@@ -141,16 +203,36 @@ export default function ViewerProfile() {
         ) : (
           <TasteView userId={id} taste={taste.data} onChange={(next) => taste.setData(next)} />
         )
-      ) : tab === "activity" ? (
+      ) : view === "activity" ? (
         <Activity viewer={v} />
-      ) : tab === "home" ? (
+      ) : view === "home" ? (
         <TheirHome viewer={v} />
-      ) : tab === "access" ? (
+      ) : view === "access" ? (
         <ViewerAccess key={id} viewer={v} />
-      ) : tab === "playback" ? (
+      ) : view === "playback" ? (
         <ViewerPlayback key={id} viewer={v} />
+      ) : view === "alerts" ? (
+        <div className="space-y-6">
+          <FavoriteEpisodeAlerts load={loadAlerts} />
+          <NotInterested load={loadHidden} restore={restoreHidden} />
+        </div>
+      ) : view === "sign-in" ? (
+        <div className="space-y-6">
+          {!v.isOwner ? (
+            <Membership
+              id={id}
+              active={viewerStatus(v) === "active"}
+              onChange={() => void viewer.reload()}
+            />
+          ) : null}
+          <SignInMethods base={`/users/${id}`} token={getToken()} owner />
+          {serverAccess ? <ConnectApps base={`/viewers/${id}`} token={getToken()} /> : null}
+        </div>
       ) : (
-        <ViewerWatchlist viewerId={id} />
+        <div className="space-y-6">
+          <FavoritesMirror load={loadFavorites} save={saveFavorites} />
+          <ViewerWatchlist viewerId={id} />
+        </div>
       )}
     </DetailPageLayout>
   );

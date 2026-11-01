@@ -1,5 +1,5 @@
 import { fireEvent, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { calls, renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
@@ -130,7 +130,7 @@ describe("Overview", () => {
 
 describe("Updates settings", () => {
   it("shows update status and asks the server to install", async () => {
-    const { fake } = renderApp("/updates");
+    const { fake } = renderApp("/maintenance/updates");
     expect(await screen.findByText(/Version 0\.3\.0/, {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText(/03:00–06:00 local time/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Update now" }));
@@ -138,5 +138,76 @@ describe("Updates settings", () => {
       await screen.findByRole("button", { name: "Install now anyway" }, WAIT),
     ).toBeInTheDocument();
     expect(calls(fake, "POST", "/updates/apply").length).toBe(1);
+  });
+
+  it("keeps the channel up front and tucks the window, feed and wait behind more options", async () => {
+    renderApp("/maintenance/updates");
+    expect(await screen.findByLabelText("Channel", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Install updates automatically")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Update feed")).toBeNull();
+    expect(screen.queryByLabelText("Wait for playback to finish")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More options: Release channel" }));
+    expect(await screen.findByLabelText("Maintenance window starts", {}, WAIT)).toHaveValue(
+      "03:00",
+    );
+    expect(screen.getByLabelText("Maintenance window ends")).toHaveValue("06:00");
+    expect(screen.getByLabelText("Update feed")).toHaveValue("");
+    expect(screen.getByLabelText("Wait for playback to finish")).toHaveValue("");
+  });
+});
+
+describe("Getting started", () => {
+  afterEach(() => localStorage.removeItem("ether.getting-started.dismissed"));
+
+  it("lists the remaining fresh-install steps and hides when dismissed", async () => {
+    localStorage.removeItem("ether.getting-started.dismissed");
+    renderApp("/", {}, (fake) => {
+      fake.state.config.debrid = { ...fake.state.config.debrid!, providers: [] };
+      fake.state.config.usenet.providers = [];
+      fake.state.config.quality.default = "1080p";
+      fake.state.config.frontends = {
+        jellyfin: { enabled: true },
+      } as typeof fake.state.config.frontends;
+      const original = fake.fetch;
+      fake.fetch = async (input, init) => {
+        const response = await original(input, init);
+        const url = String(input);
+        if (url.endsWith("/dashboard")) {
+          const body = await response.json();
+          body.sections.sessions = [];
+          return new Response(JSON.stringify(body), { status: 200 });
+        }
+        if (url.endsWith("/viewers")) {
+          const body = await response.json();
+          const viewers = (body.viewers ?? body).filter(
+            (viewer: { isOwner?: boolean }) => viewer.isOwner,
+          );
+          return new Response(JSON.stringify({ viewers }), { status: 200 });
+        }
+        return response;
+      };
+    });
+    const steps = await screen.findByRole("region", { name: "Next steps" }, WAIT);
+    expect(within(steps).getByRole("link", { name: "Add a source" })).toHaveAttribute(
+      "href",
+      "/sources",
+    );
+    expect(screen.getByRole("link", { name: "Connect a device" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add viewers" })).toHaveAttribute("href", "/viewers");
+    expect(
+      screen.getByRole("link", { name: "Playback quality: 1080p at home · change" }),
+    ).toHaveAttribute("href", "/releases/profiles");
+    expect(within(steps).queryByRole("link", { name: "Connect Plex" })).toBeNull(); // Plex is off
+    fireEvent.click(within(steps).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("region", { name: "Next steps" })).not.toBeInTheDocument();
+  });
+
+  it("hides once source, device, viewers, and quality are done", async () => {
+    localStorage.removeItem("ether.getting-started.dismissed");
+    renderApp("/", {}, (fake) => {
+      fake.state.config.quality.default = "4K";
+    });
+    expect(await screen.findByTestId("getting-started-clear", {}, WAIT)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Next steps" })).not.toBeInTheDocument();
   });
 });

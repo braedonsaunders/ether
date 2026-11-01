@@ -139,19 +139,269 @@ func TestRemuxDownloadRejectsNonCopyableCodecs(t *testing.T) {
 	fr := newFakeRunner()
 	fr.runFunc = downloadRunner("x")
 	d := newDownloadRemuxer(t, fr, config.Downloads{})
+	info := downloadInfo()
+	info.Streams = info.Streams[1:]
+	_, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: info, AudioStream: -1,
+	}, nil)
+	if !errors.Is(err, core.ErrDownloadNeedsTranscode) {
+		t.Fatalf("no video: err = %v, want ErrDownloadNeedsTranscode", err)
+	}
+}
+
+func TestRemuxDownloadConvertsIncompatibleCodecs(t *testing.T) {
+	fr := newFakeRunner()
+	fr.runFunc = downloadRunner("converted-mp4")
+	d := newDownloadRemuxer(t, fr, config.Downloads{})
 	for name, mutate := range map[string]func(*core.MediaInfo){
 		"av1 video":    func(i *core.MediaInfo) { i.Streams[0].Codec = "av1" },
+		"vp9 video":    func(i *core.MediaInfo) { i.Streams[0].Codec = "vp9" },
 		"truehd audio": func(i *core.MediaInfo) { i.Streams[1].Codec = "truehd" },
-		"no video":     func(i *core.MediaInfo) { i.Streams = i.Streams[1:] },
+		"dts audio":    func(i *core.MediaInfo) { i.Streams[1].Codec = "dts" },
 	} {
 		info := downloadInfo()
 		mutate(&info)
-		_, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
-			InputURL: "http://x", Info: info, AudioStream: -1,
+		path, size, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+			InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 7,
 		}, nil)
-		if !errors.Is(err, core.ErrDownloadNeedsTranscode) {
-			t.Fatalf("%s: err = %v, want ErrDownloadNeedsTranscode", name, err)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
 		}
+		if size != int64(len("converted-mp4")) {
+			t.Fatalf("%s: size = %d", name, size)
+		}
+		d.ReleaseDownload(path)
+	}
+	fr.mu.Lock()
+	var convert []string
+	for _, c := range fr.runCalls {
+		if hasArg(c, "-movflags") && !strings.Contains(strings.Join(c, " "), "-c copy") {
+			convert = c
+			break
+		}
+	}
+	fr.mu.Unlock()
+	if len(convert) == 0 {
+		t.Fatal("convert did not encode")
+	}
+	joined := strings.Join(convert, " ")
+	if !strings.Contains(joined, "-f mp4") || !strings.Contains(joined, "-movflags +faststart") {
+		t.Fatalf("convert args %q missing mp4 faststart", joined)
+	}
+}
+
+func TestDownloadCopyableHonorsCaps(t *testing.T) {
+	info := downloadInfo()
+	info.Streams[0].Codec = "hevc"
+	if _, _, ok := DownloadCopyable(info, -1, core.ClientCaps{}); !ok {
+		t.Fatal("empty caps should copy HEVC")
+	}
+	if _, _, ok := DownloadCopyable(info, -1, core.ClientCaps{VideoCodecs: []string{"h264"}}); ok {
+		t.Fatal("HEVC copied for a profile without HEVC")
+	}
+	fr := newFakeRunner()
+	fr.runFunc = downloadRunner("converted-hevc")
+	d := newDownloadRemuxer(t, fr, config.Downloads{})
+	path, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 8,
+		Caps: core.ClientCaps{VideoCodecs: []string{"h264"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.ReleaseDownload(path)
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	for _, c := range fr.runCalls {
+		if hasArg(c, "-movflags") && strings.Contains(strings.Join(c, " "), "-c copy") {
+			t.Fatalf("unsupported HEVC was copied: %v", c)
+		}
+	}
+}
+
+func TestConvertDownloadRespectsMaxTranscodes(t *testing.T) {
+	fr := newFakeRunner()
+	fr.runFunc = downloadRunner("converted-mp4")
+	m := newTestManager(t, fr, config.Transcode{MaxTranscodes: 1})
+	d, err := m.NewDownloadRemuxer(config.Downloads{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := m.acquireTranscodeSlot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := downloadInfo()
+	info.Streams[0].Codec = "av1"
+	_, _, err = d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 9,
+	}, nil)
+	if !errors.Is(err, ErrTooManyTranscodes) {
+		t.Fatalf("convert at cap: %v", err)
+	}
+	release()
+	path, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 9,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.ReleaseDownload(path)
+}
+
+func TestConvertDownloadSlotAfterRemuxerSem(t *testing.T) {
+	fr := newFakeRunner()
+	started := make(chan struct{}, 1)
+	hold := make(chan struct{})
+	fr.runFunc = func(ctx context.Context, cmd Command) error {
+		if !hasArg(cmd.Args, "-movflags") {
+			return errUnhandled
+		}
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return os.WriteFile(cmd.Args[len(cmd.Args)-1], []byte("x"), 0o644)
+	}
+	m := newTestManager(t, fr, config.Transcode{MaxTranscodes: 2})
+	d, err := m.NewDownloadRemuxer(config.Downloads{MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := downloadInfo()
+	info.Streams[0].Codec = "av1"
+	req := func(viewer int64) core.DownloadRemuxRequest {
+		return core.DownloadRemuxRequest{InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: viewer}
+	}
+	done1 := make(chan error, 1)
+	go func() {
+		path, _, err := d.RemuxDownload(context.Background(), req(1), nil)
+		if err == nil {
+			d.ReleaseDownload(path)
+		}
+		done1 <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first convert did not start")
+	}
+	done2 := make(chan error, 1)
+	go func() {
+		path, _, err := d.RemuxDownload(context.Background(), req(2), nil)
+		if err == nil {
+			d.ReleaseDownload(path)
+		}
+		done2 <- err
+	}()
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		n := m.downloadEncodes
+		m.mu.Unlock()
+		if n != 1 {
+			t.Fatalf("sem waiter held a transcode slot: downloadEncodes=%d", n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := m.StartHLS(context.Background(), transcodeRequest(t, "hls-while-waiting")); err != nil {
+		t.Fatalf("HLS blocked by remuxer waiter: %v", err)
+	}
+	close(hold)
+	if err := <-done1; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done2; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemuxDownloadBurnsImageSubtitles(t *testing.T) {
+	fr := newFakeRunner()
+	fr.runFunc = downloadRunner("burned-mp4")
+	d := newDownloadRemuxer(t, fr, config.Downloads{})
+	path, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: downloadInfo(), AudioStream: -1, ViewerID: 4,
+		Options: core.DecideOptions{BurnSubtitles: true, AudioStream: -1},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.ReleaseDownload(path)
+	fr.mu.Lock()
+	var convert []string
+	for _, c := range fr.runCalls {
+		joined := strings.Join(c, " ")
+		if hasArg(c, "-movflags") && !strings.Contains(joined, "-c copy") {
+			convert = c
+			break
+		}
+	}
+	fr.mu.Unlock()
+	if len(convert) == 0 {
+		t.Fatal("burn request remuxed instead of converting")
+	}
+	joined := strings.Join(convert, " ")
+	if !strings.Contains(joined, "overlay=") && !strings.Contains(joined, "subtitles=") {
+		t.Fatalf("convert args %q missing image-subtitle burn", joined)
+	}
+}
+
+func TestRemuxDownloadConvertOneEncodePerViewer(t *testing.T) {
+	fr := newFakeRunner()
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	fr.runFunc = func(ctx context.Context, cmd Command) error {
+		if !hasArg(cmd.Args, "-movflags") {
+			return errUnhandled
+		}
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return os.WriteFile(cmd.Args[len(cmd.Args)-1], []byte("x"), 0o644)
+	}
+	d := newDownloadRemuxer(t, fr, config.Downloads{MaxConcurrent: 2})
+	info := downloadInfo()
+	info.Streams[0].Codec = "av1"
+	req := core.DownloadRemuxRequest{InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 3}
+	errc := make(chan error, 2)
+	go func() {
+		path, _, err := d.RemuxDownload(context.Background(), req, nil)
+		if err == nil {
+			d.ReleaseDownload(path)
+		}
+		errc <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first convert did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+	go func() {
+		_, _, err := d.RemuxDownload(ctx, req, nil)
+		errc <- err
+	}()
+	select {
+	case <-started:
+		t.Fatal("second convert started while the first still held the viewer encode")
+	case err := <-errc:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("second convert err = %v, want deadline", err)
+		}
+	}
+	close(release)
+	if err := <-errc; err != nil {
+		t.Fatalf("first convert: %v", err)
 	}
 }
 
@@ -405,6 +655,7 @@ func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
 		"s-old-1234/c-1/00000.ts",
 		"s-old-1234/rung-720p/00000.ts",
 		"s-old-1234/seg-0-00001.m4s",
+		"http-old-1234/pipe.mkv",
 		"downloads/dl-ab12cd34.mp4",
 		"downloads/dl-ab12cd34.mp4.part",
 	}
@@ -440,7 +691,10 @@ func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "s-old-1234")); !os.IsNotExist(err) {
 		t.Errorf("stale session dir kept: %v", err)
 	}
-	for _, rel := range ether[5:] {
+	if _, err := os.Stat(filepath.Join(dir, "http-old-1234")); !os.IsNotExist(err) {
+		t.Errorf("stale http session dir kept: %v", err)
+	}
+	for _, rel := range ether[6:] {
 		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
 			t.Errorf("ether orphan %s kept: %v", rel, err)
 		}

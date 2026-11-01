@@ -318,7 +318,8 @@ describe("Collection Studio gallery", () => {
     expect(
       await screen.findByRole("heading", { name: "Edge of your seat" }, WAIT),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /Templates/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Collection views" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Templates/ }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Preview template Hidden gems" }, WAIT),
     );

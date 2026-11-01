@@ -2,8 +2,10 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -32,7 +34,7 @@ func TestPlayableCandidateDoesNotWaitForSlowIndexer(t *testing.T) {
 	r := rel("fast", "The.Signal.1999.1080p.BluRay.x264-GROUP", 6000)
 	idx := &slowTailIndexer{fakeIndexer: fakeIndexer{releases: []core.Release{r}}}
 	s := New(idx, fakeHealth{}, nil, testCfg(), Options{})
-	defer s.Close()
+	t.Cleanup(func() { s.Close() })
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	start := time.Now()
@@ -40,11 +42,17 @@ func TestPlayableCandidateDoesNotWaitForSlowIndexer(t *testing.T) {
 	if err != nil || result.Release.ID != "fast" {
 		t.Fatalf("live selection: %v %v", result, err)
 	}
-	if !idx.joined.Load() {
-		t.Fatal("search worker escaped resolution")
-	}
 	if len(s.searchCache) != 0 {
 		t.Fatal("partial fleet answer cached as complete")
+	}
+	if idx.joined.Load() {
+		t.Fatal("early start cancelled the remaining indexer search")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !idx.joined.Load() {
+		t.Fatal("search worker escaped service close")
 	}
 	if got := s.Traces()[0]; len(got.Discovery) != 1 || got.Discovery[0].Path != "live-early" || got.Discovery[0].Count != 1 || got.Limits == nil || got.Limits.ClientMaxHeight != 1080 {
 		t.Fatalf("discovery trace: %+v", got)
@@ -194,4 +202,92 @@ func TestMeasuredSearchPipeline(t *testing.T) {
 		}
 	}
 	t.Logf("controlled 150ms discovery + 150ms validation: serial=%s pipelined=%s", times[0], times[1])
+}
+
+func TestReleasePolicyStartsOnPrimaryWithoutWaitingForSlowIndexer(t *testing.T) {
+	r := rel("primary", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-PRIMARY", 8000)
+	r.Info = core.ReleaseInfo{Title: "The Signal", Year: 1999, Height: 1080, Source: core.SourceWEBDL, VideoCodec: "h264", Group: "PRIMARY", Languages: []string{"english"}}
+	idx := &slowTailIndexer{fakeIndexer: fakeIndexer{releases: []core.Release{r}}}
+	s := serviceWithRules(t, idx, fakeHealth{}, groupPolicy())
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	got, err := s.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	if err != nil || got.Release.ID != "primary" {
+		t.Fatalf("release-policy search waited for a hung indexer: %+v %v", got, err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("primary start took %s, want under the critical-path deadline", elapsed)
+	}
+	if idx.joined.Load() {
+		t.Fatal("early start cancelled the remaining indexer search")
+	}
+}
+
+func TestBackgroundSearchCachesCompleteFleet(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		first := rel("fast", "The.Signal.1999.1080p.BluRay.x264-GROUP", 6000)
+		late := rel("late", "The.Signal.1999.2160p.UHD.BluRay.HEVC-GROUP", 20000)
+		idx := &stagedIndexer{first: []core.Release{first}, rest: []core.Release{late}, gap: 2 * time.Second}
+		s := New(idx, fakeHealth{}, nil, testCfg(), Options{})
+		t.Cleanup(func() { s.Close() })
+		got, err := s.Resolve(context.Background(), core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+		if err != nil || got.Release.ID != "fast" {
+			t.Fatalf("early start: %+v %v", got, err)
+		}
+		if _, ok := s.peekSearchCache(searchCacheKey(searchRequestFor(matrixTitle()))); ok {
+			t.Fatal("partial fleet answer cached as complete")
+		}
+		time.Sleep(2 * time.Second)
+		cached, ok := s.peekSearchCache(searchCacheKey(searchRequestFor(matrixTitle())))
+		if !ok || len(cached) != 2 {
+			t.Fatalf("background search did not cache the complete fleet: ok=%v n=%d", ok, len(cached))
+		}
+	})
+}
+
+// One fast indexer answers with many releases at once while another never
+// finishes. The top-ranked candidates all fail their check; Play must keep
+// checking further down the arrived list instead of waiting out the slow
+// indexer (lab: 60 s to start a never-played episode).
+func TestFailedEarlyChecksKeepCheckingArrivedCandidates(t *testing.T) {
+	var releases []core.Release
+	unhealthy := map[string]bool{}
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("bad%02d", i)
+		releases = append(releases, rel(id, fmt.Sprintf("The.Signal.1999.1080p.BluRay.x264-G%02d", i), 6000+int64(i)))
+		unhealthy["nzb:"+id] = true
+	}
+	releases = append(releases, rel("good", "The.Signal.1999.720p.WEB-DL.x264-GOOD", 2000))
+	idx := &slowTailIndexer{fakeIndexer: fakeIndexer{releases: releases}}
+	cfg := testCfg()
+	cfg.Resolver.MaxCandidates = 40
+	s := New(idx, fakeHealth{unhealthy: unhealthy}, nil, cfg, Options{})
+	t.Cleanup(func() { s.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result, err := s.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	if err != nil || result.Release.ID != "good" {
+		t.Fatalf("want the first healthy arrived candidate without waiting for the slow indexer: %v %v", result, err)
+	}
+}
+
+// Two torrents can share a name and size but be different swarms; only one
+// may be cached. Lab: Running Man E09 had three such copies and Play waited
+// out a 30 s indexer because the cached one was never checked early.
+func TestSameNameTorrentsWithDifferentHashesAreCheckedSeparately(t *testing.T) {
+	name := "The.Signal.1999.1080p.BluRay.x264-GROUP"
+	bad := rel("bad", name, 6000)
+	bad.Protocol, bad.InfoHash = "torrent", "aaaa"
+	good := rel("good", name, 6000)
+	good.Protocol, good.InfoHash = "torrent", "bbbb"
+	idx := &slowTailIndexer{fakeIndexer: fakeIndexer{releases: []core.Release{bad, good}}}
+	s := New(idx, fakeHealth{unhealthy: map[string]bool{"nzb:bad": true}}, nil, testCfg(), Options{})
+	t.Cleanup(func() { s.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result, err := s.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	if err != nil || result.Release.ID != "good" {
+		t.Fatalf("want the cached copy without waiting for the slow indexer: %v %v", result, err)
+	}
 }

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -31,8 +32,18 @@ type Marker struct {
 	Final   bool   `json:"final"`
 	Source  string `json:"source"`
 }
+
+// Lookup is the live skip-marker configuration.
+// IntroOff and CreditsOff hide those buttons. The zero value offers both.
+type Lookup struct {
+	Enabled    bool
+	APIKey     string
+	IntroOff   bool
+	CreditsOff bool
+}
+
 type Options struct {
-	Config func() (bool, string) // current TheIntroDB enabled state and optional end-user key
+	Config func() Lookup // current IntroDB lookup and which skip buttons are offered
 
 	Logger     *slog.Logger
 	DB         *sql.DB
@@ -66,7 +77,7 @@ func New(o Options) *Service {
 		o.BaseURL = "https://api.theintrodb.org/v4"
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 2 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapMetadata, 2*time.Second)
 	}
 	if o.TTL <= 0 {
 		o.TTL = 7 * 24 * time.Hour
@@ -76,6 +87,57 @@ func New(o Options) *Service {
 	}
 	return &Service{o: o}
 }
+
+func (s *Service) lookup() (enabled bool, apiKey string, intro, credits bool) {
+	intro, credits = true, true
+	enabled, apiKey = s.o.Enabled, s.o.APIKey
+	if s.o.Config == nil {
+		return
+	}
+	cfg := s.o.Config()
+	return cfg.Enabled, cfg.APIKey, !cfg.IntroOff, !cfg.CreditsOff
+}
+
+func offer(in []Marker, intro, credits bool) []Marker {
+	if (intro && credits) || len(in) == 0 {
+		return in
+	}
+	out := make([]Marker, 0, len(in))
+	for _, m := range in {
+		switch m.Type {
+		case "intro", "recap":
+			if intro {
+				out = append(out, m)
+			}
+		case "credits":
+			if credits {
+				out = append(out, m)
+			}
+		default:
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// dropMovieBumpers removes an intro that only covers the studio cards at
+// the head of a movie. TheIntroDB's row for The Matrix is one submission
+// from the start of the file to 40s; the film has no title sequence, and
+// Plex was offering Skip Intro at 0:23.
+func dropMovieBumpers(key core.RatingKey, in []Marker) []Marker {
+	if key.Kind() != core.KindMovie {
+		return in
+	}
+	out := make([]Marker, 0, len(in))
+	for _, m := range in {
+		if m.Type == "intro" && m.StartMS <= 1000 && m.EndMS-m.StartMS <= 90_000 {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 func valid(m Marker, d time.Duration) bool {
 	return (m.Type == "intro" || m.Type == "credits" || m.Type == "recap") && m.StartMS >= 0 && m.EndMS > m.StartMS && m.EndMS <= d.Milliseconds()
 }
@@ -160,7 +222,23 @@ func (s *Service) Put(ctx context.Context, key core.RatingKey, d time.Duration, 
 // credits ranges.
 func (s *Service) Markers(ctx context.Context, key core.RatingKey, info core.MediaInfo) ([]Marker, error) {
 	out, err := s.rawMarkers(ctx, key, info)
-	return s.applyStingers(ctx, key, info, out), err
+	_, _, intro, credits := s.lookup()
+	return offer(s.applyStingers(ctx, key, info, dropMovieBumpers(key, out)), intro, credits), err
+}
+
+// CachedMarkers uses chapters and locally cached ranges only. It never fetches
+// or aligns remote markers, making it safe for non-resolving detail pages.
+func (s *Service) CachedMarkers(ctx context.Context, key core.RatingKey, info core.MediaInfo) ([]Marker, error) {
+	if info.Estimated || info.Duration <= 0 {
+		return nil, nil
+	}
+	out := FromChapters(info)
+	cached, ok, err := s.cached(ctx, key, info.Duration)
+	if err == nil && ok {
+		out = merge(out, cached)
+	}
+	_, _, intro, credits := s.lookup()
+	return offer(s.applyStingers(ctx, key, info, dropMovieBumpers(key, out)), intro, credits), err
 }
 
 // applyStingers detects mid-/post-credits scenes (chapters first, then
@@ -199,10 +277,7 @@ func (s *Service) rawMarkers(ctx context.Context, key core.RatingKey, info core.
 	if ok {
 		return merge(out, cached), nil
 	}
-	enabled, apiKey := s.o.Enabled, s.o.APIKey
-	if s.o.Config != nil {
-		enabled, apiKey = s.o.Config()
-	}
+	enabled, apiKey, _, _ := s.lookup()
 	if !enabled || info.Duration <= 0 || (key.Kind() != core.KindEpisode && key.Kind() != core.KindMovie) {
 		return out, nil
 	}

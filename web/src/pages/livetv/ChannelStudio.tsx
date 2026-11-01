@@ -4,6 +4,7 @@ import {
   Button,
   Input,
   SearchSelect,
+  Select,
   SubtabNav,
   Switch,
   cn,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Artwork } from "../../components/Artwork";
+import { MoreOptions } from "../../components/ConfigSection";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { DragHandle, SortableList } from "../../components/Sortable";
 import { Field, Segmented } from "../../components/fields";
@@ -40,17 +42,22 @@ import { MapGuideButton } from "./GuideData";
 import { LivePreview } from "./LivePreview";
 import { ProgrammePicker } from "./ProgrammePicker";
 import { Timeline } from "./Timeline";
+import { WeekGrid } from "./WeekGrid";
 import {
   MINUTE,
+  blockLabel,
   clock,
   duration,
   hueOf,
   localBlockTime,
   minutesOfDay,
   onNow,
+  playoutPatch,
+  playoutValue,
   programmingMode,
   progress,
   timeOfDay,
+  timeZones,
   tv,
   upNext,
   type Block,
@@ -63,7 +70,7 @@ import {
 } from "./model";
 import { useLocale } from "../../i18n/react";
 
-export type Mode = "movies" | "collection" | "genre";
+export type Mode = "movies" | "collection" | "genre" | "mix";
 export type StudioDraft = { channel: Channel; mode: Mode; genre: string };
 export type CollectionChoice = CollectionSpec & { ratingKey?: string };
 
@@ -87,27 +94,40 @@ export function compose(d: StudioDraft): Channel {
       !Object.keys(c.filter || {}).some((key) => key !== "genres" && key !== "type")
     )
       throw new Error(t("Enter at least one genre for this channel."));
-    if (d.mode === "movies" && !c.items.length)
+    if (d.mode === "movies" && !c.items.length && !c.offAir && !c.fallback?.length)
       throw new Error(t("Add at least one movie to this channel."));
-    let end = 0;
-    for (const block of [...(c.blocks ?? [])].sort((a, b) => a.start - b.start)) {
+    if (d.mode === "mix" && !c.sources?.length)
+      throw new Error(t("Add at least one programming source."));
+    const blocks = [...(c.blocks ?? [])].sort((a, b) => a.start - b.start);
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i]!;
       if (
         !Number.isFinite(block.start) ||
         !Number.isFinite(block.end) ||
-        block.start < end ||
         block.start < 0 ||
         block.end <= block.start ||
         block.end > 1440
       )
         throw new Error(t("Time blocks must have valid start and end times without overlapping."));
-      if (!block.items.length)
+      const days = block.days?.length ? block.days : [0, 1, 2, 3, 4, 5, 6];
+      for (let j = 0; j < i; j++) {
+        const other = blocks[j]!;
+        const otherDays = other.days?.length ? other.days : [0, 1, 2, 3, 4, 5, 6];
+        const shareDay = days.some((day) => otherDays.includes(day));
+        if (shareDay && block.start < other.end && block.end > other.start)
+          throw new Error(
+            t("Time blocks must have valid start and end times without overlapping."),
+          );
+      }
+      const sourced = block.filter || block.collection || block.sources?.length;
+      if (!block.items.length && !sourced && !c.offAir && !c.fallback?.length)
         throw new Error(t("Add at least one movie to each time block, or remove the empty block."));
-      end = block.end;
     }
     return {
       ...c,
-      items: d.mode === "movies" ? c.items : c.items,
+      items: c.items,
       blocks: c.blocks ?? [],
+      sources: d.mode === "mix" ? c.sources : undefined,
       collection: d.mode === "collection" ? c.collection : undefined,
       filter:
         d.mode === "genre"
@@ -163,6 +183,7 @@ export function ChannelStudio({
   const virtual = c.kind === "virtual";
   const [tab, setTab] = useState(virtual ? "programming" : "stream");
   const [watching, setWatching] = useState(false);
+  const [horizon, setHorizon] = useState<1 | 7>(1);
   useEffect(() => setWatching(false), [c.id]);
   useEffect(() => {
     setTab(virtual ? "programming" : "stream");
@@ -191,7 +212,9 @@ export function ChannelStudio({
       return;
     }
     const ctl = new AbortController();
-    tv.preview(JSON.parse(previewKey) as Channel, ctl.signal)
+    const from = new Date(Date.now() - 30 * MINUTE);
+    const until = new Date(from.getTime() + horizon * 24 * 60 * MINUTE);
+    tv.preview(JSON.parse(previewKey) as Channel, ctl.signal, { from, until })
       .then((p) => {
         setPreview(p);
         setPreviewError("");
@@ -200,13 +223,13 @@ export function ChannelStudio({
         if (!isAbort(e)) setPreviewError(errorMessage(e));
       });
     return () => ctl.abort();
-  }, [previewKey]);
+  }, [previewKey, horizon]);
 
   const schedule = virtual ? (preview ?? (isNew ? [] : guide)) : guide;
   const live = onNow(schedule, now);
   const next = upNext(schedule, now);
   const windowFrom = now - 30 * MINUTE;
-  const windowUntil = virtual ? now + 6 * 60 * MINUTE : now + 8 * 60 * MINUTE;
+  const windowUntil = virtual ? now + horizon * 24 * 60 * MINUTE : now + 8 * 60 * MINUTE;
   const hue = hueOf(c.id || c.name || "new");
   const source = sources.find((s) => s.id === c.sourceId);
 
@@ -225,7 +248,7 @@ export function ChannelStudio({
       ];
 
   return (
-    <div className="pb-10">
+    <div className="@container min-w-0 pb-10">
       {watching && c.id ? <LivePreview channel={c} onClose={() => setWatching(false)} /> : null}
       {/* hero */}
       <section
@@ -360,7 +383,32 @@ export function ChannelStudio({
             </label>
           </div>
         </div>
-        <div className="relative px-4 pb-4 sm:px-6">
+        <div className="relative space-y-2 px-4 pb-4 sm:px-6">
+          {virtual ? (
+            <div className="flex justify-end gap-1" role="group" aria-label={t("Preview window")}>
+              {(
+                [
+                  [1, t("Next 24 hours")],
+                  [7, t("Next 7 days")],
+                ] as const
+              ).map(([days, label]) => (
+                <button
+                  key={days}
+                  type="button"
+                  aria-pressed={horizon === days}
+                  onClick={() => setHorizon(days)}
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-xs font-medium",
+                    horizon === days
+                      ? "bg-primary text-primary-fg"
+                      : "bg-surface text-fg-muted ring-1 ring-border",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <Timeline
             programmes={schedule}
             from={windowFrom}
@@ -498,7 +546,9 @@ export function ChannelStudio({
             {!isNew ? (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/5 p-4">
                 <div>
-                  <p className="text-sm font-medium text-fg">{t("Delete channel")}</p>
+                  <p className="text-sm font-medium text-fg">
+                    {t("Delete {name}", { name: c.name || t("this channel") })}
+                  </p>
                   <p className="text-xs text-fg-muted">
                     {virtual
                       ? t("Removes it from every viewer's guide.")
@@ -508,7 +558,7 @@ export function ChannelStudio({
                   </p>
                 </div>
                 <Button variant="outline" className="text-danger" onClick={onDelete}>
-                  <Trash2 size={14} /> {t("Delete channel")}
+                  <Trash2 size={14} /> {t("Delete {name}", { name: c.name || t("this channel") })}
                 </Button>
               </div>
             ) : null}
@@ -785,9 +835,15 @@ function Programming({
     },
     {
       value: "genre",
-      label: t("Genres"),
-      hint: t("Everything in the catalogue that fits"),
+      label: t("Smart filter"),
+      hint: t("Genre, decade, rating, studio, keyword, runtime"),
       icon: <Tags size={18} />,
+    },
+    {
+      value: "mix",
+      label: t("Mix"),
+      hint: t("Blend several sources by weight"),
+      icon: <Sparkles size={18} />,
     },
   ];
   const known = collections.filter((x) => x.ratingKey);
@@ -797,7 +853,7 @@ function Programming({
       <div
         role="radiogroup"
         aria-label={t("Programming source")}
-        className="grid gap-2 sm:grid-cols-3"
+        className="grid gap-2 @md:grid-cols-2 @5xl:grid-cols-4"
       >
         {modes.map((m) => {
           const on = draft.mode === m.value;
@@ -897,7 +953,19 @@ function Programming({
             />
           </Field>
           <FilterChips filter={c.filter} />
+          <SmartFilter
+            filter={c.filter}
+            onChange={(filter) => set({ filter: { ...c.filter, ...filter } })}
+          />
         </div>
+      ) : null}
+
+      {draft.mode === "mix" ? (
+        <MixEditor
+          sources={c.sources ?? []}
+          collections={known}
+          onChange={(sources) => set({ sources })}
+        />
       ) : null}
 
       {draft.mode !== "movies" ? (
@@ -907,19 +975,332 @@ function Programming({
           )}
         </p>
       ) : null}
-      <label className="flex items-center gap-3 text-sm">
-        <Switch
-          checked={c.shuffle}
-          onChange={(e) => set({ shuffle: e.currentTarget.checked })}
-          aria-label={t("Shuffle")}
-        />
-        <span>
-          <span className="font-medium text-fg">{t("Shuffle")}</span>
-          <span className="ml-2 text-xs text-fg-muted">
-            {t("A stable shuffle; the guide never jumps.")}
+      <Field
+        label={t("Watched by the household")}
+        hint={t("Limit this channel to titles the household has or hasn't finished.")}
+      >
+        <Select
+          aria-label={t("Watched by the household")}
+          value={c.watched || ""}
+          onChange={(e) =>
+            set({ watched: (e.currentTarget.value || undefined) as Channel["watched"] })
+          }
+        >
+          <option value="">{t("Watched or not")}</option>
+          <option value="unwatched">{t("Unwatched")}</option>
+          <option value="watched">{t("Already watched")}</option>
+        </Select>
+      </Field>
+      <PlayoutFields
+        mode={c.mode}
+        shuffle={c.shuffle}
+        align={c.align}
+        fit={c.fit}
+        repeatDays={c.repeatDays}
+        onChange={set}
+      />
+      <section className="space-y-3 rounded-xl border border-border bg-surface p-4">
+        <div>
+          <h3 className="text-sm font-semibold text-fg">{t("When programming runs out")}</h3>
+          <p className="text-xs text-fg-muted">
+            {t("What viewers see if a block or the catalogue has nothing left to play.")}
+          </p>
+        </div>
+        <label className="flex items-center gap-3 text-sm">
+          <Switch
+            checked={!!c.offAir}
+            onChange={(e) => set({ offAir: e.currentTarget.checked })}
+            aria-label={t("Go off air")}
+          />
+          <span>
+            <span className="font-medium text-fg">{t("Go off air")}</span>
+            <span className="ml-2 text-xs text-fg-muted">
+              {t("The guide shows Off air until something is scheduled.")}
+            </span>
           </span>
-        </span>
-      </label>
+        </label>
+        <ProgrammePicker
+          label={t("Fallback programming")}
+          searchLabel={t("Search fallback titles")}
+          items={c.fallback ?? []}
+          onChange={(fallback) => set({ fallback })}
+        />
+      </section>
+    </div>
+  );
+}
+
+function PlayoutFields({
+  mode,
+  shuffle,
+  align,
+  fit,
+  repeatDays,
+  onChange,
+}: {
+  mode?: string;
+  shuffle: boolean;
+  align?: string;
+  fit?: string;
+  repeatDays?: number;
+  onChange: (patch: Partial<Channel>) => void;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Field
+        label={t("Playout")}
+        hint={t("Episodes of a show stay in order. The guide does not jump.")}
+      >
+        <Select
+          aria-label={t("Playout")}
+          value={playoutValue(mode, shuffle)}
+          onChange={(e) => onChange(playoutPatch(e.currentTarget.value))}
+        >
+          <option value="order">{t("In order")}</option>
+          <option value="shuffle">{t("Shuffle")}</option>
+          <option value="random">{t("Random")}</option>
+          <option value="marathon">{t("Marathon")}</option>
+          <option value="newest">{t("Newest first")}</option>
+        </Select>
+      </Field>
+      <Field
+        label={t("Start programmes")}
+        hint={t("Snap the next start to the clock, then cut or fill the gap.")}
+      >
+        <Select
+          aria-label={t("Start programmes")}
+          value={align || ""}
+          onChange={(e) =>
+            onChange({ align: (e.currentTarget.value || undefined) as Channel["align"] })
+          }
+        >
+          <option value="">{t("Back to back")}</option>
+          <option value="half">{t("On the half hour")}</option>
+          <option value="hour">{t("On the hour")}</option>
+        </Select>
+      </Field>
+      <Field
+        label={t("If a programme overruns")}
+        hint={t("Cut ends it at the next slot. Pad plays it out and fills to the next slot.")}
+      >
+        <Select
+          aria-label={t("If a programme overruns")}
+          value={fit || "cut"}
+          onChange={(e) => onChange({ fit: e.currentTarget.value === "pad" ? "pad" : undefined })}
+        >
+          <option value="cut">{t("Cut")}</option>
+          <option value="pad">{t("Pad")}</option>
+        </Select>
+      </Field>
+      <Field
+        label={t("Avoid repeats")}
+        htmlFor="repeat-days"
+        hint={t("Skip a title that aired inside this many days. 0 allows the loop to repeat.")}
+      >
+        <Input
+          id="repeat-days"
+          type="number"
+          min={0}
+          max={30}
+          value={repeatDays ?? 0}
+          onChange={(e) =>
+            onChange({
+              repeatDays:
+                Math.max(0, Math.min(30, Number(e.currentTarget.value) || 0)) || undefined,
+            })
+          }
+        />
+      </Field>
+    </div>
+  );
+}
+
+function SmartFilter({
+  filter,
+  onChange,
+}: {
+  filter?: Record<string, unknown>;
+  onChange: (patch: Record<string, unknown>) => void;
+}) {
+  const decade = typeof filter?.yearFrom === "number" ? String(filter.yearFrom) : "";
+  const keywords = Array.isArray(filter?.keywords) ? (filter.keywords as string[]).join(", ") : "";
+  const minutes = (value: unknown) => {
+    const n = Number(value);
+    if (!n) return "";
+    return String(n > 10_000 ? Math.round(n / 60_000_000_000) : n);
+  };
+  return (
+    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
+      <Field label={t("Decade")}>
+        <Select
+          aria-label={t("Decade")}
+          value={decade}
+          onChange={(e) => {
+            const year = Number(e.currentTarget.value);
+            onChange(
+              year
+                ? { yearFrom: year, yearTo: year + 9 }
+                : { yearFrom: undefined, yearTo: undefined },
+            );
+          }}
+        >
+          <option value="">{t("Any decade")}</option>
+          {[2020, 2010, 2000, 1990, 1980, 1970, 1960].map((year) => (
+            <option key={year} value={year}>
+              {t("{year}s", { year })}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label={t("Age level")} hint={t("Nothing more mature than this rating.")}>
+        <Select
+          aria-label={t("Age level")}
+          value={String(filter?.maxContentRating ?? "")}
+          onChange={(e) => onChange({ maxContentRating: e.currentTarget.value || undefined })}
+        >
+          <option value="">{t("Any age")}</option>
+          <option value="G">{t("All ages")}</option>
+          <option value="PG">{t("Parental guidance")}</option>
+          <option value="PG-13">{t("Teen")}</option>
+          <option value="R">{t("Mature")}</option>
+        </Select>
+      </Field>
+      <Field label={t("Studio or network")} htmlFor="smart-studio">
+        <Input
+          id="smart-studio"
+          value={String(filter?.studio ?? "")}
+          onChange={(e) => onChange({ studio: e.currentTarget.value || undefined })}
+          placeholder={t("Studio or network")}
+        />
+      </Field>
+      <Field
+        label={t("Keyword")}
+        htmlFor="smart-keyword"
+        hint={t("Separate with commas. A title must match every keyword.")}
+      >
+        <Input
+          id="smart-keyword"
+          value={keywords}
+          onChange={(e) =>
+            onChange({
+              keywords: e.currentTarget.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder={t("space, heist")}
+        />
+      </Field>
+      <Field label={t("Shortest")} htmlFor="smart-min" hint={t("Minutes")}>
+        <Input
+          id="smart-min"
+          type="number"
+          min={0}
+          value={minutes(filter?.minRuntime)}
+          onChange={(e) =>
+            onChange({
+              minRuntime: e.currentTarget.value
+                ? Number(e.currentTarget.value) * 60_000_000_000
+                : undefined,
+            })
+          }
+        />
+      </Field>
+      <Field label={t("Longest")} htmlFor="smart-max" hint={t("Minutes")}>
+        <Input
+          id="smart-max"
+          type="number"
+          min={0}
+          value={minutes(filter?.maxRuntime)}
+          onChange={(e) =>
+            onChange({
+              maxRuntime: e.currentTarget.value
+                ? Number(e.currentTarget.value) * 60_000_000_000
+                : undefined,
+            })
+          }
+        />
+      </Field>
+    </div>
+  );
+}
+
+function MixEditor({
+  sources,
+  collections,
+  onChange,
+}: {
+  sources: NonNullable<Channel["sources"]>;
+  collections: CollectionChoice[];
+  onChange: (sources: NonNullable<Channel["sources"]>) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {sources.map((source, index) => (
+        <div
+          key={index}
+          className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-[6rem_1fr_auto]"
+        >
+          <Field label={t("Weight")}>
+            <Input
+              aria-label={t("Weight for source {number}", { number: index + 1 })}
+              type="number"
+              min={1}
+              max={20}
+              value={source.weight ?? 1}
+              onChange={(e) => {
+                const next = [...sources];
+                next[index] = {
+                  ...source,
+                  weight: Math.max(1, Number(e.currentTarget.value) || 1),
+                };
+                onChange(next);
+              }}
+            />
+          </Field>
+          <Field label={t("Collection")}>
+            <SearchSelect
+              ariaLabel={t("Collection for source {number}", { number: index + 1 })}
+              value={source.collection ? String(source.collection) : ""}
+              onChange={(v) => {
+                const next = [...sources];
+                next[index] = { ...source, collection: v ? Number(v) : undefined };
+                onChange(next);
+              }}
+              placeholder={t("Choose a collection")}
+              searchPlaceholder={t("Search…")}
+              noneLabel={t("None")}
+              noMatchesLabel={t("No matches")}
+              searchingLabel={t("Searching…")}
+              selectLabel={t("Select")}
+              closeLabel={t("Close")}
+              options={collections.map((x) => ({ value: String(x.ratingKey), label: x.name }))}
+            />
+          </Field>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-end"
+            aria-label={t("Remove source {number}", { number: index + 1 })}
+            onClick={() => onChange(sources.filter((_, n) => n !== index))}
+          >
+            <X size={14} />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          onChange([
+            ...sources,
+            { weight: 1, name: t("Source {number}", { number: sources.length + 1 }) },
+          ])
+        }
+      >
+        <Plus size={13} /> {t("Add source")}
+      </Button>
     </div>
   );
 }
@@ -951,170 +1332,140 @@ function Schedule({
   onChange: (p: Partial<Channel>) => void;
 }) {
   const blocks = c.blocks ?? [];
-  const setBlocks = (b: Block[]) => onChange({ blocks: b });
-  const add = (start?: number) => {
-    const s = start ?? blocks.at(-1)?.end ?? 0;
-    setBlocks([...blocks, { start: s, end: Math.min(1440, s + 60), items: [], shuffle: false }]);
+  const [selected, setSelected] = useState<number | null>(null);
+  const setBlocks = (b: Block[]) => {
+    onChange({ blocks: b });
+    setSelected((cur) => (cur != null && cur < b.length ? cur : null));
   };
-  const offset = -new Date().getTimezoneOffset();
+  const zone = c.timezone || "";
+  const zones = useMemo(() => {
+    const list = timeZones();
+    const current = zone || "UTC";
+    return list.includes(current) ? list : [current, ...list];
+  }, [zone]);
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-fg">{t("Daily time blocks")}</h3>
-          <p className="text-xs text-fg-muted">
-            {offset
-              ? t(
-                  "Pin programming to times of day (in UTC; your time is UTC{offset}). The base programming fills the rest of the day.",
-                  { offset: `${offset > 0 ? "+" : ""}${offset / 60}` },
-                )
-              : t(
-                  "Pin programming to times of day (in UTC). The base programming fills the rest of the day.",
-                )}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={blocks.some((b) => b.end === 1440)}
-          onClick={() => add()}
-        >
-          <Plus size={13} /> {t("Add time block")}
-        </Button>
-      </div>
-
-      {/* 24h day bar: click a free hour to add a block there */}
-      <div className="space-y-1">
-        <div className="relative h-12 overflow-hidden rounded-xl border border-border bg-[repeating-linear-gradient(135deg,transparent,transparent_6px,rgb(var(--ch-border)/0.5)_6px,rgb(var(--ch-border)/0.5)_7px)]">
-          {Array.from({ length: 24 }, (_, h) => (
-            <button
-              key={h}
-              type="button"
-              aria-label={t("Add a block at {time} UTC", { time: timeOfDay(h * 60) })}
-              onClick={() => {
-                const s = h * 60;
-                if (!blocks.some((b) => s < b.end && s + 60 > b.start)) add(s);
+      <WeekGrid blocks={blocks} onChange={setBlocks} selected={selected} onSelect={setSelected} />
+      <MoreOptions label={t("More options")}>
+        <div className="px-4 pb-4">
+          <Field label={t("Timezone")}>
+            <Select
+              aria-label={t("Timezone")}
+              value={zone || "UTC"}
+              onChange={(e) => {
+                const next = e.currentTarget.value;
+                onChange({ timezone: next === "UTC" ? "" : next });
               }}
-              className="absolute inset-y-0 border-r border-border/40 hover:bg-primary/10"
-              style={{ left: `${(h / 24) * 100}%`, width: `${100 / 24}%` }}
-            />
-          ))}
-          {blocks.map((b, i) => {
-            const hue = (i * 67 + 200) % 360;
+            >
+              {zones.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      </MoreOptions>
+      {selected == null || !blocks[selected]
+        ? null
+        : (() => {
+            const index = selected;
+            const block = blocks[index]!;
+            const update = (patch: Partial<Block>) =>
+              setBlocks(blocks.map((b, n) => (n === index ? { ...b, ...patch } : b)));
             return (
-              <div
-                key={i}
-                className="pointer-events-none absolute inset-y-1 overflow-hidden rounded-lg px-2 py-1 text-[11px] font-medium text-white shadow-sm"
-                style={{
-                  left: `${(b.start / 1440) * 100}%`,
-                  width: `${((b.end - b.start) / 1440) * 100}%`,
-                  background: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${(hue + 30) % 360} 65% 40%))`,
-                }}
-              >
-                <span className="block truncate">{t("Block {number}", { number: i + 1 })}</span>
-                <span className="block truncate opacity-80">
-                  {tn(b.items.length, "{count} title", "{count} titles")}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="relative h-4 text-[10.5px] tabular-nums text-fg-subtle" aria-hidden>
-          {[0, 3, 6, 9, 12, 15, 18, 21].map((h) => (
-            <span key={h} className="absolute" style={{ left: `${(h / 24) * 100}%` }}>
-              {timeOfDay(h * 60)}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {blocks.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-fg-muted">
-          {t("No time blocks: the base programming plays all day. Click an hour above to add one.")}
-        </p>
-      ) : null}
-      {blocks.map((block, index) => {
-        const update = (patch: Partial<Block>) =>
-          setBlocks(blocks.map((b, n) => (n === index ? { ...b, ...patch } : b)));
-        return (
-          <section key={index} className="space-y-3 rounded-xl border border-border bg-surface p-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <span
-                className="mb-2 size-3 rounded-full"
-                style={{ background: `hsl(${(index * 67 + 200) % 360} 65% 50%)` }}
-                aria-hidden
-              />
-              <Field
-                label={t("Start (UTC)")}
-                htmlFor={`blk-${index}-start`}
-                hint={t("{time} your time", { time: localBlockTime(block.start) })}
-              >
-                <Input
-                  id={`blk-${index}-start`}
-                  type="time"
-                  value={timeOfDay(block.start)}
-                  onChange={(e) => update({ start: minutesOfDay(e.currentTarget.value) })}
-                />
-              </Field>
-              <Field
-                label={t("End (UTC)")}
-                htmlFor={`blk-${index}-end`}
-                hint={
-                  block.end === 1440
-                    ? t("Midnight")
-                    : t("{time} your time", { time: localBlockTime(block.end) })
-                }
-              >
-                <div className="flex items-center gap-2">
-                  <Input
-                    id={`blk-${index}-end`}
-                    aria-label={t("Time block {number} end time", { number: index + 1 })}
-                    type="time"
-                    disabled={block.end === 1440}
-                    value={block.end === 1440 ? "00:00" : timeOfDay(block.end)}
-                    onChange={(e) => update({ end: minutesOfDay(e.currentTarget.value) })}
+              <section className="space-y-3 rounded-xl border border-border bg-surface p-4">
+                <h3 className="text-sm font-semibold text-fg">{blockLabel(block)}</h3>
+                <div className="flex flex-wrap items-end gap-3">
+                  <span
+                    className="mb-2 size-3 rounded-full"
+                    style={{ background: `hsl(${(index * 67 + 200) % 360} 65% 50%)` }}
+                    aria-hidden
                   />
-                  <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
-                    <input
-                      type="checkbox"
-                      checked={block.end === 1440}
-                      aria-label={t("Time block {number} runs to midnight", { number: index + 1 })}
-                      onChange={(e) =>
-                        update({
-                          end: e.currentTarget.checked ? 1440 : Math.min(1439, block.start + 60),
-                        })
-                      }
+                  <Field
+                    label={zone ? t("Start time") : t("Start (UTC)")}
+                    htmlFor={`blk-${index}-start`}
+                    hint={
+                      zone
+                        ? undefined
+                        : t("{time} your time", { time: localBlockTime(block.start) })
+                    }
+                  >
+                    <Input
+                      id={`blk-${index}-start`}
+                      type="time"
+                      value={timeOfDay(block.start)}
+                      onChange={(e) => update({ start: minutesOfDay(e.currentTarget.value) })}
                     />
-                    {t("To midnight")}
+                  </Field>
+                  <Field
+                    label={zone ? t("End") : t("End (UTC)")}
+                    htmlFor={`blk-${index}-end`}
+                    hint={
+                      zone
+                        ? undefined
+                        : block.end === 1440
+                          ? t("Midnight")
+                          : t("{time} your time", { time: localBlockTime(block.end) })
+                    }
+                  >
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`blk-${index}-end`}
+                        aria-label={t("Time block {number} end time", { number: index + 1 })}
+                        type="time"
+                        disabled={block.end === 1440}
+                        value={block.end === 1440 ? "00:00" : timeOfDay(block.end)}
+                        onChange={(e) => update({ end: minutesOfDay(e.currentTarget.value) })}
+                      />
+                      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
+                        <input
+                          type="checkbox"
+                          checked={block.end === 1440}
+                          aria-label={t("Time block {number} runs to midnight", {
+                            number: index + 1,
+                          })}
+                          onChange={(e) =>
+                            update({
+                              end: e.currentTarget.checked
+                                ? 1440
+                                : Math.min(1439, block.start + 60),
+                            })
+                          }
+                        />
+                        {t("To midnight")}
+                      </label>
+                    </div>
+                  </Field>
+                  <label className="mb-2 flex items-center gap-2 text-sm">
+                    <Switch
+                      checked={block.shuffle}
+                      onChange={(e) => update({ shuffle: e.currentTarget.checked })}
+                      aria-label={t("Shuffle block {number}", { number: index + 1 })}
+                    />
+                    {t("Shuffle")}
                   </label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mb-1 ml-auto text-fg-subtle hover:text-danger"
+                    aria-label={t("Remove block {number}", { number: index + 1 })}
+                    onClick={() => {
+                      setBlocks(blocks.filter((_, n) => n !== index));
+                      setSelected(null);
+                    }}
+                  >
+                    <X size={14} /> {t("Remove")}
+                  </Button>
                 </div>
-              </Field>
-              <label className="mb-2 flex items-center gap-2 text-sm">
-                <Switch
-                  checked={block.shuffle}
-                  onChange={(e) => update({ shuffle: e.currentTarget.checked })}
-                  aria-label={t("Shuffle block {number}", { number: index + 1 })}
+                <ProgrammePicker
+                  label={t("Time block {number} programming", { number: index + 1 })}
+                  items={block.items}
+                  onChange={(items) => update({ items })}
                 />
-                {t("Shuffle")}
-              </label>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mb-1 ml-auto text-fg-subtle hover:text-danger"
-                aria-label={t("Remove block {number}", { number: index + 1 })}
-                onClick={() => setBlocks(blocks.filter((_, n) => n !== index))}
-              >
-                <X size={14} /> {t("Remove")}
-              </Button>
-            </div>
-            <ProgrammePicker
-              label={t("Time block {number} programming", { number: index + 1 })}
-              items={block.items}
-              onChange={(items) => update({ items })}
-            />
-          </section>
-        );
-      })}
+              </section>
+            );
+          })()}
     </div>
   );
 }

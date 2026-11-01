@@ -7,7 +7,7 @@
 	type="static"
 	mediaPresentationDuration="PT2H3M4S"
 	maxSegmentDuration="PT5S"
-	minBufferTime="PT5S">
+	minBufferTime="PT2.5S">
 	<Period start="PT0S" id="0" duration="PT2H3M4S">
 		<AdaptationSet segmentAlignment="true">
 			<SegmentTemplate timescale="1000" duration="2500" initialization="s/a&amp;b/$RepresentationID$/init" media="s/a&amp;b/$RepresentationID$/$Number$.m4s" startNumber="0">

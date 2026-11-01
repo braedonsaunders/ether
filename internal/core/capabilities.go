@@ -78,6 +78,13 @@ type HomeCandidateSource interface {
 	HomeCandidatesFor(context.Context, *User, HubContext, int) ([]Hub, error)
 }
 
+// PolicyHomeCandidateSource filters a viewer's candidate pool before ranking
+// and row limits. The caller supplies a fail-closed visibility predicate.
+type PolicyHomeCandidateSource interface {
+	HomeCandidatesWithPolicy(context.Context, *User, HubContext, int, func(context.Context, *User, *Title) bool) ([]Hub, error)
+	SectionCandidatesWithPolicy(context.Context, *User, MediaType, HubContext, int, func(context.Context, *User, *Title) bool) ([]Hub, error)
+}
+
 // HubItemSource exposes the optional HubItemsFor capability for resolving a
 // specific hub by identifier even after a model or window transition.
 type HubItemSource interface {

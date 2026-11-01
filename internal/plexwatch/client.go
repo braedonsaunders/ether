@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/egress"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/retryafter"
 )
 
@@ -68,7 +70,7 @@ type Client struct {
 
 func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*Client, error) {
 	if clientID == "" {
-		clientID = "ether-plex-watch"
+		clientID = plexguid.ClientIdentifier("", "")
 	}
 	if now == nil {
 		now = time.Now
@@ -93,7 +95,7 @@ func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*C
 		c.plex, c.servers, c.scrobble = u, u, u
 	}
 	if hc == nil {
-		hc = &http.Client{Timeout: 20 * time.Second}
+		hc = egress.Client(egress.CapDirect, 20*time.Second)
 	}
 	clone := *hc
 	clone.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -203,15 +205,21 @@ type postItem struct {
 }
 
 func (c *Client) postState(ctx context.Context, token string, plexID int64, item postItem) error {
-	body, err := json.Marshal(struct {
-		Items []postItem `json:"items"`
-		User  int64      `json:"user"`
-	}{Items: []postItem{item}, User: plexID})
+	body, err := encodeState(plexID, item)
 	if err != nil {
 		return err
 	}
 	_, err = c.call(ctx, http.MethodPost, c.scrobble, "/state", token, body, nil, http.StatusCreated, http.StatusOK)
 	return err
+}
+
+// encodeState is shared by durable admission and the network writer so the
+// immutable payload is exactly the body handed to the HTTP client.
+func encodeState(plexID int64, item postItem) ([]byte, error) {
+	return json.Marshal(struct {
+		Items []postItem `json:"items"`
+		User  int64      `json:"user"`
+	}{Items: []postItem{item}, User: plexID})
 }
 
 type remotePage struct {
@@ -245,7 +253,7 @@ func (c *Client) fetchState(ctx context.Context, token string, plexID int64, cur
 	if _, err := c.call(ctx, http.MethodGet, c.scrobble, path, token, nil, &out, http.StatusOK); err != nil {
 		return remotePage{}, err
 	}
-	return remotePage{Items: out.Items, EndCursor: out.PageInfo.EndCursor, HasNextPage: out.PageInfo.HasNextPage}, nil
+	return remotePage{Items: out.Items, EndCursor: out.PageInfo.EndCursor, HasNextPage: out.PageInfo.EndCursor != "" && out.PageInfo.HasNextPage}, nil
 }
 
 func (c *Client) call(ctx context.Context, method string, base *url.URL, pathAndQuery, token string, body []byte, dest any, ok ...int) (int, error) {

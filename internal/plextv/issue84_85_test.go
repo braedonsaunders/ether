@@ -8,7 +8,12 @@ import (
 	"time"
 )
 
-func TestRequiredPublishesPlexDirectAndCustom(t *testing.T) {
+// TestRequiredPublishesPlainAddressesAndCustom covers issues #84 and #192.
+// Required mode must publish something (#84), and like PMS it publishes the
+// plain LAN IP rather than its plex.direct host: plex.tv matches the IP
+// against localAddresses, so clients list the server as Nearby (#192), and
+// httpsRequired makes plex.tv offer only the https plex.direct variants.
+func TestRequiredPublishesPlainAddressesAndCustom(t *testing.T) {
 	f := newFakePlexTV(t, testMachineID)
 	f.addUser("server-token-42", owner())
 	cfg := testConfig()
@@ -23,8 +28,9 @@ func TestRequiredPublishesPlexDirectAndCustom(t *testing.T) {
 	if err = r.PublishNow(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(r.Status().PublishedURIs, "https://192-168-1-5."+fakeHash+".plex.direct:32400") {
-		t.Fatalf("published %v", r.Status().PublishedURIs)
+	published := r.Status().PublishedURIs
+	if !slices.Contains(published, "http://192.168.1.5:32400") || slices.Contains(published, "https://192-168-1-5."+fakeHash+".plex.direct:32400") {
+		t.Fatalf("published %v", published)
 	}
 	if !slices.Contains(r.Status().PublishedURIs, "https://plex.example.com") {
 		t.Fatal("custom URL missing")
@@ -41,7 +47,7 @@ func TestRequiredPublishesPlexDirectAndCustom(t *testing.T) {
 	}
 	got := false
 	for _, c := range resources[0].Connections {
-		if c.URI == "https://192-168-1-5."+fakeHash+".plex.direct:32400" {
+		if c.Address == "192.168.1.5" {
 			got = true
 		}
 	}

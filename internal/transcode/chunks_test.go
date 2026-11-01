@@ -577,3 +577,103 @@ func TestChunkedRestartInsidePublishedGOPKeepsPlan(t *testing.T) {
 		})
 	}
 }
+
+// Issue #36: when a title's video track ends earlier than its container and
+// audio duration (e.g. Lupin S1E1: video ends at 46:19.88, segment 694, while
+// audio runs to 48:39.20, segment 729), ssegment muxes all trailing audio
+// into the final video chunk and reports only the video duration in EXTINF.
+// Extending the final chunk's end to its last Cluster/block timestamp lets
+// the slotter alias the trailing audio-only segments without triggering
+// empty restarts at 695/696 or returning 502.
+func TestChunkedMatroskaTailAudioOutlastsVideo(t *testing.T) {
+	fr := newFakeRunner()
+	fr.chunkGOP = 4 * time.Second
+	fr.chunkEnd = 44 * time.Second      // video ends at segment 10 (40..44s)
+	fr.chunkAudioEnd = 60 * time.Second // audio and container continue to segment 14 (56..60s)
+	// Use a 16s ahead limit (4 segments) to also exercise a multi-segment
+	// batch completing at EOF past the throttle window without discarding
+	// the tail segments.
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(8*time.Second, 16*time.Second, 3*time.Minute))
+	info := mustParse(t, "mp4_h264_aac.json")
+	info.Duration = 60 * time.Second
+	d := core.Decision{Kind: core.DecisionRemux, Container: ContainerMatroska, VideoCopy: true, AudioCopy: true, AudioStream: 1}
+	hs, err := m.StartHLS(t.Context(), core.HLSRequest{SessionID: "mkv-tail-audio", InputURL: "http://127.0.0.1:1/source", Info: info, Decision: d})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := hs.(*Session)
+	if s.total != 15 {
+		t.Fatalf("total = %d, want 15", s.total)
+	}
+	// Resume at segment 8 (32s), like a tail resume.
+	for n := 8; n < s.total; n++ {
+		r := get(t, s, n)
+		if r.Code != http.StatusOK {
+			t.Fatalf("segment %d: status %d (%s)", n, r.Code, r.Body.String())
+		}
+		if n <= 10 && len(r.Body.Bytes()) <= emptyClusterSize {
+			t.Errorf("segment %d is %d bytes, want video+audio cluster", n, len(r.Body.Bytes()))
+		}
+		if n > 10 && len(r.Body.Bytes()) > emptyClusterSize {
+			t.Errorf("sequential tail segment %d is %d bytes, want empty Cluster alias", n, len(r.Body.Bytes()))
+		}
+	}
+	if starts := fr.startCount(); starts != 2 {
+		t.Errorf("ffmpeg starts = %d, want 2 (initial + seek to 8, no empty restarts at 11/12)", starts)
+	}
+}
+
+// Issue #36: when a single poll collects a batch of chunks that crosses the
+// aheadLimit and throttleLocked pauses (rather than stops) the run, the
+// remaining segments already consumed from cr.next and cr.sl must still be
+// published so no hole (like 00655.mkv) is left when the run resumes.
+func TestChunkedPauseMidBatchPublishesConsumedSegments(t *testing.T) {
+	fr := newFakeRunner()
+	fr.segDelay = time.Millisecond
+	fr.chunkGOP = 4 * time.Second
+	fr.chunkEnd = 80 * time.Second
+	// Disable background polling so one collectChunks(r, false) sees a
+	// multi-segment batch that crosses the 4-segment aheadLimit.
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(4*time.Second, 16*time.Second, 3*time.Minute), withPollInterval(time.Hour))
+	info := mustParse(t, "mp4_h264_aac.json")
+	info.Duration = 80 * time.Second
+	d := core.Decision{Kind: core.DecisionRemux, Container: ContainerMatroska, VideoCopy: true, AudioCopy: true, AudioStream: 1}
+	hs, err := m.StartHLS(t.Context(), core.HLSRequest{SessionID: "mkv-pause-batch", InputURL: "http://127.0.0.1:1/source", Info: info, Decision: d})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := hs.(*Session)
+	s.mu.Lock()
+	r := s.cur
+	s.mu.Unlock()
+	// Wait until fakeProc has written at least 9 chunks (segments 0..7 closed).
+	waitFor(t, "8 chunks written Before first poll", func() bool {
+		_, err := os.Stat(filepath.Join(r.chunks.dir, "00008.mkv"))
+		return err == nil
+	})
+	s.collectChunks(r, false)
+	s.mu.Lock()
+	paused := r.paused
+	stopped := r.stopped
+	maxDone := r.maxDone
+	pausedDone := r.pausedDone
+	var missing []int
+	for n := 0; n <= maxDone; n++ {
+		if !s.done[0][n] {
+			missing = append(missing, n)
+		}
+	}
+	s.mu.Unlock()
+	if !paused || stopped {
+		t.Fatalf("paused=%v stopped=%v, want paused && !stopped", paused, stopped)
+	}
+	if maxDone < 7 {
+		t.Fatalf("maxDone = %d, want >= 7 (entire consumed batch published)", maxDone)
+	}
+	if pausedDone != maxDone {
+		t.Fatalf("pausedDone = %d, want maxDone (%d)", pausedDone, maxDone)
+	}
+	if len(missing) > 0 {
+		t.Fatalf("unpublished segments in 0..%d: %v", maxDone, missing)
+	}
+}

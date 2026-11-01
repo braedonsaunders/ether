@@ -54,7 +54,7 @@ func (a *app) platform() string {
 }
 
 // updatePageURL is the web UI page showing update status and "Update now".
-func (a *app) updatePageURL() string { return a.webUIURL() + "settings/updates" }
+func (a *app) updatePageURL() string { return a.webUIURL() + "maintenance/updates" }
 
 // checkUpdates reports a newer release, if any. It never applies anything.
 func (a *app) checkUpdates(ctx context.Context) (*updater.Update, error) {

@@ -11,6 +11,7 @@ import (
 // layout rules, insights and the bandit all work per kind. Hub ids are per
 // row ("home.because.<key>"), kinds are not.
 const (
+	KindFavorites     = "favorites"
 	KindContinue      = "continue-watching"
 	KindUpNext        = "up-next"
 	KindTop10         = "top-10"
@@ -203,6 +204,7 @@ var kinds = []kindInfo{
 		prior: 0.06, slug: "network", context: "network", cap: 1, sectionCap: 2, dynamic: true, surfaces: onShows, fits: fitsShows, group: groupShows, lean: leanFamiliar},
 	{kind: KindStandalone, title: "Standalone & Anthology Episodes", description: "Acclaimed standalone and anthology episodes that can be watched in one sitting with zero multi-season commitment.",
 		prior: 0.065, slug: "standalone", context: "standalone", surfaces: onShows, fits: fitsShows, group: groupShows},
+	{kind: KindFavorites, title: "Favorites", description: "Titles this viewer marked as favorites.", prior: 0.20, slug: "favorites", context: "favorites", surfaces: map[string]float64{}, group: groupPicks},
 }
 
 var kindByName = func() map[string]kindInfo {

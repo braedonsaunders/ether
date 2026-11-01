@@ -3,7 +3,6 @@ package playback
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -43,7 +42,26 @@ func (m *Manager) ResumedTracks(ctx context.Context, user *core.User, key core.R
 		return core.MediaInfo{}, "", false
 	}
 	facts := m.persistedProbe(ctx, user.ID, key, rp.Release.ID, rp.NZB)
-	if facts == nil || facts.releaseID != rp.Release.ID || facts.info.Estimated || facts.info.Video() == nil || len(facts.info.Streams) == 0 {
+	if facts == nil || facts.releaseID != rp.Release.ID || facts.info.Estimated || facts.info.Video() == nil || len(facts.info.Streams) > 0 == false {
+		// Check active/prepared sessions for this viewer + title + release as well.
+		m.mu.Lock()
+		for _, s := range m.sessions {
+			if s == nil || s.closed || s.ident.userID != user.ID || s.ident.key != key {
+				continue
+			}
+			if g := s.current(); g != nil && g.releaseID() == rp.Release.ID {
+				if sanitized, ok := persistedProbeFacts(g.infoSnapshot()); ok && rememberedInfoCodecCurrent(sanitized, caps) {
+					m.mu.Unlock()
+					sanitized.Keyframes = nil
+					sanitized.Chapters = nil
+					return sanitized, rp.Release.ID, true
+				}
+			}
+		}
+		m.mu.Unlock()
+		return core.MediaInfo{}, "", false
+	}
+	if !rememberedInfoCodecCurrent(facts.info, caps) {
 		return core.MediaInfo{}, "", false
 	}
 	info := facts.info
@@ -115,8 +133,8 @@ func (s *resumeStore) observedMedia(ctx context.Context, userID int64, key core.
 	if len(raw) > maxPersistedProbeBytes {
 		return nil, nil
 	}
-	var info core.MediaInfo
-	if json.Unmarshal([]byte(raw), &info) != nil {
+	info, ok := decodePersistedProbe(raw)
+	if !ok {
 		return nil, nil
 	}
 	facts, ok := persistedProbeFacts(info)

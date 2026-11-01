@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/discovery"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/langfeat"
 	"github.com/braedonsaunders/ether/internal/overlays"
 	"github.com/braedonsaunders/ether/internal/personalize"
-	"github.com/braedonsaunders/ether/internal/plex"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/ratings"
 	"github.com/braedonsaunders/ether/internal/watchlist"
 	"net/http"
@@ -16,9 +19,17 @@ import (
 )
 
 func (a *App) buildDiscovery() {
-	a.ratings = ratings.New(a.db, ratings.Options{Sealer: a.cfg})
-	a.watchlist = watchlist.New(a.db, watchlist.Options{Logger: a.log.With("component", "watchlist"), Catalog: a.catalog, Resolver: a.resolver, Engine: a.media, Trakt: a.trakt, Users: a.users.Users, Allowed: a.safety.Allowed, Notifier: a.notifications, Tokens: a.discoveryToken, PrewarmBytes: a.cfg.Get().Cache.PrefetchBytes, ResumeSchedule: a.clustered()}) // a new leader continues the schedule
+	a.ratings = ratings.New(a.db, ratings.Options{Sealer: a.cfg, Certification: a.catalog.ApplyProviderCertification, Unrated: a.catalog.UnratedTitles})
+	a.watchlist = watchlist.New(a.db, watchlist.Options{Logger: a.log.With("component", "watchlist"), Catalog: a.catalog, Resolver: a.resolver, Engine: a.media, Trakt: a.trakt, Users: a.users.Users, Allowed: a.safety.Allowed, Notifier: a.notifications, Tokens: a.discoveryToken, ClientIdentifier: plexguid.ClientIdentifier(a.cfg.Get().Plex.ClientIdentifier, a.cfg.Get().Server.MachineIdentifier), PrewarmBytes: a.cfg.Get().Cache.PrefetchBytes, ResumeSchedule: a.clustered(), OnAvailable: func(ctx context.Context, userID int64, key core.RatingKey) {
+		if a.sessionEvents == nil {
+			return
+		}
+		if err := a.sessionEvents.Publish(ctx, frontend.Event{Type: "LibraryChanged", ViewerID: userID, Item: key}); err != nil && a.log != nil {
+			a.log.Warn("watchlist available event", "err", err)
+		}
+	}}) // a new leader continues the schedule
 	a.discoveryPersonal = personalize.NewDiscovery(a.db, a.catalog, a.state, a.safety.Allowed)
+	a.discoveryPersonal.NotInterested = a.notInterestedSignals
 	a.overlays = overlays.New(a.db, overlays.Options{CacheDir: filepath.Join(a.opts.DataDir, "cache", "overlays"), Images: a.images, Allowed: a.safety.Allowed, Ratings: a.ratings, FactsFor: a.overlayFacts, Variants: a.artworkVariants, Taste: func(ctx context.Context, u *core.User) []string {
 		p, err := a.personalize.Taste(ctx, u)
 		if err != nil {
@@ -42,7 +53,17 @@ func (a *App) buildDiscovery() {
 		}
 		return tags
 	}})
-	a.plexDiscovery = &plex.DiscoveryFeatures{Watchlist: a.watchlist, Ratings: a.ratings, Overlays: a.overlays, Personal: a.discoveryPersonal, LLM: a.llm, Localize: a.tmdb.Localized}
+	a.discoveryFeatures = &discovery.Features{Watchlist: a.watchlist, Ratings: a.ratings, Overlays: a.overlays, Personal: a.discoveryPersonal, LLM: a.llm, Localize: a.tmdb.Localized}
+	a.lang = langfeat.New(langfeat.Options{
+		Dir:        filepath.Join(a.opts.DataDir, "cache", "langfeat"),
+		Gates:      a.languageGates,
+		Translate:  a.languageChat,
+		Transcribe: a.languageTranscribe,
+		Subtitles:  a.subtitles,
+		Audio:      a.languageAudio,
+		SourceText: a.languageSourceText,
+	})
+	a.discoveryFeatures.OverviewTranslate = a.lang.Overview
 }
 func (a *App) overlayFacts(ctx context.Context, u *core.User, t *core.Title, status, quality bool) overlays.Facts {
 	f := overlays.Facts{}
@@ -81,7 +102,14 @@ func (a *App) overlayFacts(ctx context.Context, u *core.User, t *core.Title, sta
 	return f
 }
 func (a *App) discoveryHandlers(m map[string]http.Handler) {
-	m["discovery"] = a.watchlist.Router()
+	base := a.watchlist.Router()
+	m["discovery"] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/translate" {
+			a.translateOverview(w, r)
+			return
+		}
+		base.ServeHTTP(w, r)
+	})
 	m["discovery/ratings"] = a.ratings.Router(a.catalog)
 	m["discovery/overlays"] = a.overlays.Router(a.catalog, func(r *http.Request, id int64) (*core.User, error) {
 		u, err := a.users.User(r.Context(), id)
@@ -98,7 +126,7 @@ func (a *App) discoveryToken(ctx context.Context, id int64) (string, error) {
 		return "", err
 	}
 	if u.IsOwner {
-		return a.cfg.Get().Plex.Token, nil
+		return a.cfg.Read().Plex.Token, nil
 	}
 	users, err := a.users.AllUsers(ctx)
 	if err != nil {
@@ -106,7 +134,7 @@ func (a *App) discoveryToken(ctx context.Context, id int64) (string, error) {
 	}
 	for _, record := range users {
 		if record.ID == id && record.Active && record.Home && record.Restricted {
-			return a.plextv.HomeUserToken(ctx, a.cfg.Get().Plex.Token, u.PlexID, "")
+			return a.plextv.HomeUserToken(ctx, a.cfg.Read().Plex.Token, u.PlexID, "")
 		}
 	}
 	return "", core.ErrUnauthorized

@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 )
 
 // UPnP IGD service types, best first.
@@ -87,7 +89,7 @@ func DiscoverIGD(ctx context.Context, o DiscoverOptions) (*IGD, error) {
 		o.Wait = 3 * time.Second
 	}
 	if o.Client == nil {
-		o.Client = &http.Client{Timeout: 5 * time.Second}
+		o.Client = egress.Client(egress.CapDirect, 5*time.Second)
 	}
 	locations, err := ssdpSearch(ctx, o.Target, o.Wait)
 	if err != nil {
@@ -186,7 +188,7 @@ type upnpService struct {
 // service.
 func LoadIGD(ctx context.Context, client *http.Client, location string) (*IGD, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = egress.Client(egress.CapDirect, 5*time.Second)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, location, nil)
 	if err != nil {
@@ -296,7 +298,7 @@ func (g *IGD) soap(ctx context.Context, action string, args []soapArg) (map[stri
 	req.Header.Set("SOAPAction", `"`+g.ServiceType+"#"+action+`"`)
 	client := g.Client
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = egress.Client(egress.CapDirect, 5*time.Second)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

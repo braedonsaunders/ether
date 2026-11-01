@@ -45,6 +45,17 @@ func (h *Handler) handleCatalogBrowse(w http.ResponseWriter, r *http.Request) {
 	if genre := p.Get("genre"); genre != "" {
 		q.Filter.Genres = []string{genre}
 	}
+	if waiting := p.Get("waiting"); waiting == "1" || waiting == "true" {
+		q.Filter.Type = core.TypeMovie
+		if h.deps.WaitingReleaseKeys != nil {
+			q.Filter.IncludeKeys = h.deps.WaitingReleaseKeys(r.Context())
+			if q.Filter.IncludeKeys == nil {
+				q.Filter.IncludeKeys = []core.RatingKey{}
+			}
+		} else {
+			q.Filter.IncludeKeys = []core.RatingKey{}
+		}
+	}
 	if decade := p.Get("decade"); decade != "" {
 		year, err := strconv.Atoi(decade)
 		if err != nil || year < 1800 || year > 2200 || year%10 != 0 {
@@ -94,20 +105,23 @@ type ImageProxy interface {
 
 // TitleCard is the shared title shape of the owner API.
 type TitleCard struct {
-	Key            string   `json:"key"`
-	Type           string   `json:"type"`
-	Title          string   `json:"title"`
-	Year           int      `json:"year,omitempty"`
-	Summary        string   `json:"summary,omitempty"`
-	Poster         string   `json:"poster,omitempty"`
-	Backdrop       string   `json:"backdrop,omitempty"`
-	Rating         float64  `json:"rating,omitempty"`
-	ContentRating  string   `json:"contentRating,omitempty"`
-	RuntimeMinutes int      `json:"runtimeMinutes,omitempty"`
-	Genres         []string `json:"genres,omitempty"`
-	ShowTitle      string   `json:"showTitle,omitempty"`
-	Season         int      `json:"season,omitempty"`
-	Episode        int      `json:"episode,omitempty"`
+	Key           string  `json:"key"`
+	Type          string  `json:"type"`
+	Title         string  `json:"title"`
+	Year          int     `json:"year,omitempty"`
+	Summary       string  `json:"summary,omitempty"`
+	Poster        string  `json:"poster,omitempty"`
+	Backdrop      string  `json:"backdrop,omitempty"`
+	Rating        float64 `json:"rating,omitempty"`
+	ContentRating string  `json:"contentRating,omitempty"`
+	// ContentRatingSource is where ContentRating came from ("tmdb:US:6",
+	// "omdb"); see core.Title.
+	ContentRatingSource string   `json:"contentRatingSource,omitempty"`
+	RuntimeMinutes      int      `json:"runtimeMinutes,omitempty"`
+	Genres              []string `json:"genres,omitempty"`
+	ShowTitle           string   `json:"showTitle,omitempty"`
+	Season              int      `json:"season,omitempty"`
+	Episode             int      `json:"episode,omitempty"`
 }
 
 // ImageURL is the browser-loadable proxy URL of a TMDB image path.
@@ -125,7 +139,7 @@ func ImageURL(path string, w int) string {
 func CardFor(t core.Title) TitleCard {
 	c := TitleCard{
 		Key: t.Key.String(), Type: string(t.Type), Title: t.Title, Year: t.Year, Summary: t.Summary,
-		Rating: roundRating(t.Rating), ContentRating: t.ContentRating, RuntimeMinutes: int(t.Runtime / time.Minute),
+		Rating: roundRating(t.Rating), ContentRating: t.ContentRating, ContentRatingSource: t.ContentRatingSource, RuntimeMinutes: int(t.Runtime / time.Minute),
 		Genres: t.Genres, ShowTitle: t.ShowTitle, Season: t.Season, Episode: t.Episode,
 	}
 	poster := t.PosterPath
@@ -368,17 +382,18 @@ func (h *Handler) handleVisibilityPreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var body struct {
-		Exclusions []core.LibraryExclusion `json:"exclusions"`
+		Exclusions        []core.LibraryExclusion `json:"exclusions"`
+		VisibilityDefault string                  `json:"visibilityDefault"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10)).Decode(&body); err != nil {
 		writeError(w, 400, "bad_json", "Invalid filter")
 		return
 	}
-	if _, err := libraryfilter.Compile(body.Exclusions); err != nil {
-		writeError(w, 400, "invalid_filter", err.Error())
+	if _, err := libraryfilter.CompilePolicy(body.Exclusions, body.VisibilityDefault); err != nil {
+		writeError(w, 400, "invalid_filter", "Could not preview catalogue")
 		return
 	}
-	p, err := h.deps.CatalogVisibility(r.Context(), body.Exclusions)
+	p, err := h.deps.CatalogVisibility(r.Context(), body.Exclusions, body.VisibilityDefault)
 	if err != nil {
 		writeError(w, 500, "preview_failed", "Could not preview catalogue")
 		return

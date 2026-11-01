@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 )
 
 // Pinned upstream release and GitHub asset digest, not a mutable 'latest' URL.
@@ -47,13 +49,15 @@ type rtxInstaller struct {
 }
 
 func newRTXInstaller(root string, runner Runner) rtxInstaller {
+	client := egress.Client(egress.CapDirect, 12*time.Minute)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 || req.URL.Scheme != "https" {
+			return errors.New("unsafe runtime download redirect")
+		}
+		return nil
+	}
 	return rtxInstaller{root: root, url: rtxPackageURL, digest: rtxPackageSHA256, size: rtxPackageSize,
-		client: &http.Client{Timeout: 12 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 || req.URL.Scheme != "https" {
-				return errors.New("unsafe runtime download redirect")
-			}
-			return nil
-		}}, extract: func(ctx context.Context, archive, dir string) error {
+		client: client, extract: func(ctx context.Context, archive, dir string) error {
 			ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
 			// Windows 10/11/Server includes bsdtar with 7z support. The archive must

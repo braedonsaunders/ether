@@ -57,6 +57,12 @@ function backend() {
               SpeedBps: 125000,
               Client: { deviceName: "Phone" },
             },
+            {
+              ID: "other",
+              TitleName: "Other film",
+              Username: "Alex",
+              Client: { deviceName: "TV", protocol: "jellyfin" },
+            },
           ],
         };
       else if (url.endsWith("/stats/infrastructure"))
@@ -91,6 +97,17 @@ function backend() {
           indexerMonth: [],
           costs: [],
           notes: [],
+        };
+      else if (url.includes("/discovery/settings"))
+        v = {
+          enabled: false,
+          plex: true,
+          trakt: true,
+          notify: false,
+          prewarm: false,
+          checkHours: 6,
+          naturalSearch: false,
+          recaps: false,
         };
       else if (url.endsWith("/notifications/"))
         v = { channels: [], events: ["playback.error", "newsletter.weekly"], deliveries: [] };
@@ -130,6 +147,12 @@ describe("Activity", () => {
     renderAt("/activity");
     expect(await screen.findByText("Example film", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("Sam · Phone")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "jellyfin" } });
+    expect(screen.queryByText("Example film")).toBeNull();
+    expect(screen.getByText("Other film")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "plex" } });
+    expect(screen.queryByText("Other film")).toBeNull();
+    expect(within(screen.getByText("Example film").closest("li")!).getByText("plex")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Stop stream" }));
     await waitFor(() =>
       expect(
@@ -294,6 +317,40 @@ describe("Source usage", () => {
 });
 
 describe("Hardware status", () => {
+  it("shows a tone-map failure on Activity and the transcoder card", async () => {
+    const notice = "This FFmpeg cannot tone-map HDR video to SDR";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const value = url.endsWith("/status/sessions")
+          ? []
+          : url.endsWith("/users")
+            ? undefined
+            : undefined;
+        if (url.endsWith("/status/hwaccel")) {
+          return new Response(
+            JSON.stringify({
+              value: { hwaccel: { name: "none", encoders: [] }, playbackError: notice },
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/status/sessions")) {
+          return new Response(JSON.stringify({ value: [] }), { status: 200 });
+        }
+        if (url.endsWith("/users"))
+          return new Response(JSON.stringify({ users: [] }), { status: 200 });
+        return new Response(JSON.stringify(value ?? { ok: true }), { status: 200 });
+      }),
+    );
+    const activity = renderAt("/activity");
+    expect(await screen.findByRole("alert", {}, WAIT)).toHaveTextContent("cannot tone-map");
+    activity.unmount();
+    renderAt("/hardware");
+    expect(await screen.findByRole("alert", {}, WAIT)).toHaveTextContent("cannot tone-map");
+  });
+
   it("reports software-only transcoding", async () => {
     backend();
     renderAt("/hardware");

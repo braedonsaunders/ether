@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/schedule"
 )
 
@@ -87,7 +88,7 @@ func NewClient(opts Options) (*Client, error) {
 		c.current = Version
 	}
 	if c.http == nil {
-		c.http = &http.Client{Timeout: 30 * time.Second}
+		c.http = egress.Client(egress.CapDirect, 30*time.Second)
 	}
 	if c.goos == "" {
 		c.goos = runtime.GOOS

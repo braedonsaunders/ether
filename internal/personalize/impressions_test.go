@@ -182,3 +182,43 @@ func TestRetentionPurgesOldImpressions(t *testing.T) {
 		t.Fatalf("after retention: %d item rows (want 1), %d row rows (want 2, kept 400 days)", items, rows)
 	}
 }
+
+func TestNeutralImpressionsPreserveKindAndRankWithoutChangingPlexKinds(t *testing.T) {
+	h := newHarness(t, nil)
+	user := &core.User{ID: 7}
+	ctx := context.Background()
+	for _, row := range []core.NeutralImpression{
+		{RowID: "neutral.one", Kind: KindTop10, Rank: 3, Items: []core.RatingKey{movieKey(0, 1)}, Situation: core.HomeSituation{Now: testNow, Device: core.DeviceTV}},
+		{RowID: "neutral.two", Kind: KindBecause, Rank: 5, Items: []core.RatingKey{movieKey(0, 2)}, Situation: core.HomeSituation{Now: testNow, Device: core.DeviceTV}},
+	} {
+		h.e.RecordNeutralImpression(user, row)
+	}
+	h.e.Flush(ctx)
+	for _, want := range []struct {
+		id, kind string
+		rank     int
+	}{{"neutral.one", KindTop10, 3}, {"neutral.two", KindBecause, 5}} {
+		var kind string
+		var rank int
+		if err := h.db.QueryRow(`SELECT kind,best_position FROM personalize_row_impressions WHERE hub_id=?`, want.id).Scan(&kind, &rank); err != nil || kind != want.kind || rank != want.rank {
+			t.Fatalf("%s: %s %d %v", want.id, kind, rank, err)
+		}
+		h.e.hubMu.RLock()
+		_, exists := h.e.hubKinds[want.id]
+		h.e.hubMu.RUnlock()
+		if exists {
+			t.Fatal("neutral event modified Plex kind registry")
+		}
+	}
+}
+
+func TestSemanticRowKindUsesRegisteredProducer(t *testing.T) {
+	h := newHarness(t, nil)
+	h.e.registerHub("neutral-id", KindBecause)
+	if got := h.e.SemanticRowKind("neutral-id"); got != KindBecause {
+		t.Fatalf("got %q", got)
+	}
+	if got := h.e.SemanticRowKind("home.continue"); got != KindContinue {
+		t.Fatalf("fallback %q", got)
+	}
+}

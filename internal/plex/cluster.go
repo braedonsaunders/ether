@@ -16,7 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/plex/model"
-	"github.com/braedonsaunders/ether/internal/store"
+	_ "github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // Clustering. A clustered node (Deps.Cluster set) shares with the others:
@@ -35,34 +35,6 @@ import (
 //     moves to another node keeps its queue.
 //
 // A standalone server (no Deps.Cluster) does none of this.
-func init() {
-	store.Register("plex", 2, `
-CREATE TABLE plex_sessions (
-	id          TEXT    PRIMARY KEY,
-	node_id     TEXT    NOT NULL,
-	user_id     INTEGER NOT NULL,
-	session_key INTEGER NOT NULL,
-	data        TEXT    NOT NULL,
-	updated_at  INTEGER NOT NULL
-);
-CREATE INDEX plex_sessions_node ON plex_sessions(node_id);
-CREATE TABLE plex_counters (
-	name  TEXT    PRIMARY KEY,
-	value INTEGER NOT NULL
-);
-INSERT INTO plex_counters(name, value) VALUES ('session_key', 0);
-INSERT INTO plex_counters(name, value) VALUES ('playqueue_item', 0);
-CREATE TABLE plex_playqueues (
-	id         INTEGER PRIMARY KEY,
-	user_id    INTEGER NOT NULL,
-	rev        INTEGER NOT NULL,
-	data       TEXT    NOT NULL,
-	updated_at INTEGER NOT NULL
-);
-CREATE INDEX plex_playqueues_user ON plex_playqueues(user_id);
-CREATE INDEX plex_playqueues_updated ON plex_playqueues(updated_at);
-`)
-}
 
 // Cluster topics.
 const (
@@ -115,7 +87,7 @@ func newClusterState(s *Server, db *sql.DB, node clusterbus.Node) *clusterState 
 
 func (c *clusterState) start() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=?`, c.self); err != nil {
+	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=? AND (protocol IS NULL OR protocol='plex')`, c.self); err != nil {
 		c.warn("clear own stale sessions", err)
 	}
 	cancel()
@@ -136,7 +108,7 @@ func (c *clusterState) close() {
 	<-c.done
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
-	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=?`, c.self); err != nil {
+	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=? AND (protocol IS NULL OR protocol='plex')`, c.self); err != nil {
 		c.warn("remove own sessions", err)
 	}
 }
@@ -323,21 +295,21 @@ func (c *clusterState) syncSessions(ctx context.Context) error {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO plex_sessions(id, node_id, user_id, session_key, data, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO plex_sessions(id, node_id, user_id, session_key, data, updated_at, protocol) VALUES (?, ?, ?, ?, ?, ?, 'plex')
 ON CONFLICT(id) DO UPDATE SET node_id=excluded.node_id, user_id=excluded.user_id, session_key=excluded.session_key,
-	data=excluded.data, updated_at=excluded.updated_at`, e.id, c.self, e.user.ID, e.sessionKey, string(b), now); err != nil {
+	data=excluded.data, updated_at=excluded.updated_at, protocol='plex'`, e.id, c.self, e.user.ID, e.sessionKey, string(b), now); err != nil {
 			return err
 		}
 		args = append(args, e.id)
 	}
-	q := `DELETE FROM plex_sessions WHERE node_id=?`
+	q := `DELETE FROM plex_sessions WHERE node_id=? AND (protocol IS NULL OR protocol='plex')`
 	if len(entries) > 0 {
 		q += ` AND id NOT IN (` + strings.TrimSuffix(strings.Repeat("?,", len(entries)), ",") + `)`
 	}
 	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM plex_sessions WHERE updated_at<?`, now-(10*time.Minute).Milliseconds()); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM plex_sessions WHERE (protocol IS NULL OR protocol='plex') AND updated_at<?`, now-(10*time.Minute).Milliseconds()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -348,7 +320,11 @@ func (c *clusterState) remoteEntries(ctx context.Context) []playEntry {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 	live := c.liveNodes(ctx)
-	rows, err := c.db.QueryContext(ctx, `SELECT node_id, data FROM plex_sessions WHERE node_id<>? AND updated_at>=?`,
+	// Broker rows share this table but carry a surface. A timeline stop has
+	// to find the tracker row, whose id is the user/client/session key.
+	// The broker row's id is the client session alone, so treating it as
+	// the play session drops the forwarded stop whenever it is visible first.
+	rows, err := c.db.QueryContext(ctx, `SELECT node_id, data FROM plex_sessions WHERE node_id<>? AND protocol='plex' AND surface IS NULL AND updated_at>=?`,
 		c.self, c.s.now().Add(-c.ttl).UnixMilli())
 	if err != nil {
 		c.warn("read other nodes' sessions", err)
@@ -431,7 +407,7 @@ func (s *Server) endLocalSession(tid string, offset time.Duration) {
 	if !ok {
 		return
 	}
-	if s.playbackOwners.stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
+	if s.playbackOwners.Stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
 		s.cleanSupersededEncoders(s.ctx, e.user.ID, e.client.ClientID, e.key, e.client.SessionID)
 		return
 	}
@@ -440,11 +416,8 @@ func (s *Server) endLocalSession(tid string, offset time.Duration) {
 	if s.cl != nil {
 		s.cl.poke()
 	}
-	if s.d.Playback != nil {
-		if ps, ok := s.d.Playback.SessionFor(e.user.ID, e.client.ClientID, e.key); ok {
-			s.d.Playback.Stop(ps.ID)
-		}
-	}
+	user := e.user
+	s.reportBrokerTimeline(s.ctx, &Request{User: &user, ClientID: e.client.ClientID, SessionID: e.client.SessionID}, e.key, offset, e.duration, "stopped", sanitizeSessionID(e.transcodeID))
 	for _, id := range s.transcodes.forClient(e.user.ID, e.client.ClientID, e.key) {
 		unlock, err := s.lockEncoder(s.ctx, id)
 		if err != nil {
@@ -454,7 +427,7 @@ func (s *Server) endLocalSession(tid string, offset time.Duration) {
 			if s.d.Transcoder != nil {
 				s.d.Transcoder.Stop(id)
 			}
-			s.transcodes.remove(id)
+			s.dropTranscode(id)
 		}
 		unlock()
 	}
@@ -497,7 +470,9 @@ func (c *clusterState) onTerminate(msg []byte) {
 				c.s.log.Info("ended stream at another node's request", "session", ev.ID)
 			}
 		case "playback":
-			if c.s.stopLocalPlayback(ev.ID, ev.Reason) {
+			if stop, ok := c.s.playbackBroker.(interface {
+				StopPlayback(context.Context, string) bool
+			}); ok && stop.StopPlayback(context.Background(), ev.ID) {
 				c.s.log.Info("ended stream at another node's request", "session", ev.ID)
 			}
 		case "stopped":

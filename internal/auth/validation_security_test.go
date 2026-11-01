@@ -125,3 +125,24 @@ func TestUnknownTokenValidationCapacity(t *testing.T) {
 		t.Errorf("unbounded in-flight validations: %d", n)
 	}
 }
+
+// A permissive validator simulates plex.tv accepting arbitrary credentials.
+// Ether grants must be rejected before they can reach it.
+type acceptingValidator struct{ calls int }
+
+func (v *acceptingValidator) Account(context.Context, string) (*plextv.Account, error) {
+	v.calls++
+	return &plextv.Account{ID: 100}, nil
+}
+func (v *acceptingValidator) HasServer(context.Context, string) (bool, error) { return true, nil }
+func TestPlexRejectsSurfaceGrantBeforeValidation(t *testing.T) {
+	s, _, _ := setup(t)
+	v := &acceptingValidator{}
+	s.o.Validator = v
+	if _, err := s.Authenticate(context.Background(), "eg1_arbitrary"); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("got %v", err)
+	}
+	if v.calls != 0 {
+		t.Fatal("grant reached Plex validator")
+	}
+}

@@ -1,60 +1,153 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { calls, renderApp } from "./harness";
+import { fireEvent, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { applyReleaseMode, releaseMode } from "../lib/release-mode";
 import { destinations } from "../lib/sitemap";
+import { calls, renderApp, settleUi } from "./harness";
 
-describe("Sources availability", () => {
-  it("is discoverable and does not start checks just by viewing", async () => {
-    const { fake } = renderApp("/sources/availability");
-    expect(await screen.findByText("Availability intelligence")).toBeVisible();
-    expect(destinations().some((d) => d.href === "/sources/availability")).toBe(true);
-    expect(screen.getByRole("button", { name: "Sync feeds" })).toBeDisabled();
-    expect(screen.getByText("Evidence will appear here")).toBeVisible();
-    expect(calls(fake, "POST", "/availability")).toHaveLength(0);
+const matchMedia = window.matchMedia;
+
+beforeEach(() => {
+  window.matchMedia = (query: string) => ({
+    matches: query.includes("min-width") || query.includes("prefers-reduced-motion"),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
   });
-  it("saves monitoring and budgets, then schedules sync", async () => {
-    const { fake } = renderApp("/sources/availability");
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const d = await screen.findByRole("dialog", { name: "Availability settings" });
-    fireEvent.click(within(d).getByRole("switch", { name: "Monitor release feeds" }));
-    fireEvent.click(within(d).getByRole("switch", { name: "Check discovered sources" }));
-    fireEvent.change(within(d).getByLabelText("Feed API requests"), { target: { value: "48" } });
-    fireEvent.click(within(d).getByRole("button", { name: "Save settings" }));
-    await waitFor(() => expect(calls(fake, "PUT", "/config/availability")).toHaveLength(1));
+});
+afterEach(() => {
+  window.matchMedia = matchMedia;
+});
+
+describe("New release modes", () => {
+  it("maps the shipped default to When they can play", () => {
+    expect(
+      releaseMode({
+        monitor: true,
+        verify: false,
+        preferVerified: true,
+        newlyAvailable: true,
+        indexerIds: [],
+        debrid: true,
+        pollMinutes: 15,
+        maxPages: 5,
+        feedRequests: 400,
+        checkRequests: 100,
+        grabs: 20,
+        checks: 20,
+        checkBytes: 1,
+        reservePercent: 80,
+      }),
+    ).toBe("playable");
+    expect(
+      releaseMode({
+        disableMovieEvidenceGate: true,
+        monitor: false,
+        verify: false,
+        preferVerified: true,
+        newlyAvailable: true,
+        indexerIds: [],
+        debrid: true,
+        pollMinutes: 15,
+        maxPages: 5,
+        feedRequests: 400,
+        checkRequests: 100,
+        grabs: 20,
+        checks: 20,
+        checkBytes: 1,
+        reservePercent: 80,
+      }),
+    ).toBe("immediate");
+    const digital = applyReleaseMode(
+      {
+        monitor: true,
+        verify: false,
+        preferVerified: true,
+        newlyAvailable: true,
+        indexerIds: [],
+        debrid: true,
+        pollMinutes: 15,
+        maxPages: 5,
+        feedRequests: 400,
+        checkRequests: 100,
+        grabs: 20,
+        checks: 20,
+        checkBytes: 1,
+        reservePercent: 80,
+        effort: "gentle",
+      },
+      "digital",
+    );
+    expect(digital).toMatchObject({
+      mode: "digital",
+      monitor: false,
+      digitalDateEvidence: true,
+      disableMovieEvidenceGate: false,
+      effort: "normal",
+    });
+  });
+
+  it("lives in Catalog settings, not Sources", async () => {
+    renderApp("/catalog/settings");
+    await settleUi(() => {
+      expect(screen.getByRole("radio", { name: /When they can play/ })).toBeVisible();
+    });
+    expect(screen.getByText("Recommended")).toBeVisible();
+    expect(
+      screen.getByText(
+        "A new movie appears once Ether finds a release you can play with your quality settings. Ether checks for you automatically.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: /waiting for a release/ })).toHaveAttribute(
+      "href",
+      "/catalog?waiting=1&type=movie",
+    );
+    expect(
+      screen.queryByRole("switch", { name: "Look for playable releases" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Gentle")).not.toBeInTheDocument();
+    expect(screen.queryByText("Indexer requests today")).not.toBeInTheDocument();
+    expect(destinations().some((d) => d.href === "/sources/availability")).toBe(false);
+    expect(destinations().some((d) => d.href === "/catalog/settings")).toBe(true);
+  });
+
+  it("saves On digital release without a second movie table", async () => {
+    const { fake } = renderApp("/catalog/settings");
+    await settleUi(() => {
+      expect(screen.getByRole("radio", { name: /On digital release/ })).toBeVisible();
+    });
+    expect(screen.queryByText("Ready Movie")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /On digital release/ }));
+    await settleUi(() => {
+      expect(calls(fake, "PUT", "/config/availability")).toHaveLength(1);
+    });
     expect(calls(fake, "PUT", "/config/availability")[0]!.body).toMatchObject({
-      monitor: true,
-      verify: true,
+      mode: "digital",
+      monitor: false,
+      digitalDateEvidence: true,
+      disableMovieEvidenceGate: false,
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps a daily ceiling behind Advanced", async () => {
+    const { fake } = renderApp("/catalog/settings");
+    await settleUi(() => {
+      expect(screen.getByRole("button", { name: "More options: Advanced" })).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More options: Advanced" }));
+    const field = screen.getByLabelText("Daily request ceiling");
+    fireEvent.change(field, { target: { value: "48" } });
+    fireEvent.blur(field);
+    await settleUi(() => {
+      expect(calls(fake, "PUT", "/config/availability")).toHaveLength(1);
+    });
+    expect(calls(fake, "PUT", "/config/availability")[0]!.body).toMatchObject({
+      effort: "custom",
       feedRequests: 48,
-      reservePercent: 80,
     });
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Sync feeds" }));
-    await waitFor(() => expect(calls(fake, "POST", "/availability/sync")).toHaveLength(1));
-  });
-  it("preserves the movie window when disabling the gate", async () => {
-    const { fake } = renderApp("/sources/availability");
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const d = await screen.findByRole("dialog", { name: "Availability settings" });
-    expect(within(d).getByLabelText("Movie evidence window")).toHaveValue(60);
-    fireEvent.change(within(d).getByLabelText("Movie evidence window"), {
-      target: { value: "120" },
-    });
-    fireEvent.click(within(d).getByRole("switch", { name: "Require movie release evidence" }));
-    fireEvent.click(within(d).getByRole("button", { name: "Save settings" }));
-    await waitFor(() => expect(calls(fake, "PUT", "/config/availability")).toHaveLength(1));
-    expect(calls(fake, "PUT", "/config/availability")[0]!.body).toMatchObject({
-      disableMovieEvidenceGate: true,
-      movieEvidenceDays: 120,
-    });
-  });
-  it("discards unsaved source selection", async () => {
-    const { fake } = renderApp("/sources/availability");
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const d = await screen.findByRole("dialog", { name: "Availability settings" });
-    fireEvent.click(within(d).getByRole("switch", { name: "Use all supported feeds" }));
-    fireEvent.click(within(d).getByRole("button", { name: "Cancel" }));
-    expect(calls(fake, "PUT", "/config/availability")).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("switch", { name: "Use all supported feeds" })).toBeChecked();
   });
 });

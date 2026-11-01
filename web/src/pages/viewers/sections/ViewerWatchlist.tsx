@@ -62,7 +62,7 @@ export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
     <Section
       title={t("Watchlist")}
       description={t(
-        "Titles Ether is watching for on this viewer's behalf. Each one appears on their Plex Home once it can be streamed.",
+        "Titles watched for this viewer. Each one shows on their Home once it can be streamed.",
       )}
       actions={
         <>
@@ -89,8 +89,8 @@ export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
         <p className="text-sm text-fg-muted">
           {tx("Watchlist monitoring is off. {link} to sync and check this viewer's watchlist.", {
             link: (
-              <Link to="/viewers/defaults" className="font-medium text-fg underline">
-                {t("Turn it on in Defaults")}
+              <Link to="/notifications" className="font-medium text-fg underline">
+                {t("Turn it on in Notifications")}
               </Link>
             ),
           })}

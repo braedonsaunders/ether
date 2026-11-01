@@ -3,7 +3,9 @@ package playback
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
@@ -74,5 +76,63 @@ func TestCachedAndFallbackReleasesRecheckReportedIDs(t *testing.T) {
 	title.Type, title.IDs = core.TypeMovie, core.IDs{TMDB: 123}
 	if releaseMatchesTitle(r, title) {
 		t.Fatal("conflicting movie ID reached open")
+	}
+}
+
+func TestPayloadMatchesTitleAndZeroByteRangeFailureReturns503(t *testing.T) {
+	title := &core.Title{Key: core.EpisodeKey(33238, 1, 1), Type: core.TypeEpisode, Season: 1, Episode: 1, ShowYear: 2010, Title: "Times Square"}
+	wrongPayload := []byte("ETHER-DEBRID/1\n{\"path\":\"Running Man Episode 1-129 English Subbed 720P/[iSUBS]Running.Man.E43.720P.avi\",\"size\":2748515170}")
+	rightPayload := []byte("ETHER-DEBRID/1\n{\"path\":\"Running Man Episode 1-129 English Subbed 720P/[iSUBS]Running.Man.E01.720P.avi\",\"size\":1491294208}")
+	if payloadMatchesTitle(wrongPayload, title) {
+		t.Fatal("wrong episode file in pack payload matched S01E01")
+	}
+	if !payloadMatchesTitle(rightPayload, title) {
+		t.Fatal("matching episode file in pack payload was rejected")
+	}
+
+	// A direct-play range request that fails before writing its first byte must
+	// answer 503 (never a 0-byte 206 Partial Content that players treat as EOF).
+	a := mkv("A", 200000, 100*time.Second)
+	h := newHarness(t, []*fakeRelease{a}, []string{"A"})
+	ps := h.prepare(owner, movieKey, "c1")
+	g := h.m.lookup(ps.ID).current()
+	<-g.indexReady
+	g.src = retryDirectSource{g.src}
+	a.setFail(100000, 200000, core.ErrSourceUnavailable)
+	srv := directPlayServer(t, h.m, ps.ID)
+	resp, body, err := get(t, srv.URL, map[string]string{"Range": "bytes=120000-129999"})
+	if err != nil {
+		t.Fatalf("range request failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("Content-Range") != "" || resp.Header.Get("Retry-After") == "" {
+		t.Fatalf("expected 503 without Content-Range on 0-byte failure, got status=%d headers=%v body=%q", resp.StatusCode, resp.Header, body)
+	}
+}
+
+func TestStaleWrongEpisodeResumeAndPreferredFallThrough(t *testing.T) {
+	epKey := core.EpisodeKey(33238, 1, 1)
+	epTitle := &core.Title{Key: epKey, Type: core.TypeEpisode, Season: 1, Episode: 1, ShowYear: 2010, Title: "Times Square"}
+	good := mkv("38feded1", 200000, 88*time.Minute)
+	h := newHarness(t, []*fakeRelease{good}, []string{"38feded1"})
+	h.catalog.titles[epKey] = epTitle
+	h.resolver.candidates[0].Name = "Running.Man.2010.S01E01.Times.Square.720p"
+
+	wrongPayload := []byte("ETHER-DEBRID/1\n{\"path\":\"Running Man/[iSUBS]Running.Man.E02.720P.avi\",\"size\":1491294208}")
+	wrongRel := core.Release{ID: "stale-ep2", Name: "Running.Man.2010.S01E02.Suwon.World.Cup.Stadium.720p"}
+	if err := h.m.Remember(t.Context(), owner, epKey, defaultCaps("c1"), &core.Resolution{
+		Title:   epKey,
+		Release: wrongRel,
+		NZB:     wrongPayload,
+	}); err != nil {
+		t.Fatalf("Remember: %v", err)
+	}
+
+	if rp, err := h.m.ResumePoint(t.Context(), owner.ID, epKey); err != nil || rp != nil {
+		t.Fatalf("expected stale wrong-episode ResumePoint to be dropped, got rp=%+v err=%v", rp, err)
+	}
+
+	ps, err := h.m.PrepareSurface(t.Context(), owner, epKey, defaultCaps("c1"), "stale-ep2", true)
+	if err != nil || ps == nil || ps.Resolution == nil || ps.Resolution.Release.ID != "38feded1" {
+		t.Fatalf("expected stale preferred wrong-episode release to fall through to fresh candidate, got ps=%+v err=%v", ps, err)
 	}
 }

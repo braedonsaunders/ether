@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -32,14 +33,22 @@ func (s *Server) postPlayPicks(ctx context.Context, pr *Request, key core.Rating
 	return picks
 }
 
+func (s *Server) postPlaySelection(ctx context.Context, pr *Request, key core.RatingKey, unrestricted bool) experience.PostPlaySelection {
+	selection := experience.PostPlaySelection{Visibility: s.visibility(), Unrestricted: unrestricted, Picks: func(ctx context.Context, fetch int) []core.PostPlayPick {
+		return s.postPlayPicks(ctx, pr, key, fetch)
+	}}
+	if s.d.Recommender != nil {
+		selection.Related = func(ctx context.Context, count int) ([]core.Hub, error) {
+			return s.d.Recommender.Related(ctx, pr.User, key, count)
+		}
+	}
+	return selection
+}
+
 // postPlayHub renders ranked picks as one hub in post-play shape. The
 // prefix follows the just-watched title's family, like Related's hubs.
-func (s *Server) postPlayHub(ctx context.Context, pr *Request, key core.RatingKey, picks []core.PostPlayPick) (model.Hub, bool) {
-	items := make([]core.Title, 0, len(picks))
-	for _, p := range picks {
-		items = append(items, p.Title)
-	}
-	items = s.filterAllowed(pr.User, items)
+func (s *Server) postPlayHub(ctx context.Context, pr *Request, key core.RatingKey, row experience.PostPlayRow) (model.Hub, bool) {
+	items := row.Items
 	if len(items) == 0 {
 		return model.Hub{}, false
 	}
@@ -52,34 +61,6 @@ func (s *Server) postPlayHub(ctx context.Context, pr *Request, key core.RatingKe
 		Context: "hub." + prefix + ".postplay", Style: "shelf", Items: items,
 	}
 	return s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}), true
-}
-
-// relatedAfterPostPlay appends the plain Related rows behind the hook
-// queue, dropping titles the queue already shows, as post-play screens
-// scroll from the personal pick into the familiar rows.
-func (s *Server) relatedAfterPostPlay(ctx context.Context, pr *Request, mc *model.MediaContainer, key core.RatingKey, count int, seen map[core.RatingKey]bool) {
-	if s.d.Recommender == nil {
-		return
-	}
-	hubs, err := s.d.Recommender.Related(ctx, pr.User, key, count)
-	if err != nil {
-		s.log.Debug("postplay related hubs", "key", key, "err", err)
-		return
-	}
-	for _, h := range hubs {
-		items := h.Items[:0:0]
-		for _, t := range h.Items {
-			if !seen[t.Key] {
-				seen[t.Key] = true
-				items = append(items, t)
-			}
-		}
-		if len(items) == 0 {
-			continue
-		}
-		h.Items = items
-		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}))
-	}
 }
 
 // decorateDetail adds the viewer's micro-reason decision header (#31) to

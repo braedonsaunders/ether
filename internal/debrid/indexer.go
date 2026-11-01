@@ -86,7 +86,7 @@ func (x *Indexer) Search(ctx context.Context, req core.SearchRequest) ([]core.Re
 // The resolver targets and validates speculative torrents before selecting one.
 func (x *Indexer) SearchWith(ctx context.Context, req core.SearchRequest, arrived func([]core.Release)) ([]core.Release, error) {
 	started := time.Now()
-	early := x.earlyCacheChecks(ctx)
+	early := x.earlyCacheChecks(ctx, arrived)
 	if early != nil {
 		defer func() { early.cancel(); early.wg.Wait() }()
 	}
@@ -94,19 +94,17 @@ func (x *Indexer) SearchWith(ctx context.Context, req core.SearchRequest, arrive
 	var err error
 	emit := func(batch []core.Release) {
 		x.svc.ApplyHints(ctx, batch)
-		if early != nil {
-			early.add(batch)
+		var eligible []core.Release
+		for _, r := range batch {
+			if r, ok := x.playable(r); ok {
+				eligible = append(eligible, r)
+			}
 		}
-		if arrived != nil {
-			var eligible []core.Release
-			for _, r := range batch {
-				if r, ok := x.playable(r); ok {
-					eligible = append(eligible, r)
-				}
-			}
-			if len(eligible) > 0 {
-				arrived(eligible)
-			}
+		if early != nil {
+			early.add(eligible)
+		}
+		if arrived != nil && len(eligible) > 0 {
+			arrived(eligible)
 		}
 	}
 	if streaming, ok := x.inner.(core.StreamingIndexer); ok && (early != nil || arrived != nil) {
@@ -184,7 +182,14 @@ func (x *Indexer) SearchWith(ctx context.Context, req core.SearchRequest, arrive
 	// season packs), search for season packs (Episode = 0) and keep cached
 	// packs so older shows whose episodes live only in cached season packs
 	// still resolve.
-	if enabled && !anyCached && len(torrents) > 0 && req.Type == core.TypeEpisode && req.Season > 0 && req.Episode > 0 && ctx.Err() == nil {
+	hasPack := false
+	for _, r := range kept {
+		if r.Info.FullSeason {
+			hasPack = true
+			break
+		}
+	}
+	if enabled && !anyCached && !hasPack && len(torrents) > 0 && req.Type == core.TypeEpisode && req.Season > 0 && req.Episode > 0 && ctx.Err() == nil {
 		packCached, packs := x.searchSeasonPacks(ctx, req)
 		for h, ok := range packCached {
 			if ok {
@@ -250,7 +255,7 @@ func (x *Indexer) playable(r core.Release) (core.Release, bool) {
 func (x *Indexer) searchSeasonPacks(ctx context.Context, req core.SearchRequest) (map[string]bool, []core.Release) {
 	packReq := req
 	packReq.Episode = 0
-	early := x.earlyCacheChecks(ctx)
+	early := x.earlyCacheChecks(ctx, nil)
 	if early != nil {
 		defer func() { early.cancel(); early.wg.Wait() }()
 	}
@@ -307,7 +312,7 @@ func (x *Indexer) SearchRescue(ctx context.Context, req core.SearchRequest) ([]c
 	if !ok {
 		return nil, nil
 	}
-	early := x.earlyCacheChecks(ctx)
+	early := x.earlyCacheChecks(ctx, nil)
 	if early != nil {
 		defer func() { early.cancel(); early.wg.Wait() }()
 	}
@@ -379,6 +384,9 @@ func (x *Indexer) FetchNZB(ctx context.Context, r core.Release) ([]byte, error) 
 		return x.svc.DirectPayload(ctx, r)
 	}
 	if r.Protocol != core.ProtocolTorrent {
+		if x.usenetReady != nil && !x.usenetReady() {
+			return nil, fmt.Errorf("usenet release %q: %w", r.Name, core.ErrNotAvailable)
+		}
 		return x.inner.FetchNZB(ctx, r)
 	}
 	if !x.svc.Enabled() {
@@ -420,33 +428,49 @@ func (x *Indexer) fetchTorrentOnce(ctx context.Context, r core.Release) (data []
 
 // earlyChecks runs debrid cache checks per indexer as results arrive.
 type earlyChecks struct {
-	x       *Indexer
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	wg      sync.WaitGroup
-	asked   map[string]bool
-	cached  map[string]bool
-	pending []string
-	running bool
-	sure    bool // every check so far was definitive
+	x        *Indexer
+	ctx      context.Context
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	wg       sync.WaitGroup
+	asked    map[string]bool
+	cached   map[string]bool
+	byHash   map[string][]core.Release
+	onCached func([]core.Release)
+	pending  []string
+	running  bool
+	sure     bool // every check so far was definitive
 }
 
-func (x *Indexer) earlyCacheChecks(ctx context.Context) *earlyChecks {
+func (x *Indexer) earlyCacheChecks(ctx context.Context, onCached func([]core.Release)) *earlyChecks {
 	if !x.svc.Enabled() {
 		return nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	return &earlyChecks{x: x, ctx: cctx, cancel: cancel, asked: map[string]bool{}, cached: map[string]bool{}, sure: true}
+	return &earlyChecks{
+		x:        x,
+		ctx:      cctx,
+		cancel:   cancel,
+		asked:    map[string]bool{},
+		cached:   map[string]bool{},
+		byHash:   map[string][]core.Release{},
+		onCached: onCached,
+		sure:     true,
+	}
 }
 
 // add starts a cache check for the torrent hashes in one indexer's results.
 func (e *earlyChecks) add(rs []core.Release) {
 	e.mu.Lock()
 	for _, r := range rs {
-		if r.Protocol == core.ProtocolTorrent && r.InfoHash != "" && !e.asked[r.InfoHash] {
-			e.asked[r.InfoHash] = true
-			e.pending = append(e.pending, r.InfoHash)
+		if r.Protocol == core.ProtocolTorrent && r.InfoHash != "" {
+			if r.ID != "" {
+				e.byHash[r.InfoHash] = append(e.byHash[r.InfoHash], r)
+			}
+			if !e.asked[r.InfoHash] {
+				e.asked[r.InfoHash] = true
+				e.pending = append(e.pending, r.InfoHash)
+			}
 		}
 	}
 	if len(e.pending) == 0 || e.running || e.ctx.Err() != nil {
@@ -479,18 +503,25 @@ func (e *earlyChecks) add(rs []core.Release) {
 			e.mu.Unlock()
 			cached, definitive := e.x.svc.CheckCached(e.ctx, hashes)
 			e.mu.Lock()
+			var newlyCached []core.Release
 			for h, ok := range cached {
 				if ok {
 					e.cached[h] = true
+					newlyCached = append(newlyCached, e.byHash[h]...)
 				}
 			}
 			e.sure = e.sure && definitive
-			if len(e.pending) == 0 {
+			done := len(e.pending) == 0
+			if done {
 				e.running = false
-				e.mu.Unlock()
-				return
 			}
 			e.mu.Unlock()
+			if e.onCached != nil && len(newlyCached) > 0 {
+				e.onCached(newlyCached)
+			}
+			if done {
+				return
+			}
 		}
 	}()
 }

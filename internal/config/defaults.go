@@ -26,7 +26,8 @@ func Defaults(dataDir string) Config {
 		Personalize: Personalize{
 			PostPlay: true, PostPlayPrebuffer: true, MicroReasons: true, SessionIntent: true,
 		},
-		Extras: Extras{PrewarmBytes: 48 << 20, ResolverTimeout: Duration(20 * time.Second)},
+		Extras:   Extras{PrewarmBytes: 48 << 20, ResolverTimeout: Duration(20 * time.Second)},
+		Outbound: Outbound{Indexers: true, Stremio: true, Debrid: true, Usenet: true},
 		Server: Server{
 			Port:               DefaultPort,
 			BindAddress:        "0.0.0.0",
@@ -116,6 +117,7 @@ func DefaultQuality() Quality {
 				PreferredAudio:   []string{"truehd", "eac3", "dtshd", "ac3", "aac"},
 				MinSizeMBPerMin:  15,
 				MaxSizeMBPerMin:  1000,
+				Ranking:          core.DefaultRanking(nil),
 			},
 			{
 				Name:             "1080p",
@@ -126,6 +128,7 @@ func DefaultQuality() Quality {
 				PreferredAudio:   []string{"eac3", "ac3", "aac"},
 				MinSizeMBPerMin:  5,
 				MaxSizeMBPerMin:  150,
+				Ranking:          core.DefaultRanking(nil),
 			},
 			{
 				Name:             "720p",
@@ -136,6 +139,7 @@ func DefaultQuality() Quality {
 				PreferredAudio:   []string{"aac", "ac3", "eac3"},
 				MinSizeMBPerMin:  2,
 				MaxSizeMBPerMin:  60,
+				Ranking:          core.DefaultRanking(nil),
 			},
 		},
 		Rules: []QualityRule{

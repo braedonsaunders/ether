@@ -1,15 +1,26 @@
 import { Badge } from "@braedonsaunders/appkit-ui";
 import { Cpu } from "lucide-react";
+import type { ReactNode } from "react";
+import apple from "../../assets/brands/apple.svg?no-inline";
+import amd from "../../assets/brands/amd.svg?no-inline";
+import intel from "../../assets/brands/intel.svg?no-inline";
+import nvidia from "../../assets/brands/nvidia.svg?no-inline";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { t, tn } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
+import { codecLabel, encodeCodecs } from "./hardwareCodecs";
 
 type Hardware = {
   hwaccel?: { name: string; encoders: string[] | null; device?: string };
   ffmpeg?: unknown;
   error?: string;
+  notice?: string;
+  playbackError?: string;
+  filtersProbed?: boolean;
+  toneMap?: string[];
+  colour?: string[];
   enhancement?: {
     backend: string;
     setupState?: string;
@@ -21,7 +32,88 @@ type Hardware = {
   };
 };
 
-/** Detected transcoding hardware: acceleration, encoders and the bundled FFmpeg. */
+function BrandMark({ src, color }: { src: string; color: string }) {
+  return (
+    <span
+      aria-hidden
+      className="block size-8 bg-current"
+      style={{
+        color,
+        maskImage: `url("${src}")`,
+        maskPosition: "center",
+        maskSize: "contain",
+        maskRepeat: "no-repeat",
+        WebkitMaskImage: `url("${src}")`,
+        WebkitMaskPosition: "center",
+        WebkitMaskSize: "contain",
+        WebkitMaskRepeat: "no-repeat",
+      }}
+    />
+  );
+}
+
+function vendorMark(name: string | undefined): ReactNode {
+  switch (name) {
+    case "nvenc":
+      return <BrandMark src={nvidia} color="#76B900" />;
+    case "qsv":
+      return <BrandMark src={intel} color="#0071C5" />;
+    case "vaapi":
+      return <BrandMark src={amd} color="#ED1C24" />;
+    case "videotoolbox":
+      return <BrandMark src={apple} color="currentColor" />;
+    default:
+      return <Cpu size={22} aria-hidden />;
+  }
+}
+
+function vendorCopy(name: string | undefined): { title: string; detail: string } {
+  switch (name) {
+    case "videotoolbox":
+      return {
+        title: t("Apple VideoToolbox"),
+        detail: t("This Mac converts video in hardware."),
+      };
+    case "nvenc":
+      return {
+        title: t("NVIDIA NVENC"),
+        detail: t("This computer's NVIDIA card converts video."),
+      };
+    case "qsv":
+      return {
+        title: t("Intel Quick Sync"),
+        detail: t("This computer's Intel graphics convert video."),
+      };
+    case "vaapi":
+      return {
+        title: t("AMD VA-API"),
+        detail: t("This computer converts video through VA-API."),
+      };
+    default:
+      return { title: t("Software only"), detail: t("Transcoding uses the CPU.") };
+  }
+}
+
+function toneMapName(path: string): string {
+  switch (path) {
+    case "zscale":
+      return t("Software");
+    case "libplacebo":
+      return "libplacebo";
+    case "opencl":
+      return "OpenCL";
+    case "vaapi":
+      return "VA-API";
+    case "videotoolbox":
+      return "VideoToolbox";
+    case "cuda":
+      return "NVIDIA";
+    default:
+      return path;
+  }
+}
+
+/** Detected transcoding hardware: the graphics vendor, codecs, and HDR paths. */
 export function HardwareStatus() {
   const hw = useAsync(
     async (signal) =>
@@ -35,7 +127,11 @@ export function HardwareStatus() {
   const accel = data?.hwaccel;
   const encoders = accel?.encoders ?? [];
   const none = !accel?.name || accel.name === "none";
-  const ffmpeg = data?.ffmpeg;
+  const ffmpeg = typeof data?.ffmpeg === "string" ? data.ffmpeg : "";
+  const codecs = encodeCodecs(encoders);
+  const toneMap = data?.toneMap ?? [];
+  const colour = data?.colour ?? [];
+  const copy = vendorCopy(none ? "none" : accel?.name);
 
   return (
     <Section
@@ -53,54 +149,75 @@ export function HardwareStatus() {
           {data.error}
         </p>
       ) : (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="grid size-9 place-items-center rounded-lg bg-primary-subtle text-primary">
-              <Cpu size={18} />
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-bg-subtle text-fg">
+              {vendorMark(none ? undefined : accel?.name)}
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-medium text-fg">
-                {none
-                  ? t("Software only")
-                  : t("Hardware acceleration: {name}", { name: accel!.name })}
-              </p>
-              <p className="text-xs text-fg-muted">
-                {accel?.device
-                  ? t("Device {device}", { device: accel.device })
-                  : none
-                    ? t("Transcoding uses the CPU.")
-                    : ""}
-                {typeof ffmpeg === "string" && ffmpeg ? ` · FFmpeg ${ffmpeg}` : ""}
+              <p className="text-base font-semibold text-fg">{copy.title}</p>
+              <p className="text-sm text-fg-muted">{copy.detail}</p>
+              <p className="mt-1 text-xs text-fg-muted">
+                {[
+                  accel?.device ? t("Device {device}", { device: accel.device }) : "",
+                  ffmpeg ? t("FFmpeg {version}", { version: ffmpeg }) : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-1.5" aria-label={t("Hardware encoders")}>
-            {encoders.length ? (
-              encoders.map((e) => (
-                <Badge key={e} variant="secondary" className="font-mono">
-                  {e}
-                </Badge>
-              ))
-            ) : (
-              <span className="text-xs text-fg-muted">{t("No hardware encoders detected")}</span>
-            )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-border bg-bg-subtle p-3">
+              <p className="text-xs font-medium text-fg-muted">{t("Encodes")}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5" aria-label={t("Hardware encoders")}>
+                {codecs.length ? (
+                  codecs.map((codec) => (
+                    <Badge key={codec} variant="secondary">
+                      {codecLabel(codec)}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-sm text-fg-muted">
+                    {t("No hardware encoders detected")}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg border border-border bg-bg-subtle p-3">
+              <p className="text-xs font-medium text-fg-muted">{t("HDR")}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5" aria-label={t("HDR")}>
+                {toneMap.length ? (
+                  <Badge variant="secondary">{t("HDR10")}</Badge>
+                ) : (
+                  <span className="text-sm text-fg-muted">
+                    {t("No HDR conversion on this computer.")}
+                  </span>
+                )}
+              </div>
+              {toneMap.length ? (
+                <p className="mt-2 text-xs text-fg-muted">
+                  {t("HDR to SDR uses {paths}.", {
+                    paths: toneMap.map(toneMapName).join(", "),
+                  })}
+                </p>
+              ) : null}
+              {colour.length ? (
+                <p className="mt-1 text-xs text-fg-muted">{t("Colour conversion is available.")}</p>
+              ) : null}
+            </div>
           </div>
-          {ffmpeg && typeof ffmpeg !== "string" ? (
-            <details>
-              <summary className="cursor-pointer text-xs font-medium text-fg-muted">
-                {t("FFmpeg details")}
-              </summary>
-              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-md bg-bg-subtle p-3 text-xs">
-                {JSON.stringify(ffmpeg, null, 2)}
-              </pre>
-            </details>
+          {data.filtersProbed === false && !data.notice && !data.playbackError ? (
+            <p className="text-sm text-fg-muted">{t("Optional filters were not read.")}</p>
           ) : null}
-          <p className="text-xs text-fg-subtle">
-            {t("Live CPU and GPU load, disk checks and tone-mapping benchmarks aren't collected.")}
-          </p>
+          {data.playbackError || data.notice ? (
+            <p role="alert" className="text-sm text-danger">
+              {data.playbackError || data.notice}
+            </p>
+          ) : null}
           {data.enhancement ? (
             <div
-              className="rounded-md border border-border p-3"
+              className="rounded-lg border border-border p-3"
               aria-label={t("Server enhancement status")}
             >
               <p className="text-sm font-medium text-fg">

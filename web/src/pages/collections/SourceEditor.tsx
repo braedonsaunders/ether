@@ -1,6 +1,7 @@
 import { Badge, Button, Input, SearchSelect } from "@braedonsaunders/appkit-ui";
 import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
 import { Segmented } from "../../components/fields";
 import { LookupPicker, TitleSearch } from "../../components/pickers";
@@ -180,6 +181,26 @@ function SourceBody({
             <p className="text-xs text-danger">
               {t("Enter a full https:// link to a public list.")}
             </p>
+          ) : source.kind === "traktList" ? (
+            <p className="text-xs text-fg-muted">
+              {tx("Uses the Trakt account connected in {link}.", {
+                link: (
+                  <Link to="/services/trakt" className="text-primary underline">
+                    {t("Integrations")}
+                  </Link>
+                ),
+              })}
+            </p>
+          ) : source.kind === "mdblist" ? (
+            <p className="text-xs text-fg-muted">
+              {tx("Uses the MDBList account connected in {link}.", {
+                link: (
+                  <Link to="/services/ratings" className="text-primary underline">
+                    {t("Integrations")}
+                  </Link>
+                ),
+              })}
+            </p>
           ) : null}
         </div>
       );
@@ -333,7 +354,7 @@ function HandPicked({ keys, onChange }: { keys: string[]; onChange: (k: string[]
       {keys.length > 1 ? (
         <p className="text-[11px] text-fg-subtle">
           {t(
-            "Drag the handle or use the arrows to reorder. Sort by “Source order” to keep this order in Plex.",
+            "Drag the handle or use the arrows to reorder. Sort by “Source order” to keep this order.",
           )}
         </p>
       ) : null}

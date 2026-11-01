@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/playback"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -101,7 +102,8 @@ type Service struct {
 
 func New(db *sql.DB, opts Options) *Service {
 	if opts.Client == nil {
-		opts.Client = &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		opts.Client = egress.Client(egress.CapDirect, 15*time.Second)
+		opts.Client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now

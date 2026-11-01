@@ -2,6 +2,7 @@ package plex
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"image/jpeg"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +20,8 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/resolver"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 var fixedNow = time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
@@ -85,6 +89,10 @@ type fakeCatalog struct {
 	failOnce map[core.RatingKey]bool // the next Get of these keys fails
 }
 
+func (c *fakeCatalog) StoredTitle(ctx context.Context, k core.RatingKey) (*core.Title, error) {
+	return c.Get(ctx, k)
+}
+
 func (c *fakeCatalog) Get(_ context.Context, k core.RatingKey) (*core.Title, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -132,35 +140,31 @@ func (c *fakeCatalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, 
 	c.lastQ = q
 	var all []core.Title
 	for _, t := range c.titles {
-		if q.Filter.Type != "" && t.Type != q.Filter.Type {
-			continue
-		}
-		if len(q.Filter.Genres) > 0 {
-			match := false
-			for _, g := range q.Filter.Genres {
-				for _, tg := range t.Genres {
-					if g == tg {
-						match = true
-					}
-				}
-			}
-			if !match {
-				continue
-			}
-		}
-		if q.Filter.YearFrom > 0 && t.Year < q.Filter.YearFrom || q.Filter.YearTo > 0 && t.Year > q.Filter.YearTo {
+		if !fakeFilterMatch(t, q.Filter) {
 			continue
 		}
 		all = append(all, t)
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if q.Sort == core.SortTitle {
+	slices.SortStableFunc(all, func(a, b core.Title) int {
+		if q.Sort == "" {
 			if q.Desc {
-				return all[i].Title > all[j].Title
+				return cmp.Compare(b.Key, a.Key)
 			}
-			return all[i].Title < all[j].Title
+			if c := cmp.Compare(a.Key, b.Key); c != 0 {
+				return c
+			}
+		} else {
+			primary := core.SortSpec{Sort: q.Sort, Desc: q.Desc}
+			if c := compareTitlesBySpec(a, b, primary, fixedNow); c != 0 {
+				return c
+			}
 		}
-		return all[i].Popularity > all[j].Popularity
+		for _, sec := range q.SecondarySorts {
+			if c := compareTitlesBySpec(a, b, sec, fixedNow); c != 0 {
+				return c
+			}
+		}
+		return cmp.Compare(a.Key, b.Key)
 	})
 	total := len(all)
 	lo := min(q.Offset, total)
@@ -189,6 +193,149 @@ func (c *fakeCatalog) Search(_ context.Context, query string, types []core.Media
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	if len(out) > limit {
 		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (c *fakeCatalog) SearchPeople(_ context.Context, terms []string, limit int) ([]core.Person, error) {
+	if len(terms) == 0 || limit <= 0 {
+		return nil, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	type personEntry struct {
+		p       core.Person
+		credits int
+	}
+	byID := map[int64]*personEntry{}
+	add := func(p core.Person) {
+		if p.TMDB <= 0 || strings.TrimSpace(p.Name) == "" {
+			return
+		}
+		e, ok := byID[p.TMDB]
+		if !ok {
+			e = &personEntry{p: core.Person{TMDB: p.TMDB, Name: p.Name}}
+			byID[p.TMDB] = e
+		}
+		e.credits++
+	}
+	for _, t := range c.titles {
+		if t.Adult {
+			continue
+		}
+		seen := map[int64]bool{}
+		for _, p := range t.Cast {
+			if !seen[p.TMDB] {
+				seen[p.TMDB] = true
+				add(p)
+			}
+		}
+		for _, p := range t.Directors {
+			if !seen[p.TMDB] {
+				seen[p.TMDB] = true
+				add(p)
+			}
+		}
+		for _, p := range t.Writers {
+			if !seen[p.TMDB] {
+				seen[p.TMDB] = true
+				add(p)
+			}
+		}
+	}
+	var matches []personEntry
+	for _, e := range byID {
+		words := strings.FieldsFunc(strings.ToLower(e.p.Name), func(r rune) bool {
+			return !('a' <= r && r <= 'z' || '0' <= r && r <= '9' || r >= 0x80)
+		})
+		ok := true
+		for _, term := range terms {
+			found := false
+			for _, w := range words {
+				if strings.HasPrefix(w, term) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			matches = append(matches, *e)
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].credits != matches[j].credits {
+			return matches[i].credits > matches[j].credits
+		}
+		return matches[i].p.TMDB < matches[j].p.TMDB
+	})
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+	out := make([]core.Person, len(matches))
+	for i, m := range matches {
+		out[i] = m.p
+	}
+	return out, nil
+}
+
+func (c *fakeCatalog) PersonCreditKeys(_ context.Context, person int64, types []core.MediaType, limit int) ([]core.RatingKey, error) {
+	if person <= 0 || limit <= 0 || len(types) == 0 {
+		return nil, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	allow := map[core.MediaType]bool{}
+	for _, t := range types {
+		allow[t] = true
+	}
+	var titles []core.Title
+	for _, t := range c.titles {
+		if t.Adult || !allow[t.Type] {
+			continue
+		}
+		credited := false
+		for _, p := range t.Cast {
+			if p.TMDB == person {
+				credited = true
+				break
+			}
+		}
+		if !credited {
+			for _, p := range t.Directors {
+				if p.TMDB == person {
+					credited = true
+					break
+				}
+			}
+		}
+		if !credited {
+			for _, p := range t.Writers {
+				if p.TMDB == person {
+					credited = true
+					break
+				}
+			}
+		}
+		if credited {
+			titles = append(titles, t)
+		}
+	}
+	sort.Slice(titles, func(i, j int) bool {
+		if titles[i].Popularity != titles[j].Popularity {
+			return titles[i].Popularity > titles[j].Popularity
+		}
+		return titles[i].Key < titles[j].Key
+	})
+	if len(titles) > limit {
+		titles = titles[:limit]
+	}
+	out := make([]core.RatingKey, len(titles))
+	for i, t := range titles {
+		out[i] = t.Key
 	}
 	return out, nil
 }
@@ -509,6 +656,17 @@ func (h *fakeHLS) ServeRungSegment(w http.ResponseWriter, r *http.Request, rung 
 func (h *fakeHLS) SwapInput(context.Context, string, core.MediaInfo, time.Duration) error { return nil }
 func (h *fakeHLS) LastAccess() time.Time                                                  { return fixedNow }
 func (h *fakeHLS) Close() error                                                           { return nil }
+func (h *fakeHLS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "video/x-matroska")
+	w.Header().Set("Accept-Ranges", "none")
+	w.Header().Set("Connection", "close")
+	if r.Method == http.MethodHead {
+		return
+	}
+	fmt.Fprintf(w, "mkv-%s-%s", h.id, h.req.StartOffset)
+}
+
+var _ core.HTTPSession = (*fakeHLS)(nil)
 
 type fakeTranscoder struct {
 	mu       sync.Mutex
@@ -717,11 +875,13 @@ var (
 	breakingBad = core.Title{
 		Key: core.ShowKey(1396), Type: core.TypeShow, IDs: core.IDs{TMDB: 1396, TVDB: 81189},
 		Title: "Boundary Bay", Year: 2008, Summary: "A chemistry teacher...", ChildCount: 1, LeafCount: 2,
+		AddedAt:    time.Date(2008, 1, 27, 0, 0, 0, 0, time.UTC),
 		Popularity: 100, PosterPath: "/bb.jpg", BackdropPath: "/bbart.jpg", UpdatedAt: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
 	}
 	bbS1 = core.Title{
 		Key: core.SeasonKey(1396, 1), Type: core.TypeSeason, ShowKey: core.ShowKey(1396), ShowTitle: "Boundary Bay",
-		Season: 1, Title: "Season 1", ChildCount: 2, PosterPath: "/bbs1.jpg", UpdatedAt: breakingBad.UpdatedAt,
+		AddedAt: time.Date(2008, 1, 27, 0, 0, 0, 0, time.UTC),
+		Season:  1, Title: "Season 1", ChildCount: 2, PosterPath: "/bbs1.jpg", UpdatedAt: breakingBad.UpdatedAt,
 	}
 	bbE1 = core.Title{
 		Key: core.EpisodeKey(1396, 1, 1), Type: core.TypeEpisode, ShowKey: core.ShowKey(1396), ShowTitle: "Boundary Bay",
@@ -756,6 +916,7 @@ type fixture struct {
 	cols     *fakeCollections
 	hooks    chan string
 	art      *fakeArtwork
+	broker   *sessions.Broker
 }
 
 func newFixture(opts ...func(*Deps)) *fixture {
@@ -793,15 +954,16 @@ func newFixture(opts ...func(*Deps)) *fixture {
 		},
 	}
 	d := Deps{
-		Catalog:     cat,
-		Collections: f.cols,
-		Recommender: rec,
-		State:       f.state,
-		Playlists:   f.pls,
-		Auth:        &fakeAuth{users: map[string]core.User{ownerToken: ownerUser, friendToken: friendUser}},
-		Playback:    f.playback,
-		Transcoder:  f.trans,
-		HTTPClient:  &http.Client{Transport: f.art},
+		Catalog:          cat,
+		Collections:      f.cols,
+		Recommender:      rec,
+		State:            f.state,
+		Playlists:        f.pls,
+		Auth:             &fakeAuth{users: map[string]core.User{ownerToken: ownerUser, friendToken: friendUser}},
+		Playback:         f.playback,
+		Transcoder:       f.trans,
+		ApplyClientRules: resolver.ApplyClientRules,
+		HTTPClient:       &http.Client{Transport: f.art},
 		Config: func() config.Config {
 			c := config.Config{}
 			c.Server.Port = 32400
@@ -822,5 +984,282 @@ func newFixture(opts ...func(*Deps)) *fixture {
 		o(&d)
 	}
 	f.srv = NewServer(d)
+	f.attachPlaybackBroker(d)
 	return f
+}
+
+// fixturePlayback follows Server deps. Tests replace Playback after NewServer.
+type fixturePlayback struct{ f *fixture }
+
+func (p *fixturePlayback) current() core.Playback {
+	if p.f.srv != nil && p.f.srv.d.Playback != nil {
+		return p.f.srv.d.Playback
+	}
+	return p.f.playback
+}
+
+func (p *fixturePlayback) Estimate(ctx context.Context, t *core.Title, caps core.ClientCaps) core.MediaInfo {
+	return p.current().Estimate(ctx, t, caps)
+}
+func (p *fixturePlayback) Prepare(ctx context.Context, u *core.User, k core.RatingKey, caps core.ClientCaps) (*core.PlaySession, error) {
+	return p.current().Prepare(ctx, u, k, caps)
+}
+func (p *fixturePlayback) Session(id string) (*core.PlaySession, bool) {
+	return p.current().Session(id)
+}
+func (p *fixturePlayback) SessionFor(u int64, client string, k core.RatingKey) (*core.PlaySession, bool) {
+	return p.current().SessionFor(u, client, k)
+}
+func (p *fixturePlayback) ServeRange(w http.ResponseWriter, r *http.Request, id string) {
+	p.current().ServeRange(w, r, id)
+}
+func (p *fixturePlayback) InputURL(id string) string { return p.current().InputURL(id) }
+func (p *fixturePlayback) Failover(ctx context.Context, id string, at time.Duration) (*core.PlaySession, error) {
+	return p.current().Failover(ctx, id, at)
+}
+func (p *fixturePlayback) Stop(id string)                { p.current().Stop(id) }
+func (p *fixturePlayback) Sessions() []*core.PlaySession { return p.current().Sessions() }
+func (p *fixturePlayback) PrepareSurface(ctx context.Context, u *core.User, k core.RatingKey, caps core.ClientCaps, releaseID string, exact bool) (*core.PlaySession, error) {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.PrepareSurface(ctx, u, k, caps, releaseID, exact)
+	}
+	return nil, core.ErrNotAvailable
+}
+func (p *fixturePlayback) SessionForSurface(surface string, userID int64, clientID string, key core.RatingKey, releaseID string, exact bool) (*core.PlaySession, bool) {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.SessionForSurface(surface, userID, clientID, key, releaseID, exact)
+	}
+	return nil, false
+}
+func (p *fixturePlayback) MarkSurfaceOpened(id string) bool {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.MarkSurfaceOpened(id)
+	}
+	return true
+}
+func (p *fixturePlayback) MarkSurfacePrepared(id string) bool {
+	if scoped, ok := p.current().(core.SurfaceScopedPlayback); ok {
+		return scoped.MarkSurfacePrepared(id)
+	}
+	return true
+}
+func (p *fixturePlayback) PinSourceRevision(ctx context.Context, id, revision string) error {
+	if pins, ok := p.current().(core.PlaybackRevisionPin); ok {
+		return pins.PinSourceRevision(ctx, id, revision)
+	}
+	return nil
+}
+func (p *fixturePlayback) UnpinSourceRevision(id string) {
+	if pins, ok := p.current().(core.PlaybackRevisionPin); ok {
+		pins.UnpinSourceRevision(id)
+	}
+}
+func (p *fixturePlayback) CurrentSource(ctx context.Context, id string) (core.PlaybackSourceObservation, error) {
+	if snap, ok := p.current().(core.PlaybackSourceSnapshot); ok {
+		return snap.CurrentSource(ctx, id)
+	}
+	return core.PlaybackSourceObservation{}, core.ErrNotAvailable
+}
+func (p *fixturePlayback) Touch(id string) {
+	if toucher, ok := p.current().(interface{ Touch(string) }); ok {
+		toucher.Touch(id)
+	}
+}
+func (p *fixturePlayback) PlaybackProgress(userID int64, clientID string, key core.RatingKey, position time.Duration, state string) {
+	if progress, ok := p.current().(core.PlaybackTimeline); ok {
+		progress.PlaybackProgress(userID, clientID, key, position, state)
+	}
+}
+
+type fixtureTranscoder struct{ f *fixture }
+
+func (t fixtureTranscoder) current() core.Transcoder {
+	if t.f.srv != nil && t.f.srv.d.Transcoder != nil {
+		return t.f.srv.d.Transcoder
+	}
+	return t.f.trans
+}
+func (t fixtureTranscoder) Probe(ctx context.Context, inputURL string) (*core.MediaInfo, error) {
+	return t.current().Probe(ctx, inputURL)
+}
+func (t fixtureTranscoder) Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions) core.Decision {
+	return t.current().Decide(info, caps, opts)
+}
+func (t fixtureTranscoder) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSession, error) {
+	return t.current().StartHLS(ctx, req)
+}
+func (t fixtureTranscoder) Session(id string) (core.HLSSession, bool) {
+	return t.current().Session(id)
+}
+func (t fixtureTranscoder) Stop(id string)        { t.current().Stop(id) }
+func (t fixtureTranscoder) HWAccel() core.HWAccel { return t.current().HWAccel() }
+
+type fixtureTrickplay struct{ f *fixture }
+
+func (t fixtureTrickplay) provider() core.TrickplayProvider {
+	if t.f.srv != nil && t.f.srv.d.Trickplay != nil {
+		return t.f.srv.d.Trickplay
+	}
+	return nil
+}
+func (t fixtureTrickplay) EnsureTrickplay(ctx context.Context, src core.TrickplaySource) {
+	if p := t.provider(); p != nil {
+		p.EnsureTrickplay(ctx, src)
+	}
+}
+func (t fixtureTrickplay) TrickplayAvailable(id string) bool {
+	if p := t.provider(); p != nil {
+		return p.TrickplayAvailable(id)
+	}
+	return false
+}
+func (t fixtureTrickplay) TrickplayBIF(id string) ([]byte, bool) {
+	if p := t.provider(); p != nil {
+		return p.TrickplayBIF(id)
+	}
+	return nil, false
+}
+func (t fixtureTrickplay) TrickplayFrame(id string, at time.Duration) ([]byte, bool) {
+	if p := t.provider(); p != nil {
+		return p.TrickplayFrame(id, at)
+	}
+	return nil, false
+}
+func (t fixtureTrickplay) SetTrickplayFallback(id string, jpeg []byte) {
+	if p := t.provider(); p != nil {
+		p.SetTrickplayFallback(id, jpeg)
+	}
+}
+func (t fixtureTrickplay) AcquireTrickplay(ctx context.Context, src core.TrickplaySource) (core.TrickplayLease, error) {
+	p := t.provider()
+	if p == nil {
+		return nil, core.ErrNotAvailable
+	}
+	if leaser, ok := p.(core.TrickplayLeaser); ok {
+		return leaser.AcquireTrickplay(ctx, src)
+	}
+	p.EnsureTrickplay(ctx, src)
+	return fixtureTrickplayLease{ensure: p.EnsureTrickplay}, nil
+}
+
+type fixtureTrickplayLease struct {
+	ensure func(context.Context, core.TrickplaySource)
+}
+
+func (l fixtureTrickplayLease) Ensure(ctx context.Context, src core.TrickplaySource) {
+	if l.ensure != nil {
+		l.ensure(ctx, src)
+	}
+}
+func (fixtureTrickplayLease) Release(bool) {}
+
+type fixtureProgress struct{ f *fixture }
+
+func (p fixtureProgress) Progress(ctx context.Context, viewer int64, key core.RatingKey, position, duration time.Duration, state string) error {
+	if p.f.srv != nil && p.f.srv.d.State != nil {
+		return p.f.srv.d.State.Progress(ctx, viewer, key, position, duration, state)
+	}
+	return p.f.state.Progress(ctx, viewer, key, position, duration, state)
+}
+
+func (f *fixture) attachPlaybackBroker(d Deps) {
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		if id <= 0 {
+			return nil, core.ErrUnauthorized
+		}
+		return &core.Viewer{ID: id}, nil
+	}
+	events := sessions.NewEventBus(nil, active)
+	broker, err := sessions.NewBroker(sessions.BrokerDeps{
+		DB: d.DB, Cluster: d.Cluster,
+		Lookup: func(ctx context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+			if f.srv != nil && f.srv.d.Catalog != nil {
+				return f.srv.d.Catalog.Get(ctx, key)
+			}
+			if d.Catalog != nil {
+				return d.Catalog.Get(ctx, key)
+			}
+			return f.catalog.Get(ctx, key)
+		},
+		Playback: &fixturePlayback{f: f}, Transcoder: fixtureTranscoder{f: f}, Progress: fixtureProgress{f: f}, Trickplay: fixtureTrickplay{f: f}, ActiveViewer: active,
+		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
+		OnTimeline: func(v *core.Viewer, key core.RatingKey, pos, dur time.Duration, state string) {
+			if d.Hooks.OnTimeline == nil || v == nil {
+				return
+			}
+			u := *v
+			if u.Username == "" && u.ID == ownerUser.ID {
+				u = ownerUser
+			}
+			d.Hooks.OnTimeline(&u, key, pos, dur, state)
+		},
+		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {
+			if f.srv == nil || f.srv.d.Subtitles == nil {
+				return nil, "", core.ErrNotAvailable
+			}
+			return f.srv.d.Subtitles.OpenFormat(id, format)
+		},
+		Events: events, Now: d.Now,
+	})
+	if err != nil {
+		panic(err)
+	}
+	f.broker = broker
+	f.srv.UsePlaybackBroker(sessions.BindSurface(broker, "plex"))
+	f.srv.UsePlexStreams(sessions.BindPlexStreams(broker))
+}
+
+func (f *fixture) bindStream(key core.RatingKey, index int, info core.StreamInfo) int64 {
+	return f.srv.assignStream(context.Background(), &ownerUser, key, index, info, "")
+}
+
+// mountTestBroker is the same broker the app mounts. A server that renders
+// stream ids uses it; there is no second id map.
+func mountTestBroker(s *Server, now func() time.Time) {
+	if s == nil {
+		return
+	}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		if id <= 0 {
+			return nil, core.ErrUnauthorized
+		}
+		return &core.Viewer{ID: id}, nil
+	}
+	events := sessions.NewEventBus(nil, active)
+	progress, _ := s.d.State.(sessions.ProgressWriter)
+	if progress == nil {
+		progress = discardProgress{}
+	}
+	if now == nil {
+		now = time.Now
+	}
+	broker, err := sessions.NewBroker(sessions.BrokerDeps{
+		Lookup: func(ctx context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+			if s.d.Catalog == nil {
+				return nil, core.ErrNotFound
+			}
+			return s.d.Catalog.Get(ctx, key)
+		},
+		Playback: s.d.Playback, Transcoder: s.d.Transcoder, Progress: progress, ActiveViewer: active,
+		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
+		OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {
+			if s.d.Subtitles == nil {
+				return nil, "", core.ErrNotAvailable
+			}
+			return s.d.Subtitles.OpenFormat(id, format)
+		},
+		Events: events, Now: now,
+	})
+	if err != nil {
+		panic(err)
+	}
+	s.UsePlaybackBroker(sessions.BindSurface(broker, "plex"))
+	s.UsePlexStreams(sessions.BindPlexStreams(broker))
+}
+
+type discardProgress struct{}
+
+func (discardProgress) Progress(context.Context, int64, core.RatingKey, time.Duration, time.Duration, string) error {
+	return nil
 }

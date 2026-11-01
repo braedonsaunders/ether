@@ -10,6 +10,7 @@ import { t, tx } from "../../i18n";
 import { apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
+import { FromPlexDefaults } from "./FromPlexDefaults";
 import {
   normalizeRules,
   sameRules,
@@ -30,8 +31,8 @@ function choiceText(m: ShowMemory): string {
 }
 
 /**
- * One viewer's audio and subtitle choices. They follow Viewers › Defaults
- * until the owner saves something different here.
+ * One viewer's audio and subtitle choices. They follow the household choices
+ * on Playback until the owner saves something different here.
  */
 export function ViewerPlayback({ viewer }: { viewer: Viewer }) {
   const id = viewer.id;
@@ -84,7 +85,7 @@ export function ViewerPlayback({ viewer }: { viewer: Viewer }) {
       await data.reload();
       setError(null);
       toast.success(t("Now using the defaults"), {
-        description: t("{name} follows Viewers › Defaults.", { name }),
+        description: t("{name} follows the household audio and subtitles.", { name }),
       });
     } catch (e) {
       toast.error(t("Couldn't reset"), { description: errorMessage(e) });
@@ -118,10 +119,10 @@ export function ViewerPlayback({ viewer }: { viewer: Viewer }) {
               : tx("Follows {link}. Change anything below to give {name} their own.", {
                   link: (
                     <Link
-                      to="/viewers/defaults"
+                      to="/playback/subtitles"
                       className="font-medium text-primary hover:underline"
                     >
-                      {t("Viewers › Defaults")}
+                      {t("Playback › Audio & subtitles")}
                     </Link>
                   ),
                   name,
@@ -135,12 +136,14 @@ export function ViewerPlayback({ viewer }: { viewer: Viewer }) {
         ) : null}
       </div>
 
+      <FromPlexDefaults viewerId={id} show="tracks" />
+
       <StreamRulesFields value={draft} onChange={setDraft} disabled={busy} />
 
       <Section
         title={t("Show memory")}
         description={t(
-          "When this viewer changes tracks in Plex, Ether remembers the choice for later episodes of the same show.",
+          "When this viewer changes tracks, later episodes of that show use the same choice.",
         )}
       >
         {memory.length === 0 ? (

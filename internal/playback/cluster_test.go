@@ -2,7 +2,9 @@ package playback
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -59,6 +61,92 @@ func TestClusterUserLimitSpansNodes(t *testing.T) {
 		_, err := b.m.Prepare(ctx, friend, movie2, defaultCaps("phone"))
 		return err == nil
 	})
+}
+
+func TestClusterPreparedSourceVisibilityTracksOpen(t *testing.T) {
+	a, b, _ := twoNodes(t, nil)
+	caps := defaultCaps("device")
+	caps.Protocol = "jellyfin"
+	source, err := a.m.PrepareSurface(context.Background(), friend, movieKey, caps, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "remote prepared marker", func() bool {
+		for _, s := range b.m.RemoteSessions(context.Background()) {
+			if s.ID == source.ID {
+				return s.PreparedOnly
+			}
+		}
+		return false
+	})
+	if !a.m.MarkSurfaceOpened(source.ID) {
+		t.Fatal("failed to mark open")
+	}
+	eventually(t, "remote opened marker", func() bool {
+		for _, s := range b.m.RemoteSessions(context.Background()) {
+			if s.ID == source.ID {
+				return !s.PreparedOnly
+			}
+		}
+		return false
+	})
+	a.m.Stop(source.ID)
+}
+
+func TestClusterPreparedSnapshotMixedVersions(t *testing.T) {
+	// Old readers ignore the additive marker; new readers treat a missing
+	// marker from old nodes as an opened legacy playback.
+	type oldSession struct {
+		ID       string
+		UserID   int64
+		ClientID string
+		Key      core.RatingKey
+	}
+	newSnapshot := sharedSnapshot(&core.PlaySession{ID: "new", UserID: 7, ClientID: "device", Key: movieKey, PreparedOnly: true})
+	var old oldSession
+	if err := json.Unmarshal([]byte(newSnapshot), &old); err != nil || old.ID != "new" || old.UserID != 7 || old.Key != movieKey {
+		t.Fatalf("old reader: %+v %v", old, err)
+	}
+	oldSnapshot, err := json.Marshal(oldSession{ID: "old", UserID: 7, ClientID: "device", Key: movieKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var current core.PlaySession
+	if err := json.Unmarshal(oldSnapshot, &current); err != nil || current.ID != "old" || current.PreparedOnly {
+		t.Fatalf("new reader: %+v %v", current, err)
+	}
+}
+
+func TestClusterCollidingPlexAndBrokerScopesConsumeSeparateSlots(t *testing.T) {
+	for _, brokerFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("brokerFirst=%t", brokerFirst), func(t *testing.T) {
+			a, b, _ := twoNodes(t, func(h *harness, _ *Options) { h.cfg.Server.MaxStreams = 1 })
+			ctx := context.Background()
+			caps := defaultCaps("8:jellyfincolliding-device")
+			caps.Protocol = "plex"
+			other := caps
+			other.Protocol = "jellyfin"
+			var first *core.PlaySession
+			var err error
+			if brokerFirst {
+				first, err = a.m.PrepareSurface(ctx, friend, movieKey, other, "", false)
+			} else {
+				first, err = a.m.Prepare(ctx, friend, movieKey, caps)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if brokerFirst {
+				_, err = b.m.Prepare(ctx, friend, movieKey, caps)
+			} else {
+				_, err = b.m.PrepareSurface(ctx, friend, movieKey, other, "", false)
+			}
+			if !errors.Is(err, core.ErrStreamLimit) {
+				t.Fatalf("remote collision bypassed stream limit: %v", err)
+			}
+			a.m.Stop(first.ID)
+		})
+	}
 }
 
 func TestClusterServerLimitAndLiveTVUnits(t *testing.T) {

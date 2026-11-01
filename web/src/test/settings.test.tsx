@@ -20,6 +20,16 @@ afterEach(async () => {
 });
 
 describe("Settings", () => {
+  it("shows and filters client families reported by other protocols", async () => {
+    renderApp("/playback/devices");
+    expect(await screen.findByText("Stremio TV", {}, WAIT)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Protocol" }));
+    fireEvent.click(
+      within(await screen.findByRole("listbox", { hidden: true })).getByText("Stremio"),
+    );
+    expect(screen.getByText("Stremio TV")).toBeInTheDocument();
+    expect(screen.queryByText("Jellyfin TV")).toBeNull();
+  });
   it("saves automatic franchise visibility without changing other catalog settings", async () => {
     const { fake } = renderApp("/catalog/settings");
     const toggle = await screen.findByLabelText("Hide automatic franchise collections", {}, WAIT);
@@ -72,11 +82,20 @@ describe("Settings", () => {
     );
   });
 
-  it("lists optional integrations without catalog or source cards", async () => {
+  it("lists integrations without source cards and keeps TMDB on this page", async () => {
     renderApp("/services");
-    const optional = await screen.findByRole("region", { name: "Optional" }, WAIT);
+    const required = await screen.findByRole("region", { name: "Required" }, WAIT);
     expect(screen.queryByRole("region", { name: "Essentials" })).toBeNull();
-    for (const name of ["TMDB", "Debrid", "Prowlarr", "Plex"])
+    expect(within(required).getByRole("listitem", { name: "TMDB" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Set up TMDB" })).toHaveAttribute(
+      "href",
+      "/services/tmdb",
+    );
+    const artwork = screen.getByRole("region", { name: "Artwork and ratings" });
+    const posters = await within(artwork).findByRole("listitem", { name: "PostersPlus" }, WAIT);
+    const ratings = within(artwork).getByRole("listitem", { name: "OMDb and MDBList" });
+    expect(posters.parentElement).toBe(ratings.parentElement);
+    for (const name of ["Debrid", "Prowlarr", "Plex"])
       expect(screen.queryByRole("listitem", { name })).toBeNull();
     for (const name of [/Catalog settings/, /Sources › Debrid/, /Sources › Indexers/])
       expect(screen.queryByRole("link", { name })).toBeNull();
@@ -87,12 +106,41 @@ describe("Settings", () => {
       [/^Ratings$/, "/services/ratings"],
       [/^Markers$/, "/services/introdb"],
     ] as const)
-      expect(within(optional).getByRole("link", { name })).toHaveAttribute("href", href);
+      expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
     expect(within(screen.getByRole("listitem", { name: "Language model" })).getByText("On"));
     expect(screen.queryByRole("button", { name: "Test Trakt" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "TheIntroDB" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save Simkl settings" })).toBeNull();
     expect(screen.queryByRole("switch", { name: "Prowlarr enabled" })).toBeNull();
     expect(screen.queryByRole("switch", { name: "TMDB enabled" })).toBeNull();
+  });
+
+  it("keeps the TheIntroDB key, health and test on its integration tab", async () => {
+    const { fake } = renderApp("/services/introdb", {}, (f) => {
+      f.state.config.markers = { theIntroDb: true, apiKey: "" };
+    });
+    expect(await screen.findByLabelText("Optional TheIntroDB key", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test TheIntroDB" })).toBeInTheDocument();
+    expect(screen.getAllByText("Public lookup").length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("Optional TheIntroDB key"), {
+      target: { value: "intro-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test TheIntroDB" }));
+    await waitFor(() => expect(calls(fake, "POST", "/test/introdb")).toHaveLength(1), WAIT);
+    expect(calls(fake, "POST", "/test/introdb")[0]!.body).toEqual({ apiKey: "intro-key" });
+  });
+
+  it("saves and tests the TMDB key from Integrations", async () => {
+    const { fake } = renderApp("/services/tmdb");
+    fireEvent.change(await screen.findByLabelText("TMDB API key", {}, WAIT), {
+      target: { value: "tmdb-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test TMDB key" }));
+    await waitFor(() => expect(calls(fake, "POST", "/test/tmdb")).toHaveLength(1), WAIT);
+    expect(calls(fake, "POST", "/test/tmdb")[0]!.body).toEqual({ key: "tmdb-key" });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/catalog")[0]!.body).toMatchObject({ tmdbKey: "tmdb-key" });
   });
 
   it("keeps a Trakt draft when another integration is toggled", async () => {
@@ -133,7 +181,9 @@ describe("Settings", () => {
     const { fake } = renderApp("/services");
     fireEvent.click(await screen.findByRole("switch", { name: "Trakt enabled" }, WAIT));
     const dialog = await screen.findByRole("dialog", { name: "Set up Trakt" }, WAIT);
-    fireEvent.change(within(dialog).getByLabelText("Client ID"), { target: { value: "cid" } });
+    fireEvent.change(within(dialog).getByLabelText("Client ID"), {
+      target: { value: "cid" },
+    });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save and enable" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/trakt")).toHaveLength(1), WAIT);
     expect(calls(fake, "PUT", "/config/trakt")[0]!.body).toMatchObject({
@@ -171,7 +221,9 @@ describe("Settings", () => {
     });
     fireEvent.click(await screen.findByRole("switch", { name: "Trakt enabled" }, WAIT));
     const dialog = await screen.findByRole("dialog", { name: "Set up Trakt" }, WAIT);
-    fireEvent.change(within(dialog).getByLabelText("Client ID"), { target: { value: "bad id" } });
+    fireEvent.change(within(dialog).getByLabelText("Client ID"), {
+      target: { value: "bad id" },
+    });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save and enable" }));
     expect((await screen.findAllByText("looks malformed", {}, WAIT)).length).toBeGreaterThan(0);
     expect(screen.getByRole("dialog", { name: "Set up Trakt" })).toBeInTheDocument();
@@ -201,15 +253,18 @@ describe("Settings", () => {
 
   it("gives each service its own tab with its connection test", async () => {
     renderApp("/services/trakt", {}, (f) => {
-      f.state.config.trakt = { enabled: true, clientId: "cid", clientSecret: "" };
+      f.state.config.llm.enabled = true;
+      f.state.config.trakt = {
+        enabled: true,
+        clientId: "cid",
+        clientSecret: "",
+      };
     });
     expect(await screen.findByRole("button", { name: "Test Trakt" }, WAIT)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Test endpoint" })).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "Language model" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Language model" }, WAIT));
     expect(await screen.findByRole("button", { name: "Test endpoint" }, WAIT)).toBeInTheDocument();
-    expect(
-      await screen.findByRole("heading", { name: "Language model features" }, WAIT),
-    ).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Language features" }, WAIT)).toBeVisible();
   });
 
   it("picks a language-model provider and a model from its live list", async () => {
@@ -284,7 +339,11 @@ describe("Settings", () => {
 
   it("jumps to the tab holding a field the server rejected", async () => {
     renderApp("/services/trakt", {}, (f) => {
-      f.state.config.trakt = { enabled: true, clientId: "old", clientSecret: "" };
+      f.state.config.trakt = {
+        enabled: true,
+        clientId: "old",
+        clientSecret: "",
+      };
       const orig = f.fetch;
       f.fetch = async (input, init) => {
         const url = new URL(String(input), "http://localhost");
@@ -309,7 +368,7 @@ describe("Settings", () => {
       target: { value: "bad id" },
     });
     fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
-    await screen.findByRole("region", { name: "Optional" }, WAIT);
+    await screen.findByRole("region", { name: "Watch tracking" }, WAIT);
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
     await waitFor(
       () =>
@@ -366,38 +425,30 @@ describe("Settings", () => {
     expect(screen.queryByRole("tab", { name: "Shared Cache" })).not.toBeInTheDocument();
   });
 
-  it("gives config sections the UI has no page for their own General tab, and saves them whole", async () => {
-    const { fake } = renderApp("/server", {}, (f) => {
+  it("keeps unknown config off General and tucks power options under More options", async () => {
+    renderApp("/server", {}, (f) => {
       f.state.config = {
         ...f.state.config,
         experiments: { enabled: true, explore: 0.2 },
-        posters: {
-          enabled: false,
-          source: "postersplus",
-          baseUrl: "",
-          apiKey: "",
-          urlTemplate: "",
-        },
       } as never;
     });
-    fireEvent.click(await screen.findByRole("tab", { name: "Experiments" }, WAIT));
-    expect(screen.queryByRole("tab", { name: "Posters" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Experiments" }, WAIT)).toBeInTheDocument();
-    fireEvent.change(await screen.findByLabelText("Explore", {}, WAIT), {
-      target: { value: "0.4" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
-    await waitFor(() => expect(calls(fake, "PUT", "/config")).toHaveLength(1), WAIT);
-    expect(
-      (calls(fake, "PUT", "/config")[0]!.body as { experiments: unknown }).experiments,
-    ).toEqual({ enabled: true, explore: 0.4 });
+    expect(await screen.findByLabelText("Server name", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Port")).toBeInTheDocument();
+    expect(screen.getByText("Living Room Ether is ready for viewers.")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Experiments" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Listen address")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Streams per viewer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Advanced" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More options: How apps connect" }));
+    expect(screen.getByLabelText("Listen address")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More options: Who can watch at once" }));
+    expect(screen.getByLabelText("Streams per viewer")).toBeInTheDocument();
   });
 
-  it("redirects the old General poster editor to Metadata artwork", async () => {
+  it("does not keep a General poster alias", async () => {
     renderApp("/server/posters");
-    expect(await screen.findByRole("switch", { name: "Ether posters" }, WAIT)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Configure poster provider" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "General" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "General" }, WAIT)).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Ether posters" })).not.toBeInTheDocument();
   });
 
   it("edits downloads, personalization and trailers on General tabs without losing other edits", async () => {
@@ -421,22 +472,154 @@ describe("Settings", () => {
     expect(whole.server.friendlyName).toBe("Den Ether");
   });
 
-  it("opens Connectivity on status and connection checks", async () => {
-    renderApp("/remote-access");
-    expect(await screen.findByRole("heading", { name: "Connection checks" }, WAIT)).toBeVisible();
-    expect(screen.getByText("Plex account")).toBeInTheDocument();
+  it("keeps Plex account and connection settings inside its enabled app tab", async () => {
+    renderApp("/apps/plex");
+    expect(await screen.findByRole("button", { name: "Sign out of Plex" }, WAIT)).toBeVisible();
+    expect(screen.getAllByText("Claimed by the Plex account owner.").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("switch", { name: "Claimed" })).toBeNull();
+    expect(screen.queryByLabelText("Owner token")).toBeNull();
     expect(screen.queryByLabelText("Allow remote access")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Remote access" }));
-    expect(await screen.findByLabelText("Allow remote access", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Connection checks" }, WAIT)).toBeVisible();
+    expect(screen.getByLabelText("Allow remote access")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Secure connections" })).toBeNull();
+  });
+
+  it("rejects non-URL junk in Custom server URLs with a translated message while accepting Tailscale CGNAT URLs", async () => {
+    const { fake } = renderApp("/apps/plex");
+    fireEvent.click(await screen.findByRole("tab", { name: "Remote access" }, WAIT));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More options: Remote access" }, WAIT),
+    );
+    const input = await screen.findByLabelText("Custom server URLs", {}, WAIT);
+    fireEvent.change(input, {
+      target: { value: "[http://10.0.0.43:32450](http://10.0.0.43:32450/)" },
+    });
+    expect(
+      (
+        await screen.findAllByText(
+          "Enter full http:// or https:// server URLs, separated by commas.",
+          {},
+          WAIT,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    expect(calls(fake, "PUT", "/config/plex")).toHaveLength(0);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Display language" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: /Deutsch/ }, WAIT));
+    expect(
+      (
+        await screen.findAllByText(
+          german("Enter full http:// or https:// server URLs, separated by commas."),
+          {},
+          WAIT,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.change(await screen.findByLabelText(german("Custom server URLs"), {}, WAIT), {
+      target: { value: "http://100.100.1.2:32400, https://plex.example.com:8443" },
+    });
+    expect(
+      screen.queryByText(
+        german("Enter full http:// or https:// server URLs, separated by commas."),
+      ),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(german("Save changes")) }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/plex")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/plex")[0]!.body).toMatchObject({
+      customUrls: ["http://100.100.1.2:32400", "https://plex.example.com:8443"],
+    });
+  });
+
+  it("returns disabled Plex settings to the overview without changing the saved account", async () => {
+    const { fake } = renderApp("/apps/plex", {}, (f) => {
+      f.state.config.frontends = { plex: { enabled: false } };
+    });
+    const accountBefore = JSON.stringify(fake.state.config.plex);
+    expect(await screen.findByRole("switch", { name: "Plex enabled" }, WAIT)).not.toBeChecked();
+    expect(screen.queryByRole("tab", { name: "Plex" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Connection checks" })).toBeNull();
-    expect(screen.queryByText("Owner token")).toBeNull();
+    expect(calls(fake, "PUT", "/config")).toHaveLength(0);
+    expect(JSON.stringify(fake.state.config.plex)).toBe(accountBefore);
+  });
+
+  it("keeps an unsaved app setting while switching tabs", async () => {
+    renderApp("/apps/jellyfin", {}, (f) => {
+      f.state.config.frontends = { jellyfin: { enabled: true }, silo: { enabled: true } };
+    });
+    fireEvent.change(await screen.findByRole("spinbutton", { name: "Port" }, WAIT), {
+      target: { value: "8095" },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Silo" }));
+    await screen.findByRole("spinbutton", { name: "Port" }, WAIT);
+    fireEvent.click(screen.getByRole("tab", { name: "Jellyfin" }));
+    expect(await screen.findByRole("spinbutton", { name: "Port" }, WAIT)).toHaveValue(8095);
+    expect(screen.queryByRole("textbox", { name: "Server name" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Unsaved changes" })).toBeVisible();
+  });
+
+  it("lets the owner opt in to the Jellyfin public viewer picker", async () => {
+    const { fake } = renderApp("/apps/jellyfin", {}, (f) => {
+      f.state.config.frontends = { jellyfin: { enabled: true } };
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More options: Find this server" }, WAIT),
+    );
+    const picker = await screen.findByLabelText(
+      "Show local viewer names on the sign-in screen",
+      {},
+      WAIT,
+    );
+    expect(picker).not.toBeChecked();
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(
+      () => expect(calls(fake, "PUT", "/frontends/jellyfin/settings")).toHaveLength(1),
+      WAIT,
+    );
+    expect(calls(fake, "PUT", "/frontends/jellyfin/settings")[0]!.body).toMatchObject({
+      publicViewerPicker: true,
+    });
+  });
+
+  it("turns personalized Jellyfin home rows off without forgetting the count", async () => {
+    const { fake } = renderApp("/apps/jellyfin", {}, (f) => {
+      f.state.config.frontends = { jellyfin: { enabled: true } };
+    });
+    const rows = await screen.findByRole("switch", { name: "Personalized rows" }, WAIT);
+    expect(rows).toBeChecked();
+    fireEvent.click(rows);
+    fireEvent.click(screen.getByRole("button", { name: "More options: Home" }));
+    fireEvent.change(await screen.findByRole("spinbutton", { name: "How many rows" }), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(
+      () => expect(calls(fake, "PUT", "/frontends/jellyfin/settings")).toHaveLength(1),
+      WAIT,
+    );
+    expect(calls(fake, "PUT", "/frontends/jellyfin/settings")[0]!.body).toMatchObject({
+      homeRows: false,
+      homeRowCount: 2,
+    });
+  });
+
+  it("does not keep the old Connectivity URL", async () => {
+    renderApp("/remote-access/secure");
+    expect(await screen.findByRole("link", { name: "Home" }, WAIT)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Apps" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Connectivity" })).not.toBeInTheDocument();
   });
 
   it("puts every server page in the main sidebar, with no separate settings menu", async () => {
     renderApp("/server");
     await screen.findByRole("heading", { name: "General" }, WAIT);
     const sidebar = (name: string) => screen.queryAllByRole("link", { name });
-    for (const name of ["General", "Connectivity", "Integrations", "Notifications", "Maintenance"])
+    for (const name of ["General", "Apps", "Integrations", "Notifications", "Maintenance"])
       expect(sidebar(name).length).toBeGreaterThan(0);
     for (const name of ["Backups & import", "Updates", "Troubleshooting", "Logs"])
       expect(sidebar(name)).toHaveLength(0);
@@ -475,7 +658,9 @@ describe("Settings", () => {
     const { fake } = renderApp("/services");
     fireEvent.click(await screen.findByRole("switch", { name: "Simkl enabled" }, WAIT));
     const simkl = await screen.findByRole("dialog", { name: "Set up Simkl" }, WAIT);
-    fireEvent.change(within(simkl).getByLabelText("Client ID"), { target: { value: "app-id" } });
+    fireEvent.change(within(simkl).getByLabelText("Client ID"), {
+      target: { value: "app-id" },
+    });
     fireEvent.click(within(simkl).getByRole("button", { name: "Save and enable" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/simkl")).toHaveLength(1), WAIT);
     expect(calls(fake, "PUT", "/config/simkl")[0]!.body).toMatchObject({
@@ -487,7 +672,9 @@ describe("Settings", () => {
 
     fireEvent.click(screen.getByRole("switch", { name: "OMDb and MDBList enabled" }));
     const ratings = await screen.findByRole("dialog", { name: "Set up OMDb and MDBList" }, WAIT);
-    fireEvent.change(within(ratings).getByLabelText("API key"), { target: { value: "omdb-key" } });
+    fireEvent.change(within(ratings).getByLabelText("API key"), {
+      target: { value: "omdb-key" },
+    });
     fireEvent.click(within(ratings).getByRole("button", { name: "Save and enable" }));
     await waitFor(
       () => expect(calls(fake, "PUT", "/discovery/ratings/settings")).toHaveLength(1),
@@ -701,7 +888,7 @@ describe("Settings", () => {
   });
 
   it("labels local file playback as a troubleshooting tool", async () => {
-    renderApp("/troubleshooting");
+    renderApp("/maintenance/troubleshooting");
     expect(
       await screen.findByRole("heading", { name: "Test playback with a local file" }, WAIT),
     ).toBeInTheDocument();

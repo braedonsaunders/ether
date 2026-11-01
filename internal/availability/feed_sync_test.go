@@ -129,6 +129,7 @@ func TestFeedCatchupReservesFreshPollsAndResumesNextDay(t *testing.T) {
 	x.c.Availability.MaxPages = 5
 	x.now = time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
 	x.c.Availability.FeedRequests = 96 // One source, exactly one head every 15m.
+	x.f.sources[0].DailyLimit = 480    // A real cap: head polls stay reserved. Unlimited indexers do not.
 	f := &movingFeed{sources: x.f.sources, items: feedItems(0, 500)}
 	x.s.d.Feeds = f
 	if err := x.s.Cycle(t.Context()); err != nil {

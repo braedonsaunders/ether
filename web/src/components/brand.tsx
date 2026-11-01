@@ -1,6 +1,5 @@
 import { cn } from "@braedonsaunders/appkit-ui";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { t } from "../i18n";
 import art from "../lib/brand-art.json";
 
 type Motion = "static" | "intro" | "loop";
@@ -91,13 +90,10 @@ export function EtherLogo({
   );
 }
 
-export function Brand({ serverName }: { serverName?: string }) {
+export function Brand() {
   return (
     <span className="flex min-w-0 flex-col gap-1">
       <EtherLogo className="w-[116px]" />
-      {serverName && serverName.toLowerCase() !== "ether" && (
-        <span className="block truncate text-[10px] leading-tight text-fg-muted">{serverName}</span>
-      )}
     </span>
   );
 }
@@ -131,7 +127,6 @@ export function BrandSplash({ ready }: { ready: boolean }) {
     >
       <div className="ether-splash-center">
         <EtherLogo motion="intro" className="w-full" />
-        <p>{t("Your Plex. Beyond the static library.")}</p>
         <div className="ether-splash-progress" />
       </div>
     </div>

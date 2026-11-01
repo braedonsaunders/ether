@@ -8,11 +8,12 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { Globe, Link2, Plus, Puzzle, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { localized, t, tn } from "../../i18n";
 import { ActionMenu } from "../../components/ActionMenu";
+import { MoreOptions } from "../../components/ConfigSection";
 import { Meter } from "../../components/charts";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
@@ -24,6 +25,7 @@ import {
   type TestState,
 } from "../../components/fields";
 import { Section } from "../../components/layout";
+import { SortableList } from "../../components/Sortable";
 import { SettingsRow } from "../../components/SettingsRow";
 import { api, errorMessage, newId } from "../../lib/api";
 import { isPlainObject } from "../../lib/format";
@@ -35,7 +37,6 @@ import {
   NumRow,
   OrderButtons,
   RecordDrawer,
-  RecordItem,
   TextRow,
   recordErrors,
   swap,
@@ -43,6 +44,8 @@ import {
   useTests,
   type Errors,
 } from "./form";
+import { SourceCard } from "./cards";
+import { StremioMark } from "./marks";
 import {
   MissingDefinition,
   SiteDefinitionRow,
@@ -202,7 +205,13 @@ function SiteTestResults({ result }: { result: SiteTestResult }) {
  * settings edited in place. `version` changes when indexers were added
  * elsewhere (Prowlarr import).
  */
-export function IndexerList({ version = 0 }: { version?: number }) {
+export function IndexerList({
+  version = 0,
+  addRequest,
+}: {
+  version?: number;
+  addRequest?: { nonce: number; type: "site" | "newznab" | "stremio" } | null;
+}) {
   const { dashboard, refreshDashboard } = useApp();
   const config = useAsync(() => api.getConfig(), [version]);
   const [sitesVersion, setSitesVersion] = useState(0);
@@ -216,6 +225,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const { tests, runTest, reset } = useTests();
+  const seenAdd = useRef(0);
   const [siteTest, setSiteTest] = useState<{ state: TestState; result?: SiteTestResult }>({
     state: { status: "idle" },
   });
@@ -263,6 +273,22 @@ export function IndexerList({ version = 0 }: { version?: number }) {
     setInstalled(def);
     open(indexers.length, blankSiteIndexer(def, indexers.length));
   };
+  useEffect(() => {
+    if (!addRequest || !cfg || seenAdd.current === addRequest.nonce) return;
+    seenAdd.current = addRequest.nonce;
+    if (addRequest.type === "site") {
+      setEditing(null);
+      setPicking(true);
+      return;
+    }
+    open(
+      indexers.length,
+      addRequest.type === "stremio"
+        ? blankStremioIndexer(indexers.length)
+        : blankIndexer(indexers.length),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addRequest, cfg, indexers.length]);
 
   async function save() {
     if (!editing) return;
@@ -368,8 +394,11 @@ export function IndexerList({ version = 0 }: { version?: number }) {
         </Alert>
       ) : null}
       <Section
+        id="sources-indexers"
         title={t("Indexers")}
-        description={t("Searched in order. Ether handles service limits automatically.")}
+        description={t(
+          "Searched in order when someone presses Play. Ether follows each service's limits automatically.",
+        )}
         actions={
           <ActionMenu
             label={t("Add indexer")}
@@ -402,7 +431,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
             <Plus size={14} /> {t("Add indexer")}
           </ActionMenu>
         }
-        bodyClassName=""
+        bodyClassName="space-y-3 p-4"
       >
         {indexers.length === 0 ? (
           <EmptyState
@@ -413,8 +442,12 @@ export function IndexerList({ version = 0 }: { version?: number }) {
             )}
           />
         ) : (
-          <ul className="divide-y divide-border">
-            {indexers.map((ix, i) => {
+          <SortableList
+            items={indexers}
+            getId={(ix) => ix.id}
+            className="space-y-3"
+            onReorder={(next) => void commit(next, t("Indexer order saved"))}
+            renderItem={(ix, handle, i) => {
               const s = statFor(ix);
               const label = indexerName(ix, i);
               const hits = Number(s?.hitsUsed ?? 0);
@@ -423,9 +456,10 @@ export function IndexerList({ version = 0 }: { version?: number }) {
               const tested = site ? statusFor(ix) : undefined;
               const countsSearches = site || isStremio(ix);
               return (
-                <RecordItem
-                  key={ix.id}
-                  title={label}
+                <SourceCard
+                  name={label}
+                  position={i + 1}
+                  logo={isStremio(ix) ? <StremioMark /> : undefined}
                   description={[
                     i === 0 ? t("Searched first") : t("Priority {number}", { number: i + 1 }),
                     site && ix.url ? hostOf(ix.url) : "",
@@ -515,12 +549,13 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                       onMove={(d) => void move(i, d)}
                     />
                   }
+                  handle={handle}
                   editLabel={t("Edit {name}", { name: label })}
                   onEdit={() => open(i, ix)}
                 />
               );
-            })}
-          </ul>
+            }}
+          />
         )}
       </Section>
 
@@ -701,6 +736,13 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                   error={errors.url}
                   onChange={(v) => set({ url: v })}
                 />
+                {draft.url.includes("torrentio.strem.fun") ? (
+                  <p className="px-5 text-sm text-fg-muted">
+                    {t(
+                      "Lookups go to torrentio.strem.fun. Prefer your own? Use Torznab (Prowlarr, Jackett, Zilean).",
+                    )}
+                  </p>
+                ) : null}
                 {addonUrlHasDebridKey(draft.url) ? (
                   <Alert variant="warning" role="status">
                     <AlertDescription>
@@ -762,10 +804,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
             {builtin && draftDef ? (
               <SiteSettingsFields def={draftDef} draft={draft} onChange={set} errors={errors} />
             ) : null}
-            <details className="space-y-3">
-              <summary className="cursor-pointer text-sm font-medium">
-                {t("Advanced: personal caps")}
-              </summary>
+            <MoreOptions label={t("More options")}>
               <SettingsSection
                 title={t("Optional daily caps")}
                 description={
@@ -809,40 +848,40 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                   />
                 )}
               </SettingsSection>
-            </details>
-            {builtin || stremio ? null : (
-              <SettingsSection title={t("Categories")}>
-                <SettingsRow
-                  stacked
-                  title={t("Movie categories")}
-                  description={t(
-                    "{protocol} category ids. Empty uses the standard movie categories.",
-                    { protocol: protocolLabel(draft) },
-                  )}
-                >
-                  <ListInput
-                    numeric
-                    ariaLabel={t("Movie categories")}
-                    value={draft.movieCategories}
-                    onChange={(v) => set({ movieCategories: v.length ? (v as number[]) : null })}
-                    placeholder="2000, 2040"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  stacked
-                  title={t("TV categories")}
-                  description={t("Empty uses the standard TV categories.")}
-                >
-                  <ListInput
-                    numeric
-                    ariaLabel={t("TV categories")}
-                    value={draft.tvCategories}
-                    onChange={(v) => set({ tvCategories: v.length ? (v as number[]) : null })}
-                    placeholder="5000, 5040"
-                  />
-                </SettingsRow>
-              </SettingsSection>
-            )}
+              {builtin || stremio ? null : (
+                <SettingsSection title={t("Categories")}>
+                  <SettingsRow
+                    stacked
+                    title={t("Movie categories")}
+                    description={t(
+                      "{protocol} category ids. Empty uses the standard movie categories.",
+                      { protocol: protocolLabel(draft) },
+                    )}
+                  >
+                    <ListInput
+                      numeric
+                      ariaLabel={t("Movie categories")}
+                      value={draft.movieCategories}
+                      onChange={(v) => set({ movieCategories: v.length ? (v as number[]) : null })}
+                      placeholder="2000, 2040"
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    stacked
+                    title={t("TV categories")}
+                    description={t("Empty uses the standard TV categories.")}
+                  >
+                    <ListInput
+                      numeric
+                      ariaLabel={t("TV categories")}
+                      value={draft.tvCategories}
+                      onChange={(v) => set({ tvCategories: v.length ? (v as number[]) : null })}
+                      placeholder="5000, 5040"
+                    />
+                  </SettingsRow>
+                </SettingsSection>
+              )}
+            </MoreOptions>
           </>
         ) : null}
       </RecordDrawer>

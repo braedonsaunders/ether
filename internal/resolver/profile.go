@@ -3,8 +3,10 @@
 package resolver
 
 import (
+	"slices"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 )
@@ -20,21 +22,100 @@ func defaultProfile() core.QualityProfile {
 		PreferredAudio:   []string{"eac3", "ac3", "aac"},
 		MinSizeMBPerMin:  5,
 		MaxSizeMBPerMin:  150,
+		Ranking:          core.DefaultRanking(nil),
 	}
 }
 
-// defaultCappedAndroidClient reports whether caps describes an Android
-// mobile client whose default base ceiling is 1080p unless overridden by
-// a user-configured client rule.
-func defaultCappedAndroidClient(caps core.ClientCaps) bool {
-	pr := strings.ToLower(caps.Product)
-	pl := strings.ToLower(caps.Platform)
-	dv := strings.ToLower(caps.Device)
-	isAndroid := strings.Contains(pr, "android") || (pl == "android" && !strings.Contains(pr, "web"))
-	if !isAndroid {
-		return false
+func clientDevice(caps core.ClientCaps) string {
+	if caps.Device != "" {
+		return caps.Device
 	}
-	return !strings.Contains(pr, "tv") && !strings.Contains(dv, "shield") && !strings.Contains(dv, "tv")
+	return caps.DeviceName
+}
+
+// defaultCappedAndroidClient reports whether caps describes an Android
+// mobile client whose registry playback ceiling is 1080p unless an owner
+// quality rule lifts it. The match is the registry quirk
+// android-mobile-ceiling, the same fact the capability engine uses.
+func defaultCappedAndroidClient(caps core.ClientCaps) bool {
+	return clientreg.HasQuirk(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, "android-mobile-ceiling")
+}
+
+func isSurroundAudioCodec(c string) bool {
+	switch strings.ToLower(strings.TrimSpace(c)) {
+	case "eac3", "ec3", "e-ac3", "ac3", "dts", "dtshd", "dts-hd", "dtshd_ma", "dca", "dca-ma", "truehd", "mlp":
+		return true
+	}
+	return false
+}
+
+func filterOutSurroundAudio(codecs []string) []string {
+	var kept []string
+	for _, c := range codecs {
+		if !isSurroundAudioCodec(c) {
+			kept = append(kept, c)
+		}
+	}
+	return kept
+}
+
+func matchingRule(q config.Quality, caps core.ClientCaps, user *core.User) (config.QualityRule, bool) {
+	byName := map[string]struct{}{}
+	for _, p := range q.Profiles {
+		byName[p.Name] = struct{}{}
+	}
+	for _, rule := range q.Rules {
+		if !ruleMatches(rule, caps, user) {
+			continue
+		}
+		if _, ok := byName[rule.Profile]; !ok {
+			continue
+		}
+		return rule, true
+	}
+	return config.QualityRule{}, false
+}
+
+func stripSurroundAudioCaps(caps core.ClientCaps) core.ClientCaps {
+	if len(caps.AudioCodecs) == 0 {
+		if defaults := clientreg.Playback(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, nil); len(defaults.Audio) > 0 {
+			caps.AudioCodecs = append([]string(nil), defaults.Audio...)
+		} else {
+			caps.AudioCodecs = []string{"aac", "mp3", "flac", "alac", "opus"}
+		}
+	}
+	caps.AudioCodecs = filterOutSurroundAudio(caps.AudioCodecs)
+	if len(caps.AudioCodecs) == 0 {
+		caps.AudioCodecs = []string{"aac"}
+	}
+	if len(caps.TranscodeAudioCodecs) > 0 {
+		caps.TranscodeAudioCodecs = filterOutSurroundAudio(caps.TranscodeAudioCodecs)
+	}
+	if caps.Profiles != nil {
+		cp := *caps.Profiles
+		cp.DirectPlay = slices.Clone(caps.Profiles.DirectPlay)
+		for i := range cp.DirectPlay {
+			base := cp.DirectPlay[i].AudioCodecs
+			if len(base) == 0 {
+				base = caps.AudioCodecs
+			}
+			filtered := filterOutSurroundAudio(base)
+			if len(filtered) == 0 {
+				filtered = []string{"aac"}
+			}
+			cp.DirectPlay[i].AudioCodecs = filtered
+		}
+		cp.Transcoding = slices.Clone(caps.Profiles.Transcoding)
+		for i := range cp.Transcoding {
+			filtered := filterOutSurroundAudio(cp.Transcoding[i].AudioCodecs)
+			if len(filtered) == 0 {
+				filtered = []string{"aac"}
+			}
+			cp.Transcoding[i].AudioCodecs = filtered
+		}
+		caps.Profiles = &cp
+	}
+	return caps
 }
 
 // ApplyClientRules returns caps with any matching user-defined client rule
@@ -46,6 +127,11 @@ func defaultCappedAndroidClient(caps core.ClientCaps) bool {
 // default remote bitrate cap is cleared so 4K releases are not demoted below
 // 8 Mbps.
 func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) core.ClientCaps {
+	if len(caps.VideoCodecs) == 0 && caps.Protocol != "plex" && !strings.Contains(strings.ToLower(caps.Product), "plex") {
+		if defaults := clientreg.Playback(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, nil); defaults.ID != "" && defaults.ID != "generic" && len(defaults.Video) > 0 {
+			caps.VideoCodecs = append([]string(nil), defaults.Video...)
+		}
+	}
 	if caps.Download {
 		return caps
 	}
@@ -60,15 +146,18 @@ func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) c
 			selected, hasSelected = p, true
 		}
 	}
-	if !hasSelected {
-		for _, rule := range q.Rules {
-			if !ruleMatches(rule, caps, user) {
-				continue
-			}
-			prof, ok := byName[rule.Profile]
-			if !ok {
-				continue
-			}
+	var matchedRule config.QualityRule
+	var hasRule bool
+	for _, rule := range q.Rules {
+		if !ruleMatches(rule, caps, user) {
+			continue
+		}
+		prof, ok := byName[rule.Profile]
+		if !ok {
+			continue
+		}
+		matchedRule, hasRule = rule, true
+		if !hasSelected {
 			selected, hasSelected = prof, true
 			targetHeight := rule.MaxHeight
 			if targetHeight <= 0 {
@@ -88,8 +177,11 @@ func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) c
 			if caps.MaxHeight >= 2160 && prof.AllowHDR && !caps.ExplicitNoHDR && defaultCappedAndroidClient(caps) {
 				caps.HDR10 = true
 			}
-			break
 		}
+		break
+	}
+	if hasRule && matchedRule.ConvertSurroundAudio {
+		caps = stripSurroundAudioCaps(caps)
 	}
 	if !hasSelected && q.Default != "" {
 		if p, ok := byName[q.Default]; ok {
@@ -159,6 +251,7 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 	prof.PreferredAudio = append([]string(nil), prof.PreferredAudio...)
 	prof.PreferredLanguages = append([]string(nil), prof.PreferredLanguages...)
 	prof.AllowedQualities = append([]string(nil), prof.AllowedQualities...)
+	prof.Ranking = append([]string(nil), prof.Ranking...)
 	if prof.CustomFormatScores != nil {
 		copyScores := map[string]int{}
 		for k, v := range prof.CustomFormatScores {
@@ -184,7 +277,7 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 	prof.SelectionKey = prof.ComputeSelectionKey()
 
 	// Snapshot the owner's configured ceiling before the download
-	// reshape below (and the client clamp after it) lowers the
+	// reshape below (and the client-cap clamp after it) lowers the
 	// effective MaxHeight: "configured" is what the owner set, even
 	// when the reshape is what ends up limiting the release.
 	prof = snapshotConfiguredMaxHeight(prof)
@@ -210,6 +303,15 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 			}
 		}
 		prof.PreferredCodecs = kept
+	}
+	if rule, ok := matchingRule(q, caps, user); ok && rule.ConvertSurroundAudio && len(caps.AudioCodecs) > 0 {
+		kept := prof.PreferredAudio[:0:0]
+		for _, a := range prof.PreferredAudio {
+			if caps.SupportsAudio(a) {
+				kept = append(kept, a)
+			}
+		}
+		prof.PreferredAudio = kept
 	}
 	return prof
 }
@@ -298,6 +400,9 @@ func traceConfiguredMaxHeight(p core.QualityProfile) *int {
 }
 
 func ruleMatches(rule config.QualityRule, caps core.ClientCaps, user *core.User) bool {
+	if rule.Protocol != "" && !strings.EqualFold(string(rule.Protocol), string(caps.Protocol)) {
+		return false
+	}
 	if rule.Product != "" && !strings.Contains(strings.ToLower(caps.Product), strings.ToLower(rule.Product)) {
 		return false
 	}
@@ -311,5 +416,5 @@ func ruleMatches(rule config.QualityRule, caps core.ClientCaps, user *core.User)
 	}
 	// A rule with no matchers at all would match everything; require
 	// at least one matcher to avoid surprises from empty config rows.
-	return rule.Product != "" || rule.Platform != "" || rule.UserID != 0
+	return rule.Protocol != "" || rule.Product != "" || rule.Platform != "" || rule.UserID != 0
 }

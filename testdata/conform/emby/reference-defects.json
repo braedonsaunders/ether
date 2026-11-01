@@ -1,0 +1,20 @@
+{
+  "defects": [
+    {
+      "id": "emby-suffix-range-ignored",
+      "detail": "A bytes=-65536 request was served as bytes 0-65536 instead of the file suffix.",
+      "observed": "Emby 4.10.2",
+      "method": "GET",
+      "path": "/Videos/{item_id}/stream",
+      "status": "open"
+    },
+    {
+      "id": "emby-lab-unconfigured-addresses",
+      "detail": "The current lab advertises empty address lists and omits local and WAN addresses; Ether advertises reachable addresses.",
+      "observed": "Emby 4.10.2 lab",
+      "method": "GET",
+      "path": "/System/Info/Public",
+      "status": "configuration"
+    }
+  ]
+}

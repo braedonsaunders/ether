@@ -34,6 +34,15 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 	s.reqSeq++
 	seq := s.reqSeq
 	s.mu.Unlock()
+	tracked := false
+	defer func() {
+		if !tracked {
+			return
+		}
+		s.mu.Lock()
+		s.endFetchLocked(n)
+		s.mu.Unlock()
+	}()
 	for {
 		if r.Context().Err() != nil {
 			return
@@ -45,20 +54,29 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 			return
 		}
 		stale := seq < s.movedBy
-		if !stale && r.Method == http.MethodGet {
-			if n > s.lastReq+3 || n < s.lastReq-3 {
-				s.recoverySeekAt = time.Now()
-				s.completedDeliveries = nil
-			}
-			s.lastReq = n
+		if stale && tracked {
+			// A newer seek owns the encoder. Drop this fetch so it cannot
+			// keep the playhead on the position the player left.
+			s.endFetchLocked(n)
+			tracked = false
 		}
-		s.throttleLocked()
+		if !stale && r.Method == http.MethodGet && s.tracksPlayheadLocked(t) {
+			if !tracked {
+				s.beginFetchLocked(t, n)
+				tracked = true
+			} else {
+				s.notePlayheadLocked(t, n)
+			}
+		}
 		paths, availability := s.segmentFilesLocked(t, n, r.Method)
 		if availability == segmentRetry {
 			s.mu.Unlock()
 			continue
 		}
 		if availability == segmentReady {
+			// The segment is already on disk. A throttle stop still resumes
+			// here so the encoder continues ahead of this playhead.
+			s.throttleLocked()
 			s.pruneLocked()
 			s.mu.Unlock()
 			if s.serveFiles(w, r, paths, t, n) {
@@ -76,7 +94,9 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 			writeStartError(w, errInputExhausted)
 			return
 		}
-		if s.endSeg >= 0 && n > s.endSeg {
+		if s.endSeg >= 0 && n > s.endSeg && (s.total == 0 || n >= s.total) {
+			// A known VOD playlist still listing n is not past the
+			// title. A previous run's window EOF must restart, not 404.
 			s.mu.Unlock()
 			http.NotFound(w, r)
 			return
@@ -100,7 +120,23 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 			return
 		}
 		var dwell *time.Timer
-		if !waitTail && s.needsRestartLocked(n) {
+		// Only the oldest outstanding fetch may move the encoder. A request
+		// for a segment the encoder has already raced to is a buffer fill,
+		// not a seek, and must not abandon the segment the client is on.
+		if !waitTail && !s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
+			s.throttleLocked()
+			s.mu.Unlock()
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "segment is ahead of the playhead", http.StatusServiceUnavailable)
+			return
+		}
+		if !waitTail && s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
+			if s.emptyRuns >= emptyRestartCap && (s.lastReal < 0 || n > s.lastReal) && !s.segmentPublishedLocked(t, n) {
+				s.mu.Unlock()
+				s.log.Warn("segment unavailable after empty restarts", "segment", n, "lastReal", s.lastReal, "emptyAt", s.emptyAt)
+				http.Error(w, "segment unavailable", http.StatusBadGateway)
+				return
+			}
 			if stale {
 				// Superseded by a seek: answer now instead of moving the
 				// encoder away from where the player went. A player that
@@ -114,8 +150,12 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 				// Another rung's run is inside its dwell: wait it out
 				// instead of restarting the encoder now.
 				s.wantTrack = previousTrack // pending/canceled probes must not steer chaining
+				s.throttleLocked()
 				dwell = time.NewTimer(left)
 			} else {
+				// Starting at n. A throttle resume would first start at the
+				// old lead (the copy ran ahead and stopped), and this request
+				// would start again. One rung switch counted as two runs.
 				if restarts >= 2 {
 					err := s.failErr
 					s.mu.Unlock()
@@ -126,13 +166,19 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 				restarts++
 				s.seekRampSeg = n
 				s.movedBy = seq
-				if err := s.startRunLocked(n, s.failures > 0); err != nil {
+				why := "fetch ahead"
+				if s.cur != nil && (n < s.cur.startSeg || n < s.cur.next()) {
+					why = "fetch behind"
+				}
+				if err := s.startRunForLocked(n, s.failures > 0, why); err != nil {
 					s.mu.Unlock()
 					s.log.Error("start ffmpeg", "segment", n, "err", err)
 					writeStartError(w, err)
 					return
 				}
 			}
+		} else {
+			s.throttleLocked()
 		}
 		ch := s.changed
 		s.mu.Unlock()
@@ -156,20 +202,31 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 	}
 }
 
+// coveringSegLocked is the latest segment at or before n that holds a
+// real Matroska GOP, or -1 if none is still on disk.
+func (s *Session) coveringSegLocked(t, n int) int {
+	if t < 0 || t >= len(s.done) {
+		return -1
+	}
+	for k := n; k >= 0 && s.done[t][k]; k-- {
+		st, err := os.Stat(s.trackSegPath(t, k))
+		if err != nil {
+			return -1
+		}
+		if st.Size() > emptyClusterSize {
+			return k
+		}
+	}
+	return -1
+}
+
 // decodableMKVLocked is the file to serve for Matroska segment n of track
 // t to a fresh decoder: n itself, or for an empty Cluster (a segment
 // inside a GOP longer than a segment, chunks.go) the earlier segment
 // holding that GOP; false when it is no longer on disk.
 func (s *Session) decodableMKVLocked(t, n int) (string, bool) {
-	for k := n; k >= 0 && s.done[t][k]; k-- {
-		p := s.trackSegPath(t, k)
-		st, err := os.Stat(p)
-		if err != nil {
-			return "", false
-		}
-		if st.Size() > emptyClusterSize {
-			return p, true
-		}
+	if k := s.coveringSegLocked(t, n); k >= 0 {
+		return s.trackSegPath(t, k), true
 	}
 	return "", false
 }
@@ -178,6 +235,152 @@ func stopTimer(t *time.Timer) {
 	if t != nil {
 		t.Stop()
 	}
+}
+
+// tracksPlayheadLocked reports whether a fetch of track t shares the
+// timeline index. DASH audio uses the same segment numbers as video.
+func (s *Session) tracksPlayheadLocked(int) bool { return true }
+
+// beginFetchLocked records a GET and places the playhead.
+func (s *Session) beginFetchLocked(t, n int) {
+	if s.inflight == nil {
+		s.inflight = map[int]int{}
+	}
+	s.inflight[n]++
+	s.notePlayheadLocked(t, n)
+	if s.log != nil {
+		s.log.Info("segment fetch", "segment", n, "playhead", s.lastReq, "oldest", s.oldestFetchLocked())
+	}
+}
+
+// endFetchLocked drops a finished or abandoned GET and lets a waiting seek
+// take the playhead.
+func (s *Session) endFetchLocked(n int) {
+	if s.inflight[n] > 1 {
+		s.inflight[n]--
+	} else {
+		delete(s.inflight, n)
+	}
+	prev := s.lastReq
+	if oldest := s.oldestFetchLocked(); oldest >= 0 && !s.encoderHeadLocked(oldest) {
+		s.lastReq = oldest
+	}
+	if s.lastReq != prev {
+		s.broadcastLocked()
+	}
+}
+
+// notePlayheadLocked follows the oldest fetch still open. A segment the
+// encoder has not produced and will not reach is a seek: that request
+// becomes the playhead even if an older one is still open, and the older
+// one is then superseded. A fetch of a segment the encoder has already
+// reached is the encoder head, not a seek, so it cannot pull eviction
+// up to that head.
+func (s *Session) notePlayheadLocked(t, n int) {
+	prev := s.lastReq
+	published := s.segmentPublishedLocked(t, n)
+	restart := s.needsRestartLocked(n)
+	head := s.encoderHeadLocked(n)
+	decision := "hold"
+	if !published && restart && !head {
+		s.lastReq = n
+		decision = "seek"
+	} else if oldest := s.oldestFetchLocked(); oldest >= 0 && !s.encoderHeadLocked(oldest) {
+		s.lastReq = oldest
+		decision = "oldest"
+	}
+	if s.traceOn() {
+		s.log.Info("playhead", "segment", n, "decision", decision, "prev", prev, "playhead", s.lastReq, "oldest", s.oldestFetchLocked(), "published", published, "needsRestart", restart, "encoderHead", head)
+	}
+	if s.lastReq > prev+3 || s.lastReq < prev-3 {
+		s.recoverySeekAt = time.Now()
+		s.completedDeliveries = nil
+	}
+}
+
+// encoderHeadLocked reports that n is at or behind the encoder and far
+// enough ahead of the playhead that adopting it would evict the segment
+// the client is still on. A real seek lands beyond the encoder.
+func (s *Session) encoderHeadLocked(n int) bool {
+	// With throttling off, the segment a client fetches is the playhead
+	// even when the encoder has already passed it.
+	if s.m == nil || s.m.opts.maxAhead <= 0 || s.segDur <= 0 {
+		return false
+	}
+	if n <= s.lastReq+s.restartLimit() {
+		return false
+	}
+	for t := range s.done {
+		if s.segmentPublishedLocked(t, n) {
+			return true
+		}
+	}
+	r := s.cur
+	if r == nil || r.finished || r.stopped || r.maxDone < 0 {
+		return false
+	}
+	tip := r.maxDone
+	if next := r.next(); next-1 > tip {
+		tip = next - 1
+	}
+	return n <= tip+s.restartLimit()
+}
+
+func (s *Session) segmentPublishedLocked(t, n int) bool {
+	if t < 0 || t >= len(s.done) {
+		return false
+	}
+	return s.done[t][n]
+}
+
+// advancePlayheadLocked follows contiguous delivery. A segment fetched far
+// ahead of the playhead, or while an earlier fetch is still open, does not
+// move eviction or the encoder throttle.
+func (s *Session) advancePlayheadLocked(n int) {
+	if n < s.lastReq || n > s.lastReq+s.restartLimit() {
+		return
+	}
+	if oldest := s.oldestFetchLocked(); oldest >= 0 && n > oldest {
+		return
+	}
+	s.lastReq = n
+}
+
+func (s *Session) oldestFetchLocked() int {
+	oldest := -1
+	for n, c := range s.inflight {
+		if c <= 0 {
+			continue
+		}
+		if oldest < 0 || n < oldest {
+			oldest = n
+		}
+	}
+	return oldest
+}
+
+// mayMoveEncoderLocked reports whether this request is the playhead fetch.
+// A newer segment request waits; it does not restart ffmpeg at the encoder head.
+func (s *Session) mayMoveEncoderLocked(t, n int, tracked bool) bool {
+	if !tracked {
+		return true
+	}
+	if !s.segmentPublishedLocked(t, n) && s.needsRestartLocked(n) && !s.encoderHeadLocked(n) {
+		return true
+	}
+	return n == s.oldestFetchLocked()
+}
+
+// restartLimit is how many segments ahead of the encoder a request may be
+// before it is a seek.
+func (s *Session) restartLimit() int {
+	ahead := 2
+	if s.m != nil && s.segDur > 0 {
+		if n := int(s.m.opts.restartAhead / s.segDur); n > ahead {
+			ahead = n
+		}
+	}
+	return ahead
 }
 
 // needsRestartLocked decides between waiting for the running ffmpeg and
@@ -195,11 +398,7 @@ func (s *Session) needsRestartLocked(n int) bool {
 		// Behind the run's start, or already passed by it (pruned).
 		return true
 	}
-	ahead := int(s.m.opts.restartAhead / s.segDur)
-	if ahead < 2 {
-		ahead = 2
-	}
-	return n > r.next()+ahead
+	return n > r.next()+s.restartLimit()
 }
 
 // rungDwellLocked protects the sole encoder from rendition probes. Completed
@@ -335,7 +534,7 @@ func (s *Session) serveInit(w http.ResponseWriter, r *http.Request, t int) {
 				if start < 0 {
 					start = 0
 				}
-				if err := s.startRunLocked(start, s.failures > 0); err != nil {
+				if err := s.startRunForLocked(start, s.failures > 0, "rendition init"); err != nil {
 					s.mu.Unlock()
 					writeStartError(w, err)
 					return
@@ -438,6 +637,9 @@ func (s *Session) serveCounted(w http.ResponseWriter, r *http.Request, name stri
 				delete(s.completedDeliveries[t], k)
 			}
 		}
+	}
+	if s.tracksPlayheadLocked(t) {
+		s.advancePlayheadLocked(n)
 	}
 	if s.cur != nil && s.cur.track == t && (!s.isDASH() || t != s.audioTrackLocked()) {
 		if s.deliveredCount == 0 || s.deliveredTrack != t || n != s.deliveredSeg+1 {

@@ -82,6 +82,15 @@ func (s *Service) Preference(ctx context.Context, user int64, show core.RatingKe
 	return p, err
 }
 
+// Customized reports that the viewer's preferences, or the owner's
+// defaults, change some series' episode set: an episode group, or hidden
+// specials. Showing specials first or last only reorders them.
+func (s *Service) Customized(ctx context.Context, u *core.User) (bool, error) {
+	var custom bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM episodeorder_preferences WHERE user_id IN (0,?) AND (group_id<>'' OR specials='hidden'))`, userID(u)).Scan(&custom)
+	return custom, err
+}
+
 // Grouped reports which of the shows present an alternate episode group to
 // the viewer: their own preference, else the owner's default. A show without
 // one keeps the canonical season tree, so a list can render it from the
@@ -251,7 +260,17 @@ func (s *Service) layout(ctx context.Context, u *core.User, k core.RatingKey) (*
 		if len(kids) == 0 {
 			return
 		}
-		out.seasons = append(out.seasons, core.Title{Key: core.SeasonKey(show.TMDB(), n), Type: core.TypeSeason, ShowKey: show, ShowTitle: st.Title, Title: name, SeasonTitle: name, Season: n, ChildCount: len(kids), LeafCount: len(kids), PosterPath: st.PosterPath, BackdropPath: st.BackdropPath, ContentRating: st.ContentRating})
+		now := time.Now()
+		var added time.Time
+		for _, ep := range kids {
+			if !ep.Released.After(now) && ep.Released.After(added) {
+				added = ep.Released
+			}
+		}
+		if added.IsZero() {
+			added = st.DateAdded(now)
+		}
+		out.seasons = append(out.seasons, core.Title{Key: core.SeasonKey(show.TMDB(), n), Type: core.TypeSeason, ShowKey: show, ShowTitle: st.Title, Title: name, SeasonTitle: name, Season: n, ChildCount: len(kids), LeafCount: len(kids), PosterPath: st.PosterPath, BackdropPath: st.BackdropPath, ContentRating: st.ContentRating, AddedAt: added})
 		out.episodes = append(out.episodes, kids...)
 	}
 	for i, group := range groups {
@@ -335,6 +354,27 @@ func (s *Service) Get(ctx context.Context, u *core.User, k core.RatingKey) (*cor
 		return nil, core.ErrNotFound
 	}
 	return s.catalog.Get(ctx, k)
+}
+
+// CachedVirtualSeason returns only an already-computed, unexpired layout for
+// this viewer. It never refreshes preferences, the catalogue, or TMDB.
+func (s *Service) CachedVirtualSeason(_ context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
+	if u == nil || u.ID <= 0 || k.Kind() != core.KindSeason || k.Season() < virtualBase {
+		return nil, core.ErrNotFound
+	}
+	cacheKey := fmt.Sprintf("%d:%d", u.ID, showKey(k))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cached, ok := s.cache[cacheKey]
+	if !ok || cached.value == nil || !time.Now().Before(cached.expires) {
+		return nil, core.ErrNotFound
+	}
+	for _, season := range cached.value.seasons {
+		if season.Key == k {
+			return &season, nil
+		}
+	}
+	return nil, core.ErrNotFound
 }
 func (s *Service) Children(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
 	if k.Kind() != core.KindShow && k.Kind() != core.KindSeason {

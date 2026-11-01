@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/egress"
+
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/htmlindex"
 )
@@ -58,7 +60,7 @@ func newHTTPSession(def *Definition, hc *http.Client, flare func() string, log *
 	jar := newResettableJar()
 	base := hc
 	if base == nil {
-		base = &http.Client{Timeout: defaultHTTPTimeout}
+		base = egress.Client(egress.CapIndexers, defaultHTTPTimeout)
 	}
 	c := &http.Client{
 		Transport: base.Transport,
@@ -71,7 +73,7 @@ func newHTTPSession(def *Definition, hc *http.Client, flare func() string, log *
 	if c.Timeout == 0 {
 		c.Timeout = defaultHTTPTimeout
 	}
-	s := &httpSession{client: c, jar: jar, flare: flare, log: log, ua: defaultUserAgent, site: def.Name, flareHC: &http.Client{Transport: base.Transport, Timeout: flareMaxTimeout + 30*time.Second}}
+	s := &httpSession{client: c, jar: jar, flare: flare, log: log, ua: defaultUserAgent, site: def.Name, flareHC: egress.Client(egress.CapDirect, flareMaxTimeout+30*time.Second)}
 	if def.RequestDelay > 0 {
 		// Bounded before converting: an absurd value (1e30, .inf) would
 		// overflow the Duration and stall or skip pacing.

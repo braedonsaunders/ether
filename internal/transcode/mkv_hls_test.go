@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -143,8 +144,14 @@ func TestIntegrationMatroskaHLSDecodeSeekAndSwap(t *testing.T) {
 		if got := startTime(t, streams, "video"); math.Abs(got-wantStart) > 1.1 {
 			t.Fatalf("segment %d starts %.3f, want %.3f", n, got, wantStart)
 		}
+		if got := startTime(t, streams, "audio"); math.Abs(got-wantStart) > 1.1 {
+			t.Fatalf("segment %d audio starts %.3f, want %.3f", n, got, wantStart)
+		}
 		if out, err := exec.Command(e.ffmpeg, "-v", "error", "-i", path, "-map", "0:v:0", "-frames:v", "3", "-f", "null", "-").CombinedOutput(); err != nil {
 			t.Fatalf("decode segment %d: %v %s", n, err, out)
+		}
+		if out, err := exec.Command(e.ffmpeg, "-v", "error", "-i", path, "-map", "0:a:0", "-frames:a", "3", "-f", "null", "-").CombinedOutput(); err != nil {
+			t.Fatalf("decode audio segment %d: %v %s", n, err, out)
 		}
 	}
 	decode(0, "first.mkv", 10)
@@ -169,16 +176,69 @@ func TestIntegrationMatroskaHLSDecodeSeekAndSwap(t *testing.T) {
 	decode(2, "swap.mkv", 18)
 }
 
+func TestIntegrationMatroskaTailResumeAudioOutlastsVideo(t *testing.T) {
+	e := newRealEnv(t, WithoutHWDetection())
+	outPath := filepath.Join(e.dir, "tail-audio.mkv")
+	cmd := exec.CommandContext(t.Context(), e.ffmpeg,
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-t", "16", "-i", "testsrc2=size=640x360:rate=24",
+		"-f", "lavfi", "-t", "24", "-i", "sine=frequency=440:sample_rate=48000",
+		"-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "pools=1:frame-threads=1:keyint=24:min-keyint=24:scenecut=0",
+		"-c:a", "eac3", "-ac", "2",
+		"-max_interleave_delta", "0",
+		outPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("cannot generate tail-audio.mkv: %v: %s", err, out)
+	}
+	info, err := e.m.Probe(t.Context(), e.url("tail-audio.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := core.Decision{Kind: core.DecisionRemux, Container: ContainerMatroska, VideoCopy: true, AudioCopy: true, AudioStream: 1}
+	hs, err := e.m.StartHLS(t.Context(), core.HLSRequest{
+		SessionID: "tail-audio",
+		InputURL:  e.url("tail-audio.mkv"),
+		Info:      *info,
+		Decision:  d,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetch(t, hs, 0)
+	if err := hs.SwapInput(t.Context(), e.url("tail-audio.mkv"), *info, 8*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	// Resume near the end of the video stream (segment 2, 8s) and walk through
+	// the trailing audio-only segments (segments 4 and 5, 16..24s) to the end.
+	joined := fetch(t, hs, InitSegment)
+	for n := 2; n < 6; n++ {
+		b := fetch(t, hs, n)
+		if len(b) < 4 || string(b[:4]) != "\x1f\x43\xb6\x75" {
+			t.Fatalf("segment %d is not a Matroska Cluster", n)
+		}
+		joined = append(joined, b...)
+	}
+	path := e.writeTemp(t, "tail-resume.mkv", joined)
+	streams := e.probeFile(t, path)
+	if got := startTime(t, streams, "video"); math.Abs(got-18) > 1.1 {
+		t.Fatalf("tail resume video starts %.3f, want 18.000", got)
+	}
+	if got := startTime(t, streams, "audio"); math.Abs(got-18) > 1.1 {
+		t.Fatalf("tail resume audio starts %.3f, want 18.000", got)
+	}
+}
+
 func TestMatroskaChunkArgsKeepPositiveTitleClock(t *testing.T) {
 	d := core.Decision{Kind: core.DecisionRemux, Container: ContainerMatroska, VideoCopy: true, AudioCopy: true, AudioStream: 1}
 	s := baseSpec(mustParse(t, "mkv_hevc_hdr10.json"), d)
 	s.ChunkDir = "chunks"
 	s.Features.jellyfinSegmentClock = true
 	args := buildArgs(s)
-	mustContain(t, args, "-copyts", "-start_at_zero", "-output_ts_offset 10.000", "-segment_time_delta 210.000")
+	mustContain(t, args, "-copyts", "-start_at_zero", "-output_ts_offset 10.000", "-segment_time_delta 210.000", "-bsf:a noise=amount=0:drop='lt(pts*tb,200.000)'")
 	mustNotContain(t, args, "-segment_format_options output_ts_offset=")
 	s.Features.jellyfinSegmentClock = false
 	args = buildArgs(s)
-	mustContain(t, args, "-segment_format_options output_ts_offset=210.000")
+	mustContain(t, args, "-segment_format_options output_ts_offset=210.000", "-bsf:a noise=amount=0:drop='lt(pts*tb,0)'")
 	mustNotContain(t, args, "-copyts", "-segment_time_delta")
 }

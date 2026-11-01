@@ -47,3 +47,18 @@ type TrickplayProvider interface {
 	// not-yet-generated intervals. Real frames replace it as they arrive.
 	SetTrickplayFallback(releaseID string, jpeg []byte)
 }
+
+// TrickplayLeaser is supplied by the runtime-owned shared provider. Acquire
+// registers a holder and starts generation atomically with idle cancellation.
+// Calls return promptly; consumers retain one lease until their source ends.
+type TrickplayLeaser interface {
+	AcquireTrickplay(context.Context, TrickplaySource) (TrickplayLease, error)
+}
+
+// TrickplayLease holds one release. Ensure after Release is inert. Release is
+// idempotent; cancelIfIdle applies the caller's idle policy only when no other
+// holder remains. Only the runtime owner can Close the provider.
+type TrickplayLease interface {
+	Ensure(context.Context, TrickplaySource)
+	Release(cancelIfIdle bool)
+}

@@ -2,14 +2,14 @@ package transcode
 
 import (
 	"slices"
-	"strings"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// ClientPolicy records conservative product quirks, not device certification.
-// Headers/profile declarations remain authoritative; model/display/audio chain
-// capabilities must not be inferred from a platform name alone.
+// ClientPolicy records the registry's family defaults for one client.
+// Headers and profile declarations remain authoritative; a model name alone
+// does not certify a display or an audio chain.
 type ClientPolicy struct {
 	Family              string   `json:"family"`
 	DolbyVisionProfiles []int    `json:"dolbyVisionProfiles"`
@@ -17,40 +17,63 @@ type ClientPolicy struct {
 	Notes               string   `json:"notes"`
 }
 
+func identityOf(c core.ClientCaps) clientreg.Identity {
+	device := c.Device
+	if device == "" {
+		device = c.DeviceName
+	}
+	return clientreg.Identity{Product: c.Product, Platform: c.Platform, Device: device, Version: c.Version}
+}
+
+// PlaybackDefaults is the registry baseline for a client that sent no profile.
+// ID is the matched playback record. "generic" means nothing more specific matched.
+type PlaybackDefaults struct {
+	ID                               string
+	Video, Audio, Containers         []string
+	MaxHeight                        int
+	HDR10, DolbyVision, HeightLocked bool
+}
+
+// PlaybackDefaultsFor evaluates the registry, including owner overrides.
+// Model is separate from ClientCaps because Plex carries it on the request.
+func PlaybackDefaultsFor(product, platform, device, model, version string, overrides []core.ClientCapabilityOverride) PlaybackDefaults {
+	got := clientreg.Playback(clientreg.Identity{Product: product, Platform: platform, Device: device, Model: model, Version: version}, overrides)
+	return PlaybackDefaults{
+		ID: got.ID, Video: got.Video, Audio: got.Audio, Containers: got.Containers,
+		MaxHeight: got.MaxHeight, HDR10: got.HDR10, DolbyVision: got.DolbyVision, HeightLocked: got.HeightLocked,
+	}
+}
+
+// PolicyStamp returns Dolby Vision profiles and subtitle codecs when an owner
+// override changed them. Unchanged defaults stay unset so a Plex client cap
+// matches the historical shape.
+func PolicyStamp(product, platform, device, model, version string, overrides []core.ClientCapabilityOverride) (dv []int, subs []string, dvChanged, subsChanged bool) {
+	id := clientreg.Identity{Product: product, Platform: platform, Device: device, Model: model, Version: version}
+	plain, edited := clientreg.Policy(id, nil), clientreg.Policy(id, overrides)
+	return slices.Clone(edited.DolbyVisionProfiles), slices.Clone(edited.Subtitles),
+		!slices.Equal(plain.DolbyVisionProfiles, edited.DolbyVisionProfiles),
+		!slices.Equal(plain.Subtitles, edited.Subtitles)
+}
+
+// HasQuirk reports a named registry quirk for this client identity.
+func HasQuirk(product, platform, device, model, version, name string) bool {
+	return clientreg.HasQuirk(clientreg.Identity{Product: product, Platform: platform, Device: device, Model: model, Version: version}, name)
+}
+
+// ClientPolicyFor resolves the embedded registry with no owner overrides.
 func ClientPolicyFor(c core.ClientCaps) ClientPolicy {
-	p := strings.ToLower(c.Product + " " + c.Platform + " " + c.Device)
-	policy := ClientPolicy{Family: "generic", SubtitleCodecs: []string{"srt", "subrip", "webvtt", "vtt", "ass", "ssa"}, Notes: "Text is served separately; image subtitles require explicit client support."}
-	switch {
-	case strings.Contains(p, "apple tv"), strings.Contains(p, "tvos"):
-		policy.Family = "Apple TV"
-		policy.DolbyVisionProfiles = []int{5, 8}
-		policy.Notes = "Dolby Vision profile 7 uses a compatible HDR base layer; TrueHD requires an audio transcode unless declared supported."
-	case strings.Contains(p, "ios"), strings.Contains(p, "ipados"):
-		policy.Family = "iOS"
-		policy.DolbyVisionProfiles = []int{5, 8}
-	case strings.Contains(p, "plex web"), strings.Contains(p, "safari"), strings.Contains(p, "chrome"), strings.Contains(p, "firefox"), strings.Contains(p, "edge"):
-		policy.Family = "Plex Web"
-		policy.Notes = "Browser codec declarations govern playback; text subtitles remain sidecars."
-	case strings.Contains(p, "shield"):
-		policy.Family = "Android TV (Shield)"
-		policy.DolbyVisionProfiles = []int{5, 8}
-		policy.SubtitleCodecs = append(policy.SubtitleCodecs, "pgs", "hdmv_pgs_subtitle", "vobsub", "dvd_subtitle")
-	case strings.Contains(p, "android"), strings.Contains(p, "google tv"):
-		policy.Family = "Android / Google TV"
-	case strings.Contains(p, "fire tv"):
-		policy.Family = "Fire TV"
-	case strings.Contains(p, "roku"):
-		policy.Family = "Roku"
-	case strings.Contains(p, "webos"), strings.Contains(p, "lg"):
-		policy.Family = "LG webOS"
-	case strings.Contains(p, "tizen"), strings.Contains(p, "samsung"):
-		policy.Family = "Samsung Tizen"
-	case strings.Contains(p, "xbox"), strings.Contains(p, "playstation"):
-		policy.Family = "Console"
-	case strings.Contains(p, "htpc"), strings.Contains(p, "kodi"), strings.Contains(p, "infuse"):
-		policy.Family = "HTPC"
-		policy.DolbyVisionProfiles = []int{5, 7, 8}
-		policy.SubtitleCodecs = append(policy.SubtitleCodecs, "pgs", "hdmv_pgs_subtitle", "vobsub", "dvd_subtitle")
+	return ResolvePolicy(c, nil)
+}
+
+// ResolvePolicy layers owner overrides on the registry, then lets a runtime
+// declaration replace Dolby Vision profiles and subtitle codecs.
+func ResolvePolicy(c core.ClientCaps, overrides []core.ClientCapabilityOverride) ClientPolicy {
+	got := clientreg.Policy(identityOf(c), overrides)
+	policy := ClientPolicy{
+		Family:              got.Family,
+		DolbyVisionProfiles: slices.Clone(got.DolbyVisionProfiles),
+		SubtitleCodecs:      slices.Clone(got.Subtitles),
+		Notes:               got.Notes,
 	}
 	if len(c.DVProfiles) > 0 {
 		policy.DolbyVisionProfiles = slices.Clone(c.DVProfiles)
@@ -71,8 +94,7 @@ func SupportsDVProfile(c core.ClientCaps, profile int) bool {
 	if profile == 0 {
 		return true
 	}
-	p := ClientPolicyFor(c)
-	return slices.Contains(p.DolbyVisionProfiles, profile)
+	return slices.Contains(ClientPolicyFor(c).DolbyVisionProfiles, profile)
 }
 
 func supportsSubtitle(c core.ClientCaps, codec string) bool {

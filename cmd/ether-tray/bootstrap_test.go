@@ -11,8 +11,13 @@ import (
 
 type bootstrapService struct {
 	fakeSvc
-	state                 service.Status
-	statusErr, installErr error
+	state                           service.Status
+	statusErr, installErr, startErr error
+}
+
+func (s *bootstrapService) Start() error {
+	s.actions = append(s.actions, "start")
+	return s.startErr
 }
 
 func (s *bootstrapService) Status() (service.Status, error) { return s.state, s.statusErr }

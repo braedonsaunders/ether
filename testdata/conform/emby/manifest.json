@@ -1,0 +1,146 @@
+{
+  "discoveryWarnings": [],
+  "fixtureCounts": {
+    "emby-sdk": 18
+  },
+  "fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.",
+  "requestErrors": null,
+  "trimmedResponses": [],
+  "protocol": "emby",
+  "referenceVersion": "4.10.2",
+  "profileDirectory": "internal/conform/profiles/emby",
+  "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored.",
+  "intentionalDifferences": [
+    {
+      "id": "direct-stream-extra-etag",
+      "method": "GET",
+      "route": "/Videos/{itemId}/stream[.ext]",
+      "kind": "binary-range",
+      "path": "$headers.ETag",
+      "direction": "target-only",
+      "reason": "Ether emits an ETag for If-Range resume; an additional HTTP validator is valid even when the reference omits it."
+    }
+  ],
+  "documentedPrivacyDifferences": [
+    {
+      "method": "GET",
+      "path": "/Users/Public",
+      "field": "$[]/LastLoginDate",
+      "referenceEvidence": "emby-sdk/emby-sdk_jsonconnect_public users_GET__Users_Public.json records this field in the unauthenticated Emby 4.10.2 response.",
+      "etherBehavior": "Omitted from the public picker to avoid disclosing viewer login history before authentication. Authenticated user responses expose observed, credential-authorized values when known.",
+      "comparison": "non-blocking after client audit; see notApplicable"
+    },
+    {
+      "method": "GET",
+      "path": "/Users/Public",
+      "field": "$[]/LastActivityDate",
+      "referenceEvidence": "emby-sdk/emby-sdk_jsonconnect_public users_GET__Users_Public.json records this field in the unauthenticated Emby 4.10.2 response.",
+      "etherBehavior": "Omitted from the public picker to avoid disclosing viewer activity before authentication. Authenticated user responses expose observed, credential-authorized values when known.",
+      "comparison": "non-blocking after client audit; see notApplicable"
+    }
+  ],
+  "notApplicable": [
+    {
+      "endpoint": "/Users/Public",
+      "path": "$[]/LastLoginDate",
+      "reason": "The public picker omits login timestamps until the viewer authenticates.",
+      "clientAudit": "Emby.SDK UserDto.LastLoginDate is not required. Emby web 4.10.2 startup/login.js renders public users with card field Name and signs in from Id, Name, ServerId, and HasPassword; it does not read LastLoginDate. That is the shell Emby for tvOS 2.0.9 loads. The published login contract for Emby for Android TV uses the same public list and HasPassword, and the C# property is nullable. Authenticated /Users/Me still returns an observed LastLoginDate."
+    },
+    {
+      "endpoint": "/Users/Public",
+      "path": "$[]/LastActivityDate",
+      "reason": "The public picker omits activity timestamps until the viewer authenticates.",
+      "clientAudit": "Emby.SDK UserDto.LastActivityDate is not required. Emby web 4.10.2 startup/login.js does not read it, and the published Android TV login contract does not either. The C# property is nullable. Authenticated user responses still return an observed LastActivityDate."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/Chapters",
+      "reason": "Chapter markers are returned only when the media file contains them. The aligned parity file has none, and titles are not invented.",
+      "clientAudit": "Emby.SDK BaseItemDto.Chapters is optional. Emby Android TV, Emby for iOS, and Emby for Android play and seek without a chapter list; the chapter UI is skipped when the field is absent."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/MediaSources[]/Chapters",
+      "reason": "Media-source chapters follow the file. The aligned parity file has no markers.",
+      "clientAudit": "Emby.SDK MediaSourceInfo.Chapters is optional. Playback uses the media source id and stream URL; chapter markers are a seek aid, not a prerequisite."
+    },
+    {
+      "endpoint": "/Items/${item_id}/PlaybackInfo",
+      "path": "$/MediaSources[]/Chapters",
+      "reason": "Playback chapters follow the file. The aligned parity file has no markers.",
+      "clientAudit": "Emby.SDK PlaybackInfo MediaSourceInfo.Chapters is optional. Direct play and HLS start from the media source id without a chapter list."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/FileName",
+      "reason": "A resolver label is not a verified file basename, so FileName stays absent.",
+      "clientAudit": "Emby.SDK BaseItemDto.FileName is optional. Clients identify the item by Id and open it through PlaybackInfo; they do not require the server basename."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/PartCount",
+      "reason": "PartCount is emitted only when one version reports a real part count. The candidate does not.",
+      "clientAudit": "Emby.SDK BaseItemDto.PartCount is optional. Playback does not use it to choose a stream."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/Path",
+      "reason": "The server filesystem path is not published. The scoped playback URL is on the media source.",
+      "clientAudit": "Emby.SDK BaseItemDto.Path is optional. Clients stream the media source path returned by PlaybackInfo, not a host filesystem path."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/DateModified",
+      "reason": "DateModified is a file timestamp. Catalogue and first-observed times are not substituted.",
+      "clientAudit": "Emby.SDK BaseItemDto.DateModified is optional. Clients sort and display with PremiereDate and UserData when a file modification time is absent."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/UserData/LastPlayedDate",
+      "reason": "LastPlayedDate is returned only after this viewer has a recorded play. The conformance viewer has none.",
+      "clientAudit": "Emby.SDK UserItemDataDto.LastPlayedDate is optional. Clients treat absence as not played and still resume from PlaybackPositionTicks when that field is present."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/MediaStreams[]/RefFrames",
+      "reason": "Reference-frame count is emitted only when the probe reports it. ffprobe does not report refs for this encode, and a count is not invented.",
+      "clientAudit": "Emby.SDK MediaStream.RefFrames is optional. Direct play and transcode decisions use codec, profile, level, width, and frame rate."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/MediaSources[]/MediaStreams[]/RefFrames",
+      "reason": "Reference-frame count is emitted only when the probe reports it. ffprobe does not report refs for this encode, and a count is not invented.",
+      "clientAudit": "Emby.SDK MediaStream.RefFrames is optional. Clients select a media source by Id and do not require a reference-frame count to start playback."
+    },
+    {
+      "endpoint": "/Items/${item_id}/PlaybackInfo",
+      "path": "$/MediaSources[]/MediaStreams[]/RefFrames",
+      "reason": "Reference-frame count is emitted only when the probe reports it. ffprobe does not report refs for this encode, and a count is not invented.",
+      "clientAudit": "Emby.SDK PlaybackInfo MediaStream.RefFrames is optional. Playback starts from the media source id without it."
+    },
+    {
+      "endpoint": "/Items/${item_id}/PlaybackInfo",
+      "path": "$/MediaSources[]/Name",
+      "reason": "The media source name is the verified file basename. A resolver label is not used in its place.",
+      "clientAudit": "Emby.SDK MediaSourceInfo.Name is optional. Clients select a source by Id."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Views",
+      "path": "$/Items[]/DateCreated",
+      "reason": "Libraries are configured sections, not folders with a creation time.",
+      "clientAudit": "Emby.SDK views are selected by Id, Name, and CollectionType. DateCreated is optional display text and is not required to open a library."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Views",
+      "path": "$/Items[]/DateModified",
+      "reason": "Libraries are configured sections, not folders with a modification time.",
+      "clientAudit": "Emby.SDK views are selected by Id, Name, and CollectionType. DateModified is optional and is not required to open a library."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Views",
+      "path": "$/Items[]/ParentId",
+      "reason": "Ether libraries are top-level sections and have no parent folder.",
+      "clientAudit": "Emby Android TV, Emby for iOS, and Emby for Android open a view by its Id. A parent folder id is not required when the view list is already the library root."
+    }
+  ]
+}

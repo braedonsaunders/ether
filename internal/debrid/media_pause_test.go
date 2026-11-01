@@ -100,3 +100,21 @@ func TestSharedCDNPauseDoesNotInterruptAnEstablishedHealthyFile(t *testing.T) {
 		t.Fatalf("established file ignored its own rate limit: %v", err)
 	}
 }
+
+func TestRateLimitedSourceDisablesDirectPlayRetryAndReadAhead(t *testing.T) {
+	r := newEngineRig(t, 4<<20, -1)
+	src, err := r.eng.Open(t.Context(), r.rel.ID, r.pl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	hs := src.(*httpSource)
+	if !hs.RetryDirectPlay() {
+		t.Fatal("expected healthy httpSource to allow direct play retry")
+	}
+	p, _ := hs.f.payload()
+	_ = hs.f.pauseMedia(p.Provider, p.URL, http.StatusTooManyRequests, 3*time.Minute)
+	if hs.RetryDirectPlay() {
+		t.Fatal("expected rate-limited httpSource to disable direct play retry so playback fails over immediately")
+	}
+}

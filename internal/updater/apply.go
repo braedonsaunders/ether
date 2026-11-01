@@ -212,6 +212,9 @@ func (c *Client) Apply(ctx context.Context, upd *Update, opts ApplyOptions) (str
 // renamed aside to .old (allowed while running), then the new one moved
 // in; on failure the .old is moved back.
 func ApplyBinary(newPath, target string) error {
+	if err := refuseBundleTarget(target); err != nil {
+		return err
+	}
 	info, err := os.Stat(target)
 	if err != nil {
 		return fmt.Errorf("updater: stat target: %w", err)
@@ -259,6 +262,9 @@ func applyBinaryWindows(newPath, target string, mode os.FileMode) error {
 // Rollback restores "<target>.old" over target. On Windows the caller must
 // not be running from target (the service should be stopped first).
 func Rollback(target string) error {
+	if err := refuseBundleTarget(target); err != nil {
+		return err
+	}
 	old := target + ".old"
 	if _, err := os.Stat(old); err != nil {
 		return fmt.Errorf("updater: no rollback copy at %s: %w", old, err)
@@ -284,11 +290,25 @@ func Rollback(target string) error {
 // (on Windows the .old of a *running* binary can only be deleted by the
 // next process, which is exactly this).
 func CleanupOld(target string) error {
+	if err := refuseBundleTarget(target); err != nil {
+		return err
+	}
 	err := os.Remove(target + ".old")
 	if os.IsNotExist(err) {
 		return nil
 	}
 	return err
+}
+
+// refuseBundleTarget stops an update from replacing or deleting an .app
+// bundle. The server binary inside Contents/Resources is a file and may be
+// replaced; the bundle directory itself is never the target.
+func refuseBundleTarget(target string) error {
+	clean := filepath.Clean(target)
+	if strings.HasSuffix(strings.ToLower(filepath.Base(clean)), ".app") {
+		return fmt.Errorf("updater: refusing to replace or delete the app bundle %s", clean)
+	}
+	return nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

@@ -27,3 +27,23 @@ func TestLANOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestLANOnlyForwardedPublicClient(t *testing.T) {
+	for _, header := range []string{"X-Forwarded-For", "Forwarded", "X-Real-IP"} {
+		for _, peer := range []string{"127.0.0.1:1234", "10.0.0.2:1234"} {
+			h := lanOnly(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), func() []string { return []string{"10.0.0.2/32"} })
+			r := httptest.NewRequest("GET", "/ether/", nil)
+			r.RemoteAddr = peer
+			value := "203.0.113.1"
+			if header == "Forwarded" {
+				value = "for=" + value
+			}
+			r.Header.Set(header, value)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("%s %s: %d", peer, header, w.Code)
+			}
+		}
+	}
+}

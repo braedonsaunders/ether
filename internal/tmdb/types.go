@@ -131,6 +131,21 @@ type CollectionRef struct {
 	BackdropPath string `json:"backdrop_path"`
 }
 
+// AltTitles is the alternative_titles appendix: other names a title goes by
+// (romanized originals such as "Sousou no Frieren", regional and working
+// titles). Movies list them under titles, TV under results.
+type AltTitles struct {
+	Titles  []AltTitle `json:"titles"`
+	Results []AltTitle `json:"results"`
+}
+
+// AltTitle is one alternative title.
+type AltTitle struct {
+	Country string `json:"iso_3166_1"`
+	Title   string `json:"title"`
+	Type    string `json:"type"`
+}
+
 // MovieDetails is /movie/{id} with append_to_response.
 type MovieDetails struct {
 	Movie
@@ -150,6 +165,7 @@ type MovieDetails struct {
 	ExternalIDs       *ExternalIDs   `json:"external_ids"`
 	Images            *Images        `json:"images"`
 	Keywords          *Keywords      `json:"keywords"`
+	AlternativeTitles *AltTitles     `json:"alternative_titles"`
 	Similar           *Paged[Movie]  `json:"similar"`
 	Recommendations   *Paged[Movie]  `json:"recommendations"`
 }
@@ -217,14 +233,15 @@ type TVDetails struct {
 		Name        string `json:"name"`
 		ProfilePath string `json:"profile_path"`
 	} `json:"created_by"`
-	Credits          *Credits        `json:"credits"`
-	AggregateCredits *Credits        `json:"aggregate_credits"`
-	ContentRatings   *ContentRatings `json:"content_ratings"`
-	ExternalIDs      *ExternalIDs    `json:"external_ids"`
-	Images           *Images         `json:"images"`
-	Keywords         *Keywords       `json:"keywords"`
-	Similar          *Paged[TVShow]  `json:"similar"`
-	Recommendations  *Paged[TVShow]  `json:"recommendations"`
+	Credits           *Credits        `json:"credits"`
+	AggregateCredits  *Credits        `json:"aggregate_credits"`
+	ContentRatings    *ContentRatings `json:"content_ratings"`
+	ExternalIDs       *ExternalIDs    `json:"external_ids"`
+	Images            *Images         `json:"images"`
+	Keywords          *Keywords       `json:"keywords"`
+	AlternativeTitles *AltTitles      `json:"alternative_titles"`
+	Similar           *Paged[TVShow]  `json:"similar"`
+	Recommendations   *Paged[TVShow]  `json:"recommendations"`
 }
 
 // Episode is a TV episode.

@@ -56,6 +56,7 @@ type fakePlexTV struct {
 	sharedXML     string
 	usersXML      string
 	userXML       string
+	userJSON      string
 	features      []Feature
 	featuresErr   int
 	requests      []string
@@ -217,6 +218,11 @@ func (f *fakePlexTV) handle(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, f.userXML)
 			return
 		}
+		if f.userJSON != "" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, f.userJSON)
+			return
+		}
 		json.NewEncoder(w).Encode(acct)
 	case r.URL.Path == "/api/claim/token.json":
 		if !authed {
@@ -328,7 +334,7 @@ func (f *fakePlexTV) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := append([]Resource{}, f.resources[token]...)
-		if strings.HasPrefix(token, "server-token-") || token == "owner-token" {
+		if strings.HasPrefix(token, "server-token-") {
 			var conns []ResourceConnection
 			for _, u := range f.published {
 				if u == "" {

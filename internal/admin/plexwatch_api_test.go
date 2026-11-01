@@ -12,10 +12,11 @@ import (
 )
 
 type fakePlexWatch struct {
-	userID int64
-	plexID int64
-	on     bool
-	finish error
+	userID   int64
+	plexID   int64
+	on       bool
+	resolved bool
+	finish   error
 }
 
 func (f *fakePlexWatch) remember(userID, plexID int64) {
@@ -54,6 +55,11 @@ func (f *fakePlexWatch) Disconnect(_ context.Context, userID, plexID int64) (adm
 }
 func (f *fakePlexWatch) Retry(_ context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
 	f.remember(userID, plexID)
+	return f.status(), nil
+}
+func (f *fakePlexWatch) Resolve(_ context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
+	f.remember(userID, plexID)
+	f.resolved = true
 	return f.status(), nil
 }
 func (f *fakePlexWatch) ExportCurrent(_ context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
@@ -102,5 +108,12 @@ func TestPlexWatchUsesViewerPlexID(t *testing.T) {
 	}
 	if watch.plexID != 99 {
 		t.Fatalf("finish used plex id %d", watch.plexID)
+	}
+
+	r = req(http.MethodPost, "/ether/api/viewers/7/plex-watch/resolve", "")
+	r.Header.Set("X-Plex-Token", ownerToken)
+	rec = serve(h, r)
+	if rec.Code != http.StatusOK || !watch.resolved || watch.userID != 7 || watch.plexID != 99 {
+		t.Fatalf("resolve: %d resolved=%v user=%d plex=%d", rec.Code, watch.resolved, watch.userID, watch.plexID)
 	}
 }

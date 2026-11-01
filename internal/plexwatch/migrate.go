@@ -104,6 +104,7 @@ func (s *Service) ImportCurrent(ctx context.Context, userID, plexID int64) (Stat
 			break
 		}
 	}
+	_ = s.reconcileUser(ctx, userID, false)
 	return s.Status(ctx, userID, plexID)
 }
 

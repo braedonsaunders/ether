@@ -230,3 +230,34 @@ func TestMP4EditListShiftsPresentationTime(t *testing.T) {
 		t.Fatalf("empty edit offset=%v err=%v", off, err)
 	}
 }
+
+func TestMatroskaSeekHeadJumpsPastManyClustersWithoutScanningPayload(t *testing.T) {
+	info := elementBytes(0x1549a966, elementBytes(0x2ad7b1, words(1000000)))
+	tracks := elementBytes(0x1654ae6b, elementBytes(0xae, elementBytes(0xd7, []byte{1}), elementBytes(0x83, []byte{1})))
+	var clusters [][]byte
+	for i := 0; i < 200; i++ {
+		clusters = append(clusters, elementBytes(0x1f43b675, elementBytes(0xe7, words(uint32(i*1000))), make([]byte, 64)))
+	}
+	clusterBytes := bytes.Join(clusters, nil)
+	cuesOffset := uint32(len(info) + len(tracks) + len(clusterBytes) + 40)
+	seekHead := elementBytes(0x114d9b74, elementBytes(0x4dbb, elementBytes(0x53ab, []byte{0x1c, 0x53, 0xbb, 0x6b}), elementBytes(0x53ac, words(cuesOffset))))
+	cuesOffset = uint32(len(seekHead) + len(info) + len(tracks) + len(clusterBytes))
+	seekHead = elementBytes(0x114d9b74, elementBytes(0x4dbb, elementBytes(0x53ab, []byte{0x1c, 0x53, 0xbb, 0x6b}), elementBytes(0x53ac, words(cuesOffset))))
+	cues := elementBytes(0x1c53bb6b,
+		cue(0, uint32(len(seekHead)+len(info)+len(tracks)), 1),
+		cue(5000, uint32(len(seekHead)+len(info)+len(tracks)+500), 1),
+	)
+	segBody := bytes.Join([][]byte{seekHead, info, tracks, clusterBytes, cues}, nil)
+	segHdr := []byte{0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+	ebml := elementBytes(0x1a45dfa3, elementBytes(0x4282, []byte("matroska")))
+	file := bytes.Join([][]byte{ebml, segHdr, segBody}, nil)
+
+	r := &recordIndexReader{Reader: bytes.NewReader(file)}
+	pts := containerIndex(context.Background(), r, int64(len(file)))
+	if len(pts) != 2 {
+		t.Fatalf("expected 2 cue points, got %+v", pts)
+	}
+	if len(r.reads) > 12 {
+		t.Fatalf("expected SeekHead jump to Cues in <=12 reads, got %d reads", len(r.reads))
+	}
+}

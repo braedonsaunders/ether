@@ -23,7 +23,7 @@ func TestObservedMediaPreservesIdentityAndViewerScope(t *testing.T) {
 		{Type: "video", Height: 2160, Codec: "hevc", DolbyVision: true},
 		{Type: "subtitle", External: true, ExternalURL: "https://fixture.invalid/secret"},
 	}}
-	raw, _ := json.Marshal(info)
+	raw, _ := json.Marshal(probeFactsRecord{FactsVersion: core.ProbeFactsVersion, Info: info})
 	_, err = db.ExecContext(ctx, `INSERT INTO playback_resume(user_id,rating_key,release_id,release_json,nzb_hash,size,updated_at) VALUES(1,?,'r','{}','hash',500,?)`, key, now.UnixMilli())
 	if err != nil {
 		t.Fatal(err)
@@ -90,5 +90,50 @@ func TestObservedMediaReadsOnlyMatchingActiveExactSession(t *testing.T) {
 	}
 	if got, _ := m.ObservedMediaInfo(context.Background(), 4, key); got != nil {
 		t.Fatal("another viewer's active facts exposed")
+	}
+}
+
+func TestNoteLiveProbeServesImmediateReplayAndResumedTracksWithoutDiskRace(t *testing.T) {
+	now := time.Now()
+	key := core.EpisodeKey(280945, 1, 1)
+	s := &resumeStore{}
+	nzb := []byte("debrid-payload-running-man")
+	probedDur := 2*time.Hour + 16*time.Minute + 20*time.Second
+	info := core.MediaInfo{
+		Container: "mkv",
+		Size:      10 << 30,
+		Duration:  probedDur,
+		Estimated: false,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "hevc", Width: 3840, Height: 2160},
+			{Index: 1, Type: "audio", Codec: "eac3", Channels: 6},
+		},
+	}
+	facts, ok := persistedProbeFacts(info)
+	if !ok {
+		t.Fatal("expected valid persistedProbeFacts")
+	}
+	rec := resumeRecord{
+		userID:    1,
+		key:       key,
+		release:   core.Release{ID: "rel-running-man-2160p", Name: "Running.Man.S01E01.2160p.WEB-DL.mkv"},
+		profile:   "Any",
+		size:      info.Size,
+		duration:  probedDur,
+		updatedAt: now,
+	}
+	s.noteLive(rec, nzb, &probeCache{
+		releaseID:    rec.release.ID,
+		info:         facts,
+		points:       []IndexPoint{{Offset: 0, Time: 0}, {Offset: 1 << 20, Time: 10 * time.Second}},
+		needsAugment: true,
+		nzbHash:      nzbHash(nzb),
+	})
+	got := s.liveProbe(1, key, rec.release.ID, nzb)
+	if got == nil {
+		t.Fatal("expected immediate in-memory liveProbe hit before async SQLite write")
+	}
+	if got.info.Duration != probedDur || got.info.Estimated || len(got.points) != 2 {
+		t.Fatalf("unexpected liveProbe: %+v", got)
 	}
 }

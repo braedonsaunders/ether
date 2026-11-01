@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
 )
@@ -13,13 +12,13 @@ import (
 // DiscoveryCandidate is local, name-based negative evidence only. It does not
 // certify quality or fetch a provider. Feed and playback share this policy.
 func (s *Service) DiscoveryCandidate(t *core.Title, r core.Release) string {
-	return sourceSuitability(r, t, s.ProfileFor(core.ClientCaps{HDR10: true, DolbyVision: true}, nil), s.resolverCfg(), false)
+	return sourceSuitability(r, t, s.ProfileFor(core.ClientCaps{HDR10: true, DolbyVision: true}, nil), false)
 }
 
-func sourceSuitability(r core.Release, t *core.Title, p core.QualityProfile, c config.Resolver, explicit bool) string {
+func sourceSuitability(r core.Release, t *core.Title, p core.QualityProfile, explicit bool) string {
 	// Reparse the name: saved feed payloads can contain older parser results.
 	info := releaseparse.Parse(r.Name)
-	if (info.Source == core.SourceCam || r.Info.Source == core.SourceCam) && !(c.AllowCam && p.AllowCam) {
+	if (info.Source == core.SourceCam || r.Info.Source == core.SourceCam) && !p.AllowCam {
 		return "cam not allowed"
 	}
 	if explicit || !releaseparse.ExplicitDub(r.Name) || len(info.Languages) == 0 {
@@ -55,6 +54,15 @@ func (s *Service) KnownUnavailable(ctx context.Context, keys []core.RatingKey) m
 	return out
 }
 func (s *Service) KnownUnavailableSince(ctx context.Context, keys []core.RatingKey) map[core.RatingKey]time.Time {
+	return s.knownUnavailableSince(ctx, keys, true)
+}
+
+// KnownUnavailableSinceCurrent reads durable observations without a node-local override.
+func (s *Service) KnownUnavailableSinceCurrent(ctx context.Context, keys []core.RatingKey) map[core.RatingKey]time.Time {
+	return s.knownUnavailableSince(ctx, keys, false)
+}
+
+func (s *Service) knownUnavailableSince(ctx context.Context, keys []core.RatingKey, memo bool) map[core.RatingKey]time.Time {
 	out := map[core.RatingKey]time.Time{}
 	now := s.now()
 	if s.db != nil {
@@ -80,6 +88,9 @@ func (s *Service) KnownUnavailableSince(ctx context.Context, keys []core.RatingK
 			}
 			rows.Close()
 		}
+	}
+	if !memo {
+		return out
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()

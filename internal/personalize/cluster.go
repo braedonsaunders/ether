@@ -82,3 +82,11 @@ func (e *Engine) applyRemote(ctx context.Context, hints []string, all bool) {
 		e.request(id)
 	}
 }
+
+// FavoritesChanged schedules a local rebuild and notifies peers without
+// blocking the caller's committed mutation. Bursts coalesce on the normal
+// rebuild queue. The caller must not use this after Close.
+func (e *Engine) FavoritesChanged(userID int64) {
+	e.scheduleRebuild(userID)
+	go e.notify("overrides:" + strconv.FormatInt(userID, 10))
+}

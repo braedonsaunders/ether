@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 )
 
 // DefaultWANEndpoints are queried in order. The first is the endpoint PMS
@@ -37,7 +39,7 @@ func NewWANDetector(client *http.Client, logger *slog.Logger, endpoints ...strin
 		endpoints = DefaultWANEndpoints
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = egress.Client(egress.CapDirect, 10*time.Second)
 	}
 	if logger == nil {
 		logger = slog.Default()

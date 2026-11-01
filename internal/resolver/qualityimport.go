@@ -94,6 +94,7 @@ func ImportQualityProfile(data []byte) (QualityImport, error) {
 		PreferredAudio:       []string{"eac3", "ac3", "aac"},
 		MinSizeMBPerMin:      5, // the same fake filter as a new profile; scaled down for SD
 		MinCustomFormatScore: &native.MinFormatScore,
+		Ranking:              core.DefaultRanking(nil),
 	}
 	seenQuality := map[string]bool{}
 	seenSource := map[core.Source]bool{}
@@ -381,7 +382,7 @@ func PlanQualityImport(imp QualityImport, app string, found map[string]core.Cust
 		plan.Formats = append(plan.Formats, f)
 	}
 	if len(existing)+len(plan.add) > 1000 {
-		plan.Warnings = append(plan.Warnings, "Custom scoring is limited to 1,000 formats; remove some under Custom scoring before importing this profile.")
+		plan.Warnings = append(plan.Warnings, "Custom scoring is limited to 1,000 formats; remove some from a quality profile's More options before importing this profile.")
 	}
 	slices.SortStableFunc(plan.Formats, func(a, b ImportFormat) int {
 		if a.Score != b.Score {
@@ -399,7 +400,7 @@ func PlanQualityImport(imp QualityImport, app string, found map[string]core.Cust
 		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%d custom %s can't be imported and won't score releases for this profile.", lost, plural(lost, "format", "formats")))
 	}
 	if other := len(existing) - countPresent(plan.Formats); other > 0 {
-		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%d custom %s already in Custom scoring %s part of this profile and won't change its ranking.", other, plural(other, "format", "formats"), plural(other, "isn't", "aren't")))
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%d custom %s already saved %s part of this profile and won't change its ranking.", other, plural(other, "format", "formats"), plural(other, "isn't", "aren't")))
 	}
 	if len(scores) > 0 {
 		plan.Profile.CustomFormatScores = scores
@@ -481,6 +482,7 @@ func (p QualityImportPlan) Apply(c *config.Config, name string) error {
 	prof.PreferredCodecs = slices.Clone(prof.PreferredCodecs)
 	prof.PreferredAudio = slices.Clone(prof.PreferredAudio)
 	prof.PreferredLanguages = slices.Clone(prof.PreferredLanguages)
+	prof.Ranking = slices.Clone(prof.EffectiveRanking())
 	if prof.MinCustomFormatScore != nil {
 		v := *prof.MinCustomFormatScore
 		prof.MinCustomFormatScore = &v

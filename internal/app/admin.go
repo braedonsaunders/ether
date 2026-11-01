@@ -13,8 +13,12 @@ import (
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/llm"
+	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/newznab"
+	"github.com/braedonsaunders/ether/internal/notify"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/subtitles"
 	"github.com/braedonsaunders/ether/internal/tmdb"
@@ -23,8 +27,41 @@ import (
 )
 
 func (a *App) buildAdmin() http.Handler {
+	local, _ := identity.NewLocal(a.db)
+	grants, _ := identity.NewGrants(a.db, a.users, 30*24*time.Hour, nil)
+	limiter, _ := identity.NewLoginLimiter(a.db, 15*time.Minute, 30, 8, nil)
+	pollLimiter, _ := identity.NewPollLimiter(a.db, time.Minute, 120, 60, nil)
+	quick, _ := identity.NewQuickConnect(a.db, 10*time.Minute, 30*24*time.Hour, nil)
+	invites, _ := identity.NewInvite(a.db, 24*time.Hour, 30*24*time.Hour, nil)
 	return admin.New(admin.Deps{
+		FavoritesMirror:  a.favorites,
+		NotInterested:    notInterestedPortal{a},
+		ViewerAlerts:     &notify.ViewerAlerts{DB: a.db, Active: a.users.ActiveUser},
+		ActiveViewer:     a.users.ActiveUser,
+		ViewerPortalURL:  a.frontends.viewerPortalURL,
+		StremioPortalURL: a.frontends.viewerPortalSecureURL,
+		CreateDLNAGuest:  a.createDLNAGuest,
+		Invites:          invites,
+		SetViewerActive:  a.users.SetOwnerEnabled,
+		LocalOwnerConfigured: func(ctx context.Context) bool {
+			owner, err := a.users.Owner(ctx)
+			if err != nil {
+				return false
+			}
+			links, err := local.Links(ctx, owner.ID)
+			if err != nil {
+				return true
+			} // fail closed if identity storage is unavailable
+			for _, link := range links {
+				if link.Provider == "local" {
+					return true
+				}
+			}
+			return false
+		},
+		AuthenticatePlex: a.users.Authenticate, LinkPlex: a.users.LinkPlex, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, OwnerCredentialChanged: a.syncOwnerRecovery, PollLimiter: pollLimiter, QuickConnect: quick, RefreshViewers: a.users.RefreshViewers, OwnerConfigured: func(ctx context.Context) bool { _, err := a.users.Owner(ctx); return err == nil },
 		Config:        a.cfg,
+		Frontends:     a.frontends.control,
 		Extensions:    a.extensionHandlers(),
 		ValidateExtra: a.validateExtra,
 		Logger:        a.log.With("component", "admin"),
@@ -69,6 +106,9 @@ func (a *App) buildAdmin() http.Handler {
 		},
 		TestOpenSubtitles: subtitles.Test,
 		TestTrakt:         trakt.Test,
+		TestIntroDB: func(ctx context.Context, apiKey string) error {
+			return markers.Probe(ctx, "", apiKey)
+		},
 		TestLLM: func(ctx context.Context, c config.LLM) error {
 			c.Enabled = true // test the settings before the owner switches them on
 			_, err := llm.NewClient(llm.ClientOptions{Config: c, Logger: a.log}).Chat(ctx,
@@ -107,7 +147,22 @@ func (a *App) buildAdmin() http.Handler {
 			if a.transcoder == nil {
 				return map[string]string{"error": "ffmpeg not found"}
 			}
-			return map[string]any{"hwaccel": a.transcoder.HWAccel(), "ffmpeg": a.transcoder.Version(), "enhancement": a.transcoder.EnhancementStatus()}
+			hw := map[string]any{"hwaccel": a.transcoder.HWAccel(), "ffmpeg": a.transcoder.Version(), "enhancement": a.transcoder.EnhancementStatus()}
+			cap := a.transcoder.Capability()
+			if cap.Notice != "" {
+				hw["notice"] = cap.Notice
+			}
+			if cap.PlaybackError != "" {
+				hw["playbackError"] = cap.PlaybackError
+			}
+			if len(cap.ToneMap) > 0 {
+				hw["toneMap"] = cap.ToneMap
+			}
+			if len(cap.Colour) > 0 {
+				hw["colour"] = cap.Colour
+			}
+			hw["filtersProbed"] = cap.FiltersProbed
+			return hw
 		},
 		ExtraStatus: map[string]admin.StatusFunc{
 			"stream":   func(context.Context) any { return a.engine.Stats() },
@@ -118,15 +173,23 @@ func (a *App) buildAdmin() http.Handler {
 			"database": a.databaseStatus,
 			"updates":  a.updateStatus,
 		},
-		ResolverTraces:    func(context.Context) (any, error) { return a.resolver.Traces(), nil },
-		Users:             a.users,
-		ViewerDirectory:   a.viewerDirectory,
-		Personalization:   a.personalize,
-		Collections:       a.collections,
-		CatalogHelper:     a.collections,
-		CatalogVisibility: a.catalog.PreviewVisibility,
-		Images:            a.images,
-		PlexWatch:         a.plexWatchAPI(),
+		ResolverTraces:  func(context.Context) (any, error) { return a.resolver.Traces(), nil },
+		Users:           a.users,
+		ViewerDirectory: a.viewerDirectory,
+		Personalization: a.personalize,
+		Collections:     a.collections,
+		CatalogHelper:   a.collections,
+		WaitingReleaseKeys: func(ctx context.Context) []core.RatingKey {
+			if a.availability == nil {
+				return nil
+			}
+			return a.availability.HiddenMovies(ctx)
+		},
+		CatalogVisibility: func(ctx context.Context, specs []core.LibraryExclusion, fallback string) (any, error) {
+			return a.catalog.PreviewVisibilityPolicy(ctx, specs, fallback)
+		},
+		Images:    a.images,
+		PlexWatch: a.plexWatchAPI(),
 	})
 }
 
@@ -148,14 +211,15 @@ func (a *App) debridStatus(context.Context) any {
 
 func (a *App) cacheStatus(context.Context) any {
 	used, budget := a.cache.Usage()
-	return map[string]any{"used": used, "budget": budget, "mode": a.cfg.Get().Cache.Mode}
+	return map[string]any{"used": used, "budget": budget, "mode": a.cfg.Read().Cache.Mode}
 }
 
 // plexAuth adapts the plex.tv PIN sign-in and claim flow to the wizard.
 type plexAuth struct {
-	app  *App
-	mu   sync.Mutex
-	pins map[string]*plextv.PIN
+	app       *App
+	mu        sync.Mutex
+	pins      map[string]*plextv.PIN
+	userToken string
 }
 
 func (p *plexAuth) client() *plextv.Client { return p.app.registrar.SignInClient() }
@@ -200,7 +264,9 @@ func (p *plexAuth) PollPIN(ctx context.Context, id string) (bool, error) {
 			ownerRejected = true
 			return errors.New("this Plex account does not own the server; sign in as the existing owner")
 		}
-		c.Plex.Token = got.AuthToken
+		if !c.Plex.Claimed {
+			c.Plex.Token = ""
+		}
 		c.Plex.OwnerPlexID = acct.ID
 		c.Plex.OwnerUsername = acct.Username
 		return nil
@@ -213,19 +279,30 @@ func (p *plexAuth) PollPIN(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	p.mu.Lock()
+	p.userToken = got.AuthToken
 	delete(p.pins, id)
 	p.mu.Unlock()
 	return true, p.app.users.BootstrapOwner(ctx, p.app.cfg.Get().Plex)
 }
 
 func (p *plexAuth) Claim(ctx context.Context) error {
-	tok := p.app.cfg.Get().Plex.Token
+	p.mu.Lock()
+	tok := p.userToken
+	p.mu.Unlock()
+	if tok == "" {
+		tok = p.app.cfg.Get().Plex.Token
+	}
 	if tok == "" {
 		return errors.New("sign in to plex.tv first")
 	}
 	if _, err := p.app.registrar.Claim(ctx, tok); err != nil {
 		return err
 	}
+	p.mu.Lock()
+	if p.userToken == tok {
+		p.userToken = ""
+	}
+	p.mu.Unlock()
 	return p.app.users.BootstrapOwner(ctx, p.app.cfg.Get().Plex)
 }
 

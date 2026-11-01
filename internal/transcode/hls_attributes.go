@@ -40,6 +40,9 @@ func HLSVariantAttributes(info core.MediaInfo, d core.Decision) string {
 			}
 		}
 		c := estimateCodecs(codec, profile, height, depth)
+		if !d.VideoCopy && codec == "h264" && d.H264Level > 0 {
+			c = fmt.Sprintf("avc1.6400%02x", d.H264Level)
+		}
 		if d.VideoCopy && v.CodecString != "" {
 			c = v.CodecString
 		}

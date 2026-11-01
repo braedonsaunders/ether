@@ -11,7 +11,22 @@ import (
 	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
 
-const preResolveTTL = 60 * time.Minute
+const (
+	preResolveTTL = 60 * time.Minute
+	// takeWarmBudget is how long Play waits for an in-flight warm-up
+	// before resolving itself. A usenet RAR can sit in probe/prefetch
+	// for tens of seconds; a cached debrid remux must not wait behind it.
+	takeWarmBudget = 400 * time.Millisecond
+)
+
+// parityRetainWarm is nil in production, so warm-up eviction is unchanged.
+// A plexparity build points it at a function that keeps fixture probes, which
+// otherwise get dropped once thirty-two warm entries are recorded.
+var parityRetainWarm func(identity) bool
+
+func warmRetained(id identity) bool {
+	return parityRetainWarm != nil && parityRetainWarm(id)
+}
 
 const (
 	detailPrefetchBytes  = 2 << 20
@@ -38,6 +53,26 @@ type warmEntry struct {
 	// that Resolve saw. A later catalogue correction must not reuse it.
 	originalAudio    bool
 	originalLanguage string
+	// opened is closed once the opening window is proven. For debrid/HTTP
+	// that is the probe; for usenet it is a successful opening prefetch.
+	// nil means the entry predates this field and is treated as proven.
+	opened chan struct{}
+	openDo sync.Once
+}
+
+func (e *warmEntry) markOpeningReady() {
+	if e == nil {
+		return
+	}
+	e.openDo.Do(func() {
+		if e.opened != nil {
+			close(e.opened)
+		}
+	})
+}
+
+func usenetWarm(res *core.Resolution) bool {
+	return res != nil && res.Release.Protocol == core.ProtocolUsenet
 }
 
 func (e *warmEntry) setCancel(cancel context.CancelFunc) {
@@ -95,7 +130,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		return false
 	}
 	reason := opts.Reason
-	if reason != core.PrewarmTrailer && reason != core.PrewarmPostPlay {
+	if reason != core.PrewarmTrailer && reason != core.PrewarmPostPlay && reason != core.PrewarmBrowse {
 		reason = core.PrewarmDetail
 	}
 	cfg := m.config().Cache
@@ -108,9 +143,14 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		prefetchBytes = cfg.DetailBytes
 	}
 	if prefetchBytes <= 0 {
-		if reason == core.PrewarmDetail {
+		switch reason {
+		case core.PrewarmDetail:
 			prefetchBytes = detailPrefetchBytes
-		} else {
+		case core.PrewarmBrowse:
+			// Resolve + open the cached/debrid link. Do not pull opening
+			// bytes from a browse row — that is the expensive part.
+			prefetchBytes = 0
+		default:
 			prefetchBytes = bigWarmPrefetchBytes
 		}
 	}
@@ -118,7 +158,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		prefetchBytes = maxWarmPrefetchBytes
 	}
 	timeout := 45 * time.Second
-	id := identity{userID: user.ID, clientID: caps.ClientID, key: key}
+	id := identity{userID: user.ID, clientID: caps.ClientID, key: key, surface: playbackSurface(string(caps.Protocol))}
 	now := m.now()
 	m.mu.Lock()
 	if m.closed || m.byIdent[id] != nil || m.hasFlightLocked(id) {
@@ -126,7 +166,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		return false
 	}
 	for ident, e := range m.warm {
-		if !now.Before(e.expires) {
+		if !now.Before(e.expires) && !warmRetained(ident) {
 			delete(m.warm, ident)
 		}
 	}
@@ -160,6 +200,9 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		var oldest identity
 		var expiry time.Time
 		for ident, e := range m.warm {
+			if warmRetained(ident) {
+				continue
+			}
 			select {
 			case <-e.done:
 				if expiry.IsZero() || e.expires.Before(expiry) {
@@ -201,7 +244,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 	}
 	m.warmRequests[bk] = append(recent, now)
 	profileObj := m.deps.SelectProfile(caps, user)
-	e := &warmEntry{profileKey: profileKey(profileObj), profileObj: profileObj, caps: caps, done: make(chan struct{}), foreground: make(chan context.Context, 1), started: now, expires: now.Add(preResolveTTL)}
+	e := &warmEntry{profileKey: profileKey(profileObj), profileObj: profileObj, caps: caps, done: make(chan struct{}), opened: make(chan struct{}), foreground: make(chan context.Context, 1), started: now, expires: now.Add(preResolveTTL)}
 	m.warm[id] = e
 	u := *user
 	m.wg.Add(1)
@@ -230,7 +273,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 			e.originalAudio = true
 			e.originalLanguage = strings.TrimSpace(title.Language)
 		}
-		if res == nil || !releaseMatchesTitle(res.Release, title) {
+		if res == nil || !releaseMatchesTitle(res.Release, title) || !payloadMatchesTitle(res.NZB, title) {
 			res, err = m.deps.Resolver.Resolve(ctx, core.ResolveRequest{Title: title, Client: caps, User: &u})
 		} else if reason == core.PrewarmDetail {
 			// Reusing the remembered source skips Resolve/search. Recover only
@@ -242,12 +285,13 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		if err != nil || res == nil {
 			return
 		}
-		src, err := m.deps.Engine.Open(ctx, res.Release.ID, res.NZB)
+		session := newSession(randomID(16), id, &u, caps, title, e.profileKey, m.now())
+		defer session.sources.seal()
+		src, finish, err := m.openSource(ctx, session.sources, res)
 		if err != nil {
 			return
 		}
-		session := newSession(randomID(16), id, &u, caps, title, e.profileKey, m.now())
-		generation, err := m.probeGeneration(ctx, session, res, src, func(size int64) core.MediaInfo {
+		generation, err := m.probeGeneration(ctx, session, res, src, finish, func(size int64) core.MediaInfo {
 			info := EstimateInfo(title, caps, m.deps.SelectProfile(caps, &u))
 			info.Size = size
 			return info
@@ -266,12 +310,21 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 				prefetchBytes = min(int64(256<<20), max(int64(8<<20), int64(float64(src.Size())*playableReserve.Seconds()/info.Duration.Seconds())))
 			}
 		}
-		// Publish before prefetch so a play request need not wait for background IO.
+		// Publish before prefetch so a play request need not wait for
+		// background IO on debrid/HTTP. Usenet still has to prove the
+		// opening articles exist; takeWarm will not consume it until then.
 		m.mu.Lock()
 		e.res, e.probe, e.runtime = res, facts, title.Runtime
 		m.mu.Unlock()
 		e.ready.Do(func() { close(e.done) })
+		if !usenetWarm(res) {
+			e.markOpeningReady()
+		}
 		m.log.Debug("prewarm ready", "key", key, "reason", reason, "release", res.Release.Name, "prefetch", prefetchBytes)
+		if prefetchBytes <= 0 {
+			e.markOpeningReady()
+			return
+		}
 		if err := m.deps.Engine.Prefetch(ctx, res.Release.ID, res.NZB, 0, prefetchBytes); err != nil {
 			if permanentSourceFailure(err) {
 				// Probe success is not proof that the opening window is intact.
@@ -288,6 +341,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 			}
 			return
 		}
+		e.markOpeningReady()
 		m.log.Info("opening prefetch completed", "key", key, "release", res.Release.ID, "bytes", prefetchBytes)
 		// Seek indexes are optional for starting playback. Keep filling one
 		// under the warm-up budget, but never hold the ready signal for it.
@@ -329,7 +383,7 @@ func (e *warmEntry) facts() warmFacts {
 		f.size, f.duration = info.Size, info.Duration
 		f.bitrate = info.BitrateKbps
 		if v := info.Video(); v != nil {
-			f.height, f.codec = v.Height, v.Codec
+			f.height, f.codec = warmResolutionHeight(v.Width, v.Height), v.Codec
 			f.hdr = v.ColorTransfer == "smpte2084" || v.ColorTransfer == "arib-std-b67"
 			f.dv = v.DolbyVision
 		}
@@ -356,7 +410,8 @@ func warmAcceptable(e *warmEntry, profile core.QualityProfile, caps core.ClientC
 	if e == nil || e.res == nil {
 		return false
 	}
-	if !reflect.DeepEqual(e.profileObj.ReleaseRules, profile.ReleaseRules) {
+	if !reflect.DeepEqual(e.profileObj.ReleaseRules, profile.ReleaseRules) ||
+		!reflect.DeepEqual(e.profileObj.EffectiveRanking(), profile.EffectiveRanking()) {
 		return false
 	}
 	if e.originalAudio && e.originalLanguage != strings.TrimSpace(originalLanguage) {
@@ -481,10 +536,38 @@ func (m *Manager) WaitWarmProbe(ctx context.Context, user *core.User, caps core.
 	return m.WarmProbeInfo(user, caps, key)
 }
 
+func waitWarmChan(ctx context.Context, ch <-chan struct{}, deadline time.Time) bool {
+	if ch == nil {
+		return true
+	}
+	select {
+	case <-ch:
+		return true
+	default:
+	}
+	d := time.Until(deadline)
+	if d <= 0 {
+		return false
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ch:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return false
+	}
+}
+
 // takeWarmResolution consumes the warm entry for id when its release is
 // acceptable for the Play-time profile and caps (and, for a variant,
 // is the picked release); an unacceptable entry is discarded.
 func (m *Manager) takeWarmResolution(ctx context.Context, id identity, profile core.QualityProfile, caps core.ClientCaps, prefer, originalLanguage string) *warmEntry {
+	// Warm facts are keyed by viewer/device/title, then checked against the
+	// selected release below; a plan's variant identity is not a warm key.
+	id.variant, id.exact = "", false
 	m.mu.Lock()
 	e := m.warm[id]
 	if e == nil {
@@ -506,9 +589,13 @@ func (m *Manager) takeWarmResolution(ctx context.Context, id identity, profile c
 		default:
 		}
 	}
-	select {
-	case <-e.done:
-	case <-ctx.Done():
+	deadline := time.Now().Add(takeWarmBudget)
+	if !waitWarmChan(ctx, e.done, deadline) {
+		return nil
+	}
+	if e.opened != nil && !waitWarmChan(ctx, e.opened, deadline) {
+		// Probe published but the usenet opening is still unproven.
+		// Let Play resolve a cached debrid remux instead of waiting.
 		return nil
 	}
 	m.mu.Lock()
@@ -599,4 +686,20 @@ func (m *Manager) hasActivePlaybackLocked() bool {
 		}
 	}
 	return false
+}
+
+// warmResolutionHeight normalizes cinemascope/anamorphic dimensions (e.g.
+// 1920x800 or 3840x1600) to their nominal vertical tier so profile MinHeight
+// checks (such as 1080p) do not reject wide-aspect 1080p/4K releases.
+func warmResolutionHeight(w, h int) int {
+	switch {
+	case (w >= 3200 || h >= 1800) && h < 2160:
+		return 2160
+	case (w >= 1700 || h >= 1000) && h < 1080:
+		return 1080
+	case (w >= 1200 || h >= 700) && h < 720:
+		return 720
+	default:
+		return h
+	}
 }

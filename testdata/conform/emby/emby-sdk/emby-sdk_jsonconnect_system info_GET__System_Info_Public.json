@@ -1,0 +1,42 @@
+{
+  "status": 200,
+  "headers": {
+    "Access-Control-Allow-Headers": [
+      "Accept, Accept-Language, Authorization, Cache-Control, Content-Disposition, Content-Encoding, Content-Language, Content-Length, Content-MD5, Content-Range, Content-Type, Date, Host, If-Match, If-Modified-Since, If-None-Match, If-Unmodified-Since, Origin, OriginToken, Pragma, Range, Slug, Transfer-Encoding, Want-Digest, X-MediaBrowser-Token, X-Emby-Token, X-Emby-Client, X-Emby-Client-Version, X-Emby-Device-Id, X-Emby-Device-Name, X-Emby-Authorization"
+    ],
+    "Access-Control-Allow-Methods": [
+      "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    ],
+    "Access-Control-Allow-Origin": [
+      "*"
+    ],
+    "Access-Control-Allow-Private-Network": [
+      "true"
+    ],
+    "Content-Length": [
+      "263"
+    ],
+    "Content-Type": [
+      "application/json; charset=utf-8"
+    ],
+    "Cross-Origin-Resource-Policy": [
+      "cross-origin"
+    ],
+    "Date": [
+      "Thu, 29 Oct 2026 [REDACTED_IP] GMT"
+    ],
+    "Expires": [
+      "-1"
+    ],
+    "Private-Network-Access-Id": [
+      "b18d946bfa4f457ab5d1310cc8025a4d"
+    ],
+    "Private-Network-Access-Name": [
+      "5ffe5c7aa476"
+    ],
+    "Server": [
+      "UPnP/1.0 DLNADOC/1.50"
+    ]
+  },
+  "body": "eyJJZCI6ImIxOGQ5NDZiZmE0ZjQ1N2FiNWQxMzEwY2M4MDI1YTRkIiwiTG9jYWxBZGRyZXNzIjoiaHR0cDovL1tSRURBQ1RFRF9JUF06ODA5NiIsIkxvY2FsQWRkcmVzc2VzIjpbImh0dHA6Ly9bUkVEQUNURURfSVBdOjgwOTYiXSwiUmVtb3RlQWRkcmVzc2VzIjpbImh0dHA6Ly9bUkVEQUNURURfSVBdOjgwOTYiXSwiU2VydmVyTmFtZSI6IltSRURBQ1RFRF0iLCJWZXJzaW9uIjoiW1JFREFDVEVEX0lQXSIsIldhbkFkZHJlc3MiOiJodHRwOi8vW1JFREFDVEVEX0lQXTo4MDk2In0="
+}

@@ -13,6 +13,10 @@ import (
 
 // The Collection Studio API, used by internal/admin.
 
+// listIndexWait bounds how long a collection listing waits for the
+// catalogue index's first build.
+const listIndexWait = 2 * time.Second
+
 // ListSpecs returns every collection, owner-made first, then built-ins.
 func (s *Service) ListSpecs(ctx context.Context) ([]core.CollectionSpec, error) {
 	rows, err := s.loadRows(ctx)
@@ -23,7 +27,10 @@ func (s *Service) ListSpecs(ctx context.Context) ([]core.CollectionSpec, error) 
 	var snap *snapshot
 	for _, r := range rows {
 		if _, ok := localFacetSpec(r.spec); ok {
-			snap, _ = s.idx.get(ctx)
+			// A listing waits briefly for the catalogue index's first
+			// build, which reads the whole catalogue; past that the stored
+			// counts stand.
+			snap = s.idx.readyWithin(ctx, listIndexWait)
 			break
 		}
 	}
@@ -129,6 +136,7 @@ func (s *Service) Rebuild(ctx context.Context, id string) (*core.CollectionSpec,
 	if err != nil {
 		return nil, err
 	}
+	s.invalidate(row.id)
 	s.idx.invalidate()
 	s.notify("index")
 	if _, err := s.build(ctx, row); err != nil {

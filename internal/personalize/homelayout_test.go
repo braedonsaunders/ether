@@ -312,3 +312,52 @@ func TestDesignerHasOnePersistentLayout(t *testing.T) {
 		t.Fatal("canonical layout lost advanced viewer constraints", loaded, err)
 	}
 }
+
+func TestNeutralHomeKeepsFullLibraryBackfill(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	newer := core.Title{Key: core.MovieKey(11), Title: "Newer", Released: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)}
+	older := core.Title{Key: core.MovieKey(12), Title: "Older", Released: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)}
+	candidates := []core.NeutralHomeRow{
+		{ID: "home.continue", Title: "Continue Watching", Kind: "continue-watching", Purpose: "continue", Items: []core.Title{{Key: core.MovieKey(1)}}},
+		{ID: "library.recent.1", Title: "Recently Added Movies", Kind: "recentlyAdded", Purpose: "recentlyAdded", Items: []core.Title{newer, older}},
+	}
+	got, err := h.e.FinalizeNeutralHome(ctx, &core.User{ID: 1}, core.HomeSituation{Now: testNow, Device: core.DeviceTV}, "home", candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1].ID != "library.recent.1" || len(got[1].Items) != 2 || got[1].Items[0].Key != newer.Key || got[1].Items[1].Key != older.Key {
+		t.Fatalf("backfill = %+v", got)
+	}
+}
+
+func TestNeutralHomeLayoutMatchesLegacy(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	user := &core.User{ID: 1}
+	hc := hubContext(testNow, core.DeviceTV)
+	hubs := []core.Hub{
+		{ID: "home.continue", Title: "Continue", ItemCount: 1},
+		{ID: "movie.trending", Title: "Trending", ItemCount: 4},
+		{ID: "live.onnow", Title: "On Now", ItemCount: 2},
+	}
+	old, err := h.e.FinalizeHome(ctx, user, hc, "home", hubs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := make([]core.NeutralHomeRow, len(hubs))
+	for i, hub := range hubs {
+		candidates[i] = core.NeutralHomeRow{ID: hub.ID, Title: hub.Title, Type: hub.Type, Items: hub.Items, ItemCount: hub.ItemCount}
+	}
+	got, err := h.e.FinalizeNeutralHome(ctx, user, core.HomeSituation{Device: hc.Device, Daypart: hc.Daypart, Weekend: hc.Weekend, Now: hc.Now, LibraryID: hc.SectionID, Product: hc.Product, Platform: hc.Platform, SessionID: hc.SessionID, ClientID: hc.ClientID}, "home", candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, len(got))
+	for i, row := range got {
+		ids[i] = row.ID
+	}
+	if !reflect.DeepEqual(hubIDsOf(old), ids) {
+		t.Fatalf("legacy %v != neutral %v", hubIDsOf(old), ids)
+	}
+}

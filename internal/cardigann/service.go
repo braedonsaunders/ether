@@ -17,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/safefetch"
 )
@@ -91,7 +92,7 @@ func New(o Options) *Service {
 		o.Now = time.Now
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
+		o.HTTPClient = egress.Client(egress.CapIndexers, defaultHTTPTimeout)
 	}
 	if o.LoginLock == nil {
 		km := &keyedMutex{}

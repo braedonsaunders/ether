@@ -155,7 +155,7 @@ func buildZip(snap finishSnap, extra []archived, coverage []Gap, uses []secretUs
 		files = append(files, archived{name: name, body: body})
 	}
 	add("README.md", readme)
-	eventsBody, skipped := eventsJSONL(snap.events, snap.flags, uses)
+	eventsBody, skipped := eventsJSONL(snap.events, snap.flags, snap.id, uses)
 	if skipped > 0 {
 		pre = append(pre, Gap{Collector: "events.jsonl", Status: "omitted", Detail: "Some events were omitted because the redaction check did not accept them."})
 	}
@@ -511,9 +511,10 @@ type exportEvent struct {
 	Uncorrelated  bool              `json:"uncorrelated,omitempty"`
 	Candidates    []exportCandidate `json:"candidates,omitempty"`
 	Media         *MediaFacts       `json:"media,omitempty"`
+	Playback      *PlaybackDecision `json:"playback,omitempty"`
 }
 
-func eventsJSONL(events []Event, flags [3]bool, uses []secretUse) (string, int) {
+func eventsJSONL(events []Event, flags [3]bool, captureID string, uses []secretUse) (string, int) {
 	var b strings.Builder
 	skipped := 0
 	for _, e := range events {
@@ -536,6 +537,7 @@ func eventsJSONL(events []Event, flags [3]bool, uses []secretUse) (string, int) 
 			m := *e.Media
 			row.Media = &m
 		}
+		row.Playback = exportPlayback(e.Playback, flags[0], captureID, uses)
 		if len(e.Candidates) > 0 {
 			row.Candidates = make([]exportCandidate, len(e.Candidates))
 			for i, c := range e.Candidates {

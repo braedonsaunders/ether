@@ -22,14 +22,21 @@ import (
 )
 
 type Config struct {
-	Posters      Posters      `json:"posters"`
-	Availability Availability `json:"availability"`
+	// Frontends selects protocol listeners by their registered ID.
+	Frontends map[string]Frontend `json:"frontends,omitempty"`
+	// FrontendPorts are node-local listener port overrides.
+	FrontendPorts map[string]int `json:"frontendPorts,omitempty"`
+	Posters       Posters        `json:"posters"`
+	Availability  Availability   `json:"availability"`
 	// SharedCache is the cluster-wide NAS policy. Mount paths stay in Cache.
-	SharedCache   *Cache        `json:"sharedCache,omitempty"`
-	Server        Server        `json:"server"`
-	Plex          Plex          `json:"plex"`
-	Usenet        Usenet        `json:"usenet"`
-	Indexers      []Indexer     `json:"indexers"`
+	SharedCache *Cache    `json:"sharedCache,omitempty"`
+	Server      Server    `json:"server"`
+	Plex        Plex      `json:"plex"`
+	Usenet      Usenet    `json:"usenet"`
+	Indexers    []Indexer `json:"indexers"`
+	// Prowlarr is the saved connection for indexer sync. Empty means the
+	// owner has not saved one. The API key is a secret, redacted like indexer keys.
+	Prowlarr      Prowlarr      `json:"prowlarr,omitempty"`
 	Cache         Cache         `json:"cache"`
 	Catalog       Catalog       `json:"catalog"`
 	Resolver      Resolver      `json:"resolver"`
@@ -46,13 +53,25 @@ type Config struct {
 	Personalize   Personalize   `json:"personalize"`
 	Extras        Extras        `json:"extras"`
 	Debrid        Debrid        `json:"debrid"`
+	// Clients holds owner overrides of the capability registry.
+	Clients ClientCompatibility `json:"clients"`
 	// Database is node-local storage selection (SQLite or PostgreSQL).
-	Database      Database     `json:"database"`
-	IndexerSites  IndexerSites `json:"indexerSites"`
-	SetupComplete bool         `json:"setupComplete"`
+	Database     Database     `json:"database"`
+	IndexerSites IndexerSites `json:"indexerSites"`
+	// Outbound is this computer's optional proxy for source traffic.
+	Outbound      Outbound `json:"outbound"`
+	SetupComplete bool     `json:"setupComplete"`
+}
+
+// Frontend holds the enabled state of a protocol front end.
+type Frontend struct {
+	Enabled  bool           `json:"enabled"`
+	Settings map[string]any `json:"settings,omitempty"`
 }
 
 type Server struct {
+	// TrustedProxyCIDRs are proxy peer networks whose forwarding headers are trusted.
+	TrustedProxyCIDRs []string `json:"trustedProxyCIDRs,omitempty"`
 	// Port for the Plex API and web UI. PMS uses 32400.
 	Port         int    `json:"port"`
 	BindAddress  string `json:"bindAddress"`
@@ -94,6 +113,13 @@ type Plex struct {
 	OwnerPlexID      int64  `json:"ownerPlexId"`
 	OwnerUsername    string `json:"ownerUsername"`
 	Claimed          bool   `json:"claimed"`
+	// UsePlexMetadata serves cached Plex metadata-provider fields to Plex
+	// apps when a title has a verified plex:// guid. Off by default.
+	// Other frontends and the owner console keep TMDB. Viewer limits use
+	// the safer (more mature) of the TMDB and Plex content ratings; Plex
+	// apps still display Plex's own rating. Date-added stays the catalogue
+	// release/air date.
+	UsePlexMetadata bool `json:"usePlexMetadata,omitempty"`
 	// Remote access
 	RemoteAccess bool     `json:"remoteAccess"`
 	UseUPnP      bool     `json:"useUpnp"`
@@ -250,15 +276,19 @@ type Catalog struct {
 	GateMoviesByHomeRelease bool `json:"gateMoviesByHomeRelease"`
 	// HideFranchiseCollections hides automatic TMDB groups from Plex's
 	// Collections tab. The zero value preserves existing libraries.
-	HideFranchiseCollections bool                    `json:"hideFranchiseCollections"`
-	Exclusions               []core.LibraryExclusion `json:"exclusions,omitempty"`
-	TMDBKey                  string                  `json:"tmdbKey"`  // owner override; empty uses the bundled key
-	Language                 string                  `json:"language"` // TMDB language, e.g. "en-US"
-	Region                   string                  `json:"region"`
-	MinPopularity            float64                 `json:"minPopularity"`
-	MinVotes                 int                     `json:"minVotes"`
-	IncludeAdult             bool                    `json:"includeAdult"`
-	RefreshInterval          Duration                `json:"refreshInterval"`
+	HideFranchiseCollections bool `json:"hideFranchiseCollections"`
+	// VisibilityDefault is what a title does when no exclusion rule matches:
+	// "show" or "hide". Empty means show, which keeps saved exclusion lists
+	// (hide rules, first match) identical to the previous OR of groups.
+	VisibilityDefault string                  `json:"visibilityDefault,omitempty"`
+	Exclusions        []core.LibraryExclusion `json:"exclusions,omitempty"`
+	TMDBKey           string                  `json:"tmdbKey"`  // owner override; empty uses the bundled key
+	Language          string                  `json:"language"` // TMDB language, e.g. "en-US"
+	Region            string                  `json:"region"`
+	MinPopularity     float64                 `json:"minPopularity"`
+	MinVotes          int                     `json:"minVotes"`
+	IncludeAdult      bool                    `json:"includeAdult"`
+	RefreshInterval   Duration                `json:"refreshInterval"`
 }
 
 type Resolver struct {
@@ -267,7 +297,6 @@ type Resolver struct {
 	CustomFormats        []core.CustomFormat `json:"customFormats,omitempty"`
 	CustomFormatScores   map[string]int      `json:"customFormatScores,omitempty"`
 	MinCustomFormatScore *int                `json:"minCustomFormatScore,omitempty"`
-	AllowCam             bool                `json:"allowCam"` // owner setting, off by default
 	HealthSamples        int                 `json:"healthSamples"`
 	SearchCacheTTL       Duration            `json:"searchCacheTtl"`
 	UnavailableCooloff   Duration            `json:"unavailableCooloff"` // hide titles with no release this long
@@ -275,9 +304,13 @@ type Resolver struct {
 	// SameQualityAlternatives is how many other releases of the same cut,
 	// resolution and HDR type a detail page lists after Auto as Play
 	// Versions (0 = none, at most 3; default 1).
-	SameQualityAlternatives int      `json:"sameQualityAlternatives"`
-	BlockedGroups           []string `json:"blockedGroups"`
-	BlockedTerms            []string `json:"blockedTerms"`
+	SameQualityAlternatives int `json:"sameQualityAlternatives"`
+	// OfferHigherVersions lets Play Version list releases taller than the
+	// profile ceiling (a 4K copy on a 1080p profile). Off, the default,
+	// keeps that ceiling: height, HDR policy and size limits.
+	OfferHigherVersions bool     `json:"offerHigherVersions"`
+	BlockedGroups       []string `json:"blockedGroups"`
+	BlockedTerms        []string `json:"blockedTerms"`
 	// SourcePreference orders releases of equivalent quality by source:
 	// "auto" (or empty) puts the source that measurably starts faster
 	// first, and cached debrid first for popular titles until both
@@ -300,11 +333,19 @@ type Quality struct {
 
 // QualityRule selects a profile when all non-empty matchers match.
 type QualityRule struct {
-	Product   string `json:"product,omitempty"`  // substring of X-Plex-Product
-	Platform  string `json:"platform,omitempty"` // substring of X-Plex-Platform
-	UserID    int64  `json:"userId,omitempty"`
-	Profile   string `json:"profile"`
-	MaxHeight int    `json:"maxHeight,omitempty"` // optional max-height override (2160, 1080, 720, 480; 0 = profile ceiling)
+	Protocol             core.Protocol `json:"protocol,omitempty"`
+	Product              string        `json:"product,omitempty"`  // substring of X-Plex-Product
+	Platform             string        `json:"platform,omitempty"` // substring of X-Plex-Platform
+	UserID               int64         `json:"userId,omitempty"`
+	Profile              string        `json:"profile"`
+	MaxHeight            int           `json:"maxHeight,omitempty"`            // optional max-height override (2160, 1080, 720, 480; 0 = profile ceiling)
+	ConvertSurroundAudio bool          `json:"convertSurroundAudio,omitempty"` // convert Dolby/DTS/TrueHD audio to AAC for players that do not decode surround formats
+}
+
+// ClientCompatibility stores owner edits of the capability registry.
+// An empty list means the embedded defaults. A client declaration still wins.
+type ClientCompatibility struct {
+	Overrides []core.ClientCapabilityOverride `json:"overrides"`
 }
 
 type Transcode struct {
@@ -387,6 +428,12 @@ type LLM struct {
 	BaseURL string `json:"baseUrl"`
 	APIKey  string `json:"apiKey"`
 	Model   string `json:"model"`
+	// Speech is an OpenAI-compatible transcription endpoint (Whisper).
+	// It is independent of Enabled: subtitle-from-audio uses it only when
+	// an owner turns that feature on and a viewer asks for the track.
+	SpeechBaseURL string `json:"speechBaseUrl,omitempty"`
+	SpeechAPIKey  string `json:"speechApiKey,omitempty"`
+	SpeechModel   string `json:"speechModel,omitempty"`
 }
 
 type Updates struct {
@@ -473,11 +520,17 @@ func defaultDataDir(goos string, getenv func(string) string, home func() (string
 
 // Store loads, saves and broadcasts the config.
 type Store struct {
+	policyMu      sync.RWMutex
+	policyBump    func() error
+	policyErr     error
 	path          string
 	credentialKey []byte
 	mu            sync.RWMutex
 	cfg           Config
-	subs          []func(Config)
+	// generation changes whenever the live config is replaced, so readers
+	// can reuse a derived snapshot until the next successful update.
+	generation uint64
+	subs       []func(Config)
 	// syncDir is the post-rename directory-sync step used by save. Open
 	// sets it to syncDirAfterRename (production: skipped on Windows);
 	// tests may replace it per Store to inject a post-rename failure.
@@ -567,15 +620,17 @@ func Open(dataDir string) (*Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		if s.cfg, err = decodeOverDefaults(s.cfg, plain); err != nil {
+		var dropped bool
+		if s.cfg, dropped, err = decodeOverDefaults(s.cfg, plain); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", s.path, err)
 		}
 		// A configuration already upgraded to v2 credentials stays v2.
 		s.bound.Store(stats.strict)
 		s.localBound.Store(stats.strict)
 		// Seal secrets written in plaintext (by hand, or by a release that
-		// predates sealing).
-		if stats.plaintext > 0 || !ContainsSealed(b) {
+		// predates sealing). Also rewrite a file that still names a server
+		// per app.
+		if dropped || stats.plaintext > 0 || !ContainsSealed(b) {
 			if err := s.save(); err != nil {
 				return nil, err
 			}
@@ -611,7 +666,7 @@ func Read(dataDir string) (Config, error) {
 			return Config{}, err
 		}
 	}
-	cfg, err := decodeOverDefaults(Defaults(dataDir), plain)
+	cfg, _, err := decodeOverDefaults(Defaults(dataDir), plain)
 	if err != nil {
 		return Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -626,20 +681,72 @@ func Read(dataDir string) (Config, error) {
 // default field the file omits (omitempty zero values) — a saved quality
 // rule {"platform":"iOS"} would come back still matching the default rule's
 // "Apple TV" product.
-func decodeOverDefaults(defaults Config, b []byte) (Config, error) {
+func decodeOverDefaults(defaults Config, b []byte) (Config, bool, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
 	var file map[string]any
 	if err := dec.Decode(&file); err != nil {
-		return Config{}, err
+		return Config{}, false, err
 	}
 	// Like json.Unmarshal, reject anything after the document.
 	if _, err := dec.Token(); err != io.EOF {
-		return Config{}, fmt.Errorf("invalid data after the top-level value")
+		return Config{}, false, fmt.Errorf("invalid data after the top-level value")
 	}
+	dropped := stripFrontendServerNames(file)
 	doc := toDoc(defaults)
 	mergeDoc(doc, file)
-	return fromDoc(doc)
+	cfg, err := fromDoc(doc)
+	if err == nil {
+		for i := range cfg.Quality.Profiles {
+			if len(cfg.Quality.Profiles[i].Ranking) == 0 {
+				cfg.Quality.Profiles[i].Ranking = core.DefaultRanking(cfg.Quality.Profiles[i].ReleaseRules)
+			}
+		}
+	}
+	return cfg, dropped, err
+}
+
+// stripFrontendServerNames removes a per-app server name. The general
+// server name is the only one frontends advertise.
+func stripFrontendServerNames(file map[string]any) bool {
+	fronts, ok := file["frontends"].(map[string]any)
+	if !ok {
+		return false
+	}
+	dropped := false
+	for _, raw := range fronts {
+		fe, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		settings, ok := fe["settings"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, ok := settings["serverName"]; ok {
+			delete(settings, "serverName")
+			dropped = true
+		}
+	}
+	return dropped
+}
+
+// DropFrontendServerNames removes a stored per-app server name so a save
+// cannot keep a second name beside the general one.
+func DropFrontendServerNames(c *Config) {
+	for id, fe := range c.Frontends {
+		if fe.Settings == nil {
+			continue
+		}
+		if _, ok := fe.Settings["serverName"]; !ok {
+			continue
+		}
+		delete(fe.Settings, "serverName")
+		if len(fe.Settings) == 0 {
+			fe.Settings = nil
+		}
+		c.Frontends[id] = fe
+	}
 }
 
 // mergeDoc overlays src onto dst recursively: objects merge key by key at
@@ -665,12 +772,44 @@ func (s *Store) Get() Config {
 	return clone(s.cfg)
 }
 
+// TrustedProxyCIDRs is the live trusted-proxy list. The returned slice is a
+// copy, so a caller cannot change the stored configuration.
+func (s *Store) TrustedProxyCIDRs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.cfg.Server.TrustedProxyCIDRs...)
+}
+
+// Read returns the live config without cloning it. Callers must not mutate
+// the result or anything it points at. Browse paths use it so a page miss
+// does not marshal the whole config.
+func (s *Store) Read() Config {
+	if s == nil {
+		return Config{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
+// Generation changes when the live config is replaced. It does not change
+// when a save is rolled back, so a snapshot taken at this value stays valid.
+func (s *Store) Generation() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
+}
+
 // Update applies fn to a copy of the config, saves it and notifies subscribers.
 //
 // On a cluster node the shared part is written to the database with an
 // optimistic version check; when another node changed it first, fn is
 // applied again to the fresh settings, so fn must only mutate its argument.
 func (s *Store) Update(fn func(*Config) error) error {
+	return s.policyUpdate(func() error { return s.update(fn) })
+}
+
+func (s *Store) update(fn func(*Config) error) error {
 	if s.Clustered() {
 		return s.updateClustered(fn)
 	}
@@ -680,6 +819,7 @@ func (s *Store) Update(fn func(*Config) error) error {
 		s.mu.Unlock()
 		return err
 	}
+	DropFrontendServerNames(&next)
 	prev := s.cfg
 	s.cfg = next
 	if err := s.save(); err != nil {
@@ -687,6 +827,7 @@ func (s *Store) Update(fn func(*Config) error) error {
 		s.mu.Unlock()
 		return err
 	}
+	s.generation++
 	subs := append([]func(Config){}, s.subs...)
 	s.mu.Unlock()
 	for _, f := range subs {

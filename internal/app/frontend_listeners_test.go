@@ -1,0 +1,378 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+)
+
+type listenerFrontend struct {
+	addr   string
+	closed *int
+}
+
+func (f listenerFrontend) Describe() frontend.Descriptor { return frontend.Descriptor{ID: "test"} }
+func (f listenerFrontend) Mount(context.Context, frontend.Host) (frontend.Instance, error) {
+	return listenerInstance{f.addr, f.closed}, nil
+}
+
+type listenerInstance struct {
+	addr   string
+	closed *int
+}
+
+func (i listenerInstance) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") })
+}
+func (i listenerInstance) Listeners() []frontend.ListenerSpec {
+	return []frontend.ListenerSpec{{Address: i.addr}}
+}
+func (i listenerInstance) Discovery() []frontend.Announcer { return nil }
+func (i listenerInstance) Status(context.Context) frontend.Status {
+	return frontend.Status{TargetVersion: "1"}
+}
+func (i listenerInstance) Close(context.Context) error { *i.closed++; return nil }
+func TestFrontendListeners(t *testing.T) {
+	ctx := context.Background()
+	closed := 0
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	if err := reg.Register(listenerFrontend{"127.0.0.1:0", &closed}); err != nil {
+		t.Fatal(err)
+	}
+	m := newFrontendListeners(reg)
+	if err := m.start(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	st := m.status(ctx, "test")
+	if len(st.Addresses) != 1 || st.TargetVersion != "1" {
+		t.Fatal(st)
+	}
+	res, err := http.Get("http://" + st.Addresses[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatal(res.Status)
+	}
+	if err := m.close(ctx); err != nil || closed != 1 {
+		t.Fatal(err, closed)
+	}
+}
+func TestFrontendListenerConflict(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	closed := 0
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	if err := reg.Register(listenerFrontend{ln.Addr().String(), &closed}); err != nil {
+		t.Fatal(err)
+	}
+	m := newFrontendListeners(reg)
+	if err := m.start(context.Background(), "test"); err == nil || closed != 1 {
+		t.Fatal(err, closed)
+	}
+	if st := m.status(context.Background(), "test"); st.Error == "" {
+		t.Fatal(st)
+	}
+}
+
+func TestFrontendDefaultFallback(t *testing.T) {
+	var tried []string
+	listen := func(_ string, addr string) (net.Listener, error) {
+		tried = append(tried, addr)
+		if len(tried) == 1 {
+			return nil, syscall.EADDRINUSE
+		}
+		return net.Listen("tcp", "127.0.0.1:0")
+	}
+	ln, err := listenFrontendWith("silo", "127.0.0.1:8090", listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ln.Close()
+	if len(tried) != 2 || tried[1] != "127.0.0.1:8091" {
+		t.Fatal(tried)
+	}
+	tried = nil
+	ln, err = listenFrontendWith("plex", "127.0.0.1:32400", listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ln.Close()
+	if tried[1] != "127.0.0.1:32450" {
+		t.Fatal(tried)
+	}
+	tried = nil
+	_, err = listenFrontendWith("silo", "127.0.0.1:9090", listen)
+	if !errors.Is(err, syscall.EADDRINUSE) || len(tried) != 1 {
+		t.Fatal(tried, err)
+	}
+}
+
+func TestFrontendConnectionURLs(t *testing.T) {
+	addresses := []net.Addr{&net.IPNet{IP: net.ParseIP("192.168.1.2"), Mask: net.CIDRMask(24, 32)}, &net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)}}
+	got := connectionURLs("0.0.0.0:8090", "/silo", addresses)
+	if len(got) != 1 || got[0] != "http://192.168.1.2:8090/silo" {
+		t.Fatal(got)
+	}
+	if got := connectionURLs("127.0.0.1:8090", "", addresses); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if got := connectionURLs("[2001:db8::1]:8090", "", nil); len(got) != 1 || got[0] != "http://[2001:db8::1]:8090" {
+		t.Fatal(got)
+	}
+}
+
+type sharedFrontend struct {
+	id     frontend.Protocol
+	prefix string
+}
+
+func (f sharedFrontend) Describe() frontend.Descriptor { return frontend.Descriptor{ID: f.id} }
+func (f sharedFrontend) Mount(context.Context, frontend.Host) (frontend.Instance, error) {
+	return sharedInstance(f), nil
+}
+
+type sharedInstance sharedFrontend
+
+func (i sharedInstance) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, string(i.id)) })
+}
+func (i sharedInstance) Listeners() []frontend.ListenerSpec {
+	return []frontend.ListenerSpec{{Shared: true, PathPrefix: i.prefix}}
+}
+func (i sharedInstance) Discovery() []frontend.Announcer        { return nil }
+func (i sharedInstance) Status(context.Context) frontend.Status { return frontend.Status{} }
+func (i sharedInstance) Close(context.Context) error            { return nil }
+func TestSharedFrontendPaths(t *testing.T) {
+	ctx := context.Background()
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	m := newFrontendListeners(reg)
+	for _, f := range []sharedFrontend{{"files", "/files"}, {"nested", "/files/media"}, {"conflict", "/files"}, {"owner", "/ether/test"}} {
+		if err := reg.Register(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.start(ctx, "files"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.start(ctx, "nested"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.start(ctx, "conflict"); err == nil {
+		t.Fatal("duplicate prefix accepted")
+	}
+	if err := m.start(ctx, "owner"); err == nil {
+		t.Fatal("owner console path accepted")
+	}
+	for path, want := range map[string]string{"/files": "files", "/files/media/x": "nested"} {
+		handler := m.sharedHandler(path)
+		if handler == nil {
+			t.Fatal(path)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Body.String() != want {
+			t.Fatal(path, w.Body.String())
+		}
+	}
+	if m.sharedHandler("/files-other") != nil || m.sharedHandler("/else") != nil {
+		t.Fatal("matched outside prefix")
+	}
+	if err := m.close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type longFrontend struct{ entered chan struct{} }
+
+func (f longFrontend) Describe() frontend.Descriptor { return frontend.Descriptor{ID: "long"} }
+func (f longFrontend) Mount(context.Context, frontend.Host) (frontend.Instance, error) {
+	return longInstance(f), nil
+}
+
+type longInstance longFrontend
+
+func (i longInstance) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(i.entered); <-r.Context().Done() })
+}
+func (i longInstance) Listeners() []frontend.ListenerSpec {
+	return []frontend.ListenerSpec{{Address: "127.0.0.1:0"}}
+}
+func (i longInstance) Discovery() []frontend.Announcer        { return nil }
+func (i longInstance) Status(context.Context) frontend.Status { return frontend.Status{} }
+func (i longInstance) Close(context.Context) error            { return nil }
+func TestFrontendStopForcesLongRequestsClosed(t *testing.T) {
+	ctx := context.Background()
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	entered := make(chan struct{})
+	if err := reg.Register(longFrontend{entered}); err != nil {
+		t.Fatal(err)
+	}
+	m := newFrontendListeners(reg)
+	if err := m.start(ctx, "long"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		resp, err := http.Get("http://" + m.status(ctx, "long").Addresses[0])
+		if err == nil {
+			resp.Body.Close()
+		}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("request did not start")
+	}
+	deadline, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if err := m.stop(deadline, "long"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("request survived forced close")
+	}
+	if _, ok := reg.Instance("long"); ok {
+		t.Fatal("frontend still mounted")
+	}
+}
+
+func TestFrontendToggleUnderLoad(t *testing.T) {
+	ctx := context.Background()
+	closed := 0
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	if err := reg.Register(sharedFrontend{id: "files", prefix: "/files"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Register(listenerFrontend{"127.0.0.1:0", &closed}); err != nil {
+		t.Fatal(err)
+	}
+	m := newFrontendListeners(reg)
+	defer m.close(ctx)
+	for _, id := range []frontend.Protocol{"test", "files"} {
+		for cycle := 0; cycle < 3; cycle++ {
+			if err := m.start(ctx, id); err != nil {
+				t.Fatal(err)
+			}
+			if !m.status(ctx, id).Mounted {
+				t.Fatal("not mounted")
+			}
+			done := make(chan struct{})
+			entered := make(chan struct{}, 8)
+			var wg sync.WaitGroup
+			for n := 0; n < 8; n++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					first := true
+					for {
+						select {
+						case <-done:
+							return
+						default:
+						}
+						if id == "files" {
+							if h := m.sharedHandler("/files"); h != nil {
+								h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/files", nil))
+							}
+						} else {
+							st := m.status(ctx, id)
+							if len(st.Addresses) > 0 {
+								resp, err := http.Get("http://" + st.Addresses[0])
+								if err == nil {
+									io.Copy(io.Discard, resp.Body)
+									resp.Body.Close()
+								}
+							}
+						}
+						if first {
+							entered <- struct{}{}
+							first = false
+						}
+					}
+				}()
+			}
+			for n := 0; n < 8; n++ {
+				<-entered
+			}
+			if err := m.stop(ctx, id); err != nil {
+				t.Fatal(err)
+			}
+			close(done)
+			wg.Wait()
+			if m.status(ctx, id).Mounted {
+				t.Fatal("still mounted")
+			}
+			if id == "files" && m.sharedHandler("/files") != nil {
+				t.Fatal("disabled shared handler")
+			}
+		}
+	}
+}
+
+func TestFrontendUnauthorizedLogThrottle(t *testing.T) {
+	var logs bytes.Buffer
+	m := newFrontendListeners(frontend.NewRegistry(nil))
+	m.log = slog.New(slog.NewTextHandler(&logs, nil))
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "Unauthorized", 401) })
+	for _, id := range []frontend.Protocol{"silo", "jellyfin"} {
+		// Recreating wrappers must not reset the protocol's failure budget.
+		for n := 0; n < 100; n++ {
+			h := m.observe(id, next)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest("GET", "/secret?token=secret", nil))
+			if w.Code != 401 || w.Body.String() != "Unauthorized\n" {
+				t.Fatal("wire changed")
+			}
+		}
+	}
+	if bytes.Count(logs.Bytes(), []byte("authentication failed")) != 2 || bytes.Contains(logs.Bytes(), []byte("secret")) {
+		t.Fatal(logs.String())
+	}
+}
+
+func TestFrontendNon2xxLogsRouteStatusReason(t *testing.T) {
+	var logs bytes.Buffer
+	m := newFrontendListeners(frontend.NewRegistry(nil))
+	m.log = slog.New(slog.NewTextHandler(&logs, nil))
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Playback unavailable", http.StatusServiceUnavailable)
+	})
+	h := m.observe("jellyfin", next)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/Items/abc/PlaybackInfo?api_key=secret", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatal(w.Code)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "frontend response") || !strings.Contains(out, "route=/Items/abc/PlaybackInfo") || !strings.Contains(out, "status=503") || !strings.Contains(out, "Playback unavailable") {
+		t.Fatal(out)
+	}
+	if strings.Contains(out, "secret") || strings.Contains(out, "api_key") {
+		t.Fatal(out)
+	}
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	before := logs.Len()
+	m.observe("jellyfin", ok).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/Items/abc", nil))
+	if logs.Len() != before {
+		t.Fatal(logs.String()[before:])
+	}
+}

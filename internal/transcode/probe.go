@@ -152,8 +152,9 @@ type ffprobeStream struct {
 	FieldOrder     string            `json:"field_order"`
 	Extradata      string            `json:"extradata"`
 	Index          int               `json:"index"`
-	Level          int               `json:"level"`
+	Level          *int              `json:"level"`
 	CodecName      string            `json:"codec_name"`
+	CodecLongName  string            `json:"codec_long_name"`
 	CodecType      string            `json:"codec_type"`
 	CodecTagString string            `json:"codec_tag_string"`
 	Profile        string            `json:"profile"`
@@ -165,6 +166,10 @@ type ffprobeStream struct {
 	ColorSpace     string            `json:"color_space"`
 	ColorRange     string            `json:"color_range"`
 	SAR            string            `json:"sample_aspect_ratio"`
+	DAR            string            `json:"display_aspect_ratio"`
+	TimeBase       string            `json:"time_base"`
+	NALLengthSize  json.RawMessage   `json:"nal_length_size"`
+	Refs           *int              `json:"refs"`
 	RFrameRate     string            `json:"r_frame_rate"`
 	AvgFrameRate   string            `json:"avg_frame_rate"`
 	BitsPerRaw     string            `json:"bits_per_raw_sample"`
@@ -219,6 +224,24 @@ func ParseProbe(b []byte) (*core.MediaInfo, error) {
 	if m.BitrateKbps == 0 && m.Size > 0 && m.Duration > 0 {
 		m.BitrateKbps = int(float64(m.Size*8) / m.Duration.Seconds() / 1000)
 	}
+	// Only a complete successful MP4/Matroska probe can establish that its
+	// container has no DV configuration record. Partial best-effort probes
+	// must not turn missing evidence into a negative claim.
+	if (m.Container == "mp4" || m.Container == "mkv") && probeCompleteMode(m, false) {
+		for i := range m.Streams {
+			si := &m.Streams[i]
+			if si.Type == "video" && !si.DolbyVision && si.DolbyVisionConfigurationPresent == nil {
+				present := false
+				si.DolbyVisionConfigurationPresent = &present
+			}
+			// A complete container probe that has no Dolby Vision configuration
+			// also has no base-layer compatibility id.
+			if si.Type == "video" && si.DolbyVisionConfigurationPresent != nil && !*si.DolbyVisionConfigurationPresent && si.DolbyVisionBLCompatibilityIDPresent == nil {
+				present := false
+				si.DolbyVisionBLCompatibilityIDPresent = &present
+			}
+		}
+	}
 	return m, nil
 }
 
@@ -235,11 +258,48 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	}
 	si.Codec = NormalizeCodec(s.CodecName)
 	si.Profile = s.Profile
-	si.Level = s.Level
+	if s.Level != nil {
+		si.Level = *s.Level
+		if *s.Level >= 0 {
+			v := *s.Level
+			si.ProbedLevel = &v
+		}
+	}
 	si.Language = normalizeLanguage(tag(s.Tags, "language"))
 	si.Title = tag(s.Tags, "title")
+	// MP4 audio often has no title tag. A descriptive handler name is the label
+	// Jellyfin publishes, such as "GPAC ISO Audio Handler". Generic handler
+	// names (SoundHandler) and video or subtitle handlers stay off the title.
+	if si.Title == "" && s.CodecType == "audio" {
+		si.Title = descriptiveAudioHandler(tag(s.Tags, "handler_name"))
+	}
+	si.CodecLongName = strings.TrimSpace(s.CodecLongName)
 	si.Default = s.Disposition["default"] == 1
 	si.Forced = s.Disposition["forced"] == 1
+	for _, field := range []struct {
+		key string
+		dst **bool
+	}{
+		{"default", &si.DefaultDisposition},
+		{"forced", &si.ForcedDisposition},
+		{"hearing_impaired", &si.HearingImpaired},
+		{"original", &si.Original},
+		{"visual_impaired", &si.VisualImpaired},
+		{"comment", &si.Commentary},
+		{"dub", &si.Dub},
+	} {
+		if value, ok := s.Disposition[field.key]; ok {
+			set := value == 1
+			*field.dst = &set
+		}
+	}
+	if tag := s.CodecTagString; tag != "" && tag != "[0][0][0][0]" && tag != "0x0000" {
+		si.CodecTag = tag
+	}
+	si.TimeBase = probedTimeBase(s.TimeBase)
+	if n, err := strconv.Atoi(strings.TrimSpace(s.BitsPerRaw)); err == nil && n > 0 {
+		si.BitsPerRawSample = &n
+	}
 	si.BitrateKbps = int(atoi64(s.BitRate) / 1000)
 	if si.BitrateKbps == 0 {
 		// mkvmerge statistics tags
@@ -254,7 +314,28 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	case "video":
 		si.Width, si.Height = s.Width, s.Height
 		si.Interlaced = s.FieldOrder != "" && s.FieldOrder != "unknown" && s.FieldOrder != "progressive"
+		switch s.FieldOrder {
+		case "progressive", "tt", "bb", "tb", "bt":
+			si.FieldOrder = s.FieldOrder
+			v := s.FieldOrder != "progressive"
+			si.ProbedInterlaced = &v
+		}
+		si.PixelFormat = probedColour(s.PixFmt)
+		si.DisplayAspectRatio = probedSAR(s.DAR)
+		if s.Refs != nil && *s.Refs >= 0 {
+			v := *s.Refs
+			si.ReferenceFrames = &v
+		}
+		if v, ok := optionalProbeInt(s.NALLengthSize); ok && v > 0 {
+			si.NALLengthSize = &v
+		}
 		avg, nominal := parseRate(s.AvgFrameRate), parseRate(s.RFrameRate)
+		if v := exactProbeRate(s.AvgFrameRate); v > 0 {
+			si.AverageFrameRate = &v
+		}
+		if v := exactProbeRate(s.RFrameRate); v > 0 {
+			si.ReferenceFrameRate = &v
+		}
 		// A material rate disagreement is evidence against a steady frame clock.
 		si.VariableFrameRate = avg > 0 && nominal > 0 && (avg/nominal < 0.999 || avg/nominal > 1.001)
 		si.FrameRate = avg
@@ -269,6 +350,39 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 		si.ColorSpace = probedColour(s.ColorSpace)
 		si.DolbyVision, si.DolbyVisionProfile = dolbyVision(s)
 		for _, sd := range s.SideDataList {
+			if sd["side_data_type"] == "HDR Dynamic Metadata SMPTE2094-40" {
+				present := true
+				si.HDR10Plus = &present
+			} else if si.HDR10Plus == nil {
+				if flag, ok := sd["hdr10plus_flag"].(float64); ok && (flag == 0 || flag == 1) {
+					present := flag == 1
+					si.HDR10Plus = &present
+				}
+			}
+			if sd["side_data_type"] == "DOVI configuration record" {
+				v := true
+				si.DolbyVisionConfigurationPresent = &v
+			}
+			if _, ok := sd["dv_profile"].(float64); ok {
+				v := true
+				si.DolbyVisionConfigurationPresent = &v
+			}
+			if flag, ok := sd["dovi_config_present"].(float64); ok && (flag == 1 || (flag == 0 && si.DolbyVisionConfigurationPresent == nil)) {
+				v := flag == 1
+				si.DolbyVisionConfigurationPresent = &v
+			}
+			if _, ok := sd["dv_bl_signal_compatibility_id"].(float64); ok {
+				v := true
+				si.DolbyVisionBLCompatibilityIDPresent = &v
+			}
+			if flag, ok := sd["dv_bl_compat_id_present"].(float64); ok && (flag == 1 || (flag == 0 && si.DolbyVisionBLCompatibilityIDPresent == nil)) {
+				v := flag == 1
+				si.DolbyVisionBLCompatibilityIDPresent = &v
+			}
+			if profile, ok := sd["dv_profile"].(float64); ok && profile >= 0 && profile == math.Trunc(profile) {
+				v := int(profile)
+				si.ProbedDolbyVisionProfile = &v
+			}
 			if major, ok := sd["dv_version_major"].(float64); ok {
 				minor, _ := sd["dv_version_minor"].(float64)
 				si.DolbyVisionVersion = fmt.Sprintf("%d.%d", int(major), int(minor))
@@ -288,6 +402,10 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 			}
 			if level, ok := sd["dv_level"].(float64); ok {
 				si.DolbyVisionLevel = int(level)
+				if level >= 0 && level == math.Trunc(level) {
+					v := int(level)
+					si.ProbedDolbyVisionLevel = &v
+				}
 			}
 			if compat, ok := sd["dv_bl_signal_compatibility_id"].(float64); ok {
 				si.DolbyVisionCompatibilityID = int(compat)
@@ -308,6 +426,15 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	return si, true
 }
 
+func descriptiveAudioHandler(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "soundhandler", "videohandler", "subtitlehandler", "datahandler", "hinthandler":
+		return ""
+	default:
+		return strings.TrimSpace(name)
+	}
+}
+
 func tag(tags map[string]string, key string) string {
 	if v, ok := tags[key]; ok {
 		return strings.TrimSpace(v)
@@ -326,10 +453,15 @@ func tag(tags map[string]string, key string) string {
 // garbage. It is the shared entry point for the ffprobe tag, the
 // Matroska legacy Language element and the MP4 mdhd code.
 func normalizeLanguage(l string) string {
+	l = strings.ToLower(strings.TrimSpace(l))
+	// "und" and any other tag langtag rejects stay empty. That is the
+	// form both the ffprobe tag parser and the native Matroska/MP4
+	// readers have always stored. Silo maps an absent audio language
+	// back to "und" at its own boundary.
 	if langtag.Normalize(l) == "" {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(l))
+	return l
 }
 
 // normalizeBCP47Language converts a BCP 47 tag (Matroska
@@ -363,6 +495,45 @@ func isImageCodec(c string) bool {
 
 // probedSAR keeps a signalled sample aspect ratio; ffprobe reports 0:1
 // (or nothing) when neither stream nor container carries one.
+func probedTimeBase(s string) string {
+	n, d, ok := strings.Cut(s, "/")
+	num, e1 := strconv.ParseInt(n, 10, 64)
+	den, e2 := strconv.ParseInt(d, 10, 64)
+	if !ok || e1 != nil || e2 != nil || num <= 0 || den <= 0 {
+		return ""
+	}
+	return s
+}
+
+func optionalProbeInt(raw json.RawMessage) (int, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, false
+	}
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		text = string(raw)
+	}
+	v, err := strconv.Atoi(text)
+	return v, err == nil
+}
+
+func exactProbeRate(s string) float64 {
+	n, d, ok := strings.Cut(s, "/")
+	if !ok {
+		return 0
+	}
+	num, e1 := strconv.ParseFloat(n, 64)
+	den, e2 := strconv.ParseFloat(d, 64)
+	if e1 != nil || e2 != nil || num <= 0 || den <= 0 || math.IsNaN(num) || math.IsNaN(den) || math.IsInf(num, 0) || math.IsInf(den, 0) {
+		return 0
+	}
+	value := num / den
+	if math.IsInf(value, 0) || math.IsNaN(value) {
+		return 0
+	}
+	return value
+}
+
 func probedSAR(s string) string {
 	n, d, ok := strings.Cut(s, ":")
 	if !ok || atoi64(n) <= 0 || atoi64(d) <= 0 {

@@ -1,0 +1,341 @@
+{
+  "commit": "9503ece9d544e5f111f2afa531e87a2c3ad0e6c1",
+  "order": "alphabetical component, then version; 9503 has no RegisterAfter",
+  "sha256": "a7448e985f863e8ea98668764568645786cd849c6d021a7b7edce27c0faf3346",
+  "migrations": [
+    {
+      "component": "auth",
+      "version": 1
+    },
+    {
+      "component": "auth",
+      "version": 2
+    },
+    {
+      "component": "auth",
+      "version": 3
+    },
+    {
+      "component": "auth_sessions",
+      "version": 1
+    },
+    {
+      "component": "availability",
+      "version": 1
+    },
+    {
+      "component": "availability",
+      "version": 2
+    },
+    {
+      "component": "availability",
+      "version": 3
+    },
+    {
+      "component": "backup",
+      "version": 1
+    },
+    {
+      "component": "backup",
+      "version": 2
+    },
+    {
+      "component": "cachefill",
+      "version": 1
+    },
+    {
+      "component": "cardigann",
+      "version": 1
+    },
+    {
+      "component": "catalog",
+      "version": 1
+    },
+    {
+      "component": "catalog",
+      "version": 2
+    },
+    {
+      "component": "catalog",
+      "version": 3
+    },
+    {
+      "component": "catalog",
+      "version": 4
+    },
+    {
+      "component": "catalog",
+      "version": 5
+    },
+    {
+      "component": "catalog",
+      "version": 6
+    },
+    {
+      "component": "catalog",
+      "version": 7
+    },
+    {
+      "component": "catalog",
+      "version": 8
+    },
+    {
+      "component": "catalog",
+      "version": 9
+    },
+    {
+      "component": "cluster",
+      "version": 1
+    },
+    {
+      "component": "cluster",
+      "version": 2
+    },
+    {
+      "component": "clusterconfig",
+      "version": 1
+    },
+    {
+      "component": "collections",
+      "version": 2
+    },
+    {
+      "component": "collections",
+      "version": 3
+    },
+    {
+      "component": "collections",
+      "version": 4
+    },
+    {
+      "component": "collections",
+      "version": 5
+    },
+    {
+      "component": "collections",
+      "version": 6
+    },
+    {
+      "component": "credentials",
+      "version": 1
+    },
+    {
+      "component": "debrid",
+      "version": 1
+    },
+    {
+      "component": "debrid",
+      "version": 2
+    },
+    {
+      "component": "episodeorder",
+      "version": 1
+    },
+    {
+      "component": "invites",
+      "version": 1
+    },
+    {
+      "component": "invites",
+      "version": 2
+    },
+    {
+      "component": "livetv",
+      "version": 1
+    },
+    {
+      "component": "livetv",
+      "version": 2
+    },
+    {
+      "component": "markers",
+      "version": 1
+    },
+    {
+      "component": "migrate",
+      "version": 1
+    },
+    {
+      "component": "newznab",
+      "version": 1
+    },
+    {
+      "component": "newznab",
+      "version": 2
+    },
+    {
+      "component": "newznab",
+      "version": 3
+    },
+    {
+      "component": "newznab",
+      "version": 4
+    },
+    {
+      "component": "notify",
+      "version": 1
+    },
+    {
+      "component": "notify",
+      "version": 2
+    },
+    {
+      "component": "notify",
+      "version": 3
+    },
+    {
+      "component": "notify_once",
+      "version": 1
+    },
+    {
+      "component": "overlays",
+      "version": 1
+    },
+    {
+      "component": "personalize",
+      "version": 1
+    },
+    {
+      "component": "personalize",
+      "version": 2
+    },
+    {
+      "component": "personalize",
+      "version": 3
+    },
+    {
+      "component": "personalize_discovery",
+      "version": 1
+    },
+    {
+      "component": "playback",
+      "version": 1
+    },
+    {
+      "component": "playback",
+      "version": 2
+    },
+    {
+      "component": "playback_index",
+      "version": 1
+    },
+    {
+      "component": "playback_probe",
+      "version": 1
+    },
+    {
+      "component": "plex",
+      "version": 1
+    },
+    {
+      "component": "plex",
+      "version": 2
+    },
+    {
+      "component": "plexguid",
+      "version": 1
+    },
+    {
+      "component": "plexguid",
+      "version": 2
+    },
+    {
+      "component": "ratings",
+      "version": 1
+    },
+    {
+      "component": "resolver",
+      "version": 1
+    },
+    {
+      "component": "resolver",
+      "version": 2
+    },
+    {
+      "component": "resolver",
+      "version": 3
+    },
+    {
+      "component": "safety",
+      "version": 1
+    },
+    {
+      "component": "segcache",
+      "version": 1
+    },
+    {
+      "component": "segcache_reclaim",
+      "version": 1
+    },
+    {
+      "component": "simkl",
+      "version": 1
+    },
+    {
+      "component": "state",
+      "version": 1
+    },
+    {
+      "component": "state",
+      "version": 2
+    },
+    {
+      "component": "stats",
+      "version": 1
+    },
+    {
+      "component": "stats",
+      "version": 2
+    },
+    {
+      "component": "stats",
+      "version": 3
+    },
+    {
+      "component": "stats",
+      "version": 4
+    },
+    {
+      "component": "stats",
+      "version": 5
+    },
+    {
+      "component": "stats",
+      "version": 6
+    },
+    {
+      "component": "trackprefs",
+      "version": 1
+    },
+    {
+      "component": "trakt",
+      "version": 1
+    },
+    {
+      "component": "trakt",
+      "version": 2
+    },
+    {
+      "component": "trakt",
+      "version": 3
+    },
+    {
+      "component": "variants",
+      "version": 1
+    },
+    {
+      "component": "watchlist",
+      "version": 1
+    },
+    {
+      "component": "watchlist",
+      "version": 2
+    },
+    {
+      "component": "watchlist_episodes",
+      "version": 1
+    }
+  ],
+  "postgres_sha256": "015dec9de127d547162274760a6c149863743946c954bb8812503d25e345223b",
+  "postgres_source": "9503 internal/store/{translate,lex}.go; no production RegisterDialect overrides"
+}

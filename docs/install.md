@@ -1,23 +1,41 @@
 # Installing Ether
 
-Download a macOS DMG, Windows setup EXE, Linux DEB/RPM, or standalone
-archive from the [Releases page](https://github.com/braedonsaunders/ether/releases/latest).
-Docker images are available at `ghcr.io/braedonsaunders/ether`. Packaged
-installers and archives bundle FFmpeg and FFprobe.
+[Ether's multi-app support](apps.md) is the shared server the app
+frontends, including Plex, run in. Install Ether as
+below; there is no separate installer or service for the shared server.
 
-The v0.2.4 macOS app is ad-hoc signed and **not notarised**; macOS may require
-**System Settings › Privacy & Security › Open Anyway** after you attempt to
-open it. The Windows installer is unsigned and may trigger SmartScreen.
+If you do not use a terminal, start with the macOS or Windows section below.
+Download a macOS DMG or a Windows setup EXE from the
+[Releases page](https://github.com/braedonsaunders/ether/releases/latest),
+open it, and follow the wizard in the browser. No terminal is needed.
+Linux packages and Docker are further down. Packaged installers bundle
+FFmpeg and FFprobe.
+
+Signed macOS releases open normally. An unsigned build needs one right-click → Open the first time.
+The Windows installer is unsigned and may trigger SmartScreen.
 The automatic-update manifest is signed separately with Ether's release key.
 
 If you already have an Ether executable, run it and open
-<http://localhost:32400/ether/>. The setup wizard walks you through Plex sign-in,
+<http://localhost:32400/ether/>. The setup wizard walks you through app selection,
+owner-account setup,
 provider and indexer configuration, and cache settings. A standalone executable
 needs access to FFmpeg and FFprobe for media processing.
 
-After any install, open the web UI and finish the setup wizard (sign in
-to plex.tv, add your Usenet providers and Newznab indexers, pick a cache
-folder). Ether ships no content, providers or indexers; see
+FFmpeg built with zscale (libzimg) gives the best HDR-to-SDR tone mapping.
+Without zscale, Ether uses libplacebo, then an OpenCL or hardware tone map
+when the binary has one. If none of those are available it does not guess a
+picture: playback reports that this FFmpeg cannot tone-map and tries another
+release.
+
+The ready-made Torrentio source looks titles up on torrentio.strem.fun. To keep lookups on a server you run, add a Torznab indexer (Prowlarr, Jackett, or Zilean) instead.
+
+After any install, open the web UI and finish the setup wizard. Choose your
+app integrations, sign in with Plex if selected or create a local Ether owner
+account, add your sources and indexers, and pick a cache folder. Jellyfin,
+Emby and Silo do not require a Plex account or a separate Plex Media Server.
+Review the
+[client support notes](user-guide.md#jellyfin-and-emby-apps) for integration limits.
+Ether ships no content, providers or indexers; see
 [LEGAL.md](../LEGAL.md).
 
 ## Windows
@@ -95,16 +113,38 @@ docker run -d --name ether --restart unless-stopped \
   ghcr.io/braedonsaunders/ether:latest
 ```
 
-**Host networking is recommended.** Plex apps discover servers on the
+**Host networking is recommended on Linux.** Plex apps discover servers on the
 LAN with GDM (UDP 32410–32414) and Ether's remote-access setup talks to
-your router over UPnP; both need the host network namespace. Bridge mode
+your router over UPnP; both need the host network namespace. Docker Desktop
+on Mac and Windows does not provide that namespace. Bridge mode
 with `-p 32400:32400` works for Plex Web and for claimed/remote
-connections, but LAN auto-discovery will not find the server.
+connections, but LAN auto-discovery will not find the server. Do not publish
+port 8096. Jellyfin, Emby, and the other apps are reached at
+`http://HOST:PORT/jellyfin` (and `/emby`, `/silo`) on the console port.
+
+Already running Plex on 32400? Use bridge mode and `ETHER_PORT` so Ether does
+not take that port:
+
+```yaml
+services:
+  ether:
+    image: ghcr.io/braedonsaunders/ether:latest
+    environment:
+      ETHER_PORT: "32800"
+    ports:
+      - "32800:32800"
+    volumes:
+      - ./config:/config
+      - ./cache:/cache
+```
+
+Open `http://HOST:32800/ether/`. Jellyfin is `http://HOST:32800/jellyfin`.
 
 Volumes: `/config` (config, database, identity — back this up) and
-`/cache` for the segment cache. The cache defaults to `/config/cache`
-until you select `/cache` as the cache directory in the setup wizard (or
-later on the Cache page), where its budget is set too.
+`/cache` for the segment cache. The cache defaults to `/config/cache`.
+On a fresh install, a mounted `/cache` volume is used automatically, so
+no restart is required for that path. The budget is set in the setup wizard
+or later on the Cache page.
 
 User and permissions: Ether runs as `PUID`:`PGID` (default 999:999, the
 image's `ether` account). Set them to the user that owns your folders, as
@@ -150,8 +190,10 @@ and fatal crash traces to `<data dir>/logs/crash.log`.
 
 ## Remote access / port forwarding
 
-Ether uses **TCP 32400** for playback. For remote access
-outside your LAN:
+Ether’s main listener defaults to **TCP 32400**. Other frontends can have
+their own listeners; use the addresses shown on the Apps page. The following
+discovery and address-publication instructions apply to the **Plex frontend**
+for remote access outside your LAN:
 
 - Easiest: enable *Remote access* in the web UI — Ether asks your router
   for a UPnP mapping and publishes the address to plex.tv, for Plex clients.
@@ -172,6 +214,58 @@ outside your LAN:
   any public hop in the trusted suffix as remote for playback restrictions.
   Keep the owner UI path `/ether/` private at the proxy; complete initial
   setup before exposing the server.
+
+## How Ether reaches the internet
+
+Ether can send indexers, Stremio addons, debrid and Usenet through one proxy
+on this computer, and leave Plex, updates, UPnP and remote access on the
+normal connection. The setting is off until you turn it on, under
+**Server → General → How Ether reaches the internet**. A username and password
+are stored with Ether's other secrets and are not put in the address.
+
+Two layouts are common:
+
+1. **Split tunnel.** Ether stays on the host network so Plex discovery and
+   remote access keep working. A VPN container publishes a proxy. Gluetun's
+   HTTP proxy listens on port 8888 when `HTTPPROXY=on`. From a host-network
+   Ether process that address is `http://127.0.0.1:8888`, because Docker DNS
+   names are not visible there. On a shared Docker network it is
+   `http://gluetun:8888`. SOCKS on port 1080 is only useful if you enabled a
+   SOCKS proxy yourself; gluetun does not publish one by default.
+2. **Whole stack in the VPN network.** Leave Ether's proxy off. Publish
+   Ether's ports on the VPN container, and point remote access at the VPN
+   address. Do not also turn Ether's proxy on.
+
+Indexer names are looked up on this computer. If the ISP's DNS sinks those
+names, point this computer's resolver at the VPN. `ALL_PROXY` is ignored.
+`HTTP_PROXY` and `HTTPS_PROXY` apply only while Ether's own proxy setting is
+off. While it is on, a routed call that cannot reach the proxy fails; Ether
+does not dial that call directly.
+
+```yaml
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=custom
+      - VPN_TYPE=openvpn
+      - HTTPPROXY=on
+    ports:
+      - 8888:8888/tcp
+      - 32400:32400/tcp
+  ether:
+    image: ghcr.io/braedonsaunders/ether:latest
+    network_mode: host
+```
+
+Use the published proxy address in Ether. Do not set
+`network_mode: service:gluetun` on Ether when Plex remote access has to stay
+on your home address. Publish Ether's own port on gluetun only for the
+whole-stack layout, and then leave Ether's proxy off.
 
 ## Running a cluster
 
@@ -209,15 +303,12 @@ and one-time join tokens. No terminal commands are required for setup.
   or UPnP. Set the public port on each node's *Connectivity* page.
 - **One public IP for providers.** Debrid services may flag one account used
   from several addresses at once. Keep every node behind the same internet
-  connection; the Cluster page warns you when nodes reach the internet from
-  different public addresses. Some Usenet accounts also restrict simultaneous
-  source IPs. An HTTP(S) proxy does not route NNTP. If nodes use a common
-  gateway, set `ETHER_USENET_PROXY=socks5://host:port` in each remote node's
-  service environment as well as configuring its HTTP(S) proxy. This optional,
-  node-local setting routes NNTP through SOCKS5 while retaining end-to-end
-  provider TLS verification. An unavailable proxy fails the connection; Ether
-  never silently falls back to another public IP. Keep credentials, if needed,
-  in the protected service environment, not command-line arguments.
+  connection. The Cluster page warns when the address nodes use for indexers,
+  debrid and Usenet differs. Set the same proxy on every node under
+  **Server → General → How Ether reaches the internet**. Usenet uses SOCKS5 or
+  an HTTP CONNECT tunnel, and the provider certificate is still checked.
+  A proxy that is down fails the connection; Ether does not fall back to a
+  direct address. Plex, updates and the router stay on the normal connection.
 
 ### Start a cluster from an existing server
 
@@ -283,7 +374,11 @@ until it is resumed. A rolling update owns its maintenance state while draining.
 
 Use **Open manager** beside another node to manage that machine's local settings.
 Owner credentials are not forwarded between nodes; sign in there if needed.
-The **Updates** page handles rolling software updates.
+The **Updates** page handles software updates. The first upgrade onto multi-app support requires
+a maintenance outage: stop and fence every old database writer, upgrade all
+nodes, then serve traffic. Follow the [mandatory upgrade
+runbook](acceptance/upgrade.md); this transition is not a mixed-version
+rolling upgrade.
 
 ### Settings: shared and per node
 
@@ -333,14 +428,91 @@ owner account after setup is complete. In **Backups & import › Snapshots**, en
 a password of at least 12 characters before downloading. Downloads use the
 encrypted `.etherbackup` format. Ether does not store the password.
 
-Restore by uploading the file with the same password. A validated upload is
-staged in `<data directory>/restored-<timestamp>`; the running configuration is
-not replaced. Stop the Ether service, set `ETHER_DATA_DIR` to the staged folder
-in its service environment, then start it again. For a PostgreSQL backup, also
-point `ETHER_DATABASE_URL` at an empty PostgreSQL database, or leave it unset to
-restore as a standalone server. The logical database dump is imported on first
-start. Preserve the original data directory until the restored server has been
-verified.
+Restore from **Backups & import**: choose **Restore** on a snapshot, or
+upload a downloaded file with the same password. Ether first checks the
+backup (password, checksums, database) into `<data directory>/restored-<timestamp>`
+and shows what will change and who is watching. On a standalone server,
+**Restore and restart** then does the rest: on the next start, before the
+settings or database are opened, the current `config.json`, `.credentials-key`
+and `ether.db` (with its `-wal`/`-shm` files) move into
+`<data directory>/rollbacks/restore-<timestamp>/` and the backup takes their
+place. A failure at any point, including a crash part way through, puts the
+original files back. The Backups page then shows a report (what was restored,
+from when, the database integrity check, and the rollback folder) with
+**Undo restore**, which puts the rollback folder back the same way. The three
+newest rollback folders are kept. A cluster's PostgreSQL backup restored on a
+standalone server is imported into its own database; the server stays
+standalone.
+
+A cluster node never replaces the shared PostgreSQL database by itself. The
+backup is checked and staged, and the console guides you: stop every node,
+create an empty PostgreSQL database, start one node with `ETHER_DATABASE_URL`
+pointing at it and `ETHER_DATA_DIR` set to the staged folder (the logical dump
+is imported on first start), then point the other nodes at the new database.
+
+### Restarting from the console
+
+**Maintenance › Restart Ether** (and the restart prompts after storage
+changes) restarts the server without a terminal. The console shows who is
+watching first and can wait until nobody is. On Linux and macOS, and in a
+container or a terminal, Ether replaces itself with a fresh process (the
+same PID, so systemd and launchd keep running it without their restart
+delay, and a container keeps running whatever its restart policy). A
+Windows service exits and the Service Control Manager starts it again after
+5 seconds (15 and then 60 seconds when it restarts several times within a
+day, the service's recovery actions). The console follows the restart and
+reconnects by itself.
+
+### While Ether starts
+
+Ether listens as soon as its data directory is locked, before it opens the
+database. Until it is ready, `/ether/` shows what it is doing (waiting for
+PostgreSQL, updating the database step by step, restoring a backup) and
+`/ether/api/startup-status` reports the same as read-only JSON without
+credentials; every other request, the Plex API included, gets `503` with
+`Retry-After`, and GDM discovery and plex.tv publishing wait. A start that
+fails (for example a damaged database or a database that refuses the
+connection) stays on that page with what to do and retries by itself; the
+data directory stays locked meanwhile.
+
+On a standalone server the page can restore a backup or undo the last
+restore. Sign in as the owner first, with:
+
+- the owner's local username and password: Ether keeps a copy of that
+  sign-in (its Argon2id hash, never the password) in `owner-recovery.json`
+  in the data directory, refreshed at every owner sign-in and password
+  change, and otherwise reads the database read-only;
+- the Plex account that owns the server;
+- or the one-time **recovery code** Ether writes to `recovery-code.txt` in
+  the data directory and to its log while it cannot start. It works once,
+  and not through a reverse proxy.
+
+Sign-ins are rate limited and only open the restore actions on that page,
+for 15 minutes. Before setup is finished, the local network needs none.
+The recovery code also reaches whatever collects Ether's log: the system
+journal under systemd, `docker logs` in a container. Treat those as being as
+private as the data directory.
+
+When `config.json` itself cannot be read (or is not a settings file:
+empty, `null` or `{}`), Ether treats setup as finished, offers no restore from the page and listens
+on `127.0.0.1` only. In a container that loopback address is the
+container's own, so the page is unreachable from outside until the settings
+are fixed (`docker exec` into the container, or restore `config.json` into
+the volume); this is deliberate, so damaged settings never expose the
+server more than the owner chose. A partial `config.json` is fine:
+whatever it leaves out takes its default, as it does once Ether is running.
+
+A restore counts once the restored server is about to serve. If it cannot
+start on the backup (a migration fails, the database is damaged, the
+settings don't match), Ether puts the original files back automatically,
+starts on them and says so in the report.
+
+### Database integrity
+
+A standalone server checks its SQLite database for damage (`PRAGMA
+quick_check`) two minutes after it starts and in the daily maintenance. A
+damaged database appears in the console's health checklist with a link to
+restore a backup; Ether keeps running so you can.
 
 Encrypted backups can also be uploaded during initial setup through the local
 setup interface. Restoring an older unencrypted `.tar.gz` requires an owner
@@ -406,11 +578,13 @@ readable only by the server account. To roll back by hand, stop Ether, install
 the previous version, and replace `ether.db`, `config.json` and
 `.credentials-key` with a set's copies.
 
-If an older version starts on a database a newer one already migrated, for
-example after the updater rolled back a release that kept crashing, it keeps
-running (migrations only add) and logs a warning naming the newer components
-and the newest snapshot. It does not refuse to start, so automatic rollback and
-rolling cluster updates keep working.
+Do not start binaries from before the multi-app upgrade against a migrated database. Older
+binaries may merely log newer migration versions and continue running; that
+behavior does not establish schema or writer compatibility. For that
+transition, stop and fence every old writer, upgrade every serving node,
+and follow the [upgrade and rollback runbook](acceptance/upgrade.md).
+Rollback requires restoring the matching database and configuration backup
+with every new writer stopped and fenced.
 
 Not covered: PostgreSQL databases get no pre-upgrade snapshot (use scheduled
 backups), and rolling back a release never restores a snapshot automatically,

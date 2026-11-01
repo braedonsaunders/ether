@@ -12,9 +12,10 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/artwork"
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/ratings"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/store"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font/gofont/gobold"
@@ -129,18 +130,27 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 		return snap.value, snap.err
 	}
 	var v Settings
-	var raw string
-	e := s.db.QueryRowContext(ctx, `SELECT value FROM overlays_settings WHERE id=1`).Scan(&raw)
-	if errors.Is(e, sql.ErrNoRows) {
-		return normalizeSettings(v), nil
-	}
+	// Artwork for each listed item asks: read the row once per request.
+	row, e := reqmemo.Do(ctx, "overlays:settings", func() (*string, error) {
+		var raw string
+		err := s.db.QueryRowContext(ctx, `SELECT value FROM overlays_settings WHERE id=1`).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return &raw, err
+	})
 	if e != nil {
 		return v, e
 	}
+	if row == nil {
+		return normalizeSettings(v), nil
+	}
+	raw := *row
 	e = json.Unmarshal([]byte(raw), &v)
 	return normalizeSettings(v), e
 }
 func (s *Service) SaveSettings(ctx context.Context, v Settings) error {
+	reqmemo.Forget(ctx, "overlays:settings")
 	v = normalizeSettings(v)
 	if err := validateSettings(v); err != nil {
 		return err
@@ -152,7 +162,73 @@ func (s *Service) SaveSettings(ctx context.Context, v Settings) error {
 	_, e = s.db.ExecContext(ctx, `INSERT INTO overlays_settings(id,value) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value`, string(raw))
 	return e
 }
+
+type artworkPageKey struct{}
+
+// WithArtworkPage reads saved variants for a grid once and keeps settings on
+// the context so each tile does not query them again.
+func (s *Service) WithArtworkPage(ctx context.Context, keys []core.RatingKey) (context.Context, error) {
+	if s == nil {
+		return ctx, nil
+	}
+	ctx = s.WithSettingsSnapshot(ctx)
+	if _, ok := ctx.Value(artworkPageKey{}).(map[core.RatingKey]Artwork); ok {
+		return ctx, nil
+	}
+	batch, err := s.ArtworkMany(ctx, keys)
+	if err != nil {
+		return ctx, err
+	}
+	return context.WithValue(ctx, artworkPageKey{}, batch), nil
+}
+
+func (s *Service) ArtworkMany(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]Artwork, error) {
+	out := make(map[core.RatingKey]Artwork, len(keys))
+	for _, key := range keys {
+		out[key] = Artwork{}
+	}
+	if s == nil || s.db == nil || len(keys) == 0 {
+		return out, nil
+	}
+	for start := 0; start < len(keys); start += 200 {
+		part := keys[start:min(start+200, len(keys))]
+		args := make([]any, len(part))
+		marks := make([]string, len(part))
+		for i, key := range part {
+			args[i] = int64(key)
+			marks[i] = "?"
+		}
+		rows, err := s.db.QueryContext(ctx, `SELECT item_key, value FROM overlays_artwork WHERE item_key IN (`+strings.Join(marks, ",")+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key int64
+			var raw string
+			if err = rows.Scan(&key, &raw); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			var art Artwork
+			if err = json.Unmarshal([]byte(raw), &art); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[core.RatingKey(key)] = art
+		}
+		if err = rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return out, nil
+}
+
 func (s *Service) Artwork(ctx context.Context, key core.RatingKey) (Artwork, error) {
+	if batch, ok := ctx.Value(artworkPageKey{}).(map[core.RatingKey]Artwork); ok {
+		return batch[key], nil
+	}
 	var raw string
 	var v Artwork
 	e := s.db.QueryRowContext(ctx, `SELECT value FROM overlays_artwork WHERE item_key=?`, key).Scan(&raw)
@@ -387,7 +463,7 @@ func (s *Service) visible(u *core.User, t *core.Title) bool {
 		return false
 	}
 	if u != nil {
-		if catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
+		if contentrating.Exceeds(t.ContentRating, u.MaxContentRating) {
 			return false
 		}
 		if len(u.AllowedSections) > 0 {

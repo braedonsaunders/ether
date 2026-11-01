@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -38,5 +39,20 @@ func TestEnhancedPlayerHLSTargetSurvivesDecision(t *testing.T) {
 	pr.ProfileExtra = "add-direct-play-profile(type=videoProfile&container=mkv&videoCodec=hevc&audioCodec=eac3)"
 	if got := pr.ClientCaps(0).HLSContainers; len(got) != 0 {
 		t.Fatalf("direct-play format leaked into HLS: %v", got)
+	}
+}
+
+func TestMatroskaTextSubtitleIsInBand(t *testing.T) {
+	st := model.Stream{StreamType: 3, Codec: "srt", Selected: model.Ptr(true), ID: 42, Key: "/library/streams/42", Format: "srt"}
+	src := core.StreamInfo{Type: "subtitle", Codec: "subrip"}
+	mkv := core.Decision{Kind: core.DecisionTranscode, Container: transcode.ContainerMatroska}
+	got, keep := applyStreamDecision(st, src, mkv, true)
+	if !keep || got.Location != "segments-av" || got.Key != "" || got.Format != "" || got.Decision != "copy" {
+		t.Fatalf("matroska text track: %+v", got)
+	}
+	ts := core.Decision{Kind: core.DecisionTranscode, Container: transcode.ContainerMPEGTS}
+	got, _ = applyStreamDecision(st, src, ts, true)
+	if got.Location != "sidecar" || got.Key != "/library/streams/42" || got.Format != "srt" {
+		t.Fatalf("mpegts sidecar changed: %+v", got)
 	}
 }

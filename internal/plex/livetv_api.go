@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/go-chi/chi/v5"
@@ -54,11 +55,12 @@ type liveDevice struct {
 	ChannelMapping []liveMapping `plex:"ChannelMapping"`
 }
 type liveDVR struct {
-	Key      string       `plex:"key"`
-	Language string       `plex:"language"`
-	Lineup   string       `plex:"lineup"`
-	UUID     string       `plex:"uuid"`
-	Device   []liveDevice `plex:"Device"`
+	Key         string       `plex:"key"`
+	Language    string       `plex:"language"`
+	Lineup      string       `plex:"lineup"`
+	UUID        string       `plex:"uuid"`
+	RefreshedAt int64        `plex:"refreshedAt"`
+	Device      []liveDevice `plex:"Device"`
 }
 type liveGrabber struct {
 	Title      string `plex:"title"`
@@ -168,7 +170,9 @@ func (s *Server) registerLiveTVRoutes(r chi.Router) {
 			writeHTTPError(w, 404)
 			return
 		}
-		s.d.LiveTV.ServeRelaySegment(w, r, chi.URLParam(r, "session"), n, FromContext(r.Context()).User)
+		cw := s.newCountWriter(w, r)
+		s.d.LiveTV.ServeRelaySegment(cw, r, chi.URLParam(r, "session"), n, FromContext(r.Context()).User)
+		cw.finish()
 	})
 
 	get("/livetv/sessions/{session}/{consumer}/resource/{resource}", func(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +185,9 @@ func (s *Server) registerLiveTVRoutes(r chi.Router) {
 			writeHTTPError(w, 404)
 			return
 		}
-		s.d.LiveTV.ServeSegment(w, r, chi.URLParam(r, "session"), start, n, FromContext(r.Context()).User)
+		cw := s.newCountWriter(w, r)
+		s.d.LiveTV.ServeSegment(cw, r, chi.URLParam(r, "session"), start, n, FromContext(r.Context()).User)
+		cw.finish()
 	})
 }
 func (s *Server) liveDevices(r *http.Request) ([]liveDevice, error) {
@@ -205,7 +211,50 @@ func (s *Server) handleLiveDVRs(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	s.write(w, r, &liveContainer{Size: 1, Identifier: livetv.Provider, DVR: []liveDVR{{Key: "1", Language: "eng", Lineup: "lineup://" + livetv.Provider + "/dvr", UUID: s.identity().MachineIdentifier + "-livetv", Device: devices}}})
+	s.write(w, r, &liveContainer{Size: 1, Identifier: livetv.Provider, DVR: []liveDVR{{Key: "1", Language: "eng", Lineup: "lineup://" + livetv.Provider + "/dvr", UUID: s.identity().MachineIdentifier + "-livetv", RefreshedAt: s.liveLineupRefreshedAt(), Device: devices}}})
+}
+
+// liveLineupRefreshedAt is the clock Apple TV compares to drop a cached lineup.
+func (s *Server) liveLineupRefreshedAt() int64 {
+	if s.d.LiveTV != nil {
+		if at := s.d.LiveTV.LineupChanged(); !at.IsZero() {
+			return at.Unix()
+		}
+	}
+	return s.now().Unix()
+}
+
+// NotifyLiveLineup tells connected Plex clients to reload the DVR lineup and
+// guide. Channel create and delete call it through LiveTV.SetOnChange.
+func (s *Server) NotifyLiveLineup() {
+	now := s.liveLineupRefreshedAt()
+	s.publishNotification(model.NotificationContainer{
+		Type: "activity",
+		Size: 1,
+		ActivityNotification: []model.ActivityNotification{{
+			Event: "ended",
+			UUID:  "ether-livetv-lineup",
+			Activity: &model.Activity{
+				UUID:     "ether-livetv-lineup",
+				Type:     "livetv.guide",
+				Title:    "Live TV lineup",
+				Progress: 100,
+			},
+		}},
+	}, 0)
+	s.publishNotification(model.NotificationContainer{
+		Type: "timeline",
+		Size: 1,
+		TimelineEntry: []model.TimelineEntry{{
+			Identifier: livetv.Provider,
+			SectionID:  "1",
+			ItemID:     "1",
+			Type:       1,
+			Title:      "Live TV",
+			State:      5,
+			UpdatedAt:  now,
+		}},
+	}, 0)
 }
 func (s *Server) handleLiveGrabbers(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, &liveContainer{Size: 1, Identifier: livetv.Provider, MediaGrabber: []liveGrabber{{Title: "Ether owner channels", Identifier: "tv.plex.grabbers.ether", Protocol: "livetv"}}})
@@ -255,6 +304,10 @@ func liveProgrammeMetadata(c livetv.Channel, p livetv.Programme) model.Metadata 
 var errLiveBadRequest = errors.New("invalid guide request")
 
 func (s *Server) liveGuideMetadata(r *http.Request) ([]model.Metadata, error) {
+	return s.liveGuideMetadataCapture(r, nil)
+}
+
+func (s *Server) liveGuideMetadataCapture(r *http.Request, captured *[]livetv.Programme) ([]model.Metadata, error) {
 	from := s.now()
 	until := from.Add(time.Second)
 	q := r.URL.Query()
@@ -319,6 +372,9 @@ func (s *Server) liveGuideMetadata(r *http.Request) ([]model.Metadata, error) {
 			continue
 		}
 		out = append(out, liveProgrammeMetadata(byID[p.ChannelID], p))
+		if captured != nil {
+			*captured = append(*captured, p)
+		}
 	}
 	return out, nil
 }
@@ -345,16 +401,22 @@ func (s *Server) handleLiveWatchNow(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, &model.MediaContainer{Size: 1, Identifier: livetv.Provider, Type: []model.MetaType{{Active: true, Key: liveProviderPath + "/watchnow/all", Title: "All Channels", Type: "mixed"}}})
 }
 func (s *Server) liveTVHub(r *http.Request) *model.Hub {
+	h, _ := s.liveTVHubProjection(r)
+	return h
+}
+
+func (s *Server) liveTVHubProjection(r *http.Request) (*model.Hub, frontend.Row) {
 	if !s.liveTVEnabled() {
-		return nil
+		return nil, frontend.Row{}
 	}
-	md, err := s.liveGuideMetadata(r)
+	var programmes []livetv.Programme
+	md, err := s.liveGuideMetadataCapture(r, &programmes)
 	if err != nil {
-		return nil
+		return nil, frontend.Row{}
 	}
 	cs, err := s.d.LiveTV.AllowedChannels(r.Context(), FromContext(r.Context()).User)
 	if err != nil {
-		return nil
+		return nil, frontend.Row{}
 	}
 	found := map[string]bool{}
 	for _, item := range md {
@@ -374,12 +436,48 @@ func (s *Server) liveTVHub(r *http.Request) *model.Hub {
 		}
 	}
 	if len(md) == 0 {
-		return nil
+		return nil, frontend.Row{}
 	}
 	if len(md) > 24 {
 		md = md[:24]
 	}
-	return &model.Hub{Key: liveProviderPath + "/watchnow/all", Title: "On Now", Type: "mixed", HubIdentifier: "livetv.onnow", Context: "hub.livetv.onnow", Size: len(md), Style: "shelf", Promoted: model.Ptr(true), Metadata: md}
+	h := &model.Hub{Key: liveProviderPath + "/watchnow/all", Title: "On Now", Type: "mixed", HubIdentifier: "livetv.onnow", Context: "hub.livetv.onnow", Size: len(md), Style: "shelf", Promoted: model.Ptr(true), Metadata: md}
+	row := frontend.Row{ID: "livetv.onnow", Title: "On Now", Purpose: frontend.RowLive, Style: "shelf", Promoted: true}
+	channels := make(map[string]livetv.Channel, len(cs))
+	for _, c := range cs {
+		channels[c.ID] = c
+	}
+	for _, item := range md {
+		var id string
+		for _, media := range item.Media {
+			for _, attr := range media.Extra {
+				if attr.Name == "channelIdentifier" {
+					id, _ = attr.Value.(string)
+				}
+			}
+		}
+		c, ok := channels[id]
+		if !ok {
+			continue
+		}
+		entry := &frontend.RowLiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Logo: liveLogo(c), GuideReference: c.GuideID}
+		now := s.now()
+		for _, p := range programmes {
+			if p.ChannelID != id || !p.End.After(now) {
+				continue
+			}
+			programme := &frontend.RowProgramme{ID: p.ID, Title: p.Item.Title, Start: p.Start, End: p.End, Item: p.Item.Key}
+			if !p.Start.After(now) {
+				if entry.Current == nil || p.Start.Before(entry.Current.Start) {
+					entry.Current = programme
+				}
+			} else if entry.Next == nil || p.Start.Before(entry.Next.Start) {
+				entry.Next = programme
+			}
+		}
+		row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryLiveChannel, LiveChannel: entry})
+	}
+	return h, row
 }
 func (s *Server) liveChannelMetadata(c livetv.Channel) model.Metadata {
 	return model.Metadata{RatingKey: "channel-" + c.ID, Key: liveProviderPath + "/channels/" + url.PathEscape(c.ID), Type: "clip", Title: c.Name, Summary: "Live channel. No programme guide supplied.", Thumb: liveLogo(c), ContentRating: c.Rating, Extra: []model.Attr{model.A("live", true), model.A("dvrChannel", true)}, Media: []model.Media{{Protocol: "livetv", Extra: []model.Attr{model.A("origin", "livetv"), model.A("channelIdentifier", c.ID), model.A("channelTitle", c.Name), model.A("channelVcn", c.Number), model.A("onAir", true)}}}}
@@ -488,6 +586,9 @@ func (s *Server) handleLiveSession(w http.ResponseWriter, r *http.Request) {
 // handleLiveTVPlayback hooks the universal decision/start endpoints before the
 // catalogue parser. Plex passes the tune response's /livetv/sessions key here.
 func (s *Server) handleLiveTVPlayback(w http.ResponseWriter, r *http.Request) bool {
+	if s.refuseCapability(w, r) {
+		return true
+	}
 	path := r.URL.Query().Get("path")
 	if !strings.HasPrefix(path, "/livetv/sessions/") {
 		return false
@@ -516,13 +617,50 @@ func (s *Server) handleLiveTVPlayback(w http.ResponseWriter, r *http.Request) bo
 		return true
 	}
 	if strings.HasSuffix(r.URL.Path, "/start.mpd") {
-		s.d.LiveTV.ServeDASH(w, r, id, pr.User)
+		if err := s.d.LiveTV.ServeDASH(w, r, id, pr.User); err != nil {
+			s.writeLiveDASHError(w, r, info, err)
+		}
+		return true
+	}
+	if strings.HasSuffix(r.URL.Path, "/start") && r.URL.Query().Get("protocol") == core.ProtocolHTTP {
+		if err := s.d.LiveTV.ServeHTTP(w, r, id, pr.User); err != nil {
+			s.writeErr(w, r, err)
+		}
 		return true
 	}
 	// Native players can retry this endpoint without following a redirect.
 	// The Live TV playlist already uses rooted, authenticated child URLs.
 	s.d.LiveTV.ServePlaylist(w, r, id, pr.User)
 	return true
+}
+
+// writeLiveDASHError is the Plex decision document for a virtual channel that
+// cannot produce DASH. Plex Web treats a bare 503 as s1001 (Network) and never
+// shows the reason. Decision codes at or above 2000 are the message it displays.
+func (s *Server) writeLiveDASHError(w http.ResponseWriter, r *http.Request, info livetv.SessionInfo, err error) {
+	var dashErr *livetv.VirtualDASHError
+	if !errors.As(err, &dashErr) {
+		s.writeErr(w, r, err)
+		return
+	}
+	msg := "This live channel cannot be played as DASH."
+	if dashErr.Message != "" {
+		msg = dashErr.Message
+	} else if dashErr.Err != nil && !errors.Is(dashErr.Err, core.ErrNotAvailable) {
+		msg = playbackMessage(dashErr.Err)
+	}
+	s.write(w, r, &model.MediaContainer{
+		Size: 1, Identifier: livetv.Provider,
+		Extra: []model.Attr{
+			model.A("directPlayDecisionCode", codeDirectPlayError),
+			model.A("directPlayDecisionText", msg),
+			model.A("generalDecisionCode", codeGeneralError),
+			model.A("generalDecisionText", msg),
+			model.A("transcodeDecisionCode", codeTranscodeError),
+			model.A("transcodeDecisionText", msg),
+		},
+		Metadata: []model.Metadata{s.liveSessionMetadata(info)},
+	})
 }
 func (s *Server) handleLiveLogo(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "channel")

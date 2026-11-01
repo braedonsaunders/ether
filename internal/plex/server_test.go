@@ -71,6 +71,22 @@ func TestAuth(t *testing.T) {
 	}
 }
 
+func TestClientSeenOnlyAfterAuthentication(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	var seen []string
+	f.srv.d.Hooks.OnClientSeen = func(id string) { seen = append(seen, id) }
+	f.request(t, http.MethodGet, "/identity", map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": "public"})
+	f.request(t, http.MethodGet, "/library/sections", map[string]string{"X-Plex-Token": "bad", "X-Plex-Client-Identifier": "unauthorized"})
+	if len(seen) != 0 {
+		t.Fatalf("observed unauthenticated clients: %v", seen)
+	}
+	f.request(t, http.MethodGet, "/library/sections", map[string]string{"X-Plex-Token": friendToken, "X-Plex-Client-Identifier": "device"})
+	if len(seen) != 1 || seen[0] != "device" {
+		t.Fatalf("seen = %v", seen)
+	}
+}
+
 func TestSectionRestriction(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
@@ -216,6 +232,11 @@ func TestTimelineUpdatesState(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("OnTimeline not called")
 	}
+	select {
+	case h := <-f.hooks:
+		t.Fatalf("timeline hook ran again: %s", h)
+	case <-time.After(50 * time.Millisecond):
+	}
 	if len(f.playback.touched) != 1 {
 		t.Fatalf("session not touched: %v", f.playback.touched)
 	}
@@ -235,8 +256,12 @@ func TestTimelineUpdatesState(t *testing.T) {
 func TestScrobbleRate(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	if rec := f.get(t, "/:/scrobble?key=1000000000000550&identifier=com.plexapp.plugins.library"); rec.Code != http.StatusOK {
+	rec := f.get(t, "/:/scrobble?key=1000000000000550&identifier=com.plexapp.plugins.library")
+	if rec.Code != http.StatusOK {
 		t.Fatalf("scrobble %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "MediaContainer") {
+		t.Fatalf("scrobble body %q", rec.Body.String())
 	}
 	if st, _ := f.state.Get(context.Background(), ownerUser.ID, fightClub.Key); st.ViewCount != 1 {
 		t.Fatal("not scrobbled")
@@ -302,8 +327,8 @@ func TestDecisionOptions(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	// Select the French track and the embedded English subtitle by id.
-	frID := f.srv.streams.register(fightClub.Key, 2, sampleInfo.Streams[2])
-	subID := f.srv.streams.register(fightClub.Key, 3, sampleInfo.Streams[3])
+	frID := f.bindStream(fightClub.Key, 2, sampleInfo.Streams[2])
+	subID := f.bindStream(fightClub.Key, 3, sampleInfo.Streams[3])
 	f.get(t, "/library/metadata/1000000000000550") // registers stream ids
 	f.request(t, http.MethodPut, fmt.Sprintf("/library/parts/1000000000000550?audioStreamID=%d&subtitleStreamID=%d&allParts=1", frID, subID), nil)
 	f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/1000000000000550&directPlay=0&maxVideoBitrate=4000&videoResolution=1280x720&subtitles=burn&session=o1",
@@ -661,11 +686,42 @@ func TestEventSource(t *testing.T) {
 			}
 			e := v.TimelineEntry
 			if e.ItemID != bbE1.Key.String() || e.ParentItemID != bbE1.Key.Parent().String() ||
-				e.RootItemID != breakingBad.Key.String() || e.Type != 4 || e.State != 5 || e.Identifier != model.LibraryIdentifier {
+				e.RootItemID != breakingBad.Key.String() || e.Type != 4 || e.State != 5 ||
+				e.MetadataState != "created" || e.Identifier != model.LibraryIdentifier {
 				t.Fatalf("timeline entry %+v", e)
 			}
 			return
 		}
+	}
+}
+
+func TestMovieScrobbleTimelineNamesItself(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	sub, _ := f.srv.notifier.subscribe([]string{"timeline"}, &ownerUser)
+	defer f.srv.notifier.unsubscribe(sub)
+	f.get(t, "/:/scrobble?key="+fightClub.Key.String()+"&identifier=com.plexapp.plugins.library")
+	select {
+	case msg := <-sub.ch:
+		var body struct {
+			NotificationContainer struct {
+				TimelineEntry []model.TimelineEntry
+			}
+		}
+		if err := json.Unmarshal(msg.data, &body); err != nil {
+			t.Fatal(err)
+		}
+		entries := body.NotificationContainer.TimelineEntry
+		if len(entries) != 1 {
+			t.Fatalf("timeline %s", msg.data)
+		}
+		e := entries[0]
+		if e.ItemID != fightClub.Key.String() || e.RootItemID != fightClub.Key.String() ||
+			e.Type != 1 || e.State != 5 || e.MetadataState != "created" {
+			t.Fatalf("movie timeline %+v", e)
+		}
+	default:
+		t.Fatal("movie scrobble published no timeline entry")
 	}
 }
 
@@ -840,8 +896,8 @@ func TestPlaylistMoveAfterItself(t *testing.T) {
 }
 
 func TestRedactQueryHidesCredentials(t *testing.T) {
-	got := redactQuery("a=1&X-Plex-Token=secret&" + streamGrantParam + "=grant&x-plex-token=s2")
-	if strings.Contains(got, "secret") || strings.Contains(got, "grant") || strings.Contains(got, "s2") || !strings.Contains(got, "a=1") {
+	got := redactQuery("a=1&X-Plex-Token=secret&" + streamGrantParam + "=grant&" + readCapParam + "=read&x-plex-token=s2")
+	if strings.Contains(got, "secret") || strings.Contains(got, "grant") || strings.Contains(got, "read") || strings.Contains(got, "s2") || !strings.Contains(got, "a=1") {
 		t.Fatalf("redactQuery = %q", got)
 	}
 }

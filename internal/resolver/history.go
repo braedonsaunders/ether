@@ -32,7 +32,13 @@ type HistoryRecord struct {
 	Error              string `json:"error,omitempty"`
 	Failover           bool   `json:"failover,omitempty"`
 	Pinned             bool   `json:"pinned,omitempty"` // the owner's pin was used
-	Candidates         int    `json:"candidates"`
+	// Unverified: the release played after every health check timed out.
+	Unverified bool `json:"unverified,omitempty"`
+	// Chooser is "auto" or "viewer". Empty on decisions recorded before
+	// it existed. ChosenVersion is the release name for a viewer pick.
+	Chooser       string `json:"chooser,omitempty"`
+	ChosenVersion string `json:"chosenVersion,omitempty"`
+	Candidates    int    `json:"candidates"`
 	// Trace is the full decision (candidates capped at 50); only
 	// HistoryEntry fills it.
 	Trace *Trace `json:"trace,omitempty"`
@@ -74,6 +80,7 @@ func compactTrace(tr Trace) Trace {
 func historyFromTrace(tr Trace) HistoryRecord {
 	h := HistoryRecord{At: tr.At, TitleKey: tr.TitleKey, TitleName: tr.TitleName, Profile: tr.Profile,
 		ReleaseID: tr.Winner, Error: tr.Err, Failover: tr.Failover, Pinned: tr.PinStatus == "used",
+		Unverified: tr.Unverified, Chooser: tr.Chooser, ChosenVersion: tr.ChosenVersion,
 		Candidates: len(tr.Candidates) + tr.Omitted}
 	if tr.Limits != nil {
 		h.ProfileMaxHeight, h.ClientMaxHeight, h.EffectiveMaxHeight = tr.Limits.ProfileConfiguredMaxHeight, tr.Limits.ClientMaxHeight, tr.Limits.ProfileMaxHeight
@@ -162,6 +169,9 @@ func scanHistory(r rowScanner, withTrace bool) (HistoryRecord, error) {
 			if tr.Limits != nil {
 				h.ProfileMaxHeight, h.ClientMaxHeight, h.EffectiveMaxHeight = tr.Limits.ProfileConfiguredMaxHeight, tr.Limits.ClientMaxHeight, tr.Limits.ProfileMaxHeight
 			}
+			h.Unverified = tr.Unverified
+			h.Chooser = tr.Chooser
+			h.ChosenVersion = tr.ChosenVersion
 		}
 	}
 	return h, nil

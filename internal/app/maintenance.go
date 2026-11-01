@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/schedule"
@@ -9,7 +10,8 @@ import (
 )
 
 // dbMaintenanceInterval is how often derived data is pruned, the SQLite WAL
-// truncated and the planner statistics refreshed. The first pass waits
+// truncated, the planner statistics refreshed and the database checked for
+// damage. The first pass waits
 // dbMaintenanceDelay so it never competes with startup work.
 const (
 	dbMaintenanceInterval = 24 * time.Hour
@@ -56,6 +58,27 @@ func (a *App) runPruners(ctx context.Context) {
 	}
 }
 
+// checkpointWAL copies the SQLite WAL from a background goroutine. A commit
+// on a request must not run that checkpoint itself.
+func (a *App) checkpointWAL(ctx context.Context) {
+	if a.db == nil || store.DialectOf(a.db) != store.SQLite {
+		return
+	}
+	store.RunCheckpointer(ctx, a.db, a.walTruncateAllowed, func(err error) {
+		a.log.Warn("wal checkpoint", "err", err)
+	})
+}
+
+// walTruncateAllowed reports whether a TRUNCATE checkpoint is safe. PASSIVE
+// checkpoints still run when this is false. A live playback, or any other
+// connection inside a query, keeps the exclusive truncate off the request.
+func (a *App) walTruncateAllowed() bool {
+	if a.playback != nil && len(a.playback.Sessions()) > 0 {
+		return false
+	}
+	return a.db != nil && a.db.Stats().InUse == 0
+}
+
 // maintainDB prunes derived data and runs store.Maintain daily until ctx
 // ends.
 func (a *App) maintainDB(ctx context.Context) {
@@ -64,13 +87,24 @@ func (a *App) maintainDB(ctx context.Context) {
 		delay = dbMaintenanceInterval
 		start := time.Now()
 		a.runPruners(ctx)
-		if err := store.Maintain(ctx, a.db); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
+		err := store.Maintain(ctx, a.db)
+		var corrupt *store.CorruptionError
+		switch {
+		case ctx.Err() != nil:
+			return
+		case errors.As(err, &corrupt):
+			// Damage does not heal on a retry: report it and check again
+			// at the next daily pass.
+			a.recordIntegrity(corrupt.Integrity)
+		case store.IsCorrupt(err):
+			a.recordIntegrity(store.Integrity{Findings: []string{err.Error()}, Checked: time.Now().UTC()})
+		case err != nil:
 			a.log.Warn("database maintenance", "err", err)
 			delay = dbMaintenanceDelay
-		} else {
+		default:
+			if store.DialectOf(a.db) != store.Postgres {
+				a.recordIntegrity(store.Integrity{OK: true, Checked: time.Now().UTC()})
+			}
 			a.log.Info("database maintenance done", "took", time.Since(start))
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/clusterconfig"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/service"
+	"github.com/braedonsaunders/ether/internal/startup"
+	"github.com/braedonsaunders/ether/internal/updater"
 )
 
 var errClusterSetup = errors.New("cluster setup requested")
@@ -27,17 +30,72 @@ type clusterSetup struct {
 	stop    chan struct{}
 }
 
-// Serve owns the complete application lifetime. A UI cluster transition first
-// stops HTTP and every background writer and closes SQLite, then migrates and
-// starts a fresh App. It works in the foreground and under every OS supervisor.
+// Serve owns the complete application lifetime. It binds the port as soon
+// as the data directory is locked, so the console can show a starting
+// server's progress (startup.Gate), and keeps it across App instances. A UI
+// cluster transition first stops HTTP and every background writer and
+// closes SQLite, then migrates and starts a fresh App. A start that fails
+// after the port is bound does not exit (a service manager would only
+// restart it into the same failure): the status page explains the failure,
+// offers a restore on a standalone server, and the start is retried with
+// backoff. It works in the foreground and under every OS supervisor.
 func Serve(ctx context.Context, opts Options) error {
 	setup := &clusterSetup{state: "idle", stop: make(chan struct{}, 1)}
 	opts.clusterSetup = setup
+	if opts.Version == "" {
+		opts.Version = updater.Version
+	}
+	log := opts.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	if opts.DataDir == "" {
+		opts.DataDir = config.DefaultDataDir()
+	}
+	// The lock is held across every start, so a retried start never lets
+	// a second instance take the data directory (and the port) meanwhile.
+	lock, err := acquireInstanceLock(opts.DataDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	opts.lock = lock
+	front := newFrontDoor(startup.NewTracker(opts.Version, time.Now), log)
+	defer front.close()
+	opts.front = front
+	rc := newRecovery(opts.DataDir, front, log)
+	front.recovery.Store(ptr(rc.handler()))
+	failures := 0
 	for {
-		a, err := New(ctx, opts)
-		if err != nil {
-			return err
+		if rc.beginAttempt(ctx) != nil {
+			return nil
 		}
+		a, err := New(ctx, opts)
+		rc.endAttempt(err == nil)
+		if err != nil {
+			if !front.bound() || ctx.Err() != nil || errors.Is(err, service.ErrRestartRequested) {
+				return err
+			}
+			if errors.Is(err, errRestoreRolledBack) {
+				// The original data is back in place: start on it now.
+				log.Error("the restored backup could not start; starting again on the original data", "err", err)
+				continue
+			}
+			failures++
+			wait := startRetryDelay(failures)
+			f := failureOf(err, readNodeFacts(opts.DataDir, os.Getenv).Standalone())
+			front.tracker.Fail(f, failures, wait)
+			log.Error("Ether could not start; the console at /ether/ explains why. Retrying", "err", err, "attempt", failures, "retry", wait)
+			if f.Recoverable {
+				rc.prepare()
+			}
+			if !rc.wait(ctx, wait) {
+				return nil
+			}
+			continue
+		}
+		rc.clear()
+		failures = 0
 		finish := func(bool) error { return nil }
 		if opts.NotificationExecutable != "" {
 			watch, watchErr := a.WatchNotifications(opts.NotificationExecutable)
@@ -52,6 +110,11 @@ func Serve(ctx context.Context, opts Options) error {
 		// process. Close its watcher cleanly before starting the replacement.
 		_ = finish(err == nil || errors.Is(err, errClusterSetup) || errors.Is(err, service.ErrRestartRequested))
 		a.Close()
+		// A restore this start applied but never confirmed (Run stopped
+		// before serving) puts the original data back.
+		if a.rollbackUnconfirmed(err) && ctx.Err() == nil {
+			continue
+		}
 		if !errors.Is(err, errClusterSetup) {
 			return err
 		}
@@ -63,6 +126,14 @@ func Serve(ctx context.Context, opts Options) error {
 		}
 	}
 }
+
+// startRetryDelay is the wait before retrying a failed start: 15s,
+// doubling, at most 10 minutes.
+func startRetryDelay(failures int) time.Duration {
+	return min(15*time.Second<<min(failures-1, 6), 10*time.Minute)
+}
+
+func ptr[T any](v T) *T { return &v }
 
 func (s *clusterSetup) apply(ctx context.Context, dir string) error {
 	s.mu.Lock()

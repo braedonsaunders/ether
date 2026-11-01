@@ -17,6 +17,16 @@ type liveProbeEntry struct {
 	expires time.Time
 }
 
+type liveProbeFlight struct {
+	done chan struct{}
+	info *core.MediaInfo
+	err  error
+}
+
+// liveProbeTTL keeps a successful codec read across channel changes in one
+// viewing session. Errors are never cached.
+const liveProbeTTL = 15 * time.Minute
+
 // A short cache reuses capability-independent codec analysis on channel switches.
 // Errors are never cached; URL changes naturally invalidate signed/rotated feeds.
 func (s *Service) probeLiveInput(ctx context.Context, input string) (*core.MediaInfo, error) {
@@ -43,23 +53,51 @@ func (s *Service) probeLiveCached(ctx context.Context, key, input string) (*core
 		return nil, err
 	}
 	s.probeMu.Lock()
-	entry, found := s.probeCache[key]
-	s.probeMu.Unlock()
-	if found && s.o.Now().Before(entry.expires) {
+	if entry, found := s.probeCache[key]; found && s.o.Now().Before(entry.expires) {
+		s.probeMu.Unlock()
 		info := entry.info
 		return &info, nil
 	}
-	var info *core.MediaInfo
-	var err error
-	if p, ok := s.o.Transcoder.(liveProber); ok {
-		info, err = p.ProbeLive(ctx, input)
-	} else {
-		info, err = s.o.Transcoder.Probe(ctx, input)
+	if flight, ok := s.probeWait[key]; ok {
+		s.probeMu.Unlock()
+		select {
+		case <-flight.done:
+			if flight.err != nil || flight.info == nil {
+				return flight.info, flight.err
+			}
+			info := *flight.info
+			return &info, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	if err != nil || info == nil || info.Video() == nil {
-		return info, err
+	flight := &liveProbeFlight{done: make(chan struct{})}
+	if s.probeWait == nil {
+		s.probeWait = map[string]*liveProbeFlight{}
 	}
+	s.probeWait[key] = flight
+	s.probeMu.Unlock()
+
+	info, err := s.probeLiveUncached(ctx, input)
 	s.probeMu.Lock()
+	if err == nil && info != nil && info.Video() != nil {
+		s.storeProbeLocked(key, *info)
+	}
+	flight.info, flight.err = info, err
+	close(flight.done)
+	delete(s.probeWait, key)
+	s.probeMu.Unlock()
+	return info, err
+}
+
+func (s *Service) probeLiveUncached(ctx context.Context, input string) (*core.MediaInfo, error) {
+	if p, ok := s.o.Transcoder.(liveProber); ok {
+		return p.ProbeLive(ctx, input)
+	}
+	return s.o.Transcoder.Probe(ctx, input)
+}
+
+func (s *Service) storeProbeLocked(key string, info core.MediaInfo) {
 	if s.probeCache == nil {
 		s.probeCache = map[string]liveProbeEntry{}
 	}
@@ -80,7 +118,5 @@ func (s *Service) probeLiveCached(ctx context.Context, key, input string) (*core
 			delete(s.probeCache, oldest)
 		}
 	}
-	s.probeCache[key] = liveProbeEntry{info: *info, expires: s.o.Now().Add(2 * time.Minute)}
-	s.probeMu.Unlock()
-	return info, nil
+	s.probeCache[key] = liveProbeEntry{info: info, expires: s.o.Now().Add(liveProbeTTL)}
 }

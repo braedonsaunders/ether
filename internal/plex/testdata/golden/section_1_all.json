@@ -315,7 +315,6 @@
         "year": 1979,
         "thumb": "/library/metadata/1000000000000348/thumb/1788220800",
         "duration": 7020000,
-        "addedAt": 1788220800,
         "updatedAt": 1788220800,
         "Media": [
           {
@@ -379,7 +378,7 @@
         "art": "/library/metadata/1000000000000550/art/1790812800",
         "duration": 8340000,
         "originallyAvailableAt": "1999-10-15",
-        "addedAt": 1790812800,
+        "addedAt": 939945600,
         "updatedAt": 1790812800,
         "audienceRatingImage": "themoviedb://image.rating",
         "Media": [

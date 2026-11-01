@@ -4,6 +4,7 @@ import {
   Input,
   SearchSelect,
   SettingsSection,
+  Switch,
   confirmDialog,
 } from "@braedonsaunders/appkit-ui";
 import { ListFilter, Plus } from "lucide-react";
@@ -60,6 +61,7 @@ function ruleViewer(r: QualityRule, viewers: Viewer[] | null) {
 
 function ruleSummary(r: QualityRule, viewers: Viewer[] | null) {
   return [
+    r.protocol,
     r.product || t("Any device"),
     r.platform,
     ruleViewer(r, viewers),
@@ -69,7 +71,7 @@ function ruleSummary(r: QualityRule, viewers: Viewer[] | null) {
     .join(" · ");
 }
 
-/** Client rules: the first rule matching an app picks its quality profile. */
+/** Device rules: the first rule matching an app picks its quality profile. */
 export function ClientRulesTab() {
   const { config, quality, commit } = useQuality();
   const { viewers } = useViewers();
@@ -154,9 +156,9 @@ export function ClientRulesTab() {
   return (
     <>
       <Section
-        title={t("Client rules")}
+        title={t("Device rules")}
         description={t(
-          "Checked from the top. The first rule that matches an app picks its quality profile; apps no rule matches use the defaults.",
+          "Checked from the top. The first rule that matches an app on a device picks its quality profile; apps no rule matches use the defaults.",
         )}
         actions={
           <Button
@@ -223,8 +225,32 @@ export function ClientRulesTab() {
         {draft ? (
           <SettingsSection title={t("Match")}>
             <SettingsRow
+              title={t("Protocol")}
+              description={t("Choose which kind of app this rule matches.")}
+              control={
+                <div className="w-56">
+                  <SearchSelect
+                    value={draft.protocol ?? ""}
+                    onChange={(v) => set({ protocol: v || undefined })}
+                    options={[
+                      { value: "", label: t("Any protocol") },
+                      { value: "plex", label: "Plex" },
+                      { value: "jellyfin", label: "Jellyfin" },
+                      { value: "emby", label: "Emby" },
+                      { value: "silo", label: "Silo" },
+                      { value: "stremio", label: "Stremio" },
+                      { value: "webdav", label: t("Files") },
+                      { value: "dlna", label: "DLNA" },
+                    ]}
+                    ariaLabel={t("Protocol")}
+                    searchable={false}
+                  />
+                </div>
+              }
+            />
+            <SettingsRow
               title={t("Device")}
-              description={t("The Plex app's product name.")}
+              description={t("The app’s product name.")}
               control={
                 <div className="w-56">
                   <SearchSelect
@@ -312,7 +338,9 @@ export function ClientRulesTab() {
               description={
                 errors.maxHeight ? (
                   <span className="text-danger">{errors.maxHeight}</span>
-                ) : undefined
+                ) : (
+                  t("Caps this device below its quality profile. Any uses the profile's ceiling.")
+                )
               }
               control={
                 <div className="w-56">
@@ -325,6 +353,19 @@ export function ClientRulesTab() {
                     searchable={false}
                   />
                 </div>
+              }
+            />
+            <SettingsRow
+              title={t("Convert Dolby and DTS audio to AAC")}
+              description={t("For free Infuse and other players that can't play surround formats.")}
+              control={
+                <Switch
+                  checked={Boolean(draft.convertSurroundAudio)}
+                  onChange={(e) =>
+                    set({ convertSurroundAudio: e.currentTarget.checked || undefined })
+                  }
+                  aria-label={t("Convert Dolby and DTS audio to AAC")}
+                />
               }
             />
           </SettingsSection>

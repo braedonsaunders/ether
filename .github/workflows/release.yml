@@ -48,8 +48,22 @@ jobs:
           fi
           gh run watch "$run" --repo "$REPO" --interval 30 --exit-status
 
+  certification:
+    name: Recertify the client matrix for this minor
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check the published certification matrix
+        run: go run ./scripts/certification-gate -tag "$GITHUB_REF_NAME"
+
   goreleaser:
     name: GoReleaser (binaries, packages, docker)
+    needs: certification
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
@@ -228,7 +242,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HAS_UPDATE_KEY: ${{ secrets.ETHER_UPDATE_PRIVATE_KEY != '' }}
-    needs: [ci, goreleaser, macos, windows]
+    needs: [ci, certification, goreleaser, macos, windows]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5

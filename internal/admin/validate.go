@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/libraryfilter"
 	"github.com/braedonsaunders/ether/internal/releasepolicy"
+	"github.com/braedonsaunders/ether/internal/remote"
 )
 
 // FieldError is one validation problem, addressed by dotted field path.
@@ -94,6 +96,16 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if a.ReservePercent < 0 || a.ReservePercent > 99 {
 		v.add("availability.reservePercent", "must be between 0 and 99")
 	}
+	switch a.Effort {
+	case "", "gentle", "normal", "unlimited", "custom":
+	default:
+		v.add("availability.effort", "must be gentle, normal, unlimited, or custom")
+	}
+	switch a.Mode {
+	case "", config.ModePlayable, config.ModeDigital, config.ModeImmediate:
+	default:
+		v.add("availability.mode", "must be playable, digital, or immediate")
+	}
 
 	if cfg.SharedCache != nil {
 		shared := cfg
@@ -138,10 +150,22 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.Server.ClusterWeight < 0 || cfg.Server.ClusterWeight > 100 {
 		v.add("server.clusterWeight", "must be between 0 and 100")
 	}
+	for _, p := range cfg.Outbound.Problems() {
+		v.add(p.Field, "%s", p.Message)
+	}
 
 	v.port("plex.publicPort", cfg.Plex.PublicPort, true)
 	if cfg.Plex.SecureConnections != "" {
 		v.oneOf("plex.secureConnections", cfg.Plex.SecureConnections, "required", "preferred", "disabled")
+	}
+	for _, raw := range cfg.Plex.CustomURLs {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		if _, err := remote.ParseCustomURL(raw); err != nil {
+			v.add("plex.customUrls", "Enter full http:// or https:// server URLs, separated by commas.")
+			break
+		}
 	}
 
 	seenProv := map[string]bool{}
@@ -291,7 +315,7 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.Catalog.MinPopularity < 0 {
 		v.add("catalog.minPopularity", "must be >= 0")
 	}
-	if _, err := libraryfilter.Compile(cfg.Catalog.Exclusions); err != nil {
+	if _, err := libraryfilter.CompilePolicy(cfg.Catalog.Exclusions, cfg.Catalog.VisibilityDefault); err != nil {
 		v.add("catalog.exclusions", "%s", err.Error())
 	}
 	if cfg.Catalog.MinVotes < 0 {
@@ -331,6 +355,9 @@ func ValidateConfig(cfg config.Config) []FieldError {
 			v.add(f+".releaseRules", "%s", err)
 		} else if msg := releasepolicy.Conflict(p.ReleaseRules); msg != "" {
 			v.add(f+".releaseRules", "%s", msg)
+		}
+		if err := core.ValidateRanking(p.Ranking, p.ReleaseRules); err != nil {
+			v.add(f+".ranking", "%s", err)
 		}
 		if p.MinHeight < 0 || p.MaxHeight < 0 || (p.MaxHeight > 0 && p.MinHeight > p.MaxHeight) {
 			v.add(f+".minHeight", "must be <= maxHeight")
@@ -423,6 +450,21 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	v.clock("updates.maintenanceEnd", cfg.Updates.MaintenanceEnd)
 	if cfg.Updates.MaxDrain < 0 {
 		v.add("updates.maxDrain", "must not be negative")
+	}
+	if len(cfg.Clients.Overrides) > 128 {
+		v.add("clients.overrides", "must be 128 entries or fewer")
+	}
+	for i, o := range cfg.Clients.Overrides {
+		f := fmt.Sprintf("clients.overrides[%d]", i)
+		if o.ID == "" && o.Product == "" && o.Platform == "" && o.Device == "" {
+			v.add(f, "needs a client id or a product, platform or device")
+		}
+		if o.MaxHeight < 0 || o.MaxHeight > 8640 || o.MaxBitrateKbps < 0 {
+			v.add(f+".maxHeight", "is out of range")
+		}
+		if len(o.VideoCodecs) > 64 || len(o.AudioCodecs) > 64 || len(o.Containers) > 64 || len(o.SubtitleCodecs) > 64 || len(o.DolbyVisionProfiles) > 32 {
+			v.add(f, "lists too many values")
+		}
 	}
 	return v.errs
 }

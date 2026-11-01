@@ -2,11 +2,14 @@ package availability
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
-	"strings"
-	"time"
 )
 
 // EvidenceWindow is a proof window, not a delay: an eligible observed release
@@ -53,7 +56,17 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 	if source, ok := s.d.Validator.(interface {
 		KnownUnavailableSince(context.Context, []core.RatingKey) map[core.RatingKey]time.Time
 	}); ok {
-		unavailable = source.KnownUnavailableSince(ctx, keys)
+		if current, _ := ctx.Value(currentPolicyKey{}).(bool); current {
+			if durable, ok := s.d.Validator.(interface {
+				KnownUnavailableSinceCurrent(context.Context, []core.RatingKey) map[core.RatingKey]time.Time
+			}); ok {
+				unavailable = durable.KnownUnavailableSinceCurrent(ctx, keys)
+			} else {
+				unavailable = source.KnownUnavailableSince(ctx, keys)
+			}
+		} else {
+			unavailable = source.KnownUnavailableSince(ctx, keys)
+		}
 	}
 	acceptable := map[core.RatingKey]bool{}
 	type observation struct {
@@ -86,6 +99,9 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 			s.log.Warn("availability observations not fully loaded", "err", err)
 		}
 		rows.Close()
+	}
+	if input.availability.DigitalDateEvidence {
+		s.acceptDigitalReleases(ctx, keys, input.now, acceptable)
 	}
 	// Close the cursor before policy checks, which may read the same database.
 	for _, o := range observations {
@@ -131,21 +147,9 @@ func (s *Service) HiddenMovies(ctx context.Context) []core.RatingKey {
 	if !ok {
 		return nil
 	}
-	items, err := c.RecentMovies(ctx, input.now.Add(-time.Duration(input.availability.EffectiveMovieEvidenceDays())*24*time.Hour))
-	if err != nil {
-		return nil
-	}
-	visible := map[core.RatingKey]bool{}
-	for _, t := range s.filterDiscoverySnapshot(ctx, items, input) {
-		visible[t.Key] = true
-	}
-	var hidden []core.RatingKey
-	for _, t := range items {
-		if !visible[t.Key] {
-			hidden = append(hidden, t.Key)
-		}
-	}
-	return hidden
+	return s.hidden(ctx, "movie", input, func() ([]core.Title, error) {
+		return c.RecentMovies(ctx, input.now.Add(-time.Duration(input.availability.EffectiveMovieEvidenceDays())*24*time.Hour))
+	})
 }
 
 // HiddenShows excludes first-day series before SQL pagination, just as movies.
@@ -157,7 +161,31 @@ func (s *Service) HiddenShows(ctx context.Context) []core.RatingKey {
 	if !ok {
 		return nil
 	}
-	items, err := c.RecentShows(ctx, input.now.Add(-24*time.Hour))
+	return s.hidden(ctx, "show", input, func() ([]core.Title, error) {
+		return c.RecentShows(ctx, input.now.Add(-24*time.Hour))
+	})
+}
+
+type hiddenEntry struct {
+	at       time.Time
+	revision uint64
+	keys     []core.RatingKey
+}
+
+// hidden is the titles in the evidence window that no observation unlocks
+// yet. Every library page excludes them, so the answer is memoized on the
+// same terms as the visibility memo: fifteen seconds, and cleared by a new
+// observation or invalidation.
+func (s *Service) hidden(ctx context.Context, kind string, input discoverySnapshot, recent func() ([]core.Title, error)) []core.RatingKey {
+	key := fmt.Sprintf("%s:%s:%+v:%+v", kind, input.policy, input.availability, input.feeds)
+	s.visibilityMu.Lock()
+	revision := s.visibilityRevision
+	e, ok := s.hiddenCache[key]
+	s.visibilityMu.Unlock()
+	if ok && e.revision == revision && input.now.Sub(e.at) < 15*time.Second && !input.now.Before(e.at) {
+		return slices.Clone(e.keys)
+	}
+	items, err := recent()
 	if err != nil {
 		return nil
 	}
@@ -171,5 +199,13 @@ func (s *Service) HiddenShows(ctx context.Context) []core.RatingKey {
 			hidden = append(hidden, t.Key)
 		}
 	}
+	s.visibilityMu.Lock()
+	if revision == s.visibilityRevision {
+		if s.hiddenCache == nil || len(s.hiddenCache) >= 64 {
+			s.hiddenCache = map[string]hiddenEntry{}
+		}
+		s.hiddenCache[key] = hiddenEntry{at: input.now, revision: revision, keys: slices.Clone(hidden)}
+	}
+	s.visibilityMu.Unlock()
 	return hidden
 }

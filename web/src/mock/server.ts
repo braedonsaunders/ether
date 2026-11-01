@@ -51,12 +51,24 @@ import {
 } from "./data";
 import { createMetadataMock } from "./metadata";
 import { createMaintenance } from "./maintenance";
+import { createOpsMock, UNREACHABLE } from "./ops";
 import { createReleaseConsoleMock } from "./releases";
 import { createSitesMock } from "./sites";
 import { createTrashMock } from "./trash";
 import { createCacheMock } from "./cache";
+import { createCalendarMock } from "./calendar";
 import { createLiveTVMock } from "./livetv";
 import { TEMPLATES } from "./templates";
+import { NOT_RATED, RATING_LEVELS, canonicalRating } from "../lib/contentRatings";
+
+/** A few other boards' labels per level, as the server lists them. */
+const MOCK_EQUIVALENTS: Record<string, string[]> = {
+  G: ["gb/U", "ca/G", "de/0", "br/L"],
+  PG: ["gb/PG", "ca/PG", "de/6", "se/7", "br/10"],
+  "PG-13": ["gb/12A", "ca/14A", "de/12"],
+  R: ["gb/15", "ca/18A", "de/16"],
+  "NC-17": ["gb/18", "de/18"],
+};
 
 const NOW = () => new Date();
 
@@ -68,6 +80,20 @@ export interface FakeOptions {
   latencyMs?: number;
   /** Serve as a node of a three-node PostgreSQL cluster instead of a standalone server. */
   cluster?: boolean;
+  /** Pin the server in a startup state (see mock/ops.ts), e.g. "migrating" or "failed:database_corrupt". */
+  startup?: string;
+  /** Milliseconds per step of a simulated restart or restore. */
+  opsPace?: number;
+  /** Viewers watching, for the restart and restore drawers. */
+  viewers?: number;
+  /** The cache storage changed and needs a restart. */
+  cacheRestart?: boolean;
+  /** Report a damaged SQLite database in the health checklist. */
+  damagedDatabase?: boolean;
+  /** Start with a restore report ("restored", "failed") or a scheduled restore ("pending"). */
+  restore?: string;
+  /** Household audio and subtitle choices, for the Playback screen in the browser mock. */
+  householdAudio?: boolean;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -83,7 +109,8 @@ function err(status: number, code: string, message: string): Response {
 function defaultConfig(): EtherConfig {
   return {
     availability: {
-      monitor: false,
+      mode: "playable",
+      monitor: true,
       verify: false,
       preferVerified: true,
       newlyAvailable: true,
@@ -248,12 +275,12 @@ function defaultConfig(): EtherConfig {
       refreshInterval: "24h0m0s",
     },
     resolver: {
-      allowCam: false,
       healthSamples: 12,
       searchCacheTtl: "6h0m0s",
       unavailableCooloff: "24h0m0s",
       maxCandidates: 3,
       sameQualityAlternatives: 1,
+      offerHigherVersions: false,
       blockedGroups: null,
       blockedTerms: null,
     },
@@ -269,7 +296,7 @@ function defaultConfig(): EtherConfig {
           preferredCodecs: ["hevc", "av1"],
           preferredAudio: ["truehd", "eac3"],
           minSizeMbPerMin: 15,
-          maxSizeMbPerMin: 600,
+          maxSizeMbPerMin: 1000,
           preferredLanguages: null,
           allowCam: false,
         },
@@ -337,6 +364,7 @@ function defaultConfig(): EtherConfig {
       clockFormat: "",
     },
     extras: { enabled: false, resolverTimeout: "20s", prewarmBytes: 48 * 1024 ** 2 },
+    markers: { theIntroDb: true, apiKey: "" },
     setupComplete: true,
   };
 }
@@ -409,8 +437,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
   const trash = createTrashMock();
   const maintenance = createMaintenance();
   const sites = createSitesMock();
-  const cacheMock = createCacheMock();
+  const cacheMock = createCacheMock(opts.cacheRestart);
   const liveTV = createLiveTVMock(catalog);
+  const calendar = createCalendarMock();
   const state = {
     boot: {
       ok: true,
@@ -419,9 +448,33 @@ export function createFakeServer(opts: FakeOptions = {}) {
       authenticated: true,
       authRequired: false,
       serverName: "Living Room Ether",
+      signInMethods: ["local", "plex"],
       ...opts.bootstrap,
     } as Bootstrap,
     config: defaultConfig(),
+    // Null until a caller opts in (the browser mock does). Viewer tests still
+    // overlay these routes on a 404 from the shared fake.
+    streamDefaults: (opts.householdAudio
+      ? {
+          audioLanguages: ["en"],
+          subtitleLanguages: ["en"],
+          preferOriginal: true,
+          subtitleMode: "foreign-only",
+          subtitleStyle: "normal",
+          loudness: false,
+          nightMode: false,
+          dialogueBoost: false,
+        }
+      : null) as null | {
+      audioLanguages: string[];
+      subtitleLanguages: string[];
+      preferOriginal: boolean;
+      subtitleMode: string;
+      subtitleStyle: string;
+      loudness: boolean;
+      nightMode: boolean;
+      dialogueBoost: boolean;
+    },
     users: VIEWERS.map<EtherUser>((v) => ({
       id: v.id,
       plexId: v.plexId,
@@ -435,6 +488,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
       audioLanguages: [],
       allowedSections: [],
     })),
+    favoritesMirror: new Map<number, boolean>(),
+    dlnaGuests: [] as Viewer[],
     collections: [] as CollectionSpec[],
     overrides: new Map<number, TasteOverride[]>(),
     layout: {
@@ -464,6 +519,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
     } as HomeLayout,
     logs: [] as LogEntry[],
     calls: [] as { method: string; path: string; body: unknown }[],
+    plexDefaults: {} as Record<number, Record<string, unknown>>,
     llm: opts.llm ?? true,
     clustered: opts.cluster ?? false,
     joinTokens: [] as JoinTokenInfo[],
@@ -622,7 +678,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       case "runtime":
         return [t.runtimeMinutes ?? 0];
       case "contentRating":
-        return t.contentRating ? [t.contentRating] : [];
+        return [t.contentRating ? canonicalRating(t.contentRating) : NOT_RATED];
       case "released":
         return [t.released];
       case "addedAt":
@@ -641,6 +697,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
   }
 
   function matches(t: FakeTitle, r: Rule): boolean {
+    if (r.field === "contentRating") return ratingMatches(t, r);
     const vals = fieldValues(t, r.field);
     const eq = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
     switch (r.op) {
@@ -672,7 +729,34 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const since = new Date(Date.now() - durationMs(String(r.value))).toISOString().slice(0, 10);
         return vals.some((x) => String(x) >= since);
       }
+      case "unknown":
+        return vals.length === 0 || vals.every((x) => x === "" || x == null);
+      case "known":
+        return vals.some((x) => x !== "" && x != null);
     }
+  }
+
+  /** Content ratings compare by level, as on the server. */
+  function ratingMatches(t: FakeTitle, r: Rule): boolean {
+    const have = fieldValues(t, "contentRating")[0] as string;
+    const want = (Array.isArray(r.value) ? r.value : [r.value]).map((v) =>
+      canonicalRating(String(v)),
+    );
+    const bound = want[0] ?? "";
+    const order = RATING_LEVELS.map((l) => l.value);
+    switch (r.op) {
+      case "in":
+      case "is":
+        return want.includes(have);
+      case "notIn":
+      case "isNot":
+        return !want.includes(have);
+      case "gte":
+        return have !== NOT_RATED && order.indexOf(have) >= order.indexOf(bound);
+      case "lte":
+        return have !== NOT_RATED && order.indexOf(have) <= order.indexOf(bound);
+    }
+    return false;
   }
 
   function evaluate(spec: CollectionSpec) {
@@ -1544,6 +1628,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       names: [
         "cache",
         "catalog",
+        "database",
         "debrid",
         "hwaccel",
         "indexers",
@@ -1555,6 +1640,28 @@ export function createFakeServer(opts: FakeOptions = {}) {
       version: state.boot.version,
       sections: {
         cache: { used: 87 * 1024 ** 3, budget: state.config.cache.budgetBytes },
+        database: state.clustered
+          ? { clustered: true, state: "ok", reachable: true, held: 0 }
+          : {
+              clustered: false,
+              state: "ok",
+              reachable: true,
+              integrity: opts.damagedDatabase
+                ? {
+                    ok: false,
+                    findings: [
+                      "*** in database main ***",
+                      "Page 4127: btreeInitPage() returns error code 11",
+                    ],
+                    checked: new Date(Date.now() - 20 * 60_000).toISOString(),
+                    tookSeconds: 1.2,
+                  }
+                : {
+                    ok: true,
+                    checked: new Date(Date.now() - 3 * 3600_000).toISOString(),
+                    tookSeconds: 0.9,
+                  },
+            },
         catalog: {
           movies: 24929,
           shows: 24298,
@@ -1583,6 +1690,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
         },
         hwaccel: {
           ffmpeg: "8.0.1",
+          filtersProbed: true,
+          toneMap: ["videotoolbox"],
+          colour: ["zscale", "colorspace", "scale"],
           hwaccel: { name: "videotoolbox", encoders: ["h264_videotoolbox", "hevc_videotoolbox"] },
           enhancement: {
             backend: "nvenc-ngx",
@@ -1623,6 +1733,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
           upnp: { active: true },
           cert: {
             present: true,
+            verified: true,
             subject: "*.abc.plex.direct",
             notBefore: new Date(Date.now() - 30 * 86400000).toISOString(),
             notAfter: new Date(Date.now() + 80 * 86400000).toISOString(),
@@ -1748,12 +1859,12 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const warnings =
       byIP.size > 1
         ? [
-            `nodes reach the internet from different public addresses (${[...byIP]
+            `nodes reach providers from different public addresses (${[...byIP]
               .sort()
               .map(([ip, names]) => `${ip}: ${names.sort().join(", ")}`)
               .join(
                 "; ",
-              )}); debrid providers may flag simultaneous use of one account from several IPs`,
+              )}); a debrid account can be limited when it is used from more than one address`,
           ]
         : undefined;
     return {
@@ -1795,19 +1906,114 @@ export function createFakeServer(opts: FakeOptions = {}) {
     }
   >();
 
+  const ops = createOpsMock({
+    startup: opts.startup,
+    pace: opts.opsPace,
+    viewers: opts.viewers,
+    restore: opts.restore,
+    clustered: () => state.clustered,
+    backups: () => state.backups,
+  });
+
   // ---- Router ------------------------------------------------------------------------
 
   async function handle(method: string, url: URL, body: unknown): Promise<Response> {
     const p = url.pathname.replace(/^\/ether\/api/, "");
+    if (method === "GET" && p.startsWith("/viewer-plex-defaults/")) {
+      const id = Number(p.split("/").pop());
+      return json({
+        hasProfile: false,
+        hasSettings: false,
+        audioLanguage: "",
+        subtitleLanguage: "",
+        subtitleMode: "off",
+        filterMovies: "",
+        filterTelevision: "",
+        allowSync: null,
+        ...(state.plexDefaults[id] ?? {}),
+      });
+    }
+    if (
+      state.streamDefaults &&
+      p === "/stream-preferences/0" &&
+      (method === "GET" || method === "PUT")
+    ) {
+      if (method === "PUT" && body && typeof body === "object") {
+        state.streamDefaults = {
+          ...state.streamDefaults,
+          ...(body as NonNullable<typeof state.streamDefaults>),
+        };
+      }
+      return json(state.streamDefaults);
+    }
     const q = url.searchParams;
     const seg = p.split("/").filter(Boolean);
     const route = `${method} /${seg.join("/")}`;
+
+    if (p === "/frontends/dlna/guest" && method === "POST") {
+      const viewer: Viewer = {
+        id: 100 + state.dlnaGuests.length,
+        plexId: 0,
+        username: "",
+        title: "Living-room guest",
+        isOwner: false,
+        accessStatus: "active",
+        plays30d: 0,
+        hoursWatched30d: 0,
+      };
+      state.dlnaGuests.push(viewer);
+      return json(viewer, 201);
+    }
+
+    if (p === "/me/favorites-mirror") {
+      if (method === "POST") state.favoritesMirror.set(1, (body as { enabled: boolean }).enabled);
+      return json({ enabled: state.favoritesMirror.get(1) ?? true });
+    }
+
+    const appsOffset = seg[0] === "me" ? 1 : seg[0] === "viewers" && seg[1] ? 2 : -1;
+    if (appsOffset >= 0 && seg[appsOffset] === "apps") {
+      const enabled = ["jellyfin", "emby", "silo", "stremio", "webdav", "m3u"].filter(
+        (id) => state.config.frontends?.[id]?.enabled,
+      );
+      if (method === "GET" && seg.length === appsOffset + 1) return json({ apps: enabled });
+      const surface = seg[appsOffset + 1];
+      if (method === "POST" && surface && enabled.includes(surface)) {
+        const qr =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+        const id = seg[0] === "viewers" ? seg[1] : "1";
+        if (surface === "webdav")
+          return json({
+            surface,
+            url: "http://ether.local/webdav/",
+            username: id,
+            password: "mock-app-password",
+            qr,
+          });
+        if (surface === "jellyfin" || surface === "emby" || surface === "silo") {
+          const viewer = state.users.find((u) => String(u.id) === id) ?? state.users[0];
+          return json({
+            surface,
+            url: `http://ether.local/${surface}`,
+            username: viewer?.username || id,
+            password: "mock-app-password",
+            qr,
+          });
+        }
+        const path =
+          surface === "m3u" ? "m3u/mock-grant/playlist.m3u" : "stremio/mock-grant/manifest.json";
+        return json({ surface, url: `http://ether.local/${path}`, qr });
+      }
+      return err(404, "not_found", "app unavailable");
+    }
 
     const cached = cacheMock(method, seg, body, state.config, state.clustered);
     if (cached) return json(cached.body, cached.status);
 
     const site = sites.handle(method, seg, body, state.config);
     if (site) return json(site.body, site.status);
+
+    const cal = calendar.handle(method, seg, q);
+    if (cal) return json(cal.body, cal.status);
 
     const tvr = liveTV.handle(method, seg, q, body);
     if (tvr) return json(tvr.body, tvr.status);
@@ -1825,8 +2031,142 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const mr = maintenance.handle(method, seg, body);
     if (mr) return json(mr.body, mr.status);
 
+    const mockConnectUrls = (id: string, port?: number) => {
+      if (port) return [`http://192.168.1.20:${port}`];
+      if (id === "stremio" || id === "webdav" || id === "dlna" || id === "m3u") {
+        return [`http://192.168.1.20:32550/${id}`];
+      }
+      return [];
+    };
+    const protocolDefs = [
+      { id: "plex", name: "Plex", defaultPort: 32400 },
+      { id: "jellyfin", name: "Jellyfin", defaultPort: 8096 },
+      { id: "emby", name: "Emby", defaultPort: 8097 },
+      { id: "stremio", name: "Stremio" },
+      { id: "silo", name: "Silo", defaultPort: 8090 },
+      { id: "dlna", name: "DLNA" },
+      { id: "webdav", name: "Files (WebDAV)" },
+      { id: "m3u", name: "M3U & XMLTV" },
+    ];
+    if (seg[0] === "frontends" && seg.length === 1 && method === "GET") {
+      return json(
+        protocolDefs.map((descriptor) => {
+          const entry = state.config.frontends?.[descriptor.id];
+          const enabled =
+            entry?.enabled ?? (state.config.frontends == null && descriptor.id === "plex");
+          const port = state.config.frontendPorts?.[descriptor.id] ?? descriptor.defaultPort;
+          return {
+            descriptor,
+            enabled,
+            status: {
+              addresses: enabled && port ? [`127.0.0.1:${port}`] : [],
+              connectUrls: enabled ? mockConnectUrls(descriptor.id, port) : [],
+              lan: "unknown",
+              wan: "unknown",
+              clients24h: 0,
+              clients24hKnown: true,
+              liveStreams: 0,
+              liveStreamsKnown: true,
+              targetVersion: "",
+              conformance: "unknown",
+            },
+          };
+        }),
+      );
+    }
+    if (seg[0] === "frontends" && seg.length === 3) {
+      const [, id, action] = seg;
+      const descriptor = protocolDefs.find((item) => item.id === id);
+      if (!descriptor) return err(404, "not_found", "Front end not found");
+      if (action === "status" && method === "GET") {
+        const enabled =
+          state.config.frontends?.[id!]?.enabled ??
+          (state.config.frontends == null && id === "plex");
+        const port = state.config.frontendPorts?.[id!] ?? descriptor.defaultPort;
+        return json({
+          addresses: enabled && port ? [`127.0.0.1:${port}`] : [],
+          connectUrls: enabled ? mockConnectUrls(id ?? "", port) : [],
+          lan: "unknown",
+          wan: "unknown",
+          clients24h: 0,
+          clients24hKnown: true,
+          liveStreams: 0,
+          liveStreamsKnown: true,
+          targetVersion: "",
+          conformance: "unknown",
+        });
+      }
+      if (action === "settings" && method === "GET")
+        return json({
+          ...state.config.frontends?.[id!]?.settings,
+          ...((state.config.frontendPorts?.[id!] ?? descriptor.defaultPort)
+            ? { port: state.config.frontendPorts?.[id!] ?? descriptor.defaultPort }
+            : {}),
+        });
+      const entries =
+        state.config.frontends ?? (state.config.frontends = { plex: { enabled: true } });
+      const entry = entries[id!] ?? (entries[id!] = { enabled: false });
+      if (action === "settings" && method === "PUT") {
+        const { port, ...settings } = body as Record<string, unknown>;
+        entry.settings = settings;
+        if (typeof port === "number") (state.config.frontendPorts ??= {})[id!] = port;
+        return json({ ok: true });
+      }
+      if (
+        action === "enabled" &&
+        method === "PUT" &&
+        typeof (body as { enabled?: unknown }).enabled === "boolean"
+      ) {
+        entry.enabled = (body as { enabled: boolean }).enabled;
+        return json({ ok: true });
+      }
+    }
+
     // Static routes
     switch (route) {
+      case "GET /availability/titles":
+        return json([
+          {
+            key: "1",
+            title: "Ready Movie",
+            year: 2026,
+            theatrical: 1_760_000_000,
+            digital: 1_762_000_000,
+            code: "playable",
+            source: "Indexer One",
+          },
+          {
+            key: "2",
+            title: "Waiting Movie",
+            year: 2026,
+            theatrical: 1_761_000_000,
+            code: "searching",
+            nextCheck: Math.floor(Date.now() / 1000) + 7200,
+          },
+          {
+            key: "3",
+            title: "Theatre Movie",
+            year: 2026,
+            theatrical: 1_762_500_000,
+            code: "theatrical",
+          },
+          {
+            key: "4",
+            title: "Quality Movie",
+            year: 2026,
+            theatrical: 1_760_500_000,
+            code: "quality",
+            reason: "cam",
+          },
+        ]);
+      case "GET /availability/title/1":
+        return json({ code: "playable" });
+      case "GET /availability/summary":
+        return json({
+          ready: 12,
+          waiting: 34,
+          lastChecked: Math.floor(Date.now() / 1000) - 300,
+        });
       case "GET /availability":
         return json({
           mode: state.config.availability?.verify
@@ -1848,10 +2188,14 @@ export function createFakeServer(opts: FakeOptions = {}) {
               message: "Ready to monitor",
               matched: 0,
             })),
-          usage: {},
+          usage: { feedRequests: 12 },
           counts: {},
           recent: [],
           day: new Date().toISOString().slice(0, 10),
+          effort: state.config.availability?.effort || "normal",
+          effectiveFeedRequests: state.config.availability?.feedRequests ?? 100,
+          effectivePollMinutes: state.config.availability?.pollMinutes ?? 30,
+          effectiveMaxPages: state.config.availability?.maxPages ?? 3,
         });
       case "POST /availability/sync":
         return state.config.availability?.monitor
@@ -1862,6 +2206,113 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return json(state.boot);
       case "GET /dashboard":
         return json(dashboard());
+      case "GET /stats/infrastructure":
+        return json({
+          month: "2026-10",
+          monthPlays: 40,
+          notes: null,
+          snapshots: {
+            providers: {
+              at: 1_762_000_000,
+              data: [
+                {
+                  id: "p1",
+                  name: "Primary news",
+                  host: "news.example.com",
+                  state: "ok",
+                  backfill: false,
+                  avgLatency: 42_000_000,
+                  bytes: 0,
+                  articles: 0,
+                  misses: 0,
+                  errors: 0,
+                },
+                {
+                  id: "p2",
+                  name: "Block account",
+                  host: "block.example.net",
+                  state: "ok",
+                  backfill: true,
+                  avgLatency: 80_000_000,
+                  bytes: 0,
+                  articles: 0,
+                  misses: 0,
+                  errors: 0,
+                },
+              ],
+            },
+            indexers: {
+              at: 1_762_000_000,
+              data: [
+                {
+                  indexer: "Indexer One",
+                  hitsUsed: 12,
+                  hitsRemaining: 88,
+                  grabsUsed: 2,
+                  grabsRemaining: 18,
+                },
+              ],
+            },
+          },
+          providerMonth: [
+            {
+              id: "p1",
+              bytes: 80 * 1073741824,
+              articles: 12000,
+              misses: 40,
+              errors: 1,
+              backfillSaves: 3,
+              bodyMisses: 30,
+              bodyTakedowns: 0,
+            },
+          ],
+          indexerMonth: [
+            {
+              indexer: "Indexer One",
+              searches: 400,
+              successes: 360,
+              grabs: 20,
+              grabSuccess: 18,
+              budgets: 0,
+              latencyMs: 180,
+              ageSeconds: 0,
+              ageSamples: 0,
+            },
+          ],
+          costs: [{ kind: "provider", id: "p1", monthly: 10, currency: "USD" }],
+          failovers: 2,
+          failedPlays: 1,
+          providerDays: [
+            {
+              id: "p1",
+              day: "2026-10-18",
+              bytes: 40 * 1073741824,
+              articles: 6000,
+              misses: 10,
+              errors: 0,
+            },
+            {
+              id: "p1",
+              day: "2026-10-19",
+              bytes: 40 * 1073741824,
+              articles: 6000,
+              misses: 30,
+              errors: 1,
+            },
+          ],
+          indexerDays: [
+            {
+              indexer: "Indexer One",
+              day: "2026-10-19",
+              searches: 400,
+              successes: 360,
+              grabs: 20,
+              latencyMs: 72000,
+            },
+          ],
+        });
+      case "PUT /stats/costs":
+        return json({ ok: true });
       case "GET /config":
         return json({ config: state.config });
       case "PUT /config":
@@ -1886,6 +2337,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
       case "POST /plex/pin":
         return json({ id: "pin1", code: "WXYZ", authUrl: "https://app.plex.tv/auth#?code=WXYZ" });
       case "POST /plex/claim":
+        state.config.plex.claimed = true;
+        if (!state.config.plex.token) state.config.plex.token = "••••";
+        if (!state.config.plex.ownerUsername) state.config.plex.ownerUsername = "owner";
         return json({ ok: true });
       case "POST /auth/pin":
         return json({ handle: "h1", code: "ABCD", authUrl: "https://app.plex.tv/auth#?code=ABCD" });
@@ -1906,14 +2360,126 @@ export function createFakeServer(opts: FakeOptions = {}) {
       }
       case "GET /system/load":
         return json(mockSystemLoad(Date.now()));
+      case "POST /outbound/check": {
+        const posted = body as { enabled?: boolean; url?: string };
+        if (posted?.enabled && posted.url === "http://down") {
+          return json({
+            sourceError: "proxy did not answer",
+            publishedIp: "203.0.113.7",
+            remoteAccess: true,
+            proxyEnabled: true,
+          });
+        }
+        if (posted?.enabled) {
+          return json({
+            sourceIp: "198.51.100.20",
+            publishedIp: "203.0.113.7",
+            remoteAccess: true,
+            proxyEnabled: true,
+          });
+        }
+        return json({
+          sourceIp: "203.0.113.7",
+          publishedIp: "203.0.113.7",
+          remoteAccess: true,
+          proxyEnabled: false,
+        });
+      }
       case "POST /test/usenet":
       case "POST /test/indexer":
       case "POST /test/debrid":
       case "POST /test/tmdb":
+      case "POST /test/introdb":
       case "POST /test/llm":
       case "POST /test/trakt":
       case "POST /test/opensubtitles":
         return json({ ok: true, durationMs: 40 + (hash(route) % 200) });
+      case "GET /playback/policy":
+        return json({
+          apps: [
+            {
+              protocol: "plex",
+              name: "Plex Web",
+              devices: ["Browser"],
+              videoCodecs: [],
+              subtitles: ["srt"],
+              directPlay: "browser",
+              note: "",
+              certification: "builtin",
+            },
+            {
+              protocol: "jellyfin",
+              name: "Jellyfin TV",
+              devices: ["Android TV"],
+              videoCodecs: [],
+              subtitles: ["srt"],
+              directPlay: "reported",
+              note: "",
+              certification: "pending",
+            },
+            {
+              protocol: "jellyfin",
+              name: "Swiftfin",
+              devices: ["Apple TV"],
+              videoCodecs: [],
+              subtitles: [],
+              directPlay: "reported",
+              note: "",
+              certification: "pending",
+            },
+            {
+              protocol: "stremio",
+              name: "Stremio TV",
+              devices: ["Android TV"],
+              videoCodecs: [],
+              subtitles: ["srt"],
+              directPlay: "stream",
+              note: "",
+              certification: "builtin",
+            },
+          ],
+          devices: [
+            {
+              name: "Apple TV",
+              id: "apple-tv",
+              dolbyVisionProfiles: [5, 8],
+              subtitleCodecs: ["srt"],
+              videoCodecs: ["h264", "hevc"],
+              maxHeight: 2160,
+              hdr10: true,
+              dolbyVision: true,
+              builtinMaxHeight: 2160,
+              builtinHdr10: true,
+              builtinDolbyVision: true,
+              notes:
+                "Dolby Vision profile 7 uses a compatible HDR base layer; TrueHD requires an audio transcode unless declared supported.",
+            },
+            {
+              name: "Android TV",
+              dolbyVisionProfiles: [],
+              subtitleCodecs: ["srt"],
+              notes: "Text is served separately; image subtitles require explicit client support.",
+            },
+            {
+              name: "Browser",
+              dolbyVisionProfiles: [],
+              subtitleCodecs: ["srt"],
+              notes: "Browser codec declarations govern playback; text subtitles remain sidecars.",
+            },
+          ],
+          observed: [
+            { protocol: "jellyfin", name: "Jellyfin TV", lastSeen: "2026-10-31T12:00:00Z" },
+          ],
+        });
+      case "GET /playback/prowlarr":
+        return json({ config: {}, status: "" });
+      case "POST /playback/prowlarr/tags":
+        return json({
+          tags: [
+            { id: 1, label: "ether" },
+            { id: 2, label: "anime" },
+          ],
+        });
       case "POST /playback/prowlarr": {
         const req = body as {
           config?: { dailyLimit?: number; dailyGrabs?: number };
@@ -2155,22 +2721,32 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const groups =
           (body as { exclusions: { mediaType: string; match: string; rules: Rule[] }[] })
             .exclusions ?? [];
-        const items = catalog.filter((t) =>
-          groups.some(
-            (g) =>
+        const hits = (g: (typeof groups)[number]) =>
+          catalog.filter(
+            (t) =>
               (g.mediaType === "mixed" || g.mediaType === t.type) &&
               (g.match === "any"
                 ? g.rules.some((r) => fieldValues(t, r.field).length > 0 && matches(t, r))
                 : g.rules.every((r) => fieldValues(t, r.field).length > 0 && matches(t, r))),
-          ),
-        );
+          );
+        const items = catalog.filter((t) => groups.some((g) => hits(g).includes(t)));
+        const shown = catalog.filter((t) => !items.includes(t));
         return json({
           total: catalog.length,
           hidden: items.length,
+          visible: shown.length,
           movies: items.filter((t) => t.type === "movie").length,
           shows: items.filter((t) => t.type === "show").length,
+          rules: groups.map((g) => {
+            const hit = hits(g);
+            return {
+              movies: hit.filter((t) => t.type === "movie").length,
+              shows: hit.filter((t) => t.type === "show").length,
+            };
+          }),
           unknownCountry: catalog.filter((t) => !fieldValues(t, "country").length).length,
           items: items.slice(0, 48).map(card),
+          shown: shown.slice(0, 48).map(card),
         });
       }
       case "GET /catalog/browse": {
@@ -2178,11 +2754,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const type = q.get("type");
         const genre = q.get("genre");
         const decade = q.get("decade");
+        const waiting = q.get("waiting") === "1";
         const sort = q.get("sort");
         const items = catalog.filter(
           (t) =>
             t.title.toLowerCase().includes(needle) &&
             (!type || t.type === type) &&
+            (!waiting || t.type === "movie") &&
             (!genre || t.genres?.includes(genre)) &&
             (!decade || decadeOf(t.year) === decade),
         );
@@ -2221,6 +2799,25 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const facet = q.get("facet");
         const type = q.get("type");
         const pool = catalog.filter((t) => !type || type === "mixed" || t.type === type);
+        if (facet === "contentRating") {
+          const level = (t: FakeTitle) => fieldValues(t, "contentRating")[0];
+          return json({
+            values: [
+              ...RATING_LEVELS.map((l) => ({
+                key: l.value,
+                title: l.labels,
+                count: pool.filter((t) => level(t) === l.value).length,
+                labels: [...l.labels.split(" · "), ...(MOCK_EQUIVALENTS[l.value] ?? [])],
+              })),
+              {
+                key: NOT_RATED,
+                title: NOT_RATED,
+                count: pool.filter((t) => level(t) === NOT_RATED).length,
+                labels: [NOT_RATED],
+              },
+            ],
+          });
+        }
         const counts = new Map<string, number>();
         for (const t of pool) {
           const vals =
@@ -2283,7 +2880,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       }
       case "GET /viewers":
         return json({
-          viewers: VIEWERS.map((v, i) => ({
+          viewers: [...VIEWERS, ...state.dlnaGuests].map((v, i) => ({
             ...v,
             thumb: avatarFor(v.title),
             lastActive: new Date(Date.now() - (i * 7 + 1) * 3600_000).toISOString(),
@@ -2452,6 +3049,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
     }
     if (seg[0] === "catalog" && seg[1] === "title" && seg[2]) {
       const t = byKey.get(decodeURIComponent(seg[2]));
+      const followed = t ? null : calendar.title(decodeURIComponent(seg[2]));
+      if (followed) return json(followed);
       if (!t) return err(404, "not_found", "no such title");
       return json({
         ...card(t),
@@ -2465,6 +3064,11 @@ export function createFakeServer(opts: FakeOptions = {}) {
       const id = Number(seg[1]);
       const v = VIEWERS.find((x) => x.id === id);
       if (!v) return err(404, "not_found", "no such viewer");
+      if (seg[2] === "favorites-mirror") {
+        if (method === "POST")
+          state.favoritesMirror.set(id, (body as { enabled: boolean }).enabled);
+        return json({ enabled: state.favoritesMirror.get(id) ?? true });
+      }
       if (!seg[2] && method === "GET") {
         const recent = pickTitles(`recent${id}`, 8).map((t, i) => ({
           title: card(t),
@@ -2569,8 +3173,18 @@ export function createFakeServer(opts: FakeOptions = {}) {
     }
     if (seg[0] === "config" && seg[1] && method === "PUT") {
       const key = seg[1] === "opensubtitles" ? "openSubtitles" : seg[1];
-      (state.config as unknown as Record<string, unknown>)[key] = body;
-      return json({ section: key, value: body });
+      let value = body;
+      if (
+        key === "plex" &&
+        body !== null &&
+        typeof body === "object" &&
+        !Array.isArray(body) &&
+        (body as { claimed?: boolean }).claimed === false
+      ) {
+        value = { ...(body as Record<string, unknown>), token: "" };
+      }
+      (state.config as unknown as Record<string, unknown>)[key] = value;
+      return json({ section: key, value });
     }
     if (seg[0] === "cluster" && seg[1] === "join-tokens" && seg[2] && method === "DELETE") {
       if (!state.clustered) return err(409, "not_clustered", "clustering is not enabled");
@@ -2588,6 +3202,60 @@ export function createFakeServer(opts: FakeOptions = {}) {
         name: seg[1],
         value: (dashboard().sections as Record<string, unknown>)[seg[1]] ?? null,
       });
+    if (seg[0] === "me") {
+      const sub = seg.slice(1).join("/");
+      if (method === "POST" && sub === "login") return json({ token: "viewer-grant" });
+      if (method === "POST" && sub === "pin")
+        return json({ handle: "pin1", code: "ABCD", authUrl: "https://plex.example/auth" });
+      if (method === "GET" && sub === "pin/pin1")
+        return json({ done: true, token: "viewer-grant" });
+      if (method === "GET" && sub === "") return json({ id: 1, username: "alice", title: "Alice" });
+      if (method === "POST" && sub === "quickconnect") {
+        const code = String((body as { code?: string } | null)?.code ?? "");
+        if (code === "EXPIRED") return err(400, "expired", "code expired");
+        if (code === "USEDUP") return err(400, "used", "code already used");
+        if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return err(400, "invalid", "invalid code");
+        return json({ ok: true, device: "Living Room Apple TV", app: "Jellyfin" });
+      }
+      if (method === "GET" && sub === "identities")
+        return json({ identities: [{ id: 1, provider: "plex", display: "alice" }] });
+      if (method === "GET" && sub === "devices")
+        return json({
+          devices: [
+            {
+              hash: "abc",
+              surface: "jellyfin",
+              client: "Apple TV",
+              product: "Jellyfin",
+              version: "1",
+              lastUsed: Date.now(),
+            },
+          ],
+        });
+      if (sub === "favorite-episode-alert") return json({ enabled: false });
+      if (method === "POST" && sub === "invite/redeem") return json({ token: "viewer-grant" });
+      if (method === "POST" && sub === "password") return json({ ok: true });
+      if (method === "POST" && sub === "devices/revoke") return json({ ok: true });
+    }
+    if (seg[0] === "users" && seg[1] && seg[2] === "identities" && method === "GET")
+      return json({ identities: [{ id: 1, provider: "local", display: "owner" }] });
+    if (
+      seg[0] === "users" &&
+      seg[1] &&
+      seg[2] === "devices" &&
+      seg.length === 3 &&
+      method === "GET"
+    )
+      return json({ devices: [] });
+    if (seg[0] === "users" && seg[1] && seg[2] === "password" && method === "POST")
+      return json({ ok: true });
+    if (seg[0] === "users" && seg[1] && seg[2] === "devices" && seg[3] === "revoke")
+      return json({ ok: true });
+    const viewerHidden = /^\/viewers\/(\d+)\/not-interested(?:\/restore)?$/.exec(p);
+    if (viewerHidden && (method === "GET" || method === "POST")) {
+      if (method === "GET") return json({ items: [] });
+      return json({ restored: true });
+    }
     return err(404, "not_found", "no such API endpoint");
   }
 
@@ -2612,6 +3280,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
     if (opts.latencyMs)
       await new Promise((r) => setTimeout(r, opts.latencyMs! * (0.5 + Math.random())));
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const seg = url.pathname
+      .replace(/^\/ether\/api/, "")
+      .split("/")
+      .filter(Boolean);
+    const gate = ops.handle(method, seg, body, new Headers(init?.headers ?? req?.headers));
+    if (gate === UNREACHABLE) throw new TypeError("Failed to fetch");
+    if (gate) return json(gate.body, gate.status);
     return handle(method, url, body);
   }
 

@@ -3,6 +3,8 @@ package config
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,6 +120,20 @@ func (s *Store) KeyFingerprint() string { return KeyFingerprint(s.credentialKey)
 // cluster join-token issuer needs it; never log or store it.
 func (s *Store) CredentialKey() []byte { return append([]byte(nil), s.credentialKey...) }
 
+// DerivedKey is an HMAC of the unexported credential key. Callers use it as a
+// node-shared secret without receiving the credential key itself.
+func (s *Store) DerivedKey(label string) []byte {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	key := append([]byte(nil), s.credentialKey...)
+	s.mu.RUnlock()
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(label))
+	return mac.Sum(nil)
+}
+
 // Seal encrypts plain with the credential key, bound to name.
 func (s *Store) Seal(name string, plain []byte) (string, error) {
 	return sealBytes(s.credentialKey, name, plain)
@@ -147,6 +163,10 @@ func (o SharedOptions) withDefaults() SharedOptions {
 // ErrKeyMismatch when the cluster was sealed with another credential key.
 // Until ctx ends it then follows changes made by other nodes.
 func (s *Store) AttachShared(ctx context.Context, b SharedBackend, o SharedOptions) error {
+	return s.policyUpdate(func() error { return s.attachShared(ctx, b, o) })
+}
+
+func (s *Store) attachShared(ctx context.Context, b SharedBackend, o SharedOptions) error {
 	if b == nil {
 		return errors.New("config: no shared settings backend")
 	}
@@ -191,6 +211,7 @@ func (s *Store) AttachShared(ctx context.Context, b SharedBackend, o SharedOptio
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, doc.Version
+	s.generation++
 	s.shared, s.sharedOpts = b, o
 	saveErr := s.save()
 	subs := append([]func(Config){}, s.subs...)
@@ -298,6 +319,10 @@ func (s *Store) watchShared(ctx context.Context, every time.Duration) {
 // RefreshShared applies the stored shared settings if another node changed
 // them, notifying subscribers. It is a no-op on a standalone server.
 func (s *Store) RefreshShared(ctx context.Context) error {
+	return s.policyUpdate(func() error { return s.refreshShared(ctx) })
+}
+
+func (s *Store) refreshShared(ctx context.Context) error {
 	s.writeMu.Lock()
 	s.mu.RLock()
 	b, have := s.shared, s.sharedVer
@@ -327,6 +352,7 @@ func (s *Store) RefreshShared(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, doc.Version
+	s.generation++
 	changed := !sameConfig(before, next)
 	var saveErr error
 	if changed {
@@ -363,6 +389,7 @@ func (s *Store) updateClustered(fn func(*Config) error) error {
 			s.writeMu.Unlock()
 			return err
 		}
+		DropFrontendServerNames(&next)
 		newShared := SharedJSON(next)
 		if bytes.Equal(newShared, SharedJSON(base)) {
 			break
@@ -397,6 +424,7 @@ func (s *Store) updateClustered(fn func(*Config) error) error {
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, ver
+	s.generation++
 	saveErr := s.save()
 	subs := append([]func(Config){}, s.subs...)
 	n := s.notifier

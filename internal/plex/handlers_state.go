@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"sort"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
+	watchstate "github.com/braedonsaunders/ether/internal/state"
 )
 
 // stateKey reads the item key from ratingKey= or key=.
@@ -42,6 +45,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	unlockOwner, locked := s.lockPlaybackRequest(w, r)
 	if !locked {
 		return
@@ -59,7 +63,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	// A late stop from an explicitly superseded playback must not stop the
 	// replacement source or overwrite its progress. Unknown/omitted IDs keep
 	// the historical behavior for clients with different request identities.
-	if s.playbackOwners.stale(pr.User.ID, pr.ClientID, key, pr.SessionID) {
+	if s.playbackOwners.Stale(pr.User.ID, pr.ClientID, key, pr.SessionID) {
 		s.cleanSupersededEncoders(ctx, pr.User.ID, pr.ClientID, key, pr.SessionID)
 		s.sessions.remove(trackID(pr.User.ID, pr.ClientID, pr.SessionID))
 		s.writeEmpty(w, r)
@@ -69,38 +73,23 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	duration := msParam(q.Get("duration"))
 	user := pr.User
 	s.log.Debug("playback timeline", "user", user.ID, "client", pr.ClientID, "key", key, "state", state, "position", offset, "duration", duration)
-
-	if s.d.State != nil && key.Kind() != core.KindExtra {
-		if err := s.d.State.Progress(ctx, user.ID, key, offset, duration, state); err != nil {
-			s.log.Warn("record progress", "key", key, "err", err)
-		}
-	}
 	var ps *core.PlaySession
 	if s.d.Playback != nil {
 		if p, ok := s.d.Playback.SessionFor(user.ID, pr.ClientID, key); ok {
 			ps = p
-			if state != "stopped" {
-				s.ensureTrickplay(ctx, p, offset)
-			}
-			if t, ok := s.d.Playback.(SessionToucher); ok && (state == "playing" || state == "paused") {
-				t.Touch(p.ID)
-			}
 		}
+	}
+	if !s.reportBrokerTimeline(ctx, pr, key, offset, duration, state, sanitizeSessionID(q.Get("session"))) {
+		s.log.Warn("timeline report", "key", key, "state", state)
 	}
 	tids := s.transcodes.forClient(user.ID, pr.ClientID, key)
 	for _, id := range tids {
-		if e, ok := s.transcodes.get(id); ok && s.playbackOwners.stale(user.ID, pr.ClientID, key, e.playbackID) {
+		if e, ok := s.transcodes.get(id); ok && s.playbackOwners.Stale(user.ID, pr.ClientID, key, e.playbackID) {
 			s.cleanSupersededEncoders(ctx, user.ID, pr.ClientID, key, e.playbackID)
 			continue
 		}
 		s.transcodes.touch(id, s.now())
-		if s.d.Transcoder != nil {
-			if output, ok := s.d.Transcoder.Session(id); ok {
-				if activity, ok := output.(core.SessionActivity); ok {
-					activity.PlaybackState(state)
-				}
-			}
-		}
+		sessions.NotifyTranscodeActivity(s.d.Transcoder, id, state)
 	}
 	pqItem, _ := strconv.ParseInt(q.Get("playQueueItemID"), 10, 64)
 	if pqItem > 0 {
@@ -123,7 +112,6 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			s.cl.forwardStop(r.Context(), tid, offset)
 		}
 		if ps != nil {
-			s.d.Playback.Stop(ps.ID)
 			s.cancelTrickplayIfIdle(ps)
 		}
 		for _, id := range tids {
@@ -135,7 +123,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 				if s.d.Transcoder != nil {
 					s.d.Transcoder.Stop(id)
 				}
-				s.transcodes.remove(id)
+				s.dropTranscode(id)
 			}
 			unlock()
 		}
@@ -170,13 +158,6 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			s.cl.poke() // share starts and state changes now; positions ride the heartbeat
 		}
 	}
-	if progress, ok := s.d.Playback.(core.PlaybackTimeline); ok {
-		progress.PlaybackProgress(user.ID, pr.ClientID, key, offset, state)
-	}
-	if hook := s.d.Hooks.OnTimeline; hook != nil {
-		u := *user
-		s.goHook("OnTimeline", func() { hook(&u, key, offset, duration, state) })
-	}
 	s.observePlaybackReported(pr)
 	s.write(w, r, mc)
 }
@@ -185,6 +166,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -205,6 +187,7 @@ func (s *Server) handleUnscrobble(w http.ResponseWriter, r *http.Request) { s.sc
 func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -247,13 +230,16 @@ func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) 
 			s.goHook("OnScrobble", func() { hook(&u, key) })
 		}
 	}
-	w.WriteHeader(http.StatusOK)
+	// An empty body has no Content-Type. tvOS treats that PUT as a failure
+	// and leaves the button on the label it had when the detail opened.
+	s.writeEmpty(w, r)
 }
 
 // handleRate is /:/rate?key=&rating= (0-10, -1 clears).
 func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -296,6 +282,7 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRemoveFromContinueWatching(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -318,6 +305,7 @@ func (s *Server) handleRemoveFromContinueWatching(w http.ResponseWriter, r *http
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	entries := s.sessionEntries(ctx)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].sessionKey < entries[j].sessionKey })
 	mc := &model.MediaContainer{}
@@ -386,6 +374,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	mc := &model.MediaContainer{}
 	if s.d.State == nil || pr.User == nil {
 		s.write(w, r, mc)
@@ -496,15 +485,22 @@ func (s *Server) terminateLocal(sid, reason string) bool {
 				return false
 			}
 			defer unlock()
-			if s.playbackOwners.stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
+			if s.playbackOwners.Stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
 				s.cleanSupersededEncoders(s.ctx, e.user.ID, e.client.ClientID, e.key, e.client.SessionID)
 				return true
 			}
 
 			s.setTermination(e.id, reason)
 			if s.d.Playback != nil {
-				if ps, ok := s.d.Playback.SessionFor(e.user.ID, e.client.ClientID, e.key); ok {
-					s.d.Playback.Stop(ps.ID)
+				if ps, ok := s.d.Playback.SessionFor(e.user.ID, e.client.ClientID, e.key); ok && ps != nil {
+					if stop, ok := s.playbackBroker.(interface {
+						StopPlayback(context.Context, string) bool
+					}); ok {
+						if !stop.StopPlayback(s.ctx, ps.ID) {
+							s.adoptBrokerTimeline(s.ctx, &Request{User: &e.user, ClientID: e.client.ClientID, SessionID: e.client.SessionID}, e.key)
+							stop.StopPlayback(s.ctx, ps.ID)
+						}
+					}
 				}
 			}
 			return true

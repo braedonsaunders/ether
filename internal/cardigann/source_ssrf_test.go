@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"sync/atomic"
 	"testing"
@@ -63,29 +63,35 @@ func TestInstallFromSourceBlocksPrivateDownloadURL(t *testing.T) {
 func TestInstallFromSourceWithConfiguredProxyBlocksMetadataBeforeProxy(t *testing.T) {
 	ctx := context.Background()
 	var proxyHits atomic.Int32
-	// Proxy fake funcional: encaminha a URL absoluta que recebe. O
-	// listing (origem confiável do dono) passa por ele legitimamente;
-	// a URL metadata do listing, não — é recusada antes do proxy.
-	direct := &http.Client{Transport: &http.Transport{Proxy: nil}}
+	// The listing is a public name, so the configured proxy stays on
+	// the route and answers it. The metadata URL from that listing is
+	// refused before the proxy is asked.
 	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxyHits.Add(1)
-		resp, err := direct.Get(r.URL.String())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+		if r.URL.Path != "/listing" {
+			http.Error(w, "unexpected "+r.URL.Path, http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		w.WriteHeader(resp.StatusCode)
-		_, _ = w.Write(body)
+		json.NewEncoder(w).Encode([]map[string]string{
+			{"name": "evil.yml", "type": "file", "sha": "sha-1", "download_url": "http://169.254.169.254/latest/meta-data/evil.yml"},
+		})
 	}))
 	defer proxySrv.Close()
 	proxyURL, _ := url.Parse(proxySrv.URL)
 
-	src := sourceWithDownloadURL(t, "http://169.254.169.254/latest/meta-data/evil.yml")
 	s := newTestService(t, config.IndexerSites{})
-	s.sourceHC = (&safefetch.Guard{}).Client(&http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}})
-	s.ApplyConfig(config.Config{IndexerSites: config.IndexerSites{DefinitionsURL: src.URL + "/listing"}})
+	// A loopback listing stays direct. This listing is a public name so
+	// the configured proxy is on the route; the proxy answers it.
+	s.sourceHC = (&safefetch.Guard{LookupIP: func(_ context.Context, host string) ([]netip.Addr, error) {
+		if host == "definitions.example" {
+			return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+		}
+		if ip, err := netip.ParseAddr(host); err == nil {
+			return []netip.Addr{ip}, nil
+		}
+		return nil, errors.New("unresolved")
+	}}).Client(&http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}})
+	s.ApplyConfig(config.Config{IndexerSites: config.IndexerSites{DefinitionsURL: "http://definitions.example/listing"}})
 	if _, err := s.Catalog(ctx, false); err != nil {
 		t.Fatalf("catalog via proxy: %v", err)
 	}

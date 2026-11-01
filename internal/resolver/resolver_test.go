@@ -266,22 +266,43 @@ func TestResolveValidatesLeadingCandidatesConcurrentlyInRankOrder(t *testing.T) 
 func TestResolveCamGating(t *testing.T) {
 	ctx := context.Background()
 	cam := []core.Release{rel("cam1", "The.Signal.1999.CAM.x264-GRP", 1500)}
+	title := matrixTitle()
 	svc := New(&fakeIndexer{releases: cam}, fakeHealth{}, nil, testCfg(), Options{})
-	_, err := svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	_, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
 	if !errors.Is(err, core.ErrNotAvailable) {
 		t.Fatalf("cam default err=%v", err)
 	}
-	// Allow cams globally and in the profile.
+	// No profile allows cinema recordings, so the title is unavailable for everyone.
+	if known, avail := svc.Available(ctx, title.Key); !known || avail {
+		t.Fatalf("cam-only title known=%v avail=%v", known, avail)
+	}
+
+	// A profile that allows CAM plays it. There is no global switch.
 	cfg := testCfg()
-	cfg.Resolver.AllowCam = true
 	for i := range cfg.Quality.Profiles {
 		cfg.Quality.Profiles[i].AllowCam = true
 		cfg.Quality.Profiles[i].MinSizeMBPerMin = 1
 	}
 	svc = New(&fakeIndexer{releases: cam}, fakeHealth{}, nil, cfg, Options{})
-	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
 	if err != nil || res.Release.ID != "cam1" {
 		t.Fatalf("cam allowed res=%+v err=%v", res, err)
+	}
+
+	// One other profile still allows CAM, so a refusing profile does not
+	// hide the title from everyone.
+	cfg = testCfg()
+	cfg.Quality.Profiles[0].AllowCam = true
+	for i := range cfg.Quality.Profiles {
+		cfg.Quality.Profiles[i].MinSizeMBPerMin = 1
+	}
+	svc = New(&fakeIndexer{releases: cam}, fakeHealth{}, nil, cfg, Options{})
+	_, err = svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
+	if !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("refusing profile err=%v", err)
+	}
+	if known, avail := svc.Available(ctx, title.Key); known && !avail {
+		t.Fatalf("cam hidden for everyone while another profile allows it: known=%v avail=%v", known, avail)
 	}
 }
 
@@ -889,5 +910,83 @@ func TestRemote4KProfileDoesNotDemote2160pUnderDefault8MbpsCap(t *testing.T) {
 	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: caps})
 	if err != nil || res.Release.ID != "uhd-18gb" {
 		t.Fatalf("remote 4K profile picked %+v (err=%v), want uhd-18gb", res, err)
+	}
+}
+
+func TestConvertSurroundAudioDeviceRulePrefersSameTierAAC(t *testing.T) {
+	ctx := context.Background()
+	cfg := testCfg()
+	cfg.Quality.Default = "4K"
+	cfg.Quality.Profiles = []core.QualityProfile{{
+		Name:             "4K",
+		MinHeight:        720,
+		MaxHeight:        2160,
+		AllowHDR:         true,
+		AllowDolbyVision: true,
+		PreferredSources: []core.Source{core.SourceWEBDL},
+		PreferredCodecs:  []string{"hevc", "h264"},
+		PreferredAudio:   []string{"eac3", "ac3", "aac"},
+		MinSizeMBPerMin:  1,
+		MaxSizeMBPerMin:  200,
+	}}
+	idx := &fakeIndexer{releases: []core.Release{
+		rel("ddp", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 4500),
+		rel("aac", "The.Signal.1999.1080p.WEB-DL.AAC2.0.H.264-GRP", 4200),
+	}}
+	infuseCaps := func() core.ClientCaps {
+		return core.ClientCaps{
+			Protocol:    "jellyfin",
+			Product:     "Infuse-Direct",
+			Platform:    "tvOS",
+			MaxHeight:   2160,
+			HDR10:       true,
+			DolbyVision: true,
+			VideoCodecs: []string{"h264", "hevc"},
+			AudioCodecs: []string{"aac", "ac3", "eac3", "truehd", "dts", "flac"},
+			Containers:  []string{"mkv", "mp4"},
+		}
+	}
+
+	// Without ConvertSurroundAudio: prefers DDP5.1 (eac3) per profile PreferredAudio.
+	svcOff := New(idx, fakeHealth{}, nil, cfg, Options{})
+	capsOff := ApplyClientRules(cfg.Quality, infuseCaps(), nil)
+	resOff, err := svcOff.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: capsOff})
+	if err != nil || resOff.Release.ID != "ddp" {
+		t.Fatalf("without toggle: winner=%+v err=%v, want ddp", resOff, err)
+	}
+
+	// With ConvertSurroundAudio: strips surround codecs from caps and prefers same-tier AAC release.
+	cfgOn := cfg
+	cfgOn.Quality.Rules = []config.QualityRule{{
+		Protocol:             "jellyfin",
+		Product:              "Infuse",
+		Profile:              "4K",
+		ConvertSurroundAudio: true,
+	}}
+	svcOn := New(idx, fakeHealth{}, nil, cfgOn, Options{})
+	capsOn := ApplyClientRules(cfgOn.Quality, infuseCaps(), nil)
+	for _, surr := range []string{"eac3", "ac3", "dts", "dtshd", "dca", "truehd"} {
+		if capsOn.SupportsAudio(surr) {
+			t.Fatalf("capsOn still supports surround codec %s: %+v", surr, capsOn.AudioCodecs)
+		}
+	}
+	if !capsOn.SupportsAudio("aac") {
+		t.Fatalf("capsOn should still support aac: %+v", capsOn.AudioCodecs)
+	}
+	resOn, err := svcOn.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: capsOn})
+	if err != nil || resOn.Release.ID != "aac" {
+		t.Fatalf("with toggle (same tier): winner=%+v err=%v, want aac", resOn, err)
+	}
+
+	// When only an EAC3 release exists at the higher tier, keeps the higher video tier
+	// so the transcoder can copy video and convert audio to AAC.
+	idxOnlySurround4K := &fakeIndexer{releases: []core.Release{
+		rel("uhd-ddp", "The.Signal.1999.2160p.WEB-DL.DDP5.1.HEVC-GRP", 12000),
+		rel("hd-aac", "The.Signal.1999.1080p.WEB-DL.AAC2.0.H.264-GRP", 4200),
+	}}
+	svcTier := New(idxOnlySurround4K, fakeHealth{}, nil, cfgOn, Options{})
+	resTier, err := svcTier.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: capsOn})
+	if err != nil || resTier.Release.ID != "uhd-ddp" {
+		t.Fatalf("with toggle (higher tier surround): winner=%+v err=%v, want uhd-ddp", resTier, err)
 	}
 }

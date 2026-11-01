@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
@@ -71,6 +72,80 @@ func TestEmbeddedSubtitleServedFromSession(t *testing.T) {
 	streamRec := f.get(t, streamKey+"?format=vtt")
 	if streamRec.Code != 200 || !contains(streamRec.Body.String(), "Hello world") {
 		t.Fatalf("GET %s returned %d: %q", streamKey, streamRec.Code, streamRec.Body.String())
+	}
+}
+
+// TestDirectPlayEmbeddedTextIsSidecar is Plex Web and Plex for Android
+// selecting an embedded SRT or ASS during direct play. The decision must
+// name a sidecar URL, and that URL must return the cues. Bitmap PGS is
+// burned into the picture instead.
+func TestDirectPlayEmbeddedTextIsSidecar(t *testing.T) {
+	f, _ := newSubtitleFixture(t)
+	const vtt = sampleVTT
+	f.srv.d.Transcoder = &extractTranscoder{fakeTranscoder: f.trans, out: vtt}
+	f.trans.decision = core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: "mkv"}
+	f.playback.info = core.MediaInfo{
+		Container: "mkv", Duration: 14 * time.Minute, BitrateKbps: 4000,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 800, Default: true},
+			{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+			{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en"},
+			{Index: 3, Type: "subtitle", Codec: "ass", Language: "fr"},
+			{Index: 4, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "es"},
+		},
+	}
+	key := fightClub.Key
+	meta := f.get(t, "/library/metadata/"+key.String())
+	tags := subtitleTags(meta.Body.String())
+	srtID := subtitleChoice(tags, "eng", false)
+	assID := subtitleChoice(tags, "fre", false)
+	pgsID := ""
+	for _, tag := range tags {
+		if strings.Contains(tag, `codec="pgs"`) {
+			pgsID = streamAttr(tag, "id")
+		}
+	}
+	if srtID == "" || assID == "" || pgsID == "" {
+		t.Fatalf("metadata subtitle ids srt=%q ass=%q pgs=%q tags=%q", srtID, assID, pgsID, tags)
+	}
+
+	clients := []struct {
+		name, protocol string
+		hdr            []string
+	}{
+		{"web", "dash", []string{"X-Plex-Product", "Plex Web", "X-Plex-Platform", "Chrome", "X-Plex-Client-Identifier", "web-subs"}},
+		{"android", "hls", []string{"X-Plex-Product", "Plex for Android (Mobile)", "X-Plex-Platform", "Android", "X-Plex-Client-Identifier", "android-subs"}},
+	}
+	for _, c := range clients {
+		for _, id := range []string{srtID, assID} {
+			rec := f.get(t, fmt.Sprintf("/video/:/transcode/universal/decision?path=/library/metadata/%s&protocol=%s&directPlay=1&directStream=1&session=%s-%s&subtitleStreamID=%s", key, c.protocol, c.name, id, id), c.hdr...)
+			if rec.Code != 200 {
+				t.Fatalf("%s decision %d: %s", c.name, rec.Code, rec.Body.String())
+			}
+			selected := selectedTag(subtitleTags(rec.Body.String()))
+			if !strings.Contains(selected, `location="sidecar"`) || !strings.Contains(selected, `key="/library/streams/`) || strings.Contains(selected, `location="direct"`) {
+				t.Fatalf("%s embedded text decision: %s", c.name, selected)
+			}
+			streamKey := streamAttr(selected, "key")
+			got := f.get(t, streamKey, c.hdr...)
+			if got.Code != 200 || !contains(got.Body.String(), "Hello world") {
+				t.Fatalf("%s GET %s: %d %q", c.name, streamKey, got.Code, got.Body.String())
+			}
+		}
+	}
+
+	f.trans.decision = core.Decision{Kind: core.DecisionTranscode, VideoCodec: "h264", AudioCodec: "aac", Container: "mpegts", BurnSubtitles: true}
+	rec := f.get(t, fmt.Sprintf("/video/:/transcode/universal/decision?path=/library/metadata/%s&protocol=dash&directPlay=0&directStream=1&session=web-pgs&subtitleStreamID=%s", key, pgsID),
+		"X-Plex-Product", "Plex Web", "X-Plex-Platform", "Chrome", "X-Plex-Client-Identifier", "web-subs")
+	selected := selectedTag(subtitleTags(rec.Body.String()))
+	if !strings.Contains(selected, `decision="burn"`) || !strings.Contains(selected, `location="segments-video"`) {
+		t.Fatalf("web PGS burn decision: %s\n%s", selected, rec.Body.String())
+	}
+	rec = f.get(t, fmt.Sprintf("/video/:/transcode/universal/decision?path=/library/metadata/%s&protocol=hls&directPlay=0&directStream=1&session=and-pgs&subtitleStreamID=%s", key, pgsID),
+		"X-Plex-Product", "Plex for Android (Mobile)", "X-Plex-Platform", "Android", "X-Plex-Client-Identifier", "android-subs")
+	selected = selectedTag(subtitleTags(rec.Body.String()))
+	if !strings.Contains(selected, `decision="burn"`) || !strings.Contains(selected, `location="segments-video"`) {
+		t.Fatalf("android PGS burn decision: %s\n%s", selected, rec.Body.String())
 	}
 }
 

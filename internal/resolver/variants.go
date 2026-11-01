@@ -57,22 +57,85 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 	}
 	strict = pinFirst(strict, pinID)
 	pool := strict
-	// The alternative pool may exceed the profile's height cap (a 4K pick
-	// on a 1080p remote profile), but never the client's own limits; every
-	// other acceptability rule still applies. Resolve honours the pick via
-	// ResolveRequest.Prefer's profile-gate bypass.
-	if relaxed, ok := relaxedVariantProfile(profile, req.Client); ok {
-		pool, _, err = s.rankCandidates(ctx, req, sreq, relaxed, results, nil, pinID)
-		if err != nil {
-			return nil, err
+	// Taller tiers (a 4K copy on a 1080p profile) are listed only when the
+	// owner opts in. The relaxed pool still stops at the client's own
+	// limits, and HDR policy and size limits stay on the strict profile.
+	// Without the opt-in, Resolve also refuses a Play Version pick above
+	// that ceiling (resolver.go).
+	allowTaller := s.resolverCfg().OfferHigherVersions
+	if allowTaller {
+		if relaxed, ok := relaxedVariantProfile(profile, req.Client); ok {
+			pool, _, err = s.rankCandidates(ctx, req, sreq, relaxed, results, nil, pinID)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
-	return pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max), nil
+	vs := pickVariants(req.Title, req.Client, profile, strict[0].rel, pool, strict, s.sameQualityAlternatives(), max, allowTaller)
+	labelPlayedAuto(req.Title, vs, req.PlayedRelease, results, s.LookupRelease)
+	return vs, nil
+}
+
+// labelPlayedAuto aligns Auto with the release this viewer actually played
+// when Auto resolved past its first candidate (including onto a same-quality
+// alternative row in Auto's own tier) or an earlier Auto pick ranks
+// differently now. Explicit versions in another quality tier or cut keep
+// Auto's own label and attributes.
+func labelPlayedAuto(t *core.Title, vs []core.ReleaseVariant, played string, results []core.Release, lookup func(string) (core.Release, bool)) {
+	if played == "" || len(vs) == 0 || !vs[0].Auto || vs[0].Release.ID == played {
+		return
+	}
+	for _, v := range vs[1:] {
+		if v.Release.ID == played {
+			if variantKey(v.Release.Info) != variantKey(vs[0].Release.Info) {
+				return // an explicit tier or cut version the client marks as played
+			}
+			vs[0] = core.ReleaseVariant{
+				ID:      v.Release.ID,
+				Label:   autoLabel(v.Release),
+				Edition: v.Release.Info.Edition,
+				Auto:    true,
+				Release: v.Release,
+				Info:    v.Info,
+			}
+			return
+		}
+	}
+	apply := func(r core.Release) {
+		info := estimateVariantInfo(t, sizedForEpisode(r))
+		for _, v := range vs[1:] {
+			if strings.EqualFold(strings.TrimSpace(v.Release.Name), strings.TrimSpace(r.Name)) && v.Release.Name != "" {
+				info = v.Info
+				break
+			}
+		}
+		vs[0] = core.ReleaseVariant{
+			ID:      r.ID,
+			Label:   autoLabel(r),
+			Edition: r.Info.Edition,
+			Auto:    true,
+			Release: r,
+			Info:    info,
+		}
+	}
+	for _, r := range results {
+		if r.ID == played {
+			apply(r)
+			return
+		}
+	}
+	if lookup != nil {
+		if r, ok := lookup(played); ok {
+			apply(r)
+		}
+	}
 }
 
 // relaxedVariantProfile raises the profile's height cap to the client's
-// own maximum so taller tiers can be offered as explicit picks. It
-// reports false when nothing changes.
+// own maximum so taller tiers can be offered as explicit picks. HDR
+// policy and size limits are left as the owner set them. It reports
+// false when nothing changes. Callers use it only when the owner has
+// opted in to offering higher versions.
 func relaxedVariantProfile(profile core.QualityProfile, caps core.ClientCaps) (core.QualityProfile, bool) {
 	clientMax := caps.MaxHeight
 	if clientMax <= 0 {
@@ -130,7 +193,7 @@ func variantKey(info core.ReleaseInfo) string {
 // distinct cut, and any remaining distinct tiers. Tiers are best-scored
 // first within each slot and deduplicated by (edition, quality tier); the
 // alternatives come from the strict profile pool, in rank order.
-func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfile, auto core.Release, pool, strict []candidate, alternatives, max int) []core.ReleaseVariant {
+func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfile, auto core.Release, pool, strict []candidate, alternatives, max int, allowTaller bool) []core.ReleaseVariant {
 	usedRel := map[string]bool{}
 	usedKey := map[string]bool{}
 	var out []core.ReleaseVariant
@@ -149,6 +212,9 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 		}
 	}
 	add := func(rel core.Release, kind string, isAuto bool) bool {
+		if !isAuto && releaseAboveProfile(rel, t, profile, allowTaller) {
+			return false
+		}
 		if len(out) >= tierMax || usedRel[rel.ID] || usedKey[variantKey(rel.Info)] {
 			return false
 		}
@@ -190,6 +256,16 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 	// first menu entry stay on Auto. They share Auto's variantKey, so none
 	// of them can be a tier above.
 	alts := pickAlternatives(auto, strict, alternatives, max-len(out))
+	if len(alts) > 0 {
+		kept := alts[:0]
+		for _, rel := range alts {
+			if releaseAboveProfile(rel, t, profile, false) {
+				continue
+			}
+			kept = append(kept, rel)
+		}
+		alts = kept
+	}
 	if len(alts) == 0 {
 		return out
 	}
@@ -232,6 +308,32 @@ func pickAlternatives(auto core.Release, ranked []candidate, limit, room int) []
 // name (case-insensitive) and its size.
 func releaseIdentity(rel core.Release) string {
 	return strings.ToLower(strings.TrimSpace(rel.Name)) + "|" + strconv.FormatInt(rel.Size, 10)
+}
+
+// releaseAboveProfile reports a release Play Version must not list.
+// Height is waived only when the owner opted in. HDR policy and the
+// size ceiling always stand, including for that opt-in. Auto is never
+// passed here.
+func releaseAboveProfile(rel core.Release, t *core.Title, profile core.QualityProfile, allowTaller bool) bool {
+	info := rel.Info
+	if !allowTaller && profile.MaxHeight > 0 && info.Height > profile.MaxHeight {
+		return true
+	}
+	if info.DolbyVision && !profile.AllowDolbyVision && !(info.HDR10 && profile.AllowHDR) {
+		return true
+	}
+	if info.HDR10 && !info.DolbyVision && !profile.AllowHDR {
+		return true
+	}
+	size := sizedForEpisode(rel).Size
+	if size > 0 && t != nil && t.Runtime > 0 {
+		mbPerMin := float64(size) / (1 << 20) / t.Runtime.Minutes()
+		_, cfgMax := profile.SizeBoundsFor(t)
+		if maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, info); maxMBPerMin > 0 && mbPerMin > maxMBPerMin {
+			return true
+		}
+	}
+	return false
 }
 
 func canOffer4KHDR(caps core.ClientCaps, profile core.QualityProfile) bool {
@@ -297,16 +399,26 @@ func bestCompat(pool []candidate, caps core.ClientCaps, used map[string]bool) (c
 	return best, found
 }
 
-// variantLabel is the viewer-facing version name, e.g.
-// "4K Dolby Vision Remux" or "Director's Cut — 1080p Blu-ray".
+// variantLabel is the viewer-facing version name (Plex Media@title,
+// Jellyfin and Emby MediaSources[].Name, Silo and Stremio version names):
+// what the release is, with its source and group when the name says, e.g.
+// "Auto · 1080p WEB-DL · DD+ 5.1 · FLUX", "4K Dolby Vision Remux ·
+// FraMeSToR" or "Director's Cut — 1080p Blu-ray · AMIABLE".
 func variantLabel(rel core.Release, kind string) string {
+	group := strings.TrimSpace(rel.Info.Group)
+	withGroup := func(s string) string {
+		if group == "" {
+			return s
+		}
+		return s + " · " + group
+	}
 	switch kind {
 	case "auto":
-		return "Auto / Best for Device"
+		return autoLabel(rel)
 	case "compat":
-		return qualityPhrase(rel.Info) + " (High Compatibility)"
+		return withGroup(qualityPhrase(rel.Info)) + " (High Compatibility)"
 	case "edition":
-		return rel.Info.Edition + " — " + qualityPhrase(rel.Info)
+		return rel.Info.Edition + " — " + withGroup(qualityPhrase(rel.Info))
 	case "alt":
 		return alternativeLabel(rel)
 	}
@@ -314,7 +426,20 @@ func variantLabel(rel core.Release, kind string) string {
 	if rel.Info.Edition != "" {
 		q += " · " + rel.Info.Edition
 	}
-	return q
+	return withGroup(q)
+}
+
+// autoLabel names the release Auto plays, kept short (no size):
+// "Auto · 1080p WEB-DL · DD+ 5.1 · FLUX".
+func autoLabel(rel core.Release) string {
+	parts := []string{"Auto", qualityPhrase(rel.Info)}
+	if a := audioPhrase(rel.Info); a != "" {
+		parts = append(parts, a)
+	}
+	if g := strings.TrimSpace(rel.Info.Group); g != "" {
+		parts = append(parts, g)
+	}
+	return strings.Join(parts, " · ")
 }
 
 // alternativeLabel tells same-quality releases apart: quality, audio, size
@@ -366,8 +491,12 @@ func sizePhrase(size int64) string {
 func qualityPhrase(info core.ReleaseInfo) string {
 	res := "SD"
 	switch {
-	case info.Height >= 2160:
+	case info.Height >= 1800:
 		res = "4K"
+	case info.Height >= 1000:
+		res = "1080p"
+	case info.Height >= 700:
+		res = "720p"
 	case info.Height > 0:
 		res = strconv.Itoa(info.Height) + "p"
 	}
@@ -411,20 +540,23 @@ func sourceWord(s core.Source) string {
 // release size over the title runtime (typical bitrates when unknown).
 func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 	info := rel.Info
-	height := info.Height
+	// Bitrate guesses need a height. The picture shown on a detail page must
+	// not: an unparsed name is not 1080p, and inventing E-AC-3 5.1 is how a
+	// detail promised 1080p EAC3 for a file that played as SD.
+	claimedH := info.Height
+	height := claimedH
 	if height <= 0 {
 		height = 1080
 	}
 	codec := info.VideoCodec
-	if codec == "" {
+	if codec == "" && claimedH >= 2160 {
+		codec = "hevc"
+	} else if codec == "" && claimedH > 0 {
 		codec = "h264"
-		if height >= 2160 {
-			codec = "hevc"
-		}
 	}
 	video := core.StreamInfo{
 		Index: 0, Type: "video", Codec: codec,
-		Width: variantWidth(height), Height: height,
+		Width: variantWidth(claimedH), Height: claimedH,
 		FrameRate: 23.976, BitDepth: 8, Default: true,
 	}
 	if codec == "h264" {
@@ -442,10 +574,10 @@ func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 	video.DolbyVision = info.DolbyVision
 
 	audioCodec := info.AudioCodec
-	if audioCodec == "" {
-		audioCodec = "eac3"
+	channels := channelInfo{}
+	if info.Channels != "" {
+		channels = channelsFromString(info.Channels)
 	}
-	channels := channelsFromString(info.Channels)
 	audio := core.StreamInfo{
 		Index: 1, Type: "audio", Codec: audioCodec,
 		Channels: channels.count, ChannelLayout: channels.layout,
@@ -465,9 +597,6 @@ func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 		bitrate = int(float64(rel.Size) * 8 / dur.Seconds() / 1000)
 	case rel.Size > 0:
 		bitrate = typicalVariantKbps(height, codec)
-		if bitrate > 0 {
-			dur = time.Duration(float64(rel.Size) * 8 / (float64(bitrate) * 1000) * float64(time.Second))
-		}
 	default:
 		bitrate = typicalVariantKbps(height, codec)
 	}
@@ -484,12 +613,19 @@ func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 	if container == "" {
 		container = "mkv"
 	}
+	var streams []core.StreamInfo
+	if claimedH > 0 || codec != "" {
+		streams = append(streams, video)
+	}
+	if audioCodec != "" {
+		streams = append(streams, audio)
+	}
 	return core.MediaInfo{
 		Container:   container,
 		Duration:    dur,
 		Size:        size,
 		BitrateKbps: bitrate,
-		Streams:     []core.StreamInfo{video, audio},
+		Streams:     streams,
 		Estimated:   true,
 	}
 }

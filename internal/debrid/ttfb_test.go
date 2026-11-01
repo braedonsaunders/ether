@@ -2,15 +2,15 @@ package debrid
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// Time to first byte of the head of a file at Play, against fakes with
-// injected latency: a provider API call (link generation) costs
-// apiLatency and every CDN request costs cdnLatency before headers. These
-// are fakes on loopback, not live services; they show the shape of the
-// startup cost, not absolute numbers for any provider.
+// Injected latency of the head of a file at Play. A provider API call
+// (link generation) costs apiLatency and every CDN request costs
+// cdnLatency before headers. The play test sums those delays. It does not
+// compare wall clocks: a loaded runner can make the shorter path look slower.
 const (
 	apiLatency = 120 * time.Millisecond
 	cdnLatency = 40 * time.Millisecond
@@ -41,12 +41,45 @@ var ttfbScenarios = []ttfbScenario{
 	}},
 }
 
+// headTTFB is the wall-clock cost of opening and reading the first bytes.
+// The benchmark uses it. Play-shape tests use headInjected so a slow runner
+// cannot reorder the cases.
 func headTTFB(tb testing.TB, sc ttfbScenario) time.Duration {
+	start := time.Now()
+	playHead(tb, sc, nil)
+	return time.Since(start)
+}
+
+// headInjected is the latency the fakes added during Play: provider Link
+// delay plus CDN header delay. It does not sleep.
+func headInjected(tb testing.TB, sc ttfbScenario) time.Duration {
+	var waited atomic.Int64
+	playHead(tb, sc, &waited)
+	return time.Duration(waited.Load())
+}
+
+func playHead(tb testing.TB, sc ttfbScenario, waited *atomic.Int64) {
+	tb.Helper()
 	r := newEngineRig(tb, 8<<20, -1)
 	r.media.latency = cdnLatency
-	r.provs["realdebrid-0"].delay = apiLatency
+	p := r.provs["realdebrid-0"]
+	p.delay = apiLatency
+	if waited != nil {
+		// Read-ahead starts a variable number of extra range requests before
+		// the first byte returns. Hold it off so the counted delays are the
+		// link refresh and the one range GET the reader is waiting on.
+		cfg := r.svc.Config()
+		cfg.ReadAheadChunks = -1
+		r.svc.UpdateConfig(cfg)
+		sleep := func(d time.Duration) { waited.Add(int64(d)) }
+		r.media.sleep = sleep
+		p.sleep = sleep
+	}
 	pl := sc.prepare(r)
-	start := time.Now()
+	if waited != nil {
+		// Check and Prefetch run before Play. Only the open and the first read count.
+		waited.Store(0)
+	}
 	src, err := r.eng.Open(context.Background(), r.rel.ID, pl)
 	if err != nil {
 		tb.Fatal(err)
@@ -56,23 +89,16 @@ func headTTFB(tb testing.TB, sc ttfbScenario) time.Duration {
 	if _, err := src.ReadAt(buf, 0); err != nil {
 		tb.Fatal(err)
 	}
-	return time.Since(start)
 }
 
 func TestHeadTTFBAtPlay(t *testing.T) {
-	if testing.Short() {
-		t.Skip("timing")
-	}
 	got := map[string]time.Duration{}
 	for _, sc := range ttfbScenarios {
-		got[sc.name] = headTTFB(t, sc)
-		t.Logf("%-12s head TTFB at Play: %v", sc.name, got[sc.name].Round(time.Microsecond))
+		got[sc.name] = headInjected(t, sc)
+		t.Logf("%-12s injected head delay at Play: %v", sc.name, got[sc.name])
 	}
-	if got["prewarmed"] >= got["fresh-link"] || got["fresh-link"] >= got["expired-link"] {
-		t.Fatalf("expected prewarmed < fresh-link < expired-link: %v", got)
-	}
-	if got["fresh-link"] < cdnLatency || got["expired-link"] < apiLatency+cdnLatency {
-		t.Fatalf("latency not injected: %v", got)
+	if got["prewarmed"] != 0 || got["fresh-link"] != cdnLatency || got["expired-link"] != apiLatency+cdnLatency {
+		t.Fatalf("injected delay = %v, want prewarmed 0, fresh-link %v, expired-link %v", got, cdnLatency, apiLatency+cdnLatency)
 	}
 }
 

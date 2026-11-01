@@ -27,7 +27,6 @@ export function MetadataWorkspace({
   return (
     <Workspace
       title={t("Metadata")}
-      subtitle={t("Artwork, rating sources and episode presentation.")}
       actions={
         <>
           {actions}

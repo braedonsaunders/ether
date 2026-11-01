@@ -5,17 +5,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	_ "time/tzdata" // Owner time policies work on hosts without a zoneinfo database.
 
-	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/clusterbus"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -34,6 +36,9 @@ type Policy struct {
 	// AllowedHours is empty for any time, otherwise hours 0..23 in Timezone.
 	AllowedHours []int  `json:"allowedHours"`
 	Timezone     string `json:"timezone"`
+	// AllowDownloads is an owner override of plex.tv allowSync. Nil means
+	// the plex.tv default (and the server AllowFriends setting) still apply.
+	AllowDownloads *bool `json:"allowDownloads,omitempty"`
 }
 
 type Service struct {
@@ -44,6 +49,30 @@ type Service struct {
 
 	invalMu sync.Mutex
 	inval   *clusterbus.Invalidator // nil on a standalone server
+	gen     atomic.Uint64
+
+	plexShare        func(*core.User) PlexShare
+	friendsDownloads func() bool
+	shareCache       map[int64]cachedShare
+
+	playbackMu    sync.Mutex
+	playbackEpoch map[int64]playbackConfirm
+}
+
+// Generation changes when a viewer's safety policy is saved.
+func (s *Service) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
+}
+
+// playbackConfirm is an unrestricted viewer's fenced snapshot at one epoch.
+// A later play re-reads the epoch and skips the write when it has not moved.
+type playbackConfirm struct {
+	epoch  int64
+	user   core.User
+	policy Policy
 }
 
 func New(ctx context.Context, db *sql.DB) (*Service, error) {
@@ -113,7 +142,7 @@ func (p Policy) Validate() error {
 	if p.MaxBitrateKbps < 0 || p.StreamLimit < 0 {
 		return fmt.Errorf("invalid viewer or bitrate")
 	}
-	if p.MaxContentRating != "" && catalog.RatingRank(p.MaxContentRating) == 0 {
+	if p.MaxContentRating != "" && contentrating.LevelOf(p.MaxContentRating) == contentrating.Unrated {
 		return fmt.Errorf("unrecognized rating limit")
 	}
 	for _, h := range p.AllowedHours {
@@ -149,6 +178,7 @@ func (s *Service) Put(ctx context.Context, id int64, p Policy) error {
 	}
 	s.mu.Lock()
 	s.policies[id] = p
+	s.gen.Add(1)
 	s.mu.Unlock()
 	s.invalMu.Lock()
 	iv := s.inval
@@ -170,8 +200,29 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 	if u == nil {
 		return true
 	}
-	p := s.ForUser(u)
-	if catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, p.MaxContentRating) {
+	if !AllowedWithPolicy(u, t, s.ForUser(u)) {
+		return false
+	}
+	compiled := shareFilterFor(t, s.compiledFor(u))
+	if ownerSetsRating(u, s.Get(u.ID)) {
+		compiled.allowRatings = nil
+		compiled.denyRatings = nil
+		compiled.maxRating = ""
+		compiled.minRating = ""
+	}
+	return sharePassesCompiled(t, compiled)
+}
+
+// AllowedWithPolicy evaluates caller-owned policy facts. The caller must
+// separately enforce the catalog visibility gate and durable policy fence.
+func AllowedWithPolicy(u *core.User, t *core.Title, p Policy) bool {
+	if t == nil || t.Adult {
+		return false
+	}
+	if u == nil {
+		return true
+	}
+	if contentrating.Exceeds(t.ContentRating, u.MaxContentRating) || contentrating.Exceeds(t.ContentRating, p.MaxContentRating) {
 		return false
 	}
 	blocked := func(values, bans []string) bool {
@@ -187,10 +238,15 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 	return !blocked(t.Genres, p.BlockedGenres) && !blocked(t.Keywords, p.BlockedKeywords)
 }
 func (s *Service) CanPlay(u *core.User, remote bool, now time.Time) bool {
+	return CanPlayWithPolicy(u, s.ForUser(u), remote, now)
+}
+
+// CanPlayWithPolicy evaluates the same playback rules against an owned policy
+// snapshot. It does not establish freshness or an authorization interval.
+func CanPlayWithPolicy(u *core.User, p Policy, remote bool, now time.Time) bool {
 	if u == nil {
 		return false
 	}
-	p := s.ForUser(u)
 	if remote && p.RemoteDisabled {
 		return false
 	}
@@ -211,6 +267,29 @@ func (s *Service) CanPlay(u *core.User, remote bool, now time.Time) bool {
 		}
 	}
 	return false
+}
+
+// PolicyInTx reads the durable policy row. A missing row is unrestricted.
+func (s *Service) PolicyInTx(ctx context.Context, tx *sql.Tx, viewerID int64) (Policy, error) {
+	if s == nil || tx == nil || viewerID <= 0 {
+		return Policy{}, fmt.Errorf("safety: invalid viewer")
+	}
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT policy FROM safety_policies WHERE user_id=?`, viewerID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Policy{}, nil
+	}
+	if err != nil {
+		return Policy{}, err
+	}
+	var policy Policy
+	if err := json.Unmarshal([]byte(raw), &policy); err != nil {
+		return Policy{}, err
+	}
+	if err := policy.Validate(); err != nil {
+		return Policy{}, err
+	}
+	return policy, nil
 }
 func IsRemote(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -268,6 +347,31 @@ func (s *Service) Handler() http.Handler {
 	return m
 }
 
+// BrowseBlocks is the part of a viewer's policy that library SQL can apply
+// before pagination: blocked genres, blocked keywords, and the rating cap.
+func (s *Service) BrowseBlocks(u *core.User) (genres, keywords []string, maxRating string) {
+	if s == nil || u == nil {
+		return nil, nil, ""
+	}
+	p := s.ForUser(u)
+	return append([]string(nil), p.BlockedGenres...), append([]string(nil), p.BlockedKeywords...), p.MaxContentRating
+}
+
+// BrowseShareFilter is the parsed plex.tv share predicate for one library
+// type, ready to push into catalog SQL. Owner rating caps drop plex.tv
+// rating clauses and keep label clauses.
+func (s *Service) BrowseShareFilter(u *core.User, typ core.MediaType) core.Filter {
+	if s == nil || u == nil {
+		return core.Filter{}
+	}
+	c := s.compiledFor(u)
+	f := c.movies
+	if typ == core.TypeShow || typ == core.TypeSeason || typ == core.TypeEpisode {
+		f = c.tv
+	}
+	return f.forType(typ, ownerSetsRating(u, s.Get(u.ID)))
+}
+
 // ForUser is u's policy.
 func (s *Service) ForUser(u *core.User) Policy {
 	if u == nil {
@@ -276,12 +380,16 @@ func (s *Service) ForUser(u *core.User) Policy {
 	return s.Get(u.ID)
 }
 func (s *Service) UserPolicy(u *core.User) *core.User {
+	return UserPolicyWithPolicy(u, s.ForUser(u))
+}
+
+// UserPolicyWithPolicy applies restrictions from a caller-owned policy copy.
+func UserPolicyWithPolicy(u *core.User, p Policy) *core.User {
 	if u == nil {
 		return nil
 	}
 	out := *u
-	p := s.ForUser(u)
-	if p.MaxContentRating != "" && (out.MaxContentRating == "" || catalog.RatingRank(p.MaxContentRating) < catalog.RatingRank(out.MaxContentRating)) {
+	if p.MaxContentRating != "" && (out.MaxContentRating == "" || contentrating.LevelOf(p.MaxContentRating) < contentrating.LevelOf(out.MaxContentRating)) {
 		out.MaxContentRating = p.MaxContentRating
 	}
 	if p.StreamLimit > 0 && (out.StreamLimit <= 0 || p.StreamLimit < out.StreamLimit) {
@@ -296,5 +404,7 @@ func (s *Service) Restricted(u *core.User) bool {
 		return true
 	}
 	p := s.ForUser(u)
-	return u.MaxContentRating != "" || len(u.AllowedSections) > 0 || p.MaxContentRating != "" || len(p.BlockedGenres) > 0 || len(p.BlockedKeywords) > 0
+	share := s.shareFor(u)
+	return u.MaxContentRating != "" || len(u.AllowedSections) > 0 || p.MaxContentRating != "" || len(p.BlockedGenres) > 0 || len(p.BlockedKeywords) > 0 ||
+		share.FilterMovies != "" || share.FilterTelevision != ""
 }

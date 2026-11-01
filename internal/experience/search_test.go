@@ -1,0 +1,133 @@
+package experience
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/braedonsaunders/ether/internal/core"
+)
+
+func TestSearchDiscoveryAndFallback(t *testing.T) {
+	ctx := context.Background()
+	viewer := &core.User{AllowedSections: []int{1}}
+	called := false
+	s := Search{
+		Visibility: Visibility{SectionFor: func(typ core.MediaType) (int, bool) {
+			if typ == core.TypeMovie {
+				return 1, true
+			}
+			return 2, true
+		}},
+		Natural: func(context.Context, *core.User, string, int) ([]core.Title, bool) {
+			return []core.Title{{Key: 1, Type: core.TypeMovie}, {Key: 2, Type: core.TypeMovie, Adult: true}, {Key: 3, Type: core.TypeShow}}, true
+		},
+		Catalog: func(context.Context, string, []core.MediaType, int) ([]core.Title, error) {
+			called = true
+			return nil, errors.New("catalog failure")
+		},
+	}
+	got, err := s.Find(ctx, viewer, "test", []core.MediaType{core.TypeMovie}, 10)
+	if err != nil || called || len(got) != 1 || got[0].Key != 1 {
+		t.Fatalf("discovery results: %+v, %v, catalog called %v", got, err, called)
+	}
+	s.Natural = nil
+	_, err = s.Find(ctx, viewer, "test", []core.MediaType{core.TypeMovie}, 10)
+	if !called || err == nil {
+		t.Fatal("catalogue errors must propagate")
+	}
+	called = false
+	got, err = s.Find(ctx, viewer, " ", []core.MediaType{core.TypeMovie}, 10)
+	if err != nil || got != nil || called {
+		t.Fatal("blank search must not query catalogue")
+	}
+}
+
+func TestSearchCatalogueEnforcesViewerPolicy(t *testing.T) {
+	s := Search{
+		Visibility: Visibility{SectionFor: func(t core.MediaType) (int, bool) {
+			if t == core.TypeMovie {
+				return 1, true
+			}
+			return 2, true
+		}},
+		Catalog: func(context.Context, string, []core.MediaType, int) ([]core.Title, error) {
+			return []core.Title{{Key: 1, Type: core.TypeMovie}, {Key: 2, Type: core.TypeShow}, {Key: 3, Type: core.TypeMovie, Adult: true}}, nil
+		},
+	}
+	got, err := s.Find(context.Background(), &core.User{AllowedSections: []int{1}}, "query", []core.MediaType{core.TypeMovie}, 10)
+	if err != nil || len(got) != 1 || got[0].Key != 1 {
+		t.Fatalf("unexpected results: %+v, %v", got, err)
+	}
+}
+
+func TestSearchFiltersBeforeLimitAndBackfills(t *testing.T) {
+	ctx := context.Background()
+	parent := core.ShowKey(10)
+	episode := core.Title{Key: 11, ShowKey: parent, Type: core.TypeEpisode}
+	items := []core.Title{episode, {Key: 12, Type: core.TypeMovie}, {Key: 13, Type: core.TypeMovie}}
+	calls := 0
+	s := Search{
+		Visibility: Visibility{
+			GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) { return &core.Title{Adult: true}, nil },
+			FilterAvailable: func(_ context.Context, titles []core.Title) []core.Title {
+				if titles[0].Key == 12 {
+					return nil
+				}
+				return titles
+			},
+		},
+		Catalog: func(_ context.Context, _ string, _ []core.MediaType, limit int) ([]core.Title, error) {
+			calls++
+			return items[:min(limit, len(items))], nil
+		},
+	}
+	got, err := s.Find(ctx, &core.User{}, "query", []core.MediaType{core.TypeMovie, core.TypeEpisode}, 1)
+	if err != nil || len(got) != 1 || got[0].Key != 13 || calls != 3 {
+		t.Fatalf("backfill: %+v, %v, calls %d", got, err, calls)
+	}
+}
+
+func TestSearchUnrestrictedNaturalKeepsLegacyLimitAndTitlePolicy(t *testing.T) {
+	calls := 0
+	s := Search{Unrestricted: func(*core.User) bool { return true }, Natural: func(_ context.Context, _ *core.User, _ string, limit int) ([]core.Title, bool) {
+		calls++
+		if limit != 0 {
+			t.Fatalf("limit=%d", limit)
+		}
+		return []core.Title{{Key: 1, Type: core.TypeMovie}, {Key: 2, Type: core.TypeShow}, {Key: 3, Type: core.TypeMovie, Adult: true}}, true
+	}, Visibility: Visibility{FilterAvailable: func(context.Context, []core.Title) []core.Title {
+		t.Fatal("legacy path requested availability")
+		return nil
+	}}}
+	got, err := s.Find(context.Background(), &core.User{}, "query", []core.MediaType{core.TypeMovie}, 0)
+	if err != nil || calls != 1 || len(got) != 1 || got[0].Key != 1 {
+		t.Fatalf("results=%+v calls=%d err=%v", got, calls, err)
+	}
+}
+
+func TestSearchResolveSourcePrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		collections, handled bool
+		sourceErr            error
+		wantCatalog          bool
+	}{
+		{name: "flat skips collection source", handled: true, wantCatalog: true},
+		{name: "handled empty stays empty", collections: true, handled: true},
+		{name: "unhandled falls back", collections: true, wantCatalog: true},
+		{name: "error stops fallback", collections: true, sourceErr: errors.New("vibe unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			search := Search{Vibe: VibeSearch{Source: fakeVibe{ok: tc.handled, err: tc.sourceErr}}, Catalog: func(context.Context, string, []core.MediaType, int) ([]core.Title, error) {
+				calls++
+				return []core.Title{{Key: 1, Type: core.TypeMovie}}, nil
+			}}
+			result, err := search.Resolve(context.Background(), &core.User{}, "query", []core.MediaType{core.TypeMovie}, 3, tc.collections)
+			if (err != nil) != (tc.sourceErr != nil) || (calls == 1) != tc.wantCatalog || result.CollectionSearch != (tc.collections && tc.handled) {
+				t.Fatalf("result=%+v err=%v catalog calls=%d", result, err, calls)
+			}
+		})
+	}
+}

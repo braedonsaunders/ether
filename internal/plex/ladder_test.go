@@ -134,6 +134,7 @@ func testLadderPlaylistTraversalWithoutPlexHeaders(t *testing.T, container strin
 		u, _ := url.Parse(path)
 		q := u.Query()
 		q.Del(streamGrantParam)
+		q.Del(readCapParam)
 		u.RawQuery = q.Encode()
 		rec = f.request(t, http.MethodGet, u.String(), map[string]string{"X-Plex-Token": ""})
 		if rec.Code != http.StatusUnauthorized {

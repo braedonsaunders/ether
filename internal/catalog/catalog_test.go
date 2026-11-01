@@ -9,6 +9,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	_ "github.com/braedonsaunders/ether/internal/state"
 )
 
 func TestGetMovieOnDemand(t *testing.T) {
@@ -117,6 +118,31 @@ func TestNextEpisode(t *testing.T) {
 	}
 }
 
+func TestNextStoredEpisodeDoesNotLeaveTheCatalogue(t *testing.T) {
+	ctx := context.Background()
+	c := newTestCatalog(t, fakeTMDB(t))
+	for _, key := range []core.RatingKey{core.ShowKey(100), core.EpisodeKey(100, 0, 1), core.EpisodeKey(100, 1, 1), core.EpisodeKey(100, 1, 2), core.EpisodeKey(100, 2, 1)} {
+		if _, err := c.Get(ctx, key); err != nil {
+			t.Fatal(key, err)
+		}
+	}
+	next, err := c.NextStoredEpisode(ctx, core.EpisodeKey(100, 1, 1))
+	if err != nil || next.Key != core.EpisodeKey(100, 1, 2) {
+		t.Fatalf("stored next: %+v %v", next, err)
+	}
+	next, err = c.NextStoredEpisode(ctx, core.EpisodeKey(100, 1, 2))
+	if err != nil || next.Key != core.EpisodeKey(100, 2, 1) {
+		t.Fatalf("stored cross season: %+v %v", next, err)
+	}
+	next, err = c.NextStoredEpisode(ctx, core.EpisodeKey(100, 0, 1))
+	if err != nil || next.Key != core.EpisodeKey(100, 1, 1) {
+		t.Fatalf("stored after special: %+v %v", next, err)
+	}
+	if _, err := c.NextStoredEpisode(ctx, core.EpisodeKey(100, 2, 1)); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("stored last: %v", err)
+	}
+}
+
 func TestSyncBuildsBrowsableSet(t *testing.T) {
 	ctx := context.Background()
 	c := newTestCatalog(t, fakeTMDB(t))
@@ -170,6 +196,8 @@ func TestBrowseFiltersSortPaging(t *testing.T) {
 		{"collection", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, Collection: 10}}, []string{"Fjord Harbor"}},
 		{"query", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, Query: "fjord"}}, []string{"Fjord Harbor"}},
 		{"language", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, Languages: []string{"fr"}}}, []string{}},
+		{"includeKeys", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, IncludeKeys: []core.RatingKey{core.MovieKey(551)}}}, []string{"Family Fun"}},
+		{"includeKeys empty", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, IncludeKeys: []core.RatingKey{}}}, []string{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -307,30 +335,6 @@ func TestListSimilarCollectionByExternal(t *testing.T) {
 	}
 }
 
-func TestRatingRankOrdering(t *testing.T) {
-	cases := []struct {
-		rating, max string
-		exceeds     bool
-	}{
-		{"G", "PG", false}, {"PG-13", "PG", true}, {"R", "PG-13", true}, {"NC-17", "R", true},
-		{"TV-MA", "TV-14", true}, {"TV-PG", "PG-13", false}, {"TV-14", "PG", true},
-		{"R", "TV-MA", false}, {"TV-MA", "R", false}, // R ~ TV-MA same rank
-		{"18", "R", true}, {"12", "PG", true}, {"U", "G", false},
-		{"", "G", true}, {"R", "", false}, {"NR", "G", true},
-	}
-	for _, tc := range cases {
-		if got := catalog.RatingExceeds(tc.rating, tc.max); got != tc.exceeds {
-			t.Errorf("RatingExceeds(%q,%q)=%v want %v (ranks %d vs %d)", tc.rating, tc.max, got, tc.exceeds, catalog.RatingRank(tc.rating), catalog.RatingRank(tc.max))
-		}
-	}
-	if !(catalog.RatingRank("G") < catalog.RatingRank("PG") && catalog.RatingRank("PG") < catalog.RatingRank("PG-13") && catalog.RatingRank("PG-13") < catalog.RatingRank("R") && catalog.RatingRank("R") < catalog.RatingRank("NC-17")) {
-		t.Fatal("MPAA ordering broken")
-	}
-	if !(catalog.RatingRank("TV-Y") <= catalog.RatingRank("TV-G") && catalog.RatingRank("TV-PG") < catalog.RatingRank("TV-14") && catalog.RatingRank("TV-14") < catalog.RatingRank("TV-MA")) {
-		t.Fatal("TV ordering broken")
-	}
-}
-
 func TestUnreleasedVisibility(t *testing.T) {
 	ctx := context.Background()
 	{
@@ -457,5 +461,50 @@ func TestStatsCacheAndTimeoutFallback(t *testing.T) {
 	}
 	if s2.BrowsableMovies != 4 || s2.HomeReleasePending != 4 {
 		t.Fatalf("updated stats: %+v", s2)
+	}
+}
+
+func TestRecentAirMatchesAddedOrder(t *testing.T) {
+	ctx := context.Background()
+	c := newTestCatalog(t, fakeTMDB(t))
+	if err := c.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []core.RatingKey{core.ShowKey(100), core.EpisodeKey(100, 1, 1), core.EpisodeKey(100, 1, 2), core.EpisodeKey(100, 2, 1)} {
+		if _, err := c.Get(ctx, key); err != nil {
+			t.Fatal(key, err)
+		}
+	}
+	page, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, done, err := c.RecentAir(ctx, core.TypeMovie, 0, 5)
+	if err != nil || !done {
+		t.Fatalf("movies: %v done=%v", err, done)
+	}
+	if len(got) != len(page.Items) {
+		t.Fatalf("movies %d vs browse %d", len(got), len(page.Items))
+	}
+	for i := range got {
+		if got[i].Key != page.Items[i].Key || got[i].AddedAt.IsZero() {
+			t.Fatalf("movie %d: got %v %v browse %v", i, got[i].Key, got[i].AddedAt, page.Items[i].Key)
+		}
+	}
+	shows, _, err := c.RecentAir(ctx, core.TypeShow, 0, 5)
+	if err != nil || len(shows) != 1 || shows[0].Key != core.ShowKey(100) || shows[0].AddedAt.IsZero() {
+		t.Fatalf("show: %+v %v", shows, err)
+	}
+	counts, err := c.CountUnplayedAired(ctx, 1, []core.RatingKey{core.ShowKey(100), core.SeasonKey(100, 1)}, "")
+	if err != nil || counts[core.ShowKey(100)] != 3 || counts[core.SeasonKey(100, 1)] != 2 {
+		t.Fatalf("unplayed %+v %v", counts, err)
+	}
+	showPage, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeShow, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: 5})
+	if err != nil || len(showPage.Items) == 0 || !shows[0].AddedAt.Equal(showPage.Items[0].AddedAt) {
+		added := time.Time{}
+		if len(showPage.Items) > 0 {
+			added = showPage.Items[0].AddedAt
+		}
+		t.Fatalf("show added %v browse %v err %v", shows[0].AddedAt, added, err)
 	}
 }

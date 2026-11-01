@@ -324,3 +324,27 @@ func TestRemote4KProfileClearsDefault8MbpsRemoteBitrateCap(t *testing.T) {
 		t.Fatalf("explicit client maxVideoBitrate should be preserved, got %+v", appliedExplicit)
 	}
 }
+
+func TestCapabilityOverrideChangesRegistryAndYieldsToProfile(t *testing.T) {
+	pr := &Request{Product: "Plex for Apple TV", Platform: "tvOS", Device: "Apple TV"}
+	base := pr.ClientCaps(0)
+	if !base.SupportsVideo("hevc") || !base.DolbyVision || base.MaxHeight != 2160 || len(base.DVProfiles) != 0 {
+		t.Fatalf("registry baseline %+v", base)
+	}
+	off := false
+	edited := pr.ClientCapsWith(0, []core.ClientCapabilityOverride{{
+		ID:                  "apple-tv",
+		VideoCodecs:         []string{"h264"},
+		DolbyVisionProfiles: []int{5, 7, 8},
+		DolbyVision:         &off,
+		MaxHeight:           720,
+	}})
+	if edited.SupportsVideo("hevc") || edited.DolbyVision || edited.MaxHeight != 720 || !edited.ExplicitMaxHeight || !slices.Equal(edited.DVProfiles, []int{5, 7, 8}) {
+		t.Fatalf("override %+v", edited)
+	}
+	pr.ProfileExtra = "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=hevc&audioCodec=aac)"
+	runtime := pr.ClientCapsWith(0, []core.ClientCapabilityOverride{{ID: "apple-tv", VideoCodecs: []string{"h264"}}})
+	if !runtime.SupportsVideo("h264") || !runtime.SupportsVideo("hevc") {
+		t.Fatalf("profile extra should add hevc on top of the override: %+v", runtime)
+	}
+}

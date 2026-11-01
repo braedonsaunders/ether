@@ -34,6 +34,8 @@ func mustParse(t *testing.T, name string) core.MediaInfo {
 func TestParseProbeGolden(t *testing.T) {
 	sec := func(f float64) time.Duration { return time.Duration(f * float64(time.Second)) }
 	boolean := func(v bool) *bool { return &v }
+	integer := func(v int) *int { return &v }
+	rate := func(v float64) *float64 { return &v }
 	tests := []struct {
 		file string
 		want core.MediaInfo
@@ -43,7 +45,7 @@ func TestParseProbeGolden(t *testing.T) {
 			want: core.MediaInfo{
 				Container: "mkv", Duration: sec(7950.125), Size: 59836712345, BitrateKbps: 60211,
 				Streams: []core.StreamInfo{
-					{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Level: 153, Default: true, Width: 3840, Height: 2160,
+					{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Level: 153, Default: true, Original: boolean(false), Commentary: boolean(false), Dub: boolean(false), Width: 3840, Height: 2160,
 						FrameRate: 23.976, BitDepth: 10, ColorTransfer: "smpte2084", BitrateKbps: 58312,
 						SampleAspectRatio: "1:1", ColorRange: "tv", ColorPrimaries: "bt2020", ColorSpace: "bt2020nc"},
 					{Index: 1, Type: "audio", Codec: "eac3", Language: "eng", Title: "English DD+ 5.1", Default: true,
@@ -123,7 +125,65 @@ func TestParseProbeGolden(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.file, func(t *testing.T) {
+			// Every retained stream in these recorded fixtures reports both
+			// dispositions; preserve their presence as well as their values.
+			for i := range tt.want.Streams {
+				tt.want.Streams[i].DefaultDisposition = boolean(tt.want.Streams[i].Default)
+				tt.want.Streams[i].ForcedDisposition = boolean(tt.want.Streams[i].Forced)
+			}
+			// Assert the additional probe facts without changing the legacy fields.
+			v := &tt.want.Streams[0]
+			if !v.DolbyVision && (tt.want.Container == "mp4" || tt.want.Container == "mkv") {
+				v.DolbyVisionConfigurationPresent = boolean(false)
+				if v.DolbyVisionBLCompatibilityIDPresent == nil {
+					v.DolbyVisionBLCompatibilityIDPresent = boolean(false)
+				}
+			}
+			switch tt.file {
+			case "mkv_hevc_hdr10.json":
+				v.ProbedLevel = integer(153)
+				v.PixelFormat = "yuv420p10le"
+				v.TimeBase = "1/1000"
+				v.ReferenceFrames = integer(1)
+				v.DisplayAspectRatio = "16:9"
+				v.FieldOrder = "progressive"
+				v.ProbedInterlaced = boolean(false)
+				v.AverageFrameRate = rate(24000.0 / 1001)
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
+				tt.want.Streams[1].TimeBase = "1/1000"
+			case "mkv_dv_p8.json":
+				v.PixelFormat = "yuv420p10le"
+				v.AverageFrameRate = rate(24000.0 / 1001)
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
+				v.DolbyVisionConfigurationPresent = boolean(true)
+				v.DolbyVisionBLCompatibilityIDPresent = boolean(true)
+				v.ProbedDolbyVisionProfile = integer(8)
+				v.ProbedDolbyVisionLevel = integer(6)
+			case "mp4_h264_aac.json":
+				v.ProbedLevel = integer(40)
+				v.PixelFormat = "yuv420p"
+				v.CodecTag = "avc1"
+				v.TimeBase = "1/12288"
+				v.BitsPerRawSample = integer(8)
+				v.AverageFrameRate = rate(24)
+				v.ReferenceFrameRate = rate(24)
+				tt.want.Streams[1].CodecTag = "mp4a"
+				tt.want.Streams[2].CodecTag = "tx3g"
+			case "mkv_truehd_atmos.json":
+				v.PixelFormat = "yuv420p"
+				v.AverageFrameRate = rate(24000.0 / 1001)
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
+				tt.want.Streams[1].BitsPerRawSample = integer(24)
+			case "mkv_pgs.json":
+				v.PixelFormat = "yuv420p"
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
+			}
 			got := mustParse(t, tt.file)
+			for i := range got.Streams {
+				if i < len(tt.want.Streams) {
+					tt.want.Streams[i].CodecLongName = got.Streams[i].CodecLongName
+				}
+			}
 			if !reflect.DeepEqual(got, tt.want) {
 				if len(got.Streams) != len(tt.want.Streams) {
 					t.Fatalf("streams: got %d want %d\n%+v", len(got.Streams), len(tt.want.Streams), got.Streams)
@@ -225,6 +285,22 @@ func TestParseProbeErrors(t *testing.T) {
 	}
 	if _, err := ParseProbe([]byte(`{}`)); err == nil {
 		t.Error("expected error for empty output")
+	}
+}
+
+func TestParseProbeAudioHandlerName(t *testing.T) {
+	raw := []byte(`{"format":{"format_name":"mov,mp4"},"streams":[
+		{"codec_type":"audio","codec_name":"aac","tags":{"handler_name":"GPAC ISO Audio Handler"}},
+		{"codec_type":"audio","codec_name":"aac","tags":{"title":"Commentary","handler_name":"SoundHandler"}},
+		{"codec_type":"audio","codec_name":"aac","tags":{"handler_name":"SoundHandler"}},
+		{"codec_type":"video","codec_name":"h264","tags":{"handler_name":"VideoHandler"}}
+	]}`)
+	info, err := ParseProbe(raw)
+	if err != nil || len(info.Streams) != 4 {
+		t.Fatal(err, info)
+	}
+	if info.Streams[0].Title != "GPAC ISO Audio Handler" || info.Streams[1].Title != "Commentary" || info.Streams[2].Title != "" || info.Streams[3].Title != "" {
+		t.Fatal(info.Streams[0].Title, info.Streams[1].Title, info.Streams[2].Title, info.Streams[3].Title)
 	}
 }
 

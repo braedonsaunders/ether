@@ -41,7 +41,7 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "preloading",
         title: t("Preloading"),
-        keywords: searchTerms(msg("household selection popular movies tv")),
+        keywords: searchTerms(msg("household selection popular movies tv warm arrivals")),
       },
     ],
     keywords: searchTerms(msg("disk budget storage retention prefetch warming next episode")),
@@ -72,14 +72,8 @@ export const PAGES = localized<PageDef[]>(() => [
   {
     href: "/viewers",
     title: t("Viewers"),
-    sections: [
-      { key: "people", title: t("People"), keywords: searchTerms(msg("users friends accounts")) },
-      {
-        key: "defaults",
-        title: t("Defaults"),
-        keywords: searchTerms(msg("audio subtitles language watchlist alerts policy")),
-      },
-    ],
+    sections: [],
+    keywords: searchTerms(msg("users friends accounts people")),
   },
   {
     href: "/home",
@@ -107,13 +101,25 @@ export const PAGES = localized<PageDef[]>(() => [
     ],
   },
   {
+    href: "/calendar",
+    title: t("Calendar"),
+    sections: [
+      { key: "month", title: t("Month"), keywords: searchTerms(msg("schedule grid")) },
+      { key: "week", title: t("Week") },
+      { key: "agenda", title: t("Agenda"), keywords: searchTerms(msg("list upcoming")) },
+    ],
+    keywords: searchTerms(
+      msg("upcoming episodes premieres finales releases airing tonight sonarr radarr schedule"),
+    ),
+  },
+  {
     href: "/catalog",
     title: t("Catalog"),
     sections: [
       {
         key: "settings",
         title: t("Catalog settings"),
-        keywords: searchTerms(msg("tmdb language region popularity")),
+        keywords: searchTerms(msg("tmdb language region popularity new releases playable digital")),
       },
     ],
     keywords: searchTerms(msg("catalogue movies shows browse search library")),
@@ -144,8 +150,17 @@ export const PAGES = localized<PageDef[]>(() => [
     title: t("Sources"),
     sections: [
       {
+        key: "debrid",
+        title: t("Debrid"),
+        keywords: searchTerms(
+          msg(
+            "real-debrid realdebrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent cached",
+          ),
+        ),
+      },
+      {
         key: "usenet",
-        title: t("Usenet providers"),
+        title: t("Usenet"),
         keywords: searchTerms(msg("nntp backfill connections")),
       },
       {
@@ -158,23 +173,9 @@ export const PAGES = localized<PageDef[]>(() => [
         ),
       },
       {
-        key: "debrid",
-        title: t("Debrid"),
-        keywords: searchTerms(
-          msg(
-            "real-debrid realdebrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent cached",
-          ),
-        ),
-      },
-      {
-        key: "availability",
-        title: t("Availability"),
-        keywords: searchTerms(msg("release feeds rss source evidence checks budget")),
-      },
-      {
-        key: "usage",
-        title: t("Usage & costs"),
-        keywords: searchTerms(msg("quota price plan cost")),
+        key: "stats",
+        title: t("Stats"),
+        keywords: searchTerms(msg("quota price plan cost success speed plays failover")),
       },
     ],
   },
@@ -183,35 +184,33 @@ export const PAGES = localized<PageDef[]>(() => [
     title: t("Releases"),
     sections: [
       {
-        key: "quality",
-        title: t("Quality profiles"),
-        keywords: searchTerms(msg("resolution 4k 1080p remote")),
-      },
-      { key: "rules", title: t("Client rules"), keywords: searchTerms(msg("device profile")) },
-      {
-        key: "selection",
-        title: t("Selection rules"),
-        keywords: searchTerms(msg("cam health blocked terms groups")),
+        key: "profiles",
+        title: t("Profiles"),
+        keywords: searchTerms(
+          msg(
+            "quality profiles resolution 4k 1080p remote cam scoring trash custom formats rules ranking",
+          ),
+        ),
       },
       {
-        key: "scoring",
-        title: t("Custom scoring"),
-        keywords: searchTerms(msg("trash custom formats")),
+        key: "devices",
+        title: t("Device rules"),
+        keywords: searchTerms(msg("device client profile")),
       },
       {
-        key: "startup",
-        title: t("Playback start"),
-        keywords: searchTerms(msg("startup race warm")),
+        key: "searching",
+        title: t("Searching"),
+        keywords: searchTerms(msg("how ether searches versions cache health samples candidates")),
+      },
+      {
+        key: "blocklist",
+        title: t("Blocklist"),
+        keywords: searchTerms(msg("blocked bad release unblock terms groups")),
       },
       {
         key: "pinned",
         title: t("Pinned"),
         keywords: searchTerms(msg("pin release override search interactive manual pick find")),
-      },
-      {
-        key: "blocklist",
-        title: t("Blocklist"),
-        keywords: searchTerms(msg("blocked bad release unblock")),
       },
       {
         key: "history",
@@ -227,22 +226,22 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "transcoding",
         title: t("Transcoding"),
-        keywords: searchTerms(msg("ffmpeg hardware gpu bitrate")),
+        keywords: searchTerms(msg("ffmpeg hardware gpu bitrate startup race health")),
       },
       {
         key: "devices",
-        title: t("Device capabilities"),
+        title: t("App compatibility"),
         keywords: searchTerms(msg("compatibility codecs")),
       },
       {
         key: "markers",
-        title: t("Markers"),
+        title: t("Skip buttons"),
         keywords: searchTerms(msg("intro credits skip chapters")),
       },
       {
         key: "subtitles",
-        title: t("Subtitles"),
-        keywords: searchTerms(msg("timing sync opensubtitles")),
+        title: t("Audio & subtitles"),
+        keywords: searchTerms(msg("audio languages subtitles timing sync opensubtitles household")),
       },
     ],
   },
@@ -253,7 +252,7 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "channels",
         title: t("Channels"),
-        keywords: searchTerms(msg("email discord webhook push alerts")),
+        keywords: searchTerms(msg("email discord webhook push alerts watchlist")),
       },
       { key: "report", title: t("Weekly report"), keywords: searchTerms(msg("newsletter digest")) },
       { key: "deliveries", title: t("Delivery history") },
@@ -287,14 +286,9 @@ export const PAGES = localized<PageDef[]>(() => [
     keywords: searchTerms(msg("settings")),
   },
   {
-    href: "/remote-access",
-    title: t("Connectivity"),
+    href: "/apps",
+    title: t("Apps"),
     sections: [
-      {
-        key: "status",
-        title: t("Plex status"),
-        keywords: searchTerms(msg("claim connection checks reachability")),
-      },
       {
         key: "remote",
         title: t("Remote access"),
@@ -305,18 +299,8 @@ export const PAGES = localized<PageDef[]>(() => [
         title: t("Secure connections"),
         keywords: searchTerms(msg("certificate plex.direct tls")),
       },
-      {
-        key: "account",
-        title: t("Plex account"),
-        keywords: searchTerms(msg("owner token claimed")),
-      },
-      {
-        key: "compatibility",
-        title: t("Compatibility"),
-        keywords: searchTerms(msg("pms version")),
-      },
     ],
-    keywords: searchTerms(msg("settings plex")),
+    keywords: searchTerms(msg("settings plex apps protocols")),
   },
   {
     href: "/services",

@@ -23,9 +23,10 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/langtag"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/subtitles"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // SubtitleCatalog is optionally implemented by Deps.Subtitles: the sidecars
@@ -62,6 +63,45 @@ type SubtitleTimeline interface {
 	OpenFormatAt(id, format string, offset time.Duration) (io.ReadCloser, string, error)
 }
 
+// infoWithSelectedSidecar keeps a chosen external subtitle on a metadata
+// stream list. Cached sidecars omit a language the file already embeds, so
+// the next detail response would select that embedded track, or Off when
+// the viewer's subtitle mode is off.
+func infoWithSelectedSidecar(info core.MediaInfo, want *core.StreamInfo) core.MediaInfo {
+	ps := ensureSelectedSidecar(&core.PlaySession{Info: info}, want)
+	if ps == nil {
+		return info
+	}
+	return ps.Info
+}
+
+// ensureSelectedSidecar keeps a viewer's chosen external subtitle on the
+// play session when the probe has no external file of that language.
+// Cached sidecars omit a language the file already embeds, so an embedded
+// PGS (or another track the client cannot draw) would otherwise win the
+// decision and Continue Watching would show no SRT. A probed external of
+// the same language is left alone: the stored choice follows that release
+// sidecar instead of pinning the earlier cached copy beside it.
+func ensureSelectedSidecar(ps *core.PlaySession, want *core.StreamInfo) *core.PlaySession {
+	if ps == nil || want == nil || want.Type != "subtitle" || !want.External || want.ExternalURL == "" {
+		return ps
+	}
+	for _, st := range ps.Info.Streams {
+		if st.Type != "subtitle" || !st.External {
+			continue
+		}
+		if st.ExternalURL == want.ExternalURL || sameLanguage(st.Language, want.Language) {
+			return ps
+		}
+	}
+	cp := *ps
+	streams := make([]core.StreamInfo, len(ps.Info.Streams)+1)
+	copy(streams, ps.Info.Streams)
+	streams[len(ps.Info.Streams)] = *want
+	cp.Info.Streams = streams
+	return &cp
+}
+
 // withCachedSidecars appends the viewer's cached sidecars that info does not
 // already list. It never touches the network.
 func (s *Server) withCachedSidecars(ctx context.Context, u *core.User, t *core.Title, info core.MediaInfo) core.MediaInfo {
@@ -78,87 +118,20 @@ func (s *Server) withCachedSidecars(ctx context.Context, u *core.User, t *core.T
 	return out
 }
 
-// resolveSubtitle finds a chosen subtitle stream in info: the same sidecar
-// source, the same embedded position, else a track of the same language
-// (same kind and forced flag preferred). -1 when info has none.
+// resolveSubtitle finds a chosen subtitle in info by language, codec, and
+// source. The old stream position is only a tie-break. -1 when info has none.
 func resolveSubtitle(want *core.StreamInfo, pos int, info core.MediaInfo) int {
-	if want == nil {
-		if pos >= 0 && pos < len(info.Streams) && info.Streams[pos].Type == "subtitle" {
-			return pos
-		}
-		return -1
-	}
-	if !want.External && pos >= 0 && pos < len(info.Streams) {
-		st := info.Streams[pos]
-		if st.Type == "subtitle" && !st.External && st.Index == want.Index && (want.Language == "" || sameLanguage(st.Language, want.Language)) {
-			return pos
-		}
-	}
-	if want.External && want.ExternalURL != "" {
-		for i, st := range info.Streams {
-			if st.Type == "subtitle" && st.External && st.ExternalURL == want.ExternalURL {
-				return i
-			}
-		}
-	}
-	best, bestScore := -1, 0
-	for i, st := range info.Streams {
-		if st.Type != "subtitle" || !sameLanguage(st.Language, want.Language) {
-			continue
-		}
-		n := 1
-		if st.Forced == want.Forced {
-			n += 4
-		}
-		if st.External == want.External {
-			n += 2
-		}
-		if n > bestScore {
-			best, bestScore = i, n
-		}
-	}
-	return best
+	return experience.ResolveSubtitle(want, pos, info)
 }
 
 // resolveAudio retains the requested language across estimates and releases.
 // Within that language prefer the same codec, channel layout and track label;
 // position breaks ties but can never override a language mismatch.
 func resolveAudio(want *core.StreamInfo, pos int, info core.MediaInfo) int {
-	best, bestScore := -1, -1
-	for i, st := range info.Streams {
-		if st.Type != "audio" {
-			continue
-		}
-		if want.Language == "" {
-			// Without a language, only retain a fully matching track at its position.
-			if i == pos && sameStreamIdentity(*want, st) {
-				return i
-			}
-			continue
-		}
-		tier := langtag.MatchTier(want.Language, st.Language)
-		if tier == 0 {
-			continue
-		}
-		// Exact language/script/region outranks every codec/layout hint.
-		score := tier * 32
-		if st.Codec == want.Codec {
-			score += 8
-		}
-		if st.Channels == want.Channels {
-			score += 4
-		}
-		if st.Title == want.Title {
-			score += 2
-		}
-		if i == pos {
-			score++
-		}
-		if score > bestScore {
-			best, bestScore = i, score
-		}
+	if want == nil {
+		return -1
 	}
-	return best
+	return experience.ResolveAudio(want, pos, info)
 }
 
 // resolveSelection maps stored track identities onto the current positions. A
@@ -181,12 +154,36 @@ func resolveSelection(sel selection, info core.MediaInfo) selection {
 
 // resolvePlaySelection is resolveSelection for a play request.
 func resolvePlaySelection(p *playRequest, info core.MediaInfo) {
-	sel := resolveSelection(selection{audio: p.audioSel, audioSet: p.audioSel >= 0, audioStream: p.audioStream, subtitle: p.subSel, subtitleSet: p.subSet, subtitleStream: p.subStream}, info)
-	p.audioSel = sel.audio
-	p.subSel, p.subSet = sel.subtitle, sel.subtitleSet
+	out, err := experience.TranslatePlexTrackIdentity(experience.PlexIssuedIdentity{
+		Audio: p.audioStream, AudioPosition: p.audioSel, AudioSet: p.audioSel >= 0,
+		Subtitle: p.subStream, SubtitlePosition: p.subSel, SubtitleSet: p.subSet,
+	}, info)
+	if err != nil {
+		return
+	}
+	p.audioSel = out.Audio
+	p.subSel, p.subSet = out.Subtitle, out.SubtitleSet
 	if !p.subSet {
 		p.subSel = -1
 	}
+}
+
+// stampMatroskaVTT maps WebVTT cue times onto segmented Matroska.
+// Cluster timestamps begin at the 10s mux origin (900000 in the 90 kHz
+// clock X-TIMESTAMP-MAP uses). Cue times stay on the title clock, so
+// LOCAL 00:00:00.000 is the first frame of the title, not PTS 0.
+func stampMatroskaVTT(body []byte) []byte {
+	const magic = "WEBVTT"
+	s := string(body)
+	if !strings.HasPrefix(s, magic) {
+		s = magic + "\n\n" + s
+	}
+	if strings.Contains(s, "X-TIMESTAMP-MAP=") {
+		return []byte(s)
+	}
+	rest := strings.TrimPrefix(s[len(magic):], "\r\n")
+	rest = strings.TrimPrefix(rest, "\n")
+	return []byte(magic + "\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:900000\n" + rest)
 }
 
 // subtitleFormat maps a requested subtitle format to one Ether serves.
@@ -385,6 +382,83 @@ func (s *Server) handleSubtitlePick(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// SubtitleUpload is optionally implemented by Deps.Subtitles: Plex Web's
+// "Upload Subtitles" (POST /library/metadata/{key}/subtitles).
+type SubtitleUpload interface {
+	UploadSubtitle(ctx context.Context, t *core.Title, u *core.User, filename, format, language string, body []byte) (core.StreamInfo, error)
+}
+
+const maxUploadBytes = 16 << 20
+
+// handleSubtitleUpload is POST /library/metadata/{key}/subtitles?title=&format=
+// with the file as the body. Matches the Plex Web player modal: empty body
+// is 406, a missing title or a title with no extension is 500, an
+// unaccepted format is 400, and a successful store is 200 with an empty
+// body. The sidecar is selected for the viewer.
+func (s *Server) handleSubtitleUpload(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	pr := FromContext(ctx)
+	t, ok := s.subtitleTitle(r)
+	if !ok || pr.User == nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	// rex-ref has no measurement that shared or managed users can upload
+	// (findings.md "Upload Subtitle modal", protocol-traps.md). Owner only
+	// so a friend cannot change anyone else's pick.
+	if !pr.User.IsOwner {
+		writeHTTPError(w, http.StatusForbidden)
+		return
+	}
+	uploader, ok := s.d.Subtitles.(SubtitleUpload)
+	if !ok {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxUploadBytes+1))
+	if err != nil {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	// PMS: empty body is 406 before the title or format checks.
+	if len(body) == 0 {
+		writeHTTPError(w, http.StatusNotAcceptable)
+		return
+	}
+	if len(body) > maxUploadBytes {
+		writeHTTPError(w, http.StatusRequestEntityTooLarge)
+		return
+	}
+	q := r.URL.Query()
+	title := strings.TrimSpace(q.Get("title"))
+	format := q.Get("format")
+	if title == "" || !strings.Contains(title, ".") {
+		writeHTTPError(w, http.StatusInternalServerError)
+		return
+	}
+	if !subtitles.AcceptsUploadFormat(format) {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	st, err := uploader.UploadSubtitle(ctx, t, pr.User, title, format, q.Get("language"), body)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("subtitle upload failed", "key", t.Key, "err", err)
+		}
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	s.selections.update(pr.User.ID, int64(t.Key), func(sel *selection) {
+		sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, &st
+	})
+	if s.d.TrackPreferences != nil {
+		if err := s.d.TrackPreferences.Remember(ctx, pr.User.ID, t.Key, "subtitle", &st); err != nil {
+			s.log.Warn("save stream preference", "error", err)
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleTranscodeSubtitles is /video/:/transcode/universal/subtitles: the
 // selected subtitle of a transcode session. External sidecars are served
 // with their cues moved back by the session's start offset (the HLS
@@ -393,6 +467,9 @@ func (s *Server) handleSubtitlePick(w http.ResponseWriter, r *http.Request) {
 // when the transcoder supports it; image subtitles and unknown sessions
 // get an empty container.
 func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	pr := FromContext(r.Context())
 	q := r.URL.Query()
 	p, perr := s.parsePlayRequest(r)
@@ -431,6 +508,9 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 			s.writeEmpty(w, r)
 			return
 		}
+		if actual == "vtt" && entry.decision.Container == transcode.ContainerMatroska {
+			body = stampMatroskaVTT(body)
+		}
 		w.Header().Set("Content-Type", subtitleContentTypes[actual])
 		_, _ = w.Write(body)
 		return
@@ -449,14 +529,34 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	reader, actual, err := timeline.OpenFormatAt(st.ExternalURL, subtitleFormat(q.Get("format")), offset)
+	source := ""
+	if keyer, ok := s.d.Playback.(interface{ SourceKey(string) string }); ok {
+		source = keyer.SourceKey(entry.playID)
+	}
+	var reader io.ReadCloser
+	var actual string
+	if from, ok := timeline.(interface {
+		OpenFormatAtFrom(string, string, time.Duration, string) (io.ReadCloser, string, error)
+	}); ok {
+		reader, actual, err = from.OpenFormatAtFrom(st.ExternalURL, subtitleFormat(q.Get("format")), offset, source)
+	} else {
+		reader, actual, err = timeline.OpenFormatAt(st.ExternalURL, subtitleFormat(q.Get("format")), offset)
+	}
 	if err != nil {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
 	defer reader.Close()
+	body, err := io.ReadAll(io.LimitReader(reader, 32<<20))
+	if err != nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	if actual == "vtt" && entry.decision.Container == transcode.ContainerMatroska {
+		body = stampMatroskaVTT(body)
+	}
 	w.Header().Set("Content-Type", subtitleContentTypes[actual])
-	_, _ = io.Copy(w, io.LimitReader(reader, 32<<20))
+	_, _ = w.Write(body)
 }
 
 func (s *Server) extractEmbeddedSubtitle(ctx context.Context, playID string, st core.StreamInfo, format string, offset time.Duration) ([]byte, string, bool) {
@@ -467,6 +567,9 @@ func (s *Server) extractEmbeddedSubtitle(ctx context.Context, playID string, st 
 	input := s.d.Playback.InputURL(playID)
 	if input == "" {
 		return nil, "", false
+	}
+	if keyer, ok := s.d.Playback.(interface{ SourceKey(string) string }); ok {
+		ctx = transcode.WithSubtitleSource(ctx, keyer.SourceKey(playID))
 	}
 	var buf bytes.Buffer
 	if err := ex.ExtractSubtitle(ctx, input, st.Index, st.Codec, &buf); err != nil || buf.Len() == 0 {
@@ -502,18 +605,19 @@ func (s *Server) extractEmbeddedSubtitle(ctx context.Context, playID string, st 
 	return body, format, true
 }
 
-func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, ref streamRef) {
+func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, key core.RatingKey, info core.StreamInfo) {
 	pr := FromContext(r.Context())
-	if pr == nil || pr.User == nil || ref.info.Type != "subtitle" || s.d.Playback == nil {
+	if pr == nil || pr.User == nil || info.Type != "subtitle" || s.d.Playback == nil {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
 	var playID string
 	var offset time.Duration
 	var bestAt time.Time
-	s.transcodes.mu.Lock()
-	for _, e := range s.transcodes.m {
-		if e.userID != pr.User.ID || e.key != ref.key || e.playID == "" {
+	matroska := false
+	for _, id := range s.transcodes.ids() {
+		e, ok := s.transcodes.get(id)
+		if !ok || e.userID != pr.User.ID || e.key != key || e.playID == "" {
 			continue
 		}
 		if pr.ClientID != "" && e.clientID != "" && e.clientID != pr.ClientID {
@@ -521,17 +625,17 @@ func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, ref
 		}
 		if playID == "" || e.updatedAt.After(bestAt) {
 			playID, offset, bestAt = e.playID, e.offset, e.updatedAt
+			matroska = e.decision.Container == transcode.ContainerMatroska
 		}
 	}
-	s.transcodes.mu.Unlock()
 	if playID == "" && pr.ClientID != "" {
-		if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, ref.key); ok && ps != nil {
+		if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, key); ok && ps != nil {
 			playID = ps.ID
 		}
 	}
 	if playID == "" {
 		for _, ps := range s.d.Playback.Sessions() {
-			if ps.UserID == pr.User.ID && ps.Key == ref.key {
+			if ps.UserID == pr.User.ID && ps.Key == key {
 				playID = ps.ID
 				break
 			}
@@ -547,10 +651,13 @@ func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, ref
 	if _, ext, ok := strings.Cut(chi.URLParam(r, "stream"), "."); ok && q.Get("format") == "" {
 		format = subtitleFormat(ext)
 	}
-	body, actual, ok := s.extractEmbeddedSubtitle(r.Context(), playID, ref.info, format, offset)
+	body, actual, ok := s.extractEmbeddedSubtitle(r.Context(), playID, info, format, offset)
 	if !ok {
 		writeHTTPError(w, http.StatusNotFound)
 		return
+	}
+	if actual == "vtt" && matroska {
+		body = stampMatroskaVTT(body)
 	}
 	w.Header().Set("Content-Type", subtitleContentTypes[actual])
 	_, _ = w.Write(body)

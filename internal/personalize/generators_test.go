@@ -288,3 +288,110 @@ func TestOwnerCollectionRows(t *testing.T) {
 		t.Fatalf("owner rows fetched again (%d → %d)", before, cols.calls)
 	}
 }
+
+func TestFavoritesRowIsOwnerPlacedAndPreservesOrder(t *testing.T) {
+	keys := []core.RatingKey{core.MovieKey(1), core.MovieKey(2)}
+	h := newHarness(t, func(o *Options) {
+		o.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) {
+			return []FavoriteSignal{{Key: keys[0], AddedAt: testNow}, {Key: keys[1], AddedAt: testNow.Add(-time.Hour)}}, nil
+		}
+	})
+	// Use catalogue keys known to the harness.
+	h.cat.dataMu.Lock()
+	for _, key := range keys {
+		h.cat.titles[key] = core.Title{Key: key, Type: core.TypeMovie, Title: key.String()}
+	}
+	h.cat.dataMu.Unlock()
+	b := &builder{e: h.e, ctx: context.Background(), user: core.User{ID: 1}}
+	rows := b.genFavorites()
+	if len(rows) != 1 || len(rows[0].items) != 2 || rows[0].items[0].t.Key != keys[0] || !rows[0].keepOrder || rows[0].minItems != 1 {
+		t.Fatalf("favorite rows: %+v", rows)
+	}
+	if len(infoFor(KindFavorites).surfaces) != 0 {
+		t.Fatal("favorites row must not be enabled by default")
+	}
+}
+
+func TestEmptyFavoritesPreservesGeneratedRows(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	user := core.User{ID: 1}
+	before, err := h.e.buildModel(ctx, user, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.e.opts.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) { return []FavoriteSignal{}, nil }
+	after, err := h.e.buildModel(ctx, user, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.rows) != len(after.rows) {
+		t.Fatalf("row count changed: %d vs %d", len(before.rows), len(after.rows))
+	}
+	for i := range before.rows {
+		a, b := before.rows[i], after.rows[i]
+		if a.id != b.id || a.kind != b.kind || len(a.items) != len(b.items) {
+			t.Fatalf("row %d changed", i)
+		}
+		for j := range a.items {
+			if a.items[j].t.Key != b.items[j].t.Key {
+				t.Fatalf("row %d item %d changed", i, j)
+			}
+		}
+	}
+}
+
+func TestFavoriteHistoryPriorityStableAndEmptyParity(t *testing.T) {
+	a, b := core.ShowKey(1), core.ShowKey(2)
+	hist := []core.HistoryEntry{{Key: core.EpisodeKey(1, 1, 1)}, {Key: core.EpisodeKey(2, 1, 1)}, {Key: core.EpisodeKey(2, 1, 2)}, {Key: core.MovieKey(3)}}
+	original := append([]core.HistoryEntry(nil), hist...)
+	prioritizeFavoriteHistory(hist, nil)
+	for i := range hist {
+		if hist[i].Key != original[i].Key {
+			t.Fatal("empty favorites changed order")
+		}
+	}
+	prioritizeFavoriteHistory(hist, []FavoriteSignal{{Key: b}})
+	want := []core.RatingKey{original[1].Key, original[2].Key, original[0].Key, original[3].Key}
+	for i := range want {
+		if hist[i].Key != want[i] {
+			t.Fatalf("order %+v (other show %v)", hist, a)
+		}
+	}
+}
+
+func TestUpNextFavoritesPreserveHistoryOrderWithinGroups(t *testing.T) {
+	h := newHarness(t, nil)
+	a, b, c := showKey(0, 1), showKey(0, 2), showKey(0, 3)
+	for _, show := range []core.RatingKey{a, b, c} {
+		h.cat.addSeason(show, 1, testNow.AddDate(-1, 0, 0))
+	}
+	h.finish(1, core.EpisodeKey(a.TMDB(), 1, 1), testNow.Add(-time.Hour))
+	h.finish(1, core.EpisodeKey(b.TMDB(), 1, 1), testNow.Add(-2*time.Hour))
+	h.finish(1, core.EpisodeKey(c.TMDB(), 1, 1), testNow.Add(-3*time.Hour))
+	builder := &builder{e: h.e, ctx: context.Background(), user: core.User{ID: 1}, now: testNow}
+	base := builder.genUpNext()
+	if len(base) != 1 || len(base[0].items) != 3 {
+		t.Fatalf("base %+v", base)
+	}
+	h.e.opts.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) {
+		return []FavoriteSignal{{Key: b}, {Key: c}}, nil
+	}
+	got := builder.genUpNext()
+	if len(got) != 1 || len(got[0].items) != 3 {
+		t.Fatalf("favorites %+v", got)
+	}
+	want := []core.RatingKey{core.EpisodeKey(b.TMDB(), 1, 2), core.EpisodeKey(c.TMDB(), 1, 2), core.EpisodeKey(a.TMDB(), 1, 2)}
+	for i, key := range want {
+		if got[0].items[i].t.Key != key {
+			t.Fatalf("order %+v", got[0].items)
+		}
+	}
+	h.e.opts.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) { return nil, nil }
+	again := builder.genUpNext()
+	for i := range base[0].items {
+		if base[0].items[i].t.Key != again[0].items[i].t.Key {
+			t.Fatal("empty favorites changed up next")
+		}
+	}
+}

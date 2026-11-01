@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -240,6 +241,11 @@ func TestSessionHardwareFallsBackToCPU(t *testing.T) {
 		t.Fatalf("segment 0: %d %s", r.Code, r.Body.String())
 	}
 	if fr.startCount() != 2 {
+		fr.mu.Lock()
+		for i, args := range fr.starts {
+			t.Logf("start %d c:v=%s graph=%s", i, argValue(args, "-c:v"), argValue(args, "-filter_complex"))
+		}
+		fr.mu.Unlock()
 		t.Errorf("starts = %d, want 2 (hw then cpu)", fr.startCount())
 	}
 	if enc := argValue(fr.lastStart(), "-c:v"); enc != "libx264" {
@@ -252,6 +258,83 @@ func TestSessionHardwareFallsBackToCPU(t *testing.T) {
 	get(t, s, 100)
 	if enc := argValue(fr.lastStart(), "-c:v"); enc != "libx264" {
 		t.Errorf("after seek encoder %q", enc)
+	}
+}
+
+func TestSessionMissingFilterTriesNextGraph(t *testing.T) {
+	fr := newFakeRunner()
+	fr.failStart = func(args []string) (string, bool) {
+		if strings.Contains(argValue(args, "-filter_complex"), "zscale") {
+			return "No such filter: 'zscale'", true
+		}
+		return "", false
+	}
+	failures := make(chan error, 2)
+	m := newTestManager(t, fr, config.Transcode{HWAccel: "none"}, WithFailureHandler(func(_ string, _ time.Duration, err error) {
+		failures <- err
+	}))
+	info := core.MediaInfo{Duration: time.Minute, Container: "mkv", Streams: []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 720, Height: 480, BitDepth: 8},
+		{Index: 1, Type: "audio", Codec: "aac", Channels: 2},
+	}}
+	caps := appleTV
+	caps.HLSContainers = []string{"mkv"}
+	opts := allow()
+	opts.DirectPlay, opts.DirectStream = false, false
+	d := Decide(info, caps, opts, Policy{})
+	s := startSession(t, m, core.HLSRequest{SessionID: "bt601", InputURL: "http://127.0.0.1:1/dvd", Info: info, Decision: d})
+	if r := get(t, s, 0); r.Code != 200 {
+		t.Fatalf("segment 0: %d %s", r.Code, r.Body.String())
+	}
+	if fr.startCount() != 2 {
+		t.Fatalf("starts = %d, want zscale then colorspace", fr.startCount())
+	}
+	graphs := []string{}
+	fr.mu.Lock()
+	for _, args := range fr.starts {
+		graphs = append(graphs, argValue(args, "-filter_complex"))
+	}
+	fr.mu.Unlock()
+	if !strings.Contains(graphs[0], "zscale") || strings.Contains(graphs[1], "zscale") || !strings.Contains(graphs[1], "colorspace=") {
+		t.Fatalf("graphs %q", graphs)
+	}
+}
+
+func TestSessionMissingToneMapFilterDoesNotRetrySameGraph(t *testing.T) {
+	fr := newFakeRunner()
+	fr.failStart = func(args []string) (string, bool) {
+		return "No such filter: 'zscale'", true
+	}
+	failures := make(chan error, 2)
+	m := newTestManager(t, fr, config.Transcode{HWAccel: "none"}, WithFailureHandler(func(_ string, _ time.Duration, err error) {
+		failures <- err
+	}))
+	// Strip every tone-map alternative so the retry has no second graph.
+	m.feat.filters = map[string]bool{}
+	for name := range testFeatures().filters {
+		m.feat.filters[name] = true
+	}
+	for _, name := range []string{"libplacebo", "tonemap_opencl", "scale_vt", "tonemap_vaapi", "tonemap_cuda", "tonemap_videotoolbox", "colorspace"} {
+		delete(m.feat.filters, name)
+	}
+	s := startSession(t, m, transcodeRequest(t, "hdr-noz"))
+	r := get(t, s, 0)
+	if r.Code != http.StatusBadGateway && r.Code != http.StatusInternalServerError {
+		t.Fatalf("code %d %s", r.Code, r.Body.String())
+	}
+	if fr.startCount() != 1 {
+		t.Fatalf("starts = %d, want one zscale attempt and no identical retry", fr.startCount())
+	}
+	select {
+	case err := <-failures:
+		if err == nil || !strings.Contains(err.Error(), "tone-map") || strings.Contains(err.Error(), "No such filter") {
+			t.Fatalf("handler err %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("failure handler not called")
+	}
+	if !strings.Contains(m.Capability().PlaybackError, "tone-map") {
+		t.Fatalf("capability %+v", m.Capability())
 	}
 }
 
@@ -366,8 +449,103 @@ func TestSessionEndOfInput(t *testing.T) {
 		defer s.mu.Unlock()
 		return s.endSeg == 3
 	})
-	if r := get(t, s, 5); r.Code != 404 {
+	if r := get(t, s, 5); r.Code != 404 && r.Code != http.StatusBadGateway {
 		t.Errorf("past EOF: %d", r.Code)
+	}
+}
+
+// A remux that EOFs after one buffered window (lab: Lupin DoVi-p8 resume
+// at 41:20, run 620–692 of 730, then 44× 404 on 693) must start the next
+// run for the sequential segment, never 404 it.
+func TestRemuxRestartsAfterPrematureEOF(t *testing.T) {
+	fr := newFakeRunner()
+	fr.eofAfter = 25
+	fr.segDelay = time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	s := startSession(t, m, remuxRequest(t, "premature-eof", 48*time.Minute+39*time.Second))
+	resume := 620
+	started := time.Now()
+	if r := get(t, s, resume); r.Code != 200 {
+		t.Fatalf("resume segment %d: %d %s", resume, r.Code, r.Body.String())
+	}
+	if took := time.Since(started); took > 5*time.Second {
+		t.Fatalf("resume first segment took %v, want under 5s", took)
+	}
+	startsAfterResume := fr.startCount()
+	next := resume + fr.eofAfter
+	waitFor(t, "resume window to end", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.done[0][next] {
+			return true
+		}
+		if s.cur != nil && s.cur.startSeg >= next {
+			return true
+		}
+		return s.resumeAt >= next && s.cur == nil
+	})
+	s.mu.Lock()
+	ended := s.endSeg
+	s.mu.Unlock()
+	if ended >= 0 && ended < s.total-1 {
+		t.Fatalf("endSeg=%d declared the title over at a window boundary (total=%d)", ended, s.total)
+	}
+	if r := get(t, s, next); r.Code != 200 {
+		t.Fatalf("segment %d after window EOF: %d %s (want 200, not 404)", next, r.Code, r.Body.String())
+	}
+	if fr.startCount() <= startsAfterResume && !func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.done[0][next]
+	}() {
+		t.Fatalf("encoder did not continue after the window ended: starts=%d", fr.startCount())
+	}
+}
+
+// A remux restart whose -ss lands on the previous GOP (lab: DoVi p8 at
+// 695, ffmpeg finished lastSegment=694 with maxDone=-1) must alias that
+// boundary and start the next segment, never loop 143 times into 502s.
+func TestRemuxEmptyRestartAdvances(t *testing.T) {
+	fr := newFakeRunner()
+	fr.eofAfter = 25
+	fr.emptyOnceFrom = 640
+	fr.segDelay = time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	s := startSession(t, m, remuxRequest(t, "empty-restart", 48*time.Minute+39*time.Second))
+	if r := get(t, s, 620); r.Code != 200 {
+		t.Fatalf("resume 620: %d %s", r.Code, r.Body.String())
+	}
+	startsAfterResume := fr.startCount()
+	waitFor(t, "empty restart at the window boundary", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.emptyAt >= 640
+	})
+	s.mu.Lock()
+	hole := s.emptyAt
+	s.mu.Unlock()
+	if r := get(t, s, hole); r.Code != 200 {
+		t.Fatalf("boundary %d after empty restart: %d %s", hole, r.Code, r.Body.String())
+	}
+	if r := get(t, s, hole+1); r.Code != 200 {
+		t.Fatalf("advanced %d: %d %s", hole+1, r.Code, r.Body.String())
+	}
+	if n := fr.startCount() - startsAfterResume; n > 6 {
+		t.Fatalf("empty restart looped: %d extra starts (want a handful, not 143)", n)
+	}
+	fr.mu.Lock()
+	started := append([][]string(nil), fr.starts[startsAfterResume:]...)
+	fr.mu.Unlock()
+	advanced := false
+	for _, args := range started {
+		ss, _ := strconv.ParseFloat(argValue(args, "-ss"), 64)
+		if int(ss/4) > hole {
+			advanced = true
+			break
+		}
+	}
+	if !advanced {
+		t.Fatalf("encoder did not advance past the empty %d restart", hole)
 	}
 }
 
@@ -532,24 +710,31 @@ func TestThrottlePausesAndResumes(t *testing.T) {
 	p := fr.lastProc()
 	waitFor(t, "pause", p.isPaused)
 	s.mu.Lock()
-	ahead := s.cur.maxDone
+	// A pause that does not hold is stopped and remembered at resumeAt,
+	// which clears the current run. Reading s.cur unconditionally panics.
+	frontier := s.resumeAt
+	if s.cur != nil {
+		frontier = s.cur.maxDone
+	}
 	s.mu.Unlock()
 	// The upper bound depends on how far the poller lagged ffmpeg.
-	if ahead < 4 {
-		t.Errorf("paused at segment %d", ahead)
+	if frontier < 4 {
+		t.Errorf("paused at segment %d", frontier)
 	}
-	// Player caught up with the paused encoder. Under load the poller can
-	// see ffmpeg pause well past the limit (and one more segment may land
-	// after the pause), so request the paused frontier itself rather than
-	// a fixed segment that may still be more than limit/2 behind it.
-	if r := get(t, s, ahead); r.Code != 200 {
-		t.Fatal(r.Code)
+	// Catch the player up one segment at a time. A single fetch of the
+	// paused frontier is farther than restartLimit from the playhead, so
+	// it is the encoder head: the playhead stays put and throttle never
+	// resumes.
+	for n := 0; n <= frontier; n++ {
+		if r := get(t, s, n); r.Code != 200 {
+			t.Fatalf("segment %d: %d", n, r.Code)
+		}
 	}
 	// ffmpeg resumed and produces more.
 	waitFor(t, "progress past pause", func() bool {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		return s.cur != nil && s.cur.maxDone > ahead
+		return s.cur != nil && s.cur.maxDone > frontier
 	})
 }
 
@@ -581,6 +766,40 @@ func TestThrottleStopsWhenPauseUnsupported(t *testing.T) {
 	}
 	if r := get(t, s, resumeAt+1); r.Code != 200 {
 		t.Fatal(r.Code)
+	}
+}
+
+// A downswitch while the primary is throttle-stopped must start once, at the
+// requested segment. Resuming the old lead first and then restarting counted
+// two runs (TestIntegrationAdaptiveRapidMediaHandoff/dash: "handoff used 3").
+func TestRungSwitchDoesNotResumeThrottleBeforeRestart(t *testing.T) {
+	fr := newFakeRunner()
+	fr.segDelay = time.Millisecond
+	fr.noPause = true
+	m := newTestManager(t, fr, config.Transcode{ABRLadder: true}, WithBuffering(24*time.Second, 16*time.Second, 0), withRungDwell(0))
+	s := startSession(t, m, ladderEncodeRequest(t, "handoff", 10*time.Minute))
+	first := fr.lastProc()
+	waitFor(t, "throttle stop", first.wasKilled)
+	s.mu.Lock()
+	resumeAt := s.resumeAt
+	s.mu.Unlock()
+	if resumeAt < 5 {
+		t.Fatalf("resumeAt = %d", resumeAt)
+	}
+	if fr.startCount() != 1 {
+		t.Fatalf("starts = %d", fr.startCount())
+	}
+	n := resumeAt - 2
+	rec := httptest.NewRecorder()
+	s.ServeRungSegment(rec, httptest.NewRequest(http.MethodGet, "/", nil), "720p4m", n)
+	if rec.Code != 200 {
+		t.Fatalf("rung segment %d: %d %s", n, rec.Code, rec.Body.String())
+	}
+	if fr.startCount() != 2 {
+		t.Fatalf("starts = %d, want 2", fr.startCount())
+	}
+	if got, want := argValue(fr.lastStart(), "-ss"), secs(time.Duration(n)*4*time.Second); got != want {
+		t.Fatalf("restarted at %s, want segment %d at %s", got, n, want)
 	}
 }
 
@@ -751,8 +970,14 @@ func TestSessionHEVCEncoderFallbackWarnsOncePerSession(t *testing.T) {
 	var buf lockedBuffer
 	m.log = slog.New(slog.NewTextHandler(&buf, nil))
 	// No HW HEVC and no libx265: HEVC encodes fall back to libx264.
+	// Filters stay probed so the HDR tone map is a real graph; an unread
+	// filter list is not treated as zscale.
 	m.hw = core.HWAccel{Name: AccelNone}
-	m.feat = features{encoders: map[string]bool{"libx264": true}}
+	m.feat = features{
+		encoders:      map[string]bool{"libx264": true},
+		filters:       map[string]bool{"zscale": true, "tonemap": true, "scale": true},
+		filtersProbed: true,
+	}
 
 	req := transcodeRequest(t, "hevc-fallback-once")
 	req.Decision.VideoCodec = "hevc"
@@ -773,6 +998,19 @@ func TestSessionHEVCEncoderFallbackWarnsOncePerSession(t *testing.T) {
 	}
 }
 
+func sessionStartedCopy(fr *fakeRunner, sessionID string) bool {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	needle := "s-" + sessionID + "-"
+	for _, args := range fr.starts {
+		joined := strings.Join(args, " ")
+		if (strings.Contains(joined, "/"+needle) || strings.Contains(joined, `\`+needle)) && argValue(args, "-c:v") == "copy" {
+			return true
+		}
+	}
+	return false
+}
+
 // The transcode cap counts encoders, not decisions: a copy session whose
 // run encodes (a fast-start ramp or a lower rung) holds a slot, and a copy
 // session started at the cap plays plainly rather than encoding past it.
@@ -785,7 +1023,11 @@ func TestMaxTranscodesCountsEncodingCopySessions(t *testing.T) {
 	// At the cap the copy session still starts, without the encoded ramp
 	// or lower rungs.
 	s := startSession(t, m, remuxRequest(t, "r1", 10*time.Minute))
-	mustContain(t, fr.lastStart(), "-c:v copy")
+	// t1 can chain another encode after r1 starts. The copy is r1's run,
+	// not whichever ffmpeg happened to start last.
+	if !sessionStartedCopy(fr, "r1") {
+		t.Fatalf("capped copy session did not start with -c:v copy; last %q", fr.lastStart())
+	}
 	if n := len(s.Rungs()); n != 1 {
 		t.Errorf("rungs at the cap = %d, want the primary only", n)
 	}
@@ -833,4 +1075,176 @@ func TestPausedSessionSurvivesPhoneCallAndStillExpires(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The encoder can be hundreds of segments past the segment the client is
+// still waiting on. A fetch of that leading edge must not become the
+// playhead: eviction would delete the waiting segment before it is served.
+func TestPrefetchDoesNotEvictTheWaitingSegment(t *testing.T) {
+	fr := newFakeRunner()
+	fr.segDelay = time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 10*time.Minute, 20*time.Second))
+	s := startSession(t, m, remuxRequest(t, "playhead", time.Hour))
+	waitFor(t, "segment 40", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.cur != nil && s.cur.maxDone >= 40
+	})
+	hold := &holdResponse{got: make(chan struct{}), rel: make(chan struct{})}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		req := httptest.NewRequest(http.MethodGet, "/seg/0", nil)
+		s.ServeSegment(hold, req, 0)
+	}()
+	select {
+	case <-hold.got:
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out waiting for segment 0 to be served")
+	}
+	if r := get(t, s, 40); r.Code != 200 {
+		t.Fatalf("segment 40: %d %s", r.Code, r.Body.String())
+	}
+	if _, err := os.Stat(s.segPath(0)); err != nil {
+		t.Fatalf("segment 0 evicted while the client was still fetching it: %v", err)
+	}
+	s.mu.Lock()
+	playhead := s.lastReq
+	s.mu.Unlock()
+	if playhead > 5 {
+		t.Fatalf("playhead = %d, a leading-edge fetch moved it", playhead)
+	}
+	close(hold.rel)
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("segment 0 request did not finish")
+	}
+	if hold.code != 0 && hold.code != 200 {
+		t.Fatalf("segment 0: %d", hold.code)
+	}
+}
+
+// Reaching the forced-key cap starts the next run only when the client is
+// near it. Otherwise the cap is 400 segments ahead of a resume and the new
+// run's window replaces the one the client asked for.
+func TestForcedKeyCapDoesNotChainAheadOfPlayhead(t *testing.T) {
+	m := newTestManager(t, newFakeRunner(), config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	done := make(chan struct{})
+	close(done)
+	p := &fakeProc{done: done, kill: make(chan struct{})}
+	s := &Session{
+		m:        m,
+		log:      slog.New(slog.DiscardHandler),
+		segDur:   4 * time.Second,
+		total:    1357,
+		endSeg:   -1,
+		info:     core.MediaInfo{Duration: 90 * time.Minute},
+		lastReq:  175,
+		resumeAt: -1,
+		changed:  make(chan struct{}),
+		cur: &run{
+			seq: 4, startSeg: 177, maxDone: 576, produced: 400,
+			planEnd: 577, proc: p, mode: ModeTranscode,
+		},
+	}
+	s.mu.Lock()
+	s.progressedLocked(s.cur)
+	resume, cur := s.resumeAt, s.cur
+	s.mu.Unlock()
+	s.watchers.Wait()
+	if cur != nil {
+		t.Fatal("encoder kept running at a segment cap the player has not reached")
+	}
+	if resume != 577 {
+		t.Fatalf("resumeAt = %d, want 577", resume)
+	}
+}
+
+// A resume seek stays the playhead after the encoder has run past it.
+// Fetching the encoder head must not evict the segment the client is on.
+func TestEncoderHeadFetchKeepsTheResumeSegment(t *testing.T) {
+	fr := newFakeRunner()
+	fr.segDelay = 20 * time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	s := startSession(t, m, remuxRequest(t, "resume-head", time.Hour))
+	if r := get(t, s, 175); r.Code != 200 {
+		t.Fatalf("segment 175: %d %s", r.Code, r.Body.String())
+	}
+	waitFor(t, "encoder throttled past the resume point", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.cur != nil && s.cur.paused && s.cur.maxDone > 175+s.aheadLimit()
+	})
+	s.mu.Lock()
+	head := s.cur.maxDone
+	s.mu.Unlock()
+	if r := get(t, s, head); r.Code != 200 {
+		t.Fatalf("segment %d: %d %s", head, r.Code, r.Body.String())
+	}
+	if _, err := os.Stat(s.segPath(175)); err != nil {
+		t.Fatalf("resume segment evicted: %v", err)
+	}
+	s.mu.Lock()
+	playhead := s.lastReq
+	s.mu.Unlock()
+	if playhead > 175+s.restartLimit() {
+		t.Fatalf("playhead = %d, encoder head moved it", playhead)
+	}
+}
+
+// Pause that does not stop the encoder used to leave the lead at the
+// encoder head. The next poll stops the run and resumes inside the window.
+func TestPauseThatKeepsWritingStopsAtThePlayhead(t *testing.T) {
+	m := newTestManager(t, newFakeRunner(), config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	done := make(chan struct{})
+	close(done)
+	p := &fakeProc{done: done, kill: make(chan struct{}), paused: true}
+	s := &Session{
+		m:        m,
+		log:      slog.New(slog.DiscardHandler),
+		segDur:   4 * time.Second,
+		info:     core.MediaInfo{Duration: 90 * time.Minute},
+		lastReq:  359,
+		resumeAt: -1,
+		changed:  make(chan struct{}),
+		cur: &run{
+			startSeg: 359, maxDone: 639, produced: 280,
+			paused: true, pausedDone: 390, proc: p,
+		},
+	}
+	s.mu.Lock()
+	s.throttleLocked()
+	resume, cur := s.resumeAt, s.cur
+	s.mu.Unlock()
+	s.watchers.Wait()
+	if cur != nil {
+		t.Fatal("encoder kept writing after pause failed to hold")
+	}
+	if resume != 359+s.aheadLimit() {
+		t.Fatalf("resumeAt = %d, want %d", resume, 359+s.aheadLimit())
+	}
+}
+
+type holdResponse struct {
+	hdr  http.Header
+	code int
+	got  chan struct{}
+	rel  chan struct{}
+	once sync.Once
+}
+
+func (h *holdResponse) Header() http.Header {
+	if h.hdr == nil {
+		h.hdr = make(http.Header)
+	}
+	return h.hdr
+}
+
+func (h *holdResponse) WriteHeader(code int) { h.code = code }
+
+func (h *holdResponse) Write(p []byte) (int, error) {
+	h.once.Do(func() { close(h.got) })
+	<-h.rel
+	return len(p), nil
 }

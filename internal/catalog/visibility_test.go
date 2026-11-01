@@ -90,8 +90,38 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 		add(letter+" Hidden Hindi", "hi")
 	}
 
-	// Non-ASCII sort_title (> 'z'): visible French title and hidden Japanese/Russian titles.
+	// Accented and mixed-case Latin titles fold into A..Z and sort in folded order.
+	add("À Nous la Liberté", "fr")
+	add("Æon Flux", "en")
+	add("Ça brûle", "fr")
+	add("Český Honza", "fr")
 	add("Été 85", "fr")
+	add("Léolo", "fr")
+	add("Léon Morin, Priest", "fr")
+	add("Léon: The Professional", "en")
+	add("Líneas cruzadas", "fr")
+	add("Lögnens pris", "fr")
+	add("Lymelife", "en")
+	add("Ödipussi", "fr")
+	add("Yucatán", "fr")
+	add("Yummy", "en")
+	add("Yuppies", "en")
+	add("Yves Saint Laurent", "fr")
+	// Mixed-case explicit SortTitle must also fold into its base ASCII bucket.
+	if err := c.upsert(ctx, core.Title{
+		Key:       core.MovieKey(nextID),
+		Type:      core.TypeMovie,
+		Title:     "L'Éclisse",
+		SortTitle: "ÉCLISSE",
+		Language:  "fr",
+		Released:  rel,
+	}, upsertOpts{browsable: true}); err != nil {
+		t.Fatal(err)
+	}
+	nextID++
+
+	// Non-Latin / symbol sort_title (>= '{'): visible symbol title and hidden Japanese/Russian titles.
+	add("½ Revolution", "en")
 	add("七人の侍", "ja")
 	add("Солярис", "ru")
 
@@ -170,5 +200,103 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 	}
 	if offset != all.Total {
 		t.Fatalf("sum of firstCharacter counts (%d) != Browse total (%d)", offset, all.Total)
+	}
+
+	// Verify accented L titles ("Léon...", "Léolo", "Líneas cruzadas", "Lögnens pris")
+	// sort inside bucket L before "Lymelife", never after "Lymelife".
+	lBucket, err := c.Browse(ctx, core.BrowseQuery{
+		Filter: core.Filter{Type: core.TypeMovie, FirstCharacter: "L"},
+		Sort:   core.SortTitle,
+		Limit:  500,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idxOf := func(items []core.Title, title string) int {
+		for i, it := range items {
+			if it.Title == title {
+				return i
+			}
+		}
+		return -1
+	}
+	lymelifeIdx := idxOf(lBucket.Items, "Lymelife")
+	if lymelifeIdx < 0 {
+		t.Fatal("Lymelife not found in L bucket")
+	}
+	for _, acc := range []string{"Léolo", "Léon Morin, Priest", "Léon: The Professional", "Líneas cruzadas", "Lögnens pris"} {
+		idx := idxOf(lBucket.Items, acc)
+		if idx < 0 || idx >= lymelifeIdx {
+			t.Fatalf("expected %q (idx=%d) to sort before Lymelife (idx=%d) in bucket L", acc, idx, lymelifeIdx)
+		}
+	}
+
+	// Pre-existing unfolded sort_title rows across multiple keyset pages are folded when catalog.New opens the DB.
+	db2 := store.OpenTest(t)
+	tx2, err := db2.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt2, err := tx2.PrepareContext(ctx, `INSERT INTO catalog_titles(key,type,title,sort_title,released_ts,browsable,adult,detail) VALUES(?,?,?,?,?,1,0,1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedRows := []struct{ title, rawSort string }{
+		{"Lymelife", "lymelife"},
+		{"Léolo", "léolo"},
+		{"Léon Morin, Priest", "léon morin, priest"},
+		{"Léon: The Professional", "léon: the professional"},
+		{"Líneas cruzadas", "líneas cruzadas"},
+		{"Lögnens pris", "lögnens pris"},
+		{"M", "m"},
+		{"Été 85", "été 85"},
+		{"\u200e7 Hours to Win Your Heart", "\u200e7 hours to win your heart"},
+	}
+	for i, row := range seedRows {
+		if _, err := stmt2.ExecContext(ctx, int64(core.MovieKey(int64(i+1))), "movie", row.title, row.rawSort, rel.Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Add >2*sortTitleFoldBatchSize rows so keyset paging spans 3 batches.
+	totalSeed := 2*sortTitleFoldBatchSize + 250
+	for i := len(seedRows) + 1; i <= totalSeed; i++ {
+		title := fmt.Sprintf("Film %04d", i)
+		rawSort := fmt.Sprintf("film %04d", i)
+		if i == sortTitleFoldBatchSize+5 || i == 2*sortTitleFoldBatchSize+5 {
+			title = fmt.Sprintf("Épilogue %04d", i)
+			rawSort = fmt.Sprintf("épilogue %04d", i)
+		}
+		if _, err := stmt2.ExecContext(ctx, int64(core.MovieKey(int64(i))), "movie", title, rawSort, rel.Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = stmt2.Close()
+	if err := tx2.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	cReopened, err := New(db2, nil, config.Catalog{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cReopened.getMeta(ctx, sortTitleFoldedKey); got != sortTitleFoldedVersion {
+		t.Fatalf("expected %s=%s, got %q", sortTitleFoldedKey, sortTitleFoldedVersion, got)
+	}
+	fc2, err := cReopened.Facet(ctx, core.TypeMovie, "firstCharacter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	off2 := 0
+	for _, b := range fc2 {
+		page2, err := cReopened.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortTitle, Offset: off2, Limit: 1})
+		if err != nil || len(page2.Items) != 1 {
+			t.Fatalf("browse bucket %s at offset %d: %v (items=%d)", b.Key, off2, err, len(page2.Items))
+		}
+		if got := page2.Items[0]; b.Key == "M" && got.Title != "M" {
+			t.Fatalf("bucket M at offset %d landed on %q (want M)", off2, got.Title)
+		}
+		off2 += b.Count
+	}
+	if off2 != totalSeed {
+		t.Fatalf("sum of firstCharacter counts (%d) != totalSeed (%d)", off2, totalSeed)
 	}
 }

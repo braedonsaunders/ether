@@ -1,8 +1,10 @@
 package transcode
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -131,6 +133,21 @@ func mp4Info(b []byte, size int64) (*core.MediaInfo, error) {
 	return m, nil
 }
 
+// mp4HandlerName reads the hdlr name. QuickTime stores a Pascal string
+// (length byte equals the remaining byte count). ISO BMFF stores a C string.
+func mp4HandlerName(payload []byte) string {
+	if len(payload) < 25 {
+		return ""
+	}
+	raw := payload[24:]
+	if len(raw) > 0 && int(raw[0]) == len(raw)-1 {
+		raw = raw[1:]
+	} else if i := bytes.IndexByte(raw, 0); i >= 0 {
+		raw = raw[:i]
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 // fullBoxTime reads timescale and duration from an mvhd/mdhd payload.
 func fullBoxTime(p []byte) (scale uint32, dur uint64) {
 	if len(p) < 4 {
@@ -177,6 +194,11 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 			si.Title = strings.TrimRight(string(name.payload(b)), "\x00")
 		}
 	}
+	// An audio track with no name uses the handler string ffprobe puts in
+	// tags.handler_name. Generic names (SoundHandler) stay empty.
+	if si.Title == "" && handler == "soun" {
+		si.Title = descriptiveAudioHandler(mp4HandlerName(hdlr.payload(b)))
+	}
 	stbl, ok := path(b, trak, "mdia", "minf", "stbl")
 	if !ok {
 		return si, false, incomplete("track without sample table")
@@ -193,6 +215,12 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 		return si, false, incomplete("multiple sample descriptions")
 	}
 	entry := entries[0]
+	// The sample-entry fourcc is the codec tag ffprobe reports. A title is
+	// the udta name, or a descriptive audio handler name when that is empty.
+	si.CodecTag = entry.typ
+	if scale > 0 {
+		si.TimeBase = "1/" + strconv.FormatUint(uint64(scale), 10)
+	}
 	frames, bytes, deltas := sampleStats(b, stbl)
 	// libavformat measures the stream over its edit list when it has one.
 	played := 0.0
@@ -214,11 +242,19 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 			return si, false, err
 		}
 		switch {
+		case len(deltas) == 0:
+			// No sample timing. The track duration and sample count are not
+			// a frame rate, and neither rational is published.
 		case len(deltas) == 1 || (len(deltas) == 2 && deltas[1][0] == 1):
-			if deltas[0][1] > 0 {
-				si.FrameRate = math.Round(float64(scale)/float64(deltas[0][1])*1000) / 1000
+			if deltas[0][1] > 0 && scale > 0 {
+				rate := float64(scale) / float64(deltas[0][1])
+				si.AverageFrameRate = &rate
+				si.ReferenceFrameRate = &rate
+				si.FrameRate = math.Round(rate*1000) / 1000
 			}
 		case frames > 0 && dur > 0:
+			// Variable sample timing keeps the average clock only. The
+			// constant rationals stay absent.
 			si.FrameRate = math.Round(float64(frames)*float64(scale)/float64(dur)*1000) / 1000
 		}
 		if si.FrameRate == 0 {
@@ -259,7 +295,10 @@ func mp4Video(b []byte, e mp4Box, si *core.StreamInfo) error {
 	if si.Width == 0 || si.Height == 0 {
 		return incomplete("video geometry missing")
 	}
-	kids, _ := readBoxes(b, e.start+e.hdr+78, e.end)
+	kids, err := readBoxes(b, e.start+e.hdr+78, e.end)
+	if err != nil {
+		return incomplete("invalid video sample entry")
+	}
 	find := func(typ string) []byte {
 		for _, k := range kids {
 			if k.typ == typ {
@@ -290,7 +329,7 @@ func mp4Video(b []byte, e mp4Box, si *core.StreamInfo) error {
 	if dovi == nil {
 		dovi = find("dvwC")
 	}
-	var err error
+	err = nil
 	switch e.typ {
 	case "avc1", "avc3", "dva1", "dvav":
 		err = videoConfig(si, "h264", find("avcC"), transfer, dovi)
@@ -308,6 +347,9 @@ func mp4Video(b []byte, e mp4Box, si *core.StreamInfo) error {
 	switch e.typ {
 	case "dva1", "dvav", "dvh1", "dvhe", "dav1":
 		si.DolbyVision = true // ffprobe also infers it from the sample entry
+		if dovi == nil {
+			si.DolbyVisionConfigurationPresent = nil // conflicting/incomplete signalling
+		}
 	}
 	return nil
 }

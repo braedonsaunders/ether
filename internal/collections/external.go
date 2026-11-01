@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 )
 
 // ExternalBases are the origins external list sources are fetched from.
@@ -87,7 +89,7 @@ type webEntry struct {
 
 func newWebClient(c *http.Client, ua string, now func() time.Time) *webClient {
 	if c == nil {
-		c = &http.Client{Timeout: 30 * time.Second}
+		c = egress.Client(egress.CapMetadata, 30*time.Second)
 	}
 	return &webClient{http: c, ua: ua, now: now, ttl: 6 * time.Hour,
 		gaps: map[string]time.Duration{"letterboxd.com": 1500 * time.Millisecond, "mdblist.com": time.Second, "api.trakt.tv": 500 * time.Millisecond,

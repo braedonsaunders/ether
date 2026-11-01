@@ -2,6 +2,7 @@ package playback
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,21 +27,29 @@ func (m *Manager) PlaybackProgress(userID int64, clientID string, key core.Ratin
 	m.mu.Lock()
 	var sessions []*session
 	for _, s := range m.sessions {
-		if s.ident.userID == userID && s.ident.clientID == clientID && s.ident.key == key {
+		if s.ident.userID == userID && s.ident.key == key && (s.ident.clientID == clientID || s.caps.ClientID == clientID || strings.HasSuffix(s.ident.clientID, ":"+string(s.caps.Protocol)+clientID)) {
 			sessions = append(sessions, s)
 		}
 	}
 	m.mu.Unlock()
+	now := m.now()
 	for _, s := range sessions {
 		s.mu.Lock()
 		s.viewerPosition = max(0, position)
 		s.viewerAt = time.Now()
 		s.viewerState = state
 		if state == "playing" || state == "paused" {
-			s.lastActive = m.now()
+			s.lastActive = now
+			s.stopAt = time.Time{}
+		} else if state == "stopped" && s.stopAt.IsZero() {
+			s.stopAt = now.Add(m.opts.StoppedGrace)
 		}
 		s.mu.Unlock()
 		m.maintainReserve(s, position, state)
+	}
+	if state == "stopped" && len(sessions) > 0 {
+		m.reg.poke()
+		m.kickPins()
 	}
 }
 

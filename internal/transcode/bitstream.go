@@ -90,10 +90,19 @@ func (r *bitReader) se() int64 {
 type spsFacts struct {
 	bitDepth int
 	transfer int
+	// chroma is chroma_format_idc. H.264 omits it for the 8-bit 4:2:0 profiles,
+	// where the specification default is 1. Zero means monochrome.
+
+	chroma int
 	// VUI picture format; zero when not signalled (fullRange -1).
 	sarNum, sarDen    int
 	fullRange         int
 	primaries, matrix int
+	// refs is max_num_ref_frames (H.264) or the highest temporal layer's
+	// max_dec_pic_buffering (H.265). hasRefs is false when the SPS did not
+	// reach that field.
+	refs    int
+	hasRefs bool
 }
 
 // avcSPS parses an H.264 sequence parameter set NAL (header byte included).
@@ -106,10 +115,11 @@ func avcSPS(nal []byte) (spsFacts, error) {
 	r.skip(8) // constraint flags
 	r.skip(8) // level
 	r.ue()    // seq_parameter_set_id
-	f := spsFacts{bitDepth: 8, fullRange: -1}
+	f := spsFacts{bitDepth: 8, fullRange: -1, chroma: 1}
 	switch profile {
 	case 100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135:
 		chroma := r.ue()
+		f.chroma = int(chroma)
 		if chroma == 3 {
 			r.skip(1) // separate_colour_plane_flag
 		}
@@ -148,7 +158,8 @@ func avcSPS(nal []byte) (spsFacts, error) {
 			r.se()
 		}
 	}
-	r.ue()    // max_num_ref_frames
+	f.refs = int(r.ue()) // max_num_ref_frames
+	f.hasRefs = r.err == nil
 	r.skip(1) // gaps_in_frame_num_value_allowed_flag
 	r.ue()    // pic_width_in_mbs_minus1
 	r.ue()    // pic_height_in_map_units_minus1
@@ -288,7 +299,8 @@ func hevcSPS(nal []byte) (spsFacts, error) {
 		}
 	}
 	r.ue() // sps_seq_parameter_set_id
-	if r.ue() == 3 {
+	chroma := int(r.ue())
+	if chroma == 3 {
 		r.skip(1) // separate_colour_plane_flag
 	}
 	r.ue() // pic_width_in_luma_samples
@@ -299,7 +311,7 @@ func hevcSPS(nal []byte) (spsFacts, error) {
 		r.ue()
 		r.ue()
 	}
-	f := spsFacts{bitDepth: int(r.ue()) + 8, fullRange: -1}
+	f := spsFacts{bitDepth: int(r.ue()) + 8, fullRange: -1, chroma: chroma}
 	r.ue() // bit_depth_chroma_minus8
 	pocBits := int(r.ue()) + 4
 	ordering := r.flag()
@@ -308,7 +320,9 @@ func hevcSPS(nal []byte) (spsFacts, error) {
 		first = 0
 	}
 	for i := first; i <= maxSub; i++ {
-		r.ue()
+		// Highest layer wins: ffprobe's refs is that layer's DPB size.
+		f.refs = int(r.ue()) + 1
+		f.hasRefs = r.err == nil
 		r.ue()
 		r.ue()
 	}

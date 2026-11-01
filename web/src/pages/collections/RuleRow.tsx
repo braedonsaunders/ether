@@ -1,8 +1,10 @@
 import { Button, Input, SearchSelect, Slider, cn } from "@braedonsaunders/appkit-ui";
 import { AlertCircle, Trash2 } from "lucide-react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Segmented, NumberInput } from "../../components/fields";
 import { FacetPicker, FacetSelect, LookupPicker, type Picked } from "../../components/pickers";
 import { localized, t } from "../../i18n";
+import { NOT_RATED } from "../../lib/contentRatings";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
 import type { Rule, RuleField, RuleOp } from "../../lib/contract";
 import {
@@ -13,6 +15,7 @@ import {
   isRuleComplete,
   opLabel,
   parseWithin,
+  valueFor,
   withField,
   withOp,
   type FieldMeta,
@@ -37,8 +40,17 @@ export function RuleRow({
   index,
   kind,
   allowedFields,
+  metaFor,
+  inline,
+  openValue,
 }: {
   allowedFields?: RuleField[];
+  /** Visibility rules add operators (is not set) and facet-backed studio/keyword. */
+  metaFor?: (field: RuleField) => FieldMeta | undefined;
+  /** Field, operator and value on one line, read as a sentence. */
+  inline?: boolean;
+  /** Open the value picker once, when this condition was just added. */
+  openValue?: boolean;
   rule: Rule;
   onChange: (r: Rule) => void;
   onRemove: () => void;
@@ -47,7 +59,7 @@ export function RuleRow({
   index: number;
   kind: "include" | "exclude";
 }) {
-  const meta = fieldMeta(rule.field);
+  const meta = metaFor?.(rule.field) ?? fieldMeta(rule.field);
   const complete = isRuleComplete(rule);
   const n = index + 1;
   const label = kind === "exclude" ? t("Exclusion {n}", { n }) : t("Rule {n}", { n });
@@ -60,11 +72,22 @@ export function RuleRow({
       role="group"
       aria-label={label}
     >
-      <div className="flex flex-wrap items-start gap-2">
-        <div className="w-full sm:w-48">
+      <div className={cn("flex flex-wrap items-center gap-2", inline && "items-center")}>
+        <div className={inline ? "w-36 shrink-0" : "w-full sm:w-48"}>
           <SearchSelect
             value={rule.field}
-            onChange={(v) => v && onChange(withField(rule, v as RuleField))}
+            onChange={(v) => {
+              if (!v) return;
+              const field = v as RuleField;
+              const custom = metaFor?.(field);
+              if (!custom) onChange(withField(rule, field));
+              else
+                onChange({
+                  field,
+                  op: custom.defaultOp,
+                  value: valueFor(custom, custom.defaultOp),
+                });
+            }}
             options={
               allowedFields
                 ? FIELD_OPTIONS.filter((f) => allowedFields.includes(f.value))
@@ -76,7 +99,7 @@ export function RuleRow({
           />
         </div>
         {meta ? (
-          <div className="w-full sm:w-40">
+          <div className={inline ? "w-32 shrink-0" : "w-full sm:w-40"}>
             <SearchSelect
               value={rule.op}
               onChange={(v) => v && onChange(withOp(rule, v as RuleOp))}
@@ -87,11 +110,23 @@ export function RuleRow({
             />
           </div>
         ) : null}
+        {inline && meta ? (
+          <OpenOnMount active={openValue} className="min-w-40 flex-1">
+            <ValueEditor
+              rule={rule}
+              meta={meta}
+              onChange={onChange}
+              mediaType={mediaType}
+              region={region}
+              label={label}
+            />
+          </OpenOnMount>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="ml-auto size-9 text-fg-muted hover:text-danger"
+          className="ml-auto size-9 shrink-0 text-fg-muted hover:text-danger"
           onClick={onRemove}
           aria-label={
             kind === "exclude" ? t("Remove exclusion {n}", { n }) : t("Remove rule {n}", { n })
@@ -100,31 +135,63 @@ export function RuleRow({
           <Trash2 size={15} />
         </Button>
       </div>
-      <div className="mt-2">
-        {meta ? (
-          <ValueEditor
-            rule={rule}
-            meta={meta}
-            onChange={onChange}
-            mediaType={mediaType}
-            region={region}
-            label={label}
-          />
-        ) : (
-          <RawValue rule={rule} onChange={onChange} label={label} />
-        )}
-      </div>
-      <p
-        className={cn(
-          "mt-2 flex items-center gap-1.5 text-xs",
-          complete ? "text-fg-muted" : "text-warning",
-        )}
-      >
-        {complete ? null : <AlertCircle size={12} aria-hidden />}
-        {complete
-          ? describeRule(rule)
-          : t("Pick a value to apply this rule. It's left out of the preview until then.")}
-      </p>
+      {inline ? null : (
+        <div className="mt-2">
+          {meta ? (
+            <ValueEditor
+              rule={rule}
+              meta={meta}
+              onChange={onChange}
+              mediaType={mediaType}
+              region={region}
+              label={label}
+            />
+          ) : (
+            <RawValue rule={rule} onChange={onChange} label={label} />
+          )}
+        </div>
+      )}
+      {inline && complete ? null : (
+        <p
+          className={cn(
+            "mt-2 flex items-center gap-1.5 text-xs",
+            complete ? "text-fg-muted" : "text-warning",
+          )}
+        >
+          {complete ? null : <AlertCircle size={12} aria-hidden />}
+          {complete
+            ? describeRule(rule)
+            : t("Pick a value to apply this rule. It's left out of the preview until then.")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function OpenOnMount({
+  active,
+  className,
+  children,
+}: {
+  active?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!active) return;
+    // Delay past StrictMode's setup/cleanup pair so the picker is opened once.
+    const id = window.setTimeout(() => {
+      const target = ref.current?.querySelector<HTMLElement>("button, [role='combobox'], input");
+      if (!target || target.getAttribute("aria-expanded") === "true") return;
+      target.click();
+      if (target instanceof HTMLInputElement) target.focus();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [active]);
+  return (
+    <div ref={ref} className={className}>
+      {children}
     </div>
   );
 }
@@ -161,6 +228,7 @@ function ValueEditor({
   region: string;
   label: string;
 }) {
+  if (rule.op === "unknown" || rule.op === "known") return null;
   const multi = rule.op === "in" || rule.op === "notIn";
   const facetType = mediaType === "show" ? "show" : mediaType === "movie" ? "movie" : "";
   switch (meta.kind) {
@@ -180,6 +248,7 @@ function ValueEditor({
           value={String(rule.value ?? "")}
           onChange={(v) => onChange({ ...rule, value: v })}
           ariaLabel={t("{label} value", { label })}
+          omit={rule.op === "gte" || rule.op === "lte" ? [NOT_RATED] : undefined}
         />
       );
     case "lookup":

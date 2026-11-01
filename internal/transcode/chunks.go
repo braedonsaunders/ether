@@ -606,6 +606,15 @@ func (s *Session) collectChunks(r *run, exited bool) {
 				return
 			}
 			c := fmp4Chunk{path: path, start: start, end: start + e.dur}
+			if exited && cr.container == ContainerMatroska && cr.next == len(p.entries)-1 {
+				// ssegment cuts only on video keyframes and derives EXTINF
+				// from the video reference stream. When audio outlasts the
+				// video track at the end of a title, the final chunk carries
+				// the remaining audio Clusters through the container's end.
+				if end, ok, err := mkvChunkEnd(path); err == nil && ok && end > c.end {
+					c.end = end
+				}
+			}
 			if !cr.sl.started {
 				pre, held := s.isPreroll(r, cr, c)
 				if pre {
@@ -680,7 +689,7 @@ func (s *Session) collectChunks(r *run, exited bool) {
 	}
 	changed := false
 	done := s.done[t]
-	for _, sg := range segs {
+	for i, sg := range segs {
 		n := sg.n
 		if n < r.startSeg || (r.planEnd > 0 && n >= r.planEnd) {
 			// Past this run's mode boundary: the next run redoes it in its
@@ -735,6 +744,26 @@ func (s *Session) collectChunks(r *run, exited bool) {
 			s.noteSegSizeLocked(n, dst)
 		}
 		changed = true
+		if !exited && s.leadOverLocked(r) {
+			// One poll can list hundreds of segments once VideoToolbox is
+			// ahead. Stop publishing at the throttle window when the run is
+			// stopped so those files never become the only ones left on
+			// disk. A run that is merely paused will resume with cr.next
+			// and cr.sl already past this batch, so keep its assembled
+			// segments rather than leaving an unpublished gap.
+			s.throttleLocked()
+			if r.stopped {
+				for _, rest := range segs[i+1:] {
+					if rest.file != "" {
+						s.removals.remove(rest.file)
+					}
+				}
+				break
+			}
+			if r.paused {
+				r.pausedDone = r.maxDone
+			}
+		}
 	}
 	if changed {
 		s.progressedLocked(r)

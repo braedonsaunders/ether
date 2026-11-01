@@ -9,7 +9,10 @@ import (
 	"github.com/braedonsaunders/ether/internal/collections"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/llm"
+	"github.com/braedonsaunders/ether/internal/notinterested"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/recommend"
 	"github.com/braedonsaunders/ether/internal/simkl"
@@ -23,7 +26,49 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	dataDir := a.opts.DataDir
 	var err error
 	// Watch state and recommendations.
-	a.state = state.New(a.db, state.Options{Logger: log.With("component", "state"), Availability: a.dbAvail})
+	a.state = state.New(a.db, state.Options{Now: parityClock(), Logger: log.With("component", "state"), Availability: a.dbAvail})
+	basePlaylists := a.state.Playlists()
+	marked, ok := basePlaylists.(core.TransactionalMarkedPlaylists)
+	if !ok {
+		return fmt.Errorf("favorites: marked playlists unavailable")
+	}
+	libs := []experience.Library{{ID: 1, Name: "Movies", Type: core.TypeMovie}, {ID: 2, Name: "TV Shows", Type: core.TypeShow}}
+	visibility := experienceVisibility(a.safety, a.catalog.Get, func(ctx context.Context, titles []core.Title) []core.Title {
+		if a.availability == nil {
+			return titles
+		}
+		return a.availability.FilterDiscovery(ctx, titles)
+	}, func() []*core.PlaySession {
+		if a.playback == nil {
+			return nil
+		}
+		return a.playback.Sessions()
+	}, libs)
+	a.favorites, err = favorites.New(favorites.Options{DB: a.db, Marked: marked, Active: a.users.ActiveUser,
+		Allowed: func(ctx context.Context, u *core.User, subject favorites.Subject) bool {
+			return a.favoriteAllowed(ctx, u, subject, visibility)
+		},
+		AllowedTitles: func(ctx context.Context, u *core.User, keys []core.RatingKey) (bool, error) {
+			return a.favoriteTitlesCached(ctx, u, keys, visibility)
+		},
+		Changed: func(ctx context.Context, id int64, subject favorites.Subject) { a.favoriteChanged(ctx, id, subject) },
+	})
+	if err != nil {
+		return fmt.Errorf("favorites: %w", err)
+	}
+	a.notInterested, err = notinterested.New(notinterested.Options{DB: a.db, Active: a.users.ActiveUser,
+		Allowed: func(ctx context.Context, u *core.User, key core.RatingKey) bool {
+			return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: key.String()}, visibility)
+		},
+		Changed: a.notInterestedChanged,
+	})
+	if err != nil {
+		return fmt.Errorf("not interested: %w", err)
+	}
+	a.playlists, err = favorites.NewPlaylists(basePlaylists, a.favorites)
+	if err != nil {
+		return fmt.Errorf("favorites playlists: %w", err)
+	}
 	a.closers = append(a.closers, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -53,7 +98,10 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	})
 	// Per-viewer Homes, built in the background and served to Plex.
 	if a.personalize, err = personalize.New(personalize.Options{
-		DB: a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
+		Now:          parityClock(),
+		RefreshEvery: parityRefreshEvery(),
+		Ranker:       parityRankerOptions(),
+		DB:           a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
 		FilterAvailable: func(ctx context.Context, ts []core.Title) []core.Title {
 			ts = a.catalog.FilterVisibility(ctx, ts)
 			if a.availability == nil {
@@ -62,7 +110,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 			return a.availability.FilterDiscovery(ctx, ts)
 		},
 		UserPolicy: a.safety.UserPolicy, Allowed: a.safety.Allowed,
-		LLM: a.llm, Trakt: a.trakt, Playlists: a.state.Playlists(),
+		LLM: a.llm, Trakt: a.trakt, Playlists: a.playlists, Favorites: a.favoriteSignals, NotInterested: a.notInterestedSignals, NotInterestedSnapshot: a.notInterestedSnapshot,
 		ExtraHomeRows: a.extraHomeRows,
 		Dependencies: func(scorer core.PersonalScorer) (core.Recommender, core.CollectionRows, error) {
 			opts := append(a.collectionOptions(cfg), collections.WithState(a.state), collections.WithAuth(a.users), collections.WithScorer(scorer), collections.WithVibeRefiner(a.llm))
@@ -74,8 +122,9 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 			a.recommend = recommend.New(recommend.Options{Catalog: a.catalog, State: a.state, LLM: a.llm, Scorer: scorer, Logger: log.With("component", "recommend")})
 			return a.recommend, a.collections, nil
 		},
-		ServerName: func() string { return a.cfg.Get().Server.FriendlyName },
+		ServerName: func() string { return a.cfg.Read().Server.FriendlyName },
 		Logger:     log.With("component", "personalize"),
+		OnBuilt:    a.refreshPersonalHomes,
 		// Background training waits while anyone is streaming.
 		Busy: func() bool {
 			if a.playback != nil && len(a.playback.Sessions()) > 0 {
@@ -84,7 +133,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 			return a.livetv != nil && len(a.livetv.ViewingSessions()) > 0
 		},
 		// Netflix-style hooks (#31/#32) follow the owner's live switches.
-		IntentEnabled: func() bool { return a.cfg.Get().Personalize.SessionIntent },
+		IntentEnabled: func() bool { return a.cfg.Read().Personalize.SessionIntent },
 		ClockFormat: func() string {
 			c := a.cfg.Get()
 			if c.Personalize.ClockFormat != "" {
@@ -94,6 +143,10 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 		},
 	}); err != nil {
 		return fmt.Errorf("personalization: %w", err)
+	}
+	if err := parityWarmPersonalization(ctx, a); err != nil {
+		a.personalize.Close()
+		return err
 	}
 	a.closers = append(a.closers, a.personalize.Close)
 	a.subtitles = subtitles.New(subtitles.Options{

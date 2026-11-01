@@ -17,6 +17,7 @@ import (
 // and CSRF boundaries as the existing admin API.
 func (a *App) extensionHandlers() map[string]http.Handler {
 	m := map[string]http.Handler{"safety/policies": a.safety.Handler()}
+	m["viewer-plex-defaults"] = a.users.PlexDefaultsHandler()
 	m["simkl"] = simkl.Handler(simkl.HandlerDeps{Device: a.simklDevice, Service: a.simklService, Enabled: func() bool { c := a.cfg.Get().Simkl; return c.Enabled && c.ClientID != "" }, Viewer: func(ctx context.Context, id int64) bool {
 		users, err := a.users.Users(ctx)
 		if err != nil {
@@ -34,6 +35,7 @@ func (a *App) extensionHandlers() map[string]http.Handler {
 	m["stats"] = a.stats.Handler()
 	m["notifications"] = a.notifications.Handler()
 	m["livetv"] = a.livetv.Handler()
+	m["calendar"] = a.calendar.Handler()
 	m["safety/diagnostics"] = a.diagnosticsHandler()
 	m["playback"] = a.playbackPolicyHandler()
 	m["indexer-sites"] = a.sites.Handler(cardigann.HandlerDeps{
@@ -45,6 +47,7 @@ func (a *App) extensionHandlers() map[string]http.Handler {
 	m["subtitle-sync"] = a.subtitleSyncHandler()
 	m["metadata"] = a.episodeorder.Router()
 	m["updates"] = a.updatesHandler()
+	m["server/restart"] = a.restartHandler()
 	m["cluster"] = a.clusterHandler()
 	ua := "Ether/" + a.opts.Version + " (+https://github.com/braedonsaunders/ether)"
 	m["releases"] = a.resolver.ConsoleHandler(resolver.ConsoleDeps{

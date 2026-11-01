@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
 
@@ -24,6 +25,22 @@ type MarkerProvider interface {
 	Markers(context.Context, core.RatingKey, core.MediaInfo) ([]markers.Marker, error)
 }
 
+func (s *Server) trackScope(ctx context.Context, key core.RatingKey) trackprefs.Scope {
+	scope := trackprefs.Scope{Device: FromContext(ctx).ClientID}
+	wanted := core.TypeMovie
+	if key.Kind() == core.KindShow || key.Kind() == core.KindSeason || key.Kind() == core.KindEpisode {
+		wanted = core.TypeShow
+		scope.Series = strconv.FormatInt(int64(core.ShowKey(key.TMDB())), 10)
+	}
+	for _, section := range s.LibrarySections() {
+		if section.Type == wanted {
+			scope.Library = strconv.Itoa(section.ID)
+			break
+		}
+	}
+	return scope
+}
+
 func (s *Server) preferredSelection(ctx context.Context, u *core.User, key core.RatingKey, info core.MediaInfo, original string, sel selection) selection {
 	if s.d.TrackPreferences == nil || u == nil {
 		return sel
@@ -33,7 +50,21 @@ func (s *Server) preferredSelection(ctx context.Context, u *core.User, key core.
 			original = show.Language
 		}
 	}
-	p, err := s.d.TrackPreferences.Select(ctx, u.ID, key, info, original)
+	var p trackprefs.Selection
+	var err error
+	applied := false
+	if scoped, ok := s.d.TrackPreferences.(interface {
+		SelectScoped(context.Context, int64, core.RatingKey, core.MediaInfo, string, trackprefs.Scope) (trackprefs.Selection, bool, error)
+	}); ok {
+		p, applied, err = scoped.SelectScoped(ctx, u.ID, key, info, original, s.trackScope(ctx, key))
+		if err != nil {
+			s.log.Warn("scoped stream preferences unavailable", "error", err)
+			applied, err = false, nil
+		}
+	}
+	if err == nil && !applied {
+		p, err = s.d.TrackPreferences.Select(ctx, u.ID, key, info, original)
+	}
 	if err != nil {
 		s.log.Warn("stream preferences unavailable", "error", err)
 		return sel
@@ -60,6 +91,19 @@ func (s *Server) applyStreamPreferences(ctx context.Context, pr *Request, p *pla
 			}
 			p.opts.AudioFilters = rules.AudioFilters(channels)
 		}
+		if scoped, ok := s.d.TrackPreferences.(interface {
+			ScopedRules(context.Context, int64, trackprefs.Scope) (trackprefs.Rules, bool, error)
+		}); ok {
+			scope := s.trackScope(ctx, p.key)
+			if pr.ClientID != "" {
+				scope.Device = pr.ClientID
+			}
+			rules, _, err := scoped.ScopedRules(ctx, pr.User.ID, scope)
+			if err == nil {
+				p.opts.MaxBitrateKbps = trackprefs.LimitBitrate(p.opts.MaxBitrateKbps, rules.MaxBitrateKbps)
+				p.opts.MaxHeight = trackprefs.LimitBitrate(p.opts.MaxHeight, rules.MaxHeight)
+			}
+		}
 	}
 }
 func (s *Server) rememberStreamRequest(r *http.Request, user *core.User, key core.RatingKey) {
@@ -78,11 +122,18 @@ func (s *Server) rememberStreamRequest(r *http.Request, user *core.User, key cor
 		var track *core.StreamInfo
 		if kind == "subtitle" && id == 0 {
 		} else {
-			ref, ok := s.streams.lookup(id)
-			if !ok || ref.key != key || ref.info.Type != kind {
+			pr := FromContext(r.Context())
+			binding, rerr := s.resolveStream(sessions.WithPlexServe(r.Context(), pr.Remote, ""), user, id)
+			if rerr != nil {
+				if !streamMiss(rerr) {
+					return
+				}
 				continue
 			}
-			track = &ref.info
+			if binding.Key != key || binding.Info.Type != kind {
+				continue
+			}
+			track = &binding.Info
 		}
 		if err = s.d.TrackPreferences.Remember(r.Context(), user.ID, key, kind, track); err != nil {
 			s.log.Warn("save stream preference", "error", err)

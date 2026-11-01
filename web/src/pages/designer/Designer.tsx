@@ -49,7 +49,11 @@ export default function Designer() {
     setDraft(prune(doc.data.layout));
   }
   const dirty = Boolean(doc.data) && !sameLayout(draft, saved);
-  const available = doc.data?.availableRows ?? [];
+  const available = (doc.data?.availableRows ?? []).map((row) =>
+    row.kind === "favorites"
+      ? { ...row, title: t("Favorites"), description: t("Titles this viewer marked as favorites.") }
+      : row,
+  );
   const defaults = doc.data?.defaults.maxRows ?? { home: 14, movies: 10, shows: 10 };
 
   const viewerId = layer === "global" ? spotCheck : layer;
@@ -70,7 +74,7 @@ export default function Designer() {
       setDraft(prune(next.layout));
       setNonce((n) => n + 1);
       toast.success(t("Home layout saved"), {
-        description: t("Plex Homes follow it on their next load."),
+        description: t("Apps pick it up the next time Home loads."),
       });
     } catch (e) {
       toast.error(t("Couldn't save the layout"), { description: errorMessage(e) });
@@ -139,9 +143,7 @@ export default function Designer() {
       <EmptyState
         icon={<Users />}
         title={t("No viewers yet")}
-        description={t(
-          "Share this server from plex.tv; each person appears here once they sign in.",
-        )}
+        description={t("Add a viewer. They show up here after they sign in.")}
       />
     </div>
   ) : null;
@@ -149,9 +151,6 @@ export default function Designer() {
   return (
     <Workspace
       title={t("Home")}
-      subtitle={t(
-        "Shape the native Plex Home: every viewer's personalized For You, with per-viewer overrides on top.",
-      )}
       actions={actions}
       asideLabel={t("Designer controls")}
       mainLabel={t("Home preview")}

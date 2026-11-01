@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +32,8 @@ import (
 //   - Events are XML in data lines, e.g.
 //     <Message command="notifyConnectivity" asyncIdentifier="…" connectivity="0|1" address="…" port="32400"/>,
 //     the answer to PUT /api/servers/{id}/connectivity. Other commands PMS
-//     handles: notifyResetToken, notifyAccountChange, refreshCertificate.
+//     handles: notifyResetToken, notifyAccountChange, notifySharingChange,
+//     notifyHomeChange, refreshCertificate.
 
 // PubsubTLSName is the name pubsub hosts' certificates are valid for.
 const PubsubTLSName = "pubsub.plex.tv"
@@ -118,7 +121,7 @@ type Presence struct {
 
 func NewPresence(o PresenceOptions) *Presence {
 	if o.StreamClient == nil {
-		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr := egress.Transport(egress.CapDirect)
 		tr.TLSClientConfig = &tls.Config{ServerName: PubsubTLSName, MinVersion: tls.VersionTLS12}
 		tr.ForceAttemptHTTP2 = false
 		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}

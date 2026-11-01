@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { PosterProviders } from "../pages/metadata/PosterProviders";
 import { api, apiFetch } from "../lib/api";
@@ -23,27 +24,32 @@ it("saves independently and clears keys when changing destination", async () => 
     },
   });
   const saved = vi.fn();
-  render(<PosterProviders onSaved={saved} />);
+  render(
+    <MemoryRouter>
+      <PosterProviders onSaved={saved} />
+    </MemoryRouter>,
+  );
   const configure = screen.getByRole("button", { name: "Configure poster provider" });
   await waitFor(() => expect(configure).toBeEnabled());
   expect(screen.queryByLabelText(/Server URL/)).not.toBeInTheDocument();
   fireEvent.click(configure);
+  expect(screen.getAllByText("Poster service connected").length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText(/Access key|API key|Poster URL template/)).not.toBeInTheDocument();
   fireEvent.change(await screen.findByLabelText(/Server URL/), {
     target: { value: "http://new:8000" },
   });
-  expect(screen.getByLabelText(/Access key/)).toHaveValue("");
   fireEvent.click(screen.getByRole("button", { name: "Save poster provider" }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
   const [path, opts] = vi.mocked(apiFetch).mock.calls[0]!;
   expect(path).toBe("/config/posters");
   expect(JSON.parse(opts!.body as string)).toMatchObject({
     baseUrl: "http://new:8000",
-    apiKey: "",
+    apiKey: "••••",
   });
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   fireEvent.click(configure);
   fireEvent.change(screen.getByLabelText("Source"), { target: { value: "betterposters" } });
-  expect(screen.getByLabelText(/Poster URL template/)).toHaveAttribute("type", "password");
+  expect(screen.queryByLabelText(/Poster URL template/)).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Source"), { target: { value: "xrdb" } });
   fireEvent.change(screen.getByLabelText("Server URL"), {
     target: { value: "https://xrdb.example" },
@@ -51,8 +57,7 @@ it("saves independently and clears keys when changing destination", async () => 
   fireEvent.change(screen.getByLabelText("Profile ID or alias (optional)"), {
     target: { value: "family" },
   });
-  expect(screen.getByLabelText("Access key (optional)")).toHaveValue("");
-  expect(screen.queryByLabelText("Poster URL template")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Access key (optional)")).not.toBeInTheDocument();
 });
 
 it("discards provider edits when the drawer is canceled", async () => {
@@ -66,7 +71,11 @@ it("discards provider edits when the drawer is canceled", async () => {
       urlTemplate: "",
     },
   } as Awaited<ReturnType<typeof api.getConfig>>);
-  render(<PosterProviders onSaved={vi.fn()} />);
+  render(
+    <MemoryRouter>
+      <PosterProviders onSaved={vi.fn()} />
+    </MemoryRouter>,
+  );
   const configure = screen.getByRole("button", { name: "Configure poster provider" });
   await waitFor(() => expect(configure).toBeEnabled());
   fireEvent.click(configure);

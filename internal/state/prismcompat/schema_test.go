@@ -42,7 +42,7 @@ func registerPrismState(t *testing.T) {
 }
 
 // TestPrismStateAndPlexwatchSchema migrates Prism state/3 and state/4
-// together with state_plexwatch/1-3 and the plexwatch account component.
+// together with state_plexwatch/1-4 and the plexwatch account component.
 // Fresh and state/2 baselines both keep their rows.
 func TestPrismStateAndPlexwatchSchema(t *testing.T) {
 	registerPrismState(t)
@@ -241,8 +241,9 @@ func assertCombinedObjects(t *testing.T, db *sql.DB) {
 	}
 	for _, k := range []string{
 		"state/1", "state/2", "state/3", "state/4",
-		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3",
+		"state_plexwatch/1", "state_plexwatch/2", "state_plexwatch/3", "state_plexwatch/4",
 		"plexwatch/1", "plexwatch/2", "plexwatch/3", "plexwatch/4",
+		"watchsend/1",
 	} {
 		if !got[k] {
 			t.Fatalf("missing %s in %v", k, got)
@@ -253,7 +254,7 @@ func assertCombinedObjects(t *testing.T, db *sql.DB) {
 	}
 	probes := []string{
 		`SELECT watch_at, rating_at FROM state_watch WHERE 0=1`,
-		`SELECT consent_generation FROM state_sync_journal WHERE 0=1`,
+		`SELECT consent_generation, never_sent FROM state_sync_journal WHERE 0=1`,
 		`SELECT holder FROM state_sync_lock WHERE 0=1`,
 		`SELECT marker FROM state_playlist_markers WHERE 0=1`,
 		`SELECT revision FROM state_last_source WHERE 0=1`,
@@ -261,6 +262,7 @@ func assertCombinedObjects(t *testing.T, db *sql.DB) {
 		`SELECT token FROM plexwatch_account WHERE 0=1`,
 		`SELECT permit_id, generation FROM plexwatch_permit WHERE 0=1`,
 		`SELECT inflight_until FROM plexwatch_fence WHERE 0=1`,
+		`SELECT attempt_id, payload, receipt_at FROM plexwatch_attempt WHERE 0=1`,
 	}
 	for _, q := range probes {
 		rows, err := db.Query(q)

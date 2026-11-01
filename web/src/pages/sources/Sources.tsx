@@ -1,61 +1,101 @@
 import { localized, t } from "../../i18n";
 import { Button } from "@braedonsaunders/appkit-ui";
-import { Download } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Drawer } from "../../components/Drawer";
-import { DomainPage, useRouteTab } from "../../components/layout";
+import { DomainPage } from "../../components/layout";
 import { ProwlarrImport } from "../../components/ProwlarrImport";
 import { DebridSources } from "./Debrid";
 import { HealthStrip } from "./form";
 import { IndexerList } from "./Indexers";
 import { UsenetProviders } from "./Usenet";
-import { Availability } from "./Availability";
 import { SourceUsage } from "./Usage";
+import { AddSourceGallery, type GalleryChoice } from "./cards";
+import type { DebridKind } from "../../lib/types";
 
 const TABS = localized(
   () =>
     [
-      { key: "usenet", label: t("Usenet providers") },
-      { key: "indexers", label: t("Indexers") },
       { key: "debrid", label: t("Debrid") },
-      { key: "availability", label: t("Availability") },
-      { key: "usage", label: t("Usage & costs") },
+      { key: "usenet", label: t("Usenet") },
+      { key: "indexers", label: t("Indexers") },
+      { key: "stats", label: t("Stats") },
     ] as const,
 );
 
-/** Where releases come from: Usenet providers, indexers, debrid accounts, and what they cost. */
+type AddDebrid = { nonce: number; kind: DebridKind };
+type AddIndexer = { nonce: number; type: "site" | "newznab" | "stremio" };
+
+/**
+ * Where playback comes from: one tab per source type, plus Stats.
+ * An unknown address opens Debrid.
+ * Adding one starts from a gallery, then a drawer.
+ */
 export default function Sources() {
-  const tab = useRouteTab(TABS);
+  const { tab: raw } = useParams();
+  const navigate = useNavigate();
+  const top = TABS.find((item) => item.key === raw)?.key ?? "debrid";
   const [importing, setImporting] = useState(false);
+  const [gallery, setGallery] = useState(false);
   const [version, setVersion] = useState(0);
+  const [debridAdd, setDebridAdd] = useState<AddDebrid | null>(null);
+  const [usenetAdd, setUsenetAdd] = useState<number | null>(null);
+  const [indexerAdd, setIndexerAdd] = useState<AddIndexer | null>(null);
+
+  function pick(choice: GalleryChoice) {
+    const nonce = Date.now();
+    setGallery(false);
+    if (choice.type === "debrid") {
+      navigate("/sources/debrid");
+      setDebridAdd({ nonce, kind: choice.kind });
+    } else if (choice.type === "usenet") {
+      navigate("/sources/usenet");
+      setUsenetAdd(nonce);
+    } else if (choice.type === "prowlarr") {
+      navigate("/sources/indexers");
+      setImporting(true);
+    } else {
+      navigate("/sources/indexers");
+      setIndexerAdd({ nonce, type: choice.type });
+    }
+  }
+
   return (
     <DomainPage
       title={t("Sources")}
-      description={t("The Usenet providers, indexers and debrid accounts Ether streams from.")}
       base="/sources"
       tabs={TABS}
-      active={tab}
+      active={top}
       status={<HealthStrip ids={["usenet", "indexers"]} />}
       actions={
-        tab === "indexers" ? (
-          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
-            <Download size={14} /> {t("Import from Prowlarr")}
-          </Button>
+        top !== "stats" ? (
+          <>
+            <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+              {t("Import from Prowlarr")}
+            </Button>
+            <Button size="sm" onClick={() => setGallery(true)}>
+              <Plus size={14} /> {t("Add a source")}
+            </Button>
+          </>
         ) : null
       }
     >
-      {tab === "usenet" ? <UsenetProviders /> : null}
-      {tab === "indexers" ? <IndexerList version={version} /> : null}
-      {tab === "debrid" ? <DebridSources /> : null}
-      {tab === "availability" ? <Availability /> : null}
-      {tab === "usage" ? <SourceUsage /> : null}
+      {top !== "stats" ? (
+        <p className="text-sm text-fg-muted">
+          {t("Drag a card to choose which account Ether tries first.")}
+        </p>
+      ) : null}
+      {top === "debrid" ? <DebridSources addKind={debridAdd} /> : null}
+      {top === "usenet" ? <UsenetProviders addNonce={usenetAdd} /> : null}
+      {top === "indexers" ? <IndexerList version={version} addRequest={indexerAdd} /> : null}
+      {top === "stats" ? <SourceUsage /> : null}
+      <AddSourceGallery open={gallery} onClose={() => setGallery(false)} onPick={pick} />
       <Drawer
         open={importing}
         onClose={() => setImporting(false)}
         title={t("Import from Prowlarr")}
-        description={t(
-          "Optional: add the indexers a Prowlarr instance already manages, searched through Prowlarr's Newznab and Torznab endpoints.",
-        )}
+        description={t("Sync indexers from Prowlarr.")}
         size="lg"
       >
         <ProwlarrImport onImported={() => setVersion((v) => v + 1)} />

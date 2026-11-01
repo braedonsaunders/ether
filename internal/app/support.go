@@ -17,6 +17,7 @@ import (
 
 func (a *App) supportDeps() diagnostics.Deps {
 	return diagnostics.Deps{
+		Now:          parityClock(),
 		Version:      a.opts.Version,
 		Platform:     runtime.GOOS + "/" + runtime.GOARCH,
 		Container:    containerHint(),

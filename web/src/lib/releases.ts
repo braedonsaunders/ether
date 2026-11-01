@@ -133,6 +133,9 @@ export interface HistoryRecord {
   error?: string;
   failover?: boolean;
   pinned?: boolean;
+  /** Who chose the release. Absent on older decisions. */
+  chooser?: "auto" | "viewer";
+  chosenVersion?: string;
   candidates: number;
   trace?: ResolverTrace | null;
 }
@@ -170,7 +173,7 @@ export interface TrashProfile {
   formats: number;
 }
 
-/** present: already in Custom scoring; add: added by the import. */
+/** present: already saved; add: added by the import. */
 export type ImportFormatStatus = "present" | "add" | "unsupported" | "missing";
 
 export interface ImportFormat {

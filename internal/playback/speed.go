@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -148,9 +149,9 @@ func (m *Manager) checkSpeed(s *session, now time.Time) {
 		return
 	}
 	s.mu.Lock()
-	decision, downs, viewerState := s.decision, s.downFailovers, s.viewerState
+	decision, downs, misses, viewerState := s.decision, s.downFailovers, s.downMisses, s.viewerState
 	s.mu.Unlock()
-	if downs >= m.opts.MaxDownFailovers || viewerState == "paused" || viewerState == "stopped" {
+	if downs+misses >= m.opts.MaxDownFailovers || viewerState == "paused" || viewerState == "stopped" {
 		return
 	}
 	hls, hasHLS := m.deps.HLSLookup(s.id)
@@ -223,6 +224,36 @@ func (m *Manager) checkSpeed(s *session, now time.Time) {
 		"fetchBps", int64(fetch), "mediaBps", int64(media), "at", at,
 		"buffer", buffer, "bufferKnown", bufferKnown, "runway", bufferRunway(buffer, ratio), "blockedRead", blocked)
 	m.backgroundDownFailover(s, g, at)
+}
+
+// noteFailedDownFailover records a down-failover that found nothing
+// slower. The releases it opened stay excluded. Once failed and
+// successful down-failovers together reach MaxDownFailovers, the
+// session stops. Closing the source ends the client read, which is
+// the error a player can see; the timeline would otherwise stay
+// "playing" while bytes trickle in.
+func (m *Manager) noteFailedDownFailover(s *session, tried []string) {
+	if m.opts.MaxDownFailovers < 0 || s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	for _, id := range tried {
+		if id != "" && !slices.Contains(s.tried, id) {
+			s.tried = append(s.tried, id)
+		}
+	}
+	s.downMisses++
+	giveUp := s.downFailovers+s.downMisses >= m.opts.MaxDownFailovers
+	s.mu.Unlock()
+	if !giveUp {
+		return
+	}
+	m.log.Error("playback starved; no lower-bitrate release worked", "session", s.id, "key", s.ident.key)
+	m.Stop(s.id)
 }
 
 // backgroundDownFailover runs a speed-triggered failover off the monitor.

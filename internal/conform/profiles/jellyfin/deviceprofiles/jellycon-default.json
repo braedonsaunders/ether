@@ -1,0 +1,110 @@
+{
+  "client": "JellyCon",
+  "source": "https://github.com/jellyfin/jellycon/blob/e3fe0375f76605d76f6f2e481dbb2f21eb5ee311/resources/lib/play_utils.py",
+  "source_commit": "e3fe0375f76605d76f6f2e481dbb2f21eb5ee311",
+  "configuration": "Default add-on settings: 1000 Mbps, AC3, 256 kbps audio, 8 channels; force-transcode flags disabled",
+  "device_profile": {
+    "Name": "Kodi",
+    "MaxStaticBitrate": 1000000000,
+    "MaxStreamingBitrate": 1000000000,
+    "MusicStreamingTranscodingBitrate": 256000,
+    "TimelineOffsetSeconds": 5,
+    "TranscodingProfiles": [
+      {
+        "Type": "Audio"
+      },
+      {
+        "Container": "ts",
+        "Protocol": "hls",
+        "Type": "Video",
+        "AudioCodec": "ac3",
+        "VideoCodec": "h264",
+        "MaxAudioChannels": "8"
+      },
+      {
+        "Container": "jpeg",
+        "Type": "Photo"
+      }
+    ],
+    "DirectPlayProfiles": [
+      {
+        "Type": "Video"
+      },
+      {
+        "Type": "Audio"
+      },
+      {
+        "Type": "Photo"
+      }
+    ],
+    "ResponseProfiles": [],
+    "ContainerProfiles": [],
+    "CodecProfiles": [],
+    "SubtitleProfiles": [
+      {
+        "Format": "srt",
+        "Method": "External"
+      },
+      {
+        "Format": "srt",
+        "Method": "Embed"
+      },
+      {
+        "Format": "ass",
+        "Method": "External"
+      },
+      {
+        "Format": "ass",
+        "Method": "Embed"
+      },
+      {
+        "Format": "sub",
+        "Method": "Embed"
+      },
+      {
+        "Format": "sub",
+        "Method": "External"
+      },
+      {
+        "Format": "ssa",
+        "Method": "Embed"
+      },
+      {
+        "Format": "ssa",
+        "Method": "External"
+      },
+      {
+        "Format": "smi",
+        "Method": "Embed"
+      },
+      {
+        "Format": "smi",
+        "Method": "External"
+      },
+      {
+        "Format": "pgssub",
+        "Method": "Embed"
+      },
+      {
+        "Format": "pgssub",
+        "Method": "External"
+      },
+      {
+        "Format": "dvdsub",
+        "Method": "Embed"
+      },
+      {
+        "Format": "dvdsub",
+        "Method": "External"
+      },
+      {
+        "Format": "pgs",
+        "Method": "Embed"
+      },
+      {
+        "Format": "pgs",
+        "Method": "External"
+      }
+    ]
+  }
+}

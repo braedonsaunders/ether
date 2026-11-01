@@ -9,4 +9,5 @@ var (
 	_ core.BitrateAccessPolicy  = (*Service)(nil)
 	_ core.ArtworkAccessPolicy  = (*Service)(nil)
 	_ core.UserPolicySource     = (*Service)(nil)
+	_ core.DownloadAccessPolicy = (*Service)(nil)
 )

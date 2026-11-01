@@ -1,17 +1,13 @@
 package subtitles
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -139,122 +135,11 @@ func Shift(cues []Cue, offset time.Duration, rate float64) ([]Cue, error) {
 	return out, nil
 }
 
-// AlignAgainst estimates a constant offset using exact normalized text matches
-// against embedded reference subtitles. It requires several independent cues
-// and rejects inconsistent matches rather than guessing from unrelated dialogue.
-func AlignAgainst(cues, reference []Cue) (time.Duration, error) {
-	norm := func(s string) string {
-		return strings.Join(strings.Fields(strings.ToLower(htmlTagRe.ReplaceAllString(s, ""))), " ")
-	}
-	matches := map[string][]time.Duration{}
-	for _, c := range reference {
-		k := norm(c.Text)
-		if len(k) >= 12 {
-			matches[k] = append(matches[k], c.Start)
-		}
-	}
-	var offsets []time.Duration
-	counts := map[string]int{}
-	for _, c := range cues {
-		counts[norm(c.Text)]++
-	}
-	for _, c := range cues {
-		k := norm(c.Text)
-		if ts := matches[k]; len(ts) == 1 && counts[k] == 1 {
-			offsets = append(offsets, ts[0]-c.Start)
-		}
-	}
-	if len(offsets) < 3 {
-		return 0, errors.New("not enough unique matching subtitle cues")
-	}
-	sort.Slice(offsets, func(i, j int) bool { return offsets[i] < offsets[j] })
-	median := offsets[len(offsets)/2]
-	inliers := 0
-	for _, d := range offsets {
-		if d >= median-500*time.Millisecond && d <= median+500*time.Millisecond {
-			inliers++
-		}
-	}
-	if inliers < 3 || inliers*4 < len(offsets)*3 {
-		return 0, errors.New("subtitle alignment is inconsistent; use manual offset")
-	}
-	return median, nil
-}
-
-// SyncOptions adjusts a cached sidecar or estimates the offset from supplied
-// embedded-reference SRT/VTT/ASS. It creates a new cache entry, preserving the
-// original download and every other viewer's selection.
-type SyncOptions struct {
-	Apply bool `json:"apply"` // apply adjusted copy to the cached release for every viewer
-
-	OffsetMS  int64   `json:"offsetMs"`
-	Rate      float64 `json:"rate"`
-	Reference string  `json:"reference,omitempty"`
-}
-
-func (s *Service) Sync(id string, opts SyncOptions) (string, error) {
-	r, _, err := s.Open(id)
-	if err != nil {
-		return "", err
-	}
-	defer r.Close()
-	raw, err := io.ReadAll(io.LimitReader(r, 16<<20))
-	if err != nil {
-		return "", err
-	}
-	cues, err := ParseCues(string(raw))
-	if err != nil {
-		return "", err
-	}
-	offset := time.Duration(opts.OffsetMS) * time.Millisecond
-	if opts.Reference != "" {
-		ref, err := ParseCues(opts.Reference)
-		if err != nil {
-			ref, err = ParseASS(opts.Reference)
-		}
-		if err != nil {
-			return "", err
-		}
-		offset, err = AlignAgainst(cues, ref)
-		if err != nil {
-			return "", err
-		}
-	}
-	rate := opts.Rate
-	if rate == 0 {
-		rate = 1
-	}
-	cues, err = Shift(cues, offset, rate)
-	if err != nil {
-		return "", err
-	}
-	if len(cues) == 0 {
-		return "", errors.New("sync removed every subtitle cue")
-	}
-	sum := sha256.Sum256([]byte(RenderSRT(cues)))
-	newID := hex.EncodeToString(sum[:16])
-	if err = os.MkdirAll(s.dir, 0755); err != nil {
-		return "", err
-	}
-	if err = writeFileAtomic(filepath.Join(s.dir, newID+".srt"), []byte(RenderSRT(cues))); err != nil {
-		return "", err
-	}
-	if err = writeFileAtomic(filepath.Join(s.dir, newID+".vtt"), []byte(RenderVTT(cues))); err != nil {
-		return "", err
-	}
-	if opts.Apply {
-		original := strings.TrimPrefix(id, URLPrefix)
-		if err = writeFileAtomic(filepath.Join(s.dir, original+".sync.json"), []byte(newID)); err != nil {
-			return "", err
-		}
-	}
-	return URLPrefix + newID, nil
-}
-
-// SyncHandler serves POST /{cachedSubtitleID}; mount behind owner auth/CSRF.
+// SyncHandler serves GET / of cached sidecars and POST /{id} as a
+// manual timing adjust written into the correction store.
 func (s *Service) SyncHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" && strings.Trim(r.URL.Path, "/") == "" {
+		if r.Method == http.MethodGet && strings.Trim(r.URL.Path, "/") == "" {
 			items, err := s.CachedSubtitles()
 			if err != nil {
 				http.Error(w, "Subtitles unavailable", 500)
@@ -264,28 +149,90 @@ func (s *Service) SyncHandler() http.Handler {
 			_ = json.NewEncoder(w).Encode(items)
 			return
 		}
-		if r.Method != "POST" {
-			w.Header().Set("Allow", "POST")
-			w.WriteHeader(405)
+		if r.Method == http.MethodPost {
+			s.handleManualAdjust(w, r)
 			return
 		}
-		var opts SyncOptions
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&opts); err != nil {
-			http.Error(w, "invalid sync options", 400)
-			return
-		}
-		if opts.OffsetMS < -3600000 || opts.OffsetMS > 3600000 {
-			http.Error(w, "offset exceeds one hour", 400)
-			return
-		}
-		id, err := s.Sync(strings.Trim(r.URL.Path, "/"), opts)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"externalUrl": id})
+		w.Header().Set("Allow", "GET, POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
+}
+
+func (s *Service) handleManualAdjust(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(strings.Trim(r.URL.Path, "/"), URLPrefix)
+	if id == "" || strings.ContainsAny(id, "/\\") {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if strings.Contains(id, "..") {
+		http.Error(w, "Invalid subtitle id", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		OffsetMs  int64   `json:"offsetMs"`
+		Rate      float64 `json:"rate"`
+		Reference string  `json:"reference"`
+		Apply     bool    `json:"apply"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body) != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	if body.OffsetMs < -3600000 || body.OffsetMs > 3600000 {
+		http.Error(w, "Offset must be within ±1 hour", http.StatusBadRequest)
+		return
+	}
+	rate := body.Rate
+	if rate == 0 {
+		rate = 1
+	}
+	if rate < 0.5 || rate > 2 {
+		http.Error(w, "Rate must be between 0.5 and 2", http.StatusBadRequest)
+		return
+	}
+	c := correction{
+		Offset: time.Duration(body.OffsetMs) * time.Millisecond,
+		Rate:   rate, Applied: body.Apply, Manual: true, Measured: false,
+		Confidence: 1, Inliers: 1, At: s.now().UTC(),
+	}
+	if body.Reference != "" {
+		cues, err := s.cuesByCachedID(id)
+		ref, rerr := parseReference(body.Reference)
+		if rerr != nil {
+			http.Error(w, rerr.Error(), http.StatusBadRequest)
+			return
+		}
+		if err == nil {
+			if fit, ok := FitTiming(cues, ref); ok {
+				c.Offset, c.Rate = fit.Offset, fit.Rate
+				c.Confidence, c.Inliers = fit.Confidence, fit.Inliers
+			}
+		}
+	}
+	s.storeCorrection(id, manualSource, c)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"externalUrl": URLPrefix + id})
+}
+
+func parseReference(text string) ([]Cue, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, errors.New("Reference subtitles are empty")
+	}
+	if looksASS(text) {
+		cues, err := ParseASS(text)
+		if err != nil || len(cues) == 0 {
+			return nil, errors.New("Reference subtitles must be readable ASS, SRT, or WebVTT")
+		}
+		return cues, nil
+	}
+	cues, err := ParseCues(text)
+	if err != nil || len(cues) == 0 {
+		return nil, errors.New("Reference subtitles must be readable ASS, SRT, or WebVTT")
+	}
+	return cues, nil
+}
+
+func looksASS(s string) bool {
+	return strings.Contains(s, "[Script Info]") || strings.Contains(s, "[Events]") || strings.Contains(s, "Dialogue:")
 }

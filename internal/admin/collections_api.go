@@ -70,6 +70,8 @@ type collectionView struct {
 }
 
 func viewOf(s core.CollectionSpec) collectionView {
+	s.Rules, s.Warnings = encodableRules(s.Rules, s.Warnings)
+	s.Exclude, s.Warnings = encodableRules(s.Exclude, s.Warnings)
 	v := collectionView{CollectionSpec: s}
 	if s.ID != "" {
 		stamp := ""
@@ -82,6 +84,31 @@ func viewOf(s core.CollectionSpec) collectionView {
 		v.ArtworkURL = "/ether/api/collections/" + s.ID + "/artwork?v=" + stamp
 	}
 	return v
+}
+
+// encodableRules drops rules whose stored value is not valid JSON, so one
+// damaged rule cannot fail the whole collection list. Each dropped rule is
+// reported as a warning on its collection.
+func encodableRules(rules []core.CollectionRule, warnings []string) ([]core.CollectionRule, []string) {
+	out := rules[:0:0]
+	for _, r := range rules {
+		if len(r.Value) == 0 || !json.Valid(r.Value) {
+			msg := fmt.Sprintf("Rule %q has a damaged value and was skipped. Edit the collection to set it again.", r.Field)
+			has := false
+			for _, w := range warnings {
+				if w == msg {
+					has = true
+					break
+				}
+			}
+			if !has {
+				warnings = append(warnings, msg)
+			}
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, warnings
 }
 
 // decodeSpec reads a CollectionSpec, tolerating fields the server owns

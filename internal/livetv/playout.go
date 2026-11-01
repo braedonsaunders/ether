@@ -7,14 +7,15 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/streamgrant"
 )
 
 const segmentDuration = 4 * time.Second
@@ -49,6 +50,10 @@ type session struct {
 	relayCancel     context.CancelFunc
 	relayInfo       *core.MediaInfo
 	dash            core.DASHSession
+	http            core.HTTPSession
+	// httpStart is closed when an in-flight ensureHTTP StartHLS finishes.
+	// Waiters re-check liveHTTP instead of starting a second encoder.
+	httpStart chan struct{}
 	// mu guards the fields above and below it. It is never held across
 	// Playback.Prepare/Failover, HLS SwapInput, programme lookups, probing
 	// or upstream I/O: preparers work on a staged
@@ -67,15 +72,16 @@ type session struct {
 	failoverGate chan struct{} // initialized under mu
 	// ctx is the session lifetime, cancelled by close; preparation I/O is
 	// bound to it (bindContext) so Stop cancels a slow Prepare/probe.
-	ctx       context.Context
-	cancel    context.CancelFunc
-	info      SessionInfo
-	user      core.User
-	caps      core.ClientCaps
-	last      time.Time
-	tracks    []*track
-	resources map[string]string
-	closed    bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	info        SessionInfo
+	streamGrant string
+	user        core.User
+	caps        core.ClientCaps
+	last        time.Time
+	tracks      []*track
+	resources   map[string]string
+	closed      bool
 }
 
 // bindContext derives a context cancelled when parent ends or when the
@@ -137,6 +143,9 @@ func (ss *session) close(s *Service) {
 	relay := ss.relay
 	relayCancel := ss.relayCancel
 	dash := ss.dash
+	httpStream := ss.http
+	ss.dash = nil
+	ss.http = nil
 	reserved := ss.reserved
 	ss.mu.Unlock()
 	s.revokeInput(ss)
@@ -148,6 +157,9 @@ func (ss *session) close(s *Service) {
 	}
 	if dash != nil {
 		dash.Close()
+	}
+	if httpStream != nil {
+		httpStream.Close()
 	}
 	for _, t := range tracks {
 		s.stopTrack(t)
@@ -244,7 +256,7 @@ func (s *Service) TuneWithSession(ctx context.Context, u *core.User, channelID s
 			ActivityID: liveSessionID(), ClientSessionID: clientSessionID,
 			UserID: u.ID, Channel: c, Programme: p, StartedAt: s.o.Now(),
 		},
-		user: *u, caps: caps, last: s.o.Now(), resources: map[string]string{},
+		streamGrant: randomID(), user: *u, caps: caps, last: s.o.Now(), resources: map[string]string{},
 	}
 	base := s.ctx
 	if base == nil {
@@ -288,7 +300,7 @@ func (s *Service) TuneWithSession(ctx context.Context, u *core.User, channelID s
 	// close can therefore cancel it through the session context instead of
 	// waiting behind up to ~10s of upstream work.
 	if c.Kind == "virtual" {
-		_, err = s.prepareTrack(ctx, ss, *p)
+		err = s.tuneVirtual(ctx, ss, *p)
 		if err != nil {
 			s.Stop(ctx, ss.info.ID, u)
 			return SessionInfo{}, err
@@ -560,6 +572,9 @@ func (s *Service) prepareTrackOnStage(ctx context.Context, ss *session, p Progra
 			return t, nil
 		}
 	}
+	if p.Item.Slate == offAirSlate {
+		return nil, fmt.Errorf("channel is off air")
+	}
 	if s.o.Playback == nil || s.o.Transcoder == nil {
 		return nil, core.ErrNotAvailable
 	}
@@ -730,7 +745,14 @@ func (s *Service) ServePlaylist(w http.ResponseWriter, r *http.Request, id strin
 				target = int(math.Ceil(dur.Seconds()))
 			}
 			uri := fmt.Sprintf("program/%d/%d.ts", tr.programme.Start.UnixMilli(), n)
-			uri = withAuth(uri, r)
+			// start.m3u8 is not the session playlist, so a relative segment
+			// resolves outside /livetv and the stream token cannot authenticate
+			// it. Root it. The session index keeps relative URLs, which resolve
+			// next to that playlist.
+			if !strings.Contains(r.URL.Path, "/livetv/sessions/") {
+				uri = "/livetv/sessions/" + id + "/0/" + uri
+			}
+			uri = withAuth(uri, ss.streamGrant)
 			segments = append(segments, seg{tr.sequence + int64(n), at, dur, uri, ti > 0 && n == 0})
 		}
 		if tr.programme.End.Before(now.Add(-24 * time.Second)) {
@@ -755,21 +777,8 @@ func (s *Service) ServePlaylist(w http.ResponseWriter, r *http.Request, id strin
 		fmt.Fprint(w, b.String())
 	}
 }
-func withAuth(raw string, r *http.Request) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	q := u.Query()
-	token := r.URL.Query().Get("X-Plex-Token")
-	if token == "" {
-		token = r.Header.Get("X-Plex-Token")
-	}
-	if token != "" {
-		q.Set("X-Plex-Token", token)
-	}
-	u.RawQuery = q.Encode()
-	return u.String()
+func withAuth(raw, grant string) string {
+	return streamgrant.GrantURL(raw, grant)
 }
 func (s *Service) ServeSegment(w http.ResponseWriter, r *http.Request, id string, start int64, n int, u *core.User) {
 	ss, err := s.getSession(r.Context(), id, u)
@@ -901,6 +910,14 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	}
 	c := ss.info.Channel
 	c.StreamURL = ss.inputURL
+	analyze := len(ss.caps.VideoCodecs) > 0 || len(ss.caps.AudioCodecs) > 0 || clientreg.HasQuirk(clientreg.Identity{Product: ss.caps.Product, Platform: ss.caps.Platform, Device: ss.caps.Device, Version: ss.caps.Version}, "probe-hls-without-codecs")
+	probe := analyze || c.Transcode || ss.caps.Protocol == "jellyfin" || ss.caps.Protocol == "emby"
+	// Codec analysis overlaps the playlist prefix read. The first tune of a
+	// channel still waits on the probe; a retune inside liveProbeTTL does not.
+	probeCh, probeCancel := s.startEarlyProbe(ctx, ss, probe)
+	if probeCancel != nil {
+		defer probeCancel()
+	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.StreamURL, nil)
 	res, err := s.upstreamWithHeaders(ctx, c.StreamURL, req, ss.inputHeaders)
 	if err != nil {
@@ -918,24 +935,38 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	isHLS := strings.HasPrefix(strings.TrimSpace(string(prefix[:n])), "#EXTM3U") || strings.Contains(strings.ToLower(res.Header.Get("Content-Type")), "mpegurl")
 	var info *core.MediaInfo
 	if isHLS && !c.Transcode {
-		analyze := len(ss.caps.VideoCodecs) > 0 || len(ss.caps.AudioCodecs) > 0 || strings.Contains(strings.ToLower(ss.caps.Product), "apple") || strings.EqualFold(ss.caps.Platform, "tvos") || strings.EqualFold(ss.caps.Platform, "ios")
-		if s.o.Transcoder != nil && analyze {
-			info, err = s.probeSessionInput(ctx, ss)
-			if err != nil {
-				return err
+		if s.o.Transcoder != nil && probe {
+			probeWaitCtx := ctx
+			var waitCancel context.CancelFunc
+			if ss.caps.Protocol == "silo" {
+				// Silo playback/start has a < 1s budget. Wait briefly for a
+				// cached or fast probe, then proceed with HLS passthrough if
+				// live ffprobe is still sampling segments.
+				probeWaitCtx, waitCancel = context.WithTimeout(ctx, 350*time.Millisecond)
+				defer waitCancel()
 			}
-			if info == nil || info.Video() == nil {
-				return core.ErrNotAvailable
+			info, err = s.takeEarlyProbe(probeWaitCtx, ss, probeCh)
+			if analyze && ss.caps.Protocol != "silo" {
+				if err != nil {
+					return err
+				}
+				if info == nil || info.Video() == nil {
+					return core.ErrNotAvailable
+				}
 			}
-			copy := *info
-			copy.Duration = 0
-			info = &copy
-			ss.info.MediaInfo = info
-			// A playlist is a transport, not evidence that its codecs are
-			// playable. MPEG-2/MP2 HLS needs conversion on Apple TV too.
-			dec := s.o.Transcoder.Decide(*info, ss.caps, core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: -1, SubtitleStream: -1})
-			if !dec.VideoCopy || !dec.AudioCopy {
-				return s.startIPTVRelay(ctx, ss, *info)
+			if err == nil && info != nil && info.Video() != nil {
+				copy := *info
+				copy.Duration = 0
+				info = &copy
+				ss.info.MediaInfo = info
+				if analyze {
+					// A playlist is a transport, not evidence that its codecs are
+					// playable. MPEG-2/MP2 HLS needs conversion on Apple TV too.
+					dec := s.o.Transcoder.Decide(*info, ss.caps, core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: -1, SubtitleStream: -1})
+					if !dec.VideoCopy || !dec.AudioCopy {
+						return s.startIPTVRelay(ctx, ss, *info)
+					}
+				}
 			}
 		}
 		ss.resources["index.m3u8"] = c.StreamURL
@@ -944,7 +975,7 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	if s.o.Transcoder == nil {
 		return core.ErrNotAvailable
 	}
-	info, err = s.probeSessionInput(ctx, ss)
+	info, err = s.takeEarlyProbe(ctx, ss, probeCh)
 	if err != nil {
 		return err
 	}
@@ -955,6 +986,38 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	copy.Duration = 0
 	ss.info.MediaInfo = &copy
 	return s.startIPTVRelay(ctx, ss, copy)
+}
+
+type probeResult struct {
+	info *core.MediaInfo
+	err  error
+}
+
+// startEarlyProbe begins codec analysis before the prefix read when this
+// tune will need it. Direct HLS without a codec decision does not probe.
+func (s *Service) startEarlyProbe(ctx context.Context, ss *session, need bool) (<-chan probeResult, context.CancelFunc) {
+	if !need || s.o.Transcoder == nil {
+		return nil, nil
+	}
+	ch := make(chan probeResult, 1)
+	probeCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		info, err := s.probeSessionInput(probeCtx, ss)
+		ch <- probeResult{info, err}
+	}()
+	return ch, cancel
+}
+
+func (s *Service) takeEarlyProbe(ctx context.Context, ss *session, ch <-chan probeResult) (*core.MediaInfo, error) {
+	if ch == nil {
+		return s.probeSessionInput(ctx, ss)
+	}
+	select {
+	case r := <-ch:
+		return r.info, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 func (s *Service) serveRelayPlaylist(w http.ResponseWriter, r *http.Request, ss *session) {
 	ss.mu.Lock()
@@ -992,7 +1055,7 @@ func (s *Service) serveRelayPlaylist(w http.ResponseWriter, r *http.Request, ss 
 				http.Error(w, "invalid relay segment", 502)
 				return
 			}
-			lines[i] = withAuth(fmt.Sprintf("/livetv/sessions/%s/0/relay/%d.ts", ss.info.ID, n), r)
+			lines[i] = withAuth(fmt.Sprintf("/livetv/sessions/%s/0/relay/%d.ts", ss.info.ID, n), ss.streamGrant)
 		}
 	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")

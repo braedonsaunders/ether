@@ -49,6 +49,7 @@ func (s *State) ImportTransaction(ctx context.Context, prepare func(*sql.Tx) (Im
 		return tx.Commit()
 	}()
 	if err == nil {
+		s.gen.Add(1)
 		for _, ev := range events {
 			ev.Imported = true
 			s.emit(ev)

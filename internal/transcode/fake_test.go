@@ -35,24 +35,29 @@ type fakeRunner struct {
 	runCalls   [][]string
 
 	// HLS simulation.
-	segDelay   time.Duration // time to produce each segment
-	lastSeg    int           // input ends after this segment; -1 = never
-	failStart  func(args []string) (stderr string, fail bool)
-	failAfter  int // fail after producing this many segments (0 = never)
-	starts     [][]string
-	procs      []*fakeProc
-	runFunc    func(ctx context.Context, cmd Command) error
-	startError error
-	noPause    bool // processes cannot be suspended (Windows)
+	segDelay      time.Duration // time to produce each segment
+	lastSeg       int           // input ends after this segment; -1 = never
+	failStart     func(args []string) (stderr string, fail bool)
+	failAfter     int  // fail after producing this many segments (0 = never)
+	eofAfter      int  // clean EOF after this many segments of this run (0 = never)
+	emptyOnceFrom int  // first run starting at or after this segment EOFs with no output
+	emptyOnceDone bool // emptyOnceFrom has already fired
+	starts        [][]string
+	procs         []*fakeProc
+	runFunc       func(ctx context.Context, cmd Command) error
+	startError    error
+	noPause       bool // processes cannot be suspended (Windows)
 
 	// DASH simulation: the input ends at this media time (0 = never).
 	dashEnd  time.Duration
 	dashHold bool // keep the bounded producer alive until Stop, to test cleanup before exit
 
 	// Chunked HLS simulation (keyframe-planned sessions): source keyframe
-	// interval (default 2.5s) and end of input (0 = never).
-	chunkGOP time.Duration
-	chunkEnd time.Duration
+	// interval (default 2.5s), end of video input (0 = never) and end of
+	// trailing audio in the final Matroska chunk (0 = same as chunkEnd).
+	chunkGOP      time.Duration
+	chunkEnd      time.Duration
+	chunkAudioEnd time.Duration
 }
 
 func newFakeRunner() *fakeRunner {
@@ -93,6 +98,7 @@ const sampleFilters = `Filters:
  .. scale             V->V       Scale the input video size and/or convert the image format.
  .. scale_vt          V->V       Scale Videotoolbox frames
  .. zscale            V->V       Apply resizing, colorspace and bit depth conversion.
+ .. colorspace        V->V       Convert between colorspaces.
  .S tonemap           V->V       Conversion to/from different dynamic ranges.
  .. tonemap_vaapi     V->V       VAAPI VPP for tone-mapping
  .. subtitles         V->V       Render text subtitles onto input video using the libass library.
@@ -209,12 +215,32 @@ func (f *fakeRunner) Start(cmd Command) (Process, error) {
 	if f.failStart != nil {
 		stderr, fail = f.failStart(cmd.Args)
 	}
-	if argValue(cmd.Args, "-f") == "dash" {
+	startNum, _ := strconv.Atoi(argValue(cmd.Args, "-start_number"))
+	if argValue(cmd.Args, "-segment_format") == "matroska" {
+		if n, err := strconv.Atoi(argValue(cmd.Args, "-segment_start_number")); err == nil {
+			startNum = n
+		}
+	}
+	// Chunked Matroska muxes with -segment_start_number 0; the run's
+	// playlist index is -ss / segment.
+	if startNum == 0 {
+		if ssf, err := strconv.ParseFloat(argValue(cmd.Args, "-ss"), 64); err == nil && ssf > 0 {
+			startNum = int(math.Round(ssf / fakeChunkSeg.Seconds()))
+		}
+	}
+	emptyAt := -1
+	if f.emptyOnceFrom > 0 && startNum >= f.emptyOnceFrom && !f.emptyOnceDone {
+		f.emptyOnceDone = true
+		emptyAt = startNum
+	}
+	if argValue(cmd.Args, "-f") == "matroska" {
+		go p.simulateHTTP(cmd)
+	} else if argValue(cmd.Args, "-f") == "dash" {
 		go p.simulateDASH(cmd, f.segDelay, f.dashEnd, f.dashHold, f.failAfter, fail, stderr)
 	} else if fakeChunked(cmd.Args) {
-		go p.simulateChunks(cmd, f.segDelay, f.chunkGOP, f.chunkEnd, f.lastSeg, f.failAfter, fail, stderr)
+		go p.simulateChunks(cmd, f.segDelay, f.chunkGOP, f.chunkEnd, f.chunkAudioEnd, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
 	} else {
-		go p.simulate(cmd, f.segDelay, f.lastSeg, f.failAfter, fail, stderr)
+		go p.simulate(cmd, f.segDelay, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
 	}
 	f.procs = append(f.procs, p)
 	return p, nil
@@ -297,6 +323,18 @@ func (p *fakeProc) Resume() error {
 	return nil
 }
 
+func (p *fakeProc) simulateHTTP(cmd Command) {
+	defer close(p.done)
+	if cmd.Stdout != nil {
+		_, _ = io.WriteString(cmd.Stdout, "\x1aE\xdf\xa3fake-matroska")
+	}
+	select {
+	case <-p.kill:
+		p.err = errors.New("signal: killed")
+	default:
+	}
+}
+
 func (p *fakeProc) isPaused() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -337,7 +375,7 @@ func (p *fakeProc) publish(path string, data []byte) bool {
 	}
 }
 
-func (p *fakeProc) simulate(cmd Command, delay time.Duration, lastSeg, failAfter int, failStart bool, stderr string) {
+func (p *fakeProc) simulate(cmd Command, delay time.Duration, lastSeg, failAfter, eofAfter, emptyAt int, failStart bool, stderr string) {
 	defer close(p.done)
 	args := cmd.Args
 	playlist := args[len(args)-1]
@@ -356,6 +394,11 @@ func (p *fakeProc) simulate(cmd Command, delay time.Duration, lastSeg, failAfter
 		p.err = errors.New("exit status 1")
 		return
 	}
+	if emptyAt >= 0 {
+		list := "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ENDLIST\n"
+		_ = p.publish(playlist, []byte(list))
+		return
+	}
 	if init != "" {
 		initPath := init
 		if !filepath.IsAbs(initPath) {
@@ -371,6 +414,13 @@ func (p *fakeProc) simulate(cmd Command, delay time.Duration, lastSeg, failAfter
 	list.WriteString("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n")
 	for n, produced := start, 0; ; n, produced = n+1, produced+1 {
 		if lastSeg >= 0 && n > lastSeg {
+			list.WriteString("#EXT-X-ENDLIST\n")
+			if !p.publish(playlist, []byte(list.String())) {
+				return
+			}
+			return
+		}
+		if eofAfter > 0 && produced >= eofAfter {
 			list.WriteString("#EXT-X-ENDLIST\n")
 			if !p.publish(playlist, []byte(list.String())) {
 				return
@@ -433,7 +483,7 @@ const fakeChunkSeg = 4 * time.Second
 // at end (or after legacy segment lastSeg); failAfter fails the run after
 // that many chunks. Chunks carry real timestamps (MPEG-TS PTS, fMP4 tfdt,
 // Matroska Cluster) and a text marker "segment N args-ss=... input=...".
-func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, lastSeg, failAfter int, failStart bool, stderr string) {
+func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end, audioEnd time.Duration, lastSeg, failAfter, eofAfter, emptyAt int, failStart bool, stderr string) {
 	defer close(p.done)
 	args := cmd.Args
 	playlist := args[len(args)-1]
@@ -457,6 +507,12 @@ func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, la
 		p.err = errors.New("exit status 1")
 		return
 	}
+	if emptyAt >= 0 {
+		if playlist != "" {
+			_ = p.publish(playlist, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ENDLIST\n"))
+		}
+		return
+	}
 	if init != "" {
 		_ = os.WriteFile(init, testVideoInit(1280, 720), 0o644)
 	}
@@ -476,6 +532,13 @@ func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, la
 	list.WriteString("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n")
 	for n := 0; ; n++ {
 		if end > 0 && t >= end {
+			list.WriteString("#EXT-X-ENDLIST\n")
+			if !p.publish(playlist, []byte(list.String())) {
+				return
+			}
+			return
+		}
+		if eofAfter > 0 && n >= eofAfter {
 			list.WriteString("#EXT-X-ENDLIST\n")
 			if !p.publish(playlist, []byte(list.String())) {
 				return
@@ -514,6 +577,9 @@ func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, la
 		switch {
 		case mkv:
 			b = testMKVChunk(t, marker)
+			if end > 0 && t+d >= end && audioEnd > end {
+				b = append(b, emptyCluster(audioEnd+matroskaOrigin-time.Millisecond)...)
+			}
 		case strings.HasSuffix(name, ".m4s"):
 			b = testChunk(uint32(n+1), int64(t*90000/time.Second), 3750, int(d*24/time.Second), []byte(marker))
 		default:

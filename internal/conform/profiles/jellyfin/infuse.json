@@ -1,0 +1,23 @@
+{
+  "protocol": "jellyfin",
+  "client": "Infuse (documented; capture required)",
+  "source": {
+    "publisher": "Firecore Support",
+    "url": "https://support.firecore.com/hc/en-us/articles/21072505575319-Connection-Info-for-Emby-Jellyfin-and-Plex",
+    "behavior_url": "https://support.firecore.com/hc/en-us/articles/360006462093-Streaming-from-Plex-Emby-and-Jellyfin",
+    "notes": "Documentation describes Infuse-Direct, Infuse-Library, and Infuse-Download connection types and example Emby/Jellyfin headers. Infuse is closed source; no ordered request flow has been verified."
+  },
+  "headers": {
+    "X-Emby-Authorization": "MediaBrowser Token=\"${access_token}\", Client=\"${connection_type}\", Version=\"${version}\", Device=\"${device_name}\", DeviceId=\"${device_id}\"",
+    "User-Agent": "${connection_type}/${version}",
+    "Accept": "application/json",
+    "Accept-Language": "${accept_language}",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive"
+  },
+  "authorization": {
+    "format": "Documented MediaBrowser token header; exact sign-in and token acquisition sequence requires owner capture."
+  },
+  "flows": {},
+  "profile_status": "unverified: needs owner capture"
+}

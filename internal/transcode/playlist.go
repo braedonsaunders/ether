@@ -63,6 +63,10 @@ func segmentLength(i, n int, span, segDur time.Duration) time.Duration {
 // mediaPlaylist renders the full-length VOD playlist for a span, so clients
 // can seek anywhere before ffmpeg has produced a thing.
 func mediaPlaylist(span, segDur time.Duration, container string, name func(n int) string) []byte {
+	return mediaPlaylistWithIndependence(span, segDur, container, name, true)
+}
+
+func mediaPlaylistWithIndependence(span, segDur time.Duration, container string, name func(n int) string, independent bool) []byte {
 	var b bytes.Buffer
 	n := segmentCount(span, segDur)
 	b.Grow(n * 48)
@@ -81,7 +85,9 @@ func mediaPlaylist(span, segDur time.Duration, container string, name func(n int
 	fmt.Fprintf(&b, "#EXT-X-TARGETDURATION:%d\n", target)
 	b.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n")
 	b.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
-	b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
+	if independent {
+		b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
+	}
 	if hasInitSegment(container) {
 		fmt.Fprintf(&b, "#EXT-X-MAP:URI=%q\n", initSegmentName(container))
 	}
@@ -129,7 +135,7 @@ func eventPlaylist(done []int, segDur time.Duration, container string, ended boo
 // playlist of the full timeline without ENDLIST until ended, so clients
 // that reload it pick up re-planned segments ahead of the playhead; with
 // total==0 timelines only the first limit segments are listed.
-func planPlaylist(tl *Timeline, container string, name func(n int) string, discont func(n int) bool, event, ended bool, limit int) []byte {
+func planPlaylist(tl *Timeline, container string, name func(n int) string, discont func(n int) bool, event, ended bool, limit int, independent bool) []byte {
 	var b bytes.Buffer
 	version := 3
 	if hasInitSegment(container) {
@@ -143,7 +149,9 @@ func planPlaylist(tl *Timeline, container string, name func(n int) string, disco
 		b.WriteString("#EXT-X-PLAYLIST-TYPE:EVENT\n")
 	} else {
 		b.WriteString("#EXT-X-PLAYLIST-TYPE:VOD\n")
-		b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
+		if independent {
+			b.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
+		}
 	}
 	if hasInitSegment(container) {
 		fmt.Fprintf(&b, "#EXT-X-MAP:URI=%q\n", initSegmentName(container))

@@ -84,6 +84,35 @@ func setup(t *testing.T) (*Service, *fakeResolver, *fakeEngine, *fakeNotifier, *
 	}
 	return s, res, eng, note, src, &now
 }
+
+func TestAvailableEventFiresOnceWhenATitleBecomesPlayable(t *testing.T) {
+	s, _, _, _, _, now := setup(t)
+	var got []core.RatingKey
+	s.o.OnAvailable = func(_ context.Context, userID int64, key core.RatingKey) {
+		if userID != 1 {
+			t.Fatalf("user %d", userID)
+		}
+		got = append(got, key)
+	}
+	ctx := context.Background()
+	u := &core.User{ID: 1, MaxContentRating: "PG"}
+	if err := s.Sync(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Check(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != core.MovieKey(1) {
+		t.Fatalf("available %v", got)
+	}
+	*now = now.Add(7 * time.Hour)
+	if err := s.Check(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("repeat %v", got)
+	}
+}
 func TestAvailabilityIsHealthyReleasedViewerScopedAndOnce(t *testing.T) {
 	s, res, eng, note, _, now := setup(t)
 	ctx := context.Background()
@@ -314,5 +343,30 @@ func TestAvailabilityRetractsAfterConfirmedMissingRelease(t *testing.T) {
 	}
 	if note.calls != 2 {
 		t.Fatal("new availability transition not notified")
+	}
+}
+
+func TestContainsViewerAndMutation(t *testing.T) {
+	s, _, _, _, _, _ := setup(t)
+	ctx := context.Background()
+	u := &core.User{ID: 1}
+	key := core.MovieKey(1)
+	if err := s.Remind(ctx, u, key); err != nil {
+		t.Fatal(err)
+	}
+	yes, err := s.Contains(ctx, 1, key)
+	if err != nil || !yes {
+		t.Fatalf("membership %v %v", yes, err)
+	}
+	yes, err = s.Contains(ctx, 2, key)
+	if err != nil || yes {
+		t.Fatalf("viewer isolation %v %v", yes, err)
+	}
+	if err = s.Remove(ctx, 1, key); err != nil {
+		t.Fatal(err)
+	}
+	yes, err = s.Contains(ctx, 1, key)
+	if err != nil || yes {
+		t.Fatalf("removal %v %v", yes, err)
 	}
 }

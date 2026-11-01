@@ -11,7 +11,7 @@ import (
 // creating an authentication service. Inactive viewers retain their history.
 func StoredIdentity(ctx context.Context, db *sql.DB, id int64) (*core.User, error) {
 	var u core.User
-	err := db.QueryRowContext(ctx, `SELECT id,plex_id,username FROM auth_users WHERE id=?`, id).Scan(&u.ID, &u.PlexID, &u.Username)
+	err := db.QueryRowContext(ctx, `SELECT id,COALESCE(plex_id,0),username FROM auth_users WHERE id=?`, id).Scan(&u.ID, &u.PlexID, &u.Username)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = core.ErrNotFound
 	}

@@ -148,16 +148,20 @@ func clamp(v, lo, hi float64) float64 { return math.Max(lo, math.Min(hi, v)) }
 // tasteInput is everything the model is built from. Gathering it is I/O
 // (see engine.gatherTaste); building from it is pure.
 type tasteInput struct {
-	userID    int64
-	now       time.Time
-	loc       *time.Location
-	halfLife  time.Duration
-	history   []core.HistoryEntry                 // newest first
-	statuses  map[core.RatingKey]core.WatchStatus // by item key
-	titles    map[core.RatingKey]core.Title       // by taste key
-	plays     []playRecord                        // oldest first
-	shownDays map[core.RatingKey]int              // impressions without play, by item key
-	overrides []core.TasteOverride
+	userID              int64
+	now                 time.Time
+	loc                 *time.Location
+	halfLife            time.Duration
+	history             []core.HistoryEntry                 // newest first
+	statuses            map[core.RatingKey]core.WatchStatus // by item key
+	titles              map[core.RatingKey]core.Title       // by taste key
+	plays               []playRecord                        // oldest first
+	shownDays           map[core.RatingKey]int              // impressions without play, by item key
+	overrides           []core.TasteOverride
+	favorites           []FavoriteSignal
+	notInterested       []NotInterestedSignal
+	preferenceRevision  uint64
+	preferenceSignature string
 }
 
 type evAcc struct {
@@ -327,6 +331,24 @@ func buildTaste(in tasteInput) *Taste {
 		}
 		evs = append(evs, e)
 	}
+	// Favorites are independent positive evidence with a slower decay than viewing.
+	for _, favorite := range in.favorites {
+		if favorite.Key == 0 {
+			continue
+		}
+		weight := 1.8
+		if age := in.now.Sub(favorite.AddedAt); !favorite.AddedAt.IsZero() && age > 0 {
+			weight *= math.Pow(0.5, float64(age)/float64(2*in.halfLife))
+		}
+		evs = append(evs, Evidence{Key: tasteKey(favorite.Key), At: favorite.AddedAt, Raw: 1.8, Weight: weight, Kind: "favorite"})
+	}
+	// Explicit rejection is strong negative evidence; unlike passive impressions
+	// it remains effective until the viewer removes it.
+	for _, signal := range in.notInterested {
+		if signal.Key != 0 {
+			evs = append(evs, Evidence{Key: tasteKey(signal.Key), At: signal.AddedAt, Raw: -1.8, Weight: -1.8, Kind: "notInterested"})
+		}
+	}
 	// Impressions without a play: weak negative evidence once a title has
 	// been shown on three or more days and never started.
 	ignored := map[core.RatingKey]int{}
@@ -383,8 +405,24 @@ func buildTaste(in tasteInput) *Taste {
 		}
 		ts.spread(t, w)
 	}
+	for _, favorite := range in.favorites {
+		if favorite.PersonID <= 0 {
+			continue
+		}
+		weight := 1.8
+		if age := in.now.Sub(favorite.AddedAt); !favorite.AddedAt.IsZero() && age > 0 {
+			weight *= math.Pow(0.5, float64(age)/float64(2*in.halfLife))
+		}
+		ts.Person[favorite.PersonID] += weight
+		mass += weight
+	}
 	for i := range ts.Evidence {
-		ts.evidenceByKey[ts.Evidence[i].Key] = &ts.Evidence[i]
+		e := &ts.Evidence[i]
+		// A favorite adds taste but must not erase a separate playback or
+		// rating record used by watched-state and post-play decisions.
+		if old := ts.evidenceByKey[e.Key]; old == nil || e.Kind != "favorite" {
+			ts.evidenceByKey[e.Key] = e
+		}
 	}
 	normalize(ts.Genre, floorGenre)
 	normalize(ts.Keyword, floorKeyword)

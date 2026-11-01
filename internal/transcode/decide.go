@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -320,6 +321,10 @@ func heightForBitrate(kbps int, codec string) int {
 }
 
 // bitrateCeiling is the bitrate past which a height gains little.
+// ProfileVideoKbps is the H.264 video target Decide uses for a quality
+// profile height. Silo publishes the same number on that rung.
+func ProfileVideoKbps(height int) int { return bitrateCeiling(height, "h264") }
+
 func bitrateCeiling(height int, codec string) int {
 	var k int
 	switch {
@@ -447,6 +452,13 @@ func planAudio(a *core.StreamInfo, caps core.ClientCaps, audioIssues []string, b
 
 // Decide chooses direct play, remux into HLS, or full transcode, in that
 // order of preference, and explains why in Decision.Reason.
+func outputContainer(caps core.ClientCaps, opts core.DecideOptions, videoCodec, audioCodec string) string {
+	if opts.Protocol == core.ProtocolHTTP {
+		return ContainerMatroska
+	}
+	return HLSContainer(caps, videoCodec, audioCodec)
+}
+
 func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, pol Policy) core.Decision {
 	v := info.Video()
 	a := pickAudio(info, opts.AudioStream)
@@ -551,7 +563,7 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 			d.VideoCodec = v.Codec
 			d.MaxHeight = v.Height
 		}
-		d.Container = HLSContainer(caps, d.VideoCodec, audioCodec)
+		d.Container = outputContainer(caps, opts, d.VideoCodec, audioCodec)
 		d.BitrateKbps = info.BitrateKbps
 		if !audioCopy && a != nil {
 			d.BitrateKbps = info.BitrateKbps - copiedAudioKbps(a) + audioKbps
@@ -660,7 +672,7 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 	d.VideoCodec = codec
 	d.MaxHeight = height
 	d.BitrateKbps = videoKbps + audioKbps
-	d.Container = HLSContainer(caps, codec, audioCodec)
+	d.Container = outputContainer(caps, opts, codec, audioCodec)
 
 	parts := []string{"transcode"}
 	if len(why) > 0 {
@@ -731,6 +743,8 @@ func describeSource(info core.MediaInfo, v, a *core.StreamInfo) string {
 
 // appleTVHDR10Base is a player quirk, not a hardware certification or a
 // blanket HEVC/HDR limit. Profile 5 has no HDR10 base and must not be stripped.
+// The client match is the registry quirk plex-appletv-hdr10-base: native Plex
+// on tvOS accepts the decision and then fails to open profiles 7 and 8.1.
 func appleTVHDR10Base(v *core.StreamInfo, caps core.ClientCaps) bool {
 	if v == nil || v.Codec != "hevc" || !v.DolbyVision || v.ColorTransfer != "smpte2084" || !caps.HDR10 {
 		return false
@@ -744,6 +758,5 @@ func appleTVHDR10Base(v *core.StreamInfo, caps core.ClientCaps) bool {
 	if v.DolbyVisionBLPresent != nil && !*v.DolbyVisionBLPresent {
 		return false
 	}
-	product := strings.ToLower(caps.Product)
-	return strings.Contains(product, "plex") && (strings.Contains(product, "apple tv") || strings.EqualFold(caps.Platform, "tvos"))
+	return clientreg.HasQuirk(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: caps.Device, Version: caps.Version}, "plex-appletv-hdr10-base")
 }

@@ -142,6 +142,11 @@ func (m *Manager) generationFor(inputURL string) *generation {
 // readMetadata reads without counting as the viewer's sequential position,
 // so warming never disturbs read-ahead or seek detection.
 func readMetadata(ctx context.Context, g *generation, p []byte, off int64) (int, error) {
+	// Prefetch priority so a live encoder Range can steal the connection
+	// instead of waiting behind a 48 MiB warm of the GOP at the seek.
+	if pr, ok := g.src.(core.PrefetchReaderAt); ok {
+		return pr.ReadAtPrefetchContext(ctx, p, off)
+	}
 	if mr, ok := g.src.(core.MetadataReaderAt); ok {
 		return mr.ReadMetadataAtContext(ctx, p, off)
 	}

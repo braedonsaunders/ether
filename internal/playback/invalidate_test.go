@@ -15,7 +15,7 @@ func TestInvalidateTitleDropsWarmResolution(t *testing.T) {
 		t.Fatal("warm skipped")
 	}
 	h.m.mu.Lock()
-	e := h.m.warm[identity{owner.ID, caps.ClientID, movieKey}]
+	e := h.m.warm[identity{userID: owner.ID, clientID: caps.ClientID, key: movieKey}]
 	h.m.mu.Unlock()
 	select {
 	case <-e.done:

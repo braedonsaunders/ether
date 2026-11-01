@@ -27,7 +27,7 @@ func TestEgressWarning(t *testing.T) {
 		t.Fatalf("dead node counted: %s", w)
 	}
 	w := egressWarning([]cluster.Node{egressNode("b", "198.51.100.2", true), egressNode("a", "203.0.113.1", true), egressNode("c", "203.0.113.1", true)})
-	want := "nodes reach the internet from different public addresses (198.51.100.2: b; 203.0.113.1: a, c); debrid providers may flag simultaneous use of one account from several IPs"
+	want := "nodes reach providers from different public addresses (198.51.100.2: b; 203.0.113.1: a, c); a debrid account can be limited when it is used from more than one address"
 	if w != want {
 		t.Fatalf("warning %q", w)
 	}
@@ -77,24 +77,19 @@ func (f *fakeWAN) Detect(context.Context) (net.IP, error) {
 	return net.ParseIP(f.ip), nil
 }
 
-func TestDetectEgressOnlyWhenDebridEnabled(t *testing.T) {
+func TestDetectEgressUsesSourcePath(t *testing.T) {
 	cfg, err := config.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := &App{cfg: cfg, log: quietLog()}
 	wan := &fakeWAN{ip: "203.0.113.7"}
-	if ip := a.detectEgress(context.Background(), wan); ip != "" || wan.calls != 0 {
-		t.Fatalf("looked up without debrid: %q (%d calls)", ip, wan.calls)
+	if ip := a.detectEgress(context.Background(), wan); ip != "203.0.113.7" || wan.calls != 1 {
+		t.Fatalf("source lookup %q (%d calls)", ip, wan.calls)
 	}
-	if err := cfg.Update(func(c *config.Config) error {
-		c.Debrid.Providers = []config.DebridProvider{{ID: "rd", Kind: config.DebridRealDebrid, APIKey: "k", Enabled: true}}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if ip := a.detectEgress(context.Background(), wan); ip != "203.0.113.7" {
-		t.Fatalf("egress %q", ip)
+	wan.ip = ""
+	if ip := a.detectEgress(context.Background(), wan); ip != "" {
+		t.Fatalf("failed lookup returned %q", ip)
 	}
 	a.egress = &egressIP{}
 	a.egress.set("203.0.113.7")

@@ -99,9 +99,7 @@ export function BrowserPush({
                   ? t(
                       "Notifications are blocked for this site. Allow them in your browser’s site settings, then reconnect.",
                     )
-                  : t(
-                      "Connect each phone, tablet or computer separately. Your browser’s push service delivers the alerts; operating-system permissions and Focus settings control how they appear.",
-                    )}
+                  : t("Connect each phone, tablet or computer separately.")}
             </p>
             {message ? (
               <p role="status" className="text-fg">

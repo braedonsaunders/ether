@@ -1,0 +1,30 @@
+{
+  "specs": [
+    {
+      "protocol": "jellyfin",
+      "version": "12.4",
+      "url": "https://repo.jellyfin.org/files/openapi/stable/jellyfin-openapi-12.4.json",
+      "sha256": "02a6064916b7e08f1f1d8d7ffc1fb1c7623df0e378729fcd7fd353766868036e",
+      "format": "openapi-3",
+      "latest_url": "https://repo.jellyfin.org/files/openapi/stable/"
+    },
+    {
+      "protocol": "emby",
+      "version": "4.10.2.0 / Emby.SDK 45e73012eddf985dcfe878ca031b500085e16496",
+      "url": "https://raw.githubusercontent.com/MediaBrowser/Emby.SDK/45e73012eddf985dcfe878ca031b500085e16496/Resources/OpenApi/openapi_v2.json",
+      "sha256": "4dffb6e928f2b16892c87ca74b31c4dd7b6937c1aa72d7f265e80c1b3c7e9f70",
+      "format": "swagger-2",
+      "latest_url": "https://raw.githubusercontent.com/MediaBrowser/Emby.SDK/master/Resources/OpenApi/openapi_v2.json"
+    },
+    {
+      "protocol": "silo",
+      "version": "build-1810-omnibus / 44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2",
+      "url": "https://raw.githubusercontent.com/Silo-Server/silo-server/44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2/contracts/api/v2/openapi.json",
+      "sha256": "7bd930f36640541315d631b721593942019cb8333f9b0bc5c2148d45dd2acc07",
+      "format": "openapi-3",
+      "latest_url": "https://raw.githubusercontent.com/Silo-Server/silo-server/main/contracts/api/v2/openapi.json",
+      "route_inventory_url": "https://raw.githubusercontent.com/Silo-Server/silo-server/44a345dbfb8c0a5892dc366ee0dd33fc091b7cf2/contracts/api/v2/route-inventory.json",
+      "route_inventory_sha256": "93ec729cc191156ac5d5928e46a03f350419eb9b847f94dac8bacf949290efc3"
+    }
+  ]
+}

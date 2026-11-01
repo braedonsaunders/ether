@@ -40,3 +40,11 @@ type GoodputSession interface {
 	// GoodputKbps is the rolling segment-delivery estimate; 0 unknown.
 	GoodputKbps() int
 }
+
+// HLSIndependentSegments is an optional, session-wide guarantee that every
+// segment in every advertised rendition is independently decodable. A
+// session must not implement it as true unless it can prove that guarantee for
+// copied media, all encoder paths, and every rung it actually advertises.
+type HLSIndependentSegments interface {
+	IndependentSegments() bool
+}

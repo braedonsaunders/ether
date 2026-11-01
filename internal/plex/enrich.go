@@ -73,6 +73,16 @@ func (c *titleCache) get(key core.RatingKey) *core.Title {
 	return t
 }
 
+// peek returns the cached detail for key without scheduling a background fetch.
+func (c *titleCache) peek(key core.RatingKey) *core.Title {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.items.Peek(key); ok {
+		return e.t
+	}
+	return nil
+}
+
 func (c *titleCache) schedule(key core.RatingKey) {
 	c.q.submit("title:"+strconv.FormatInt(int64(key), 10), func(ctx context.Context) {
 		fctx, cancel := context.WithTimeout(ctx, titleFetchTimeout)
@@ -222,6 +232,10 @@ func (s *Server) enrich(t *core.Title) *core.Title {
 // showOf returns the cached detail of a season's or episode's show, or nil
 // (scheduling a fetch) when it isn't cached yet.
 func (s *Server) showOf(t *core.Title) *core.Title {
+	return s.showOfOpts(t, false)
+}
+
+func (s *Server) showOfOpts(t *core.Title, storedOnly bool) *core.Title {
 	if s.titles == nil || (t.Type != core.TypeSeason && t.Type != core.TypeEpisode) {
 		return nil
 	}
@@ -234,6 +248,9 @@ func (s *Server) showOf(t *core.Title) *core.Title {
 	}
 	if show.Kind() != core.KindShow {
 		return nil
+	}
+	if storedOnly {
+		return s.titles.peek(show)
 	}
 	return s.titles.get(show)
 }

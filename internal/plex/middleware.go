@@ -3,16 +3,35 @@ package plex
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/identity"
+
+	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
+
+type acceptanceContextKey struct{}
+
+func withAcceptance(ctx context.Context, a auth.Acceptance) context.Context {
+	return context.WithValue(ctx, acceptanceContextKey{}, a)
+}
+
+func acceptanceFrom(ctx context.Context) (auth.Acceptance, bool) {
+	a, ok := ctx.Value(acceptanceContextKey{}).(auth.Acceptance)
+	return a, ok && a.Valid()
+}
 
 const corsAllowHeaders = "Accept, Accept-Language, Content-Type, Range, X-Plex-Token, X-Plex-Client-Identifier, X-Plex-Product, " +
 	"X-Plex-Version, X-Plex-Platform, X-Plex-Platform-Version, X-Plex-Device, X-Plex-Device-Name, X-Plex-Device-Vendor, " +
@@ -115,13 +134,30 @@ func (sr *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWriter }
 
-// requestLog logs every request at debug level.
+// requestLog logs requests at debug level and summarizes noisy 401 failures.
 func (s *Server) requestLog(next http.Handler) http.Handler {
+	log := s.log
+	if log == nil {
+		log = slog.Default()
+	}
+	failures := faillog.New(log.With("frontend", "plex"), "authentication")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sr := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(sr, r)
+		if sr.status == http.StatusUnauthorized {
+			failures.Fail(errors.New("unauthorized"))
+			return
+		}
 		pr := FromContext(r.Context())
+		if s.d.TracePlayback && traceTranscodePath(r.URL.Path) {
+			status := sr.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			s.log.Info("hls request", "method", r.Method, "path", r.URL.Path, "query", redactTraceQuery(r.URL.Query()),
+				"range", r.Header.Get("Range"), "status", status, "bytes", sr.written, "duration", time.Since(start))
+		}
 		s.log.Debug("request", "method", r.Method, "path", r.URL.Path, "status", sr.status,
 			"dur", time.Since(start).Round(time.Millisecond), "product", pr.Product, "client", pr.ClientID,
 			"range", r.Header.Get("Range"), "contentRange", sr.Header().Get("Content-Range"),
@@ -131,11 +167,46 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 	})
 }
 
+// traceTranscodePath reports Plex HLS and session playlist/segment routes.
+func traceTranscodePath(path string) bool {
+	return strings.HasPrefix(path, "/video/:/transcode/") || strings.Contains(path, "/:/transcode/universal/session/")
+}
+
+// redactTraceQuery keeps the request query except credential parameters.
+func redactTraceQuery(q url.Values) string {
+	if len(q) == 0 {
+		return ""
+	}
+	cloned := url.Values{}
+	for k, vs := range q {
+		if traceSecretQuery(k) {
+			cloned[k] = []string{"redacted"}
+			continue
+		}
+		cloned[k] = vs
+	}
+	return cloned.Encode()
+}
+
+func traceSecretQuery(k string) bool {
+	switch strings.ToLower(k) {
+	case "x-plex-token", "token", "accesstoken", "access_token",
+		strings.ToLower(streamGrantParam), strings.ToLower(readCapParam):
+		return true
+	default:
+		return false
+	}
+}
+
 // parse attaches the parsed request context.
 func (s *Server) parse(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pr := ParseRequest(r)
-		next.ServeHTTP(w, r.WithContext(withRequest(r.Context(), pr)))
+		pr := ParseRequest(r, identity.ProxyPrefixes(s.cfg().Server.TrustedProxyCIDRs)...)
+		ctx := withRequest(r.Context(), pr)
+		if s.plexMetaOn() {
+			ctx = core.WithPlexSaferRating(ctx)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -153,42 +224,125 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			return
 		}
 		pr := FromContext(r.Context())
-		if pr.Token == "" && s.authenticateStreamGrant(r, pr) {
+		if pr.Token != "" && s.d.Auth != nil {
+			u, receipt, err := s.acceptToken(r.Context(), pr.Token)
+			switch {
+			case err == nil && u != nil:
+				if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+					u = policy.UserPolicy(u)
+				}
+				if id := transcodeSessionID(r.URL.Path); id != "" {
+					e, ok := s.transcodes.get(id)
+					if !ok {
+						writeHTTPError(w, http.StatusNotFound)
+						return
+					}
+					if e.userID != u.ID {
+						writeHTTPError(w, http.StatusForbidden)
+						return
+					}
+				}
+				pr.User = u
+				if receipt.Valid() {
+					r = r.WithContext(withAcceptance(r.Context(), receipt))
+				}
+				if !s.acceptanceCurrent(r) {
+					writeHTTPError(w, http.StatusUnauthorized)
+					return
+				}
+				if s.d.Hooks.OnClientSeen != nil {
+					s.d.Hooks.OnClientSeen(pr.ClientID)
+				}
+				if s.d.Dashboard != nil {
+					s.d.Dashboard.SeeDevice(pr.ClientID, pr.DeviceName, pr.Platform)
+				}
+				next.ServeHTTP(w, r)
+				return
+			case err == nil, errors.Is(err, core.ErrUnauthorized), errors.Is(err, core.ErrNotFound):
+				// Stale or unknown token: playlist/segment reads may still
+				// pass with a live stream grant or minted read capability.
+			case errors.Is(err, r.Context().Err()):
+				return
+			default:
+				s.log.Warn("authentication failed", "err", err)
+				writeHTTPError(w, http.StatusServiceUnavailable)
+				return
+			}
+		}
+		if s.authenticateStreamGrant(r, pr) || s.authenticateSessionRead(r, pr) || s.authenticateLiveGrant(r, pr) {
+			if !s.acceptanceCurrent(r) {
+				writeHTTPError(w, http.StatusUnauthorized)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
-		if pr.Token == "" || s.d.Auth == nil {
-			writeHTTPError(w, http.StatusUnauthorized)
-			return
-		}
-		u, err := s.d.Auth.Authenticate(r.Context(), pr.Token)
-		switch {
-		case err == nil && u != nil:
-			if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
-				u = policy.UserPolicy(u)
-			}
-			if id := transcodeSessionID(r.URL.Path); id != "" {
-				e, ok := s.transcodes.get(id)
-				if !ok {
-					writeHTTPError(w, http.StatusNotFound)
-					return
-				}
-				if e.userID != u.ID {
-					writeHTTPError(w, http.StatusForbidden)
-					return
-				}
-			}
-			pr.User = u
-			next.ServeHTTP(w, r)
-		case err == nil, errors.Is(err, core.ErrUnauthorized), errors.Is(err, core.ErrNotFound):
-			writeHTTPError(w, http.StatusUnauthorized)
-		case errors.Is(err, r.Context().Err()):
-			// client went away
-		default:
-			s.log.Warn("authentication failed", "err", err)
-			writeHTTPError(w, http.StatusServiceUnavailable)
-		}
+		writeHTTPError(w, http.StatusUnauthorized)
 	})
+}
+
+type tokenAcceptor interface {
+	Accept(context.Context, string) (*core.User, auth.Acceptance, error)
+	ReceiptCurrent(context.Context, auth.Acceptance) error
+}
+
+func (s *Server) acceptToken(ctx context.Context, token string) (*core.User, auth.Acceptance, error) {
+	if acc, ok := s.d.Auth.(tokenAcceptor); ok {
+		return acc.Accept(ctx, token)
+	}
+	u, err := s.d.Auth.Authenticate(ctx, token)
+	return u, auth.Acceptance{}, err
+}
+
+// acceptanceCurrent rechecks a receipt minted for this request. Requests that
+// did not mint one, including stream grants, stay on their own check.
+func (s *Server) acceptanceCurrent(r *http.Request) bool {
+	receipt, ok := acceptanceFrom(r.Context())
+	if !ok {
+		return true
+	}
+	checker, ok := s.d.Auth.(tokenAcceptor)
+	if !ok {
+		return false
+	}
+	return checker.ReceiptCurrent(r.Context(), receipt) == nil
+}
+
+func (s *Server) authenticateLiveGrant(r *http.Request, pr *Request) bool {
+	if s.d.LiveTV == nil {
+		return false
+	}
+	if !capabilityPathOK(r) {
+		return false
+	}
+	u, ok := s.d.LiveTV.AuthenticateMediaGrant(r, s.activeViewer)
+	if !ok {
+		return false
+	}
+	if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+		u = policy.UserPolicy(u)
+	}
+	if fresh, ok := s.d.AccessPolicy.(interface {
+		ConfirmPlayback(context.Context, *core.User, bool, time.Time) (*core.User, error)
+	}); ok {
+		confirmed, err := fresh.ConfirmPlayback(r.Context(), u, pr.ClientCaps(0).Remote, s.now())
+		if err != nil && !errors.Is(err, core.ErrPolicyUnconfirmed) {
+			return false
+		}
+		if err == nil {
+			if confirmed == nil || confirmed.ID != u.ID {
+				return false
+			}
+			u = confirmed
+		} else if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
+			return false
+		}
+	} else if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
+		return false
+	}
+	pr.User = u
+	pr.Capability = true
+	return true
 }
 
 // ownerOnly restricts a handler to the server owner.
@@ -323,7 +477,8 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeHTTPError(w, http.StatusNotFound)
 	case errors.Is(err, core.ErrUnauthorized):
 		writeHTTPError(w, http.StatusUnauthorized)
-	case errors.Is(err, core.ErrStreamLimit):
+	case errors.Is(err, core.ErrStreamLimit), errors.Is(err, transcode.ErrTooManyTranscodes):
+		w.Header().Set("Retry-After", "5")
 		writeHTTPError(w, http.StatusServiceUnavailable)
 	case errors.Is(err, core.ErrNotAvailable), errors.Is(err, core.ErrUnreleased), errors.Is(err, core.ErrDebridAuth):
 		// The title exists; nothing can play it right now (no release yet,

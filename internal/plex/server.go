@@ -9,7 +9,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"io"
+	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"log/slog"
 	"net/http"
 	"runtime"
@@ -24,8 +24,15 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
+	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/hoststat"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
+	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/stats"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 // DefaultPMSVersion is reported when Identity.Version is empty. Clients gate
@@ -49,6 +56,8 @@ type Identity struct {
 // Hooks are optional callbacks into other components. They run on their own
 // goroutine and must be safe for concurrent use.
 type Hooks struct {
+	// OnClientSeen receives the client identifier after authentication.
+	OnClientSeen func(clientID string)
 	// OnTimeline is called for every timeline update (prefetch uses it).
 	OnTimeline func(user *core.User, key core.RatingKey, offset, duration time.Duration, state string)
 	// OnScrobble is called when a user marks an item watched.
@@ -73,10 +82,15 @@ type SessionToucher interface {
 // Deps are the server's dependencies. Catalog, State, Auth and Playback are
 // required; the rest degrade gracefully when nil.
 type Deps struct {
+	ArtworkImages       *artworkservice.RemoteCache
+	ArtworkPalettes     *artworkservice.PaletteCache
+	SessionCoordination *sessions.Coordination
+	FavoriteShows       func(context.Context, *core.User) (map[core.RatingKey]bool, error)
 	FilterAvailable     func(context.Context, []core.Title) []core.Title
 	PrioritizeAvailable func(context.Context, []core.Title) []core.Title
 	EpisodeOrder        *episodeorder.Service
 	PlexGUID            *plexguid.Service
+	PlexMeta            *plexmeta.Service
 	Discovery           *DiscoveryFeatures
 	LiveTV              *livetv.Service
 	AccessPolicy        AccessPolicy
@@ -92,6 +106,9 @@ type Deps struct {
 	// Variants lists distinct release versions for "Play Version" detail
 	// pages (optional: without it, detail pages stay single-Media).
 	Variants core.VariantResolver
+	// DecisionTraces is the latest resolution for a title, copied into a
+	// support capture. Nil leaves playback unchanged.
+	DecisionTraces core.DecisionTraceSource
 	// Downloads remuxes resolved sources to temp MP4s for the Download
 	// Queue API; nil disables downloads (allowSync stays "0").
 	Downloads        core.DownloadRemuxer
@@ -101,6 +118,10 @@ type Deps struct {
 	Extras           ExtrasProvider
 	Trickplay        core.TrickplayProvider
 
+	// ApplyClientRules adjusts caps for the owner's quality rules. Nil leaves
+	// the request caps unchanged. The app wires resolver.ApplyClientRules so
+	// this package stays outside the resolver.
+	ApplyClientRules func(config.Quality, core.ClientCaps, *core.User) core.ClientCaps
 	// Config returns the current settings snapshot.
 	Config func() config.Config
 	// OwnerSubscription returns the current entitlement snapshot from plex.tv.
@@ -114,8 +135,12 @@ type Deps struct {
 	// Sections overrides the default Movies (1) and TV Shows (2) sections.
 	Sections []Section
 	// HTTPClient fetches artwork for the image proxy; defaults to a client
-	// with a 20 s timeout.
+	// with a 20 s timeout. The app wires the metadata route so this package
+	// does not import the egress policy.
 	HTTPClient *http.Client
+	// DirectHTTP proxies trailer bytes. Nil uses the default transport.
+	// The app wires the direct route so this package does not import egress.
+	DirectHTTP *http.Client
 	// ImageCacheBytes bounds the in-memory artwork cache (default 128 MiB).
 	ImageCacheBytes int64
 	// DB persists derived artwork data (UltraBlurColors) in plex_* tables.
@@ -133,29 +158,43 @@ type Deps struct {
 	SessionHeartbeat time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
+	// Dashboard is this node's in-memory Plex Web Dashboard store. Nil is
+	// replaced with a process-local store at NewServer. Statistics are not
+	// clustered; a client reads the node it connected to.
+	Dashboard *stats.Dashboard
+	// Resources is this node's host sample ring for /statistics/resources.
+	Resources *hoststat.Resources
 	// Support records neutral request and playback facts. Nil leaves playback unchanged.
 	Support *diagnostics.Recorder
+	// TracePlayback logs HLS/transcode requests when ETHER_TRACE_PLAYBACK=1.
+	// It does not change responses.
+	TracePlayback bool
 }
 
 // Server is the PMS API handler. It is an http.Handler; call Close on
 // shutdown to stop background work and notification streams.
 type Server struct {
-	d      Deps
-	log    *slog.Logger
-	router chi.Router
+	trickplayMu      sync.Mutex
+	trickplayHolders map[string]*trickplay.Holder
+	trickplayClosed  bool
+	d                Deps
+	log              *slog.Logger
+	router           chi.Router
 
 	sections []Section
 
-	images            *imageCache
-	streams           *streamRegistry
+	images            *artworkservice.RemoteCache
+	boundStreams      sessions.PlexStreamAPI
 	variantIDs        *variantIDRegistry
 	renderedVariants  *renderedVariants
 	downloads         *downloadStore
 	queues            *playQueueStore
-	sessions          *sessionTracker
-	playbackOwners    *playbackOwners
-	playbackLifecycle *playbackLifecycle
+	sessions          *sessionActivities
+	playbackBroker    frontend.Sessions
+	playbackOwners    *sessions.PlaybackOwners
+	playbackLifecycle *sessions.Lifecycle
 	transcodes        *transcodeTable
+	readCaps          *readCapabilityStore
 	extraPlay         *extraPlayStore
 	selections        *selectionStore
 	notifier          *notifier
@@ -164,7 +203,7 @@ type Server struct {
 
 	// Background enrichment (nil when disabled).
 	titles    *titleCache
-	ultra     *ultraBlurCache
+	ultra     *artworkservice.PaletteCache
 	titleJobs *bgQueue
 	blurJobs  *bgQueue
 
@@ -199,26 +238,39 @@ func NewServer(d Deps) *Server {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
+	if d.Dashboard == nil {
+		d.Dashboard = stats.NewDashboard(stats.DashboardOptions{Now: d.Now})
+	}
+	if d.Resources == nil {
+		d.Resources = hoststat.NewResources(hoststat.Options{Now: d.Now})
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	coord := d.SessionCoordination
+	if coord == nil || coord.Owners == nil || coord.Gates == nil {
+		coord = sessions.NewCoordination()
+	}
 	s := &Server{
 		d:                 d,
 		log:               d.Logger.With("component", "plex"),
-		images:            newImageCache(d.ImageCacheBytes, d.HTTPClient),
-		streams:           newStreamRegistry(),
+		images:            artworkservice.NewRemoteCache(d.ImageCacheBytes, d.HTTPClient),
 		variantIDs:        newVariantIDRegistry(d.DB),
 		renderedVariants:  newRenderedVariants(),
 		downloads:         newDownloadStore(),
 		queues:            newPlayQueueStore(),
-		sessions:          newSessionTracker(),
-		playbackOwners:    newPlaybackOwners(),
-		playbackLifecycle: newPlaybackLifecycle(),
+		sessions:          newSessionActivities(),
+		playbackOwners:    coord.Owners,
+		playbackLifecycle: coord.Gates,
 		transcodes:        newTranscodeTable(),
-		extraPlay:         newExtraPlayStore(),
+		readCaps:          newReadCapabilityStore(),
+		extraPlay:         newExtraPlayStore(d.DirectHTTP),
 		selections:        newSelectionStore(),
 		notifier:          newNotifier(),
 		facets:            newFacetCache(),
 		ctx:               ctx,
 		cancel:            cancel,
+	}
+	if d.ArtworkImages != nil {
+		s.images = d.ArtworkImages
 	}
 	s.sections = s.buildSections()
 	s.queues.now = d.Now
@@ -230,7 +282,16 @@ func NewServer(d Deps) *Server {
 		s.titleJobs = newBGQueue(ctx, &s.wg, titleFetchWorkers, titleFetchQueueLen)
 		s.blurJobs = newBGQueue(ctx, &s.wg, ultraBlurWorkers, ultraBlurQueueLen)
 		s.titles = newTitleCache(s.titleJobs, s.now, s.log, d.Catalog.Get)
-		s.ultra = newUltraBlurCache(d.DB, s.blurJobs, s.now, s.log, s.computeUltraBlur)
+		s.ultra = artworkservice.NewPaletteCache(d.DB, s.blurJobs.submit, s.now, s.log, func(ctx context.Context, key core.RatingKey, path string) (artworkservice.Palette, error) {
+			var art artworkservice.CollectionArt
+			if c, ok := s.d.Collections.(artworkservice.CollectionArt); ok {
+				art = c
+			}
+			return artworkservice.ComputeItemPalette(ctx, s.images, s.d.ImageURL, key, path, s.now(), art)
+		})
+	}
+	if d.ArtworkPalettes != nil {
+		s.ultra = d.ArtworkPalettes
 	}
 	s.router = s.routes()
 	s.wg.Add(1)
@@ -244,14 +305,17 @@ func NewServer(d Deps) *Server {
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
 
+// Closed reports whether Close has begun.
+func (s *Server) Closed() bool {
+	return s == nil || s.ctx.Err() != nil
+}
+
 // Close stops background goroutines and disconnects notification clients.
 func (s *Server) Close() error {
 	s.once.Do(func() {
 		s.releaseAllDownloads()
 		s.cancel()
-		if closer, ok := s.d.Trickplay.(io.Closer); ok {
-			_ = closer.Close()
-		}
+		s.closeTrickplayHolders()
 		s.notifier.close()
 		s.wg.Wait()
 		if s.cl != nil {
@@ -278,10 +342,9 @@ func (s *Server) identity() Identity {
 	if id.MachineIdentifier == "" {
 		id.MachineIdentifier = "ether"
 	}
-	if id.FriendlyName == "" {
-		id.FriendlyName = c.Server.FriendlyName
-	}
-	if id.FriendlyName == "" {
+	if name := strings.TrimSpace(c.Server.FriendlyName); name != "" {
+		id.FriendlyName = name
+	} else if strings.TrimSpace(id.FriendlyName) == "" {
 		id.FriendlyName = "Ether"
 	}
 	if c.Plex.CompatibilityVersion != "" {
@@ -352,9 +415,15 @@ func librarySectionTitle(t core.MediaType, c config.Config) string {
 }
 
 // withLibraryTitles copies secs and applies the configured library names.
-// Section UUIDs stay derived from id only, so renames do not break plex.tv.
+// IDs and UUIDs are not rewritten; UUIDs stay derived from section id only.
+// NewServer installs an empty config when none was provided. A hand-built
+// Server skips that, so a nil provider uses the same empty config. Empty
+// library names already resolve to Movies and TV Shows.
 func (s *Server) withLibraryTitles(secs []Section) []Section {
-	c := s.cfg()
+	var c config.Config
+	if s.d.Config != nil {
+		c = s.cfg()
+	}
 	out := append([]Section(nil), secs...)
 	for i := range out {
 		switch out[i].Type {
@@ -377,12 +446,23 @@ func (s *Server) sectionByID(id int) (Section, bool) {
 
 // sectionFor returns the section an item of type t lives in.
 func (s *Server) sectionFor(t core.MediaType) (Section, bool) {
+	sec, ok := s.untitledSectionFor(t)
+	if !ok {
+		return Section{}, false
+	}
+	return s.withLibraryTitles([]Section{sec})[0], true
+}
+
+// untitledSectionFor is sectionFor without the configured title. A
+// visibility check needs only the section id, and runs for every title a
+// page shows, so it reads no configuration.
+func (s *Server) untitledSectionFor(t core.MediaType) (Section, bool) {
 	want := core.TypeMovie
 	switch t {
 	case core.TypeShow, core.TypeSeason, core.TypeEpisode:
 		want = core.TypeShow
 	}
-	for _, sec := range s.withLibraryTitles(s.sections) {
+	for _, sec := range s.sections {
 		if sec.Type == want {
 			return sec, true
 		}
@@ -398,23 +478,26 @@ func (s *Server) userSections(u *core.User) []Section {
 	}
 	var out []Section
 	for _, sec := range secs {
-		for _, id := range u.AllowedSections {
-			if id == sec.ID {
-				out = append(out, sec)
-				break
-			}
+		if experience.SectionAllowed(u, sec.ID) {
+			out = append(out, sec)
 		}
 	}
 	return out
 }
 
 func (s *Server) canSeeSection(u *core.User, id int) bool {
-	for _, sec := range s.userSections(u) {
+	for _, sec := range s.sections {
 		if sec.ID == id {
-			return true
+			return u == nil || len(u.AllowedSections) == 0 || u.IsOwner || experience.SectionAllowed(u, sec.ID)
 		}
 	}
 	return false
+}
+
+func (s *Server) expireTranscodes(now time.Time, ttl time.Duration) {
+	for _, id := range s.transcodes.expire(now, ttl) {
+		s.revokeReadCapability(id)
+	}
 }
 
 // janitor expires idle play queues, sessions and transcode bindings.
@@ -428,11 +511,12 @@ func (s *Server) janitor() {
 			return
 		case <-t.C:
 			now := s.now()
+			s.expireTrickplayHolders()
 			s.expireDownloads(now)
 			s.queues.expire(now, 6*time.Hour)
 			s.renderedVariants.expire(now, renderedVariantsTTL)
-			s.transcodes.expire(now, 2*time.Hour)
-			s.playbackOwners.expire(now, 2*time.Hour)
+			s.expireTranscodes(now, 2*time.Hour)
+			s.playbackOwners.Expire(now, 2*time.Hour)
 			s.extraPlay.expire(now, 2*time.Hour)
 			s.expireTerminations(now, terminationTTL)
 			expired := s.sessions.expire(now, 2*time.Minute)
@@ -460,20 +544,34 @@ func (s *Server) goHook(name string, fn func()) {
 
 func trimSlash(p string) string { return strings.TrimSuffix(p, "/") }
 
-// TranscodeFor returns the running transcode session fed by a playback
-// session. Transcode sessions are keyed by the client's session id, so
-// playback needs this to move ffmpeg to a new input on mid-stream failover.
-func (s *Server) TranscodeFor(playSessionID string) (core.HLSSession, bool) {
-	if s.d.Transcoder == nil {
-		return nil, false
+// releaseMountedPlayback stops encoders, trickplay, and downloads this server
+// started. The HTTP server itself stays up so an in-flight request can finish
+// and a later mount can reuse it.
+func (s *Server) releaseMountedPlayback() {
+	if s == nil {
+		return
 	}
-	for _, id := range s.transcodes.byPlayID(playSessionID) {
-		if hs, ok := s.d.Transcoder.Session(id); ok && hs != nil {
-			return hs, true
+	s.UsePlaybackBroker(nil)
+	var ids []string
+	if s.transcodes != nil {
+		ids = s.transcodes.ids()
+	}
+	for _, id := range ids {
+		if s.d.Transcoder != nil {
+			s.d.Transcoder.Stop(id)
 		}
+		s.dropTranscode(id)
 	}
-	if s.d.LiveTV != nil {
-		return s.d.LiveTV.TranscodeFor(playSessionID)
+	s.releaseTrickplayHolders()
+	s.releaseAllDownloads()
+}
+
+func (s *Server) releaseTrickplayHolders() {
+	s.trickplayMu.Lock()
+	holds := s.trickplayHolders
+	s.trickplayHolders = nil
+	s.trickplayMu.Unlock()
+	for _, hold := range holds {
+		hold.Close(true)
 	}
-	return nil, false
 }

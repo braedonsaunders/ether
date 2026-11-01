@@ -1,10 +1,12 @@
 import { Badge, Button, Input, Switch, toast } from "@braedonsaunders/appkit-ui";
 import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Drawer } from "../../components/Drawer";
-import { Field, SecretInput } from "../../components/fields";
+import { Field } from "../../components/fields";
+import { secretConfigured } from "../../components/IntegrationAccount";
 import { MutationError } from "../../components/feedback";
-import { localized, t } from "../../i18n";
+import { localized, t, tx } from "../../i18n";
 import { api, apiFetch } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import { nativeSelect } from "./shared";
@@ -98,6 +100,7 @@ export function PosterProviders({ onSaved }: { onSaved: () => void }) {
                 ? t("Movie and show posters, with TMDB as a fallback.")
                 : t("Add a provider for movie and show posters.")}
             </p>
+            <PosterAccount posters={config.data} />
           </>
         )}
       </section>
@@ -145,9 +148,7 @@ export function PosterProviders({ onSaved }: { onSaved: () => void }) {
                   id="poster-provider-source"
                   className={nativeSelect}
                   value={draft.source}
-                  onChange={(e) =>
-                    setDraft({ ...empty, enabled: draft.enabled, source: e.target.value })
-                  }
+                  onChange={(e) => setDraft({ ...draft, source: e.target.value })}
                 >
                   {sources.map((s) => (
                     <option key={s.value} value={s.value}>
@@ -160,9 +161,7 @@ export function PosterProviders({ onSaved }: { onSaved: () => void }) {
                 <Field
                   label={t("Server URL")}
                   htmlFor="poster-provider-url"
-                  hint={t(
-                    "Your server may be on your LAN. Changing its address clears the saved key.",
-                  )}
+                  hint={t("Your server may be on your LAN.")}
                 >
                   <Input
                     id="poster-provider-url"
@@ -172,7 +171,7 @@ export function PosterProviders({ onSaved }: { onSaved: () => void }) {
                         : "http://postersplus:8000"
                     }
                     value={draft.baseUrl}
-                    onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value, apiKey: "" })}
+                    onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })}
                   />
                 </Field>
               )}
@@ -185,50 +184,7 @@ export function PosterProviders({ onSaved }: { onSaved: () => void }) {
                   />
                 </Field>
               )}
-              {draft.source !== "betterposters" && (
-                <Field
-                  label={
-                    draft.source === "postersplus" || draft.source === "xrdb"
-                      ? t("Access key (optional)")
-                      : t("API key")
-                  }
-                  htmlFor="poster-provider-key"
-                >
-                  <SecretInput
-                    id="poster-provider-key"
-                    value={draft.apiKey}
-                    onChange={(value) => setDraft({ ...draft, apiKey: value })}
-                  />
-                </Field>
-              )}
-              {(draft.source === "custom" || draft.source === "betterposters") && (
-                <Field
-                  label={t("Poster URL template")}
-                  htmlFor="poster-provider-template"
-                  hint={
-                    draft.source === "betterposters"
-                      ? t(
-                          "Optional: paste the Poster URL from {url}. Leave blank to use its default posters.",
-                          { url: "btttr.cc/configure" },
-                        )
-                      : t(
-                          "Use {imdb}, or {tmdb} with {type} (movie/tv). Add {key} to use the separate key.",
-                          {
-                            imdb: "{imdb_id}",
-                            tmdb: "{tmdb_id}",
-                            type: "{type}",
-                            key: "{api_key}",
-                          },
-                        )
-                  }
-                >
-                  <SecretInput
-                    id="poster-provider-template"
-                    value={draft.urlTemplate}
-                    onChange={(value) => setDraft({ ...draft, urlTemplate: value, apiKey: "" })}
-                  />
-                </Field>
-              )}
+              <PosterAccount posters={draft} />
             </fieldset>
             <div className="space-y-2 rounded-lg bg-bg-subtle p-4 text-xs leading-relaxed text-fg-muted">
               <p>
@@ -249,5 +205,29 @@ export function PosterProviders({ onSaved }: { onSaved: () => void }) {
         )}
       </Drawer>
     </>
+  );
+}
+
+function PosterAccount({ posters }: { posters?: Posters | null }) {
+  const connected = secretConfigured(posters?.apiKey) || secretConfigured(posters?.urlTemplate);
+  if (connected) {
+    return (
+      <p className="text-sm">
+        <Link to="/services" className="text-primary underline">
+          {t("Poster service connected")}
+        </Link>
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-fg-muted">
+      {tx("Connect your poster service in {link}.", {
+        link: (
+          <Link to="/services" className="text-primary underline">
+            {t("Integrations")}
+          </Link>
+        ),
+      })}
+    </p>
   );
 }

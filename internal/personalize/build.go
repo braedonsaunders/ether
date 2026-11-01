@@ -128,6 +128,17 @@ func (e *Engine) buildAndStore(ctx context.Context, userID int64) (*userModel, e
 		}
 		return nil, err
 	}
+	if !m.generic && e.opts.NotInterestedSnapshot != nil {
+		signals, revision, err := e.opts.NotInterestedSnapshot(bctx, &u)
+		if err != nil {
+			return nil, err
+		}
+		_, signature := snapshotSet(signals, revision)
+		if signature != m.preferenceSignature {
+			e.request(userID)
+			return nil, fmt.Errorf("personalize: preference changed during model build")
+		}
+	}
 	e.mu.Lock()
 	if old := e.models[userID]; old == nil || !old.builtAt.After(m.builtAt) {
 		e.version++
@@ -137,7 +148,28 @@ func (e *Engine) buildAndStore(ctx context.Context, userID int64) (*userModel, e
 	e.mu.Unlock()
 	e.log.Debug("personalize: model built", "user", userID, "rows", len(m.rows), "took", m.took,
 		"confidence", fmt.Sprintf("%.2f", m.taste.Confidence))
+	if e.opts.OnBuilt != nil && userID != genericID {
+		id := userID
+		go e.opts.OnBuilt(id)
+	}
 	return m, nil
+}
+
+// ModelReady reports whether a request can rank without waiting for a build.
+// A fresh viewer model or the generic model is enough. Plex still waits in
+// modelFor when neither exists; Jellyfin and Emby Next Up use this so a cold
+// start serves the un-personalized order instead.
+func (e *Engine) ModelReady(userID int64) bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := e.now()
+	fresh := func(m *userModel) bool {
+		return m != nil && now.Sub(m.builtAt) <= e.opts.ModelTTL
+	}
+	return fresh(e.models[userID]) || fresh(e.models[genericID])
 }
 
 // modelFor returns the viewer's model for a request. A stale model is
@@ -145,11 +177,21 @@ func (e *Engine) buildAndStore(ctx context.Context, userID int64) (*userModel, e
 // model (and their own is queued); with wait set (owner preview) the call
 // waits for the viewer's own build instead.
 func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *userModel {
+	var signature string
+	revisionOK := true
+	if e.opts.NotInterestedSnapshot != nil && user != nil && user.ID > 0 {
+		signals, rev, err := e.opts.NotInterestedSnapshot(ctx, user)
+		revisionOK = err == nil
+		_, signature = snapshotSet(signals, rev)
+	}
 	e.mu.Lock()
 	if user.ID != 0 || user.Username != "" {
 		e.users[user.ID] = *user
 	}
 	m := e.models[user.ID]
+	if !revisionOK || (m != nil && e.opts.NotInterestedSnapshot != nil && m.preferenceSignature != signature) {
+		m = nil
+	}
 	stale := m != nil && e.now().Sub(m.builtAt) > e.opts.ModelTTL
 	e.mu.Unlock()
 	if m != nil && !stale {
@@ -167,7 +209,7 @@ func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *user
 		e.mu.Lock()
 		m = e.models[user.ID]
 		e.mu.Unlock()
-		if m != nil {
+		if m != nil && revisionOK && (e.opts.NotInterestedSnapshot == nil || m.preferenceSignature == signature) {
 			return m
 		}
 	}
@@ -177,9 +219,33 @@ func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *user
 	if g != nil {
 		return g
 	}
-	// First requests after startup: wait briefly for the generic model.
+	// One page calls this several times. Only the first caller waits for
+	// the generic model; a later call returns whatever is already stored
+	// so a slow build cannot hold Home for a multiple of ColdWait. A fast
+	// build still unblocks that first caller through gf.done.
 	gf := e.request(genericID)
-	t := time.NewTimer(e.opts.ColdWait)
+	e.mu.Lock()
+	first := e.coldDeadline.IsZero()
+	if first {
+		e.coldDeadline = time.Unix(1, 0)
+	}
+	e.mu.Unlock()
+	if !wait && !first {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if m := e.models[user.ID]; m != nil && revisionOK && (e.opts.NotInterestedSnapshot == nil || m.preferenceSignature == signature) {
+			return m
+		}
+		return e.models[genericID]
+	}
+	waitFor := e.opts.ColdWait
+	// Home (wait == false) must not sit out a full ColdWait while the
+	// generic build is blocked on a provider. A model that is actually
+	// ready still arrives through gf.done before this cap.
+	if !wait && waitFor > 50*time.Millisecond {
+		waitFor = 50 * time.Millisecond
+	}
+	t := time.NewTimer(waitFor)
 	defer t.Stop()
 	select {
 	case <-gf.done:
@@ -189,7 +255,7 @@ func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *user
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if m := e.models[user.ID]; m != nil {
+	if m := e.models[user.ID]; m != nil && revisionOK && (e.opts.NotInterestedSnapshot == nil || m.preferenceSignature == signature) {
 		return m
 	}
 	return e.models[genericID]
@@ -289,6 +355,8 @@ func (e *Engine) buildModel(ctx context.Context, user core.User, generic bool) (
 		statuses: map[core.RatingKey]core.WatchStatus{}, memo: map[string][]core.Title{}, fits: map[core.RatingKey]fitMemo{},
 		hydrateLeft: hydrateBudget}
 	fatigue := map[core.RatingKey]float64{}
+	var preferenceRevision uint64
+	var preferenceSignature string
 	if generic {
 		b.taste = buildTaste(tasteInput{userID: user.ID, now: start, loc: e.loc})
 	} else {
@@ -297,6 +365,8 @@ func (e *Engine) buildModel(ctx context.Context, user core.User, generic bool) (
 			return nil, err
 		}
 		b.taste = buildTaste(in)
+		preferenceRevision = in.preferenceRevision
+		preferenceSignature = in.preferenceSignature
 		b.touched = touched
 		for k, days := range in.shownDays {
 			if days >= 2 {
@@ -311,7 +381,7 @@ func (e *Engine) buildModel(ctx context.Context, user core.User, generic bool) (
 		}
 		rows = append(rows, e.runGenerator(g, b)...)
 	}
-	m := &userModel{user: user, generic: generic, taste: b.taste, rows: rows, fatigue: fatigue, builtAt: start,
+	m := &userModel{user: user, generic: generic, taste: b.taste, rows: rows, fatigue: fatigue, builtAt: start, preferenceRevision: preferenceRevision, preferenceSignature: preferenceSignature,
 		crowd: b.crowd().features(), buzz: b.buzz().scores()}
 	m.took = e.now().Sub(start)
 	return m, nil
@@ -343,6 +413,27 @@ func (e *Engine) gatherTaste(ctx context.Context, user core.User) (tasteInput, m
 	now := e.now()
 	in := tasteInput{userID: user.ID, now: now, loc: e.loc, halfLife: e.opts.HalfLife,
 		statuses: map[core.RatingKey]core.WatchStatus{}, titles: map[core.RatingKey]core.Title{}}
+	if e.opts.Favorites != nil {
+		favorites, err := e.opts.Favorites(ctx, &user)
+		if err != nil {
+			return in, nil, fmt.Errorf("favorites: %w", err)
+		}
+		in.favorites = favorites
+	}
+	if e.opts.NotInterestedSnapshot != nil {
+		signals, revision, err := e.opts.NotInterestedSnapshot(ctx, &user)
+		if err != nil {
+			return in, nil, fmt.Errorf("not interested: %w", err)
+		}
+		in.notInterested, in.preferenceRevision = signals, revision
+		_, in.preferenceSignature = snapshotSet(signals, revision)
+	} else if e.opts.NotInterested != nil {
+		signals, err := e.opts.NotInterested(ctx, &user)
+		if err != nil {
+			return in, nil, fmt.Errorf("not interested: %w", err)
+		}
+		in.notInterested = signals
+	}
 	touched := map[core.RatingKey]bool{}
 	var err error
 	if e.state != nil {
@@ -438,6 +529,22 @@ func (e *Engine) gatherTaste(ctx context.Context, user core.User) (tasteInput, m
 	for _, p := range in.plays {
 		if p.updated.After(latest[p.tasteKey]) {
 			latest[p.tasteKey] = p.updated
+		}
+	}
+	for _, favorite := range in.favorites {
+		if favorite.Key != 0 {
+			key := tasteKey(favorite.Key)
+			if _, ok := latest[key]; !ok || favorite.AddedAt.After(latest[key]) {
+				latest[key] = favorite.AddedAt
+			}
+		}
+	}
+	for _, signal := range in.notInterested {
+		if signal.Key != 0 {
+			key := tasteKey(signal.Key)
+			if _, ok := latest[key]; !ok || signal.AddedAt.After(latest[key]) {
+				latest[key] = signal.AddedAt
+			}
 		}
 	}
 	order := make([]kt, 0, len(latest))
@@ -675,11 +782,10 @@ func (e *Engine) ownerRows(ctx context.Context, user *core.User, hc core.HubCont
 	}
 	done, have := ent.done, !ent.at.IsZero()
 	e.mu.Unlock()
-	if !have && done != nil {
-		delay := e.opts.OwnerRowsWait
-		if wait {
-			delay = e.opts.SourceTimeout
-		}
+	// Home does not block on the first owner-row fetch. The preview path
+	// still waits, and the next home uses the rows once they are stored.
+	if !have && done != nil && wait {
+		delay := e.opts.SourceTimeout
 		t := time.NewTimer(delay)
 		select {
 		case <-done:
@@ -706,6 +812,9 @@ func (e *Engine) fetchOwnerRows(key string, user *core.User, hc core.HubContext,
 			e.log.Error("personalize: owner rows panicked", "panic", v)
 		}
 		e.mu.Lock()
+		if ent.at.IsZero() {
+			ent.at = e.now()
+		}
 		ent.loading = false
 		close(ent.done)
 		e.mu.Unlock()
@@ -715,7 +824,7 @@ func (e *Engine) fetchOwnerRows(key string, user *core.User, hc core.HubContext,
 	rows, err := e.opts.Collections.HomeRowsFor(ctx, user, hc)
 	if err != nil {
 		e.log.Debug("personalize: owner rows failed", "err", err)
-		return
+		rows = nil
 	}
 	if source, ok := e.opts.Collections.(core.CollectionLayoutSource); ok {
 		seen := map[string]bool{}
@@ -738,7 +847,10 @@ func (e *Engine) fetchOwnerRows(key string, user *core.User, hc core.HubContext,
 		}
 	}
 	e.mu.Lock()
-	ent.rows, ent.at = rows, e.now()
+	if err == nil || len(rows) > 0 || ent.rows == nil {
+		ent.rows = rows
+	}
+	ent.at = e.now()
 	if len(e.owner) > 5000 {
 		for k, v := range e.owner {
 			if k != key && !v.loading {

@@ -94,9 +94,7 @@ export function Channels({
     <>
       <Section
         title={t("Channels")}
-        description={t(
-          "Send alerts about playback, sources and the server to the apps you already use.",
-        )}
+        description={t("Alerts for playback, sources and the server.")}
         actions={
           <Button size="sm" onClick={() => edit(blankChannel(), true)}>
             <Plus size={14} /> {t("New channel")}
@@ -179,11 +177,7 @@ export function Channels({
       >
         <div className="flex items-start gap-3 text-sm text-fg-muted">
           <Smartphone size={18} className="mt-0.5 shrink-0" />
-          <p>
-            {t(
-              "Use browser push on this device, or create an ntfy, Gotify, Telegram or email channel. Those apps can alert you while the dashboard is closed. On iPhone and iPad, add Ether to your Home Screen over HTTPS, open it there, and connect that device. Each device has its own event rules.",
-            )}
-          </p>
+          <p>{t("Use browser push, or an ntfy, Gotify, Telegram or email channel.")}</p>
         </div>
       </Section>
 

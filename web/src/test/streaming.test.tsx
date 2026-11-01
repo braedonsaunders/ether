@@ -2,13 +2,25 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { EtherConfig, UsenetProvider } from "../lib/types";
-import { normalizeTraces, resolutionCeilings, TraceDetail } from "../pages/releases/History";
+import {
+  choiceLabel,
+  normalizeTraces,
+  resolutionCeilings,
+  TraceDetail,
+} from "../pages/releases/History";
 import { calls, renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
 async function choose(label: string, option: string) {
   fireEvent.click(screen.getByRole("button", { name: label }));
   fireEvent.click(await screen.findByRole("option", { name: option }));
+}
+
+async function pick(scope: HTMLElement, label: string, ...options: string[]) {
+  fireEvent.click(within(scope).getByRole("button", { name: label }));
+  for (const option of options) {
+    fireEvent.click(await screen.findByRole("option", { name: option, hidden: true }));
+  }
 }
 
 describe("Sources", () => {
@@ -94,39 +106,164 @@ describe("Sources", () => {
   });
 });
 
-describe("Releases", () => {
-  it("edits client rules in a drawer using a device and named viewer", async () => {
-    const { fake } = renderApp("/releases/rules");
-    expect(await screen.findByRole("button", { name: "Edit rule 1" }, WAIT)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Device" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Edit rule 1" }));
-    const drawer = await screen.findByRole("dialog", { name: "Rule 1" });
-    expect(within(drawer).getByRole("button", { name: "Device" })).toBeInTheDocument();
-    await choose("Device", "Plex Web");
-    await choose("Viewer", "The Kids");
-    await choose("Profile", "1080p");
-    fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
-    await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
-    expect(calls(fake, "PUT", "/config/quality")[0]!.body).toMatchObject({
-      rules: [{ product: "Plex Web", userId: 3, profile: "1080p" }],
+describe("Playback devices", () => {
+  it("filters app compatibility by protocol and device", async () => {
+    renderApp("/playback/devices");
+    expect(await screen.findByText("Plex Web", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
+    expect(screen.getByText("Swiftfin")).toBeInTheDocument();
+    expect(screen.getByText(/Seen on this server/)).toBeInTheDocument();
+    expect(screen.getAllByText("Reports its own").length).toBeGreaterThan(0);
+    expect(screen.getByText("Stream link")).toBeInTheDocument();
+    expect(screen.queryByText(/tells Ether/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/plays that stream/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Protocol" }));
+    fireEvent.click(
+      within(await screen.findByRole("listbox", { hidden: true })).getByText("Jellyfin"),
+    );
+    expect(screen.queryByText("Plex Web")).not.toBeInTheDocument();
+    expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Device" }));
+    fireEvent.click(
+      within(await screen.findByRole("listbox", { hidden: true })).getByText("Apple TV"),
+    );
+    expect(screen.queryByText("Jellyfin TV")).not.toBeInTheDocument();
+    expect(screen.getByText("Swiftfin")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    expect(await screen.findByText("Profile 5", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("H.265/HEVC")).toBeInTheDocument();
+    expect(screen.getByText("Dolby Vision")).toBeInTheDocument();
+  });
+
+  it("saves an app compatibility override from a drawer", async () => {
+    const { fake } = renderApp("/playback/devices");
+    fireEvent.click(await screen.findByRole("tab", { name: "Devices" }, WAIT));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Apple TV" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "Edit Apple TV" });
+    expect(within(drawer).getByText("Built in: Profile 5, Profile 8")).toBeInTheDocument();
+    expect(within(drawer).getAllByText("Built in: 4K").length).toBeGreaterThan(0);
+    await pick(drawer, "Dolby Vision profiles", "Profile 5", "Profile 7", "Profile 8");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/clients")).toHaveLength(1));
+    expect(calls(fake, "PUT", "/config/clients")[0]!.body).toMatchObject({
+      overrides: [{ id: "apple-tv", dolbyVisionProfiles: [5, 7, 8] }],
     });
   });
 
-  it("edits the default profiles in place with the save bar", async () => {
-    const { fake } = renderApp("/releases/quality");
-    expect(await screen.findByRole("button", { name: "Remote profile" }, WAIT)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
-    await choose("Remote profile", "4K");
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  it("adds an app override from a typed match", async () => {
+    const { fake } = renderApp("/playback/devices");
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "Add an app" });
+    fireEvent.change(within(drawer).getByLabelText("Match"), { target: { value: "Infuse" } });
+    await pick(drawer, "Video codecs", "H.265/HEVC");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/clients")).toHaveLength(1));
+    expect(calls(fake, "PUT", "/config/clients")[0]!.body).toMatchObject({
+      overrides: [{ product: "Infuse", videoCodecs: ["hevc"] }],
+    });
+  });
+});
+
+describe("Releases", () => {
+  it("edits client rules in a drawer using a device and named viewer", async () => {
+    const { fake } = renderApp("/releases/devices");
+    expect(await screen.findByRole("button", { name: "Edit rule 1" }, WAIT)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Device" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: "Convert Dolby and DTS audio to AAC" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit rule 1" }));
+    const drawer = await screen.findByRole("dialog", { name: "Rule 1" });
+    expect(within(drawer).getByRole("button", { name: "Device" })).toBeInTheDocument();
+    const surroundSwitch = within(drawer).getByRole("switch", {
+      name: "Convert Dolby and DTS audio to AAC",
+    });
+    expect(surroundSwitch).not.toBeChecked();
+    expect(
+      within(drawer).getByText(
+        "For free Infuse and other players that can't play surround formats.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(surroundSwitch);
+    await choose("Protocol", "Plex");
+    await choose("Device", "Plex Web");
+    await choose("Viewer", "The Kids");
+    await choose("Profile", "1080p");
+    await choose("Maximum resolution", "1080p");
+    fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/quality")[0]!.body).toMatchObject({
-      default: "1080p",
-      remote: "4K",
+      rules: [
+        {
+          protocol: "plex",
+          product: "Plex Web",
+          userId: 3,
+          profile: "1080p",
+          maxHeight: 1080,
+          convertSurroundAudio: true,
+        },
+      ],
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Edit rule 1" }));
+    const reopened = await screen.findByRole("dialog", { name: "Rule 1" });
+    expect(
+      within(reopened).getByRole("switch", { name: "Convert Dolby and DTS audio to AAC" }),
+    ).toBeChecked();
+  });
+
+  it("shows Never play filters and What matters most ladder in the profile drawer", async () => {
+    renderApp("/releases/profiles");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit 4K" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "4K" });
+    expect(within(drawer).getByRole("group", { name: "Movies" })).toBeInTheDocument();
+    expect(within(drawer).getByRole("group", { name: "TV episodes" })).toBeInTheDocument();
+    expect(within(drawer).getByLabelText("Maximum MB per minute")).toHaveValue(1000);
+    expect(within(drawer).getByLabelText("Episode maximum MB per minute")).toHaveValue(0);
+    expect(within(drawer).getByRole("switch", { name: "Larger file" })).not.toBeChecked();
+    expect(within(drawer).queryByText("Imported from TRaSH / Radarr / Sonarr")).toBeNull();
+  });
+
+  it("reorders steps in What matters most and saves the new ranking ladder", async () => {
+    const { fake } = renderApp("/releases/profiles");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit 4K" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "4K" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Move Release type up" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
+    const body = calls(fake, "PUT", "/config/quality")[0]!.body as EtherConfig["quality"];
+    const saved4k = body.profiles?.find((p) => p.name === "4K");
+    expect(saved4k?.ranking).toEqual([
+      "language",
+      "connection",
+      "releaseType",
+      "resolution",
+      "hdr",
+      "verified",
+      "videoCodec",
+      "audioFormat",
+      "size",
+    ]);
+  });
+
+  it("shows Default at home and Default away badges and updates them from the profile drawer", async () => {
+    const { fake } = renderApp("/releases/profiles");
+    expect(await screen.findByText("Default at home", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("Default away")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit 4K" }));
+    const drawer = await screen.findByRole("dialog", { name: "4K" });
+    const defaultsGroup = within(drawer).getByRole("group", { name: "Default for" });
+    fireEvent.click(within(defaultsGroup).getByRole("button", { name: "At home" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
+    expect(calls(fake, "PUT", "/config/quality")[0]!.body).toMatchObject({
+      default: "4K",
+      remote: "1080p",
     });
   });
 
   it("renames a profile in its drawer and keeps rules pointing at it", async () => {
-    const { fake } = renderApp("/releases/quality");
+    const { fake } = renderApp("/releases/profiles");
     fireEvent.click(await screen.findByRole("button", { name: "Edit 4K" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "4K" });
     fireEvent.change(within(drawer).getByLabelText("Name"), { target: { value: "UHD" } });
@@ -138,11 +275,11 @@ describe("Releases", () => {
   });
 
   it("removes a profile a client rule uses, with its rules (#9)", async () => {
-    const { fake } = renderApp("/releases/quality");
+    const { fake } = renderApp("/releases/profiles");
     fireEvent.click(await screen.findByRole("button", { name: "Edit 4K" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "4K" });
     fireEvent.click(within(drawer).getByRole("button", { name: "Remove profile" }));
-    expect(await screen.findByText(/The client rule using it will be removed/)).toBeInTheDocument();
+    expect(await screen.findByText(/The device rule using it will be removed/)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
     const body = calls(fake, "PUT", "/config/quality")[0]!.body as EtherConfig["quality"];
@@ -151,38 +288,54 @@ describe("Releases", () => {
     expect(body).toMatchObject({ default: "1080p", remote: "1080p" });
   });
 
-  it("discards invalid scoring drafts before editing startup settings", async () => {
-    const { fake } = renderApp("/releases/scoring");
-    const defs = await screen.findByLabelText("Custom format definitions", {}, WAIT);
+  it("rejects invalid custom-format JSON inside an imported profile", async () => {
+    const { fake } = renderApp("/releases/profiles", {}, (f) => {
+      const p = f.state.config.quality.profiles?.find((x) => x.name === "1080p");
+      if (p) p.minCustomFormatScore = 0;
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit 1080p" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "1080p" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "More options: Custom scoring" }));
+    const defs = await within(drawer).findByLabelText("Custom format definitions");
     fireEvent.change(defs, { target: { value: "unfinished JSON" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save profile" }));
     expect(await screen.findByText(/aren't valid JSON/)).toBeInTheDocument();
+    expect(calls(fake, "PUT", "/config/quality")).toHaveLength(0);
     expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(screen.getByLabelText("Custom format definitions")).toHaveValue("[]");
-    fireEvent.click(screen.getByRole("tab", { name: "Playback start" }));
-    fireEvent.click(
-      await screen.findByRole("switch", {
-        name: "Start the top release before its health check completes",
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
-    expect(calls(fake, "PUT", "/config/resolver")[0]!.body).toMatchObject({
-      customFormats: [],
-      optimisticStart: true,
+  });
+
+  it("saves score overrides on an imported profile", async () => {
+    const { fake } = renderApp("/releases/profiles", {}, (f) => {
+      const p = f.state.config.quality.profiles?.find((x) => x.name === "1080p");
+      if (p) p.minCustomFormatScore = 0;
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit 1080p" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "1080p" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "More options: Custom scoring" }));
+    fireEvent.change(within(drawer).getByLabelText("Score overrides for this profile"), {
+      target: { value: '{ "x265-hd": -500 }' },
+    });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
+    const body = calls(fake, "PUT", "/config/quality")[0]!.body as EtherConfig["quality"];
+    expect(body.profiles?.find((p) => p.name === "1080p")?.customFormatScores).toEqual({
+      "x265-hd": -500,
     });
   });
 });
 
 describe("Source routing", () => {
-  it("shows measured startup per source and saves the preference", async () => {
-    const { fake } = renderApp("/releases/startup");
-    expect(await screen.findByText(/debrid 410 ms \(22 plays\)/, {}, WAIT)).toBeInTheDocument();
-    expect(screen.getByText(/Usenet 2\.1 s \(37 plays\)/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Source for equal-quality releases" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Prefer Usenet" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  it("shows Tie-breaker with measured startup inside the profile drawer and saves which source leads", async () => {
+    const { fake } = renderApp("/releases/profiles");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit 1080p" }, WAIT));
+    const drawer = await screen.findByRole("dialog", { name: "1080p" }, WAIT);
+    expect(
+      await within(drawer).findByText(/debrid 410 ms \(22 plays\)/, {}, WAIT),
+    ).toBeInTheDocument();
+    expect(within(drawer).getByText(/Usenet 2\.1 s \(37 plays\)/)).toBeInTheDocument();
+    expect(within(drawer).getByText("Applies to all profiles.")).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "When two releases are equal" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Usenet first" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/resolver")[0]!.body).toMatchObject({
       sourcePreference: "usenet",
@@ -191,15 +344,45 @@ describe("Source routing", () => {
 });
 
 describe("Release selection", () => {
-  it("lets the owner set how many same-quality versions Plex lists", async () => {
-    const { fake } = renderApp("/releases/selection");
+  it("lets the owner set how many same-quality versions apps list on the Searching tab", async () => {
+    const { fake } = renderApp("/releases/searching");
     const field = await screen.findByLabelText("Same-quality versions to offer", {}, WAIT);
     expect(field).toHaveValue(1);
+    expect(screen.getByLabelText("Offer higher versions")).not.toBeChecked();
     fireEvent.change(field, { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/resolver")[0]!.body).toMatchObject({
       sameQualityAlternatives: 3,
+    });
+  });
+
+  it("shows How Ether searches as a clean section on the Searching tab", async () => {
+    renderApp("/releases/searching");
+    expect(await screen.findByLabelText("Releases to keep ready", {}, WAIT)).toHaveValue(3);
+    expect(screen.getByLabelText("Health check samples")).toHaveValue(12);
+    expect(screen.getByLabelText("Remember searches for")).toHaveValue("6h0m0s");
+    expect(screen.getByLabelText("Retry unavailable titles after")).toHaveValue("24h0m0s");
+  });
+
+  it("edits blocked words next to blocked releases", async () => {
+    renderApp("/releases/blocklist");
+    expect(await screen.findByLabelText("Blocked release groups", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Blocked terms")).toBeInTheDocument();
+  });
+
+  it("starts playback sooner from the Playback page", async () => {
+    const { fake } = renderApp("/playback/transcoding");
+    fireEvent.click(await screen.findByRole("button", { name: "More options: Start speed" }, WAIT));
+    fireEvent.click(
+      await screen.findByRole("switch", {
+        name: "Start the top release before its health check completes",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
+    expect(calls(fake, "PUT", "/config/resolver")[0]!.body).toMatchObject({
+      optimisticStart: true,
     });
   });
 });
@@ -341,6 +524,16 @@ describe("Release traces", () => {
     // Explicitly unlimited is present 0 and does render as "Any".
     expect(t[4]!.profileMaxHeight).toBe(0);
     expect(resolutionCeilings(t[4]!)).toBe("Profile Any · Client ≤1080 · Effective ≤1080");
+    const chosen = normalizeTraces([
+      { titleName: "Picked", chooser: "auto" },
+      { titleName: "Version", chooser: "viewer", chosenVersion: "Movie.2160p" },
+      { titleName: "Legacy" },
+    ]);
+    expect(choiceLabel(chosen[0]!.chooser, chosen[0]!.chosenVersion)).toBe("Auto");
+    expect(choiceLabel(chosen[1]!.chooser, chosen[1]!.chosenVersion)).toBe(
+      "Viewer/client picked version Movie.2160p",
+    );
+    expect(choiceLabel(chosen[2]!.chooser, chosen[2]!.chosenVersion)).toBeNull();
   });
 
   it("shows the ceilings in the trace detail", () => {
@@ -390,8 +583,8 @@ describe("Release traces", () => {
 });
 
 describe("Playback", () => {
-  it("redirects the legacy cache URL to the new management page", async () => {
-    const { fake } = renderApp("/playback/cache");
+  it("edits cache policy from the cache page", async () => {
+    const { fake } = renderApp("/cache");
     expect(await screen.findByRole("heading", { name: "Cache" }, WAIT)).toBeInTheDocument();
     expect(await screen.findByRole("tab", { name: "Overview" }, WAIT)).toHaveAttribute(
       "aria-selected",
@@ -405,15 +598,15 @@ describe("Playback", () => {
   });
 
   it("shows detected hardware above the transcoding settings", async () => {
-    renderApp("/playback");
+    renderApp("/playback/transcoding");
     expect(await screen.findByRole("tab", { name: "Transcoding" }, WAIT)).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    expect(
-      await screen.findByText("Hardware acceleration: videotoolbox", {}, WAIT),
-    ).toBeInTheDocument();
-    expect(screen.getByText("h264_videotoolbox")).toBeInTheDocument();
+    expect(await screen.findByText("Apple VideoToolbox", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("H.264")).toBeInTheDocument();
+    expect(screen.getByText("H.265/HEVC")).toBeInTheDocument();
+    expect(screen.getByText("HDR10")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hardware acceleration" })).toBeInTheDocument();
     expect(screen.getByText("RTX Video: Unavailable")).toBeInTheDocument();
   });
@@ -434,10 +627,37 @@ describe("Playback", () => {
     expect(screen.getByLabelText("Offset (milliseconds)")).toBeInTheDocument();
   });
 
+  it("turns the intro skip button off and names IntroDB", async () => {
+    const { fake } = renderApp("/playback/markers");
+    expect(
+      await screen.findByText("Intro and credit times from IntroDB.", {}, WAIT),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Integrations" })
+        .some((link) => link.getAttribute("href")?.endsWith("/services/introdb")),
+    ).toBe(true);
+    expect(screen.getByText("Chapter titles")).toBeInTheDocument();
+    expect(screen.getByText("Subtitle dialogue")).toBeInTheDocument();
+    const intro = screen.getByRole("switch", { name: "Skip intro" });
+    expect(intro).toBeChecked();
+    fireEvent.click(intro);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/markers")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/markers")[0]!.body).toMatchObject({
+      theIntroDb: true,
+      skipIntro: false,
+      skipCredits: true,
+    });
+  });
+
   it("saves nested server enhancement settings without losing transcoding preferences", async () => {
-    const { fake } = renderApp("/playback");
+    const { fake } = renderApp("/playback/transcoding");
     await screen.findByRole("button", { name: "RTX Video Super Resolution" }, WAIT);
+    expect(screen.queryByLabelText("ffmpeg path")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Enhancement quality")).not.toBeInTheDocument();
     await choose("RTX Video Super Resolution", "Automatic · local streams");
+    fireEvent.click(screen.getByRole("button", { name: "More options: Sharper picture" }));
     await choose("Enhancement quality", "Streaming ultra");
     fireEvent.change(screen.getByLabelText("Enhanced resolution limit"), {
       target: { value: "1440" },

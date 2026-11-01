@@ -12,10 +12,14 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
+	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/schedule"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -38,29 +42,33 @@ type Notifier interface {
 	TitleAvailable(context.Context, string) error
 }
 type Settings struct {
-	Enabled       bool `json:"enabled"`
-	Plex          bool `json:"plex"`
-	Trakt         bool `json:"trakt"`
-	Notify        bool `json:"notify"`
-	Prewarm       bool `json:"prewarm"`
-	CheckHours    int  `json:"checkHours"`
-	NaturalSearch bool `json:"naturalSearch"`
-	Recaps        bool `json:"recaps"`
+	Enabled           bool `json:"enabled"`
+	Plex              bool `json:"plex"`
+	Trakt             bool `json:"trakt"`
+	Notify            bool `json:"notify"`
+	Prewarm           bool `json:"prewarm"`
+	CheckHours        int  `json:"checkHours"`
+	NaturalSearch     bool `json:"naturalSearch"`
+	Recaps            bool `json:"recaps"`
+	SubtitleTranslate bool `json:"subtitleTranslate"`
+	SpeechToText      bool `json:"speechToText"`
+	OverviewTranslate bool `json:"overviewTranslate"`
 }
 type Options struct {
-	Logger       *slog.Logger
-	Catalog      core.Catalog
-	Resolver     core.Resolver
-	Engine       core.Engine
-	Trakt        Source
-	Tokens       func(context.Context, int64) (string, error)
-	Users        func(context.Context) ([]core.User, error)
-	Allowed      func(*core.User, *core.Title) bool
-	Notifier     Notifier
-	Client       *http.Client
-	PlexBaseURL  string
-	Now          func() time.Time
-	PrewarmBytes int64
+	Logger           *slog.Logger
+	Catalog          core.Catalog
+	Resolver         core.Resolver
+	Engine           core.Engine
+	Trakt            Source
+	Tokens           func(context.Context, int64) (string, error)
+	Users            func(context.Context) ([]core.User, error)
+	Allowed          func(*core.User, *core.Title) bool
+	Notifier         Notifier
+	Client           *http.Client
+	PlexBaseURL      string
+	ClientIdentifier string
+	Now              func() time.Time
+	PrewarmBytes     int64
 	// SyncInterval is how often Run passes over every viewer (30m).
 	SyncInterval time.Duration
 	// ResumeSchedule makes Run wait until SyncInterval has passed since the
@@ -68,12 +76,25 @@ type Options struct {
 	// pass, instead of passing at once. A cluster sets it because Run
 	// restarts on every leader handoff.
 	ResumeSchedule bool
+	// OnAvailable runs when a watchlist title first becomes playable.
+	// The key is the movie, show, or newly released episode.
+	OnAvailable func(context.Context, int64, core.RatingKey)
 }
 type Service struct {
-	db *sql.DB
-	o  Options
-	mu sync.Mutex
+	db  *sql.DB
+	o   Options
+	mu  sync.Mutex
+	gen atomic.Uint64
 }
+
+// Generation changes when watchlist membership changes.
+func (s *Service) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
+}
+
 type Item struct {
 	Title       core.Title `json:"title"`
 	Sources     []string   `json:"sources"`
@@ -90,10 +111,14 @@ func New(db *sql.DB, o Options) *Service {
 		o.Now = time.Now
 	}
 	if o.Client == nil {
-		o.Client = &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		o.Client = egress.Client(egress.CapMetadata, 20*time.Second)
+		o.Client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	if o.PlexBaseURL == "" {
 		o.PlexBaseURL = "https://discover.provider.plex.tv"
+	}
+	if o.ClientIdentifier == "" {
+		o.ClientIdentifier = plexguid.ClientIdentifier("", "")
 	}
 	if o.PrewarmBytes <= 0 {
 		o.PrewarmBytes = 8 << 20
@@ -104,19 +129,28 @@ func New(db *sql.DB, o Options) *Service {
 	return &Service{db: db, o: o}
 }
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
-	var raw string
 	v := Settings{Plex: true, Trakt: true, CheckHours: 6}
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM watchlist_settings WHERE id=1`).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return v, nil
-	}
+	// Every item of a list asks: read the row once per request.
+	row, err := reqmemo.Do(ctx, "watchlist:settings", func() (*string, error) {
+		var raw string
+		err := s.db.QueryRowContext(ctx, `SELECT value FROM watchlist_settings WHERE id=1`).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return &raw, err
+	})
 	if err != nil {
 		return v, err
 	}
+	if row == nil {
+		return v, nil
+	}
+	raw := *row
 	err = json.Unmarshal([]byte(raw), &v)
 	return v, err
 }
 func (s *Service) SaveSettings(ctx context.Context, v Settings) error {
+	reqmemo.Forget(ctx, "watchlist:settings")
 	if v.CheckHours < 1 || v.CheckHours > 168 {
 		return errors.New("check interval must be between 1 and 168 hours")
 	}
@@ -128,7 +162,7 @@ func (s *Service) SaveSettings(ctx context.Context, v Settings) error {
 	return err
 }
 func (s *Service) allowed(u *core.User, t *core.Title) bool {
-	if u == nil || t == nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
+	if u == nil || t == nil || t.Adult || contentrating.Exceeds(t.ContentRating, u.MaxContentRating) {
 		return false
 	}
 	section := 1
@@ -156,8 +190,58 @@ func (s *Service) Remind(ctx context.Context, u *core.User, key core.RatingKey) 
 	}
 	return s.upsert(ctx, u.ID, "manual", *t)
 }
+
+// Contains reports membership from any watchlist source for one viewer.
+func (s *Service) Contains(ctx context.Context, userID int64, key core.RatingKey) (bool, error) {
+	var present bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM watchlist_items WHERE user_id=? AND item_key=?)`, userID, key).Scan(&present)
+	return present, err
+}
+
+// ContainsMany reads membership for a page in one query per chunk.
+func (s *Service) ContainsMany(ctx context.Context, userID int64, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
+	out := make(map[core.RatingKey]bool, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	for start := 0; start < len(keys); start += 400 {
+		chunk := keys[start:min(start+400, len(keys))]
+		args := make([]any, 0, len(chunk)+1)
+		args = append(args, userID)
+		query := `SELECT item_key FROM watchlist_items WHERE user_id=? AND item_key IN (`
+		for i, key := range chunk {
+			if i > 0 {
+				query += ","
+			}
+			query += "?"
+			args = append(args, key)
+		}
+		query += ")"
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key int64
+			if err := rows.Scan(&key); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[core.RatingKey(key)] = true
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return out, nil
+}
 func (s *Service) Remove(ctx context.Context, userID int64, key core.RatingKey) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM watchlist_items WHERE user_id=? AND item_key=?`, userID, key)
+	if err == nil {
+		s.gen.Add(1)
+	}
 	return err
 }
 func (s *Service) upsert(ctx context.Context, uid int64, source string, t core.Title) error {
@@ -166,6 +250,9 @@ func (s *Service) upsert(ctx context.Context, uid int64, source string, t core.T
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, uid, t.Key, source, string(raw), s.o.Now().Unix())
+	if err == nil {
+		s.gen.Add(1)
+	}
 	return err
 }
 func (s *Service) replace(ctx context.Context, u *core.User, source string, ts []core.Title) error {
@@ -213,7 +300,11 @@ func (s *Service) replace(ctx context.Context, u *core.User, source string, ts [
 			return err
 		}
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
 }
 
 // Sync preserves the last successful snapshot when an upstream fails.
@@ -354,6 +445,7 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 			}
 			continue
 		}
+		wasAvailable := !it.AvailableAt.IsZero()
 		res, e := s.resolve(ctx, u, resolveTitle)
 		now := s.o.Now().Unix()
 		if _, err = s.db.ExecContext(ctx, `UPDATE watchlist_items SET checked=? WHERE user_id=? AND item_key=?`, now, u.ID, t.Key); err != nil {
@@ -369,6 +461,9 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 		}
 		if _, err = s.db.ExecContext(ctx, `UPDATE watchlist_items SET available=CASE WHEN available=0 THEN ? ELSE available END,title=? WHERE user_id=? AND item_key=?`, now, mustTitle(t), u.ID, t.Key); err != nil {
 			return err
+		}
+		if !wasAvailable && s.o.OnAvailable != nil {
+			s.o.OnAvailable(ctx, u.ID, t.Key)
 		}
 		if newest != nil {
 			// The show's episodes so far count as seen: only later ones are new.

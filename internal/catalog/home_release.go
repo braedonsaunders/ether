@@ -47,7 +47,7 @@ func (c *Catalog) homeVisible(t *core.Title) bool {
 }
 
 func homeReleaseSQL(alias string) string {
-	return "(" + alias + ".type<>'movie' OR EXISTS (SELECT 1 FROM catalog_home_release hr WHERE hr.key=" + alias + ".key AND (hr.fallback_admitted=1 OR (hr.checked=1 AND ((hr.earliest_ts<>0 AND hr.earliest_ts<=?) OR (hr.earliest_ts=0 AND " + alias + ".released_ts<>0 AND " + alias + ".released_ts<=?))))))"
+	return "(" + alias + ".type<>'movie' OR EXISTS (SELECT 1 FROM catalog_home_release hr WHERE hr.key=" + alias + ".key AND (hr.fallback_admitted=1 OR (hr.checked=1 AND ((hr.earliest_ts<>0 AND hr.earliest_ts<=?) OR (hr.earliest_ts=0 AND " + alias + ".release_known=1 AND " + alias + ".released_ts<=?))))))"
 }
 
 func (c *Catalog) hydrateHomeRelease(ctx context.Context, items []core.Title) error {
@@ -105,10 +105,13 @@ func (c *Catalog) hydrateHomeRelease(ctx context.Context, items []core.Title) er
 }
 
 func saveHomeReleases(ctx context.Context, tx *sql.Tx, t core.Title, dates *tmdb.ReleaseDates, now int64) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM catalog_home_release_dates WHERE key=?`, int64(t.Key)); err != nil {
-		return err
+	type homeDate struct {
+		country string
+		kind    int
+		ts      int64
 	}
 	var earliest time.Time
+	want := map[homeDate]bool{}
 	for _, country := range dates.Results {
 		for _, release := range country.ReleaseDate {
 			if release.Type != 4 && release.Type != 5 {
@@ -121,7 +124,33 @@ func saveHomeReleases(ctx context.Context, tx *sql.Tx, t core.Title, dates *tmdb
 			if earliest.IsZero() || date.Before(earliest) {
 				earliest = date
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_home_release_dates(key,country,kind,released_ts) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, int64(t.Key), strings.ToUpper(country.ISO3166), release.Type, date.Unix()); err != nil {
+			want[homeDate{strings.ToUpper(country.ISO3166), release.Type, date.Unix()}] = true
+		}
+	}
+	// A refresh usually brings the same dates; rewriting them would fire the
+	// viewer-policy triggers for nothing.
+	same := true
+	rows, err := tx.QueryContext(ctx, `SELECT country,kind,released_ts FROM catalog_home_release_dates WHERE key=?`, int64(t.Key))
+	if err != nil {
+		return err
+	}
+	n := 0
+	for rows.Next() {
+		var d homeDate
+		if err := rows.Scan(&d.country, &d.kind, &d.ts); err != nil {
+			rows.Close()
+			return err
+		}
+		same = same && want[d]
+		n++
+	}
+	rows.Close()
+	if !same || n != len(want) {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM catalog_home_release_dates WHERE key=?`, int64(t.Key)); err != nil {
+			return err
+		}
+		for d := range want {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_home_release_dates(key,country,kind,released_ts) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, int64(t.Key), d.country, d.kind, d.ts); err != nil {
 				return err
 			}
 		}
@@ -130,7 +159,7 @@ func saveHomeReleases(ctx context.Context, tx *sql.Tx, t core.Title, dates *tmdb
 	if !earliest.IsZero() {
 		ts = earliest.Unix()
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,attempted_at) VALUES(?,1,?,?) ON CONFLICT(key) DO UPDATE SET checked=1,earliest_ts=excluded.earliest_ts,attempted_at=excluded.attempted_at`, int64(t.Key), ts, now)
+	_, err = tx.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,attempted_at) VALUES(?,1,?,?) ON CONFLICT(key) DO UPDATE SET checked=1,earliest_ts=excluded.earliest_ts,attempted_at=excluded.attempted_at`, int64(t.Key), ts, now)
 	return err
 }
 
@@ -147,7 +176,7 @@ func (c *Catalog) admitFallbacks(ctx context.Context) error {
 	if c.admitReady && c.admitGen == gen && c.admitMinute == minute {
 		return nil
 	}
-	result, err := c.db.ExecContext(ctx, `UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND fallback_admitted=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.released_ts<>0 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds()))
+	result, err := c.db.ExecContext(ctx, `UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND fallback_admitted=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.release_known=1 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds()))
 	if err != nil {
 		return err
 	}
@@ -163,17 +192,53 @@ func (c *Catalog) admitFallbacks(ctx context.Context) error {
 	return nil
 }
 
+// HomeReleases returns digital or physical dates that have been recorded.
+// A missing key has not been checked. A zero time means the movie was
+// checked and has no digital or physical date (theatrical only).
+func (c *Catalog) HomeReleases(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+	out := map[core.RatingKey]time.Time{}
+	for start := 0; start < len(keys); start += 500 {
+		batch := keys[start:min(start+500, len(keys))]
+		args := make([]any, len(batch))
+		for i, k := range batch {
+			args[i] = int64(k)
+		}
+		rows, err := c.db.QueryContext(ctx, `SELECT key,earliest_ts FROM catalog_home_release WHERE checked=1 AND key IN (`+placeholders(len(batch))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var key, ts int64
+			if err = rows.Scan(&key, &ts); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if ts > 0 {
+				out[core.RatingKey(key)] = time.Unix(ts, 0).UTC()
+			} else {
+				out[core.RatingKey(key)] = time.Time{}
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // BackfillHomeReleases fetches at most limit details, never from a browse.
 // Missing and future dates are revisited daily; failures also cool down for a
 // day so an unavailable title cannot starve the remaining catalogue.
 // Recently reached dates are rechecked daily; settled dates are revisited
 // after 90 days to pick up later corrections.
 func (c *Catalog) BackfillHomeReleases(ctx context.Context, limit int) (int, error) {
-	if c.client == nil || limit <= 0 {
+	if c.tmdb() == nil || limit <= 0 {
 		return 0, nil
 	}
 	now := c.now().Unix()
-	rows, err := c.db.QueryContext(ctx, `SELECT t.key FROM catalog_titles t LEFT JOIN catalog_home_release h ON h.key=t.key WHERE t.type='movie' AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=? AND (h.key IS NULL OR (h.attempted_at<=? AND (h.checked=0 OR h.earliest_ts=0 OR h.earliest_ts>? OR h.attempted_at<=?))) ORDER BY COALESCE(h.attempted_at,0), t.browsable DESC, t.popularity DESC,t.key LIMIT ?`, now, now-int64((24*time.Hour).Seconds()), now-int64((30*24*time.Hour).Seconds()), now-int64((90*24*time.Hour).Seconds()), limit)
+	rows, err := c.db.QueryContext(ctx, `SELECT t.key FROM catalog_titles t LEFT JOIN catalog_home_release h ON h.key=t.key WHERE t.type='movie' AND t.adult=0 AND t.release_known=1 AND t.released_ts<=? AND (h.key IS NULL OR (h.attempted_at<=? AND (h.checked=0 OR h.earliest_ts=0 OR h.earliest_ts>? OR h.attempted_at<=?))) ORDER BY COALESCE(h.attempted_at,0), t.browsable DESC, t.popularity DESC,t.key LIMIT ?`, now, now-int64((24*time.Hour).Seconds()), now-int64((30*24*time.Hour).Seconds()), now-int64((90*24*time.Hour).Seconds()), limit)
 	if err != nil {
 		return 0, err
 	}
@@ -200,7 +265,7 @@ func (c *Catalog) BackfillHomeReleases(ctx context.Context, limit int) (int, err
 		if err != nil {
 			return count, err
 		}
-		d, fetchErr := c.client.MovieDetails(ctx, key.TMDB())
+		d, fetchErr := c.tmdb().MovieDetails(ctx, key.TMDB())
 		if fetchErr != nil || d == nil {
 			continue
 		}

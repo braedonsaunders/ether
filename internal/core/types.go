@@ -29,6 +29,8 @@ type IDs struct {
 
 type Person struct {
 	TMDB      int64  `json:"tmdb,omitempty"`
+	IMDB      string `json:"imdb,omitempty"`
+	ID        string `json:"id,omitempty"` // catalogue person id when there is no TMDB id
 	Name      string `json:"name"`
 	Role      string `json:"role,omitempty"` // character for cast, job for crew
 	ThumbPath string `json:"thumbPath,omitempty"`
@@ -54,26 +56,50 @@ type Title struct {
 	// regular seasons; 0 when an earlier season's size is unknown (additive).
 	AbsoluteEpisode int `json:"absoluteEpisode,omitempty"`
 
-	Title                       string        `json:"title"`
-	OriginalTitle               string        `json:"originalTitle,omitempty"`
-	SortTitle                   string        `json:"sortTitle,omitempty"`
-	Tagline                     string        `json:"tagline,omitempty"`
-	Summary                     string        `json:"summary,omitempty"`
-	Year                        int           `json:"year,omitempty"`
-	Released                    time.Time     `json:"released,omitempty"` // first air / release date
+	Title         string `json:"title"`
+	OriginalTitle string `json:"originalTitle,omitempty"`
+	SortTitle     string `json:"sortTitle,omitempty"`
+	Tagline       string `json:"tagline,omitempty"`
+	Summary       string `json:"summary,omitempty"`
+	Year          int    `json:"year,omitempty"`
+	// PrimaryReleased is TMDB's primary release_date for a movie. The title
+	// year comes from it. Released stays the date added (theatrical, when
+	// one exists). Empty when the year came from a premiere or the release
+	// itself. Not serialized.
+	PrimaryReleased time.Time `json:"-"`
+	// YearSource records which date produced Year: primary, premiere,
+	// released, none, or missing. Empty means a row stored before that
+	// date was kept. Not serialized.
+	YearSource                  string        `json:"-"`
+	Released                    time.Time     `json:"released,omitempty"`   // first air / release date
+	AddedAt                     time.Time     `json:"addedAt,omitzero"`     // series/season latest aired episode, or a derived air date; not a catalogue insertion time
+	LastAirDate                 time.Time     `json:"lastAirDate,omitzero"` // last aired episode date when known
 	HomeReleaseChecked          bool          `json:"homeReleaseChecked,omitempty"`
 	HomeReleased                time.Time     `json:"homeReleased,omitempty"`
 	HomeReleaseFallbackAdmitted bool          `json:"homeReleaseFallbackAdmitted,omitempty"`
 	Runtime                     time.Duration `json:"runtime,omitempty"`
 	Status                      string        `json:"status,omitempty"` // TMDB status: Released, In Production, Ended...
 
-	Genres        []string `json:"genres,omitempty"`
-	Keywords      []string `json:"keywords,omitempty"` // TMDB keywords (lower-case), for content-based recommendations
-	Studios       []string `json:"studios,omitempty"`
-	Countries     []string `json:"countries,omitempty"`
-	Language      string   `json:"language,omitempty"` // ISO 639-1 original language
-	ContentRating string   `json:"contentRating,omitempty"`
-	Adult         bool     `json:"adult,omitempty"`
+	Genres   []string `json:"genres,omitempty"`
+	Keywords []string `json:"keywords,omitempty"` // TMDB keywords (lower-case), for content-based recommendations
+	// AlternativeTitles are other names the title goes by (TMDB alternative
+	// titles: romanized originals, regional and working titles). Release
+	// matching only; never serialized (additive). Episodes and seasons carry
+	// their series' in ShowAlternativeTitles.
+	AlternativeTitles     []string `json:"-"`
+	ShowAlternativeTitles []string `json:"-"`
+	RemoteTrailerName     string   `json:"remoteTrailerName,omitempty"`
+	RemoteTrailerURL      string   `json:"remoteTrailerURL,omitempty"`
+	Studios               []string `json:"studios,omitempty"`
+	Countries             []string `json:"countries,omitempty"`
+	Language              string   `json:"language,omitempty"` // ISO 639-1 original language
+	// ContentRating is the certification in contentrating's stored form:
+	// bare US labels ("PG", "TV-14"), region-qualified otherwise ("de/6").
+	ContentRating string `json:"contentRating,omitempty"`
+	// ContentRatingSource records where ContentRating came from: "tmdb:US:6"
+	// (TMDB, country, movie release type), "tmdb:CA" (TV), "omdb", "mdblist".
+	ContentRatingSource string `json:"contentRatingSource,omitempty"`
+	Adult               bool   `json:"adult,omitempty"`
 
 	Rating     float64 `json:"rating,omitempty"` // TMDB vote average 0-10
 	VoteCount  int     `json:"voteCount,omitempty"`
@@ -124,11 +150,17 @@ var (
 	ErrBudgetExhausted   = errors.New("indexer daily budget exhausted")
 	ErrStreamLimit       = errors.New("stream limit reached")
 	ErrUnauthorized      = errors.New("unauthorized")
+	// ErrPolicyUnconfirmed means the durable policy store could not be read.
+	// Callers may keep an unrestricted cached decision. Restricted viewers fail closed.
+	ErrPolicyUnconfirmed = errors.New("policy store unavailable")
 )
 
 // User is a Plex account with access to this server: the owner or a friend
 // the owner shared with on plex.tv.
 type User struct {
+	// Timestamps are internal identity metadata and do not change existing wire JSON.
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 	// Delegated marks short-lived server credentials; these never grant owner access.
 	Delegated bool   `json:"-"`
 	ID        int64  `json:"id"` // local id
@@ -150,13 +182,15 @@ type User struct {
 // ClientCaps is what a Plex client can play, derived from X-Plex-* headers,
 // the client profile and its declared limits.
 type ClientCaps struct {
-	Product         string `json:"product"`  // X-Plex-Product: "Plex Web", "Plex for iOS", "Plex for Apple TV"
-	Platform        string `json:"platform"` // X-Plex-Platform
-	PlatformVersion string `json:"platformVersion"`
-	Device          string `json:"device"`
-	DeviceName      string `json:"deviceName"`
-	ClientID        string `json:"clientId"` // X-Plex-Client-Identifier
-	Version         string `json:"version"`
+	Profiles        *ClientCapabilityProfiles `json:"profiles,omitempty"`
+	Protocol        Protocol                  `json:"protocol,omitempty"`
+	Product         string                    `json:"product"`  // X-Plex-Product: "Plex Web", "Plex for iOS", "Plex for Apple TV"
+	Platform        string                    `json:"platform"` // X-Plex-Platform
+	PlatformVersion string                    `json:"platformVersion"`
+	Device          string                    `json:"device"`
+	DeviceName      string                    `json:"deviceName"`
+	ClientID        string                    `json:"clientId"` // X-Plex-Client-Identifier
+	Version         string                    `json:"version"`
 
 	MaxHeight            int                 `json:"maxHeight"`                   // 2160, 1080, 720...
 	ExplicitMaxHeight    bool                `json:"explicitMaxHeight,omitempty"` // true when MaxHeight came from a request header/query limitation rather than a product default

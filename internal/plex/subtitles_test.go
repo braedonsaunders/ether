@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/langtag"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
@@ -126,6 +128,20 @@ func (f *fakeSubtitles) DownloadSubtitle(_ context.Context, t *core.Title, _ *co
 		}
 	}
 	return core.StreamInfo{}, core.ErrNotFound
+}
+
+func (f *fakeSubtitles) UploadSubtitle(_ context.Context, t *core.Title, _ *core.User, filename, format, language string, body []byte) (core.StreamInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if language == "" {
+		language = "en"
+	}
+	st := sidecar(language, "ether-subtitle:upload-"+filename)
+	st.Title = filename
+	st.Codec = format
+	f.picks[t.Key] = append(f.picks[t.Key], st)
+	f.files[st.ExternalURL] = string(body)
+	return st, nil
 }
 
 var (
@@ -388,6 +404,75 @@ func TestSubtitleSearchAndPick(t *testing.T) {
 	}
 }
 
+func (f *fixture) requestBody(t *testing.T, method, target string, body []byte, hdr map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, target, strings.NewReader(string(body)))
+	req.RemoteAddr = "192.168.1.50:51000"
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	if _, ok := hdr["X-Plex-Token"]; !ok && !strings.Contains(target, "X-Plex-Token") {
+		req.Header.Set("X-Plex-Token", ownerToken)
+	}
+	if _, ok := hdr["X-Plex-Client-Identifier"]; !ok {
+		req.Header.Set("X-Plex-Client-Identifier", "client-1")
+	}
+	rec := httptest.NewRecorder()
+	f.srv.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestSubtitleUpload(t *testing.T) {
+	// Status grammar measured on PMS 1.43.4 (rex-ref/docs/findings.md
+	// cycle 11 / protocol-traps.md): empty body is 406 before title or
+	// format; no title and a title with no extension are 500; format is
+	// case-sensitive (SRT=400, srt=200); srt/ass/ssa/smi/txt/psb pass,
+	// vtt is accepted here as an Ether extra.
+	f, subs := newSubtitleFixture(t)
+	key := fightClub.Key.String()
+	body := []byte("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=srt", body, map[string]string{"X-Plex-Token": friendToken}); rec.Code != http.StatusForbidden {
+		t.Fatalf("friend upload: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=srt", body, nil); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("upload: %d %q", rec.Code, rec.Body.String())
+	}
+	uploadID := externalID(fightClub.Key, "ether-subtitle:upload-movie.en.srt")
+	found := false
+	for _, tag := range subtitleTags(f.get(t, "/library/metadata/"+key).Body.String()) {
+		if strings.Contains(tag, fmt.Sprintf(`id="%d"`, uploadID)) {
+			found = true
+			if !strings.Contains(tag, `selected="1"`) || !strings.Contains(tag, `external="1"`) {
+				t.Fatalf("uploaded track not selected: %s", tag)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("uploaded track not listed; files=%v", subs.files)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=SRT", body, nil); rec.Code != http.StatusBadRequest {
+		t.Fatalf("uppercase format: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.srt&format=srt", nil, nil); rec.Code != http.StatusNotAcceptable {
+		t.Fatalf("empty body: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles", nil, nil); rec.Code != http.StatusNotAcceptable {
+		t.Fatalf("empty body before title: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?format=srt", body, nil); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("missing title: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie&format=srt", body, nil); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("title without extension: %d", rec.Code)
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.psb&format=psb", body, nil); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("psb: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.vtt&format=vtt", body, nil); rec.Code != http.StatusOK {
+		t.Fatalf("vtt: %d", rec.Code)
+	}
+}
+
 func TestSubtitleSearchWithoutServiceIsEmpty(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
@@ -428,6 +513,462 @@ func TestTranscodeSidecarSubtitlesFollowSessionOffset(t *testing.T) {
 	rec = f.get(t, "/video/:/transcode/universal/subtitles?session=hls2")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<MediaContainer size="0"`) {
 		t.Fatalf("no subtitle: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+const (
+	englishSidecarSRT = "1\n00:02:16,000 --> 00:02:20,000\nThis blade has a dark past.\n\n"
+	spanishSidecarSRT = "1\n00:02:16,000 --> 00:02:20,000\nEsta hoja tiene un pasado oscuro.\n\n"
+)
+
+var appleTV = []string{
+	"X-Plex-Product", "Plex for Apple TV",
+	"X-Plex-Platform", "tvOS",
+	"X-Plex-Device", "Apple TV",
+	"X-Plex-Client-Identifier", "apple-tv",
+}
+
+func headerMap(pairs ...string) map[string]string {
+	h := map[string]string{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		h[pairs[i]] = pairs[i+1]
+	}
+	return h
+}
+
+func streamAttr(tag, name string) string {
+	m := regexp.MustCompile(name + `="([^"]*)"`).FindStringSubmatch(tag)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// subtitleChoice is the stream id of a subtitle tag matching language and
+// whether it is an external sidecar.
+func subtitleChoice(tags []string, langCode string, external bool) string {
+	for _, tag := range tags {
+		if !strings.Contains(tag, `languageCode="`+langCode+`"`) {
+			continue
+		}
+		isExternal := strings.Contains(tag, `external="1"`)
+		if isExternal != external {
+			continue
+		}
+		if id := streamAttr(tag, "id"); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func putSubtitle(t *testing.T, f *fixture, key, id string) {
+	t.Helper()
+	rec := f.request(t, http.MethodPut, "/library/parts/"+key+"?subtitleStreamID="+id+"&allParts=1", headerMap(appleTV...))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("select subtitle %s: %d %s", id, rec.Code, rec.Body.String())
+	}
+}
+
+// TestExternalSubtitleSwitchOnResume is the Apple TV sequence: Off to English,
+// play, stop, Spanish, resume. The detail chip follows the PUT. The next
+// decision must name that Spanish SRT and its stream URL must serve the
+// Spanish cues, including when the resumed probe already has some other
+// Spanish track (so the cached-sidecar list would otherwise drop the file).
+func TestExternalSubtitleSwitchOnResume(t *testing.T) {
+	f, subs := newSubtitleFixture(t)
+	key := fightClub.Key
+	keyS := key.String()
+	subs.cache(key, sidecar("es", "ether-subtitle:cached-es"))
+	subs.files["ether-subtitle:cached-en"] = englishSidecarSRT
+	subs.files["ether-subtitle:cached-es"] = spanishSidecarSRT
+	f.playback.info = estimateInfo
+
+	meta := f.get(t, "/library/metadata/"+keyS, appleTV...)
+	tags := subtitleTags(meta.Body.String())
+	enID := subtitleChoice(tags, "eng", true)
+	esID := subtitleChoice(tags, "spa", true)
+	if enID == "" || esID == "" || enID == esID {
+		t.Fatalf("detail sidecar ids en=%q es=%q tags=%q", enID, esID, tags)
+	}
+
+	putSubtitle(t, f, keyS, enID)
+	play := "/video/:/transcode/universal/decision?path=/library/metadata/" + keyS + "&protocol=hls&directPlay=1&directStream=1&hasMDE=1&session=atv-en"
+	rec := f.get(t, play, appleTV...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("english decision: %d %s", rec.Code, rec.Body.String())
+	}
+	assertSidecarDecision(t, f, rec.Body.String(), "eng", englishSidecarSRT)
+
+	stop := f.get(t, "/:/timeline?ratingKey="+keyS+"&state=stopped&time=20000&duration=8340000", appleTV...)
+	if stop.Code != http.StatusOK {
+		t.Fatalf("stop: %d %s", stop.Code, stop.Body.String())
+	}
+	putSubtitle(t, f, keyS, esID)
+	again := subtitleTags(f.get(t, "/library/metadata/"+keyS, appleTV...).Body.String())
+	chosen := selectedTag(again)
+	if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `external="1"`) || !strings.Contains(chosen, `languageCode="spa"`) {
+		t.Fatalf("detail chip did not persist Spanish: %q", again)
+	}
+
+	// The file probed on resume already contains a Spanish track. Listing
+	// cached sidecars then skips the external SRT the viewer just chose.
+	f.playback.mu.Lock()
+	clear(f.playback.sessions)
+	f.playback.info = core.MediaInfo{
+		Container: "mkv", Duration: 14 * time.Minute, Size: 800_000_000, BitrateKbps: 7600,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, Default: true},
+			{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+			{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en", Title: "full"},
+			{Index: 3, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "es", Title: "full"},
+		},
+	}
+	f.playback.mu.Unlock()
+
+	resume := "/video/:/transcode/universal/decision?path=/library/metadata/" + keyS + "&protocol=hls&directPlay=1&directStream=1&hasMDE=1&session=atv-es&offset=135"
+	rec = f.get(t, resume, appleTV...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("spanish decision: %d %s", rec.Code, rec.Body.String())
+	}
+	assertSidecarDecision(t, f, rec.Body.String(), "spa", spanishSidecarSRT)
+	// The previous English binding still serves English, not the new file.
+	enBody := f.get(t, "/library/streams/"+enID, appleTV...)
+	if enBody.Code != http.StatusOK || enBody.Body.String() != englishSidecarSRT {
+		t.Fatalf("english stream after switch: %d %q", enBody.Code, enBody.Body.String())
+	}
+
+	// Reverse: Spanish back to the English SRT, still against the probe that
+	// already has an English subtitle.
+	putSubtitle(t, f, keyS, enID)
+	f.playback.mu.Lock()
+	clear(f.playback.sessions)
+	f.playback.mu.Unlock()
+	back := "/video/:/transcode/universal/decision?path=/library/metadata/" + keyS + "&protocol=hls&directPlay=1&directStream=1&hasMDE=1&session=atv-en2&offset=135"
+	rec = f.get(t, back, appleTV...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("english resume: %d %s", rec.Code, rec.Body.String())
+	}
+	assertSidecarDecision(t, f, rec.Body.String(), "eng", englishSidecarSRT)
+
+	// The session subtitle endpoint follows the resumed choice as well.
+	sub := f.get(t, "/video/:/transcode/universal/subtitles?session=atv-en2", appleTV...)
+	if sub.Code != http.StatusOK || !strings.Contains(sub.Body.String(), "This blade has a dark past.") {
+		t.Fatalf("session english sidecar: %d %q", sub.Code, sub.Body.String())
+	}
+}
+
+// TestExplicitSubtitleWinsOverOffMode is the Apple TV detail chip: the
+// viewer's saved mode is off, they PUT a Spanish SRT, and the next metadata
+// response must keep that stream selected. Mode off is a default, not a
+// veto of a per-title choice.
+func TestExplicitSubtitleWinsOverOffMode(t *testing.T) {
+	f, subs := newSubtitleFixture(t)
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	f.srv.d.TrackPreferences = prefs
+	rules := trackprefs.Default()
+	rules.SubtitleMode = "off"
+	if err := prefs.PutRules(context.Background(), ownerUser.ID, rules); err != nil {
+		t.Fatal(err)
+	}
+	key := fightClub.Key
+	keyS := key.String()
+	subs.cache(key, sidecar("es", "ether-subtitle:cached-es"))
+	subs.files["ether-subtitle:cached-es"] = spanishSidecarSRT
+	f.playback.info = estimateInfo
+	meta := f.get(t, "/library/metadata/"+keyS, appleTV...)
+	esID := subtitleChoice(subtitleTags(meta.Body.String()), "spa", true)
+	if esID == "" {
+		t.Fatalf("spanish srt missing from the menu: %s", meta.Body.String())
+	}
+	putSubtitle(t, f, keyS, esID)
+	f.playback.info = core.MediaInfo{
+		Container: "mkv", Duration: 14 * time.Minute, Size: 800_000_000, BitrateKbps: 7600,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, Default: true},
+			{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+			{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en", Title: "full"},
+			{Index: 3, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "es", Title: "full"},
+		},
+	}
+	again := subtitleTags(f.get(t, "/library/metadata/"+keyS, appleTV...).Body.String())
+	chosen := selectedTag(again)
+	if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `external="1"`) || !strings.Contains(chosen, `languageCode="spa"`) {
+		t.Fatalf("off mode cleared the explicit Spanish choice: %q", again)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM trackprefs_memory WHERE user_id=? AND kind='subtitle'`, ownerUser.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("explicit subtitle was not stored, trackprefs_memory rows=%d", n)
+	}
+}
+
+func TestEmbeddedToExternalSubtitleSwitch(t *testing.T) {
+	f, subs := newSubtitleFixture(t)
+	f.srv.d.Transcoder = &extractTranscoder{fakeTranscoder: f.trans, out: "WEBVTT\n\n00:02:16.000 --> 00:02:20.000\nEmbedded english\n"}
+	key := fightClub.Key
+	keyS := key.String()
+	subs.cache(key, sidecar("es", "ether-subtitle:cached-es"))
+	subs.files["ether-subtitle:cached-es"] = spanishSidecarSRT
+	f.playback.info = core.MediaInfo{
+		Container: "mkv", Duration: 14 * time.Minute, Size: 800_000_000, BitrateKbps: 7600,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, Default: true},
+			{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+			{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en", Title: "full"},
+		},
+	}
+
+	meta := f.get(t, "/library/metadata/"+keyS, appleTV...)
+	tags := subtitleTags(meta.Body.String())
+	enID := subtitleChoice(tags, "eng", false)
+	esID := subtitleChoice(tags, "spa", true)
+	if enID == "" || esID == "" {
+		t.Fatalf("embedded english or external spanish missing: %q", tags)
+	}
+	putSubtitle(t, f, keyS, enID)
+	rec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+keyS+"&protocol=hls&directPlay=0&directStream=1&session=emb-ext-1", appleTV...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("embedded decision: %d %s", rec.Code, rec.Body.String())
+	}
+	selected := selectedTag(subtitleTags(rec.Body.String()))
+	if strings.Contains(selected, `external="1"`) || !strings.Contains(selected, `languageCode="eng"`) {
+		t.Fatalf("embedded english not selected: %s", selected)
+	}
+
+	f.playback.mu.Lock()
+	clear(f.playback.sessions)
+	f.playback.info.Streams = append(f.playback.info.Streams, core.StreamInfo{Index: 4, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "es", Title: "full"})
+	f.playback.mu.Unlock()
+	putSubtitle(t, f, keyS, esID)
+	rec = f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+keyS+"&protocol=hls&directPlay=0&directStream=1&session=emb-ext-2", appleTV...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("external decision: %d %s", rec.Code, rec.Body.String())
+	}
+	assertSidecarDecision(t, f, rec.Body.String(), "spa", spanishSidecarSRT)
+}
+
+func assertSidecarDecision(t *testing.T, f *fixture, body, langCode, want string) {
+	t.Helper()
+	selected := selectedTag(subtitleTags(body))
+	if selected == "" || !strings.Contains(selected, `languageCode="`+langCode+`"`) || !strings.Contains(selected, `external="1"`) {
+		t.Fatalf("decision subtitle %s: %q\n%s", langCode, selected, body)
+	}
+	key := streamAttr(selected, "key")
+	if !strings.HasPrefix(key, "/library/streams/") {
+		t.Fatalf("sidecar key: %q", selected)
+	}
+	rec := f.get(t, key, appleTV...)
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Fatalf("GET %s: %d %q", key, rec.Code, rec.Body.String())
+	}
+}
+
+// TestWaysToWatchSubtitleReread is the Apple TV discover path: search,
+// More Ways to Watch, then More › Subtitles. The detail is addressed by a
+// plex:// guid and by Play Version part ids (the 8×10^15 block and the
+// 9×10^15 ids the registry issues). The client PUTs with the plex.tv token
+// and allParts=1, then re-reads the guid, the rating key, and the part id.
+func TestWaysToWatchSubtitleReread(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	pb.info = estimateInfo
+	subs := newFakeSubtitles()
+	subs.cache(fightClub.Key, sidecar("es", "ether-subtitle:cached-es"))
+	subs.files["ether-subtitle:cached-es"] = spanishSidecarSRT
+	f.srv.d.Subtitles = subs
+
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	rules := trackprefs.Default()
+	rules.SubtitleMode = "off"
+	if err := prefs.PutRules(context.Background(), ownerUser.ID, rules); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.d.TrackPreferences = prefs
+
+	const guid = "plex://movie/5d77688123d5a3001f4ed3df"
+	if _, err := db.Exec(`INSERT INTO plexguid_mappings(rating_key, guid, checked_at) VALUES(?,?,?)`, int64(fightClub.Key), guid, time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	pg := plexguid.New(db, plexguid.Options{})
+	t.Cleanup(func() { pg.Close() })
+	f.srv.d.PlexGUID = pg
+
+	const plexToken = "plex-tv-user-token"
+	f.srv.d.Auth.(*fakeAuth).users[plexToken] = ownerUser
+	hdr := append([]string{"X-Plex-Token", plexToken}, appleTV...)
+
+	key := fightClub.Key.String()
+	meta := f.get(t, "/library/metadata/"+key, hdr...)
+	if meta.Code != http.StatusOK {
+		t.Fatalf("detail: %d %s", meta.Code, meta.Body.String())
+	}
+	esID := subtitleChoice(subtitleTags(meta.Body.String()), "spa", true)
+	if esID == "" {
+		t.Fatalf("spanish srt missing from the discover detail: %s", meta.Body.String())
+	}
+	variant := variantPartRE.FindStringSubmatch(meta.Body.String())
+	if variant == nil {
+		t.Fatalf("variant part id missing:\n%s", meta.Body.String())
+	}
+	guidPath := "/library/metadata/" + url.PathEscape(guid)
+
+	put := func(partID string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/library/parts/"+partID+"?subtitleStreamID="+esID+"&allParts=1", nil)
+		req.RemoteAddr = "192.168.1.50:51000"
+		for i := 0; i+1 < len(hdr); i += 2 {
+			req.Header.Set(hdr[i], hdr[i+1])
+		}
+		rec := httptest.NewRecorder()
+		f.srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("PUT part %s: %d %s", partID, rec.Code, rec.Body.String())
+		}
+	}
+	assertSpanish := func(path string) {
+		t.Helper()
+		rec := f.get(t, path, hdr...)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, rec.Code, rec.Body.String())
+		}
+		chosen := selectedTag(subtitleTags(rec.Body.String()))
+		if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `languageCode="spa"`) {
+			t.Fatalf("GET %s did not mark Spanish selected: %q", path, chosen)
+		}
+	}
+
+	// A different title's part must not take the stream.
+	put(alien.Key.String())
+	if chosen := selectedTag(subtitleTags(f.get(t, "/library/metadata/"+key, hdr...).Body.String())); chosen != "" {
+		t.Fatalf("cross-title part stored a selection: %s", chosen)
+	}
+
+	// Unregistered id in the 8×10^15 block: the stream id names the title.
+	put("8000000000000001")
+	assertSpanish("/library/metadata/" + key)
+	assertSpanish(guidPath)
+
+	// Registered variant part, then the Auto part. Re-read the part id itself
+	// and the plex:// guid the discover row keeps.
+	put(variant[1])
+	assertSpanish("/library/metadata/" + key)
+	assertSpanish("/library/metadata/" + variant[1])
+	assertSpanish(guidPath)
+
+	put(key)
+	assertSpanish("/library/metadata/" + key)
+	assertSpanish(guidPath)
+}
+
+// TestSubtitleChoiceSurvivesVariantReorder is the Apple TV More Ways to
+// Watch flake: the viewer picks Spanish SRT, then the variant list reorders
+// (a different release becomes Auto, so the same part id names a different
+// release) and the Spanish track moves to a new index. A PGS track now sits
+// in the old slot with the old stream index. The choice is the title plus
+// language, codec, and source, so the re-read and the direct-play decision
+// still select that SRT, at the same stream id.
+func TestSubtitleChoiceSurvivesVariantReorder(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	initial := []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 1280, Height: 720},
+		{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+		{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en"},
+		{Index: 3, Type: "subtitle", Codec: "srt", Language: "es"},
+	}
+	for i := range f.resolver.byKey[fightClub.Key] {
+		if f.resolver.byKey[fightClub.Key][i].Auto {
+			f.resolver.byKey[fightClub.Key][i].Info.Streams = initial
+		}
+	}
+	pb.info.Streams = initial
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	rules := trackprefs.Default()
+	rules.SubtitleMode = "off"
+	if err := prefs.PutRules(context.Background(), ownerUser.ID, rules); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.d.TrackPreferences = prefs
+
+	key := fightClub.Key.String()
+	meta := f.get(t, "/library/metadata/"+key, appleTV...)
+	if meta.Code != http.StatusOK {
+		t.Fatalf("detail: %d %s", meta.Code, meta.Body.String())
+	}
+	esID := ""
+	for _, tag := range subtitleTags(meta.Body.String()) {
+		if strings.Contains(tag, `languageCode="spa"`) && strings.Contains(tag, `codec="srt"`) && !strings.Contains(tag, `external="1"`) {
+			esID = streamAttr(tag, "id")
+		}
+	}
+	if esID == "" {
+		t.Fatalf("spanish srt missing:\n%s", meta.Body.String())
+	}
+	partID := strconv.FormatInt(f.srv.variantIDs.idFor(fightClub.Key, "rel-4k"), 10)
+	req := httptest.NewRequest(http.MethodPut, "/library/parts/"+partID+"?subtitleStreamID="+esID+"&allParts=1", nil)
+	req.RemoteAddr = "192.168.1.50:51000"
+	req.Header.Set("X-Plex-Token", ownerToken)
+	for i := 0; i+1 < len(appleTV); i += 2 {
+		req.Header.Set(appleTV[i], appleTV[i+1])
+	}
+	rec := httptest.NewRecorder()
+	f.srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// A warmer candidate becomes Auto, so the title-key part is a different
+	// release, and the Spanish SRT is no longer at index 3.
+	var next []core.ReleaseVariant
+	for _, id := range []string{"rel-4k", "rel-compat", "rel-auto"} {
+		for _, v := range f.resolver.byKey[fightClub.Key] {
+			if v.Release.ID == id {
+				v.Auto = id == "rel-4k"
+				next = append(next, v)
+			}
+		}
+	}
+	moved := []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 1280, Height: 720},
+		{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+		{Index: 3, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "es"},
+		{Index: 4, Type: "subtitle", Codec: "subrip", Language: "en"},
+		{Index: 9, Type: "subtitle", Codec: "srt", Language: "es"},
+	}
+	for i := range next {
+		if next[i].Auto {
+			next[i].Info.Streams = moved
+		}
+	}
+	f.resolver.byKey[fightClub.Key] = next
+	pb.info.Streams = moved
+
+	assertSpanishSRT := func(path string) {
+		t.Helper()
+		body := f.get(t, path, appleTV...).Body.String()
+		chosen := selectedTag(subtitleTags(body))
+		if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `languageCode="spa"`) || !strings.Contains(chosen, `codec="srt"`) {
+			t.Fatalf("GET %s selected %q, want Spanish SRT id %s", path, chosen, esID)
+		}
+	}
+	assertSpanishSRT("/library/metadata/" + key)
+	assertSpanishSRT("/library/metadata/" + partID)
+
+	dec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+key+"&directPlay=1&directStream=1&protocol=hls&session=reorder-sub", appleTV...)
+	if dec.Code != http.StatusOK {
+		t.Fatalf("decision: %d %s", dec.Code, dec.Body.String())
+	}
+	tags := subtitleTags(dec.Body.String())
+	chosen := selectedTag(tags)
+	if chosen == "" && len(tags) > 0 {
+		chosen = tags[0]
+	}
+	if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `codec="srt"`) {
+		t.Fatalf("direct play dropped Spanish SRT: %q\n%s", chosen, dec.Body.String())
 	}
 }
 

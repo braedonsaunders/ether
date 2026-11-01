@@ -2,6 +2,7 @@ package collections
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -10,13 +11,34 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/language/display"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // Catalogue helpers for the Collection Studio's pickers.
 
-var standardContentRatings = []string{
-	"G", "TV-Y", "TV-G", "TV-Y7", "PG", "TV-PG", "PG-13", "TV-14", "R", "TV-MA", "NC-17", "NR",
+// ratingFacet lists every content-rating level, mildest first, then "Not
+// rated": the level's key is the stored rule value, the title its US labels
+// ("PG · TV-PG"), Labels every board's equivalent label (bare US, "cc/label"
+// elsewhere) and Count the browsable titles at that level.
+func (s *Service) ratingFacet(ctx context.Context, t core.MediaType) ([]core.FacetValue, error) {
+	counts := map[string]int{}
+	if vals, err := s.cat.Facet(ctx, t, "contentRatingLevel"); err == nil {
+		for _, v := range vals {
+			counts[v.Key] = v.Count
+		}
+	}
+	levels := append(append([]contentrating.Level(nil), contentrating.Levels...), contentrating.Unrated)
+	out := make([]core.FacetValue, 0, len(levels))
+	for _, l := range levels {
+		out = append(out, core.FacetValue{
+			Key:    l.Key(),
+			Title:  strings.Join(l.USLabels(), " · "),
+			Count:  counts[strconv.Itoa(int(l))],
+			Labels: contentrating.Equivalents(l),
+		})
+	}
+	return out, nil
 }
 
 // BrowseTitles lists the released local catalogue with filters and pagination.
@@ -46,21 +68,12 @@ func (s *Service) Facets(ctx context.Context, t core.MediaType, facet string) ([
 	default:
 		return nil, &ValidationError{Fields: map[string]string{"facet": "facet is genre, decade, contentRating, studio, country or language"}}
 	}
+	if facet == "contentRating" {
+		return s.ratingFacet(ctx, t)
+	}
 	vals, err := s.cat.Facet(ctx, t, facet)
 	if err != nil {
 		return nil, err
-	}
-	if facet == "contentRating" {
-		seen := make(map[string]bool, len(vals))
-		for _, v := range vals {
-			seen[strings.ToUpper(v.Key)] = true
-		}
-		for _, r := range standardContentRatings {
-			if !seen[r] {
-				vals = append(vals, core.FacetValue{Key: r, Title: r})
-			}
-		}
-		return vals, nil
 	}
 	if facet == "country" {
 		// Movies store country names, shows ISO codes; merge them.
@@ -176,7 +189,22 @@ func (s *Service) Lookup(ctx context.Context, kind, q, region string) ([]core.Lo
 }
 
 // TitleDetail returns a title with credits and keywords (fetching details
-// from TMDB when the mirror only has a summary).
+// from TMDB when the mirror only has a summary). The owner console also
+// inspects titles viewers cannot open yet, such as an upcoming movie on the
+// release calendar, so an unreleased title Get refuses is read from the
+// mirror instead. Adult titles stay hidden.
 func (s *Service) TitleDetail(ctx context.Context, key core.RatingKey) (*core.Title, error) {
-	return s.cat.Get(ctx, key)
+	t, err := s.cat.Get(ctx, key)
+	if !errors.Is(err, core.ErrNotFound) {
+		return t, err
+	}
+	stored, ok := s.cat.(core.StoredTitleLookup)
+	if !ok || (key.Kind() != core.KindMovie && key.Kind() != core.KindShow) {
+		return nil, err
+	}
+	t, serr := stored.StoredTitle(ctx, key)
+	if serr != nil || t == nil || t.Adult || t.Key != key {
+		return nil, err
+	}
+	return t, nil
 }

@@ -6,19 +6,60 @@ import (
 	"strings"
 	"testing"
 
+	pmsconform "github.com/braedonsaunders/ether/internal/conform"
+	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/pmsconform"
 )
 
 // Every recorded browsing probe is exercised in both encodings and all three
 // client profiles. Dataset-dependent listings differ; protocol identity and
 // status are still checked against the recording rather than merely parsed.
+var contractSkips = func() []loadBearingSkip {
+	var out []loadBearingSkip
+	add := func(id, endpoint, path, reason string) {
+		out = append(out, loadBearingSkip{ID: id, Endpoint: endpoint, Path: path, Fixture: "*", Reason: reason})
+	}
+	reason := "Ether answers allowSync=0; PMS 1.43.4 answers 1. Changing Plex production responses is out of this slice"
+	for _, ep := range []string{
+		"/library/metadata/{{movieKey}}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1",
+		"/library/metadata/{{showKey}}/children",
+		"/library/metadata/{{seasonKey}}/children",
+		"/library/metadata/{{episodeKey}}",
+	} {
+		add(ep+"-allowSync-xml", ep, "/MediaContainer/@allowSync", reason)
+		add(ep+"-allowSync-json", ep, "$/MediaContainer/allowSync", reason)
+	}
+	return out
+}()
+
+func valueContractPath(path string) bool {
+	return strings.HasPrefix(path, "/library/metadata/") ||
+		strings.HasPrefix(path, "/library/onDeck") ||
+		strings.HasPrefix(path, "/library/collections/") ||
+		strings.HasPrefix(path, "/playlists/")
+}
+
+func matchContractSkip(endpoint, fixture string, d pmsconform.Difference, used map[string]bool) (bool, string) {
+	for _, s := range contractSkips {
+		if s.Endpoint != endpoint || s.Path != d.Path {
+			continue
+		}
+		if s.Fixture != "*" && s.Fixture != fixture {
+			continue
+		}
+		used[s.ID] = true
+		return true, s.Reason
+	}
+	return false, ""
+}
+
 func TestRecordedCorpusProtocolContracts(t *testing.T) {
-	for _, probe := range pmsconform.Corpus() {
-		for profile, client := range pmsconform.Clients() {
+	used := map[string]bool{}
+	for _, probe := range conformplex.Corpus() {
+		for profile, client := range conformplex.Clients() {
 			for _, jsonMode := range []bool{false, true} {
 				t.Run(profile+"/"+pmsFixtureName(profile, probe.Path, jsonMode), func(t *testing.T) {
-					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "pms", profile, pmsFixtureName(profile, probe.Path, jsonMode)))
+					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "conform", "plex", profile, pmsFixtureName(profile, probe.Path, jsonMode)))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -58,7 +99,7 @@ func TestRecordedCorpusProtocolContracts(t *testing.T) {
 						return
 					}
 					ours := pmsconform.Response{Status: rec.Code, Headers: rec.Header(), Body: rec.Body.Bytes()}
-					for _, diff := range pmsconform.Compare(ref, ours).Differences {
+					for _, diff := range conformplex.Compare(ref, ours).Differences {
 						// Three legacy root JSON recordings lost the original multiuser
 						// boolean during redaction. Their explicitly redacted value is opaque.
 						if strings.HasSuffix(diff.Path, "/multiuser") && diff.Reference == "[REDACTED]" {
@@ -66,6 +107,18 @@ func TestRecordedCorpusProtocolContracts(t *testing.T) {
 						}
 						switch diff.Kind {
 						case pmsconform.KindParse, pmsconform.KindType, pmsconform.KindStatus, pmsconform.KindHeader:
+							t.Errorf("%s %s PMS=%v ours=%v", diff.Kind, diff.Path, diff.Reference, diff.Target)
+						case pmsconform.KindValue:
+							if !diff.Blocking || !valueContractPath(probe.Path) {
+								continue
+							}
+							if catalogCountField(diff.Path) {
+								continue
+							}
+							if skip, reason := matchContractSkip(probe.Path, pmsFixtureName(profile, probe.Path, jsonMode), diff, used); skip {
+								t.Logf("skip %s %s: %s", diff.Kind, diff.Path, reason)
+								continue
+							}
 							t.Errorf("%s %s PMS=%v ours=%v", diff.Kind, diff.Path, diff.Reference, diff.Target)
 						}
 					}
@@ -77,6 +130,11 @@ func TestRecordedCorpusProtocolContracts(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+	for _, s := range contractSkips {
+		if !used[s.ID] {
+			t.Errorf("stale skip %s (%s %s %s) never matched: %s", s.ID, s.Endpoint, s.Path, s.Fixture, s.Reason)
 		}
 	}
 }

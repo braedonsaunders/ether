@@ -33,8 +33,8 @@ describe("Owner usability", () => {
   });
 
   it.each([
-    { path: "/sources/usenet", trigger: "Add provider", dialog: "New provider" },
-    { path: "/sources/debrid", trigger: "Add provider", dialog: "New debrid provider" },
+    { path: "/sources/usenet", trigger: "Add a Usenet provider", dialog: "New provider" },
+    { path: "/sources/debrid", trigger: "Add a debrid service", dialog: "New debrid provider" },
     { path: "/sources/indexers", trigger: "Import from Prowlarr", dialog: "Import from Prowlarr" },
     { path: "/cache", trigger: "Edit policy", dialog: "Edit cache policy" },
     { path: "/notifications/channels", trigger: "New channel", dialog: "New notification channel" },
@@ -79,7 +79,7 @@ describe("Owner usability", () => {
   });
 
   it("shows newest logs first, including entries sharing a timestamp", async () => {
-    const { fake } = renderApp("/logs", {}, (f) => {
+    const { fake } = renderApp("/maintenance/logs", {}, (f) => {
       f.state.logs = [
         { time: "2026-10-19T09:00:00Z", level: "info", message: "oldest" },
         { time: "2026-10-19T10:00:00Z", level: "info", message: "first at ten" },

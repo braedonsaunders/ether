@@ -79,6 +79,9 @@ func buildRTXArgs(s runSpec) (args []string, keyframes []byte, err error) {
 	if s.BigProbe {
 		args = append(args, "--input-analyze", "20", "--input-probesize", "20000000")
 	}
+	for key, value := range s.InputScopeHeaders {
+		headers[key] = value
+	}
 	ha := inputHeaderArgs(headers)
 	for i := 0; i+1 < len(ha); i += 2 {
 		args = append(args, "--input-option", strings.TrimPrefix(ha[i], "-")+":"+ha[i+1])

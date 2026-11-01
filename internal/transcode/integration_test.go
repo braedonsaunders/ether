@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -76,11 +77,14 @@ func (e *realEnv) gen(t *testing.T, name string, seconds int, args ...string) {
 }
 
 type probedStream struct {
-	CodecName string `json:"codec_name"`
-	CodecType string `json:"codec_type"`
-	CodecTag  string `json:"codec_tag_string"`
-	Height    int    `json:"height"`
-	StartTime string `json:"start_time"`
+	CodecName      string `json:"codec_name"`
+	CodecType      string `json:"codec_type"`
+	CodecTag       string `json:"codec_tag_string"`
+	Height         int    `json:"height"`
+	StartTime      string `json:"start_time"`
+	ColorPrimaries string `json:"color_primaries"`
+	ColorTransfer  string `json:"color_transfer"`
+	ColorSpace     string `json:"color_space"`
 }
 
 func (e *realEnv) probeFile(t *testing.T, path string) []probedStream {
@@ -198,6 +202,38 @@ func TestIntegrationRemuxSeekAndSwap(t *testing.T) {
 	}
 }
 
+// Plex tvOS resume starts the session at 0, then jumps to the resume
+// segment. That first media GET must return under 5s on a local source
+// (the cached-debrid bar).
+func TestIntegrationRemuxResumeFirstFrame(t *testing.T) {
+	e := newRealEnv(t, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	e.gen(t, "resume.mkv", 24, "-c:v", "libx264", "-preset", "ultrafast", "-g", "24", "-c:a", "aac", "-ac", "2")
+	ctx := context.Background()
+	info, err := e.m.Probe(ctx, e.url("resume.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := e.m.Decide(*info, plexWeb, allow())
+	if d.Kind != core.DecisionRemux {
+		t.Fatalf("decision %+v", d)
+	}
+	hs, err := e.m.StartHLS(ctx, core.HLSRequest{
+		SessionID: "it-resume", InputURL: e.url("resume.mkv"), Info: *info, Decision: d,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	seg := fetch(t, hs, 3)
+	if took := time.Since(started); took > 5*time.Second {
+		t.Fatalf("resume segment 3 took %v, want under 5s", took)
+	}
+	if len(seg) < 188 || seg[0] != 0x47 {
+		t.Fatalf("segment 3 is not MPEG-TS (%d bytes)", len(seg))
+	}
+	e.m.Stop("it-resume")
+}
+
 func TestIntegrationTranscode(t *testing.T) {
 	e := newRealEnv(t)
 	e.gen(t, "t.mkv", 16, "-c:v", "libx264", "-preset", "ultrafast", "-g", "48", "-c:a", "aac", "-ac", "2")
@@ -311,6 +347,133 @@ func TestIntegrationHWDetection(t *testing.T) {
 	if e.m.Version() == "" || e.m.Version() == "unknown" {
 		t.Errorf("version %q", e.m.Version())
 	}
+}
+
+func TestIntegrationSDRAndHDRWithoutAssumingZscale(t *testing.T) {
+	e := newRealEnv(t)
+	t.Logf("ffmpeg features path=%s version=%s %s probe=%s", e.m.FFmpegPath(), e.m.Version(), featureLine(e.m.feat), probeState(e.m.feat))
+	if !e.m.feat.filtersProbed {
+		t.Fatal("filter probe did not record a filter list")
+	}
+	e.gen(t, "dvd.mkv", 3, "-map", "0:v", "-map", "1:a",
+		"-vf", "scale=720:480,setsar=32/27",
+		"-c:v", "libx264", "-preset", "ultrafast",
+		"-color_primaries", "smpte170m", "-color_trc", "bt709", "-colorspace", "smpte170m",
+		"-c:a", "aac")
+	ctx := context.Background()
+	info, err := e.m.Probe(ctx, e.url("dvd.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := appleTV
+	caps.HLSContainers = []string{"mkv"}
+	opts := allow()
+	opts.DirectPlay, opts.DirectStream = false, false
+	d := e.m.Decide(*info, caps, opts)
+	if d.VideoCopy || d.Container != ContainerMatroska {
+		t.Fatalf("decision %+v", d)
+	}
+	hs, err := e.m.StartHLS(ctx, core.HLSRequest{SessionID: "dvd-sdr", InputURL: e.url("dvd.mkv"), Info: *info, Decision: d})
+	if err != nil {
+		t.Fatalf("SDR transcode: %v", err)
+	}
+	defer hs.Close()
+	graph := sessionGraph(hs.(*Session))
+	if !e.m.feat.hasFilter("zscale") && strings.Contains(graph, "zscale") {
+		t.Fatalf("zscale-less ffmpeg used zscale: %s", graph)
+	}
+	if e.m.feat.hasFilter("zscale") && !strings.Contains(graph, "zscale") {
+		t.Fatalf("zscale ffmpeg did not use it: %s", graph)
+	}
+	if !e.m.feat.hasFilter("zscale") && !strings.Contains(graph, "colorspace=") && !strings.Contains(graph, "out_color_matrix=") {
+		t.Fatalf("no SDR colour conversion: %s", graph)
+	}
+	saw := false
+	for _, s := range probePlayable(t, e, hs, "dvd-out") {
+		if s.CodecType != "video" {
+			continue
+		}
+		saw = true
+		if s.CodecName != "h264" {
+			t.Errorf("video %+v", s)
+		}
+		if s.ColorPrimaries != "" && s.ColorPrimaries != "bt709" {
+			t.Errorf("SDR output primaries %q, want bt709", s.ColorPrimaries)
+		}
+	}
+	if !saw {
+		t.Fatal("SDR transcode produced no video")
+	}
+
+	// FFmpeg 8 takes the encoder's colour from the frames. setparams tags
+	// them PQ; output flags alone are dropped by jellyfin-ffmpeg 8.1.
+	e.gen(t, "hdr.mkv", 3, "-map", "0:v", "-map", "1:a",
+		"-vf", "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
+		"-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p10le",
+		"-x265-params", "log-level=error:pools=1:frame-threads=1:keyint=24:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc",
+		"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc", "-c:a", "aac")
+	hinfo, err := e.m.Probe(ctx, e.url("hdr.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dynamicRange(hinfo.Video()) != rangeHDR10 {
+		t.Fatalf("generated clip not tagged HDR10: %+v", hinfo.Video())
+	}
+	hd := e.m.Decide(*hinfo, plexWeb, allow())
+	hhs, err := e.m.StartHLS(ctx, core.HLSRequest{SessionID: "hdr-tonemap", InputURL: e.url("hdr.mkv"), Info: *hinfo, Decision: hd})
+	if err != nil {
+		var graphErr *GraphError
+		if !errors.As(err, &graphErr) || !strings.Contains(err.Error(), "tone-map") || strings.Contains(err.Error(), "No such filter") {
+			t.Fatalf("HDR start: %v", err)
+		}
+		if !strings.Contains(e.m.Capability().PlaybackError, "tone-map") && e.m.Capability().Notice == "" {
+			t.Fatalf("no owner diagnostic: %+v", e.m.Capability())
+		}
+		return
+	}
+	defer hhs.Close()
+	hgraph := sessionGraph(hhs.(*Session))
+	if !e.m.feat.hasFilter("zscale") && strings.Contains(hgraph, "zscale") {
+		t.Fatalf("HDR graph used zscale this ffmpeg does not have: %s", hgraph)
+	}
+	sawVideo := false
+	for _, s := range probePlayable(t, e, hhs, "hdr-out") {
+		if s.CodecType != "video" {
+			continue
+		}
+		sawVideo = true
+		if s.CodecName != "h264" {
+			t.Errorf("video %+v", s)
+		}
+		if s.ColorTransfer == "smpte2084" || s.ColorPrimaries == "bt2020" {
+			t.Errorf("HDR was not mapped to SDR: %+v", s)
+		}
+	}
+	if !sawVideo {
+		t.Fatal("HDR transcode produced no video")
+	}
+}
+
+// probePlayable joins a Matroska init header to segment 0. Segment files
+// from the static-header muxer are clusters, not standalone files.
+func probePlayable(t *testing.T, e *realEnv, hs core.HLSSession, name string) []probedStream {
+	t.Helper()
+	body := fetch(t, hs, 0)
+	ext := "ts"
+	if s, ok := hs.(*Session); ok && hasInitSegment(s.container) {
+		body = append(append([]byte(nil), fetch(t, hs, InitSegment)...), body...)
+		ext = "mkv"
+	}
+	return e.probeFile(t, e.writeTemp(t, name+"."+ext, body))
+}
+
+func sessionGraph(s *Session) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cur == nil {
+		return ""
+	}
+	return filterGraph(buildArgs(s.cur.spec))
 }
 
 func TestIntegrationToneMap(t *testing.T) {

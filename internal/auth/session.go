@@ -34,6 +34,9 @@ const (
 // The table is its own migration component so its numbering can never
 // collide with the auth component's, and sorts after it (auth_users exists).
 func init() {
+	// Explicit, not only lexical: RegisterAfter can pull another component
+	// ahead of "auth", and auth_sessions references auth_users.
+	store.RegisterAfter("auth_sessions", "auth")
 	store.Register("auth_sessions", 1, `
 CREATE TABLE auth_sessions (
  token_hash TEXT PRIMARY KEY,

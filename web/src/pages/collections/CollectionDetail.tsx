@@ -124,10 +124,11 @@ export function CollectionDetail({
             >
               {spec.name}
             </h2>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-fg-muted">
-              {spec.description ||
-                t("A curated selection from your catalogue, ready to discover in Plex.")}
-            </p>
+            {spec.description ? (
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-fg-muted">
+                {spec.description}
+              </p>
+            ) : null}
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
               <span>
                 {spec.mediaType === "show"
@@ -161,7 +162,7 @@ export function CollectionDetail({
               template
                 ? t("Customise before publishing")
                 : spec.enabled
-                  ? t("Available in Plex")
+                  ? t("Available in apps")
                   : t("Publish to make it visible")
             }
           />

@@ -1,0 +1,602 @@
+[
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "ae9e966da982ad7bcdbde1eb7d48c84e279fec7db4eadb733c8fd02a61b1da01"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "e4517423611eb770fc1ce50888f3a697e18633d97fbd4c0f339667d45f0cf3a2"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "ae9e966da982ad7bcdbde1eb7d48c84e279fec7db4eadb733c8fd02a61b1da01"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "e4517423611eb770fc1ce50888f3a697e18633d97fbd4c0f339667d45f0cf3a2"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b06065b26f08deabecc96707ced4b0b64178f1aea3b96de9e4670aa2d8a89e5b"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2311b0d1e7ee16a5205516987df7d3ba68d940f7313622495a4455415db08f22"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b06065b26f08deabecc96707ced4b0b64178f1aea3b96de9e4670aa2d8a89e5b"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2311b0d1e7ee16a5205516987df7d3ba68d940f7313622495a4455415db08f22"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "05a9d34a186004365f2e4bcdb5efc3e17a100ce217bfe79588aec18ef08a405d"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0833ae087fe2822a71b1979bcb16f05c0e6c303dfe7a224561c0f3f0c2ac4e3c"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "05a9d34a186004365f2e4bcdb5efc3e17a100ce217bfe79588aec18ef08a405d"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0833ae087fe2822a71b1979bcb16f05c0e6c303dfe7a224561c0f3f0c2ac4e3c"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3c4b837de01f92e537c3b44ec7e1d2a4d2a9181720820b4f5abbd6efe34634fc"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0059bf10afbf3b568c0527774ee084543b9a333f318c9f50a7a75242b18f9a1c"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3c4b837de01f92e537c3b44ec7e1d2a4d2a9181720820b4f5abbd6efe34634fc"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0059bf10afbf3b568c0527774ee084543b9a333f318c9f50a7a75242b18f9a1c"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "e013a73cbde5b4ddad12ab2f9b33ca1b85c2e0d788ef1e49267cef5dae2692a2"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "50f04ddb7a0af2e52909797a325fd546d27d13026535bdaacd193f8a67f76561"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/sections/{{section}}?count=2",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "633074c74a2b92bb5393211540fb1699a9355ba3a81606ecae1eabef73449f19"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c3148a0b94cf44c9fd3037d3427cb15f9f9da8a3b4a7347b9b28dda5010fe1f8"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/sections/{{section}}?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2c88b0064f9bf7ab6cd83fef4320a9d3d1c64359a08d5d1ae6435e83e95edea2"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "608b07639a7bdff7e2be0de31585243c4154320f2932a41b12b1256944b5e61d"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "e013a73cbde5b4ddad12ab2f9b33ca1b85c2e0d788ef1e49267cef5dae2692a2"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "50f04ddb7a0af2e52909797a325fd546d27d13026535bdaacd193f8a67f76561"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7d325e3d56bab3e8870dcc4dfcc0a49463e2c64cb417986caa90e76d68c9a3cd"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "f171885fc5a0db12fb74318e06c92c9c778388752e59270fffd3e36c4d06d45c"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/sections/{{section}}?count=2",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "73cd7cf802f9f2dfdb3fa4f613f0315edef4dda39d20e1ff7429c001ee5ae8e7"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "43f4839a6df500cf2fb98f5fa9e1dc0ff7524e7f26f54005a30367dbbf1bc712"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/sections/{{section}}?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "228507dbbcdc2e45446f654b8d6538635a1b4a0d5d664e6671fbb0fac3369c92"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b45ffaa32792111271827e9a0d7dd9a4dc852a474bdae1cffe61397c1bf1d59e"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7d325e3d56bab3e8870dcc4dfcc0a49463e2c64cb417986caa90e76d68c9a3cd"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "f171885fc5a0db12fb74318e06c92c9c778388752e59270fffd3e36c4d06d45c"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8aa1cd6ff416d156c9586819586682d4fda6eb1cfad5b4eaaf3367603d0857da"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "7dd68a5958c183da4fc4878accba7341e27b46b2055dbee2c574ee2b39c2fb7b"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/sections/{{section}}?count=2",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "ea552b1a3ac3cdfb9dbc689fe2ede552c2bbe3ba497b43de9109a140004ba180"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "06ede280dee305eb3a89c1ddd651e0d1ad8fcc5b0ab6806da74878f6993d9b51"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/sections/{{section}}?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7707469e262fcb44a1de9733acc13a4fdb793868e8a7fcd36460f92353061f0"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "709b6c717f8f106048a1d7d54f9fb088f713997b0b51f70ff605253e1701085e"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8aa1cd6ff416d156c9586819586682d4fda6eb1cfad5b4eaaf3367603d0857da"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "7dd68a5958c183da4fc4878accba7341e27b46b2055dbee2c574ee2b39c2fb7b"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "99e7729e08f527b741ccbecb8caaf379afea891e473a3e58c8201c67be42d656"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "67a1bef5d971ee249417d681277ec320259e00870aa1a78a24a0f43c92b6b539"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/sections/{{section}}?count=2",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "24283ddfca5f58e32c832b95689ea41058294fb58c93b94ea92b025d8b45feb4"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "10b797682bae46c8911b0eeec8d0f450946ac2b7483cc31de0bb0adf23144f15"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/sections/{{section}}?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "6efe82f9726e585491d9f5bc6500554bb15cf5a301cc93da96f7a4ad1b479147"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "984a131471b5d071c5cba2228731579d4f029deb733d493b7ffaba3ba191f481"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "99e7729e08f527b741ccbecb8caaf379afea891e473a3e58c8201c67be42d656"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "67a1bef5d971ee249417d681277ec320259e00870aa1a78a24a0f43c92b6b539"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c253847656f18d5fd3e5537a0c9bbe3773660f25c16a4cdc8e5e53266ab8f682"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8a43ba9922de226c128d8c4a01bd554d8f0f063b91a648db5ce45bdbcf7670ac"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/sections/{{section}}?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "37c014a673b865e18acd3dcc7d011343e0180670f767d1edf79153fe59ac3347"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "81339598e69d7c959f22813b94323591cea2162b5599677625033f41a560eec3"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c253847656f18d5fd3e5537a0c9bbe3773660f25c16a4cdc8e5e53266ab8f682"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8a43ba9922de226c128d8c4a01bd554d8f0f063b91a648db5ce45bdbcf7670ac"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/promoted?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "a86658a0323c78b1b92c4b29fd30d0d6e6b623c843eb91055859a30c74c62ba6"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "41291097634e91766aef6aaac5181faa12fc2daeb0e47d4891bb61eb502b1fde"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/sections/{{section}}?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "18d1f280fecec961315e0b3bb0141e6abf1543a587b39b8dc020afdd23ad4d02"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ecc509bbbfe49d34a09c6911f530f6de3f4c0df926dd9fb072b7bda225f37020"
+    }
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "/hubs?count=5",
+    "rows": [
+      "home.because.1000000000010001",
+      "home.because.1000000000010003"
+    ],
+    "first": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "a86658a0323c78b1b92c4b29fd30d0d6e6b623c843eb91055859a30c74c62ba6"
+    },
+    "second": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "41291097634e91766aef6aaac5181faa12fc2daeb0e47d4891bb61eb502b1fde"
+    }
+  }
+]

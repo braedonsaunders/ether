@@ -37,7 +37,7 @@ func (s *Service) IssueDelegation(ctx context.Context, userID int64) (string, er
 	}
 	token := delegationPrefix + rand.Text()
 	result, err := s.db.ExecContext(ctx, `INSERT INTO auth_delegations(token_hash,user_id,expires_at)
- SELECT ?,id,? FROM auth_users WHERE id=? AND active=1
+ SELECT ?,id,? FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest'
  AND (SELECT COUNT(*) FROM auth_delegations WHERE user_id=?)<64`, HashToken(token), now.Add(delegationTTL).Unix(), userID, userID)
 	if err != nil {
 		return "", err
@@ -52,23 +52,23 @@ func (s *Service) IssueDelegation(ctx context.Context, userID int64) (string, er
 	return token, nil
 }
 
-func (s *Service) authenticateDelegation(ctx context.Context, token string) (*core.User, error) {
-	var id int64
-	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM auth_delegations WHERE token_hash=? AND expires_at>?`, HashToken(token), s.o.Now().Unix()).Scan(&id)
+func (s *Service) authenticateDelegation(ctx context.Context, token string) (*core.User, time.Time, error) {
+	var id, expiresAt int64
+	err := s.db.QueryRowContext(ctx, `SELECT user_id, expires_at FROM auth_delegations WHERE token_hash=? AND expires_at>?`, HashToken(token), s.o.Now().Unix()).Scan(&id, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, core.ErrUnauthorized
+		return nil, time.Time{}, core.ErrUnauthorized
 	}
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	r, err := scanRow(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM auth_users WHERE id=? AND active=1`, id))
+	r, err := scanRow(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest'`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, core.ErrUnauthorized
+		return nil, time.Time{}, core.ErrUnauthorized
 	}
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	u := r.effective()
 	u.IsOwner, u.Delegated = false, true
-	return &u, nil
+	return &u, time.Unix(expiresAt, 0).UTC(), nil
 }

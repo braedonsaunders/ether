@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -26,6 +27,9 @@ import (
 
 // handleStartDASH is /video/:/transcode/universal/start.mpd.
 func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	if s.handleLiveTVPlayback(w, r) {
 		return
 	}
@@ -54,7 +58,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unlockEncoder()
-	if s.playbackOwners.stale(pr.User.ID, pr.ClientID, p.key, pr.SessionID) {
+	if s.playbackOwners.Stale(pr.User.ID, pr.ClientID, p.key, pr.SessionID) {
 		writeHTTPError(w, http.StatusGone)
 		return
 	}
@@ -80,8 +84,14 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		entry, _ = s.transcodes.get(p.sessionID)
+	} else if dec, err := s.publishBrokerPlayback(ctx, pr, replayPlay(p, entry), ps); err != nil {
+		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
+		writeHTTPError(w, http.StatusServiceUnavailable)
+		return
+	} else {
+		entry.decision = dec
 	}
-	s.playbackOwners.bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
+	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
 
@@ -101,6 +111,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		// start for the same decision keeps the session (and its finished
 		// segments); a new decision request starts afresh.
 		if ds, isDASH := existing.(core.DASHSession); isDASH && entry.started {
+			s.notePlexEncoder(p.sessionID, frontend.StreamDASH, dec, p.offset)
 			unlockEncoder()
 			unlockOwner()
 			s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)
@@ -128,8 +139,8 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError)
 		return
 	}
-	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-	s.transcodes.put(entry)
+	s.bindTranscodeStarted(entry, dec, p.offset)
+	s.notePlexEncoder(p.sessionID, frontend.StreamDASH, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()
 	s.serveStreamManifest(w, r, p.sessionID, ds.ServeManifest)
@@ -173,7 +184,9 @@ func (s *Server) handleDASHSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ds, rep, ok := s.dashSession(w, r); ok {
-		ds.ServeMedia(w, r, rep, n)
+		cw := s.newCountWriter(w, r)
+		ds.ServeMedia(cw, r, rep, n)
+		cw.finish()
 	}
 }
 

@@ -4,6 +4,7 @@ package releaseparse
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +19,7 @@ var (
 	reSeasonOnly  = regexp.MustCompile(`(?i)\bS(\d{1,2})(?:\s*(?:-|to)\s*S?(\d{1,2}))?\b`)
 	reSeasonWord  = regexp.MustCompile(`(?i)\b(?:Seasons?|Saison|Stagione|Temporada)\s*(\d{1,2})(?:\s*(?:-|to)\s*(?:Seasons?|S)?\s*(\d{1,2}))?\b`)
 	reXEpisode    = regexp.MustCompile(`\b(\d{1,2})x(\d{1,3})\b`)
-	reBareEpisode = regexp.MustCompile(`(?i)\b(?:Episode\s*(\d{1,3})|Ep\s*(\d{1,3})|E(\d{2,3}))\b`)
+	reBareEpisode = regexp.MustCompile(`(?i)\b(?:Episodes?\s*(\d{1,3})|Ep\s*(\d{1,3})|E(\d{2,3}))(?:\s*(?:-|~|to)\s*(?:Episodes?\s*|Ep\s*|E)?(\d{1,3}))?\b`)
 	reDashEpisode = regexp.MustCompile(`(?i)\s-\s*(\d{2,3})\s+(?:\d{3,4}[pi]\b|BD\b|BLURAY\b|WEB|HDTV\b|DVD|X264\b|X265\b|HEVC\b|H264\b|H265\b|AV1\b|XVID\b)`)
 	reEpRange     = regexp.MustCompile(`(?i)E(\d{1,3})`)
 	// Anime absolute numbering and "Season N - EE" (parseAbsoluteEpisode,
@@ -55,6 +56,13 @@ var languages = []struct{ token, name string }{
 	{"ITA", "italian"}, {"JAP", "japanese"}, {"JPN", "japanese"},
 	{"GER", "german"}, {"DEU", "german"}, {"FRE", "french"}, {"FRA", "french"},
 	{"SPA", "spanish"}, {"POR", "portuguese"}, {"KOR", "korean"},
+	// Scene audio codes of Spanish-language groups ("LAT.DDP5.1",
+	// "ESP.AC3") and the remaining ISO 639-2 codes groups write. NORDIC
+	// stays out: it marks Nordic subtitles over the original audio.
+	{"LAT", LanguageSpanishLatino}, {"ESP", LanguageSpanishSpain}, {"CAST", LanguageSpanishSpain},
+	{"POL", "polish"}, {"HUN", "hungarian"}, {"CZE", "czech"}, {"GRE", "greek"}, {"TUR", "turkish"},
+	{"HEB", "hebrew"}, {"ARA", "arabic"}, {"HIN", "hindi"}, {"TAM", "tamil"}, {"TEL", "telugu"},
+	{"SWE", "swedish"}, {"DAN", "danish"}, {"THA", "thai"}, {"VIE", "vietnamese"}, {"CHI", "chinese"},
 	// Explicit regional language tags are used by WEB release groups.
 	// Do not treat bare country codes (BR/US/GB) as audio languages.
 	{"PT-BR", LanguagePortugueseBrazil}, {"BRAZILIAN", LanguagePortugueseBrazil}, {"DUBLADO", LanguagePortugueseBrazil}, {"PT-PT", LanguagePortuguesePortugal},
@@ -141,15 +149,24 @@ func Parse(name string) core.ReleaseInfo {
 		seen[LanguageMulti] = true
 		info.Languages = append(info.Languages, LanguageMulti)
 	}
+	subs := subtitlePositions(spaced, floor)
+	var subOnly []string
 	for _, l := range languages {
-		if languageTagAfter(spaced, l.token, floor) {
-			if !seen[l.name] {
-				seen[l.name] = true
-				info.Languages = append(info.Languages, l.name)
-			}
+		audio, sub := languageTagRole(spaced, l.token, floor, subs)
+		switch {
+		case audio && !seen[l.name]:
+			seen[l.name] = true
+			info.Languages = append(info.Languages, l.name)
+		case sub && !audio:
+			subOnly = append(subOnly, l.name)
 		}
 	}
 	info.SubtitleLanguages = parseSubtitleLanguages(spaced, floor)
+	for _, name := range subOnly {
+		if !seen[name] && !slices.Contains(info.SubtitleLanguages, name) {
+			info.SubtitleLanguages = append(info.SubtitleLanguages, name)
+		}
+	}
 	info.Title = extractTitle(spaced, yearAt, markerAt, floor, &info)
 	return info
 }
@@ -303,8 +320,12 @@ func parseEpisodes(spaced, upper string, info *core.ReleaseInfo) int {
 		}
 	}
 	if strings.Contains(upper, " E") {
-		if episode, at, ok := parseBareEpisode(spaced); ok {
-			info.Episodes = []int{episode}
+		if episodes, fullPack, at, ok := parseBareEpisode(spaced); ok {
+			if fullPack {
+				info.FullSeason = true
+			} else {
+				info.Episodes = episodes
+			}
 			return at
 		}
 	}
@@ -384,32 +405,58 @@ func parseXEpisode(spaced string) (season, episode, at int, ok bool) {
 }
 
 // parseBareEpisode reads a bare episode pattern (reBareEpisode):
-// "Episode N", "Ep N" or "ENN" without a season.
-func parseBareEpisode(spaced string) (episode, at int, ok bool) {
-	loc := reBareEpisode.FindStringSubmatchIndex(spaced)
-	if loc == nil {
-		return 0, -1, false
+// "Episode N", "Ep N" or "ENN" without a season. Multi-episode pack ranges
+// ("Episode 1-129") mark FullSeason when no specific episode follows.
+func parseBareEpisode(spaced string) (episodes []int, fullPack bool, at int, ok bool) {
+	locs := reBareEpisode.FindAllStringSubmatchIndex(spaced, -1)
+	if len(locs) == 0 {
+		return nil, false, -1, false
 	}
-	m := submatches(spaced, loc)
 	_, yearAt := parseYearAt(spaced)
-	// "Star Wars Episode 1 1999" has the release year after "Episode 1";
-	// miniseries and season-directory files ("Band.of.Brothers.E01",
-	// "Episode 05 - Name.mkv") do not.
-	if m[1] != "" && yearAt >= 0 && loc[0] <= yearAt {
-		return 0, -1, false
+	sawPack := false
+	packAt := -1
+	for _, loc := range locs {
+		m := submatches(spaced, loc)
+		// "Star Wars Episode 1 1999" has the release year after "Episode 1";
+		// miniseries and season-directory files ("Band.of.Brothers.E01",
+		// "Episode 05 - Name.mkv") do not.
+		if m[1] != "" && m[4] == "" && yearAt >= 0 && loc[0] <= yearAt {
+			continue
+		}
+		tok := m[1]
+		if tok == "" {
+			tok = m[2]
+		}
+		if tok == "" {
+			tok = m[3]
+		}
+		e, err := strconv.Atoi(tok)
+		if err != nil || e < 1 || e > 999 {
+			continue
+		}
+		if m[4] != "" {
+			last, err := strconv.Atoi(m[4])
+			if err == nil && last > e {
+				if last-e > 4 {
+					if !sawPack {
+						sawPack = true
+						packAt = loc[0]
+					}
+					continue
+				}
+				var eps []int
+				for n := e; n <= last; n++ {
+					eps = append(eps, n)
+				}
+				return eps, false, loc[0], true
+			}
+		}
+		return []int{e}, false, loc[0], true
 	}
-	tok := m[1]
-	if tok == "" {
-		tok = m[2]
+	if sawPack {
+		return nil, true, packAt, true
 	}
-	if tok == "" {
-		tok = m[3]
-	}
-	e, err := strconv.Atoi(tok)
-	if err != nil || e < 1 || e > 100 {
-		return 0, -1, false
-	}
-	return e, loc[0], true
+	return nil, false, -1, false
 }
 
 // parseDashEpisode reads the dash episode pattern (reDashEpisode):
@@ -610,6 +657,82 @@ func languageTagAfter(spaced, tag string, floor int) bool {
 	return false
 }
 
+// subtitlePositions marks the offsets in spaced (after floor) of language
+// tags that declare subtitles rather than audio: a tag right before a SUB,
+// SUBS or SUBTITLES token ("ENG.SUBS"), and each tag in the run of tags
+// right after one ("Sub.ITA.ENG").
+func subtitlePositions(spaced string, floor int) map[int]bool {
+	type token struct {
+		at   int
+		text string
+	}
+	var toks []token
+	for i := max(floor+1, 0); i < len(spaced); {
+		if spaced[i] == ' ' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(spaced) && spaced[j] != ' ' {
+			j++
+		}
+		toks = append(toks, token{i, spaced[i:j]})
+		i = j
+	}
+	isSub := func(s string) bool {
+		switch strings.ToUpper(s) {
+		case "SUB", "SUBS", "SUBTITLE", "SUBTITLES", "SUBBED":
+			return true
+		}
+		return false
+	}
+	isTag := func(s string) bool {
+		head, _, _ := strings.Cut(s, "-") // "FRE-GRP": the group follows the last tag
+		for _, l := range languages {
+			if strings.EqualFold(s, l.token) || strings.EqualFold(head, l.token) {
+				return true
+			}
+		}
+		return false
+	}
+	out := map[int]bool{}
+	for k, t := range toks {
+		if !isSub(t.text) {
+			continue
+		}
+		if k > 0 && isTag(toks[k-1].text) {
+			out[toks[k-1].at] = true
+		}
+		for n := k + 1; n < len(toks) && isTag(toks[n].text); n++ {
+			out[toks[n].at] = true
+		}
+	}
+	return out
+}
+
+// languageTagRole reports whether tag occurs after floor as an audio
+// declaration, and whether it occurs in a subtitle position (subs).
+func languageTagRole(spaced, tag string, floor int, subs map[int]bool) (audio, sub bool) {
+	for i := max(floor+1, 0); i+len(tag) <= len(spaced); i++ {
+		if i > 0 && spaced[i-1] != ' ' {
+			continue
+		}
+		end := i + len(tag)
+		if end < len(spaced) && spaced[end] != ' ' && spaced[end] != '-' {
+			continue
+		}
+		if !strings.EqualFold(spaced[i:end], tag) {
+			continue
+		}
+		if subs[i] {
+			sub = true
+		} else {
+			audio = true
+		}
+	}
+	return audio, sub
+}
+
 // tokenIndex returns the offset in s of the first case-insensitive match of
 // the ASCII keyword kw that is a whole token (bounded by the string ends,
 // spaces or hyphens), or -1.
@@ -651,9 +774,13 @@ func parseHeight(upper string) int {
 	return 0
 }
 
+// reRemux matches REMUX as a word of its own ("BluRay.REMUX", "BDRemux",
+// "Remux-2160p"), never inside another word ("~ RemuxDoc", an uploader).
+var reRemux = regexp.MustCompile(`(^|[ \-\[(])(BD|UHD|BR)?REMUX($|[ \-\])])`)
+
 func parseSource(upper string) core.Source {
 	switch {
-	case strings.Contains(upper, " REMUX") || strings.Contains(upper, "BDREMUX"):
+	case reRemux.MatchString(upper):
 		return core.SourceRemux
 	case containsAny(upper, "BLURAY", "BLU-RAY", "BDRIP", "BRRIP", "BD-RIP", "HDDVD", "HD-DVD"):
 		return core.SourceBluRay

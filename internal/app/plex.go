@@ -2,29 +2,35 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"runtime"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/plextv"
-	"github.com/braedonsaunders/ether/internal/spike"
-	"github.com/braedonsaunders/ether/internal/state"
-	"github.com/braedonsaunders/ether/internal/transcode"
+	"github.com/braedonsaunders/ether/internal/resolver"
 )
 
 // buildPlex assembles the PMS-compatible front end. In spike mode the
 // library is the configured local files instead of the TMDB catalogue, but
 // auth, plex.tv registration and the transcoder are the real ones, so the
 // spike exercises the same path official apps will use.
-func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
-	var tc core.Transcoder
-	if a.transcoder != nil {
-		tc = a.transcoder
+func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, error) {
+	a.plexBuildMu.Lock()
+	defer a.plexBuildMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
+	if a.plexServer != nil && !a.plexServer.Closed() {
+		return a.plexServer, nil
+	}
+	tc := a.activeTranscoder()
 	identity := plex.Identity{
 		MachineIdentifier: cfg.Server.MachineIdentifier,
 		FriendlyName:      cfg.Server.FriendlyName,
@@ -32,33 +38,16 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		Platform:          plexPlatform(),
 	}
 	hooks := plex.Hooks{
-		OnTimeline: func(u *core.User, key core.RatingKey, offset, duration time.Duration, state string) {
-			if u != nil {
-				// Plex renews/stops the requesting client's exact session.
-				// A title-wide renewal here would preserve abandoned streams
-				// on another device watching the same title.
-				// Session intent (#32): a detail open that just turned
-				// into this playback was a conversion, not browsing.
-				if state == "playing" {
-					a.personalize.NotePlayback(u, key)
-				}
-			}
-			a.prefetch.OnTimeline(u, key, offset, duration, state)
-		},
+		OnClientSeen: func(id string) { a.frontendClients.observe("plex", id) },
 	}
 
 	var deps plex.Deps
 	if cfg.Spike.Enabled {
-		lib, err := spike.New(context.Background(), a.cfg.Get, spike.Options{Logger: a.log.With("component", "spike")})
-		if err != nil {
-			return nil, err
-		}
-		deps = lib.Deps()
+		deps = a.spikeLibrary.Deps()
 		deps.Auth = a.users
 		if tc != nil {
 			deps.Transcoder = tc
 		}
-		hooks.OnTimeline = nil
 	} else {
 		deps = plex.Deps{
 			Catalog:     a.catalog,
@@ -66,7 +55,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 			VibeSearch:  a.collections,
 			Recommender: a.personalize,
 			State:       a.state,
-			Playlists:   a.state.Playlists(),
+			Playlists:   a.playlists,
 			Auth:        a.users,
 			Playback:    a.playback,
 			Transcoder:  tc,
@@ -84,13 +73,38 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		}
 		return a.availability.Prioritize(ctx, items)
 	}
-	deps.Variants = a.resolver // "Play Version" release picker (cache-only)
+	deps.Variants = a.resolver       // "Play Version" release picker (cache-only)
+	deps.DecisionTraces = a.resolver // latest resolution, for the support capture
+	clientID := func() string {
+		cfg := a.cfg.Read()
+		return plexguid.ClientIdentifier(cfg.Plex.ClientIdentifier, cfg.Server.MachineIdentifier)
+	}
 	deps.PlexGUID = plexguid.New(a.db, plexguid.Options{
-		Token:      func() string { return a.cfg.Get().Plex.Token },
-		Background: true,
+		HTTP:             a.opts.plextvHTTP,
+		Token:            func() string { return a.cfg.Read().Plex.Token },
+		ClientIdentifier: clientID,
+		Background:       true,
 	})
 	a.plexGUID = deps.PlexGUID
-	a.closers = append(a.closers, deps.PlexGUID.Close)
+	deps.PlexMeta = plexmeta.New(a.db, plexmeta.Options{
+		HTTP:             a.opts.plextvHTTP,
+		Token:            func() string { return a.cfg.Read().Plex.Token },
+		ClientIdentifier: clientID,
+		GUID: func(ctx context.Context, k core.RatingKey) string {
+			if deps.PlexGUID == nil {
+				return ""
+			}
+			return deps.PlexGUID.Cached(ctx, k)
+		},
+		Enabled: func() bool {
+			cfg := a.cfg.Read()
+			return cfg.Plex.Claimed && cfg.Plex.UsePlexMetadata
+		},
+		Background: true,
+	})
+	if err := a.buildPlexWatch(); err != nil {
+		return nil, fmt.Errorf("plex watch state: %w", err)
+	}
 	if !cfg.Spike.Enabled {
 		// EpisodeOrder is TMDB-backed (build_integrations.go): metadataTitle
 		// prefers it over Catalog, and the real catalog does not know the
@@ -99,44 +113,57 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		// queues (which read Catalog directly) keep working.
 		deps.EpisodeOrder = a.episodeorder
 	}
-	deps.Discovery = a.plexDiscovery
+	deps.Discovery = a.discoveryFeatures
 	deps.LiveTV = a.livetv
 	deps.Subtitles = plexSubtitles{a}
 	deps.TrackPreferences = a.trackprefs
+	deps.SessionCoordination = a.sessionCoordination
 	deps.Markers = a.markers
+	// The remuxer is built once in buildIntegrations and shared with every
+	// front end. Support is the device-scoped "Record a problem" recorder.
+	deps.Downloads = a.downloadRemuxer
 	deps.Support = a.support
-	if a.transcoder != nil && !cfg.Spike.Enabled {
-		if dl, err := a.transcoder.NewDownloadRemuxer(cfg.Downloads); err == nil {
-			deps.Downloads = dl
-		} else {
-			a.log.Warn("offline downloads unavailable", "err", err)
-		}
-	}
 	deps.Extras = a.extras
-	if a.transcoder != nil {
-		deps.Trickplay = transcode.NewThumbnails(transcode.ThumbOptions{
-			FFmpeg: a.transcoder.FFmpegPath(), Logger: a.log,
-		})
-	}
-	deps.AccessPolicy = a.safety
-	deps.Config = a.cfg.Get
+	deps.Trickplay = a.trickplay.Borrow()
+	a.wirePlexPolicy(&deps)
+	deps.FavoriteShows = a.favoriteShows
+	deps.Now = parityClock()
+	deps.Config = a.cfg.Read
+	deps.ApplyClientRules = resolver.ApplyClientRules
+	deps.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
+	deps.DirectHTTP = &http.Client{Transport: egress.Transport(egress.CapDirect)}
 	deps.Logger = a.log.With("component", "plex")
+	deps.TracePlayback = a.tracePlayback
 	deps.Identity = identity
 	deps.OwnerSubscription = func() (bool, []string) {
 		st := a.registrar.Status()
 		return st.PlexPass, st.OwnerFeatures
 	}
 	deps.Hooks = hooks
+	if a.stats != nil {
+		deps.Dashboard = a.stats.Dashboard()
+	}
+	if a.hostResources != nil {
+		deps.Resources = a.hostResources
+	}
 	if node := a.clusterNode(); node != nil && deps.DB != nil {
 		deps.Cluster = node
 	}
+	if a.artwork != nil {
+		deps.ArtworkImages = a.artwork.Images
+		deps.ArtworkPalettes = a.artwork.Palettes
+	}
 	srv := plex.NewServer(deps)
 	a.plexServer = srv
-	a.publishLibrarySections()
-	a.closers = append(a.closers, func() { srv.Close() })
-	if !cfg.Spike.Enabled {
-		a.closers = append(a.closers, subscribeWatchRefresh(a.state, srv.WatchStateChanged))
+	if a.livetv != nil {
+		a.livetv.SetOnChange(srv.NotifyLiveLineup)
 	}
+	a.publishLibrarySections()
+	// Frontend unmount closes the server and the GUID worker. Server.Close is
+	// idempotent, so the app closer may run as well. Watch refresh stays on
+	// the Plex mount (ExplicitWatchOnly in spike), not a second subscription.
+	a.plexClose = func() { srv.Close(); deps.PlexGUID.Close(); deps.PlexMeta.Close() }
+	a.closers = append(a.closers, func() { srv.Close() })
 	return srv, nil
 }
 
@@ -156,26 +183,6 @@ func (a *App) publishLibrarySections() {
 	a.registrar.SetLibrarySections(libraries)
 }
 
-// State emits only after committing, including deferred cluster writes. Do not
-// refresh the library on every playing heartbeat: it churns recommendation rows
-// and duplicates the separate session-status notifications. Explicit scrobbles
-// already publish their own library notification in the Plex handler.
-func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKey)) func() {
-	return watch.Subscribe(func(ev state.Event) {
-		if ev.Account && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble || ev.Kind == state.EventRated) {
-			refresh(ev.UserID, ev.Key)
-			return
-		}
-		if ev.Imported {
-			return
-		}
-		if ev.Kind == state.EventCompleted ||
-			(ev.Kind == state.EventProgress && !ev.Completed && (ev.State == "paused" || ev.State == "stopped")) {
-			refresh(ev.UserID, ev.Key)
-		}
-	})
-}
-
 func plexPlatform() string {
 	switch runtime.GOOS {
 	case "darwin":
@@ -185,4 +192,17 @@ func plexPlatform() string {
 	default:
 		return "Linux"
 	}
+}
+
+// wirePlexPolicy supplies the same safety service to every Plex deployment.
+func (a *App) wirePlexPolicy(deps *plex.Deps) {
+	deps.AccessPolicy = a.safety
+}
+
+// currentPlexServer publishes lazy construction to playback callbacks. The
+// mutex is released before callers invoke the adapter or shared playback.
+func (a *App) currentPlexServer() *plex.Server {
+	a.plexBuildMu.Lock()
+	defer a.plexBuildMu.Unlock()
+	return a.plexServer
 }

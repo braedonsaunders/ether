@@ -1,0 +1,154 @@
+package livetv
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/braedonsaunders/ether/internal/core"
+)
+
+// ServeHTTP writes Plex for Mac's protocol=http Matroska stream for a
+// live session, when the decision can convert the channel.
+func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request, id string, u *core.User) error {
+	ss, err := s.getSession(r.Context(), id, u)
+	if err != nil {
+		writeStreamError(w, err)
+		return nil
+	}
+	hs, err := s.ensureHTTP(r.Context(), ss, id)
+	if err != nil {
+		return err
+	}
+	hs.ServeHTTP(w, r)
+	return nil
+}
+
+func liveHTTP(ss *session) core.HTTPSession {
+	if ss.http == nil {
+		return nil
+	}
+	if c, ok := ss.http.(interface{ Closed() bool }); ok && c.Closed() {
+		ss.http = nil
+		return nil
+	}
+	return ss.http
+}
+
+func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.HTTPSession, error) {
+	for {
+		ss.mu.Lock()
+		if ss.closed {
+			ss.mu.Unlock()
+			return nil, core.ErrNotFound
+		}
+		ss.consumed = true
+		if h := liveHTTP(ss); h != nil {
+			ss.mu.Unlock()
+			return h, nil
+		}
+		if wait := ss.httpStart; wait != nil {
+			ss.mu.Unlock()
+			select {
+			case <-wait:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		if s.o.Transcoder == nil {
+			ss.mu.Unlock()
+			return nil, core.ErrNotAvailable
+		}
+		started := make(chan struct{})
+		ss.httpStart = started
+		info := ss.info.MediaInfo
+		caps := ss.caps
+		liveInput := ss.info.Channel.Kind != "virtual"
+		gen := ss.generation
+		ss.mu.Unlock()
+
+		stream, err := s.startHTTPStream(ctx, ss, id, info, caps, liveInput, gen)
+		ss.mu.Lock()
+		if ss.httpStart == started {
+			ss.httpStart = nil
+		}
+		close(started)
+		if err != nil {
+			ss.mu.Unlock()
+			return nil, err
+		}
+		if ss.closed || ss.generation != gen {
+			ss.mu.Unlock()
+			stream.Close()
+			return nil, core.ErrNotFound
+		}
+		if h := liveHTTP(ss); h != nil {
+			ss.mu.Unlock()
+			stream.Close()
+			return h, nil
+		}
+		ss.http = stream
+		ss.mu.Unlock()
+		return stream, nil
+	}
+}
+
+func (s *Service) startHTTPStream(ctx context.Context, ss *session, id string, info *core.MediaInfo, caps core.ClientCaps, liveInput bool, gen int64) (core.HTTPSession, error) {
+	if info == nil {
+		probed, err := s.probeSessionInput(ctx, ss)
+		if err != nil {
+			return nil, err
+		}
+		if probed == nil {
+			return nil, core.ErrNotAvailable
+		}
+		info = probed
+	}
+	copyInfo := *info
+	copyInfo.Duration = 0
+	dec := s.o.Transcoder.Decide(copyInfo, caps, core.DecideOptions{
+		DirectStream: true, AudioStream: -1, SubtitleStream: -1, Protocol: core.ProtocolHTTP,
+	})
+	if dec.Kind == core.DecisionDirectPlay {
+		dec.Kind = core.DecisionRemux
+		dec.VideoCopy, dec.AudioCopy = true, true
+	}
+	dec.Container = "mkv"
+
+	ss.mu.Lock()
+	if ss.closed || ss.generation != gen {
+		ss.mu.Unlock()
+		return nil, core.ErrNotFound
+	}
+	ss.info.MediaInfo = info
+	var input string
+	if liveInput {
+		var err error
+		input, err = s.relayInput(ss)
+		if err != nil {
+			ss.mu.Unlock()
+			return nil, err
+		}
+	} else {
+		if s.o.Playback == nil || len(ss.tracks) == 0 || ss.tracks[0].playbackID == "" {
+			ss.mu.Unlock()
+			return nil, core.ErrNotAvailable
+		}
+		input = s.o.Playback.InputURL(ss.tracks[0].playbackID)
+	}
+	ss.mu.Unlock()
+
+	hs, err := s.o.Transcoder.StartHLS(s.ctx, core.HLSRequest{
+		SessionID: "livetv-http-" + id, InputURL: input, LiveInput: liveInput,
+		Info: copyInfo, Decision: dec, Protocol: core.ProtocolHTTP, SegmentDuration: segmentDuration,
+	})
+	if err != nil {
+		return nil, err
+	}
+	stream, ok := hs.(core.HTTPSession)
+	if !ok {
+		hs.Close()
+		return nil, core.ErrNotAvailable
+	}
+	return stream, nil
+}

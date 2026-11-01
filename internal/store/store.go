@@ -33,16 +33,33 @@ import (
 )
 
 type migration struct {
-	component string
-	version   int
-	sql       string
-	overrides map[Dialect]string
+	component   string
+	version     int
+	sql         string
+	overrides   map[Dialect]string
+	sqliteApply func(context.Context, *sql.Tx) error
 }
 
 var (
-	regMu      sync.Mutex
-	migrations []migration
+	regMu        sync.Mutex
+	migrations   []migration
+	dependencies = map[string]map[string]bool{}
 )
+
+// RegisterAfter declares component-level migration dependencies. Every
+// migration of a dependency is applied before any migration of component.
+// Unrelated components retain their alphabetical order. Dependencies absent
+// from a partial binary are ignored; cycles fail migration startup.
+func RegisterAfter(component string, dependsOn ...string) {
+	regMu.Lock()
+	defer regMu.Unlock()
+	if dependencies[component] == nil {
+		dependencies[component] = map[string]bool{}
+	}
+	for _, dependency := range dependsOn {
+		dependencies[component][dependency] = true
+	}
+}
 
 // Register adds a migration written in SQLite's dialect. Versions are per
 // component and start at 1. Call from init(); a migration must never change
@@ -79,6 +96,32 @@ func RegisterDialect(component string, version int, d Dialect, sql string) {
 	migrations = append(migrations, migration{component: component, version: version, overrides: map[Dialect]string{d: sql}})
 }
 
+// RegisterSQLiteApply binds apply to a migration Register or RegisterDialect
+// already recorded. It does not create a version. SQLite Migrate calls apply
+// instead of that version's SQLite SQL. PostgreSQL never calls apply; it
+// still runs the registered SQL or the RegisterDialect override. Success and
+// failure use the same version bookkeeping as every other migration: the
+// schema_migrations row is inserted only after apply returns nil, and an
+// error rolls the version's transaction back with no row written. apply does
+// not disable foreign keys.
+func RegisterSQLiteApply(component string, version int, apply func(context.Context, *sql.Tx) error) {
+	if apply == nil {
+		panic("store: RegisterSQLiteApply requires a function")
+	}
+	regMu.Lock()
+	defer regMu.Unlock()
+	for i := range migrations {
+		if migrations[i].component == component && migrations[i].version == version {
+			if migrations[i].sqliteApply != nil {
+				panic("store: RegisterSQLiteApply " + component + "/" + strconv.Itoa(version) + " already bound")
+			}
+			migrations[i].sqliteApply = apply
+			return
+		}
+	}
+	panic("store: RegisterSQLiteApply " + component + "/" + strconv.Itoa(version) + " is not registered")
+}
+
 // sqlFor returns the migration text to run on dialect d.
 func (m migration) sqlFor(d Dialect) string {
 	if s, ok := m.overrides[d]; ok {
@@ -107,6 +150,30 @@ type Options struct {
 	// SnapshotFiles are stored with a SQLite pre-migrate snapshot (the
 	// settings and credential key matching the database), if one is taken.
 	SnapshotFiles []SnapshotFile
+	// Progress, when set, hears what opening is doing: the pre-migrate
+	// snapshot and each pending migration (for a startup status page).
+	Progress func(Progress)
+}
+
+// Progress is reported while a database opens. Stage is StageSnapshot
+// (copying a SQLite database before migrating it) or StageMigrate, where
+// Done of Total pending migrations have been applied.
+type Progress struct {
+	Stage       string
+	Done, Total int
+}
+
+// Progress stages.
+const (
+	StageSnapshot = "snapshot"
+	StageMigrate  = "migrate"
+)
+
+// report calls fn when it is set.
+func report(fn func(Progress), p Progress) {
+	if fn != nil {
+		fn(p)
+	}
 }
 
 // Querier is the read side of *sql.DB and *sql.Tx.
@@ -126,6 +193,28 @@ type MigrationGate func(ctx context.Context, q Querier, pending []string) error
 // yet (another live node runs a binary that does not know the pending
 // migrations and the owner asked to wait for it).
 var ErrMigrationDeferred = errors.New("store: schema migration deferred")
+
+// HasDependency reports whether component declared a RegisterAfter dependency
+// that is present. Absent dependencies are ignored, matching Migrate.
+func HasDependency(component, dependency string) bool {
+	regMu.Lock()
+	defer regMu.Unlock()
+	return dependencies[component][dependency]
+}
+
+// ComponentOrder is the migration component sequence Migrate will apply.
+func ComponentOrder() []string {
+	var order []string
+	seen := map[string]bool{}
+	for _, m := range registered() {
+		if seen[m.component] {
+			continue
+		}
+		seen[m.component] = true
+		order = append(order, m.component)
+	}
+	return order
+}
 
 // KnownMigrations is the highest migration version this binary registers
 // for each component.
@@ -186,20 +275,20 @@ func OpenWith(ctx context.Context, o Options) (*sql.DB, Dialect, error) {
 		if o.URL == "" {
 			return nil, d, errors.New("store: postgres requires a database URL")
 		}
-		db, err := openPostgres(ctx, o.URL, log, o.MigrationGate)
+		db, err := openPostgres(ctx, o.URL, log, o.MigrationGate, o.Progress)
 		return db, d, err
 	default:
 		if o.DataDir == "" {
 			return nil, d, errors.New("store: sqlite requires a data directory")
 		}
-		db, err := openSQLite(ctx, filepath.Join(o.DataDir, "ether.db"), o.SnapshotFiles)
+		db, err := openSQLite(ctx, filepath.Join(o.DataDir, "ether.db"), o.SnapshotFiles, o.Progress)
 		return db, d, err
 	}
 }
 
 // Open opens (creating if needed) ether.db in dataDir and migrates it.
 func Open(ctx context.Context, dataDir string) (*sql.DB, error) {
-	return openSQLite(ctx, filepath.Join(dataDir, "ether.db"), nil)
+	return openSQLite(ctx, filepath.Join(dataDir, "ether.db"), nil, nil)
 }
 
 // OpenPath opens a database file; ":memory:" works for tests (single conn).
@@ -211,33 +300,36 @@ func OpenPath(ctx context.Context, path string) (*sql.DB, error) {
 			return OpenTestPostgres(ctx, u)
 		}
 	}
-	return openSQLite(ctx, path, nil)
+	return openSQLite(ctx, path, nil, nil)
 }
 
-func openSQLite(ctx context.Context, path string, files []SnapshotFile) (*sql.DB, error) {
+func openSQLite(ctx context.Context, path string, files []SnapshotFile, progress func(Progress)) (*sql.DB, error) {
 	// journal_size_limit caps the WAL left on disk after a checkpoint; without
 	// it one large transaction leaves a WAL file that never shrinks.
-	dsn := "file:" + path + "?_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-65536)&_pragma=temp_store(MEMORY)&_pragma=mmap_size(268435456)" +
+	// wal_autocheckpoint=0 keeps a commit from running a checkpoint. Under
+	// WAL + synchronous=NORMAL the checkpoint is the fsync; a request must
+	// not wait on it. RunCheckpointer does that work in the background.
+	dsn := "file:" + path + "?_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=wal_autocheckpoint(0)&_pragma=cache_size(-65536)&_pragma=temp_store(MEMORY)&_pragma=mmap_size(268435456)" +
 		fmt.Sprintf("&_pragma=journal_size_limit(%d)", journalSizeLimit)
 	if path == ":memory:" {
 		dsn = "file::memory:?_pragma=foreign_keys(1)"
 	} else if err := protectDBFiles(path); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite-cached", dsn)
 	if err != nil {
 		return nil, err
 	}
 	if path == ":memory:" {
 		db.SetMaxOpenConns(1)
-	} else if ok, err := snapshotBeforeMigrate(ctx, db, path, registered(), files); err != nil {
+	} else if ok, err := snapshotBeforeMigrate(ctx, db, path, registered(), files, progress); err != nil {
 		// Best effort: a full disk or read-only directory must not stop
 		// the server from starting.
 		slog.Warn("store: could not snapshot the database before migrating", "path", path+PreMigrateSuffix, "err", err)
 	} else if ok {
 		slog.Info("store: snapshot taken before applying database migrations", "path", path+PreMigrateSuffix)
 	}
-	if err := Migrate(ctx, db); err != nil {
+	if err := migrateSQLite(ctx, db, progress); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -248,6 +340,16 @@ func openSQLite(ctx context.Context, path string, files []SnapshotFile) (*sql.DB
 	// Recommended at open by the SQLite docs: analyse tables whose stats are
 	// missing or stale, bounded by the 0x10000 analysis limit so it is cheap.
 	_, _ = db.ExecContext(ctx, `PRAGMA optimize=0x10002`)
+	if path != ":memory:" {
+		// Opening SQLite re-reads the whole schema. The default idle pool
+		// drops every connection past the second, so a play paid that cost
+		// again. Keep the connections a server actually uses.
+		db.SetMaxIdleConns(8)
+		if err := db.PingContext(ctx); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	return db, nil
 }
 
@@ -283,10 +385,17 @@ func protectDBFiles(path string) error {
 	return nil
 }
 
-// registered returns the migrations sorted by component then version.
+// registered returns components in stable dependency order, versions ascending.
 func registered() []migration {
 	regMu.Lock()
 	ms := append([]migration(nil), migrations...)
+	deps := make(map[string][]string, len(dependencies))
+	for component, requirements := range dependencies {
+		for requirement := range requirements {
+			deps[component] = append(deps[component], requirement)
+		}
+		sort.Strings(deps[component])
+	}
 	regMu.Unlock()
 	sort.Slice(ms, func(i, j int) bool {
 		if ms[i].component != ms[j].component {
@@ -294,7 +403,41 @@ func registered() []migration {
 		}
 		return ms[i].version < ms[j].version
 	})
-	return ms
+	groups := make(map[string][]migration)
+	var components []string
+	for _, m := range ms {
+		if _, ok := groups[m.component]; !ok {
+			components = append(components, m.component)
+		}
+		groups[m.component] = append(groups[m.component], m)
+	}
+	done := make(map[string]bool, len(groups))
+	ordered := make([]migration, 0, len(ms))
+	for len(done) < len(components) {
+		chosen := ""
+		for _, component := range components {
+			if done[component] {
+				continue
+			}
+			ready := true
+			for _, requirement := range deps[component] {
+				if _, present := groups[requirement]; present && !done[requirement] {
+					ready = false
+					break
+				}
+			}
+			if ready {
+				chosen = component
+				break
+			}
+		}
+		if chosen == "" {
+			panic("store: cyclic migration dependency")
+		}
+		done[chosen] = true
+		ordered = append(ordered, groups[chosen]...)
+	}
+	return ordered
 }
 
 const createMigrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -303,27 +446,56 @@ const createMigrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
 // Migrate applies every registered migration db has not yet recorded.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	if DialectOf(db) == Postgres {
-		return migratePostgres(ctx, db, nil)
+		return migratePostgres(ctx, db, nil, nil)
 	}
+	return migrateSQLite(ctx, db, nil)
+}
+
+func migrateSQLite(ctx context.Context, db *sql.DB, progress func(Progress)) error {
 	if _, err := db.ExecContext(ctx, createMigrationsTable); err != nil {
 		return err
 	}
-	for _, m := range registered() {
+	applied := func(m migration) (bool, error) {
 		var n int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE component=? AND version=?`,
-			m.component, m.version).Scan(&n); err != nil {
+		err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE component=? AND version=?`,
+			m.component, m.version).Scan(&n)
+		return n > 0, err
+	}
+	// Counted up front for progress; each is checked again right before it
+	// runs, because a migration may record another as applied.
+	var pending []migration
+	for _, m := range registered() {
+		done, err := applied(m)
+		if err != nil {
 			return err
 		}
-		if n > 0 {
+		if !done {
+			pending = append(pending, m)
+		}
+	}
+	for i, m := range pending {
+		if done, err := applied(m); err != nil {
+			return err
+		} else if done {
 			continue
 		}
+		report(progress, Progress{Stage: StageMigrate, Done: i, Total: len(pending)})
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, m.sqlFor(SQLite)); err != nil {
+		// sqliteApply is SQLite-only. A nil callback runs sqlFor(SQLite), the
+		// same statement as before this hook existed. PostgreSQL goes through
+		// migratePostgres and never reaches this branch.
+		var applyErr error
+		if m.sqliteApply != nil {
+			applyErr = m.sqliteApply(ctx, tx)
+		} else {
+			_, applyErr = tx.ExecContext(ctx, m.sqlFor(SQLite))
+		}
+		if applyErr != nil {
 			tx.Rollback()
-			return fmt.Errorf("migration %s/%d: %w", m.component, m.version, err)
+			return fmt.Errorf("migration %s/%d: %w", m.component, m.version, applyErr)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(component, version) VALUES (?, ?)`,
 			m.component, m.version); err != nil {

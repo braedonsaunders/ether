@@ -11,11 +11,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -40,6 +42,7 @@ CREATE INDEX playback_resume_hash ON playback_resume(nzb_hash);
 	// selection key. Rows remember the language a release was chosen
 	// under so a later edit can drop that memory without changing the
 	// stored `Name|<16 hex>` profile column.
+	// Released main owns playback/3. Payload incarnations are playback/4.
 	store.Register("playback", 3, `ALTER TABLE playback_resume ADD COLUMN original_language TEXT NOT NULL DEFAULT '';`)
 	// Keep the existing playback migration immutable; indexes have their own
 	// component history.
@@ -139,13 +142,47 @@ type resumeStore struct {
 	// database outage on a clustered node; nil writes synchronously.
 	held *store.Outbox[resumeKey, resumeWrite]
 
-	// nzbMu orders NZB file writes against gcNZB's count-then-remove;
-	// nzbRefs counts NZBs written (or found on disk) whose row may not be
-	// committed yet, which gcNZB must not remove: another record dropping
-	// the last committed reference to the same NZB would otherwise delete
-	// the file under a row about to point at it.
-	nzbMu   sync.Mutex
-	nzbRefs map[string]int
+	payload *payloadStore
+
+	nzbMu    sync.Mutex
+	nzbCache map[string][]byte
+
+	// fresh is the resume row this process last confirmed. A repeated play
+	// of the same release skips the database read that only checks sameness.
+	// live is the same choice kept for the next prepare, so that prepare does
+	// not read the database or the NZB file while the durable write is still
+	// catching up.
+	freshMu sync.Mutex
+	fresh   map[resumeKey]resumeFresh
+	live    map[resumeKey]resumeLive
+	// liveGen invalidates a save's late publish. Expiry can delete the row
+	// after it commits and before the in-memory copy is stored; publishing
+	// that copy would resurrect a resume the reconciler already dropped.
+	liveGen map[resumeKey]uint64
+	// beforeLiveNote, when set, runs after the row commits and before the
+	// in-memory copy is published. Tests use it to expire the row in that window.
+	beforeLiveNote func()
+}
+
+type resumeLive struct {
+	profile          string
+	originalLanguage string
+	releaseID        string
+	size             int64
+	duration         time.Duration
+	res              *core.Resolution
+	probe            *probeCache
+}
+
+type resumeFresh struct {
+	hash             string
+	release          string
+	profile          string
+	originalLanguage string
+	size             int64
+	duration         time.Duration
+	probe            bool
+	points           int
 }
 
 type resumeKey struct {
@@ -156,7 +193,7 @@ type resumeKey struct {
 // resumeWrite is one resume record whose NZB is already on disk.
 type resumeWrite struct {
 	rec    resumeRecord
-	hash   string
+	lease  *nzbLease
 	points []core.KeyframePoint
 	// probe travels in the same write as the record, so the persisted
 	// probe can never land before (or outlive a queued replacement of)
@@ -174,24 +211,30 @@ func (s *resumeStore) hold(avail *store.Availability, log *slog.Logger) {
 	s.held = store.NewOutbox(store.OutboxOptions[resumeKey, resumeWrite]{
 		Name: "playback resume", Availability: avail, Logger: log, Cap: maxHeldResumes,
 		Timeout: 3 * time.Second,
+		Merge: func(old, new resumeWrite) resumeWrite {
+			s.payload.queueRelease(old.lease.owner)
+			return new
+		},
 		Apply: func(ctx context.Context, _ resumeKey, w resumeWrite) error {
-			if err := s.saveRow(ctx, w.rec, w.hash); err != nil {
+			if err := s.writeBundle(ctx, w.rec, w.lease, w.points, w.probe, w.nzb); err != nil {
 				return err
 			}
-			if err := s.saveIndex(ctx, w.rec.userID, w.rec.key, w.rec.release.ID, w.points); err != nil {
-				return err
-			}
-			return s.saveProbe(ctx, w.rec.userID, w.rec.key, w.rec.release.ID, w.nzb, w.probe, w.rec.updatedAt)
+			// The bundle committed. Cleanup retains its own exact owner and
+			// retry queue; its failure must not replay this committed writer.
+			s.releaseNZB(w.lease)
+			return nil
 		},
 	})
 }
 
 // close writes held records (bounded by ctx).
 func (s *resumeStore) close(ctx context.Context) error {
-	if s.held == nil {
-		return nil
+	var err error
+	if s.held != nil {
+		err = s.held.Close(ctx)
 	}
-	return s.held.Close(ctx)
+	s.payload.close()
+	return errors.Join(err, s.payload.pendingError())
 }
 
 // put stores a record and its keyframe index: at once, or — on a clustered
@@ -204,31 +247,34 @@ func (s *resumeStore) put(ctx context.Context, rec resumeRecord, nzb []byte, poi
 // putWithProbe is put plus the probed facts of the serving generation,
 // persisted in the same (possibly held) write as the resume row.
 func (s *resumeStore) putWithProbe(ctx context.Context, rec resumeRecord, nzb []byte, points []core.KeyframePoint, probe core.MediaInfo) error {
+	reqmemo.Forget(ctx, resumeMemoKey(rec.userID, rec.key))
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
-	hash, err := s.acquireNZB(nzb)
+	hash := nzbHash(nzb)
+	if s.resumeCurrent(ctx, rec, hash, probe, len(points)) {
+		s.rememberFresh(rec, hash, probe, len(points))
+		return nil
+	}
+	lease, err := s.acquireNZB(ctx, rec, nzb)
 	if err != nil {
 		return fmt.Errorf("playback: store nzb: %w", err)
 	}
 	if s.held != nil {
-		queued, err := s.held.Write(ctx, resumeKey{rec.userID, rec.key}, resumeWrite{rec: rec, hash: hash, points: points, probe: probe, nzb: nzb})
-		if !queued {
-			s.releaseNZB(hash)
+		queued, err := s.held.Write(ctx, resumeKey{rec.userID, rec.key}, resumeWrite{rec: rec, lease: lease, points: points, probe: probe, nzb: nzb})
+		if !queued && !errors.Is(err, errResumeCommitUnknown) {
+			s.releaseNZB(lease)
 		}
-		// A queued record keeps its NZB referenced for the rest of the
-		// process (the startup sweep reclaims it if the row never lands).
 		return err
 	}
-	err = s.saveRow(ctx, rec, hash)
-	s.releaseNZB(hash)
-	if err != nil {
-		return err
+	err = s.writeBundle(ctx, rec, lease, points, probe, nzb)
+	if !errors.Is(err, errResumeCommitUnknown) {
+		s.releaseNZB(lease)
 	}
-	if err := s.saveIndex(ctx, rec.userID, rec.key, rec.release.ID, points); err != nil {
-		return err
+	if err == nil {
+		s.rememberFresh(rec, hash, probe, len(points))
 	}
-	return s.saveProbe(ctx, rec.userID, rec.key, rec.release.ID, nzb, probe, rec.updatedAt)
+	return err
 }
 
 func newResumeStore(db *sql.DB, dataDir string) (*resumeStore, error) {
@@ -236,8 +282,14 @@ func newResumeStore(db *sql.DB, dataDir string) (*resumeStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("playback: nzb dir: %w", err)
 	}
-	s := &resumeStore{db: db, dir: dir, nzbRefs: map[string]int{}}
-	s.sweep(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	payload, err := openPayloadStore(ctx, db, dir)
+	if err != nil {
+		return nil, err
+	}
+	s := &resumeStore{db: db, dir: dir, payload: payload}
+	s.sweep(ctx)
 	return s, nil
 }
 
@@ -265,13 +317,13 @@ func (s *resumeStore) sweep(ctx context.Context) {
 		}
 		switch {
 		case strings.HasPrefix(name, "nzb-") && strings.HasSuffix(name, ".tmp"):
-			_ = os.Remove(filepath.Join(s.dir, name))
-		case strings.HasSuffix(name, ".nzb"):
-			hash := strings.TrimSuffix(name, ".nzb")
-			var n int
-			if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_resume WHERE nzb_hash=?`, hash).Scan(&n); err == nil && n == 0 {
+			var owners int
+			if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_payload_owners WHERE domain=?`, s.payload.domain).Scan(&owners); err == nil && owners == 0 {
 				_ = os.Remove(filepath.Join(s.dir, name))
 			}
+		case strings.HasSuffix(name, ".nzb"):
+			hash := strings.TrimSuffix(name, ".nzb")
+			s.gcNZB(ctx, hash)
 		}
 	}
 }
@@ -283,24 +335,25 @@ func nzbHash(b []byte) string {
 
 func (s *resumeStore) nzbPath(hash string) string { return filepath.Join(s.dir, hash+".nzb") }
 
-// acquireNZB stores an NZB and holds it against gcNZB until releaseNZB.
-func (s *resumeStore) acquireNZB(nzb []byte) (string, error) {
-	s.nzbMu.Lock()
-	defer s.nzbMu.Unlock()
-	hash, err := s.writeNZB(nzb)
+// acquireNZB commits a durable writer owner before touching the payload.
+func (s *resumeStore) acquireNZB(ctx context.Context, rec resumeRecord, nzb []byte) (*nzbLease, error) {
+	hash := nzbHash(nzb)
+	owner, err := s.payload.reserve(ctx, rec.userID, "resume", "", fmt.Sprintf("%d/%d", rec.userID, rec.key), hash, "resume-write")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	s.nzbRefs[hash]++
-	return hash, nil
+	if _, err := s.writeNZB(nzb); err != nil {
+		s.payload.queueRelease(owner)
+		return nil, err
+	}
+	return &nzbLease{hash: hash, owner: owner}, nil
 }
-
-func (s *resumeStore) releaseNZB(hash string) {
-	s.nzbMu.Lock()
-	defer s.nzbMu.Unlock()
-	if s.nzbRefs[hash]--; s.nzbRefs[hash] <= 0 {
-		delete(s.nzbRefs, hash)
+func (s *resumeStore) releaseNZB(lease *nzbLease) error {
+	err := s.payload.release(context.Background(), lease.owner)
+	if err != nil {
+		s.payload.queueRelease(lease.owner)
 	}
+	return err
 }
 
 func (s *resumeStore) writeNZB(nzb []byte) (string, error) {
@@ -341,37 +394,294 @@ func (s *resumeStore) readNZB(hash string) ([]byte, error) {
 	return b, nil
 }
 
+// resumeCurrent reports that this resume row, and any persistable probe or
+// keyframe index, is already stored. A matching row with no probe yet must
+// still be written so the next start can skip the container probe.
+func (s *resumeStore) resumeCurrent(ctx context.Context, rec resumeRecord, hash string, probe core.MediaInfo, points int) bool {
+	if s.freshHit(rec, hash, probe, points) {
+		return true
+	}
+	got, err := s.get(ctx, rec.userID, rec.key)
+	if err != nil || got == nil || got.release.ID == "" {
+		return false
+	}
+	if got.nzbHash != hash || got.release.ID != rec.release.ID || got.profile != rec.profile || got.originalLanguage != rec.originalLanguage || got.size != rec.size || got.duration != rec.duration {
+		return false
+	}
+	if _, ok := persistedProbeFacts(probe); ok {
+		var n int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_probe WHERE user_id=? AND rating_key=? AND release_id=? AND nzb_hash=?`, rec.userID, int64(rec.key), rec.release.ID, hash).Scan(&n); err != nil || n == 0 {
+			return false
+		}
+	}
+	if points > 0 {
+		var n int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_index WHERE user_id=? AND rating_key=? AND release_id=?`, rec.userID, int64(rec.key), rec.release.ID).Scan(&n); err != nil || n == 0 {
+			return false
+		}
+	}
+	s.rememberFresh(rec, hash, probe, points)
+	return true
+}
+
+func (s *resumeStore) freshHit(rec resumeRecord, hash string, probe core.MediaInfo, points int) bool {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.fresh[resumeKey{rec.userID, rec.key}]
+	if !ok || got.hash != hash || got.release != rec.release.ID || got.profile != rec.profile || got.originalLanguage != rec.originalLanguage || got.size != rec.size || got.duration != rec.duration {
+		return false
+	}
+	if _, ok := persistedProbeFacts(probe); ok && !got.probe {
+		return false
+	}
+	return points <= 0 || got.points > 0
+}
+
+func (s *resumeStore) rememberFresh(rec resumeRecord, hash string, probe core.MediaInfo, points int) {
+	_, probeOK := persistedProbeFacts(probe)
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	if s.fresh == nil {
+		s.fresh = map[resumeKey]resumeFresh{}
+	}
+	s.fresh[resumeKey{rec.userID, rec.key}] = resumeFresh{
+		hash: hash, release: rec.release.ID, profile: rec.profile, originalLanguage: rec.originalLanguage,
+		size: rec.size, duration: rec.duration, probe: probeOK, points: points,
+	}
+}
+
+func (s *resumeStore) bumpLiveGenLocked(k resumeKey) uint64 {
+	if s.liveGen == nil {
+		s.liveGen = map[resumeKey]uint64{}
+	}
+	s.liveGen[k]++
+	return s.liveGen[k]
+}
+
+func (s *resumeStore) storeLiveLocked(rec resumeRecord, nzb []byte, probe ...*probeCache) {
+	res := &core.Resolution{Title: rec.key, Release: rec.release, NZB: append([]byte(nil), nzb...), ResolvedAt: rec.updatedAt}
+	if s.live == nil {
+		s.live = map[resumeKey]resumeLive{}
+	}
+	k := resumeKey{rec.userID, rec.key}
+	var pc *probeCache
+	if len(probe) > 0 && probe[0] != nil {
+		pc = probe[0]
+	} else if prev, ok := s.live[k]; ok && prev.releaseID == rec.release.ID {
+		pc = prev.probe
+	}
+	s.live[k] = resumeLive{
+		profile: rec.profile, originalLanguage: rec.originalLanguage, releaseID: rec.release.ID,
+		size: rec.size, duration: rec.duration, res: res, probe: pc,
+	}
+}
+
+// noteLive publishes a resume for the next prepare immediately. It supersedes
+// any save that has not published yet.
+func (s *resumeStore) noteLive(rec resumeRecord, nzb []byte, probe ...*probeCache) {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	s.bumpLiveGenLocked(resumeKey{rec.userID, rec.key})
+	s.storeLiveLocked(rec, nzb, probe...)
+}
+
+func (s *resumeStore) liveProbe(userID int64, key core.RatingKey, releaseID string, nzb []byte) *probeCache {
+	if s == nil || releaseID == "" {
+		return nil
+	}
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.live[resumeKey{userID, key}]
+	if !ok || got.probe == nil || got.releaseID != releaseID {
+		return nil
+	}
+	if len(nzb) > 0 && got.probe.nzbHash != "" && got.probe.nzbHash != nzbHash(nzb) {
+		return nil
+	}
+	copyInfo := core.CloneMediaInfo(got.probe.info)
+	return &probeCache{
+		releaseID:    got.probe.releaseID,
+		info:         copyInfo,
+		points:       append([]IndexPoint(nil), got.probe.points...),
+		needsAugment: got.probe.needsAugment,
+		nzbHash:      got.probe.nzbHash,
+	}
+}
+
+// claimLive reserves the next publish. A forget between the claim and
+// publishLive drops the publish, so expiry cannot be undone by the save
+// that just lost the row.
+func (s *resumeStore) claimLive(user int64, key core.RatingKey) uint64 {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	return s.bumpLiveGenLocked(resumeKey{user, key})
+}
+
+func (s *resumeStore) publishLive(gen uint64, rec resumeRecord, nzb []byte) {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	k := resumeKey{rec.userID, rec.key}
+	if s.liveGen[k] != gen {
+		return
+	}
+	s.storeLiveLocked(rec, nzb)
+}
+
+func (s *resumeStore) rememberedResolution(userID int64, key core.RatingKey, profile core.QualityProfile, profileKey, original string, caps core.ClientCaps) *core.Resolution {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.live[resumeKey{userID, key}]
+	if !ok || got.res == nil || got.profile != profileKey || got.releaseID == "" {
+		return nil
+	}
+	if !rememberedOriginalAudioCurrent(profile, got.originalLanguage, original, got.res.Release) || !rememberedCodecCurrent(got.res.Release, caps) || !sourceFitsBitrate(got.size, got.duration, 0, caps.MaxBitrateKbps) {
+		return nil
+	}
+	if got.probe != nil && !rememberedInfoCodecCurrent(got.probe.info, caps) {
+		return nil
+	}
+	cp := *got.res
+	cp.NZB = append([]byte(nil), got.res.NZB...)
+	return &cp
+}
+
+func (s *resumeStore) livePoint(userID int64, key core.RatingKey) *ResumePoint {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.live[resumeKey{userID, key}]
+	if !ok || got.res == nil {
+		return nil
+	}
+	return &ResumePoint{
+		UserID: userID, Key: key, Release: got.res.Release, NZB: append([]byte(nil), got.res.NZB...),
+		Profile: profileName(got.profile), Size: got.size, Duration: got.duration, UpdatedAt: got.res.ResolvedAt,
+		profileKey: got.profile, originalLanguage: got.originalLanguage,
+	}
+}
+
+func (s *resumeStore) forgetFresh(user int64, key core.RatingKey) {
+	s.freshMu.Lock()
+	k := resumeKey{user, key}
+	s.bumpLiveGenLocked(k)
+	delete(s.fresh, k)
+	delete(s.live, k)
+	s.freshMu.Unlock()
+}
+
+func (s *resumeStore) forgetFreshKey(key core.RatingKey) {
+	s.freshMu.Lock()
+	drop := map[resumeKey]struct{}{}
+	for id := range s.fresh {
+		if id.key == key {
+			drop[id] = struct{}{}
+		}
+	}
+	for id := range s.live {
+		if id.key == key {
+			drop[id] = struct{}{}
+		}
+	}
+	for id := range drop {
+		s.bumpLiveGenLocked(id)
+		delete(s.fresh, id)
+		delete(s.live, id)
+	}
+	s.freshMu.Unlock()
+}
+
+func (s *resumeStore) cachedNZB(hash string) ([]byte, bool) {
+	s.nzbMu.Lock()
+	defer s.nzbMu.Unlock()
+	b, ok := s.nzbCache[hash]
+	if !ok {
+		return nil, false
+	}
+	return append([]byte(nil), b...), true
+}
+
+func (s *resumeStore) rememberNZB(hash string, b []byte) {
+	if hash == "" || len(b) == 0 || len(b) > 1<<20 {
+		return
+	}
+	s.nzbMu.Lock()
+	defer s.nzbMu.Unlock()
+	if s.nzbCache == nil {
+		s.nzbCache = map[string][]byte{}
+	}
+	if len(s.nzbCache) >= 32 {
+		for key := range s.nzbCache {
+			delete(s.nzbCache, key)
+			break
+		}
+	}
+	s.nzbCache[hash] = append([]byte(nil), b...)
+}
+
+// readResumeNZB retains the actual payload across the filesystem read. A
+// concurrent retention/invalidation delete cannot reclaim an admitted read.
+func (s *resumeStore) readResumeNZB(ctx context.Context, rec *resumeRecord) ([]byte, error) {
+	if b, ok := s.cachedNZB(rec.nzbHash); ok {
+		return b, nil
+	}
+	owner, err := s.payload.reserve(ctx, rec.userID, "resume", "", fmt.Sprintf("%d/%d", rec.userID, rec.key), rec.nzbHash, "resume-read")
+	if err != nil {
+		return nil, err
+	}
+	b, readErr := s.readNZB(rec.nzbHash)
+	if err := s.payload.release(context.Background(), owner); err != nil {
+		s.payload.queueRelease(owner)
+	}
+	if readErr == nil {
+		s.rememberNZB(rec.nzbHash, b)
+	}
+	return b, readErr
+}
+
 func (s *resumeStore) save(ctx context.Context, rec resumeRecord, nzb []byte) error {
+	reqmemo.Forget(ctx, resumeMemoKey(rec.userID, rec.key))
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
-	hash, err := s.acquireNZB(nzb)
+	// Claim before the row is visible. Expiry that wins after the commit
+	// bumps the generation and the publish below does not restore the copy.
+	gen := s.claimLive(rec.userID, rec.key)
+	lease, err := s.acquireNZB(ctx, rec, nzb)
 	if err != nil {
-		return fmt.Errorf("playback: store nzb: %w", err)
+		return err
 	}
-	defer s.releaseNZB(hash)
-	return s.saveRow(ctx, rec, hash)
+	err = s.writeBundle(ctx, rec, lease, nil, core.MediaInfo{}, nzb)
+	if !errors.Is(err, errResumeCommitUnknown) {
+		s.releaseNZB(lease)
+	}
+	if err == nil {
+		if s.beforeLiveNote != nil {
+			s.beforeLiveNote()
+		}
+		// The in-process copy is what ResumeFor reads first. A later
+		// Remember has to replace the copy left by the play that just ended.
+		s.publishLive(gen, rec, nzb)
+	}
+	return err
 }
 
-// saveRow upserts the record for an NZB already on disk.
-func (s *resumeStore) saveRow(ctx context.Context, rec resumeRecord, hash string) error {
+func saveResumeRowTx(ctx context.Context, tx *sql.Tx, rec resumeRecord, hash string) (string, error) {
 	rel, err := json.Marshal(rec.release)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM playback_index WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_index WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
+		return "", err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM playback_probe WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_probe WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
+		return "", err
 	}
 	var oldHash string
-	err = s.db.QueryRowContext(ctx, `SELECT nzb_hash FROM playback_resume WHERE user_id=? AND rating_key=?`,
+	err = tx.QueryRowContext(ctx, `SELECT nzb_hash FROM playback_resume WHERE user_id=? AND rating_key=?`,
 		rec.userID, int64(rec.key)).Scan(&oldHash)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+		return "", err
 	}
-	_, err = s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO playback_resume (user_id, rating_key, release_id, release_json, nzb_hash, profile, original_language, size, duration_ms, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, rating_key) DO UPDATE SET
@@ -381,12 +691,9 @@ ON CONFLICT (user_id, rating_key) DO UPDATE SET
 		rec.userID, int64(rec.key), rec.release.ID, string(rel), hash, rec.profile, rec.originalLanguage, rec.size,
 		rec.duration.Milliseconds(), rec.updatedAt.UnixMilli())
 	if err != nil {
-		return err
+		return "", err
 	}
-	if oldHash != "" && oldHash != hash {
-		s.gcNZB(ctx, oldHash)
-	}
-	return nil
+	return oldHash, nil
 }
 
 const resumeColumns = `user_id, rating_key, release_id, release_json, nzb_hash, profile, original_language, size, duration_ms, updated_at`
@@ -414,17 +721,30 @@ func scanResume(sc interface{ Scan(...any) error }) (resumeRecord, error) {
 }
 
 // get returns the record for a user and title, or nil when there is none.
+func resumeMemoKey(userID int64, key core.RatingKey) string {
+	return "playback:resume:" + strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(int64(key), 10)
+}
+
+// A list builds several stream views per item, each asking for its resume
+// record, so a read request reads each record once.
 func (s *resumeStore) get(ctx context.Context, userID int64, key core.RatingKey) (*resumeRecord, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+resumeColumns+` FROM playback_resume WHERE user_id=? AND rating_key=?`,
-		userID, int64(key))
-	rec, err := scanResume(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	rec, err := reqmemo.Do(ctx, resumeMemoKey(userID, key), func() (*resumeRecord, error) {
+		row := s.db.QueryRowContext(ctx, `SELECT `+resumeColumns+` FROM playback_resume WHERE user_id=? AND rating_key=?`,
+			userID, int64(key))
+		rec, err := scanResume(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &rec, nil
+	})
+	if err != nil || rec == nil {
 		return nil, err
 	}
-	return &rec, nil
+	cp := *rec
+	return &cp, nil
 }
 
 func (s *resumeStore) all(ctx context.Context) ([]resumeRecord, error) {
@@ -445,10 +765,12 @@ func (s *resumeStore) all(ctx context.Context) ([]resumeRecord, error) {
 }
 
 func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingKey) error {
+	reqmemo.Forget(ctx, resumeMemoKey(userID, key))
 	var hash string
 	err := s.db.QueryRowContext(ctx, `SELECT nzb_hash FROM playback_resume WHERE user_id=? AND rating_key=?`,
 		userID, int64(key)).Scan(&hash)
 	if errors.Is(err, sql.ErrNoRows) {
+		s.forgetFresh(userID, key)
 		return nil
 	}
 	if err != nil {
@@ -466,6 +788,7 @@ func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingK
 		return err
 	}
 	s.gcNZB(ctx, hash)
+	s.forgetFresh(userID, key)
 	return nil
 }
 
@@ -473,8 +796,12 @@ func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingK
 // release policy. This table contains source identities, not watch progress.
 // Keep the content-addressed payload and index caches for ordinary pruning.
 func (s *resumeStore) invalidateTitle(ctx context.Context, key core.RatingKey) error {
+	reqmemo.ForgetPrefix(ctx, "playback:resume:")
 	if key.Kind() != core.KindShow && key.Kind() != core.KindSeason {
 		_, err := s.db.ExecContext(ctx, `DELETE FROM playback_resume WHERE rating_key=?`, int64(key))
+		if err == nil {
+			s.forgetFreshKey(key)
+		}
 		return err
 	}
 	records, err := s.all(ctx)
@@ -486,6 +813,7 @@ func (s *resumeStore) invalidateTitle(ctx context.Context, key core.RatingKey) e
 			if _, err := s.db.ExecContext(ctx, `DELETE FROM playback_resume WHERE user_id=? AND rating_key=?`, rec.userID, int64(rec.key)); err != nil {
 				return err
 			}
+			s.forgetFresh(rec.userID, rec.key)
 		}
 	}
 	return nil
@@ -493,16 +821,9 @@ func (s *resumeStore) invalidateTitle(ctx context.Context, key core.RatingKey) e
 
 // gcNZB removes an NZB file no row references any more.
 func (s *resumeStore) gcNZB(ctx context.Context, hash string) {
-	s.nzbMu.Lock()
-	defer s.nzbMu.Unlock()
-	if s.nzbRefs[hash] > 0 {
-		return // a record being written is about to reference it
-	}
-	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_resume WHERE nzb_hash=?`, hash).Scan(&n); err != nil || n > 0 {
+	if err := s.payload.gc(ctx, hash); err != nil {
 		return
 	}
-	_ = os.Remove(s.nzbPath(hash))
 }
 
 func (rec *resumeRecord) point(nzb []byte) *ResumePoint {
@@ -522,6 +843,9 @@ func (rec *resumeRecord) point(nzb []byte) *ResumePoint {
 }
 
 func (s *resumeStore) saveIndex(ctx context.Context, userID int64, key core.RatingKey, releaseID string, points []core.KeyframePoint) error {
+	return saveIndexWith(ctx, s.db, userID, key, releaseID, points)
+}
+func saveIndexWith(ctx context.Context, exec resumeExecer, userID int64, key core.RatingKey, releaseID string, points []core.KeyframePoint) error {
 	if len(points) == 0 || releaseID == "" {
 		return nil
 	}
@@ -532,7 +856,7 @@ func (s *resumeStore) saveIndex(ctx context.Context, userID int64, key core.Rati
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO playback_index(user_id,rating_key,release_id,points_json) VALUES(?,?,?,?)
+	_, err = exec.ExecContext(ctx, `INSERT INTO playback_index(user_id,rating_key,release_id,points_json) VALUES(?,?,?,?)
 ON CONFLICT(user_id,rating_key,release_id) DO UPDATE SET points_json=excluded.points_json`, userID, int64(key), releaseID, string(b))
 	return err
 }

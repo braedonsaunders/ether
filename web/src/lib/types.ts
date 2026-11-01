@@ -211,6 +211,8 @@ export interface PosterProviderConfig {
 }
 
 export interface EtherConfig {
+  frontends?: Record<string, { enabled: boolean; settings?: Record<string, unknown> }>;
+  frontendPorts?: Record<string, number>;
   posters?: PosterProviderConfig;
   availability?: AvailabilityConfig;
   server: {
@@ -232,6 +234,7 @@ export interface EtherConfig {
     ownerPlexId: number;
     ownerUsername: string;
     claimed: boolean;
+    usePlexMetadata?: boolean;
     remoteAccess: boolean;
     useUpnp: boolean;
     publicPort: number;
@@ -258,6 +261,20 @@ export interface EtherConfig {
   indexerSites?: IndexerSitesConfig;
   /** Absent on servers without debrid support. */
   debrid?: DebridConfig;
+  /** Node-local outbound proxy. Absent until the server sends the section. */
+  outbound?: {
+    enabled: boolean;
+    preset?: string;
+    url: string;
+    username?: string;
+    password?: string;
+    indexers: boolean;
+    stremio: boolean;
+    debrid: boolean;
+    usenet: boolean;
+    metadata: boolean;
+    bypass?: string[] | null;
+  };
   sharedCache?: EtherConfig["cache"];
   cache: {
     storage?: "local" | "shared";
@@ -299,14 +316,19 @@ export interface EtherConfig {
     refreshInterval: string;
   };
   resolver: {
-    allowCam: boolean;
     healthSamples: number;
     searchCacheTtl: string;
     unavailableCooloff: string;
     maxCandidates: number;
     sameQualityAlternatives: number;
+    offerHigherVersions?: boolean;
     blockedGroups: string[] | null;
     blockedTerms: string[] | null;
+    optimisticStart?: boolean;
+    healthRace?: number;
+    sourcePreference?: string;
+    customFormats?: unknown[];
+    customFormatScores?: Record<string, number>;
   };
   quality: {
     profiles: QualityProfile[] | null;
@@ -333,15 +355,30 @@ export interface EtherConfig {
   };
   trakt: { enabled: boolean; clientId: string; clientSecret: string };
   simkl?: { enabled: boolean; clientId: string; clientSecret: string };
-  markers?: { theIntroDb: boolean; apiKey: string };
-  openSubtitles: { enabled: boolean; apiKey: string; username: string; password: string };
-  llm: { enabled: boolean; provider: string; baseUrl: string; apiKey: string; model: string };
+  markers?: { theIntroDb: boolean; apiKey: string; skipIntro?: boolean; skipCredits?: boolean };
+  openSubtitles: {
+    enabled: boolean;
+    apiKey: string;
+    username: string;
+    password: string;
+  };
+  llm: {
+    enabled: boolean;
+    provider: string;
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    speechBaseUrl?: string;
+    speechApiKey?: string;
+    speechModel?: string;
+  };
   updates: {
     channel: string;
     autoUpdate: boolean;
     feedUrl: string;
     maintenanceStart?: string;
     maintenanceEnd?: string;
+    maxDrain?: string;
   };
   spike: { enabled: boolean; localFiles: string[] | null };
   downloads?: {
@@ -372,6 +409,7 @@ export interface EtherConfig {
 
 export interface QualityProfile {
   releaseRules?: ReleaseRule[] | null;
+  ranking?: string[] | null;
   name: string;
   maxHeight: number;
   minHeight: number;
@@ -395,11 +433,14 @@ export interface QualityProfile {
 }
 
 export interface QualityRule {
+  protocol?: string;
   product?: string;
   platform?: string;
   userId?: number;
   profile: string;
+  /** Caps this device below the profile. 0 or absent means the profile's ceiling. */
   maxHeight?: number;
+  convertSurroundAudio?: boolean;
 }
 
 export interface SetupStep {
@@ -414,14 +455,20 @@ export interface SetupStatus {
   requiredComplete: boolean;
   steps: SetupStep[];
   cacheRestartRequired?: boolean;
+  /** Set when a /cache volume is mounted. */
+  cacheVolume?: string;
 }
 export interface Bootstrap {
   ok: boolean;
   version: string;
   setupComplete: boolean;
+  ownerConfigured?: boolean;
+  signInMethods?: ("local" | "plex")[];
   authenticated: boolean;
   authRequired: boolean;
   serverName: string;
+  /** False when the Plex app is off. Omitted means Plex is on. */
+  plexEnabled?: boolean;
 }
 export interface TestResult {
   ok: boolean;
@@ -531,6 +578,8 @@ export interface DashboardData {
   setupComplete: boolean;
   setupSteps?: SetupStep[];
   version: string;
+  /** False when the Plex app is off. Omitted means Plex is on. */
+  plexEnabled?: boolean;
 }
 
 /** One resolver decision (internal/resolver.Trace). Durations are nanoseconds. */
@@ -586,6 +635,10 @@ export interface ResolverTrace {
   omitted?: number;
   /** The source-routing decision, e.g. "debrid first: popular title". */
   routing?: string;
+  /** Who chose the winner. Absent on decisions recorded before it existed. */
+  chooser?: "auto" | "viewer";
+  /** Release name when chooser is "viewer". */
+  chosenVersion?: string;
 }
 
 /** A source's measured startup (NZB or payload fetch plus a real health check). */
@@ -710,6 +763,12 @@ export interface ClusterSetupStatus {
 export interface AvailabilityConfig {
   disableMovieEvidenceGate?: boolean;
   movieEvidenceDays?: number;
+  /** playable, digital, or immediate. Empty is derived from the gate flags. */
+  mode?: string;
+  /** gentle, normal, unlimited, or custom. Empty is treated as normal. */
+  effort?: string;
+  catchUp?: boolean;
+  digitalDateEvidence?: boolean;
   monitor: boolean;
   verify: boolean;
   preferVerified: boolean;

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,7 +95,7 @@ func roundTrip(t *testing.T, src, dst *sql.DB) {
 
 func openSQLiteMemory(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := openSQLite(context.Background(), ":memory:", nil)
+	db, err := openSQLite(context.Background(), ":memory:", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,5 +157,36 @@ func TestLogicalRejectsDamage(t *testing.T) {
 	var n int
 	if err := dst.QueryRowContext(ctx, `SELECT COUNT(*) FROM storetest_links`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("failed import left %d rows (err=%v)", n, err)
+	}
+}
+
+// A full-text index is derived data: its virtual table and shadow tables are
+// left out of a dump and rebuilt by their triggers on restore.
+func TestLogicalSkipsVirtualTables(t *testing.T) {
+	ctx := context.Background()
+	db, err := OpenPath(ctx, filepath.Join(t.TempDir(), "fts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, `CREATE TABLE lg_docs (id INTEGER PRIMARY KEY, body TEXT);
+CREATE VIRTUAL TABLE lg_docs_fts USING fts5(body, content='lg_docs', content_rowid='id', tokenize='trigram');`); err != nil {
+		t.Fatal(err)
+	}
+	tables, err := listTables(ctx, db, SQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range tables {
+		if strings.HasPrefix(name, "lg_docs_fts") {
+			t.Fatalf("dump lists derived table %s (all: %v)", name, tables)
+		}
+	}
+	found := false
+	for _, name := range tables {
+		found = found || name == "lg_docs"
+	}
+	if !found {
+		t.Fatalf("dump misses lg_docs: %v", tables)
 	}
 }

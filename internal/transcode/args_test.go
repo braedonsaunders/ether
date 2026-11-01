@@ -222,10 +222,23 @@ func TestBuildArgsToneMapWithoutZscale(t *testing.T) {
 	info := mustParse(t, "mkv_hevc_hdr10.json")
 	d := Decide(info, plexWeb, allow(), Policy{})
 	s := baseSpec(info, d)
-	s.Features.filters = map[string]bool{"scale": true, "overlay": true}
+	s.Features.filters = map[string]bool{"scale": true, "overlay": true, "colorspace": true}
+	if err := graphFailure(s); err == nil || !strings.Contains(err.Error(), "tone-map") {
+		t.Fatalf("graphFailure = %v", err)
+	}
+	if strings.Contains(strings.Join(buildArgs(s), " "), "zscale") {
+		t.Fatal("missing zscale still emitted zscale")
+	}
+	s.Features.filters["libplacebo"] = true
 	graph := argValue(buildArgs(s), "-filter_complex")
-	if strings.Contains(graph, "zscale") || !strings.Contains(graph, "setparams") {
-		t.Errorf("fallback graph %q", graph)
+	if strings.Contains(graph, "zscale") || !strings.Contains(graph, "libplacebo=tonemapping=hable") {
+		t.Fatalf("libplacebo graph %q", graph)
+	}
+	delete(s.Features.filters, "libplacebo")
+	s.Features.filters["tonemap_opencl"] = true
+	graph = argValue(buildArgs(s), "-filter_complex")
+	if strings.Contains(graph, "zscale") || !strings.Contains(graph, "tonemap_opencl=tonemap=hable") {
+		t.Fatalf("opencl graph %q", graph)
 	}
 }
 
@@ -308,10 +321,56 @@ func TestBuildArgsBurnPGS(t *testing.T) {
 	o.SubtitleStream = 2
 	d := Decide(pgs, appleTV, o, Policy{})
 	graph := argValue(buildArgs(baseSpec(pgs, d)), "-filter_complex")
-	want := "[0:0]null[base];[0:2]scale=1920:800[sub];[base][sub]overlay=eof_action=pass,format=yuv420p[vout]"
+	// baseSpec seeks to 200s, so both overlay inputs drop the title clock
+	// before the muxer adds it back.
+	want := "[0:0]null,setpts=PTS-STARTPTS[base];[0:2]setpts=PTS-STARTPTS,scale=1920:800[sub];[base][sub]overlay=eof_action=pass,format=yuv420p[vout]"
 	if graph != want {
 		t.Errorf("graph\n got %s\nwant %s", graph, want)
 	}
+}
+
+func TestBuildArgsTextBurnKeepsSeekClock(t *testing.T) {
+	pgs := mustParse(t, "mkv_pgs.json")
+	d := core.Decision{Kind: core.DecisionTranscode, Container: ContainerMatroska, VideoCodec: "h264", MaxHeight: 1080, BitrateKbps: 4000, AudioStream: 1, AudioCopy: true, SubtitleStream: 5, BurnSubtitles: true}
+	s := baseSpec(pgs, d)
+	s.Start = 0
+	graph := argValue(buildArgs(s), "-filter_complex")
+	if !strings.Contains(graph, "subtitles=filename=") || strings.Contains(graph, "setpts=") {
+		t.Fatalf("start-at-0 graph should burn without shifting PTS: %s", graph)
+	}
+	s.Start = 420 * time.Second
+	graph = argValue(buildArgs(s), "-filter_complex")
+	if !strings.Contains(graph, "setpts=PTS+420.000/TB,subtitles=filename=") || !strings.Contains(graph, ",setpts=PTS-STARTPTS,") {
+		t.Fatalf("seeked burn graph: %s", graph)
+	}
+}
+
+func TestBuildArgsMatroskaTextTrackSeeksWithTheVideo(t *testing.T) {
+	info := mustParse(t, "mkv_pgs.json")
+	d := core.Decision{Kind: core.DecisionTranscode, Container: ContainerMatroska, VideoCodec: "h264", MaxHeight: 1080, BitrateKbps: 4000, AudioStream: 1, AudioCopy: true, SubtitleStream: 5}
+	args := buildArgs(baseSpec(info, d))
+	mustContain(t, args, "-ss 200.000 -i http://127.0.0.1:32400/ether/source/1", "-map 0:5", "-c:s copy")
+	mustNotContain(t, args, "-sn")
+	if strings.Count(joined(args), "-ss ") != 1 {
+		t.Fatalf("embedded text uses the video input's seek, args:\n%s", joined(args))
+	}
+
+	for i := range info.Streams {
+		if info.Streams[i].Index == 5 {
+			info.Streams[i].External = true
+			info.Streams[i].ExternalURL = "http://subs/spa.srt"
+			info.Streams[i].Codec = "srt"
+		}
+	}
+	ext := buildArgs(baseSpec(info, d))
+	mustContain(t, ext, "-ss 200.000 -i http://127.0.0.1:32400/ether/source/1", "-ss 200.000 -i http://subs/spa.srt", "-map 1:0", "-c:s copy")
+	mustNotContain(t, ext, "-sn")
+
+	ts := d
+	ts.Container = ContainerMPEGTS
+	mpegts := buildArgs(baseSpec(info, ts))
+	mustContain(t, mpegts, "-sn")
+	mustNotContain(t, mpegts, "http://subs/spa.srt")
 }
 
 func TestBuildArgsTextSubtitleStaysSidecar(t *testing.T) {
@@ -355,7 +414,10 @@ func TestOutputSize(t *testing.T) {
 
 func TestSubtitleArgs(t *testing.T) {
 	args := subtitleArgs("http://h/x", 4)
-	mustContain(t, args, "-i http://h/x -map 0:4 -c:s webvtt -f webvtt pipe:1")
+	mustContain(t, args, "-i http://h/x?background=1 -map 0:4 -c:s webvtt -f webvtt pipe:1")
+	if got := subtitleArgs("fixture.mkv", 1); strings.Contains(strings.Join(got, " "), "background=1") {
+		t.Fatal("local files must not grow a loopback query")
+	}
 }
 
 func TestVideoBitrate(t *testing.T) {

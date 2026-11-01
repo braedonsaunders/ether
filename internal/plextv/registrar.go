@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -103,14 +104,15 @@ type RegistrarOptions struct {
 	Certs   *CertManager // nil disables certificate management
 
 	// Intervals (defaults in parentheses).
-	Tick                 time.Duration // loop granularity (15s)
-	AddressInterval      time.Duration // LAN/WAN re-check (30s)
-	PublishInterval      time.Duration // unconditional re-publish (1h)
-	FriendSyncInterval   time.Duration // access token sync (1m, observed)
-	MappingInterval      time.Duration // UPnP/NAT-PMP renew check (5m)
-	CertInterval         time.Duration // certificate expiry check (1w, observed when not near expiry)
-	ReachabilityInterval time.Duration // remote self-test (1h, observed)
-	OwnerInterval        time.Duration // owner account / Plex Pass re-check (6h)
+	Tick                       time.Duration // loop granularity (15s)
+	AddressInterval            time.Duration // LAN/WAN re-check (30s)
+	PublishInterval            time.Duration // unconditional re-publish (1h)
+	FriendSyncInterval         time.Duration // access token sync (30m; pubsub events trigger immediate sync)
+	UnknownTokenSyncMinSpacing time.Duration // minimum spacing between unknown-token friend re-reads (15s)
+	MappingInterval            time.Duration // UPnP/NAT-PMP renew check (5m)
+	CertInterval               time.Duration // certificate expiry check (1w, observed when not near expiry)
+	ReachabilityInterval       time.Duration // remote self-test (1h, observed)
+	OwnerInterval              time.Duration // owner account / Plex Pass re-check (6h)
 
 	// PeerURIs, when set (clustered servers), returns the other live
 	// nodes' connection URIs in publication order. PublishNow appends them,
@@ -141,8 +143,13 @@ type Registrar struct {
 	client *Client
 	log    *slog.Logger
 
-	wake    chan struct{}
-	mapWake chan struct{} // RunPortMapping
+	wake               chan struct{}
+	mapWake            chan struct{} // RunPortMapping
+	presenceWake       chan struct{}
+	publicationMu      sync.Mutex
+	publicationRunMu   sync.Mutex
+	publicationCancel  context.CancelFunc
+	publicationEnabled bool
 
 	runMu  sync.Mutex
 	cancel context.CancelFunc
@@ -151,17 +158,20 @@ type Registrar struct {
 	addrMu      sync.Mutex // serialises address refreshes
 	addrRefresh time.Time  // last refreshAddresses
 
-	mu            sync.Mutex
-	st            Status
-	lastLAN       []string
-	lastWAN       string
-	next          map[string]time.Time
-	pubFail       int
-	pubGeneration uint64 // advances whenever fresh connections must be published
-	forcePub      bool
-	mappingOn     bool
-	asyncID       string // outstanding connectivity request
-	libraries     []LibrarySection
+	mu                   sync.Mutex
+	st                   Status
+	lastLAN              []string
+	lastWAN              string
+	next                 map[string]time.Time
+	lastUnknownTokenSync time.Time
+	pubFail              int
+	pubGeneration        uint64 // advances whenever fresh connections must be published
+	forcePub             bool
+	mappingOn            bool
+	trustAt              time.Time
+	trustFP              string
+	asyncID              string // outstanding connectivity request
+	libraries            []LibrarySection
 
 	presence *Presence
 
@@ -202,7 +212,8 @@ func NewRegistrar(o RegistrarOptions) (*Registrar, error) {
 	def(&o.Tick, 15*time.Second)
 	def(&o.AddressInterval, 30*time.Second)
 	def(&o.PublishInterval, time.Hour)
-	def(&o.FriendSyncInterval, time.Minute)
+	def(&o.FriendSyncInterval, 30*time.Minute)
+	def(&o.UnknownTokenSyncMinSpacing, 15*time.Second)
 	def(&o.MappingInterval, 5*time.Minute)
 	def(&o.CertInterval, 7*24*time.Hour)
 	def(&o.ReachabilityInterval, time.Hour)
@@ -231,12 +242,14 @@ func NewRegistrar(o RegistrarOptions) (*Registrar, error) {
 		o.Reach = remote.NewReachabilityChecker(nil)
 	}
 	r := &Registrar{
-		o:       o,
-		client:  client,
-		log:     o.Logger.With("component", "registrar"),
-		wake:    make(chan struct{}, 1),
-		mapWake: make(chan struct{}, 1),
-		next:    map[string]time.Time{},
+		o:                  o,
+		client:             client,
+		log:                o.Logger.With("component", "registrar"),
+		wake:               make(chan struct{}, 1),
+		mapWake:            make(chan struct{}, 1),
+		presenceWake:       make(chan struct{}, 1),
+		publicationEnabled: plexAppsEnabled(o.Config.Get()),
+		next:               map[string]time.Time{},
 	}
 	if c := o.Config.Get(); c.Plex.Claimed {
 		r.claimedToken = c.Plex.Token
@@ -280,9 +293,42 @@ func (r *Registrar) Start(ctx context.Context) error {
 	loopDone := make(chan struct{})
 	go r.loop(ctx, loopDone)
 	presenceDone := make(chan struct{})
-	go func() { defer close(presenceDone); r.presence.Run(ctx) }()
+	go func() { defer close(presenceDone); r.runPresence(ctx) }()
 	go func() { <-loopDone; <-presenceDone; close(done) }()
 	return nil
+}
+
+func plexAppsEnabled(c config.Config) bool {
+	return c.Frontends == nil || c.Frontends["plex"].Enabled
+}
+
+// Presence is publication, not account or membership synchronisation.
+func (r *Registrar) runPresence(ctx context.Context) {
+	var cancel context.CancelFunc
+	var done chan struct{}
+	stop := func() {
+		if cancel != nil {
+			cancel()
+			<-done
+			cancel = nil
+		}
+	}
+	defer stop()
+	for {
+		if plexAppsEnabled(r.o.Config.Get()) && cancel == nil {
+			child, c := context.WithCancel(ctx)
+			cancel = c
+			done = make(chan struct{})
+			go func() { defer close(done); r.presence.Run(child) }()
+		} else if !plexAppsEnabled(r.o.Config.Get()) {
+			stop()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.presenceWake:
+		}
+	}
 }
 
 // Stop ends the loop and removes any port mapping.
@@ -467,6 +513,9 @@ func (r *Registrar) runDue(ctx context.Context) {
 		_ = r.RenewCertificate(ctx, false)
 		r.scheduleCertCheck()
 	}
+	if r.o.Certs != nil {
+		r.refreshCertTrust(ctx)
+	}
 	claimed := cfg.Plex.Claimed && cfg.Plex.Token != ""
 	if !claimed {
 		return
@@ -475,8 +524,8 @@ func (r *Registrar) runDue(ctx context.Context) {
 	force := r.forcePub
 	generation := r.pubGeneration
 	r.mu.Unlock()
-	if force || r.due(taskPublish, r.o.PublishInterval) {
-		if err := r.PublishNow(ctx); err != nil && ctx.Err() == nil {
+	if plexAppsEnabled(cfg) && (force || r.due(taskPublish, r.o.PublishInterval)) {
+		if err := r.PublishNow(ctx); err != nil && ctx.Err() == nil && plexAppsEnabled(r.o.Config.Get()) {
 			r.mu.Lock()
 			r.pubFail++
 			backoff := time.Minute << min(r.pubFail-1, 5) // 1m .. 32m
@@ -498,7 +547,7 @@ func (r *Registrar) runDue(ctx context.Context) {
 			r.schedule(taskOwner, r.o.Now().Add(10*time.Minute))
 		}
 	}
-	if cfg.Plex.RemoteAccess && r.due(taskReach, r.o.ReachabilityInterval) {
+	if plexAppsEnabled(cfg) && cfg.Plex.RemoteAccess && r.due(taskReach, r.o.ReachabilityInterval) {
 		r.CheckReachability(ctx)
 	}
 }
@@ -660,13 +709,37 @@ func (r *Registrar) connections(cfg config.Config) []remote.Connection {
 	})
 }
 
+// publishable is the URI list sent to plex.tv. Like PMS, every address goes
+// out as plain http://<ip>:<port>, whatever the secure-connections mode:
+// plex.tv matches those IPs against localAddresses to mark LAN connections
+// local, and synthesises the https plex.direct variants (https only when
+// httpsRequired is set). A published plex.direct hostname is stored as a
+// non-local address, so clients would list a LAN server as Remote.
+// CGNAT (100.64.0.0/10, including Tailscale) addresses are never published to
+// plex.tv because plex.tv rejects the whole device update when one is present.
 func publishable(cs []remote.Connection, includePlexDirect bool) []string {
 	var out []string
+	add := func(uri string) {
+		if !remote.IsPublishableURI(uri) {
+			return
+		}
+		if !slices.Contains(out, uri) {
+			out = append(out, uri)
+		}
+	}
 	for _, c := range cs {
-		if c.Protocol == "https" && !c.Custom && !includePlexDirect {
+		if ip := net.ParseIP(c.Address); ip != nil && remote.IsCGNAT(ip) {
 			continue
 		}
-		out = append(out, c.URI)
+		if c.Protocol == "https" && !c.Custom {
+			if c.Address != "" && c.Port > 0 {
+				add("http://" + net.JoinHostPort(c.Address, strconv.Itoa(c.Port)))
+			}
+			if !includePlexDirect {
+				continue
+			}
+		}
+		add(c.URI)
 	}
 	return out
 }
@@ -675,18 +748,17 @@ func publishable(cs []remote.Connection, includePlexDirect bool) []string {
 // them.
 func (r *Registrar) publishSet(cfg config.Config) ([]remote.Connection, []string) {
 	conns := r.connections(cfg)
-	uris := publishable(conns, r.o.PublishPlexDirect || cfg.Plex.SecureConnections == remote.SecureRequired)
+	published := conns
 	if !cfg.Plex.RemoteAccess {
 		// Only LAN and custom URLs when remote access is off.
-		var lanOnly []string
+		published = nil
 		for _, c := range conns {
-			if (c.Local || c.Custom) && slices.Contains(uris, c.URI) {
-				lanOnly = append(lanOnly, c.URI)
+			if c.Local || c.Custom {
+				published = append(published, c)
 			}
 		}
-		uris = lanOnly
 	}
-	return conns, uris
+	return conns, publishable(published, r.o.PublishPlexDirect)
 }
 
 // NodeURIs returns the URIs this node would publish for itself, refreshing
@@ -746,6 +818,22 @@ func mergeURIs(own, extra []string) []string {
 // PublishNow publishes the current connections to plex.tv and verifies the
 // server appears in the resources list.
 func (r *Registrar) PublishNow(ctx context.Context) error {
+	r.publicationRunMu.Lock()
+	defer r.publicationRunMu.Unlock()
+	r.publicationMu.Lock()
+	if !r.publicationEnabled {
+		r.publicationMu.Unlock()
+		return errors.New("plextv: Plex apps are disabled")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	r.publicationCancel = cancel
+	r.publicationMu.Unlock()
+	defer func() {
+		cancel()
+		r.publicationMu.Lock()
+		r.publicationCancel = nil
+		r.publicationMu.Unlock()
+	}()
 	r.mu.Lock()
 	generation := r.pubGeneration
 	libraries := slices.Clone(r.libraries)
@@ -762,11 +850,16 @@ func (r *Registrar) PublishNow(ctx context.Context) error {
 	}
 	conns, uris := r.publishSet(cfg)
 	if r.o.PeerURIs != nil {
-		uris = mergeURIs(uris, r.o.PeerURIs())
+		for _, peerURI := range r.o.PeerURIs() {
+			if remote.IsPublishableURI(peerURI) {
+				uris = mergeURIs(uris, []string{peerURI})
+			}
+		}
 	}
 	if len(uris) == 0 {
 		err := errors.New("plextv: no connection addresses to publish")
 		r.mu.Lock()
+		r.st.Connections = conns
 		r.st.LastPublish = r.o.Now()
 		r.st.LastPublishError = err.Error()
 		r.mu.Unlock()
@@ -820,17 +913,23 @@ func (r *Registrar) PublishNow(ctx context.Context) error {
 	} else {
 		mapping = "unmapped"
 	}
+	var localAddrs []string
+	for _, addr := range lan {
+		if ip := net.ParseIP(addr); ip != nil && !remote.IsCGNAT(ip) {
+			localAddrs = append(localAddrs, addr)
+		}
+	}
 	reg := ServerRegistration{
-		Name: cfg.Server.FriendlyName, Version: r.o.Version, LocalAddresses: mergeURIs(lan, r.peerLANAddrs()), MappingState: mapping,
+		Name: cfg.Server.FriendlyName, Version: r.o.Version, LocalAddresses: mergeURIs(localAddrs, r.peerLANAddrs()), MappingState: mapping,
 		PrivatePort: serverPort(cfg),
 		Libraries:   libraries,
 	}
-	if len(lan) > 0 {
-		reg.PrivateAddress = lan[0]
+	if len(localAddrs) > 0 {
+		reg.PrivateAddress = localAddrs[0]
 	}
 	if cfg.Plex.RemoteAccess {
 		reg.Port = r.wanPort(cfg)
-		if net.ParseIP(wan) != nil {
+		if ip := net.ParseIP(wan); ip != nil && !remote.IsCGNAT(ip) {
 			reg.Address = wan
 		}
 	}
@@ -900,6 +999,20 @@ func (r *Registrar) SyncFriendsNow(ctx context.Context) error {
 	return nil
 }
 
+// SyncFriendsOnUnknownToken re-reads friends and access tokens when an
+// unrecognised token arrives, rate-limited by UnknownTokenSyncMinSpacing.
+func (r *Registrar) SyncFriendsOnUnknownToken(ctx context.Context) error {
+	now := r.o.Now()
+	r.mu.Lock()
+	if !r.lastUnknownTokenSync.IsZero() && now.Round(0).Sub(r.lastUnknownTokenSync.Round(0)) < r.o.UnknownTokenSyncMinSpacing {
+		r.mu.Unlock()
+		return nil
+	}
+	r.lastUnknownTokenSync = now
+	r.mu.Unlock()
+	return r.SyncFriendsNow(ctx)
+}
+
 // CheckReachability probes the WAN connections and records the result.
 func (r *Registrar) CheckReachability(ctx context.Context) remote.Reachability {
 	cfg := r.o.Config.Get()
@@ -967,7 +1080,50 @@ func (r *Registrar) RenewCertificate(ctx context.Context, force bool) error {
 		r.requestPublishLocked()
 		r.mu.Unlock()
 	}
+	r.refreshCertTrust(ctx)
 	return err
+}
+
+// refreshCertTrust re-checks the installed plex.direct certificate on the
+// certificate schedule, sooner after a failed handshake, and again after a
+// reissue. Status polls only read the stored result.
+func (r *Registrar) refreshCertTrust(ctx context.Context) {
+	if r.o.Certs == nil || ctx.Err() != nil {
+		return
+	}
+	info := r.o.Certs.Info()
+	if !info.Present || info.SelfSigned || r.certTrustFresh(info) {
+		return
+	}
+	cfg := r.o.Config.Get()
+	identity := cfg.Plex.CertHash
+	if identity == "" {
+		identity = info.Hash
+	}
+	addr := localPlexDirectDial(r.connections(cfg))
+	vctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, _ = r.o.Certs.VerifyTrust(vctx, identity, addr)
+	r.mu.Lock()
+	r.trustAt = r.o.Now()
+	r.trustFP = info.Fingerprint
+	r.mu.Unlock()
+}
+
+func (r *Registrar) certTrustFresh(info CertInfo) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if info.Fingerprint == "" || info.Fingerprint != r.trustFP || r.trustAt.IsZero() {
+		return false
+	}
+	wait := r.o.CertInterval
+	if wait <= 0 {
+		wait = 7 * 24 * time.Hour
+	}
+	if !info.Verified && info.VerifyReason == CertReasonHandshake {
+		wait = time.Minute
+	}
+	return r.o.Now().Sub(r.trustAt) < wait
 }
 
 // scheduleCertCheck brings the next certificate check forward from
@@ -1068,7 +1224,7 @@ func (r *Registrar) Claim(ctx context.Context, userToken string) (*ClaimResult, 
 		r.mu.Unlock()
 	}
 	r.refreshConfigStatus(r.o.Config.Get())
-	r.log.Info("server claimed", "owner", res.Owner.Username, "method", res.Method)
+	r.log.Info("server claimed", "owner", res.Owner.Username)
 	r.Trigger()
 	return res, nil
 }
@@ -1100,6 +1256,23 @@ func (r *Registrar) Unclaim(ctx context.Context) error {
 // the claim. Without the release the old account keeps the device record
 // and a later claim by another account is refused by plex.tv with 401s.
 func (r *Registrar) onConfig(c config.Config) {
+	enabled := plexAppsEnabled(c)
+	r.publicationMu.Lock()
+	changed := r.publicationEnabled != enabled
+	r.publicationEnabled = enabled
+	if !enabled && r.publicationCancel != nil {
+		r.publicationCancel()
+	}
+	r.publicationMu.Unlock()
+	if changed {
+		select {
+		case r.presenceWake <- struct{}{}:
+		default:
+		}
+		if enabled {
+			r.RequestPublish()
+		}
+	}
 	r.mu.Lock()
 	prev := r.claimedToken
 	if c.Plex.Claimed {
@@ -1221,7 +1394,7 @@ func (r *Registrar) onPubsub(m PubsubMessage) {
 	case "refreshCertificate":
 		r.schedule(taskCert, time.Time{})
 		r.Trigger()
-	case "notifyResetToken", "notifyAccountChange":
+	case "notifyResetToken", "notifyAccountChange", "notifySharingChange", "notifyHomeChange":
 		r.schedule(taskFriends, time.Time{})
 		r.Trigger()
 	default:

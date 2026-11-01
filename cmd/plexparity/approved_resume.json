@@ -1,0 +1,155 @@
+[
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:61000:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3a767b9bf73342e147c3891419bd01737b8d20365fff1716451c7e65b02fb8db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bb7b2cb373a80077d3c103d45bb86bf07c99dcef19c3eef6e1e92f0909b98948"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:120000:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3a767b9bf73342e147c3891419bd01737b8d20365fff1716451c7e65b02fb8db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ea37669a29849e9a781bfea6ba0d0c27244a5d3badfd1bfe940732bea98119dc"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:201274:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3a767b9bf73342e147c3891419bd01737b8d20365fff1716451c7e65b02fb8db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4d8d209a224d9f638d13995bf092afd9cd0d30d9d66003cd9ec2b8ffa3c59c0a"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:61000:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "a716eb13ddf598fdab944af31320909da57782a82b4f9e81044d4751147e3998"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ad7d352c0ff0531694991c5689c1a5b64fe65c46ddcb00376a211add80a4b4a4"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:61000:continue",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "8336abd842544ff311798e40c33f7c906a4509150dcb56b1016e6bbb6a383996"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ece91e141d301a78a5e2e82591e14b2154050bbb90bdca3007bab0185c188e46"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:120000:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "a716eb13ddf598fdab944af31320909da57782a82b4f9e81044d4751147e3998"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9174253b51e0b14c630f70d0de7bb06a7244834be3d99de8708b858a77355d6a"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:120000:continue",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "8336abd842544ff311798e40c33f7c906a4509150dcb56b1016e6bbb6a383996"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "562ba1f9396b23be05ab1bf3d41841ab787f39bccef93d272a8877da82b870d4"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:201274:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "a716eb13ddf598fdab944af31320909da57782a82b4f9e81044d4751147e3998"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ae48197abe1a20ee76500c9410115b676cb8894d94214bc89027c348b2ea9664"
+    },
+    "commit": "1d5a1ff6"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "playback:infuse-resume:201274:continue",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "8336abd842544ff311798e40c33f7c906a4509150dcb56b1016e6bbb6a383996"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9e848fcea16a446f72dd18f3d6b63cbf6696407fb14068df69da617ea0f99f5a"
+    },
+    "commit": "1d5a1ff6"
+  }
+]

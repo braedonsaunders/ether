@@ -73,7 +73,7 @@ func (c *Catalog) CrowdRecommendations(ctx context.Context, key core.RatingKey, 
 		out, err := c.titlesByKeys(ctx, keys)
 		return out, false, err
 	}
-	if !fetch || c.client == nil {
+	if !fetch || c.tmdb() == nil {
 		if keys == nil {
 			return nil, false, nil
 		}
@@ -132,7 +132,7 @@ func (c *Catalog) fetchCrowd(ctx context.Context, key core.RatingKey, pages int)
 		total := 0
 		switch key.Kind() {
 		case core.KindMovie:
-			res, err := c.client.MovieRecommendations(ctx, id, p)
+			res, err := c.tmdb().MovieRecommendations(ctx, id, p)
 			if err != nil {
 				if p > 1 {
 					return out, nil // page 1 is the list that matters
@@ -144,7 +144,7 @@ func (c *Catalog) fetchCrowd(ctx context.Context, key core.RatingKey, pages int)
 			}
 			total = res.TotalPages
 		default:
-			res, err := c.client.TVRecommendations(ctx, id, p)
+			res, err := c.tmdb().TVRecommendations(ctx, id, p)
 			if err != nil {
 				if p > 1 {
 					return out, nil
@@ -292,13 +292,8 @@ func (c *Catalog) titlesByKeys(ctx context.Context, keys []core.RatingKey) ([]co
 		}
 		if c.writeGen.Load() == gen {
 			c.cacheMu.Lock()
-			if len(c.titleCache) >= 8192 {
-				c.titleCache = map[core.RatingKey]cachedStoredTitle{}
-			}
 			for _, t := range ts {
-				if t.Key.Kind() == core.KindMovie {
-					c.titleCache[t.Key] = cachedStoredTitle{st: storedTitle{t: cloneTitle(t)}, gen: gen, minute: minBucket}
-				}
+				c.putSnapshotLocked(t.Key, gen, minBucket, storedTitle{t: cloneTitle(t)})
 			}
 			c.cacheMu.Unlock()
 		}

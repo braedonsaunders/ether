@@ -59,7 +59,9 @@ func (m *Manager) pinLoop() {
 		<-m.ctx.Done()
 		return
 	}
-	m.reconcileAndLog()
+	if m.ctx.Err() == nil {
+		m.reconcileAndLog()
+	}
 	t := time.NewTicker(m.opts.PinInterval)
 	defer t.Stop()
 	for {
@@ -68,12 +70,16 @@ func (m *Manager) pinLoop() {
 			return
 		case <-t.C:
 		case <-m.pinKick:
-			// Debounce bursts of session ends.
+			// Debounce bursts of session ends. Cancellation ends the wait;
+			// a fired debounce must not start another reconcile after stop.
 			select {
 			case <-m.ctx.Done():
 				return
 			case <-time.After(2 * time.Second):
 			}
+		}
+		if m.ctx.Err() != nil {
+			return
 		}
 		m.reconcileAndLog()
 	}
@@ -143,6 +149,8 @@ func (m *Manager) ReconcilePins(ctx context.Context) error {
 	if m.resume == nil {
 		return nil
 	}
+	m.waitResumeSaves()
+	m.resume.payload.scheduleRecovery()
 	recs, err := m.resume.all(ctx)
 	if err != nil {
 		return err
@@ -173,6 +181,9 @@ func (m *Manager) ReconcilePins(ctx context.Context) error {
 	cands := map[string]*pinCandidate{}
 	var expired []resumeRecord
 	for _, rec := range recs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		progress := false
 		active := rec.updatedAt
 		if inProgress[rec.key] {

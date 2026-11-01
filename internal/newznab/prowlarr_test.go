@@ -243,6 +243,87 @@ func TestProwlarrDiscovery429FutureHTTPDateRetryAfter(t *testing.T) {
 	}
 }
 
+func TestProwlarrTagFilterKeepsIndexersWithAnyChosenTag(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.RequestURI())
+		if r.URL.Path != "/api/v1/indexer" || r.URL.RawQuery != "" {
+			t.Errorf("discovery must only read the indexer list, got %s", r.URL.RequestURI())
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		fmt.Fprint(w, `[
+			{"id":4,"name":"News","enable":true,"protocol":"usenet","tags":[1,3]},
+			{"id":5,"name":"Other","enable":true,"protocol":"usenet","tags":[2]},
+			{"id":6,"name":"Both","enable":true,"protocol":"torrent","tags":[1]},
+			{"id":7,"name":"None","enable":true,"protocol":"usenet","tags":[]},
+			{"id":8,"name":"Off","enable":false,"protocol":"usenet","tags":[1]},
+			{"id":4,"name":"News again","enable":true,"protocol":"usenet","tags":[1]}
+		]`)
+	}))
+	defer srv.Close()
+	cfg := config.Prowlarr{URL: srv.URL, APIKey: "k", Tags: []int{1, 1, 0}}
+	report, err := DiscoverProwlarrReport(context.Background(), cfg, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Indexers) != 2 || report.Indexers[0].ID == report.Indexers[1].ID {
+		t.Fatalf("indexers %+v", report.Indexers)
+	}
+	got := []string{report.Indexers[0].Name, report.Indexers[1].Name}
+	if !strings.Contains(got[0], "News") || !strings.Contains(got[1], "Both") || !report.Indexers[1].IsTorrent() {
+		t.Fatalf("names %+v", report.Indexers)
+	}
+	prefix := ProwlarrIDPrefix(cfg)
+	// Present still lists every enabled indexer once, including ones the tag left out.
+	wantPresent := []string{prefix + "4", prefix + "5", prefix + "6", prefix + "7"}
+	if !slices.Equal(report.PresentIDs, wantPresent) {
+		t.Fatalf("present=%v want %v", report.PresentIDs, wantPresent)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("calls %v", paths)
+	}
+}
+
+func TestProwlarrEmptyTagListImportsEveryEnabledIndexer(t *testing.T) {
+	const body = `[{"id":4,"name":"News","enable":true,"protocol":"usenet","tags":[1]},{"id":5,"name":"Other","enable":true,"protocol":"torrent","tags":[2]}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, body)
+	}))
+	defer srv.Close()
+	for _, tags := range [][]int{nil, {}, {0, -3}} {
+		report, err := DiscoverProwlarrReport(context.Background(), config.Prowlarr{URL: srv.URL, APIKey: "k", Tags: tags}, Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Indexers) != 2 {
+			t.Fatalf("tags %v indexers %+v", tags, report.Indexers)
+		}
+	}
+}
+
+func TestProwlarrListTags(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/tag" {
+			t.Errorf("path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Header.Get("X-Api-Key") != "k" {
+			t.Error("missing auth")
+		}
+		fmt.Fprint(w, `[{"id":2,"label":"anime"},{"id":1,"label":"Ether"},{"id":1,"label":"Ether"},{"id":3,"label":"  "},{"id":0,"label":"nope"}]`)
+	}))
+	defer srv.Close()
+	tags, err := ListProwlarrTags(context.Background(), config.Prowlarr{URL: srv.URL, APIKey: "k"}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 2 || tags[0].Label != "anime" || tags[1].ID != 1 {
+		t.Fatalf("tags %+v", tags)
+	}
+}
+
 // ProwlarrIDPrefix validates like discovery: unusable URLs yield "".
 func TestProwlarrIDPrefixValidatesLikeDiscovery(t *testing.T) {
 	for _, raw := range []string{

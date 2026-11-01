@@ -25,6 +25,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -85,6 +86,7 @@ type Service struct {
 	mu       sync.Mutex
 	airGate  chan struct{} // context-aware admission to serialized air-date refreshes
 	members  map[int64]*memberSet
+	failed   map[buildKey]time.Time
 	flights  flight.Group[buildKey, *memberSet]
 	personal map[string]personalEntry
 
@@ -178,7 +180,7 @@ func New(db *sql.DB, cat core.Catalog, log *slog.Logger, opts ...Option) (*Servi
 	}
 	s := &Service{db: db, cat: cat, log: log, now: time.Now,
 		liveTTL: 2 * time.Minute, tick: time.Minute, buildBudget: 20 * time.Second,
-		members: map[int64]*memberSet{}, personal: map[string]personalEntry{}, airGate: make(chan struct{}, 1),
+		members: map[int64]*memberSet{}, failed: map[buildKey]time.Time{}, personal: map[string]personalEntry{}, airGate: make(chan struct{}, 1),
 		opts: options{indexTTL: 2 * time.Minute}}
 	for _, fn := range opts {
 		fn(s)
@@ -190,6 +192,9 @@ func New(db *sql.DB, cat core.Catalog, log *slog.Logger, opts ...Option) (*Servi
 	s.names = newNameResolver(db, s.api, s.now)
 	s.mirror = catalog.NewMirror(db, s.now)
 	s.idx = newIndex(db, s.now, s.opts.indexTTL)
+	if g, ok := cat.(interface{ WriteGeneration() uint64 }); ok {
+		s.idx.gen = g.WriteGeneration
+	}
 	ua := s.opts.userAgent
 	if ua == "" {
 		ua = "Ether (+https://github.com/braedonsaunders/ether)"
@@ -298,6 +303,11 @@ func (s *Service) cached(id int64) *memberSet {
 func (s *Service) invalidate(id int64) {
 	s.mu.Lock()
 	delete(s.members, id)
+	for k := range s.failed {
+		if k.id == id {
+			delete(s.failed, k)
+		}
+	}
 	for k := range s.personal {
 		if pe := s.personal[k]; pe.id == id {
 			delete(s.personal, k)
@@ -306,13 +316,37 @@ func (s *Service) invalidate(id int64) {
 	s.mu.Unlock()
 }
 
+func (s *Service) recentlyFailed(bk buildKey) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.failed[bk]
+	if !ok {
+		return false
+	}
+	ttl := s.liveTTL
+	if ttl <= 0 {
+		ttl = 2 * time.Minute
+	}
+	if s.now().Sub(at) < ttl {
+		return true
+	}
+	delete(s.failed, bk)
+	return false
+}
+
 // membersFor returns a row's members, building when it never was built,
 // was edited, or (live) the cached evaluation expired.
 func (s *Service) membersFor(ctx context.Context, row *specRow, wait bool) (*memberSet, error) {
 	if key, ok := localFacetSpec(row.spec); ok {
-		snap, err := s.idx.get(ctx)
-		if err != nil {
-			return nil, err
+		snap := s.idx.ready()
+		if snap == nil {
+			if !wait {
+				return nil, errNotBuilt
+			}
+			var err error
+			if snap, err = s.idx.get(ctx); err != nil {
+				return nil, err
+			}
 		}
 		keys := append([]core.RatingKey(nil), snap.facetKeys(key)...)
 		row.itemCount = len(keys)
@@ -336,6 +370,13 @@ func (s *Service) membersFor(ctx context.Context, row *specRow, wait bool) (*mem
 		s.members[row.id] = ms
 		s.mu.Unlock()
 		return ms, nil
+	}
+	bk := buildKey{row.id, row.rawSpec}
+	if s.recentlyFailed(bk) {
+		if ms != nil {
+			return ms, nil
+		}
+		return nil, errNotBuilt
 	}
 	if !wait {
 		go func() {
@@ -380,15 +421,19 @@ var errBuildSuperseded = errors.New("collection changed during build")
 // same row share one evaluation.
 func (s *Service) build(ctx context.Context, row *specRow) (*memberSet, error) {
 	// The evaluation is shared, so it must not die with the first caller.
-	return s.flights.DoDetached(ctx, buildKey{row.id, row.rawSpec}, func(ctx context.Context) (*memberSet, error) {
+	bk := buildKey{row.id, row.rawSpec}
+	return s.flights.DoDetached(ctx, bk, func(ctx context.Context) (*memberSet, error) {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 		ms, err := s.buildNow(ctx, row)
+		s.mu.Lock()
 		if err == nil {
-			s.mu.Lock()
 			s.members[row.id] = ms
-			s.mu.Unlock()
+			delete(s.failed, bk)
+		} else if !errors.Is(err, context.Canceled) {
+			s.failed[bk] = s.now()
 		}
+		s.mu.Unlock()
 		return ms, err
 	})
 }
@@ -417,6 +462,11 @@ func (s *Service) buildNow(ctx context.Context, row *specRow) (*memberSet, error
 	res, err := s.evaluate(ctx, row.spec, evalOptions{seed: row.spec.Name, persist: true, prior: prior})
 	if err != nil {
 		return nil, err
+	}
+	for _, w := range row.warnings {
+		if strings.Contains(w, "has a damaged value and was skipped") && !slices.Contains(res.warnings, w) {
+			res.warnings = append(res.warnings, w)
+		}
 	}
 	resolved := row.rawSpec
 	if !row.builtin && resolvedChanged(row.spec, res.resolved) {
@@ -467,8 +517,11 @@ func (s *Service) serve(ctx context.Context, row *specRow, user *core.User, wait
 	if err != nil {
 		return nil, err
 	}
-	snap := s.idx.current()
+	snap := s.idx.ready()
 	if snap == nil {
+		if !wait {
+			return nil, errNotBuilt
+		}
 		if snap, err = s.idx.get(ctx); err != nil {
 			return nil, err
 		}

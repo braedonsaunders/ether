@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // TV Shows → Recommended: series-centric lenses. A series is a commitment,
@@ -76,7 +76,7 @@ func (b *builder) genNewSeasons() []*candRow {
 				best = s
 			}
 		}
-		if best.Season == 0 || !recommend.ContentRatingAllowed(e.Title.ContentRating, b.user.MaxContentRating) {
+		if best.Season == 0 || !contentrating.Allowed(e.Title.ContentRating, b.user.MaxContentRating) {
 			continue
 		}
 		// Only for viewers caught up on what came before (most of the
@@ -154,7 +154,7 @@ func (b *builder) genFinishShow() []*candRow {
 		if idle < stalledAfter || idle > 540*24*time.Hour {
 			continue
 		}
-		if !recommend.ContentRatingAllowed(t.ContentRating, b.user.MaxContentRating) {
+		if !contentrating.Allowed(t.ContentRating, b.user.MaxContentRating) {
 			continue
 		}
 		progress := float64(e.Completions) / float64(t.LeafCount)
@@ -501,7 +501,7 @@ func (b *builder) genStandalone() []*candRow {
 		if !ep.Released.IsZero() && ep.Released.After(b.now) {
 			continue
 		}
-		if !recommend.ContentRatingAllowed(ep.ContentRating, b.user.MaxContentRating) {
+		if !contentrating.Allowed(ep.ContentRating, b.user.MaxContentRating) {
 			continue
 		}
 		if ws := b.statuses[ep.Key]; ws.ViewCount > 0 || ws.ViewOffset > 0 {

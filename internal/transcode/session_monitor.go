@@ -4,12 +4,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
+var missingFilterRE = regexp.MustCompile(`(?i)(?:no such filter:\s*['"]?([a-z0-9_]+)|filter ['"]([a-z0-9_]+)['"] not found)`)
+
 // watch polls a run's output for finished segments until ffmpeg exits.
 func (s *Session) watch(r *run) {
+	defer func() {
+		s.mu.Lock()
+		unusedStop := r.stopWork
+		r.stopWork = nil
+		s.mu.Unlock()
+		unusedStop.finish()
+		r.watchWork.finish()
+	}()
 	defer s.watchers.Done()
 	t := time.NewTicker(s.m.opts.pollInterval)
 	defer t.Stop()
@@ -157,18 +168,111 @@ func (s *Session) progressedLocked(r *run) {
 		s.failErr = nil
 	}
 	s.maybeGovernLocked()
-	// A run that reached its plan's mode boundary (fast-start ramp ->
-	// steady, copy -> clamp, ...) stops there and the next mode's run
-	// starts immediately, so the switch segment has no startup gap.
-	if s.cur == r && r.planEnd > 0 && r.maxDone >= r.planEnd-1 && (s.total == 0 || r.planEnd < s.total) && s.endSeg < 0 {
-		next := r.planEnd
-		s.log.Debug("plan mode boundary; chaining run", "segment", next, "fromMode", r.mode)
-		if err := s.startRunLocked(next, false); err != nil {
-			s.log.Warn("chain run at mode boundary", "segment", next, "err", err)
-		}
-	}
+	s.chainOrHoldLocked(r)
 	s.throttleLocked()
 	s.broadcastLocked()
+}
+
+// chainOrHoldLocked starts the next plan run when this one has reached its
+// mode boundary and the client is close enough to need it. A forced-key
+// cap (maxForcedKeySegments) is the same kind of boundary: reaching it
+// while the player is still minutes behind must not start that far run or
+// the encoder head becomes the only window left on disk.
+func (s *Session) chainOrHoldLocked(r *run) {
+	if !s.boundaryReadyLocked(r) {
+		return
+	}
+	next := r.planEnd
+	if !s.clientNearLocked(next) {
+		s.log.Info("transcode run reached its segment cap ahead of the player", "segment", next, "playhead", s.lastReq)
+		s.stopRunForLocked("segment cap ahead of player")
+		s.resumeAt = next
+		return
+	}
+	s.log.Debug("plan mode boundary; chaining run", "segment", next, "fromMode", r.mode, "playhead", s.lastReq)
+	if err := s.startRunForLocked(next, false, "plan boundary"); err != nil {
+		s.log.Warn("chain run at mode boundary", "segment", next, "err", err)
+	}
+}
+
+// boundaryReadyLocked reports that run r filled up to its plan boundary
+// and another run is what produces the following segment.
+// emptyRestartCap is how many consecutive ffmpeg starts that publish
+// nothing are allowed before the session stops looping. The first is
+// the GOP-boundary hole (seek landed on the previous keyframe); the
+// second is a real short file or a dead source window.
+const emptyRestartCap = 2
+
+func (s *Session) handleEmptyRestartLocked(r *run) {
+	log := s.log.With("run", r.seq)
+	s.emptyRuns++
+	s.emptyAt = r.startSeg
+	next := r.startSeg + 1
+	if s.emptyRuns >= emptyRestartCap {
+		if s.lastReal >= 0 {
+			s.endSeg = s.lastReal
+		} else {
+			s.endSeg = r.startSeg - 1
+		}
+		log.Info("ffmpeg finished", "lastSegment", s.endSeg, "emptyRestarts", s.emptyRuns, "reason", "empty restart cap: run produced no new segment")
+		return
+	}
+	aliased := s.publishBoundaryAliasLocked(r.startSeg)
+	if aliased {
+		log.Info("transcode restart produced no new segment; serving previous GOP and advancing", "segment", r.startSeg, "next", next, "emptyRestarts", s.emptyRuns)
+	} else {
+		log.Info("transcode restart produced no new segment; advancing", "segment", r.startSeg, "next", next, "emptyRestarts", s.emptyRuns)
+	}
+	if s.total > 0 && next >= s.total {
+		if s.lastReal >= 0 {
+			s.endSeg = s.lastReal
+		} else {
+			s.endSeg = r.startSeg - 1
+		}
+		log.Info("ffmpeg finished", "lastSegment", s.endSeg)
+		return
+	}
+	if s.clientNearLocked(next) {
+		if err := s.startRunForLocked(next, false, "empty restart advance"); err != nil {
+			s.failErr = err
+		}
+		return
+	}
+	s.resumeAt = next
+}
+
+func (s *Session) publishBoundaryAliasLocked(n int) bool {
+	t := 0
+	if t >= len(s.done) || n <= 0 || !s.done[t][n-1] {
+		return false
+	}
+	if s.done[t][n] {
+		return true
+	}
+	dst := s.trackSegPath(t, n)
+	if s.container == ContainerMatroska {
+		if os.WriteFile(dst, emptyCluster(s.segStart(n)+matroskaOrigin), 0o644) != nil {
+			return false
+		}
+	} else if linkOrCopy(s.trackSegPath(t, n-1), dst) != nil {
+		return false
+	}
+	s.done[t][n] = true
+	return true
+}
+
+func (s *Session) boundaryReadyLocked(r *run) bool {
+	return s.cur == r && r.planEnd > 0 && r.maxDone >= r.planEnd-1 && (s.total == 0 || r.planEnd < s.total) && s.endSeg < 0
+}
+
+// clientNearLocked reports that the player is close enough to seg that the
+// next run has to be producing it. With throttling disabled the encoder is
+// allowed to run the whole title, and the boundary chains as before.
+func (s *Session) clientNearLocked(seg int) bool {
+	if s.m == nil || s.m.opts.maxAhead <= 0 || s.segDur <= 0 {
+		return true
+	}
+	return seg-s.lastReq <= s.aheadLimit()
 }
 
 // finish records a run's exit and reacts to failures: a hardware encoder
@@ -176,7 +280,7 @@ func (s *Session) progressedLocked(r *run) {
 // failure is retried once with a larger probe, and a mid-stream failure is
 // reported to the failure handler (playback fails over to another release).
 func (s *Session) finish(r *run) {
-	err := r.proc.Err()
+	err := redactScopedCommandError(r.proc.Err(), r.spec)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.finished = true
@@ -185,6 +289,13 @@ func (s *Session) finish(r *run) {
 	defer s.broadcastLocked()
 	if s.closed || r.stopped {
 		return
+	}
+	if s.traceOn() {
+		why := "eof"
+		if err != nil {
+			why = "error"
+		}
+		s.log.Info("ffmpeg run", "event", "stop", "reason", why, "run", r.seq, "segment", r.startSeg, "maxDone", r.maxDone, "planEnd", r.planEnd, "playhead", s.lastReq, "err", err)
 	}
 	log := s.log.With("run", r.seq)
 	if err == nil {
@@ -195,18 +306,54 @@ func (s *Session) finish(r *run) {
 		// A run bounded by a plan mode boundary that produced up to it
 		// has not hit the end of the input: chain the next mode's run
 		// when the player is in (or near) this run's range.
-		if r.planEnd > 0 && r.produced > 0 && r.maxDone >= r.planEnd-1 && (s.total == 0 || r.planEnd < s.total) && s.cur == r {
-			if s.lastReq >= r.startSeg {
-				log.Debug("ffmpeg finished at plan boundary; chaining", "segment", r.planEnd)
-				if err := s.startRunLocked(r.planEnd, false); err != nil {
+		if s.boundaryReadyLocked(r) && r.produced > 0 {
+			if s.clientNearLocked(r.planEnd) {
+				// Chain even when the player has not fetched this run yet.
+				// A governor clamp (or any mode boundary) starts the run
+				// ahead of the playhead; declaring EOF there drops the rest
+				// of the title.
+				log.Debug("ffmpeg finished at plan boundary; chaining", "segment", r.planEnd, "playhead", s.lastReq)
+				if err := s.startRunForLocked(r.planEnd, false, "plan boundary exit"); err != nil {
 					s.failErr = err
 				}
 				return
 			}
+			// The process exited at the cap. This is not the end of the
+			// input; resume there once the player arrives.
+			s.resumeAt = r.planEnd
+			log.Info("transcode run reached its segment cap ahead of the player", "segment", r.planEnd, "playhead", s.lastReq)
+			return
 		}
-		// ffmpeg reached the end of the input.
+		// ffmpeg reached the end of this run's input. That is not the
+		// end of the title when the playlist still lists later
+		// segments: a remux of a cached debrid source often EOFs after
+		// one buffered window (lab: 620–692 of 730). Declaring endSeg
+		// there 404s the next sequential fetch and the player sits on
+		// "seeking". Hold a resume, or chain if the playhead is already
+		// there. A run that produced nothing at n is a GOP-boundary
+		// hole or a real short file: alias n and advance once, then
+		// cap (lab: 143 empty restarts at 695 → 502).
 		if r.produced > 0 {
+			s.emptyRuns = 0
+			s.emptyAt = -1
+			s.lastReal = r.maxDone
+			if s.total > 0 && r.maxDone < s.total-1 {
+				next := r.maxDone + 1
+				if s.clientNearLocked(next) {
+					log.Info("transcode run ended before the title; continuing", "segment", next, "playhead", s.lastReq, "total", s.total)
+					if err := s.startRunForLocked(next, false, "title continues"); err != nil {
+						s.failErr = err
+					}
+					return
+				}
+				s.resumeAt = next
+				log.Info("transcode run ended before the title", "lastSegment", r.maxDone, "resumeAt", next, "playhead", s.lastReq, "total", s.total)
+				return
+			}
 			s.endSeg = r.maxDone
+		} else if s.total > 0 && r.startSeg > 0 && r.startSeg < s.total {
+			s.handleEmptyRestartLocked(r)
+			return
 		} else {
 			s.endSeg = r.startSeg - 1
 		}
@@ -220,7 +367,7 @@ func (s *Session) finish(r *run) {
 	}
 	if r.rtx && r.produced == 0 && !s.inputFailed {
 		s.fallbackRTXLocked("native VSR run failed before producing segments", r.startSeg)
-		if err := s.startRunLocked(r.startSeg, r.spec.BigProbe); err != nil {
+		if err := s.startRunForLocked(r.startSeg, r.spec.BigProbe, "rtx fallback"); err != nil {
 			s.failErr = err
 		}
 		return
@@ -230,10 +377,21 @@ func (s *Session) finish(r *run) {
 		s.decision.Enhancement.Reason = "native VSR input/process failed"
 	}
 	if r.produced == 0 {
+		if name := missingFilter(stderr); name != "" {
+			if s.tryNextGraphLocked(r, name) {
+				return
+			}
+			_ = s.reportGraphLocked(&GraphError{Message: filterUnavailableMessage(name)})
+			return
+		}
+		if namelessFilterMiss(stderr) {
+			_ = s.reportGraphLocked(&GraphError{Message: "FFmpeg rejected a filter in this graph. The same graph will not be retried."})
+			return
+		}
 		if r.hw && !s.forceCPU && looksLikeEncoderFailure(stderr, r.spec) {
 			s.forceCPU = true
 			log.Warn("hardware encoder failed; falling back to CPU", "hwaccel", r.spec.Accel.Name)
-			if err := s.startRunLocked(r.startSeg, r.spec.BigProbe); err != nil {
+			if err := s.startRunForLocked(r.startSeg, r.spec.BigProbe, "hardware fallback"); err != nil {
 				s.failErr = err
 			}
 			return
@@ -241,7 +399,7 @@ func (s *Session) finish(r *run) {
 		s.failures++
 		s.failErr = fmt.Errorf("ffmpeg: %w: %s", err, tail(stderr, 300))
 		if s.failures == 1 {
-			if err := s.startRunLocked(r.startSeg, true); err != nil {
+			if err := s.startRunForLocked(r.startSeg, true, "start retry"); err != nil {
 				s.failErr = err
 			}
 			return
@@ -279,4 +437,86 @@ func looksLikeEncoderFailure(stderr string, spec runSpec) bool {
 		}
 	}
 	return false
+}
+
+func missingFilter(stderr string) string {
+	m := missingFilterRE.FindStringSubmatch(stderr)
+	if len(m) == 0 {
+		return ""
+	}
+	if m[1] != "" {
+		return m[1]
+	}
+	if len(m) > 2 {
+		return m[2]
+	}
+	return ""
+}
+
+func namelessFilterMiss(stderr string) bool {
+	l := strings.ToLower(stderr)
+	return strings.Contains(l, "filter not found") || strings.Contains(l, "no such filter")
+}
+
+// tryNextGraphLocked drops a filter ffmpeg says is missing and starts the
+// next graph when that graph is different. It reports a terminal graph
+// error itself when nothing else can play the video.
+func (s *Session) tryNextGraphLocked(r *run, name string) bool {
+	if s.deniedFilters == nil {
+		s.deniedFilters = map[string]bool{}
+	}
+	if s.deniedFilters[name] || s.filterFallbacks >= 4 {
+		return false
+	}
+	s.deniedFilters[name] = true
+	s.filterFallbacks++
+	next := r.spec
+	next.Features = s.featuresLocked()
+	if err := graphFailure(next); err != nil {
+		_ = s.reportGraphLocked(err)
+		return true
+	}
+	if filterGraph(buildArgs(next)) == filterGraph(buildArgs(r.spec)) {
+		return false
+	}
+	s.log.Warn("ffmpeg filter missing; trying the next graph", "filter", name, "run", r.seq)
+	if err := s.startRunForLocked(r.startSeg, false, "filter fallback"); err != nil {
+		s.failErr = err
+	}
+	return true
+}
+
+func (s *Session) reportGraphLocked(err error) error {
+	if err == nil {
+		return nil
+	}
+	s.failErr = err
+	s.inputFailed = true
+	s.failures = 2
+	if s.m != nil {
+		s.m.noteGraphError(err)
+	}
+	if s.graphReported || s.closed {
+		return err
+	}
+	s.graphReported = true
+	if s.log != nil {
+		s.log.Warn("transcode graph rejected", "err", err)
+	}
+	if s.m == nil {
+		return err
+	}
+	at := s.segStart(0)
+	if s.cur != nil {
+		at = s.segStart(s.cur.next())
+	}
+	id, input, ferr := s.id, s.input, err
+	if h := s.m.opts.onInputFailure; h != nil {
+		go h(id, input, at, ferr)
+		return err
+	}
+	if h := s.m.opts.onFailure; h != nil {
+		go h(id, at, ferr)
+	}
+	return err
 }

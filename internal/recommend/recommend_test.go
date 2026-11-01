@@ -144,18 +144,18 @@ func (f fakeCollections) DeleteSmart(context.Context, core.RatingKey) error { re
 // ---- fixture ---------------------------------------------------------------
 
 var (
-	arrival  = core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Arrival", Year: 2016, Genres: []string{"Sci-Fi", "Drama"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 7.6, Popularity: 50, Released: time.Date(2016, 11, 1, 0, 0, 0, 0, time.UTC)}
-	dune     = core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, Title: "Dune", Year: 2021, Genres: []string{"Sci-Fi", "Adventure"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 8.0, Popularity: 90, CollectionID: 55, CollectionName: "Dune Collection", Released: time.Date(2021, 10, 1, 0, 0, 0, 0, time.UTC)}
-	dune2    = core.Title{Key: core.MovieKey(3), Type: core.TypeMovie, Title: "Dune: Part Two", Year: 2024, Genres: []string{"Sci-Fi", "Adventure"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 8.3, Popularity: 95, CollectionID: 55, CollectionName: "Dune Collection", Released: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)}
-	comedy   = core.Title{Key: core.MovieKey(4), Type: core.TypeMovie, Title: "Silly Comedy", Year: 2023, Genres: []string{"Comedy"}, Language: "en", Rating: 6.0, Popularity: 80, Released: time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC)}
+	arrival  = core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Arrival", Year: 2016, Genres: []string{"Sci-Fi", "Drama"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 7.6, Popularity: 50, Released: time.Date(2016, 11, 1, 0, 0, 0, 0, time.UTC), ContentRating: "PG-13"}
+	dune     = core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, Title: "Dune", Year: 2021, Genres: []string{"Sci-Fi", "Adventure"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 8.0, Popularity: 90, CollectionID: 55, CollectionName: "Dune Collection", Released: time.Date(2021, 10, 1, 0, 0, 0, 0, time.UTC), ContentRating: "PG-13"}
+	dune2    = core.Title{Key: core.MovieKey(3), Type: core.TypeMovie, Title: "Dune: Part Two", Year: 2024, Genres: []string{"Sci-Fi", "Adventure"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 8.3, Popularity: 95, CollectionID: 55, CollectionName: "Dune Collection", Released: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), ContentRating: "PG-13"}
+	comedy   = core.Title{Key: core.MovieKey(4), Type: core.TypeMovie, Title: "Silly Comedy", Year: 2023, Genres: []string{"Comedy"}, Language: "en", Rating: 6.0, Popularity: 80, Released: time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC), ContentRating: "PG-13"}
 	goryR    = core.Title{Key: core.MovieKey(5), Type: core.TypeMovie, Title: "Gory Sci-Fi", Year: 2022, Genres: []string{"Sci-Fi", "Horror"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 8.5, Popularity: 70, ContentRating: "R"}
-	sever    = core.Title{Key: core.ShowKey(9), Type: core.TypeShow, Title: "Severance", Year: 2022, Genres: []string{"Sci-Fi", "Thriller"}, Language: "en", Rating: 8.4, Popularity: 85}
-	ep1      = core.Title{Key: core.EpisodeKey(9, 1, 1), Type: core.TypeEpisode, Title: "Ep1", ShowTitle: "Severance", Season: 1, Episode: 1}
-	ep2      = core.Title{Key: core.EpisodeKey(9, 1, 2), Type: core.TypeEpisode, Title: "Ep2", ShowTitle: "Severance", Season: 1, Episode: 2}
-	ep3      = core.Title{Key: core.EpisodeKey(9, 1, 3), Type: core.TypeEpisode, Title: "Ep3", ShowTitle: "Severance", Season: 1, Episode: 3}
-	inProg   = core.Title{Key: core.MovieKey(6), Type: core.TypeMovie, Title: "Half Watched", Year: 2020, Genres: []string{"Drama"}, Popularity: 10}
-	newMovie = core.Title{Key: core.MovieKey(7), Type: core.TypeMovie, Title: "Brand New", Year: 2026, Genres: []string{"Drama"}, Popularity: 5, Released: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
-	sicario  = core.Title{Key: core.MovieKey(8), Type: core.TypeMovie, Title: "Sicario", Year: 2015, Genres: []string{"Thriller", "Drama"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 7.4, Popularity: 40, Released: time.Date(2015, 9, 1, 0, 0, 0, 0, time.UTC)}
+	sever    = core.Title{Key: core.ShowKey(9), Type: core.TypeShow, Title: "Severance", Year: 2022, Genres: []string{"Sci-Fi", "Thriller"}, Language: "en", Rating: 8.4, Popularity: 85, ContentRating: "TV-14"}
+	ep1      = core.Title{Key: core.EpisodeKey(9, 1, 1), Type: core.TypeEpisode, Title: "Ep1", ShowTitle: "Severance", Season: 1, Episode: 1, ContentRating: "TV-14"}
+	ep2      = core.Title{Key: core.EpisodeKey(9, 1, 2), Type: core.TypeEpisode, Title: "Ep2", ShowTitle: "Severance", Season: 1, Episode: 2, ContentRating: "TV-14"}
+	ep3      = core.Title{Key: core.EpisodeKey(9, 1, 3), Type: core.TypeEpisode, Title: "Ep3", ShowTitle: "Severance", Season: 1, Episode: 3, ContentRating: "TV-14"}
+	inProg   = core.Title{Key: core.MovieKey(6), Type: core.TypeMovie, Title: "Half Watched", Year: 2020, Genres: []string{"Drama"}, Popularity: 10, ContentRating: "PG-13"}
+	newMovie = core.Title{Key: core.MovieKey(7), Type: core.TypeMovie, Title: "Brand New", Year: 2026, Genres: []string{"Drama"}, Popularity: 5, Released: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), ContentRating: "PG-13"}
+	sicario  = core.Title{Key: core.MovieKey(8), Type: core.TypeMovie, Title: "Sicario", Year: 2015, Genres: []string{"Thriller", "Drama"}, Directors: []core.Person{{TMDB: 100, Name: "Villeneuve"}}, Language: "en", Rating: 7.4, Popularity: 40, Released: time.Date(2015, 9, 1, 0, 0, 0, 0, time.UTC), ContentRating: "PG-13"}
 )
 
 func fixture(t *testing.T) (*Recommender, *state.State, *core.User) {
@@ -251,18 +251,16 @@ func TestRelatedHubs(t *testing.T) {
 	}
 }
 
-func TestContentRatingAllowed(t *testing.T) {
-	cases := []struct {
-		rating, max string
-		want        bool
-	}{
-		{"R", "PG-13", false}, {"PG", "PG-13", true}, {"TV-MA", "TV-14", false},
-		{"TV-14", "PG-13", true}, {"", "PG-13", true}, {"R", "", true}, {"NR", "G", true}, {"G", "G", true}, {"NC-17", "R", false},
+// A restricted viewer's limit compares age levels and never admits
+// unrated titles, the same rule the PMS boundary enforces.
+func TestFilterTitlesByLevel(t *testing.T) {
+	in := []core.Title{{Key: 1, ContentRating: "TV-14"}, {Key: 2, ContentRating: "R"}, {Key: 3}, {Key: 4, ContentRating: "NR"}, {Key: 5, ContentRating: "gb/12A"}, {Key: 6, ContentRating: "PG"}}
+	got := keysOf(FilterTitles(in, &core.User{MaxContentRating: "PG-13"}))
+	if len(got) != 3 || got[0] != 1 || got[1] != 5 || got[2] != 6 {
+		t.Fatalf("FilterTitles = %v", got)
 	}
-	for _, tc := range cases {
-		if got := ContentRatingAllowed(tc.rating, tc.max); got != tc.want {
-			t.Errorf("ContentRatingAllowed(%q,%q)=%v want %v", tc.rating, tc.max, got, tc.want)
-		}
+	if len(FilterTitles(in, &core.User{})) != len(in) {
+		t.Fatal("no limit filtered")
 	}
 }
 

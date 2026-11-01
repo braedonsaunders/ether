@@ -1,0 +1,378 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"image"
+	_ "image/jpeg" // TMDB backdrops are JPEG
+	_ "image/png"
+	"log/slog"
+	"math"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/lru"
+
+	"github.com/braedonsaunders/ether/internal/store"
+)
+
+func init() {
+	store.Register("plex", 1, `CREATE TABLE plex_ultrablur (
+		key          INTEGER PRIMARY KEY,
+		backdrop     TEXT    NOT NULL,
+		top_left     TEXT    NOT NULL,
+		top_right    TEXT    NOT NULL,
+		bottom_right TEXT    NOT NULL,
+		bottom_left  TEXT    NOT NULL,
+		computed_at  INTEGER NOT NULL
+	)`)
+}
+
+const (
+	ultraBlurImageSize   = "w300"
+	ultraBlurEntries     = 50000
+	ultraBlurRetry       = time.Hour
+	ultraBlurTimeout     = 30 * time.Second
+	ultraBlurWorkers     = 2
+	ultraBlurQueueLen    = 512
+	ultraBlurPreloadMax  = 500 // keys per batched DB lookup
+	ultraBlurDBQueryTime = 2 * time.Second
+)
+
+type ultraBlurEntry struct {
+	key      core.RatingKey
+	path     string
+	colors   *Palette // nil after a failure
+	failedAt time.Time
+}
+
+type PaletteCache struct {
+	db      *sql.DB // optional
+	submit  func(string, func(context.Context)) bool
+	now     func() time.Time
+	log     *slog.Logger
+	compute func(ctx context.Context, key core.RatingKey, path string) (Palette, error)
+
+	mu    sync.Mutex
+	items *lru.Cache[core.RatingKey, *ultraBlurEntry]
+}
+
+func NewPaletteCache(db *sql.DB, submit func(string, func(context.Context)) bool, now func() time.Time, log *slog.Logger, compute func(context.Context, core.RatingKey, string) (Palette, error)) *PaletteCache {
+	return &PaletteCache{db: db, submit: submit, now: now, log: log, compute: compute, items: lru.New(lru.Options[core.RatingKey, *ultraBlurEntry]{MaxEntries: ultraBlurEntries})}
+}
+
+// lookup returns the colours of key's backdrop path, or nil when they are
+// not known yet (scheduling their computation).
+func (c *PaletteCache) Lookup(key core.RatingKey, path string) *Palette {
+	if path == "" || key == 0 {
+		return nil
+	}
+	c.mu.Lock()
+	if e, ok := c.items.Peek(key); ok {
+		if e.path == path {
+			c.items.Get(key)
+			if e.colors != nil {
+				cp := *e.colors
+				c.mu.Unlock()
+				return &cp
+			}
+			if c.now().Sub(e.failedAt) < ultraBlurRetry {
+				c.mu.Unlock()
+				return nil
+			}
+		}
+	}
+	c.mu.Unlock()
+	c.schedule(key, path)
+	return nil
+}
+
+func (c *PaletteCache) schedule(key core.RatingKey, path string) {
+	c.submit("ultrablur:"+strconv.FormatInt(int64(key), 10), func(ctx context.Context) {
+		if colors, ok := c.loadOne(ctx, key, path); ok {
+			c.set(key, path, &colors)
+			return
+		}
+		cctx, cancel := context.WithTimeout(ctx, ultraBlurTimeout)
+		defer cancel()
+		colors, err := c.compute(cctx, key, path)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			c.log.Debug("ultrablur compute failed", "key", key, "path", path, "err", err)
+			c.set(key, path, nil)
+			return
+		}
+		c.set(key, path, &colors)
+		c.save(ctx, key, path, colors)
+	})
+}
+
+func (c *PaletteCache) set(key core.RatingKey, path string, colors *Palette) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e := &ultraBlurEntry{key: key, path: path, colors: colors}
+	if colors == nil {
+		e.failedAt = c.now()
+	}
+	c.items.Add(key, e)
+}
+
+// ultraBlurWant is one item a listing is about to render.
+type PaletteWant struct {
+	Key  core.RatingKey
+	Path string
+}
+
+// preload fills the memory cache from the database for items it doesn't
+// hold yet, in one query, so a restart doesn't recompute anything and a
+// listing's first render already has colours computed earlier.
+func (c *PaletteCache) Preload(ctx context.Context, wants []PaletteWant) {
+	if c.db == nil || len(wants) == 0 {
+		return
+	}
+	c.mu.Lock()
+	missing := map[core.RatingKey]string{}
+	for _, w := range wants {
+		if w.Path == "" || w.Key == 0 {
+			continue
+		}
+		if e, ok := c.items.Peek(w.Key); ok && e.path == w.Path {
+			continue
+		}
+		missing[w.Key] = w.Path
+		if len(missing) >= ultraBlurPreloadMax {
+			break
+		}
+	}
+	c.mu.Unlock()
+	if len(missing) == 0 {
+		return
+	}
+	args := make([]any, 0, len(missing))
+	for k := range missing {
+		args = append(args, int64(k))
+	}
+	qctx, cancel := context.WithTimeout(ctx, ultraBlurDBQueryTime)
+	defer cancel()
+	rows, err := c.db.QueryContext(qctx, `SELECT key, backdrop, top_left, top_right, bottom_right, bottom_left FROM plex_ultrablur WHERE key IN (`+placeholders(len(args))+`)`, args...)
+	if err != nil {
+		if ctx.Err() == nil {
+			c.log.Debug("ultrablur preload", "err", err)
+		}
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k int64
+		var path string
+		var u Palette
+		if err := rows.Scan(&k, &path, &u.TopLeft, &u.TopRight, &u.BottomRight, &u.BottomLeft); err != nil {
+			return
+		}
+		if missing[core.RatingKey(k)] == path {
+			c.set(core.RatingKey(k), path, &u)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		c.log.Debug("ultrablur preload", "err", err)
+	}
+}
+
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat("?,", n-1) + "?"
+}
+
+func (c *PaletteCache) loadOne(ctx context.Context, key core.RatingKey, path string) (Palette, bool) {
+	var u Palette
+	if c.db == nil {
+		return u, false
+	}
+	qctx, cancel := context.WithTimeout(ctx, ultraBlurDBQueryTime)
+	defer cancel()
+	err := c.db.QueryRowContext(qctx, `SELECT top_left, top_right, bottom_right, bottom_left FROM plex_ultrablur WHERE key = ? AND backdrop = ?`, int64(key), path).
+		Scan(&u.TopLeft, &u.TopRight, &u.BottomRight, &u.BottomLeft)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) && ctx.Err() == nil {
+			c.log.Debug("ultrablur load", "key", key, "err", err)
+		}
+		return u, false
+	}
+	return u, true
+}
+
+func (c *PaletteCache) save(ctx context.Context, key core.RatingKey, path string, u Palette) {
+	if c.db == nil {
+		return
+	}
+	qctx, cancel := context.WithTimeout(ctx, ultraBlurDBQueryTime)
+	defer cancel()
+	_, err := c.db.ExecContext(qctx, `INSERT INTO plex_ultrablur (key, backdrop, top_left, top_right, bottom_right, bottom_left, computed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET backdrop = excluded.backdrop, top_left = excluded.top_left, top_right = excluded.top_right,
+			bottom_right = excluded.bottom_right, bottom_left = excluded.bottom_left, computed_at = excluded.computed_at`,
+		int64(key), path, u.TopLeft, u.TopRight, u.BottomRight, u.BottomLeft, c.now().Unix())
+	if err != nil && ctx.Err() == nil {
+		c.log.Warn("ultrablur save", "key", key, "err", err)
+	}
+}
+
+// CollectionArt is generated collection artwork. Smart-collection UltraBlur
+// colours come from that image when it exists.
+type CollectionArt interface {
+	CollectionArtwork(context.Context, *core.User, core.RatingKey, string, int) ([]byte, string, bool, error)
+}
+
+// ComputeItemPalette derives UltraBlur colours for one catalogue item.
+// A smart collection uses its generated art (custom collection art) when the
+// lookup returns bytes; every other item uses the backdrop path.
+func ComputeItemPalette(ctx context.Context, cache *RemoteCache, imageURL core.ImageURLFunc, key core.RatingKey, path string, now time.Time, art CollectionArt) (Palette, error) {
+	if key.Kind() == core.KindSmart && art != nil {
+		if data, _, ok, err := art.CollectionArtwork(ctx, &core.User{ID: 1, IsOwner: true}, key, "art", 300); err == nil && ok && len(data) > 0 {
+			decoded, _, decErr := image.Decode(bytes.NewReader(data))
+			if decErr != nil {
+				return Palette{}, fmt.Errorf("decode collection art %d: %w", key, decErr)
+			}
+			return PaletteFromImage(decoded)
+		}
+	}
+	return ComputePalette(ctx, cache, imageURL, path, now)
+}
+
+// ComputePalette fetches a backdrop's small variant through the artwork
+// cache and derives its corner colours.
+func ComputePalette(ctx context.Context, cache *RemoteCache, imageURL core.ImageURLFunc, path string, now time.Time) (Palette, error) {
+	// The artwork cache finishes a fetch even if its first caller goes
+	// away (others may be waiting on it), so wait here with ctx: shutdown
+	// must not block on a slow CDN.
+	type result struct {
+		img *RemoteImage
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		img, err := cache.Get(ctx, imageURL(path, ultraBlurImageSize), now)
+		ch <- result{img, err}
+	}()
+	var img *RemoteImage
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			return Palette{}, r.err
+		}
+		img = r.img
+	case <-ctx.Done():
+		return Palette{}, ctx.Err()
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(img.Data))
+	if err != nil {
+		return Palette{}, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return PaletteFromImage(decoded)
+}
+
+// PaletteFromImage averages each quadrant of img and tones the averages
+// like PMS's UltraBlur palette.
+func PaletteFromImage(img image.Image) (Palette, error) {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w < 2 || h < 2 {
+		return Palette{}, errors.New("image too small")
+	}
+	type rect struct{ x0, y0, x1, y1 int }
+	quads := [4]rect{
+		{0, 0, w / 2, h / 2}, // top left
+		{w / 2, 0, w, h / 2}, // top right
+		{w / 2, h / 2, w, h}, // bottom right
+		{0, h / 2, w / 2, h}, // bottom left
+	}
+	var hex [4]string
+	for i, q := range quads {
+		var r, g, bl, n float64
+		for y := q.y0; y < q.y1; y++ {
+			for x := q.x0; x < q.x1; x++ {
+				cr, cg, cb, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
+				r += float64(cr)
+				g += float64(cg)
+				bl += float64(cb)
+				n++
+			}
+		}
+		// RGBA() is 16-bit per channel.
+		hex[i] = ultraBlurTone(r/n/257, g/n/257, bl/n/257)
+	}
+	return Palette{TopLeft: hex[0], TopRight: hex[1], BottomRight: hex[2], BottomLeft: hex[3]}, nil
+}
+
+// ultraBlurTone maps an average colour (0-255 channels) into the range PMS's
+// UltraBlur colours occupy: lightness compressed to roughly 0.10-0.45 and
+// saturation lifted, keeping the hue. Near-grey averages stay near grey.
+func ultraBlurTone(r, g, b float64) string {
+	h, s, l := rgbToHSL(r/255, g/255, b/255)
+	l = 0.10 + 0.35*l
+	if s > 0.03 {
+		s = math.Min(1, s*1.4+0.15)
+	}
+	rr, gg, bb := hslToRGB(h, s, l)
+	return fmt.Sprintf("%02x%02x%02x", clampByte(rr*255), clampByte(gg*255), clampByte(bb*255))
+}
+
+func clampByte(v float64) int {
+	return int(math.Max(0, math.Min(255, math.Round(v))))
+}
+
+// rgbToHSL converts 0-1 channels to hue (0-360), saturation and lightness.
+func rgbToHSL(r, g, b float64) (h, s, l float64) {
+	mx := math.Max(r, math.Max(g, b))
+	mn := math.Min(r, math.Min(g, b))
+	l = (mx + mn) / 2
+	if mx == mn {
+		return 0, 0, l
+	}
+	d := mx - mn
+	s = d / (1 - math.Abs(2*l-1))
+	switch mx {
+	case r:
+		h = math.Mod((g-b)/d, 6)
+	case g:
+		h = (b-r)/d + 2
+	default:
+		h = (r-g)/d + 4
+	}
+	h *= 60
+	if h < 0 {
+		h += 360
+	}
+	return h, s, l
+}
+
+func hslToRGB(h, s, l float64) (r, g, b float64) {
+	c := (1 - math.Abs(2*l-1)) * s
+	x := c * (1 - math.Abs(math.Mod(h/60, 2)-1))
+	m := l - c/2
+	switch {
+	case h < 60:
+		r, g, b = c, x, 0
+	case h < 120:
+		r, g, b = x, c, 0
+	case h < 180:
+		r, g, b = 0, c, x
+	case h < 240:
+		r, g, b = 0, x, c
+	case h < 300:
+		r, g, b = x, 0, c
+	default:
+		r, g, b = c, 0, x
+	}
+	return r + m, g + m, b + m
+}

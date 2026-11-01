@@ -64,6 +64,11 @@ export interface FieldGroup {
   title?: string;
   description?: string;
   fields: FieldDef[];
+  /**
+   * Same section, shown only after "More options". Use for controls a
+   * household can leave at their defaults.
+   */
+  more?: FieldDef[];
 }
 
 const UNIT_BYTES = { GiB: 1024 ** 3, MiB: 1024 ** 2 } as const;
@@ -215,7 +220,9 @@ export function SchemaField({
           description={description}
         >
           <ListInput
+            id={id}
             ariaLabel={def.label}
+            invalid={Boolean(error)}
             value={(value as (string | number)[] | null) ?? []}
             onChange={onChange}
             placeholder={def.placeholder}
