@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -161,6 +162,75 @@ func TestRegistrarFriendSyncIntervalAndSharingHomePubsub(t *testing.T) {
 	}
 	if got := f.count("GET /api/v2/server/access_tokens"); got != before+2 {
 		t.Fatalf("post-window unknown-token sync fetches = %d, want %d", got, before+2)
+	}
+}
+
+func TestRegistrarNeverPublishesCGNATOrJunkCustomURLs(t *testing.T) {
+	f := newFakePlexTV(t, testMachineID)
+	f.addUser("server-token-42", owner())
+	cfg := testConfig()
+	cfg.Plex.Token = "server-token-42"
+	cfg.Plex.OwnerPlexID = 42
+	cfg.Plex.Claimed = true
+	cfg.Plex.RemoteAccess = true
+	cfg.Plex.CustomURLs = []string{
+		"http://100.88.1.9:32400",
+		"https://plex.example.com:8443",
+		"[http://192.168.1.5:32400](http://192.168.1.5:32400/)",
+	}
+
+	r, err := NewRegistrar(RegistrarOptions{
+		Config: &memConfig{cfg: cfg},
+		Client: newServerClient(t, f),
+		WAN:    &fakeWAN{ip: "100.64.0.9"},
+		Mapper: &fakeMapper{},
+		LAN: func() ([]net.IP, error) {
+			return []net.IP{net.ParseIP("192.168.1.5"), net.ParseIP("100.100.1.2")}, nil
+		},
+		PeerURIs: func() []string {
+			return []string{"http://100.77.1.3:32400", "http://192.168.1.6:32400"}
+		},
+		Logger: discardLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.PublishNow(context.Background()); err != nil {
+		t.Fatalf("PublishNow: %v", err)
+	}
+
+	wantPublished := []string{
+		"http://192.168.1.5:32400",
+		"https://plex.example.com:8443",
+		"http://192.168.1.6:32400",
+	}
+	if !slices.Equal(f.published, wantPublished) {
+		t.Fatalf("published URIs = %v, want %v", f.published, wantPublished)
+	}
+	if len(f.registered) == 0 {
+		t.Fatal("expected servers.xml registration")
+	}
+	for _, forbidden := range []string{"100.100.1.2", "100.88.1.9", "100.77.1.3", "100.64.0.9"} {
+		if strings.Contains(f.registered[0], forbidden) {
+			t.Fatalf("servers.xml leaked CGNAT address %s: %s", forbidden, f.registered[0])
+		}
+	}
+
+	// CGNAT addresses remain in Status().Connections as local entries so local/Tailscale use keeps working.
+	st := r.Status()
+	hasLocalTailscaleLAN := false
+	hasLocalTailscaleCustom := false
+	for _, c := range st.Connections {
+		if c.URI == "http://100.100.1.2:32400" && c.Local {
+			hasLocalTailscaleLAN = true
+		}
+		if c.URI == "http://100.88.1.9:32400" && c.Local && c.Custom {
+			hasLocalTailscaleCustom = true
+		}
+	}
+	if !hasLocalTailscaleLAN || !hasLocalTailscaleCustom {
+		t.Fatalf("expected CGNAT LAN and custom URLs to remain locally usable in Connections, got %+v", st.Connections)
 	}
 }
 

@@ -715,14 +715,22 @@ func (r *Registrar) connections(cfg config.Config) []remote.Connection {
 // local, and synthesises the https plex.direct variants (https only when
 // httpsRequired is set). A published plex.direct hostname is stored as a
 // non-local address, so clients would list a LAN server as Remote.
+// CGNAT (100.64.0.0/10, including Tailscale) addresses are never published to
+// plex.tv because plex.tv rejects the whole device update when one is present.
 func publishable(cs []remote.Connection, includePlexDirect bool) []string {
 	var out []string
 	add := func(uri string) {
+		if !remote.IsPublishableURI(uri) {
+			return
+		}
 		if !slices.Contains(out, uri) {
 			out = append(out, uri)
 		}
 	}
 	for _, c := range cs {
+		if ip := net.ParseIP(c.Address); ip != nil && remote.IsCGNAT(ip) {
+			continue
+		}
 		if c.Protocol == "https" && !c.Custom {
 			if c.Address != "" && c.Port > 0 {
 				add("http://" + net.JoinHostPort(c.Address, strconv.Itoa(c.Port)))
@@ -842,11 +850,16 @@ func (r *Registrar) PublishNow(ctx context.Context) error {
 	}
 	conns, uris := r.publishSet(cfg)
 	if r.o.PeerURIs != nil {
-		uris = mergeURIs(uris, r.o.PeerURIs())
+		for _, peerURI := range r.o.PeerURIs() {
+			if remote.IsPublishableURI(peerURI) {
+				uris = mergeURIs(uris, []string{peerURI})
+			}
+		}
 	}
 	if len(uris) == 0 {
 		err := errors.New("plextv: no connection addresses to publish")
 		r.mu.Lock()
+		r.st.Connections = conns
 		r.st.LastPublish = r.o.Now()
 		r.st.LastPublishError = err.Error()
 		r.mu.Unlock()
@@ -900,17 +913,23 @@ func (r *Registrar) PublishNow(ctx context.Context) error {
 	} else {
 		mapping = "unmapped"
 	}
+	var localAddrs []string
+	for _, addr := range lan {
+		if ip := net.ParseIP(addr); ip != nil && !remote.IsCGNAT(ip) {
+			localAddrs = append(localAddrs, addr)
+		}
+	}
 	reg := ServerRegistration{
-		Name: cfg.Server.FriendlyName, Version: r.o.Version, LocalAddresses: mergeURIs(lan, r.peerLANAddrs()), MappingState: mapping,
+		Name: cfg.Server.FriendlyName, Version: r.o.Version, LocalAddresses: mergeURIs(localAddrs, r.peerLANAddrs()), MappingState: mapping,
 		PrivatePort: serverPort(cfg),
 		Libraries:   libraries,
 	}
-	if len(lan) > 0 {
-		reg.PrivateAddress = lan[0]
+	if len(localAddrs) > 0 {
+		reg.PrivateAddress = localAddrs[0]
 	}
 	if cfg.Plex.RemoteAccess {
 		reg.Port = r.wanPort(cfg)
-		if net.ParseIP(wan) != nil {
+		if ip := net.ParseIP(wan); ip != nil && !remote.IsCGNAT(ip) {
 			reg.Address = wan
 		}
 	}

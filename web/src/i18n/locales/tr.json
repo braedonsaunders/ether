@@ -2283,6 +2283,7 @@
   "m_0dd72fc99d2ec6": "Arama başarısız oldu",
   "m_0dd823f235ffc3": "{field}: son {value}",
   "m_0ddbd68d097288": "Daha fazla kişi görmek için başka bir durum seçin veya arama yapın.",
+  "m_0de03683c24947": "Virgülle ayrılmış tam http:// veya https:// sunucu URL'leri girin.",
   "m_0de47c9c2db4b9": "Bu ağda kalan adlar",
   "m_0de4bfec9b4424": "Debrid bağlı, ama henüz bir torrent kaynağı ayarlanmadı. {action}",
   "m_0de6dca824c89a": "Kaynak {number} öğesini kullan",

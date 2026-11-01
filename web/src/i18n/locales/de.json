@@ -2283,6 +2283,7 @@
   "m_0dd72fc99d2ec6": "Suche fehlgeschlagen",
   "m_0dd823f235ffc3": "{field} in den letzten {value}",
   "m_0ddbd68d097288": "Wähle einen anderen Status oder suche, um mehr Personen zu sehen.",
+  "m_0de03683c24947": "Geben Sie vollständige http://- oder https://-Server-URLs durch Kommas getrennt ein.",
   "m_0de47c9c2db4b9": "Namen, die in diesem Netz bleiben",
   "m_0de4bfec9b4424": "Debrid ist verbunden, aber es ist noch keine Torrent-Quelle eingerichtet. {action}",
   "m_0de6dca824c89a": "Quelle {number} verwenden",

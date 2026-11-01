@@ -138,6 +138,7 @@ func BuildConnections(o BuildOptions) []Connection {
 		if ip == nil {
 			return
 		}
+		local = local || IsCGNAT(ip)
 		v6 := ip.To4() == nil
 		addr := ip.String()
 		if wantHTTPS {
@@ -171,15 +172,40 @@ func BuildConnections(o BuildOptions) []Connection {
 
 // ParseCustomURL validates an owner-supplied connection URL.
 func ParseCustomURL(raw string) (Connection, error) {
-	u, err := url.Parse(strings.TrimSpace(raw))
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return Connection{}, fmt.Errorf("custom url %q: empty", raw)
+	}
+	if len(s) > 512 || strings.HasPrefix(s, "[") || strings.ContainsAny(s, " \t\r\n()<>\"'\\|?#") {
+		return Connection{}, fmt.Errorf("custom url %q: must be an http(s) server URL", raw)
+	}
+	u, err := url.Parse(s)
 	if err != nil {
 		return Connection{}, err
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return Connection{}, fmt.Errorf("custom url %q: scheme must be http or https", raw)
 	}
-	if u.Hostname() == "" {
+	if u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return Connection{}, fmt.Errorf("custom url %q: must not include credentials, query or fragment", raw)
+	}
+	if u.Path != "" && u.Path != "/" {
+		return Connection{}, fmt.Errorf("custom url %q: must not include a path", raw)
+	}
+	host := u.Hostname()
+	if host == "" {
 		return Connection{}, fmt.Errorf("custom url %q: missing host", raw)
+	}
+	if strings.HasSuffix(u.Host, ":") {
+		return Connection{}, fmt.Errorf("custom url %q: bad port", raw)
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.To4() != nil && strings.ContainsAny(u.Host, "[]") {
+			return Connection{}, fmt.Errorf("custom url %q: invalid host", raw)
+		}
+	} else if strings.ContainsAny(u.Host, "[]") || !isValidDNSName(host) {
+		return Connection{}, fmt.Errorf("custom url %q: invalid host", raw)
 	}
 	port := 80
 	if u.Scheme == "https" {
@@ -192,18 +218,71 @@ func ParseCustomURL(raw string) (Connection, error) {
 		}
 		port = n
 	}
-	u.Path = strings.TrimRight(u.Path, "/")
+	u.Path = ""
+	u.RawPath = ""
 	u.RawQuery, u.Fragment = "", ""
-	ip := net.ParseIP(u.Hostname())
+	resolvedIP := ip
+	if resolvedIP == nil {
+		if pdIP, _, ok := ParsePlexDirectHost(host); ok {
+			resolvedIP = pdIP
+		}
+	}
 	return Connection{
 		Protocol: u.Scheme,
-		Address:  u.Hostname(),
+		Address:  host,
 		Port:     port,
 		URI:      u.String(),
-		Local:    ip != nil && (ip.IsPrivate() || ip.IsLoopback()),
-		IPv6:     ip != nil && ip.To4() == nil,
+		Local:    resolvedIP != nil && (resolvedIP.IsPrivate() || resolvedIP.IsLoopback() || IsCGNAT(resolvedIP)),
+		IPv6:     resolvedIP != nil && resolvedIP.To4() == nil,
 		Custom:   true,
 	}, nil
+}
+
+// IsPublishableURI reports whether raw is a valid connection URI that may be
+// published to plex.tv. CGNAT (100.64.0.0/10, including Tailscale) addresses
+// remain usable locally but are never sent to plex.tv.
+func IsPublishableURI(raw string) bool {
+	c, err := ParseCustomURL(raw)
+	if err != nil {
+		return false
+	}
+	if ip := net.ParseIP(c.Address); ip != nil {
+		return !IsCGNAT(ip)
+	}
+	if ip, _, ok := ParsePlexDirectHost(c.Address); ok {
+		return !IsCGNAT(ip)
+	}
+	return true
+}
+
+func isValidDNSName(host string) bool {
+	if host == "" || len(host) > 253 || strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") {
+		return false
+	}
+	labels := strings.Split(host, ".")
+	for _, label := range labels {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+				return false
+			}
+		}
+	}
+	last := labels[len(labels)-1]
+	allDigits := true
+	for i := 0; i < len(last); i++ {
+		if last[i] < '0' || last[i] > '9' {
+			allDigits = false
+			break
+		}
+	}
+	return !allDigits
 }
 
 // URIs extracts the URI of each connection.

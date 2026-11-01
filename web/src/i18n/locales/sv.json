@@ -2283,6 +2283,7 @@
   "m_0dd72fc99d2ec6": "Sökningen misslyckades",
   "m_0dd823f235ffc3": "{field} de senaste {value}",
   "m_0ddbd68d097288": "Välj en annan status eller sök för att se fler personer.",
+  "m_0de03683c24947": "Ange fullständiga server-URL:er med http:// eller https://, separerade med kommatecken.",
   "m_0de47c9c2db4b9": "Namn som stannar på det här nätverket",
   "m_0de4bfec9b4424": "Debrid är anslutet, men ingen torrentkälla är inställd ännu. {action}",
   "m_0de6dca824c89a": "Använd källa {number}",

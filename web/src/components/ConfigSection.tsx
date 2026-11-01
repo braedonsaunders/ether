@@ -1,5 +1,5 @@
 import { SettingsSection, Spinner, toast } from "@braedonsaunders/appkit-ui";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useApp } from "../app-context";
 import { t } from "../i18n";
 import { api, ApiError } from "../lib/api";
@@ -19,13 +19,18 @@ type Obj = Record<string, unknown>;
 export function MoreOptions({
   label,
   text,
+  hasError = false,
   children,
 }: {
   label: string;
   text?: string;
+  hasError?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (hasError) setOpen(true);
+  }, [hasError]);
   return (
     <div className="border-t border-border">
       <button
@@ -178,6 +183,7 @@ export function ConfigSection({
             {g.more?.length ? (
               <MoreOptions
                 label={g.title ? t("More options: {title}", { title: g.title }) : t("More options")}
+                hasError={g.more.some((f) => Boolean(errors[`${configKey}.${f.key}`]))}
               >
                 {g.more.map((f, j) => renderField(f, `more-${f.key}-${j}`))}
               </MoreOptions>
