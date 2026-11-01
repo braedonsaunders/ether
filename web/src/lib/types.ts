@@ -234,6 +234,7 @@ export interface EtherConfig {
     ownerPlexId: number;
     ownerUsername: string;
     claimed: boolean;
+    usePlexMetadata?: boolean;
     remoteAccess: boolean;
     useUpnp: boolean;
     publicPort: number;

@@ -5455,6 +5455,9 @@
   "m_1fd48c40608e24": "Usługa poprosiła Ether, żeby poczekał. Najpierw próbowane są inne konta, a to ponawia samo.",
   "m_1fd6e9040f9cb9": {
     "few": "{count} ukończone",
+  "m_0222a7e49fb0bb": "Plex apps use Plex's details when a title is matched. Other apps stay on TMDB.",
+  "m_0514715a519ee0": "Use Plex's metadata for Plex apps",
+  "m_18ce6fc7682991": "Claim this server to turn this on.",
     "many": "{count} ukończonych",
     "one": "{count} ukończone",
     "other": "{count} ukończonego"
