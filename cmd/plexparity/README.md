@@ -101,9 +101,9 @@ world are the documented set, now exact pairs in `approved_v0258.json` and
 - `/devices` owner device list (`createdAt` stamped from the server clock by
   `91f5756f6`) and non-owner `403 Forbidden`: 50 and 50 (`32e51bfaf`).
 - HLS playback documents (`start.m3u8`, `media-playlist`, `reconnect-playlist`,
-  `seek-master`, and `seek-playlist` for remux and transcode) carrying
-  `&X-Ether-Read-Token=<READ-TOKEN>` alongside `X-Ether-Stream-Token`: 250 and
-  250 (`32e51bfaf`).
+  `seek-master`, `seek-playlist`, and `subtitle:start`) carrying
+  `&X-Ether-Read-Token=<READ-TOKEN>` alongside `X-Ether-Stream-Token`: 275 and
+  275 (`32e51bfaf`).
 - DASH manifest (`playback:dash:manifest`) carrying
   `&amp;X-Ether-Read-Token=<READ-TOKEN>` (`32e51bfaf`) and `minBufferTime`
   `PT10S` to `PT5S` (`76e1dbce3`, composed as `76e1dbce3+32e51bfaf` against
@@ -231,7 +231,7 @@ Rex batch (`32e51bfaf`, merge of `64ab75605`, plus `eda0de766` and
    container.
 2. HLS and DASH playback documents (`start.m3u8` for remux and transcode,
    `media-playlist`, `reconnect-playlist`, `seek-master`, `seek-playlist`, and
-   `playback:dash:manifest`, 275 pairs per world in `approved_v0258_token.json`):
+   `subtitle:start`, and `playback:dash:manifest`, 300 pairs per world in `approved_v0258_token.json`):
    every media URI gains `&X-Ether-Read-Token=<minted per session>` alongside
    `X-Ether-Stream-Token` (slice H, P5a session read capability, device-bound
    and revoked with the session; masked to `<READ-TOKEN>` by `eda0de766`).

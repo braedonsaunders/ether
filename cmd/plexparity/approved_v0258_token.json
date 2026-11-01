@@ -6543,5 +6543,430 @@
       "sha256": "354abcb4b18babfa048e93fd19d322d5c9a5220409d6dd8cd330d705568ea522"
     },
     "commit": "76e1dbce3+32e51bfaf"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "307b6cf33cff26bba8b43ebb577f3bf9dc667689bdaa7f22f66ec6d92346ea1a"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f90b7198e4c5ca48d5ee988fb771c181ded4b68aa717af6aea4cf6dc42f57f44"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "042c4c7da1ce8a12e5ee51199deb01e39a81a126155e38e547f9511d2ed1ad14"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "77e9fa3673c2f424570eeb1f64616ee7a85d928881ec494c40a497fa9e36e564"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "6573646d956ad64e5dcae428659728d1edea42cf734bbc1c13b26661b1c6024b"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "a47545b2b2b0458c489ce8b5961d37af74fa8682ea91a1cded3d6814ab3bf66e"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "33ac218f2f43f754aae23ee42094d5653ed61cdc459861666ef6adf67d428046"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "fddc98f9a280afb9fb978855fc6daf5ba7a7e7d631c9833dbac6ed4a73e2865e"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "787d274e04216c920441312b6c0f605c3fd37e1ad7ad946a6c4fc9cd2c5acde4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "4e176afc5845acc03fbcc72e83a2ed15378bd23c59daf9166f599182fbd98988"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "e13bf15cf1d7edd07380883621f4545dc6d98f653310c6b3fa798d38281929f7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "cf9e512343635c0ca3717a6a06bf5401ff074afd323f413f898a39d6559b0f43"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "ad2594e8993e3cd79585c74a39a9e27a3860f653fccce6142b8c3b676280bd7e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "2aabffb383b4b94ba66ac26ff0f65be56134344dea34b569d4389492bbea1c91"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "14091ae769e0867a95eb545dcb650a757ba432950c55d5539a991e2ce1698413"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f5da9db866570c0303a3c2beec0b458831cb662e221e8a6c732e50a628fa3d7f"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "400b20b83dcad21fae72afd2340dc38ba0d01830e586bb900a75355f853af047"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f855d10866b133312687a1a283055f717cafdd0abe89823c42c942a9be4bab5c"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f4d34e0e5e1d44ca5d5a9b018bb7c64ce340d1161260e45905c1a98338da62d0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "046b9aedd16cd63b826bddf66691d74b38721fc9ab850a91c4d69ab8a4fa2fcf"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "bc6eb97d88b59a88c150ee5cedec324b8e784f70b64bbd3502e9bbf03635b30f"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "c80a4e5118baabcd32458394f27f002cfe5ae781feb5ae7e88d5b63e1617444b"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "4f916d62996f8534b97b70ae6c8eebfaf35f7c7f286a32c6b78156d2546abe61"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "30bb22da3123b75627107ff29d58e9b33d172795ed4f447e0287e83a8bc388a1"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "757629d6d17ec3a94a64355ff28b103f95bfe756c6d7a7b2371c7e20956922f2"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3bddcbb67cb4428d3157227ace29d73f206add7e3dcd844be469c66962437041"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "312e68e688702f404548671e5f2e013dd36ad8b873aadc50f0225ce5a7451827"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3876cdf1403f1cf2e376c0f3341136eccc42dab2ca248cce3a55f89bef2b270c"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "bc81777fc6e7e9c6ad21aeb314657899cc99ae9dc606a908299af2eb3d388c46"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "a982c2c33b0e352bf2d25aaf099b21e9b0dd62a2b091b24d17633ffb5cc615f1"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "188baad823e4853cf5b21ec5e7baa5d0b7097c124066930b8ae01328d3f6a161"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "387a954451a9238b8641008adc796637c96b0e394b64ebdb1be43429790b3bd8"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "daba64d0f7e297c7f1379a38740f8591181b339d3371bb953234cd08268a0f5d"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "ba912200162151c7ad70a6c8b195c6183608c63a8f59baa84f97e7f9fadec0b7"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "e3ba18c46d0bba22c7472cbc8d3af7d5d903508292a25cb13f1b3c7be2920c76"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f36f3bc17286183e28c20c39f38f1ddf7c19248faae605d7af60336e36fb4297"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "67716d71ad372fc6d33214c78c5207d4360e3da5d84a30752526065cf52f1950"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "380667e583a8090c90ad96c859f410205063c12270323c7ecc4c39662d3e65e8"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "d08297eb585d9167b84aec6b9f4e2a6377d86d2ec1e4b71113463519e6a8505a"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "aac711c3344c610af77580109c1fa0f6813cbf4a03afe17e478cf7a775d94c85"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "d05952a7f01f6522c72c5e96e93849c32b497a0afdc7f62fec5c5563bfe299a0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "7ebf1c42fbc79efac308a0d45d9927562591025cdf4aaa5c97a2ddbbd657ea2a"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "cd14ed706e94b20e5b69d58b6b4c8d17cc61a5be200e0c957bf08c1d7917b631"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "87d9d9e56b9acca10befae1f1c6938726ee3fefa526d4c7d303b60f845a6e017"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b6045e52233d5f7c87b6ce43caa4947222f221f0c95b86f1dadd371bd7efd4d7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "52f47371619dce73d895f106313b9aae27169bf628d735d9946f8d92d2631828"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "007e620eb11ddd406d97e29751418986c016f7743e759f2750f26b1e66437ef5"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "33d9250dfa1ae03bef88bf12c70285e50f12c9ab80305632b05a118c664d3f96"
+    },
+    "commit": "32e51bfaf"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "subtitle:start",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b42e648ad5facdc49b1747205fd61acccb032df7d2295195186b2842821042e3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "249a137bbe77fa685676e4b59060f040d3c865c1853f065ece8048d1da18a65c"
+    },
+    "commit": "32e51bfaf"
   }
 ]

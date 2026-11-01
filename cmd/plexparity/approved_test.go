@@ -534,8 +534,8 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 	if err := json.Unmarshal(approvedV0258Token, &tokens); err != nil {
 		t.Fatal(err)
 	}
-	if len(tokens) != 385 {
-		t.Fatalf("got %d token pairs, want 385", len(tokens))
+	if len(tokens) != 410 {
+		t.Fatalf("got %d token pairs, want 410", len(tokens))
 	}
 	tokenCommits := map[string]int{}
 	seenTokens := map[approvedDifference]bool{}
@@ -546,7 +546,7 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 		seenTokens[e] = true
 		tokenCommits[e.Commit]++
 	}
-	wantTokenCommits := map[string]int{"9b8fa7546": 60, "32e51bfaf": 275, "76e1dbce3": 25, "76e1dbce3+32e51bfaf": 25}
+	wantTokenCommits := map[string]int{"9b8fa7546": 60, "32e51bfaf": 300, "76e1dbce3": 25, "76e1dbce3+32e51bfaf": 25}
 	if !reflect.DeepEqual(tokenCommits, wantTokenCommits) {
 		t.Fatalf("token commits %v, want %v", tokenCommits, wantTokenCommits)
 	}
