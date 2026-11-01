@@ -194,6 +194,52 @@ func TestPrewarmRejectsMissingOpeningButNotTransientFailure(t *testing.T) {
 	}
 }
 
+type holdPrefetch struct {
+	core.Engine
+	hold chan struct{}
+}
+
+func (e *holdPrefetch) Prefetch(ctx context.Context, _ string, _ []byte, _, _ int64) error {
+	select {
+	case <-e.hold:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestPrepareDoesNotWaitForUsenetOpeningPrefetch(t *testing.T) {
+	h := newHarness(t, []*fakeRelease{mkv("r1", 2<<20, time.Minute)}, []string{"r1"})
+	hold := make(chan struct{})
+	h.m.deps.Engine = &holdPrefetch{Engine: h.engine, hold: hold}
+	t.Cleanup(func() { close(hold) })
+	if !h.m.PreResolve(context.Background(), owner, movieKey, defaultCaps("client")) {
+		t.Fatal("warm skipped")
+	}
+	h.m.mu.Lock()
+	e := h.m.warm[identity{userID: owner.ID, clientID: "client", key: movieKey}]
+	h.m.mu.Unlock()
+	if e == nil {
+		t.Fatal("no warm entry")
+	}
+	select {
+	case <-e.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe did not publish")
+	}
+	start := time.Now()
+	ps, err := h.m.Prepare(context.Background(), owner, movieKey, defaultCaps("client"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Prepare waited %s behind usenet opening prefetch", d)
+	}
+	if ps.Resolution == nil || ps.Resolution.Release.ID != "r1" {
+		t.Fatalf("prepare %+v", ps)
+	}
+}
+
 func TestWaitWarmProbeStopsAtTheCallerBudget(t *testing.T) {
 	user := &core.User{ID: 9}
 	caps := core.ClientCaps{ClientID: "adult"}
