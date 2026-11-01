@@ -2,6 +2,8 @@ package mediabrowser
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/core"
 	"net/http"
@@ -395,5 +397,72 @@ func TestJellyfinPlaybackInfoNamesProbedVideoSource(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
 			t.Fatal(want, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestInfuseEstimatePlaybackInfoAdvertisesStaticDirect(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	sessions := frontendtest.Sessions{PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
+		if !req.Intent.Estimate {
+			t.Fatal("estimate resolved a release")
+		}
+		return frontend.PlayPlan{Estimated: true, DirectPlay: false, DirectStream: true, Transcoding: true, Decision: frontend.Decision{Kind: "copy"}}, nil
+	}, OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+		t.Fatal("estimate opened playback")
+		return frontend.Session{}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":false}`))
+	r.Header.Set("Authorization", `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9", Token="grant"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	var body struct {
+		MediaSources []struct {
+			SupportsDirectPlay   bool
+			SupportsDirectStream bool
+			Protocol             string
+			IsRemote             bool
+		}
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.MediaSources) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	src := body.MediaSources[0]
+	if !src.SupportsDirectPlay || !src.SupportsDirectStream || src.Protocol != "File" || src.IsRemote {
+		t.Fatal(w.Body.String())
+	}
+}
+
+func TestInfuseTranscodeResumePlaybackInfoDoesNot503(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	sessions := frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+		return frontend.PlayPlan{ID: "plan", DirectPlay: false, DirectStream: false, Transcoding: true, Decision: frontend.Decision{Kind: "transcode"}}, nil
+	}, OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+		return frontend.Session{ID: "session"}, nil
+	}, StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+		return "", errors.New("hls failed")
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true,"StartTimeTicks":23000000000}`))
+	r.Header.Set("Authorization", `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9", Token="grant"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	var body struct {
+		MediaSources []struct {
+			SupportsDirectPlay   bool
+			SupportsDirectStream bool
+			Protocol             string
+		}
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.MediaSources) != 1 || !body.MediaSources[0].SupportsDirectPlay || !body.MediaSources[0].SupportsDirectStream || body.MediaSources[0].Protocol != "File" {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }

@@ -34,7 +34,10 @@ func (i *instance) defaultMediaSource(r *http.Request, viewer *frontend.Viewer, 
 		return source
 	}
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
-	if plan.DirectPlay {
+	if i.protocol == "jellyfin" {
+		offerJellyfinStatic(source, planReq.Intent.Options)
+	}
+	if plan.DirectPlay || plan.DirectStream {
 		if path := i.lazySourceURL(r, credential, planReq); path != "" {
 			source["Path"] = path
 		}

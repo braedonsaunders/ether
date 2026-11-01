@@ -522,6 +522,9 @@ func (i *instance) browseRoutes() error {
 				if path := i.lazySourceURL(r, token, plan); path != "" {
 					source["Path"] = path
 				}
+				if i.protocol == "jellyfin" {
+					offerJellyfinStatic(source, frontend.DecideOptions{DirectPlay: true, DirectStream: true})
+				}
 				i.mediaSourceDialect(source)
 				if i.protocol == "emby" {
 					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)

@@ -89,9 +89,10 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	if req.Format == frontend.StreamDirect {
 		// Infuse Static=true is Jellyfin DirectStream: serve the original
-		// file. A remux ("copy") decision is the same bytes; only a
-		// transcode needs HLS instead of this path.
-		if s.decision.Kind == core.DecisionTranscode || (!s.opts.DirectPlay && !s.opts.DirectStream) {
+		// file. Remux is the same bytes. A transcode plan still serves the
+		// file when the client asked for DirectPlay or DirectStream; Infuse
+		// opens /Videos/{id}/stream?Static=true instead of waiting on HLS.
+		if !s.opts.DirectPlay && !s.opts.DirectStream {
 			return "", core.ErrNotAvailable
 		}
 		if b.deps.Transcoder != nil {

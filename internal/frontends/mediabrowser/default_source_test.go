@@ -107,3 +107,34 @@ func TestColdDetailStillOffersGenericSource(t *testing.T) {
 		}
 	}
 }
+
+func TestInfuseDetailOffersStaticWhenPlanRemuxes(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie", Title: "Sintel"}}, nil
+	}}
+	sessions := frontendtest.Sessions{PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
+		if !req.Intent.Estimate {
+			t.Fatal("detail resolved a release")
+		}
+		return frontend.PlayPlan{Estimated: true, DirectPlay: false, DirectStream: true, Transcoding: true, Decision: frontend.Decision{Kind: "copy"}}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Sessions: sessions, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/Items/"+ids.RatingKeyGUID(5)+"?fields=MediaSources,Path", nil)
+	r.Header.Set("Authorization", `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9", Token="grant"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	var body struct {
+		Sources []map[string]any `json:"MediaSources"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Sources) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if body.Sources[0]["SupportsDirectPlay"] != true || body.Sources[0]["SupportsDirectStream"] != true || body.Sources[0]["Protocol"] != "File" || body.Sources[0]["IsRemote"] != false {
+		t.Fatal(body.Sources[0])
+	}
+}
