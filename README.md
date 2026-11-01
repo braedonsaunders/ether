@@ -263,7 +263,7 @@ Open **`http://localhost:32400/ether/`** and complete the setup wizard:
 4. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start).
 5. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api)** and optional integrations (Trakt, Simkl, OpenSubtitles, local Ollama/LM Studio).
 
-**Documentation:** [**Installation & Clustering Guide**](docs/install.md) · [**Owner & User Guide**](docs/user-guide.md) · [**Multi-App Architecture & Watch Party**](docs/apps.md) · [**Performance Architecture**](docs/performance.md) · [**Head-to-Head Scorecard**](docs/scorecard.md) · [**NAS & Homelab Templates**](packaging/community/README.md)
+**Documentation:** [**Installation & Clustering Guide**](docs/install.md) · [**Owner & User Guide**](docs/user-guide.md) · [**Multi-App Architecture & Watch Party**](docs/apps.md) · [**Performance Architecture**](docs/performance.md) · [**NAS & Homelab Templates**](packaging/community/README.md)
 
 ---
 
