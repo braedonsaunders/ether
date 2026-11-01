@@ -72,6 +72,48 @@ func TestPlexLayerExplicitPickWins(t *testing.T) {
 	}
 }
 
+func TestPlexLayerIsBaselineUnderScopedOverride(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	s := New(db, Options{PlexLayer: func(_ context.Context, id int64) (PlexLayer, bool) {
+		if id != 7 {
+			return PlexLayer{}, false
+		}
+		return PlexLayer{AudioLanguage: "ja", AutoSelectAudio: true, SubtitleLanguage: "en", SubtitleMode: "always"}, true
+	}})
+	r, err := s.GetRules(ctx, 7)
+	if err != nil || r.SubtitleMode != "always" || len(r.AudioLanguages) != 1 || r.AudioLanguages[0] != "ja" {
+		t.Fatalf("plex baseline %+v %v", r, err)
+	}
+	off := "off"
+	if err := s.PutScoped(ctx, 7, "device", "tv", ScopedRules{SubtitleMode: &off}); err != nil {
+		t.Fatal(err)
+	}
+	got, sources, err := s.ScopedRulesWithSources(ctx, 7, Scope{Device: "tv"})
+	if err != nil || got.SubtitleMode != "off" || sources["subtitle_mode"] != "device" {
+		t.Fatalf("scoped mode %+v %v %v", got, sources, err)
+	}
+	if sources["audio"] != "plex" || sources["subtitle"] != "plex" {
+		t.Fatalf("plex languages must remain marked plex: %v", sources)
+	}
+	info := core.MediaInfo{Streams: []core.StreamInfo{
+		{Type: "audio", Language: "jpn", Index: 0},
+		{Type: "subtitle", Language: "eng", Index: 2},
+	}}
+	sel, changed, err := s.SelectScoped(ctx, 7, core.MovieKey(1), info, "ja", Scope{Device: "tv"})
+	if err != nil || !changed || sel.Audio != 0 || sel.Subtitle != -1 {
+		t.Fatalf("scoped over plex %+v changed=%v %v", sel, changed, err)
+	}
+	_, onlyPlex, err := s.ScopedRules(ctx, 7, Scope{})
+	if err != nil || onlyPlex {
+		t.Fatalf("plex-only is not a scoped change: %v %v", onlyPlex, err)
+	}
+}
+
 func TestPlexLayerViewerRulesWin(t *testing.T) {
 	sel := plexSelect(t, PlexLayer{AudioLanguage: "ja", AutoSelectAudio: true, SubtitleMode: "always"}, 7, func(s *Service) {
 		r := Default()

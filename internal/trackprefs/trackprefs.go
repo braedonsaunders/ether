@@ -176,34 +176,70 @@ type storedValue struct {
 	found bool
 }
 
-func (s *Service) GetRules(ctx context.Context, user int64) (Rules, error) {
-	r := Default()
-	// A list builds every item's streams with these rules: read them once
-	// per request.
-	row, err := reqmemo.Do(ctx, "trackprefs:rules:"+strconv.FormatInt(user, 10), func() (storedValue, error) {
+func (s *Service) storedRules(ctx context.Context, user int64) (Rules, bool, error) {
+	row, err := reqmemo.Do(ctx, "trackprefs:stored:"+strconv.FormatInt(user, 10), func() (storedValue, error) {
 		var v storedValue
-		err := s.db.QueryRowContext(ctx, `SELECT rules FROM trackprefs_rules WHERE user_id IN(0,?) ORDER BY user_id DESC LIMIT 1`, user).Scan(&v.raw)
+		err := s.db.QueryRowContext(ctx, `SELECT rules FROM trackprefs_rules WHERE user_id=?`, user).Scan(&v.raw)
 		if errors.Is(err, sql.ErrNoRows) {
 			return v, nil
 		}
 		v.found = err == nil
 		return v, err
 	})
-	if err != nil {
-		return r, err
+	if err != nil || !row.found {
+		return Default(), false, err
 	}
-	if !row.found {
-		return r, nil
+	r := Default()
+	if err = json.Unmarshal([]byte(row.raw), &r); err != nil {
+		return r, false, err
 	}
-	raw := row.raw
-	err = json.Unmarshal([]byte(raw), &r)
 	if r.AudioLanguages == nil {
 		r.AudioLanguages = []string{}
 	}
 	if r.SubtitleLanguages == nil {
 		r.SubtitleLanguages = []string{}
 	}
-	return r, err
+	return r, true, nil
+}
+
+func (s *Service) GetRules(ctx context.Context, user int64) (Rules, error) {
+	r := Default()
+	r = s.fillPlexLayer(ctx, user, r)
+	if user > 0 {
+		if shared, ok, err := s.storedRules(ctx, 0); err != nil {
+			return r, err
+		} else if ok {
+			r = overlayRules(r, shared)
+		}
+	}
+	if own, ok, err := s.storedRules(ctx, user); err != nil {
+		return r, err
+	} else if ok {
+		r = overlayRules(r, own)
+	}
+	return r, nil
+}
+
+func overlayRules(base, over Rules) Rules {
+	if len(over.AudioLanguages) > 0 {
+		base.AudioLanguages = append([]string(nil), over.AudioLanguages...)
+	}
+	if len(over.SubtitleLanguages) > 0 {
+		base.SubtitleLanguages = append([]string(nil), over.SubtitleLanguages...)
+	}
+	base.PreferOriginal = over.PreferOriginal
+	base.SubtitleMode = over.SubtitleMode
+	base.SubtitleStyle = over.SubtitleStyle
+	if len(over.SubtitleAppearance) > 0 {
+		base.SubtitleAppearance = append(json.RawMessage(nil), over.SubtitleAppearance...)
+	}
+	base.Loudness = over.Loudness
+	base.NightMode = over.NightMode
+	base.DialogueBoost = over.DialogueBoost
+	base.MaxBitrateKbps = over.MaxBitrateKbps
+	base.MaxHeight = over.MaxHeight
+	base.PreferredQuality = over.PreferredQuality
+	return base
 }
 func (s *Service) DeleteRules(ctx context.Context, user int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_rules WHERE user_id=?`, user)
@@ -417,10 +453,10 @@ func (s *Service) sharedLanguages(ctx context.Context, user int64, r Rules) Rule
 	if len(r.SubtitleLanguages) == 0 {
 		r.SubtitleLanguages = append([]string(nil), shared.SubtitleLanguages...)
 	}
-	return s.applyPlexLayer(ctx, user, r)
+	return r
 }
 
-func (s *Service) applyPlexLayer(ctx context.Context, user int64, r Rules) Rules {
+func (s *Service) fillPlexLayer(ctx context.Context, user int64, r Rules) Rules {
 	if s == nil || s.options.PlexLayer == nil || user <= 0 {
 		return r
 	}
@@ -434,18 +470,9 @@ func (s *Service) applyPlexLayer(ctx context.Context, user int64, r Rules) Rules
 	if len(r.SubtitleLanguages) == 0 && layer.SubtitleLanguage != "" {
 		r.SubtitleLanguages = []string{layer.SubtitleLanguage}
 	}
-	if layer.SubtitleMode == "" {
-		return r
+	if layer.SubtitleMode != "" {
+		r.SubtitleMode = layer.SubtitleMode
 	}
-	hasViewer, err := s.HasViewerRules(ctx, user)
-	if err != nil || hasViewer {
-		return r
-	}
-	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM trackprefs_rules WHERE user_id=0`).Scan(&n); err != nil || n > 0 {
-		return r
-	}
-	r.SubtitleMode = layer.SubtitleMode
 	return r
 }
 
