@@ -62,28 +62,31 @@ type MediaContainer struct {
 	// play queues) in order, after the common ones above.
 	Extra []Attr `plex:",attrs"`
 
-	Meta           *Meta            `plex:"Meta,object"`
-	Directory      []Directory      `plex:"Directory"`
-	Metadata       []Metadata       `plex:"Metadata"`
-	Stream         []Stream         `plex:"Stream"` // subtitle search results
-	Hub            []Hub            `plex:"Hub"`
-	SearchResult   []SearchResult   `plex:"SearchResult"`
-	MediaProvider  []MediaProvider  `plex:"MediaProvider"`
-	Setting        []Setting        `plex:"Setting"`
-	Server         []Server         `plex:"Server"`
-	Agent          []Agent          `plex:"Agent"`
-	Device         []Device         `plex:"Device"`
-	Activity       []Activity       `plex:"Activity"`
-	ButlerTask     []ButlerTask     `plex:"ButlerTask"`
-	Account        []Account        `plex:"Account"`
-	Release        []UpdateRelease  `plex:"Release"`
-	TranscodeSess  []TranscodeSess  `plex:"TranscodeSession"`
-	FieldType      []FieldType      `plex:"FieldType"`
-	Type           []MetaType       `plex:"Type"`
-	Sort           []Sort           `plex:"Sort"`
-	Filter         []Filter         `plex:"Filter"`
-	Field          []Field          `plex:"Field"`
-	PlaySessionCtl []SessionControl `plex:"SessionControl"`
+	Meta                *Meta                 `plex:"Meta,object"`
+	Directory           []Directory           `plex:"Directory"`
+	Metadata            []Metadata            `plex:"Metadata"`
+	Stream              []Stream              `plex:"Stream"` // subtitle search results
+	Hub                 []Hub                 `plex:"Hub"`
+	SearchResult        []SearchResult        `plex:"SearchResult"`
+	MediaProvider       []MediaProvider       `plex:"MediaProvider"`
+	Setting             []Setting             `plex:"Setting"`
+	Server              []Server              `plex:"Server"`
+	Agent               []Agent               `plex:"Agent"`
+	StatisticsBandwidth []StatisticsBandwidth `plex:"StatisticsBandwidth"`
+	StatisticsResources []StatisticsResources `plex:"StatisticsResources"`
+	StatisticsMedia     []StatisticsMedia     `plex:"StatisticsMedia"`
+	Device              []Device              `plex:"Device"`
+	Activity            []Activity            `plex:"Activity"`
+	ButlerTask          []ButlerTask          `plex:"ButlerTask"`
+	Account             []Account             `plex:"Account"`
+	Release             []UpdateRelease       `plex:"Release"`
+	TranscodeSess       []TranscodeSess       `plex:"TranscodeSession"`
+	FieldType           []FieldType           `plex:"FieldType"`
+	Type                []MetaType            `plex:"Type"`
+	Sort                []Sort                `plex:"Sort"`
+	Filter              []Filter              `plex:"Filter"`
+	Field               []Field               `plex:"Field"`
+	PlaySessionCtl      []SessionControl      `plex:"SessionControl"`
 }
 
 // SetPage fills size/offset/totalSize.
@@ -638,6 +641,37 @@ type Device struct {
 	Platform         string `plex:"platform"`
 	ClientIdentifier string `plex:"clientIdentifier"`
 	CreatedAt        int64  `plex:"createdAt"`
+}
+
+// StatisticsBandwidth is one Dashboard bandwidth series row.
+type StatisticsBandwidth struct {
+	AccountID int64 `plex:"accountID"`
+	DeviceID  int64 `plex:"deviceID"`
+	Timespan  int   `plex:"timespan"`
+	At        int64 `plex:"at"`
+	Lan       bool  `plex:"lan"`
+	Bytes     int64 `plex:"bytes"`
+}
+
+// StatisticsResources is one Dashboard host-sample row.
+type StatisticsResources struct {
+	Timespan   int     `plex:"timespan"`
+	At         int64   `plex:"at"`
+	HostCPU    float64 `plex:"hostCpuUtilization"`
+	ProcessCPU float64 `plex:"processCpuUtilization"`
+	HostMemory float64 `plex:"hostMemoryUtilization"`
+	ProcessMem float64 `plex:"processMemoryUtilization"`
+}
+
+// StatisticsMedia is one Dashboard completed-play row.
+type StatisticsMedia struct {
+	AccountID    int64 `plex:"accountID"`
+	DeviceID     int64 `plex:"deviceID"`
+	Timespan     int   `plex:"timespan"`
+	At           int64 `plex:"at"`
+	MetadataType int   `plex:"metadataType"`
+	Count        int64 `plex:"count"`
+	Duration     int64 `plex:"duration"`
 }
 
 type Activity struct {

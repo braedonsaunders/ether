@@ -118,6 +118,12 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		return st.PlexPass, st.OwnerFeatures
 	}
 	deps.Hooks = hooks
+	if a.stats != nil {
+		deps.Dashboard = a.stats.Dashboard()
+	}
+	if a.hostResources != nil {
+		deps.Resources = a.hostResources
+	}
 	if node := a.clusterNode(); node != nil && deps.DB != nil {
 		deps.Cluster = node
 	}
