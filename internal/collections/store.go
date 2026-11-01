@@ -62,7 +62,19 @@ CREATE TABLE collections_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL DEFAULT '');
 	// match-"any" collections with per-viewer rules serve correctly.
 	store.Register("collections", 4, `UPDATE collections_specs SET build_hash='';`)
 	store.Register("collections", 6, `CREATE TABLE collections_air_dates (show_key INTEGER PRIMARY KEY, episode_ts INTEGER NOT NULL, premiere_ts INTEGER NOT NULL, fetched_at INTEGER NOT NULL, attempted_at INTEGER NOT NULL, failed INTEGER NOT NULL);`)
+	store.Register("collections", 7, repairNanoStampsSQL)
 }
+
+// repairNanoStampsSQL converts stamps written in nanoseconds back to
+// seconds. Migration imports stamped collections_specs in nanoseconds; read
+// as seconds those land past year 9999, which JSON cannot encode, so the
+// console's collection list failed (GitHub #180). 253402300799 is
+// maxUnixStamp.
+const repairNanoStampsSQL = `UPDATE collections_specs SET
+  created_at = CASE WHEN created_at > 253402300799 THEN created_at / 1000000000 ELSE created_at END,
+  updated_at = CASE WHEN updated_at > 253402300799 THEN updated_at / 1000000000 ELSE updated_at END,
+  last_built_at = CASE WHEN last_built_at > 253402300799 THEN last_built_at / 1000000000 ELSE last_built_at END,
+  changed_at = CASE WHEN changed_at > 253402300799 THEN changed_at / 1000000000 ELSE changed_at END;`
 
 // builtinBase keeps shipped collections' ids far above owner ids.
 const builtinBase int64 = 900_000
@@ -146,22 +158,27 @@ func scanSpecRow(sc interface{ Scan(...any) error }) (*specRow, error) {
 	Normalize(&r.spec)
 	r.builtin = builtin != 0
 	r.enabled = enabled != 0
-	if created > 0 {
-		r.createdAt = time.Unix(created, 0).UTC()
-	}
-	if updated > 0 {
-		r.updatedAt = time.Unix(updated, 0).UTC()
-	}
-	if built > 0 {
-		r.lastBuilt = time.Unix(built, 0).UTC()
-	}
-	if changed > 0 {
-		r.changedAt = time.Unix(changed, 0).UTC()
-	}
+	r.createdAt = unixStamp(created)
+	r.updatedAt = unixStamp(updated)
+	r.lastBuilt = unixStamp(built)
+	r.changedAt = unixStamp(changed)
 	_ = json.Unmarshal([]byte(warnJSON), &r.warnings)
 	r.spec.Rules, r.warnings = sanitizeStoredRules(r.spec.Rules, r.warnings)
 	r.spec.Exclude, r.warnings = sanitizeStoredRules(r.spec.Exclude, r.warnings)
 	return &r, nil
+}
+
+// maxUnixStamp is 9999-12-31T23:59:59Z, the last second JSON can encode.
+const maxUnixStamp = 253402300799
+
+// unixStamp reads a stored unix-seconds column. Zero (never) and values no
+// clock could have written read as the zero time, so one damaged stamp can
+// never make a collection unencodable.
+func unixStamp(v int64) time.Time {
+	if v <= 0 || v > maxUnixStamp {
+		return time.Time{}
+	}
+	return time.Unix(v, 0).UTC()
 }
 
 // sanitizeStoredRules drops stored rules whose JSON value is damaged or cannot

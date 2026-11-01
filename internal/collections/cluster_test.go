@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/collections"
 	"github.com/braedonsaunders/ether/internal/core"
@@ -39,7 +40,7 @@ func TestImportedCollectionIDsAreUniqueAcrossNodes(t *testing.T) {
 					return
 				}
 				defer tx.Rollback()
-				id, err := collections.ImportTitlesTx(ctx, tx, 0, 1, "List", []core.RatingKey{core.MovieKey(1)}, 1)
+				id, err := collections.ImportTitlesTx(ctx, tx, 0, 1, "List", []core.RatingKey{core.MovieKey(1)}, time.Unix(1, 0))
 				if err == nil {
 					err = tx.Commit()
 				}

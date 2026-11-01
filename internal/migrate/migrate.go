@@ -763,7 +763,7 @@ func (s *Service) Import(ctx context.Context, id string) (Plan, error) {
 			batch.History = append(batch.History, stateImportRecord(it))
 		}
 		for _, l := range p.Lists {
-			if err := importList(ctx, tx, p.Source, l, time.Now().UnixNano()); err != nil {
+			if err := importList(ctx, tx, p.Source, l, time.Now()); err != nil {
 				return batch, err
 			}
 		}
@@ -782,7 +782,7 @@ func stateImportRecord(it Item) state.ImportRecord {
 	return r
 }
 
-func importList(ctx context.Context, tx *sql.Tx, source string, l List, now int64) error {
+func importList(ctx context.Context, tx *sql.Tx, source string, l List, now time.Time) error {
 	if l.Kind != "playlist" && l.Kind != "collection" {
 		return errors.New("invalid imported list kind")
 	}

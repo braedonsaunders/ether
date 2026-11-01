@@ -346,3 +346,32 @@ func TestCatalogHelperAPI(t *testing.T) {
 		t.Fatalf("bad key: %d", rec.Code)
 	}
 }
+
+// listStudio returns a fixed collection list.
+type listStudio struct {
+	*fakeStudio
+	list []core.CollectionSpec
+}
+
+func (l listStudio) ListSpecs(ctx context.Context) ([]core.CollectionSpec, error) { return l.list, nil }
+
+// One collection that cannot be encoded (a stamp past year 9999, as
+// nanosecond imports produced) is left out; the rest of the list still loads
+// (GitHub #180).
+func TestCollectionsListSkipsUnencodableCollection(t *testing.T) {
+	store := newStore(t, func(c *config.Config) { seededConfig(c); c.SetupComplete = true })
+	st := newFakeStudio()
+	bad := time.Unix(1_790_000_000_000_000_000, 0)
+	list := []core.CollectionSpec{st.specs["1"], {ID: "7", Name: "Imported", UpdatedAt: &bad}, st.specs["top-rated-movie"]}
+	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store), Collections: listStudio{st, list}, CatalogHelper: fakeHelper{}, Images: &fakeImages{}})
+	rec := serve(h, authed(req(http.MethodGet, "/ether/api/collections", "")))
+	var got struct {
+		Collections []struct {
+			ID string `json:"id"`
+		} `json:"collections"`
+	}
+	decode(t, rec, &got)
+	if rec.Code != http.StatusOK || len(got.Collections) != 2 || got.Collections[0].ID != "1" || got.Collections[1].ID != "top-rated-movie" {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+}
