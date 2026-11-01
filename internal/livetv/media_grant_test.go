@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/streamgrant"
 )
 
 func TestMediaGrantAuthorizesPlaybackButNotControl(t *testing.T) {
@@ -19,7 +19,7 @@ func TestMediaGrantAuthorizesPlaybackButNotControl(t *testing.T) {
 		}
 		return nil
 	}
-	media := httptest.NewRequest(http.MethodGet, "/livetv/sessions/sess/0/program/1/2.ts?"+sessions.StreamGrantParam+"=grant-value", nil)
+	media := httptest.NewRequest(http.MethodGet, "/livetv/sessions/sess/0/program/1/2.ts?"+streamgrant.StreamGrantParam+"=grant-value", nil)
 	if u, ok := s.AuthenticateMediaGrant(media, active); !ok || u == nil || u.ID != 4 {
 		t.Fatalf("media grant: %+v %v", u, ok)
 	}
@@ -29,7 +29,7 @@ func TestMediaGrantAuthorizesPlaybackButNotControl(t *testing.T) {
 			t.Fatalf("authorized %s", path)
 		}
 	}
-	stop := httptest.NewRequest(http.MethodDelete, "/livetv/sessions/sess/0/index.m3u8?"+sessions.StreamGrantParam+"=grant-value", nil)
+	stop := httptest.NewRequest(http.MethodDelete, "/livetv/sessions/sess/0/index.m3u8?"+streamgrant.StreamGrantParam+"=grant-value", nil)
 	if _, ok := s.AuthenticateMediaGrant(stop, active); ok {
 		t.Fatal("grant authorized a control method")
 	}

@@ -267,6 +267,7 @@ func copyProfile(p core.QualityProfile) core.QualityProfile {
 	p.PreferredAudio = append([]string(nil), p.PreferredAudio...)
 	p.PreferredLanguages = append([]string(nil), p.PreferredLanguages...)
 	p.AllowedQualities = append([]string(nil), p.AllowedQualities...)
+	p.Ranking = append([]string(nil), p.Ranking...)
 	if p.CustomFormatScores != nil {
 		m := make(map[string]int, len(p.CustomFormatScores))
 		for k, v := range p.CustomFormatScores {

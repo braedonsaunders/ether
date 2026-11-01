@@ -3,8 +3,10 @@ package resolver
 import (
 	"math"
 	"regexp"
+	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
 
 // uhdDiscMaxMBPerMin is the most an untouched UHD Blu-ray can average
@@ -122,17 +124,23 @@ func isAnimation(t *core.Title) bool {
 
 // sameTier reports releases of one tier for hedged validation: same height
 // and HDR kind (qualityTier), both above or both below their bitrate floor,
-// and both in an accepted audio language or both not.
+// both in an accepted audio language or both not, and equal on any moved
+// score-tail ladder steps.
 func sameTier(a, b candidate) bool {
-	return qualityTier(a.rel.Info) == qualityTier(b.rel.Info) && a.starved == b.starved && a.langOK == b.langOK
+	return qualityTier(a.rel.Info) == qualityTier(b.rel.Info) &&
+		a.starved == b.starved &&
+		a.langOK == b.langOK &&
+		a.quality.movedEqual(b.quality)
 }
 
 // sameQuality reports releases that are interchangeable for source
-// routing: one tier (sameTier) and the same kind of source, since a remux
-// is not a re-encode, nor a disc encode a web file. A faster or preferred
-// source never swaps one for another.
+// routing: one policy and quality tier (sameTier) and the same kind of
+// source, since a remux is not a re-encode, nor a disc encode a web file.
+// A faster or preferred source never swaps one for another.
 func sameQuality(a, b candidate) bool {
-	return sameTier(a, b) && sourceClass(a.rel.Info.Source) == sourceClass(b.rel.Info.Source)
+	return releasepolicy.Equivalent(a.policy, b.policy) &&
+		sameTier(a, b) &&
+		sourceClass(a.rel.Info.Source) == sourceClass(b.rel.Info.Source)
 }
 
 func sourceClass(s core.Source) string {
@@ -147,10 +155,19 @@ func sourceClass(s core.Source) string {
 	return "other"
 }
 
-// qualityRank is where a release sits in its profile's quality order:
-// resolution first, then the owner's preferred source order. Higher is
-// better; the zero value ranks with unknowns.
-type qualityRank struct{ height, source, hdr int }
+// qualityRank holds a release's per-dimension ranks for its profile's
+// ranking ladder. Higher is better; the zero value ranks with unknowns.
+type qualityRank struct {
+	height, source, hdr    int
+	codec, audio           int
+	size                   int64
+	movedCodec, movedAudio int
+	movedSize              int64
+}
+
+func (a qualityRank) movedEqual(b qualityRank) bool {
+	return a.movedCodec == b.movedCodec && a.movedAudio == b.movedAudio && a.movedSize == b.movedSize
+}
 
 func (a qualityRank) better(b qualityRank) bool {
 	if a.height != b.height {
@@ -162,11 +179,28 @@ func (a qualityRank) better(b qualityRank) bool {
 	return a.hdr > b.hdr
 }
 
+func hasDefaultScoreTail(ladder []string) bool {
+	n := len(ladder)
+	return n >= 3 &&
+		ladder[n-3] == core.RankVideoCodec &&
+		ladder[n-2] == core.RankAudioFormat &&
+		ladder[n-1] == core.RankSize
+}
+
+func audioFormatRank(info core.ReleaseInfo, profile core.QualityProfile) int {
+	r := indexRank(profile.PreferredAudio, info.AudioCodec) * 2
+	if info.Atmos {
+		r++
+	}
+	return r
+}
+
 // rankQuality places a release in the profile's quality order. A release
 // below its bitrate floor ranks one resolution step down: a starved
 // "2160p" is not better than a good 1080p, HDR or not. Unknown heights
 // rank lowest.
-func rankQuality(info core.ReleaseInfo, profile core.QualityProfile, starved bool) qualityRank {
+func rankQuality(rel core.Release, profile core.QualityProfile, starved bool) qualityRank {
+	info := rel.Info
 	h := info.Height
 	if starved {
 		switch {
@@ -178,11 +212,93 @@ func rankQuality(info core.ReleaseInfo, profile core.QualityProfile, starved boo
 			h = 480
 		}
 	}
-	r := qualityRank{height: h, source: indexRank(profile.PreferredSources, info.Source), hdr: hdrRank(info, profile)}
+	hdr := hdrRank(info, profile)
 	if starved {
-		r.hdr = 0 // a starved or upscaled encode keeps no HDR advantage either
+		hdr = 0 // a starved or upscaled encode keeps no HDR advantage either
+	}
+	codec := indexRank(profile.PreferredCodecs, info.VideoCodec)
+	audio := audioFormatRank(info, profile)
+	var size int64
+	if profile.PreferLargest {
+		size = sizedForEpisode(rel).Size
+	}
+	r := qualityRank{
+		height: h,
+		source: indexRank(profile.PreferredSources, info.Source),
+		hdr:    hdr,
+		codec:  codec,
+		audio:  audio,
+		size:   size,
+	}
+	if !hasDefaultScoreTail(profile.EffectiveRanking()) {
+		r.movedCodec = codec
+		r.movedAudio = audio
+		r.movedSize = size
 	}
 	return r
+}
+
+// compareCandidates walks the profile's ranking ladder from top to bottom,
+// breaking remaining ties by the soft score (profile score + custom formats +
+// client compatibility). Fallback tiers on require rules always hold first so
+// a fallback candidate never outranks a primary candidate.
+func compareCandidates(a, b candidate, profile core.QualityProfile) bool {
+	if a.policy.Fallback != b.policy.Fallback {
+		return a.policy.Fallback < b.policy.Fallback
+	}
+	ladder := profile.EffectiveRanking()
+	defaultTail := hasDefaultScoreTail(ladder)
+	for _, step := range ladder {
+		switch {
+		case strings.HasPrefix(step, core.RankRulePrefix):
+			id := strings.TrimPrefix(step, core.RankRulePrefix)
+			if ap, bp := a.policy.PreferRule(id), b.policy.PreferRule(id); ap != bp {
+				return ap > bp
+			}
+		case step == core.RankLanguage:
+			// A release whose declared audio is only in languages nobody
+			// asked for is a last resort, whatever its quality or fit.
+			if a.langOK != b.langOK {
+				return a.langOK
+			}
+		case step == core.RankConnection:
+			// A previously working LAN remux must not outrank a source that
+			// fits this client's slower connection. Unknown sizes remain usable
+			// and an oversized source can still be transcoded as a fallback.
+			if a.bandwidth != b.bandwidth {
+				return a.bandwidth > b.bandwidth
+			}
+		case step == core.RankResolution:
+			if a.quality.height != b.quality.height {
+				return a.quality.height > b.quality.height
+			}
+		case step == core.RankReleaseType:
+			if a.quality.source != b.quality.source {
+				return a.quality.source > b.quality.source
+			}
+		case step == core.RankHDR:
+			if a.quality.hdr != b.quality.hdr {
+				return a.quality.hdr > b.quality.hdr
+			}
+		case step == core.RankVerified:
+			if a.verified != b.verified {
+				return a.verified
+			}
+		case step == core.RankVideoCodec:
+			if !defaultTail && a.quality.codec != b.quality.codec {
+				return a.quality.codec > b.quality.codec
+			}
+		case step == core.RankAudioFormat:
+			if !defaultTail && a.quality.audio != b.quality.audio {
+				return a.quality.audio > b.quality.audio
+			}
+		case step == core.RankSize:
+			if !defaultTail && a.quality.size != b.quality.size {
+				return a.quality.size > b.quality.size
+			}
+		}
+	}
+	return a.rel.Score > b.rel.Score
 }
 
 // hdrRank orders dynamic range the profile can use: Dolby Vision, then

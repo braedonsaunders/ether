@@ -30,6 +30,10 @@ func (h *consoleAPI) previewRules(w http.ResponseWriter, r *http.Request) {
 		consoleError(w, 400, "invalid", err.Error())
 		return
 	}
+	if err := core.ValidateRanking(in.Profile.Ranking, in.Profile.ReleaseRules); err != nil {
+		consoleError(w, 400, "invalid", err.Error())
+		return
+	}
 	warning := releasepolicy.Conflict(in.Profile.ReleaseRules)
 	if len(in.Names) > 100 {
 		consoleError(w, 400, "invalid", "at most 100 filenames")
@@ -108,11 +112,12 @@ func (h *consoleAPI) previewRules(w http.ResponseWriter, r *http.Request) {
 			v := policy.Evaluate(rel, releasepolicy.Context{})
 			out = append(out, ConsoleRelease{Release: browserRelease(rel), Preferences: &v, Rejected: v.Rejected})
 		}
+		ranking := in.Profile.EffectiveRanking()
 		sort.SliceStable(out, func(i, j int) bool {
 			if out[i].Rejected != out[j].Rejected {
 				return !out[i].Rejected
 			}
-			return releasepolicy.Better(*out[i].Preferences, *out[j].Preferences)
+			return releasepolicy.BetterByRanking(*out[i].Preferences, *out[j].Preferences, ranking)
 		})
 		rank := 0
 		for i := range out {

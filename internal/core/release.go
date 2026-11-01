@@ -4,6 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -21,6 +24,90 @@ const (
 	SourceBluRay   Source = "bluray"
 	SourceRemux    Source = "remux"
 )
+
+// Ranking ladder step keys for QualityProfile.Ranking.
+const (
+	RankRulePrefix  = "rule:"
+	RankLanguage    = "language"
+	RankConnection  = "connection"
+	RankResolution  = "resolution"
+	RankReleaseType = "releaseType"
+	RankHDR         = "hdr"
+	RankVerified    = "verified"
+	RankVideoCodec  = "videoCodec"
+	RankAudioFormat = "audioFormat"
+	RankSize        = "size"
+)
+
+// DefaultRankingSteps is the built-in ranking ladder order after any Prefer rules.
+var DefaultRankingSteps = []string{
+	RankLanguage,
+	RankConnection,
+	RankResolution,
+	RankReleaseType,
+	RankHDR,
+	RankVerified,
+	RankVideoCodec,
+	RankAudioFormat,
+	RankSize,
+}
+
+func builtinRankingIndex(step string) int {
+	return slices.Index(DefaultRankingSteps, step)
+}
+
+func isBuiltinRankingStep(step string) bool {
+	return builtinRankingIndex(step) >= 0
+}
+
+// DefaultRanking returns today's default ladder order: each Prefer rule in
+// rules (in slice order), followed by DefaultRankingSteps.
+func DefaultRanking(rules []ReleaseRule) []string {
+	out := make([]string, 0, len(rules)+len(DefaultRankingSteps))
+	seen := map[string]bool{}
+	for _, r := range rules {
+		if r.Action == "prefer" && r.ID != "" && !seen[r.ID] {
+			seen[r.ID] = true
+			out = append(out, RankRulePrefix+r.ID)
+		}
+	}
+	out = append(out, DefaultRankingSteps...)
+	return out
+}
+
+// ValidateRanking checks an explicit ranking ladder against a profile's rules.
+// An empty ladder is valid and means DefaultRanking(rules).
+func ValidateRanking(ranking []string, rules []ReleaseRule) error {
+	if len(ranking) == 0 {
+		return nil
+	}
+	validRules := map[string]bool{}
+	for _, r := range rules {
+		if r.Action == "prefer" && r.ID != "" {
+			validRules[RankRulePrefix+r.ID] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, step := range ranking {
+		if seen[step] {
+			return fmt.Errorf("duplicate ranking step %q", step)
+		}
+		seen[step] = true
+		if strings.HasPrefix(step, RankRulePrefix) {
+			if !validRules[step] {
+				return fmt.Errorf("ranking step %q does not name a prefer rule", step)
+			}
+			continue
+		}
+		if !isBuiltinRankingStep(step) {
+			return fmt.Errorf("unknown ranking step %q", step)
+		}
+	}
+	if !seen[RankConnection] || !seen[RankVerified] {
+		return fmt.Errorf("ranking must include %q and %q", RankConnection, RankVerified)
+	}
+	return nil
+}
 
 // ReleaseInfo is what can be parsed from a release name.
 type ReleaseInfo struct {
@@ -110,6 +197,7 @@ type Resolution struct {
 // of client.
 type QualityProfile struct {
 	ReleaseRules         []ReleaseRule  `json:"releaseRules,omitempty"`
+	Ranking              []string       `json:"ranking,omitempty"`
 	AllowedQualities     []string       `json:"allowedQualities,omitempty"` // imported source-resolution gates
 	CustomFormatScores   map[string]int `json:"customFormatScores,omitempty"`
 	MinCustomFormatScore *int           `json:"minCustomFormatScore,omitempty"`
@@ -144,6 +232,68 @@ type QualityProfile struct {
 	SelectionKey string `json:"-"`
 }
 
+// EffectiveRanking returns the complete ranking ladder for p: DefaultRanking
+// when Ranking is empty, or p.Ranking with any unmentioned Prefer rules
+// prepended and any omitted built-in steps placed in their default relative
+// positions.
+func (p QualityProfile) EffectiveRanking() []string {
+	if len(p.Ranking) == 0 {
+		return DefaultRanking(p.ReleaseRules)
+	}
+	validRules := map[string]bool{}
+	var preferOrder []string
+	for _, r := range p.ReleaseRules {
+		if r.Action == "prefer" && r.ID != "" {
+			key := RankRulePrefix + r.ID
+			if !validRules[key] {
+				validRules[key] = true
+				preferOrder = append(preferOrder, key)
+			}
+		}
+	}
+	mentioned := map[string]bool{}
+	var filtered []string
+	for _, step := range p.Ranking {
+		if mentioned[step] {
+			continue
+		}
+		if strings.HasPrefix(step, RankRulePrefix) {
+			if !validRules[step] {
+				continue
+			}
+		} else if !isBuiltinRankingStep(step) {
+			continue
+		}
+		mentioned[step] = true
+		filtered = append(filtered, step)
+	}
+	out := make([]string, 0, len(preferOrder)+len( DefaultRankingSteps))
+	for _, key := range preferOrder {
+		if !mentioned[key] {
+			mentioned[key] = true
+			out = append(out, key)
+		}
+	}
+	out = append(out, filtered...)
+	for bi, b := range DefaultRankingSteps {
+		if mentioned[b] {
+			continue
+		}
+		inserted := false
+		for i, step := range out {
+			if si := builtinRankingIndex(step); si > bi {
+				out = slices.Insert(out, i, b)
+				inserted = true
+				break
+			}
+		}
+		if !inserted {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // SizeBoundsForKey returns the configured (min, max) MB/min bounds for a rating key.
 // TV episodes use EpisodeMinSizeMBPerMin / EpisodeMaxSizeMBPerMin when positive,
 // falling back to MinSizeMBPerMin / MaxSizeMBPerMin.
@@ -172,9 +322,16 @@ func (p QualityProfile) SizeBoundsFor(t *Title) (minMBPerMin, maxMBPerMin float6
 // definition in p: sha256 of its JSON (runtime-only fields tagged
 // json:"-" are excluded) truncated to 16 hex chars. Any selection-field
 // edit (heights, HDR/DV, codecs, sources, audio, languages, sizes,
-// qualities, scores, release rules) changes it; client caps never enter it.
+// qualities, scores, release rules, ranking) changes it; client caps
+// never enter it.
 func (p QualityProfile) ComputeSelectionKey() string {
 	p.SelectionKey = ""
+	eff := p.EffectiveRanking()
+	if slices.Equal(eff, DefaultRanking(p.ReleaseRules)) {
+		p.Ranking = nil
+	} else {
+		p.Ranking = eff
+	}
 	b, err := json.Marshal(p)
 	if err != nil {
 		return ""

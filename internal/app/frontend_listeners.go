@@ -461,10 +461,78 @@ func (m *frontendListeners) observeFailures(id frontend.Protocol, next http.Hand
 	}
 	m.mu.Unlock()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		recorder := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		recorder := &statusReasonWriter{ResponseWriter: middleware.NewWrapResponseWriter(w, r.ProtoMajor)}
 		next.ServeHTTP(recorder, r)
-		if recorder.Status() == http.StatusUnauthorized {
+		status := recorder.Status()
+		if status == http.StatusUnauthorized {
 			tracker.Fail(errors.New("unauthorized"))
 		}
+		if (id == "jellyfin" || id == "emby") && status != 0 && status != http.StatusUnauthorized && (status < 200 || status >= 300) {
+			// Path only: query strings carry tokens. Infuse 503s were silent
+			// because this wrapper used to count 401s and ignore the rest.
+			m.log.Warn("frontend response", "frontend", id, "method", r.Method, "route", r.URL.Path, "status", status, "reason", recorder.reason())
+		}
 	})
+}
+
+// statusReasonWriter keeps a short error body so a 503 can be logged without
+// buffering successful media responses.
+type statusReasonWriter struct {
+	http.ResponseWriter
+	code int
+	body []byte
+}
+
+func (w *statusReasonWriter) WriteHeader(code int) {
+	w.code = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusReasonWriter) Write(p []byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+	if w.code >= 400 && len(w.body) < 240 {
+		need := 240 - len(w.body)
+		if need > len(p) {
+			need = len(p)
+		}
+		w.body = append(w.body, p[:need]...)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *statusReasonWriter) Status() int {
+	if w.code != 0 {
+		return w.code
+	}
+	if rec, ok := w.ResponseWriter.(interface{ Status() int }); ok {
+		return rec.Status()
+	}
+	return 0
+}
+
+func (w *statusReasonWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *statusReasonWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *statusReasonWriter) reason() string {
+	s := strings.TrimSpace(string(w.body))
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 200 {
+		s = s[:200]
+	}
+	if s == "" {
+		if status := w.Status(); status != 0 {
+			return http.StatusText(status)
+		}
+		return "error"
+	}
+	return s
 }

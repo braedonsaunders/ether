@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -345,5 +346,33 @@ func TestFrontendUnauthorizedLogThrottle(t *testing.T) {
 	}
 	if bytes.Count(logs.Bytes(), []byte("authentication failed")) != 2 || bytes.Contains(logs.Bytes(), []byte("secret")) {
 		t.Fatal(logs.String())
+	}
+}
+
+func TestFrontendNon2xxLogsRouteStatusReason(t *testing.T) {
+	var logs bytes.Buffer
+	m := newFrontendListeners(frontend.NewRegistry(nil))
+	m.log = slog.New(slog.NewTextHandler(&logs, nil))
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Playback unavailable", http.StatusServiceUnavailable)
+	})
+	h := m.observe("jellyfin", next)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/Items/abc/PlaybackInfo?api_key=secret", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatal(w.Code)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "frontend response") || !strings.Contains(out, "route=/Items/abc/PlaybackInfo") || !strings.Contains(out, "status=503") || !strings.Contains(out, "Playback unavailable") {
+		t.Fatal(out)
+	}
+	if strings.Contains(out, "secret") || strings.Contains(out, "api_key") {
+		t.Fatal(out)
+	}
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	before := logs.Len()
+	m.observe("jellyfin", ok).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/Items/abc", nil))
+	if logs.Len() != before {
+		t.Fatal(logs.String()[before:])
 	}
 }

@@ -386,6 +386,83 @@ func TestInfuseStaticStreamWithoutTokenIsUnauthorized(t *testing.T) {
 	}
 }
 
+type transcodeBrokerTranscoder struct{ fakeBrokerTranscoder }
+
+func (transcodeBrokerTranscoder) Decide(core.MediaInfo, core.ClientCaps, core.DecideOptions) core.Decision {
+	return core.Decision{Kind: core.DecisionTranscode, VideoCodec: "h264", AudioCodec: "aac", Container: "mpegts"}
+}
+
+func TestInfuseEstimateAndTranscodeResumeStayPlayable(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key, Type: core.TypeMovie, Title: "Sintel"}, nil
+	}
+	broker, err := NewBroker(BrokerDeps{
+		Events: events, Playback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 1}, Transcoder: transcodeBrokerTranscoder{},
+		Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true },
+		BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Lookup: lookup, MediaLookup: lookup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	lazy, err := NewLazyStreams(db, broker, "jellyfin", infuseGrant{}, time.Hour, func(*http.Request) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := (mediabrowser.Jellyfin{MachineID: "test"}).Mount(ctx, frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+			return &frontend.Viewer{ID: 1}, nil
+		}},
+		Sessions: broker, LazyStreams: lazy,
+		Capabilities: frontendtest.Capabilities{BuildFunc: func(_ context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
+			return frontend.CapabilityResult{Client: core.ClientCaps{Protocol: "jellyfin", ClientID: req.Device.ClientID, Product: req.Device.Product}}, nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close(ctx)
+	guid := ids.RatingKeyGUID(core.MovieKey(38))
+	auth := `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9", Token="grant"`
+	estimate := httptest.NewRequest(http.MethodPost, "/jellyfin/Items/"+guid+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":false}`))
+	estimate.Header.Set("Authorization", auth)
+	got := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(got, estimate)
+	var preview struct {
+		MediaSources []map[string]any
+	}
+	if got.Code != http.StatusOK || json.Unmarshal(got.Body.Bytes(), &preview) != nil || len(preview.MediaSources) != 1 {
+		t.Fatalf("estimate %d %s", got.Code, got.Body.String())
+	}
+	if preview.MediaSources[0]["SupportsDirectPlay"] != true || preview.MediaSources[0]["Protocol"] != "File" {
+		t.Fatalf("estimate source %+v", preview.MediaSources[0])
+	}
+	resume := httptest.NewRequest(http.MethodPost, "/jellyfin/Items/"+guid+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true,"StartTimeTicks":23000000000}`))
+	resume.Header.Set("Authorization", auth)
+	opened := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(opened, resume)
+	var play struct {
+		PlaySessionId string
+		MediaSources  []map[string]any
+	}
+	if opened.Code != http.StatusOK || json.Unmarshal(opened.Body.Bytes(), &play) != nil || len(play.MediaSources) != 1 {
+		t.Fatalf("resume %d %s", opened.Code, opened.Body.String())
+	}
+	if play.MediaSources[0]["SupportsDirectPlay"] != true || play.MediaSources[0]["Protocol"] != "File" {
+		t.Fatalf("resume source %+v", play.MediaSources[0])
+	}
+	path, _ := play.MediaSources[0]["Path"].(string)
+	if play.PlaySessionId == "" || !strings.Contains(path, "/sessions/media/") || !strings.HasSuffix(path, "/file") {
+		t.Fatalf("resume session %q path %q", play.PlaySessionId, path)
+	}
+}
+
 type infuseGrant struct{}
 
 func (infuseGrant) GrantReference(context.Context, string, string) (string, *core.Viewer, error) {

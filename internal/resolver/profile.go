@@ -21,6 +21,7 @@ func defaultProfile() core.QualityProfile {
 		PreferredAudio:   []string{"eac3", "ac3", "aac"},
 		MinSizeMBPerMin:  5,
 		MaxSizeMBPerMin:  150,
+		Ranking:          core.DefaultRanking(nil),
 	}
 }
 
@@ -154,6 +155,7 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 	prof.PreferredAudio = append([]string(nil), prof.PreferredAudio...)
 	prof.PreferredLanguages = append([]string(nil), prof.PreferredLanguages...)
 	prof.AllowedQualities = append([]string(nil), prof.AllowedQualities...)
+	prof.Ranking = append([]string(nil), prof.Ranking...)
 	if prof.CustomFormatScores != nil {
 		copyScores := map[string]int{}
 		for k, v := range prof.CustomFormatScores {

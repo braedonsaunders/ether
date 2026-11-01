@@ -14,8 +14,8 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/livetv"
-	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/store"
+	"github.com/braedonsaunders/ether/internal/streamgrant"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -406,7 +406,7 @@ func TestStreamTokenAloneFetchesPlaylistAndDASH(t *testing.T) {
 	}
 	var mediaURL string
 	for _, line := range strings.Split(playlist.Body.String(), "\n") {
-		if strings.Contains(line, sessions.StreamGrantParam) && strings.Contains(line, "/resource/") {
+		if strings.Contains(line, streamgrant.StreamGrantParam) && strings.Contains(line, "/resource/") {
 			mediaURL = strings.TrimSpace(line)
 			break
 		}
@@ -435,7 +435,7 @@ func TestStreamTokenAloneFetchesPlaylistAndDASH(t *testing.T) {
 	initURL := matches[0][1]
 	segmentURL := strings.ReplaceAll(matches[1][1], "$Number$", "0")
 	for _, target := range []struct{ url, body string }{{initURL, "init-0"}, {segmentURL, "media-0-0"}} {
-		if !strings.Contains(target.url, sessions.StreamGrantParam) {
+		if !strings.Contains(target.url, streamgrant.StreamGrantParam) {
 			t.Fatalf("DASH URL has no stream token: %s", target.url)
 		}
 		got := f.request(t, "GET", target.url, map[string]string{"X-Plex-Token": ""})
@@ -506,7 +506,7 @@ func TestVirtualChannelHLSFromStartPlaylistKeepsTheSession(t *testing.T) {
 			break
 		}
 	}
-	if segment == "" || !strings.HasPrefix(segment, sessionPath+"/0/program/") || !strings.Contains(segment, sessions.StreamGrantParam+"=") {
+	if segment == "" || !strings.HasPrefix(segment, sessionPath+"/0/program/") || !strings.Contains(segment, streamgrant.StreamGrantParam+"=") {
 		t.Fatalf("start.m3u8 segment is not a rooted stream-token URL:\n%s", start.Body.String())
 	}
 	joined := time.Hour + time.Minute + 44*time.Second

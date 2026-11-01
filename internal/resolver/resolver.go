@@ -901,10 +901,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	}
 	if len(downgrades) > 0 && ctx.Err() == nil {
 		sort.SliceStable(downgrades, func(i, j int) bool {
-			if downgrades[i].quality != downgrades[j].quality {
-				return downgrades[i].quality.better(downgrades[j].quality)
-			}
-			return downgrades[i].rel.Score > downgrades[j].rel.Score
+			return compareCandidates(downgrades[i], downgrades[j], profile)
 		})
 		index, nzb, verr := s.validateCandidates(ctx, downgrades, &trace, rcfg.HealthRace)
 		if verr == nil && index >= 0 {
@@ -1237,41 +1234,16 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 		if !langOK && trace != nil {
 			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; ranked after releases in an accepted audio language", "; ")
 		}
-		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, starved: starved, quality: rankQuality(rel.Info, profile, starved), bandwidth: bandwidth})
+		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth})
 	}
-	return s.orderCandidates(cands, req.Title, trace), clientRejected, nil
+	return s.orderCandidates(cands, profile, req.Title, trace), clientRejected, nil
 }
 
-func (s *Service) orderCandidates(cands []candidate, title *core.Title, trace *Trace) []candidate {
+func (s *Service) orderCandidates(cands []candidate, profile core.QualityProfile, title *core.Title, trace *Trace) []candidate {
 	sort.SliceStable(cands, func(i, j int) bool {
-		// A release whose declared audio is only in languages nobody
-		// asked for is a last resort, whatever its quality or fit.
-		if cands[i].langOK != cands[j].langOK {
-			return cands[i].langOK
-		}
-		// A previously working LAN remux must not outrank a source that
-		// fits this client's slower connection. Unknown sizes remain usable
-		// and an oversized source can still be transcoded as a fallback.
-		if cands[i].bandwidth != cands[j].bandwidth {
-			return cands[i].bandwidth > cands[j].bandwidth
-		}
-		// Quality the profile ranks (resolution, then the owner's source
-		// order) comes before the soft score, as in the Starr apps: age,
-		// grabs or an audio codec never lift an encode over a remux, nor a
-		// 1080p over a 4K.
-		if cands[i].quality != cands[j].quality {
-			return cands[i].quality.better(cands[j].quality)
-		}
-		// Within one quality, a source that recently played wins.
-		if cands[i].verified != cands[j].verified {
-			return cands[i].verified
-		}
-		return cands[i].rel.Score > cands[j].rel.Score
+		return compareCandidates(cands[i], cands[j], profile)
 	})
-	cands = s.routeSources(cands, title, trace)
-	// Explicit ordered preferences and fallback tiers override soft source ranking.
-	sort.SliceStable(cands, func(i, j int) bool { return releasepolicy.Better(cands[i].policy, cands[j].policy) })
-	return cands
+	return s.routeSources(cands, title, trace)
 }
 
 // releaseScore is one release's total ranking score and its parts.

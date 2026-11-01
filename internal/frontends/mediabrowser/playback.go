@@ -39,6 +39,29 @@ func boolValue(p *bool, def bool) bool {
 	return *p
 }
 
+// jellyfinStaticPlayable is Infuse/Swiftfin GET /Videos/{id}/stream?Static=true.
+func jellyfinStaticPlayable(protocol frontend.Protocol, channel string, opts frontend.DecideOptions) bool {
+	return protocol == "jellyfin" && channel == "" && (opts.DirectPlay || opts.DirectStream)
+}
+
+func jellyfinStaticFallback(err error) bool {
+	return err != nil && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity)
+}
+
+func offerJellyfinStatic(source map[string]any, opts frontend.DecideOptions) {
+	if source == nil {
+		return
+	}
+	if opts.DirectPlay {
+		source["SupportsDirectPlay"] = true
+	}
+	if opts.DirectPlay || opts.DirectStream {
+		source["SupportsDirectStream"] = true
+	}
+	source["IsRemote"] = false
+	source["Protocol"] = "File"
+}
+
 func streamError(protocol frontend.Protocol, w http.ResponseWriter, err error) {
 	if errors.Is(err, frontend.ErrNotFound) || errors.Is(err, frontend.ErrNotAvailable) || errors.Is(err, frontend.ErrSourceGone) {
 		if protocol == "jellyfin" {
@@ -286,7 +309,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		// These streams are produced by Ether, even when their input is remote.
 		source["IsRemote"] = false
 	}
-	if i.protocol == "jellyfin" && channel == "" && !media.Estimated {
+	if i.protocol == "jellyfin" && channel == "" && (!media.Estimated || jellyfinStaticPlayable(i.protocol, channel, opts)) {
 		// Infuse and Swiftfin direct-play a Jellyfin file with
 		// GET /Videos/{id}/stream?Static=true. They do not open Path.
 		// IsRemote true would tell Infuse that Path is an upstream URL to
@@ -298,6 +321,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		source["ETag"] = plan.ETag
 	}
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
+	if jellyfinStaticPlayable(i.protocol, channel, opts) {
+		offerJellyfinStatic(source, opts)
+	}
 	source["IsInfiniteStream"] = channel != ""
 	if channel != "" {
 		i.shapeLiveMediaSource(source, sourceID, channelName, "", "", media, false)
@@ -313,7 +339,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	playID := ""
-	if !playback && channel == "" && opts.DirectPlay {
+	if !playback && channel == "" && (opts.DirectPlay || opts.DirectStream) {
 		if path := i.lazySourceURL(r, credential, planRequest); path != "" {
 			source["Path"] = path
 		}
@@ -321,67 +347,85 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	if playback {
 		session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: i.protocol, PlanID: plan.ID, Viewer: v, Device: dev})
 		if err != nil {
-			http.Error(w, "Playback unavailable", 503)
-			return
-		}
-		format := frontend.StreamDirect
-		if channel != "" || (plan.Decision.Kind != "directplay" && plan.Decision.Kind != "copy") {
-			format = frontend.StreamHLS
-		}
-		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
-		if err != nil {
-			_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID)
-			streamError(i.protocol, w, err)
-			return
-		}
-		scopedURL := url
-		if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
-			url = prefix + url
-		}
-		if channel != "" {
-			if session.Media != nil {
-				media = *session.Media
+			if !jellyfinStaticFallback(err) || !jellyfinStaticPlayable(i.protocol, channel, opts) {
+				http.Error(w, "Playback unavailable", 503)
+				return
 			}
-			media = defaultLiveMediaInfo(media)
-			source = i.detailMediaSourceDTO(sourceID, media)
-			i.shapeLiveMediaSource(source, sourceID, channelName, session.ID, url, media, true)
-		} else if subtitleService := i.host.Sessions; subtitleService != nil {
-			streams := i.mediaStreams(plan.Media.Streams)
-			for n, stream := range plan.Media.Streams {
-				if stream.Type != "subtitle" {
-					continue
-				}
-				subtitleURL, e := subtitleService.SubtitleURL(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, stream.Index, "vtt")
-				if e != nil || !strings.HasPrefix(subtitleURL, "/sessions/media/") || strings.ContainsAny(subtitleURL, "\r\n") {
-					continue
-				}
-				if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
-					subtitleURL = prefix + subtitleURL
-				}
-				dto := streams[n].(map[string]any)
-				dto["DeliveryUrl"] = subtitleURL
-				dto["DeliveryMethod"] = "External"
-				dto["IsTextSubtitleStream"] = true
-				dto["SupportsExternalStream"] = true
-			}
-			source["MediaStreams"] = streams
-		}
-		playID = session.ID
-		if format == frontend.StreamDirect {
-			if path := i.absoluteMediaURL(r, scopedURL); path != "" {
-				source["Path"] = path
-			} else if i.host.SurfaceURL == nil {
-				// Older embedded hosts without a URL facade can still use the
-				// broker's same-origin scoped path. Production uses verified URLs.
-				source["Path"] = url
+			if i.host.Log != nil {
+				i.host.Log.Warn("jellyfin static PlaybackInfo open", "err", err)
 			}
 		} else {
-			source["TranscodingUrl"] = url
-			source["TranscodingSubProtocol"] = "hls"
-			if channel != "" {
-				source["TranscodingContainer"] = "ts"
-			} else if container := hlsContainerDTO(plan); container != "" {
-				source["TranscodingContainer"] = container
+			format := frontend.StreamDirect
+			if channel != "" || (plan.Decision.Kind != "directplay" && plan.Decision.Kind != "copy") {
+				format = frontend.StreamHLS
+			}
+			url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
+			if err != nil && format == frontend.StreamHLS && jellyfinStaticPlayable(i.protocol, channel, opts) {
+				url, err = i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect, Position: intent.Position})
+				if err == nil {
+					format = frontend.StreamDirect
+				}
+			}
+			if err != nil {
+				_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID)
+				if !jellyfinStaticFallback(err) || !jellyfinStaticPlayable(i.protocol, channel, opts) {
+					streamError(i.protocol, w, err)
+					return
+				}
+				if i.host.Log != nil {
+					i.host.Log.Warn("jellyfin static PlaybackInfo stream", "err", err)
+				}
+			} else {
+				scopedURL := url
+				if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
+					url = prefix + url
+				}
+				if channel != "" {
+					if session.Media != nil {
+						media = *session.Media
+					}
+					media = defaultLiveMediaInfo(media)
+					source = i.detailMediaSourceDTO(sourceID, media)
+					i.shapeLiveMediaSource(source, sourceID, channelName, session.ID, url, media, true)
+				} else if subtitleService := i.host.Sessions; subtitleService != nil {
+					streams := i.mediaStreams(plan.Media.Streams)
+					for n, stream := range plan.Media.Streams {
+						if stream.Type != "subtitle" {
+							continue
+						}
+						subtitleURL, e := subtitleService.SubtitleURL(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, stream.Index, "vtt")
+						if e != nil || !strings.HasPrefix(subtitleURL, "/sessions/media/") || strings.ContainsAny(subtitleURL, "\r\n") {
+							continue
+						}
+						if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
+							subtitleURL = prefix + subtitleURL
+						}
+						dto := streams[n].(map[string]any)
+						dto["DeliveryUrl"] = subtitleURL
+						dto["DeliveryMethod"] = "External"
+						dto["IsTextSubtitleStream"] = true
+						dto["SupportsExternalStream"] = true
+					}
+					source["MediaStreams"] = streams
+				}
+				playID = session.ID
+				if format == frontend.StreamDirect {
+					if path := i.absoluteMediaURL(r, scopedURL); path != "" {
+						source["Path"] = path
+					} else if i.host.SurfaceURL == nil {
+						// Older embedded hosts without a URL facade can still use the
+						// broker's same-origin scoped path. Production uses verified URLs.
+						source["Path"] = url
+					}
+				} else {
+					source["TranscodingUrl"] = url
+					source["TranscodingSubProtocol"] = "hls"
+					if channel != "" {
+						source["TranscodingContainer"] = "ts"
+					} else if container := hlsContainerDTO(plan); container != "" {
+						source["TranscodingContainer"] = container
+					}
+				}
 			}
 		}
 	}
