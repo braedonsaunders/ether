@@ -52,8 +52,11 @@ per half.
 - Subtitle stream identity: 1250 ordinary, 1625 active-ranker. Embedded
   subtitle ids follow language, codec, and source (`14a6b0890`).
 - Subtitle sidecar location: 50 and 50 (`tracks:probe`, `tracks:selected`).
-  Direct play serves the embedded text track as a sidecar (`3654964cc`),
+  Direct play served the embedded text track as a sidecar (`3654964cc`),
   so `location` is `sidecar` and the stream key is `/library/streams/...`.
+  Since #191 only Plex Web gets that sidecar: every other client keeps
+  `location="direct"` with no key, the PMS shape, and reads the track from
+  the file it plays (extracting it first meant reading the whole release).
   Segmented Matroska text is different (`f8f762a7b`): the decision is
   `copy` with `location="segments-av"` and no sidecar key, because Plex
   tvOS reads that track from the segments. MPEG-TS stays a sidecar.

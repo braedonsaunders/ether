@@ -503,16 +503,9 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 	if !st.External {
 		// Embedded track: extract it from the playing source so a subtitle
 		// picked in-player renders without restarting the session.
-		body, actual, ok := s.extractEmbeddedSubtitle(r.Context(), entry.playID, st, subtitleFormat(q.Get("format")), offset)
-		if !ok {
+		if !s.writeEmbeddedSubtitle(w, r, entry.playID, st, subtitleFormat(q.Get("format")), offset, entry.decision.Container == transcode.ContainerMatroska) {
 			s.writeEmpty(w, r)
-			return
 		}
-		if actual == "vtt" && entry.decision.Container == transcode.ContainerMatroska {
-			body = stampMatroskaVTT(body)
-		}
-		w.Header().Set("Content-Type", subtitleContentTypes[actual])
-		_, _ = w.Write(body)
 		return
 	}
 	if !strings.HasPrefix(st.ExternalURL, "ether-subtitle:") {
@@ -651,14 +644,135 @@ func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, key
 	if _, ext, ok := strings.Cut(chi.URLParam(r, "stream"), "."); ok && q.Get("format") == "" {
 		format = subtitleFormat(ext)
 	}
-	body, actual, ok := s.extractEmbeddedSubtitle(r.Context(), playID, info, format, offset)
-	if !ok {
+	if !s.writeEmbeddedSubtitle(w, r, playID, info, format, offset, matroska) {
 		writeHTTPError(w, http.StatusNotFound)
-		return
 	}
-	if actual == "vtt" && matroska {
-		body = stampMatroskaVTT(body)
+}
+
+// Extracting an embedded track reads the release from its first byte, and
+// on a remote release of several GB that takes minutes. Players give up on
+// a silent subtitle download long before that (ExoPlayer's read timeout is
+// 8 s), which left picked subtitles blank (#191). A track that is not ready
+// within subtitleQuietWait gets its response started at once, and a blank
+// line every subtitleKeepAlive holds it open until the cues arrive. Blank
+// lines are legal between WebVTT blocks and skipped by SRT readers.
+var (
+	subtitleQuietWait = 2 * time.Second
+	subtitleKeepAlive = 4 * time.Second
+)
+
+// writeEmbeddedSubtitle serves an embedded text track as format (srt or
+// vtt). It reports false, with nothing written, when extraction failed
+// before the response had to start.
+func (s *Server) writeEmbeddedSubtitle(w http.ResponseWriter, r *http.Request, playID string, st core.StreamInfo, format string, offset time.Duration, matroska bool) bool {
+	type extracted struct {
+		body   []byte
+		actual string
+		ok     bool
+	}
+	done := make(chan extracted, 1)
+	go func() {
+		body, actual, ok := s.extractEmbeddedSubtitle(r.Context(), playID, st, format, offset)
+		done <- extracted{body, actual, ok}
+	}()
+	finish := func(got extracted) []byte {
+		if got.actual == "vtt" && matroska {
+			return stampMatroskaVTT(got.body)
+		}
+		return got.body
+	}
+	quiet := time.NewTimer(subtitleQuietWait)
+	defer quiet.Stop()
+	select {
+	case got := <-done:
+		if !got.ok {
+			return false
+		}
+		w.Header().Set("Content-Type", subtitleContentTypes[got.actual])
+		_, _ = w.Write(finish(got))
+		return true
+	case <-quiet.C:
+	case <-r.Context().Done():
+		return true
+	}
+	// extractEmbeddedSubtitle answers WebVTT when asked for it, else SRT.
+	actual := "srt"
+	if format == "vtt" {
+		actual = "vtt"
 	}
 	w.Header().Set("Content-Type", subtitleContentTypes[actual])
-	_, _ = w.Write(body)
+	w.WriteHeader(http.StatusOK)
+	header := "\n"
+	if actual == "vtt" {
+		header = string(finish(extracted{body: []byte("WEBVTT\n\n"), actual: "vtt"}))
+	}
+	flusher, _ := w.(http.Flusher)
+	write := func(b []byte) {
+		_, _ = w.Write(b)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	write([]byte(header))
+	alive := time.NewTicker(subtitleKeepAlive)
+	defer alive.Stop()
+	for {
+		select {
+		case got := <-done:
+			if got.ok {
+				body := finish(got)
+				if actual == "vtt" {
+					body = vttCues(body)
+				}
+				write(body)
+			}
+			return true
+		case <-alive.C:
+			write([]byte("\n"))
+		case <-r.Context().Done():
+			return true
+		}
+	}
+}
+
+// vttCues drops a WebVTT header block (through its first blank line), for
+// cues written after a header that was already sent.
+func vttCues(body []byte) []byte {
+	text := strings.ReplaceAll(string(body), "\r\n", "\n")
+	if !strings.HasPrefix(text, "WEBVTT") {
+		return []byte(text)
+	}
+	if _, cues, ok := strings.Cut(text, "\n\n"); ok {
+		return []byte(cues)
+	}
+	return nil
+}
+
+// prewarmSidecarSubtitle starts extracting the selected embedded text
+// track a decision hands out as a sidecar, bound to the play session, so
+// the player's request for it joins work already under way.
+func (s *Server) prewarmSidecarSubtitle(u *core.User, ps *core.PlaySession, m model.Media) {
+	if u == nil || ps == nil || ps.ID == "" || len(m.Part) == 0 {
+		return
+	}
+	sessions, ok := s.d.Playback.(interface {
+		SessionContext(string) context.Context
+	})
+	if !ok {
+		return
+	}
+	for _, st := range m.Part[0].Stream {
+		if st.StreamType != 3 || st.Location != "sidecar" || st.Selected == nil || !*st.Selected || !embeddedTextSubtitle(st) {
+			continue
+		}
+		binding, err := s.resolveStream(context.Background(), u, st.ID)
+		if err != nil || binding.Info.Type != "subtitle" || binding.Info.External {
+			continue
+		}
+		ctx := sessions.SessionContext(ps.ID)
+		if ctx == nil {
+			return
+		}
+		go s.extractEmbeddedSubtitle(ctx, ps.ID, binding.Info, "vtt", 0)
+	}
 }

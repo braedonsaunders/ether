@@ -588,6 +588,8 @@ func (p *fakePlayback) ServeRange(w http.ResponseWriter, r *http.Request, id str
 
 func (p *fakePlayback) InputURL(id string) string { return "http://127.0.0.1:1/source/" + id }
 
+func (p *fakePlayback) SessionContext(string) context.Context { return context.Background() }
+
 func (p *fakePlayback) Failover(context.Context, string, time.Duration) (*core.PlaySession, error) {
 	return nil, core.ErrNotAvailable
 }

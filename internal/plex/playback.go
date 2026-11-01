@@ -142,6 +142,10 @@ type playRequest struct {
 	// it is response shaping, not a playback setting (an asymmetric compare
 	// would re-prepare and restart the encoder on every start).
 	listAllTracks bool
+	// sidecarText: the client cannot read a text subtitle out of the file
+	// it plays, so a direct-play decision hands the picked embedded track
+	// over as a separate file. Response shaping, zeroed by sameSettings.
+	sidecarText bool
 }
 
 // androidFamilyClient reports whether the decision lists every probed track.
@@ -155,6 +159,14 @@ func androidFamilyClient(pr *Request) bool {
 	return transcode.HasQuirk(pr.Product, pr.Platform, pr.Device, pr.Model, pr.Version, "plex-list-all-tracks")
 }
 
+// browserClient reports Plex Web. A browser's video element cannot draw a
+// text track it finds inside a Matroska file, so it needs the subtitle as
+// a separate file. Plex for Android and the TV apps read the embedded
+// track themselves, as they do from a real PMS.
+func browserClient(pr *Request) bool {
+	return pr != nil && strings.Contains(strings.ToLower(pr.Product), "plex web")
+}
+
 // sameSettings compares playback controls, excluding the seek position (DASH
 // spans the title) and device capabilities (clients may omit their profile on
 // subsequent starts). Quality limits from the query are also in opts. Keep the
@@ -163,6 +175,7 @@ func (p playRequest) sameSettings(other playRequest) bool {
 	p.offset, other.offset = 0, 0
 	p.caps, other.caps = core.ClientCaps{}, core.ClientCaps{}
 	p.listAllTracks, other.listAllTracks = false, false
+	p.sidecarText, other.sidecarText = false, false
 	return reflect.DeepEqual(p, other)
 }
 
@@ -562,7 +575,9 @@ func (s *Server) decisionContainer(ctx context.Context, pr *Request, t *core.Tit
 		shown = core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: ps.Info.Container}
 	}
 	p.listAllTracks = androidFamilyClient(pr)
+	p.sidecarText = browserClient(pr)
 	md.Media = []model.Media{s.decisionMedia(t, ps, shown, p, pr.User)}
+	s.prewarmSidecarSubtitle(pr.User, ps, md.Media[0])
 	s.addProbedStreamFeatures(ctx, t.Key, ps.Info, &md)
 	if md.Media[0].Duration > 0 {
 		md.Duration = md.Media[0].Duration
@@ -636,7 +651,7 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 
 	selectedOnly := info.Estimated || !p.listAllTracks
 	if dec.Kind == core.DecisionDirectPlay {
-		return directPlayMedia(m, streams, selectedOnly)
+		return directPlayMedia(m, streams, selectedOnly, p.sidecarText)
 	}
 	applyTranscodeMedia(&m, dec, p.protocol)
 	var kept []model.Stream
@@ -670,13 +685,14 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 // clients keep the recorded PMS shape (video + selected tracks), which
 // TestDecisionConformsToPMS and the goldens pin.
 //
-// A selected embedded text subtitle is a sidecar, not location=direct.
-// Plex Web and Plex for Android do not paint SRT/ASS out of the file the
-// way mpv does, so a direct-play decision that only says the cue is in
-// the MKV leaves the screen blank. The stream URL is the extracted text.
-// An image subtitle only reaches direct play when the client can draw it;
-// otherwise Decide burns it and this function is not used.
-func directPlayMedia(m model.Media, streams []model.Stream, selectedOnly bool) model.Media {
+// A selected embedded text subtitle stays location=direct, as PMS answers:
+// Plex for Android and the TV apps read it from the file they are already
+// playing, at no cost. Plex Web (sidecarText) cannot draw a track inside
+// the file, so for it the track is a sidecar whose URL serves the
+// extracted text. An image subtitle only reaches direct play when the
+// client can draw it; otherwise Decide burns it and this function is not
+// used.
+func directPlayMedia(m model.Media, streams []model.Stream, selectedOnly, sidecarText bool) model.Media {
 	part := &m.Part[0]
 	part.Decision = "directplay"
 	var kept []model.Stream
@@ -685,7 +701,7 @@ func directPlayMedia(m model.Media, streams []model.Stream, selectedOnly bool) m
 			continue
 		}
 		st.Location = "direct"
-		if embeddedTextSubtitle(st) && st.Selected != nil && *st.Selected {
+		if sidecarText && embeddedTextSubtitle(st) && st.Selected != nil && *st.Selected {
 			st.Location = "sidecar"
 			if st.Key == "" {
 				st.Key = "/library/streams/" + strconv.FormatInt(st.ID, 10)
