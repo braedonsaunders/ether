@@ -56,6 +56,7 @@ type fakePlexTV struct {
 	sharedXML     string
 	usersXML      string
 	userXML       string
+	userJSON      string
 	features      []Feature
 	featuresErr   int
 	requests      []string
@@ -215,6 +216,11 @@ func (f *fakePlexTV) handle(w http.ResponseWriter, r *http.Request) {
 		if f.userXML != "" {
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, f.userXML)
+			return
+		}
+		if f.userJSON != "" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, f.userJSON)
 			return
 		}
 		json.NewEncoder(w).Encode(acct)

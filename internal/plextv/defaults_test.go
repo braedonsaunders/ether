@@ -24,11 +24,66 @@ func TestTrackDefaultsFromJSON(t *testing.T) {
 		t.Fatalf("%+v", d)
 	}
 	nested := trackDefaultsFromJSON([]byte(`{"profile":{"defaultAudioLanguage":"fr","autoSelectAudio":true,"defaultSubtitleLanguage":"de","autoSelectSubtitle":1,"defaultSubtitleForced":true}}`))
-	if nested.AudioLanguage != "fr" || nested.EtherMode() != "foreign-only" {
-		t.Fatalf("%+v", nested)
+	if nested.AudioLanguage != "fr" || nested.EtherMode() != "foreign-only" || nested.ForcedOnly {
+		t.Fatalf("prefer-forced must not turn subtitles on: %+v", nested)
 	}
 	if trackDefaultsFromJSON([]byte(`{}`)).HasProfile {
 		t.Fatal("empty JSON is not a profile")
+	}
+}
+
+func TestTrackDefaultsFromPlexTVUserJSON(t *testing.T) {
+	// Shape of GET /api/v2/user: defaultSubtitleForced is a number, languages
+	// also arrive as the plural CSV fields.
+	raw := []byte(`{
+		"id": 42,
+		"username": "owner",
+		"title": "The Owner",
+		"profile": {
+			"autoSelectAudio": true,
+			"autoSelectSubtitle": 0,
+			"defaultAudioLanguage": "",
+			"defaultAudioLanguages": "ja,en",
+			"defaultSubtitleLanguage": "",
+			"defaultSubtitleLanguages": "en,fr",
+			"defaultSubtitleForced": 2
+		}
+	}`)
+	d := trackDefaultsFromJSON(raw)
+	if !d.HasProfile || d.AudioLanguage != "ja" || !d.AutoSelectAudio || d.SubtitleLanguage != "en" || d.EtherMode() != "forced-only" {
+		t.Fatalf("%+v", d)
+	}
+	prefer := trackDefaultsFromJSON([]byte(`{"profile":{"autoSelectSubtitle":0,"defaultSubtitleForced":1,"defaultAudioLanguage":"en"}}`))
+	if prefer.EtherMode() != "off" || prefer.ForcedOnly {
+		t.Fatalf("forced=1 must stay off: %+v", prefer)
+	}
+}
+
+func TestUserKeepsFirstDecodeWhenProfileJSONUsesNumbers(t *testing.T) {
+	f := newFakePlexTV(t, testMachineID)
+	f.addUser("owner-device", owner())
+	f.userJSON = `{
+		"id": 42,
+		"uuid": "owner-uuid",
+		"username": "owner",
+		"title": "The Owner",
+		"profile": {
+			"autoSelectAudio": true,
+			"autoSelectSubtitle": 1,
+			"defaultAudioLanguage": "en",
+			"defaultAudioLanguages": "en,ja",
+			"defaultSubtitleLanguage": "fr",
+			"defaultSubtitleLanguages": "fr",
+			"defaultSubtitleForced": 2
+		}
+	}`
+	c, err := New(Options{BaseURL: f.srv.URL, Identity: ServerIdentity(testConfig(), ""), RetryBackoff: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.User(context.Background(), "owner-device")
+	if err != nil || got.Track.AudioLanguage != "en" || got.Track.SubtitleLanguage != "fr" || got.Track.EtherMode() != "foreign-only" {
+		t.Fatalf("%+v %v", got, err)
 	}
 }
 
@@ -90,7 +145,7 @@ func TestUserParsesProfile(t *testing.T) {
 		t.Fatalf("%+v %v", got, err)
 	}
 
-	f.userXML = `<?xml version="1.0"?><user id="42" username="owner"><profile defaultAudioLanguage="ja" autoSelectAudio="1" defaultSubtitleLanguage="en" autoSelectSubtitle="0" defaultSubtitleForced="1"/></user>`
+	f.userXML = `<?xml version="1.0"?><user id="42" username="owner"><profile defaultAudioLanguage="ja" autoSelectAudio="1" defaultSubtitleLanguage="en" autoSelectSubtitle="0" defaultSubtitleForced="2"/></user>`
 	got, err = c.User(context.Background(), "owner-device")
 	if err != nil || got.Track.AudioLanguage != "ja" || got.Track.EtherMode() != "forced-only" {
 		t.Fatalf("xml %+v %v", got, err)

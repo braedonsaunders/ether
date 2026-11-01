@@ -1,6 +1,7 @@
 package plextv
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -27,6 +28,10 @@ type ShareDefaults struct {
 	HasSettings      bool
 }
 
+// plex.tv defaultSubtitleForced is an enum, not a bool:
+// 0 prefer non-forced, 1 prefer forced, 2 only forced, 3 only non-forced.
+const plexForcedOnly = 2
+
 // EtherSubtitleMode maps a plex.tv subtitle mode onto Ether's stored names.
 func EtherSubtitleMode(mode int) string {
 	switch mode {
@@ -40,6 +45,8 @@ func EtherSubtitleMode(mode int) string {
 }
 
 // EtherMode is the Ether subtitle mode for this plex.tv profile.
+// Forced-only is only defaultSubtitleForced=2 when the subtitle mode is off.
+// Value 1 (prefer forced) must not turn subtitles on.
 func (d TrackDefaults) EtherMode() string {
 	if d.ForcedOnly && d.SubtitleMode == 0 {
 		return "forced-only"
@@ -53,12 +60,20 @@ func profileDefaults(n *xmlNode) TrackDefaults {
 	}
 	mode := n.attr("autoSelectSubtitle", "subtitleMode")
 	parsed, _ := strconv.Atoi(strings.TrimSpace(mode))
+	audio := strings.TrimSpace(n.attr("defaultAudioLanguage"))
+	if audio == "" {
+		audio = firstCSV(n.attr("defaultAudioLanguages"))
+	}
+	sub := strings.TrimSpace(n.attr("defaultSubtitleLanguage"))
+	if sub == "" {
+		sub = firstCSV(n.attr("defaultSubtitleLanguages"))
+	}
 	return TrackDefaults{
-		AudioLanguage:    strings.TrimSpace(n.attr("defaultAudioLanguage")),
+		AudioLanguage:    audio,
 		AutoSelectAudio:  n.boolAttr("autoSelectAudio"),
-		SubtitleLanguage: strings.TrimSpace(n.attr("defaultSubtitleLanguage")),
+		SubtitleLanguage: sub,
 		SubtitleMode:     parsed,
-		ForcedOnly:       n.boolAttr("defaultSubtitleForced"),
+		ForcedOnly:       flexIntFromString(n.attr("defaultSubtitleForced")) == plexForcedOnly,
 		HasProfile:       true,
 	}
 }
@@ -79,50 +94,134 @@ func shareDefaults(n *xmlNode) ShareDefaults {
 	return out
 }
 
+type jsonTrack struct {
+	DefaultAudioLanguage     string          `json:"defaultAudioLanguage"`
+	DefaultAudioLanguages    json.RawMessage `json:"defaultAudioLanguages"`
+	AutoSelectAudio          bool            `json:"autoSelectAudio"`
+	DefaultSubtitleLanguage  string          `json:"defaultSubtitleLanguage"`
+	DefaultSubtitleLanguages json.RawMessage `json:"defaultSubtitleLanguages"`
+	AutoSelectSubtitle       flexInt         `json:"autoSelectSubtitle"`
+	SubtitleMode             flexInt         `json:"subtitleMode"`
+	DefaultSubtitleForced    flexInt         `json:"defaultSubtitleForced"`
+}
+
 func trackDefaultsFromJSON(raw []byte) TrackDefaults {
 	var v struct {
-		DefaultAudioLanguage    string `json:"defaultAudioLanguage"`
-		AutoSelectAudio         bool   `json:"autoSelectAudio"`
-		DefaultSubtitleLanguage string `json:"defaultSubtitleLanguage"`
-		AutoSelectSubtitle      int    `json:"autoSelectSubtitle"`
-		SubtitleMode            int    `json:"subtitleMode"`
-		DefaultSubtitleForced   bool   `json:"defaultSubtitleForced"`
-		Profile                 *struct {
-			DefaultAudioLanguage    string `json:"defaultAudioLanguage"`
-			AutoSelectAudio         bool   `json:"autoSelectAudio"`
-			DefaultSubtitleLanguage string `json:"defaultSubtitleLanguage"`
-			AutoSelectSubtitle      int    `json:"autoSelectSubtitle"`
-			SubtitleMode            int    `json:"subtitleMode"`
-			DefaultSubtitleForced   bool   `json:"defaultSubtitleForced"`
-		} `json:"profile"`
+		jsonTrack
+		Profile *jsonTrack `json:"profile"`
 	}
 	if json.Unmarshal(raw, &v) != nil {
 		return TrackDefaults{}
 	}
-	src := v
+	src := v.jsonTrack
 	if v.Profile != nil {
-		src.DefaultAudioLanguage = v.Profile.DefaultAudioLanguage
-		src.AutoSelectAudio = v.Profile.AutoSelectAudio
-		src.DefaultSubtitleLanguage = v.Profile.DefaultSubtitleLanguage
-		src.AutoSelectSubtitle = v.Profile.AutoSelectSubtitle
-		src.SubtitleMode = v.Profile.SubtitleMode
-		src.DefaultSubtitleForced = v.Profile.DefaultSubtitleForced
+		src = *v.Profile
 	}
-	mode := src.AutoSelectSubtitle
+	audio := strings.TrimSpace(src.DefaultAudioLanguage)
+	if audio == "" {
+		audio = firstLanguage(src.DefaultAudioLanguages)
+	}
+	sub := strings.TrimSpace(src.DefaultSubtitleLanguage)
+	if sub == "" {
+		sub = firstLanguage(src.DefaultSubtitleLanguages)
+	}
+	mode := int(src.AutoSelectSubtitle)
 	if mode == 0 {
-		mode = src.SubtitleMode
+		mode = int(src.SubtitleMode)
 	}
-	if src.DefaultAudioLanguage == "" && src.DefaultSubtitleLanguage == "" && !src.AutoSelectAudio && mode == 0 && !src.DefaultSubtitleForced {
+	forced := int(src.DefaultSubtitleForced)
+	if audio == "" && sub == "" && !src.AutoSelectAudio && mode == 0 && forced == 0 {
 		return TrackDefaults{}
 	}
 	return TrackDefaults{
-		AudioLanguage:    strings.TrimSpace(src.DefaultAudioLanguage),
+		AudioLanguage:    audio,
 		AutoSelectAudio:  src.AutoSelectAudio,
-		SubtitleLanguage: strings.TrimSpace(src.DefaultSubtitleLanguage),
+		SubtitleLanguage: sub,
 		SubtitleMode:     mode,
-		ForcedOnly:       src.DefaultSubtitleForced,
+		ForcedOnly:       forced == plexForcedOnly,
 		HasProfile:       true,
 	}
+}
+
+// flexInt accepts the JSON number plex.tv sends, a quoted digit from XML-shaped
+// fixtures, and a bool from older fakes.
+type flexInt int
+
+func (f *flexInt) UnmarshalJSON(raw []byte) error {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		*f = 0
+		return nil
+	}
+	switch raw[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return err
+		}
+		*f = flexInt(flexIntFromString(s))
+		return nil
+	case 't', 'T':
+		*f = 1
+		return nil
+	case 'f', 'F':
+		*f = 0
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return err
+	}
+	*f = flexInt(n)
+	return nil
+}
+
+func flexIntFromString(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		if strings.EqualFold(s, "true") {
+			return 1
+		}
+		return 0
+	}
+	return n
+}
+
+func firstLanguage(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	if raw[0] == '"' {
+		var s string
+		if json.Unmarshal(raw, &s) != nil {
+			return ""
+		}
+		return firstCSV(s)
+	}
+	var parts []string
+	if json.Unmarshal(raw, &parts) != nil {
+		return ""
+	}
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+func firstCSV(s string) string {
+	for _, p := range strings.Split(s, ",") {
+		if t := strings.TrimSpace(p); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 func optionalBoolAttr(n *xmlNode, names ...string) *bool {

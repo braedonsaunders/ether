@@ -209,8 +209,12 @@ func (c *Client) User(ctx context.Context, token string) (*Account, error) {
 		}
 	} else if err := json.Unmarshal(resp.body, &a); err != nil {
 		return nil, fmt.Errorf("plextv: decode user: %w", err)
-	} else {
-		a.Track = trackDefaultsFromJSON(resp.body)
+	} else if parsed := trackDefaultsFromJSON(resp.body); parsed.HasProfile {
+		a.Track = parsed
+	} else if a.Track.AudioLanguage != "" || a.Track.SubtitleLanguage != "" || a.Track.AutoSelectAudio || a.Track.SubtitleMode != 0 {
+		// Keep the first decode when the profile object used a shape
+		// trackDefaultsFromJSON does not accept.
+		a.Track.HasProfile = true
 	}
 	if a.ID == 0 {
 		return nil, errors.New("plextv: user response without id")
