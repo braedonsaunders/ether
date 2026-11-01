@@ -350,6 +350,9 @@ func decodeWindow(ctx context.Context, ffmpeg, input string, r io.ReaderAt, size
 		"-f", "s16le", "pipe:1",
 	)
 	cmd := exec.CommandContext(ctx, ffmpeg, args...)
+	// A blocked source read must not keep Wait (and the speech slot and
+	// source hold) past cancellation: give up on the stdin copy shortly after.
+	cmd.WaitDelay = 2 * time.Second
 	if r != nil {
 		limit := size
 		if limit <= 0 || limit > sourceReadBudget {
