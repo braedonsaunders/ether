@@ -140,18 +140,19 @@ func (c *Client) AuthURL(pin *PIN, forwardURL string) string {
 
 // Account is a plex.tv user (GET /api/v2/user).
 type Account struct {
-	ID           int64        `json:"id"`
-	UUID         string       `json:"uuid"`
-	Username     string       `json:"username"`
-	Title        string       `json:"title"`
-	FriendlyName string       `json:"friendlyName"`
-	Email        string       `json:"email"`
-	Thumb        string       `json:"thumb"`
-	AuthToken    string       `json:"authToken"`
-	Home         bool         `json:"home"`
-	HomeAdmin    bool         `json:"homeAdmin"`
-	Restricted   bool         `json:"restricted"`
-	Subscription Subscription `json:"subscription"`
+	ID           int64         `json:"id"`
+	UUID         string        `json:"uuid"`
+	Username     string        `json:"username"`
+	Title        string        `json:"title"`
+	FriendlyName string        `json:"friendlyName"`
+	Email        string        `json:"email"`
+	Thumb        string        `json:"thumb"`
+	AuthToken    string        `json:"authToken"`
+	Home         bool          `json:"home"`
+	HomeAdmin    bool          `json:"homeAdmin"`
+	Restricted   bool          `json:"restricted"`
+	Subscription Subscription  `json:"subscription"`
+	Track        TrackDefaults `json:"profile,omitempty"`
 }
 
 // Subscription is the account's Plex Pass state.
@@ -201,8 +202,15 @@ func (c *Client) User(ctx context.Context, token string) (*Account, error) {
 				}
 			}
 		}
+		if profile := n.find("profile"); profile != nil {
+			a.Track = profileDefaults(profile)
+		} else if n.attr("defaultAudioLanguage") != "" || n.attr("defaultSubtitleLanguage") != "" || n.attr("autoSelectAudio") != "" || n.attr("autoSelectSubtitle") != "" {
+			a.Track = profileDefaults(n)
+		}
 	} else if err := json.Unmarshal(resp.body, &a); err != nil {
 		return nil, fmt.Errorf("plextv: decode user: %w", err)
+	} else {
+		a.Track = trackDefaultsFromJSON(resp.body)
 	}
 	if a.ID == 0 {
 		return nil, errors.New("plextv: user response without id")

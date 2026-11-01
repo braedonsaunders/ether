@@ -27,6 +27,8 @@ type Friend struct {
 	Pending    bool     `json:"pending"`    // invite not accepted yet
 	AllLibs    bool     `json:"allLibraries"`
 	Sections   []string `json:"sections,omitempty"` // shared section keys
+	Track      TrackDefaults
+	Share      ShareDefaults
 }
 
 // DisplayName prefers title over username.
@@ -95,6 +97,15 @@ func (c *Client) AccessTokens(ctx context.Context, serverToken string) ([]Friend
 			fill(&f.Thumb, inv.attr("thumb"))
 			f.Home = f.Home || inv.boolAttr("home")
 			f.Restricted = f.Restricted || inv.boolAttr("restricted")
+			if profile := childElement(inv, "profile"); profile != nil {
+				f.Track = profileDefaults(profile)
+			}
+		}
+		if settings := childElement(n, "settings"); settings != nil {
+			f.Share = shareDefaults(settings)
+		} else if sync := optionalBoolAttr(n, "allowSync"); sync != nil {
+			f.Share.AllowSync = sync
+			f.Share.HasSettings = true
 		}
 		for _, s := range n.findAll("section") {
 			if k := s.attr("key", "id"); k != "" {
@@ -147,6 +158,12 @@ func (c *Client) SharedServers(ctx context.Context, ownerToken string) ([]Friend
 			Email:    n.attr("email"),
 			Owned:    n.boolAttr("owned"),
 			AllLibs:  n.boolAttr("allLibraries"),
+			Share: ShareDefaults{
+				FilterMovies:     n.attr("filterMovies"),
+				FilterTelevision: n.attr("filterTelevision"),
+				AllowSync:        optionalBoolAttr(n, "allowSync"),
+				HasSettings:      n.attr("filterMovies") != "" || n.attr("filterTelevision") != "" || n.attr("allowSync") != "",
+			},
 		}
 		accepted := n.attr("acceptedAt")
 		f.Pending = accepted == "" || accepted == "0"
