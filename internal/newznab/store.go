@@ -288,7 +288,7 @@ func (c *Client) capsFromDB(ctx context.Context, endpoint string) (*Caps, bool) 
 	if err := c.db.QueryRowContext(ctx, `SELECT caps, fetched_at FROM newznab_caps WHERE indexer_id=? AND endpoint=?`, c.indexerID(), endpoint).Scan(&raw, &at); err != nil {
 		return nil, false
 	}
-	if c.now().Sub(time.Unix(at, 0)) > 24*time.Hour {
+	if c.now().Sub(time.Unix(at, 0)) > capsTTL {
 		return nil, false
 	}
 	var caps Caps

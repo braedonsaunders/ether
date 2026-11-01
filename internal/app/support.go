@@ -13,6 +13,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/logfile"
+	"github.com/braedonsaunders/ether/internal/newznab"
 )
 
 func (a *App) supportDeps() diagnostics.Deps {
@@ -55,6 +56,7 @@ func supportSettings(cfg config.Config) diagnostics.Settings {
 		RemoteAccess:          cfg.Plex.RemoteAccess,
 		CertificateConfigured: cfg.Plex.CertFile != "" || cfg.Plex.KeyFile != "",
 		CacheBudgetBytes:      cfg.Cache.BudgetBytes,
+		IndexerIdentity:       newznab.IdentitySummary(cfg.ClientIdentity, cfg.Indexers),
 	}
 }
 

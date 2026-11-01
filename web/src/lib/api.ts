@@ -36,6 +36,7 @@ import type {
   EtherUser,
   FieldError,
   CatalogEntry,
+  IdentityView,
   Indexer,
   LLMModel,
   LLMProvider,
@@ -292,6 +293,7 @@ export const api = {
 
   // ---- Config ---------------------------------------------------------------
   getConfig: async () => (await apiFetch<{ config: EtherConfig }>("/config")).config,
+  getIdentity: () => apiFetch<IdentityView>("/config/identity"),
   putConfig: async (config: EtherConfig) =>
     (await put<{ config: EtherConfig }>("/config", config)).config,
   putSection: (section: string, value: unknown) =>

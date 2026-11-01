@@ -28,7 +28,7 @@ func TestSearchItemArrivesBeforeFeedFinishes(t *testing.T) {
 	c := New(config.Indexer{Name: "test", Enabled: true}, nil, Options{})
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	r, err := c.getSearchStream(ctx, srv.URL, func(batch []core.Release) {
+	r, err := c.getSearchStream(ctx, resolvedIdentity{name: IdentityEther}, srv.URL, func(batch []core.Release) {
 		if len(batch) != 1 || batch[0].Name != "Example.2025.1080p.WEB-DL" {
 			t.Errorf("arrival: %+v", batch)
 		}
@@ -56,7 +56,7 @@ func TestJSONSearchItemArrivesBeforeFeedFinishes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	count := 0
-	rs, err := c.getSearchStream(ctx, srv.URL, func(batch []core.Release) {
+	rs, err := c.getSearchStream(ctx, resolvedIdentity{name: IdentityEther}, srv.URL, func(batch []core.Release) {
 		count += len(batch)
 		if count == 1 {
 			close(seen)

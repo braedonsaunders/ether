@@ -74,6 +74,7 @@ export function DomainPage({
 export function Section({
   title,
   description,
+  descriptionClassName,
   actions,
   footer,
   children,
@@ -83,6 +84,7 @@ export function Section({
 }: {
   title?: ReactNode;
   description?: ReactNode;
+  descriptionClassName?: string;
   actions?: ReactNode;
   footer?: ReactNode;
   children: ReactNode;
@@ -101,7 +103,11 @@ export function Section({
           <div className="min-w-0">
             {title ? <h2 className="text-sm font-semibold text-fg">{title}</h2> : null}
             {description ? (
-              <p className="mt-0.5 max-w-2xl text-sm text-fg-muted">{description}</p>
+              <p
+                className={cn("mt-0.5 text-sm text-fg-muted", descriptionClassName ?? "max-w-2xl")}
+              >
+                {description}
+              </p>
             ) : null}
           </div>
           {actions ? (

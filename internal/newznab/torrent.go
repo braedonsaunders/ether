@@ -363,31 +363,14 @@ func (c *Client) resolveTorrent(ctx context.Context, r core.Release) (core.Relea
 	// the safefetch guard, like FetchNZB. Only the owner-configured
 	// indexer origin may be private; redirects away from it (other than
 	// magnet, handled below) are revalidated at dial time.
-	req, err := http.NewRequestWithContext(c.trustedCtx(ctx, rawURL), http.MethodGet, rawURL, nil)
-	if err != nil {
-		return r, redactURLError(err)
-	}
-	req.Header.Set("User-Agent", "Ether/1.0")
 	// Torznab download links commonly redirect to a magnet URI, which
 	// net/http cannot follow: stop there and read the Location header.
-	hc := *c.guarded
-	inner := hc.CheckRedirect
-	hc.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+	resp, err := c.requestWith(ctx, c.grabIdentity(r).torrent(), rawURL, func(next *http.Request, _ []*http.Request) error {
 		if next.URL.Scheme == "magnet" {
 			return http.ErrUseLastResponse
 		}
-		if inner != nil {
-			return inner(next, via)
-		}
-		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
-		}
 		return nil
-	}
-	if hc.Timeout == 0 {
-		hc.Timeout = defaultHTTPTimeout
-	}
-	resp, err := hc.Do(req)
+	})
 	if err != nil {
 		// url.Error embeds the URL, which can carry the indexer API key.
 		var ue *url.Error

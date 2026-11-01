@@ -103,12 +103,17 @@ func settingsPolicy(c config.Config) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
+
+// selected matches an owner-selected indexer id against a feed id. A split
+// media feed keeps its indexer's id as the base, so selecting the indexer
+// selects both sides.
 func selected(ids []string, id string) bool {
 	if len(ids) == 0 {
 		return true
 	}
+	base, _, _ := strings.Cut(id, "#")
 	for _, x := range ids {
-		if x == id {
+		if x == id || x == base {
 			return true
 		}
 	}
@@ -416,26 +421,27 @@ func (s *Service) Observe(ctx context.Context, t *core.Title, r core.Release) {
 		return
 	}
 	for _, f := range s.d.Feeds.FeedSources() {
-		if f.Name == r.Indexer {
-			policy := s.policy()
-			if err := s.remember(ctx, f, *t, r, policy); err != nil {
-				return
-			}
-			var revision int64
-			if err := s.db.QueryRowContext(ctx, `SELECT revision FROM availability_releases WHERE id=? AND rating_key=? AND source_id=?`, r.ID, t.Key, f.ID).Scan(&revision); err != nil {
-				return
-			}
-			_, reason, err := s.d.Validator.FeedCandidate(ctx, t, r)
-			if err != nil || reason != "" {
-				return
-			}
-			now := s.now().Unix()
-			_, err = s.db.ExecContext(ctx, `UPDATE availability_releases SET state='verified',reason='Health check reused from playback resolution',verified_at=?,first_verified=CASE WHEN first_verified=0 THEN ? ELSE first_verified END,policy=?,next_check=? WHERE id=? AND rating_key=? AND source_id=? AND revision=? AND generation=?`, now, now, policy, now+int64((6*time.Hour).Seconds()), r.ID, t.Key, f.ID, revision, f.Generation)
-			if err != nil {
-				s.log.Debug("availability observation could not be saved", "error", err)
-			}
+		if f.Name != r.Indexer || !feedSideMatches(f.ID, r.MediaType) {
+			continue
+		}
+		policy := s.policy()
+		if err := s.remember(ctx, f, *t, r, policy); err != nil {
 			return
 		}
+		var revision int64
+		if err := s.db.QueryRowContext(ctx, `SELECT revision FROM availability_releases WHERE id=? AND rating_key=? AND source_id=?`, r.ID, t.Key, f.ID).Scan(&revision); err != nil {
+			return
+		}
+		_, reason, err := s.d.Validator.FeedCandidate(ctx, t, r)
+		if err != nil || reason != "" {
+			return
+		}
+		now := s.now().Unix()
+		_, err = s.db.ExecContext(ctx, `UPDATE availability_releases SET state='verified',reason='Health check reused from playback resolution',verified_at=?,first_verified=CASE WHEN first_verified=0 THEN ? ELSE first_verified END,policy=?,next_check=? WHERE id=? AND rating_key=? AND source_id=? AND revision=? AND generation=?`, now, now, policy, now+int64((6*time.Hour).Seconds()), r.ID, t.Key, f.ID, revision, f.Generation)
+		if err != nil {
+			s.log.Debug("availability observation could not be saved", "error", err)
+		}
+		return
 	}
 }
 

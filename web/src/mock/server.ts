@@ -31,6 +31,8 @@ import type {
   ClusterStatus,
   EtherConfig,
   EtherUser,
+  IdentityView,
+  Indexer,
   JoinTokenInfo,
   LogEntry,
 } from "../lib/types";
@@ -78,6 +80,46 @@ function json(body: unknown, status = 200): Response {
 }
 function err(status: number, code: string, message: string): Response {
   return json({ error: { code, message } }, status);
+}
+
+/** Mirrors the server's override → global → ether precedence for one request. */
+function effectiveIdentity(
+  policy: EtherConfig["clientIdentity"],
+  ix: Pick<Indexer, "searchIdentity" | "grabIdentity">,
+  purpose: "search" | "grab",
+  movie: boolean,
+): string {
+  const search = (movie ? policy?.searchMovies : policy?.searchTv) || "ether";
+  if (purpose === "search") return ix.searchIdentity || search;
+  if (ix.grabIdentity) return ix.grabIdentity;
+  const grab = movie ? policy?.grabMovies : policy?.grabTv;
+  return !grab || grab === "same" ? search : grab;
+}
+
+function identityView(cfg: EtherConfig): IdentityView {
+  const policy = cfg.clientIdentity;
+  return {
+    tvSearch: effectiveIdentity(policy, {}, "search", false),
+    movieSearch: effectiveIdentity(policy, {}, "search", true),
+    tvGrab: effectiveIdentity(policy, {}, "grab", false),
+    movieGrab: effectiveIdentity(policy, {}, "grab", true),
+    userAgents: {
+      ether: "Ether/dev",
+      prowlarr: "Prowlarr/2.7.0.5723 (alpine 3.24.2)",
+      sonarr: "Sonarr/4.0.20.3014 (alpine 3.24.2)",
+      radarr: "Radarr/6.4.4.10685 (alpine 3.24.2)",
+      nzbhydra2: "NZBHydra2 9.2.0",
+    },
+    indexers: (cfg.indexers ?? []).map((ix) => ({
+      id: ix.id,
+      searchOverride: ix.searchIdentity,
+      grabOverride: ix.grabIdentity,
+      effectiveTvSearch: effectiveIdentity(policy, ix, "search", false),
+      effectiveMovieSearch: effectiveIdentity(policy, ix, "search", true),
+      effectiveTvGrab: effectiveIdentity(policy, ix, "grab", false),
+      effectiveMovieGrab: effectiveIdentity(policy, ix, "grab", true),
+    })),
+  };
 }
 
 function defaultConfig(): EtherConfig {
@@ -1862,6 +1904,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return json(state.boot);
       case "GET /dashboard":
         return json(dashboard());
+      case "GET /config/identity":
+        return json(identityView(state.config));
       case "GET /config":
         return json({ config: state.config });
       case "PUT /config":

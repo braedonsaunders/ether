@@ -40,6 +40,46 @@ export interface Indexer {
   settings?: Record<string, string> | null;
   /** A built-in site's password settings; each set value is redacted to "••••". */
   secretSettings?: Record<string, string> | null;
+  /** Search identity preset; empty inherits the global policy. */
+  searchIdentity?: string;
+  /** Grab identity preset; empty inherits the global policy. No "same". */
+  grabIdentity?: string;
+  /** User agent and headers used only when an override is "custom". */
+  userAgent?: string;
+  headers?: Record<string, string> | null;
+}
+
+/** The global client-identity policy (config.clientIdentity). */
+export interface ClientIdentityConfig {
+  /** Preset names; "" (search) or absent means ether. Grab allows "same". */
+  searchTv?: string;
+  searchMovies?: string;
+  grabTv?: string;
+  grabMovies?: string;
+  /** Header values are redacted to "••••" when set. */
+  userAgent?: string;
+  headers?: Record<string, string> | null;
+}
+
+/** GET /config/identity: effective preset names, never custom values. */
+export interface IdentityView {
+  tvSearch: string;
+  movieSearch: string;
+  tvGrab: string;
+  movieGrab: string;
+  indexers: IndexerIdentityView[];
+  /** Literal user agent per preset; custom has no fixed value. */
+  userAgents: Record<string, string>;
+}
+
+export interface IndexerIdentityView {
+  id: string;
+  searchOverride?: string;
+  grabOverride?: string;
+  effectiveTvSearch: string;
+  effectiveMovieSearch: string;
+  effectiveTvGrab: string;
+  effectiveMovieGrab: string;
 }
 
 export type IndexerProtocol = "usenet" | "torrent";
@@ -256,6 +296,7 @@ export interface EtherConfig {
   };
   indexers: Indexer[] | null;
   indexerSites?: IndexerSitesConfig;
+  clientIdentity?: ClientIdentityConfig;
   /** Absent on servers without debrid support. */
   debrid?: DebridConfig;
   sharedCache?: EtherConfig["cache"];

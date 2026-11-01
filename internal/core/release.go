@@ -68,6 +68,10 @@ type Release struct {
 	// TitleIDs are movie/series identifiers reported by the indexer. They
 	// must never be inferred from the search request's identifiers.
 	TitleIDs IDs `json:"titleIds,omitempty"`
+	// MediaType is the media the release was discovered for (TypeMovie or
+	// TypeEpisode), used to select the grab identity. Empty when the source
+	// did not say; older cached records decode without it.
+	MediaType MediaType `json:"mediaType,omitempty"`
 
 	// Torrent releases (additive). Protocol is "" for Usenet and
 	// ProtocolTorrent for Torznab results; torrents are streamed through
