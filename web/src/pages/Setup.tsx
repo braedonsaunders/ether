@@ -888,6 +888,8 @@ export default function Setup() {
 
   const finish = async (force: boolean) => {
     const status = await api.setupComplete(force);
+    const catalog = status.steps.find((item) => item.id === "catalog");
+    if (catalog) setTmdbBundled(Boolean(catalog.complete));
     setServerSteps(Object.fromEntries(status.steps.map((item) => [item.id, item.complete])));
     sessionStorage.removeItem(SETUP_STEP_KEY);
     sessionStorage.removeItem("ether.setup.skipped");
@@ -900,7 +902,13 @@ export default function Setup() {
   const passwordLongEnough = localPassword.length >= MIN_LOCAL_PASSWORD;
   const passwordsMatch = passwordLongEnough && localPassword === localPasswordAgain;
 
-  if (finished) return <SetupReady initialConfig={cfg} />;
+  if (finished)
+    return (
+      <SetupReady
+        initialConfig={cfg}
+        tmdbAvailable={tmdbBundled || Boolean(cfg.catalog?.tmdbKey?.trim())}
+      />
+    );
 
   return (
     <WizardLayout

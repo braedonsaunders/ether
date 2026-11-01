@@ -957,6 +957,7 @@ describe("setup wizard", () => {
         "Your settings are saved. Add a debrid or Usenet account so titles can play.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add a TMDB key" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add a debrid account" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect Plex" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect a device" })).toBeInTheDocument();

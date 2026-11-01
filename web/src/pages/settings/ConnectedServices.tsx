@@ -20,7 +20,7 @@ import { secretConfigured } from "../../components/IntegrationAccount";
 import { SimklMark, TraktMark } from "../../components/integration-brands";
 import { SaveBar } from "../../components/SaveBar";
 import { LevelBadge } from "../../components/status";
-import { localized, t } from "../../i18n";
+import { localized, t, tx } from "../../i18n";
 import { api, apiFetch, ApiError, type TestFn } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import type { EtherConfig } from "../../lib/types";
@@ -913,6 +913,20 @@ export function ConnectedServices({
               />
             }
           >
+            <p className="mb-3 text-sm text-fg-muted">
+              {tx("Create a free API key in your {link} account settings, then paste it below.", {
+                link: (
+                  <a
+                    href="https://www.themoviedb.org/settings/api"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-primary underline"
+                  >
+                    themoviedb.org
+                  </a>
+                ),
+              })}
+            </p>
             <SchemaField
               def={{
                 key: "tmdbKey",

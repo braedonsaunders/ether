@@ -99,6 +99,14 @@ describe("Catalog workspace", () => {
     );
   });
 
+  it("shows a one-line notice linking to /services/tmdb when no TMDB key is configured", async () => {
+    renderAppWith("/catalog", (_method, path) => {
+      if (path === "/catalog/browse") return { items: [], total: 0 };
+    });
+    const link = await screen.findByRole("link", { name: "Add a TMDB key" });
+    expect(link).toHaveAttribute("href", "/services/tmdb");
+  });
+
   it("shows errors with retry and provides an empty-result reset", async () => {
     let fail = true;
     renderAppWith("/catalog?q=missing", (_method, path) => {

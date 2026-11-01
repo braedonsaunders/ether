@@ -135,6 +135,10 @@ describe("Settings", () => {
     fireEvent.change(await screen.findByLabelText("TMDB API key", {}, WAIT), {
       target: { value: "tmdb-key" },
     });
+    expect(screen.getByRole("link", { name: "themoviedb.org" })).toHaveAttribute(
+      "href",
+      "https://www.themoviedb.org/settings/api",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Test TMDB key" }));
     await waitFor(() => expect(calls(fake, "POST", "/test/tmdb")).toHaveLength(1), WAIT);
     expect(calls(fake, "POST", "/test/tmdb")[0]!.body).toEqual({ key: "tmdb-key" });

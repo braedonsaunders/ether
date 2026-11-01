@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
         -X github.com/braedonsaunders/ether/internal/updater.Version=${VERSION} \
         -X github.com/braedonsaunders/ether/internal/updater.Commit=${COMMIT} \
         -X github.com/braedonsaunders/ether/internal/updater.PublicKeyB64=${ETHER_UPDATE_PUBLIC_KEY} \
-        -X github.com/braedonsaunders/ether/internal/tmdb.BundledAPIKey=${ETHER_TMDB_KEY}" \
+        -X github.com/braedonsaunders/ether/internal/tmdb.BundledKey=${ETHER_TMDB_KEY}" \
       -o /out/ether ./cmd/ether
 
 # ---- runtime ----------------------------------------------------------------

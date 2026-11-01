@@ -65,6 +65,7 @@ function sourceReady(cfg: EtherConfig): boolean {
 }
 
 function GettingStarted({ sessions }: { sessions: NowPlaying[] }) {
+  const { dashboard } = useApp();
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(GETTING_STARTED_KEY) === "1",
   );
@@ -74,11 +75,20 @@ function GettingStarted({ sessions }: { sessions: NowPlaying[] }) {
   const cfg = config.data;
   const people = viewers.data;
   if (!cfg || !people) return null;
+  const catalogStep = dashboard?.setupSteps?.find((s) => s.id === "catalog");
+  const catalogStats = dashboard?.sections?.catalog as
+    { browsableMovies?: number; movies?: number; lastSync?: string } | undefined;
+  const tmdbReady =
+    Boolean(cfg.catalog?.tmdbKey?.trim()) ||
+    (catalogStep
+      ? catalogStep.complete
+      : Boolean(catalogStats?.browsableMovies || catalogStats?.movies || catalogStats?.lastSync));
   const apps = Object.entries(cfg.frontends ?? {})
     .filter(([, row]) => row?.enabled)
     .map(([id]) => id);
   const profile = cfg.quality?.default?.trim() || "1080p";
   const steps = [
+    { id: "tmdb", todo: !tmdbReady, label: t("Add a TMDB key"), to: "/services/tmdb" },
     { id: "source", todo: !sourceReady(cfg), label: t("Add a source"), to: "/sources" },
     {
       id: "plex",
