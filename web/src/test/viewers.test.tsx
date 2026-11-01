@@ -166,29 +166,15 @@ describe("Viewers", () => {
     await waitFor(() => expect(screen.queryByText("You have unsaved changes")).toBeNull());
   });
 
-  const withPlex = (server: FakeServer) => {
-    server.state.plexDefaults[3] = {
-      hasProfile: true,
-      hasSettings: true,
-      audioLanguage: "ja",
-      autoSelectAudio: true,
-      subtitleLanguage: "en",
-      subtitleMode: "always",
-      filterMovies: "contentRating<=PG-13",
-      filterTelevision: "label!=Hidden",
-      allowSync: false,
-    };
-  };
-
   it("shows read-only plex.tv share defaults on Access", async () => {
-    renderApp("/viewers/3/access", {}, withPlex);
+    renderApp("/viewers/3/access", {}, withPlexDefaults);
     expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("contentRating<=PG-13")).toBeInTheDocument();
     expect(screen.getByText("label!=Hidden")).toBeInTheDocument();
   });
 
   it("shows read-only plex.tv track defaults on Playback", async () => {
-    renderApp("/viewers/3/playback", { householdAudio: true }, withPlex);
+    renderApp("/viewers/3/playback", { householdAudio: true }, withPlexDefaults);
     expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
     expect(await screen.findByText("ja", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("Always on")).toBeInTheDocument();
