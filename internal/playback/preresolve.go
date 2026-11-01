@@ -273,7 +273,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 			e.originalAudio = true
 			e.originalLanguage = strings.TrimSpace(title.Language)
 		}
-		if res == nil || !releaseMatchesTitle(res.Release, title) {
+		if res == nil || !releaseMatchesTitle(res.Release, title) || !payloadMatchesTitle(res.NZB, title) {
 			res, err = m.deps.Resolver.Resolve(ctx, core.ResolveRequest{Title: title, Client: caps, User: &u})
 		} else if reason == core.PrewarmDetail {
 			// Reusing the remembered source skips Resolve/search. Recover only

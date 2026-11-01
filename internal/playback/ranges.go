@@ -137,13 +137,62 @@ func ifRangeMatches(v, etag string, modTime time.Time) bool {
 
 // representation describes a byte stream served with range support.
 type representation struct {
-	size        int64
-	etag        string
-	modTime     time.Time
-	contentType string
+	size                  int64
+	etag                  string
+	modTime               time.Time
+	contentType           string
+	deferStatusOnZeroRead bool
 	// body writes length bytes starting at start. An error ends the response
 	// early (the client sees a short body and re-requests).
 	body func(w io.Writer, start, length int64) error
+}
+
+type lazyHeaderWriter struct {
+	w      http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (l *lazyHeaderWriter) Write(p []byte) (int, error) {
+	if !l.wrote {
+		l.wrote = true
+		l.w.WriteHeader(l.status)
+	}
+	return l.w.Write(p)
+}
+
+func serveSingleRangeBody(w http.ResponseWriter, r *http.Request, status int, start, length int64, deferStatusOnZeroRead bool, body func(w io.Writer, start, length int64) error) error {
+	if r.Method == http.MethodHead || length == 0 {
+		w.WriteHeader(status)
+		return nil
+	}
+	if !deferStatusOnZeroRead {
+		w.WriteHeader(status)
+		return body(w, start, length)
+	}
+	lw := &lazyHeaderWriter{w: w, status: status}
+	err := body(lw, start, length)
+	if !lw.wrote {
+		if err == nil {
+			w.WriteHeader(status)
+			return nil
+		}
+		if r.Context().Err() != nil {
+			return err
+		}
+		h := w.Header()
+		h.Del("Content-Range")
+		h.Del("Content-Length")
+		h.Set("Cache-Control", "no-store")
+		if errors.Is(err, errEndResponse) {
+			http.Error(w, "source changed; restart playback", http.StatusConflict)
+			return err
+		}
+		h.Set("Retry-After", "2")
+		http.Error(w, "media source temporarily unavailable", http.StatusServiceUnavailable)
+		return err
+	}
+	return err
 }
 
 // serveRepresentation answers GET and HEAD with full Range and If-Range
@@ -186,21 +235,13 @@ func serveRepresentation(w http.ResponseWriter, r *http.Request, rep representat
 	case 0:
 		h.Set("Content-Type", ctype)
 		h.Set("Content-Length", strconv.FormatInt(rep.size, 10))
-		w.WriteHeader(http.StatusOK)
-		if r.Method == http.MethodHead || rep.size == 0 {
-			return nil
-		}
-		return rep.body(w, 0, rep.size)
+		return serveSingleRangeBody(w, r, http.StatusOK, 0, rep.size, rep.deferStatusOnZeroRead, rep.body)
 	case 1:
 		br := ranges[0]
 		h.Set("Content-Type", ctype)
 		h.Set("Content-Range", br.contentRange(rep.size))
 		h.Set("Content-Length", strconv.FormatInt(br.length, 10))
-		w.WriteHeader(http.StatusPartialContent)
-		if r.Method == http.MethodHead {
-			return nil
-		}
-		return rep.body(w, br.start, br.length)
+		return serveSingleRangeBody(w, r, http.StatusPartialContent, br.start, br.length, rep.deferStatusOnZeroRead, rep.body)
 	}
 
 	mw := multipart.NewWriter(w)

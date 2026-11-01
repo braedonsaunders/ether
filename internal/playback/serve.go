@@ -52,10 +52,11 @@ func (m *Manager) ServeRange(w http.ResponseWriter, r *http.Request, sessionID s
 	w = newStallWriter(w, m.opts.WriteStallTimeout)
 	s.mu.Lock()
 	rep := representation{
-		size:        s.virtual.Size,
-		etag:        s.etag,
-		modTime:     s.modTime,
-		contentType: s.contentType,
+		size:                  s.virtual.Size,
+		etag:                  s.etag,
+		modTime:               s.modTime,
+		contentType:           s.contentType,
+		deferStatusOnZeroRead: true,
 	}
 	s.mu.Unlock()
 	rep.body = func(w io.Writer, start, length int64) error {

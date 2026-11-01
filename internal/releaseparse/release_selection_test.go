@@ -66,3 +66,22 @@ func TestRemuxIsAWord(t *testing.T) {
 		}
 	}
 }
+
+func TestRunningManPackAndKoreanVarietyEpisodeParsing(t *testing.T) {
+	pack := Parse("Running Man Episode 1-129 English Subbed 720P")
+	if !pack.FullSeason || len(pack.Episodes) != 0 || pack.Title != "Running Man" {
+		t.Fatalf("pack = %+v", pack)
+	}
+	inPack := Parse("Running Man Episode 1-129 English Subbed 720P [iSUBS]Running.Man.E43.720P.avi")
+	if inPack.FullSeason || !slices.Equal(inPack.Episodes, []int{43}) || EpisodeMatches(inPack, 1, 1) || !EpisodeMatches(inPack, 1, 43) {
+		t.Fatalf("inPack = %+v", inPack)
+	}
+	e129 := Parse("[iSUBS]Running.Man.E129.720P.avi")
+	if !slices.Equal(e129.Episodes, []int{129}) || !EpisodeMatches(e129, 1, 129) {
+		t.Fatalf("e129 = %+v", e129)
+	}
+	e005 := Parse("Running.Man.E005.1080p.Kcw.WEB-DL.AAC.H.264-RSG")
+	if !slices.Equal(e005.Episodes, []int{5}) || !EpisodeMatches(e005, 1, 5) {
+		t.Fatalf("e005 = %+v", e005)
+	}
+}

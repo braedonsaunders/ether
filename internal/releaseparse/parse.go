@@ -19,7 +19,7 @@ var (
 	reSeasonOnly  = regexp.MustCompile(`(?i)\bS(\d{1,2})(?:\s*(?:-|to)\s*S?(\d{1,2}))?\b`)
 	reSeasonWord  = regexp.MustCompile(`(?i)\b(?:Seasons?|Saison|Stagione|Temporada)\s*(\d{1,2})(?:\s*(?:-|to)\s*(?:Seasons?|S)?\s*(\d{1,2}))?\b`)
 	reXEpisode    = regexp.MustCompile(`\b(\d{1,2})x(\d{1,3})\b`)
-	reBareEpisode = regexp.MustCompile(`(?i)\b(?:Episode\s*(\d{1,3})|Ep\s*(\d{1,3})|E(\d{2,3}))\b`)
+	reBareEpisode = regexp.MustCompile(`(?i)\b(?:Episodes?\s*(\d{1,3})|Ep\s*(\d{1,3})|E(\d{2,3}))(?:\s*(?:-|~|to)\s*(?:Episodes?\s*|Ep\s*|E)?(\d{1,3}))?\b`)
 	reDashEpisode = regexp.MustCompile(`(?i)\s-\s*(\d{2,3})\s+(?:\d{3,4}[pi]\b|BD\b|BLURAY\b|WEB|HDTV\b|DVD|X264\b|X265\b|HEVC\b|H264\b|H265\b|AV1\b|XVID\b)`)
 	reEpRange     = regexp.MustCompile(`(?i)E(\d{1,3})`)
 	// Anime absolute numbering and "Season N - EE" (parseAbsoluteEpisode,
@@ -320,8 +320,12 @@ func parseEpisodes(spaced, upper string, info *core.ReleaseInfo) int {
 		}
 	}
 	if strings.Contains(upper, " E") {
-		if episode, at, ok := parseBareEpisode(spaced); ok {
-			info.Episodes = []int{episode}
+		if episodes, fullPack, at, ok := parseBareEpisode(spaced); ok {
+			if fullPack {
+				info.FullSeason = true
+			} else {
+				info.Episodes = episodes
+			}
 			return at
 		}
 	}
@@ -401,32 +405,58 @@ func parseXEpisode(spaced string) (season, episode, at int, ok bool) {
 }
 
 // parseBareEpisode reads a bare episode pattern (reBareEpisode):
-// "Episode N", "Ep N" or "ENN" without a season.
-func parseBareEpisode(spaced string) (episode, at int, ok bool) {
-	loc := reBareEpisode.FindStringSubmatchIndex(spaced)
-	if loc == nil {
-		return 0, -1, false
+// "Episode N", "Ep N" or "ENN" without a season. Multi-episode pack ranges
+// ("Episode 1-129") mark FullSeason when no specific episode follows.
+func parseBareEpisode(spaced string) (episodes []int, fullPack bool, at int, ok bool) {
+	locs := reBareEpisode.FindAllStringSubmatchIndex(spaced, -1)
+	if len(locs) == 0 {
+		return nil, false, -1, false
 	}
-	m := submatches(spaced, loc)
 	_, yearAt := parseYearAt(spaced)
-	// "Star Wars Episode 1 1999" has the release year after "Episode 1";
-	// miniseries and season-directory files ("Band.of.Brothers.E01",
-	// "Episode 05 - Name.mkv") do not.
-	if m[1] != "" && yearAt >= 0 && loc[0] <= yearAt {
-		return 0, -1, false
+	sawPack := false
+	packAt := -1
+	for _, loc := range locs {
+		m := submatches(spaced, loc)
+		// "Star Wars Episode 1 1999" has the release year after "Episode 1";
+		// miniseries and season-directory files ("Band.of.Brothers.E01",
+		// "Episode 05 - Name.mkv") do not.
+		if m[1] != "" && m[4] == "" && yearAt >= 0 && loc[0] <= yearAt {
+			continue
+		}
+		tok := m[1]
+		if tok == "" {
+			tok = m[2]
+		}
+		if tok == "" {
+			tok = m[3]
+		}
+		e, err := strconv.Atoi(tok)
+		if err != nil || e < 1 || e > 999 {
+			continue
+		}
+		if m[4] != "" {
+			last, err := strconv.Atoi(m[4])
+			if err == nil && last > e {
+				if last-e > 4 {
+					if !sawPack {
+						sawPack = true
+						packAt = loc[0]
+					}
+					continue
+				}
+				var eps []int
+				for n := e; n <= last; n++ {
+					eps = append(eps, n)
+				}
+				return eps, false, loc[0], true
+			}
+		}
+		return []int{e}, false, loc[0], true
 	}
-	tok := m[1]
-	if tok == "" {
-		tok = m[2]
+	if sawPack {
+		return nil, true, packAt, true
 	}
-	if tok == "" {
-		tok = m[3]
-	}
-	e, err := strconv.Atoi(tok)
-	if err != nil || e < 1 || e > 100 {
-		return 0, -1, false
-	}
-	return e, loc[0], true
+	return nil, false, -1, false
 }
 
 // parseDashEpisode reads the dash episode pattern (reDashEpisode):

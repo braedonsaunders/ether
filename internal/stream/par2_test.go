@@ -371,3 +371,30 @@ func TestCheckReleaseKeepsPar2AndHeadsInDiskCache(t *testing.T) {
 		t.Fatalf("name %q from cache", src.Name())
 	}
 }
+
+func TestObfuscatedUnrecognizableMultiPartFailsAfterLeadingPair(t *testing.T) {
+	f := newFakeFetcher()
+	var postFiles []postFile
+	var p2Files []par2test.File
+	for i := 10; i < 42; i++ {
+		name := fmt.Sprintf("60d0b0d07a0f5c41ad028f7eb16667c4.%02d", i)
+		data := randBytes(uint64(i), 100_000)
+		postFiles = append(postFiles, postFile{name: name, data: data})
+		p2Files = append(p2Files, par2test.File{Name: name, Data: data})
+	}
+	postFiles = append(postFiles, postFile{
+		name: "60d0b0d07a0f5c41ad028f7eb16667c4.par2",
+		data: par2Index(16_384, p2Files...),
+	})
+	doc := post(t, f, 50_000, postFiles...)
+	e := newTestEngine(t, f, nil, Options{HealthSamples: 4})
+	ok, err := e.Check(context.Background(), doc)
+	if ok || err == nil {
+		t.Fatalf("expected unrecognizable obfuscated post to fail Check, got ok=%v err=%v", ok, err)
+	}
+	// Only the leading 2 unknown files + the .par2 index (3 articles) should be
+	// fetched instead of all 32 unknown files.
+	if got := f.totalCalls(); got > 3 {
+		t.Fatalf("Check fetched %d articles on unrecognizable post, want <= 3", got)
+	}
+}

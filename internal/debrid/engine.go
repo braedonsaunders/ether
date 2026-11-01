@@ -393,6 +393,9 @@ func (e *Engine) acquireFile(ctx context.Context, releaseID string, payload []by
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", core.ErrReleaseRejected, err)
 	}
+	if p.Target != nil && p.Path != "" && (!fileIdentityMatches(File{Path: p.Path}, p.Target) || !chosenFileMatchesTarget(p.Path, p.Target)) {
+		return nil, fmt.Errorf("debrid: payload file %q does not match target episode: %w", p.Path, core.ErrReleaseRejected)
+	}
 	if releaseID == "" {
 		releaseID = healthKey(p)
 	}

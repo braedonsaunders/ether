@@ -22,7 +22,7 @@ func (s *Service) reusablePayload(ctx context.Context, rel core.Release) (Payloa
 	if hash := strings.ToLower(rel.InfoHash); hash != "" && hash != p.InfoHash {
 		return Payload{}, false
 	}
-	if !fileIdentityMatches(File{Path: p.Path}, rel.Target) {
+	if !fileIdentityMatches(File{Path: p.Path}, rel.Target) || !chosenFileMatchesTarget(p.Path, rel.Target) {
 		return Payload{}, false
 	}
 	p.Target = rel.Target

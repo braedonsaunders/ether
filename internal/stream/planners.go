@@ -560,37 +560,48 @@ func (b *builder) unknownFilesExcept(skip map[*postedFile]bool, limit int) []*po
 // With one, the index is fetched in parallel with the heads: when one
 // unknown file dominates the post (a plain video beside small extras),
 // only its head is fetched first, and if that names it a video the other
-// probes are skipped; otherwise (archive volumes) every head is fetched in
-// the same wave as the index, and PAR2 names and orders them.
+// probes are skipped; otherwise the leading pair of heads is fetched with
+// the index first so non-streamable or unrecognisable multi-part posts fail
+// fast without downloading every volume's first segment.
 func (b *builder) identifyObfuscated(ctx context.Context) error {
 	unknown := b.unknownFiles()
 	if len(unknown) == 0 {
 		return nil
 	}
 	idx := b.rel.par2IndexFile()
-	if idx == nil {
+	if idx == nil && len(unknown) <= 4 {
 		return b.probeAll(ctx, unknown, nil)
 	}
 	wave := unknown
-	if len(unknown) > 1 && unknown[0].file.Bytes() >= 2*unknown[1].file.Bytes() {
+	if idx == nil {
+		wave = []*postedFile{unknown[0], unknown[1], unknown[len(unknown)-1]}
+	} else if len(unknown) > 1 && unknown[0].file.Bytes() >= 2*unknown[1].file.Bytes() {
 		wave = unknown[:1]
+	} else if len(unknown) > 2 {
+		wave = unknown[:2]
 	}
-	setCh := make(chan *par2.Set, 1)
-	go func() { setCh <- b.rel.loadPar2(ctx, b.prio, b.fo, idx) }()
-	_ = b.parallel(ctx, len(wave), func(ctx context.Context, i int) error {
-		_, _ = b.e.segment(ctx, b.rel, wave[i], 0, b.prio, b.fo)
-		return nil
-	})
-	set := <-setCh
+	var set *par2.Set
+	if idx != nil {
+		setCh := make(chan *par2.Set, 1)
+		go func() { setCh <- b.rel.loadPar2(ctx, b.prio, b.fo, idx) }()
+		_ = b.parallel(ctx, len(wave), func(ctx context.Context, i int) error {
+			_, _ = b.e.segment(ctx, b.rel, wave[i], 0, b.prio, b.fo)
+			return nil
+		})
+		set = <-setCh
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if len(wave) < len(unknown) {
-		named, _, err := b.probeObfuscated(ctx, wave, set)
+		named, unreadable, err := b.probeObfuscated(ctx, wave, set)
 		if err != nil {
 			return err
 		}
-		if cands := b.candidates(b.rel.files); len(cands) > 0 && !b.shouldProbe(cands) {
+		if set == nil {
+			set = b.rel.par2Ready()
+		}
+		if cands := b.candidates(b.rel.files); len(cands) > 0 {
 			if err := b.checkCachedRAR(ctx, cands[0]); err != nil {
 				return err
 			}
@@ -599,6 +610,13 @@ func (b *builder) identifyObfuscated(ctx context.Context) error {
 		if info.Kind == nzb.KindVideo && !info.Sample && !info.Extra && !b.shouldProbe(b.candidates(b.rel.files)) {
 			if named[wave[0]] {
 				b.e.par2Saved.Add(int64(len(unknown) - len(wave)))
+			}
+			return nil
+		}
+		if len(wave) >= 2 && wave[0].file.Info.Kind == nzb.KindUnknown && wave[1].file.Info.Kind == nzb.KindUnknown &&
+			!unreadable[wave[0]] && !unreadable[wave[1]] {
+			if !wave[0].SizeKnown() && !wave[1].SizeKnown() {
+				return incompleteError("leading files %s and %s are missing", wave[0].Name(), wave[1].Name())
 			}
 			return nil
 		}

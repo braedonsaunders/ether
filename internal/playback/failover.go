@@ -56,7 +56,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			}
 		}
 	}
-	if res != nil && !releaseMatchesTitle(res.Release, s.title) {
+	if res != nil && (!releaseMatchesTitle(res.Release, s.title) || !payloadMatchesTitle(res.NZB, s.title)) {
 		// An older stored/warmed selection may predate the series identity
 		// gate. Do not reuse a same-named reboot for this show's episode.
 		res, cached, fromResume = nil, nil, false
@@ -214,7 +214,7 @@ func allowsH264Transcode(c core.ClientCaps) bool {
 func (m *Manager) openGeneration(ctx context.Context, s *session, res *core.Resolution, fallback func(size int64) core.MediaInfo, cached ...*probeCache) (*generation, error) {
 	// Recheck at the shared open boundary, including failover and old
 	// cached alternates. A mismatch is request-specific, not a bad release.
-	if !releaseMatchesTitle(res.Release, s.title) {
+	if !releaseMatchesTitle(res.Release, s.title) || !payloadMatchesTitle(res.NZB, s.title) {
 		return nil, fmt.Errorf("%w: release does not match requested episode", core.ErrNotAvailable)
 	}
 	src, finish, err := m.openSource(ctx, s.sources, res)

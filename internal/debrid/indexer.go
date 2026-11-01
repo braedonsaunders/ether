@@ -384,6 +384,9 @@ func (x *Indexer) FetchNZB(ctx context.Context, r core.Release) ([]byte, error) 
 		return x.svc.DirectPayload(ctx, r)
 	}
 	if r.Protocol != core.ProtocolTorrent {
+		if x.usenetReady != nil && !x.usenetReady() {
+			return nil, fmt.Errorf("usenet release %q: %w", r.Name, core.ErrNotAvailable)
+		}
 		return x.inner.FetchNZB(ctx, r)
 	}
 	if !x.svc.Enabled() {

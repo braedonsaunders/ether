@@ -870,6 +870,23 @@ func (f *Fetcher) eachOnce(ctx context.Context, id, kind string, req routeReq, o
 	return lastErr
 }
 
+// HasUsableProvider reports whether at least one enabled Usenet provider is
+// not locked out after an authentication failure.
+func (f *Fetcher) HasUsableProvider() bool {
+	if f == nil {
+		return false
+	}
+	f.mu.RLock()
+	pools := f.pools
+	f.mu.RUnlock()
+	for _, p := range pools {
+		if !errors.Is(p.brk.allow(), ErrProviderDisabled) {
+			return true
+		}
+	}
+	return false
+}
+
 // Stats returns a snapshot per enabled provider, in configuration order.
 func (f *Fetcher) Stats() []ProviderStats {
 	f.mu.RLock()

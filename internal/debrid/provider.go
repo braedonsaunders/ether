@@ -578,7 +578,8 @@ func ChooseFile(files []File, target *core.ReleaseTarget) (File, error) {
 	if target == nil || target.Episode <= 0 {
 		return videos[0], nil
 	}
-	// Pass 1: explicit season + episode match on base name or full path.
+	// Pass 1: explicit season + episode match on base name, or on full path
+	// when the base name carries no episode number of its own.
 	for _, f := range videos {
 		normPath := strings.ReplaceAll(f.Path, "\\", "/")
 		baseInfo := releaseparse.Parse(path.Base(normPath))
@@ -587,7 +588,7 @@ func ChooseFile(files []File, target *core.ReleaseTarget) (File, error) {
 			baseInfo.Seasons = fullInfo.Seasons
 		}
 		if releaseparse.EpisodeMatches(baseInfo, target.Season, target.Episode) ||
-			releaseparse.EpisodeMatches(fullInfo, target.Season, target.Episode) {
+			(len(baseInfo.Episodes) == 0 && (len(videos) == 1 || len(fullInfo.Episodes) == 1) && releaseparse.EpisodeMatches(fullInfo, target.Season, target.Episode)) {
 			return f, nil
 		}
 	}
@@ -604,12 +605,25 @@ func ChooseFile(files []File, target *core.ReleaseTarget) (File, error) {
 	// A file that names a different episode (a partial pack) never stands
 	// in for the wanted one.
 	if len(videos) == 1 {
-		info := releaseparse.Parse(strings.NewReplacer("/", " ", "\\", " ").Replace(videos[0].Path))
-		if len(info.Episodes) == 0 && !namesOtherClassicEpisode(videos[0].Path, target.Season, target.Episode) {
+		normPath := strings.ReplaceAll(videos[0].Path, "\\", "/")
+		baseInfo := releaseparse.Parse(path.Base(normPath))
+		info := releaseparse.Parse(strings.ReplaceAll(normPath, "/", " "))
+		if len(baseInfo.Episodes) == 0 && len(info.Episodes) == 0 && !namesOtherClassicEpisode(videos[0].Path, target.Season, target.Episode) {
 			return videos[0], nil
 		}
 	}
 	return File{}, fmt.Errorf("debrid: no file for S%02dE%02d in torrent: %w", target.Season, target.Episode, errNoVideo)
+}
+
+func chosenFileMatchesTarget(filePath string, target *core.ReleaseTarget) bool {
+	if target == nil || target.Episode <= 0 || filePath == "" {
+		return true
+	}
+	if classicPackEpisodeMatches(filePath, target.Season, target.Episode) {
+		return true
+	}
+	_, err := ChooseFile([]File{{Path: filePath, Size: 1}}, target)
+	return err == nil
 }
 
 var (

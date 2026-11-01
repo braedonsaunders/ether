@@ -71,6 +71,9 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 	a.closers = append(a.closers, func() { a.media.Close() })
 	a.sources = debrid.NewIndexer(a.indexers, a.debrid)
 	a.sources.SetUsenetReady(func() bool {
+		if a.fetcher != nil {
+			return a.fetcher.HasUsableProvider()
+		}
 		for _, p := range a.cfg.Get().Usenet.Providers {
 			if p.Enabled {
 				return true
