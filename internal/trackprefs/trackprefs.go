@@ -55,6 +55,17 @@ type Options struct {
 	// ServerLanguage is the catalog metadata language (config catalog.language,
 	// for example en-US). It is not the console locale.
 	ServerLanguage func() string
+	// PlexLayer is the viewer's cached plex.tv account settings. It sits
+	// under the viewer's own row and user 0. A missing callback skips it.
+	PlexLayer func(context.Context, int64) (PlexLayer, bool)
+}
+
+// PlexLayer is the default language layer from a plex.tv account.
+type PlexLayer struct {
+	AudioLanguage    string
+	AutoSelectAudio  bool
+	SubtitleLanguage string
+	SubtitleMode     string // Ether names: off, foreign-only, always
 }
 type rulesCacheKey struct {
 	user                    int64
@@ -406,6 +417,35 @@ func (s *Service) sharedLanguages(ctx context.Context, user int64, r Rules) Rule
 	if len(r.SubtitleLanguages) == 0 {
 		r.SubtitleLanguages = append([]string(nil), shared.SubtitleLanguages...)
 	}
+	return s.applyPlexLayer(ctx, user, r)
+}
+
+func (s *Service) applyPlexLayer(ctx context.Context, user int64, r Rules) Rules {
+	if s == nil || s.options.PlexLayer == nil || user <= 0 {
+		return r
+	}
+	layer, ok := s.options.PlexLayer(ctx, user)
+	if !ok {
+		return r
+	}
+	if len(r.AudioLanguages) == 0 && layer.AutoSelectAudio && layer.AudioLanguage != "" {
+		r.AudioLanguages = []string{layer.AudioLanguage}
+	}
+	if len(r.SubtitleLanguages) == 0 && layer.SubtitleLanguage != "" {
+		r.SubtitleLanguages = []string{layer.SubtitleLanguage}
+	}
+	if layer.SubtitleMode == "" {
+		return r
+	}
+	hasViewer, err := s.HasViewerRules(ctx, user)
+	if err != nil || hasViewer {
+		return r
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM trackprefs_rules WHERE user_id=0`).Scan(&n); err != nil || n > 0 {
+		return r
+	}
+	r.SubtitleMode = layer.SubtitleMode
 	return r
 }
 
