@@ -732,7 +732,9 @@ describe("setup wizard", () => {
     expect(screen.getByText("Password must be at least 12 characters.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-pass1" } });
-    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "secret-pass1" } });
+    fireEvent.change(screen.getByLabelText("Password again"), {
+      target: { value: "secret-pass1" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith("owner", "secret-pass1"));
     expect(
@@ -1007,7 +1009,9 @@ describe("setup wizard", () => {
     await screen.findByRole("heading", { name: "Create your owner account" });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "morgan" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-pass1" } });
-    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "secret-pass1" } });
+    fireEvent.change(screen.getByLabelText("Password again"), {
+      target: { value: "secret-pass1" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Where Ether streams from" });
     const account = screen.getByRole("button", { name: /Account/ });

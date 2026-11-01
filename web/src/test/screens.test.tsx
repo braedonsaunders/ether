@@ -176,7 +176,9 @@ describe("Getting started", () => {
         if (url.endsWith("/dashboard")) {
           const body = await response.json();
           body.sections.sessions = [];
-          body.setupSteps = [{ id: "catalog", title: "TMDB API key", complete: false, required: true }];
+          body.setupSteps = [
+            { id: "catalog", title: "TMDB API key", complete: false, required: true },
+          ];
           return new Response(JSON.stringify(body), { status: 200 });
         }
         if (url.endsWith("/viewers")) {
