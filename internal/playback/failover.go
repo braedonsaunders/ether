@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/releasepolicy"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -65,13 +66,19 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		res, cached, fromResume = nil, nil, false
 	}
 	var (
-		tried      []string
-		alternates []core.Release
-		lastErr    error
+		tried       []string
+		alternates  []core.Release
+		lastErr     error
+		fallbackGen *generation
 		// allUncached: every release that failed to open was a torrent
 		// no debrid account could serve (uncached, blocked, add refused).
 		allUncached = true
 	)
+	defer func() {
+		if fallbackGen != nil {
+			m.dropGeneration(fallbackGen)
+		}
+	}()
 	fallback := func(size int64) core.MediaInfo {
 		info := EstimateInfo(s.title, s.caps, profile)
 		info.Size = size
@@ -83,6 +90,14 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			var err error
 			res, err = m.nextResolution(ctx, s, tried, alternates)
 			if err != nil {
+				if fallbackGen != nil {
+					g := fallbackGen
+					fallbackGen = nil
+					s.mu.Lock()
+					s.tried = append(s.tried, tried...)
+					s.mu.Unlock()
+					return g, nil
+				}
 				if lastErr != nil && errors.Is(err, core.ErrNotAvailable) {
 					if errors.Is(lastErr, core.ErrDebridAuth) {
 						return nil, fmt.Errorf("%w (last failure: %v): %w", err, lastErr, core.ErrDebridAuth)
@@ -99,6 +114,21 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		if err == nil && fromResume && !s.exact && !rememberedInfoCodecCurrent(g.infoSnapshot(), s.caps) {
 			m.dropGeneration(g)
 			tried = append(tried, res.Release.ID)
+			res, cached, fromResume = nil, nil, false
+			continue
+		}
+		if err == nil && !s.exact && s.prefer == "" && !m.probedAudioAcceptable(s, profile, g.infoSnapshot()) {
+			m.log.Info("probed release lacks viewer audio language; trying next candidate", "release", res.Release.Name)
+			if fallbackGen == nil {
+				fallbackGen = g
+			} else {
+				m.dropGeneration(g)
+			}
+			allUncached = false
+			tried = append(tried, res.Release.ID)
+			if len(res.Alternates) > 0 {
+				alternates = res.Alternates
+			}
 			res, cached, fromResume = nil, nil, false
 			continue
 		}
@@ -125,6 +155,14 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			alternates = res.Alternates
 		}
 		res = nil
+	}
+	if fallbackGen != nil {
+		g := fallbackGen
+		fallbackGen = nil
+		s.mu.Lock()
+		s.tried = append(s.tried, tried...)
+		s.mu.Unlock()
+		return g, nil
 	}
 	return nil, releasesFailed(len(tried), lastErr, allUncached)
 }
@@ -1304,4 +1342,57 @@ func recoverableSourceFailure(err error) bool {
 	}
 	var ne net.Error
 	return errors.As(err, &ne) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// probedAudioAcceptable reports whether a probed foreign-title release carries
+// at least one audio stream in the viewer's wanted language (or an untagged
+// audio stream). When every audio stream is explicitly tagged in a non-wanted
+// language (e.g. a Spanish/Portuguese ".DUAL" release on an English server),
+// openInitial tries the next candidate while keeping the first healthy
+// generation as a fallback if no alternate carries the wanted language.
+func (m *Manager) probedAudioAcceptable(s *session, profile core.QualityProfile, info core.MediaInfo) bool {
+	if s.title == nil || info.Estimated {
+		return true
+	}
+	orig := strings.TrimSpace(s.title.Language)
+	if orig == "" {
+		return true
+	}
+	var wanted []string
+	switch {
+	case len(profile.PreferredLanguages) > 0:
+		wanted = append(wanted, profile.PreferredLanguages...)
+	case len(s.user.AudioLanguages) > 0:
+		wanted = append(wanted, s.user.AudioLanguages...)
+	default:
+		if serverLang := strings.TrimSpace(m.config().Catalog.Language); serverLang != "" {
+			base, _, _ := strings.Cut(serverLang, "-")
+			wanted = append(wanted, base)
+		}
+	}
+	if len(wanted) == 0 {
+		return true
+	}
+	for _, w := range wanted {
+		if releaseparse.LanguageMatch(orig, w) != releaseparse.LanguageNoMatch {
+			return true
+		}
+	}
+	audioCount := 0
+	for _, st := range info.Streams {
+		if st.Type != "audio" {
+			continue
+		}
+		audioCount++
+		lang := strings.ToLower(strings.TrimSpace(st.Language))
+		if lang == "" || lang == "und" || lang == "unk" || lang == "mul" || lang == "zxx" {
+			return true
+		}
+		for _, w := range wanted {
+			if releaseparse.LanguageMatch(lang, w) != releaseparse.LanguageNoMatch {
+				return true
+			}
+		}
+	}
+	return audioCount == 0
 }

@@ -410,7 +410,7 @@ func (c condition) evaluate(r core.Release, ctx Context) State {
 	}
 	known := false
 	for _, v := range values {
-		if v == "" || ((c.Field == "language" || c.Field == "subtitles") && (v == "multi" || v == "und")) {
+		if v == "" || ((c.Field == "language" || c.Field == "subtitles") && (v == "multi" || v == "dual" || v == "und")) {
 			continue
 		}
 		known = true
@@ -465,7 +465,7 @@ func (c condition) originalAudioState(r core.Release, ctx Context) State {
 	known := false
 	unspecified := false
 	for _, v := range r.Info.Languages {
-		if v == "" || v == "multi" || v == "und" {
+		if v == "" || v == "multi" || v == "dual" || v == "und" {
 			continue
 		}
 		known = true
@@ -491,7 +491,7 @@ func (c condition) languageState(r core.Release) State {
 	known := false
 	unspecified := false
 	for _, v := range values {
-		if v == "" || v == "multi" || v == "und" {
+		if v == "" || v == "multi" || v == "dual" || v == "und" {
 			continue
 		}
 		known = true

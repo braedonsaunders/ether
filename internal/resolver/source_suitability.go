@@ -32,7 +32,7 @@ func sourceSuitability(r core.Release, t *core.Title, p core.QualityProfile, exp
 		return ""
 	}
 	for _, lang := range info.Languages {
-		if lang == releaseparse.LanguageMulti {
+		if lang == releaseparse.LanguageMulti || lang == releaseparse.LanguageDual {
 			return ""
 		}
 		for _, pref := range want {

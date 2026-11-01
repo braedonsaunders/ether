@@ -12,6 +12,7 @@ import (
 // "portuguese-brazil"); its base is the part before the hyphen.
 const (
 	LanguageMulti              = "multi"
+	LanguageDual               = "dual"
 	LanguageSpanishLatino      = "spanish-latino"
 	LanguageSpanishSpain       = "spanish-spain"
 	LanguagePortugueseBrazil   = "portuguese-brazil"
@@ -195,4 +196,38 @@ func multiAudioAfter(spaced string, floor int) bool {
 		}
 		from = i + len("MULTI")
 	}
+}
+
+// dualAudioKindAfter inspects DUAL tags after floor. In anime and English P2P
+// releases, "Dual Audio" / "Dual-Audio" means original + English audio
+// (LanguageMulti). In Latin American, Brazilian, and European scene/P2P
+// releases (e.g. "DUAL-BiOMA"), a bare ".DUAL." tag without "Audio" means
+// local dub + original language (LanguageDual) and does not imply English on
+// a non-English film.
+func dualAudioKindAfter(spaced string, floor int) string {
+	upper := strings.ToUpper(spaced)
+	hasBareDual := false
+	for from := max(floor+1, 0); ; {
+		i := tokenIndex(upper[from:], "DUAL")
+		if i < 0 {
+			break
+		}
+		i += from
+		if i > floor {
+			rest := strings.TrimLeft(upper[i+len("DUAL"):], " -")
+			if strings.HasPrefix(rest, "SUB") {
+				from = i + len("DUAL")
+				continue
+			}
+			if strings.HasPrefix(rest, "AUDIO") {
+				return LanguageMulti
+			}
+			hasBareDual = true
+		}
+		from = i + len("DUAL")
+	}
+	if hasBareDual {
+		return LanguageDual
+	}
+	return ""
 }

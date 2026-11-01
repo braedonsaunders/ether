@@ -300,3 +300,28 @@ func TestAlternativeTitleMatchesRomanizedRelease(t *testing.T) {
 		t.Fatalf("without alternative titles the romanized release should not match: %q", got)
 	}
 }
+
+// On a foreign-language film (Spanish original on an English server), releases
+// within the same resolution tier that explicitly declare the viewer's wanted
+// language ("ITA-SPA-ENG.MULTI" or "Multi") rank ahead of untagged original
+// ("Colision...playWEB") and bare Latin/Brazilian ".DUAL" ("DUAL-BiOMA")
+// releases, even when the English/Multi releases are WEBRip and the Spanish
+// releases are WEB-DL.
+func TestForeignMoviePrefersWantedAudioOverBareDualAndUntaggedOriginal(t *testing.T) {
+	title := &core.Title{
+		Key: core.MovieKey(1656569), Type: core.TypeMovie, IDs: core.IDs{TMDB: 1656569, IMDB: "tt40893556"},
+		Title: "Collision Course", OriginalTitle: "Colisión", Year: 2026, Runtime: 98 * time.Minute, Language: "es",
+	}
+	ids, _ := rankFor(t, title, nil,
+		rel("playweb", "Colision.2026.1080p.NF.WEB-DL.DDP5.1.Atmos.H.264-playWEB", 3948),
+		rel("bioma", "Collision.Course.2026.1080p.NF.WEB-DL.DDP5.1.Atmos.H.264.DUAL-BiOMA", 3622),
+		rel("vesp", "Collision.Course.2026.1080p.WEBRip.ITA-SPA-ENG.MULTI.AC3.5.1.H264-V3SP4EV3R", 3440),
+		rel("playful", "Collision Course 2026 1080p NF WEBRip x265 10bit EAC3 5 1 Atmos Multi PlayfulDarkness", 2060),
+	)
+	if len(ids) != 4 {
+		t.Fatalf("got %d candidates (%v), want 4", len(ids), ids)
+	}
+	if (ids[0] != "vesp" && ids[0] != "playful") || (ids[1] != "vesp" && ids[1] != "playful") {
+		t.Fatalf("order %v, want vesp and playful (English/Multi) ahead of playweb and bioma", ids)
+	}
+}
