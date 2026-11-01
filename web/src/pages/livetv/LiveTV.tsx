@@ -152,7 +152,9 @@ export default function LiveTV() {
 
   useEffect(() => {
     const ctl = new AbortController();
-    Promise.all([loadCore(ctl.signal), api.users(), api.collections()])
+    // Collections only feed the virtual-channel pickers: a failure there
+    // leaves the list empty instead of taking the whole page down.
+    Promise.all([loadCore(ctl.signal), api.users(), api.collections().catch(() => [])])
       .then(([, u, cs]) => {
         if (ctl.signal.aborted) return;
         setUsers(u);

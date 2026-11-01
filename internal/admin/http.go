@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,12 +14,21 @@ import (
 
 const maxBodyBytes = 4 << 20 // 4 MiB: config documents are small
 
+// writeJSON encodes before writing the status, so a value that cannot be
+// encoded is a logged 500 with an error body, never an empty 200.
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(true)
+	if err := enc.Encode(v); err != nil {
+		slog.Error("encode response", "component", "admin", "err", err)
+		buf.Reset()
+		_ = json.NewEncoder(&buf).Encode(map[string]any{"error": map[string]any{"code": "encode_failed", "message": "the server could not encode this response"}})
+		status = http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(true)
-	_ = enc.Encode(v)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // writeError emits the uniform API error shape:
