@@ -138,26 +138,7 @@ func (c *fakeCatalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, 
 	c.lastQ = q
 	var all []core.Title
 	for _, t := range c.titles {
-		if q.Filter.Type != "" && t.Type != q.Filter.Type {
-			continue
-		}
-		if q.Filter.KnownAddedDate && t.DateAdded(fixedNow).IsZero() {
-			continue
-		}
-		if len(q.Filter.Genres) > 0 {
-			match := false
-			for _, g := range q.Filter.Genres {
-				for _, tg := range t.Genres {
-					if g == tg {
-						match = true
-					}
-				}
-			}
-			if !match {
-				continue
-			}
-		}
-		if q.Filter.YearFrom > 0 && t.Year < q.Filter.YearFrom || q.Filter.YearTo > 0 && t.Year > q.Filter.YearTo {
+		if !fakeFilterMatch(t, q.Filter) {
 			continue
 		}
 		all = append(all, t)

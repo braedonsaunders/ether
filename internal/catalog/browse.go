@@ -22,6 +22,13 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	if q.Filter.Person > 0 {
 		c.ensurePersonCredits(ctx, q.Filter.Person)
 	}
+	for _, cf := range q.Filter.Credits {
+		for _, p := range cf.People {
+			if p > 0 {
+				c.ensurePersonCredits(ctx, p)
+			}
+		}
+	}
 	limit := q.Limit
 	if limit <= 0 {
 		limit = 50
@@ -384,9 +391,31 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		conds = append(conds, "t.year<=? AND t.year>0")
 		args = append(args, f.YearTo)
 	}
+	if len(f.Years) > 0 {
+		conds = append(conds, "t.year IN ("+placeholders(len(f.Years))+")")
+		for _, y := range f.Years {
+			args = append(args, y)
+		}
+	}
+	if len(f.ExcludeYears) > 0 {
+		conds = append(conds, "t.year>0 AND t.year NOT IN ("+placeholders(len(f.ExcludeYears))+")")
+		for _, y := range f.ExcludeYears {
+			args = append(args, y)
+		}
+	}
 	if f.MinRating > 0 {
 		conds = append(conds, "t.rating>=?")
 		args = append(args, f.MinRating)
+	}
+	if f.MaxRating > 0 {
+		conds = append(conds, "t.rating>0 AND t.rating<=?")
+		args = append(args, f.MaxRating)
+	}
+	if len(f.ExcludeRatings) > 0 {
+		conds = append(conds, "t.rating>0 AND t.rating NOT IN ("+placeholders(len(f.ExcludeRatings))+")")
+		for _, r := range f.ExcludeRatings {
+			args = append(args, r)
+		}
 	}
 	if f.MaxRuntime > 0 {
 		conds = append(conds, "t.runtime_sec>0 AND t.runtime_sec<=?")
@@ -395,6 +424,12 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	if f.MinRuntime > 0 {
 		conds = append(conds, "t.runtime_sec>=?")
 		args = append(args, int64(f.MinRuntime.Seconds()))
+	}
+	if len(f.ExcludeRuntimes) > 0 {
+		conds = append(conds, "t.runtime_sec>0 AND t.runtime_sec NOT IN ("+placeholders(len(f.ExcludeRuntimes))+")")
+		for _, d := range f.ExcludeRuntimes {
+			args = append(args, int64(d.Seconds()))
+		}
 	}
 	if len(f.Languages) > 0 {
 		conds = append(conds, "t.language IN ("+placeholders(len(f.Languages))+")")
@@ -408,9 +443,21 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 			args = append(args, v)
 		}
 	}
+	if len(f.ExcludeCountries) > 0 {
+		conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_countries co WHERE co.key=t.key AND co.country IN (`+placeholders(len(f.ExcludeCountries))+`))`)
+		for _, v := range f.ExcludeCountries {
+			args = append(args, v)
+		}
+	}
 	if len(f.ContentRatings) > 0 {
 		conds = append(conds, "t.content_rating IN ("+placeholders(len(f.ContentRatings))+")")
 		for _, v := range f.ContentRatings {
+			args = append(args, v)
+		}
+	}
+	if len(f.ExcludeContentRatings) > 0 {
+		conds = append(conds, "t.content_rating NOT IN ("+placeholders(len(f.ExcludeContentRatings))+")")
+		for _, v := range f.ExcludeContentRatings {
 			args = append(args, v)
 		}
 	}
@@ -422,19 +469,79 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 			conds = append(conds, "0=1")
 		}
 	}
-	if f.Collection > 0 {
+	if f.Collection > 0 && len(f.Collections) == 0 {
 		conds = append(conds, "t.collection_id=?")
 		args = append(args, f.Collection)
 	}
-	if f.Person > 0 {
+	if len(f.Collections) > 0 {
+		conds = append(conds, "t.collection_id IN ("+placeholders(len(f.Collections))+")")
+		for _, id := range f.Collections {
+			args = append(args, id)
+		}
+	}
+	if len(f.ExcludeCollections) > 0 {
+		conds = append(conds, "t.collection_id NOT IN ("+placeholders(len(f.ExcludeCollections))+")")
+		for _, id := range f.ExcludeCollections {
+			args = append(args, id)
+		}
+	}
+	if f.Person > 0 && len(f.Credits) == 0 {
 		// IN, not a correlated EXISTS: a person's few titles drive the
 		// query by key instead of a walk over every browsable title.
 		conds = append(conds, `t.key IN (SELECT key FROM catalog_credits WHERE person_tmdb=?)`)
 		args = append(args, f.Person)
 	}
-	if f.Studio != "" {
+	for _, cf := range f.Credits {
+		if len(cf.People) == 0 {
+			continue
+		}
+		ph := placeholders(len(cf.People))
+		if cf.Exclude {
+			if cf.Kind != "" {
+				conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_credits cc WHERE cc.key=t.key AND cc.person_tmdb IN (`+ph+`) AND cc.kind=?)`)
+			} else {
+				conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_credits cc WHERE cc.key=t.key AND cc.person_tmdb IN (`+ph+`))`)
+			}
+		} else {
+			if cf.Kind != "" {
+				conds = append(conds, `t.key IN (SELECT key FROM catalog_credits WHERE person_tmdb IN (`+ph+`) AND kind=?)`)
+			} else {
+				conds = append(conds, `t.key IN (SELECT key FROM catalog_credits WHERE person_tmdb IN (`+ph+`))`)
+			}
+		}
+		for _, p := range cf.People {
+			args = append(args, p)
+		}
+		if cf.Kind != "" {
+			args = append(args, cf.Kind)
+		}
+	}
+	if f.Studio != "" && len(f.StudioFilters) == 0 {
 		conds = append(conds, `t.key IN (SELECT key FROM catalog_studios WHERE studio=?)`)
 		args = append(args, f.Studio)
+	}
+	for _, sf := range f.StudioFilters {
+		val := strings.ToLower(sf.Value)
+		switch sf.Op {
+		case "==":
+			conds = append(conds, `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND LOWER(s.studio)=?)`)
+			args = append(args, val)
+		case "!==":
+			conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND LOWER(s.studio)=?)`)
+			args = append(args, val)
+		case "!=":
+			conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND LOWER(s.studio) LIKE ? ESCAPE '\')`)
+			args = append(args, "%"+escapeLike(val)+"%")
+		case "<=":
+			conds = append(conds, `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND LOWER(s.studio) LIKE ? ESCAPE '\')`)
+			args = append(args, escapeLike(val)+"%")
+		case ">=":
+			conds = append(conds, `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND LOWER(s.studio) LIKE ? ESCAPE '\')`)
+			args = append(args, "%"+escapeLike(val))
+		default: // "="
+			conds = append(conds, `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND LOWER(s.studio) LIKE ? ESCAPE '\')`)
+			args = append(args, "%"+escapeLike(val)+"%")
+		}
 	}
 	if fc := strings.TrimSpace(f.FirstCharacter); fc != "" {
 		switch {
@@ -453,6 +560,67 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		match, matchArgs := c.titleMatch("t.", f.Query)
 		conds = append(conds, match)
 		args = append(args, matchArgs...)
+	}
+	for _, tf := range f.TitleFilters {
+		val := strings.ToLower(tf.Value)
+		switch tf.Op {
+		case "==":
+			conds = append(conds, `LOWER(t.title)=?`)
+			args = append(args, val)
+		case "!==":
+			conds = append(conds, `LOWER(t.title)<>?`)
+			args = append(args, val)
+		case "!=":
+			conds = append(conds, `LOWER(t.title) NOT LIKE ? ESCAPE '\'`)
+			args = append(args, "%"+escapeLike(val)+"%")
+		case "<=":
+			conds = append(conds, `LOWER(t.title) LIKE ? ESCAPE '\'`)
+			args = append(args, escapeLike(val)+"%")
+		case ">=":
+			conds = append(conds, `LOWER(t.title) LIKE ? ESCAPE '\'`)
+			args = append(args, "%"+escapeLike(val))
+		default: // "="
+			match, matchArgs := c.titleMatch("t.", tf.Value)
+			conds = append(conds, match)
+			args = append(args, matchArgs...)
+		}
+	}
+	for _, rf := range f.ReleasedFilters {
+		const day = 86400
+		switch rf.Op {
+		case "<<":
+			conds = append(conds, "t.released_ts<?")
+			args = append(args, rf.Unix)
+		case "<=":
+			end := rf.Unix
+			if rf.SpanDay {
+				end += day - 1
+			}
+			conds = append(conds, "t.released_ts<=?")
+			args = append(args, end)
+		case ">>":
+			conds = append(conds, "t.released_ts>?")
+			args = append(args, rf.Unix)
+		case ">=":
+			conds = append(conds, "t.released_ts>=?")
+			args = append(args, rf.Unix)
+		case "!=", "!==":
+			if rf.SpanDay {
+				conds = append(conds, "(t.released_ts<? OR t.released_ts>=?)")
+				args = append(args, rf.Unix, rf.Unix+day)
+			} else {
+				conds = append(conds, "t.released_ts<>?")
+				args = append(args, rf.Unix)
+			}
+		default: // "=", "=="
+			if rf.SpanDay {
+				conds = append(conds, "t.released_ts>=? AND t.released_ts<?")
+				args = append(args, rf.Unix, rf.Unix+day)
+			} else {
+				conds = append(conds, "t.released_ts=?")
+				args = append(args, rf.Unix)
+			}
+		}
 	}
 	conds = append(conds, "t.release_known=1 AND t.released_ts<=?")
 	args = append(args, c.now().Unix())

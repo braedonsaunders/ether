@@ -20,6 +20,31 @@ const (
 	SortUpdated    SortOrder = "updated" // actual catalogue metadata update time
 )
 
+// StringFilter narrows a string column with a Plex string operator
+// ("=", "!=", "==", "!==", "<=", ">=").
+type StringFilter struct {
+	Op    string `json:"op,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+// DateFilter narrows a release timestamp with a comparison operator
+// ("=", "!=", "<<", "<=", ">>", ">="). SpanDay is true when the value was
+// parsed from a calendar day (YYYY-MM-DD), so "=" and "!=" cover the 24-hour
+// UTC day.
+type DateFilter struct {
+	Op      string `json:"op,omitempty"`
+	Unix    int64  `json:"unix,omitempty"`
+	SpanDay bool   `json:"spanDay,omitempty"`
+}
+
+// CreditFilter narrows by credited person TMDB IDs and optional credit kind
+// ("cast", "director", "writer", "crew", or "" for any).
+type CreditFilter struct {
+	People  []int64 `json:"people,omitempty"`
+	Kind    string  `json:"kind,omitempty"`
+	Exclude bool    `json:"exclude,omitempty"`
+}
+
 // Filter narrows a browse or a smart collection. Zero values mean "any".
 type Filter struct {
 	KnownAddedDate bool `json:"-"` // only released/aired titles, before pagination
@@ -30,25 +55,38 @@ type Filter struct {
 	IncludeKeys []RatingKey `json:"-"`
 	// ExcludeGenres and ExcludeKeywords remove viewer-blocked facts before
 	// counting and pagination. Matching is case-insensitive.
-	ExcludeGenres    []string      `json:"-"`
-	ExcludeKeywords  []string      `json:"-"`
-	Type             MediaType     `json:"type,omitempty"` // movie or show
-	Genres           []string      `json:"genres,omitempty"`
-	Keywords         []string      `json:"keywords,omitempty"` // every keyword must match (case-insensitive)
-	YearFrom         int           `json:"yearFrom,omitempty"`
-	YearTo           int           `json:"yearTo,omitempty"`
-	MinRating        float64       `json:"minRating,omitempty"`
-	MaxRuntime       time.Duration `json:"maxRuntime,omitempty"`
-	MinRuntime       time.Duration `json:"minRuntime,omitempty"`
-	Languages        []string      `json:"languages,omitempty"`
-	Countries        []string      `json:"countries,omitempty"`
-	ContentRatings   []string      `json:"contentRatings,omitempty"`
-	MaxContentRating string        `json:"maxContentRating,omitempty"` // per-user limit
-	Collection       int64         `json:"collection,omitempty"`
-	Person           int64         `json:"person,omitempty"` // cast or crew TMDB id
-	Studio           string        `json:"studio,omitempty"`
-	FirstCharacter   string        `json:"firstCharacter,omitempty"`
-	Query            string        `json:"query,omitempty"` // title substring
+	ExcludeGenres         []string        `json:"-"`
+	ExcludeKeywords       []string        `json:"-"`
+	Type                  MediaType       `json:"type,omitempty"` // movie or show
+	Genres                []string        `json:"genres,omitempty"`
+	Keywords              []string        `json:"keywords,omitempty"` // every keyword must match (case-insensitive)
+	YearFrom              int             `json:"yearFrom,omitempty"`
+	YearTo                int             `json:"yearTo,omitempty"`
+	Years                 []int           `json:"years,omitempty"`
+	ExcludeYears          []int           `json:"excludeYears,omitempty"`
+	MinRating             float64         `json:"minRating,omitempty"`
+	MaxRating             float64         `json:"maxRating,omitempty"`
+	ExcludeRatings        []float64       `json:"excludeRatings,omitempty"`
+	MaxRuntime            time.Duration   `json:"maxRuntime,omitempty"`
+	MinRuntime            time.Duration   `json:"minRuntime,omitempty"`
+	ExcludeRuntimes       []time.Duration `json:"excludeRuntimes,omitempty"`
+	Languages             []string        `json:"languages,omitempty"`
+	Countries             []string        `json:"countries,omitempty"`
+	ExcludeCountries      []string        `json:"excludeCountries,omitempty"`
+	ContentRatings        []string        `json:"contentRatings,omitempty"`
+	ExcludeContentRatings []string        `json:"excludeContentRatings,omitempty"`
+	MaxContentRating      string          `json:"maxContentRating,omitempty"` // per-user limit
+	Collection            int64           `json:"collection,omitempty"`
+	Collections           []int64         `json:"collections,omitempty"`
+	ExcludeCollections    []int64         `json:"excludeCollections,omitempty"`
+	Person                int64           `json:"person,omitempty"` // cast or crew TMDB id
+	Credits               []CreditFilter  `json:"credits,omitempty"`
+	Studio                string          `json:"studio,omitempty"`
+	StudioFilters         []StringFilter  `json:"studioFilters,omitempty"`
+	FirstCharacter        string          `json:"firstCharacter,omitempty"`
+	Query                 string          `json:"query,omitempty"` // title substring
+	TitleFilters          []StringFilter  `json:"titleFilters,omitempty"`
+	ReleasedFilters       []DateFilter    `json:"releasedFilters,omitempty"`
 }
 
 type BrowseQuery struct {

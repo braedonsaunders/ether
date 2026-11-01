@@ -328,9 +328,144 @@ func parseSortParam(s string) (key, dir string) {
 // Browse
 
 type browseRequest struct {
-	q         core.BrowseQuery
-	unwatched bool
-	limit     int // "limit" param; 0 = none
+	q          core.BrowseQuery
+	unwatched  *bool // true = unwatched (ViewCount == 0), false = watched (ViewCount > 0)
+	inProgress *bool // true = in progress (ViewOffset > 0), false = not in progress (ViewOffset == 0)
+	limit      int   // "limit" param; 0 = none
+}
+
+func stripFieldTypePrefix(key string) string {
+	if key == "title.query" {
+		return key
+	}
+	if prefix, rest, ok := strings.Cut(key, "."); ok && rest != "" && typeFromParam(prefix) != "" {
+		return rest
+	}
+	return key
+}
+
+// parseFilterKeyOp extracts the field name, comparison operator ("=", "!=",
+// "==", "!==", "<=", ">=", "<<", ">>"), and value from a URL query entry.
+// Plex media queries encode the operator before the "=" key-value delimiter
+// (e.g. "genre!=Drama" parses as key "genre!", value "Drama"; "title==Foo"
+// parses as key "title", value "=Foo"; "title!==Foo" parses as key "title!",
+// value "=Foo").
+func parseFilterKeyOp(rawKey, rawVal string) (key, op, val string) {
+	if rawVal == "" {
+		for _, sep := range []string{"!==", "==", ">>=", "<<=", ">=", "<=", "!=", ">>", "<<"} {
+			if k, v, ok := strings.Cut(rawKey, sep); ok && k != "" {
+				switch sep {
+				case ">>=":
+					sep = ">>"
+				case "<<=":
+					sep = "<<"
+				}
+				return stripFieldTypePrefix(k), sep, v
+			}
+		}
+	}
+	key, op, val = rawKey, "=", rawVal
+	switch {
+	case strings.HasSuffix(rawKey, "!=="):
+		key, op = strings.TrimSuffix(rawKey, "!=="), "!=="
+	case strings.HasSuffix(rawKey, "=="):
+		key, op = strings.TrimSuffix(rawKey, "=="), "=="
+	case strings.HasSuffix(rawKey, ">>="):
+		key, op = strings.TrimSuffix(rawKey, ">>="), ">>"
+	case strings.HasSuffix(rawKey, "<<="):
+		key, op = strings.TrimSuffix(rawKey, "<<="), "<<"
+	case strings.HasSuffix(rawKey, ">="):
+		key, op = strings.TrimSuffix(rawKey, ">="), ">="
+	case strings.HasSuffix(rawKey, "<="):
+		key, op = strings.TrimSuffix(rawKey, "<="), "<="
+	case strings.HasSuffix(rawKey, "!="):
+		key, op = strings.TrimSuffix(rawKey, "!="), "!="
+	case strings.HasSuffix(rawKey, ">>"):
+		key, op = strings.TrimSuffix(rawKey, ">>"), ">>"
+	case strings.HasSuffix(rawKey, "<<"):
+		key, op = strings.TrimSuffix(rawKey, "<<"), "<<"
+	case strings.HasSuffix(rawKey, ">"):
+		key, op = strings.TrimSuffix(rawKey, ">"), ">="
+	case strings.HasSuffix(rawKey, "<"):
+		key, op = strings.TrimSuffix(rawKey, "<"), "<="
+	case strings.HasSuffix(rawKey, "!"):
+		key = strings.TrimSuffix(rawKey, "!")
+		if strings.HasPrefix(rawVal, "=") {
+			op, val = "!==", rawVal[1:]
+		} else {
+			op = "!="
+		}
+	case strings.HasSuffix(rawKey, "="):
+		key, op = strings.TrimSuffix(rawKey, "="), "=="
+	default:
+		if strings.HasPrefix(rawVal, "=") {
+			op, val = "==", rawVal[1:]
+		}
+	}
+	return stripFieldTypePrefix(key), op, val
+}
+
+func parseBoolFilter(op, val string) (bool, bool) {
+	v := strings.TrimSpace(val)
+	var b bool
+	switch {
+	case v == "1" || strings.EqualFold(v, "true"):
+		b = true
+	case v == "0" || strings.EqualFold(v, "false"):
+		b = false
+	default:
+		return false, false
+	}
+	if op == "!=" || op == "!==" {
+		b = !b
+	}
+	return b, true
+}
+
+func parseDateFilter(op, raw string, now time.Time) (core.DateFilter, bool) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return core.DateFilter{}, false
+	}
+	if strings.HasPrefix(v, "-") {
+		rel := v[1:]
+		for _, unit := range []string{"mon", "s", "m", "h", "d", "w", "y"} {
+			if strings.HasSuffix(rel, unit) {
+				n, err := strconv.Atoi(strings.TrimSuffix(rel, unit))
+				if err != nil || n < 0 {
+					return core.DateFilter{}, false
+				}
+				var ts int64
+				switch unit {
+				case "s":
+					ts = now.Add(-time.Duration(n) * time.Second).Unix()
+				case "m":
+					ts = now.Add(-time.Duration(n) * time.Minute).Unix()
+				case "h":
+					ts = now.Add(-time.Duration(n) * time.Hour).Unix()
+				case "d":
+					ts = now.AddDate(0, 0, -n).Unix()
+				case "w":
+					ts = now.AddDate(0, 0, -7*n).Unix()
+				case "mon":
+					ts = now.AddDate(0, -n, 0).Unix()
+				case "y":
+					ts = now.AddDate(-n, 0, 0).Unix()
+				}
+				return core.DateFilter{Op: op, Unix: ts}, true
+			}
+		}
+	}
+	if tm, err := time.Parse("2006-01-02", v); err == nil {
+		return core.DateFilter{Op: op, Unix: tm.UTC().Unix(), SpanDay: true}, true
+	}
+	if tm, err := time.Parse(time.RFC3339, v); err == nil {
+		return core.DateFilter{Op: op, Unix: tm.UTC().Unix()}, true
+	}
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return core.DateFilter{Op: op, Unix: n}, true
+	}
+	return core.DateFilter{}, false
 }
 
 // parseBrowse converts Plex filter/sort params into a catalogue query.
@@ -350,101 +485,275 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 		return out
 	}
 	atoi := func(v string) int { n, _ := strconv.Atoi(strings.TrimSpace(v)); return n }
-	for rawKey, vals := range q {
-		if len(vals) == 0 {
-			continue
+	minPos := func(cur, n int) int {
+		if cur == 0 || n < cur {
+			return n
 		}
-		v := vals[0]
-		// Media-query operators arrive inside the key: "year>>=2000" parses
-		// as key "year>>", value "2000".
-		key, op := rawKey, "="
-		for _, suf := range []string{"!==", "==", "!=", ">>", "<<", ">", "<", "!"} {
-			if strings.HasSuffix(rawKey, suf) {
-				key, op = strings.TrimSuffix(rawKey, suf), suf
-				break
-			}
-		}
-		switch key {
-		case "genre":
-			for _, g := range splitVals(v) {
-				f.Genres = append(f.Genres, s.facetTitle(ctx, t, "genre", g))
-			}
-		case "country":
-			for _, c := range splitVals(v) {
-				f.Countries = append(f.Countries, s.facetTitle(ctx, t, "country", c))
-			}
-		case "contentRating":
-			for _, c := range splitVals(v) {
-				f.ContentRatings = append(f.ContentRatings, s.facetTitle(ctx, t, "contentRating", c))
-			}
-		case "studio":
-			f.Studio = s.facetTitle(ctx, t, "studio", v)
-		case "firstCharacter":
-			f.FirstCharacter = v
-		case "language":
-			f.Languages = splitVals(v)
-		case "year":
-			ys := splitVals(v)
-			switch op {
-			case ">>":
-				f.YearFrom = atoi(v) + 1
-			case ">":
-				f.YearFrom = atoi(v)
-			case "<<":
-				f.YearTo = atoi(v) - 1
-			case "<":
-				f.YearTo = atoi(v)
-			default:
-				for _, y := range ys {
-					n := atoi(y)
-					if n == 0 {
-						continue
-					}
-					if f.YearFrom == 0 || n < f.YearFrom {
-						f.YearFrom = n
-					}
-					if n > f.YearTo {
-						f.YearTo = n
+		return cur
+	}
+	rawKeys := make([]string, 0, len(q))
+	for k := range q {
+		rawKeys = append(rawKeys, k)
+	}
+	sort.Strings(rawKeys)
+	for _, rawKey := range rawKeys {
+		for _, rawVal := range q[rawKey] {
+			key, op, v := parseFilterKeyOp(rawKey, rawVal)
+			isNeg := op == "!=" || op == "!=="
+			switch key {
+			case "genre":
+				for _, g := range splitVals(v) {
+					name := s.facetTitle(ctx, t, "genre", g)
+					if isNeg {
+						f.ExcludeGenres = append(f.ExcludeGenres, name)
+					} else {
+						f.Genres = append(f.Genres, name)
 					}
 				}
-			}
-		case "decade":
-			n := atoi(v)
-			if n > 0 {
-				f.YearFrom, f.YearTo = n, n+9
-			}
-		case "collection":
-			if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-				if rk := core.RatingKey(id); rk.Kind() == core.KindCollection {
-					id = rk.TMDB()
+			case "country":
+				for _, c := range splitVals(v) {
+					name := s.facetTitle(ctx, t, "country", c)
+					if isNeg {
+						f.ExcludeCountries = append(f.ExcludeCountries, name)
+					} else {
+						f.Countries = append(f.Countries, name)
+					}
 				}
-				f.Collection = id
-			}
-		case "actor", "director", "writer", "producer":
-			if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-				f.Person = id
-			}
-		case "title":
-			f.Query = v
-		case "audienceRating", "rating":
-			if x, err := strconv.ParseFloat(v, 64); err == nil && (op == ">>" || op == ">") {
-				f.MinRating = x
-			}
-		case "duration":
-			if n := atoi(v); n > 0 {
+			case "contentRating":
+				for _, c := range splitVals(v) {
+					name := s.facetTitle(ctx, t, "contentRating", c)
+					if isNeg {
+						f.ExcludeContentRatings = append(f.ExcludeContentRatings, name)
+					} else {
+						f.ContentRatings = append(f.ContentRatings, name)
+					}
+				}
+			case "studio":
+				name := s.facetTitle(ctx, t, "studio", v)
+				if op == "=" && f.Studio == "" && len(f.StudioFilters) == 0 {
+					f.Studio = name
+				}
+				f.StudioFilters = append(f.StudioFilters, core.StringFilter{Op: op, Value: name})
+			case "firstCharacter":
+				f.FirstCharacter = v
+			case "language":
+				f.Languages = append(f.Languages, splitVals(v)...)
+			case "year":
 				switch op {
-				case "<<", "<":
-					f.MaxRuntime = time.Duration(n) * time.Millisecond
-				case ">>", ">":
-					f.MinRuntime = time.Duration(n) * time.Millisecond
+				case ">>":
+					if n := atoi(v); n > 0 {
+						f.YearFrom = max(f.YearFrom, n+1)
+					}
+				case ">=":
+					if n := atoi(v); n > 0 {
+						f.YearFrom = max(f.YearFrom, n)
+					}
+				case "<<":
+					if n := atoi(v); n > 1 {
+						f.YearTo = minPos(f.YearTo, n-1)
+					}
+				case "<=":
+					if n := atoi(v); n > 0 {
+						f.YearTo = minPos(f.YearTo, n)
+					}
+				case "!=", "!==":
+					for _, y := range splitVals(v) {
+						if n := atoi(y); n > 0 {
+							f.ExcludeYears = append(f.ExcludeYears, n)
+						}
+					}
+				default:
+					var ns []int
+					for _, y := range splitVals(v) {
+						if n := atoi(y); n > 0 {
+							ns = append(ns, n)
+						}
+					}
+					if len(ns) == 1 && len(f.Years) == 0 && f.YearFrom == 0 && f.YearTo == 0 {
+						f.YearFrom, f.YearTo = ns[0], ns[0]
+					} else if len(ns) > 0 {
+						if f.YearFrom > 0 && f.YearFrom == f.YearTo && len(f.Years) == 0 {
+							f.Years = append(f.Years, f.YearFrom)
+							f.YearFrom, f.YearTo = 0, 0
+						}
+						f.Years = append(f.Years, ns...)
+					}
 				}
+			case "decade":
+				switch op {
+				case ">>":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearFrom = max(f.YearFrom, d+10)
+					}
+				case ">=":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearFrom = max(f.YearFrom, d)
+					}
+				case "<<":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearTo = minPos(f.YearTo, d-1)
+					}
+				case "<=":
+					if d := (atoi(v) / 10) * 10; d > 0 {
+						f.YearTo = minPos(f.YearTo, d+9)
+					}
+				case "!=", "!==":
+					for _, p := range splitVals(v) {
+						if d := (atoi(p) / 10) * 10; d > 0 {
+							for y := d; y <= d+9; y++ {
+								f.ExcludeYears = append(f.ExcludeYears, y)
+							}
+						}
+					}
+				default:
+					var decs []int
+					for _, p := range splitVals(v) {
+						if d := (atoi(p) / 10) * 10; d > 0 {
+							decs = append(decs, d)
+						}
+					}
+					if len(decs) == 1 && len(f.Years) == 0 {
+						f.YearFrom = max(f.YearFrom, decs[0])
+						f.YearTo = minPos(f.YearTo, decs[0]+9)
+					} else if len(decs) > 1 {
+						for _, d := range decs {
+							for y := d; y <= d+9; y++ {
+								f.Years = append(f.Years, y)
+							}
+						}
+					}
+				}
+			case "originallyAvailableAt":
+				if df, ok := parseDateFilter(op, v, s.now()); ok {
+					f.ReleasedFilters = append(f.ReleasedFilters, df)
+				}
+			case "collection":
+				var ids []int64
+				for _, p := range splitVals(v) {
+					if id, err := strconv.ParseInt(p, 10, 64); err == nil && id > 0 {
+						if rk := core.RatingKey(id); rk.Kind() == core.KindCollection {
+							id = rk.TMDB()
+						}
+						ids = append(ids, id)
+					}
+				}
+				if len(ids) > 0 {
+					if isNeg {
+						f.ExcludeCollections = append(f.ExcludeCollections, ids...)
+					} else {
+						if len(ids) == 1 && f.Collection == 0 && len(f.Collections) == 0 {
+							f.Collection = ids[0]
+						}
+						f.Collections = append(f.Collections, ids...)
+					}
+				}
+			case "actor", "director", "writer", "producer":
+				kind := "cast"
+				switch key {
+				case "director":
+					kind = "director"
+				case "writer":
+					kind = "writer"
+				case "producer":
+					kind = "crew"
+				}
+				var ids []int64
+				for _, p := range splitVals(v) {
+					if id, err := strconv.ParseInt(p, 10, 64); err == nil && id > 0 {
+						ids = append(ids, id)
+					}
+				}
+				if len(ids) > 0 {
+					if isNeg {
+						f.Credits = append(f.Credits, core.CreditFilter{People: ids, Kind: kind, Exclude: true})
+					} else {
+						if len(ids) == 1 && f.Person == 0 {
+							f.Person = ids[0]
+						}
+						f.Credits = append(f.Credits, core.CreditFilter{People: ids, Kind: kind})
+					}
+				}
+			case "title":
+				if op == "=" && f.Query == "" && len(f.TitleFilters) == 0 {
+					f.Query = v
+				} else {
+					f.TitleFilters = append(f.TitleFilters, core.StringFilter{Op: op, Value: v})
+				}
+			case "audienceRating", "rating":
+				switch op {
+				case ">>", ">=":
+					if x, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && x > 0 {
+						f.MinRating = max(f.MinRating, x)
+					}
+				case "<<", "<=":
+					if x, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && x > 0 {
+						if f.MaxRating == 0 || x < f.MaxRating {
+							f.MaxRating = x
+						}
+					}
+				case "=", "==":
+					if x, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && x > 0 {
+						f.MinRating = max(f.MinRating, x)
+						if f.MaxRating == 0 || x < f.MaxRating {
+							f.MaxRating = x
+						}
+					}
+				case "!=", "!==":
+					for _, p := range splitVals(v) {
+						if x, err := strconv.ParseFloat(p, 64); err == nil && x > 0 {
+							f.ExcludeRatings = append(f.ExcludeRatings, x)
+						}
+					}
+				}
+			case "duration":
+				switch op {
+				case "<<", "<=":
+					if n := atoi(v); n > 0 {
+						d := time.Duration(n) * time.Millisecond
+						if f.MaxRuntime == 0 || d < f.MaxRuntime {
+							f.MaxRuntime = d
+						}
+					}
+				case ">>", ">=":
+					if n := atoi(v); n > 0 {
+						d := time.Duration(n) * time.Millisecond
+						if d > f.MinRuntime {
+							f.MinRuntime = d
+						}
+					}
+				case "=", "==":
+					if n := atoi(v); n > 0 {
+						d := time.Duration(n) * time.Millisecond
+						f.MinRuntime, f.MaxRuntime = d, d
+					}
+				case "!=", "!==":
+					for _, p := range splitVals(v) {
+						if n := atoi(p); n > 0 {
+							f.ExcludeRuntimes = append(f.ExcludeRuntimes, time.Duration(n)*time.Millisecond)
+						}
+					}
+				}
+			case "unwatched":
+				if want, ok := parseBoolFilter(op, v); ok {
+					br.unwatched = &want
+				}
+			case "inProgress":
+				if want, ok := parseBoolFilter(op, v); ok {
+					br.inProgress = &want
+				}
+			case "viewCount":
+				n := atoi(v)
+				switch {
+				case (op == "=" || op == "==" || op == "<=") && strings.TrimSpace(v) == "0", op == "<<" && n == 1:
+					want := true
+					br.unwatched = &want
+				case (op == "!=" || op == "!==" || op == ">>") && strings.TrimSpace(v) == "0", (op == "=" || op == "==" || op == ">=" || op == ">>") && n > 0:
+					want := false
+					br.unwatched = &want
+				}
+			case "limit":
+				br.limit = atoi(v)
 			}
-		case "unwatched":
-			br.unwatched = v == "1" || v == "true"
-		case "viewCount":
-			br.unwatched = v == "0" && op == "="
-		case "limit":
-			br.limit = atoi(v)
 		}
 	}
 	key, dir := parseSortParam(q.Get("sort"))
@@ -502,10 +811,10 @@ func (pr *Request) pageOf(limit int) (offset, size int) {
 	return offset, size
 }
 
-// browse runs a catalogue query honouring paging and the unwatched filter.
+// browse runs a catalogue query honouring paging and watch-state filters.
 func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]core.Title, int, int, error) {
 	offset, size := pr.pageOf(br.limit)
-	if !br.unwatched {
+	if br.unwatched == nil && br.inProgress == nil {
 		q := br.q
 		q.Offset, q.Limit = offset, size
 		if size == 0 {
@@ -525,7 +834,7 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 		}
 		return items, total, offset, nil
 	}
-	// Unwatched: scan the catalogue in chunks, filtering by watch state.
+	// Watch-state filter: scan the catalogue in chunks, filtering by watch state.
 	const chunk, maxScan = 200, 5000
 	var out []core.Title
 	matched, scanned, total := 0, 0, 0
@@ -542,9 +851,20 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 		}
 		st := s.stateFor(ctx, pr, page.Items)
 		for _, t := range page.Items {
-			if st[t.Key].ViewCount > 0 {
-				total--
-				continue
+			ws := st[t.Key]
+			if br.unwatched != nil {
+				isUnwatched := ws.ViewCount == 0
+				if isUnwatched != *br.unwatched {
+					total--
+					continue
+				}
+			}
+			if br.inProgress != nil {
+				isInProgress := ws.ViewOffset > 0
+				if isInProgress != *br.inProgress {
+					total--
+					continue
+				}
 			}
 			if matched >= offset && len(out) < size {
 				out = append(out, t)
@@ -558,6 +878,9 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 	}
 	if total < matched {
 		total = matched
+	}
+	if br.limit > 0 && total > br.limit {
+		total = br.limit
 	}
 	return out, total, offset, nil
 }
@@ -654,7 +977,8 @@ func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section
 	br := s.parseBrowse(ctx, sec, t, pr.User, q)
 	switch sub {
 	case "unwatched":
-		br.unwatched = true
+		want := true
+		br.unwatched = &want
 		mc.Title2 = "Unwatched"
 	case "newest":
 		br.q.Sort, br.q.Desc = core.SortReleased, true
