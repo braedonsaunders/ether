@@ -44,7 +44,7 @@ var containers = map[string]bool{
 // (multiAudioAfter) and subtitle-only tags such as VOSTFR live in
 // subtitleTags. Regional variants are named by language.go's constants.
 var languages = []struct{ token, name string }{
-	{"DUAL", LanguageMulti}, {"FRENCH", "french"}, {"TRUEFRENCH", "french"}, {"VFF", "french"}, {"VFQ", "french"}, {"VF2", "french"},
+	{"FRENCH", "french"}, {"TRUEFRENCH", "french"}, {"VFF", "french"}, {"VFQ", "french"}, {"VF2", "french"},
 	{"GERMAN", "german"}, {"SPANISH", "spanish"}, {"CASTELLANO", LanguageSpanishSpain}, {"CASTILIAN", LanguageSpanishSpain}, {"LATINO", LanguageSpanishLatino}, {"LATAM", LanguageSpanishLatino}, {"ITALIAN", "italian"},
 	{"DUTCH", "dutch"}, {"PORTUGUESE", "portuguese"}, {"RUSSIAN", "russian"}, {"RUS", "russian"}, {"UKRAINIAN", "ukrainian"}, {"UKR", "ukrainian"}, {"POLISH", "polish"},
 	{"KOREAN", "korean"}, {"JAPANESE", "japanese"}, {"CHINESE", "chinese"}, {"MANDARIN", "chinese"},
@@ -149,6 +149,11 @@ func Parse(name string) core.ReleaseInfo {
 		seen[LanguageMulti] = true
 		info.Languages = append(info.Languages, LanguageMulti)
 	}
+	dualKind := dualAudioKindAfter(spaced, floor)
+	if dualKind == LanguageMulti && !seen[LanguageMulti] {
+		seen[LanguageMulti] = true
+		info.Languages = append(info.Languages, LanguageMulti)
+	}
 	subs := subtitlePositions(spaced, floor)
 	var subOnly []string
 	for _, l := range languages {
@@ -159,6 +164,15 @@ func Parse(name string) core.ReleaseInfo {
 			info.Languages = append(info.Languages, l.name)
 		case sub && !audio:
 			subOnly = append(subOnly, l.name)
+		}
+	}
+	if dualKind == LanguageDual && !seen[LanguageMulti] {
+		if seen["english"] {
+			seen[LanguageMulti] = true
+			info.Languages = append(info.Languages, LanguageMulti)
+		} else if !seen[LanguageDual] {
+			seen[LanguageDual] = true
+			info.Languages = append(info.Languages, LanguageDual)
 		}
 	}
 	info.SubtitleLanguages = parseSubtitleLanguages(spaced, floor)

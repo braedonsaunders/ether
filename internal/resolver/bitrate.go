@@ -130,6 +130,7 @@ func sameTier(a, b candidate) bool {
 	return qualityTier(a.rel.Info) == qualityTier(b.rel.Info) &&
 		a.starved == b.starved &&
 		a.langOK == b.langOK &&
+		a.langWanted == b.langWanted &&
 		a.quality.movedEqual(b.quality)
 }
 
@@ -271,6 +272,12 @@ func compareCandidates(a, b candidate, profile core.QualityProfile) bool {
 		case step == core.RankResolution:
 			if a.quality.height != b.quality.height {
 				return a.quality.height > b.quality.height
+			}
+			// On a foreign-language title, a release within this resolution tier
+			// that explicitly declares the viewer's audio language (or MULTI)
+			// ranks ahead of untagged original-language or bare .DUAL releases.
+			if a.langWanted != b.langWanted {
+				return a.langWanted
 			}
 		case step == core.RankReleaseType:
 			if a.quality.source != b.quality.source {

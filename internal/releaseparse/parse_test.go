@@ -325,3 +325,20 @@ func TestObscureTitleEquivalenceAndAliases(t *testing.T) {
 		t.Fatalf("ordinary title produced extra aliases: %v", got)
 	}
 }
+
+func TestDualAudioVsBareDualParsing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want []string
+	}{
+		{"Collision.Course.2026.1080p.NF.WEB-DL.DDP5.1.Atmos.H.264.DUAL-BiOMA", []string{LanguageDual}},
+		{"[Serendipity] Lovely Complex - S01E01 (BD 1080p HEVC Opus 2.0) [Dual Audio] [7BBF1985]", []string{LanguageMulti}},
+		{"Some.Anime.2024.1080p.BluRay.x265.Dual-Audio-GRP", []string{LanguageMulti}},
+		{"Movie.2026.1080p.WEB-DL.ENG.DUAL.H.264-GRP", []string{"english", LanguageMulti}},
+	} {
+		got := Parse(tc.name)
+		if !reflect.DeepEqual(got.Languages, tc.want) {
+			t.Errorf("%q Languages = %v, want %v", tc.name, got.Languages, tc.want)
+		}
+	}
+}

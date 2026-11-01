@@ -53,3 +53,18 @@ func TestImportedLanguageEnumsRetainEuropeanCompatibility(t *testing.T) {
 		}
 	}
 }
+
+// A bare DUAL release carries a local dub plus the original audio, so a
+// language preference must not push it down the way a single foreign
+// language is; foreign-title ranking orders it separately.
+func TestBareDualIsNotPenalizedLikeAForeignLanguage(t *testing.T) {
+	dual := languageScore(releaseparse.Parse("Movie.2026.1080p.WEB-DL.DUAL-BiOMA"), []string{"en"})
+	untagged := languageScore(releaseparse.Parse("Movie.2026.1080p.WEB-DL-GRP"), []string{"en"})
+	foreign := languageScore(releaseparse.Parse("Movie.2026.GERMAN.1080p.WEB-DL-GRP"), []string{"en"})
+	if dual != untagged {
+		t.Errorf("bare DUAL scored %v, untagged %v; want equal", dual, untagged)
+	}
+	if foreign >= dual {
+		t.Errorf("GERMAN-only scored %v, bare DUAL %v; want GERMAN lower", foreign, dual)
+	}
+}

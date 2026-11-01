@@ -318,3 +318,34 @@ func (r *originalAudioResolver) lastID() string {
 	defer r.mu.Unlock()
 	return r.last
 }
+
+func TestOpenInitialFailsOverWhenProbedForeignReleaseLacksWantedAudio(t *testing.T) {
+	bioma := mkv("bioma", 10_000, time.Minute)
+	bioma.AudioLanguages = []string{"por", "spa"}
+	vesp := mkv("vesp", 10_000, time.Minute)
+	vesp.AudioLanguages = []string{"ita", "spa", "eng"}
+
+	h := newHarness(t, []*fakeRelease{bioma, vesp}, []string{"bioma", "vesp"})
+	h.catalog.titles[movieKey].Language = "es"
+
+	ps := h.prepare(owner, movieKey, "c1")
+	if ps.Resolution.Release.ID != "vesp" {
+		t.Fatalf("Prepare selected %s, want vesp after probing bioma (por+spa only)", ps.Resolution.Release.ID)
+	}
+	if h.resolver.isBad("bioma") {
+		t.Fatal("bioma should not be marked permanently bad for lacking viewer audio")
+	}
+}
+
+func TestOpenInitialKeepsFallbackWhenAllAlternatesLackWantedAudio(t *testing.T) {
+	bioma := mkv("bioma", 10_000, time.Minute)
+	bioma.AudioLanguages = []string{"por", "spa"}
+
+	h := newHarness(t, []*fakeRelease{bioma}, []string{"bioma"})
+	h.catalog.titles[movieKey].Language = "es"
+
+	ps := h.prepare(owner, movieKey, "c1")
+	if ps.Resolution.Release.ID != "bioma" {
+		t.Fatalf("Prepare selected %s, want bioma fallback when no other candidate exists", ps.Resolution.Release.ID)
+	}
+}

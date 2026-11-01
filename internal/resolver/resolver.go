@@ -1130,6 +1130,7 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 		exclude[id] = true
 	}
 	rcfg := s.resolverCfg()
+	wanted := wantedAudio(profile, req.User, s.catalogLanguage())
 	accepted := acceptedAudio(profile, req.User, s.catalogLanguage(), t)
 	upscales := presumedUpscales(results, isAnime(t))
 	var cands []candidate
@@ -1225,6 +1226,7 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 			tr = len(trace.Candidates) - 1
 		}
 		langOK := audioAcceptable(rel.Info, accepted)
+		langWanted := langOK && foreignTitleWantedAudio(rel.Info, wanted, t)
 		lowBitrate := bitrateScore(sizedForEpisode(rel), t) < 0
 		starved := lowBitrate || upscales[ri]
 		bandwidth := s.deliveryFit(sizedForEpisode(rel), req.Client, t)
@@ -1245,7 +1247,7 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 		if !langOK && trace != nil {
 			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; ranked after releases in an accepted audio language", "; ")
 		}
-		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth})
+		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, langWanted: langWanted, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth})
 	}
 	return s.orderCandidates(cands, profile, req.Title, trace), clientRejected, nil
 }
@@ -1655,9 +1657,9 @@ func sizedForEpisode(rel core.Release) core.Release {
 // opt-in (an unset profile is language-neutral) and may be ISO codes
 // ("fr", "es-419") or release language names. Audio decides: a release
 // declaring only other audio languages is pushed down, the preferred
-// language or MULTI is not, and another regional variant of a preferred
-// language (Castilian for a Latino preference) counts for less than the
-// exact one. Subtitle-only declarations (VOSTFR) never stand in for audio;
+// language, MULTI or a bare DUAL (local dub plus the original) is not, and
+// another regional variant of a preferred language (Castilian for a Latino
+// preference) counts for less than the exact one. Subtitle-only declarations (VOSTFR) never stand in for audio;
 // they add a small bonus of their own.
 func languageScore(info core.ReleaseInfo, prefs []string) float64 {
 	if len(prefs) == 0 {
@@ -1667,7 +1669,7 @@ func languageScore(info core.ReleaseInfo, prefs []string) float64 {
 	if len(info.Languages) > 0 {
 		ok := false
 		for _, l := range info.Languages {
-			if l == releaseparse.LanguageMulti {
+			if l == releaseparse.LanguageMulti || l == releaseparse.LanguageDual {
 				ok = true
 				continue
 			}
