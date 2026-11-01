@@ -618,3 +618,127 @@ func TestReportNotifiesTimelineOnceForPlexAndJellyfin(t *testing.T) {
 		t.Fatalf("timeline notifications = %v, want %v", got, want)
 	}
 }
+
+type livenessFakePlayback struct {
+	fakePlayback
+	active  map[string]bool
+	stopped map[string]bool
+}
+
+func (f *livenessFakePlayback) SessionActive(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopped[id] {
+		return false
+	}
+	if a, ok := f.active[id]; ok {
+		return a
+	}
+	_, ok := f.sessions[id]
+	return ok
+}
+
+func (f *livenessFakePlayback) PlaybackProgress(_ int64, clientID string, key core.RatingKey, _ time.Duration, state string) {
+	if state != "stopped" {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, p := range f.sessions {
+		if p.ClientID == clientID && p.Key == key {
+			f.stopped[id] = true
+		}
+	}
+}
+
+func TestBrokerReportItemProgressStoppedAndIdleSessionsVisibility(t *testing.T) {
+	ctx := context.Background()
+	p := &livenessFakePlayback{
+		fakePlayback: fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 4},
+		active:       map[string]bool{},
+		stopped:      map[string]bool{},
+	}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id, IsOwner: true}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	b, err := NewBroker(BrokerDeps{
+		Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: k}, nil
+		},
+		Playback:     p,
+		Transcoder:   fakeBrokerTranscoder{},
+		Progress:     &fakeProgress{},
+		ActiveViewer: active,
+		CanPlay:      func(*core.Viewer, bool, time.Time) bool { return true },
+		BitrateLimit: func(*core.Viewer) int { return 0 },
+		OnTimeline:   func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Events:       events,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := &core.Viewer{ID: 1, IsOwner: true}
+	dev := core.Device{ID: "infuse-appletv"}
+	access := frontend.SessionAccess{Viewer: viewer, Device: dev, Protocol: "jellyfin", Owner: true}
+
+	plan, err := b.Plan(ctx, frontend.PlanRequest{
+		Viewer:   viewer,
+		Device:   dev,
+		Protocol: "jellyfin",
+		Item:     core.MovieKey(42),
+		Caps:     core.ClientCaps{ClientID: "infuse-appletv"},
+		Intent:   frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: dev, Protocol: "jellyfin", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := b.Sessions(ctx, access)
+	if err != nil || len(listed) != 1 || listed[0].ID != opened.ID {
+		t.Fatalf("expected 1 active session, got %+v (%v)", listed, err)
+	}
+
+	// Infuse sends POST /Sessions/Playing/Stopped with its own client-generated PlaySessionId,
+	// which routes to ReportItemProgress(State: "stopped").
+	if err := b.ReportItemProgress(ctx, access, core.MovieKey(42), frontend.Timeline{
+		PlaybackID: "infuse-client-uuid",
+		Position:   15 * time.Second,
+		Duration:   time.Hour,
+		State:      "stopped",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err = b.Sessions(ctx, access)
+	if err != nil || len(listed) != 0 {
+		t.Fatalf("expected 0 sessions after ReportItemProgress(stopped), got %+v (%v)", listed, err)
+	}
+
+	// Open a second session that goes idle without sending Stop; /Sessions hides it once playback reports inactive.
+	dev2 := core.Device{ID: "infuse-idle"}
+	plan2, err := b.Plan(ctx, frontend.PlanRequest{
+		Viewer:   viewer,
+		Device:   dev2,
+		Protocol: "jellyfin",
+		Item:     core.MovieKey(43),
+		Caps:     core.ClientCaps{ClientID: "infuse-idle"},
+		Intent:   frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: dev2, Protocol: "jellyfin", PlanID: plan2.ID}); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	for id := range p.sessions {
+		p.active[id] = false
+	}
+	p.mu.Unlock()
+	listed, err = b.Sessions(ctx, access)
+	if err != nil || len(listed) != 0 {
+		t.Fatalf("expected 0 sessions when playback session is idle, got %+v (%v)", listed, err)
+	}
+}

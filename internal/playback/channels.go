@@ -59,10 +59,16 @@ func (m *Manager) reservationCountsLocked(id identity) (user, total, children in
 		}
 		if g != "" {
 			unit = fmt.Sprintf("group/%d/%s", other.userID, g)
+		} else if other.clientID != "" {
+			unit = fmt.Sprintf("client/%d/%s/%s", other.userID, other.surface, other.clientID)
 		}
 		units[unit] = other.userID
 	}
+	now := m.now()
 	for sid, s := range m.sessions {
+		if !m.sessionCountsForLimit(s, now) {
+			continue
+		}
 		if s.ident.userID == id.userID && s.ident.clientID == id.clientID && s.ident.surface == id.surface {
 			continue
 		}

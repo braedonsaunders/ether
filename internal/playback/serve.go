@@ -34,6 +34,11 @@ func (m *Manager) ServeRange(w http.ResponseWriter, r *http.Request, sessionID s
 		http.Error(w, "unknown playback session", http.StatusNotFound)
 		return
 	}
+	s.activeReads.Add(1)
+	defer func() {
+		s.activeReads.Add(-1)
+		s.touch(m.now())
+	}()
 	s.touch(m.now())
 	s.markDirectPlay()
 	if !s.directRangeCompatible() {

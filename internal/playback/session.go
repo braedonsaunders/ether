@@ -213,22 +213,24 @@ type session struct {
 
 	// stopCtx cancels background recovery when playback ends. Unlike a
 	// generation context, it survives retiring an input during a healthy swap.
-	stopCtx    context.Context
-	stopCancel context.CancelFunc
-	failSem    chan struct{} // serialises failovers
-	bytes      atomic.Int64
-	rate       rateMeter
+	stopCtx     context.Context
+	stopCancel  context.CancelFunc
+	failSem     chan struct{} // serialises failovers
+	bytes       atomic.Int64
+	activeReads atomic.Int32
+	rate        rateMeter
 
-	mu            sync.Mutex
-	preparedOnly  bool
-	sourcePins    int
-	cur           *generation
-	virtualGen    *generation // generation whose layout virtual mirrors
-	gens          int
-	tried         []string
-	alternates    []core.Release
-	failovers     int
-	downFailovers int
+	mu               sync.Mutex
+	preparedOnly     bool
+	stoppedBySurface bool
+	sourcePins       int
+	cur              *generation
+	virtualGen       *generation // generation whose layout virtual mirrors
+	gens             int
+	tried            []string
+	alternates       []core.Release
+	failovers        int
+	downFailovers    int
 	// downMisses counts speed-driven down-failovers that found no
 	// lower-bitrate release. They count toward MaxDownFailovers so a
 	// source that stays too slow cannot retry forever.
@@ -237,6 +239,7 @@ type session struct {
 	prefer         string // release ID the viewer picked (PrepareVariant); read-only after creation
 	exact          bool   // exact selection must never switch releases
 	lastActive     time.Time
+	lastRead       time.Time
 	stopAt         time.Time // set by a "stopped" timeline; expiry after a grace
 	decision       core.DecisionKind
 	decisionReason string
@@ -270,6 +273,7 @@ func newSession(id string, ident identity, user *core.User, caps core.ClientCaps
 		originalLanguage: titleLanguage(title),
 		startedAt:        now,
 		lastActive:       now,
+		lastRead:         now,
 		failSem:          make(chan struct{}, 1),
 		rate:             rateMeter{},
 		genSince:         now,
@@ -329,7 +333,22 @@ func (s *session) isClosed() bool {
 func (s *session) touch(now time.Time) {
 	s.mu.Lock()
 	s.lastActive = now
+	s.lastRead = now
 	s.stopAt = time.Time{}
+	s.stoppedBySurface = false
+	if s.viewerState == "stopped" {
+		s.viewerState = ""
+	}
+	s.mu.Unlock()
+}
+
+func (s *session) touchTimeline(now time.Time) {
+	s.mu.Lock()
+	s.lastActive = now
+	s.stopAt = time.Time{}
+	if s.viewerState == "stopped" {
+		s.viewerState = ""
+	}
 	s.mu.Unlock()
 }
 

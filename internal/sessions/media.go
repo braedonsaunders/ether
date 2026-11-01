@@ -443,6 +443,11 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 		b.deps.Live.Serve(w, r, viewer, s.playID, strings.Join(tail[1:], "/"), liveBase)
 		return
 	}
+	if !s.live && s.playID != "" {
+		if reader, ok := b.deps.Playback.(interface{ BeginMediaRead(string) func() }); ok {
+			defer reader.BeginMediaRead(s.playID)()
+		}
+	}
 	if len(tail) == 2 && tail[0] == "subtitles" {
 		b.serveSubtitle(w, r, s, tail[1])
 		return

@@ -263,6 +263,9 @@ func (r *registry) desired() []unitRow {
 	m.mu.Unlock()
 	now := m.now()
 	for _, s := range sessions {
+		if !m.sessionCountsForLimit(s, now) {
+			continue
+		}
 		ps := s.snapshot(now)
 		rows = append(rows, unitRow{id: ps.ID, user: ps.UserID, client: clusterClientID(s.ident), grp: ps.PlaybackGroup,
 			kind: unitSession, data: sharedSnapshot(ps), started: ps.StartedAt.UnixMilli()})

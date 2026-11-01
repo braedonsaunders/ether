@@ -84,6 +84,10 @@ type Options struct {
 	DataDir string
 	// IdleTimeout ends sessions without viewer activity (default 2m).
 	IdleTimeout time.Duration
+	// StreamActivityTimeout is how long a session without active reads or
+	// segment requests continues to count against stream limits and active
+	// session listings (default 12s).
+	StreamActivityTimeout time.Duration
 	// WriteStallTimeout fails a direct-play write that makes no progress
 	// for this long, so a client that stopped reading releases its source
 	// (default IdleTimeout: a paused player is not cut off before its
@@ -158,6 +162,7 @@ func (o *Options) defaults() {
 		}
 	}
 	def(&o.IdleTimeout, 2*time.Minute)
+	def(&o.StreamActivityTimeout, 12*time.Second)
 	def(&o.WriteStallTimeout, o.IdleTimeout)
 	def(&o.StoppedGrace, time.Minute)
 	def(&o.PrepareTimeout, 90*time.Second)
@@ -749,9 +754,25 @@ func (m *Manager) prepareOwnedEntry(ctx context.Context, user *core.User, key co
 		m.lastCaps[user.ID] = caps
 		if s := m.byIdent[id]; s != nil {
 			if s.exact == exact && (prefer == "" || s.current().releaseID() == prefer) {
+				now := m.now()
+				if !m.sessionCountsForLimit(s, now) {
+					cfg := m.config()
+					userLimit := UserStreamLimit(cfg, user)
+					serverLimit := ServerStreamLimit(cfg, m.opts.ConnectionsPerStream)
+					userN, total, _ := m.reservationCountsLocked(id)
+					if userLimit > 0 && userN >= userLimit {
+						m.mu.Unlock()
+						return nil, nil, fmt.Errorf("%w: %s is using %d of %d streams", core.ErrStreamLimit, userLabel(user), userN, userLimit)
+					}
+					if serverLimit > 0 && total >= serverLimit {
+						m.mu.Unlock()
+						return nil, nil, fmt.Errorf("%w: server is at its limit of %d streams", core.ErrStreamLimit, serverLimit)
+					}
+				}
 				m.mu.Unlock()
-				s.touch(m.now())
-				return s.snapshot(m.now()), s.sources, nil
+				s.touch(now)
+				m.reg.poke()
+				return s.snapshot(now), s.sources, nil
 			}
 			old := s.id
 			m.mu.Unlock()
@@ -940,6 +961,62 @@ func (m *Manager) lookup(id string) *session {
 	return m.sessions[id]
 }
 
+// sessionCountsForLimit reports whether s is actively streaming or within
+// StreamActivityTimeout of its last media/segment read and has not been
+// stopped or closed by the client.
+func (m *Manager) sessionCountsForLimit(s *session, now time.Time) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	closed := s.closed
+	stoppedBySurface := s.stoppedBySurface
+	stopAt := s.stopAt
+	viewerState := s.viewerState
+	last := s.lastRead
+	if last.IsZero() {
+		last = s.lastActive
+	}
+	s.mu.Unlock()
+	if closed || stoppedBySurface || !stopAt.IsZero() || viewerState == "stopped" {
+		return false
+	}
+	if s.activeReads.Load() > 0 {
+		return true
+	}
+	if hls, ok := m.deps.HLSLookup(s.id); ok && hls != nil {
+		if la := hls.LastAccess(); la.After(last) {
+			last = la
+		}
+	}
+	window := m.opts.StreamActivityTimeout
+	if window <= 0 {
+		window = 12 * time.Second
+	}
+	return now.Sub(last) <= window
+}
+
+// SessionActive reports whether a playback session is live for stream limits
+// and active session listings.
+func (m *Manager) SessionActive(id string) bool {
+	return m.sessionCountsForLimit(m.lookup(id), m.now())
+}
+
+// BeginMediaRead records an active client media or segment read and returns
+// a function to call when the response ends.
+func (m *Manager) BeginMediaRead(id string) func() {
+	s := m.lookup(id)
+	if s == nil {
+		return func() {}
+	}
+	s.activeReads.Add(1)
+	s.touch(m.now())
+	return func() {
+		s.activeReads.Add(-1)
+		s.touch(m.now())
+	}
+}
+
 // Session returns a snapshot of a live session.
 func (m *Manager) Session(id string) (*core.PlaySession, bool) {
 	s := m.lookup(id)
@@ -1019,12 +1096,24 @@ func (m *Manager) setSurfacePrepared(id string, prepared bool) bool {
 	if s == nil {
 		return false
 	}
+	now := m.now()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		return false
 	}
 	s.preparedOnly = prepared
+	if prepared {
+		s.stoppedBySurface = true
+	} else {
+		s.stoppedBySurface = false
+		s.lastActive = now
+		s.lastRead = now
+		s.stopAt = time.Time{}
+		if s.viewerState == "stopped" {
+			s.viewerState = ""
+		}
+	}
 	s.mu.Unlock()
 	m.reg.poke()
 	return true
@@ -1194,12 +1283,14 @@ func (m *Manager) Timeline(userID int64, key core.RatingKey, state string) {
 		if state == "stopped" {
 			s.mu.Lock()
 			s.stopAt = now.Add(m.opts.StoppedGrace)
+			s.viewerState = "stopped"
 			s.mu.Unlock()
 		} else if state == "playing" || state == "paused" {
-			s.touch(now)
+			s.touchTimeline(now)
 		}
 	}
 	if state == "stopped" {
+		m.reg.poke()
 		m.kickPins()
 	}
 }

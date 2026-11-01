@@ -1083,3 +1083,114 @@ func TestPausedPlaybackSurvivesPhoneCall(t *testing.T) {
 		t.Fatal("resumed abandoned source retained")
 	}
 }
+
+func TestStreamLimitsReleaseStoppedAndIdleSessions(t *testing.T) {
+	rels := []*fakeRelease{mkv("A", 10000, time.Minute), mkv("B", 10000, time.Minute)}
+	t.Run("stopped or surface-prepared releases slot immediately", func(t *testing.T) {
+		h := newHarness(t, rels, []string{"A", "B"}, func(h *harness, o *Options) {
+			h.cfg.Server.MaxStreams = 2
+			o.StoppedGrace = time.Minute
+			o.IdleTimeout = 5 * time.Minute
+		})
+		ctx := context.Background()
+		infuse1 := core.ClientCaps{ClientID: "infuse-1", Protocol: "jellyfin"}
+		infuse2 := core.ClientCaps{ClientID: "infuse-2", Protocol: "jellyfin"}
+		silo := core.ClientCaps{ClientID: "silo-1", Protocol: "silo"}
+
+		ps1, err := h.m.PrepareSurface(ctx, owner, movieKey, infuse1, "A", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.m.MarkSurfaceOpened(ps1.ID)
+
+		ps2, err := h.m.PrepareSurface(ctx, owner, movie2, infuse2, "A", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.m.MarkSurfaceOpened(ps2.ID)
+
+		// While both streams are active within the activity window, a third stream hits the cap.
+		if _, err := h.m.PrepareSurface(ctx, owner, movie3, silo, "A", true); !errors.Is(err, core.ErrStreamLimit) {
+			t.Fatalf("expected ErrStreamLimit while 2 streams are active, got %v", err)
+		}
+
+		// When Infuse stops while a detail plan still holds the surface prepared, it must stop counting immediately.
+		h.m.MarkSurfacePrepared(ps1.ID)
+		if h.m.SessionActive(ps1.ID) {
+			t.Fatal("surface-prepared session after stop still reported active")
+		}
+		ps3, err := h.m.PrepareSurface(ctx, owner, movie3, silo, "A", true)
+		if err != nil {
+			t.Fatalf("Silo blocked after Infuse stopped: %v", err)
+		}
+		h.m.Stop(ps3.ID)
+
+		// Re-open ps1, then stop via PlaybackProgress (item-level stop).
+		h.m.MarkSurfaceOpened(ps1.ID)
+		if _, err := h.m.PrepareSurface(ctx, owner, movie3, silo, "A", true); !errors.Is(err, core.ErrStreamLimit) {
+			t.Fatalf("expected ErrStreamLimit after re-opening ps1, got %v", err)
+		}
+		h.m.PlaybackProgress(owner.ID, "infuse-1", movieKey, 10*time.Second, "stopped")
+		if h.m.SessionActive(ps1.ID) {
+			t.Fatal("PlaybackProgress(stopped) session still reported active")
+		}
+		ps4, err := h.m.PrepareSurface(ctx, owner, movie3, silo, "A", true)
+		if err != nil {
+			t.Fatalf("Silo blocked after PlaybackProgress(stopped): %v", err)
+		}
+		h.m.Stop(ps4.ID)
+	})
+
+	t.Run("idle sessions without reads stop counting after activity timeout", func(t *testing.T) {
+		h := newHarness(t, rels, []string{"A", "B"}, func(h *harness, o *Options) {
+			h.cfg.Server.MaxStreams = 2
+			o.StreamActivityTimeout = 12 * time.Second
+			o.IdleTimeout = 5 * time.Minute
+		})
+		ctx := context.Background()
+		infuse1 := core.ClientCaps{ClientID: "infuse-sintel", Protocol: "jellyfin"}
+		infuse2 := core.ClientCaps{ClientID: "infuse-paywall", Protocol: "jellyfin"}
+		silo := core.ClientCaps{ClientID: "silo-web", Protocol: "silo"}
+
+		// Infuse 1 plays Sintel and stops reading without sending Stop; Infuse 2 hits AV1 paywall after PrepareSurface.
+		ps1, err := h.m.PrepareSurface(ctx, owner, movieKey, infuse1, "A", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.m.MarkSurfaceOpened(ps1.ID)
+		ps2, err := h.m.PrepareSurface(ctx, owner, movie2, infuse2, "A", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// At t=5s, both are within the 12s window so Silo is blocked.
+		h.clock.Advance(5 * time.Second)
+		if _, err := h.m.PrepareSurface(ctx, owner, movie3, silo, "A", true); !errors.Is(err, core.ErrStreamLimit) {
+			t.Fatalf("expected ErrStreamLimit at 5s, got %v", err)
+		}
+
+		// At t=13s (>12s with no ServeRange or HLS segment reads), both idle sessions stop counting.
+		h.clock.Advance(8 * time.Second)
+		if h.m.SessionActive(ps1.ID) || h.m.SessionActive(ps2.ID) {
+			t.Fatalf("idle sessions still active after 13s: ps1=%v ps2=%v", h.m.SessionActive(ps1.ID), h.m.SessionActive(ps2.ID))
+		}
+		ps3, err := h.m.PrepareSurface(ctx, owner, movie3, silo, "A", true)
+		if err != nil {
+			t.Fatalf("Silo blocked by stale idle sessions at 13s: %v", err)
+		}
+		h.m.MarkSurfaceOpened(ps3.ID)
+
+		// If ps1 performs a real range read and ps3 is active, a 4th client is blocked.
+		srv1 := directPlayServer(t, h.m, ps1.ID)
+		resp, _, err := get(t, srv1.URL, map[string]string{"Range": "bytes=0-63"})
+		if err != nil || resp.StatusCode != 206 {
+			t.Fatalf("range read: %d %v", resp.StatusCode, err)
+		}
+		if !h.m.SessionActive(ps1.ID) {
+			t.Fatal("ps1 not active immediately after range read")
+		}
+		if _, err := h.m.PrepareSurface(ctx, owner, epKey, core.ClientCaps{ClientID: "other", Protocol: "silo"}, "A", true); !errors.Is(err, core.ErrStreamLimit) {
+			t.Fatalf("expected ErrStreamLimit when 2 streams are genuinely active, got %v", err)
+		}
+	})
+}

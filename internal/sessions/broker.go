@@ -539,7 +539,11 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	var ps *core.PlaySession
 	prepStarted := time.Now()
 	if useCachedDetail {
-		ps = previous
+		if liveness, ok := b.deps.Playback.(interface{ SessionActive(string) bool }); ok && !liveness.SessionActive(previous.ID) {
+			ps, err = playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, prepareExact)
+		} else {
+			ps = previous
+		}
 	} else {
 		ps, err = playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, prepareExact)
 		// If the remembered release (or a non-detail MediaSourceId handle when
@@ -938,8 +942,12 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 		return nil, core.ErrUnauthorized
 	}
 	b.mu.Lock()
+	liveness, checkLiveness := b.deps.Playback.(interface{ SessionActive(string) bool })
 	var out []frontend.Session
 	for _, s := range b.sessions {
+		if checkLiveness && !s.live && s.playID != "" && !liveness.SessionActive(s.playID) {
+			continue
+		}
 		if owner || s.public.ViewerID == v.ID {
 			out = append(out, s.public)
 		}
@@ -1132,7 +1140,7 @@ func (b *Broker) recordItemTimeline(ctx context.Context, a frontend.SessionAcces
 		return err
 	}
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
-		progress.PlaybackProgress(viewer.ID, a.Device.ID, item, t.Position, t.State)
+		progress.PlaybackProgress(viewer.ID, clientKey(a.Protocol, a.Device), item, t.Position, t.State)
 	}
 	if b.deps.OnTimeline != nil {
 		b.deps.OnTimeline(viewer, item, t.Position, t.Duration, t.State)
@@ -1141,7 +1149,7 @@ func (b *Broker) recordItemTimeline(ctx context.Context, a frontend.SessionAcces
 }
 
 // ReportItemProgress records a Jellyfin or Emby timeline that names an item
-// instead of a broker session. It does not prepare or stop playback.
+// instead of a broker session.
 func (b *Broker) ReportItemProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
 	if a.Protocol != "jellyfin" && a.Protocol != "emby" {
 		return core.ErrUnauthorized
@@ -1169,10 +1177,31 @@ func (b *Broker) ReportItemProgress(ctx context.Context, a frontend.SessionAcces
 		return err
 	}
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
-		progress.PlaybackProgress(viewer.ID, a.Device.ID, item, t.Position, t.State)
+		progress.PlaybackProgress(viewer.ID, clientKey(a.Protocol, a.Device), item, t.Position, t.State)
 	}
 	if b.deps.OnTimeline != nil {
 		b.deps.OnTimeline(viewer, item, t.Position, t.Duration, t.State)
+	}
+	if t.State == "stopped" {
+		clientID := clientKey(a.Protocol, a.Device)
+		unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", viewer.ID, clientID))
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		b.mu.Lock()
+		var toStop []*brokerSession
+		for _, s := range b.sessions {
+			if s.public.ViewerID == viewer.ID && s.public.Protocol == a.Protocol && s.public.Device.ID == a.Device.ID && s.public.Item == item {
+				toStop = append(toStop, s)
+			}
+		}
+		b.mu.Unlock()
+		for _, s := range toStop {
+			if err := b.stopLocked(ctx, s); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
