@@ -1,6 +1,8 @@
 package subtitles
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 func synthCues(n int, step, offset time.Duration, rate float64) []Cue {
@@ -252,5 +256,135 @@ func TestSyncHandlerManualAdjust(t *testing.T) {
 	cues, err := ParseCues(string(got))
 	if err != nil || len(cues) == 0 || absDuration(cues[0].Start-1500*time.Millisecond) > timingFrameSlack {
 		t.Fatalf("manual adjust not applied: %v %v", err, cues)
+	}
+}
+
+func TestManualAdjustHonoursApplyAndWins(t *testing.T) {
+	s := New(Options{CacheDir: t.TempDir()})
+	id := "manual-win"
+	raw := []byte(RenderSRT(synthCues(8, time.Second, 0, 1)))
+	if err := os.WriteFile(filepath.Join(s.dir, id+".srt"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.storeCorrection(id, SourceKey("rel"), correction{
+		Offset: 9 * time.Second, Rate: 1, Applied: true, Measured: true, At: s.now().UTC(),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/"+id, strings.NewReader(`{"offsetMs":1500,"rate":1,"apply":false}`))
+	rec := httptest.NewRecorder()
+	s.SyncHandler().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.Bytes())
+	}
+	r, _, err := s.OpenFormatFrom(id, "srt", "rel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(r)
+	r.Close()
+	cues, err := ParseCues(string(got))
+	if err != nil || len(cues) == 0 || absDuration(cues[0].Start-9*time.Second) > timingFrameSlack {
+		t.Fatalf("apply=false should leave measured: %v %v", err, cues)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/"+id, strings.NewReader(`{"offsetMs":1500,"rate":1,"apply":true}`))
+	rec = httptest.NewRecorder()
+	s.SyncHandler().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("apply status %d %s", rec.Code, rec.Body.Bytes())
+	}
+	r, _, err = s.OpenFormatFrom(id, "srt", "rel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = io.ReadAll(r)
+	r.Close()
+	cues, err = ParseCues(string(got))
+	if err != nil || len(cues) == 0 || absDuration(cues[0].Start-1500*time.Millisecond) > timingFrameSlack {
+		t.Fatalf("manual should win: %v %v", err, cues)
+	}
+}
+
+func TestManualAdjustRejectsBoundsAndTraversal(t *testing.T) {
+	s := New(Options{CacheDir: t.TempDir()})
+	id := "manual-bound"
+	if err := os.WriteFile(filepath.Join(s.dir, id+".srt"), []byte(RenderSRT(synthCues(4, time.Second, 0, 1))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		path, body string
+		code       int
+	}{
+		{"/" + id, `{"offsetMs":3600001,"rate":1,"apply":true}`, 400},
+		{"/" + id, `{"offsetMs":0,"rate":3,"apply":true}`, 400},
+		{"/" + id, `{"offsetMs":0,"rate":0.4,"apply":true}`, 400},
+		{"/..", `{"offsetMs":0,"rate":1,"apply":true}`, 400},
+	} {
+		rec := httptest.NewRecorder()
+		s.SyncHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body)))
+		if rec.Code != tc.code {
+			t.Fatalf("%s %s: status %d want %d %s", tc.path, tc.body, rec.Code, tc.code, rec.Body.Bytes())
+		}
+	}
+}
+
+func TestManualAdjustAcceptsASSReference(t *testing.T) {
+	s := New(Options{CacheDir: t.TempDir()})
+	id := "manual-ass"
+	if err := os.WriteFile(filepath.Join(s.dir, id+".srt"), []byte(RenderSRT(synthCues(4, time.Second, 0, 1))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ass := "[Script Info]\nTitle: t\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,One\nDialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,Two\nDialogue: 0,0:00:05.00,0:00:06.00,Default,,0,0,0,,Three\n"
+	body, err := json.Marshal(map[string]any{"offsetMs": 0, "rate": 1, "apply": true, "reference": ass})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	s.SyncHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/"+id, strings.NewReader(string(body))))
+	if rec.Code != 200 {
+		t.Fatalf("ASS reference rejected: %d %s", rec.Code, rec.Body.Bytes())
+	}
+}
+
+func TestStartCorrectionSkipsWithoutReleaseKey(t *testing.T) {
+	s := New(Options{CacheDir: t.TempDir()})
+	held := false
+	s.StartCorrection(context.Background(), &core.Title{}, "sid", ReleaseAccess{
+		URL: "http://127.0.0.1/x",
+		Hold: func() (io.ReaderAt, int64, func(), bool) {
+			held = true
+			return nil, 0, nil, false
+		},
+	})
+	time.Sleep(20 * time.Millisecond)
+	if held {
+		t.Fatal("held without a release key")
+	}
+}
+
+type metaRA struct {
+	meta, live int
+}
+
+func (m *metaRA) ReadAt(p []byte, _ int64) (int, error) {
+	m.live++
+	return copy(p, []byte("live")), nil
+}
+
+func (m *metaRA) ReadMetadataAtContext(_ context.Context, p []byte, _ int64) (int, error) {
+	m.meta++
+	return copy(p, []byte("meta")), nil
+}
+
+func TestLimitReaderAtPassesMetadataReads(t *testing.T) {
+	inner := &metaRA{}
+	r := limitReaderAt(inner, 32)
+	mr, ok := r.(core.MetadataReaderAt)
+	if !ok {
+		t.Fatal("limitReaderAt hid ReadMetadataAtContext")
+	}
+	buf := make([]byte, 4)
+	n, err := mr.ReadMetadataAtContext(context.Background(), buf, 0)
+	if err != nil || n != 4 || string(buf) != "meta" || inner.meta != 1 || inner.live != 0 {
+		t.Fatalf("n=%d err=%v buf=%q meta=%d live=%d", n, err, buf, inner.meta, inner.live)
 	}
 }

@@ -952,6 +952,20 @@ func (m *Manager) SessionForSurface(surface string, userID int64, clientID strin
 	return s.snapshot(m.now()), true
 }
 
+// SessionForSurfaceClient finds the live session for this surface and
+// client, including variant-scoped identities that SessionFor misses.
+func (m *Manager) SessionForSurfaceClient(surface string, userID int64, clientID string, key core.RatingKey) (*core.PlaySession, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	surf := playbackSurface(surface)
+	for _, s := range m.byIdent {
+		if s != nil && s.ident.userID == userID && s.ident.clientID == clientID && s.ident.key == key && s.ident.surface == surf {
+			return s.snapshot(m.now()), true
+		}
+	}
+	return nil, false
+}
+
 // MarkSurfaceOpened changes Activity visibility only after broker admission.
 func (m *Manager) MarkSurfaceOpened(id string) bool {
 	return m.setSurfacePrepared(id, false)

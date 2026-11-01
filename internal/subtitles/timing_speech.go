@@ -3,6 +3,7 @@ package subtitles
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"time"
 )
@@ -248,6 +249,15 @@ func sortFloats(v []float64) {
 // DecodeAudioWindows reads a few short windows of the first audio track
 // with ffmpeg from a local file or HTTP URL. Skipped when ffmpeg is absent.
 func DecodeAudioWindows(ctx context.Context, ffmpegPath, input string, duration time.Duration, windows int, span time.Duration) ([]SpeechWindow, error) {
+	return decodeAudioWindows(ctx, ffmpegPath, input, nil, 0, duration, windows, span)
+}
+
+// DecodeAudioWindowsReader is DecodeAudioWindows from a held source reader.
+func DecodeAudioWindowsReader(ctx context.Context, ffmpegPath string, r io.ReaderAt, size int64, duration time.Duration, windows int, span time.Duration) ([]SpeechWindow, error) {
+	return decodeAudioWindows(ctx, ffmpegPath, "", r, size, duration, windows, span)
+}
+
+func decodeAudioWindows(ctx context.Context, ffmpegPath, input string, r io.ReaderAt, size int64, duration time.Duration, windows int, span time.Duration) ([]SpeechWindow, error) {
 	if ffmpegPath == "" {
 		ffmpegPath = "ffmpeg"
 	}
@@ -272,7 +282,7 @@ func DecodeAudioWindows(ctx context.Context, ffmpegPath, input string, duration 
 		if ctx.Err() != nil {
 			return out, ctx.Err()
 		}
-		pcm, rate, err := decodeWindow(ctx, ffmpegPath, input, start, span)
+		pcm, rate, err := decodeWindow(ctx, ffmpegPath, input, r, size, start, span)
 		if err != nil {
 			continue
 		}
@@ -320,19 +330,33 @@ func spreadWindows(duration time.Duration, n int, span time.Duration) []time.Dur
 	return out
 }
 
-func decodeWindow(ctx context.Context, ffmpeg, input string, start, span time.Duration) ([]int16, int, error) {
+func decodeWindow(ctx context.Context, ffmpeg, input string, r io.ReaderAt, size int64, start, span time.Duration) ([]int16, int, error) {
 	const maxPCM = 512 << 10
-	cmd := exec.CommandContext(ctx, ffmpeg,
+	args := []string{
 		"-hide_banner", "-loglevel", "error", "-nostdin",
+		"-probesize", "1048576", "-analyzeduration", "2000000",
 		"-ss", fmt.Sprintf("%.3f", start.Seconds()),
 		"-t", fmt.Sprintf("%.3f", span.Seconds()),
-		"-i", input,
+	}
+	if r != nil {
+		args = append(args, "-i", "pipe:0")
+	} else {
+		args = append(args, "-i", input)
+	}
+	args = append(args,
 		"-map", "0:a:0?", "-ac", "1", "-ar", "16000",
 		"-af", "highpass=f=300,lowpass=f=3400",
 		"-fs", fmt.Sprintf("%d", maxPCM),
 		"-f", "s16le", "pipe:1",
 	)
-	cmd.Stdin = nil
+	cmd := exec.CommandContext(ctx, ffmpeg, args...)
+	if r != nil {
+		limit := size
+		if limit <= 0 || limit > sourceReadBudget {
+			limit = sourceReadBudget
+		}
+		cmd.Stdin = io.LimitReader(io.NewSectionReader(r, 0, size), limit)
+	}
 	raw, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {

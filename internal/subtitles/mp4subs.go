@@ -129,6 +129,11 @@ func mp4TextTrack(trak []byte) ([]Cue, error) {
 	if handler != "text" && handler != "sbtl" && handler != "subt" {
 		return nil, errMP4
 	}
+	if edts := mp4Child(trak, "edts"); len(edts) > 0 {
+		if elst := mp4Child(edts, "elst"); len(elst) > 0 {
+			return nil, errMP4
+		}
+	}
 	stsd := mp4Child(mp4Child(mp4Child(mdia, "minf"), "stbl"), "stsd")
 	if !mp4HasTX3G(stsd) {
 		return nil, errMP4
@@ -156,6 +161,10 @@ func mp4TextTrack(trak []byte) ([]Cue, error) {
 	}
 	var out []Cue
 	for i := range sizes {
+		// Empty tx3g samples are 2-byte length-prefixed clears, not cue starts.
+		if sizes[i] <= 2 {
+			continue
+		}
 		start := time.Duration(times[i]) * time.Second / time.Duration(scale)
 		end := start + 2*time.Second
 		if i+1 < len(times) {
@@ -231,62 +240,4 @@ func mp4SampleTimes(stts []byte, count int) ([]uint64, error) {
 		return nil, errMP4
 	}
 	return out, nil
-}
-
-func mp4SampleOffsets(stbl []byte, count int, fileSize int64) ([]int64, error) {
-	stsc := mp4Child(stbl, "stsc")
-	if len(stsc) < 8 {
-		return nil, errMP4
-	}
-	ns := int(mp4U32(stsc, 4))
-	if ns <= 0 || 8+ns*12 > len(stsc) {
-		return nil, errMP4
-	}
-	chunks, wide := mp4Child(stbl, "stco"), false
-	if chunks == nil {
-		chunks = mp4Child(stbl, "co64")
-		wide = true
-	}
-	w := 4
-	if wide {
-		w = 8
-	}
-	if len(chunks) < 8 {
-		return nil, errMP4
-	}
-	nc := int(mp4U32(chunks, 4))
-	if nc <= 0 || 8+nc*w > len(chunks) {
-		return nil, errMP4
-	}
-	stsz := mp4Child(stbl, "stsz")
-	sizes, err := mp4SampleSizes(stsz)
-	if err != nil {
-		return nil, err
-	}
-	fixed := make([]int64, count)
-	sample, scRow := 0, 0
-	for chunk := 1; chunk <= nc; chunk++ {
-		for scRow+1 < ns && int(mp4U32(stsc, 8+(scRow+1)*12)) <= chunk {
-			scRow++
-		}
-		n := int(mp4U32(stsc, 8+scRow*12+4))
-		var off uint64
-		if wide {
-			off = binary.BigEndian.Uint64(chunks[8+(chunk-1)*8:])
-		} else {
-			off = uint64(mp4U32(chunks, 8+(chunk-1)*4))
-		}
-		for j := 0; j < n && sample < count; j++ {
-			if off > uint64(fileSize) {
-				return nil, errMP4
-			}
-			fixed[sample] = int64(off)
-			off += uint64(sizes[sample])
-			sample++
-		}
-	}
-	if sample != count {
-		return nil, errMP4
-	}
-	return fixed, nil
 }

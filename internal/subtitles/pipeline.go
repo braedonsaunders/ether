@@ -164,40 +164,75 @@ func (s *Service) handleManualAdjust(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
+	if strings.Contains(id, "..") {
+		http.Error(w, "Invalid subtitle id", http.StatusBadRequest)
+		return
+	}
 	var body struct {
 		OffsetMs  int64   `json:"offsetMs"`
 		Rate      float64 `json:"rate"`
 		Reference string  `json:"reference"`
 		Apply     bool    `json:"apply"`
-		Source    string  `json:"source"`
 	}
 	if json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body) != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	src := SourceKey(body.Source)
-	if src == "" {
-		src = manualSource
+	if body.OffsetMs < -3600000 || body.OffsetMs > 3600000 {
+		http.Error(w, "Offset must be within ±1 hour", http.StatusBadRequest)
+		return
+	}
+	rate := body.Rate
+	if rate == 0 {
+		rate = 1
+	}
+	if rate < 0.5 || rate > 2 {
+		http.Error(w, "Rate must be between 0.5 and 2", http.StatusBadRequest)
+		return
 	}
 	c := correction{
 		Offset: time.Duration(body.OffsetMs) * time.Millisecond,
-		Rate:   body.Rate, Applied: true, Measured: true,
+		Rate:   rate, Applied: body.Apply, Manual: true, Measured: false,
 		Confidence: 1, Inliers: 1, At: s.now().UTC(),
-	}
-	if c.Rate == 0 {
-		c.Rate = 1
 	}
 	if body.Reference != "" {
 		cues, err := s.cuesByCachedID(id)
-		ref, rerr := ParseCues(body.Reference)
-		if err == nil && rerr == nil {
+		ref, rerr := parseReference(body.Reference)
+		if rerr != nil {
+			http.Error(w, rerr.Error(), http.StatusBadRequest)
+			return
+		}
+		if err == nil {
 			if fit, ok := FitTiming(cues, ref); ok {
 				c.Offset, c.Rate = fit.Offset, fit.Rate
 				c.Confidence, c.Inliers = fit.Confidence, fit.Inliers
 			}
 		}
 	}
-	s.storeCorrection(id, src, c)
+	s.storeCorrection(id, manualSource, c)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"externalUrl": URLPrefix + id})
+}
+
+func parseReference(text string) ([]Cue, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, errors.New("Reference subtitles are empty")
+	}
+	if looksASS(text) {
+		cues, err := ParseASS(text)
+		if err != nil || len(cues) == 0 {
+			return nil, errors.New("Reference subtitles must be readable ASS, SRT, or WebVTT")
+		}
+		return cues, nil
+	}
+	cues, err := ParseCues(text)
+	if err != nil || len(cues) == 0 {
+		return nil, errors.New("Reference subtitles must be readable ASS, SRT, or WebVTT")
+	}
+	return cues, nil
+}
+
+func looksASS(s string) bool {
+	return strings.Contains(s, "[Script Info]") || strings.Contains(s, "[Events]") || strings.Contains(s, "Dialogue:")
 }

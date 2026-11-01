@@ -189,6 +189,9 @@ func fitRate(candidate, reference []time.Duration, rate float64, opt FitOptions)
 		denom = len(reference)
 	}
 	conf := float64(inliers) / float64(denom)
+	if conf > 1 {
+		conf = 1
+	}
 	if !segmentConsistent(scaled, reference, offset, opt.FrameSlack) {
 		return TimingFit{}, false
 	}
@@ -196,24 +199,23 @@ func fitRate(candidate, reference []time.Duration, rate float64, opt FitOptions)
 }
 
 // segmentConsistent rejects a single-offset fit when a mid-file recut
-// matches only part of the timeline.
+// matches only part of the timeline. All three thirds must agree.
 func segmentConsistent(scaled, reference []time.Duration, offset, slack time.Duration) bool {
 	if len(scaled) < 12 {
 		return true
 	}
-	ok := 0
 	for i := 0; i < 3; i++ {
 		lo := i * len(scaled) / 3
 		hi := (i + 1) * len(scaled) / 3
 		if hi-lo < 3 {
-			continue
+			return false
 		}
 		inl, _ := scoreOffset(scaled[lo:hi], reference, offset, slack)
-		if float64(inl) >= float64(hi-lo)/3 {
-			ok++
+		if float64(inl) < float64(hi-lo)/3 {
+			return false
 		}
 	}
-	return ok >= 2
+	return true
 }
 
 func scoreOffset(scaled, reference []time.Duration, offset, slack time.Duration) (intliers int, residual time.Duration) {

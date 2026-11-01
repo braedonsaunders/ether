@@ -27,7 +27,8 @@ const (
 
 // ReleaseAccess is enough of a playing session to measure a sidecar.
 // Reader and URL must belong to that session's lifetime; Enrich must
-// not pass a prepare-generation handle.
+// not pass a prepare-generation handle. Hold, when set, is taken after
+// the speech semaphore so a retired source can close during a failover.
 type ReleaseAccess struct {
 	Reader   io.ReaderAt
 	Size     int64
@@ -37,6 +38,7 @@ type ReleaseAccess struct {
 	Source   string
 	FFmpeg   string
 	Done     func()
+	Hold     func() (io.ReaderAt, int64, func(), bool)
 }
 
 func (a ReleaseAccess) close() {
@@ -52,6 +54,7 @@ type correction struct {
 	Inliers    int           `json:"inliers"`
 	Applied    bool          `json:"applied"`
 	Measured   bool          `json:"measured"`
+	Manual     bool          `json:"manual,omitempty"`
 	At         time.Time     `json:"at"`
 	Err        string        `json:"err,omitempty"`
 	Attempts   int           `json:"attempts,omitempty"`
@@ -112,11 +115,11 @@ func (s *Service) correctionPath(id, source string) string {
 }
 
 func (s *Service) loadApplied(id, source string) (correction, bool) {
-	if c, ok := s.loadCorrection(id, source); ok && c.Applied {
+	if c, ok := s.loadCorrection(id, manualSource); ok && c.Applied {
 		return c, true
 	}
-	if source != manualSource {
-		if c, ok := s.loadCorrection(id, manualSource); ok && c.Applied {
+	if source != "" && source != manualSource {
+		if c, ok := s.loadCorrection(id, source); ok && c.Applied {
 			return c, true
 		}
 	}
@@ -198,12 +201,20 @@ func (s *Service) StartCorrection(ctx context.Context, title *core.Title, id str
 		return
 	}
 	id = strings.TrimPrefix(id, URLPrefix)
-	if id == "" || strings.ContainsAny(id, "/\\") {
+	if id == "" || strings.ContainsAny(id, "/\\") || strings.Contains(id, "..") {
 		access.close()
 		return
 	}
 	src := sourceKey(access)
-	if src == "" || (access.Reader == nil && access.URL == "") {
+	if src == "" {
+		access.close()
+		return
+	}
+	if access.Reader == nil && access.URL == "" && access.Hold == nil {
+		access.close()
+		return
+	}
+	if man, ok := s.loadCorrection(id, manualSource); ok && man.Applied {
 		access.close()
 		return
 	}
@@ -218,7 +229,6 @@ func (s *Service) StartCorrection(ctx context.Context, title *core.Title, id str
 		}
 	}
 	if !s.correctFlights.run(id+"\x00"+src, func() {
-		defer access.close()
 		if s.speechSem != nil {
 			select {
 			case s.speechSem <- struct{}{}:
@@ -227,6 +237,12 @@ func (s *Service) StartCorrection(ctx context.Context, title *core.Title, id str
 				return
 			}
 		}
+		if access.Hold != nil {
+			if r, size, done, ok := access.Hold(); ok {
+				access.Reader, access.Size, access.Done = r, size, done
+			}
+		}
+		defer access.close()
 		ctx, cancel := context.WithTimeout(ctx, correctBackgroundBudget)
 		defer cancel()
 		s.measureAndStore(ctx, title, id, src, access)
@@ -256,6 +272,9 @@ func (s *Service) measureAndStore(ctx context.Context, title *core.Title, id, so
 	if access.Reader == nil && access.URL == "" {
 		return
 	}
+	if man, ok := s.loadCorrection(id, manualSource); ok && man.Applied {
+		return
+	}
 	prev, _ := s.loadCorrection(id, source)
 	cues, err := s.cuesByCachedID(id)
 	if err != nil || len(cues) < 3 {
@@ -272,7 +291,11 @@ func (s *Service) measureAndStore(ctx context.Context, title *core.Title, id, so
 		Inliers: fit.Inliers, Measured: true, At: s.now().UTC(),
 	}
 	if !fit.Identity() {
-		c.Applied = true
+		if man, ok := s.loadCorrection(id, manualSource); ok && man.Applied {
+			c.Applied = false
+		} else {
+			c.Applied = true
+		}
 	}
 	s.storeCorrection(id, source, c)
 }
@@ -315,7 +338,7 @@ func (s *Service) measureFit(ctx context.Context, cues []Cue, access ReleaseAcce
 			}
 		}
 	}
-	if ctx.Err() != nil || access.URL == "" {
+	if ctx.Err() != nil {
 		return TimingFit{}, false
 	}
 	ff := access.FFmpeg
@@ -325,7 +348,13 @@ func (s *Service) measureFit(ctx context.Context, cues []Cue, access ReleaseAcce
 	if ff == "" {
 		return TimingFit{}, false
 	}
-	windows, err := DecodeAudioWindows(ctx, ff, access.URL, access.Duration, 4, 8*time.Second)
+	var windows []SpeechWindow
+	var err error
+	if access.URL != "" {
+		windows, err = DecodeAudioWindows(ctx, ff, access.URL, access.Duration, 4, 8*time.Second)
+	} else if access.Reader != nil {
+		windows, err = DecodeAudioWindowsReader(ctx, ff, access.Reader, access.Size, access.Duration, 4, 8*time.Second)
+	}
 	if err != nil || len(windows) == 0 {
 		return TimingFit{}, false
 	}
@@ -345,21 +374,78 @@ func limitReaderAt(r io.ReaderAt, budget int64) io.ReaderAt {
 	return &limitedReaderAt{r: r, remain: &n}
 }
 
-func (l *limitedReaderAt) ReadAt(p []byte, off int64) (int, error) {
-	if l == nil || l.r == nil || l.remain == nil {
-		return 0, io.EOF
+func (l *limitedReaderAt) clip(p []byte) []byte {
+	if l == nil || l.remain == nil {
+		return nil
 	}
 	left := *l.remain
 	if left <= 0 {
-		return 0, io.EOF
+		return nil
 	}
 	if int64(len(p)) > left {
-		p = p[:left]
+		return p[:left]
 	}
-	n, err := l.r.ReadAt(p, off)
-	if n > 0 {
+	return p
+}
+
+func (l *limitedReaderAt) debit(n int) {
+	if n > 0 && l != nil && l.remain != nil {
 		*l.remain -= int64(n)
 	}
+}
+
+func (l *limitedReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	p = l.clip(p)
+	if p == nil {
+		return 0, io.EOF
+	}
+	if l.r == nil {
+		return 0, io.EOF
+	}
+	n, err := l.r.ReadAt(p, off)
+	l.debit(n)
+	return n, err
+}
+
+func (l *limitedReaderAt) ReadAtContext(ctx context.Context, p []byte, off int64) (int, error) {
+	p = l.clip(p)
+	if p == nil {
+		return 0, io.EOF
+	}
+	var n int
+	var err error
+	switch r := l.r.(type) {
+	case core.ContextReaderAt:
+		n, err = r.ReadAtContext(ctx, p, off)
+	default:
+		if l.r == nil {
+			return 0, io.EOF
+		}
+		n, err = l.r.ReadAt(p, off)
+	}
+	l.debit(n)
+	return n, err
+}
+
+func (l *limitedReaderAt) ReadMetadataAtContext(ctx context.Context, p []byte, off int64) (int, error) {
+	p = l.clip(p)
+	if p == nil {
+		return 0, io.EOF
+	}
+	var n int
+	var err error
+	switch r := l.r.(type) {
+	case core.MetadataReaderAt:
+		n, err = r.ReadMetadataAtContext(ctx, p, off)
+	case core.ContextReaderAt:
+		n, err = r.ReadAtContext(ctx, p, off)
+	default:
+		if l.r == nil {
+			return 0, io.EOF
+		}
+		n, err = l.r.ReadAt(p, off)
+	}
+	l.debit(n)
 	return n, err
 }
 

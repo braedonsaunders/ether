@@ -140,10 +140,38 @@ func (p plexSubtitles) DownloadSubtitle(ctx context.Context, t *core.Title, user
 }
 
 func (a *App) playSession(user *core.User, title *core.Title, clientID string) *core.PlaySession {
-	if a.playback == nil || user == nil || title == nil || clientID == "" {
+	if user == nil || title == nil {
 		return nil
 	}
-	if sess, ok := a.playback.SessionFor(user.ID, clientID, title.Key); ok {
+	return a.playSessionOn("", user.ID, clientID, title.Key)
+}
+
+type playSessionFinder interface {
+	SessionFor(int64, string, core.RatingKey) (*core.PlaySession, bool)
+	SessionForSurfaceClient(string, int64, string, core.RatingKey) (*core.PlaySession, bool)
+}
+
+func (a *App) playSessionOn(surface string, userID int64, clientID string, key core.RatingKey) *core.PlaySession {
+	if a == nil || a.playback == nil {
+		return nil
+	}
+	return lookupPlaySession(a.playback, surface, userID, clientID, key)
+}
+
+// lookupPlaySession finds the live session for this pick. Plex identities
+// have an empty surface; Jellyfin/Emby register with surface=protocol and
+// a variant, so SessionFor (no surface, no variant) always misses them.
+func lookupPlaySession(p playSessionFinder, surface string, userID int64, clientID string, key core.RatingKey) *core.PlaySession {
+	if p == nil || clientID == "" {
+		return nil
+	}
+	if surface != "" && surface != "plex" {
+		if sess, ok := p.SessionForSurfaceClient(surface, userID, clientID, key); ok {
+			return sess
+		}
+		return nil
+	}
+	if sess, ok := p.SessionFor(userID, clientID, key); ok {
 		return sess
 	}
 	return nil
@@ -170,24 +198,20 @@ func (a *App) liveReleaseAccess(sess *core.PlaySession) subtitles.ReleaseAccess 
 		src = sess.Resolution.Release.ID
 	}
 	if src == "" {
-		src = sess.ID
+		return subtitles.ReleaseAccess{}
 	}
+	id := sess.ID
 	access := subtitles.ReleaseAccess{
-		URL:      a.playback.InputURL(sess.ID),
+		URL:      a.playback.InputURL(id),
 		Duration: sess.Info.Duration,
 		Info:     &sess.Info,
 		Source:   src,
+		Hold: func() (io.ReaderAt, int64, func(), bool) {
+			return a.playback.SourceReader(id)
+		},
 	}
 	if a.transcoder != nil {
 		access.FFmpeg = a.transcoder.FFmpegPath()
-	}
-	if r, size, release, ok := a.playback.SourceReader(sess.ID); ok {
-		access.Reader = r
-		access.Size = size
-		access.Done = release
-	} else if sess.Source != nil {
-		access.Reader = sess.Source
-		access.Size = sess.Source.Size()
 	}
 	return access
 }

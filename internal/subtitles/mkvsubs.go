@@ -311,8 +311,8 @@ func (r *rangeReader) mkvTextCues(size int64) ([]Cue, error) {
 		if err != nil {
 			continue
 		}
-		var stamp, dur, clusterPos, rel uint64
-		hasTime, hasPos, hasRel := false, false, false
+		var stamp, dur uint64
+		hasTime, hasPos := false, false
 		for _, f := range fields {
 			if f.id == mkvCueTimeID {
 				stamp = mkvUint(f.b)
@@ -336,11 +336,7 @@ func (r *rangeReader) mkvTextCues(size int64) ([]Cue, error) {
 				case mkvCueTrackID:
 					track = mkvUint(q.b)
 				case mkvCueClusterPosID:
-					clusterPos = mkvUint(q.b)
 					hasPos = true
-				case mkvCueRelPosID:
-					rel = mkvUint(q.b)
-					hasRel = true
 				case mkvCueDurationID:
 					dur = mkvUint(q.b)
 				}
@@ -356,9 +352,6 @@ func (r *rangeReader) mkvTextCues(size int64) ([]Cue, error) {
 			if end <= start {
 				continue
 			}
-			_ = clusterPos
-			_ = rel
-			_ = hasRel
 			out = append(out, Cue{Start: start, End: end})
 		}
 	}
