@@ -2,21 +2,24 @@ import {
   Alert,
   AlertDescription,
   Badge,
+  Button,
   EmptyState,
+  Input,
   SettingsSection,
   confirmDialog,
   toast,
 } from "@braedonsaunders/appkit-ui";
-import { Globe, Link2, Plus, Puzzle, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, Globe, Link2, Plus, Puzzle, Search } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { localized, t, tn } from "../../i18n";
 import { ActionMenu } from "../../components/ActionMenu";
 import { Meter } from "../../components/charts";
 import { Drawer } from "../../components/Drawer";
-import { ErrorPanel, LoadingRows } from "../../components/feedback";
+import { ErrorPanel, LoadingRows, MutationError } from "../../components/feedback";
 import {
+  Field,
   ListInput,
   SecretInput,
   Segmented,
@@ -28,7 +31,15 @@ import { SettingsRow } from "../../components/SettingsRow";
 import { api, errorMessage, newId } from "../../lib/api";
 import { isPlainObject } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
-import type { Indexer, IndexerProtocol, SiteDefinition, SiteTestResult } from "../../lib/types";
+import type {
+  ClientIdentityConfig,
+  EtherConfig,
+  IdentityView,
+  Indexer,
+  IndexerProtocol,
+  SiteDefinition,
+  SiteTestResult,
+} from "../../lib/types";
 import { hasUsableDebrid } from "./Debrid";
 import {
   BoolRow,
@@ -138,6 +149,417 @@ const PROTOCOLS: { value: IndexerProtocol; label: string }[] = localized(() => [
   { value: "torrent", label: t("Torrent (Torznab)") },
 ]);
 
+/** The presets the server accepts, in its display order. */
+const IDENTITY_PRESETS: { value: string; label: string }[] = localized(() => [
+  { value: "ether", label: t("Ether") },
+  { value: "prowlarr", label: t("Prowlarr") },
+  { value: "sonarr", label: t("Sonarr") },
+  { value: "radarr", label: t("Radarr") },
+  { value: "nzbhydra2", label: t("NZBHydra2") },
+  { value: "custom", label: t("Custom") },
+]);
+
+const GRAB_PRESETS: { value: string; label: string }[] = localized(() => [
+  { value: "same", label: t("Same as search") },
+  ...IDENTITY_PRESETS,
+]);
+
+const IDENTITY_KEYS = ["searchTv", "searchMovies", "grabTv", "grabMovies"] as const;
+
+function identityLabel(name: string): string {
+  return IDENTITY_PRESETS.find((p) => p.value === name)?.label ?? t("Ether");
+}
+
+/** A preset option labelled with the literal user agent it sends. */
+function identityOptionLabel(name: string, userAgents?: Record<string, string>): string {
+  const label = identityLabel(name);
+  const ua = userAgents?.[name];
+  return ua ? `${label} (${ua})` : label;
+}
+
+/** A select with its chevron inset from the border instead of the native one. */
+function IdentitySelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <select
+        aria-label={label}
+        className={selectClass}
+        value={value}
+        onChange={(e) => onChange(e.currentTarget.value)}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        size={14}
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-fg-subtle"
+      />
+    </div>
+  );
+}
+
+/**
+ * The precedence the server applies to one indexer's requests: its override,
+ * then the global value for the purpose and media, then ether. A grab of
+ * "same" (or none) follows the same-media search.
+ */
+function effectiveIdentity(
+  policy: ClientIdentityConfig,
+  searchOverride = "",
+  grabOverride = "",
+): { tvSearch: string; movieSearch: string; tvGrab: string; movieGrab: string } {
+  const known = (name: string | undefined) =>
+    IDENTITY_PRESETS.some((p) => p.value === name) ? (name as string) : "ether";
+  const tvSearch = known(searchOverride || policy.searchTv);
+  const movieSearch = known(searchOverride || policy.searchMovies);
+  const grab = (value: string | undefined, search: string) =>
+    known(grabOverride || (value && value !== "same" ? value : search));
+  return {
+    tvSearch,
+    movieSearch,
+    tvGrab: grab(policy.grabTv, tvSearch),
+    movieGrab: grab(policy.grabMovies, movieSearch),
+  };
+}
+
+type HeaderRow = { name: string; value: string };
+
+function headerRecord(rows: HeaderRow[]): Record<string, string> {
+  return Object.fromEntries(
+    rows.filter((row) => row.name.trim()).map((row) => [row.name.trim(), row.value]),
+  );
+}
+
+const selectClass =
+  "w-full appearance-none rounded-md border border-border bg-surface py-2 pl-3 pr-9 text-sm";
+
+/** Name/value rows for a custom identity's extra request headers. */
+function HeaderRows({
+  rows,
+  onChange,
+}: {
+  rows: HeaderRow[];
+  onChange: (rows: HeaderRow[]) => void;
+}) {
+  const update = (i: number, patch: Partial<HeaderRow>) =>
+    onChange(rows.map((row, j) => (j === i ? { ...row, ...patch } : row)));
+  return (
+    <div className="space-y-2">
+      {rows.map((row, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input
+            aria-label={t("Header name")}
+            placeholder="X-Api-Key"
+            value={row.name}
+            onChange={(e) => update(i, { name: e.currentTarget.value })}
+          />
+          <Input
+            aria-label={t("Header value")}
+            value={row.value}
+            onChange={(e) => update(i, { value: e.currentTarget.value })}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange(rows.filter((_, j) => j !== i))}
+          >
+            {t("Remove")}
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onChange([...rows, { name: "", value: "" }])}
+      >
+        {t("Add header")}
+      </Button>
+    </div>
+  );
+}
+
+/** The global client-identity policy, saved above the indexer list. */
+function ClientIdentityCard({
+  cfg,
+  userAgents,
+  onSaved,
+}: {
+  cfg: EtherConfig;
+  userAgents?: Record<string, string>;
+  onSaved: () => Promise<void> | void;
+}) {
+  const [draft, setDraft] = useState<ClientIdentityConfig>(() => ({
+    searchTv: cfg.clientIdentity?.searchTv || "ether",
+    searchMovies: cfg.clientIdentity?.searchMovies || "ether",
+    grabTv: cfg.clientIdentity?.grabTv || "same",
+    grabMovies: cfg.clientIdentity?.grabMovies || "same",
+    userAgent: cfg.clientIdentity?.userAgent ?? "",
+  }));
+  const [rows, setRows] = useState<HeaderRow[]>(() =>
+    Object.entries(cfg.clientIdentity?.headers ?? {}).map(([name, value]) => ({ name, value })),
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const custom = IDENTITY_KEYS.some((key) => draft[key] === "custom");
+  const inheriting = (cfg.indexers ?? []).filter(
+    (ix) => !isBuiltin(ix) && !isStremio(ix) && !ix.searchIdentity && !ix.grabIdentity,
+  ).length;
+
+  async function save(over: Partial<ClientIdentityConfig> = {}) {
+    const next = { ...draft, ...over };
+    const usesCustom = IDENTITY_KEYS.some((key) => next[key] === "custom");
+    const value: ClientIdentityConfig = {
+      searchTv: next.searchTv || "ether",
+      searchMovies: next.searchMovies || "ether",
+      grabTv: next.grabTv || "same",
+      grabMovies: next.grabMovies || "same",
+      // Keep a stored custom pair while no selector uses it; switching back
+      // to Custom must not lose the user agent or headers.
+      userAgent: usesCustom ? (next.userAgent ?? "") : (cfg.clientIdentity?.userAgent ?? ""),
+      headers: usesCustom ? headerRecord(rows) : (cfg.clientIdentity?.headers ?? {}),
+    };
+    setDraft(next);
+    setSaving(true);
+    setError(null);
+    setErrors({});
+    try {
+      await api.putSection("clientIdentity", value);
+      toast.success(t("Saved"));
+      await onSaved();
+    } catch (e) {
+      setError(e);
+      setErrors(recordErrors(e, "clientIdentity."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const fields: { key: (typeof IDENTITY_KEYS)[number]; label: string; custom: boolean }[] = [
+    { key: "searchTv", label: t("TV search"), custom: false },
+    { key: "grabTv", label: t("TV grab"), custom: true },
+    { key: "searchMovies", label: t("Movie search"), custom: false },
+    { key: "grabMovies", label: t("Movie grab"), custom: true },
+  ];
+
+  return (
+    <Section
+      title={t("User agent")}
+      description={t(
+        "The client Ether presents to indexers. Indexer overrides take precedence over global values, which take precedence over Ether.",
+      )}
+      descriptionClassName="max-w-none"
+      footer={
+        <>
+          <span className="mr-auto text-xs text-fg-muted">
+            {tn(
+              inheriting,
+              "{count} indexer inherits this policy",
+              "{count} indexers inherit this policy",
+            )}
+          </span>
+          <Button
+            variant="outline"
+            disabled={saving}
+            onClick={() =>
+              void save({
+                searchTv: "sonarr",
+                searchMovies: "radarr",
+                grabTv: "same",
+                grabMovies: "same",
+              })
+            }
+          >
+            {t("Standard Servarr stack")}
+          </Button>
+          <Button disabled={saving} onClick={() => void save()}>
+            {t("Save client identity")}
+          </Button>
+        </>
+      }
+    >
+      {error ? <MutationError error={error} /> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {fields.map(({ key, label, custom: isGrab }) => (
+          <Field key={key} label={label} error={errors[key]}>
+            <IdentitySelect
+              label={label}
+              value={draft[key] ?? ""}
+              onChange={(value) => setDraft({ ...draft, [key]: value })}
+            >
+              {(isGrab ? GRAB_PRESETS : IDENTITY_PRESETS).map((preset) => (
+                <option key={preset.value} value={preset.value}>
+                  {preset.value === "same"
+                    ? preset.label
+                    : identityOptionLabel(preset.value, userAgents)}
+                </option>
+              ))}
+            </IdentitySelect>
+          </Field>
+        ))}
+      </div>
+      {custom ? (
+        <>
+          <Field label={t("User agent")} error={errors.userAgent}>
+            <Input
+              aria-label={t("User agent")}
+              value={draft.userAgent ?? ""}
+              placeholder="Ether/1.0"
+              onChange={(e) => setDraft({ ...draft, userAgent: e.currentTarget.value })}
+            />
+          </Field>
+          <Field label={t("Headers")} error={errors.headers}>
+            <HeaderRows rows={rows} onChange={setRows} />
+          </Field>
+        </>
+      ) : null}
+    </Section>
+  );
+}
+
+/** One indexer's identity overrides and the values it resolves to. */
+function IndexerIdentityFields({
+  draft,
+  identity,
+  policy,
+  errors,
+  onChange,
+}: {
+  draft: Indexer;
+  identity: IdentityView | null;
+  policy: ClientIdentityConfig;
+  errors: Errors;
+  onChange: (patch: Partial<Indexer>) => void;
+}) {
+  const [rows, setRows] = useState<HeaderRow[]>(() =>
+    Object.entries(draft.headers ?? {}).map(([name, value]) => ({ name, value })),
+  );
+  const custom = draft.searchIdentity === "custom" || draft.grabIdentity === "custom";
+  const stored = identity?.indexers.find((entry) => entry.id === draft.id);
+  const unchanged =
+    stored &&
+    (stored.searchOverride ?? "") === (draft.searchIdentity ?? "") &&
+    (stored.grabOverride ?? "") === (draft.grabIdentity ?? "");
+  const effective =
+    stored && unchanged
+      ? {
+          tvSearch: stored.effectiveTvSearch,
+          movieSearch: stored.effectiveMovieSearch,
+          tvGrab: stored.effectiveTvGrab,
+          movieGrab: stored.effectiveMovieGrab,
+        }
+      : effectiveIdentity(policy, draft.searchIdentity, draft.grabIdentity);
+
+  const inheritLabel = (grammar: "search" | "grab") =>
+    t("Inherit (TV {tv}, movies {movies})", {
+      tv: identityLabel(
+        (grammar === "search" ? stored?.effectiveTvSearch : stored?.effectiveTvGrab) ??
+          (grammar === "search" ? identity?.tvSearch : identity?.tvGrab) ??
+          "ether",
+      ),
+      movies: identityLabel(
+        (grammar === "search" ? stored?.effectiveMovieSearch : stored?.effectiveMovieGrab) ??
+          (grammar === "search" ? identity?.movieSearch : identity?.movieGrab) ??
+          "ether",
+      ),
+    });
+
+  return (
+    <SettingsSection
+      title={t("User agent")}
+      description={t(
+        "Effective: TV search {tvSearch}, movies search {movieSearch}; TV grab {tvGrab}, movies grab {movieGrab}.",
+        {
+          tvSearch: identityLabel(effective.tvSearch),
+          movieSearch: identityLabel(effective.movieSearch),
+          tvGrab: identityLabel(effective.tvGrab),
+          movieGrab: identityLabel(effective.movieGrab),
+        },
+      )}
+    >
+      <SettingsRow stacked title={t("Search identity")}>
+        <IdentitySelect
+          label={t("Search identity")}
+          value={draft.searchIdentity ?? ""}
+          onChange={(value) => onChange({ searchIdentity: value })}
+        >
+          <option value="">{inheritLabel("search")}</option>
+          {IDENTITY_PRESETS.map((preset) => (
+            <option key={preset.value} value={preset.value}>
+              {identityOptionLabel(preset.value, identity?.userAgents)}
+            </option>
+          ))}
+        </IdentitySelect>
+        {errors.searchIdentity ? (
+          <p className="text-xs text-danger" role="alert">
+            {errors.searchIdentity}
+          </p>
+        ) : null}
+      </SettingsRow>
+      <SettingsRow stacked title={t("Grab identity")}>
+        <IdentitySelect
+          label={t("Grab identity")}
+          value={draft.grabIdentity ?? ""}
+          onChange={(value) => onChange({ grabIdentity: value })}
+        >
+          <option value="">{inheritLabel("grab")}</option>
+          {IDENTITY_PRESETS.map((preset) => (
+            <option key={preset.value} value={preset.value}>
+              {identityOptionLabel(preset.value, identity?.userAgents)}
+            </option>
+          ))}
+        </IdentitySelect>
+        {errors.grabIdentity ? (
+          <p className="text-xs text-danger" role="alert">
+            {errors.grabIdentity}
+          </p>
+        ) : null}
+      </SettingsRow>
+      {custom ? (
+        <>
+          <SettingsRow stacked title={t("User agent")}>
+            <Input
+              aria-label={t("User agent")}
+              value={draft.userAgent ?? ""}
+              placeholder="Ether/1.0"
+              onChange={(e) => onChange({ userAgent: e.currentTarget.value })}
+            />
+            {errors.userAgent ? (
+              <p className="text-xs text-danger" role="alert">
+                {errors.userAgent}
+              </p>
+            ) : null}
+          </SettingsRow>
+          <SettingsRow stacked title={t("Headers")}>
+            <HeaderRows
+              rows={rows}
+              onChange={(next) => {
+                setRows(next);
+                onChange({ headers: headerRecord(next) });
+              }}
+            />
+            {errors.headers ? (
+              <p className="text-xs text-danger" role="alert">
+                {errors.headers}
+              </p>
+            ) : null}
+          </SettingsRow>
+        </>
+      ) : null}
+    </SettingsSection>
+  );
+}
+
 export function isTorrent(ix: { protocol?: string }) {
   return ix.protocol === "torrent";
 }
@@ -205,6 +627,7 @@ function SiteTestResults({ result }: { result: SiteTestResult }) {
 export function IndexerList({ version = 0 }: { version?: number }) {
   const { dashboard, refreshDashboard } = useApp();
   const config = useAsync(() => api.getConfig(), [version]);
+  const identity = useAsync(() => api.getIdentity().catch(() => null), [version]);
   const [sitesVersion, setSitesVersion] = useState(0);
   const sites = useAsync(() => api.sites.definitions(), [sitesVersion]);
   const statuses = useAsync(() => api.sites.status().catch(() => []), [version, sitesVersion]);
@@ -267,7 +690,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
   async function save() {
     if (!editing) return;
     const { index } = editing;
-    const draft = isStremio(editing.draft)
+    const draft: Indexer = isStremio(editing.draft)
       ? {
           ...editing.draft,
           url: normalizeAddonUrl(editing.draft.url),
@@ -523,6 +946,15 @@ export function IndexerList({ version = 0 }: { version?: number }) {
           </ul>
         )}
       </Section>
+
+      <ClientIdentityCard
+        cfg={cfg}
+        userAgents={identity.data?.userAgents}
+        onSaved={async () => {
+          await config.reload();
+          await identity.reload();
+        }}
+      />
 
       <SiteDefinitions
         cfg={cfg}
@@ -842,6 +1274,15 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                   />
                 </SettingsRow>
               </SettingsSection>
+            )}
+            {builtin || stremio ? null : (
+              <IndexerIdentityFields
+                draft={draft}
+                identity={identity.data ?? null}
+                policy={cfg.clientIdentity ?? {}}
+                errors={errors}
+                onChange={set}
+              />
             )}
           </>
         ) : null}
