@@ -48,7 +48,7 @@ func DecisionsFromCapture(dir, client, out string) error {
 	sort.Strings(files)
 	corpus := conformplex.DecisionCorpus{
 		Version: 1,
-		Policy:  "Redacted official-client decision requests captured through conformdiff proxy. Query pairs keep wire order. Tokens and hosts stripped. Do not point the proxy at HYPERV03 or claim a Plex server on the owner account.",
+		Policy:  "Redacted official-client decision requests captured through conformdiff proxy. Query pairs keep wire order. Tokens and hosts stripped. Do not point the proxy at the owner's production server or claim a Plex server on the owner account.",
 	}
 	seen := map[string]bool{}
 	for i, file := range files {

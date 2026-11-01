@@ -72,6 +72,16 @@ func TestLoadBearingPaths(t *testing.T) {
 			t.Errorf("%s should be volatile", path)
 		}
 	}
+	for _, path := range []string{
+		"/MediaContainer/Video/Image/@type",
+		"/MediaContainer/Video/Rating/@type",
+		"/MediaContainer/Setting/@type",
+		"/MediaContainer/Video/Media/Part/@key",
+	} {
+		if LoadBearing(path) {
+			t.Errorf("%s should not be load-bearing", path)
+		}
+	}
 }
 
 func TestIdentifierShape(t *testing.T) {

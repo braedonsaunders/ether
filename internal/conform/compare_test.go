@@ -48,9 +48,10 @@ func TestCompareCollapsesArrayIndices(t *testing.T) {
 	if d := find(r, KindExtra, "/MediaContainer/Video/@extra"); d == nil || !d.Blocking {
 		t.Fatalf("extra attr: %+v", r.Differences)
 	}
-	// Titles stay volatile. Container size is load-bearing.
-	if d := find(r, KindValue, "/MediaContainer/@size"); d == nil || !d.Blocking || d.Reference != "3" || d.Target != "2" {
-		t.Fatalf("size must be a blocking load-bearing diff: %+v", r.Differences)
+	// Titles stay volatile. Container size is still reported; Plex Compare
+	// is what makes it blocking.
+	if d := find(r, KindValue, "/MediaContainer/@size"); d == nil || d.Blocking || d.Reference != "3" || d.Target != "2" {
+		t.Fatalf("size must be an informational load-bearing diff here: %+v", r.Differences)
 	}
 	for _, d := range r.Differences {
 		if d.Kind == KindValue && d.Path != "/MediaContainer/@size" {
@@ -89,7 +90,7 @@ func TestCompareXMLFreeTextAndRedacted(t *testing.T) {
 	}
 }
 
-func TestCompareLoadBearingValuesBlock(t *testing.T) {
+func TestCompareLoadBearingValuesAreInformational(t *testing.T) {
 	ref := xmlResp(`<MediaContainer size="1" allowSync="1" viewGroup="movie" viewMode="65592" nocache="1"><Hub key="/hubs/sections/1/x" hubIdentifier="movie.recent" context="hub.movie.recent" style="shelf" type="movie" more="0"/></MediaContainer>`)
 	tgt := xmlResp(`<MediaContainer size="2" allowSync="0" viewGroup="show" viewMode="65593" nocache="0"><Hub key="/hubs/items?identifier=x" hubIdentifier="movie.recent" context="hub.movie.recent" style="hero" type="show" more="1"/></MediaContainer>`)
 	r := Compare(ref, tgt)
@@ -105,15 +106,15 @@ func TestCompareLoadBearingValuesBlock(t *testing.T) {
 		"/MediaContainer/Hub/@key",
 	} {
 		d := find(r, KindValue, path)
-		if d == nil || !d.Blocking {
-			t.Fatalf("%s should be a blocking load-bearing value: %+v", path, r.Differences)
+		if d == nil || d.Blocking {
+			t.Fatalf("%s should be a reported, non-blocking value here: %+v", path, r.Differences)
 		}
 	}
 	if d := find(r, KindValue, "/MediaContainer/Hub/@key"); d.Reference != "/hubs/sections/{id}/x" {
 		t.Fatalf("key shapes compared: %+v", r.Differences)
 	}
-	if r.Blocking() < 9 {
-		t.Fatalf("load-bearing mismatches must fail CI: %+v", r.Differences)
+	if r.Blocking() != 0 {
+		t.Fatalf("shared Compare must not block load-bearing values: %+v", r.Differences)
 	}
 	same := xmlResp(`<MediaContainer size="1" allowSync="1" viewGroup="movie"><Hub key="/hubs/sections/9/x" ratingKey="42"/></MediaContainer>`)
 	other := xmlResp(`<MediaContainer size="1" allowSync="1" viewGroup="movie"><Hub key="/hubs/sections/1/x" ratingKey="100"/></MediaContainer>`)
@@ -124,6 +125,24 @@ func TestCompareLoadBearingValuesBlock(t *testing.T) {
 	r = Compare(jsonResp(`{"MediaContainer":{"allowSync":1}}`), jsonResp(`{"MediaContainer":{"allowSync":true}}`))
 	if d := find(r, KindType, "$/MediaContainer/allowSync"); d == nil {
 		t.Fatalf("number vs boolean: %+v", r.Differences)
+	}
+}
+
+func TestCompareLoadBearingValueSets(t *testing.T) {
+	ref := xmlResp(`<MediaContainer>
+		<Hub hubIdentifier="movie.recent" style="shelf"/>
+		<Hub hubIdentifier="tv.recent" style="hero"/>
+	</MediaContainer>`)
+	tgt := xmlResp(`<MediaContainer>
+		<Hub hubIdentifier="wrong" style="bogus"/>
+		<Hub hubIdentifier="also" style="bogus"/>
+	</MediaContainer>`)
+	r := Compare(ref, tgt)
+	if d := find(r, KindValue, "/MediaContainer/Hub/@hubIdentifier"); d == nil || d.Blocking {
+		t.Fatalf("multi-value hubIdentifier must be reported, not blocked here: %+v", r.Differences)
+	}
+	if d := find(r, KindValue, "/MediaContainer/Hub/@style"); d == nil || d.Blocking {
+		t.Fatalf("multi-value style must be reported, not blocked here: %+v", r.Differences)
 	}
 }
 

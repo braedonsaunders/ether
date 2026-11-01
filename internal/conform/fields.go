@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// LoadBearingFields are protocol-shape values clients branch on. A
-// mismatch is a blocking CI failure. Catalog contents still differ
+// LoadBearingFields are Plex protocol-shape values clients branch on.
+// Shared Compare reports mismatches; plex.Compare makes them blocking so
+// Jellyfin/Emby/Silo gates are not affected. Catalog contents still differ
 // between servers; those names stay listed here because a wrong type,
 // count, or hub identity is a wire bug even when titles differ.
 var LoadBearingFields = []string{
@@ -97,10 +98,24 @@ func compileFieldPatterns(names []string) *regexp.Regexp {
 }
 
 // LoadBearing reports whether a schema path's leaf is a load-bearing field
-// or a key/ratingKey shape.
+// or a key/ratingKey shape. Image/Rating/Setting @type and Part @key are
+// catalog decoration, not protocol branches.
 func LoadBearing(path string) bool {
 	leaf := leafName(path)
-	return loadBearingSet[leaf] || keyShapeSet[leaf]
+	if keyShapeSet[leaf] {
+		return !strings.Contains(path, "/Part")
+	}
+	if !loadBearingSet[leaf] {
+		return false
+	}
+	if leaf == "type" && decorativeType(path) {
+		return false
+	}
+	return true
+}
+
+func decorativeType(path string) bool {
+	return strings.Contains(path, "/Image") || strings.Contains(path, "/Rating") || strings.Contains(path, "/Setting")
 }
 
 func loadBearingLeaf(leaf string) bool {

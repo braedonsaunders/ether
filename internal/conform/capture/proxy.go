@@ -371,6 +371,8 @@ func (r *Recorder) safeRawQuery(raw string) string {
 			value = "${access_token}"
 		case strings.EqualFold(name, "path") || strings.EqualFold(name, "uri") || strings.EqualFold(name, "url"):
 			value = plexLibraryPath(value)
+		case plexIdentityPlaceholder(name) != "":
+			value = plexIdentityPlaceholder(name)
 		case (strings.HasSuffix(strings.ToLower(name), "id") || strings.HasSuffix(strings.ToLower(name), "_id")) && value != "":
 			value = "${" + r.slot(value) + "}"
 		case opaqueID.MatchString(value):
@@ -382,6 +384,20 @@ func (r *Recorder) safeRawQuery(raw string) string {
 		parts = append(parts, enc)
 	}
 	return strings.Join(parts, "&")
+}
+
+func plexIdentityPlaceholder(name string) string {
+	switch strings.ToLower(name) {
+	case "x-plex-client-identifier":
+		return "${client_identifier}"
+	case "x-plex-session-identifier":
+		return "${session_identifier}"
+	case "session":
+		return "${session}"
+	case "x-plex-device-name":
+		return "${device_name}"
+	}
+	return ""
 }
 
 func plexLibraryPath(v string) string {
@@ -397,7 +413,11 @@ func plexLibraryPath(v string) string {
 
 func preserveQueryValue(original, redacted string) string {
 	if strings.Contains(redacted, "{{") || strings.Contains(redacted, "${") {
-		return strings.ReplaceAll(strings.ReplaceAll(url.QueryEscape(redacted), "%7B", "{"), "%7D", "}")
+		enc := url.QueryEscape(redacted)
+		enc = strings.ReplaceAll(enc, "%24", "$")
+		enc = strings.ReplaceAll(enc, "%7B", "{")
+		enc = strings.ReplaceAll(enc, "%7D", "}")
+		return enc
 	}
 	if original == "" {
 		return url.QueryEscape(redacted)
@@ -445,6 +465,12 @@ func safeRequestHeaders(h http.Header, secrets []string) http.Header {
 	}
 	if h.Get("X-Plex-Client-Identifier") != "" {
 		out.Set("X-Plex-Client-Identifier", "${client_identifier}")
+	}
+	if h.Get("X-Plex-Device-Name") != "" {
+		out.Set("X-Plex-Device-Name", "${device_name}")
+	}
+	if h.Get("X-Plex-Model") != "" {
+		out.Set("X-Plex-Model", "${model}")
 	}
 	for k, values := range out {
 		if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "X-Emby-Authorization") || strings.EqualFold(k, "X-Emby-Token") || strings.EqualFold(k, "Cookie") {

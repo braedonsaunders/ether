@@ -189,7 +189,7 @@ func SeedDecisionCorpus() DecisionCorpus {
 	}
 	return DecisionCorpus{
 		Version: 1,
-		Policy:  "Redacted official-client decision requests. Query pairs keep wire order. Tokens and hosts stripped. First seed is the recorded PMS 1.43.4 browsing corpus (representative client headers). A lab recording through conformdiff proxy against a disposable PMS — not HYPERV03, not the owner Plex account — is required to replace the seed with exact client Profile-Extra strings.",
+		Policy:  "Redacted official-client decision requests. Query pairs keep wire order. Tokens and hosts stripped. First seed is the recorded PMS 1.43.4 browsing corpus (representative client headers). A lab recording through conformdiff proxy against a disposable PMS — not the owner's production server, not the owner Plex account — is required to replace the seed with exact client Profile-Extra strings.",
 		Records: records,
 	}
 }

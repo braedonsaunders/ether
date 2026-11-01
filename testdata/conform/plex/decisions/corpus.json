@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policy": "Redacted official-client decision requests. Query pairs keep wire order. Tokens and hosts stripped. First seed is the recorded PMS 1.43.4 browsing corpus (representative client headers). A lab recording through conformdiff proxy against a disposable PMS \u2014 not HYPERV03, not the owner Plex account \u2014 is required to replace the seed with exact client Profile-Extra strings.",
+  "policy": "Redacted official-client decision requests. Query pairs keep wire order. Tokens and hosts stripped. First seed is the recorded PMS 1.43.4 browsing corpus (representative client headers). A lab recording through conformdiff proxy against a disposable PMS \u2014 not the owner's production server, not the owner Plex account \u2014 is required to replace the seed with exact client Profile-Extra strings.",
   "records": [
     {
       "id": "web-xml-legacy",

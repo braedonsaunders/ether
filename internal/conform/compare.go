@@ -14,9 +14,9 @@ import (
 )
 
 // Difference kinds. Missing, extra, type, status, header, parse and
-// request_error differences are blocking. Value differences on
-// LoadBearingFields and key/ratingKey shape are blocking; other value
-// differences (including child order at ".../#order") stay informational.
+// request_error differences are blocking. Value differences stay
+// informational here so Jellyfin/Emby/Silo are not gated on the Plex
+// load-bearing list. plex.Compare promotes those values (and hub #order).
 const (
 	KindMissing      = "missing"
 	KindExtra        = "extra"
@@ -85,13 +85,7 @@ func (r Report) WithRequest(client, format, endpoint string) Report {
 }
 
 func differenceBlocking(d Difference) bool {
-	if d.Kind != KindValue {
-		return true
-	}
-	if strings.HasSuffix(d.Path, "#order") {
-		return false
-	}
-	return LoadBearing(d.Path)
+	return d.Kind != KindValue
 }
 
 // Compare checks status, selected headers and the response schema. Bodies
@@ -102,7 +96,8 @@ func differenceBlocking(d Difference) bool {
 // "missing", the reverse is "extra", and a JSON number where PMS sends a
 // string is a "type" mismatch. VolatileFields (titles, timestamps,
 // versions, redacted fields) are compared by type only.
-// LoadBearingFields compare values and fail CI on mismatch.
+// LoadBearingFields still emit value diffs (including multi-value sets);
+// plex.Compare promotes those to blocking.
 func Compare(a, b Response) Report {
 	return CompareHeaders(a, b, []string{"Content-Type", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers", "Access-Control-Allow-Methods"})
 }
@@ -145,8 +140,9 @@ func errString(e error) any {
 	return nil
 }
 
-// maxValues bounds the distinct values remembered per path.
-const maxValues = 16
+// maxValues bounds the distinct values remembered per path. Home /hubs
+// recordings send ~25 hubIdentifiers; the bound must keep that set.
+const maxValues = 64
 
 type schemaNode struct {
 	count    int
@@ -510,32 +506,85 @@ func valueDiff(p string, x, y *schemaNode) (Difference, bool) {
 	if x.element || y.element || x.anyRedacted() {
 		return Difference{}, false
 	}
+	leaf := leafName(p)
+	shape := keyShapeLeaf(leaf)
+	bearing := loadBearingLeaf(leaf) || shape
+	norm := func(v string) string {
+		if shape {
+			return IdentifierShape(v)
+		}
+		return v
+	}
 	xv, xok := x.singleValue()
 	yv, yok := y.singleValue()
-	if !xok || !yok || xv == yv {
-		return Difference{}, false
-	}
-	leaf := leafName(p)
-	if keyShapeLeaf(leaf) {
-		if xs, ys := IdentifierShape(xv), IdentifierShape(yv); xs != ys {
-			return Difference{Path: p, Kind: KindValue, Reference: xs, Target: ys, Count: x.count, Reason: "key/ratingKey shape"}, true
+	if xok && yok {
+		xn, yn := norm(xv), norm(yv)
+		if xn == yn {
+			return Difference{}, false
 		}
-		return Difference{}, false
-	}
-	if volatile(p) && !loadBearingLeaf(leaf) {
-		// Keys and URLs are still compared by shape when PMS always uses
-		// one ("/library/metadata/{id}/children").
-		if strings.HasPrefix(xv, "/") && strings.HasPrefix(yv, "/") && regexp.MustCompile(`(?i)(key|url|thumb|art)$`).MatchString(leaf) {
-			if xs, ys := urlShape(xv), urlShape(yv); xs != ys {
-				return Difference{Path: p, Kind: KindValue, Reference: xs, Target: ys, Count: x.count}, true
+		if shape {
+			return Difference{Path: p, Kind: KindValue, Reference: xn, Target: yn, Count: x.count, Reason: "key/ratingKey shape"}, true
+		}
+		if volatile(p) && !loadBearingLeaf(leaf) {
+			// Keys and URLs are still compared by shape when PMS always uses
+			// one ("/library/metadata/{id}/children").
+			if strings.HasPrefix(xv, "/") && strings.HasPrefix(yv, "/") && regexp.MustCompile(`(?i)(key|url|thumb|art)$`).MatchString(leaf) {
+				if xs, ys := urlShape(xv), urlShape(yv); xs != ys {
+					return Difference{Path: p, Kind: KindValue, Reference: xs, Target: ys, Count: x.count}, true
+				}
 			}
+			return Difference{}, false
 		}
+		if boolEquivalent(xv, yv) {
+			return Difference{}, false
+		}
+		return Difference{Path: p, Kind: KindValue, Reference: truncate(xv, 80), Target: truncate(yv, 80), Count: x.count}, true
+	}
+	if !bearing {
 		return Difference{}, false
 	}
-	if boolEquivalent(xv, yv) {
+	xs, ys := valueSet(x, norm), valueSet(y, norm)
+	if setsEqual(xs, ys) {
 		return Difference{}, false
 	}
-	return Difference{Path: p, Kind: KindValue, Reference: truncate(xv, 80), Target: truncate(yv, 80), Count: x.count}, true
+	reason := "value set"
+	if shape {
+		reason = "key/ratingKey shape set"
+	}
+	return Difference{Path: p, Kind: KindValue, Reference: joinSet(xs), Target: joinSet(ys), Count: x.count, Reason: reason}, true
+}
+
+func valueSet(n *schemaNode, norm func(string) string) []string {
+	seen := map[string]bool{}
+	for v := range n.values {
+		seen[norm(v)] = true
+	}
+	out := make([]string, 0, len(seen))
+	for v := range seen {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func setsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] && !boolEquivalent(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func joinSet(v []string) string {
+	parts := make([]string, len(v))
+	for i, s := range v {
+		parts[i] = truncate(s, 40)
+	}
+	return strings.Join(parts, ",")
 }
 
 func boolEquivalent(x, y string) bool {

@@ -2,12 +2,14 @@ package plex
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	pmsconform "github.com/braedonsaunders/ether/internal/conform"
 	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // TestDecisionCorpusConformsToPMS replays the redacted client decision
@@ -28,7 +30,7 @@ func TestDecisionCorpusConformsToPMS(t *testing.T) {
 			defer f.srv.Close()
 			f.catalog.titles[burbs.Key] = burbs
 			f.playback.info = burbsInfo
-			f.trans.decision = decisionForRecord(rec)
+			f.srv.d.Transcoder = &realDecider{f.trans}
 			target := strings.ReplaceAll(rec.Request.Target(), "{{movieKey}}", burbs.Key.String())
 			target = strings.ReplaceAll(target, "{{ratingKey}}", burbs.Key.String())
 			hdr := rec.Request.HeaderMap()
@@ -40,6 +42,9 @@ func TestDecisionCorpusConformsToPMS(t *testing.T) {
 				t.Fatalf("status %d want %d: %s", httpRec.Code, ref.Status, httpRec.Body.String())
 			}
 			refAttrs, ourAttrs := containerAttrs(t, ref.Body), containerAttrs(t, ours.Body)
+			if answeredDirectPlay(refAttrs) && !answeredDirectPlay(ourAttrs) {
+				t.Errorf("PMS answered direct play; Ether did not: PMS=%v ours=%v", refAttrs, ourAttrs)
+			}
 			for _, key := range []string{"generalDecisionCode", "directPlayDecisionCode", "transcodeDecisionCode", "mdeDecisionCode"} {
 				if _, ok := refAttrs[key]; !ok {
 					continue
@@ -62,17 +67,27 @@ func TestDecisionCorpusConformsToPMS(t *testing.T) {
 	}
 }
 
-func decisionForRecord(rec conformplex.DecisionRecord) core.Decision {
-	direct := "1"
-	for _, q := range rec.Request.Query {
-		if q[0] == "directPlay" {
-			direct = q[1]
+type realDecider struct{ *fakeTranscoder }
+
+func (d *realDecider) Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions) core.Decision {
+	return transcode.Decide(info, caps, opts, transcode.Policy{})
+}
+
+func answeredDirectPlay(attrs map[string]string) bool {
+	for _, key := range []string{"directPlayDecisionCode", "mdeDecisionCode"} {
+		c := attrs[key]
+		if c == "" {
+			continue
+		}
+		n, err := strconv.Atoi(c)
+		if err != nil {
+			continue
+		}
+		if n >= 1000 && n < 2000 {
+			return true
 		}
 	}
-	if direct == "0" {
-		return core.Decision{Kind: core.DecisionTranscode, VideoCodec: "h264", AudioCodec: "mp3", Container: "mpegts", BitrateKbps: 20256}
-	}
-	return core.Decision{Kind: core.DecisionTranscode, VideoCodec: "h264", AudioCodec: "mp3", Container: "mpegts", BitrateKbps: 9079}
+	return false
 }
 
 func decisionCodeField(path string) bool {
