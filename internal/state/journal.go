@@ -182,6 +182,19 @@ func (s *State) NoteSyncIntents(ctx context.Context, rows []SyncRow) error {
 // ClaimSync takes the oldest live intent for holder. A row already claimed
 // by a live holder is left alone until stale.
 func (s *State) ClaimSync(ctx context.Context, holder string, now time.Time, stale time.Duration) (SyncRow, bool, error) {
+	nowNano := now.UnixNano()
+	staleNano := now.Add(-stale).UnixNano()
+	var probe int64
+	err := s.db.QueryRowContext(ctx, `SELECT seq FROM state_sync_journal
+		WHERE delivered_at=0 AND superseded=0 AND dead=0 AND next_attempt<=?
+		  AND (claimed_by='' OR claimed_at<?)
+		ORDER BY seq LIMIT 1`, nowNano, staleNano).Scan(&probe)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SyncRow{}, false, nil
+	}
+	if err != nil {
+		return SyncRow{}, false, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return SyncRow{}, false, err
@@ -194,7 +207,7 @@ func (s *State) ClaimSync(ctx context.Context, holder string, now time.Time, sta
 		FROM state_sync_journal
 		WHERE delivered_at=0 AND superseded=0 AND dead=0 AND next_attempt<=?
 		  AND (claimed_by='' OR claimed_at<?)
-		ORDER BY seq LIMIT 1`, now.UnixNano(), now.Add(-stale).UnixNano()).
+		ORDER BY seq LIMIT 1`, nowNano, staleNano).
 		Scan(&row.Seq, &row.UserID, &key, &aspect, &kind, &row.Rating, &at, &bulk, &row.Attempts, &row.ConsentGen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SyncRow{}, false, nil
@@ -204,7 +217,7 @@ func (s *State) ClaimSync(ctx context.Context, holder string, now time.Time, sta
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE state_sync_journal SET claimed_by=?, claimed_at=?
 		WHERE seq=? AND delivered_at=0 AND superseded=0 AND dead=0 AND (claimed_by='' OR claimed_at<?)`,
-		holder, now.UnixNano(), row.Seq, now.Add(-stale).UnixNano())
+		holder, nowNano, row.Seq, staleNano)
 	if err != nil {
 		return SyncRow{}, false, err
 	}

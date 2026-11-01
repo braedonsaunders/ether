@@ -304,6 +304,19 @@ func PruneImageGrantShard(ctx context.Context, db *sql.DB, now time.Time, shard 
 	if db == nil || now.IsZero() || shard < 0 || shard >= capability.HeaderShardCount {
 		return 0, errors.New("identity: invalid image maintenance scope")
 	}
+	// The fixed expression matches migration 6. A future modulus change must
+	// migrate this index and coordinate old writers before enabling cleanup.
+	if capability.HeaderShardCount != 64 {
+		return 0, errors.New("identity: image shard index modulus mismatch")
+	}
+	ms := now.UnixMilli()
+	var hasExpired bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM frontend_image_grants WHERE (viewer_id % 64)=? AND expires<=?) OR EXISTS(SELECT 1 FROM capability_headers WHERE namespace=? AND shard=? AND expires<=?)`, shard, ms, imageCapabilityNamespace, shard, ms).Scan(&hasExpired); err != nil {
+		return 0, err
+	}
+	if !hasExpired {
+		return 0, nil
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -312,12 +325,6 @@ func PruneImageGrantShard(ctx context.Context, db *sql.DB, now time.Time, shard 
 	if err = store.LockKey(ctx, store.DialectOf(db), tx, fmt.Sprintf("capability:admission:image:%d", shard)); err != nil {
 		return 0, err
 	}
-	// The fixed expression matches migration 6. A future modulus change must
-	// migrate this index and coordinate old writers before enabling cleanup.
-	if capability.HeaderShardCount != 64 {
-		return 0, errors.New("identity: image shard index modulus mismatch")
-	}
-	ms := now.UnixMilli()
 	res, err := tx.ExecContext(ctx, `DELETE FROM frontend_image_grants WHERE expires<=? AND (viewer_id % 64)=? AND hash IN (SELECT hash FROM frontend_image_grants WHERE expires<=? AND (viewer_id % 64)=? ORDER BY expires,hash LIMIT ?)`, ms, shard, ms, shard, capability.HeaderBatchMax)
 	if err != nil {
 		return 0, err

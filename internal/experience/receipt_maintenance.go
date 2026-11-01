@@ -17,6 +17,14 @@ func PruneReceiptShard(ctx context.Context, db *sql.DB, now time.Time, shard int
 	if db == nil || now.UnixMilli() <= 0 || shard < 0 || shard >= capability.HeaderShardCount {
 		return 0, errors.New("experience: invalid receipt maintenance scope")
 	}
+	cutoff := now.UnixMilli()
+	var hasExpired bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM capability_headers WHERE namespace=? AND shard=? AND expires<=?)`, ReceiptCapabilityNamespace, shard, cutoff).Scan(&hasExpired); err != nil {
+		return 0, err
+	}
+	if !hasExpired {
+		return 0, nil
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -27,7 +35,6 @@ func PruneReceiptShard(ctx context.Context, db *sql.DB, now time.Time, shard int
 	if err = capability.LockHeaderScopeInTx(ctx, db, tx, scope); err != nil {
 		return 0, err
 	}
-	cutoff := now.UnixMilli()
 	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, ReceiptCapabilityNamespace, shard, cutoff, ReceiptCapabilityNamespace, shard, cutoff, capability.HeaderBatchMax)
 	if err != nil {
 		return 0, err

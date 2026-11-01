@@ -462,3 +462,14 @@ func TestInFlightCheckCannotRestoreInvalidatedEvidence(t *testing.T) {
 		t.Fatal(st)
 	}
 }
+
+func TestPruneSkipsWritesWhenIdle(t *testing.T) {
+	x := setup(t)
+	statsCtx, qs := store.WithQueryStats(t.Context())
+	if err := x.s.prune(statsCtx); err != nil {
+		t.Fatal(err)
+	}
+	if qs.LockWait() > 0 || qs.Writes() > 0 {
+		t.Fatalf("idle prune acquired write lock or wrote: lockWait=%s writes=%d", qs.LockWait(), qs.Writes())
+	}
+}

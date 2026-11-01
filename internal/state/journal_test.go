@@ -299,3 +299,17 @@ func TestStaleAttemptDoesNotReleaseReplacement(t *testing.T) {
 		t.Fatalf("replacement ack %v %v", acked, err)
 	}
 }
+
+func TestClaimSyncSkipsWriteTxWhenIdle(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	s := New(db, Options{})
+	statsCtx, qs := store.WithQueryStats(ctx)
+	_, ok, err := s.ClaimSync(statsCtx, "node:a", time.Now(), 2*time.Minute)
+	if err != nil || ok {
+		t.Fatalf("ClaimSync = %v, %v", ok, err)
+	}
+	if qs.LockWait() > 0 || qs.Writes() > 0 {
+		t.Fatalf("idle ClaimSync acquired write lock or wrote: lockWait=%s writes=%d", qs.LockWait(), qs.Writes())
+	}
+}

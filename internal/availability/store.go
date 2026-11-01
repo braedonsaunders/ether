@@ -130,24 +130,56 @@ func (s *Service) remember(ctx context.Context, f core.ReleaseFeed, t core.Title
 	return err
 }
 func (s *Service) prune(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_feed_items WHERE seen_at<?`, s.retentionCutoff().Unix()); err != nil {
+	cutoff := s.retentionCutoff().Unix()
+	var hasExpiredFeedItems bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM availability_feed_items WHERE seen_at<?)`, cutoff).Scan(&hasExpiredFeedItems); err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_feed_items WHERE (id,source_id) IN (SELECT id,source_id FROM availability_feed_items ORDER BY seen_at DESC LIMIT 2147483647 OFFSET 30000)`); err != nil {
+	if hasExpiredFeedItems {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_feed_items WHERE seen_at<?`, cutoff); err != nil {
+			return err
+		}
+	}
+	var hasOverflowFeedItems bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM availability_feed_items LIMIT 1 OFFSET 30000)`).Scan(&hasOverflowFeedItems); err != nil {
 		return err
+	}
+	if hasOverflowFeedItems {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_feed_items WHERE (id,source_id) IN (SELECT id,source_id FROM availability_feed_items ORDER BY seen_at DESC LIMIT 2147483647 OFFSET 30000)`); err != nil {
+			return err
+		}
 	}
 
-	cutoff := s.retentionCutoff().Unix()
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_releases WHERE last_seen<?`, cutoff); err != nil {
+	var hasExpiredReleases bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM availability_releases WHERE last_seen<?)`, cutoff).Scan(&hasExpiredReleases); err != nil {
 		return err
+	}
+	if hasExpiredReleases {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_releases WHERE last_seen<?`, cutoff); err != nil {
+			return err
+		}
 	}
 	// Bound even very busy feeds; retaining recent/high-priority work is preferable
 	// to letting monitoring consume an unbounded database.
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_releases WHERE (id,rating_key,source_id) IN (SELECT id,rating_key,source_id FROM availability_releases ORDER BY last_seen DESC LIMIT 2147483647 OFFSET 30000)`); err != nil {
-		// Retention failures are surfaced rather than silently growing the table.
+	var hasOverflowReleases bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM availability_releases LIMIT 1 OFFSET 30000)`).Scan(&hasOverflowReleases); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM availability_budget WHERE day<?`, s.now().Add(-35*24*time.Hour).UTC().Format("2006-01-02"))
+	if hasOverflowReleases {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM availability_releases WHERE (id,rating_key,source_id) IN (SELECT id,rating_key,source_id FROM availability_releases ORDER BY last_seen DESC LIMIT 2147483647 OFFSET 30000)`); err != nil {
+			// Retention failures are surfaced rather than silently growing the table.
+			return err
+		}
+	}
+	budgetCutoff := s.now().Add(-35 * 24 * time.Hour).UTC().Format("2006-01-02")
+	var hasExpiredBudget bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM availability_budget WHERE day<?)`, budgetCutoff).Scan(&hasExpiredBudget); err != nil {
+		return err
+	}
+	if !hasExpiredBudget {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM availability_budget WHERE day<?`, budgetCutoff)
 	return err
 }
 func benign(err error) bool {

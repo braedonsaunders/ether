@@ -103,6 +103,19 @@ func (c *Catalog) correctMovieYears(ctx context.Context) {
 			if pending == 0 {
 				return
 			}
+			// All remaining pending movies are in their yearRetryAfter cooldown.
+			// Wait until the earliest cooldown expires (or a viewer opens a movie)
+			// instead of polling the database at yearFetchRate.
+			wait := 30 * time.Second
+			if nextAt, hasCooldown, err := c.nextMovieYearRetryAt(ctx); err == nil && hasCooldown {
+				if rem := nextAt.Sub(c.now()); rem > 0 {
+					wait = min(rem, 5*time.Minute)
+				}
+			}
+			if !c.waitMovieYearRetry(ctx, wait) {
+				return
+			}
+			continue
 		}
 		gap := c.yearGap
 		if gap <= 0 {
@@ -111,6 +124,32 @@ func (c *Catalog) correctMovieYears(ctx context.Context) {
 		if !waitGap(ctx, gap) {
 			return
 		}
+	}
+}
+
+func (c *Catalog) nextMovieYearRetryAt(ctx context.Context) (time.Time, bool, error) {
+	var minChecked sql.NullInt64
+	err := c.db.QueryRowContext(ctx, `SELECT MIN(year_checked_at) FROM catalog_titles WHERE type='movie' AND year_source='' AND tmdb_id<>0 AND year_checked_at>?`, c.now().Add(-yearRetryAfter).Unix()).Scan(&minChecked)
+	if err != nil || !minChecked.Valid || minChecked.Int64 <= 0 {
+		return time.Time{}, false, err
+	}
+	return time.Unix(minChecked.Int64, 0).Add(yearRetryAfter), true, nil
+}
+
+func (c *Catalog) waitMovieYearRetry(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case key := <-c.yearAhead:
+		c.startYearFetch(ctx, key)
+		return true
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -132,6 +171,9 @@ func (c *Catalog) movieYearProgress(ctx context.Context) MovieYearProgress {
 	c.yearMu.RLock()
 	p := c.yearState
 	c.yearMu.RUnlock()
+	if !p.Running && p.Finished && p.Pending == 0 {
+		return p
+	}
 	n, err := c.countPendingMovieYears(ctx)
 	if err == nil {
 		p.Pending = n
@@ -151,6 +193,9 @@ func (c *Catalog) countPendingMovieYears(ctx context.Context) (int, error) {
 // date before 1970. Detailed rows are left queued: their released_ts may
 // be a later theatrical date, and the primary date was not kept.
 func (c *Catalog) rederiveStoredMovieYears(ctx context.Context) (int, error) {
+	if pending, err := c.countPendingMovieYears(ctx); err == nil && pending == 0 {
+		return 0, nil
+	}
 	yearOf := func(column string) string {
 		if store.DialectOf(c.db) == store.Postgres {
 			return `CAST(EXTRACT(YEAR FROM (to_timestamp(` + column + `) AT TIME ZONE 'UTC')) AS INTEGER)`
@@ -187,6 +232,9 @@ func (c *Catalog) rederiveStoredMovieYears(ctx context.Context) (int, error) {
 // primary release, or a type-1 premiere late the previous year, can fall in
 // the other calendar year. No type-1 date is stored on its own.
 func (c *Catalog) settleUnchangedMovieYears(ctx context.Context) error {
+	if pending, err := c.countPendingMovieYears(ctx); err == nil && pending == 0 {
+		return nil
+	}
 	month := movieReleaseMonthSQL(store.DialectOf(c.db))
 	_, err := c.db.ExecContext(ctx, `UPDATE catalog_titles SET year_source=? WHERE type='movie' AND year_source='' AND released_ts=0`, yearSourceNone)
 	if err != nil {
