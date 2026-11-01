@@ -44,11 +44,19 @@ type Filter struct {
 	Countries        []string      `json:"countries,omitempty"`
 	ContentRatings   []string      `json:"contentRatings,omitempty"`
 	MaxContentRating string        `json:"maxContentRating,omitempty"` // per-user limit
-	Collection       int64         `json:"collection,omitempty"`
-	Person           int64         `json:"person,omitempty"` // cast or crew TMDB id
-	Studio           string        `json:"studio,omitempty"`
-	FirstCharacter   string        `json:"firstCharacter,omitempty"`
-	Query            string        `json:"query,omitempty"` // title substring
+	// ExcludeContentRatings and MinContentRating are additive share-policy
+	// predicates. They do not replace MaxContentRating or ContentRatings.
+	ExcludeContentRatings []string `json:"-"`
+	MinContentRating      string   `json:"-"`
+	// IncludeCollections / ExcludeCollections match Title.CollectionName.
+	// An empty collection name is unmappable and is not excluded.
+	IncludeCollections []string `json:"-"`
+	ExcludeCollections []string `json:"-"`
+	Collection         int64    `json:"collection,omitempty"`
+	Person             int64    `json:"person,omitempty"` // cast or crew TMDB id
+	Studio             string   `json:"studio,omitempty"`
+	FirstCharacter     string   `json:"firstCharacter,omitempty"`
+	Query              string   `json:"query,omitempty"` // title substring
 }
 
 type BrowseQuery struct {

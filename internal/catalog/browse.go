@@ -422,6 +422,32 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 			conds = append(conds, "0=1")
 		}
 	}
+	if f.MinContentRating != "" {
+		if level := contentrating.LevelOf(f.MinContentRating); level != contentrating.Unrated {
+			conds = append(conds, "t.content_rating_rank>0 AND t.content_rating_rank>=?")
+			args = append(args, int(level))
+		} else {
+			conds = append(conds, "0=1")
+		}
+	}
+	if len(f.ExcludeContentRatings) > 0 {
+		conds = append(conds, "t.content_rating NOT IN ("+placeholders(len(f.ExcludeContentRatings))+")")
+		for _, v := range f.ExcludeContentRatings {
+			args = append(args, v)
+		}
+	}
+	if len(f.IncludeCollections) > 0 {
+		conds = append(conds, "(t.collection_name='' OR LOWER(t.collection_name) IN ("+placeholders(len(f.IncludeCollections))+"))")
+		for _, v := range f.IncludeCollections {
+			args = append(args, strings.ToLower(strings.TrimSpace(v)))
+		}
+	}
+	if len(f.ExcludeCollections) > 0 {
+		conds = append(conds, "(t.collection_name='' OR LOWER(t.collection_name) NOT IN ("+placeholders(len(f.ExcludeCollections))+"))")
+		for _, v := range f.ExcludeCollections {
+			args = append(args, strings.ToLower(strings.TrimSpace(v)))
+		}
+	}
 	if f.Collection > 0 {
 		conds = append(conds, "t.collection_id=?")
 		args = append(args, f.Collection)

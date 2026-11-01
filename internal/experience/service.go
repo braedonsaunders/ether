@@ -27,6 +27,14 @@ type Library struct {
 	Virtual bool
 }
 
+// LibraryPageExclusions is what an indexed library page can push into SQL.
+type LibraryPageExclusions struct {
+	Keys                           []core.RatingKey
+	ExcludeGenres, ExcludeKeywords []string
+	MaxContentRating               string
+	Movie, Television              core.Filter
+}
+
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
 type ServiceDeps struct {
 	// BeginPeopleRead supplies fresh, fenced policy facts for the optional People API.
@@ -55,10 +63,10 @@ type ServiceDeps struct {
 	SeasonEpisodes func(context.Context, *core.User, core.RatingKey, int, int, int) (core.Page, bool, error)
 	Browse         func(context.Context, core.BrowseQuery) (core.Page, error)
 	// PageExclusions are viewer-specific SQL exclusions for an indexed library
-	// page: hidden titles, blocked genres, blocked keywords, and the policy
-	// content-rating cap. Nil keeps the catalogue scan, which still applies
-	// filters the SQL page cannot see.
-	PageExclusions func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string)
+	// page: hidden titles, blocked genres, blocked keywords, the policy
+	// content-rating cap, and parsed plex.tv share filters. Nil keeps the
+	// catalogue scan, which still applies filters the SQL page cannot see.
+	PageExclusions func(context.Context, *core.User) LibraryPageExclusions
 	// CountBrowsable is the indexed library size. The view list uses it instead
 	// of browsing titles.
 	CountBrowsable func(context.Context, core.MediaType) (int, error)
