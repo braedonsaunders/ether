@@ -820,6 +820,8 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		sessionEncoding: sessionEncoding{
 			endSeg:   -1,
 			resumeAt: -1,
+			emptyAt:  -1,
+			lastReal: -1,
 		},
 		sessionDelivery: sessionDelivery{
 			done:    make([]map[int]bool, tracks),

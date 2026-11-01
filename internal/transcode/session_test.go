@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -498,6 +499,53 @@ func TestRemuxRestartsAfterPrematureEOF(t *testing.T) {
 		return s.done[0][next]
 	}() {
 		t.Fatalf("encoder did not continue after the window ended: starts=%d", fr.startCount())
+	}
+}
+
+// A remux restart whose -ss lands on the previous GOP (lab: DoVi p8 at
+// 695, ffmpeg finished lastSegment=694 with maxDone=-1) must alias that
+// boundary and start the next segment, never loop 143 times into 502s.
+func TestRemuxEmptyRestartAdvances(t *testing.T) {
+	fr := newFakeRunner()
+	fr.eofAfter = 25
+	fr.emptyOnceFrom = 640
+	fr.segDelay = time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	s := startSession(t, m, remuxRequest(t, "empty-restart", 48*time.Minute+39*time.Second))
+	if r := get(t, s, 620); r.Code != 200 {
+		t.Fatalf("resume 620: %d %s", r.Code, r.Body.String())
+	}
+	startsAfterResume := fr.startCount()
+	waitFor(t, "empty restart at the window boundary", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.emptyAt >= 640
+	})
+	s.mu.Lock()
+	hole := s.emptyAt
+	s.mu.Unlock()
+	if r := get(t, s, hole); r.Code != 200 {
+		t.Fatalf("boundary %d after empty restart: %d %s", hole, r.Code, r.Body.String())
+	}
+	if r := get(t, s, hole+1); r.Code != 200 {
+		t.Fatalf("advanced %d: %d %s", hole+1, r.Code, r.Body.String())
+	}
+	if n := fr.startCount() - startsAfterResume; n > 6 {
+		t.Fatalf("empty restart looped: %d extra starts (want a handful, not 143)", n)
+	}
+	fr.mu.Lock()
+	started := append([][]string(nil), fr.starts[startsAfterResume:]...)
+	fr.mu.Unlock()
+	advanced := false
+	for _, args := range started {
+		ss, _ := strconv.ParseFloat(argValue(args, "-ss"), 64)
+		if int(ss/4) > hole {
+			advanced = true
+			break
+		}
+	}
+	if !advanced {
+		t.Fatalf("encoder did not advance past the empty %d restart", hole)
 	}
 }
 

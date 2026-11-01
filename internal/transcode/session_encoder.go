@@ -194,7 +194,15 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 			s.starting = nil
 		}
 	}
+	if s.emptyRuns > 0 && s.emptyAt >= 0 && seg <= s.emptyAt {
+		s.log.Info("skipping restart at empty segment", "segment", seg, "advance", s.emptyAt+1, "emptyRestarts", s.emptyRuns)
+		seg = s.emptyAt + 1
+	}
 	if s.total > 0 && seg >= s.total {
+		if s.emptyRuns > 0 && s.lastReal >= 0 {
+			s.endSeg = s.lastReal
+			return nil
+		}
 		seg = s.total - 1
 	}
 	if seg < 0 {

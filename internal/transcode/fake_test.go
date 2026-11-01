@@ -35,16 +35,18 @@ type fakeRunner struct {
 	runCalls   [][]string
 
 	// HLS simulation.
-	segDelay   time.Duration // time to produce each segment
-	lastSeg    int           // input ends after this segment; -1 = never
-	failStart  func(args []string) (stderr string, fail bool)
-	failAfter  int // fail after producing this many segments (0 = never)
-	eofAfter   int // clean EOF after this many segments of this run (0 = never)
-	starts     [][]string
-	procs      []*fakeProc
-	runFunc    func(ctx context.Context, cmd Command) error
-	startError error
-	noPause    bool // processes cannot be suspended (Windows)
+	segDelay      time.Duration // time to produce each segment
+	lastSeg       int           // input ends after this segment; -1 = never
+	failStart     func(args []string) (stderr string, fail bool)
+	failAfter     int  // fail after producing this many segments (0 = never)
+	eofAfter      int  // clean EOF after this many segments of this run (0 = never)
+	emptyOnceFrom int  // first run starting at or after this segment EOFs with no output
+	emptyOnceDone bool // emptyOnceFrom has already fired
+	starts        [][]string
+	procs         []*fakeProc
+	runFunc       func(ctx context.Context, cmd Command) error
+	startError    error
+	noPause       bool // processes cannot be suspended (Windows)
 
 	// DASH simulation: the input ends at this media time (0 = never).
 	dashEnd  time.Duration
@@ -211,12 +213,30 @@ func (f *fakeRunner) Start(cmd Command) (Process, error) {
 	if f.failStart != nil {
 		stderr, fail = f.failStart(cmd.Args)
 	}
+	startNum, _ := strconv.Atoi(argValue(cmd.Args, "-start_number"))
+	if argValue(cmd.Args, "-segment_format") == "matroska" {
+		if n, err := strconv.Atoi(argValue(cmd.Args, "-segment_start_number")); err == nil {
+			startNum = n
+		}
+	}
+	// Chunked Matroska muxes with -segment_start_number 0; the run's
+	// playlist index is -ss / segment.
+	if startNum == 0 {
+		if ssf, err := strconv.ParseFloat(argValue(cmd.Args, "-ss"), 64); err == nil && ssf > 0 {
+			startNum = int(math.Round(ssf / fakeChunkSeg.Seconds()))
+		}
+	}
+	emptyAt := -1
+	if f.emptyOnceFrom > 0 && startNum >= f.emptyOnceFrom && !f.emptyOnceDone {
+		f.emptyOnceDone = true
+		emptyAt = startNum
+	}
 	if argValue(cmd.Args, "-f") == "dash" {
 		go p.simulateDASH(cmd, f.segDelay, f.dashEnd, f.dashHold, f.failAfter, fail, stderr)
 	} else if fakeChunked(cmd.Args) {
-		go p.simulateChunks(cmd, f.segDelay, f.chunkGOP, f.chunkEnd, f.lastSeg, f.failAfter, f.eofAfter, fail, stderr)
+		go p.simulateChunks(cmd, f.segDelay, f.chunkGOP, f.chunkEnd, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
 	} else {
-		go p.simulate(cmd, f.segDelay, f.lastSeg, f.failAfter, f.eofAfter, fail, stderr)
+		go p.simulate(cmd, f.segDelay, f.lastSeg, f.failAfter, f.eofAfter, emptyAt, fail, stderr)
 	}
 	f.procs = append(f.procs, p)
 	return p, nil
@@ -339,7 +359,7 @@ func (p *fakeProc) publish(path string, data []byte) bool {
 	}
 }
 
-func (p *fakeProc) simulate(cmd Command, delay time.Duration, lastSeg, failAfter, eofAfter int, failStart bool, stderr string) {
+func (p *fakeProc) simulate(cmd Command, delay time.Duration, lastSeg, failAfter, eofAfter, emptyAt int, failStart bool, stderr string) {
 	defer close(p.done)
 	args := cmd.Args
 	playlist := args[len(args)-1]
@@ -356,6 +376,11 @@ func (p *fakeProc) simulate(cmd Command, delay time.Duration, lastSeg, failAfter
 			_, _ = io.WriteString(cmd.Stderr, stderr+"\n")
 		}
 		p.err = errors.New("exit status 1")
+		return
+	}
+	if emptyAt >= 0 {
+		list := "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ENDLIST\n"
+		_ = p.publish(playlist, []byte(list))
 		return
 	}
 	if init != "" {
@@ -442,7 +467,7 @@ const fakeChunkSeg = 4 * time.Second
 // at end (or after legacy segment lastSeg); failAfter fails the run after
 // that many chunks. Chunks carry real timestamps (MPEG-TS PTS, fMP4 tfdt,
 // Matroska Cluster) and a text marker "segment N args-ss=... input=...".
-func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, lastSeg, failAfter, eofAfter int, failStart bool, stderr string) {
+func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, lastSeg, failAfter, eofAfter, emptyAt int, failStart bool, stderr string) {
 	defer close(p.done)
 	args := cmd.Args
 	playlist := args[len(args)-1]
@@ -464,6 +489,12 @@ func (p *fakeProc) simulateChunks(cmd Command, delay, gop, end time.Duration, la
 			_, _ = io.WriteString(cmd.Stderr, stderr+"\n")
 		}
 		p.err = errors.New("exit status 1")
+		return
+	}
+	if emptyAt >= 0 {
+		if playlist != "" {
+			_ = p.publish(playlist, []byte("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-ENDLIST\n"))
+		}
 		return
 	}
 	if init != "" {

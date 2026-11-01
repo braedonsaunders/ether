@@ -131,6 +131,12 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 			return
 		}
 		if !waitTail && s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
+			if s.emptyRuns >= emptyRestartCap && (s.lastReal < 0 || n > s.lastReal) && !s.segmentPublishedLocked(t, n) {
+				s.mu.Unlock()
+				s.log.Warn("segment unavailable after empty restarts", "segment", n, "lastReal", s.lastReal, "emptyAt", s.emptyAt)
+				http.Error(w, "segment unavailable", http.StatusBadGateway)
+				return
+			}
 			if stale {
 				// Superseded by a seek: answer now instead of moving the
 				// encoder away from where the player went. A player that
@@ -196,20 +202,31 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 	}
 }
 
+// coveringSegLocked is the latest segment at or before n that holds a
+// real Matroska GOP, or -1 if none is still on disk.
+func (s *Session) coveringSegLocked(t, n int) int {
+	if t < 0 || t >= len(s.done) {
+		return -1
+	}
+	for k := n; k >= 0 && s.done[t][k]; k-- {
+		st, err := os.Stat(s.trackSegPath(t, k))
+		if err != nil {
+			return -1
+		}
+		if st.Size() > emptyClusterSize {
+			return k
+		}
+	}
+	return -1
+}
+
 // decodableMKVLocked is the file to serve for Matroska segment n of track
 // t to a fresh decoder: n itself, or for an empty Cluster (a segment
 // inside a GOP longer than a segment, chunks.go) the earlier segment
 // holding that GOP; false when it is no longer on disk.
 func (s *Session) decodableMKVLocked(t, n int) (string, bool) {
-	for k := n; k >= 0 && s.done[t][k]; k-- {
-		p := s.trackSegPath(t, k)
-		st, err := os.Stat(p)
-		if err != nil {
-			return "", false
-		}
-		if st.Size() > emptyClusterSize {
-			return p, true
-		}
+	if k := s.coveringSegLocked(t, n); k >= 0 {
+		return s.trackSegPath(t, k), true
 	}
 	return "", false
 }

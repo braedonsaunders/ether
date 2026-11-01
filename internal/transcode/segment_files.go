@@ -26,11 +26,16 @@ func (s *Session) segmentFilesLocked(track, n int, method string) ([]string, seg
 	if s.container == ContainerMatroska {
 		prev, served := s.mkvDelivery[track]
 		seek := !served || (prev.segment != n-1 && prev.segment != n) || (prev.segment == n && prev.seek)
-		if !seek && n > 0 && s.inflight[n-1] > 0 {
-			// The covering GOP is still on the wire. An empty Cluster
-			// here is the first bytes a resume client would decode, and
-			// Plex tvOS never leaves "seeking".
-			seek = true
+		if !seek {
+			// Sequential prefetch while n-1 is still on the wire must
+			// keep the empty Cluster so the Matroska clock advances.
+			// Treating inflight[n-1] as a seek replayed the 41:20 GOP
+			// for 620–694 and froze the Plex tvOS timer. Force a GOP
+			// only when that covering keyframe has not been served yet
+			// (resume after the 0/1 probe).
+			if cover := s.coveringSegLocked(track, n); cover >= 0 && cover > prev.segment {
+				seek = true
+			}
 		}
 		if seek {
 			path, ok := s.decodableMKVLocked(track, n)

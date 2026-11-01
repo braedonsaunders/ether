@@ -197,6 +197,70 @@ func (s *Session) chainOrHoldLocked(r *run) {
 
 // boundaryReadyLocked reports that run r filled up to its plan boundary
 // and another run is what produces the following segment.
+// emptyRestartCap is how many consecutive ffmpeg starts that publish
+// nothing are allowed before the session stops looping. The first is
+// the GOP-boundary hole (seek landed on the previous keyframe); the
+// second is a real short file or a dead source window.
+const emptyRestartCap = 2
+
+func (s *Session) handleEmptyRestartLocked(r *run) {
+	log := s.log.With("run", r.seq)
+	s.emptyRuns++
+	s.emptyAt = r.startSeg
+	next := r.startSeg + 1
+	if s.emptyRuns >= emptyRestartCap {
+		if s.lastReal >= 0 {
+			s.endSeg = s.lastReal
+		} else {
+			s.endSeg = r.startSeg - 1
+		}
+		log.Info("ffmpeg finished", "lastSegment", s.endSeg, "emptyRestarts", s.emptyRuns, "reason", "empty restart cap: run produced no new segment")
+		return
+	}
+	aliased := s.publishBoundaryAliasLocked(r.startSeg)
+	if aliased {
+		log.Info("transcode restart produced no new segment; serving previous GOP and advancing", "segment", r.startSeg, "next", next, "emptyRestarts", s.emptyRuns)
+	} else {
+		log.Info("transcode restart produced no new segment; advancing", "segment", r.startSeg, "next", next, "emptyRestarts", s.emptyRuns)
+	}
+	if s.total > 0 && next >= s.total {
+		if s.lastReal >= 0 {
+			s.endSeg = s.lastReal
+		} else {
+			s.endSeg = r.startSeg - 1
+		}
+		log.Info("ffmpeg finished", "lastSegment", s.endSeg)
+		return
+	}
+	if s.clientNearLocked(next) {
+		if err := s.startRunForLocked(next, false, "empty restart advance"); err != nil {
+			s.failErr = err
+		}
+		return
+	}
+	s.resumeAt = next
+}
+
+func (s *Session) publishBoundaryAliasLocked(n int) bool {
+	t := 0
+	if t >= len(s.done) || n <= 0 || !s.done[t][n-1] {
+		return false
+	}
+	if s.done[t][n] {
+		return true
+	}
+	dst := s.trackSegPath(t, n)
+	if s.container == ContainerMatroska {
+		if os.WriteFile(dst, emptyCluster(s.segStart(n)+matroskaOrigin), 0o644) != nil {
+			return false
+		}
+	} else if linkOrCopy(s.trackSegPath(t, n-1), dst) != nil {
+		return false
+	}
+	s.done[t][n] = true
+	return true
+}
+
 func (s *Session) boundaryReadyLocked(r *run) bool {
 	return s.cur == r && r.planEnd > 0 && r.maxDone >= r.planEnd-1 && (s.total == 0 || r.planEnd < s.total) && s.endSeg < 0
 }
@@ -266,8 +330,13 @@ func (s *Session) finish(r *run) {
 		// one buffered window (lab: 620–692 of 730). Declaring endSeg
 		// there 404s the next sequential fetch and the player sits on
 		// "seeking". Hold a resume, or chain if the playhead is already
-		// there. A run that produced nothing at n is a real short file.
+		// there. A run that produced nothing at n is a GOP-boundary
+		// hole or a real short file: alias n and advance once, then
+		// cap (lab: 143 empty restarts at 695 → 502).
 		if r.produced > 0 {
+			s.emptyRuns = 0
+			s.emptyAt = -1
+			s.lastReal = r.maxDone
 			if s.total > 0 && r.maxDone < s.total-1 {
 				next := r.maxDone + 1
 				if s.clientNearLocked(next) {
@@ -282,6 +351,9 @@ func (s *Session) finish(r *run) {
 				return
 			}
 			s.endSeg = r.maxDone
+		} else if s.total > 0 && r.startSeg > 0 && r.startSeg < s.total {
+			s.handleEmptyRestartLocked(r)
+			return
 		} else {
 			s.endSeg = r.startSeg - 1
 		}

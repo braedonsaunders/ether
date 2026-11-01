@@ -86,8 +86,15 @@ type sessionEncoding struct {
 	cur      *run
 	runSeq   int
 	endSeg   int // last segment of the input once a run hit EOF; -1 unknown
-	failures int // consecutive runs that failed without output
-	failErr  error
+	// lastReal is the last segment a run actually produced (not a GOP
+	// alias). emptyAt is the startSeg of the last run that published
+	// nothing. emptyRuns counts those in a row so a seek that lands on
+	// the previous keyframe cannot restart at the same n (lab: 143× at 695).
+	lastReal  int
+	emptyAt   int
+	emptyRuns int
+	failures  int // consecutive runs that failed without output
+	failErr   error
 	// deniedFilters are names ffmpeg reported missing. The next graph is
 	// built without them. Unknown filters are never assumed present.
 	deniedFilters   map[string]bool
