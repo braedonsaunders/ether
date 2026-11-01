@@ -142,7 +142,8 @@ describe("Updates settings", () => {
 
   it("keeps the channel up front and tucks the window, feed and wait behind more options", async () => {
     renderApp("/maintenance/updates");
-    expect(await screen.findByLabelText("Channel", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByLabelText("Check for updates", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Channel")).toBeInTheDocument();
     expect(screen.getByLabelText("Install updates automatically")).toBeInTheDocument();
     expect(screen.queryByLabelText("Update feed")).toBeNull();
     expect(screen.queryByLabelText("Wait for playback to finish")).toBeNull();

@@ -373,6 +373,7 @@ export interface EtherConfig {
     speechModel?: string;
   };
   updates: {
+    enabled?: boolean;
     channel: string;
     autoUpdate: boolean;
     feedUrl: string;

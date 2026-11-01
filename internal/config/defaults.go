@@ -93,7 +93,7 @@ func Defaults(dataDir string) Config {
 			Expiry:               Duration(24 * time.Hour),
 			MaxHeight:            1080,
 		},
-		Updates: Updates{Channel: "stable", AutoUpdate: false, MaintenanceStart: "03:00", MaintenanceEnd: "06:00"},
+		Updates: Updates{Enabled: true, Channel: "stable", AutoUpdate: false, MaintenanceStart: "03:00", MaintenanceEnd: "06:00"},
 	}
 }
 

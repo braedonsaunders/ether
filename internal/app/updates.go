@@ -105,6 +105,11 @@ func (a *App) initUpdates() {
 			return a.notifications.UpdateAvailable(ctx, a.opts.Version, version)
 		},
 	})
+	if a.cfg != nil {
+		a.cfg.Subscribe(func(config.Config) {
+			a.updates.mgr.Wake()
+		})
+	}
 	if !a.updates.mgr.Enabled() {
 		log.Debug("update checks disabled", "reason", a.updates.mgr.Status().DisabledReason)
 	}

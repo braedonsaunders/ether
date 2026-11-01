@@ -52,7 +52,7 @@ func TestConnectAppsFailsBeforeMintingWhenHTTPSUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	local, _ := identity.NewLocal(db)
-	viewerID, err := local.CreateViewer(ctx, "viewer", "password")
+	viewerID, err := local.CreateViewer(ctx, "viewer", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,8 +92,8 @@ func TestConnectAppsGrantScopeAndAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	local, _ := identity.NewLocal(db)
-	ownerID, _ := local.CreateOwner(ctx, "owner", "password")
-	viewerID, _ := local.CreateViewer(ctx, "viewer", "password")
+	ownerID, _ := local.CreateOwner(ctx, "owner", "password-1234")
+	viewerID, _ := local.CreateViewer(ctx, "viewer", "password-1234")
 	if err := users.RefreshViewers(ctx); err != nil {
 		t.Fatal(err)
 	}

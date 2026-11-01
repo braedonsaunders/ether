@@ -77,7 +77,7 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("registrar: %w", err)
 	}
 	a.users.SetUnknownTokenRefresher(a.registrar.SyncFriendsOnUnknownToken)
-	if cfg.Plex.Token != "" {
+	if cfg.Plex.Claimed && cfg.Plex.Token != "" && (cfg.Frontends == nil || cfg.Frontends["plex"].Enabled) {
 		rctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := a.registrar.RefreshOwner(rctx); err != nil {
 			log.Warn("plex.tv owner refresh", "err", err)

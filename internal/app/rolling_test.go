@@ -49,7 +49,7 @@ func TestVersionWarning(t *testing.T) {
 		t.Fatalf("same versions warned: %s", w)
 	}
 	w := versionWarning([]cluster.Node{{Name: "a", Version: "1", Live: true}, {Name: "b", Version: "2", Live: true}, {Name: "c", Version: "0", Live: false}})
-	if !strings.Contains(w, "1: a") || !strings.Contains(w, "2: b") || strings.Contains(w, "0: c") {
+	if !strings.Contains(w, "1: a") || !strings.Contains(w, "2: b") || !strings.Contains(w, "0: c") {
 		t.Fatalf("warning %q", w)
 	}
 }
@@ -111,7 +111,7 @@ func rollingManager(t *testing.T, a *App, name, version string, feed updater.Che
 	return updater.NewManager(updater.ManagerOptions{
 		NewClient: func(config.Updates) (updater.Checker, error) { return feed, nil },
 		Config: func() config.Updates {
-			return config.Updates{AutoUpdate: true, MaintenanceStart: "00:00", MaintenanceEnd: "00:00"}
+			return config.Updates{Enabled: true, AutoUpdate: true, MaintenanceStart: "00:00", MaintenanceEnd: "00:00"}
 		},
 		CurrentVersion: version,
 		Dir:            dir,

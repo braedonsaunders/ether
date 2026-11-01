@@ -188,6 +188,8 @@ type Manager struct {
 	reportFailed   string    // a rolled-back version still to report
 }
 
+const disabledBySettingsReason = "update checks are turned off in Maintenance › Updates"
+
 // NewManager builds a Manager; it does not start polling (see Run).
 func NewManager(opts ManagerOptions) *Manager {
 	if opts.Now == nil {
@@ -205,7 +207,7 @@ func NewManager(opts ManagerOptions) *Manager {
 		}
 	}
 	if opts.Config == nil {
-		opts.Config = func() config.Updates { return config.Updates{Channel: ChannelStable} }
+		opts.Config = func() config.Updates { return config.Updates{Enabled: true, Channel: ChannelStable} }
 	}
 	def := func(d *time.Duration, v time.Duration) {
 		if *d <= 0 {
@@ -245,7 +247,9 @@ func NewManager(opts ManagerOptions) *Manager {
 		m.disabledReason = ErrUpdatesDisabled.Error()
 	} else {
 		cfg := opts.Config()
-		if c, err := opts.NewClient(cfg); err != nil {
+		if !cfg.Enabled {
+			m.disabledReason = disabledBySettingsReason
+		} else if c, err := opts.NewClient(cfg); err != nil {
 			m.disabledReason = err.Error()
 			m.noKey = errors.Is(err, ErrNoPublicKey)
 		} else {
@@ -259,9 +263,15 @@ func clientKey(u config.Updates) string { return u.Channel + "\x00" + u.FeedURL 
 
 // Enabled reports whether update checks run.
 func (m *Manager) Enabled() bool {
+	cfg := m.opts.Config()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.client != nil
+	return cfg.Enabled && m.client != nil
+}
+
+// Wake prompts the manager to re-evaluate settings immediately.
+func (m *Manager) Wake() {
+	m.wake()
 }
 
 // Run drives the manager until ctx ends or a restart has been requested.
@@ -328,7 +338,8 @@ func (m *Manager) step(ctx context.Context) {
 	now := m.opts.Now().Round(0)
 	m.confirmIfHealthy(now)
 	m.coordinate(ctx)
-	feedKey := clientKey(m.opts.Config())
+	cfg := m.opts.Config()
+	feedKey := clientKey(cfg)
 	active := 0
 	if m.opts.ActiveSessions != nil {
 		active = m.opts.ActiveSessions()
@@ -340,14 +351,24 @@ func (m *Manager) step(ctx context.Context) {
 	} else if m.idleSince.IsZero() {
 		m.idleSince = now
 	}
+	if !cfg.Enabled {
+		m.client, m.clientKey = nil, ""
+		m.disabledReason = disabledBySettingsReason
+		m.resetAvailableLocked()
+		m.requested, m.force = false, false
+		m.state = StateIdle
+		m.mu.Unlock()
+		m.stopDrain(ctx)
+		return
+	}
 	enabled := m.opts.NewClient != nil && !m.noKey
 	// Correcting a badly advanced system clock must not defer checks for
 	// days. Keep at most one normal polling interval after the correction.
 	if now.Before(m.lastCheck) && m.nextCheck.Sub(now) > m.opts.PollInterval {
 		m.nextCheck = now.Add(m.opts.PollInterval)
 	}
-	// A channel/feed change in settings re-checks right away.
-	due := !now.Before(m.nextCheck) || (m.client != nil && feedKey != m.clientKey)
+	// A channel/feed change in settings, or turning checks back on, re-checks right away.
+	due := !now.Before(m.nextCheck) || m.client == nil || feedKey != m.clientKey
 	stop := m.restarting
 	m.mu.Unlock()
 	if stop || !enabled {
@@ -397,12 +418,20 @@ func (m *Manager) confirmIfHealthy(now time.Time) {
 
 func (m *Manager) check(ctx context.Context, now time.Time) {
 	cfg := m.opts.Config()
+	if !cfg.Enabled {
+		return
+	}
 	m.mu.Lock()
 	if key := clientKey(cfg); m.client == nil || key != m.clientKey {
 		c, err := m.opts.NewClient(cfg)
 		if err != nil {
-			m.lastErr = "update feed settings: " + err.Error()
-			m.nextCheck = now.Add(m.opts.RetryInterval)
+			m.noKey = errors.Is(err, ErrNoPublicKey)
+			if m.noKey {
+				m.disabledReason = err.Error()
+			} else {
+				m.lastErr = "update feed settings: " + err.Error()
+				m.nextCheck = now.Add(m.opts.RetryInterval)
+			}
 			m.mu.Unlock()
 			return
 		}
@@ -809,8 +838,12 @@ func (m *Manager) cleanDownloads(keep string) {
 // is known) to be installed as soon as the server is idle, ignoring the
 // maintenance window. force also skips the idle wait.
 func (m *Manager) UpdateNow(force bool) error {
+	cfg := m.opts.Config()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !cfg.Enabled {
+		return fmt.Errorf("%w: %s", ErrUpdatesDisabled, disabledBySettingsReason)
+	}
 	if m.client == nil {
 		if m.disabledReason != "" {
 			return fmt.Errorf("%w: %s", ErrUpdatesDisabled, m.disabledReason)
@@ -898,9 +931,14 @@ func (m *Manager) Status() ManagerStatus {
 	start, end := windowBounds(cfg)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	enabled := cfg.Enabled && m.client != nil
+	disabledReason := m.disabledReason
+	if !cfg.Enabled {
+		disabledReason = disabledBySettingsReason
+	}
 	st := ManagerStatus{
-		Enabled:            m.client != nil,
-		DisabledReason:     m.disabledReason,
+		Enabled:            enabled,
+		DisabledReason:     disabledReason,
 		Current:            m.opts.CurrentVersion,
 		State:              m.state,
 		AutoUpdate:         cfg.AutoUpdate,
@@ -928,7 +966,7 @@ func (m *Manager) Status() ManagerStatus {
 		st.Cluster = &ClusterUpdateStatus{LeaseHeld: m.leaseHeld, LeaseHolder: m.holder, Draining: m.draining,
 			DrainStarted: tp(m.drainStart), MaxDrainSeconds: int(maxDrain(cfg) / time.Second)}
 	}
-	if m.available != nil {
+	if enabled && m.available != nil {
 		mf := m.available.Manifest
 		st.Available = &AvailableUpdate{
 			Version:  mf.Version,
@@ -943,7 +981,7 @@ func (m *Manager) Status() ManagerStatus {
 		}
 	}
 	switch ok, why := m.selfApplicableLocked(m.available); {
-	case m.client == nil:
+	case !enabled:
 		st.Capability = CapabilityDisabled
 	case ok:
 		st.Capability = CapabilitySelfApply
