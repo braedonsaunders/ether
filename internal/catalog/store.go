@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -1046,68 +1047,89 @@ func (c *Catalog) setMeta(ctx context.Context, k, v string) error {
 const (
 	sortTitleFoldedKey     = "sort_title_folded"
 	sortTitleFoldedVersion = "1"
+	sortTitleFoldBatchSize = 2000
 )
 
+type sortTitleUpdate struct {
+	key  int64
+	sort string
+}
+
 // ensureSortTitlesFolded normalizes any pre-existing catalog_titles.sort_title
-// rows once so /all (ORDER BY sort_title) and /firstCharacter bucket counts
-// share the same folded collation on existing databases.
+// rows once in keyset-paged batches so /all (ORDER BY sort_title) and
+// /firstCharacter bucket counts share the same folded collation on existing
+// databases without holding the write lock across the whole table.
 func (c *Catalog) ensureSortTitlesFolded(ctx context.Context) {
 	if c.getMeta(ctx, sortTitleFoldedKey) == sortTitleFoldedVersion {
 		return
 	}
-	rows, err := c.db.QueryContext(ctx, `SELECT key, title, sort_title FROM catalog_titles`)
-	if err != nil {
-		return
-	}
-	type update struct {
-		key  int64
-		sort string
-	}
-	var updates []update
-	totalRows := 0
-	for rows.Next() {
-		var key int64
-		var title, stored string
-		if err := rows.Scan(&key, &title, &stored); err != nil {
-			rows.Close()
+	var updates []sortTitleUpdate
+	lastKey := int64(math.MinInt64)
+	for {
+		if ctx.Err() != nil {
 			return
 		}
-		totalRows++
-		want := sortTitle(title)
-		if stored != "" && foldSortTitle(stored) != want {
-			// If stored was not simply the unfolded sortTitle(title), fold the custom sort_title.
-			want = foldSortTitle(stored)
-		}
-		if want != stored {
-			updates = append(updates, update{key: key, sort: want})
-		}
-	}
-	rows.Close()
-	if rows.Err() != nil || totalRows == 0 {
-		return
-	}
-	if len(updates) > 0 {
-		tx, err := c.db.BeginTx(ctx, nil)
+		rows, err := c.db.QueryContext(ctx,
+			`SELECT key, title, sort_title FROM catalog_titles WHERE key > ? ORDER BY key ASC LIMIT ?`,
+			lastKey, sortTitleFoldBatchSize)
 		if err != nil {
 			return
 		}
-		stmt, err := tx.PrepareContext(ctx, `UPDATE catalog_titles SET sort_title=? WHERE key=?`)
-		if err != nil {
-			_ = tx.Rollback()
+		updates = updates[:0]
+		pageRows := 0
+		for rows.Next() {
+			var key int64
+			var title, stored string
+			if err := rows.Scan(&key, &title, &stored); err != nil {
+				rows.Close()
+				return
+			}
+			lastKey = key
+			pageRows++
+			if want := foldedSortTitleForRow(title, stored); want != stored {
+				updates = append(updates, sortTitleUpdate{key: key, sort: want})
+			}
+		}
+		closeErr := rows.Close()
+		if rows.Err() != nil || closeErr != nil {
 			return
 		}
-		for _, u := range updates {
-			if _, err := stmt.ExecContext(ctx, u.sort, u.key); err != nil {
-				_ = stmt.Close()
-				_ = tx.Rollback()
+		if len(updates) > 0 {
+			if !c.applySortTitleBatch(ctx, updates) {
 				return
 			}
 		}
-		_ = stmt.Close()
-		if err := tx.Commit(); err != nil {
-			return
+		if pageRows < sortTitleFoldBatchSize {
+			break
 		}
-		c.writeGen.Add(1)
 	}
 	_ = c.setMeta(ctx, sortTitleFoldedKey, sortTitleFoldedVersion)
+}
+
+func (c *Catalog) applySortTitleBatch(ctx context.Context, updates []sortTitleUpdate) bool {
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false
+	}
+	stmt, err := tx.PrepareContext(ctx, `UPDATE catalog_titles SET sort_title=? WHERE key=?`)
+	if err != nil {
+		_ = tx.Rollback()
+		return false
+	}
+	for _, u := range updates {
+		if _, err := stmt.ExecContext(ctx, u.sort, u.key); err != nil {
+			_ = stmt.Close()
+			_ = tx.Rollback()
+			return false
+		}
+	}
+	if err := stmt.Close(); err != nil {
+		_ = tx.Rollback()
+		return false
+	}
+	if err := tx.Commit(); err != nil {
+		return false
+	}
+	c.writeGen.Add(1)
+	return true
 }

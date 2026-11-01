@@ -35,7 +35,41 @@ func sortTitle(s string) string {
 	return foldSortTitle(l)
 }
 
+func legacySortTitle(s string) string {
+	l := strings.ToLower(strings.TrimSpace(s))
+	for _, p := range []string{"the ", "a ", "an "} {
+		if strings.HasPrefix(l, p) {
+			if rest := strings.TrimSpace(l[len(p):]); rest != "" {
+				return rest
+			}
+		}
+	}
+	return l
+}
+
+func foldedSortTitleForRow(title, stored string) string {
+	want := sortTitle(title)
+	if stored != "" && stored != want && stored != legacySortTitle(title) {
+		if folded := foldSortTitle(stored); folded != "" {
+			return folded
+		}
+	}
+	return want
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
 func stripFormatRunes(s string) string {
+	if isASCII(s) {
+		return s
+	}
 	return strings.Map(func(r rune) rune {
 		if unicode.Is(unicode.Cf, r) {
 			return -1
@@ -52,17 +86,7 @@ func FoldSortTitle(s string) string {
 
 func foldSortTitle(s string) string {
 	s = strings.ToLower(strings.TrimSpace(stripFormatRunes(s)))
-	if s == "" {
-		return ""
-	}
-	ascii := true
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x80 {
-			ascii = false
-			break
-		}
-	}
-	if ascii {
+	if s == "" || isASCII(s) {
 		return s
 	}
 	var b strings.Builder

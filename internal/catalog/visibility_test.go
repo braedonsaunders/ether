@@ -231,13 +231,17 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 		}
 	}
 
-	// Pre-existing unfolded sort_title rows in SQLite are folded when catalog.New opens the DB.
+	// Pre-existing unfolded sort_title rows across multiple keyset pages are folded when catalog.New opens the DB.
 	db2 := store.OpenTest(t)
-	c2, err := New(db2, nil, config.Catalog{}, nil)
+	tx2, err := db2.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, row := range []struct{ title, rawSort string }{
+	stmt2, err := tx2.PrepareContext(ctx, `INSERT INTO catalog_titles(key,type,title,sort_title,released_ts,browsable,adult,detail) VALUES(?,?,?,?,?,1,0,1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedRows := []struct{ title, rawSort string }{
 		{"Lymelife", "lymelife"},
 		{"Léolo", "léolo"},
 		{"Léon Morin, Priest", "léon morin, priest"},
@@ -247,30 +251,52 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 		{"M", "m"},
 		{"Été 85", "été 85"},
 		{"\u200e7 Hours to Win Your Heart", "\u200e7 hours to win your heart"},
-	} {
-		if _, err := db2.ExecContext(ctx, `INSERT INTO catalog_titles(key,type,title,sort_title,released_ts,browsable,adult,detail) VALUES(?,?,?,?,?,1,0,1)`,
-			int64(core.MovieKey(int64(i+1))), "movie", row.title, row.rawSort, rel.Unix()); err != nil {
+	}
+	for i, row := range seedRows {
+		if _, err := stmt2.ExecContext(ctx, int64(core.MovieKey(int64(i+1))), "movie", row.title, row.rawSort, rel.Unix()); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_ = c2
+	// Add >2*sortTitleFoldBatchSize rows so keyset paging spans 3 batches.
+	totalSeed := 2*sortTitleFoldBatchSize + 250
+	for i := len(seedRows) + 1; i <= totalSeed; i++ {
+		title := fmt.Sprintf("Film %04d", i)
+		rawSort := fmt.Sprintf("film %04d", i)
+		if i == sortTitleFoldBatchSize+5 || i == 2*sortTitleFoldBatchSize+5 {
+			title = fmt.Sprintf("Épilogue %04d", i)
+			rawSort = fmt.Sprintf("épilogue %04d", i)
+		}
+		if _, err := stmt2.ExecContext(ctx, int64(core.MovieKey(int64(i))), "movie", title, rawSort, rel.Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = stmt2.Close()
+	if err := tx2.Commit(); err != nil {
+		t.Fatal(err)
+	}
 	cReopened, err := New(db2, nil, config.Catalog{}, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := cReopened.getMeta(ctx, sortTitleFoldedKey); got != sortTitleFoldedVersion {
+		t.Fatalf("expected %s=%s, got %q", sortTitleFoldedKey, sortTitleFoldedVersion, got)
 	}
 	fc2, err := cReopened.Facet(ctx, core.TypeMovie, "firstCharacter")
 	if err != nil {
 		t.Fatal(err)
 	}
-	all2, err := cReopened.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortTitle, Limit: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
 	off2 := 0
 	for _, b := range fc2 {
-		if got := all2.Items[off2]; b.Key == "M" && got.Title != "M" {
+		page2, err := cReopened.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortTitle, Offset: off2, Limit: 1})
+		if err != nil || len(page2.Items) != 1 {
+			t.Fatalf("browse bucket %s at offset %d: %v (items=%d)", b.Key, off2, err, len(page2.Items))
+		}
+		if got := page2.Items[0]; b.Key == "M" && got.Title != "M" {
 			t.Fatalf("bucket M at offset %d landed on %q (want M)", off2, got.Title)
 		}
 		off2 += b.Count
+	}
+	if off2 != totalSeed {
+		t.Fatalf("sum of firstCharacter counts (%d) != totalSeed (%d)", off2, totalSeed)
 	}
 }
