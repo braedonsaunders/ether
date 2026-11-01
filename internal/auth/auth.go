@@ -600,7 +600,11 @@ func (s *Service) reload(ctx context.Context) error {
 			s.tokenGen[h]++
 		}
 	}
+	changed := !plexDefaultsEqual(s.plexDefaults, defaults)
 	s.users, s.byPlex, s.tokens, s.ownerPlexID, s.plexDefaults = users, byPlex, tokens, owner, defaults
+	if changed {
+		s.gen.Add(1)
+	}
 	// Cached validations may point at users whose state changed.
 	for h, e := range s.pos {
 		if u := users[e.userID]; u == nil || !u.Active {
@@ -1054,7 +1058,6 @@ func (s *Service) SetOwner(ctx context.Context, a plextv.Account, serverToken st
 	s.neg = map[string]time.Time{}
 	s.mu.Unlock()
 	err = s.reload(ctx)
-	s.bumpViewerPolicy(ctx)
 	s.notify("caches")
 	return err
 }
@@ -1256,7 +1259,6 @@ RETURNING id`,
 		s.log.Info("friends lost access", "count", len(gone))
 	}
 	err = s.reload(ctx)
-	s.bumpViewerPolicy(ctx)
 	s.notify("")
 	return err
 }

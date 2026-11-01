@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/plextv"
 )
@@ -69,6 +70,82 @@ func TestPlexDefaultsCachedFromSync(t *testing.T) {
 	}
 	if body["subtitleMode"] != "foreign-only" || body["filterMovies"] != "contentRating<=PG-13" || body["allowSync"] != false {
 		t.Fatalf("%s", rec.Body.String())
+	}
+	parts, _ := body["filterMoviesParts"].([]any)
+	if len(parts) != 1 {
+		t.Fatalf("filter parts %s", rec.Body.String())
+	}
+	if note, _ := body["labelNote"].(string); note == "" {
+		t.Fatal("labelNote")
+	}
+}
+
+func TestPlexDefaultsUnchangedUpsertSkipsWrite(t *testing.T) {
+	s, _, c := setup(t)
+	ctx := context.Background()
+	friends := []plextv.Friend{
+		{Owned: true, Token: "owner-access", PlexID: 42},
+		{PlexID: 100, Username: "alice", Title: "Alice", Email: "a@example.com", Token: "alice-access", Sections: []string{"1"},
+			Track: plextv.TrackDefaults{AudioLanguage: "ja", AutoSelectAudio: true, HasProfile: true}},
+		{PlexID: 101, Username: "bob", Token: "bob-access", AllLibs: true},
+		{PlexID: 102, Username: "dave", Token: "dave-access", Pending: true},
+	}
+	if err := s.SyncFriends(ctx, friends); err != nil {
+		t.Fatal(err)
+	}
+	aliceID := userByName(t, s, "alice")
+	var at1 int64
+	if err := s.db.QueryRow(`SELECT updated_at FROM auth_plex_defaults WHERE user_id=?`, aliceID).Scan(&at1); err != nil {
+		t.Fatal(err)
+	}
+	c.add(time.Hour)
+	if err := s.SyncFriends(ctx, friends); err != nil {
+		t.Fatal(err)
+	}
+	var at2 int64
+	if err := s.db.QueryRow(`SELECT updated_at FROM auth_plex_defaults WHERE user_id=?`, aliceID).Scan(&at2); err != nil {
+		t.Fatal(err)
+	}
+	if at1 != at2 {
+		t.Fatalf("unchanged upsert rewrote row %d -> %d", at1, at2)
+	}
+	friends[1].Track.AudioLanguage = "en"
+	if err := s.SyncFriends(ctx, friends); err != nil {
+		t.Fatal(err)
+	}
+	var at3 int64
+	if err := s.db.QueryRow(`SELECT updated_at FROM auth_plex_defaults WHERE user_id=?`, aliceID).Scan(&at3); err != nil {
+		t.Fatal(err)
+	}
+	if at3 == at2 {
+		t.Fatal("changed defaults must rewrite the row")
+	}
+}
+
+func TestPlexDefaultsReloadBumpsGeneration(t *testing.T) {
+	s, _, _ := setup(t)
+	ctx := context.Background()
+	aliceID := userByName(t, s, "alice")
+	before := s.Generation()
+	body, err := json.Marshal(PlexViewerDefaults{AudioLanguage: "ja", AutoSelectAudio: true, HasProfile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO auth_plex_defaults(user_id,plex_id,payload,updated_at) VALUES(?,?,?,?)`, aliceID, 100, string(body), 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.Generation() == before {
+		t.Fatal("new defaults must bump auth.gen")
+	}
+	mid := s.Generation()
+	if err := s.reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.Generation() != mid {
+		t.Fatal("unchanged defaults must not bump auth.gen")
 	}
 }
 

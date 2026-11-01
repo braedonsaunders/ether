@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/sharefilter"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
@@ -98,8 +99,9 @@ func upsertPlexDefaultsTx(ctx context.Context, tx *sql.Tx, userID, plexID, now i
 	if userID <= 0 || d.empty() {
 		return nil
 	}
+	var haveID int64
 	var raw string
-	err := tx.QueryRowContext(ctx, `SELECT payload FROM auth_plex_defaults WHERE user_id=?`, userID).Scan(&raw)
+	err := tx.QueryRowContext(ctx, `SELECT plex_id,payload FROM auth_plex_defaults WHERE user_id=?`, userID).Scan(&haveID, &raw)
 	if err == nil {
 		var have PlexViewerDefaults
 		if json.Unmarshal([]byte(raw), &have) == nil {
@@ -111,6 +113,9 @@ func upsertPlexDefaultsTx(ctx context.Context, tx *sql.Tx, userID, plexID, now i
 	body, err := json.Marshal(d)
 	if err != nil {
 		return err
+	}
+	if haveID == plexID && raw == string(body) {
+		return nil
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO auth_plex_defaults(user_id,plex_id,payload,updated_at) VALUES(?,?,?,?)
 		ON CONFLICT(user_id) DO UPDATE SET plex_id=excluded.plex_id, payload=excluded.payload, updated_at=excluded.updated_at`,
@@ -166,20 +171,40 @@ func (s *Service) PlexDefaultsHandler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"audioLanguage":    d.AudioLanguage,
-			"autoSelectAudio":  d.AutoSelectAudio,
-			"subtitleLanguage": d.SubtitleLanguage,
-			"subtitleMode":     d.EtherMode(),
-			"plexSubtitleMode": d.SubtitleMode,
-			"forcedOnly":       d.ForcedOnly,
-			"hasProfile":       d.HasProfile,
-			"filterMovies":     d.FilterMovies,
-			"filterTelevision": d.FilterTelevision,
-			"allowSync":        d.AllowSync,
-			"hasSettings":      d.HasSettings,
-			"labelMap":         "TMDB collection name only. Owner collections and Plex item labels are not on the title row.",
+			"audioLanguage":         d.AudioLanguage,
+			"autoSelectAudio":       d.AutoSelectAudio,
+			"subtitleLanguage":      d.SubtitleLanguage,
+			"subtitleMode":          d.EtherMode(),
+			"plexSubtitleMode":      d.SubtitleMode,
+			"forcedOnly":            d.ForcedOnly,
+			"hasProfile":            d.HasProfile,
+			"filterMovies":          d.FilterMovies,
+			"filterTelevision":      d.FilterTelevision,
+			"filterMoviesParts":     sharefilter.Format(d.FilterMovies),
+			"filterTelevisionParts": sharefilter.Format(d.FilterTelevision),
+			"allowSync":             d.AllowSync,
+			"hasSettings":           d.HasSettings,
+			"labelNote":             "TMDB collection name only. Titles without a collection name are not hidden.",
 		})
 	})
+}
+
+func plexDefaultsEqual(a, b map[int64]PlexViewerDefaults) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for id, left := range a {
+		right, ok := b[id]
+		if !ok {
+			return false
+		}
+		la, _ := json.Marshal(left)
+		lb, _ := json.Marshal(right)
+		if string(la) != string(lb) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) bumpViewerPolicy(ctx context.Context) {
