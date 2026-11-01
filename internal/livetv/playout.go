@@ -15,7 +15,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/clientreg"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/streamgrant"
 )
 
 const segmentDuration = 4 * time.Second
@@ -768,7 +768,7 @@ func (s *Service) ServePlaylist(w http.ResponseWriter, r *http.Request, id strin
 	}
 }
 func withAuth(raw, grant string) string {
-	return sessions.GrantURL(raw, grant)
+	return streamgrant.GrantURL(raw, grant)
 }
 func (s *Service) ServeSegment(w http.ResponseWriter, r *http.Request, id string, start int64, n int, u *core.User) {
 	ss, err := s.getSession(r.Context(), id, u)

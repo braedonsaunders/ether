@@ -1,4 +1,4 @@
-package sessions
+package streamgrant
 
 import (
 	"context"

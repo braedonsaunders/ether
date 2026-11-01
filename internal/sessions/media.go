@@ -11,6 +11,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/streamgrant"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -387,7 +388,7 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 		http.NotFound(w, r)
 		return
 	}
-	viewer, ok := AuthenticateGrant(r.Context(), r.Method, parts[1], GrantBinding{Token: s.grant, ViewerID: s.public.ViewerID, Started: true}, func(ctx context.Context, id int64) *core.Viewer {
+	viewer, ok := streamgrant.AuthenticateGrant(r.Context(), r.Method, parts[1], streamgrant.GrantBinding{Token: s.grant, ViewerID: s.public.ViewerID, Started: true}, func(ctx context.Context, id int64) *core.Viewer {
 		v, e := b.deps.ActiveViewer(ctx, id)
 		if e != nil {
 			return nil

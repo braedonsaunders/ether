@@ -1,4 +1,6 @@
-package sessions
+// Package streamgrant issues and checks playback-scoped stream grants:
+// capability tokens appended to media URLs in place of account credentials.
+package streamgrant
 
 import (
 	"context"

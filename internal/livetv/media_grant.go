@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/streamgrant"
 )
 
 // liveMediaSessionID is a playback path under one live session. Session
@@ -56,5 +56,5 @@ func (s *Service) AuthenticateMediaGrant(r *http.Request, active func(context.Co
 	if closed || grant == "" {
 		return nil, false
 	}
-	return sessions.AuthenticateGrant(r.Context(), r.Method, r.URL.Query().Get(sessions.StreamGrantParam), sessions.GrantBinding{Token: grant, ViewerID: userID, Started: true}, active)
+	return streamgrant.AuthenticateGrant(r.Context(), r.Method, r.URL.Query().Get(streamgrant.StreamGrantParam), streamgrant.GrantBinding{Token: grant, ViewerID: userID, Started: true}, active)
 }
