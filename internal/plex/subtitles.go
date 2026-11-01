@@ -390,6 +390,9 @@ func (s *Server) handleSubtitlePick(w http.ResponseWriter, r *http.Request) {
 // when the transcoder supports it; image subtitles and unknown sessions
 // get an empty container.
 func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	pr := FromContext(r.Context())
 	q := r.URL.Query()
 	p, perr := s.parsePlayRequest(r)

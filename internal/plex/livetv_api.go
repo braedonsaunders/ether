@@ -582,6 +582,9 @@ func (s *Server) handleLiveSession(w http.ResponseWriter, r *http.Request) {
 // handleLiveTVPlayback hooks the universal decision/start endpoints before the
 // catalogue parser. Plex passes the tune response's /livetv/sessions key here.
 func (s *Server) handleLiveTVPlayback(w http.ResponseWriter, r *http.Request) bool {
+	if s.refuseCapability(w, r) {
+		return true
+	}
 	path := r.URL.Query().Get("path")
 	if !strings.HasPrefix(path, "/livetv/sessions/") {
 		return false
