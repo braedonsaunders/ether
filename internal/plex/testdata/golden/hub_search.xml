@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<MediaContainer size="4">
-<Hub title="Movies" type="movie" hubIdentifier="movie" context="" size="0" more="0" style="shelf" />
-<Hub title="Episodes" type="episode" hubIdentifier="episode" context="" size="0" more="0" style="shelf" />
-<Hub title="Collections" type="collection" hubIdentifier="collection" context="" size="0" more="0" style="shelf" />
+<MediaContainer size="17">
 <Hub title="Shows" type="show" hubIdentifier="show" context="" size="1" more="0" style="shelf">
 <Directory ratingKey="2000000000001396" key="/library/metadata/2000000000001396/children" guid="com.plexapp.agents.themoviedb://1396?lang=en" slug="boundary-bay" type="show" title="Boundary Bay" librarySectionTitle="TV Shows" librarySectionID="2" librarySectionKey="/library/sections/2" summary="A chemistry teacher..." index="1" year="2008" thumb="/library/metadata/2000000000001396/thumb/1790899200" art="/library/metadata/2000000000001396/art/1790899200" leafCount="2" viewedLeafCount="0" childCount="1" addedAt="1201392000" updatedAt="1790899200" score="1.00000">
 <Image alt="Boundary Bay" type="coverPoster" url="/library/metadata/2000000000001396/thumb/1790899200" />
@@ -10,4 +7,20 @@
 <UltraBlurColors topLeft="530c3e" topRight="b9005d" bottomRight="a14c0d" bottomLeft="005468" />
 </Directory>
 </Hub>
+<Hub title="Artists" type="artist" hubIdentifier="artist" context="" size="0" more="0" style="shelf" />
+<Hub title="Albums" type="album" hubIdentifier="album" context="" size="0" more="0" style="shelf" />
+<Hub title="Movies" type="movie" hubIdentifier="movie" context="" size="0" more="0" style="shelf" />
+<Hub title="Episodes" type="episode" hubIdentifier="episode" context="" size="0" more="0" style="shelf" />
+<Hub title="Tracks" type="track" hubIdentifier="track" context="" size="0" more="0" style="shelf" />
+<Hub title="Collections" type="collection" hubIdentifier="collection" context="" size="0" more="0" style="shelf" />
+<Hub title="Photo Albums" type="photoalbum" hubIdentifier="photoalbum" context="" size="0" more="0" style="shelf" />
+<Hub title="Automatic Tags" type="autotag" hubIdentifier="autotag" context="" size="0" more="0" style="shelf" />
+<Hub title="Photos" type="photo" hubIdentifier="photo" context="" size="0" more="0" style="shelf" />
+<Hub title="Tags" type="tag" hubIdentifier="tag" context="" size="0" more="0" style="shelf" />
+<Hub title="Actors" type="actor" hubIdentifier="actor" context="" size="0" more="0" style="shelf" />
+<Hub title="Directors" type="director" hubIdentifier="director" context="" size="0" more="0" style="shelf" />
+<Hub title="Genres" type="genre" hubIdentifier="genre" context="" size="0" more="0" style="shelf" />
+<Hub title="Playlists" type="playlist" hubIdentifier="playlist" context="" size="0" more="0" style="shelf" />
+<Hub title="Shared" type="shared" hubIdentifier="shared" context="" size="0" more="0" style="shelf" />
+<Hub title="Places" type="place" hubIdentifier="place" context="" size="0" more="0" style="shelf" />
 </MediaContainer>

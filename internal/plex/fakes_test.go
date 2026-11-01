@@ -215,6 +215,149 @@ func (c *fakeCatalog) Search(_ context.Context, query string, types []core.Media
 	return out, nil
 }
 
+func (c *fakeCatalog) SearchPeople(_ context.Context, terms []string, limit int) ([]core.Person, error) {
+	if len(terms) == 0 || limit <= 0 {
+		return nil, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	type personEntry struct {
+		p       core.Person
+		credits int
+	}
+	byID := map[int64]*personEntry{}
+	add := func(p core.Person) {
+		if p.TMDB <= 0 || strings.TrimSpace(p.Name) == "" {
+			return
+		}
+		e, ok := byID[p.TMDB]
+		if !ok {
+			e = &personEntry{p: core.Person{TMDB: p.TMDB, Name: p.Name}}
+			byID[p.TMDB] = e
+		}
+		e.credits++
+	}
+	for _, t := range c.titles {
+		if t.Adult {
+			continue
+		}
+		seen := map[int64]bool{}
+		for _, p := range t.Cast {
+			if !seen[p.TMDB] {
+				seen[p.TMDB] = true
+				add(p)
+			}
+		}
+		for _, p := range t.Directors {
+			if !seen[p.TMDB] {
+				seen[p.TMDB] = true
+				add(p)
+			}
+		}
+		for _, p := range t.Writers {
+			if !seen[p.TMDB] {
+				seen[p.TMDB] = true
+				add(p)
+			}
+		}
+	}
+	var matches []personEntry
+	for _, e := range byID {
+		words := strings.FieldsFunc(strings.ToLower(e.p.Name), func(r rune) bool {
+			return !('a' <= r && r <= 'z' || '0' <= r && r <= '9' || r >= 0x80)
+		})
+		ok := true
+		for _, term := range terms {
+			found := false
+			for _, w := range words {
+				if strings.HasPrefix(w, term) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			matches = append(matches, *e)
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].credits != matches[j].credits {
+			return matches[i].credits > matches[j].credits
+		}
+		return matches[i].p.TMDB < matches[j].p.TMDB
+	})
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+	out := make([]core.Person, len(matches))
+	for i, m := range matches {
+		out[i] = m.p
+	}
+	return out, nil
+}
+
+func (c *fakeCatalog) PersonCreditKeys(_ context.Context, person int64, types []core.MediaType, limit int) ([]core.RatingKey, error) {
+	if person <= 0 || limit <= 0 || len(types) == 0 {
+		return nil, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	allow := map[core.MediaType]bool{}
+	for _, t := range types {
+		allow[t] = true
+	}
+	var titles []core.Title
+	for _, t := range c.titles {
+		if t.Adult || !allow[t.Type] {
+			continue
+		}
+		credited := false
+		for _, p := range t.Cast {
+			if p.TMDB == person {
+				credited = true
+				break
+			}
+		}
+		if !credited {
+			for _, p := range t.Directors {
+				if p.TMDB == person {
+					credited = true
+					break
+				}
+			}
+		}
+		if !credited {
+			for _, p := range t.Writers {
+				if p.TMDB == person {
+					credited = true
+					break
+				}
+			}
+		}
+		if credited {
+			titles = append(titles, t)
+		}
+	}
+	sort.Slice(titles, func(i, j int) bool {
+		if titles[i].Popularity != titles[j].Popularity {
+			return titles[i].Popularity > titles[j].Popularity
+		}
+		return titles[i].Key < titles[j].Key
+	})
+	if len(titles) > limit {
+		titles = titles[:limit]
+	}
+	out := make([]core.RatingKey, len(titles))
+	for i, t := range titles {
+		out[i] = t.Key
+	}
+	return out, nil
+}
+
 func (c *fakeCatalog) List(context.Context, string, core.MediaType, int) ([]core.Title, error) {
 	return nil, nil
 }

@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"math"
 	"net/http"
@@ -743,6 +744,304 @@ func (s *Server) handlePostplay(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Search
 
+// searchHubDefs is PMS's 17-hub set and order for /hubs/search and
+// /hubs/search/voice.
+var searchHubDefs = []struct {
+	id    string
+	typ   string
+	title string
+}{
+	{"show", "show", "Shows"},
+	{"artist", "artist", "Artists"},
+	{"album", "album", "Albums"},
+	{"movie", "movie", "Movies"},
+	{"episode", "episode", "Episodes"},
+	{"track", "track", "Tracks"},
+	{"collection", "collection", "Collections"},
+	{"photoalbum", "photoalbum", "Photo Albums"},
+	{"autotag", "autotag", "Automatic Tags"},
+	{"photo", "photo", "Photos"},
+	{"tag", "tag", "Tags"},
+	{"actor", "actor", "Actors"},
+	{"director", "director", "Directors"},
+	{"genre", "genre", "Genres"},
+	{"playlist", "playlist", "Playlists"},
+	{"shared", "shared", "Shared"},
+	{"place", "place", "Places"},
+}
+
+type peopleSearchCatalog interface {
+	SearchPeople(ctx context.Context, terms []string, limit int) ([]core.Person, error)
+	PersonCreditKeys(ctx context.Context, person int64, types []core.MediaType, limit int) ([]core.RatingKey, error)
+}
+
+type reasonedTitle struct {
+	title       core.Title
+	reason      string
+	reasonID    string
+	reasonTitle string
+}
+
+type peopleSearchResult struct {
+	actors        []model.Directory
+	actorsMore    bool
+	directors     []model.Directory
+	directorsMore bool
+	titles        map[core.MediaType][]reasonedTitle
+}
+
+func peopleQueryTerms(query string) []string {
+	return strings.FieldsFunc(strings.ToLower(strings.TrimSpace(query)), func(r rune) bool {
+		return !('a' <= r && r <= 'z' || '0' <= r && r <= '9' || r >= 0x80)
+	})
+}
+
+func personMatchesTerms(name string, terms []string) bool {
+	if len(terms) == 0 {
+		return false
+	}
+	words := peopleQueryTerms(name)
+	for _, term := range terms {
+		matched := false
+		for _, w := range words {
+			if strings.HasPrefix(w, term) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
+func personInList(people []core.Person, tmdb int64) (core.Person, bool) {
+	for _, p := range people {
+		if p.TMDB == tmdb {
+			return p, true
+		}
+	}
+	return core.Person{}, false
+}
+
+func personSearchDirectory(sec Section, person core.Person, kind string, count int, thumbKey core.RatingKey, inHub bool) model.Directory {
+	idStr := strconv.FormatInt(person.TMDB, 10)
+	secIDStr := strconv.Itoa(sec.ID)
+	tagType := 6
+	if kind == "director" {
+		tagType = 4
+	}
+	secType := 1
+	if sec.Type == core.TypeShow {
+		secType = 2
+	}
+	attrs := []model.Attr{
+		model.A("key", "/library/sections/"+secIDStr+"/all?"+kind+"="+idStr),
+		model.A("librarySectionID", sec.ID),
+		model.A("librarySectionKey", "/library/sections/"+secIDStr),
+		model.A("librarySectionTitle", sec.Title),
+		model.A("librarySectionType", secType),
+	}
+	if inHub {
+		attrs = append(attrs,
+			model.A("reason", "section"),
+			model.A("reasonID", sec.ID),
+			model.A("reasonTitle", sec.Title),
+		)
+	}
+	attrs = append(attrs,
+		model.A("type", "tag"),
+		model.A("id", person.TMDB),
+		model.A("filter", kind+"="+idStr),
+		model.A("tag", person.Name),
+		model.A("tagType", tagType),
+		model.A("tagKey", "tmdb-person-"+idStr),
+	)
+	if person.ThumbPath != "" && thumbKey != 0 {
+		attrs = append(attrs, model.A("thumb", "/library/metadata/"+thumbKey.String()+"/person/"+kind+"/"+base64.RawURLEncoding.EncodeToString([]byte(person.ThumbPath))))
+	}
+	attrs = append(attrs, model.A("count", count))
+	return model.Directory{Extra: attrs}
+}
+
+func stampDirectoryScores(dirs []model.Directory) {
+	for i := range dirs {
+		score := strconv.FormatFloat(searchScore(i, len(dirs)), 'f', 5, 64)
+		inserted := false
+		extra := make([]model.Attr, 0, len(dirs[i].Extra)+1)
+		for _, a := range dirs[i].Extra {
+			extra = append(extra, a)
+			if a.Name == "reasonTitle" {
+				extra = append(extra, model.A("score", score))
+				inserted = true
+			}
+		}
+		if !inserted {
+			extra = append(extra, model.A("score", score))
+		}
+		dirs[i].Extra = extra
+	}
+}
+
+// searchPeople queries the indexed people table and resolves visible
+// actor/director hubs and reasoned titles for the viewer.
+func (s *Server) searchPeople(ctx context.Context, pr *Request, query string, sectionID, limit int, inHub bool) peopleSearchResult {
+	out := peopleSearchResult{titles: map[core.MediaType][]reasonedTitle{}}
+	ps, ok := s.d.Catalog.(peopleSearchCatalog)
+	if !ok {
+		return out
+	}
+	terms := peopleQueryTerms(query)
+	if len(terms) == 0 {
+		return out
+	}
+	allowedTypes := s.searchTypes(pr.User, sectionID)
+	if len(allowedTypes) == 0 {
+		return out
+	}
+	queryTypes := make([]core.MediaType, 0, len(allowedTypes)+1)
+	allowedSet := map[core.MediaType]bool{}
+	for _, t := range allowedTypes {
+		allowedSet[t] = true
+		queryTypes = append(queryTypes, t)
+		if t == core.TypeShow {
+			allowedSet[core.TypeEpisode] = true
+			queryTypes = append(queryTypes, core.TypeEpisode)
+		}
+	}
+	var secs []Section
+	for _, sec := range s.userSections(pr.User) {
+		if sectionID > 0 && sec.ID != sectionID {
+			continue
+		}
+		secs = append(secs, sec)
+	}
+	if len(secs) == 0 {
+		return out
+	}
+	candidates, err := ps.SearchPeople(ctx, terms, max(limit*4, 24))
+	if err != nil || len(candidates) == 0 {
+		return out
+	}
+	catVis, _ := s.d.Catalog.(interface{ Visible(*core.Title) bool })
+	now := s.now()
+	creditLimit := max(limit*6, 60)
+	var actorTitles, directorTitles []reasonedTitle
+	for _, cand := range candidates {
+		if !personMatchesTerms(cand.Name, terms) {
+			continue
+		}
+		keys, err := ps.PersonCreditKeys(ctx, cand.TMDB, queryTypes, creditLimit)
+		if err != nil || len(keys) == 0 {
+			continue
+		}
+		titles := s.getTitles(withStoredPolicy(ctx), keys)
+		type secHit struct {
+			count     int
+			thumbPath string
+			thumbKey  core.RatingKey
+		}
+		actorSecs := map[int]*secHit{}
+		directorSecs := map[int]*secHit{}
+		idStr := strconv.FormatInt(cand.TMDB, 10)
+		for i := range titles {
+			t := titles[i]
+			if !allowedSet[t.Type] {
+				continue
+			}
+			if catVis != nil && !catVis.Visible(&t) {
+				continue
+			}
+			if t.Adult || !t.IsReleased(now) {
+				continue
+			}
+			if !s.visibleTitle(ctx, pr.User, &t) {
+				continue
+			}
+			sec, hasSec := s.sectionFor(t.Type)
+			if p, ok := personInList(t.Cast, cand.TMDB); ok {
+				if hasSec {
+					h := actorSecs[sec.ID]
+					if h == nil {
+						h = &secHit{}
+						actorSecs[sec.ID] = h
+					}
+					h.count++
+					if h.thumbPath == "" && p.ThumbPath != "" {
+						h.thumbPath = p.ThumbPath
+						h.thumbKey = t.Key
+					}
+				}
+				actorTitles = append(actorTitles, reasonedTitle{
+					title:       t,
+					reason:      "actor",
+					reasonID:    idStr,
+					reasonTitle: cand.Name,
+				})
+			}
+			if p, ok := personInList(t.Directors, cand.TMDB); ok {
+				if hasSec {
+					h := directorSecs[sec.ID]
+					if h == nil {
+						h = &secHit{}
+						directorSecs[sec.ID] = h
+					}
+					h.count++
+					if h.thumbPath == "" && p.ThumbPath != "" {
+						h.thumbPath = p.ThumbPath
+						h.thumbKey = t.Key
+					}
+				}
+				directorTitles = append(directorTitles, reasonedTitle{
+					title:       t,
+					reason:      "director",
+					reasonID:    idStr,
+					reasonTitle: cand.Name,
+				})
+			}
+		}
+		for _, sec := range secs {
+			if h := actorSecs[sec.ID]; h != nil && h.count > 0 {
+				if len(out.actors) < limit {
+					person := core.Person{TMDB: cand.TMDB, Name: cand.Name, ThumbPath: h.thumbPath}
+					out.actors = append(out.actors, personSearchDirectory(sec, person, "actor", h.count, h.thumbKey, inHub))
+				} else {
+					out.actorsMore = true
+				}
+			}
+			if h := directorSecs[sec.ID]; h != nil && h.count > 0 {
+				if len(out.directors) < limit {
+					person := core.Person{TMDB: cand.TMDB, Name: cand.Name, ThumbPath: h.thumbPath}
+					out.directors = append(out.directors, personSearchDirectory(sec, person, "director", h.count, h.thumbKey, inHub))
+				} else {
+					out.directorsMore = true
+				}
+			}
+		}
+	}
+	seenByType := map[core.MediaType]map[core.RatingKey]bool{}
+	addReasoned := func(rt reasonedTitle) {
+		seen := seenByType[rt.title.Type]
+		if seen == nil {
+			seen = map[core.RatingKey]bool{}
+			seenByType[rt.title.Type] = seen
+		}
+		if seen[rt.title.Key] {
+			return
+		}
+		seen[rt.title.Key] = true
+		out.titles[rt.title.Type] = append(out.titles[rt.title.Type], rt)
+	}
+	for _, rt := range actorTitles {
+		addReasoned(rt)
+	}
+	for _, rt := range directorTitles {
+		addReasoned(rt)
+	}
+	return out
+}
+
 func (s *Server) searchTypes(u *core.User, sectionID int) []core.MediaType {
 	var out []core.MediaType
 	for _, sec := range s.userSections(u) {
@@ -786,7 +1085,8 @@ func (s *Server) handleHubSearch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	q := r.URL.Query()
-	if strings.TrimSpace(q.Get("query")) == "" {
+	query := q.Get("query")
+	if strings.TrimSpace(query) == "" {
 		// PMS rejects an empty hub search with its HTML 400 page.
 		writeHTTPError(w, http.StatusBadRequest)
 		return
@@ -796,12 +1096,13 @@ func (s *Server) handleHubSearch(w http.ResponseWriter, r *http.Request) {
 		limit = min(n, 100)
 	}
 	sectionID, _ := strconv.Atoi(q.Get("sectionId"))
-	result, err := s.searchExperience().Resolve(ctx, pr.User, q.Get("query"), s.searchTypes(pr.User, sectionID), limit*2, true)
+	result, err := s.searchExperience().Resolve(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), limit*2, true)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
 	vibe, res, isVibe := result.Collection, result.Items, result.CollectionSearch
+	people := s.searchPeople(ctx, pr, query, sectionID, limit, true)
 	byType := map[core.MediaType][]core.Title{}
 	for _, t := range res {
 		byType[t.Type] = append(byType[t.Type], t)
@@ -813,31 +1114,89 @@ func (s *Server) handleHubSearch(w http.ResponseWriter, r *http.Request) {
 			allowed[core.TypeEpisode] = true
 		}
 	}
-	// PMS returns every result hub, empty ones included, in this order.
+	// PMS returns every result hub, empty ones included, in searchHubDefs order.
 	mc := &model.MediaContainer{}
-	for _, hd := range []struct {
-		t     core.MediaType
-		title string
-	}{{core.TypeMovie, "Movies"}, {core.TypeEpisode, "Episodes"}, {"collection", "Collections"}, {core.TypeShow, "Shows"}} {
-		items := byType[hd.t]
-		if !allowed[hd.t] {
-			items = nil
+	for _, hd := range searchHubDefs {
+		switch hd.id {
+		case string(core.TypeMovie), string(core.TypeShow), string(core.TypeEpisode):
+			mediaType := core.MediaType(hd.typ)
+			var items []core.Title
+			reasons := map[string]reasonedTitle{}
+			if allowed[mediaType] {
+				seen := map[core.RatingKey]bool{}
+				for _, t := range byType[mediaType] {
+					seen[t.Key] = true
+					items = append(items, t)
+				}
+				for _, rt := range people.titles[mediaType] {
+					if seen[rt.title.Key] {
+						continue
+					}
+					seen[rt.title.Key] = true
+					items = append(items, rt.title)
+					reasons[rt.title.Key.String()] = rt
+				}
+			}
+			more := false
+			if len(items) > limit {
+				items, more = items[:limit], true
+			}
+			h := core.Hub{ID: hd.id, Title: hd.title, Type: mediaType, Items: items, More: more, Style: "shelf"}
+			mh := s.renderHub(ctx, pr, hubSpec{Hub: h, noPromoted: true}, hubCtx{})
+			mh.Context, mh.Key, mh.HubKey = "", "", ""
+			for i := range mh.Metadata {
+				if rt, ok := reasons[mh.Metadata[i].RatingKey]; ok {
+					mh.Metadata[i].Reason = rt.reason
+					mh.Metadata[i].ReasonID = rt.reasonID
+					mh.Metadata[i].ReasonTitle = rt.reasonTitle
+				}
+				mh.Metadata[i].Score = strconv.FormatFloat(searchScore(i, len(mh.Metadata)), 'f', 5, 64)
+			}
+			mc.Hub = append(mc.Hub, mh)
+		case "collection":
+			mh := model.Hub{
+				Title:         hd.title,
+				Type:          hd.typ,
+				HubIdentifier: hd.id,
+				Style:         "shelf",
+			}
+			if isVibe && vibe != nil {
+				mh.Directory = []model.Directory{s.collectionDirectory(ctx, vibe)}
+				mh.Size = len(mh.Directory)
+			}
+			mc.Hub = append(mc.Hub, mh)
+		case "actor":
+			dirs := people.actors
+			stampDirectoryScores(dirs)
+			mc.Hub = append(mc.Hub, model.Hub{
+				Title:         hd.title,
+				Type:          hd.typ,
+				HubIdentifier: hd.id,
+				Size:          len(dirs),
+				More:          people.actorsMore,
+				Style:         "shelf",
+				Directory:     dirs,
+			})
+		case "director":
+			dirs := people.directors
+			stampDirectoryScores(dirs)
+			mc.Hub = append(mc.Hub, model.Hub{
+				Title:         hd.title,
+				Type:          hd.typ,
+				HubIdentifier: hd.id,
+				Size:          len(dirs),
+				More:          people.directorsMore,
+				Style:         "shelf",
+				Directory:     dirs,
+			})
+		default:
+			mc.Hub = append(mc.Hub, model.Hub{
+				Title:         hd.title,
+				Type:          hd.typ,
+				HubIdentifier: hd.id,
+				Style:         "shelf",
+			})
 		}
-		more := false
-		if len(items) > limit {
-			items, more = items[:limit], true
-		}
-		h := core.Hub{ID: string(hd.t), Title: hd.title, Type: hd.t, Items: items, More: more, Style: "shelf"}
-		mh := s.renderHub(ctx, pr, hubSpec{Hub: h, noPromoted: true}, hubCtx{})
-		if hd.t == "collection" && isVibe && vibe != nil {
-			mh.Directory = []model.Directory{s.collectionDirectory(ctx, vibe)}
-			mh.Size = len(mh.Directory)
-		}
-		mh.Context, mh.Key, mh.HubKey = "", "", ""
-		for i := range mh.Metadata {
-			mh.Metadata[i].Score = strconv.FormatFloat(searchScore(i, len(mh.Metadata)), 'f', 5, 64)
-		}
-		mc.Hub = append(mc.Hub, mh)
 	}
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
@@ -874,17 +1233,19 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	q := r.URL.Query()
+	query := q.Get("query")
 	limit := 50
 	if n, _ := strconv.Atoi(q.Get("limit")); n > 0 {
 		limit = min(n, 200)
 	}
-	result, err := s.searchExperience().Resolve(ctx, pr.User, q.Get("query"), s.searchTypes(pr.User, 0), limit, true)
+	result, err := s.searchExperience().Resolve(ctx, pr.User, query, s.searchTypes(pr.User, 0), limit, true)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
 	vibe, res, isVibe := result.Collection, result.Items, result.CollectionSearch
 	searchCollections := false
+	searchPeopleFlag := q.Get("searchTypes") == ""
 	if st := q.Get("searchTypes"); st != "" {
 		allow := map[core.MediaType]bool{}
 		for _, v := range strings.Split(st, ",") {
@@ -896,6 +1257,8 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 			case "tv", "shows", "show":
 				allow[core.TypeShow] = true
 				allow[core.TypeEpisode] = true
+			case "people", "person", "actors", "actor", "directors", "director":
+				searchPeopleFlag = true
 			}
 		}
 		if len(allow) == 0 {
@@ -910,13 +1273,25 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 			res = filtered
 		}
 	}
+	var peopleDirs []model.Directory
+	if searchPeopleFlag {
+		people := s.searchPeople(ctx, pr, query, 0, limit, false)
+		peopleDirs = append(peopleDirs, people.actors...)
+		peopleDirs = append(peopleDirs, people.directors...)
+	}
 	md := s.renderTitles(ctx, pr, res, renderOpts{media: true})
 	mc := &model.MediaContainer{}
+	totalRanked := len(md) + len(peopleDirs)
 	for i := range md {
-		score := math.Round(searchScore(i, len(md))*10000) / 10000
+		score := math.Round(searchScore(i, totalRanked)*10000) / 10000
 		// PMS names the section here but sends no section id or key.
 		md[i].LibrarySectionID, md[i].LibrarySectionKey = 0, ""
 		mc.SearchResult = append(mc.SearchResult, model.SearchResult{Score: score, Metadata: &md[i]})
+	}
+	for i := range peopleDirs {
+		score := math.Round(searchScore(len(md)+i, totalRanked)*10000) / 10000
+		d := peopleDirs[i]
+		mc.SearchResult = append(mc.SearchResult, model.SearchResult{Score: score, Directory: &d})
 	}
 	if isVibe && vibe != nil && (searchCollections || q.Get("searchTypes") == "") {
 		d := s.collectionDirectory(ctx, vibe)

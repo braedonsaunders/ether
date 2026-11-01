@@ -233,15 +233,53 @@ func TestPeopleNameIndexFollowsCredits(t *testing.T) {
 	if got := names("ringo", "sta"); strings.Join(got, ",") != "Ringo Starr" {
 		t.Fatalf("ringo sta = %v", got)
 	}
+	people, err := c.SearchPeople(ctx, []string{"ringo"}, 10)
+	if err != nil || len(people) != 1 || people[0].TMDB != 7 || people[0].Name != "Ringo Starr" {
+		t.Fatalf("SearchPeople = %+v, %v", people, err)
+	}
 	keys, err := c.PersonCreditKeys(ctx, 7, []core.MediaType{core.TypeMovie}, 10)
 	if err != nil || len(keys) != 2 {
 		t.Fatalf("credit keys = %v, %v", keys, err)
+	}
+	if store.DialectOf(db) == store.SQLite {
+		mq, margs := c.matchPeopleSQL([]string{"ringo"}, 10)
+		mplan := explainQueryPlan(t, db, mq, margs...)
+		if !strings.Contains(mplan, "VIRTUAL TABLE INDEX") || !strings.Contains(mplan, "SEARCH p USING INTEGER PRIMARY KEY") || strings.Contains(mplan, "SCAN p") {
+			t.Fatalf("MatchPeople plan did not use FTS index:\n%s", mplan)
+		}
+		cq, cargs := personCreditKeysSQL(7, []core.MediaType{core.TypeMovie, core.TypeShow, core.TypeEpisode}, 10)
+		cplan := explainQueryPlan(t, db, cq, cargs...)
+		if !strings.Contains(cplan, "catalog_credits_person") || !strings.Contains(cplan, "SEARCH t USING INTEGER PRIMARY KEY") || strings.Contains(cplan, "SCAN cr") || strings.Contains(cplan, "SCAN t") {
+			t.Fatalf("PersonCreditKeys plan scanned instead of using indexes:\n%s", cplan)
+		}
 	}
 	// Replacing a title's cast drops a person whose last credit went.
 	store1(core.MovieKey(1), core.Person{TMDB: 7, Name: "Ringo Starr"})
 	if got := names("mustard"); len(got) != 0 {
 		t.Fatalf("uncredited person still found: %v", got)
 	}
+}
+
+func explainQueryPlan(t *testing.T, db *sql.DB, q string, args ...any) string {
+	t.Helper()
+	rows, err := db.Query("EXPLAIN QUERY PLAN "+q, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var lines []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		lines = append(lines, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // A request's reads share one wait budget across every title they touch.

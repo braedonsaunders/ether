@@ -175,6 +175,24 @@ func (c *Catalog) MatchPeople(ctx context.Context, terms []string, limit int) ([
 	if len(terms) == 0 || limit <= 0 {
 		return nil, nil
 	}
+	q, args := c.matchPeopleSQL(terms, limit)
+	rows, err := c.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PersonMatch
+	for rows.Next() {
+		var m PersonMatch
+		if err := rows.Scan(&m.TMDB, &m.Name, &m.Credits); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (c *Catalog) matchPeopleSQL(terms []string, limit int) (string, []any) {
 	var q string
 	var args []any
 	if store.DialectOf(c.db) == store.Postgres {
@@ -194,20 +212,20 @@ func (c *Catalog) MatchPeople(ctx context.Context, terms []string, limit int) ([
 			WHERE catalog_person_names_fts MATCH ? AND p.credits>0 ORDER BY p.credits DESC, p.person_tmdb LIMIT ?`
 	}
 	args = append(args, limit)
-	rows, err := c.db.QueryContext(ctx, q, args...)
-	if err != nil {
+	return q, args
+}
+
+// SearchPeople returns up to limit credited people matching terms, most credited first.
+func (c *Catalog) SearchPeople(ctx context.Context, terms []string, limit int) ([]core.Person, error) {
+	matches, err := c.MatchPeople(ctx, terms, limit)
+	if err != nil || len(matches) == 0 {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []PersonMatch
-	for rows.Next() {
-		var m PersonMatch
-		if err := rows.Scan(&m.TMDB, &m.Name, &m.Credits); err != nil {
-			return nil, err
-		}
-		out = append(out, m)
+	out := make([]core.Person, len(matches))
+	for i, m := range matches {
+		out[i] = core.Person{TMDB: m.TMDB, Name: m.Name}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // PersonCreditKeys returns up to limit titles of types that credit person,
@@ -217,16 +235,8 @@ func (c *Catalog) PersonCreditKeys(ctx context.Context, person int64, types []co
 	if person <= 0 || limit <= 0 || len(types) == 0 {
 		return nil, nil
 	}
-	in := make([]string, 0, len(types))
-	args := []any{person}
-	for _, t := range types {
-		in = append(in, "?")
-		args = append(args, string(t))
-	}
-	args = append(args, limit)
-	rows, err := c.db.QueryContext(ctx, `SELECT DISTINCT t.key, t.popularity FROM catalog_credits cr JOIN catalog_titles t ON t.key=cr.key
-		WHERE cr.person_tmdb=? AND t.adult=0 AND t.type IN (`+strings.Join(in, ",")+`)
-		ORDER BY t.popularity DESC, t.key LIMIT ?`, args...)
+	q, args := personCreditKeysSQL(person, types, limit)
+	rows, err := c.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -241,4 +251,18 @@ func (c *Catalog) PersonCreditKeys(ctx context.Context, person int64, types []co
 		out = append(out, core.RatingKey(key))
 	}
 	return out, rows.Err()
+}
+
+func personCreditKeysSQL(person int64, types []core.MediaType, limit int) (string, []any) {
+	in := make([]string, 0, len(types))
+	args := []any{person}
+	for _, t := range types {
+		in = append(in, "?")
+		args = append(args, string(t))
+	}
+	args = append(args, limit)
+	q := `SELECT DISTINCT t.key, t.popularity FROM catalog_credits cr JOIN catalog_titles t ON t.key=cr.key
+		WHERE cr.person_tmdb=? AND t.adult=0 AND t.type IN (` + strings.Join(in, ",") + `)
+		ORDER BY t.popularity DESC, t.key LIMIT ?`
+	return q, args
 }
