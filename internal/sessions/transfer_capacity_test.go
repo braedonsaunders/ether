@@ -110,10 +110,6 @@ func TestViewerHourOfPlaybackReusesTransferTickets(t *testing.T) {
 	if maxTickets > 16 {
 		t.Fatalf("ticket count peaked at %d", maxTickets)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for tickets() > 2 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
 	if n := tickets(); n > 2 {
 		t.Fatalf("tickets after the hour = %d, peak %d", n, maxTickets)
 	}

@@ -420,17 +420,15 @@ func (b *Broker) settleRetirement(ctx context.Context, s *brokerSession, ok bool
 		return
 	}
 	header := *s.transferBarrier
-	db := b.deps.DB
-	report := b.deps.OnEventError
+	// A replacement session for this title already holds the ticket.
+	if b.transferHeld(header.Digest) {
+		return
+	}
 	// Stop must return while a stalled database still holds its only
 	// connection. Loss of the drop leaves the claim in place.
-	go func() {
-		// A replacement session for this title already holds the ticket.
-		if b.transferHeld(header.Digest) {
-			return
-		}
-		if err := dropTransferHeader(context.WithoutCancel(ctx), db, header); err != nil && report != nil {
-			report(err)
-		}
-	}()
+	dropCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	if err := dropTransferHeader(dropCtx, b.deps.DB, header); err != nil && b.deps.OnEventError != nil {
+		b.deps.OnEventError(err)
+	}
 }
