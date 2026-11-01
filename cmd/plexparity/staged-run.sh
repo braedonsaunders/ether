@@ -96,6 +96,7 @@ for name, changes in replacements.items():
   if name == 'app.go' and 'watchlist sync' in old and re.search(r'if parityRunCatalogueWorkers\(\)\s*\{\s*background\.start\(func\(\) \{ a\.cluster\.RunAsLeader\(ctx, "watchlist sync"', text): continue
   if old.startswith('a.closers = append(a.closers, a.tmdb.Close)') and 'parityConfigureTMDB(a.tmdb)' in text: continue
   if old.startswith('a.closers = append(a.closers, a.personalize.Close)') and 'parityWarmPersonalization(ctx, a)' in text: continue
+  if old == 'plextv.Options{Identity:' and 'BaseURL: parityPlexTVBaseURL()' in text: continue
   if old == 'auth.Options{\n' and re.search(r'auth\.Options\{\s*Now:\s*parityClock\(\)', text): continue
   if old == 'personalize.Options{\n' and re.search(r'personalize\.Options\{\s*Now:\s*parityClock\(\)', text): continue
   if old == 'resolver.New(a.sources, a.media,' and 'parityIndexer(a.sources, dataDir)' in text and 'parityHealth(a.media, dataDir)' in text: continue
