@@ -290,7 +290,15 @@ func (p *ViewerPush) Drain(ctx context.Context) error {
 			_ = p.send(ctx, subscription, event)
 		}
 	}
-	_, err = p.Preferences.DB.ExecContext(ctx, `DELETE FROM viewer_push_claims WHERE claimed_at<?`, now.Add(-48*time.Hour).Unix())
+	cutoff := now.Add(-48 * time.Hour).Unix()
+	var hasExpiredClaims bool
+	if err = p.Preferences.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM viewer_push_claims WHERE claimed_at<?)`, cutoff).Scan(&hasExpiredClaims); err != nil {
+		return err
+	}
+	if !hasExpiredClaims {
+		return nil
+	}
+	_, err = p.Preferences.DB.ExecContext(ctx, `DELETE FROM viewer_push_claims WHERE claimed_at<?`, cutoff)
 	return err
 }
 

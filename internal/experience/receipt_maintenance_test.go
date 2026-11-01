@@ -135,3 +135,16 @@ func TestReceiptMaintenanceConcurrentIssue(t *testing.T) {
 		t.Fatalf("live receipts=%d %v", n, err)
 	}
 }
+
+func TestPruneReceiptShardSkipsWriteTxWhenIdle(t *testing.T) {
+	db := store.OpenTest(t)
+	ctx := context.Background()
+	statsCtx, qs := store.WithQueryStats(ctx)
+	n, err := PruneReceiptShard(statsCtx, db, time.Unix(1700000000, 0), 7)
+	if err != nil || n != 0 {
+		t.Fatalf("PruneReceiptShard = %d, %v", n, err)
+	}
+	if qs.LockWait() > 0 || qs.Writes() > 0 {
+		t.Fatalf("idle PruneReceiptShard acquired write lock or wrote: lockWait=%s writes=%d", qs.LockWait(), qs.Writes())
+	}
+}

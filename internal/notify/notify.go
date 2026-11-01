@@ -437,12 +437,27 @@ func (s *Service) Drain(ctx context.Context) error {
 	}
 	// A claim whose node stopped mid-delivery is recorded as failed rather
 	// than resent: the event may already have been delivered.
-	if _, err := s.db.ExecContext(ctx, `UPDATE notify_queue SET status='failed',error='Delivery interrupted; receipt unknown' WHERE status='sending' AND claimed_at<?`,
-		s.opts.Now().Add(-claimTimeout).Unix()); err != nil {
+	nowTime := s.opts.Now()
+	staleClaimCutoff := nowTime.Add(-claimTimeout).Unix()
+	var hasStaleSending bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM notify_queue WHERE status='sending' AND claimed_at<?)`, staleClaimCutoff).Scan(&hasStaleSending); err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM notify_queue WHERE status IN ('sent','failed','cancelled') AND created<?`, s.opts.Now().AddDate(0, 0, -30).Unix())
-	return err
+	if hasStaleSending {
+		if _, err := s.db.ExecContext(ctx, `UPDATE notify_queue SET status='failed',error='Delivery interrupted; receipt unknown' WHERE status='sending' AND claimed_at<?`, staleClaimCutoff); err != nil {
+			return err
+		}
+	}
+	retentionCutoff := nowTime.AddDate(0, 0, -30).Unix()
+	var hasExpired bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM notify_queue WHERE status IN ('sent','failed','cancelled') AND created<?)`, retentionCutoff).Scan(&hasExpired); err != nil {
+		return err
+	}
+	if hasExpired {
+		_, err = s.db.ExecContext(ctx, `DELETE FROM notify_queue WHERE status IN ('sent','failed','cancelled') AND created<?`, retentionCutoff)
+		return err
+	}
+	return nil
 }
 
 // Critical lifecycle events bypass digest delays. Crash delivery itself is handled

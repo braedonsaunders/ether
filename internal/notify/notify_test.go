@@ -286,3 +286,20 @@ func TestIndexerOutageAlertsOncePerOutage(t *testing.T) {
 		t.Fatalf("budget exhaustion should alert: %d", n)
 	}
 }
+
+func TestDrainSkipsWritesWhenQueueIdle(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := New(db, Options{})
+	statsCtx, qs := store.WithQueryStats(ctx)
+	if err := s.Drain(statsCtx); err != nil {
+		t.Fatal(err)
+	}
+	if qs.Writes() != 0 {
+		t.Fatalf("idle Drain issued %d writes, want 0", qs.Writes())
+	}
+}

@@ -240,3 +240,16 @@ func TestImageIssuePrunesOncePerWindow(t *testing.T) {
 		t.Fatalf("a full scope did not prune before refusing: %d", prunes)
 	}
 }
+
+func TestPruneImageGrantShardSkipsWriteTxWhenIdle(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	statsCtx, qs := store.WithQueryStats(ctx)
+	n, err := PruneImageGrantShard(statsCtx, db, time.Unix(1700000000, 0), 3)
+	if err != nil || n != 0 {
+		t.Fatalf("PruneImageGrantShard = %d, %v", n, err)
+	}
+	if qs.LockWait() > 0 || qs.Writes() > 0 {
+		t.Fatalf("idle PruneImageGrantShard acquired write lock or wrote: lockWait=%s writes=%d", qs.LockWait(), qs.Writes())
+	}
+}
