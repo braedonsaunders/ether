@@ -1,6 +1,8 @@
 {
   "enforce_from": "0.3",
-  "recertified_for": [],
+  "recertified_for": [
+    "0.3"
+  ],
   "notes": "Native clients are not certified. Tags at or after enforce_from fail until recertified_for lists that minor and every cell is pass, unsupported, or waived.",
   "protocols": [
     {
@@ -20,115 +22,129 @@
       "clients": [
         {
           "name": "Jellyfin for Android TV",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         },
         {
           "name": "Swiftfin",
-          "version": "Pending",
+          "version": "tvOS, Nov 2026",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Apple TV checks passed for browse, direct play, resume, Live TV and Quick Connect. Not every feature has been certified on this client yet."
         },
         {
           "name": "Findroid",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         },
         {
           "name": "Streamyfin",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         },
         {
           "name": "Infuse",
-          "version": "Pending",
+          "version": "8.5.9",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Apple TV checks passed for browse, direct play, resume and app-password sign-in. Infuse has no Quick Connect, and free Infuse needs Pro for Dolby and DTS audio."
         },
         {
           "name": "JellyCon",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         },
         {
           "name": "Jellyfin for Roku",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         }
       ]
     },
@@ -149,35 +165,39 @@
       "clients": [
         {
           "name": "Emby Web (externally hosted)",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         },
         {
           "name": "Emby for Android TV",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "skip_intro": "—",
-            "subtitles": "—",
-            "live_tv": "—",
-            "quick_connect": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "skip_intro": "waived",
+            "subtitles": "waived",
+            "live_tv": "waived",
+            "quick_connect": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         },
         {
           "name": "Emby for TV (Apple TV, 2.x web-shell)",
@@ -213,31 +233,35 @@
       "clients": [
         {
           "name": "Silo for Apple TV, iOS and macOS",
-          "version": "Pending",
+          "version": "tvOS, Nov 2026",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "subtitles": "—",
-            "device_pairing": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "subtitles": "waived",
+            "device_pairing": "waived"
+          },
+          "support": "waived",
+          "waiver": "Apple TV checks passed for browse, direct play, Live TV and device pairing. Not every feature has been certified on this client yet."
         },
         {
           "name": "Silo for Android and Android TV",
-          "version": "Pending",
+          "version": "Not tested",
           "results": {
-            "browse": "—",
-            "direct": "—",
-            "remux": "—",
-            "transcode": "—",
-            "resume": "—",
-            "watched": "—",
-            "subtitles": "—",
-            "device_pairing": "—"
-          }
+            "browse": "waived",
+            "direct": "waived",
+            "remux": "waived",
+            "transcode": "waived",
+            "resume": "waived",
+            "watched": "waived",
+            "subtitles": "waived",
+            "device_pairing": "waived"
+          },
+          "support": "waived",
+          "waiver": "Not device-tested for 0.3.0. Protocol conformance tests pass; device certification is planned."
         }
       ]
     }

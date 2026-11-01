@@ -2,10 +2,10 @@
   <img src=".github/assets/ether-logo.svg" alt="Ether" width="360" />
 </p>
 
-<h2 align="center">Your media. Beyond the static library.<br />Your on-demand media server.</h2>
+<h2 align="center">The whole TMDB catalogue, inside the apps your family already uses.<br />Plex, Infuse, Swiftfin, Jellyfin, Emby, Silo, Stremio: one on-demand server, running alongside your local library.</h2>
 
 <p align="center">
-  Ether brings a TMDB-backed catalogue and your configured sources together. When you press <b>Play</b> in a supported app, it resolves the best release across <b>your Usenet providers</b> and <b>your debrid accounts</b>, health-checks it, and streams the exact byte ranges the player asks for.
+  Press <b>Play</b> on a title in Plex, Infuse, Swiftfin, Jellyfin, Emby, Silo, or Stremio. Ether resolves the best release across <b>your Usenet providers</b> and <b>your debrid accounts</b>, health-checks it, and streams the exact byte ranges the player asks for.
 </p>
 
 <p align="center">
@@ -17,11 +17,13 @@
 </p>
 
 <p align="center">
-  <a href="#why-ether-exists">Why Ether Exists</a> ·
-  <a href="#under-the-hood">Under the Hood</a> ·
-  <a href="#the-owner-experience">Product Tour</a> ·
-  <a href="#alongside-your-local-library">Alongside Your Library</a> ·
-  <a href="#install-in-five-minutes">Install in 5 Minutes</a> ·
+  <a href="#why-ether-exists">Why Ether exists</a> ·
+  <a href="#every-app-one-server">Every app, one server</a> ·
+  <a href="#faster-than-the-real-servers">Performance</a> ·
+  <a href="#alongside-your-local-library">Alongside your library</a> ·
+  <a href="#under-the-hood">Under the hood</a> ·
+  <a href="#the-owner-experience">Owner console</a> ·
+  <a href="#install-in-five-minutes">Install in 5 minutes</a> ·
   <a href="#questions-youre-about-to-ask">FAQ</a>
 </p>
 
@@ -33,178 +35,210 @@
 
 ## Why Ether exists
 
-A typical automated media setup is built from several excellent projects—Sonarr, Radarr, Prowlarr, SABnzbd, Overseerr, Kometa, Tautulli and more—each of them very good at its job. Wiring them together still means download clients, path mappings, webhooks and, for debrid users, FUSE/WebDAV mounts that Plex Media Server has to scan. A new title still has to download, unpack and be scanned before anyone can press Play.
+A typical automated media setup is built from several separate projects: Sonarr, Radarr, Prowlarr, SABnzbd, Overseerr, Kometa, Tautulli, and debrid mount tools. Wiring them together means download clients, path mappings, webhooks, and FUSE or WebDAV mounts that a media server has to scan. A new title still has to download, unpack, and be indexed before anyone can press Play.
 
-Ether takes a different approach to the on-demand case. **Ether is a media server backed by the live TMDB catalogue and an on-demand byte-range streaming engine.** **Ether's multi-app support is the shared protocol-neutral server the app frontends run in.** Plex, Jellyfin, Emby and Silo are frontend adapters, connecting clients to shared server services. Plex apps speak the PMS protocol through the Plex frontend. Other integrations are in development; consult the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) before choosing an app. An available integration is not a claim that every client or feature is certified.
+Ether takes a different approach to the on-demand case. Instead of presenting virtual files for another media server to scan, **Ether speaks your apps' own languages.** It is a Plex server to Plex apps, a Jellyfin server to Infuse, Swiftfin, and Findroid, an Emby server to Emby apps, and a Silo server to Silo, backed by the live TMDB catalogue and an on-demand byte-range streaming engine.
 
-**The catalogue is available without waiting for a local library scan.** When you press **Play**, Ether resolves, health-checks, and streams the bytes on the fly. When you scrub to `01:14:22`, Ether seeks to the matching keyframe offset inside a remote Usenet RAR5 set or debrid HTTPS stream and serves just those bytes.
+When you open your app, **the catalogue is already there.** When you press **Play**, Ether resolves, health-checks, and streams the bytes on the fly. When you scrub to `01:14:22`, Ether seeks to the matching keyframe offset inside a remote Usenet RAR5 set or debrid HTTPS stream and serves those bytes.
 
 | What your family experiences | What you stop maintaining |
 | :--- | :--- |
-| **Press Play and watch.** Titles are browsable, searchable, and playable inside the stock Plex app. | No request queue. No *"Can you add this to Plex?"* texts. No waiting for downloads, extractions, or library scans. |
+| **Press Play and watch.** Titles are browsable, searchable, and playable inside stock Plex, Jellyfin, Infuse, Swiftfin, Emby, Silo, and Stremio apps. | No request queue. No *"Can you add this?"* texts. No waiting for downloads, extractions, or library scans. |
 | **A Home screen that knows them.** Every viewer gets their own taste model, row ordering, and runtime-aware picks. | No single *Recently Added* row shared by everyone in the house. |
-| **It just plays.** Automatic provider backfill, mid-stream release failover, synced subtitles, and Skip Intro / Skip Credits. | No dead mounts, stuck queues, out-of-sync `.srt` files, or broken archives to chase on a Friday night. |
-| **Storage you choose.** Run in 256 MiB pass-through mode or let a multi-terabyte shelf pre-warm what your household watches next. | No cleanup rules to tune, and no need to buy storage for everything you might watch. |
+| **Pick up anywhere.** Start a movie in Plex on the living-room TV and resume it in Infuse, Swiftfin, or Silo on an iPad. | No separate watch-sync scripts or mismatched progress across apps. |
+| **Plays on demand.** Automatic provider backfill, mid-stream release failover, synced subtitles, and Skip Intro / Skip Credits. | No dead mounts, stuck queues, out-of-sync `.srt` files, or broken archives to chase on a Friday night. |
+| **Storage you choose.** Run in 0 GiB pass-through mode or let a multi-terabyte shelf pre-warm what your household watches next. | No cleanup rules to tune, and no need to buy storage for everything you might watch. |
+
+---
+
+## Every app, one server
+
+Ether is a Plex server to one app and a Jellyfin server to another, at the same time. Turn on the protocols your household uses under **Server › Apps**.
+
+| App / protocol | Default port | Supported clients and how they connect |
+| :--- | :--- | :--- |
+| **Plex** | `32400` TCP (`32410–32414` UDP GDM) | Official Plex apps on Apple TV, iOS, Android, Android TV / Shield, Fire TV, Roku, PlayStation, Xbox, Smart TVs (LG, Samsung, VIDAA), Desktop, and Web. Discovered automatically through `plex.tv` and LAN GDM. |
+| **Jellyfin** | `8096` TCP (`7359` UDP discovery, or `/jellyfin`) | Infuse, Swiftfin, Findroid, Streamyfin, Jellyfin for Android TV, JellyCon, and Jellyfin for Roku. Sign in with Quick Connect or an Ether viewer password. *(Web-wrapper apps such as Jellyfin for Android phones and Jellyfin Desktop are not supported.)* |
+| **Emby** | `8097` TCP (or `/emby`) | Native Emby apps (Android TV, iOS, Android, Roku, Smart TVs) and Infuse. Sign in with an Ether viewer password or Quick Connect. *(Apple TV Emby for TV 2.x web-shell is not supported.)* |
+| **Silo** | `8090` TCP (or `/silo`) | Native Silo apps for Apple TV, iOS, macOS, Android, and Android TV. Sign in with an Ether viewer password or approve a device code in `/ether/me`. |
+| **Stremio** | Main HTTPS port | Any Stremio app. Each viewer creates a private addon install link in the viewer portal (`/ether/me`). |
+| **Files (WebDAV)** | Main port | Infuse, VLC, Kodi, and rclone. Each viewer creates a read-only WebDAV app password in `/ether/me`. |
+| **M3U & XMLTV** | Main port | Channels DVR, TiviMate, and IPTV players. Each viewer creates private `playlist.m3u` and `guide.xml` links in `/ether/me`. |
+| **DLNA** | Local network | LAN TVs and media players with a ContentDirectory browser, governed by the owner-selected guest viewer's library and rating rules. |
+
+- **Viewers are protocol-neutral:** Ether keeps its own viewer accounts, and Plex is optional. If you connect Plex, people you share your Plex server with appear automatically as Ether viewers and can approve Jellyfin Quick Connect or Silo device pairing in `/ether/me` using their Plex sign-in.
+- **Cross-app progress and preferences:** Watch history, resume positions, ratings, and subtitle preferences (mode, language order, and styling) live on the Ether viewer account. Setting subtitle preferences in Silo or Jellyfin applies across every app. Silo and Jellyfin Web viewers also share a common Watch Party / SyncPlay room clock.
+- **One playback engine:** Every protocol routes through one session broker (`internal/sessions`). Concurrent stream limits, bandwidth budgets, household safety rules, and owner **Stop** actions apply across all apps together, and concurrent plays of the same release share one upstream fetch.
+- **Verified protocol conformance:** Jellyfin (target 12.4), Emby (target 4.10.2), and Silo responses are verified offline against recorded reference corpora (`internal/conform`, `cmd/conformdiff`) with zero blocking diffs. Plex responses are checked against recorded Plex Media Server fixtures (`internal/pmsconform`, `cmd/pmsdiff`) with a CI gate on load-bearing fields.
+- **No borrowed web clients:** Ether ships no third-party web client code. Opening `/web` on a Jellyfin or Emby listener serves a translated Ether page naming the supported native apps and how to connect.
+
+---
+
+## Faster than the real servers
+
+Ether is architected so that no request path scales with library size (`docs/performance.md`). Search uses SQLite FTS5 trigram and people word-prefix indexes (or PostgreSQL `pg_trgm`), browse totals read narrow covering indexes, and per-viewer caches are stamped with the catalogue write generation and viewer-policy epoch.
+
+On a matched 2-CPU, 6 GB head-to-head benchmark (`docs/scorecard.md`, `docs/scorecard.json`) against reference Jellyfin 12.4 and Emby 4.10.2 containers serving the same media file, and on a 264,000-title production catalogue snapshot (`docs/performance.md`):
+
+| Measurement | Ether | Reference server | Context |
+| :--- | :--- | :--- | :--- |
+| **Home views (`GET /Users/{id}/Views`, p50 / p95)** | **6.2 / 11.5 ms** (JF) · **1.15 / 3.06 ms** (Emby) | 31.5 / 50.0 ms (JF) · 1.49 / 5.04 ms (Emby) | Matched 2-CPU lab (`docs/scorecard.json`) |
+| **Direct play to first media byte (p50 / p95)** | **7.68 / 23.39 ms** (JF) · **4.28 / 9.69 ms** (Emby) | 38.63 / 57.66 ms (JF) · 5.28 / 7.21 ms (Emby) | `PlaybackInfo` + first byte (`docs/scorecard.md`) |
+| **Seek to first media byte (p50 / p95)** | **4.78 / 6.22 ms** (JF) · **4.34 / 6.77 ms** (Emby) | 40.57 / 56.71 ms (JF) · 5.42 / 7.14 ms (Emby) | Mid-stream range seek (`docs/scorecard.md`) |
+| **Resume to first media byte (p50 / p95)** | **4.84 / 8.36 ms** (JF) · **4.13 / 13.83 ms** (Emby) | 42.18 / 57.30 ms (JF) · 5.47 / 7.33 ms (Emby) | Resume from saved offset (`docs/scorecard.md`) |
+| **Large-library Home & On Deck (cold)** | **0.13–0.20 s** | 35–90 s (pre-0.3 Ether) | 264k catalogue rows, 51k history rows (`docs/performance.md`) |
+| **Large-library search (`query=star`, cold)** | **0.08 s** (Plex) · **0.12–0.29 s** (Infuse) · **0.05–0.17 s** (Emby) | 3.7–26 s (pre-0.3 Ether) | 264k catalogue rows (`docs/performance.md`) |
+| **540k-title recursive episode page (400 items)** | **54 ms** (14 ms DB, 600 statements) | 14.4 s (10.3 s DB, 270k statements) | Synthetic 540k-row CI performance gate |
+
+**Where Ether trails:** On the shared lab host (`docs/scorecard.md`), Ether's Emby p95 trailed reference Emby on direct play (9.69 ms vs 7.21 ms) and resume (13.83 ms vs 7.33 ms). On the earlier pre-fast-forward scorecard snapshot (`e3792dab4`), uncached 40-episode `/Items` lists (458 ms p50 vs 36 ms on Jellyfin; 510 ms vs 4.9 ms on Emby) and 4-movie Emby lists (56 ms vs 2.2 ms) were slower than the local-file reference servers because of per-item metadata checks that were subsequently moved off the request path. For cold on-demand playback of a title that has not been warmed on a detail page, first start also includes indexer search and Usenet/debrid source verification (typically 0.4–6 s when cached on debrid or Usenet, and longer if an external indexer times out).
 
 ---
 
 ## Alongside your local library
 
-Keep the media server and tools that curate the files you own. Ether adds an on-demand catalogue alongside that collection. With the Plex integration, Ether appears as a separate server in your Plex apps. An existing Plex Media Server is an optional, separate external server for local files; Ether's multi-app support does not require it. Ether’s availability depends on your configured sources; an on-demand catalogue is not a durable local library.
+Keep Plex Media Server, Jellyfin, or Emby and the tools that curate the files you own. Ether runs alongside them for on-demand titles outside your local disk collection. Availability depends on your configured sources; an on-demand catalogue is not a durable local archive.
 
-The table maps familiar workflows to Ether’s on-demand features. It does not claim feature parity with these mature projects. Clustering, virtual Live TV, hardware enhancement and poster customization are optional integrations; ordinary playback needs none of them.
+The table maps familiar workflows to Ether's on-demand features. It does not claim feature parity with these projects. Clustering, virtual Live TV, hardware enhancement, and poster customization are optional integrations; ordinary playback needs none of them.
 
 | If you run today | What Ether does instead |
 | :--- | :--- |
-| **Plex Media Server** *(for streaming)* | Clean-room implementation of the PMS HTTP/HLS/DASH/GDM protocol, `*.plex.direct` TLS, and `plex.tv` sharing. *(Keep PMS for your local files.)* |
-| **Sonarr & Radarr** | Resolution happens at **Play** time (or during detail-page warmup) using your quality profiles, custom formats, edition rules, and release pins. |
-| **Prowlarr & Jackett** | Native Newznab and Torznab manager with daily quota tracking, Retry-After backoff, result caching, 1-click Prowlarr import, a built-in **Cardigann YAML** engine, and **Stremio stream addons** as sources (paste an install link): torrent, NZB and HTTP stream results, looked up by IMDb, TMDB or anime database ID. |
-| **SABnzbd, NZBGet, NzbDAV, AltMount** | Native NNTP connection pools, wire-pipelined `BODY` fetching, SWAR yEnc decoding, and direct byte-range seeking inside store-mode RAR4, RAR5, and 7z sets (including password-protected stored archives). |
-| **zurg, rclone, Riven, plex_debrid** | Native HTTPS range streaming for **Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, and Offcloud**—including single-episode extraction from torrent season packs without mounts. |
+| **Plex Media Server, Jellyfin, or Emby** *(for streaming)* | Clean-room implementation of the Plex, Jellyfin, Emby, Silo, Stremio, WebDAV, M3U/XMLTV, and DLNA protocols from one server. *(Keep your existing server for local files on disk.)* |
+| **Sonarr & Radarr** | Resolution happens at **Play** time (or during detail-page warmup) using your quality profiles, a draggable "What matters most" ranking ladder, Never play filters, edition rules, release pins, and **TRaSH Guides** or **Profilarr (Dictionarry)** profile imports. |
+| **Prowlarr & Jackett** | Native Newznab and Torznab manager with daily quota tracking, `Retry-After` backoff, result caching, 1-click **Prowlarr import with tag sync**, a built-in **Cardigann engine** for the definitions you add (no bundled definitions), and **Stremio stream addons** as sources. |
+| **SABnzbd, NZBGet, NzbDAV, AltMount** | Native NNTP connection pools, cross-tier busy spillover, learned connection limits, wire-pipelined `BODY` fetching, SWAR yEnc decoding, and direct byte-range seeking inside store-mode RAR4, RAR5, and 7z sets (including password-protected stored archives). |
+| **zurg, rclone, Riven, plex_debrid** | Native HTTPS range streaming for **Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, and Offcloud**, including single-episode extraction from torrent season packs without FUSE or WebDAV mounts. |
 | **Overseerr & Jellyseerr** | Released titles need no requests. Viewers' Plex and Trakt Watchlists sync automatically; newly playable titles appear in a *Now available* row on that viewer's Home, and the owner can be alerted. |
-| **Kometa (Plex Meta Manager)** | Live visual poster studio and rule-based collection builder in the browser. Renders `4K / DV / Atmos` and rating badges in pure Go on demand, configured in the browser. |
-| **Bazarr** | Automatic OpenSubtitles matching plus **piecewise dialogue-timing alignment** that syncs subtitles and skip markers across different cuts without downloading video. |
-| **Tautulli & Notifiarr** | Built-in real-time session monitor, 30-day analytics, provider throughput graphs, weekly HTML digests, and rule-filtered alerts (Discord, Slack, Telegram, Push, Email, ntfy, Gotify). |
-| **Maintainerr** | Self-evicting segment cache with repeat-watch retention credit and rolling TV episode preloading that automatically slides forward as your household watches. |
-| **ErsatzTV, Tunarr, Threadfin** | Turn any collection into a 24/7 virtual TV channel alongside M3U/XMLTV and Xtream feeds—served straight into Plex's native Live TV guide. |
+| **Kometa (Plex Meta Manager)** | Live visual poster studio and rule-based collection builder in the browser. Renders `4K / DV / Atmos` and rating badges in pure Go on demand from verified release facts. |
+| **Bazarr** | Automatic OpenSubtitles matching, on-pick subtitle timing correction (against embedded text tracks or speech audio), mojibake repair, and piecewise dialogue alignment across different cuts without downloading video. |
+| **Tautulli & Notifiarr** | Built-in real-time session monitor, Plex Web Dashboard `/statistics` support, 30-day analytics, provider throughput graphs, weekly HTML digests, and rule-filtered alerts (Discord, Slack, Telegram, Push, Email, ntfy, Gotify). |
+| **Maintainerr** | Self-evicting segment cache with repeat-watch retention credit and rolling TV episode preloading that slides forward as your household watches. |
+| **ErsatzTV, Tunarr, Threadfin** | Turn any collection, filter, or weighted mix into a 24/7 virtual TV channel with a paintable weekly schedule grid alongside M3U/XMLTV and Xtream feeds, served over HLS and DASH. |
 
 ---
 
 ## Under the hood
 
-Ether is the product. **Multi-app support** is the shared server inside it. This diagram
-shows the intended ownership of protocol adapters and shared services. Extraction
-from legacy code is still in progress; see [multi-app architecture](docs/apps.md) for
-the current code boundaries and migration debt.
-
-```text
-     Plex apps     Jellyfin apps     Emby apps     Silo apps
-         |               |               |             |
-         v               v               v             v
-+-------------------------- ETHER ---------------------------+
-| Shared server                                              |
-|                                                           |
-| Frontend adapters: Plex (PMS) | Jellyfin | Emby | Silo       |
-|                            |                              |
-|                            v                              |
-| Shared catalogue | Identity & viewer policy                |
-| Experience: browse, search, Home, personalization, state    |
-| Session broker | Resolver | Playback                       |
-| Health checks | Range streaming | Subtitles | Transcoding  |
-+----------------------------+------------------------------+
-                             |
-                             v
-               Configured providers and indexers
-                     Usenet | Debrid | HTTP
+```
+     Plex · Infuse · Swiftfin · Findroid · Jellyfin · Emby · Silo · Stremio · WebDAV · DLNA
+                                    │  browse · search · Play · scrub
+                                    ▼
+  ┌──────────────────────────────────────────── ETHER ────────────────────────────────────────────┐
+  │  App Protocols           Plex · Jellyfin · Emby · Silo · Stremio · WebDAV · M3U/XMLTV · DLNA  │
+  │  Shared Experience       Personalization · Taste models · Unified age ratings · 17-hub search │
+  │  Session Broker          Capability registry · Stream grants · Shared limits · Watch Party    │
+  │  Smart Resolver          Ranked quality ladder · TRaSH formats · Measured source racing       │
+  │  PAR2 & Health Oracle    16 KiB MD5 de-obfuscation · Mid-file BODY probes · Slice checksums   │
+  │  Zero-Copy Streamer      Seekable RAR4/RAR5/7z (plain & AES) · HTTPS ranges · Disk/NAS tier   │
+  │  Subtitle & Cut Aligner  On-pick timing sync · Mojibake repair · Piecewise dialogue solver    │
+  │  Media & GPU Transcode   Direct play · Copy remux · HW ABR HLS/DASH/HTTP · RTX Video VSR      │
+  └──────────────────────────────────┬───────────────────────────────────────┬────────────────────┘
+                                     │                                       │
+                        Usenet Providers (Primary + Backfill)       Debrid Accounts (RD · TorBox · AD · PM)
+                        + Newznab Indexers & Cardigann Sites        + Torznab, Stremio Addons & Cardigann
 ```
 
-Each frontend translates its client's protocol to shared contracts. Jellyfin,
-Emby and Silo do not require Plex authentication or Plex wire objects; their
-architecture does not route through the Plex frontend. Existing internal Plex
-helpers are migration debt, not the shared-service ownership model. App support
-and certification remain subject to the [user guide](docs/user-guide.md).
+### 1. Native Usenet and debrid streaming without extraction
+* **Lazy store-mode archive indexing (including encrypted sets):** To open a 60-part RAR4, RAR5, or 7z post on Usenet, Ether reads only the **first, second, and last volume headers** to infer the uniform layout and expose a seekable `io.ReaderAt` immediately, verifying volume boundaries lazily before serving bytes and supporting bounded native AES decryption on password-protected stored RAR4/RAR5/7z sets when the password is supplied in the NZB metadata.
+* **PAR2 as a zero-cost de-obfuscation and integrity oracle:** Ordinary playback does not wait on full PAR2 repair (bounded repair of missing byte ranges is opt-in). Instead, Ether fetches the `<1 MiB` `.par2` index packet in parallel with the first article, matches the MD5 of the first `16 KiB` of obfuscated posts against PAR2 file descriptions to recover filenames and volume order, and verifies slice checksums on the spot. Repost message-IDs are kept as per-segment alternates.
+* **Truthful mid-file health checks and live hedging:** Providers often answer `223` to `STAT` for DMCA-removed articles that fail with `451` on `BODY`. Ether combines spread `STAT` checks with mid-file `BODY` yEnc-header reads, bails out on the first confirmed miss across all providers, spills over to the next primary provider when connections are busy, and hedges stalled live article reads on spare capacity.
+* **Surgical Matroska damage concealment and live failover:** Priority semaphores protect live reads over read-ahead and background prefetch (and yield debrid prefetch to mid-file range seeks). If an article is missing mid-stream inside an unlaced Matroska cluster, Ether skips unaffected clusters via container cues and conceals the gap while warming an alternate release in the background. If a release stalls or fails, Ether swaps to another release at the same scene with matched audio loudness.
 
-### 1. Native Usenet & Debrid streaming without extraction
-* **Lazy store-mode archive indexing (including encrypted sets):** To open a 60-part RAR4, RAR5, or 7z post on Usenet, Ether touches only the **first, second, and last volume headers** to infer the uniform layout and expose a seekable `io.ReaderAt` immediately—verifying volume boundaries lazily before serving bytes and supporting bounded native AES decryption on password-protected stored RAR4/RAR5/7z sets when the password is supplied in the NZB metadata.
-* **PAR2 as a zero-cost de-obfuscation & integrity oracle:** Ordinary playback never waits on PAR2 repair (bounded repair of just the missing byte ranges is opt-in). Instead, it fetches only the `<1 MiB` `.par2` index packet in parallel with the first article, matches the MD5 of the first `16 KiB` of obfuscated posts against PAR2 file descriptions to recover true filenames and volume order, and verifies slice checksums on the spot. If one dominant video file is identified, decoy files aren't even probed.
-* **Truthful mid-file health checks:** Providers routinely answer `223` to `STAT` for DMCA-pulled articles that fail with `451` on `BODY`. Ether combines spread `STAT` checks with real mid-file `BODY` yEnc-header reads and bails out on the first confirmed missing article across all providers.
-* **Surgical Matroska damage concealment & live failover:** Priority semaphores strictly protect `PriorityLive` reads over read-ahead and background prefetch. If an article is genuinely missing mid-stream inside an unlaced Matroska frame payload, Ether conceals the gap while warming an alternate release in the background—and if a release stalls or breaks, fails over to another release at the exact same scene, with the volume matched and baked-in black bars cropped.
+### 2. Server-side NVIDIA RTX Video Super Resolution (`nvenc-ngx-vsr`) and GPU pipelines
+90s sitcoms, classic anime, and DVD-era 480p/576p/720p shows look soft on a 4K TV, and client-side upscalers exist on only a few devices.
+* **Tensor-Core neural upscaling on the server:** On Windows hosts with an NVIDIA RTX GPU and `NVEncC64` (with NVIDIA NGX VSR runtime DLLs), Ether can run **NVIDIA RTX Video Super Resolution** inside the server's HLS/DASH transcode pipeline, cleaning compression artifacts and reconstructing edges on SDR H.264 streams before they reach an Apple TV, Roku, iPad, or browser.
+* **Self-protecting ABR and fallback:** RTX VSR is opt-in (off by default) with owner-configurable source/target resolution caps (for example `<=720p -> 1080p`), quality tiers, and concurrency limits. Enhancement is reserved for the top ABR rendition; if client bandwidth dips or the GPU concurrency limit is reached, Ether drops to ordinary hardware or software ABR renditions without interrupting playback.
+* **Probed FFmpeg capabilities:** At startup, Ether probes the installed `ffmpeg` for available filters and hardware encoders across NVIDIA NVENC, Intel QuickSync, VAAPI, and Apple VideoToolbox. Builds without `libzimg` (`zscale`) use built-in `colorspace`/`scale` filters for SDR conversions and `libplacebo`, OpenCL, or hardware tone mapping for HDR-to-SDR conversions.
 
-### 2. Server-side NVIDIA RTX Video Super Resolution (`nvenc-ngx-vsr`) & GPU pipelines
-90s sitcoms, classic anime, and DVD-era 480p/576p/720p shows tend to look soft on a 4K TV, and client-side upscalers only exist on a handful of devices.
-* **Tensor-Core neural upscaling on the server:** On Windows hosts with an NVIDIA RTX GPU and `NVEncC64` (with NVIDIA NGX VSR runtime DLLs), Ether can run **NVIDIA RTX Video Super Resolution** directly inside the server's HLS/DASH transcode pipeline—cleaning compression artifacts and reconstructing crisp edges on SDR H.264 streams before they ever reach an Apple TV, Roku, iPad, or browser.
-* **Self-protecting ABR & fallback:** RTX VSR is opt-in (off by default) with owner-configurable source/target resolution caps (e.g. `≤720p → 1080p`), quality tiers, and concurrency limits. Enhancement is reserved for the top ABR rendition; if measured client bandwidth dips or the GPU concurrency limit is reached, Ether seamlessly drops to ordinary hardware/software ABR renditions without interrupting playback or mislabeling an ordinary scaler as RTX VSR.
-* **Zero-copy GPU surface transcoding:** For standard transcodes across NVIDIA NVENC, Intel QuickSync, VAAPI, and Apple VideoToolbox, Ether keeps decode, scaling, and encode on GPU hardware surfaces end-to-end and bounds software fallback worker threads.
+### 3. Subtitle timing correction and piecewise dialogue alignment
+* **On-pick timing correction and mojibake repair:** Subtitles are downloaded only when a viewer explicitly selects one. When a viewer picks an external text subtitle, Ether aligns its cue times against an embedded text subtitle track read via container byte ranges (or speech-energy cross-correlation across short audio windows), fitting both constant offset and frame-rate ratio (`23.976` / `24` / `25` fps) within a bounded time budget. Mis-decoded Windows-1252/Latin-1 UTF-8 text (mojibake) is repaired automatically, and viewers can upload `.srt`, `.vtt`, `.ass`, or `.ssa` files directly from Plex Web.
+* **Cross-cut alignment:** When a stream fails over from a Theatrical WEB-DL to an Extended Blu-ray rip, or when **TheIntroDB** skip markers were timed against a different cut, Ether aligns the subtitle dialogue timelines with a piecewise-linear solver without downloading video, accounting for studio logo offsets, PAL speedup, and inserted scenes, and stops *Skip Credits* right before mid- or post-credits stinger dialogue.
 
-### 3. Piecewise dialogue alignment across different cuts
-What happens when a stream fails over at `00:52:18` from a Theatrical WEB-DL to an Extended Blu-ray rip—or when **TheIntroDB** skip markers were timed against a different release? Duration math lands you in the wrong scene.
-* Ether aligns the **subtitle dialogue timelines** of the two releases using a piecewise-linear solver—**without downloading a single byte of video**—accounting for studio logo offsets, PAL 25fps speedup, and inserted/removed scenes.
-* That same dialogue engine inspects subtitle cues inside closing credits to **detect mid- and post-credits stinger scenes**, automatically ending the *Skip Credits* marker right before the stinger begins.
-
-### 4. Personalization inside stock Plex apps
-Viewers never leave the official Plex client, yet every person's Home screen is dynamically assembled for *them*, *their device*, and *the current hour*:
-* **Per-viewer taste models:** Tracks affinities across genres, keywords, directors, actors, decades, and languages with exponential time decay—separating completions and comfort rewatches from early abandons and unplayed impressions.
-* **Hierarchical Thompson-sampling bandits:** Row ordering uses a Beta-Bernoulli bandit that blends hand-tuned priors → server-wide evidence → the viewer's own play rate, held stable during an active browsing visit, with fresh exploration when a new client session starts or after an idle break.
-* **Self-gated learned re-ranker:** A pooled logistic-regression model trains in the background during quiet hours on 48-hour impression-to-play attribution (debiasing row and item position at inference). It **refuses to activate** until it beats the hand-tuned baseline by a strict held-out AUC margin.
-* **Session-intent & Micro-Reason headers:** Clicking through 90s thrillers without pressing Play subtly lifts related rows for the next hour. Detail pages greet the viewer with a calibrated decision header:
-  > **`96% Match · Directed by Denis Villeneuve · Ends at 10:45 PM`** *(resume-aware, local time, never faked for new users)*.
+### 4. Personalization across your apps
+Every person's Home experience is assembled for *them*, *their device*, and *the current hour*:
+* **Per-viewer taste models:** Tracks affinities across genres, keywords, directors, actors, decades, and languages with exponential time decay, separating completions and comfort rewatches from early abandons and unplayed impressions.
+* **Hierarchical Thompson-sampling bandits and self-gated re-ranker:** Row ordering uses a Beta-Bernoulli bandit that blends hand-tuned priors, server-wide evidence, and the viewer's own play rate, held stable during an active browsing visit. A background logistic-regression re-ranker activates only when it beats the baseline on held-out AUC.
+* **Server-driven Home and virtual libraries:** Plex and Silo receive the full server-driven Home. For Jellyfin and Emby apps (including Infuse, Swiftfin, Findroid, and Streamyfin), Ether publishes each viewer's top personalized rows as virtual libraries in `/UserViews` (*For You*, *Because you watched…*, *Trending*), populates Jellyfin's *Suggestions* tab (`/Movies/Recommendations`), and seeds default home section ordering for new viewers while keeping *Continue Watching*, *Next Up*, and *Latest* per viewer.
 
 ---
 
 ## The owner experience
 
-Everything is managed through `/ether/`—a fast, keyboard-friendly web UI built around live previews and slide-over drawers. Zero YAML files required.
+Everything is managed through `/ether/`, a fast, keyboard-friendly web console with live previews, slide-over drawers, an **Overview Next steps** bar, and full translations in **19 languages** alongside English.
 
-Global TMDB trending charts refresh hourly and survive restarts. Continue Watching leads the default discovery layout, followed by Trending Now. Browseable collections and discovery rows have independent placement controls, with movie-genre and TV-network/studio defaults. Catalog → Library visibility adds optional, previewable country, language, genre and numeric exclusion rules without replacing the catalogue browser or launching provider searches.
+The sidebar groups everything by what you are doing:
+- **Overview, Activity & Viewers** at the top for live sessions, 30-day playback history, and household accounts.
+- **Library:** **Catalog** (browser, three New releases modes, and ordered show/hide visibility rules), **Collections**, **Home** (Home Designer), **Live TV**, **Calendar**, and **Metadata** (Ratings, Artwork, Episode order).
+- **Streaming:** **Sources** (Debrid, Usenet, Indexers, Stats on one level), **Releases** (Profiles, Device rules, Searching, Blocklist, Pinned, History), **Cache**, and **Playback**.
+- **Server:** **General** (including optional outbound HTTP/SOCKS5 proxy for source traffic), **Apps**, **Integrations**, **Notifications**, **Cluster**, and **Maintenance** (Backups & import, Updates, Troubleshooting, Logs).
 
-**Sources → Availability → Settings** controls the movie evidence window. It defaults to enabled for 60 days after release; change it to 1–366 days or disable the movie requirement. A suitable observed release unlocks the movie immediately during that window: this is not a mandatory wait or a guarantee of quality/playback. Episode evidence remains a separate 24-hour rule.
+### Release profiles, sources, and new-release modes
+In **Releases › Profiles**, each profile opens in a drawer organized in the exact order Ether evaluates candidates:
+1. **Never play:** resolution and runtime-based size bounds for movies and episodes, *Allow CAM*, *Allow HDR*, *Allow Dolby Vision*, and *Only play* / *Never play* rules.
+2. **What matters most:** a single numbered, drag-to-reorder ranking ladder (*Prefer* rules, *Audio language*, *Connection fit*, *Resolution*, *Release type*, *HDR*, *Played fine recently*, *Video codec*, *Audio format*, *Larger file*).
+3. **Tie-breaker:** when two releases are equal on the ladder, pick *Start fastest*, *Usenet first*, or *Debrid first*.
 
-### Taste Intelligence & Per-Viewer Controls
-Inspect what the personalization engine has learned for each viewer—their top picks, taste confidence, peak viewing hours, typical session length, and genre/person affinities—alongside granular per-person content ratings, time windows, and stream caps.
+In **Catalog › Settings**, **New releases** offers three modes: **When they can play** (recommended: new movies appear once Ether finds a playable release matching your quality profile), **On digital release**, or **Right away**. Content ratings across **Catalog › Visibility** and viewer caps use a unified age-level model so equivalent ratings (`PG`, `TV-PG`, regional `6+`/`7+`) match together.
+
+### Taste intelligence and viewer accounts
+Inspect what the personalization engine has learned for each viewer alongside age-level rating caps, time windows, stream limits, cross-app subtitle preferences, and read-only **From Plex** defaults (language preferences, share filters, and download permissions synced from `plex.tv`). Add local viewers or share one-time invite links from the **Add viewer** drawer.
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <a href=".github/assets/viewer-taste.png"><img src=".github/assets/viewer-taste.png" alt="Viewer Taste Profile & Recommendations" width="100%" /></a>
-      <p align="center"><sub><b>Per-Viewer Taste Profile</b> — learned affinities, top picks, confidence & viewing habits</sub></p>
+      <p align="center"><sub><b>Per-viewer taste profile:</b> learned affinities, top picks, confidence, and viewing habits</sub></p>
     </td>
     <td width="50%" valign="top">
       <a href=".github/assets/viewers.png"><img src=".github/assets/viewers.png" alt="Viewers & Household Policies" width="100%" /></a>
-      <p align="center"><sub><b>Viewers & Household Guardrails</b> — activity totals, age presets & stream limits</sub></p>
+      <p align="center"><sub><b>Viewers and household guardrails:</b> activity totals, age presets, From Plex defaults, and stream limits</sub></p>
     </td>
   </tr>
 </table>
 
-### Home Designer & Conversational Collections
-Compose your server's Home screen with global rules and per-viewer overrides, previewing any viewer's exact live rows before saving. Build smart collections visually—or let viewers type natural descriptions like **`"80s sci-fi under 2 hours"`** straight into the Plex search bar to generate an instant browsable collection (with zero AI required, and optional local/API LLM refinement when enabled).
-
-To create a **Look Ahead** collection, use the whole-catalogue source and choose **Upcoming** under **Release dates**, then set a 1–366 day window. **Both** combines released and upcoming matches. These opt-in collections appear only in the Collections tab; normal browsing, search and existing collections remain released-only. Upcoming items show their scheduled date and cannot start playback or release searches before that date. This covers movie releases and new series premieres, not future episodes or seasons of existing shows. TMDB discovery is bounded and warns when truncated; dates refresh on the collection's configured schedule and may change. Future placeholders use base TMDB artwork; Ether overlays and custom poster providers remain for released titles.
-
-Collection sorts include **Latest aired episode** and **Latest season premiere**. These use regular-episode dates, fetching and caching missing show dates from TMDB in bounded batches. They exclude future episodes and specials and put shows with unknown dates last. They do not search indexers or debrid providers; missing dates and capped source results are reported in the builder.
+### Home Designer and Collections Studio
+Compose your server's Home screen with global rules and per-viewer overrides, previewing any viewer's live rows before saving. Build rule-based or **Look Ahead** (upcoming) collections visually in **Collections**, or let viewers type natural descriptions like **`"80s sci-fi under 2 hours"`** into search to generate an instant browsable collection (with zero AI required, and optional local or API language-model refinement when enabled under **Integrations › Language model**).
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <a href=".github/assets/home-designer.png"><img src=".github/assets/home-designer.png" alt="Home Designer Live Preview" width="100%" /></a>
-      <p align="center"><sub><b>Home Designer</b> — live per-viewer row composition, pinning & scheduling</sub></p>
+      <p align="center"><sub><b>Home Designer:</b> live per-viewer row composition, pinning, and scheduling</sub></p>
     </td>
     <td width="50%" valign="top">
       <a href=".github/assets/collections.png"><img src=".github/assets/collections.png" alt="Smart Collections & Generated Artwork" width="100%" /></a>
-      <p align="center"><sub><b>Smart Collections</b> — rule builder, generated posters & split preview workspace</sub></p>
+      <p align="center"><sub><b>Smart Collections:</b> rule builder, generated posters, and split preview workspace</sub></p>
     </td>
   </tr>
 </table>
 
-### Live Poster Studio & 24/7 Live TV Guide
-Design versioned poster overlays (`Cinema`, `Spotlight`, `Essential`) with IMDb, Rotten Tomatoes, Letterboxd, and TMDB scores. Quality badges (`4K`, `HDR`, `Dolby Vision`, `Atmos`) are **strictly truthful**—rendered only when backed by observed media facts. In **Live TV**, combine M3U/XMLTV and Xtream feeds with 24/7 virtual channels generated from your own collections.
-
-Under **Metadata → Artwork**, choose self-hosted PostersPlus, XRDB, BetterPosters, Rating Poster Database, or a custom URL template for movie and show posters. Supply your own provider settings; unavailable posters fall back to TMDB. Provider keys and template URLs stay on the server. Ether overlays can be added on top. See [provider setup and limits](internal/artwork/PROVIDERS.md).
+### Live poster studio and 24/7 Live TV guide
+Design versioned poster overlays (`Cinema`, `Spotlight`, `Essential`) with IMDb, Rotten Tomatoes, Letterboxd, and TMDB scores, or connect self-hosted PostersPlus, XRDB, BetterPosters, Rating Poster Database (RPDB), or a custom URL template under **Metadata › Artwork**. For claimed Plex servers, **Apps › Plex › Account** also offers an optional **Use Plex's metadata for Plex apps** toggle (off by default). In **Live TV**, combine M3U/XMLTV and Xtream feeds with 24/7 virtual channels built in a single drawer with a paintable weekly schedule grid in your timezone, playout modes (in order, shuffle, random, marathon, newest first), repeat-avoidance windows, and bumpers.
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <a href=".github/assets/metadata.png"><img src=".github/assets/metadata.png" alt="Live Poster Overlay Studio" width="100%" /></a>
-      <p align="center"><sub><b>Metadata & Poster Studio</b> — pure-Go versioned badges from verified release facts</sub></p>
+      <p align="center"><sub><b>Metadata and Poster Studio:</b> pure-Go versioned badges from verified release facts</sub></p>
     </td>
     <td width="50%" valign="top">
       <a href=".github/assets/livetv.png"><img src=".github/assets/livetv.png" alt="Live TV Guide & Virtual Channels" width="100%" /></a>
-      <p align="center"><sub><b>Live TV & Virtual Channels</b> — 24/7 collection channels, M3U/XMLTV & multi-source failover</sub></p>
+      <p align="center"><sub><b>Live TV and Virtual Channels:</b> paintable weekly schedule, M3U/XMLTV, and HLS/DASH playback</sub></p>
     </td>
   </tr>
 </table>
 
-### Adaptive Media Cache & Zero-CLI High Availability
-Dial your storage footprint from **Pass-through (0 GiB)** to **Everyday (32 GiB)** up to **Edge Library (20 TiB)** with household-aware movie preloading and rolling TV episode windows on local disk or a **Shared NAS pool**. Start on standalone SQLite, and when you're ready, migrate to an active-active **PostgreSQL cluster** through a guided wizard—complete with automatic connection-budget partitioning, leader election, and zero-downtime rolling updates.
+### Adaptive media cache, guided recovery, and PostgreSQL clustering
+Dial your storage footprint from **Pass-through (0 GiB)** to **Everyday (32 GiB)** up to **Edge library (20 TiB)** with household-aware movie preloading and rolling TV episode windows on local disk or a **Shared NAS pool**. **Maintenance › Backups & import** provides 1-click guided restore with automatic rollback, in-app service restart, and a startup status and recovery page. Start on standalone SQLite, and when you need multi-node scale, migrate to an active-active **PostgreSQL cluster** through the guided **Cluster** wizard.
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <a href=".github/assets/cache.png"><img src=".github/assets/cache.png" alt="Adaptive Cache & Household Preloading" width="100%" /></a>
-      <p align="center"><sub><b>Adaptive Media Cache</b> — rolling household shelves, warm windows & Shared NAS support</sub></p>
+      <p align="center"><sub><b>Adaptive media cache:</b> rolling household shelves, warm windows, and Shared NAS support</sub></p>
     </td>
     <td width="50%" valign="top">
       <a href=".github/assets/cluster.png"><img src=".github/assets/cluster.png" alt="Standalone SQLite & PostgreSQL Cluster Wizard" width="100%" /></a>
-      <p align="center"><sub><b>Cluster Manager</b> — 1-click guided migration from SQLite to active-active PostgreSQL HA</sub></p>
+      <p align="center"><sub><b>Cluster Manager:</b> guided migration from SQLite to active-active PostgreSQL HA</sub></p>
     </td>
   </tr>
 </table>
@@ -213,10 +247,10 @@ Dial your storage footprint from **Pass-through (0 GiB)** to **Everyday (32 GiB)
 
 ## Install in five minutes
 
-| Platform | Download / Image | Details |
+| Platform | Download / image | Details |
 | :--- | :--- | :--- |
-| **macOS 13+** | [`Ether-<version>.dmg`](https://github.com/braedonsaunders/ether/releases/latest) | No terminal needed. Universal menu-bar app (Apple Silicon & Intel) with bundled FFmpeg. Signed releases open normally; an unsigned build needs one right-click → Open the first time. |
-| **Windows (x64)** | [`EtherSetup-<version>.exe`](https://github.com/braedonsaunders/ether/releases/latest) | No terminal needed. Windows service + system tray app with bundled FFmpeg and automatic firewall rule. |
+| **macOS 13+** | [`Ether-<version>.dmg`](https://github.com/braedonsaunders/ether/releases/latest) | Universal menu-bar app (Apple Silicon & Intel) with bundled FFmpeg. *(Ad-hoc signed: right-click and choose Open on first launch.)* |
+| **Windows (x64)** | [`EtherSetup-<version>.exe`](https://github.com/braedonsaunders/ether/releases/latest) | Windows service and system tray app with bundled FFmpeg and automatic firewall rule. |
 | **Linux** | [`.deb` / `.rpm`](https://github.com/braedonsaunders/ether/releases/latest) (`amd64`, `arm64`) | Dedicated `ether` systemd service, hardware transcoding group setup (`render`/`video`), bundled FFmpeg. |
 | **Docker** | `ghcr.io/braedonsaunders/ether:latest` | Multi-arch (`amd64`, `arm64`). Ready-made templates for **Unraid, TrueNAS SCALE, Proxmox, and Synology** in [`packaging/community`](packaging/community/README.md). |
 
@@ -226,144 +260,161 @@ services:
     image: ghcr.io/braedonsaunders/ether:latest
     container_name: ether
     restart: unless-stopped
-    network_mode: host            # enables LAN GDM auto-discovery in Plex apps
+    network_mode: host            # enables LAN GDM auto-discovery and UPnP
     environment:
       TZ: Etc/UTC
-      # ETHER_PORT: "32450"       # already running Plex on 32400 with host networking? pick another port
+      # ETHER_PORT: "32450"       # already running Plex on 32400? pick another port
     volumes:
       - ./config:/config
       - ./cache:/cache            # used automatically on a fresh install
     # devices: ["/dev/dri:/dev/dri"]   # optional: Intel QuickSync / VAAPI hardware transcoding
+    # Bridge mode (when not using network_mode: host):
+    # ports:
+    #   - "32400:32400/tcp"       # owner console, Plex, and /jellyfin, /emby, /silo paths
+    #   - "8096:8096/tcp"         # dedicated Jellyfin listener (optional)
+    #   - "8097:8097/tcp"         # dedicated Emby listener (optional)
+    #   - "8090:8090/tcp"         # dedicated Silo listener (optional)
 ```
 
-Docker Desktop on Mac and Windows does not give a container the same host network as Linux. Publish the console port there.
+Open **`http://localhost:32400/ether/`** and complete the setup wizard:
 
-Already running Plex on 32400? Use bridge mode and another port. Open `http://HOST:32800/ether/`. Other apps use that same port, for example `http://HOST:32800/jellyfin`.
+1. **Choose your language** for the console and default household audio and subtitle tracks.
+2. **Choose your apps** (Plex, Jellyfin, Emby, Stremio, Silo, DLNA, Files/WebDAV, M3U & XMLTV) and **create your owner account**: sign in with Plex and claim the server, or create a local Ether owner account.
+3. **Add a streaming source and indexer:** a debrid account (**Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud**), a Usenet provider, or both, plus a Stremio addon link, Torznab/Newznab URL, Prowlarr import, or tracker sites from a definitions source you add.
+4. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start).
+5. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api)** and optional integrations (Trakt, Simkl, OpenSubtitles, local Ollama/LM Studio).
 
-```yaml
-services:
-  ether:
-    image: ghcr.io/braedonsaunders/ether:latest
-    environment:
-      ETHER_PORT: "32800"
-    ports:
-      - "32800:32800"
-    volumes:
-      - ./config:/config
-      - ./cache:/cache
-```
-
-Open **`http://localhost:32400/ether/`** (or the `ETHER_PORT` you set) and finish the wizard:
-
-1. **Choose a language.**
-2. **Choose apps.** Most households pick Plex or Jellyfin. Check the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) for integration limits.
-3. **Create the owner account.** Plex sign-in is only required when Plex is on; otherwise create a local owner. People outside the house use Plex through plex.tv, or Tailscale / an address you publish for the other apps.
-4. **Add a source:** a debrid account (**Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud**) or a Usenet provider, or a ready-made torrent addon with no account.
-5. **Add an indexer** (a Stremio addon, Torznab, or Newznab).
-6. **Choose a cache preset.** Ether suggests one from the free space on the disk. 32 GiB is enough to start. A mounted `/cache` volume is used on its own.
-7. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api).** Optional integrations (Trakt, OpenSubtitles, local Ollama/LM Studio) can wait.
-
-**After setup:** [Understand Plex libraries](docs/user-guide.md#libraries-catalogue-and-home) · [Put your watchlist on Home](docs/user-guide.md#put-your-watchlist-on-home) · [Choose your Home rows](docs/user-guide.md#choose-home-rows) · [Check Stremio addon compatibility](docs/user-guide.md#stremio-addons-as-sources)
-
-**Full documentation:** [**Installation & Clustering Guide**](docs/install.md) · [**Owner & User Guide**](docs/user-guide.md) · [**NAS & Homelab Templates**](packaging/community/README.md)
+**Documentation:** [**Installation & Clustering Guide**](docs/install.md) · [**Owner & User Guide**](docs/user-guide.md) · [**Multi-App Architecture & Watch Party**](docs/apps.md) · [**Performance Architecture**](docs/performance.md) · [**Head-to-Head Scorecard**](docs/scorecard.md) · [**NAS & Homelab Templates**](packaging/community/README.md)
 
 ---
 
 ## Questions you're about to ask
 
 <details>
-<summary><b>Do I need Plex Pass?</b></summary>
+<summary><b>Do I need Plex Pass or Emby Premiere?</b></summary>
 
-For Plex clients at home on your local network, no. **To stream with Plex outside your home, yes.** Ether follows Plex's rules just like a standard Plex Media Server: remote playback requires Plex Pass on the server owner's account or a Remote Watch Pass on the viewer's account.
+For **Jellyfin, Swiftfin, Findroid, Silo, Stremio, WebDAV, and DLNA**, no paid pass is needed at home or away.
 
-Ether never emulates, unlocks, or bypasses Plex Pass or any paid Plex feature. Plex viewers sign in through `plex.tv` and receive the exact entitlements Plex grants their account. If you love the official Plex apps, support Plex.
+For **Plex apps**, local network streaming is free. **To stream in official Plex apps outside your home, yes:** Ether follows Plex's rules like a standard Plex Media Server, so remote playback in Plex apps requires Plex Pass on the server owner's account or a Remote Watch Pass on the viewer's account.
+
+For **Emby apps**, Emby's own per-platform app unlock or Emby Premiere rules apply (see Emby's Premiere feature matrix).
+
+Ether never emulates, unlocks, or bypasses Plex Pass, Emby Premiere, or any paid client feature.
 </details>
 
 <details>
-<summary><b>Which Plex apps work?</b></summary>
+<summary><b>Which apps work, and why are some web-wrapper apps unsupported?</b></summary>
 
-Every official Plex client: **Apple TV, iPhone, iPad, Android, Android TV / Nvidia Shield, Fire TV, Roku, PlayStation, Xbox, Smart TVs (LG, Samsung, VIDAA), Plex Desktop, and Plex Web.** To the client app, Ether is simply a Plex Media Server on your account.
+- **Plex:** Every official Plex client: **Apple TV, iPhone, iPad, Android, Android TV / Nvidia Shield, Fire TV, Roku, PlayStation, Xbox, Smart TVs (LG, Samsung, VIDAA), Plex Desktop, and Plex Web.** (Plex for VIDAA receives one automatic media choice so its playback settings remain stable.)
+- **Jellyfin:** Native clients including **Infuse, Swiftfin, Findroid, Streamyfin, Jellyfin for Android TV, JellyCon, and Jellyfin for Roku.**
+- **Emby:** Native Emby clients (**Android TV, iOS, Android, Roku, Smart TVs**) and **Infuse**.
+- **Silo:** Native **Silo** apps for **Apple TV, iOS, macOS, Android, and Android TV**.
+- **Stremio, WebDAV, DLNA, and M3U/XMLTV:** Stremio apps, WebDAV players (Infuse, VLC, Kodi), LAN DLNA TVs, and IPTV clients (Channels DVR, TiviMate).
 
-Plex for VIDAA receives one automatic media choice to keep its playback settings stable, so its Play Version menu does not offer individual releases. Automatic selection and playback quality controls remain available.
+**Unsupported web-wrapper apps:** Ether does not bundle third-party web clients (`jellyfin-web` or Emby Web). Client apps that are wrappers around a server-hosted web bundle, specifically **Jellyfin for Android phones**, **Jellyfin Desktop**, and **Emby for TV 2.x on Apple TV**, are unsupported. On Android phones use **Findroid** or **Streamyfin**; on Apple TV use **Infuse**, **Swiftfin**, **Silo**, or **Plex**.
+</details>
+
+<details>
+<summary><b>Can I use Ether without a Plex account?</b></summary>
+
+Yes. In the setup wizard, select Jellyfin, Emby, Silo, Stremio, WebDAV, or DLNA without Plex, and create a local Ether owner account. Viewers sign in with local usernames and passwords, invite links, or Quick Connect / device pairing in `/ether/me`. You can enable or disable Plex at any time under **Server › Apps**.
+</details>
+
+<details>
+<summary><b>Does watch progress sync between Plex, Infuse, Jellyfin, Emby, and Silo?</b></summary>
+
+Yes. Watch history, in-progress resume offsets, favourites/ratings, and subtitle preferences belong to the viewer's Ether account. Starting an episode in Plex on a TV and opening Infuse, Swiftfin, or Silo on a phone or tablet resumes from the same spot, and real-time WebSocket updates notify connected Jellyfin, Emby, and Silo clients when watch state changes. If a viewer also links their `plex.tv` account under **Viewers**, Ether can optionally send watched marks and ratings to `scrobbles.plex.tv`.
 </details>
 
 <details>
 <summary><b>Does it download whole movies? How much disk space do I need?</b></summary>
 
-By default, no. Ordinary playback fetches only the byte ranges the player is watching plus a bounded read-ahead window (a 20 Mbit/s stream uses ~150 MB per minute) into a self-trimming disk cache. If you have a tiny disk, choose **Pass-through**. If you have terabytes to spare, you can opt into the **Managed Shelf**, which proactively preloads top household movies and a rolling window of next TV episodes during idle hours.
+By default, no. Ordinary playback fetches only the byte ranges the player is watching plus a bounded read-ahead window (a 20 Mbit/s stream uses about 150 MB per minute) into a self-trimming disk cache. If you have a tiny disk, choose **Pass-through**. If you have terabytes to spare, you can opt into the **Managed shelf**, which preloads top household movies and a rolling window of next TV episodes during idle hours.
 </details>
 
 <details>
 <summary><b>Won't this hammer my indexers and Usenet providers?</b></summary>
 
-Ether is engineered specifically not to:
-- **Zero background crawling:** Indexers are queried only when a viewer opens/plays a title, when the next episode is about to air/play, or on a slow schedule for watchlisted items.
-- **Detail-page reuse:** Opening a detail page resolves, probes, and caches the keyframe index for 10 minutes—pressing Play reuses that work with zero extra queries.
-- **Quota & Retry-After discipline:** Per-indexer daily API and download caps are tracked durably across restarts; `429` and `Retry-After` responses pause that indexer cleanly while falling back to others.
-- **Minimal health sampling:** Health checks sample ~12 spread articles and bail out on the first confirmed miss across all providers.
+Ether is built not to:
+- **No background crawling of the catalogue:** Indexers are queried when a viewer opens or plays a title, when the next episode is about to play, on a slow schedule for watchlisted items, or within bounded daily budgets when checking in-window movies for the *When they can play* release mode.
+- **Detail-page reuse:** Opening a detail page resolves, probes, and caches the keyframe index for 10 minutes; pressing Play reuses that work with no extra queries.
+- **Quota and `Retry-After` discipline:** Per-indexer daily API and download caps are tracked durably across restarts; `429` and `Retry-After` responses pause that indexer cleanly while falling back to others, and concurrent `FetchNZB` requests for the same release are coalesced.
+- **Minimal health sampling:** Health checks sample about 12 spread articles and stop on the first confirmed miss across all providers.
 
-*Always check your indexer's terms of service—some private indexers restrict streaming engines.*
+*Always check your indexer's terms of service; some private indexers restrict streaming engines.*
 </details>
 
 <details>
 <summary><b>Will my debrid account get flagged for multiple IPs?</b></summary>
 
-No. Every stream is fetched by your Ether server and served from Ether to the viewer. Your debrid provider only ever sees your Ether server's IP address, even when family members stream remotely from their phones or TVs. (If you run a multi-node cluster, keep your nodes behind the same WAN IP; Ether's Cluster page warns you if nodes egress from different public IPs.)
+No. Every stream is fetched by your Ether server and served from Ether to the viewer. Your debrid provider sees only your Ether server's IP address (or your configured outbound proxy IP under **Server › General**), even when family members stream remotely from their phones or TVs. If you run a multi-node cluster, keep your nodes behind the same WAN IP or outbound proxy; Ether's **Cluster** page warns you if nodes egress from different public IPs.
 </details>
 
 <details>
 <summary><b>How does Ether treat my Real-Debrid account?</b></summary>
 
-Real-Debrid no longer reports which torrents it holds, so Ether adds only the top few candidates for a title you open, keeps the ones that are ready instantly and removes the rest. Answers are remembered so the same torrent isn't checked again, API calls are limited to four at a time, and rate limits pause the account cleanly. Files Real-Debrid refuses to serve (`infringing_file`) are removed and skipped in favour of the next release; when it refuses new torrents in a row, Ether pauses adding for a few minutes rather than retrying. A Stremio addon configured with your key can mark which torrents are cached, which saves those checks.
+Real-Debrid no longer reports which torrents it holds in bulk, so Ether adds only the top few candidates for a title you open, keeps the ones that are ready immediately, and removes the rest. Answers are remembered so the same torrent is not checked again, API calls are limited to four at a time, and rate limits pause the account cleanly. Files Real-Debrid refuses to serve (`infringing_file`) are removed and skipped in favour of the next release; when it refuses new torrents in a row, Ether pauses adding for a few minutes rather than retrying. A Stremio addon configured with your key can mark which torrents are cached, saving those checks.
 </details>
 
 <details>
-<summary><b>Can I run Ether alongside my existing Plex Media Server?</b></summary>
+<summary><b>Can I run Ether alongside my existing Plex, Jellyfin, or Emby server?</b></summary>
 
-Yes—and if you have local media files on disk, that's the recommended setup. On the same machine, Ether notices Plex Media Server already holds port 32400 and moves itself to **32450** (the installers' shortcuts follow it), so open `http://localhost:32450/ether/`. In Docker with `network_mode: host`, set `ETHER_PORT` to the port you want. Both servers then appear side-by-side in your Plex apps. You can also import your existing PMS watch history, ratings, collections, and playlists into Ether in read-only mode.
+Yes, and if you have local media files on disk, that is the recommended setup. On the same machine, Ether notices if port `32400` or `8096` is already in use and moves its listener to a free port (such as `32450` for the main console, while keeping `/jellyfin`, `/emby`, and `/silo` available on the main port), and the **Apps** page shows the active address for every protocol. You can also import your existing Plex watch history, ratings, collections, and playlists into Ether in read-only mode.
 </details>
 
 <details>
 <summary><b>What does Ether phone home to?</b></summary>
 
-Nothing. There is **zero telemetry or analytics**. Ether communicates only with `plex.tv` for the Plex integration (authentication, claiming, sharing, certificates), TMDB, the providers/indexers/services *you* configure, and GitHub's release feed when checking for updates. If a viewer connects their own Plex account under Limits & preferences, Ether can also send that viewer's future watched and unwatched marks and whole-star ratings to `scrobbles.plex.tv`. That delivery is optional, off until they enable it, and it is not telemetry. Import from the Plex account is a separate button, not a continuous two-way sync. Turning sync off stops queued changes. An update already being sent may still finish. A send does not by itself create a Discover Activity card.
+Nothing. There is **zero telemetry or analytics**. Ether communicates only with `plex.tv` when Plex is enabled (authentication, claiming, sharing, certificates, and optional Plex metadata when turned on), TMDB, the providers/indexers/services *you* configure, and GitHub's release feed when checking for updates. If a viewer connects their own Plex account, Ether can optionally send that viewer's future watched and unwatched marks and whole-star ratings to `scrobbles.plex.tv` (with held reconciliation against `GET /state/{account}` when delivery is uncertain). That delivery is off until enabled and is not telemetry.
 </details>
 
 ---
 
 ## Where it stands today
 
-Ether is backed by 2,600+ offline unit, fault-injection and fuzz tests, recorded protocol conformance checks against real Plex Media Server fixtures (`internal/pmsconform`), and hardware transcoding verification across Apple VideoToolbox, NVIDIA NVENC (plus optional Windows RTX Video Super Resolution), Intel QuickSync, and VAAPI.
+Ether is backed by 2,600+ offline unit, fault-injection, and fuzz tests, a 540k-title CI performance gate (`internal/perfharness`), recorded protocol conformance suites against Plex Media Server (`internal/pmsconform`), Jellyfin 12.4, Emby 4.10.2, and Silo (`internal/conform`), and hardware transcoding verification across Apple VideoToolbox, NVIDIA NVENC (plus optional Windows RTX Video Super Resolution), Intel QuickSync, and VAAPI.
 
 | Capability | Status |
 | :--- | :--- |
+| **Jellyfin, Emby (Infuse, Swiftfin, Findroid) & Silo Apps** | **New in 0.3** |
+| **Stremio Addon, Read-Only WebDAV, M3U/XMLTV & DLNA** | **New in 0.3** |
+| **Cross-App Progress, Subtitle Preferences, Personalized Views & Watch Party** | **New in 0.3** |
 | **TMDB Catalogue, Browse, Conversational Search & Collections** | Working |
 | **Personalization Engine, Taste Models & Home Designer** | Working |
 | **Usenet Streaming Engine, PAR2 Oracle, Health Checks & Failover** | Working |
 | **Debrid Streaming (Real-Debrid, TorBox, AllDebrid, Premiumize)** | Working |
-| **Debrid Streaming (Debrid-Link, Offcloud)** | New: built from the published APIs, awaiting reports from live accounts |
+| **Debrid Streaming (Debrid-Link, Offcloud)** | Working (built from published APIs) |
 | **Official Plex Apps (TV, Mobile, Desktop, Web)** | Working |
-| **Pure-Go Poster Overlays, Skip Markers & Subtitle Alignment** | Working |
+| **Pure-Go Poster Overlays, Skip Markers & On-Pick Subtitle Alignment** | Working |
 | **Hardware Transcoding & Optional Windows NVIDIA RTX Video VSR** | Working |
-| **Live TV Guide, Virtual Channels & M3U/XMLTV/Xtream** | Working |
+| **Live TV Guide, Paintable Virtual Channels & M3U/XMLTV/Xtream** | Working |
 | **PostgreSQL Active-Active HA Clustering & Shared NAS Cache** | Working |
 
 **Current boundaries:**
 - Usenet archives must be store-mode (`m0`, plain or password-encrypted RAR4/RAR5/7z); compressed archives and RAR-wrapped torrents are skipped during resolution.
-- NVIDIA RTX Video Super Resolution (`nvenc-ngx-vsr`) requires native Windows, an NVIDIA RTX GPU, and `NVEncC64` 9.38 with NGX DLLs (installed automatically when enabled unless a custom path is configured), is off by default, targets SDR H.264 HLS/DASH streams within configured height/concurrency bounds, and falls back to ordinary ABR renditions when bandwidth or concurrency requires it.
-- No Plex Relay support—remote viewers connect directly via UPnP/NAT-PMP, a port forward, or your reverse proxy.
+- NVIDIA RTX Video Super Resolution (`nvenc-ngx-vsr`) requires native Windows, an NVIDIA RTX GPU, and `NVEncC64` 9.38 with NGX DLLs (installed automatically when enabled unless a custom path is configured), is off by default, targets SDR H.264 HLS/DASH streams within configured height and concurrency bounds, and falls back to ordinary ABR renditions when bandwidth or concurrency requires it.
+- No bundled third-party web clients (`jellyfin-web` or Emby Web); web-wrapper apps (Jellyfin for Android phones, Jellyfin Desktop, Emby for TV 2.x on Apple TV) are unsupported.
+- No Plex Relay support: remote viewers connect directly via UPnP/NAT-PMP, a port forward, Tailscale, or your reverse proxy.
 - No DVR recording.
+
+---
+
+## Credits
+
+Thank you to the community contributors and reporters who shaped 0.3.0:
+- **FarkasLabs** for profiling and fixing the Plex settings-copy hotspot (#206) and designing the admission fence and atomic receipt commit for uncertain outbound Plex watch-state sends (#207).
+- **AlexBlomkvist (`bmkhib`)** for the live CPU and allocation profile on the Plex Home watched-episode path (#203) and the Tracearr library-wide episode/season sync diagnosis (#209).
+- **TheIndieArmy** for limiting Plex Web HDR remux promotion to affirmative 10-bit/PQ client profiles (#190).
+- **mvanbaak** for reporting and verifying on FreeBSD the source-swap failure on FFmpeg builds compiled without `libzimg`/`zscale` (#201).
+- **XenoUniv3rse** for diagnosing why `plex.tv` marked LAN connections as remote when `Secure connections` was set to `Required` (#192).
+- **evulhotdog** for adding built-in TRaSH release group custom formats to quality profile imports (#172) and contributing configurable indexer User-Agent presets (#213, scheduled for 0.3.1).
 
 ---
 
 ## Legal
 
-Ether is an independent, clean-room implementation of the HTTP protocol used by compatible media client applications. It contains no proprietary Plex code, assets, or binaries. Ether ships **no media content, no Usenet providers, no indexers, no Cardigann site definitions, no debrid accounts, and no third-party API keys**. Owners supply their own accounts and are solely responsible for their configuration and compliance with applicable laws and service terms. See [**LEGAL.md**](LEGAL.md).
+Ether is an independent, clean-room implementation of the HTTP protocols used by compatible media client applications. It contains no proprietary Plex, Jellyfin, Emby, or Silo code, assets, binaries, or web clients. Ether ships **no media content, no Usenet providers, no indexers, no Cardigann site definitions, no debrid accounts, and no third-party API keys**. Owners supply their own accounts and are solely responsible for their configuration and compliance with applicable laws and service terms. See [**LEGAL.md**](LEGAL.md).
 
-"Plex" is a trademark of Plex, Inc. Ether is **not affiliated with, sponsored by, or endorsed by Plex, Inc.** This product uses the TMDB API but is not endorsed or certified by TMDB.
+"Plex" is a trademark of Plex, Inc. "Jellyfin" is a trademark of the Jellyfin project. "Emby" is a trademark of Emby LLC. "Silo" and "Stremio" are trademarks of their respective owners. Ether is **not affiliated with, sponsored by, or endorsed by Plex, Inc., the Jellyfin project, Emby LLC, Silo, or Stremio.** This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 [**GPL-3.0 License**](LICENSE) · [**Legal**](LEGAL.md) · [**Third-Party Notices**](THIRD_PARTY_NOTICES.md)
-
-### Movie release window
-
-In Catalog settings, **Wait for digital or physical release** optionally hides movies until the earliest TMDB digital or physical release date anywhere in the world. It is off by default. Movies whose completed TMDB release-date details have no digital or physical date become visible 90 days after their theatrical release; once admitted by that fallback, they remain admitted if TMDB later changes its dates. Movies awaiting details stay hidden while bounded background batches check the catalog. Missing and future dates are rechecked, and older dates are periodically refreshed. The original theatrical date and year remain unchanged, and a date does not verify release quality.

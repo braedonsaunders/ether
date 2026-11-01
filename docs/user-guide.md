@@ -13,33 +13,34 @@ Start here: [libraries and the catalogue](#libraries-catalogue-and-home),
 
 ## Jellyfin and Emby apps
 
-Jellyfin and Emby support is in development. No app has been certified yet;
-the matrix will be filled in only after testing the listed features on the
-specified app version. A dash means not yet verified. Direct, remux, and
-transcode are separate results. From release 0.3 onward, a minor or patch tag
-does not publish until this matrix is recertified for that minor
-(`scripts/certification-gate`). `unsupported` means the review is finished and
-the client cannot work with Ether.
+Jellyfin, Emby and Silo support ships in 0.3.0 without per-app certification.
+Every app below is marked `waived` for 0.3.0: Swiftfin, Infuse and Silo passed
+Apple TV checks for browsing, direct play, resume and sign-in, and the others
+have not been device-tested yet. The reason for each waiver is in
+`docs/certification/matrix.json`. Direct, remux, and transcode are separate
+results. A release tag does not publish until this matrix is reviewed for that
+minor (`scripts/certification-gate`). `unsupported` means the review is finished
+and the app cannot work with Ether.
 
 Downloads: not supported.
 
 <!-- certification-matrix:jellyfin -->
 | Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Jellyfin for Android TV | Pending | — | — | — | — | — | — | — | — | — | — |
-| Swiftfin | Pending | — | — | — | — | — | — | — | — | — | — |
-| Findroid | Pending | — | — | — | — | — | — | — | — | — | — |
-| Streamyfin | Pending | — | — | — | — | — | — | — | — | — | — |
-| Infuse | Pending | — | — | — | — | — | — | — | — | — | — |
-| JellyCon | Pending | — | — | — | — | — | — | — | — | — | — |
-| Jellyfin for Roku | Pending | — | — | — | — | — | — | — | — | — | — |
+| Jellyfin for Android TV | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Swiftfin | tvOS, Nov 2026 | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Findroid | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Streamyfin | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Infuse | 8.5.9 | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| JellyCon | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Jellyfin for Roku | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
 <!-- /certification-matrix:jellyfin -->
 
 <!-- certification-matrix:emby -->
 | Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Emby Web (externally hosted) | Pending | — | — | — | — | — | — | — | — | — | — |
-| Emby for Android TV | Pending | — | — | — | — | — | — | — | — | — | — |
+| Emby Web (externally hosted) | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
+| Emby for Android TV | Not tested | waived | waived | waived | waived | waived | waived | waived | waived | waived | waived |
 | Emby for TV (Apple TV, 2.x web-shell) | 2.0.9 | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported |
 <!-- /certification-matrix:emby -->
 
@@ -89,8 +90,8 @@ seek; this has not yet been verified on the physical devices.
 <!-- certification-matrix:silo -->
 | Client | Version | Browse | Direct | Remux | Transcode | Resume | Watched | Subtitles | Device pairing |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Silo for Apple TV, iOS and macOS | Pending | — | — | — | — | — | — | — | — |
-| Silo for Android and Android TV | Pending | — | — | — | — | — | — | — | — |
+| Silo for Apple TV, iOS and macOS | tvOS, Nov 2026 | waived | waived | waived | waived | waived | waived | waived | waived |
+| Silo for Android and Android TV | Not tested | waived | waived | waived | waived | waived | waived | waived | waived |
 <!-- /certification-matrix:silo -->
 
 ## Apps and client support

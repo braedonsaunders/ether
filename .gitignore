@@ -17,6 +17,8 @@ node_modules/
 *.md
 /docs/benchmarks/
 !/README.md
+!/CHANGELOG.md
+!/UPGRADING.md
 !/LEGAL.md
 !/THIRD_PARTY_NOTICES.md
 !/docs/install.md
