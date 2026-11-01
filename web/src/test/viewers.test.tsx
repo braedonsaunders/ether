@@ -176,10 +176,20 @@ describe("Viewers", () => {
   });
 
   it("shows read-only plex.tv track defaults on Playback", async () => {
-    renderApp("/viewers/3/playback", { householdAudio: true }, withPlexDefaults);
+    renderApp("/viewers/3/playback", { householdAudio: true }, (fake) => {
+      withPlexDefaults(fake);
+      // Viewer 3 has no stream override of their own.
+      extraRoutes((_method, path) => {
+        if (path === "/stream-preferences/3") return { audioLanguages: [], subtitleLanguages: [] };
+        if (path === "/stream-preferences/3/shows") return [];
+        return undefined;
+      })(fake);
+    });
     expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
     expect(await screen.findByText("ja", {}, WAIT)).toBeInTheDocument();
-    expect(screen.getByText("Always on")).toBeInTheDocument();
+    // The Playback page also offers "Always on" as a subtitle-mode option;
+    // the From Plex row renders it as plain text.
+    expect(screen.getAllByText("Always on").some((el) => el.tagName === "SPAN")).toBe(true);
   });
 });
 

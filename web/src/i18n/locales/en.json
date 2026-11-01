@@ -274,7 +274,6 @@
   "m_01bec4a3238a9a": "Tell me too",
   "m_01bf5e4c3b06eb": "Manage OpenSubtitles",
   "m_01c165a5b171c0": "Open your account",
-  "m_01c1e7258f54a3": "Label filters match the TMDB collection name only.",
   "m_01c2eff07c3170": "Plays per day over the last 30 days",
   "m_01c5a85e528fc4": "User agent",
   "m_01c7ab1372ea6b": "Set up",
@@ -1792,7 +1791,6 @@
   "m_0acc02bcd17594": "/ month",
   "m_0acee2611c297e": "A public Letterboxd list URL",
   "m_0acfe12dbdae98": "Indexer budget reached",
-  "m_0ad226c998dd73": "Up to {rating}",
   "m_0ad226c998dd73": "Up to {rating}",
   "m_0ad2df5e592975": "Sign-in timed out. Try again.",
   "m_0ad320c4d8b47a": "Leave empty to let Ether choose a daily limit from your indexers.",
@@ -4021,11 +4019,11 @@
   "m_18ca1c5dc775ca": "This viewer no longer has server access. Their history is retained.",
   "m_18cac20f7cbd3e": "Downloads at once per viewer",
   "m_18cb5aae13b5b6": "Cooling down",
-  "m_18ce6fc7682991": "Claim this server to turn this on.",
   "m_18ce53b1a2aab0": {
     "one": "{name} · {count} title",
     "other": "{name} · {count} titles"
   },
+  "m_18ce6fc7682991": "Claim this server to turn this on.",
   "m_18cf88b471d455": "Proxy address suggestions",
   "m_18cf943a2b12c6": "How much of the next episode to pull ahead.",
   "m_18cfaaa0bb2c93": "A new movie appears once Ether finds a release you can play with your quality settings. Ether checks for you automatically.",
