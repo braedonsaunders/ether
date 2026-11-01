@@ -768,6 +768,7 @@
     "one": "{from}–{to} van {count} titel",
     "other": "{from}–{to} van {count} titels"
   },
+  "m_04a21669f5cf07": "Dolby- en DTS-audio omzetten naar AAC",
   "m_04a39a9880320e": "Instellingen controleren",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Kies precies wat deze bestemming bereikt. Meldingen over de levenscyclus van de server omzeilen overzichtsvertragingen. Wekelijkse rapporten worden per e-mail bezorgd.",
@@ -862,6 +863,7 @@
   "m_053490abec99f9": "Ongedaan maken en herstarten",
   "m_0535664b7379bb": "Waar Plex-apps in je netwerk verbinding maken met deze server.",
   "m_05358869783c7a": "Voorkeursaudiosporen in volgorde.",
+  "m_05358a5cbe2d50": "Voor gratis Infuse en andere spelers die geen surroundformaten afspelen.",
   "m_0536d3d4734af5": "Volgorde van regels wijzigen mislukt",
   "m_053a163478ea79": "Alleen software",
   "m_053af491377788": "Vooraf laden uitgeschakeld",

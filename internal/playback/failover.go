@@ -343,7 +343,7 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 	}
 	if prober == "native" || (facts != nil && facts.needsAugment) {
 		// Persisted facts predate any tail fill; it only fills facts
-		// that are still unknown, so a published decision never changes.
+		// that are still unknown, so a running decision never changes.
 		m.startTrailerFill(g)
 	}
 	return g, nil
@@ -1268,20 +1268,15 @@ func rememberedCodecCurrent(rel core.Release, caps core.ClientCaps) bool {
 	if caps.Protocol == "" || caps.Protocol == "plex" || len(caps.VideoCodecs) == 0 {
 		return true
 	}
-	if rel.Info.VideoCodec != "" && !caps.SupportsVideo(rel.Info.VideoCodec) {
-		return false
-	}
-	return true
+	return rel.Info.VideoCodec == "" || caps.SupportsVideo(rel.Info.VideoCodec)
 }
 
 func rememberedInfoCodecCurrent(info core.MediaInfo, caps core.ClientCaps) bool {
 	if caps.Protocol == "" || caps.Protocol == "plex" || len(caps.VideoCodecs) == 0 {
 		return true
 	}
-	if v := info.Video(); v != nil && v.Codec != "" && !caps.SupportsVideo(v.Codec) {
-		return false
-	}
-	return true
+	v := info.Video()
+	return v == nil || v.Codec == "" || caps.SupportsVideo(v.Codec)
 }
 
 func permanentSourceFailure(err error) bool {

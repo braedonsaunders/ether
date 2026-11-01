@@ -816,6 +816,7 @@
     "one": "{from}–{to} z {count} titulu",
     "other": "{from}–{to} z {count} titulů"
   },
+  "m_04a21669f5cf07": "Převést zvuk Dolby a DTS na AAC",
   "m_04a39a9880320e": "Zkontrolovat nastavení",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Vyberte přesně, co se na toto místo určení dostane. Upozornění na životní cyklus serveru obcházejí zpoždění souhrnu. Týdenní reporty se doručují e-mailem.",
@@ -916,6 +917,7 @@
   "m_053490abec99f9": "Vrátit zpět a restartovat",
   "m_0535664b7379bb": "Kam se v síti připojují aplikace Plex k tomuto serveru.",
   "m_05358869783c7a": "Preferované zvukové stopy v pořadí.",
+  "m_05358a5cbe2d50": "Pro bezplatný Infuse a další přehrávače, které nepřehrají prostorový zvuk.",
   "m_0536d3d4734af5": "Pořadí pravidel se nepodařilo změnit",
   "m_053a163478ea79": "Pouze software",
   "m_053af491377788": "Předběžné načítání je vypnuto",

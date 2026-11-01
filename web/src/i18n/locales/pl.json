@@ -816,6 +816,7 @@
     "one": "{from}–{to} z {count} tytułu",
     "other": "{from}–{to} z {count} tytułu"
   },
+  "m_04a21669f5cf07": "Konwertuj dźwięk Dolby i DTS na AAC",
   "m_04a39a9880320e": "Sprawdź ustawienia",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Wybierz dokładnie, co trafia do tego miejsca docelowego. Alerty cyklu życia serwera omijają opóźnienia podsumowań. Raporty tygodniowe są dostarczane e-mailem.",
@@ -916,6 +917,7 @@
   "m_053490abec99f9": "Cofnij i uruchom ponownie",
   "m_0535664b7379bb": "Gdzie aplikacje Plex w sieci łączą się z tym serwerem.",
   "m_05358869783c7a": "Preferowane ścieżki dźwiękowe w kolejności.",
+  "m_05358a5cbe2d50": "Dla darmowego Infuse i innych odtwarzaczy nieobsługujących dźwięku przestrzennego.",
   "m_0536d3d4734af5": "Nie udało się zmienić kolejności reguł",
   "m_053a163478ea79": "Tylko programowo",
   "m_053af491377788": "Wstępne ładowanie wyłączone",

@@ -333,12 +333,13 @@ type Quality struct {
 
 // QualityRule selects a profile when all non-empty matchers match.
 type QualityRule struct {
-	Protocol  core.Protocol `json:"protocol,omitempty"`
-	Product   string        `json:"product,omitempty"`  // substring of X-Plex-Product
-	Platform  string        `json:"platform,omitempty"` // substring of X-Plex-Platform
-	UserID    int64         `json:"userId,omitempty"`
-	Profile   string        `json:"profile"`
-	MaxHeight int           `json:"maxHeight,omitempty"` // optional max-height override (2160, 1080, 720, 480; 0 = profile ceiling)
+	Protocol             core.Protocol `json:"protocol,omitempty"`
+	Product              string        `json:"product,omitempty"`              // substring of X-Plex-Product
+	Platform             string        `json:"platform,omitempty"`             // substring of X-Plex-Platform
+	UserID               int64         `json:"userId,omitempty"`
+	Profile              string        `json:"profile"`
+	MaxHeight            int           `json:"maxHeight,omitempty"`            // optional max-height override (2160, 1080, 720, 480; 0 = profile ceiling)
+	ConvertSurroundAudio bool          `json:"convertSurroundAudio,omitempty"` // convert Dolby/DTS/TrueHD audio to AAC for players that do not decode surround formats
 }
 
 // ClientCompatibility stores owner edits of the capability registry.

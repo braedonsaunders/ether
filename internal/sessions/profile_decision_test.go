@@ -3,8 +3,10 @@ package sessions
 import (
 	"testing"
 
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -240,5 +242,95 @@ func TestH264ContractRecognizesInactiveEnhancement(t *testing.T) {
 		if _, ok := constrainedH264(d, info, caps, true); ok {
 			t.Errorf("unverified state %s accepted", state)
 		}
+	}
+}
+
+func TestInfuseConvertSurroundAudioRuleCopiesVideoAndTranscodesAudioToAAC(t *testing.T) {
+	info := core.MediaInfo{
+		Container:   "mkv",
+		BitrateKbps: 15000,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "hevc", Width: 3840, Height: 2160, FrameRate: 24, BitDepth: 10, ColorTransfer: "smpte2084"},
+			{Index: 1, Type: "audio", Codec: "eac3", Channels: 6, Default: true},
+		},
+	}
+	infuseCaps := func() core.ClientCaps {
+		return core.ClientCaps{
+			Protocol:      "jellyfin",
+			Product:       "Infuse-Direct",
+			Platform:      "tvOS",
+			MaxHeight:     2160,
+			HDR10:         true,
+			DolbyVision:   true,
+			Containers:    []string{"mkv", "mp4", "mov", "m4v", "mpegts", "avi"},
+			HLSContainers: []string{"mp4", "mpegts"},
+			VideoCodecs:   []string{"hevc", "h264", "av1", "vp9"},
+			AudioCodecs:   []string{"aac", "ac3", "eac3", "truehd", "dts", "dtshd", "flac", "alac", "opus", "mp3", "pcm"},
+			Profiles: &core.ClientCapabilityProfiles{
+				DirectPlay: []core.ClientDirectPlayProfile{{
+					MediaType:   "video",
+					Containers:  []string{"mkv", "mp4", "mov", "m4v", "ts", "mpegts", "avi"},
+					VideoCodecs: []string{"hevc", "h264", "av1", "vp9"},
+					AudioCodecs: []string{"aac", "ac3", "eac3", "truehd", "dts", "dca", "flac", "alac", "opus", "mp3", "pcm"},
+				}},
+				Transcoding: []core.ClientTranscodeProfile{
+					{
+						MediaType:        "video",
+						Delivery:         "hls",
+						Containers:       []string{"mp4"},
+						VideoCodecs:      []string{"hevc", "h264"},
+						AudioCodecs:      []string{"aac", "ac3", "eac3"},
+						MaxAudioChannels: "6",
+					},
+					{
+						MediaType:        "video",
+						Delivery:         "hls",
+						Containers:       []string{"ts"},
+						VideoCodecs:      []string{"h264"},
+						AudioCodecs:      []string{"aac", "ac3"},
+						MaxAudioChannels: "2",
+					},
+				},
+			},
+		}
+	}
+
+	b := &Broker{deps: BrokerDeps{Transcoder: profileTranscoder{}}}
+
+	// Without rule: EAC3 5.1 MKV direct-plays on Infuse-Direct.
+	qOff := config.Quality{
+		Default:  "4K",
+		Profiles: []core.QualityProfile{{Name: "4K", MaxHeight: 2160}},
+	}
+	capsOff := resolver.ApplyClientRules(qOff, infuseCaps(), nil)
+	decOff, err := b.decideProfile(&core.PlaySession{Info: info}, frontend.PlanRequest{
+		Caps:   capsOff,
+		Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: 1, SubtitleStream: -1}},
+	})
+	if err != nil || decOff.Kind != core.DecisionDirectPlay || !decOff.VideoCopy || !decOff.AudioCopy {
+		t.Fatalf("without toggle: decision=%+v err=%v, want directplay", decOff, err)
+	}
+
+	// With ConvertSurroundAudio rule: video is copied and audio is transcoded to AAC.
+	qOn := config.Quality{
+		Default:  "4K",
+		Profiles: []core.QualityProfile{{Name: "4K", MaxHeight: 2160}},
+		Rules: []config.QualityRule{{
+			Protocol:             "jellyfin",
+			Product:              "Infuse",
+			Profile:              "4K",
+			ConvertSurroundAudio: true,
+		}},
+	}
+	capsOn := resolver.ApplyClientRules(qOn, infuseCaps(), nil)
+	decOn, err := b.decideProfile(&core.PlaySession{Info: info}, frontend.PlanRequest{
+		Caps:   capsOn,
+		Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: 1, SubtitleStream: -1}},
+	})
+	if err != nil {
+		t.Fatalf("with toggle: unexpected err=%v", err)
+	}
+	if decOn.Kind != core.DecisionRemux || !decOn.VideoCopy || decOn.AudioCopy || decOn.AudioCodec != "aac" {
+		t.Fatalf("with toggle: decision=%+v, want Kind=copy VideoCopy=true AudioCopy=false AudioCodec=aac", decOn)
 	}
 }

@@ -792,6 +792,7 @@
     "one": "{from}–{to} di {count} titolo",
     "other": "{from}–{to} di {count} titoli"
   },
+  "m_04a21669f5cf07": "Converti audio Dolby e DTS in AAC",
   "m_04a39a9880320e": "Controlla le impostazioni",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Scegli esattamente cosa arriva a questa destinazione. Gli avvisi sul ciclo di vita del server ignorano i ritardi del riepilogo. I resoconti settimanali vengono consegnati via email.",
@@ -889,6 +890,7 @@
   "m_053490abec99f9": "Annulla e riavvia",
   "m_0535664b7379bb": "Dove le app Plex della tua rete si collegano a questo server.",
   "m_05358869783c7a": "Tracce audio preferite in ordine.",
+  "m_05358a5cbe2d50": "Per Infuse gratuito e altri lettori che non riproducono i formati surround.",
   "m_0536d3d4734af5": "Impossibile riordinare le regole",
   "m_053a163478ea79": "Solo software",
   "m_053af491377788": "Precaricamento disattivato",

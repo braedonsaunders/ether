@@ -36,7 +36,8 @@ func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityR
 	if err != nil {
 		return frontend.CapabilityResult{}, err
 	}
-	overrides := s.app.cfg.Read().Clients.Overrides
+	cfg := s.app.cfg.Read()
+	overrides := cfg.Clients.Overrides
 	// Plex applies this baseline in its own cap builder. A Jellyfin or Emby
 	// client that sent no codec lists gets the same floor. A sent DeviceProfile
 	// already filled those lists, and that declaration wins.
@@ -50,7 +51,8 @@ func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityR
 	if len(declared.DVProfiles) == 0 {
 		declared.DVProfiles = append([]int(nil), policy.DolbyVisionProfiles...)
 	}
-	result := frontend.CapabilityResult{Client: declared, Quality: resolver.SelectProfile(s.app.cfg.Read().Quality, declared, req.Viewer)}
+	declared = resolver.ApplyClientRules(cfg.Quality, declared, req.Viewer)
+	result := frontend.CapabilityResult{Client: declared, Quality: resolver.SelectProfile(cfg.Quality, declared, req.Viewer)}
 	if req.Viewer != nil && s.surface != "plex" {
 		s.app.recordFrontendFamily(ctx, s.surface, declared)
 	}

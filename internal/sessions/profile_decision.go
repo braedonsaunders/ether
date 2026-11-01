@@ -695,6 +695,22 @@ func profileDirectAllowed(p *core.ClientCapabilityProfiles, info core.MediaInfo,
 	return false
 }
 
+func encodedAudioChannels(d core.Decision, info core.MediaInfo) int {
+	if d.AudioChannels > 0 {
+		return d.AudioChannels
+	}
+	ch := 2
+	if source := profileStream(info, "audio", d.AudioStream); source != nil && source.Channels > 0 {
+		ch = source.Channels
+	}
+	switch strings.ToLower(strings.TrimSpace(d.AudioCodec)) {
+	case "ac3", "eac3":
+		return min(ch, 6)
+	default:
+		return min(ch, 2)
+	}
+}
+
 func profileDeliveryAllowed(p *core.ClientCapabilityProfiles, d core.Decision, info core.MediaInfo, delivery string) bool {
 	if p == nil {
 		return true
@@ -725,7 +741,7 @@ func profileDeliveryAllowed(p *core.ClientCapabilityProfiles, d core.Decision, i
 		} else if s.Type == "audio" && s.Index == d.AudioStream {
 			s.Codec = d.AudioCodec
 			if !d.AudioCopy {
-				s.Channels = d.AudioChannels
+				s.Channels = encodedAudioChannels(d, info)
 				s.SampleRate = d.AudioSampleRate
 				s.BitrateKbps = 0
 				s.Profile = ""
@@ -739,9 +755,13 @@ func profileDeliveryAllowed(p *core.ClientCapabilityProfiles, d core.Decision, i
 		if c.MaxAudioChannels != "" && (d.AudioCodec != "" || profileStream(info, "audio", d.AudioStream) != nil) {
 			limit, err := strconv.Atoi(c.MaxAudioChannels)
 			channels := d.AudioChannels
-			if channels == 0 && d.AudioCopy {
-				if source := profileStream(info, "audio", d.AudioStream); source != nil {
-					channels = source.Channels
+			if channels == 0 {
+				if d.AudioCopy {
+					if source := profileStream(info, "audio", d.AudioStream); source != nil {
+						channels = source.Channels
+					}
+				} else {
+					channels = encodedAudioChannels(d, info)
 				}
 			}
 			if err != nil || limit <= 0 || channels <= 0 || channels > limit {

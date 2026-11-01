@@ -768,6 +768,7 @@
     "one": "{from}–{to} av {count} titel",
     "other": "{from}–{to} av {count} titlar"
   },
+  "m_04a21669f5cf07": "Konvertera Dolby- och DTS-ljud till AAC",
   "m_04a39a9880320e": "Kontrollera inställningar",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Välj exakt vad som når den här mottagaren. Varningar om serverns livscykel förbigår sammanfattningsfördröjningar. Veckorapporter levereras via e-post.",
@@ -862,6 +863,7 @@
   "m_053490abec99f9": "Ångra och starta om",
   "m_0535664b7379bb": "Där Plex-appar i nätverket ansluter till den här servern.",
   "m_05358869783c7a": "Önskade ljudspår i ordning.",
+  "m_05358a5cbe2d50": "För gratis Infuse och andra spelare som inte kan spela surroundformat.",
   "m_0536d3d4734af5": "Det gick inte att ändra regelordningen",
   "m_053a163478ea79": "Endast programvara",
   "m_053af491377788": "Förladdning avstängd",

@@ -768,6 +768,7 @@
     "one": "{from}–{to} af {count} titel",
     "other": "{from}–{to} af {count} titler"
   },
+  "m_04a21669f5cf07": "Konverter Dolby- og DTS-lyd til AAC",
   "m_04a39a9880320e": "Tjek indstillinger",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Vælg præcis, hvad der når frem til denne destination. Advarsler om serverens livscyklus omgår forsinkelse af samlet levering. Ugentlige rapporter leveres via e-mail.",
@@ -862,6 +863,7 @@
   "m_053490abec99f9": "Fortryd og genstart",
   "m_0535664b7379bb": "Hvor Plex-apps på dit netværk opretter forbindelse til denne server.",
   "m_05358869783c7a": "Foretrukne lydspor i rækkefølge.",
+  "m_05358a5cbe2d50": "Til gratis Infuse og andre afspillere, der ikke kan afspille surroundformater.",
   "m_0536d3d4734af5": "Kunne ikke omarrangere regler",
   "m_053a163478ea79": "Kun software",
   "m_053af491377788": "Forudindlæsning deaktiveret",

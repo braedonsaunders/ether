@@ -912,3 +912,81 @@ func TestRemote4KProfileDoesNotDemote2160pUnderDefault8MbpsCap(t *testing.T) {
 		t.Fatalf("remote 4K profile picked %+v (err=%v), want uhd-18gb", res, err)
 	}
 }
+
+func TestConvertSurroundAudioDeviceRulePrefersSameTierAAC(t *testing.T) {
+	ctx := context.Background()
+	cfg := testCfg()
+	cfg.Quality.Default = "4K"
+	cfg.Quality.Profiles = []core.QualityProfile{{
+		Name:             "4K",
+		MinHeight:        720,
+		MaxHeight:        2160,
+		AllowHDR:         true,
+		AllowDolbyVision: true,
+		PreferredSources: []core.Source{core.SourceWEBDL},
+		PreferredCodecs:  []string{"hevc", "h264"},
+		PreferredAudio:   []string{"eac3", "ac3", "aac"},
+		MinSizeMBPerMin:  1,
+		MaxSizeMBPerMin:  200,
+	}}
+	idx := &fakeIndexer{releases: []core.Release{
+		rel("ddp", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 4500),
+		rel("aac", "The.Signal.1999.1080p.WEB-DL.AAC2.0.H.264-GRP", 4200),
+	}}
+	infuseCaps := func() core.ClientCaps {
+		return core.ClientCaps{
+			Protocol:    "jellyfin",
+			Product:     "Infuse-Direct",
+			Platform:    "tvOS",
+			MaxHeight:   2160,
+			HDR10:       true,
+			DolbyVision: true,
+			VideoCodecs: []string{"h264", "hevc"},
+			AudioCodecs: []string{"aac", "ac3", "eac3", "truehd", "dts", "flac"},
+			Containers:  []string{"mkv", "mp4"},
+		}
+	}
+
+	// Without ConvertSurroundAudio: prefers DDP5.1 (eac3) per profile PreferredAudio.
+	svcOff := New(idx, fakeHealth{}, nil, cfg, Options{})
+	capsOff := ApplyClientRules(cfg.Quality, infuseCaps(), nil)
+	resOff, err := svcOff.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: capsOff})
+	if err != nil || resOff.Release.ID != "ddp" {
+		t.Fatalf("without toggle: winner=%+v err=%v, want ddp", resOff, err)
+	}
+
+	// With ConvertSurroundAudio: strips surround codecs from caps and prefers same-tier AAC release.
+	cfgOn := cfg
+	cfgOn.Quality.Rules = []config.QualityRule{{
+		Protocol:             "jellyfin",
+		Product:              "Infuse",
+		Profile:              "4K",
+		ConvertSurroundAudio: true,
+	}}
+	svcOn := New(idx, fakeHealth{}, nil, cfgOn, Options{})
+	capsOn := ApplyClientRules(cfgOn.Quality, infuseCaps(), nil)
+	for _, surr := range []string{"eac3", "ac3", "dts", "dtshd", "dca", "truehd"} {
+		if capsOn.SupportsAudio(surr) {
+			t.Fatalf("capsOn still supports surround codec %s: %+v", surr, capsOn.AudioCodecs)
+		}
+	}
+	if !capsOn.SupportsAudio("aac") {
+		t.Fatalf("capsOn should still support aac: %+v", capsOn.AudioCodecs)
+	}
+	resOn, err := svcOn.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: capsOn})
+	if err != nil || resOn.Release.ID != "aac" {
+		t.Fatalf("with toggle (same tier): winner=%+v err=%v, want aac", resOn, err)
+	}
+
+	// When only an EAC3 release exists at the higher tier, keeps the higher video tier
+	// so the transcoder can copy video and convert audio to AAC.
+	idxOnlySurround4K := &fakeIndexer{releases: []core.Release{
+		rel("uhd-ddp", "The.Signal.1999.2160p.WEB-DL.DDP5.1.HEVC-GRP", 12000),
+		rel("hd-aac", "The.Signal.1999.1080p.WEB-DL.AAC2.0.H.264-GRP", 4200),
+	}}
+	svcTier := New(idxOnlySurround4K, fakeHealth{}, nil, cfgOn, Options{})
+	resTier, err := svcTier.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: capsOn})
+	if err != nil || resTier.Release.ID != "uhd-ddp" {
+		t.Fatalf("with toggle (higher tier surround): winner=%+v err=%v, want uhd-ddp", resTier, err)
+	}
+}

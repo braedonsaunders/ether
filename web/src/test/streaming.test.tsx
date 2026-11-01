@@ -164,9 +164,22 @@ describe("Releases", () => {
     const { fake } = renderApp("/releases/devices");
     expect(await screen.findByRole("button", { name: "Edit rule 1" }, WAIT)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Device" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: "Convert Dolby and DTS audio to AAC" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Edit rule 1" }));
     const drawer = await screen.findByRole("dialog", { name: "Rule 1" });
     expect(within(drawer).getByRole("button", { name: "Device" })).toBeInTheDocument();
+    const surroundSwitch = within(drawer).getByRole("switch", {
+      name: "Convert Dolby and DTS audio to AAC",
+    });
+    expect(surroundSwitch).not.toBeChecked();
+    expect(
+      within(drawer).getByText(
+        "For free Infuse and other players that can't play surround formats.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(surroundSwitch);
     await choose("Protocol", "Plex");
     await choose("Device", "Plex Web");
     await choose("Viewer", "The Kids");
@@ -176,9 +189,22 @@ describe("Releases", () => {
     await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/quality")[0]!.body).toMatchObject({
       rules: [
-        { protocol: "plex", product: "Plex Web", userId: 3, profile: "1080p", maxHeight: 1080 },
+        {
+          protocol: "plex",
+          product: "Plex Web",
+          userId: 3,
+          profile: "1080p",
+          maxHeight: 1080,
+          convertSurroundAudio: true,
+        },
       ],
     });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Edit rule 1" }));
+    const reopened = await screen.findByRole("dialog", { name: "Rule 1" });
+    expect(
+      within(reopened).getByRole("switch", { name: "Convert Dolby and DTS audio to AAC" }),
+    ).toBeChecked();
   });
 
   it("shows Never play filters and What matters most ladder in the profile drawer", async () => {

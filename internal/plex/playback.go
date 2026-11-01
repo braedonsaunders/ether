@@ -401,6 +401,15 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 		s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
 		applySelections(p, ps.Info, s.audioLanguages(pr.User))
 		p.caps.TranscodeAudioCodecs = streamingAudioTarget(pr.ProfileExtra, p.protocol)
+		if len(p.caps.AudioCodecs) > 0 && len(p.caps.TranscodeAudioCodecs) > 0 {
+			var kept []string
+			for _, c := range p.caps.TranscodeAudioCodecs {
+				if p.caps.SupportsAudio(c) {
+					kept = append(kept, c)
+				}
+			}
+			p.caps.TranscodeAudioCodecs = kept
+		}
 		return sessions.PlexAdmission{
 			Source: ps, Media: ps.Info, Caps: p.caps, Options: p.opts, PreferRemux: p.mde, Protocol: p.protocol,
 			RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,

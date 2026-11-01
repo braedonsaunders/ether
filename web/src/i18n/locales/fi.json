@@ -768,6 +768,7 @@
     "one": "{from}–{to} / {count} nimike",
     "other": "{from}–{to} / {count} nimikettä"
   },
+  "m_04a21669f5cf07": "Muunna Dolby- ja DTS-ääni AAC-muotoon",
   "m_04a39a9880320e": "Tarkista asetukset",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Valitse tarkalleen, mitä tähän kohteeseen lähetetään. Palvelimen elinkaarihälytykset ohittavat yhteenvedon viiveet. Viikkoraportit toimitetaan sähköpostilla.",
@@ -862,6 +863,7 @@
   "m_053490abec99f9": "Kumoa ja käynnistä uudelleen",
   "m_0535664b7379bb": "Mistä verkon Plex-sovellukset ottavat yhteyden tähän palvelimeen.",
   "m_05358869783c7a": "Ensisijaiset ääniraidat järjestyksessä.",
+  "m_05358a5cbe2d50": "Ilmaiselle Infuselle ja muille soittimille, jotka eivät toista tilaääntä.",
   "m_0536d3d4734af5": "Sääntöjen järjestäminen epäonnistui",
   "m_053a163478ea79": "Vain ohjelmisto",
   "m_053af491377788": "Esilataus pois käytöstä",

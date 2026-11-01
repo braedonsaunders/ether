@@ -4,6 +4,7 @@ import {
   Input,
   SearchSelect,
   SettingsSection,
+  Switch,
   confirmDialog,
 } from "@braedonsaunders/appkit-ui";
 import { ListFilter, Plus } from "lucide-react";
@@ -352,6 +353,17 @@ export function ClientRulesTab() {
                     searchable={false}
                   />
                 </div>
+              }
+            />
+            <SettingsRow
+              title={t("Convert Dolby and DTS audio to AAC")}
+              description={t("For free Infuse and other players that can't play surround formats.")}
+              control={
+                <Switch
+                  checked={Boolean(draft.convertSurroundAudio)}
+                  onChange={(e) => set({ convertSurroundAudio: e.currentTarget.checked || undefined })}
+                  aria-label={t("Convert Dolby and DTS audio to AAC")}
+                />
               }
             />
           </SettingsSection>

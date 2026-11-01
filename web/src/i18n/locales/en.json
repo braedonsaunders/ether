@@ -768,6 +768,7 @@
     "one": "{from}–{to} of {count} title",
     "other": "{from}–{to} of {count} titles"
   },
+  "m_04a21669f5cf07": "Convert Dolby and DTS audio to AAC",
   "m_04a39a9880320e": "Check settings",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Choose exactly what reaches this destination. Server lifecycle alerts bypass digest delays. Weekly reports are delivered by email.",
@@ -862,6 +863,7 @@
   "m_053490abec99f9": "Undo and restart",
   "m_0535664b7379bb": "Where Plex apps on your network connect to this server.",
   "m_05358869783c7a": "Preferred audio tracks in order.",
+  "m_05358a5cbe2d50": "For free Infuse and other players that can't play surround formats.",
   "m_0536d3d4734af5": "Couldn't reorder rules",
   "m_053a163478ea79": "Software only",
   "m_053af491377788": "Preloading disabled",

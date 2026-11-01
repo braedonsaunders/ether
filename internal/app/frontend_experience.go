@@ -16,6 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/livetv"
+	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
 
@@ -240,6 +241,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			if protocol != "plex" {
 				caps = playbackFloor(caps, overrides)
 			}
+			if a.cfg != nil {
+				caps = resolver.ApplyClientRules(a.cfg.Read().Quality, caps, u)
+			}
 			resumedInfo, resumedRelease, hasResumed = a.playback.ResumedTracks(ctx, u, title.Key, caps)
 			info := resumedInfo
 			if !hasResumed {
@@ -261,6 +265,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			caps := core.ClientCaps{Protocol: protocol, Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
 			if protocol != "plex" {
 				caps = playbackFloor(caps, overrides)
+			}
+			if a.cfg != nil {
+				caps = resolver.ApplyClientRules(a.cfg.Read().Quality, caps, u)
 			}
 			versions, err := scorecardVariants(ctx, a, u, title, caps)
 			if err != nil {

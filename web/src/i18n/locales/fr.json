@@ -792,6 +792,7 @@
     "one": "{from}–{to} sur {count} titre",
     "other": "{from}–{to} sur {count} titres"
   },
+  "m_04a21669f5cf07": "Convertir l’audio Dolby et DTS en AAC",
   "m_04a39a9880320e": "Vérifier les paramètres",
   "m_04a6f09de57e07": "{source} ({releases})",
   "m_04a87a1da14ec0": "Choisissez précisément ce qui parvient à cette destination. Les alertes de cycle de vie du serveur ignorent les délais de regroupement. Les rapports hebdomadaires sont envoyés par e-mail.",
@@ -889,6 +890,7 @@
   "m_053490abec99f9": "Annuler et redémarrer",
   "m_0535664b7379bb": "Où les applications Plex de votre réseau joignent ce serveur.",
   "m_05358869783c7a": "Pistes audio préférées, dans l’ordre.",
+  "m_05358a5cbe2d50": "Pour Infuse gratuit et les autres lecteurs qui ne lisent pas le son surround.",
   "m_0536d3d4734af5": "Impossible de réorganiser les règles",
   "m_053a163478ea79": "Logiciel uniquement",
   "m_053af491377788": "Préchargement désactivé",

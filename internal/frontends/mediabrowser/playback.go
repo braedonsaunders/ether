@@ -356,7 +356,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			format := frontend.StreamDirect
-			if channel != "" || (plan.Decision.Kind != "directplay" && plan.Decision.Kind != "copy") {
+			if channel != "" || (plan.Decision.Kind != "directplay" && (plan.Decision.Kind != "copy" || !plan.Decision.AudioCopy)) {
 				format = frontend.StreamHLS
 			}
 			url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
@@ -418,6 +418,11 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 						source["Path"] = url
 					}
 				} else {
+					if !plan.Decision.AudioCopy {
+						source["SupportsDirectPlay"] = plan.DirectPlay
+						source["SupportsDirectStream"] = plan.DirectStream
+						delete(source, "Path")
+					}
 					source["TranscodingUrl"] = url
 					source["TranscodingSubProtocol"] = "hls"
 					if channel != "" {

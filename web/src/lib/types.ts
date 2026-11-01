@@ -440,6 +440,7 @@ export interface QualityRule {
   profile: string;
   /** Caps this device below the profile. 0 or absent means the profile's ceiling. */
   maxHeight?: number;
+  convertSurroundAudio?: boolean;
 }
 
 export interface SetupStep {
