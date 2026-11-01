@@ -500,3 +500,30 @@ func TestSyncRevokesValidatedViewerAndPreservesTokenlessMember(t *testing.T) {
 		t.Fatalf("outage resurrected viewer: %v", err)
 	}
 }
+
+func TestUnknownTokenRefreshesFriendsBeforeValidation(t *testing.T) {
+	s, v, _ := setup(t)
+	ctx := context.Background()
+	var refreshes atomic.Int32
+	s.SetUnknownTokenRefresher(func(ctx context.Context) error {
+		if refreshes.Add(1) == 1 {
+			return s.SyncFriends(ctx, []plextv.Friend{
+				{Owned: true, Token: "owner-access", PlexID: 42},
+				{PlexID: 100, Username: "alice", Title: "Alice", Token: "alice-access", Sections: []string{"1"}},
+				{PlexID: 205, Username: "eve", Title: "Eve", Token: "eve-access", AllLibs: true},
+			})
+		}
+		return nil
+	})
+
+	u, err := s.Authenticate(ctx, "eve-access")
+	if err != nil || u.Username != "eve" || u.PlexID != 205 {
+		t.Fatalf("eve after unknown-token friend sync: user=%+v err=%v", u, err)
+	}
+	if refreshes.Load() != 1 {
+		t.Fatalf("refreshes = %d, want 1", refreshes.Load())
+	}
+	if v.calls.Load() != 0 {
+		t.Fatalf("durable token after refresh should not hit Validator.Account, got %d calls", v.calls.Load())
+	}
+}

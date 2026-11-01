@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -77,6 +79,88 @@ func TestRegistrarTrustsOnlyOutstandingConnectivityAnswer(t *testing.T) {
 	r.onPubsub(PubsubMessage{Command: "notifyConnectivity", AsyncIdentifier: "want", Connectivity: "0"})
 	if r.st.PlexReachable == nil || *r.st.PlexReachable {
 		t.Fatalf("reachable = %v", r.st.PlexReachable)
+	}
+}
+
+func TestRegistrarFriendSyncIntervalAndSharingHomePubsub(t *testing.T) {
+	f := newFakePlexTV(t, testMachineID)
+	f.addUser("server-token-42", owner())
+	f.accessXML = accessTokensXML
+	f.usersXML = usersXML
+	cfg := testConfig()
+	cfg.Plex.Token = "server-token-42"
+	cfg.Plex.OwnerPlexID = 42
+	cfg.Plex.Claimed = true
+
+	var mu sync.Mutex
+	now := time.Now()
+	users := &fakeUsers{}
+	r, err := NewRegistrar(RegistrarOptions{
+		Config: &memConfig{cfg: cfg},
+		Client: newServerClient(t, f),
+		Users:  users,
+		WAN:    &fakeWAN{},
+		Mapper: &fakeMapper{},
+		LAN:    func() ([]net.IP, error) { return []net.IP{net.ParseIP("192.168.1.5")}, nil },
+		Now:    func() time.Time { mu.Lock(); defer mu.Unlock(); return now },
+		Logger: discardLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.o.FriendSyncInterval != 30*time.Minute {
+		t.Fatalf("default FriendSyncInterval = %v, want 30m", r.o.FriendSyncInterval)
+	}
+
+	ctx := context.Background()
+	r.runDue(ctx)
+	initialSyncs := f.count("GET /api/v2/server/access_tokens")
+	if initialSyncs != 1 {
+		t.Fatalf("initial access_tokens fetches = %d, want 1", initialSyncs)
+	}
+
+	// After 5 minutes (well below the 30-minute default), runDue must not re-sync.
+	mu.Lock()
+	now = now.Add(5 * time.Minute)
+	mu.Unlock()
+	r.runDue(ctx)
+	if got := f.count("GET /api/v2/server/access_tokens"); got != initialSyncs {
+		t.Fatalf("access_tokens fetches after 5m = %d, want %d", got, initialSyncs)
+	}
+
+	// Both notifySharingChange and notifyHomeChange schedule an immediate friend sync.
+	for i, cmd := range []string{"notifySharingChange", "notifyHomeChange"} {
+		r.onPubsub(PubsubMessage{Command: cmd})
+		r.runDue(ctx)
+		want := initialSyncs + i + 1
+		if got := f.count("GET /api/v2/server/access_tokens"); got != want {
+			t.Fatalf("%s: access_tokens fetches = %d, want %d", cmd, got, want)
+		}
+	}
+
+	// Rate-limited unknown-token sync runs immediately once, then suppresses
+	// back-to-back calls within UnknownTokenSyncMinSpacing.
+	before := f.count("GET /api/v2/server/access_tokens")
+	if err := r.SyncFriendsOnUnknownToken(ctx); err != nil {
+		t.Fatalf("SyncFriendsOnUnknownToken: %v", err)
+	}
+	if got := f.count("GET /api/v2/server/access_tokens"); got != before+1 {
+		t.Fatalf("unknown-token sync fetches = %d, want %d", got, before+1)
+	}
+	if err := r.SyncFriendsOnUnknownToken(ctx); err != nil {
+		t.Fatalf("rate-limited SyncFriendsOnUnknownToken: %v", err)
+	}
+	if got := f.count("GET /api/v2/server/access_tokens"); got != before+1 {
+		t.Fatalf("rate-limited unknown-token sync should not fetch again, got %d", got)
+	}
+	mu.Lock()
+	now = now.Add(20 * time.Second)
+	mu.Unlock()
+	if err := r.SyncFriendsOnUnknownToken(ctx); err != nil {
+		t.Fatalf("post-window SyncFriendsOnUnknownToken: %v", err)
+	}
+	if got := f.count("GET /api/v2/server/access_tokens"); got != before+2 {
+		t.Fatalf("post-window unknown-token sync fetches = %d, want %d", got, before+2)
 	}
 }
 

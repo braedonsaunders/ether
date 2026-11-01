@@ -104,14 +104,15 @@ type RegistrarOptions struct {
 	Certs   *CertManager // nil disables certificate management
 
 	// Intervals (defaults in parentheses).
-	Tick                 time.Duration // loop granularity (15s)
-	AddressInterval      time.Duration // LAN/WAN re-check (30s)
-	PublishInterval      time.Duration // unconditional re-publish (1h)
-	FriendSyncInterval   time.Duration // access token sync (1m, observed)
-	MappingInterval      time.Duration // UPnP/NAT-PMP renew check (5m)
-	CertInterval         time.Duration // certificate expiry check (1w, observed when not near expiry)
-	ReachabilityInterval time.Duration // remote self-test (1h, observed)
-	OwnerInterval        time.Duration // owner account / Plex Pass re-check (6h)
+	Tick                       time.Duration // loop granularity (15s)
+	AddressInterval            time.Duration // LAN/WAN re-check (30s)
+	PublishInterval            time.Duration // unconditional re-publish (1h)
+	FriendSyncInterval         time.Duration // access token sync (30m; pubsub events trigger immediate sync)
+	UnknownTokenSyncMinSpacing time.Duration // minimum spacing between unknown-token friend re-reads (15s)
+	MappingInterval            time.Duration // UPnP/NAT-PMP renew check (5m)
+	CertInterval               time.Duration // certificate expiry check (1w, observed when not near expiry)
+	ReachabilityInterval       time.Duration // remote self-test (1h, observed)
+	OwnerInterval              time.Duration // owner account / Plex Pass re-check (6h)
 
 	// PeerURIs, when set (clustered servers), returns the other live
 	// nodes' connection URIs in publication order. PublishNow appends them,
@@ -157,19 +158,20 @@ type Registrar struct {
 	addrMu      sync.Mutex // serialises address refreshes
 	addrRefresh time.Time  // last refreshAddresses
 
-	mu            sync.Mutex
-	st            Status
-	lastLAN       []string
-	lastWAN       string
-	next          map[string]time.Time
-	pubFail       int
-	pubGeneration uint64 // advances whenever fresh connections must be published
-	forcePub      bool
-	mappingOn     bool
-	trustAt       time.Time
-	trustFP       string
-	asyncID       string // outstanding connectivity request
-	libraries     []LibrarySection
+	mu                   sync.Mutex
+	st                   Status
+	lastLAN              []string
+	lastWAN              string
+	next                 map[string]time.Time
+	lastUnknownTokenSync time.Time
+	pubFail              int
+	pubGeneration        uint64 // advances whenever fresh connections must be published
+	forcePub             bool
+	mappingOn            bool
+	trustAt              time.Time
+	trustFP              string
+	asyncID              string // outstanding connectivity request
+	libraries            []LibrarySection
 
 	presence *Presence
 
@@ -210,7 +212,8 @@ func NewRegistrar(o RegistrarOptions) (*Registrar, error) {
 	def(&o.Tick, 15*time.Second)
 	def(&o.AddressInterval, 30*time.Second)
 	def(&o.PublishInterval, time.Hour)
-	def(&o.FriendSyncInterval, time.Minute)
+	def(&o.FriendSyncInterval, 30*time.Minute)
+	def(&o.UnknownTokenSyncMinSpacing, 15*time.Second)
 	def(&o.MappingInterval, 5*time.Minute)
 	def(&o.CertInterval, 7*24*time.Hour)
 	def(&o.ReachabilityInterval, time.Hour)
@@ -977,6 +980,20 @@ func (r *Registrar) SyncFriendsNow(ctx context.Context) error {
 	return nil
 }
 
+// SyncFriendsOnUnknownToken re-reads friends and access tokens when an
+// unrecognised token arrives, rate-limited by UnknownTokenSyncMinSpacing.
+func (r *Registrar) SyncFriendsOnUnknownToken(ctx context.Context) error {
+	now := r.o.Now()
+	r.mu.Lock()
+	if !r.lastUnknownTokenSync.IsZero() && now.Round(0).Sub(r.lastUnknownTokenSync.Round(0)) < r.o.UnknownTokenSyncMinSpacing {
+		r.mu.Unlock()
+		return nil
+	}
+	r.lastUnknownTokenSync = now
+	r.mu.Unlock()
+	return r.SyncFriendsNow(ctx)
+}
+
 // CheckReachability probes the WAN connections and records the result.
 func (r *Registrar) CheckReachability(ctx context.Context) remote.Reachability {
 	cfg := r.o.Config.Get()
@@ -1358,7 +1375,7 @@ func (r *Registrar) onPubsub(m PubsubMessage) {
 	case "refreshCertificate":
 		r.schedule(taskCert, time.Time{})
 		r.Trigger()
-	case "notifyResetToken", "notifyAccountChange":
+	case "notifyResetToken", "notifyAccountChange", "notifySharingChange", "notifyHomeChange":
 		r.schedule(taskFriends, time.Time{})
 		r.Trigger()
 	default:

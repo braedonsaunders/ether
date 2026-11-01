@@ -56,6 +56,7 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
 	if a.registrar, err = plextv.NewRegistrar(ropts); err != nil {
 		return fmt.Errorf("registrar: %w", err)
 	}
+	a.users.SetUnknownTokenRefresher(a.registrar.SyncFriendsOnUnknownToken)
 	if cfg.Plex.Token != "" {
 		rctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := a.registrar.RefreshOwner(rctx); err != nil {

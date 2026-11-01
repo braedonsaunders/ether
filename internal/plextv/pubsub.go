@@ -32,7 +32,8 @@ import (
 //   - Events are XML in data lines, e.g.
 //     <Message command="notifyConnectivity" asyncIdentifier="…" connectivity="0|1" address="…" port="32400"/>,
 //     the answer to PUT /api/servers/{id}/connectivity. Other commands PMS
-//     handles: notifyResetToken, notifyAccountChange, refreshCertificate.
+//     handles: notifyResetToken, notifyAccountChange, notifySharingChange,
+//     notifyHomeChange, refreshCertificate.
 
 // PubsubTLSName is the name pubsub hosts' certificates are valid for.
 const PubsubTLSName = "pubsub.plex.tv"
