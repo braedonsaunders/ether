@@ -12,7 +12,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/sharefilter"
 	"github.com/braedonsaunders/ether/internal/store"
-	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
 
 func init() {
@@ -205,8 +204,4 @@ func plexDefaultsEqual(a, b map[int64]PlexViewerDefaults) bool {
 		}
 	}
 	return true
-}
-
-func (s *Service) bumpViewerPolicy(ctx context.Context) {
-	_ = viewerpolicy.Bump(ctx, s.db)
 }
