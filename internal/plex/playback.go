@@ -419,6 +419,9 @@ func onDemandSession(ps *core.PlaySession) bool {
 
 // handleDecision is /video/:/transcode/universal/decision.
 func (s *Server) handleDecision(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	if s.handleLiveTVPlayback(w, r) {
 		return
 	}
@@ -836,6 +839,9 @@ func applyStreamDecision(st model.Stream, src core.StreamInfo, dec core.Decision
 
 // handleStartHLS is /video/:/transcode/universal/start.m3u8.
 func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	if s.handleLiveTVPlayback(w, r) {
 		return
 	}
@@ -1099,6 +1105,9 @@ func segmentNumber(name string) (int, bool) {
 }
 
 func (s *Server) handleTranscodePing(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	if id := sanitizeSessionID(r.URL.Query().Get("session")); id != "" {
 		if e, ok := s.transcodes.get(id); ok && e.userID == FromContext(r.Context()).User.ID {
 			s.transcodes.touch(id, s.now())
@@ -1108,6 +1117,9 @@ func (s *Server) handleTranscodePing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	id := sanitizeSessionID(r.URL.Query().Get("session"))
 	pr := FromContext(r.Context())
 	if e, ok := s.transcodes.get(id); id != "" && ok && e.userID == pr.User.ID {

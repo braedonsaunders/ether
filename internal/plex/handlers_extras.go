@@ -289,6 +289,9 @@ func (s *Server) parseExtraPlayRequest(r *http.Request, key core.RatingKey) play
 // handleExtraPlayback hooks the universal decision/start endpoints for
 // KindExtra keys, like handleLiveTVPlayback does for live sessions.
 func (s *Server) handleExtraPlayback(w http.ResponseWriter, r *http.Request) bool {
+	if s.refuseCapability(w, r) {
+		return true
+	}
 	key, isExtra := extraKeyFromRequest(r)
 	if !isExtra {
 		return false

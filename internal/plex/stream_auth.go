@@ -40,6 +40,29 @@ func routeSessionID(r *http.Request) (string, bool) {
 	return id, true
 }
 
+// capabilityPathOK reports whether a capability credential (stream grant
+// or a live session id) may be considered for this request. Encoded
+// paths are refused: chi routes on RawPath while transcodeSessionID
+// reads the decoded Path, so an encoded slash can authorize one
+// binding and then reach decision/start as that viewer.
+func capabilityPathOK(r *http.Request) bool {
+	if r.URL.RawPath != "" {
+		return false
+	}
+	if strings.Contains(r.URL.EscapedPath(), "%") {
+		return false
+	}
+	return true
+}
+
+func (s *Server) refuseCapability(w http.ResponseWriter, r *http.Request) bool {
+	if !FromContext(r.Context()).Capability {
+		return false
+	}
+	writeHTTPError(w, http.StatusUnauthorized)
+	return true
+}
+
 func (s *Server) activeViewer(ctx context.Context, id int64) *core.User {
 	if s.d.Auth == nil {
 		return nil
@@ -70,6 +93,9 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
+	if !capabilityPathOK(r) {
+		return false
+	}
 	id := transcodeSessionID(r.URL.Path)
 	if id == "" {
 		return false
@@ -90,6 +116,7 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	}
 
 	pr.User = u
+	pr.Capability = true
 	return true
 }
 

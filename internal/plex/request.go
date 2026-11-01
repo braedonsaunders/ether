@@ -46,6 +46,11 @@ type Request struct {
 	Remote   bool // not on a private/loopback network
 
 	User *core.User
+
+	// Capability is set when authentication used a stream grant or other
+	// session-scoped credential, not a user token. Only transcode
+	// session/segment handlers may serve a capability-scoped request.
+	Capability bool
 }
 
 type ctxKey struct{}
