@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
@@ -179,6 +180,45 @@ func TestSessionReadAuth(t *testing.T) {
 	}
 	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
 		t.Fatal("revoked read cap was accepted")
+	}
+}
+
+func TestExpireRevokesReadCapability(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=expire-session")
+	if start.Code != 200 {
+		t.Fatal(start.Code, start.Body.String())
+	}
+	token := f.srv.readCaps.token("expire-session")
+	if token == "" {
+		t.Fatal("missing read capability")
+	}
+	f.srv.expireTranscodes(f.srv.now().Add(3*time.Hour), 2*time.Hour)
+	if _, ok := f.srv.readCaps.lookup(token); ok {
+		t.Fatal("expired binding left a live read cap")
+	}
+	path := readCapURL("/video/:/transcode/universal/session/expire-session/base/init.mp4", token)
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("expired read cap was accepted")
+	}
+}
+
+func TestSessionReadRejectsReclaimedBinding(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=reclaim-session")
+	if start.Code != 200 {
+		t.Fatal(start.Code, start.Body.String())
+	}
+	token := f.srv.readCaps.token("reclaim-session")
+	f.srv.transcodes.remove("reclaim-session")
+	f.srv.transcodes.put(&transcodeEntry{id: "reclaim-session", userID: friendUser.ID, clientID: "client-1", started: true})
+	path := readCapURL("/video/:/transcode/universal/session/reclaim-session/base/init.mp4", token)
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("stale read cap authorized a reclaimed session")
 	}
 }
 

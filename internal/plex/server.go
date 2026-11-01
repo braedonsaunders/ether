@@ -478,6 +478,12 @@ func (s *Server) canSeeSection(u *core.User, id int) bool {
 	return false
 }
 
+func (s *Server) expireTranscodes(now time.Time, ttl time.Duration) {
+	for _, id := range s.transcodes.expire(now, ttl) {
+		s.revokeReadCapability(id)
+	}
+}
+
 // janitor expires idle play queues, sessions and transcode bindings.
 func (s *Server) janitor() {
 	defer s.wg.Done()
@@ -493,7 +499,7 @@ func (s *Server) janitor() {
 			s.expireDownloads(now)
 			s.queues.expire(now, 6*time.Hour)
 			s.renderedVariants.expire(now, renderedVariantsTTL)
-			s.transcodes.expire(now, 2*time.Hour)
+			s.expireTranscodes(now, 2*time.Hour)
 			s.playbackOwners.Expire(now, 2*time.Hour)
 			s.extraPlay.expire(now, 2*time.Hour)
 			s.expireTerminations(now, terminationTTL)

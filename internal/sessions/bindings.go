@@ -141,14 +141,17 @@ func (t *BindingTable[R]) ForClient(UserID int64, ClientID string, Key core.Rati
 	return out
 }
 
-func (t *BindingTable[R]) Expire(now time.Time, ttl time.Duration) {
+func (t *BindingTable[R]) Expire(now time.Time, ttl time.Duration) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	var gone []string
 	for ID, e := range t.m {
 		if now.Sub(e.UpdatedAt) > ttl {
 			delete(t.m, ID)
+			gone = append(gone, ID)
 		}
 	}
+	return gone
 }
 
 // IDs lists every binding this table still holds.

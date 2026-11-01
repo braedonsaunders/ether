@@ -143,7 +143,7 @@ func (s *Server) authenticateSessionRead(r *http.Request, pr *Request) bool {
 		return false
 	}
 	e, ok := s.transcodes.get(cap.sessionID)
-	if !ok || !e.started {
+	if !ok || !e.started || e.userID != cap.userID || e.clientID != cap.clientID {
 		return false
 	}
 	u := s.activeViewer(r.Context(), cap.userID)

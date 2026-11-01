@@ -305,6 +305,9 @@ func (s *Server) authenticateLiveGrant(r *http.Request, pr *Request) bool {
 	if s.d.LiveTV == nil {
 		return false
 	}
+	if !capabilityPathOK(r) {
+		return false
+	}
 	u, ok := s.d.LiveTV.AuthenticateMediaGrant(r, s.activeViewer)
 	if !ok {
 		return false
@@ -331,6 +334,7 @@ func (s *Server) authenticateLiveGrant(r *http.Request, pr *Request) bool {
 		return false
 	}
 	pr.User = u
+	pr.Capability = true
 	return true
 }
 
