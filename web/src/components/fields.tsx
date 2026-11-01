@@ -1,6 +1,13 @@
 import { Badge, Button, Input, Label, cn } from "@braedonsaunders/appkit-ui";
 import { CheckCircle2, Eye, EyeOff, PlugZap, XCircle } from "lucide-react";
-import { forwardRef, useId, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { t } from "../i18n";
 import { REDACTED } from "../lib/types";
 
@@ -290,7 +297,8 @@ export function Segmented<T extends string>({
                 onChange(next.value);
                 (
                   e.currentTarget.parentElement?.children[options.indexOf(next)] as
-                    HTMLElement | undefined
+                    | HTMLElement
+                    | undefined
                 )?.focus();
               }
             }}
@@ -309,33 +317,57 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Comma-separated list editor that commits on blur (languages, blocklists…). */
+function parseListInput(raw: string, numeric?: boolean): (string | number)[] {
+  const parts = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return numeric ? parts.map(Number).filter((n) => Number.isFinite(n)) : parts;
+}
+
+/** Comma-separated list editor (languages, blocklists, custom URLs…). */
 export function ListInput({
   value,
   onChange,
   placeholder,
   ariaLabel,
   numeric,
+  id,
+  invalid,
 }: {
   value: (string | number)[] | null;
   onChange: (v: (string | number)[]) => void;
   placeholder?: string;
   ariaLabel?: string;
   numeric?: boolean;
+  id?: string;
+  invalid?: boolean;
 }) {
-  const text = (value ?? []).join(", ");
+  const list = value ?? [];
+  const [text, setText] = useState(list.join(", "));
+  const key = JSON.stringify(list);
+  useEffect(() => {
+    if (JSON.stringify(parseListInput(text, numeric)) !== key) {
+      setText(list.join(", "));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, numeric]);
   return (
     <Input
-      key={text}
-      defaultValue={text}
+      id={id}
+      value={text}
       aria-label={ariaLabel}
+      aria-invalid={invalid || undefined}
       placeholder={placeholder ?? t("Comma-separated")}
+      onChange={(e) => {
+        const nextText = e.currentTarget.value;
+        setText(nextText);
+        onChange(parseListInput(nextText, numeric));
+      }}
       onBlur={(e) => {
-        const parts = e.currentTarget.value
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        onChange(numeric ? parts.map(Number).filter((n) => Number.isFinite(n)) : parts);
+        const parsed = parseListInput(e.currentTarget.value, numeric);
+        setText(parsed.join(", "));
+        onChange(parsed);
       }}
     />
   );

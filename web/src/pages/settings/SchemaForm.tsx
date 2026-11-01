@@ -220,7 +220,9 @@ export function SchemaField({
           description={description}
         >
           <ListInput
+            id={id}
             ariaLabel={def.label}
+            invalid={Boolean(error)}
             value={(value as (string | number)[] | null) ?? []}
             onChange={onChange}
             placeholder={def.placeholder}

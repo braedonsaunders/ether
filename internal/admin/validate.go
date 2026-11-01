@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/libraryfilter"
 	"github.com/braedonsaunders/ether/internal/releasepolicy"
+	"github.com/braedonsaunders/ether/internal/remote"
 )
 
 // FieldError is one validation problem, addressed by dotted field path.
@@ -155,6 +156,15 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	v.port("plex.publicPort", cfg.Plex.PublicPort, true)
 	if cfg.Plex.SecureConnections != "" {
 		v.oneOf("plex.secureConnections", cfg.Plex.SecureConnections, "required", "preferred", "disabled")
+	}
+	for _, raw := range cfg.Plex.CustomURLs {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		if _, err := remote.ParseCustomURL(raw); err != nil {
+			v.add("plex.customUrls", "Enter full http:// or https:// server URLs, separated by commas.")
+			break
+		}
 	}
 
 	seenProv := map[string]bool{}

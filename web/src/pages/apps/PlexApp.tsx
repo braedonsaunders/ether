@@ -22,7 +22,12 @@ import type { EtherConfig } from "../../lib/types";
 import { SchemaField, type FieldDef } from "../settings/SchemaForm";
 import * as schema from "../settings/schema";
 import { PlexStatus } from "../settings/sections";
-import { plexAccountClaimed } from "./plex-account";
+import {
+  claimFailureMessage,
+  plexAccountClaimed,
+  translatePlexFieldError,
+  validateCustomUrls,
+} from "./plex-account";
 import { HomeStatusRow } from "./HomeStatus";
 import { awaySummary, claimSummary, type ReachabilityStatus } from "./reachability";
 
@@ -117,7 +122,7 @@ function PlexAccount({
     } catch (error) {
       if (!mounted.current) return;
       setClaimFailed(true);
-      setNotice(t("Signed in, but claiming failed: {error}", { error: (error as Error).message }));
+      setNotice(claimFailureMessage(error));
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -310,9 +315,21 @@ export function PlexApp({
   const [error, setError] = useState<unknown>();
   const [saving, setSaving] = useState(false);
   const active = plexSection(section);
+  const customUrlError = validateCustomUrls(draft?.plex?.customUrls);
+  const activeErrors: Record<string, string> = customUrlError
+    ? { ...errors, "plex.customUrls": customUrlError }
+    : errors;
 
   async function save() {
     if (!draft) return;
+    const urlErr = validateCustomUrls(draft.plex.customUrls);
+    if (urlErr) {
+      const fields = [{ field: "plex.customUrls", message: urlErr }];
+      setErrors({ "plex.customUrls": urlErr });
+      setError(new ApiError(400, "validation", t("Please fix the highlighted fields"), fields));
+      navigate("/apps/plex/remote");
+      return;
+    }
     setSaving(true);
     setError(undefined);
     setErrors({});
@@ -328,10 +345,14 @@ export function PlexApp({
       await config.reload();
       void refreshDashboard();
     } catch (err) {
-      setError(err);
       if (err instanceof ApiError && err.fields) {
-        setErrors(Object.fromEntries(err.fields.map((field) => [field.field, field.message])));
-        const keys = err.fields.map((field) => field.field);
+        const translatedFields = err.fields.map((field) => ({
+          field: field.field,
+          message: translatePlexFieldError(field.message),
+        }));
+        setError(new ApiError(err.status, err.code, err.message, translatedFields));
+        setErrors(Object.fromEntries(translatedFields.map((field) => [field.field, field.message])));
+        const keys = translatedFields.map((field) => field.field);
         if (keys.some((key) => key.startsWith("server.") || key.startsWith("plex."))) {
           const compatibility = keys.every((key) =>
             [
@@ -342,6 +363,8 @@ export function PlexApp({
           );
           navigate(compatibility ? "/apps/plex/compatibility" : "/apps/plex/remote");
         }
+      } else {
+        setError(err);
       }
     } finally {
       setSaving(false);
@@ -420,16 +443,16 @@ export function PlexApp({
             <FieldList
               fields={networkFields()}
               value={{ port: draft.port, bindAddress: draft.bindAddress }}
-              errors={errors}
+              errors={activeErrors}
               prefix="server"
               onChange={setServer}
             />
           </SettingsSection>
-          <OptionGroup group={remote} value={draft.plex} errors={errors} onChange={setPlex} />
+          <OptionGroup group={remote} value={draft.plex} errors={activeErrors} onChange={setPlex} />
           <OptionGroup
             group={secure}
             value={draft.plex}
-            errors={errors}
+            errors={activeErrors}
             onChange={setPlex}
             moreLabel={t("Use your own certificate")}
           />
@@ -445,7 +468,7 @@ export function PlexApp({
             ),
           }}
           value={draft.plex}
-          errors={errors}
+          errors={activeErrors}
           onChange={setPlex}
         />
       ) : null}
@@ -481,7 +504,11 @@ function OptionGroup({
         onChange={onChange}
       />
       {extra.length ? (
-        <MoreOptions label={moreLabel ?? label} text={moreLabel ?? t("More options")}>
+        <MoreOptions
+          label={moreLabel ?? label}
+          text={moreLabel ?? t("More options")}
+          hasError={extra.some((field) => Boolean(errors[`plex.${field.key}`]))}
+        >
           <FieldList
             fields={extra}
             value={value}

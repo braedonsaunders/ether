@@ -311,6 +311,10 @@ type Options struct {
 	// Validator checks unknown tokens; nil means only server and synced
 	// tokens are accepted.
 	Validator Validator
+	// RefreshUnknownToken, when set, runs a rate-limited friend/access-token
+	// sync when an unrecognised token arrives, so a newly granted server
+	// access token is accepted without waiting for the periodic sync.
+	RefreshUnknownToken func(context.Context) error
 	// CacheTTL is how long a plex.tv-validated token is trusted (15m).
 	CacheTTL time.Duration
 	// NegativeTTL is how long a rejected token is remembered (2m).
@@ -361,8 +365,26 @@ type Service struct {
 	seenMu       sync.Mutex
 	seen         map[int64]time.Time // pending last_seen_at writes
 
+	refreshMu   sync.RWMutex
+	refreshFunc func(context.Context) error
+
 	invalMu sync.Mutex
 	inval   *clusterbus.Invalidator // nil on a standalone server
+}
+
+// SetUnknownTokenRefresher installs or replaces the callback invoked when an
+// unrecognised token arrives before falling back to plex.tv validation.
+func (s *Service) SetUnknownTokenRefresher(fn func(context.Context) error) {
+	s.refreshMu.Lock()
+	s.refreshFunc = fn
+	s.refreshMu.Unlock()
+}
+
+func (s *Service) unknownTokenRefresher() func(context.Context) error {
+	s.refreshMu.RLock()
+	fn := s.refreshFunc
+	s.refreshMu.RUnlock()
+	return fn
 }
 
 // Generation changes when a household member loses access.
@@ -426,7 +448,7 @@ func New(ctx context.Context, db *sql.DB, o Options) (*Service, error) {
 		pos: map[string]cacheEntry{}, neg: map[string]time.Time{},
 		seen: map[int64]time.Time{}, incarnation: incarnation,
 		receipts: map[uint64]receipt{}, idsByHash: map[string][]uint64{},
-		tokenGen: map[string]uint64{}}
+		tokenGen: map[string]uint64{}, refreshFunc: o.RefreshUnknownToken}
 	if err := backfillPlexLinks(ctx, db); err != nil {
 		return nil, err
 	}
@@ -712,10 +734,43 @@ func (s *Service) Accept(ctx context.Context, token string) (*core.User, Accepta
 	}
 	s.mu.RUnlock()
 
-	if s.o.Validator == nil {
+	if s.o.Validator == nil && s.unknownTokenRefresher() == nil {
 		return nil, Acceptance{}, core.ErrUnauthorized
 	}
 	return s.validate(ctx, token, h)
+}
+
+func (s *Service) acceptDurable(h string, now time.Time) (*core.User, Acceptance, bool, error) {
+	s.mu.RLock()
+	id, ok := s.tokens[h]
+	if !ok {
+		s.mu.RUnlock()
+		return nil, Acceptance{}, false, nil
+	}
+	u := s.activePlexUser(id)
+	gen := s.tokenGen[h]
+	var acc Acceptance
+	var found bool
+	if u != nil {
+		acc, found = s.findLocked(h, originDurable, u.ID, gen, time.Time{})
+	}
+	s.mu.RUnlock()
+	if u == nil {
+		return nil, Acceptance{}, true, core.ErrUnauthorized
+	}
+	if !found || acc.viewer != u.ID {
+		s.mu.Lock()
+		u = s.activePlexUser(s.tokens[h])
+		gen = s.tokenGen[h]
+		if u == nil {
+			s.mu.Unlock()
+			return nil, Acceptance{}, true, core.ErrUnauthorized
+		}
+		acc = s.mintLocked(h, originDurable, u.ID, gen, time.Time{})
+		s.mu.Unlock()
+	}
+	s.touch(u.ID, now)
+	return u, acc, true, nil
 }
 
 // activeUser returns a copy of an active user; callers hold s.mu.
@@ -758,6 +813,15 @@ func (s *Service) validate(ctx context.Context, token, h string) (*core.User, Ac
 }
 
 func (s *Service) validateOnce(ctx context.Context, token, h string) (validation, error) {
+	if refresh := s.unknownTokenRefresher(); refresh != nil {
+		_ = refresh(ctx)
+		if u, acc, matched, err := s.acceptDurable(h, s.o.Now()); matched {
+			return validation{user: u, acc: acc}, err
+		}
+	}
+	if s.o.Validator == nil {
+		return validation{}, core.ErrUnauthorized
+	}
 	acct, err := s.o.Validator.Account(ctx, token)
 	if err != nil {
 		if errors.Is(err, core.ErrUnauthorized) {

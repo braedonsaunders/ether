@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/remote"
 )
 
 // dockerBridge is the range Docker uses for bridge networks (172.16.0.0/12).
@@ -154,11 +155,11 @@ func homeLAN(ip netip.Addr) bool {
 
 func advertisedOrigin(cfg config.Config) (scheme, host string, ok bool) {
 	for _, raw := range cfg.Plex.CustomURLs {
-		u, err := url.Parse(strings.TrimSpace(raw))
-		if err != nil || u.Host == "" {
+		if _, err := remote.ParseCustomURL(raw); err != nil {
 			continue
 		}
-		if u.Scheme != "http" && u.Scheme != "https" || containerHost(u.Hostname()) {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || u.Host == "" || containerHost(u.Hostname()) {
 			continue
 		}
 		return u.Scheme, u.Host, true

@@ -75,8 +75,9 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	deps.Variants = a.resolver       // "Play Version" release picker (cache-only)
 	deps.DecisionTraces = a.resolver // latest resolution, for the support capture
 	deps.PlexGUID = plexguid.New(a.db, plexguid.Options{
-		Token:      func() string { return a.cfg.Read().Plex.Token },
-		Background: true,
+		Token:             func() string { return a.cfg.Read().Plex.Token },
+		MachineIdentifier: cfg.Server.MachineIdentifier,
+		Background:        true,
 	})
 	a.plexGUID = deps.PlexGUID
 	if err := a.buildPlexWatch(); err != nil {

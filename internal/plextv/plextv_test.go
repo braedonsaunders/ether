@@ -188,7 +188,7 @@ func TestClaimExchange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Method != ClaimExchange || res.ServerToken != "server-token-42" || res.Owner.ID != 42 {
+	if res.ServerToken != "server-token-42" || res.Owner.ID != 42 {
 		t.Fatalf("%+v", res)
 	}
 	h := f.header("/api/claim/exchange")
@@ -201,17 +201,37 @@ func TestClaimExchange(t *testing.T) {
 	}
 }
 
-func TestClaimFallbackToOwnerToken(t *testing.T) {
+func TestClaimExchangeFailureStoresNoServerToken(t *testing.T) {
 	f := newFakePlexTV(t, testMachineID)
 	f.addUser("user-token", owner())
 	f.exchangeErr = 422
 	c := newServerClient(t, f)
-	res, err := c.Claim(context.Background(), "user-token")
+	if res, err := c.Claim(context.Background(), "user-token"); !errors.Is(err, ErrClaimExchangeFailed) {
+		t.Fatalf("res=%+v err=%v, want ErrClaimExchangeFailed", res, err)
+	} else {
+		var ce *ClaimExchangeError
+		if !errors.As(err, &ce) {
+			t.Fatalf("err=%T, want *ClaimExchangeError", err)
+		}
+	}
+	store := &memConfig{cfg: testConfig()}
+	users := &fakeUsers{}
+	r, err := NewRegistrar(RegistrarOptions{
+		Config: store, Client: c, Users: users,
+		WAN: &fakeWAN{ip: "203.0.113.7"}, Mapper: &fakeMapper{},
+		LAN: func() ([]net.IP, error) { return []net.IP{net.ParseIP("192.168.1.5")}, nil },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Method != ClaimOwnerToken || res.ServerToken != "user-token" {
-		t.Fatalf("%+v", res)
+	if _, err := r.Claim(context.Background(), "user-token"); !errors.Is(err, ErrClaimExchangeFailed) {
+		t.Fatalf("registrar Claim err=%v, want ErrClaimExchangeFailed", err)
+	}
+	if got := store.Get().Plex; got.Claimed || got.Token != "" {
+		t.Fatalf("failed claim stored server token: %+v", got)
+	}
+	if users.token != "" || users.owner.ID != 0 {
+		t.Fatalf("failed claim updated UserSync: %+v", users)
 	}
 	if _, err := c.Claim(context.Background(), "bad"); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("bad token: %v", err)
