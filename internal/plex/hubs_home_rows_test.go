@@ -30,6 +30,48 @@ func hubRows(t *testing.T, body []byte) []struct {
 	return v.MediaContainer.Hub
 }
 
+type paintedHub struct {
+	ID    string `json:"hubIdentifier"`
+	Title string `json:"title"`
+	Style string `json:"style"`
+	Size  int    `json:"size"`
+	Art   []string
+}
+
+func paintedHomeHubs(t *testing.T, body []byte) []paintedHub {
+	t.Helper()
+	var v struct {
+		MediaContainer struct {
+			Hub []struct {
+				ID       string `json:"hubIdentifier"`
+				Title    string `json:"title"`
+				Style    string `json:"style"`
+				Size     int    `json:"size"`
+				Metadata []struct {
+					Art   string `json:"art"`
+					Thumb string `json:"thumb"`
+				} `json:"Metadata"`
+			} `json:"Hub"`
+		} `json:"MediaContainer"`
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
+		t.Fatal(err)
+	}
+	out := make([]paintedHub, 0, len(v.MediaContainer.Hub))
+	for _, h := range v.MediaContainer.Hub {
+		row := paintedHub{ID: h.ID, Title: h.Title, Style: h.Style, Size: h.Size}
+		for _, m := range h.Metadata {
+			row.Art = append(row.Art, m.Art)
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func iosHomeHeaders() []string {
+	return []string{"Accept", "application/json", "X-Plex-Product", "Plex for iOS", "X-Plex-Platform", "iOS", "X-Plex-Device", "iPhone"}
+}
+
 func TestPromotedDropsEmptyRestrictedAndDuplicateHubs(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
@@ -116,6 +158,54 @@ func TestHomeRowOrderStableAcrossSessionAndCount(t *testing.T) {
 	for i := range first {
 		if first[i].ID != second[i].ID || first[i].Size == 0 || second[i].Size == 0 {
 			t.Fatalf("order changed or empty at %d: %+v vs %+v", i, first, second)
+		}
+	}
+}
+
+func TestIOSHomeOmitsColdAndArtlessHero(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.srv.d.Recommender = &fakeRecommender{home: []core.Hub{
+		{ID: "home.trending", Title: "Trending Now", Promoted: true, Items: []core.Title{alien}},
+		{ID: "home.because", Title: "Because You Watched", Promoted: true, Items: []core.Title{fightClub}},
+		{ID: "home.shortontime", Title: "Short on Time", Promoted: true, Items: []core.Title{alien}},
+	}}
+
+	for _, path := range []string{"/hubs", "/hubs/promoted"} {
+		rows := paintedHomeHubs(t, f.get(t, path, iosHomeHeaders()...).Body.Bytes())
+		if len(rows) == 0 || rows[0].ID != "home.because" || rows[0].Style != "hero" || rows[0].Size == 0 {
+			t.Fatalf("%s: cold/artless lead = %+v", path, rows)
+		}
+		for _, row := range rows {
+			if row.ID == "home.continue" || row.ID == "home.trending" || row.Style == "hero" && row.ID != "home.because" {
+				t.Fatalf("%s: reserved empty hero: %+v", path, rows)
+			}
+			if row.Size == 0 {
+				t.Fatalf("%s: empty hub %s", path, row.ID)
+			}
+		}
+		if rows[0].Art[0] == "" {
+			t.Fatalf("%s: promoted hero has no art: %+v", path, rows[0])
+		}
+	}
+}
+
+func TestIOSHomeKeepsReadyHeroAndTrending(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: fightClub.Key, ViewOffset: 60_000, LastViewedAt: fixedNow})
+	f.srv.d.Recommender = &fakeRecommender{home: []core.Hub{
+		{ID: "home.trending", Title: "Trending Now", Promoted: true, Items: []core.Title{fightClub}},
+		{ID: "home.because", Title: "Because You Watched", Promoted: true, Items: []core.Title{alien}},
+	}}
+
+	for _, path := range []string{"/hubs", "/hubs/promoted"} {
+		rows := paintedHomeHubs(t, f.get(t, path, iosHomeHeaders()...).Body.Bytes())
+		if len(rows) < 3 || rows[0].ID != "home.continue" || rows[0].Style != "hero" || rows[1].ID != "home.trending" || rows[1].Style != "shelf" {
+			t.Fatalf("%s: ready rows = %+v", path, rows)
+		}
+		if rows[0].Size == 0 || rows[0].Art[0] == "" {
+			t.Fatalf("%s: ready hero lost art: %+v", path, rows[0])
 		}
 	}
 }

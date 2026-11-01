@@ -271,7 +271,7 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 		},
 	}
 	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0, experience.HomePurpose)
-	mc.Hub = stableHomeHubs(rows)
+	mc.Hub = heroReadyHomeHubs(stableHomeHubs(rows))
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, hc, mc.Hub, served)

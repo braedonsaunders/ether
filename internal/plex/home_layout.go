@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
@@ -79,6 +80,87 @@ func stableHomeHubs(rows []model.Hub) []model.Hub {
 				continue
 			}
 			seen[h.HubIdentifier] = true
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
+// heroReadyItem reports whether a painted title has the artwork iOS needs
+// to draw a Home hero tile: a backdrop and a poster.
+func heroReadyItem(m model.Metadata) bool {
+	art, thumb := strings.TrimSpace(m.Art), strings.TrimSpace(m.Thumb)
+	for _, img := range m.Image {
+		switch img.Type {
+		case "background":
+			if art == "" {
+				art = strings.TrimSpace(img.URL)
+			}
+		case "coverPoster":
+			if thumb == "" {
+				thumb = strings.TrimSpace(img.URL)
+			}
+		}
+	}
+	if art == "" {
+		art = strings.TrimSpace(m.GrandparentArt)
+	}
+	if thumb == "" {
+		thumb = strings.TrimSpace(m.GrandparentThumb)
+	}
+	return art != "" && thumb != ""
+}
+
+// paintHeroItems keeps titles that can fill a hero tile and rewrites Size
+// and HubKey to match. A hub with no such titles is omitted so the client
+// never reserves the slot.
+func paintHeroItems(h model.Hub) (model.Hub, bool) {
+	kept := make([]model.Metadata, 0, len(h.Metadata))
+	keys := make([]string, 0, len(h.Metadata))
+	for _, m := range h.Metadata {
+		if !heroReadyItem(m) {
+			continue
+		}
+		kept = append(kept, m)
+		if m.RatingKey != "" {
+			keys = append(keys, m.RatingKey)
+		}
+	}
+	if len(kept) == 0 {
+		return h, false
+	}
+	if len(kept) != len(h.Metadata) {
+		if len(keys) > 0 {
+			h.HubKey = "/library/metadata/" + strings.Join(keys, ",")
+		} else {
+			h.HubKey = ""
+		}
+	}
+	h.Metadata = kept
+	h.Size = len(kept)
+	return h, true
+}
+
+// heroReadyHomeHubs is the Home-only pass after stableHomeHubs. Plex iOS
+// draws the first hub, and any style=hero hub, as the large spotlight. A
+// cold or not-yet-warm row with no backdrop must not be sent: either the
+// next already-painted, art-ready shelf is promoted into that slot, or
+// the hero is omitted. Later shelves stay as they were.
+func heroReadyHomeHubs(rows []model.Hub) []model.Hub {
+	out := make([]model.Hub, 0, len(rows))
+	haveHero := false
+	for _, h := range rows {
+		if strings.EqualFold(h.Style, "hero") || !haveHero {
+			painted, ok := paintHeroItems(h)
+			if !ok {
+				continue
+			}
+			if !strings.EqualFold(painted.Style, "hero") {
+				painted.Style = "hero"
+			}
+			out = append(out, painted)
+			haveHero = true
+			continue
 		}
 		out = append(out, h)
 	}

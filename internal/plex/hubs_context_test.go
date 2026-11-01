@@ -180,7 +180,7 @@ func TestImpressionCreditFollowsMainDuplicateRules(t *testing.T) {
 
 func TestHubsContinueFirstWithoutPlaceholder(t *testing.T) {
 	rec := &contextualRecommender{fakeRecommender: fakeRecommender{
-		home: []core.Hub{{ID: "home.trending", Title: "Trending", Promoted: true, Items: []core.Title{alien}}},
+		home: []core.Hub{{ID: "home.trending", Title: "Trending", Promoted: true, Items: []core.Title{fightClub}}},
 	}}
 	f := newContextualFixture(t, rec)
 	f.state.set(ownerUser.ID, core.WatchStatus{Key: fightClub.Key, ViewOffset: 60_000, LastViewedAt: fixedNow})
