@@ -137,6 +137,9 @@ func warnVideoEncoderFallback(log *slog.Logger, codec string, accel core.HWAccel
 // when the spec says so.
 func buildArgs(s runSpec) []string {
 	args := buildCodecArgs(s)
+	if s.Protocol == core.ProtocolHTTP {
+		return append(args, "-flush_packets", "1", "-f", "matroska", "pipe:1")
+	}
 	if s.Protocol == core.ProtocolDASH {
 		return append(args, dashMuxArgs(s)...)
 	}
@@ -215,7 +218,10 @@ func buildCodecArgs(s runSpec) []string {
 	}
 	transcodeVideo := v != nil && !d.VideoCopy
 
-	args := []string{"-hide_banner", "-nostdin", "-loglevel", "warning", "-nostats", "-progress", "pipe:1", "-y"}
+	args := []string{"-hide_banner", "-nostdin", "-loglevel", "warning", "-nostats", "-y"}
+	if s.Protocol != core.ProtocolHTTP {
+		args = append(args, "-progress", "pipe:1")
+	}
 	if transcodeVideo {
 		if _, hw := videoEncoder(d.VideoCodec, s.Accel, s.Features); !hw {
 			w, h := outputSize(v.Width, v.Height, d.MaxHeight)
@@ -240,6 +246,9 @@ func buildCodecArgs(s runSpec) []string {
 	args = append(args, inputTimestampArgs(s)...)
 	if s.Start > 0 {
 		args = append(args, "-ss", secs(s.Start))
+		if s.Protocol == core.ProtocolHTTP && !s.LiveInput {
+			args = append(args, "-copyts")
+		}
 	}
 	args = append(args, "-i", s.Input)
 	textSub := matroskaTextSubtitle(s)

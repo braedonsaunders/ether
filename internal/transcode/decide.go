@@ -452,6 +452,13 @@ func planAudio(a *core.StreamInfo, caps core.ClientCaps, audioIssues []string, b
 
 // Decide chooses direct play, remux into HLS, or full transcode, in that
 // order of preference, and explains why in Decision.Reason.
+func outputContainer(caps core.ClientCaps, opts core.DecideOptions, videoCodec, audioCodec string) string {
+	if opts.Protocol == core.ProtocolHTTP {
+		return ContainerMatroska
+	}
+	return HLSContainer(caps, videoCodec, audioCodec)
+}
+
 func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, pol Policy) core.Decision {
 	v := info.Video()
 	a := pickAudio(info, opts.AudioStream)
@@ -556,7 +563,7 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 			d.VideoCodec = v.Codec
 			d.MaxHeight = v.Height
 		}
-		d.Container = HLSContainer(caps, d.VideoCodec, audioCodec)
+		d.Container = outputContainer(caps, opts, d.VideoCodec, audioCodec)
 		d.BitrateKbps = info.BitrateKbps
 		if !audioCopy && a != nil {
 			d.BitrateKbps = info.BitrateKbps - copiedAudioKbps(a) + audioKbps
@@ -665,7 +672,7 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 	d.VideoCodec = codec
 	d.MaxHeight = height
 	d.BitrateKbps = videoKbps + audioKbps
-	d.Container = HLSContainer(caps, codec, audioCodec)
+	d.Container = outputContainer(caps, opts, codec, audioCodec)
 
 	parts := []string{"transcode"}
 	if len(why) > 0 {

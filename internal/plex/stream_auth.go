@@ -120,6 +120,47 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	return true
 }
 
+// authenticateSessionRead authorizes playlist and segment GET/HEAD by a
+// server-minted read capability bound to the starting device. The
+// client-chosen session id in the path is not a credential. Native
+// loaders that drop headers keep using stream grants.
+func (s *Server) authenticateSessionRead(r *http.Request, pr *Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if !capabilityPathOK(r) {
+		return false
+	}
+	cap, ok := s.readCaps.lookup(readCapFrom(r))
+	if !ok {
+		return false
+	}
+	id := transcodeSessionID(r.URL.Path)
+	if id == "" || id != cap.sessionID {
+		return false
+	}
+	if pr.ClientID == "" || cap.clientID == "" || pr.ClientID != cap.clientID {
+		return false
+	}
+	e, ok := s.transcodes.get(cap.sessionID)
+	if !ok || !e.started || e.userID != cap.userID || e.clientID != cap.clientID {
+		return false
+	}
+	u := s.activeViewer(r.Context(), cap.userID)
+	if u == nil {
+		return false
+	}
+	if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+		u = policy.UserPolicy(u)
+	}
+	if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
+		return false
+	}
+	pr.User = u
+	pr.Capability = true
+	return true
+}
+
 func streamGrantURL(raw, token string) string {
 	return streamgrant.GrantURL(raw, token)
 }
@@ -170,7 +211,7 @@ func (s *Server) serveStreamManifest(w http.ResponseWriter, r *http.Request, id 
 			if xml {
 				raw = html.UnescapeString(raw)
 			}
-			raw = streamGrantURL(raw, e.streamToken)
+			raw = s.mediaURL(raw, e.id, e.streamToken)
 			if xml {
 				raw = html.EscapeString(raw)
 			}
@@ -180,7 +221,7 @@ func (s *Server) serveStreamManifest(w http.ResponseWriter, r *http.Request, id 
 			lines := strings.Split(body, "\n")
 			for i, line := range lines {
 				if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
-					lines[i] = streamGrantURL(line, e.streamToken)
+					lines[i] = s.mediaURL(line, e.id, e.streamToken)
 				}
 			}
 			body = strings.Join(lines, "\n")

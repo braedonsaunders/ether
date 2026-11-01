@@ -139,8 +139,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError)
 		return
 	}
-	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-	s.transcodes.put(entry)
+	s.bindTranscodeStarted(entry, dec, p.offset)
 	s.notePlexEncoder(p.sessionID, frontend.StreamDASH, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()

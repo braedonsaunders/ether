@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -218,7 +219,11 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 		p.mediaIndex = n
 	}
 	if p.protocol == "" {
-		p.protocol = "hls"
+		if strings.HasSuffix(r.URL.Path, "/start") && !strings.HasSuffix(r.URL.Path, "/start.m3u8") && !strings.HasSuffix(r.URL.Path, "/start.mpd") {
+			p.protocol = core.ProtocolHTTP
+		} else {
+			p.protocol = "hls"
+		}
 	}
 	p.opts = core.DecideOptions{
 		DirectPlay:     q.Get("directPlay") != "0",
@@ -227,6 +232,7 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 		MaxHeight:      parseResolutionHeight(q.Get("videoResolution")),
 		AudioStream:    -1,
 		SubtitleStream: -1,
+		Protocol:       p.protocol,
 	}
 	if vb, err := strconv.Atoi(q.Get("videoBitrate")); err == nil && vb > 0 && (p.opts.MaxBitrateKbps == 0 || vb < p.opts.MaxBitrateKbps) {
 		p.opts.MaxBitrateKbps = vb
@@ -280,6 +286,9 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 		p.sessionID = sanitizeSessionID(pr.ClientID + "-" + key.String())
 	}
 	p.sessionID = sanitizeSessionID(p.sessionID)
+	if p.sessionID == "" {
+		p.sessionID = newSessionID()
+	}
 	p.offset = durationParam(q.Get("offset"), time.Second)
 	return p, nil
 }
@@ -302,6 +311,10 @@ func firstNonEmpty(vs ...string) string {
 }
 
 // sanitizeSessionID keeps session ids path-safe.
+func newSessionID() string {
+	return rand.Text()
+}
+
 func sanitizeSessionID(s string) string {
 	b := make([]byte, 0, len(s))
 	for i := 0; i < len(s) && len(b) < 128; i++ {
@@ -631,6 +644,13 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 	if p.protocol == core.ProtocolDASH {
 		dashDecisionMedia(&m)
 	}
+	if p.protocol == core.ProtocolHTTP {
+		for i := range kept {
+			if kept[i].Location == "segments-av" || kept[i].Location == "segments-video" {
+				kept[i].Location = "direct"
+			}
+		}
+	}
 	return m
 }
 
@@ -704,6 +724,14 @@ func applyTranscodeMedia(m *model.Media, dec core.Decision, protocol string) {
 	}
 	part.Container = m.Container
 	part.Protocol = protocol
+	if protocol == core.ProtocolHTTP {
+		// Plex Desktop's Matroska stream: Media/Part carry container=mkv
+		// and no protocol attribute.
+		m.Protocol = ""
+		part.Protocol = ""
+		m.Container = "mkv"
+		part.Container = "mkv"
+	}
 	part.Decision = "transcode"
 	part.Key = ""
 	part.File = ""
@@ -946,8 +974,7 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError)
 		return
 	}
-	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-	s.transcodes.put(entry)
+	s.bindTranscodeStarted(entry, dec, p.offset)
 	s.notePlexEncoder(p.sessionID, frontend.StreamHLS, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()
@@ -978,7 +1005,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 				if rg.FrameRate > 0 {
 					line += fmt.Sprintf(",FRAME-RATE=%.3f", rg.FrameRate)
 				}
-				uri := streamGrantURL("session/"+sessionID+"/"+rg.ID+"/index.m3u8", entry.streamToken)
+				uri := s.mediaURL("session/"+sessionID+"/"+rg.ID+"/index.m3u8", sessionID, entry.streamToken)
 				b.WriteString(line + "\n" + uri + "\n")
 			}
 			body := b.String()
@@ -1012,7 +1039,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		}
 	}
 	line += transcode.HLSVariantAttributes(info, dec)
-	body := "#EXTM3U\n" + line + "\n" + streamGrantURL("session/"+sessionID+"/base/index.m3u8", entry.streamToken) + "\n"
+	body := "#EXTM3U\n" + line + "\n" + s.mediaURL("session/"+sessionID+"/base/index.m3u8", sessionID, entry.streamToken) + "\n"
 	h := w.Header()
 	h.Set("Content-Type", "application/vnd.apple.mpegurl")
 	h.Set("Cache-Control", "no-cache")
@@ -1115,6 +1142,13 @@ func (s *Server) handleTranscodePing(w http.ResponseWriter, r *http.Request) {
 	if id := sanitizeSessionID(r.URL.Query().Get("session")); id != "" {
 		if e, ok := s.transcodes.get(id); ok && e.userID == FromContext(r.Context()).User.ID {
 			s.transcodes.touch(id, s.now())
+			if s.d.Transcoder != nil {
+				if hs, ok := s.d.Transcoder.Session(id); ok {
+					if t, ok := hs.(interface{ Touch() }); ok {
+						t.Touch()
+					}
+				}
+			}
 		}
 	}
 	w.WriteHeader(http.StatusOK)
@@ -1179,7 +1213,7 @@ func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
 		if s.d.Transcoder != nil {
 			s.d.Transcoder.Stop(id)
 		}
-		s.transcodes.remove(id)
+		s.dropTranscode(id)
 	}
 	w.WriteHeader(http.StatusOK)
 }

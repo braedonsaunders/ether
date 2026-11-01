@@ -506,6 +506,7 @@ const (
 	StreamDirect StreamFormat = "direct"
 	StreamHLS    StreamFormat = "hls"
 	StreamDASH   StreamFormat = "dash"
+	StreamHTTP   StreamFormat = "http"
 )
 
 // StreamRequest describes output, not an upstream URL or credential. The

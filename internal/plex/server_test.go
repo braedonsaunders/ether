@@ -896,8 +896,8 @@ func TestPlaylistMoveAfterItself(t *testing.T) {
 }
 
 func TestRedactQueryHidesCredentials(t *testing.T) {
-	got := redactQuery("a=1&X-Plex-Token=secret&" + streamGrantParam + "=grant&x-plex-token=s2")
-	if strings.Contains(got, "secret") || strings.Contains(got, "grant") || strings.Contains(got, "s2") || !strings.Contains(got, "a=1") {
+	got := redactQuery("a=1&X-Plex-Token=secret&" + streamGrantParam + "=grant&" + readCapParam + "=read&x-plex-token=s2")
+	if strings.Contains(got, "secret") || strings.Contains(got, "grant") || strings.Contains(got, "read") || strings.Contains(got, "s2") || !strings.Contains(got, "a=1") {
 		t.Fatalf("redactQuery = %q", got)
 	}
 }

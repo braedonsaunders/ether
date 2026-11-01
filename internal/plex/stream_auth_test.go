@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
@@ -85,6 +86,7 @@ func TestEncodedSlashCapabilityCannotReachDecision(t *testing.T) {
 	for _, tc := range []struct{ name, target string }{
 		{"stream grant", streamGrantURL(encoded, e.streamToken)},
 		{"session id", encoded},
+		{"read capability", readCapURL(encoded, f.srv.readCaps.token("path-escape"))},
 	} {
 		before := f.playback.prepared
 		rec := f.request(t, http.MethodGet, tc.target, map[string]string{"X-Plex-Token": ""})
@@ -112,6 +114,111 @@ func TestEncodedSlashCapabilityCannotReachDecision(t *testing.T) {
 	}
 	if rec := f.get(t, path); rec.Code != 200 {
 		t.Fatalf("unencoded token: %d", rec.Code)
+	}
+}
+
+func TestSessionReadAuth(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session")
+	if start.Code != 200 {
+		t.Fatal(start.Code, start.Body.String())
+	}
+	token := f.srv.readCaps.token("live-session")
+	if token == "" || !strings.Contains(start.Body.String(), token) {
+		t.Fatal("master missing minted read capability")
+	}
+	path := "/video/:/transcode/universal/session/live-session/base/init.mp4"
+	granted := readCapURL(path, token)
+	for _, p := range []string{
+		granted,
+		readCapURL("/video/:/transcode/universal/session/live-session/base/index.m3u8", token),
+		readCapURL("/video/:/transcode/universal/session/live-session/base/00000.ts", token),
+	} {
+		if rec := f.request(t, http.MethodGet, p, map[string]string{"X-Plex-Token": ""}); rec.Code != 200 {
+			t.Fatalf("minted read cap %s: %d", p, rec.Code)
+		}
+	}
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code != 401 {
+		t.Fatalf("path session id alone: %d", rec.Code)
+	}
+	f.srv.transcodes.put(&transcodeEntry{id: "dash-session", userID: ownerUser.ID, clientID: "client-1", started: true})
+	dashTok := f.srv.mintReadCapability("dash-session", "client-1", ownerUser.ID)
+	if rec := f.request(t, http.MethodGet, readCapURL("/video/:/transcode/universal/session/dash-session/0/header", dashTok), map[string]string{"X-Plex-Token": ""}); rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+		t.Fatalf("dash read cap: %d", rec.Code)
+	}
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
+		t.Fatalf("stale token + read cap: %d", rec.Code)
+	}
+	e, _ := f.srv.transcodes.get("live-session")
+	if rec := f.request(t, http.MethodGet, streamGrantURL(path, e.streamToken), map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
+		t.Fatalf("stale token + grant: %d", rec.Code)
+	}
+	if rec := f.request(t, http.MethodGet, readCapURL("/video/:/transcode/universal/session/not-a-session/base/init.mp4", token), map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("read cap authorized a different session")
+	}
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": "other-device"}); rec.Code == 200 {
+		t.Fatal("cross-device read cap was accepted")
+	}
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": ""}); rec.Code == 200 {
+		t.Fatal("headerless read cap was accepted")
+	}
+	for _, p := range []string{
+		"/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session",
+		"/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session",
+		"/video/:/transcode/universal/start?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session&protocol=http",
+		"/video/:/transcode/universal/ping?session=live-session",
+		"/video/:/transcode/universal/stop?session=live-session",
+	} {
+		if rec := f.request(t, http.MethodGet, readCapURL(p, token), map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+			t.Fatalf("%s: read cap authorized a non-segment route", p)
+		}
+	}
+	if rec := f.get(t, "/video/:/transcode/universal/stop?session=live-session"); rec.Code != 200 {
+		t.Fatalf("stop: %d", rec.Code)
+	}
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("revoked read cap was accepted")
+	}
+}
+
+func TestExpireRevokesReadCapability(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=expire-session")
+	if start.Code != 200 {
+		t.Fatal(start.Code, start.Body.String())
+	}
+	token := f.srv.readCaps.token("expire-session")
+	if token == "" {
+		t.Fatal("missing read capability")
+	}
+	f.srv.expireTranscodes(f.srv.now().Add(3*time.Hour), 2*time.Hour)
+	if _, ok := f.srv.readCaps.lookup(token); ok {
+		t.Fatal("expired binding left a live read cap")
+	}
+	path := readCapURL("/video/:/transcode/universal/session/expire-session/base/init.mp4", token)
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("expired read cap was accepted")
+	}
+}
+
+func TestSessionReadRejectsReclaimedBinding(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=reclaim-session")
+	if start.Code != 200 {
+		t.Fatal(start.Code, start.Body.String())
+	}
+	token := f.srv.readCaps.token("reclaim-session")
+	f.srv.transcodes.remove("reclaim-session")
+	f.srv.transcodes.put(&transcodeEntry{id: "reclaim-session", userID: friendUser.ID, clientID: "client-1", started: true})
+	path := readCapURL("/video/:/transcode/universal/session/reclaim-session/base/init.mp4", token)
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("stale read cap authorized a reclaimed session")
 	}
 }
 
