@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"time"
@@ -21,9 +22,18 @@ import (
 // errViewerScope means the request named a viewer other than the grant holder.
 var errViewerScope = errors.New("viewer mismatch")
 
+// jsonReply encodes before writing the status, so an unencodable value is a
+// 500, never an empty 200.
 func jsonReply(w http.ResponseWriter, v any) {
+	b, err := json.Marshal(v)
+	status := http.StatusOK
+	if err != nil {
+		slog.Error("encode response", "component", "mediabrowser", "err", err)
+		b, status = []byte(`{"error":{"code":"encode_failed","message":"the server could not encode this response"}}`), http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(v)
+	w.WriteHeader(status)
+	_, _ = w.Write(append(b, '\n'))
 }
 func decode(r *http.Request, v any) error {
 	return json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20)).Decode(v)

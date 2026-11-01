@@ -1,7 +1,6 @@
 package silo
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,9 +10,7 @@ import (
 )
 
 func peopleProblem(w http.ResponseWriter, status int) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "urn:ether:problem:people-unavailable", "title": http.StatusText(status), "status": status, "detail": "The requested people operation is unavailable.", "instance": "/api/v2/catalog/people"})
+	problemReply(w, status, map[string]any{"type": "urn:ether:problem:people-unavailable", "title": http.StatusText(status), "status": status, "detail": "The requested people operation is unavailable.", "instance": "/api/v2/catalog/people"})
 }
 func (i *instance) personDTO(r *http.Request, credential string, person frontend.PersonDetail) map[string]any {
 	out := map[string]any{"id": person.ID, "name": person.Name}

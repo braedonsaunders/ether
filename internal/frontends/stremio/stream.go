@@ -2,7 +2,6 @@ package stremio
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -88,8 +87,7 @@ func (i *instance) stream(w http.ResponseWriter, r *http.Request) {
 	if label := i.autoVersionName(r, viewer, device, key); label != "" {
 		stream["description"] = label
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"streams": []any{stream}})
+	writeJSON(w, map[string]any{"streams": []any{stream}})
 }
 
 // autoVersionLabelBudget bounds the version lookup for a stream answer; a

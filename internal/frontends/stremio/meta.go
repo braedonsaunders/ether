@@ -1,7 +1,6 @@
 package stremio
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,8 +78,7 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 		}
 		meta["videos"] = videos
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"meta": meta})
+	writeJSON(w, map[string]any{"meta": meta})
 }
 
 // stremioDescription puts the match header at the start of the only prose

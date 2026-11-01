@@ -9,10 +9,19 @@ import (
 )
 
 func reply(w http.ResponseWriter, status int, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"code":"encode_failed","message":"failed to encode response"}}` + "\n"))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(b)
+	_, _ = w.Write([]byte("\n"))
 }
 func fail(w http.ResponseWriter, status int, msg string) {
 	reply(w, status, map[string]any{"error": map[string]string{"code": "stats", "message": msg}})
@@ -123,7 +132,7 @@ func (s *Service) infrastructure(w http.ResponseWriter, r *http.Request) {
 	for _, kind := range []string{"providers", "indexers"} {
 		var raw string
 		var at int64
-		if s.db.QueryRowContext(r.Context(), `SELECT payload,at FROM stats_snapshots WHERE kind=?`, kind).Scan(&raw, &at) == nil {
+		if s.db.QueryRowContext(r.Context(), `SELECT payload,at FROM stats_snapshots WHERE kind=?`, kind).Scan(&raw, &at) == nil && json.Valid([]byte(raw)) {
 			snapshots[kind] = Snapshot{json.RawMessage(raw), at}
 		}
 	}

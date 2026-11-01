@@ -812,6 +812,9 @@ func (e *Engine) fetchOwnerRows(key string, user *core.User, hc core.HubContext,
 			e.log.Error("personalize: owner rows panicked", "panic", v)
 		}
 		e.mu.Lock()
+		if ent.at.IsZero() {
+			ent.at = e.now()
+		}
 		ent.loading = false
 		close(ent.done)
 		e.mu.Unlock()
@@ -821,7 +824,7 @@ func (e *Engine) fetchOwnerRows(key string, user *core.User, hc core.HubContext,
 	rows, err := e.opts.Collections.HomeRowsFor(ctx, user, hc)
 	if err != nil {
 		e.log.Debug("personalize: owner rows failed", "err", err)
-		return
+		rows = nil
 	}
 	if source, ok := e.opts.Collections.(core.CollectionLayoutSource); ok {
 		seen := map[string]bool{}
@@ -844,7 +847,10 @@ func (e *Engine) fetchOwnerRows(key string, user *core.User, hc core.HubContext,
 		}
 	}
 	e.mu.Lock()
-	ent.rows, ent.at = rows, e.now()
+	if err == nil || len(rows) > 0 || ent.rows == nil {
+		ent.rows = rows
+	}
+	ent.at = e.now()
 	if len(e.owner) > 5000 {
 		for k, v := range e.owner {
 			if k != key && !v.loading {

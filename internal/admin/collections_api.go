@@ -92,8 +92,18 @@ func viewOf(s core.CollectionSpec) collectionView {
 func encodableRules(rules []core.CollectionRule, warnings []string) ([]core.CollectionRule, []string) {
 	out := rules[:0:0]
 	for _, r := range rules {
-		if len(r.Value) > 0 && !json.Valid(r.Value) {
-			warnings = append(warnings, fmt.Sprintf("Rule %q has a damaged value and was skipped. Edit the collection to set it again.", r.Field))
+		if len(r.Value) == 0 || !json.Valid(r.Value) {
+			msg := fmt.Sprintf("Rule %q has a damaged value and was skipped. Edit the collection to set it again.", r.Field)
+			has := false
+			for _, w := range warnings {
+				if w == msg {
+					has = true
+					break
+				}
+			}
+			if !has {
+				warnings = append(warnings, msg)
+			}
 			continue
 		}
 		out = append(out, r)

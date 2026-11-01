@@ -2,8 +2,10 @@ package collections_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,5 +281,67 @@ func TestSmartNeverStale(t *testing.T) {
 	page, _ = svc.Items(ctx, nil, created.Key, 0, 10)
 	if page.Total != 4 || page.Items[0].Title != "New Sci-Fi" {
 		t.Fatalf("after add: %+v", page)
+	}
+}
+
+func TestDamagedStoredRuleSkipsAndWarnsWithoutBreakingHomeRows(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cfg := config.Catalog{Language: "en-US", Region: "US", MinPopularity: 5, MinVotes: 100}
+	cat, err := catalog.New(db, nil, cfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := int64(1); i <= 4; i++ {
+		if err := cat.UpsertTitle(ctx, core.Title{
+			Key: core.MovieKey(i), Type: core.TypeMovie, IDs: core.IDs{TMDB: i},
+			Title: "Sci-Fi Movie", Genres: []string{"Science Fiction"},
+			Year: 2020, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+			Rating: 8.0, Popularity: 50, VoteCount: 1000,
+		}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc, err := collections.New(db, cat, slog.Default(), collections.WithoutDefaults(), collections.WithIndexTTL(0), collections.WithLiveTTL(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := svc.CreateSpec(ctx, core.CollectionSpec{
+		Name:      "Damaged Rule Shelf",
+		MediaType: "movie",
+		Sources:   []core.CollectionSource{{Kind: "catalog"}},
+		Match:     "all",
+		Rules: []core.CollectionRule{
+			{Field: "genre", Op: "in", Value: json.RawMessage(`["Science Fiction"]`)},
+		},
+		Refresh: "live",
+		Enabled: true,
+		Targets: core.CollectionTargets{HomeRow: true, SectionRow: true, CollectionsTab: true, Users: core.AllUsers()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Inject a rule with an uncompilable stored value directly into collections_specs.
+	damagedSpec := `{"name":"Damaged Rule Shelf","mediaType":"movie","sources":[{"kind":"catalog"}],"match":"all","rules":[{"field":"genre","op":"in","value":["Science Fiction"]},{"field":"year","op":"gte","value":"not-a-year"}],"refresh":"live","enabled":true,"targets":{"homeRow":true,"sectionRow":true,"collectionsTab":true,"users":"all"}}`
+	if _, err := db.ExecContext(ctx, `UPDATE collections_specs SET spec_json=?, build_hash='' WHERE id=?`, damagedSpec, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.GetSpec(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Rules) != 1 || len(got.Warnings) == 0 || !strings.Contains(got.Warnings[0], `Rule "year" has a damaged value`) {
+		t.Fatalf("expected damaged rule to be skipped with warning, got rules=%+v warnings=%+v", got.Rules, got.Warnings)
+	}
+	rows, err := svc.HomeRowsFor(ctx, &core.User{ID: 1, IsOwner: true}, core.HubContext{Now: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || len(rows[0].Hub.Items) != 4 {
+		t.Fatalf("expected HomeRowsFor to serve 4 valid items despite damaged rule, got %+v", rows)
 	}
 }

@@ -560,7 +560,7 @@ func (i *instance) settingValues(w http.ResponseWriter, r *http.Request) {
 			case "playback.subtitle_mode":
 				row["value"] = map[string]string{"off": "off", "always": "always", "foreign-only": "auto", "forced-only": "auto"}[tracks.SubtitleMode]
 			case "playback.subtitle_appearance":
-				if len(tracks.SubtitleAppearance) > 0 {
+				if len(tracks.SubtitleAppearance) > 0 && validSubtitleAppearance(tracks.SubtitleAppearance) {
 					row["value"] = json.RawMessage(tracks.SubtitleAppearance)
 				}
 			case "playback.max_bitrate_kbps":

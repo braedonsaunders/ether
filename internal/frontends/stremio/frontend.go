@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -12,6 +13,20 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
+
+// writeJSON encodes before writing the status, so an unencodable value is a
+// 500, never an empty 200.
+func writeJSON(w http.ResponseWriter, v any) {
+	b, err := json.Marshal(v)
+	status := http.StatusOK
+	if err != nil {
+		slog.Error("encode response", "component", "stremio", "err", err)
+		b, status = []byte(`{"error":{"code":"encode_failed","message":"the server could not encode this response"}}`), http.StatusInternalServerError
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(append(b, '\n'))
+}
 
 // Frontend is mounted on the main listener under /stremio.
 type Frontend struct{}
@@ -130,7 +145,6 @@ func (i *instance) manifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	i.observeClient(credential)
-	w.Header().Set("Content-Type", "application/json")
 	catalogs := []any{
 		map[string]any{"type": "movie", "id": "ether-movies", "name": "Ether Movies", "extra": []any{map[string]any{"name": "search"}, map[string]any{"name": "skip"}, map[string]any{"name": "genre"}}},
 		map[string]any{"type": "series", "id": "ether-series", "name": "Ether Series", "extra": []any{map[string]any{"name": "search"}, map[string]any{"name": "skip"}, map[string]any{"name": "genre"}}},
@@ -140,7 +154,7 @@ func (i *instance) manifest(w http.ResponseWriter, r *http.Request) {
 			catalogs = append(catalogs, map[string]any{"type": typ, "id": "ether-" + row.id, "name": row.name, "extra": []any{map[string]any{"name": "skip"}}})
 		}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"id": "org.ether.viewer", "version": "1.0.0", "name": "Ether",
 		"types": []string{"movie", "series"}, "resources": []string{"catalog", "meta", "stream"},
 		"idPrefixes": []string{"tmdb:", "tt"},

@@ -159,7 +159,36 @@ func scanSpecRow(sc interface{ Scan(...any) error }) (*specRow, error) {
 		r.changedAt = time.Unix(changed, 0).UTC()
 	}
 	_ = json.Unmarshal([]byte(warnJSON), &r.warnings)
+	r.spec.Rules, r.warnings = sanitizeStoredRules(r.spec.Rules, r.warnings)
+	r.spec.Exclude, r.warnings = sanitizeStoredRules(r.spec.Exclude, r.warnings)
 	return &r, nil
+}
+
+// sanitizeStoredRules drops stored rules whose JSON value is damaged or cannot
+// be compiled, appending a warning instead of failing collection builds.
+func sanitizeStoredRules(rules []core.CollectionRule, warnings []string) ([]core.CollectionRule, []string) {
+	if len(rules) == 0 {
+		return rules, warnings
+	}
+	out := make([]core.CollectionRule, 0, len(rules))
+	for _, r := range rules {
+		if (len(r.Value) > 0 && !json.Valid(r.Value)) || func() bool { _, err := compileRule(r); return err != nil }() {
+			msg := fmt.Sprintf("Rule %q has a damaged value and was skipped. Edit the collection to set it again.", r.Field)
+			has := false
+			for _, w := range warnings {
+				if w == msg {
+					has = true
+					break
+				}
+			}
+			if !has {
+				warnings = append(warnings, msg)
+			}
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, warnings
 }
 
 func (s *Service) loadRows(ctx context.Context) ([]*specRow, error) {

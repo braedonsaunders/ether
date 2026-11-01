@@ -3,7 +3,9 @@ package plex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -207,5 +209,86 @@ func TestIOSHomeKeepsReadyHeroAndTrending(t *testing.T) {
 		if rows[0].Size == 0 || rows[0].Art[0] == "" {
 			t.Fatalf("%s: ready hero lost art: %+v", path, rows[0])
 		}
+	}
+}
+
+type brokenCollectionRows struct {
+	calls atomic.Int32
+	stall time.Duration
+	err   error
+}
+
+func (b *brokenCollectionRows) HomeRowsFor(ctx context.Context, _ *core.User, _ core.HubContext) ([]core.CollectionRow, error) {
+	b.calls.Add(1)
+	if b.stall > 0 {
+		select {
+		case <-time.After(b.stall):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, b.err
+}
+
+func TestBrokenCollectionCannotStallOrEmptyHubs(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	for i := int64(1); i <= 40; i++ {
+		title := fightClub
+		title.Key = core.MovieKey(20000 + i)
+		title.Title = fmt.Sprintf("Sci-Fi %d", i)
+		title.Genres = []string{"Science Fiction"}
+		title.Rating = 8.5
+		title.VoteCount = 10000
+		title.Popularity = 100
+		f.catalog.titles[title.Key] = title
+	}
+	broken := &brokenCollectionRows{stall: 2 * time.Second, err: errors.New("broken collection")}
+	e, err := personalize.New(personalize.Options{
+		DB:            discoveryDB(t),
+		Catalog:       f.catalog,
+		State:         f.srv.d.State,
+		Collections:   broken,
+		SourceTimeout: 80 * time.Millisecond,
+		RefreshEvery:  -1,
+		FlushEvery:    time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	f.srv.d.Recommender = e
+	if err := e.Rebuild(context.Background(), &ownerUser); err != nil {
+		t.Fatal(err)
+	}
+
+	headers := []string{"Accept", "application/json", "X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android", "X-Plex-Device", "SHIELD Android TV"}
+	for _, path := range []string{"/hubs", "/hubs/promoted"} {
+		started := time.Now()
+		res := f.get(t, path, headers...)
+		elapsed := time.Since(started)
+		if elapsed > 500*time.Millisecond {
+			t.Fatalf("%s stalled for %v on broken collection", path, elapsed)
+		}
+		rows := hubRows(t, res.Body.Bytes())
+		if len(rows) == 0 {
+			t.Fatalf("%s returned empty hubs when collection was broken", path)
+		}
+	}
+	// Wait for the background owner-row attempt to finish (bounded by SourceTimeout=80ms),
+	// then verify repeated /hubs and /hubs/promoted calls are served from cache without
+	// re-invoking HomeRowsFor.
+	time.Sleep(150 * time.Millisecond)
+	callsAfterFirst := broken.calls.Load()
+	for i := 0; i < 3; i++ {
+		for _, path := range []string{"/hubs", "/hubs/promoted"} {
+			rows := hubRows(t, f.get(t, path, headers...).Body.Bytes())
+			if len(rows) == 0 {
+				t.Fatalf("%s call %d returned empty hubs", path, i)
+			}
+		}
+	}
+	if got := broken.calls.Load(); got != callsAfterFirst {
+		t.Fatalf("HomeRowsFor called %d times on cached hubs, want %d", got, callsAfterFirst)
 	}
 }

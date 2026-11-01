@@ -22,9 +22,7 @@ func (i *instance) installationID() string {
 }
 
 func installationChanged(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(http.StatusConflict)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "/problems/installation_changed", "title": "Playback installation changed", "status": http.StatusConflict, "detail": "Refresh playback capabilities before retrying."})
+	problemReply(w, http.StatusConflict, map[string]any{"type": "/problems/installation_changed", "title": "Playback installation changed", "status": http.StatusConflict, "detail": "Refresh playback capabilities before retrying."})
 }
 
 type startRequest struct {
@@ -641,9 +639,7 @@ func versionUnavailable(w http.ResponseWriter) {
 		return
 	}
 	w.Header().Set("X-Request-ID", requestID)
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(http.StatusServiceUnavailable)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "urn:ether:problem:version-unavailable", "title": "Selected version unavailable", "status": http.StatusServiceUnavailable, "detail": "The selected version cannot be served for this playback request.", "instance": "urn:silo:request:" + requestID})
+	problemReply(w, http.StatusServiceUnavailable, map[string]any{"type": "urn:ether:problem:version-unavailable", "title": "Selected version unavailable", "status": http.StatusServiceUnavailable, "detail": "The selected version cannot be served for this playback request.", "instance": "urn:silo:request:" + requestID})
 }
 
 type progressRequest struct {
@@ -740,9 +736,7 @@ func playbackError(w http.ResponseWriter, err error) {
 			return
 		}
 		w.Header().Set("X-Request-ID", requestID)
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"type": "about:blank", "title": "Playback temporarily unavailable", "status": 503, "detail": "Playback admission is busy; retry later.", "instance": "urn:silo:request:" + requestID})
+		problemReply(w, http.StatusServiceUnavailable, map[string]any{"type": "about:blank", "title": "Playback temporarily unavailable", "status": 503, "detail": "Playback admission is busy; retry later.", "instance": "urn:silo:request:" + requestID})
 		return
 	}
 	if errors.Is(err, frontend.ErrTranscodeCapacity) {
@@ -756,9 +750,7 @@ func playbackError(w http.ResponseWriter, err error) {
 			return
 		}
 		w.Header().Set("X-Request-ID", requestID)
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://siloserver.org/docs/api/v2/problems/transcode_capacity", "title": "Transcode capacity unavailable", "status": 503, "detail": "The server is busy; retry later.", "instance": "urn:silo:request:" + requestID})
+		problemReply(w, http.StatusServiceUnavailable, map[string]any{"type": "https://siloserver.org/docs/api/v2/problems/transcode_capacity", "title": "Transcode capacity unavailable", "status": 503, "detail": "The server is busy; retry later.", "instance": "urn:silo:request:" + requestID})
 		return
 	}
 	http.Error(w, "Playback unavailable", 503)
@@ -1067,9 +1059,7 @@ func problem(w http.ResponseWriter, status int, typ, title, detail string) {
 		return
 	}
 	w.Header().Set("X-Request-ID", requestID)
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": typ, "title": title, "status": status, "detail": detail, "instance": "urn:silo:request:" + requestID})
+	problemReply(w, status, map[string]any{"type": typ, "title": title, "status": status, "detail": detail, "instance": "urn:silo:request:" + requestID})
 }
 
 type sessionMedia interface {

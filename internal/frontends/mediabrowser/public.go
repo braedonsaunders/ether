@@ -3,7 +3,6 @@ package mediabrowser
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"html"
 	"net"
@@ -51,8 +50,7 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.Handle
 				jsonReply(w, map[string]any{"Id": info.ID, "ServerName": info.ServerName, "Version": info.Version, "LocalAddress": address, "LocalAddresses": []string{address}, "RemoteAddresses": []string{address}, "WanAddress": address})
 				return
 			}
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_ = json.NewEncoder(w).Encode(struct {
+			jsonReply(w, struct {
 				ID                     string `json:"Id"`
 				ServerName             string `json:"ServerName"`
 				LocalAddress           string `json:"LocalAddress"`
@@ -77,8 +75,7 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.Handle
 			jsonReply(w, endpointInfo(r, clientIP))
 		}},
 		{"GET", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_ = json.NewEncoder(w).Encode(getInfo().ProductName)
+			jsonReply(w, getInfo().ProductName)
 		}},
 	}
 	for _, h := range handlers {

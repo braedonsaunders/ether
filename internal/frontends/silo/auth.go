@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,11 +14,29 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+// reply encodes before writing the status, so an unencodable value is a 500,
+// never an empty 200.
 func reply(w http.ResponseWriter, status int, body any) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		slog.Error("encode response", "component", "silo", "err", err)
+		b, status = []byte(`{"error":{"code":"encode_failed","message":"the server could not encode this response"}}`), http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
+	_, _ = w.Write(append(b, '\n'))
+}
+
+func problemReply(w http.ResponseWriter, status int, body any) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		slog.Error("encode response", "component", "silo", "err", err)
+		b, status = []byte(`{"type":"about:blank","title":"Internal Server Error","status":500,"detail":"The server could not encode this response."}`), http.StatusInternalServerError
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_, _ = w.Write(append(b, '\n'))
 }
 func decode(r *http.Request, v any) error {
 	return json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20)).Decode(v)

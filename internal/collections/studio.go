@@ -136,6 +136,7 @@ func (s *Service) Rebuild(ctx context.Context, id string) (*core.CollectionSpec,
 	if err != nil {
 		return nil, err
 	}
+	s.invalidate(row.id)
 	s.idx.invalidate()
 	s.notify("index")
 	if _, err := s.build(ctx, row); err != nil {

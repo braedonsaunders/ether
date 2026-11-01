@@ -33,10 +33,19 @@ type HandlerOptions struct {
 func Handler(o HandlerOptions) http.Handler {
 	mux := http.NewServeMux()
 	writeJSON := func(w http.ResponseWriter, code int, v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"code":"encode_failed","message":"failed to encode response"}}` + "\n"))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(code)
-		_ = json.NewEncoder(w).Encode(v)
+		_, _ = w.Write(b)
+		_, _ = w.Write([]byte("\n"))
 	}
 	writeError := func(w http.ResponseWriter, code int, kind, msg string) {
 		writeJSON(w, code, map[string]any{"error": map[string]string{"code": kind, "message": msg}})
