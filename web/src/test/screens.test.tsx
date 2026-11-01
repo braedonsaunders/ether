@@ -165,6 +165,7 @@ describe("Getting started", () => {
       fake.state.config.debrid = { ...fake.state.config.debrid!, providers: [] };
       fake.state.config.usenet.providers = [];
       fake.state.config.quality.default = "1080p";
+      fake.state.config.frontends = { jellyfin: { enabled: true } } as typeof fake.state.config.frontends;
       const original = fake.fetch;
       fake.fetch = async (input, init) => {
         const response = await original(input, init);
@@ -184,17 +185,16 @@ describe("Getting started", () => {
         return response;
       };
     });
-    expect(
-      await screen.findByRole("heading", { name: "Getting started" }, WAIT),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Add a source" })).toHaveAttribute("href", "/sources");
+    const steps = await screen.findByRole("region", { name: "Next steps" }, WAIT);
+    expect(within(steps).getByRole("link", { name: "Add a source" })).toHaveAttribute("href", "/sources");
     expect(screen.getByRole("link", { name: "Connect a device" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add viewers" })).toHaveAttribute("href", "/viewers");
     expect(
       screen.getByRole("link", { name: "Playback quality: 1080p at home · change" }),
     ).toHaveAttribute("href", "/releases/quality");
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByRole("heading", { name: "Getting started" })).not.toBeInTheDocument();
+    expect(within(steps).queryByRole("link", { name: "Connect Plex" })).toBeNull(); // Plex is off
+    fireEvent.click(within(steps).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("region", { name: "Next steps" })).not.toBeInTheDocument();
   });
 
   it("hides once source, device, viewers, and quality are done", async () => {
@@ -203,6 +203,6 @@ describe("Getting started", () => {
       fake.state.config.quality.default = "4K";
     });
     expect(await screen.findByTestId("getting-started-clear", {}, WAIT)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Getting started" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Next steps" })).not.toBeInTheDocument();
   });
 });

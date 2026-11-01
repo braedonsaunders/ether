@@ -18,7 +18,6 @@ import {
 import {
   Activity,
   BarChart3,
-  Check,
   Film,
   HeartPulse,
   MonitorPlay,
@@ -26,6 +25,7 @@ import {
   RefreshCw,
   Table2,
   TrendingUp,
+  X,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -74,67 +74,68 @@ function GettingStarted({ sessions }: { sessions: NowPlaying[] }) {
   const cfg = config.data;
   const people = viewers.data;
   if (!cfg || !people) return null;
+  const apps = Object.entries(cfg.frontends ?? {})
+    .filter(([, row]) => row?.enabled)
+    .map(([id]) => id);
   const profile = cfg.quality?.default?.trim() || "1080p";
-  const items = [
-    { id: "source", done: sourceReady(cfg), label: t("Add a source"), to: "/sources" },
+  const steps = [
+    { id: "source", todo: !sourceReady(cfg), label: t("Add a source"), to: "/sources" },
+    {
+      id: "plex",
+      todo: apps.includes("plex") && !(cfg.plex?.claimed || cfg.plex?.token),
+      label: t("Connect Plex"),
+      to: "/apps/plex/account",
+    },
     {
       id: "device",
-      done:
-        sessions.length > 0 ||
-        people.some((viewer: Viewer) => !viewer.isOwner && Boolean(viewer.lastActive)),
+      todo:
+        apps.length > 0 &&
+        sessions.length === 0 &&
+        !people.some((viewer: Viewer) => !viewer.isOwner && Boolean(viewer.lastActive)),
       label: t("Connect a device"),
       to: connectDevicePath(cfg.frontends),
     },
     {
       id: "viewers",
-      done: people.some((viewer) => !viewer.isOwner),
+      todo: !people.some((viewer) => !viewer.isOwner),
       label: t("Add viewers"),
       to: "/viewers",
     },
     {
       id: "quality",
-      done: profile !== "1080p",
+      todo: profile === "1080p",
       label: t("Playback quality: {profile} at home · change", { profile }),
       to: "/releases/quality",
     },
-  ];
-  if (items.every((item) => item.done)) return <span hidden data-testid="getting-started-clear" />;
+  ].filter((step) => step.todo);
+  if (steps.length === 0) return <span hidden data-testid="getting-started-clear" />;
   return (
     <section
-      aria-label={t("Getting started")}
-      className="shrink-0 rounded-xl border border-border bg-surface p-4"
+      aria-label={t("Next steps")}
+      className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-border bg-surface py-1.5 pl-3 pr-1.5"
     >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-fg">{t("Getting started")}</h2>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            localStorage.setItem(GETTING_STARTED_KEY, "1");
-            setDismissed(true);
-          }}
+      <span className="text-xs font-medium text-fg-muted">{t("Next steps")}</span>
+      {steps.map((step) => (
+        <Link
+          key={step.id}
+          to={step.to}
+          className="rounded-full border border-border px-3 py-1 text-xs font-medium text-fg transition hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          {t("Dismiss")}
-        </Button>
-      </div>
-      <ul className="mt-3 space-y-2">
-        {items.map((item) => (
-          <li key={item.id} className="flex items-center gap-2 text-sm">
-            {item.done ? (
-              <Check size={14} className="shrink-0 text-primary" aria-hidden />
-            ) : (
-              <span className="size-3.5 shrink-0" />
-            )}
-            {item.done ? (
-              <span className="text-fg-muted">{item.label}</span>
-            ) : (
-              <Link className="font-medium underline" to={item.to}>
-                {item.label}
-              </Link>
-            )}
-          </li>
-        ))}
-      </ul>
+          {step.label}
+        </Link>
+      ))}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="ml-auto size-7"
+        aria-label={t("Dismiss")}
+        onClick={() => {
+          localStorage.setItem(GETTING_STARTED_KEY, "1");
+          setDismissed(true);
+        }}
+      >
+        <X size={14} aria-hidden />
+      </Button>
     </section>
   );
 }
