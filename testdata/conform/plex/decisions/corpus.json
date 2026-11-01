@@ -84,6 +84,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
@@ -171,6 +175,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
@@ -258,6 +266,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
@@ -345,6 +357,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
@@ -432,6 +448,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
@@ -519,6 +539,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
@@ -606,6 +630,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
@@ -693,6 +721,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
@@ -780,6 +812,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
@@ -867,6 +903,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
@@ -954,6 +994,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
@@ -1041,6 +1085,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
@@ -1136,6 +1184,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
@@ -1231,6 +1283,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
@@ -1326,6 +1382,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
@@ -1421,6 +1481,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
@@ -1516,6 +1580,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
@@ -1611,6 +1679,10 @@
           [
             "X-Plex-Provides",
             "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
           ]
         ],
         "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"

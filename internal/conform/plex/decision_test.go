@@ -48,7 +48,19 @@ func TestDecisionCorpusFormatAndFixtures(t *testing.T) {
 		if !hasProduct {
 			t.Errorf("%s missing X-Plex-Product", rec.ID)
 		}
-		_ = hasExtra
+		if !hasExtra {
+			t.Errorf("%s missing X-Plex-Client-Profile-Extra (empty is ok; the field must be present)", rec.ID)
+		}
+		var seedRec *DecisionRecord
+		for i := range seed.Records {
+			if seed.Records[i].ID == rec.ID {
+				seedRec = &seed.Records[i]
+				break
+			}
+		}
+		if seedRec == nil {
+			t.Errorf("%s not in SeedDecisionCorpus", rec.ID)
+		}
 		ref, err := conform.LoadFixture(rec.FixturePath(root))
 		if err != nil {
 			t.Errorf("%s fixture: %v", rec.ID, err)

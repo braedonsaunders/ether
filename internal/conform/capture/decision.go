@@ -80,6 +80,7 @@ func DecisionsFromCapture(dir, client, out string) error {
 		if strings.Contains(strings.ToLower(entry.Request.Headers.Get("Accept")), "json") {
 			format = "json"
 		}
+		query := conformplex.QueryPairs(raw)
 		rec := conformplex.DecisionRecord{
 			ID:     fmt.Sprintf("%s-%s-%06d", client, format, entry.Sequence),
 			Client: client,
@@ -88,8 +89,8 @@ func DecisionsFromCapture(dir, client, out string) error {
 			Request: conformplex.DecisionRequest{
 				Method:  entry.Request.Method,
 				Path:    path,
-				Query:   conformplex.QueryPairs(raw),
-				Headers: orderedPlexHeaders(entry.Request.Headers),
+				Query:   query,
+				Headers: orderedPlexHeaders(entry.Request.Headers, query),
 				Raw:     entry.Request.Path,
 			},
 		}
@@ -116,7 +117,7 @@ func DecisionsFromCapture(dir, client, out string) error {
 	return os.WriteFile(out, append(b, '\n'), 0644)
 }
 
-func orderedPlexHeaders(h http.Header) [][2]string {
+func orderedPlexHeaders(h http.Header, query [][2]string) [][2]string {
 	var out [][2]string
 	seen := map[string]bool{}
 	for _, k := range plexClientHeaders {
@@ -139,6 +140,18 @@ func orderedPlexHeaders(h http.Header) [][2]string {
 	sort.Strings(extra)
 	for _, k := range extra {
 		out = append(out, [2]string{k, h.Get(k)})
+	}
+	if !seen[http.CanonicalHeaderKey("X-Plex-Client-Profile-Extra")] {
+		value := h.Get("X-Plex-Client-Profile-Extra")
+		if value == "" {
+			for _, q := range query {
+				if q[0] == "X-Plex-Client-Profile-Extra" {
+					value = q[1]
+					break
+				}
+			}
+		}
+		out = append(out, [2]string{"X-Plex-Client-Profile-Extra", value})
 	}
 	return out
 }

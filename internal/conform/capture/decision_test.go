@@ -69,6 +69,15 @@ func TestPlexProxyPreservesDecisionQueryOrder(t *testing.T) {
 	if c.Records[0].Request.Headers[0][0] != "Accept" {
 		t.Fatalf("header order: %v", c.Records[0].Request.Headers)
 	}
+	hasExtra := false
+	for _, h := range c.Records[0].Request.Headers {
+		if h[0] == "X-Plex-Client-Profile-Extra" && h[1] != "" {
+			hasExtra = true
+		}
+	}
+	if !hasExtra {
+		t.Fatalf("corpus dropped Profile-Extra: %v", c.Records[0].Request.Headers)
+	}
 }
 
 func TestDecisionsFromCaptureRequiresReferenceOrigin(t *testing.T) {

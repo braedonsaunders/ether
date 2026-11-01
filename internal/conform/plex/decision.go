@@ -147,6 +147,13 @@ func SeedDecisionCorpus() DecisionCorpus {
 		for _, profile := range []string{"web", "ios", "appletv"} {
 			c := clients[profile]
 			for _, format := range []string{"xml", "json"} {
+				extra := ""
+				for _, q := range query {
+					if q[0] == "X-Plex-Client-Profile-Extra" {
+						extra = q[1]
+						break
+					}
+				}
 				headers := [][2]string{
 					{"X-Plex-Product", c.Headers.Get("X-Plex-Product")},
 					{"X-Plex-Version", c.Headers.Get("X-Plex-Version")},
@@ -156,6 +163,7 @@ func SeedDecisionCorpus() DecisionCorpus {
 					{"X-Plex-Device-Name", c.Headers.Get("X-Plex-Device-Name")},
 					{"X-Plex-Client-Identifier", c.Headers.Get("X-Plex-Client-Identifier")},
 					{"X-Plex-Provides", c.Headers.Get("X-Plex-Provides")},
+					{"X-Plex-Client-Profile-Extra", extra},
 				}
 				if format == "json" {
 					headers = append([][2]string{{"Accept", "application/json"}}, headers...)
