@@ -40,6 +40,8 @@ builds:
       # Injected from CI secrets (see release.yml). Empty in dev/snapshot
       # builds, which then refuse to self-update — by design.
       - -X github.com/braedonsaunders/ether/internal/updater.PublicKeyB64={{ envOrDefault "ETHER_UPDATE_PUBLIC_KEY" "" }}
+      # TMDB key for the catalogue, so a fresh install works without one.
+      - -X github.com/braedonsaunders/ether/internal/tmdb.BundledKey={{ envOrDefault "ETHER_TMDB_BUNDLED_KEY" "" }}
 
   # Tray for the platforms where fyne.io/systray is pure Go. The macOS
   # tray needs CGO and is built natively by packaging/macos/build-app.sh.
