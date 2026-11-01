@@ -202,24 +202,21 @@ func (s *Service) TuneWithSession(ctx context.Context, u *core.User, channelID s
 	if c.Kind == "virtual" && p == nil {
 		return SessionInfo{}, core.ErrNotAvailable
 	}
-	// A client can abandon a successful tune before requesting any media.
-	// Reclaim only its unused session; other viewers/active players stay intact.
+	// A single client device watches one live channel at a time. When it
+	// retunes without explicitly stopping the previous channel (common on
+	// Fire TV / Android TV), supersede its prior live session immediately
+	// while leaving other devices and viewers intact.
 	if caps.ClientID != "" {
-		var abandoned []*session
+		var superseded []*session
 		s.mu.Lock()
 		for id, old := range s.sessions {
-			if !old.mu.TryLock() {
-				continue
-			}
-			unused := old.ready && !old.consumed && old.info.UserID == u.ID && old.caps.ClientID == caps.ClientID
-			old.mu.Unlock()
-			if unused {
+			if old.info.UserID == u.ID && old.caps.ClientID == caps.ClientID {
 				delete(s.sessions, id)
-				abandoned = append(abandoned, old)
+				superseded = append(superseded, old)
 			}
 		}
 		s.mu.Unlock()
-		for _, old := range abandoned {
+		for _, old := range superseded {
 			old.close(s)
 		}
 	}
