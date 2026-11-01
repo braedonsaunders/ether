@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"testing"
 
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/remote"
 )
 
@@ -26,6 +29,80 @@ func TestPortalAddresses(t *testing.T) {
 	got, err = portalPublicAddress(context.Background(), candidates)
 	if err != nil || got != "https://8.8.8.8:443/ether/me" {
 		t.Fatalf("public %q %v", got, err)
+	}
+}
+
+func TestPortalAndSurfaceBridgeModeUsesRequestHostAndAppPort(t *testing.T) {
+	_, bridgeNet, _ := net.ParseCIDR("172.20.0.0/16")
+	containerInterfaces := []remote.InterfaceAddr{{IP: net.ParseIP("172.20.0.2"), Net: bridgeNet}}
+	peer := netip.MustParseAddr("192.168.68.10")
+
+	req := httptest.NewRequest(http.MethodPost, "http://192.168.68.66:33200/ether/api/me/apps/jellyfin", nil)
+	req.RemoteAddr = "172.20.0.1:54321"
+	got, err := portalAddress(context.Background(), req, peer, "0.0.0.0", "33200", config.Config{}, nil, containerInterfaces, nil)
+	if err != nil || got != "http://192.168.68.66:33200/ether/me" {
+		t.Fatalf("bridge portal: got %q err %v", got, err)
+	}
+
+	local := &net.TCPAddr{IP: net.ParseIP("172.20.0.2"), Port: 8096}
+	gotSurface, ok := surfaceAddress(req, peer, local, []string{"0.0.0.0:8096"}, []string{""}, nil, containerInterfaces)
+	if !ok || gotSurface != "http://192.168.68.66:8096" {
+		t.Fatalf("bridge jellyfin listener: got %q ok %v", gotSurface, ok)
+	}
+}
+
+func TestPortalAndSurfaceReverseProxyHonoursTrustedHeaders(t *testing.T) {
+	_, bridgeNet, _ := net.ParseCIDR("172.20.0.0/16")
+	containerInterfaces := []remote.InterfaceAddr{{IP: net.ParseIP("172.20.0.2"), Net: bridgeNet}}
+	trusted := []netip.Prefix{netip.MustParsePrefix("172.20.0.0/16")}
+	peer := netip.MustParseAddr("198.51.100.25")
+
+	req := httptest.NewRequest(http.MethodPost, "http://172.20.0.2:32400/ether/api/me/apps/jellyfin", nil)
+	req.RemoteAddr = "172.20.0.5:41000"
+	req.Header.Set("X-Forwarded-Host", "ether.example.com")
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	got, err := portalAddress(context.Background(), req, peer, "0.0.0.0", "32400", config.Config{}, trusted, containerInterfaces, nil)
+	if err != nil || got != "https://ether.example.com/ether/me" {
+		t.Fatalf("trusted proxy portal: got %q err %v", got, err)
+	}
+
+	local := &net.TCPAddr{IP: net.ParseIP("172.20.0.2"), Port: 8096}
+	gotSurface, ok := surfaceAddress(req, peer, local, []string{"0.0.0.0:8096"}, []string{""}, trusted, containerInterfaces)
+	if !ok || gotSurface != "https://ether.example.com" {
+		t.Fatalf("trusted proxy surface: got %q ok %v", gotSurface, ok)
+	}
+
+	// Untrusted proxy headers must be ignored.
+	untrustedReq := httptest.NewRequest(http.MethodPost, "http://192.168.68.66:32400/ether/api/me/apps/jellyfin", nil)
+	untrustedReq.RemoteAddr = "192.168.68.10:41000"
+	untrustedReq.Header.Set("X-Forwarded-Host", "evil.example.com")
+	untrustedReq.Header.Set("X-Forwarded-Proto", "https")
+
+	got, err = portalAddress(context.Background(), untrustedReq, netip.MustParseAddr("192.168.68.10"), "0.0.0.0", "32400", config.Config{}, trusted, containerInterfaces, nil)
+	if err != nil || got != "http://192.168.68.66:32400/ether/me" {
+		t.Fatalf("untrusted proxy portal: got %q err %v", got, err)
+	}
+}
+
+func TestPortalAndSurfacePrefersConfiguredURL(t *testing.T) {
+	_, bridgeNet, _ := net.ParseCIDR("172.20.0.0/16")
+	containerInterfaces := []remote.InterfaceAddr{{IP: net.ParseIP("172.20.0.2"), Net: bridgeNet}}
+	peer := netip.MustParseAddr("192.168.68.10")
+
+	req := httptest.NewRequest(http.MethodPost, "http://192.168.68.66:32400/ether/api/me/apps/jellyfin", nil)
+	req.RemoteAddr = "172.20.0.1:54321"
+
+	cfg := config.Config{Plex: config.Plex{CustomURLs: []string{"https://watch.example.com:8443"}}}
+	got, err := portalAddress(context.Background(), req, peer, "0.0.0.0", "32400", cfg, nil, containerInterfaces, nil)
+	if err != nil || got != "https://watch.example.com:8443/ether/me" {
+		t.Fatalf("custom URL portal: got %q err %v", got, err)
+	}
+
+	cfgPublic := config.Config{Plex: config.Plex{PublicHost: "media.example.com", PublicPort: 443}}
+	got, err = portalAddress(context.Background(), req, peer, "0.0.0.0", "32400", cfgPublic, nil, containerInterfaces, nil)
+	if err != nil || got != "https://media.example.com/ether/me" {
+		t.Fatalf("public host portal: got %q err %v", got, err)
 	}
 }
 

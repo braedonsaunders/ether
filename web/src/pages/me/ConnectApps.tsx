@@ -56,9 +56,22 @@ function ConnectAppsSession({ base, token }: { base: string; token: string }) {
         headers: { Authorization: `Bearer ${token}`, "X-Ether-Request": "1" },
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { error?: { code?: string } };
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: { code?: string; message?: string };
+        };
         if (body.error?.code === "stremio_https_required") {
           setError(t("Stremio needs HTTPS. Add a certificate under Apps → Secure connections."));
+          return;
+        }
+        if (
+          body.error?.code === "address_unavailable" ||
+          body.error?.message === "address unavailable"
+        ) {
+          setError(
+            t(
+              "Server address unavailable. Set Custom server URLs under Apps → Plex → Remote access.",
+            ),
+          );
           return;
         }
         throw new Error();
