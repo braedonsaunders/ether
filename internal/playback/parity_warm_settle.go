@@ -149,7 +149,7 @@ func (m *Manager) ParityProbeNow(ctx context.Context, user *core.User, key core.
 	}
 	profile := m.deps.SelectProfile(caps, user)
 	res := m.resumeResolution(ctx, user.ID, key, profile, caps, strings.TrimSpace(title.Language))
-	if res == nil || !releaseMatchesTitle(res.Release, title) || !payloadMatchesTitle(res.NZB, title) {
+	if res == nil || !releaseMatchesTitle(res.Release, title) {
 		if m.deps.Resolver == nil {
 			return nil
 		}
