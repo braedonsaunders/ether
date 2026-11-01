@@ -120,7 +120,7 @@ jobs:
         if: runner.os == 'Linux'
         # Guardian subprocesses inherit race instrumentation; the expanded
         # real-media suite needs more than Go's default ten-minute package cap.
-        run: go test -race -timeout 20m ./...
+        run: go test -race -timeout 45m ./...
       - name: Test (Windows)
         # The race detector makes the real-media suite exceed any sane
         # package cap on Windows runners; races are covered on Linux.
