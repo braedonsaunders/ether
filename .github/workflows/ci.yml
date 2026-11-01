@@ -29,12 +29,30 @@ permissions:
 
 jobs:
   go:
-    name: Go (${{ matrix.os }})
+    name: Go (${{ matrix.os }} / ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            shard: app-1
+          - os: ubuntu-latest
+            shard: app-2
+          - os: ubuntu-latest
+            shard: app-3
+          - os: ubuntu-latest
+            shard: transcode-playback
+          - os: ubuntu-latest
+            shard: protocols-catalog
+          - os: ubuntu-latest
+            shard: rest
+          - os: windows-latest
+            shard: app-transcode-playback
+          - os: windows-latest
+            shard: rest
+          - os: macos-latest
+            shard: all
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -110,20 +128,23 @@ jobs:
           show_version ffmpeg
           show_version ffprobe
       - name: gofmt
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && (matrix.shard == 'rest' || matrix.shard == 'all')
         run: |
           out=$(gofmt -l .)
           if [ -n "$out" ]; then echo "::error::gofmt needed:"; echo "$out"; exit 1; fi
       - name: Build (CGO_ENABLED=0 — the shipped configuration)
+        if: matrix.shard == 'rest' || matrix.shard == 'all'
         env:
           CGO_ENABLED: "0"
         run: go build ./...
       - name: Verify bundled TMDB linker symbol
+        if: matrix.shard == 'rest' || matrix.shard == 'all'
         env:
           CGO_ENABLED: "0"
           ETHER_TEST_BUNDLED_KEY: ether-linker-smoke
         run: go test ./internal/tmdb -run TestBundledKeyLinker -ldflags "-X github.com/braedonsaunders/ether/internal/tmdb.BundledKey=ether-linker-smoke"
       - name: Vet
+        if: matrix.shard == 'rest' || matrix.shard == 'all'
         env:
           CGO_ENABLED: "0"
         run: go vet ./...
@@ -132,32 +153,78 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: go vet ./cmd/ether-tray/
-      - name: Test (race)
+      - name: Test (Linux race shard)
         # -race needs CGO; the code under test is identical to the CGO=0
         # build except the macOS tray GUI file, which is excluded here on
         # macOS by CGO_ENABLED=0 for the test step below instead.
         if: runner.os == 'Linux'
-        # Guardian subprocesses inherit race instrumentation; the expanded
-        # real-media suite needs more than Go's default ten-minute package cap.
-        run: go test -race -timeout 45m ./...
-      - name: Test (Windows)
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          case "$SHARD" in
+            app-1)
+              go test -race -timeout 20m ./internal/app -run '^Test[A-F]'
+              ;;
+            app-2)
+              go test -race -timeout 20m ./internal/app -run '^Test[G-P]'
+              ;;
+            app-3)
+              go test -race -timeout 20m ./internal/app -run '^Test[^A-P]'
+              ;;
+            transcode-playback)
+              go test -race -timeout 20m ./internal/transcode/... ./internal/playback/... ./internal/usenet/...
+              ;;
+            protocols-catalog)
+              go test -race -timeout 20m ./internal/plex/... ./internal/frontends/... ./internal/catalog/... ./internal/resolver/... ./internal/debrid/...
+              ;;
+            rest)
+              pkgs=$(go list ./... | grep -vE '/internal/(app|transcode|playback|usenet|plex|frontends|catalog|resolver|debrid)($|/)')
+              go test -race -timeout 20m $pkgs
+              ;;
+            *)
+              echo "::error::unknown Linux shard: $SHARD" >&2
+              exit 1
+              ;;
+          esac
+      - name: Test (Windows shard)
         # The race detector makes the real-media suite exceed any sane
         # package cap on Windows runners; races are covered on Linux.
         if: runner.os == 'Windows'
-        run: go test -timeout 40m ./...
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          case "$SHARD" in
+            app-transcode-playback)
+              go test -timeout 25m ./internal/app/... ./internal/transcode/... ./internal/playback/...
+              ;;
+            rest)
+              pkgs=$(go list ./... | grep -vE '/internal/(app|transcode|playback)($|/)')
+              go test -timeout 25m $pkgs
+              ;;
+            *)
+              echo "::error::unknown Windows shard: $SHARD" >&2
+              exit 1
+              ;;
+          esac
       - name: Test (macOS, headless tray)
         if: runner.os == 'macOS'
         env:
           CGO_ENABLED: "0"
         run: go test ./...
       - name: Cross-compile matrix
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.shard == 'rest'
+        shell: bash
         env:
           CGO_ENABLED: "0"
         run: |
-          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
-            GOOS=${t%/*} GOARCH=${t#*/} go build ./cmd/ether ./cmd/ether-tray ./internal/...
-          done
+          printf '%s\n' linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 | \
+            xargs -P 3 -I {} bash -c '
+              t="{}"
+              echo "Cross-compiling $t..."
+              GOOS="${t%/*}" GOARCH="${t#*/}" go build ./cmd/ether ./cmd/ether-tray ./internal/...
+            '
 
   vulnerabilities:
     name: Go vulnerabilities
