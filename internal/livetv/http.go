@@ -35,26 +35,65 @@ func liveHTTP(ss *session) core.HTTPSession {
 }
 
 func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.HTTPSession, error) {
-	ss.mu.Lock()
-	if ss.closed {
+	for {
+		ss.mu.Lock()
+		if ss.closed {
+			ss.mu.Unlock()
+			return nil, core.ErrNotFound
+		}
+		ss.consumed = true
+		if h := liveHTTP(ss); h != nil {
+			ss.mu.Unlock()
+			return h, nil
+		}
+		if wait := ss.httpStart; wait != nil {
+			ss.mu.Unlock()
+			select {
+			case <-wait:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		if s.o.Transcoder == nil {
+			ss.mu.Unlock()
+			return nil, core.ErrNotAvailable
+		}
+		started := make(chan struct{})
+		ss.httpStart = started
+		info := ss.info.MediaInfo
+		caps := ss.caps
+		liveInput := ss.info.Channel.Kind != "virtual"
+		gen := ss.generation
 		ss.mu.Unlock()
-		return nil, core.ErrNotFound
-	}
-	ss.consumed = true
-	if h := liveHTTP(ss); h != nil {
-		ss.mu.Unlock()
-		return h, nil
-	}
-	if s.o.Transcoder == nil {
-		ss.mu.Unlock()
-		return nil, core.ErrNotAvailable
-	}
-	info := ss.info.MediaInfo
-	caps := ss.caps
-	liveInput := ss.info.Channel.Kind != "virtual"
-	gen := ss.generation
-	ss.mu.Unlock()
 
+		stream, err := s.startHTTPStream(ctx, ss, id, info, caps, liveInput, gen)
+		ss.mu.Lock()
+		if ss.httpStart == started {
+			ss.httpStart = nil
+		}
+		close(started)
+		if err != nil {
+			ss.mu.Unlock()
+			return nil, err
+		}
+		if ss.closed || ss.generation != gen {
+			ss.mu.Unlock()
+			stream.Close()
+			return nil, core.ErrNotFound
+		}
+		if h := liveHTTP(ss); h != nil {
+			ss.mu.Unlock()
+			stream.Close()
+			return h, nil
+		}
+		ss.http = stream
+		ss.mu.Unlock()
+		return stream, nil
+	}
+}
+
+func (s *Service) startHTTPStream(ctx context.Context, ss *session, id string, info *core.MediaInfo, caps core.ClientCaps, liveInput bool, gen int64) (core.HTTPSession, error) {
 	if info == nil {
 		probed, err := s.probeSessionInput(ctx, ss)
 		if err != nil {
@@ -80,10 +119,6 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 	if ss.closed || ss.generation != gen {
 		ss.mu.Unlock()
 		return nil, core.ErrNotFound
-	}
-	if h := liveHTTP(ss); h != nil {
-		ss.mu.Unlock()
-		return h, nil
 	}
 	ss.info.MediaInfo = info
 	var input string
@@ -115,19 +150,5 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 		hs.Close()
 		return nil, core.ErrNotAvailable
 	}
-
-	ss.mu.Lock()
-	if ss.closed || ss.generation != gen {
-		ss.mu.Unlock()
-		stream.Close()
-		return nil, core.ErrNotFound
-	}
-	if h := liveHTTP(ss); h != nil {
-		ss.mu.Unlock()
-		stream.Close()
-		return h, nil
-	}
-	ss.http = stream
-	ss.mu.Unlock()
 	return stream, nil
 }

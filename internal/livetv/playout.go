@@ -51,6 +51,9 @@ type session struct {
 	relayInfo       *core.MediaInfo
 	dash            core.DASHSession
 	http            core.HTTPSession
+	// httpStart is closed when an in-flight ensureHTTP StartHLS finishes.
+	// Waiters re-check liveHTTP instead of starting a second encoder.
+	httpStart chan struct{}
 	// mu guards the fields above and below it. It is never held across
 	// Playback.Prepare/Failover, HLS SwapInput, programme lookups, probing
 	// or upstream I/O: preparers work on a staged

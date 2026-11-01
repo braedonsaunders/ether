@@ -134,8 +134,9 @@ func (s *httpSession) Touch() {
 
 func (s *httpSession) Closed() bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.closed
+	closed, life := s.closed, s.life
+	s.mu.Unlock()
+	return closed || (life != nil && life.isSealed())
 }
 
 func (s *httpSession) busy() bool {

@@ -94,6 +94,27 @@ func TestHTTPSessionServesMatroska(t *testing.T) {
 	}
 }
 
+func TestHTTPSessionSealedIsClosed(t *testing.T) {
+	fr := newFakeRunner()
+	m := newTestManager(t, fr, config.Transcode{})
+	hs, err := m.StartHLS(context.Background(), core.HLSRequest{
+		SessionID: "http-seal", InputURL: "http://127.0.0.1/src", Info: httpInfo(),
+		Decision: core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mkv"},
+		Protocol: core.ProtocolHTTP,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := hs.(*httpSession)
+	if stream.Closed() {
+		t.Fatal("fresh HTTP session reported closed")
+	}
+	stream.life.seal()
+	if !stream.Closed() {
+		t.Fatal("sealed lifetime was still live")
+	}
+}
+
 func TestHTTPSessionRespectsMaxTranscodes(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{MaxTranscodes: 1})
