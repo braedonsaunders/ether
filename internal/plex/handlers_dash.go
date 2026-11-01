@@ -27,6 +27,9 @@ import (
 
 // handleStartDASH is /video/:/transcode/universal/start.mpd.
 func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	if s.handleLiveTVPlayback(w, r) {
 		return
 	}

@@ -60,6 +60,61 @@ func TestStreamGrantIsolation(t *testing.T) {
 	}
 }
 
+func encodedSessionDecision(id string) string {
+	return "/video%2F:%2Ftranscode%2Funiversal%2Fsession%2F" + id + "%2Fx/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F1000000000000550"
+}
+
+func TestEncodedSlashCapabilityCannotReachDecision(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=path-escape")
+	if start.Code != 200 {
+		t.Fatal(start.Code, start.Body.String())
+	}
+	e, _ := f.srv.transcodes.get("path-escape")
+	encoded := encodedSessionDecision("path-escape")
+	probe := httptest.NewRequest(http.MethodGet, encoded, nil)
+	if probe.URL.RawPath == "" && !strings.Contains(probe.URL.EscapedPath(), "%") {
+		t.Fatal("encoded probe lost RawPath; the request no longer reproduces the escape")
+	}
+	if transcodeSessionID(probe.URL.Path) != "path-escape" {
+		t.Fatalf("decoded path session %q", transcodeSessionID(probe.URL.Path))
+	}
+
+	for _, tc := range []struct{ name, target string }{
+		{"stream grant", streamGrantURL(encoded, e.streamToken)},
+		{"session id", encoded},
+	} {
+		before := f.playback.prepared
+		rec := f.request(t, http.MethodGet, tc.target, map[string]string{"X-Plex-Token": ""})
+		if rec.Code < 400 || rec.Code > 404 {
+			t.Fatalf("%s: %d %s", tc.name, rec.Code, rec.Body.String())
+		}
+		if f.playback.prepared != before {
+			t.Fatalf("%s: decision handler ran", tc.name)
+		}
+	}
+
+	decision := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=path-escape"
+	before := f.playback.prepared
+	rec := f.request(t, http.MethodGet, streamGrantURL(decision, e.streamToken), map[string]string{"X-Plex-Token": ""})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("grant on decision: %d %s", rec.Code, rec.Body.String())
+	}
+	if f.playback.prepared != before {
+		t.Fatal("grant on decision reached the handler")
+	}
+
+	path := "/video/:/transcode/universal/session/path-escape/base/init.mp4"
+	if rec := f.request(t, http.MethodGet, streamGrantURL(path, e.streamToken), map[string]string{"X-Plex-Token": ""}); rec.Code != 200 {
+		t.Fatalf("unencoded grant: %d", rec.Code)
+	}
+	if rec := f.get(t, path); rec.Code != 200 {
+		t.Fatalf("unencoded token: %d", rec.Code)
+	}
+}
+
 func TestPrivateNotifications(t *testing.T) {
 	n := newNotifier()
 	defer n.close()
