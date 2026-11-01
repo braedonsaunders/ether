@@ -218,6 +218,7 @@
   "m_014d347ce75e4d": "Zu Ether hinzugefügt",
   "m_014e77626c919b": "Jemand",
   "m_014f0a55186cc3": "Täglich",
+  "m_014f17c33ae5ca": "Deine Einstellungen sind gespeichert — füge als Nächstes ein Debrid- oder Usenet-Konto hinzu, damit Titel abgespielt werden können.",
   "m_0152bbbd7a10b9": "{title} entfernen",
   "m_01568577258ecb": "Meldet diesen Server bei deinem Plex-Konto an, damit Plex-Apps ihn finden.",
   "m_015ab35e457cd4": "Heruntergeladenes Backup hochladen",
@@ -3958,6 +3959,7 @@
   "m_1890e0dc631181": "Auf diesem Server gesehen, zuletzt {when}",
   "m_1890e30548b2a2": "Nichts in der Quelle passt.",
   "m_1891902f870258": "Kommende Titel benötigen die Quelle „Gesamter Katalog“ und die entfernte TMDB-Discover-Abfrage.",
+  "m_1894395fd1bc40": "Deine Einstellungen sind gespeichert und der Server läuft — öffne die Übersicht oder wähle unten den nächsten Schritt.",
   "m_1894cd64b6f8df": {
     "one": "{count} geöffnete Datei",
     "other": "{count} geöffnete Dateien"
@@ -4073,6 +4075,7 @@
   "m_192be4b1f4ac19": "Datenbankbenutzer",
   "m_192bf2133a39eb": "Heruntergeladen",
   "m_192ca43bd9c999": "Stunden",
+  "m_192d3b8aaee746": "Wiedergabequalität wählen",
   "m_192f472e46b9a3": "Hinzugefügt",
   "m_1930a13dae4a76": "Player-Identität",
   "m_1931c0bcb280c2": "Details ausblenden",

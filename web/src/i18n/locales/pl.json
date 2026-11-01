@@ -228,6 +228,7 @@
   "m_014d347ce75e4d": "Dodano do Ether",
   "m_014e77626c919b": "Ktoś",
   "m_014f0a55186cc3": "Codziennie",
+  "m_014f17c33ae5ca": "Ustawienia zostały zapisane — dodaj teraz konto debrid lub Usenet, aby móc odtwarzać tytuły.",
   "m_0152bbbd7a10b9": "Usuń: {title}",
   "m_01568577258ecb": "Loguje ten serwer na konto Plex, żeby aplikacje Plex go znalazły.",
   "m_015ab35e457cd4": "Prześlij pobraną kopię zapasową",
@@ -4194,6 +4195,7 @@
   "m_1890e0dc631181": "Widziano na tym serwerze, ostatnio {when}",
   "m_1890e30548b2a2": "Nic w źródle nie pasuje.",
   "m_1891902f870258": "Nadchodzące tytuły wymagają źródła Cały katalog oraz zdalnego wyszukiwania TMDB.",
+  "m_1894395fd1bc40": "Ustawienia zostały zapisane, a serwer działa — otwórz Przegląd lub wybierz kolejny krok poniżej.",
   "m_1894cd64b6f8df": {
     "few": "{count} otwarte pliki",
     "many": "{count} otwartych plików",
@@ -4327,6 +4329,7 @@
   "m_192be4b1f4ac19": "Użytkownik bazy danych",
   "m_192bf2133a39eb": "Pobrano",
   "m_192ca43bd9c999": "Godziny",
+  "m_192d3b8aaee746": "Wybierz jakość odtwarzania",
   "m_192f472e46b9a3": "Dodano",
   "m_1930a13dae4a76": "Tożsamość odtwarzacza",
   "m_1931c0bcb280c2": "Ukryj szczegóły",

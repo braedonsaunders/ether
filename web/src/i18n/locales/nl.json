@@ -218,6 +218,7 @@
   "m_014d347ce75e4d": "Toegevoegd aan Ether",
   "m_014e77626c919b": "Iemand",
   "m_014f0a55186cc3": "Dagelijks",
+  "m_014f17c33ae5ca": "Je instellingen zijn opgeslagen — voeg nu een debrid- of Usenet-account toe zodat titels kunnen worden afgespeeld.",
   "m_0152bbbd7a10b9": "{title} verwijderen",
   "m_01568577258ecb": "Meldt deze server aan bij je Plex-account, zodat Plex-apps hem vinden.",
   "m_015ab35e457cd4": "Een gedownloade back-up uploaden",
@@ -3958,6 +3959,7 @@
   "m_1890e0dc631181": "Gezien op deze server, laatst {when}",
   "m_1890e30548b2a2": "Niets in de bron komt overeen.",
   "m_1891902f870258": "Aankomende titels vereisen de bron Hele catalogus en TMDB-discovery op afstand.",
+  "m_1894395fd1bc40": "Je instellingen zijn opgeslagen en je server draait — open Overzicht of kies hieronder een volgende stap.",
   "m_1894cd64b6f8df": {
     "one": "{count} geopend bestand",
     "other": "{count} geopende bestanden"
@@ -4073,6 +4075,7 @@
   "m_192be4b1f4ac19": "Databasegebruiker",
   "m_192bf2133a39eb": "Gedownload",
   "m_192ca43bd9c999": "Uren",
+  "m_192d3b8aaee746": "Afspeelkwaliteit kiezen",
   "m_192f472e46b9a3": "Toegevoegd",
   "m_1930a13dae4a76": "Spelersidentiteit",
   "m_1931c0bcb280c2": "Details verbergen",

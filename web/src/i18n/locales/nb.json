@@ -218,6 +218,7 @@
   "m_014d347ce75e4d": "Lagt til i Ether",
   "m_014e77626c919b": "Noen",
   "m_014f0a55186cc3": "Daglig",
+  "m_014f17c33ae5ca": "Innstillingene dine er lagret — legg til en debrid- eller Usenet-konto som neste steg så titler kan spilles av.",
   "m_0152bbbd7a10b9": "Fjern {title}",
   "m_01568577258ecb": "Logger denne serveren på Plex-kontoen din, så Plex-apper kan finne den.",
   "m_015ab35e457cd4": "Last opp en nedlastet sikkerhetskopi",
@@ -3958,6 +3959,7 @@
   "m_1890e0dc631181": "Sett på denne serveren, sist {when}",
   "m_1890e30548b2a2": "Ingenting i kilden samsvarer.",
   "m_1891902f870258": "Kommende titler krever hele katalogen som kilde og ekstern TMDB-oppdagelse.",
+  "m_1894395fd1bc40": "Innstillingene dine er lagret og serveren kjører — åpne Oversikt eller velg et neste steg nedenfor.",
   "m_1894cd64b6f8df": {
     "one": "{count} åpen fil",
     "other": "{count} åpne filer"
@@ -4073,6 +4075,7 @@
   "m_192be4b1f4ac19": "Databasebruker",
   "m_192bf2133a39eb": "Nedlastet",
   "m_192ca43bd9c999": "Timer",
+  "m_192d3b8aaee746": "Velg avspillingskvalitet",
   "m_192f472e46b9a3": "Lagt til",
   "m_1930a13dae4a76": "Spilleridentitet",
   "m_1931c0bcb280c2": "Skjul detaljer",

@@ -223,6 +223,7 @@
   "m_014d347ce75e4d": "Añadido a Ether",
   "m_014e77626c919b": "Alguien",
   "m_014f0a55186cc3": "Diario",
+  "m_014f17c33ae5ca": "Tu configuración está guardada: añade ahora una cuenta de debrid o Usenet para poder reproducir títulos.",
   "m_0152bbbd7a10b9": "Quitar {title}",
   "m_01568577258ecb": "Inicia sesión de este servidor en tu cuenta de Plex para que las apps de Plex lo encuentren.",
   "m_015ab35e457cd4": "Subir una copia de seguridad descargada",
@@ -4076,6 +4077,7 @@
   "m_1890e0dc631181": "Visto en este servidor, la última vez {when}",
   "m_1890e30548b2a2": "Nada en la fuente coincide.",
   "m_1891902f870258": "Los próximos estrenos requieren la fuente de todo el catálogo y el descubrimiento remoto de TMDB.",
+  "m_1894395fd1bc40": "Tu configuración está guardada y el servidor está en marcha: abre Resumen o elige el siguiente paso abajo.",
   "m_1894cd64b6f8df": {
     "many": "{count} archivos abiertos",
     "one": "{count} archivo abierto",
@@ -4200,6 +4202,7 @@
   "m_192be4b1f4ac19": "Usuario de la base de datos",
   "m_192bf2133a39eb": "Descargado",
   "m_192ca43bd9c999": "Horas",
+  "m_192d3b8aaee746": "Elegir calidad de reproducción",
   "m_192f472e46b9a3": "Añadido",
   "m_1930a13dae4a76": "Identidad del reproductor",
   "m_1931c0bcb280c2": "Ocultar detalles",

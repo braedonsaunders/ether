@@ -218,6 +218,7 @@
   "m_014d347ce75e4d": "Ether'e eklenme",
   "m_014e77626c919b": "Biri",
   "m_014f0a55186cc3": "Günlük",
+  "m_014f17c33ae5ca": "Ayarlarınız kaydedildi — içeriklerin oynatılabilmesi için sırada bir debrid veya Usenet hesabı ekleyin.",
   "m_0152bbbd7a10b9": "{title} öğesini kaldır",
   "m_01568577258ecb": "Plex uygulamaları bulsun diye bu sunucuyu Plex hesabınıza bağlar.",
   "m_015ab35e457cd4": "İndirilmiş bir yedeği yükle",
@@ -3958,6 +3959,7 @@
   "m_1890e0dc631181": "Bu sunucuda görüldü, son olarak {when}",
   "m_1890e30548b2a2": "Kaynakta eşleşen bir şey yok.",
   "m_1891902f870258": "Yakında gelecek başlıklar için tüm katalog kaynağı ve uzak TMDB keşfi gerekir.",
+  "m_1894395fd1bc40": "Ayarlarınız kaydedildi ve sunucunuz çalışıyor — Genel Bakış’ı açın veya aşağıdan bir sonraki adımı seçin.",
   "m_1894cd64b6f8df": {
     "one": "{count} açık dosya",
     "other": "{count} açık dosya"
@@ -4073,6 +4075,7 @@
   "m_192be4b1f4ac19": "Veritabanı kullanıcısı",
   "m_192bf2133a39eb": "İndirildi",
   "m_192ca43bd9c999": "Saatler",
+  "m_192d3b8aaee746": "Oynatma kalitesini seç",
   "m_192f472e46b9a3": "Eklendi",
   "m_1930a13dae4a76": "Oynatıcı kimliği",
   "m_1931c0bcb280c2": "Ayrıntıları gizle",

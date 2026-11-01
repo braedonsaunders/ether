@@ -218,6 +218,7 @@
   "m_014d347ce75e4d": "Lisätty Etheriin",
   "m_014e77626c919b": "Joku",
   "m_014f0a55186cc3": "Päivittäin",
+  "m_014f17c33ae5ca": "Asetuksesi on tallennettu — lisää seuraavaksi debrid- tai Usenet-tili, jotta nimikkeitä voi toistaa.",
   "m_0152bbbd7a10b9": "Poista: {title}",
   "m_01568577258ecb": "Kirjaa tämän palvelimen Plex-tilillesi, jotta Plex-sovellukset löytävät sen.",
   "m_015ab35e457cd4": "Lähetä ladattu varmuuskopio",
@@ -3958,6 +3959,7 @@
   "m_1890e0dc631181": "Nähty tällä palvelimella, viimeksi {when}",
   "m_1890e30548b2a2": "Mikään lähteessä ei vastaa.",
   "m_1891902f870258": "Tulossa olevat nimikkeet vaativat koko katalogin lähteen ja etä-TMDB-haun.",
+  "m_1894395fd1bc40": "Asetuksesi on tallennettu ja palvelin on käynnissä — avaa Yleiskatsaus tai valitse seuraava vaihe alta.",
   "m_1894cd64b6f8df": {
     "one": "{count} avoin tiedosto",
     "other": "{count} avointa tiedostoa"
@@ -4073,6 +4075,7 @@
   "m_192be4b1f4ac19": "Tietokannan käyttäjä",
   "m_192bf2133a39eb": "Ladattu",
   "m_192ca43bd9c999": "Tunnit",
+  "m_192d3b8aaee746": "Valitse toistolaatu",
   "m_192f472e46b9a3": "Lisätty",
   "m_1930a13dae4a76": "Soittimen tunniste",
   "m_1931c0bcb280c2": "Piilota tiedot",

@@ -218,6 +218,7 @@
   "m_014d347ce75e4d": "Added to Ether",
   "m_014e77626c919b": "Someone",
   "m_014f0a55186cc3": "Daily",
+  "m_014f17c33ae5ca": "Your settings are saved — add a debrid or Usenet account next so titles can play.",
   "m_0152bbbd7a10b9": "Remove {title}",
   "m_01568577258ecb": "Signs this server in to your Plex account so Plex apps can find it.",
   "m_015ab35e457cd4": "Upload a downloaded backup",
@@ -3958,6 +3959,7 @@
   "m_1890e0dc631181": "Seen on this server, last {when}",
   "m_1890e30548b2a2": "Nothing in the source matches.",
   "m_1891902f870258": "Upcoming titles require the whole catalogue source and remote TMDB discovery.",
+  "m_1894395fd1bc40": "Your settings are saved and your server is running — open Overview or pick a next step below.",
   "m_1894cd64b6f8df": {
     "one": "{count} open file",
     "other": "{count} open files"
@@ -4073,6 +4075,7 @@
   "m_192be4b1f4ac19": "Database user",
   "m_192bf2133a39eb": "Downloaded",
   "m_192ca43bd9c999": "Hours",
+  "m_192d3b8aaee746": "Choose playback quality",
   "m_192f472e46b9a3": "Added",
   "m_1930a13dae4a76": "Player identity",
   "m_1931c0bcb280c2": "Hide details",

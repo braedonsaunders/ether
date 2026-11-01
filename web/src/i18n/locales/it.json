@@ -223,6 +223,7 @@
   "m_014d347ce75e4d": "Aggiunto a Ether",
   "m_014e77626c919b": "Qualcuno",
   "m_014f0a55186cc3": "Ogni giorno",
+  "m_014f17c33ae5ca": "Le impostazioni sono salvate — aggiungi ora un account debrid o Usenet per poter riprodurre i titoli.",
   "m_0152bbbd7a10b9": "Rimuovi {title}",
   "m_01568577258ecb": "Accede a questo server con il tuo account Plex, così le app Plex lo trovano.",
   "m_015ab35e457cd4": "Carica un backup scaricato",
@@ -4076,6 +4077,7 @@
   "m_1890e0dc631181": "Visto su questo server, ultima volta {when}",
   "m_1890e30548b2a2": "Nulla nella fonte corrisponde.",
   "m_1891902f870258": "I titoli in arrivo richiedono la fonte Intero catalogo e la ricerca remota su TMDB.",
+  "m_1894395fd1bc40": "Le impostazioni sono salvate e il server è in funzione — apri Panoramica o scegli il prossimo passo qui sotto.",
   "m_1894cd64b6f8df": {
     "many": "{count} file aperti",
     "one": "{count} file aperto",
@@ -4200,6 +4202,7 @@
   "m_192be4b1f4ac19": "Utente del database",
   "m_192bf2133a39eb": "Scaricato",
   "m_192ca43bd9c999": "Ore",
+  "m_192d3b8aaee746": "Scegli la qualità di riproduzione",
   "m_192f472e46b9a3": "Aggiunto",
   "m_1930a13dae4a76": "Identità del player",
   "m_1931c0bcb280c2": "Nascondi i dettagli",

@@ -313,6 +313,103 @@
     opacity: 0;
   }
 }
+
+/* Setup completion moment: full-viewport Continuum ribbon assembly + welcome hero. */
+.ether-ready-atmosphere {
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgb(8 127 118 / 0.08) 0%,
+    rgb(8 127 118 / 0.025) 38%,
+    transparent 70%
+  );
+}
+.dark .ether-ready-atmosphere {
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgb(82 223 197 / 0.1) 0%,
+    rgb(82 223 197 / 0.03) 40%,
+    transparent 72%
+  );
+}
+.ether-ready-pulse {
+  background: radial-gradient(
+    circle,
+    rgb(8 127 118 / 0.26) 0%,
+    rgb(8 127 118 / 0.08) 52%,
+    transparent 76%
+  );
+  filter: blur(22px);
+  opacity: 0;
+  transform: scale(0.78);
+}
+.dark .ether-ready-pulse {
+  background: radial-gradient(
+    circle,
+    rgb(82 223 197 / 0.34) 0%,
+    rgb(82 223 197 / 0.1) 52%,
+    transparent 76%
+  );
+}
+.ether-ready-pulse-active {
+  animation: ether-ready-glow-pulse 1.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes ether-ready-glow-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+  42% {
+    opacity: 1;
+    transform: scale(1.16);
+  }
+  100% {
+    opacity: 0.62;
+    transform: scale(1);
+  }
+}
+.ether-ready-ribbon-glow {
+  filter: blur(6px);
+}
+.ether-ready-signal {
+  animation: ether-breathe 4s ease-in-out 0.4s infinite;
+}
+.ether-ready-content-hidden .ether-ready-title,
+.ether-ready-content-hidden .ether-ready-subtitle,
+.ether-ready-content-hidden .ether-ready-cta,
+.ether-ready-content-hidden .ether-ready-pills {
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+}
+.ether-ready-content-visible .ether-ready-title {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ether-ready-content-visible .ether-ready-subtitle {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.07s,
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.07s;
+}
+.ether-ready-content-visible .ether-ready-cta {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.14s,
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.14s;
+}
+.ether-ready-content-visible .ether-ready-pills {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.22s,
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.22s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ether-logo .ether-trace,
   .ether-logo .ether-signal,
@@ -323,8 +420,22 @@
   .ether-approve-glow,
   .ether-approve-ring,
   .ether-approve-burst span,
-  .ether-settle {
+  .ether-settle,
+  .ether-ready-signal {
     animation: none !important;
+  }
+  .ether-ready-pulse-active {
+    animation: none !important;
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  .ether-ready-content-visible .ether-ready-title,
+  .ether-ready-content-visible .ether-ready-subtitle,
+  .ether-ready-content-visible .ether-ready-cta,
+  .ether-ready-content-visible .ether-ready-pills {
+    transition: none;
+    transform: none;
+    animation: ether-settle-in 0.35s ease both;
   }
   .ether-approve-check {
     stroke-dashoffset: 0;

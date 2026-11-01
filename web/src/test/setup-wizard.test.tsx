@@ -781,9 +781,7 @@ describe("setup wizard", () => {
       await screen.findByRole("heading", { name: "Where will your household watch?" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("More apps")).not.toBeInTheDocument();
-    expect(
-      screen.getAllByRole("switch").map((el) => el.getAttribute("aria-label")),
-    ).toEqual([
+    expect(screen.getAllByRole("switch").map((el) => el.getAttribute("aria-label"))).toEqual([
       "Plex enabled",
       "Jellyfin enabled",
       "Emby enabled",
@@ -901,6 +899,73 @@ describe("setup wizard", () => {
     expect(config.catalog.language).toBe("de-DE");
     expect(config.catalog.region).toBe("DE");
     expect(fake.state.streamDefaults?.subtitleMode).toBe("foreign-only");
+  });
+  it("completes into the SetupReady screen, supports Skip/Escape and reduced motion, and brings back the sidebar on Get started", async () => {
+    sessionStorage.setItem(SETUP_STEP_KEY, "6");
+    renderApp(
+      "/setup",
+      { bootstrap: { setupComplete: false, ownerConfigured: true, authenticated: true } },
+      (f) => {
+        f.state.config.setupComplete = false;
+        f.state.config.frontends = {
+          plex: { enabled: true },
+          jellyfin: { enabled: true },
+        };
+        f.state.config.plex.claimed = false;
+        f.state.config.plex.token = "";
+        f.state.config.usenet.providers = [];
+        if (f.state.config.debrid) f.state.config.debrid.providers = [];
+      },
+    );
+    const finishNow = await screen.findByRole("button", {
+      name: "Finish now, add the TMDB key later",
+    });
+    expect(screen.queryAllByRole("link", { name: "Overview" })).toHaveLength(0);
+    fireEvent.click(finishNow);
+
+    const readyRegion = await screen.findByRole("region", { name: "Ether is ready" });
+    expect(readyRegion).toBeInTheDocument();
+    if (readyRegion.getAttribute("data-ready-state") === "animating") {
+      fireEvent.click(screen.getByRole("button", { name: "Skip" }));
+    }
+    expect(readyRegion).toHaveAttribute("data-ready-state", "settled");
+    expect(screen.getByRole("heading", { name: "Ether is ready" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your settings are saved — add a debrid or Usenet account next so titles can play.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add a debrid account" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect Plex" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect a device" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add viewers" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose playback quality" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Get started" }));
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Overview" }).length).toBeGreaterThan(0);
+  });
+
+  it("deep-links Choose playback quality from the ready screen to Quality profiles", async () => {
+    sessionStorage.setItem(SETUP_STEP_KEY, "6");
+    renderApp(
+      "/setup",
+      { bootstrap: { setupComplete: false, ownerConfigured: true, authenticated: true } },
+      (f) => {
+        f.state.config.setupComplete = false;
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Finish now, add the TMDB key later" }),
+    );
+    const readyRegion = await screen.findByRole("region", { name: "Ether is ready" });
+    if (readyRegion.getAttribute("data-ready-state") === "animating") {
+      fireEvent.keyDown(window, { key: "Escape" });
+    }
+    expect(readyRegion).toHaveAttribute("data-ready-state", "settled");
+    fireEvent.click(screen.getByRole("button", { name: "Choose playback quality" }));
+    expect(await screen.findByRole("heading", { name: "Releases" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Overview" }).length).toBeGreaterThan(0);
   });
 });
 

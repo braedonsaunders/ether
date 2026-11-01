@@ -38,13 +38,15 @@ import { loadLocale, localized, rememberLocale, t, tn, tx } from "../i18n";
 import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
-import { appLabel, appPath, appPurpose, appRank } from "./apps/catalog";
+import { appLabel, appPurpose, appRank } from "./apps/catalog";
 import { CachePresetCards, cachePresetKey, presetForFreeBytes } from "./cache/presets";
 import { ProwlarrImport } from "../components/ProwlarrImport";
 import { DEBRID_KINDS } from "./sources/Debrid";
 import { DEBRID_TOKEN_URL } from "./sources/cards";
 import { addonUrlHasDebridKey, isStremio, normalizeAddonUrl } from "./sources/Indexers";
 import { LanguageStep } from "./setup/LanguageStep";
+import { SetupReady, connectDevicePath } from "./setup/SetupReady";
+export { connectDevicePath };
 import {
   householdLanguageFor,
   projectHouseholdRules,
@@ -263,14 +265,6 @@ function SourceChoice({
     </section>
   );
 }
-const READY_MS = 1700;
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
-
 function setupAppLogo(id: string) {
   switch (id) {
     case "plex":
@@ -286,111 +280,6 @@ function setupAppLogo(id: string) {
     default:
       return householdIcon(id);
   }
-}
-
-const CONNECT_PANEL_APPS = ["jellyfin", "emby", "silo", "dlna"];
-
-/** The finish chip opens the app that shows a server address, not the Apps overview. */
-export function connectDevicePath(frontends: EtherConfig["frontends"]): string {
-  const enabled = Object.entries(frontends ?? {})
-    .filter(([, row]) => row?.enabled)
-    .map(([id]) => id)
-    .sort((a, b) => appRank(a) - appRank(b));
-  const panel = enabled.find((id) => CONNECT_PANEL_APPS.includes(id));
-  const id = panel ?? enabled[0];
-  if (!id) return "/apps";
-  if (["stremio", "webdav", "m3u"].includes(id)) return "/me";
-  return `/apps/${appPath(id)}?connect=1`;
-}
-
-function SetupReady() {
-  const navigate = useNavigate();
-  const [cfg, setCfg] = useState<EtherConfig | null>(null);
-  const [settled, setSettled] = useState(prefersReducedMotion);
-
-  useEffect(() => {
-    void api
-      .getConfig()
-      .then(setCfg)
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    if (settled) return;
-    const timer = window.setTimeout(() => setSettled(true), READY_MS);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSettled(true);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [settled]);
-
-  const debridOn = (cfg?.debrid?.providers ?? []).some((row) => row.enabled && row.apiKey.trim());
-  const usenetOn = (cfg?.usenet.providers ?? []).some((row) => row.enabled && row.host.trim());
-  const plexOpen = Boolean(cfg?.frontends?.plex?.enabled) && !cfg?.plex.claimed;
-  const anyApp = cfg?.frontends ? Object.values(cfg.frontends).some((row) => row?.enabled) : false;
-  const go = (to: string) => navigate(to);
-
-  return (
-    <div className="mx-auto flex w-full max-w-lg flex-col items-center px-6 py-16">
-      {settled ? (
-        <div className="ether-settle flex w-full flex-col items-center gap-5">
-          <Button size="lg" className="h-12 min-w-56 px-10 text-base" onClick={() => go("/")}>
-            {t("Get started")}
-          </Button>
-          <div className="flex flex-wrap justify-center gap-2">
-            {anyApp ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                onClick={() => go(connectDevicePath(cfg?.frontends))}
-              >
-                {t("Connect a device")}
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-full"
-              onClick={() => go("/viewers")}
-            >
-              {t("Add viewers")}
-            </Button>
-            {!debridOn && !usenetOn ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                onClick={() => go("/sources")}
-              >
-                {t("Add a debrid account")}
-              </Button>
-            ) : null}
-            {plexOpen ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                onClick={() => go("/apps/plex/account")}
-              >
-                {t("Connect Plex")}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : (
-        <div className="ether-settle flex flex-col items-center gap-3 text-primary" role="status">
-          <EtherMark size={72} />
-          <Button variant="link" onClick={() => setSettled(true)}>
-            {t("Skip")}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function indexerNameFromUrl(url: string): string {
@@ -978,7 +867,7 @@ export default function Setup() {
   const plexSigned = pinDone || Boolean(cfg.plex.claimed && cfg.plex.token);
   const passwordsMatch = localPassword !== "" && localPassword === localPasswordAgain;
 
-  if (finished) return <SetupReady />;
+  if (finished) return <SetupReady initialConfig={cfg} />;
 
   return (
     <WizardLayout

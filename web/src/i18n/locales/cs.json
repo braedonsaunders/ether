@@ -228,6 +228,7 @@
   "m_014d347ce75e4d": "Přidáno do Etheru",
   "m_014e77626c919b": "Někdo",
   "m_014f0a55186cc3": "Denně",
+  "m_014f17c33ae5ca": "Vaše nastavení jsou uložena — jako další přidejte účet debrid nebo Usenet, aby šlo tituly přehrávat.",
   "m_0152bbbd7a10b9": "Odebrat {title}",
   "m_01568577258ecb": "Přihlásí tento server k účtu Plex, aby ho aplikace Plex našly.",
   "m_015ab35e457cd4": "Nahrát staženou zálohu",
@@ -4194,6 +4195,7 @@
   "m_1890e0dc631181": "Viděno na tomto serveru, naposledy {when}",
   "m_1890e30548b2a2": "Ve zdroji nic neodpovídá.",
   "m_1891902f870258": "Připravované tituly vyžadují zdroj celého katalogu a vzdálené vyhledávání TMDB Discover.",
+  "m_1894395fd1bc40": "Vaše nastavení jsou uložena a server běží — otevřete Přehled nebo níže vyberte další krok.",
   "m_1894cd64b6f8df": {
     "few": "{count} otevřené soubory",
     "many": "{count} otevřeného souboru",
@@ -4327,6 +4329,7 @@
   "m_192be4b1f4ac19": "Uživatel databáze",
   "m_192bf2133a39eb": "Staženo",
   "m_192ca43bd9c999": "Hodiny",
+  "m_192d3b8aaee746": "Zvolit kvalitu přehrávání",
   "m_192f472e46b9a3": "Přidáno",
   "m_1930a13dae4a76": "Identita přehrávače",
   "m_1931c0bcb280c2": "Skrýt podrobnosti",

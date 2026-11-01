@@ -218,6 +218,7 @@
   "m_014d347ce75e4d": "Tilføjet til Ether",
   "m_014e77626c919b": "Nogen",
   "m_014f0a55186cc3": "Dagligt",
+  "m_014f17c33ae5ca": "Dine indstillinger er gemt — tilføj en debrid- eller Usenet-konto som det næste, så titler kan afspilles.",
   "m_0152bbbd7a10b9": "Fjern {title}",
   "m_01568577258ecb": "Logger denne server ind på din Plex-konto, så Plex-apps kan finde den.",
   "m_015ab35e457cd4": "Upload en downloadet backup",
@@ -3958,6 +3959,7 @@
   "m_1890e0dc631181": "Set på denne server, senest {when}",
   "m_1890e30548b2a2": "Intet i kilden matcher.",
   "m_1891902f870258": "Kommende titler kræver kilden Hele kataloget og ekstern TMDB-discover.",
+  "m_1894395fd1bc40": "Dine indstillinger er gemt, og serveren kører — åbn Oversigt eller vælg et næste trin nedenfor.",
   "m_1894cd64b6f8df": {
     "one": "{count} åben fil",
     "other": "{count} åbne filer"
@@ -4073,6 +4075,7 @@
   "m_192be4b1f4ac19": "Databasebruger",
   "m_192bf2133a39eb": "Downloadet",
   "m_192ca43bd9c999": "Timer",
+  "m_192d3b8aaee746": "Vælg afspilningskvalitet",
   "m_192f472e46b9a3": "Tilføjet",
   "m_1930a13dae4a76": "Afspilleridentitet",
   "m_1931c0bcb280c2": "Skjul detaljer",
