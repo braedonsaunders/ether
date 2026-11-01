@@ -30,11 +30,13 @@ func init() {
 }
 
 const (
-	cacheTTL        = 30 * 24 * time.Hour
-	recheckInterval = 24 * time.Hour
-	bgWorkers       = 2
-	bgQueueSize     = 256
-	bgLookupTimeout = 3 * time.Second
+	cacheTTL         = 30 * 24 * time.Hour
+	recheckInterval  = 24 * time.Hour
+	bgWorkers        = 2
+	bgQueueSize      = 256
+	bgLookupTimeout  = 3 * time.Second
+	childrenPageSize = 50
+	maxChildrenItems = 2500
 )
 
 // ClientIdentifier derives a stable per-install X-Plex-Client-Identifier for
@@ -331,14 +333,14 @@ type providerItem struct {
 	} `json:"Guid"`
 }
 
-func (s *Service) getItems(ctx context.Context, path string, q url.Values) ([]providerItem, error) {
+func (s *Service) getPage(ctx context.Context, path string, q url.Values) ([]providerItem, int, error) {
 	u := strings.TrimRight(s.o.BaseURL, "/") + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
 	req, e := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if e != nil {
-		return nil, fmt.Errorf("Plex metadata request invalid")
+		return nil, 0, fmt.Errorf("Plex metadata request invalid")
 	}
 	req.Header.Set("X-Plex-Token", s.o.Token())
 	req.Header.Set("Accept", "application/json")
@@ -349,24 +351,59 @@ func (s *Service) getItems(ctx context.Context, path string, q url.Values) ([]pr
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, e := client.Do(req)
 	if e != nil {
-		return nil, fmt.Errorf("Plex metadata unavailable")
+		return nil, 0, fmt.Errorf("Plex metadata unavailable")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, core.ErrNotFound
+		return nil, 0, core.ErrNotFound
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Plex metadata HTTP %d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("Plex metadata HTTP %d", resp.StatusCode)
 	}
 	var body struct {
 		Container struct {
-			Metadata []providerItem `json:"Metadata"`
+			TotalSize int            `json:"totalSize"`
+			Metadata  []providerItem `json:"Metadata"`
 		} `json:"MediaContainer"`
 	}
 	if e = json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&body); e != nil {
-		return nil, fmt.Errorf("Plex metadata response invalid")
+		return nil, 0, fmt.Errorf("Plex metadata response invalid")
 	}
-	return body.Container.Metadata, nil
+	return body.Container.Metadata, body.Container.TotalSize, nil
+}
+
+func (s *Service) getItems(ctx context.Context, path string, q url.Values) ([]providerItem, error) {
+	items, _, err := s.getPage(ctx, path, q)
+	return items, err
+}
+
+func (s *Service) getChildren(ctx context.Context, hex string) ([]providerItem, error) {
+	path := "/library/metadata/" + url.PathEscape(hex) + "/children"
+	var all []providerItem
+	for start := 0; start < maxChildrenItems; {
+		q := url.Values{
+			"X-Plex-Container-Start": {strconv.Itoa(start)},
+			"X-Plex-Container-Size":  {strconv.Itoa(childrenPageSize)},
+		}
+		page, totalSize, err := s.getPage(ctx, path, q)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		n := len(page)
+		if n == 0 {
+			break
+		}
+		start += n
+		if totalSize > 0 {
+			if start >= totalSize {
+				break
+			}
+		} else if n < childrenPageSize {
+			break
+		}
+	}
+	return all, nil
 }
 
 func validKindGUID(guid, kind string) bool {
@@ -468,7 +505,7 @@ func (s *Service) resolveSeason(ctx context.Context, k core.RatingKey) (string, 
 		_ = s.storeMapping(ctx, k, "", time.Now().Unix())
 		return "", nil
 	}
-	children, err := s.getItems(ctx, "/library/metadata/"+url.PathEscape(showHex)+"/children", nil)
+	children, err := s.getChildren(ctx, showHex)
 	if err != nil {
 		return "", err
 	}
@@ -553,7 +590,7 @@ func (s *Service) resolveEpisode(ctx context.Context, k core.RatingKey) (string,
 		_ = s.storeMapping(ctx, k, "", time.Now().Unix())
 		return "", nil
 	}
-	children, err := s.getItems(ctx, "/library/metadata/"+url.PathEscape(seasonHex)+"/children", nil)
+	children, err := s.getChildren(ctx, seasonHex)
 	if err != nil {
 		return "", err
 	}
