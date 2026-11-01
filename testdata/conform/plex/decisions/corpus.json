@@ -1,0 +1,1692 @@
+{
+  "version": 1,
+  "policy": "Redacted official-client decision requests. Query pairs keep wire order. Tokens and hosts stripped. First seed is the recorded PMS 1.43.4 browsing corpus (representative client headers). A lab recording through conformdiff proxy against a disposable PMS \u2014 not the owner's production server, not the owner Plex account \u2014 is required to replace the seed with exact client Profile-Extra strings.",
+  "records": [
+    {
+      "id": "web-xml-legacy",
+      "client": "web",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex Web"
+          ],
+          [
+            "X-Plex-Version",
+            "4.160.0"
+          ],
+          [
+            "X-Plex-Platform",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "129.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Windows"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
+      }
+    },
+    {
+      "id": "web-json-legacy",
+      "client": "web",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex Web"
+          ],
+          [
+            "X-Plex-Version",
+            "4.160.0"
+          ],
+          [
+            "X-Plex-Platform",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "129.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Windows"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
+      }
+    },
+    {
+      "id": "ios-xml-legacy",
+      "client": "ios",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for iOS"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "iOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
+      }
+    },
+    {
+      "id": "ios-json-legacy",
+      "client": "ios",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for iOS"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "iOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
+      }
+    },
+    {
+      "id": "appletv-xml-legacy",
+      "client": "appletv",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for Apple TV"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "tvOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
+      }
+    },
+    {
+      "id": "appletv-json-legacy",
+      "client": "appletv",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for Apple TV"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "tvOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8&X-Plex-Client-Profile-Extra="
+      }
+    },
+    {
+      "id": "web-xml-mde-direct",
+      "client": "web",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex Web"
+          ],
+          [
+            "X-Plex-Version",
+            "4.160.0"
+          ],
+          [
+            "X-Plex-Platform",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "129.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Windows"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
+      }
+    },
+    {
+      "id": "web-json-mde-direct",
+      "client": "web",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex Web"
+          ],
+          [
+            "X-Plex-Version",
+            "4.160.0"
+          ],
+          [
+            "X-Plex-Platform",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "129.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Windows"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
+      }
+    },
+    {
+      "id": "ios-xml-mde-direct",
+      "client": "ios",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for iOS"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "iOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
+      }
+    },
+    {
+      "id": "ios-json-mde-direct",
+      "client": "ios",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for iOS"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "iOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
+      }
+    },
+    {
+      "id": "appletv-xml-mde-direct",
+      "client": "appletv",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for Apple TV"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "tvOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
+      }
+    },
+    {
+      "id": "appletv-json-mde-direct",
+      "client": "appletv",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "1"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "videoQuality",
+            "8"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for Apple TV"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "tvOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=1&directStream=1&videoQuality=8"
+      }
+    },
+    {
+      "id": "web-xml-mde-stream",
+      "client": "web",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "0"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "subtitleSize",
+            "100"
+          ],
+          [
+            "audioBoost",
+            "100"
+          ],
+          [
+            "location",
+            "lan"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex Web"
+          ],
+          [
+            "X-Plex-Version",
+            "4.160.0"
+          ],
+          [
+            "X-Plex-Platform",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "129.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Windows"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
+      }
+    },
+    {
+      "id": "web-json-mde-stream",
+      "client": "web",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "0"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "subtitleSize",
+            "100"
+          ],
+          [
+            "audioBoost",
+            "100"
+          ],
+          [
+            "location",
+            "lan"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex Web"
+          ],
+          [
+            "X-Plex-Version",
+            "4.160.0"
+          ],
+          [
+            "X-Plex-Platform",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "129.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Windows"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Chrome"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
+      }
+    },
+    {
+      "id": "ios-xml-mde-stream",
+      "client": "ios",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "0"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "subtitleSize",
+            "100"
+          ],
+          [
+            "audioBoost",
+            "100"
+          ],
+          [
+            "location",
+            "lan"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for iOS"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "iOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
+      }
+    },
+    {
+      "id": "ios-json-mde-stream",
+      "client": "ios",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "0"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "subtitleSize",
+            "100"
+          ],
+          [
+            "audioBoost",
+            "100"
+          ],
+          [
+            "location",
+            "lan"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for iOS"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "iOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "iPhone"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
+      }
+    },
+    {
+      "id": "appletv-xml-mde-stream",
+      "client": "appletv",
+      "format": "xml",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "0"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "subtitleSize",
+            "100"
+          ],
+          [
+            "audioBoost",
+            "100"
+          ],
+          [
+            "location",
+            "lan"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/xml"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for Apple TV"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "tvOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
+      }
+    },
+    {
+      "id": "appletv-json-mde-stream",
+      "client": "appletv",
+      "format": "json",
+      "source": "recorded PMS 1.43.4 browsing corpus; official-client header/query extras not yet captured",
+      "request": {
+        "method": "GET",
+        "path": "/video/:/transcode/universal/decision",
+        "query": [
+          [
+            "hasMDE",
+            "1"
+          ],
+          [
+            "path",
+            "/library/metadata/{{movieKey}}"
+          ],
+          [
+            "mediaIndex",
+            "0"
+          ],
+          [
+            "partIndex",
+            "0"
+          ],
+          [
+            "protocol",
+            "hls"
+          ],
+          [
+            "fastSeek",
+            "1"
+          ],
+          [
+            "directPlay",
+            "0"
+          ],
+          [
+            "directStream",
+            "1"
+          ],
+          [
+            "subtitleSize",
+            "100"
+          ],
+          [
+            "audioBoost",
+            "100"
+          ],
+          [
+            "location",
+            "lan"
+          ]
+        ],
+        "headers": [
+          [
+            "Accept",
+            "application/json"
+          ],
+          [
+            "X-Plex-Product",
+            "Plex for Apple TV"
+          ],
+          [
+            "X-Plex-Version",
+            "8.40"
+          ],
+          [
+            "X-Plex-Platform",
+            "tvOS"
+          ],
+          [
+            "X-Plex-Platform-Version",
+            "18.0"
+          ],
+          [
+            "X-Plex-Device",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Device-Name",
+            "Apple TV"
+          ],
+          [
+            "X-Plex-Client-Identifier",
+            "pmsdiff-client"
+          ],
+          [
+            "X-Plex-Provides",
+            "player,controller"
+          ],
+          [
+            "X-Plex-Client-Profile-Extra",
+            ""
+          ]
+        ],
+        "raw": "/video/:/transcode/universal/decision?hasMDE=1&path=%2Flibrary%2Fmetadata%2F{{movieKey}}&mediaIndex=0&partIndex=0&protocol=hls&fastSeek=1&directPlay=0&directStream=1&subtitleSize=100&audioBoost=100&location=lan"
+      }
+    }
+  ]
+}

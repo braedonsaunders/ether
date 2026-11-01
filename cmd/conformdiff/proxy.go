@@ -98,3 +98,20 @@ func fixturesFromCapture(args []string) error {
 	}
 	return capture.FixturesFromCapture(*dir, *protocol, *client, "internal/conform/profiles", "testdata/conform")
 }
+
+func decisionsFromCapture(args []string) error {
+	f := flag.NewFlagSet("decisions-from-capture", flag.ContinueOnError)
+	client := f.String("client", "", "client name (web|ios|appletv)")
+	dir := f.String("capture", "", "capture directory")
+	out := f.String("out", "", "output corpus JSON")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if *dir == "" || *client == "" {
+		return fmt.Errorf("decisions-from-capture requires -capture and -client")
+	}
+	if *out == "" {
+		*out = filepath.Join("testdata", "conform", "plex", "decisions", "corpus.json")
+	}
+	return capture.DecisionsFromCapture(*dir, *client, *out)
+}

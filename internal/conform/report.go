@@ -18,6 +18,7 @@ type PathSummary struct {
 	Clients   []string `json:"clients"`
 	Count     int      `json:"count,omitempty"`
 	Nested    int      `json:"nested,omitempty"`
+	Blocking  bool     `json:"blocking,omitempty"`
 }
 
 // EndpointSummary groups the differences of one endpoint (all clients and
@@ -34,7 +35,13 @@ type EndpointSummary struct {
 
 // Blocking counts the endpoint's blocking path differences.
 func (e EndpointSummary) Blocking() int {
-	return len(e.Missing) + len(e.Extra) + len(e.Type) + len(e.Other)
+	n := len(e.Missing) + len(e.Extra) + len(e.Type) + len(e.Other)
+	for _, p := range e.Value {
+		if p.Blocking {
+			n++
+		}
+	}
+	return n
 }
 
 // Summarize groups a report by endpoint, then by (format, kind, path), so a
@@ -68,6 +75,9 @@ func Summarize(r Report) []EndpointSummary {
 		}
 		if d.Nested > ps.Nested {
 			ps.Nested = d.Nested
+		}
+		if d.Blocking {
+			ps.Blocking = true
 		}
 	}
 	byEP := map[string]*EndpointSummary{}
@@ -173,8 +183,17 @@ func WriteSummary(w io.Writer, r Report, values bool) {
 		section("type", e.Type, func(p PathSummary) string {
 			return fmt.Sprintf(" ref=%s target=%s", p.Reference, p.Target)
 		})
-		if values {
-			section("value", e.Value, func(p PathSummary) string {
+		shown := e.Value
+		if !values {
+			shown = nil
+			for _, p := range e.Value {
+				if p.Blocking {
+					shown = append(shown, p)
+				}
+			}
+		}
+		if len(shown) > 0 {
+			section("value", shown, func(p PathSummary) string {
 				return fmt.Sprintf(" ref=%q target=%q", p.Reference, p.Target)
 			})
 		}
