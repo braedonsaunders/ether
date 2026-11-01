@@ -3,6 +3,7 @@ package livetv
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -95,42 +96,44 @@ func TestVirtualTuneSkipsToTheNextPlayableItem(t *testing.T) {
 }
 
 func TestVirtualTuneUsesFallbackAndBoundsAHungPrepare(t *testing.T) {
-	now := time.Unix(7, 0).UTC()
-	first, second, filler := core.MovieKey(1), core.MovieKey(2), core.MovieKey(9)
-	prevAttempt, prevBudget := virtualAttemptBudget, virtualTuneBudget
-	virtualAttemptBudget = 150 * time.Millisecond
-	virtualTuneBudget = time.Second
-	t.Cleanup(func() {
-		virtualAttemptBudget = prevAttempt
-		virtualTuneBudget = prevBudget
+	synctest.Test(t, func(t *testing.T) {
+		now := time.Unix(7, 0).UTC()
+		first, second, filler := core.MovieKey(1), core.MovieKey(2), core.MovieKey(9)
+		prevAttempt, prevBudget := virtualAttemptBudget, virtualTuneBudget
+		virtualAttemptBudget = 150 * time.Millisecond
+		virtualTuneBudget = time.Second
+		t.Cleanup(func() {
+			virtualAttemptBudget = prevAttempt
+			virtualTuneBudget = prevBudget
+		})
+		pb := &scriptedPlayback{fakePlayback: &fakePlayback{}, fail: map[core.RatingKey]bool{second: true}, block: first}
+		s := testService(t, Options{Now: func() time.Time { return now }, Playback: pb, Transcoder: &fakeTranscoder{}})
+		c := testChannel()
+		c.Items = []Item{
+			{Key: first, Title: "Hung", DurationMS: 12000},
+			{Key: second, Title: "Also missing", DurationMS: 20000},
+		}
+		c.Fallback = []Item{{Key: filler, Title: "Fallback feature", DurationMS: 30 * 60000}}
+		saved, err := s.SaveChannel(context.Background(), c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		info, err := s.Tune(context.Background(), &core.User{ID: 1}, saved.ID, core.ClientCaps{})
+		elapsed := time.Since(start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Programme == nil || info.Programme.Item.Title != "Fallback feature" {
+			t.Fatalf("fallback was not used: %+v", info.Programme)
+		}
+		if elapsed > 2*time.Second {
+			t.Fatalf("unplayable prepare was not bounded: %s", elapsed)
+		}
+		if len(pb.calls) > virtualMaxAttempts {
+			t.Fatalf("too many attempts: %v", pb.calls)
+		}
 	})
-	pb := &scriptedPlayback{fakePlayback: &fakePlayback{}, fail: map[core.RatingKey]bool{second: true}, block: first}
-	s := testService(t, Options{Now: func() time.Time { return now }, Playback: pb, Transcoder: &fakeTranscoder{}})
-	c := testChannel()
-	c.Items = []Item{
-		{Key: first, Title: "Hung", DurationMS: 12000},
-		{Key: second, Title: "Also missing", DurationMS: 20000},
-	}
-	c.Fallback = []Item{{Key: filler, Title: "Fallback feature", DurationMS: 30 * 60000}}
-	saved, err := s.SaveChannel(context.Background(), c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	start := time.Now()
-	info, err := s.Tune(context.Background(), &core.User{ID: 1}, saved.ID, core.ClientCaps{})
-	elapsed := time.Since(start)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Programme == nil || info.Programme.Item.Title != "Fallback feature" {
-		t.Fatalf("fallback was not used: %+v", info.Programme)
-	}
-	if elapsed > 2*time.Second {
-		t.Fatalf("unplayable prepare was not bounded: %s", elapsed)
-	}
-	if len(pb.calls) > virtualMaxAttempts {
-		t.Fatalf("too many attempts: %v", pb.calls)
-	}
 }
 
 func TestVirtualTuneDoesNotPrepareKnownUnavailableTitles(t *testing.T) {

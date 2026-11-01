@@ -119,15 +119,29 @@ func (p *blockingProber) ProbeLive(ctx context.Context, input string) (*core.Med
 func TestIPTVProbeOverlapsThePlaylistPrefix(t *testing.T) {
 	var inPrefix atomic.Bool
 	var overlapped atomic.Bool
+	prefixEntered := make(chan struct{})
+	probeObserved := make(chan struct{})
+	var prefixOnce sync.Once
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inPrefix.Store(true)
 		defer inPrefix.Store(false)
-		time.Sleep(200 * time.Millisecond)
+		prefixOnce.Do(func() { close(prefixEntered) })
+		select {
+		case <-probeObserved:
+		case <-r.Context().Done():
+			return
+		}
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		fmt.Fprint(w, "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nsegment.ts\n")
 	}))
 	defer up.Close()
-	prober := &overlapProber{fakeTranscoder: &fakeTranscoder{}, inPrefix: &inPrefix, overlapped: &overlapped}
+	prober := &overlapProber{
+		fakeTranscoder: &fakeTranscoder{},
+		inPrefix:       &inPrefix,
+		overlapped:     &overlapped,
+		prefixEntered:  prefixEntered,
+		probeObserved:  probeObserved,
+	}
 	s := testService(t, Options{Transcoder: prober, HTTPClient: up.Client(), Now: func() time.Time { return time.Unix(100, 0) }})
 	saved, err := s.SaveChannel(context.Background(), Channel{Name: "News", Number: "4", Kind: "iptv", Enabled: true, StreamURL: up.URL + "/live"})
 	if err != nil {
@@ -143,12 +157,20 @@ func TestIPTVProbeOverlapsThePlaylistPrefix(t *testing.T) {
 
 type overlapProber struct {
 	*fakeTranscoder
-	inPrefix   *atomic.Bool
-	overlapped *atomic.Bool
+	inPrefix      *atomic.Bool
+	overlapped    *atomic.Bool
+	prefixEntered <-chan struct{}
+	probeObserved chan struct{}
+	probeOnce     sync.Once
 }
 
-func (p *overlapProber) ProbeLive(context.Context, string) (*core.MediaInfo, error) {
-	time.Sleep(40 * time.Millisecond)
+func (p *overlapProber) ProbeLive(ctx context.Context, _ string) (*core.MediaInfo, error) {
+	defer p.probeOnce.Do(func() { close(p.probeObserved) })
+	select {
+	case <-p.prefixEntered:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	if p.inPrefix.Load() {
 		p.overlapped.Store(true)
 	}

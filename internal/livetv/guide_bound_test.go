@@ -21,6 +21,28 @@ func TestCurrentProgrammeDoesNotScanTheGuide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO livetv_programmes(source_id,channel_id,start_ms,end_ms,data) VALUES(?,?,?,?,?)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stmt.Close()
+	encodedBySlot := make([][]byte, history)
+	startMSBySlot := make([]int64, history)
+	endMSBySlot := make([]int64, history)
+	for n := 0; n < history; n++ {
+		from := now.Add(-time.Duration(history-n) * time.Hour)
+		programme := Programme{Start: from, End: from.Add(time.Hour), Item: Item{Title: "Old"}}
+		if n == history-1 {
+			programme = Programme{Start: now.Add(-30 * time.Minute), End: now.Add(30 * time.Minute), Item: Item{Title: "On now"}}
+		}
+		encoded, err := json.Marshal(programme)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encodedBySlot[n] = encoded
+		startMSBySlot[n] = programme.Start.UnixMilli()
+		endMSBySlot[n] = programme.End.UnixMilli()
+	}
 	for src := 0; src < sourcesN; src++ {
 		sourceID := fmt.Sprintf("src%d", src)
 		for ch := 0; ch < channelsN; ch++ {
@@ -34,21 +56,13 @@ func TestCurrentProgrammeDoesNotScanTheGuide(t *testing.T) {
 				t.Fatal(err)
 			}
 			for n := 0; n < history; n++ {
-				from := now.Add(-time.Duration(history-n) * time.Hour)
-				programme := Programme{Start: from, End: from.Add(time.Hour), Item: Item{Title: "Old"}}
-				if n == history-1 {
-					programme = Programme{Start: now.Add(-30 * time.Minute), End: now.Add(30 * time.Minute), Item: Item{Title: "On now"}}
-				}
-				encoded, err := json.Marshal(programme)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err = tx.ExecContext(ctx, `INSERT INTO livetv_programmes(source_id,channel_id,start_ms,end_ms,data) VALUES(?,?,?,?,?)`, sourceID, id, programme.Start.UnixMilli(), programme.End.UnixMilli(), encoded); err != nil {
+				if _, err = stmt.ExecContext(ctx, sourceID, id, startMSBySlot[n], endMSBySlot[n], encodedBySlot[n]); err != nil {
 					t.Fatal(err)
 				}
 			}
 		}
 	}
+	stmt.Close()
 	if err = tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
