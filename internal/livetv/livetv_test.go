@@ -755,8 +755,18 @@ func TestAbandonedTunesReclaimedOnlyForSameViewerAndClient(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatal(rec.Code)
 	}
-	if _, err = s.Tune(context.Background(), u, c.ID, caps); err != core.ErrStreamLimit {
-		t.Fatalf("active media session was reaped: %v", err)
+	if _, err = s.Tune(context.Background(), u, c.ID, core.ClientCaps{ClientID: "other-device"}); err != core.ErrStreamLimit {
+		t.Fatalf("another device evaded stream limit while media active: %v", err)
+	}
+	third, err := s.Tune(context.Background(), u, c.ID, caps)
+	if err != nil {
+		t.Fatalf("same device retuning after media consumption failed: %v", err)
+	}
+	if second.ID == third.ID {
+		t.Fatal("retune reused previous session ID")
+	}
+	if _, err = s.Session(context.Background(), second.ID, u); err != core.ErrNotFound {
+		t.Fatalf("superseded active session survived retune: %v", err)
 	}
 }
 
