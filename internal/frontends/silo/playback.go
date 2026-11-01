@@ -396,7 +396,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		output["active_quality"] = active
 	}
 	document := map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "session_id": session.ID, "playback_plan": output}
-	i.rememberPlan(session.ID, format, document)
+	i.rememberPlan(session.ID, playbackPlan{format: format, live: liveFile, baseID: plan.ID, delivery: delivery, body: document})
 	reply(w, 201, document)
 }
 
@@ -513,17 +513,20 @@ func siloMediaURL(sessionID string, format frontend.StreamFormat) string {
 }
 
 type playbackPlan struct {
-	format frontend.StreamFormat
-	body   map[string]any
+	format   frontend.StreamFormat
+	live     bool
+	baseID   string
+	delivery string
+	body     map[string]any
 }
 
-func (i *instance) rememberPlan(id string, format frontend.StreamFormat, body map[string]any) {
+func (i *instance) rememberPlan(id string, plan playbackPlan) {
 	i.plansMu.Lock()
 	defer i.plansMu.Unlock()
 	if i.plans == nil {
 		i.plans = map[string]playbackPlan{}
 	}
-	i.plans[id] = playbackPlan{format: format, body: body}
+	i.plans[id] = plan
 }
 
 func (i *instance) rememberedPlan(id string) (playbackPlan, bool) {
@@ -801,6 +804,7 @@ type sharedPrefix struct{}
 type replanRequest struct {
 	InstallationID string   `json:"installation_id"`
 	Protocol       int      `json:"protocol_version"`
+	Operation      string   `json:"operation"`
 	Attempt        string   `json:"playback_attempt_id"`
 	ReplanID       string   `json:"replan_request_id"`
 	FailedPlan     string   `json:"failed_plan_id"`
@@ -810,6 +814,13 @@ type replanRequest struct {
 	Quality        string   `json:"quality_preference"`
 	Position       float64  `json:"position_seconds"`
 	Attempted      []string `json:"attempted_plan_keys"`
+}
+
+type replanRoute struct {
+	delivery string
+	format   frontend.StreamFormat
+	key      string
+	reason   string
 }
 
 func (i *instance) playbackReplan(w http.ResponseWriter, r *http.Request) {
@@ -841,12 +852,6 @@ func (i *instance) playbackReplan(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusNotFound, "urn:ether:problem:playback-session-not-found", "Playback session not found", "This server has no plan to revise for the session.")
 		return
 	}
-	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: "silo"}
-	pos := time.Duration(b.Position * float64(time.Second))
-	if _, err = i.host.Sessions.StartStream(r.Context(), access, id, frontend.StreamRequest{Format: snap.format, Position: pos}); err != nil {
-		playbackError(w, err)
-		return
-	}
 	raw, err := json.Marshal(snap.body)
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
@@ -862,29 +867,154 @@ func (i *instance) playbackReplan(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusNotFound, "urn:ether:problem:playback-session-not-found", "Playback session not found", "This server has no plan to revise for the session.")
 		return
 	}
+	currentKey, _ := plan["plan_attempt_key"].(string)
+	currentPlanID, _ := plan["plan_id"].(string)
+	currentDelivery := snap.delivery
+	if currentDelivery == "" {
+		currentDelivery, _ = plan["delivery"].(string)
+	}
+	baseID := snap.baseID
+	if baseID == "" {
+		baseID = currentPlanID
+	}
+
+	attempted := make(map[string]bool, len(b.Attempted)+2)
+	for _, k := range b.Attempted {
+		if k != "" {
+			attempted[k] = true
+		}
+	}
+	if b.Operation != "seek_reanchor" {
+		if b.PlanKey != "" {
+			attempted[b.PlanKey] = true
+		}
+		if b.FailedPlan != "" {
+			attempted[b.FailedPlan] = true
+		}
+	}
+
+	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: "silo"}
+	pos := time.Duration(b.Position * float64(time.Second))
+	if snap.live {
+		pos = 0
+	}
+
+	nextFormat := snap.format
+	nextDelivery := currentDelivery
+	nextKey := currentKey
+	nextReason, _ := plan["decision_reason"].(string)
+
+	routeFailed := b.Operation != "seek_reanchor" && (attempted[currentKey] || attempted[currentPlanID] || b.Operation == "failure_recovery")
+	if routeFailed {
+		var ladder []replanRoute
+		switch currentDelivery {
+		case "original_http":
+			ladder = []replanRoute{
+				{delivery: "server_remux_hls", format: frontend.StreamHLS, key: baseID + ":remux_hls", reason: "replan_remux_hls"},
+				{delivery: "server_transcode_hls", format: frontend.StreamHLS, key: baseID + ":transcode_hls", reason: "replan_transcode_hls"},
+			}
+		case "server_remux_hls":
+			ladder = []replanRoute{
+				{delivery: "server_transcode_hls", format: frontend.StreamHLS, key: baseID + ":transcode_hls", reason: "replan_transcode_hls"},
+			}
+		}
+		var chosen *replanRoute
+		for idx := range ladder {
+			candidate := &ladder[idx]
+			if !attempted[candidate.key] {
+				chosen = candidate
+				break
+			}
+		}
+		if chosen == nil {
+			siloAdaptationUnavailable(w, id)
+			return
+		}
+		if _, err = i.host.Sessions.StartStream(r.Context(), access, id, frontend.StreamRequest{Format: chosen.format, Position: pos}); err != nil {
+			if errors.Is(err, frontend.ErrNotAvailable) {
+				siloAdaptationUnavailable(w, id)
+				return
+			}
+			playbackError(w, err)
+			return
+		}
+		nextFormat = chosen.format
+		nextDelivery = chosen.delivery
+		nextKey = chosen.key
+		nextReason = chosen.reason
+	} else {
+		if _, err = i.host.Sessions.StartStream(r.Context(), access, id, frontend.StreamRequest{Format: nextFormat, Position: pos}); err != nil {
+			playbackError(w, err)
+			return
+		}
+		if b.Operation != "seek_reanchor" && attempted[nextKey] {
+			siloAdaptationUnavailable(w, id)
+			return
+		}
+	}
+
+	plan["plan_id"] = nextKey
+	plan["plan_attempt_key"] = nextKey
+	plan["delivery"] = nextDelivery
+	if nextReason != "" {
+		plan["decision_reason"] = nextReason
+	}
+	if nextDelivery == "server_transcode_hls" {
+		if transforms, _ := plan["transformations"].([]any); len(transforms) == 0 {
+			plan["transformations"] = []any{map[string]any{"name": "video_transcode", "executor": "ffmpeg", "recipe_version": "1", "validated_claims": []string{"video_transcode"}}}
+		}
+	}
 	stream, _ := plan["stream"].(map[string]any)
 	if stream == nil {
 		stream = map[string]any{}
 		plan["stream"] = stream
 	}
-	stream["url"] = siloMediaURL(id, snap.format)
+	stream["url"] = siloMediaURL(id, nextFormat)
+	if nextFormat == frontend.StreamHLS {
+		stream["protocol"] = "hls"
+		stream["container"] = "hls"
+		stream["mime_type"] = "application/vnd.apple.mpegurl"
+	}
 	timeline, _ := plan["timeline"].(map[string]any)
 	if timeline == nil {
 		timeline = map[string]any{}
 		plan["timeline"] = timeline
 	}
-	timeline["source_start_seconds"] = b.Position
-	if snap.format == frontend.StreamHLS {
-		timeline["stream_origin_seconds"] = b.Position
-		timeline["player_start_seconds"] = 0
-		timeline["timeline_offset_seconds"] = b.Position
+	if snap.live {
+		timeline["source_start_seconds"] = float64(0)
+		timeline["stream_origin_seconds"] = float64(0)
+		timeline["player_start_seconds"] = float64(0)
+		timeline["timeline_offset_seconds"] = float64(0)
+		timeline["can_seek_anywhere"] = false
 	} else {
-		timeline["stream_origin_seconds"] = 0
-		timeline["player_start_seconds"] = b.Position
-		timeline["timeline_offset_seconds"] = 0
+		timeline["source_start_seconds"] = b.Position
+		if nextFormat == frontend.StreamHLS {
+			timeline["stream_origin_seconds"] = b.Position
+			timeline["player_start_seconds"] = 0
+			timeline["timeline_offset_seconds"] = b.Position
+		} else {
+			timeline["stream_origin_seconds"] = 0
+			timeline["player_start_seconds"] = b.Position
+			timeline["timeline_offset_seconds"] = 0
+		}
 	}
 	document["session_id"] = id
+	i.rememberPlan(id, playbackPlan{format: nextFormat, live: snap.live, baseID: baseID, delivery: nextDelivery, body: document})
 	reply(w, http.StatusOK, document)
+}
+
+func siloAdaptationUnavailable(w http.ResponseWriter, sessionID string) {
+	reply(w, http.StatusOK, map[string]any{
+		"protocol_version": 3,
+		"server_features":  []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"},
+		"outcome":          "adaptation_unavailable",
+		"session_id":       sessionID,
+		"terminal": map[string]any{
+			"reason":    "no_compatible_route",
+			"message":   "No compatible playback route remains for this stream.",
+			"retryable": true,
+		},
+	})
 }
 
 func (i *instance) ownsSession(ctx context.Context, v *frontend.Viewer, d frontend.Device, id string) bool {
