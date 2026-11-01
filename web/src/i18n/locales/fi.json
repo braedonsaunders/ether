@@ -5177,5 +5177,13 @@
   "m_1ffb9d60560b3f": "Klusterista",
   "m_1ffceea1081742": "dvd absoluuttinen esitys järjestys",
   "m_1ffe73d99814f5": "Hub-tunnukset, lajit tai glob-mallit",
-  "m_1ffeee0f0cedfc": "Tietokannan URL-osoitteen ohitus (valinnainen)"
+  "m_1ffeee0f0cedfc": "Tietokannan URL-osoitteen ohitus (valinnainen)",
+  "m_0e5ae3b66cd6d5": "Ei asetettu",
+  "m_026edba0cfb759": "Plexistä",
+  "m_1baae470936d4f": "Vain luku -oletukset tämän katsojan plex.tv-tililtä. Etherin säännöt voittavat.",
+  "m_1626550261e179": "Valitse ääni automaattisesti",
+  "m_1b684664d80b86": "Tekstitystila",
+  "m_003fa2ab59dac8": "Elokuvasuodatin",
+  "m_00bcc1f24cfc24": "TV-suodatin",
+  "m_01c1e7258f54a3": "Tunnistesuodattimet vastaavat vain TMDB-kokoelman nimeä."
 }

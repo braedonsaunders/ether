@@ -151,6 +151,31 @@ describe("Viewers", () => {
     expect(calls(fake, "PATCH", "/users/3")).toHaveLength(0);
     await waitFor(() => expect(screen.queryByText("You have unsaved changes")).toBeNull());
   });
+
+  it("shows read-only plex.tv defaults on Access and Playback", async () => {
+    const withPlex = (server: FakeServer) => {
+      server.state.plexDefaults[3] = {
+        hasProfile: true,
+        hasSettings: true,
+        audioLanguage: "ja",
+        autoSelectAudio: true,
+        subtitleLanguage: "en",
+        subtitleMode: "always",
+        filterMovies: "contentRating<=PG-13",
+        filterTelevision: "label!=Hidden",
+        allowSync: false,
+      };
+    };
+    renderApp("/viewers/3/access", {}, withPlex);
+    expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("contentRating<=PG-13")).toBeInTheDocument();
+    expect(screen.getByText("label!=Hidden")).toBeInTheDocument();
+
+    renderApp("/viewers/3/playback", { householdAudio: true }, withPlex);
+    expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("ja")).toBeInTheDocument();
+    expect(screen.getByText("Always on")).toBeInTheDocument();
+  });
 });
 
 it("filters imported history without changing Plex access", async () => {

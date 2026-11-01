@@ -5331,5 +5331,13 @@
   "m_1ffb9d60560b3f": "De un clúster",
   "m_1ffceea1081742": "dvd absoluto emisión ordenación",
   "m_1ffe73d99814f5": "ID de hub, tipos o patrones glob",
-  "m_1ffeee0f0cedfc": "URL de base de datos alternativa (opcional)"
+  "m_1ffeee0f0cedfc": "URL de base de datos alternativa (opcional)",
+  "m_0e5ae3b66cd6d5": "Sin definir",
+  "m_026edba0cfb759": "De Plex",
+  "m_1baae470936d4f": "Valores de solo lectura de la cuenta plex.tv de este espectador. Mandan las reglas de Ether.",
+  "m_1626550261e179": "Elegir audio automáticamente",
+  "m_1b684664d80b86": "Modo de subtítulos",
+  "m_003fa2ab59dac8": "Filtro de películas",
+  "m_00bcc1f24cfc24": "Filtro de series",
+  "m_01c1e7258f54a3": "Los filtros de etiqueta coinciden solo con el nombre de la colección TMDB."
 }

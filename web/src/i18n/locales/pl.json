@@ -5485,5 +5485,13 @@
   "m_1ffb9d60560b3f": "Z klastra",
   "m_1ffceea1081742": "dvd absolute aired ordering kolejność emisji bezwzględna",
   "m_1ffe73d99814f5": "Identyfikatory hubów, rodzaje lub wzorce glob",
-  "m_1ffeee0f0cedfc": "Nadpisanie adresu URL bazy danych (opcjonalnie)"
+  "m_1ffeee0f0cedfc": "Nadpisanie adresu URL bazy danych (opcjonalnie)",
+  "m_0e5ae3b66cd6d5": "Nie ustawiono",
+  "m_026edba0cfb759": "Z Plex",
+  "m_1baae470936d4f": "Wartości tylko do odczytu z konta plex.tv tego widza. Obowiązują reguły Ether.",
+  "m_1626550261e179": "Wybierz dźwięk automatycznie",
+  "m_1b684664d80b86": "Tryb napisów",
+  "m_003fa2ab59dac8": "Filtr filmów",
+  "m_00bcc1f24cfc24": "Filtr seriali",
+  "m_01c1e7258f54a3": "Filtry etykiet pasują tylko do nazwy kolekcji TMDB."
 }

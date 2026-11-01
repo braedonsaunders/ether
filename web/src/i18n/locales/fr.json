@@ -5331,5 +5331,13 @@
   "m_1ffb9d60560b3f": "Provenant d’un cluster",
   "m_1ffceea1081742": "dvd absolu diffusion ordre",
   "m_1ffe73d99814f5": "ID de hubs, types ou motifs glob",
-  "m_1ffeee0f0cedfc": "URL de base de données de remplacement (facultatif)"
+  "m_1ffeee0f0cedfc": "URL de base de données de remplacement (facultatif)",
+  "m_0e5ae3b66cd6d5": "Non défini",
+  "m_026edba0cfb759": "Depuis Plex",
+  "m_1baae470936d4f": "Valeurs en lecture seule du compte plex.tv de ce spectateur. Les règles Ether l’emportent.",
+  "m_1626550261e179": "Choisir l’audio automatiquement",
+  "m_1b684664d80b86": "Mode sous-titres",
+  "m_003fa2ab59dac8": "Filtre films",
+  "m_00bcc1f24cfc24": "Filtre séries",
+  "m_01c1e7258f54a3": "Les filtres d’étiquette ne correspondent qu’au nom de collection TMDB."
 }

@@ -10,6 +10,7 @@ import { t, tx } from "../../i18n";
 import { apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
+import { FromPlexDefaults } from "./FromPlexDefaults";
 import {
   normalizeRules,
   sameRules,
@@ -134,6 +135,8 @@ export function ViewerPlayback({ viewer }: { viewer: Viewer }) {
           </Button>
         ) : null}
       </div>
+
+      <FromPlexDefaults viewerId={id} show="tracks" />
 
       <StreamRulesFields value={draft} onChange={setDraft} disabled={busy} />
 

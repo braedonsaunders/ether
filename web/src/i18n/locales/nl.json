@@ -5177,5 +5177,13 @@
   "m_1ffb9d60560b3f": "Uit een cluster",
   "m_1ffceea1081742": "dvd absoluut uitgezonden volgorde",
   "m_1ffe73d99814f5": "Hub-ID's, soorten of globs",
-  "m_1ffeee0f0cedfc": "Database-URL overschrijven (optioneel)"
+  "m_1ffeee0f0cedfc": "Database-URL overschrijven (optioneel)",
+  "m_0e5ae3b66cd6d5": "Niet ingesteld",
+  "m_026edba0cfb759": "Van Plex",
+  "m_1baae470936d4f": "Alleen-lezen standaardwaarden van het plex.tv-account van deze kijker. Ether-regels gelden.",
+  "m_1626550261e179": "Audio automatisch kiezen",
+  "m_1b684664d80b86": "Ondertitelmodus",
+  "m_003fa2ab59dac8": "Filmfilter",
+  "m_00bcc1f24cfc24": "Tv-filter",
+  "m_01c1e7258f54a3": "Labelfilters komen alleen overeen met de TMDB-collectienaam."
 }

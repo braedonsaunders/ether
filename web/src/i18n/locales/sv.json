@@ -5177,5 +5177,13 @@
   "m_1ffb9d60560b3f": "Från ett kluster",
   "m_1ffceea1081742": "dvd absolut sänd ordning",
   "m_1ffe73d99814f5": "Hub-ID:n, typer eller globmönster",
-  "m_1ffeee0f0cedfc": "Åsidosätt databas-URL (valfritt)"
+  "m_1ffeee0f0cedfc": "Åsidosätt databas-URL (valfritt)",
+  "m_0e5ae3b66cd6d5": "Inte angivet",
+  "m_026edba0cfb759": "Från Plex",
+  "m_1baae470936d4f": "Skrivskyddade standardvärden från den här tittarens plex.tv-konto. Ether-regler gäller.",
+  "m_1626550261e179": "Välj ljud automatiskt",
+  "m_1b684664d80b86": "Undertextläge",
+  "m_003fa2ab59dac8": "Filmfilter",
+  "m_00bcc1f24cfc24": "TV-filter",
+  "m_01c1e7258f54a3": "Etikettfilter matchar bara TMDB-samlingens namn."
 }
