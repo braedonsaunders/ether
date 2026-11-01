@@ -852,10 +852,20 @@ func (s *Server) processDownloadItem(ctx context.Context, it *downloadItem, run 
 	}
 	s.downloads.mu.Unlock()
 
+	var viewerID int64
+	if it.user != nil {
+		viewerID = it.user.ID
+	}
 	p, size, err := s.d.Downloads.RemuxDownload(ctx, core.DownloadRemuxRequest{
 		InputURL:    s.d.Playback.InputURL(ps.ID),
 		Info:        ps.Info,
 		AudioStream: -1,
+		ViewerID:    viewerID,
+		Caps:        caps,
+		Options: core.DecideOptions{
+			DirectPlay: false, DirectStream: true,
+			MaxBitrateKbps: it.bandwidth, AudioStream: -1, SubtitleStream: -1,
+		},
 	}, func(f float64) {
 		s.downloads.mu.Lock()
 		if ctx.Err() != nil {
@@ -873,7 +883,7 @@ func (s *Server) processDownloadItem(ctx context.Context, it *downloadItem, run 
 		case ctx.Err() != nil:
 			// Deleted, restarted or shutting down; state already reset.
 		case errors.Is(err, core.ErrDownloadNeedsTranscode):
-			fail("This title cannot be downloaded: its codecs cannot be copied to MP4.")
+			fail("This title cannot be downloaded: it cannot be converted to a playable MP4.")
 		case errors.Is(err, core.ErrDownloadBudget):
 			fail("Not enough temporary disk space on the server for this download.")
 		default:

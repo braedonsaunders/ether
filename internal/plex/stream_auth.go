@@ -120,6 +120,39 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	return true
 }
 
+// authenticateSessionRead authorizes playlist and segment GET/HEAD by the
+// live transcode session id: unguessable to anyone who does not already
+// have the path, bound to the device that started the session, and gone
+// when the session is. Control routes (start/ping/stop) never use it.
+func (s *Server) authenticateSessionRead(r *http.Request, pr *Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	id := transcodeSessionID(r.URL.Path)
+	if id == "" {
+		return false
+	}
+	e, ok := s.transcodes.get(id)
+	if !ok || !e.started {
+		return false
+	}
+	if pr.ClientID != "" && e.clientID != "" && pr.ClientID != e.clientID {
+		return false
+	}
+	u := s.activeViewer(r.Context(), e.userID)
+	if u == nil {
+		return false
+	}
+	if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+		u = policy.UserPolicy(u)
+	}
+	if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
+		return false
+	}
+	pr.User = u
+	return true
+}
+
 func streamGrantURL(raw, token string) string {
 	return streamgrant.GrantURL(raw, token)
 }

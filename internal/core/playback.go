@@ -32,9 +32,12 @@ type HLSRequest struct {
 	StartOffset time.Duration
 	// SegmentDuration defaults to 4s when zero (5s for DASH).
 	SegmentDuration time.Duration
-	// Protocol is ProtocolHLS (default when empty) or ProtocolDASH. A DASH
-	// session also implements DASHSession; Transcoder.Session returns it as
-	// an HLSSession, so type-assert to reach the DASH methods.
+	// Protocol is ProtocolHLS (default when empty), ProtocolDASH, or
+	// ProtocolHTTP (Plex for Mac / Desktop's chunked Matroska stream;
+	// the constant lives with the other "http" protocol name in debrid.go).
+	// A DASH session also implements DASHSession; an HTTP session also
+	// implements HTTPSession. Transcoder.Session returns either as an
+	// HLSSession, so type-assert to reach the protocol methods.
 	Protocol string
 }
 
@@ -59,6 +62,15 @@ type DASHSession interface {
 	ServeMedia(w http.ResponseWriter, r *http.Request, rep, n int)
 }
 
+// HTTPSession is a running ffmpeg remux or transcode writing one
+// streamable Matroska to the client (Plex for Mac protocol=http).
+// ServeHTTP writes the chunked body; a later start with offset is a
+// new StartHLS of the same session id.
+type HTTPSession interface {
+	HLSSession
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
 // HLSSession is one running ffmpeg remux or transcode producing HLS (or
 // DASH; see DASHSession).
 type HLSSession interface {
@@ -78,8 +90,9 @@ type HLSSession interface {
 type Transcoder interface {
 	Probe(ctx context.Context, inputURL string) (*MediaInfo, error)
 	Decide(info MediaInfo, caps ClientCaps, opts DecideOptions) Decision
-	// StartHLS starts an HLS session, or a DASH session (a DASHSession)
-	// when req.Protocol is ProtocolDASH.
+	// StartHLS starts an HLS session, a DASH session (a DASHSession)
+	// when req.Protocol is ProtocolDASH, or an HTTP Matroska session
+	// (an HTTPSession) when req.Protocol is ProtocolHTTP.
 	StartHLS(ctx context.Context, req HLSRequest) (HLSSession, error)
 	Session(id string) (HLSSession, bool)
 	Stop(id string)
@@ -107,6 +120,9 @@ type DecideOptions struct {
 	SubtitleStream int      // -1 none
 	AudioFilters   []string // trusted owner/viewer audio processing; forces audio encoding
 	BurnSubtitles  bool
+	// Protocol is the conversion protocol the client asked for (hls, dash,
+	// http). Empty keeps the HLS target. Additive.
+	Protocol string
 }
 
 // ---------------------------------------------------------------------------

@@ -618,6 +618,12 @@ func (s *Server) handleLiveTVPlayback(w http.ResponseWriter, r *http.Request) bo
 		}
 		return true
 	}
+	if strings.HasSuffix(r.URL.Path, "/start") && r.URL.Query().Get("protocol") == core.ProtocolHTTP {
+		if err := s.d.LiveTV.ServeHTTP(w, r, id, pr.User); err != nil {
+			s.writeErr(w, r, err)
+		}
+		return true
+	}
 	// Native players can retry this endpoint without following a redirect.
 	// The Live TV playlist already uses rooted, authenticated child URLs.
 	s.d.LiveTV.ServePlaylist(w, r, id, pr.User)

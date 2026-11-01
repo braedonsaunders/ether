@@ -219,7 +219,49 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			return
 		}
 		pr := FromContext(r.Context())
-		if pr.Token == "" && (s.authenticateStreamGrant(r, pr) || s.authenticateLiveGrant(r, pr)) {
+		if pr.Token != "" && s.d.Auth != nil {
+			u, receipt, err := s.acceptToken(r.Context(), pr.Token)
+			switch {
+			case err == nil && u != nil:
+				if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+					u = policy.UserPolicy(u)
+				}
+				if id := transcodeSessionID(r.URL.Path); id != "" {
+					e, ok := s.transcodes.get(id)
+					if !ok {
+						writeHTTPError(w, http.StatusNotFound)
+						return
+					}
+					if e.userID != u.ID {
+						writeHTTPError(w, http.StatusForbidden)
+						return
+					}
+				}
+				pr.User = u
+				if receipt.Valid() {
+					r = r.WithContext(withAcceptance(r.Context(), receipt))
+				}
+				if !s.acceptanceCurrent(r) {
+					writeHTTPError(w, http.StatusUnauthorized)
+					return
+				}
+				if s.d.Hooks.OnClientSeen != nil {
+					s.d.Hooks.OnClientSeen(pr.ClientID)
+				}
+				next.ServeHTTP(w, r)
+				return
+			case err == nil, errors.Is(err, core.ErrUnauthorized), errors.Is(err, core.ErrNotFound):
+				// Stale or unknown token: playlist/segment reads may still
+				// pass with a live stream grant or session id.
+			case errors.Is(err, r.Context().Err()):
+				return
+			default:
+				s.log.Warn("authentication failed", "err", err)
+				writeHTTPError(w, http.StatusServiceUnavailable)
+				return
+			}
+		}
+		if s.authenticateStreamGrant(r, pr) || s.authenticateSessionRead(r, pr) || s.authenticateLiveGrant(r, pr) {
 			if !s.acceptanceCurrent(r) {
 				writeHTTPError(w, http.StatusUnauthorized)
 				return
@@ -227,47 +269,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if pr.Token == "" || s.d.Auth == nil {
-			writeHTTPError(w, http.StatusUnauthorized)
-			return
-		}
-		u, receipt, err := s.acceptToken(r.Context(), pr.Token)
-		switch {
-		case err == nil && u != nil:
-			if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
-				u = policy.UserPolicy(u)
-			}
-			if id := transcodeSessionID(r.URL.Path); id != "" {
-				e, ok := s.transcodes.get(id)
-				if !ok {
-					writeHTTPError(w, http.StatusNotFound)
-					return
-				}
-				if e.userID != u.ID {
-					writeHTTPError(w, http.StatusForbidden)
-					return
-				}
-			}
-			pr.User = u
-			if receipt.Valid() {
-				r = r.WithContext(withAcceptance(r.Context(), receipt))
-			}
-			if !s.acceptanceCurrent(r) {
-				writeHTTPError(w, http.StatusUnauthorized)
-				return
-			}
-			if s.d.Hooks.OnClientSeen != nil {
-				s.d.Hooks.OnClientSeen(pr.ClientID)
-			}
-			next.ServeHTTP(w, r)
-		case err == nil, errors.Is(err, core.ErrUnauthorized), errors.Is(err, core.ErrNotFound):
-			writeHTTPError(w, http.StatusUnauthorized)
-		case errors.Is(err, r.Context().Err()):
-			// client went away
-		default:
-			s.log.Warn("authentication failed", "err", err)
-			writeHTTPError(w, http.StatusServiceUnavailable)
-		}
+		writeHTTPError(w, http.StatusUnauthorized)
 	})
 }
 

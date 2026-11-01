@@ -230,6 +230,9 @@ func TestDownloadQueueLifecycle(t *testing.T) {
 	if len(reqs) != 1 || !strings.Contains(reqs[0].InputURL, "phone-1/download") {
 		t.Fatalf("remux requests = %+v", reqs)
 	}
+	if reqs[0].ViewerID == 0 || !reqs[0].Caps.Download {
+		t.Fatalf("convert fields missing: %+v", reqs[0])
+	}
 	f.playback.mu.Lock()
 	stopped := len(f.playback.stopped) > 0
 	f.playback.mu.Unlock()

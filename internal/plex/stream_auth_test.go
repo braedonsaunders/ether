@@ -28,7 +28,7 @@ func TestStreamGrantIsolation(t *testing.T) {
 		path, token string
 		want        int
 	}{
-		{path, "", 401}, {streamGrantURL(path, "wrong"), "", 401},
+		{path, "", 200}, {streamGrantURL(path, "wrong"), "", 200},
 		{streamGrantURL(path, e.streamToken), "", 200}, {path, ownerToken, 200},
 		{streamGrantURL(path, e.streamToken), friendToken, 403},
 	} {
@@ -112,6 +112,54 @@ func TestEncodedSlashCapabilityCannotReachDecision(t *testing.T) {
 	}
 	if rec := f.get(t, path); rec.Code != 200 {
 		t.Fatalf("unencoded token: %d", rec.Code)
+	}
+}
+
+func TestSessionReadAuth(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session")
+	if start.Code != 200 {
+		t.Fatal(start.Code, start.Body.String())
+	}
+	path := "/video/:/transcode/universal/session/live-session/base/init.mp4"
+	// Live session id on a playlist/segment read, matching device.
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code != 200 {
+		t.Fatalf("session id: %d", rec.Code)
+	}
+	// Stale token next to the live session still passes via the session.
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
+		t.Fatalf("stale token + session: %d", rec.Code)
+	}
+	e, _ := f.srv.transcodes.get("live-session")
+	if rec := f.request(t, http.MethodGet, streamGrantURL(path, e.streamToken), map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
+		t.Fatalf("stale token + grant: %d", rec.Code)
+	}
+	// Guessing a session that does not exist.
+	if rec := f.request(t, http.MethodGet, "/video/:/transcode/universal/session/not-a-session/base/init.mp4", map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("guessed session id was accepted")
+	}
+	// Wrong device.
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": "other-device"}); rec.Code == 200 {
+		t.Fatal("cross-device session read was accepted")
+	}
+	// Control routes stay gated: start, ping, stop.
+	for _, p := range []string{
+		"/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session",
+		"/video/:/transcode/universal/ping?session=live-session",
+		"/video/:/transcode/universal/stop?session=live-session",
+	} {
+		if rec := f.request(t, http.MethodGet, p, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+			t.Fatalf("%s: session id authorized a non-segment route", p)
+		}
+	}
+	// Expired session: stop it, then the segment is refused.
+	if rec := f.get(t, "/video/:/transcode/universal/stop?session=live-session"); rec.Code != 200 {
+		t.Fatalf("stop: %d", rec.Code)
+	}
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("expired session was accepted")
 	}
 }
 

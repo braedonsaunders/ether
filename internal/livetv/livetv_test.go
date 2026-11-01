@@ -246,6 +246,10 @@ func (f *fakeHLS) SwapInput(_ context.Context, _ string, _ core.MediaInfo, at ti
 	f.offset = at
 	return nil
 }
+func (f *fakeHLS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "video/x-matroska")
+	fmt.Fprint(w, "live-mkv")
+}
 
 type fakeDASH struct {
 	fakeHLS
@@ -282,6 +286,11 @@ func (f *fakeTranscoder) Decide(_ core.MediaInfo, _ core.ClientCaps, o core.Deci
 }
 func (f *fakeTranscoder) StartHLS(_ context.Context, r core.HLSRequest) (core.HLSSession, error) {
 	f.requests = append(f.requests, r)
+	if r.Protocol == core.ProtocolHTTP {
+		h := &fakeHLS{id: r.SessionID}
+		f.hls = append(f.hls, h)
+		return h, nil
+	}
 	if r.Protocol == core.ProtocolDASH {
 		h := &fakeDASH{fakeHLS: fakeHLS{id: r.SessionID}}
 		f.dash = append(f.dash, h)
@@ -360,6 +369,50 @@ func TestVirtualPlayoutJoinContinuityAndOwnership(t *testing.T) {
 	for _, h := range tc.hls {
 		if !h.closed {
 			t.Fatal("transcoder left open")
+		}
+	}
+}
+
+func TestLiveHTTPMatroska(t *testing.T) {
+	now := time.Unix(7, 0).UTC()
+	pb := &fakePlayback{}
+	tc := &fakeTranscoder{}
+	s := testService(t, Options{Now: func() time.Time { return now }, Playback: pb, Transcoder: tc})
+	c := testChannel()
+	if _, e := s.SaveChannel(context.Background(), c); e != nil {
+		t.Fatal(e)
+	}
+	u := &core.User{ID: 1, StreamLimit: 1}
+	info, e := s.Tune(context.Background(), u, c.ID, core.ClientCaps{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/start?protocol=http", nil)
+	if err := s.ServeHTTP(rec, req, info.ID, u); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "video/x-matroska" || rec.Body.String() != "live-mkv" {
+		t.Fatalf("http start: %d %s %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+	}
+	var sawHTTP bool
+	for _, r := range tc.requests {
+		if r.Protocol == core.ProtocolHTTP {
+			sawHTTP = true
+			if !r.LiveInput {
+				t.Fatal("live HTTP must mark LiveInput")
+			}
+		}
+	}
+	if !sawHTTP {
+		t.Fatal("ServeHTTP did not start an HTTP session")
+	}
+	if e = s.Stop(context.Background(), info.ID, u); e != nil {
+		t.Fatal(e)
+	}
+	for _, h := range tc.hls {
+		if !h.closed {
+			t.Fatal("http session left open")
 		}
 	}
 }
