@@ -119,7 +119,29 @@ func (p plexSubtitles) DownloadSubtitle(ctx context.Context, t *core.Title, user
 			return st, err
 		}
 	}
-	return p.a.subtitles.DownloadOnDemand(ctx, t, id)
+	st, err := p.a.subtitles.DownloadOnDemand(ctx, t, id)
+	if err != nil {
+		return st, err
+	}
+	p.a.subtitles.StartCorrection(t, st.ExternalURL, p.a.liveReleaseAccess(t, user))
+	return st, nil
+}
+
+func (a *App) liveReleaseAccess(t *core.Title, u *core.User) subtitles.ReleaseAccess {
+	sess := a.languageSession(u, t)
+	if sess == nil || a.playback == nil {
+		return subtitles.ReleaseAccess{}
+	}
+	src := sess.ID
+	if sess.Resolution != nil && sess.Resolution.Release.ID != "" {
+		src = sess.Resolution.Release.ID
+	}
+	return subtitles.ReleaseAccess{
+		URL:      a.playback.InputURL(sess.ID),
+		Duration: sess.Info.Duration,
+		Info:     &sess.Info,
+		Source:   src,
+	}
 }
 
 func (p plexSubtitles) UploadSubtitle(_ context.Context, t *core.Title, _ *core.User, filename, format, language string, body []byte) (core.StreamInfo, error) {

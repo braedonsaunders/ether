@@ -277,10 +277,15 @@ func (s *Service) DownloadOnDemand(ctx context.Context, title *core.Title, fileI
 // a transcode session whose timeline starts offset into the title. Cues
 // that end before the offset are dropped.
 func (s *Service) OpenFormatAt(id, format string, offset time.Duration) (io.ReadCloser, string, error) {
+	return s.OpenFormatAtFrom(id, format, offset, "")
+}
+
+// OpenFormatAtFrom is OpenFormatAt for a known release/source.
+func (s *Service) OpenFormatAtFrom(id, format string, offset time.Duration, source string) (io.ReadCloser, string, error) {
 	if offset <= 0 {
-		return s.OpenFormat(id, format)
+		return s.OpenFormatFrom(id, format, source)
 	}
-	rc, _, err := s.OpenFormat(id, "srt")
+	rc, _, err := s.OpenFormatFrom(id, "srt", source)
 	if err != nil {
 		return nil, "", err
 	}

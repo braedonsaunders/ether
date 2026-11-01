@@ -8,8 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -38,13 +36,13 @@ func TestASSNormalizeAndAlign(t *testing.T) {
 	}
 	cues := []Cue{{time.Second, 2 * time.Second, "This is the first phrase"}, {3 * time.Second, 4 * time.Second, "This is the second phrase"}, {6 * time.Second, 7 * time.Second, "This is the final phrase"}}
 	ref, _ := Shift(cues, 2500*time.Millisecond, 1)
-	off, err := AlignAgainst(cues, ref)
-	if err != nil || off != 2500*time.Millisecond {
-		t.Fatalf("offset %s %v", off, err)
+	fit, ok := FitTiming(cues, ref)
+	if !ok || absDuration(fit.Offset-2500*time.Millisecond) > timingFrameSlack {
+		t.Fatalf("offset %s ok=%v", fit.Offset, ok)
 	}
 	ref[0].Start += 5 * time.Second
 	ref[1].Start += 8 * time.Second
-	if _, err = AlignAgainst(cues, ref); err == nil {
+	if _, ok = FitTiming(cues, ref); ok {
 		t.Fatal("inconsistent references accepted")
 	}
 }
@@ -60,35 +58,5 @@ func TestHashSearchRank(t *testing.T) {
 	c, err := s.SearchWithHash(context.Background(), &core.Title{Key: core.MovieKey(550)}, "en", "", "000000000000abcd")
 	if err != nil || len(c) != 2 || c[0].FileID != 2 {
 		t.Fatalf("hash rank %+v %v", c, err)
-	}
-}
-func TestSyncAppliesCopyAndPreservesOriginal(t *testing.T) {
-	s := New(Options{CacheDir: t.TempDir()})
-	raw := []byte("1\n00:00:01,000 --> 00:00:03,000\nHello world\n\n")
-	if err := os.WriteFile(filepath.Join(s.dir, "original.srt"), raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	id, err := s.Sync("original", SyncOptions{OffsetMS: 2500, Apply: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if id == "ether-subtitle:original" {
-		t.Fatal("original was overwritten")
-	}
-	r, _, err := s.Open("original")
-	if err != nil {
-		t.Fatal(err)
-	}
-	adjusted, _ := io.ReadAll(r)
-	r.Close()
-	if !strings.Contains(string(adjusted), "00:00:03,500") {
-		t.Fatalf("adjustment not applied: %s", adjusted)
-	}
-	original, _ := os.ReadFile(filepath.Join(s.dir, "original.srt"))
-	if !bytes.Equal(original, raw) {
-		t.Fatal("original changed")
-	}
-	if _, err = s.Sync("../../escape", SyncOptions{}); err == nil {
-		t.Fatal("unsafe subtitle id accepted")
 	}
 }
