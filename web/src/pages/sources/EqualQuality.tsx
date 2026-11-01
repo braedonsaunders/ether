@@ -1,13 +1,11 @@
 import { SearchSelect, SettingsSection } from "@braedonsaunders/appkit-ui";
-import { useState } from "react";
-import { ErrorPanel, LoadingRows } from "../../components/feedback";
+import { ErrorPanel } from "../../components/feedback";
 import { SettingsRow } from "../../components/SettingsRow";
 import { localized, t, tn } from "../../i18n";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
 import { api } from "../../lib/api";
 import { formatNanos } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
-import { useResolver } from "../releases/resolverDraft";
 
 export const SOURCE_PREFERENCE = localized(() => [
   { value: "auto", label: t("Start fastest") },
@@ -83,35 +81,5 @@ export function TieBreakerSection({
       />
       {error ? <ErrorPanel error={error} /> : null}
     </SettingsSection>
-  );
-}
-
-export function EqualQuality() {
-  const { config, resolver, save } = useResolver();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-
-  if (config.error) return <ErrorPanel error={config.error} onRetry={() => void config.reload()} />;
-  if (!resolver) return <LoadingRows rows={1} />;
-
-  async function choose(sourcePreference: string) {
-    setSaving(true);
-    setError(null);
-    try {
-      await save({ sourcePreference }, t("Source order saved"));
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <TieBreakerSection
-      value={resolver.sourcePreference || "auto"}
-      saving={saving}
-      error={error}
-      onChange={(v) => void choose(v)}
-    />
   );
 }
