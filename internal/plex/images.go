@@ -15,6 +15,7 @@ import (
 	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 )
 
 // setArtworkHeaders keeps remote SVG (or an upstream HTML error page) from
@@ -87,6 +88,10 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key core.RatingKey, element string, width int) {
 	if element == "composite" || element == "squareArt" {
 		element = "thumb"
+	}
+	if remote := s.plexMetaRemoteImage(r.Context(), key, element); remote != "" {
+		s.serveRemoteImage(w, r, remote)
+		return
 	}
 	raw := r.URL.Query().Get("collection")
 	if raw == "" && s.serveCollectionArtwork(w, r, key, element, width) {
@@ -192,6 +197,10 @@ func (s *Server) servePersonImage(w http.ResponseWriter, r *http.Request, key co
 	}
 	if imagePath == "" {
 		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	if plexImageURL(imagePath) {
+		s.serveRemoteImage(w, r, imagePath)
 		return
 	}
 	// Keep the same w185 profile URL emitted by metadata before proxying; poster widths are not profile configuration. Width and height are intentionally ignored.
@@ -319,6 +328,9 @@ func (s *Server) isSelfHost(r *http.Request, host string) bool {
 // allowedImageHost limits the proxy to the artwork CDN, so it is not an
 // open proxy.
 func (s *Server) allowedImageHost(host string) bool {
+	if plexmeta.ImageHost(host) {
+		return true
+	}
 	ref, err := url.Parse(s.d.ImageURL("/x.jpg", "original"))
 	if err != nil {
 		return false

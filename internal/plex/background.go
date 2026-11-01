@@ -99,6 +99,9 @@ func (s *Server) waitBackground() {
 		if s.d.PlexGUID != nil {
 			s.d.PlexGUID.Wait()
 		}
+		if s.d.PlexMeta != nil {
+			s.d.PlexMeta.Wait()
+		}
 		return
 	}
 	for i := 0; i < 4; i++ {
@@ -106,6 +109,9 @@ func (s *Server) waitBackground() {
 		s.blurJobs.wait()
 		if s.d.PlexGUID != nil {
 			s.d.PlexGUID.Wait()
+		}
+		if s.d.PlexMeta != nil {
+			s.d.PlexMeta.Wait()
 		}
 	}
 }

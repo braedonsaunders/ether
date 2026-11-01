@@ -112,7 +112,14 @@ type Plex struct {
 	ClientIdentifier string `json:"clientIdentifier"` // X-Plex-Client-Identifier Ether uses towards plex.tv
 	OwnerPlexID      int64  `json:"ownerPlexId"`
 	OwnerUsername    string `json:"ownerUsername"`
-	Claimed          bool   `json:"claimed"`
+	Claimed bool `json:"claimed"`
+	// UsePlexMetadata serves cached Plex metadata-provider fields to Plex
+	// apps when a title has a verified plex:// guid. Off by default.
+	// Other frontends and the owner console keep TMDB. Viewer limits use
+	// the safer (more mature) of the TMDB and Plex content ratings; Plex
+	// apps still display Plex's own rating. Date-added stays the catalogue
+	// release/air date.
+	UsePlexMetadata bool `json:"usePlexMetadata,omitempty"`
 	// Remote access
 	RemoteAccess bool     `json:"remoteAccess"`
 	UseUPnP      bool     `json:"useUpnp"`

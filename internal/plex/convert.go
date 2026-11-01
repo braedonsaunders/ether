@@ -143,6 +143,11 @@ func seasonTitle(t *core.Title) string {
 // metadata renders one title.
 func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o renderOpts) model.Metadata {
 	t = s.enrich(t)
+	added := t.DateAdded(s.now())
+	ov, hasPlex := s.plexMetaOverlay(ctx, t.Key)
+	if hasPlex {
+		t = applyPlexMetaTitle(t, ov)
+	}
 	show := s.showOf(t)
 	m := model.Metadata{
 		RatingKey:     t.Key.String(),
@@ -156,7 +161,7 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		ContentRating: t.ContentRating,
 		Thumb:         thumbURL(t),
 		Art:           artURL(t),
-		AddedAt:       unixOrZero(t.DateAdded(s.now())),
+		AddedAt:       unixOrZero(added),
 		UpdatedAt:     unixOrZero(t.UpdatedAt),
 	}
 	if t.SortTitle != "" && t.SortTitle != t.Title {
@@ -271,6 +276,12 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		}
 		m.GrandparentSlug = slugify(m.GrandparentTitle)
 		m.Year, m.TitleSort, m.Studio = 0, "", ""
+	}
+	if hasPlex {
+		applyPlexMetaDates(t, &m, ov)
+		if ov.Rating > 0 && t.Type != core.TypeSeason && t.Type != core.TypeEpisode {
+			m.Rating = ov.Rating
+		}
 	}
 
 	// Per-user state.
@@ -1093,24 +1104,25 @@ func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []core.Title,
 	s.preloadUltraBlur(ctx, ts)
 	var guids map[core.RatingKey]string
 	var missingGUIDs []core.RatingKey
-	if s.d.PlexGUID != nil {
-		lookup := make([]core.RatingKey, 0, len(ts)*2)
-		for i := range ts {
-			k := ts[i].Key
-			lookup = append(lookup, k)
-			switch ts[i].Type {
-			case core.TypeSeason:
-				if k.TMDB() > 0 {
-					lookup = append(lookup, core.ShowKey(k.TMDB()))
-				}
-			case core.TypeEpisode:
-				if k.TMDB() > 0 {
-					lookup = append(lookup, core.ShowKey(k.TMDB()), core.SeasonKey(k.TMDB(), ts[i].Season))
-				}
+	lookup := make([]core.RatingKey, 0, len(ts)*2)
+	for i := range ts {
+		k := ts[i].Key
+		lookup = append(lookup, k)
+		switch ts[i].Type {
+		case core.TypeSeason:
+			if k.TMDB() > 0 {
+				lookup = append(lookup, core.ShowKey(k.TMDB()))
+			}
+		case core.TypeEpisode:
+			if k.TMDB() > 0 {
+				lookup = append(lookup, core.ShowKey(k.TMDB()), core.SeasonKey(k.TMDB(), ts[i].Season))
 			}
 		}
+	}
+	if s.d.PlexGUID != nil {
 		guids = s.d.PlexGUID.CachedMany(ctx, lookup)
 	}
+	ctx = s.withPlexMeta(ctx, lookup)
 	order := s.episodeOrderList(ctx, pr, ts, o.detail)
 	out := make([]model.Metadata, 0, len(ts))
 	for i := range ts {

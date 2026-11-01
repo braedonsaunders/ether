@@ -36,10 +36,13 @@ const (
 )
 
 type Options struct {
-	HTTP       *http.Client
-	BaseURL    string
-	Token      func() string
-	Background bool
+	HTTP *http.Client
+	// ClientIdentifier is the per-install X-Plex-Client-Identifier. Nil or
+	// empty falls back to ClientIdentifier("", "").
+	ClientIdentifier func() string
+	BaseURL          string
+	Token            func() string
+	Background       bool
 }
 
 type Service struct {
@@ -307,7 +310,7 @@ func (s *Service) getItems(ctx context.Context, path string, q url.Values) ([]pr
 	req.Header.Set("X-Plex-Token", s.o.Token())
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", "Ether")
-	req.Header.Set("X-Plex-Client-Identifier", "ether-metadata")
+	req.Header.Set("X-Plex-Client-Identifier", s.clientIdentifier())
 	// Never forward account credentials to a redirect target.
 	client := *s.o.HTTP
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -331,6 +334,15 @@ func (s *Service) getItems(ctx context.Context, path string, q url.Values) ([]pr
 		return nil, fmt.Errorf("Plex metadata response invalid")
 	}
 	return body.Container.Metadata, nil
+}
+
+func (s *Service) clientIdentifier() string {
+	if s.o.ClientIdentifier != nil {
+		if id := strings.TrimSpace(s.o.ClientIdentifier()); id != "" {
+			return id
+		}
+	}
+	return ClientIdentifier("", "")
 }
 
 func validKindGUID(guid, kind string) bool {

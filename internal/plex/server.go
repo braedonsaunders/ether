@@ -28,6 +28,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/trickplay"
 )
@@ -87,6 +88,7 @@ type Deps struct {
 	PrioritizeAvailable func(context.Context, []core.Title) []core.Title
 	EpisodeOrder        *episodeorder.Service
 	PlexGUID            *plexguid.Service
+	PlexMeta            *plexmeta.Service
 	Discovery           *DiscoveryFeatures
 	LiveTV              *livetv.Service
 	AccessPolicy        AccessPolicy

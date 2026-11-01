@@ -24,6 +24,9 @@ func TestExactIdentityRequiredAndCached(t *testing.T) {
 				if r.URL.Query().Get("guid") != "tmdb://550" || r.Header.Get("X-Plex-Token") != "fixture" {
 					t.Fatal("request identity")
 				}
+				if r.Header.Get("X-Plex-Client-Identifier") != "ether-metadata" {
+					t.Fatalf("client id %q", r.Header.Get("X-Plex-Client-Identifier"))
+				}
 				w.Write([]byte(`{"MediaContainer":{"Metadata":[{"guid":"plex://movie/5d7768265af944001f1f6976","type":"movie","Guid":` + tc.ids + `}]}}`))
 			}))
 			defer srv.Close()
