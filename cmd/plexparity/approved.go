@@ -73,8 +73,14 @@ var approvedWatch []byte
 //go:embed approved_livetv.json
 var approvedLiveTV []byte
 
+// Exact /hubs/search and /hubs/search/voice pairs from the af1e9b4c0 versus
+// b5e6074c3 run (100 ordinary and 100 active-ranker pairs).
+//
+//go:embed approved_search_hubs.json
+var approvedSearchHubs []byte
+
 // Exact v0.2.58 versus current prism pairs for the documented release-date,
-// subtitle, sidecar, account mode, and restricted-search changes.
+// subtitle, sidecar, account mode, restricted-search, and search-hub changes.
 //
 //go:embed approved_v0258.json
 var approvedV0258 []byte
@@ -113,7 +119,7 @@ func approved(a, b capture) (string, error) {
 		data               []byte
 		restricted         bool
 		normalizeCandidate bool
-	}{{approvedSearch, true, false}, {approvedScopes, false, false}, {approvedResume, false, false}, {approvedDateAdded, false, false}, {approvedComposite, false, false}, {approvedActiveDate, false, false}, {approvedActiveResume, false, false}, {approvedActiveSubtitleDate, false, false}, {approvedWatch, false, false}, {approvedLiveTV, false, false}, {approvedV0258, false, false}, {approvedV0258Token, false, true}} {
+	}{{approvedSearch, true, false}, {approvedScopes, false, false}, {approvedResume, false, false}, {approvedDateAdded, false, false}, {approvedComposite, false, false}, {approvedActiveDate, false, false}, {approvedActiveResume, false, false}, {approvedActiveSubtitleDate, false, false}, {approvedWatch, false, false}, {approvedLiveTV, false, false}, {approvedSearchHubs, false, false}, {approvedV0258, false, false}, {approvedV0258Token, false, true}} {
 		if registry.restricted && a.viewer != "teen" && a.viewer != "child" {
 			continue
 		}

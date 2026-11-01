@@ -468,13 +468,54 @@ func TestApprovedLiveTVRegistryIsExact(t *testing.T) {
 	}
 }
 
+func TestApprovedSearchHubsRegistryIsExact(t *testing.T) {
+	var entries []approvedDifference
+	if err := json.Unmarshal(approvedSearchHubs, &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 200 {
+		t.Fatalf("got %d search hub response pairs, want 200", len(entries))
+	}
+	viewers := map[string]bool{"owner": true, "adult": true, "teen": true, "child": true, "friend": true}
+	clients := map[string]bool{"web": true, "ios": true, "appletv": true, "androidtv": true, "desktop": true}
+	counts := map[string]int{}
+	seen := make(map[approvedDifference]bool, len(entries))
+	for _, e := range entries {
+		if e.Path != "/hubs/search?query=fixture&limit=10&includeCollections=1" && e.Path != "/hubs/search/voice?query=fixture" {
+			t.Fatalf("search hub approval includes an unreviewed route: %+v", e)
+		}
+		counts[e.Path+" json="+fmt.Sprintf("%t", e.JSON)]++
+		if seen[e] || !viewers[e.Viewer] || !clients[e.Client] || e.Commit != "b5e6074c3" || e.Baseline.Status != 200 || e.Candidate.Status != 200 || e.Baseline.ContentType != e.Candidate.ContentType || len(e.Baseline.SHA256) != 64 || len(e.Candidate.SHA256) != 64 || e.Baseline.SHA256 == e.Candidate.SHA256 {
+			t.Fatalf("search hub approval is not a unique exact reviewed pair: %+v", e)
+		}
+		seen[e] = true
+	}
+	if counts["/hubs/search?query=fixture&limit=10&includeCollections=1 json=false"] != 50 || counts["/hubs/search?query=fixture&limit=10&includeCollections=1 json=true"] != 50 || counts["/hubs/search/voice?query=fixture json=false"] != 50 || counts["/hubs/search/voice?query=fixture json=true"] != 50 {
+		t.Fatalf("search hub approval counts %v", counts)
+	}
+	old := approvedSearchHubs
+	defer func() { approvedSearchHubs = old }()
+	a := capture{viewer: "owner", client: "web", path: "/hubs/search/voice?query=fixture", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte("before")}}
+	b := a
+	b.response.Body = []byte("after")
+	e := approvedDifference{Viewer: a.viewer, Client: a.client, Path: a.path, Baseline: signature(a.response), Candidate: signature(b.response), Commit: "b5e6074c3"}
+	approvedSearchHubs, _ = json.Marshal([]approvedDifference{e})
+	if got, err := approved(a, b); err != nil || got != e.Commit {
+		t.Fatalf("exact search hub pair: %q %v", got, err)
+	}
+	b.response.Body = []byte("unreviewed")
+	if got, err := approved(a, b); err != nil || got != "" {
+		t.Fatalf("unreviewed search hub body approved: %q %v", got, err)
+	}
+}
+
 func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 	var entries []approvedDifference
 	if err := json.Unmarshal(approvedV0258, &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 5355 {
-		t.Fatalf("got %d v0.2.58 pairs, want 5355", len(entries))
+	if len(entries) != 5555 {
+		t.Fatalf("got %d v0.2.58 pairs, want 5555", len(entries))
 	}
 	commits := map[string]int{}
 	seen := map[approvedDifference]bool{}
@@ -485,7 +526,7 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 		seen[e] = true
 		commits[e.Commit]++
 	}
-	want := map[string]int{"77af603e": 2370, "14a6b0890+77af603e": 2765, "3654964cc+77af603e": 50, "feaa49f10": 10, "c82a7830+77af603e": 160}
+	want := map[string]int{"77af603e": 2370, "14a6b0890+77af603e": 2765, "3654964cc+77af603e": 50, "feaa49f10": 10, "c82a7830+77af603e": 160, "b5e6074c3+14a6b0890+77af603e": 160, "b5e6074c3+c82a7830+77af603e": 40}
 	if !reflect.DeepEqual(commits, want) {
 		t.Fatalf("v0.2.58 commits %v", commits)
 	}

@@ -94,8 +94,12 @@ exact pairs in `approved_v0258.json` and `approved_v0258_token.json`:
   value is a fresh secret, so the candidate hash uses the harness placeholder.
 - Child and teen search and postplay, which also carry addedAt: 80 and 80
   (`c82a7830+77af603e`).
+- PMS 17-hub search order and indexed people search hubs on `/hubs/search`
+  and `/hubs/search/voice`, composed with the v0.2.58 subtitle/addedAt and
+  restricted-viewer pairs: 100 ordinary and 100 active-ranker (`b5e6074c3`).
 - Content-rating label text, Play Version labels, timeout playback (#198),
-  pre-1970 date strings, and section filter operators (`bd55103ff`): 0.
+  pre-1970 date strings, section filter operators (`bd55103ff`), and iOS Home
+  hero art gating (`b1ad78851`, #210): 0.
 
 This note does not allowlist a route.
 
@@ -175,6 +179,29 @@ numeric and date operators, including relative dates. `unwatched!=` and
 A request that does not send one of those operators is unchanged. The
 v0.2.58 corpus does not send them, so that fixture has 0 pairs and there
 is no signature to store. This note does not allowlist any response.
+
+Search hubs and indexed people search (`b5e6074c3`, Rex T1-5):
+`/hubs/search?query=fixture&limit=10&includeCollections=1` and
+`/hubs/search/voice?query=fixture` return PMS's 17-hub set in recorded order
+(`show`, `artist`, `album`, `movie`, `episode`, `track`, `collection`,
+`photoalbum`, `autotag`, `photo`, `tag`, `actor`, `director`, `genre`,
+`playlist`, `shared`, `place`) with `hubIdentifier`, `type`, `title`,
+`context=""`, `size`, `more`, and `style="shelf"`. Indexed `actor` and
+`director` people hubs return person `Directory` entries with `reason`,
+`reasonID`, `reasonTitle`, and viewer-visible `count` (60 for unrestricted
+viewers, 40 for restricted viewers), and append credited titles to the
+`movie`, `show`, and `episode` hubs (`more="1"` on `movie`). The capture
+recorded 100 pairs in each world (200 unique pairs across both worlds in
+`approved_search_hubs.json`, and 200 composed `v0.2.58` pairs in
+`approved_v0258.json`), with 0 differences elsewhere. This note does not
+allowlist a route.
+
+iOS Home hero art gating (`b1ad78851`, #210): `/hubs` and `/hubs/promoted` on
+iOS keep only art-ready items in the hero slot, promoting the next art-ready
+shelf or omitting the hero when no item has backdrop art. Every seeded parity
+fixture title has `art` and `thumb`, so `b1ad78851^` versus `b1ad78851`
+produced 0 pairs in both worlds and there is no signature to store. This note
+does not allowlist any response.
 
 Movie intros (`766c16dcd`): a movie intro that starts at the head of the file
 (within one second) and ends within 90 seconds is not offered as Skip Intro.
