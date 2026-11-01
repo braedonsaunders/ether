@@ -116,9 +116,22 @@ func imageStamp(t *core.Title) string {
 	return "1"
 }
 
-func overlayImageStamp(t *core.Title, row plexmeta.Cached, ok bool) string {
-	if ok && row.HasArt() && !row.FetchedAt.IsZero() {
-		return strconv.FormatInt(row.FetchedAt.Unix(), 10)
+func artIdentityStamp(u string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(u))
+	return strconv.FormatUint(uint64(h.Sum32()), 10)
+}
+
+func overlayThumbStamp(t *core.Title, row plexmeta.Cached, ok bool) string {
+	if ok && row.ThumbURL != "" && (t.PosterPath == plexmeta.RemoteArt || t.StillPath == plexmeta.RemoteArt) {
+		return artIdentityStamp(row.ThumbURL)
+	}
+	return imageStamp(t)
+}
+
+func overlayArtStamp(t *core.Title, row plexmeta.Cached, ok bool) string {
+	if ok && row.ArtURL != "" && t.BackdropPath == plexmeta.RemoteArt {
+		return artIdentityStamp(row.ArtURL)
 	}
 	return imageStamp(t)
 }
@@ -161,10 +174,12 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	t = s.enrich(t)
 	added := t.DateAdded(s.now())
 	ov, hasPlex := s.plexMetaOverlay(ctx, t.Key)
+	tmdbRating := t.Rating
 	if hasPlex {
 		t = applyPlexMetaTitle(t, ov.Overlay)
 	}
-	stamp := overlayImageStamp(t, ov, hasPlex)
+	thumbStamp := overlayThumbStamp(t, ov, hasPlex)
+	artStamp := overlayArtStamp(t, ov, hasPlex)
 	show := s.showOf(t)
 	m := model.Metadata{
 		RatingKey:     t.Key.String(),
@@ -176,8 +191,8 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		Tagline:       t.Tagline,
 		Year:          t.Year,
 		ContentRating: t.ContentRating,
-		Thumb:         stampedThumbURL(t, stamp),
-		Art:           stampedArtURL(t, stamp),
+		Thumb:         stampedThumbURL(t, thumbStamp),
+		Art:           stampedArtURL(t, artStamp),
 		AddedAt:       unixOrZero(added),
 		UpdatedAt:     unixOrZero(t.UpdatedAt),
 	}
@@ -196,15 +211,15 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	if t.Runtime > 0 {
 		m.Duration = ms(t.Runtime)
 	}
-	if t.Rating > 0 {
-		m.AudienceRating = math.Round(t.Rating*10) / 10
-		if hasPlex {
-			m.AudienceRatingImage = ov.AudienceRatingImage
-		} else {
-			m.AudienceRatingImage = "themoviedb://image.rating"
-		}
+	if hasPlex && ov.AudienceRating > 0 {
+		m.AudienceRating = math.Round(ov.AudienceRating*10) / 10
+		m.AudienceRatingImage = ov.AudienceRatingImage
+	} else if tmdbRating > 0 {
+		m.AudienceRating = math.Round(tmdbRating*10) / 10
+		m.AudienceRatingImage = "themoviedb://image.rating"
 	}
-	if hasPlex && ov.RatingImage != "" {
+	if hasPlex && ov.Rating > 0 {
+		m.Rating = ov.Rating
 		m.RatingImage = ov.RatingImage
 	}
 	if len(t.Studios) > 0 {
@@ -305,6 +320,7 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		applyPlexMetaDates(t, &m, ov.Overlay)
 		if ov.Rating > 0 && t.Type != core.TypeSeason && t.Type != core.TypeEpisode {
 			m.Rating = ov.Rating
+			m.RatingImage = ov.RatingImage
 		}
 	}
 
@@ -374,19 +390,13 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		m.GuidLead = externalGuids(t)
 	}
 	if detail {
-		if t.Rating > 0 {
-			img := "themoviedb://image.rating"
-			if hasPlex {
-				img = ov.AudienceRatingImage
-			}
-			if img != "" {
-				m.Rating_ = []model.RatingTag{{Image: img, Value: math.Round(t.Rating*10) / 10, Type: "audience"}}
-			}
+		if m.AudienceRating > 0 && m.AudienceRatingImage != "" {
+			m.Rating_ = []model.RatingTag{{Image: m.AudienceRatingImage, Value: m.AudienceRating, Type: "audience"}}
 		}
 	}
 	// PMS sends Image (and, for movies and shows, UltraBlurColors) on
 	// every item, in listings and hubs as well as detail pages.
-	m.Image = s.imageTags(t, show, stamp)
+	m.Image = s.imageTags(t, show, thumbStamp, artStamp)
 	if ultraBlurType(t.Type) {
 		m.UltraBlurColors = s.ultraBlurFor(t.Key, t.BackdropPath)
 	}
@@ -417,14 +427,17 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 //
 // Only artwork Ether can serve is listed; the show's clear logo needs the
 // show's detail (show), which may not be cached on the first render.
-func (s *Server) imageTags(t *core.Title, show *core.Title, stamp string) []model.Image {
+func (s *Server) imageTags(t *core.Title, show *core.Title, thumbStamp, artStamp string) []model.Image {
 	alt := t.Title
 	if alt == "" && t.Type == core.TypeSeason {
 		alt = seasonTitle(t)
 	}
 	img := func(typ, url string) model.Image { return model.Image{Alt: alt, Type: typ, URL: url} }
-	if stamp == "" {
-		stamp = imageStamp(t)
+	if thumbStamp == "" {
+		thumbStamp = imageStamp(t)
+	}
+	if artStamp == "" {
+		artStamp = imageStamp(t)
 	}
 	var out []model.Image
 	switch t.Type {
@@ -438,34 +451,34 @@ func (s *Server) imageTags(t *core.Title, show *core.Title, stamp string) []mode
 		}
 		showPath := "/library/metadata/" + showKey.String()
 		if t.Type == core.TypeSeason {
-			if th := stampedThumbURL(t, stamp); th != "" {
+			if th := stampedThumbURL(t, thumbStamp); th != "" {
 				out = append(out, img("coverPoster", th))
 			} else {
-				out = append(out, img("coverPoster", showPath+"/thumb/"+stamp))
+				out = append(out, img("coverPoster", showPath+"/thumb/"+thumbStamp))
 			}
 		} else {
-			out = append(out, img("coverPoster", showPath+"/thumb/"+stamp))
-			if th := stampedThumbURL(t, stamp); th != "" {
+			out = append(out, img("coverPoster", showPath+"/thumb/"+thumbStamp))
+			if th := stampedThumbURL(t, thumbStamp); th != "" {
 				out = append(out, img("snapshot", th))
 			}
 		}
-		if a := stampedArtURL(t, stamp); a != "" {
+		if a := stampedArtURL(t, artStamp); a != "" {
 			out = append(out, img("background", a))
 		} else {
-			out = append(out, img("background", showPath+"/art/"+stamp))
+			out = append(out, img("background", showPath+"/art/"+artStamp))
 		}
 		if show != nil && show.LogoPath != "" {
-			out = append(out, img("clearLogo", showPath+"/clearLogo/"+stamp))
+			out = append(out, img("clearLogo", showPath+"/clearLogo/"+imageStamp(t)))
 		}
 	default:
-		if th := stampedThumbURL(t, stamp); th != "" {
+		if th := stampedThumbURL(t, thumbStamp); th != "" {
 			out = append(out, img("coverPoster", th))
 		}
-		if a := stampedArtURL(t, stamp); a != "" {
+		if a := stampedArtURL(t, artStamp); a != "" {
 			out = append(out, img("background", a))
 		}
 		if t.LogoPath != "" {
-			out = append(out, img("clearLogo", "/library/metadata/"+t.Key.String()+"/clearLogo/"+stamp))
+			out = append(out, img("clearLogo", "/library/metadata/"+t.Key.String()+"/clearLogo/"+imageStamp(t)))
 		}
 	}
 	return out

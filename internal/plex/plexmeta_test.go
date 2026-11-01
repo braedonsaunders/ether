@@ -175,6 +175,19 @@ func TestPlexMetaSaferRatingHidesTitle(t *testing.T) {
 	}
 }
 
+func TestPlexMetaSummaryKeepsTMDBRatingBadge(t *testing.T) {
+	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
+	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{Summary: "Plex summary only"})
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
+	body := rec.Body.String()
+	if !strings.Contains(body, `"summary":"Plex summary only"`) {
+		t.Fatalf("summary missing: %s", body)
+	}
+	if !strings.Contains(body, `"audienceRatingImage":"themoviedb://image.rating"`) {
+		t.Fatalf("lost TMDB badge: %s", body)
+	}
+}
+
 func TestPlexMetaGUIDMismatchIgnored(t *testing.T) {
 	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
 	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, "plex://movie/000000000000000000000000", plexmeta.Overlay{Summary: "stale remap"})

@@ -61,11 +61,6 @@ func (c Cached) Stale(now time.Time) bool {
 	return c.FetchedAt.IsZero() || now.Sub(c.FetchedAt) >= cacheTTL
 }
 
-// HasArt reports that Plex supplied a poster or backdrop Ether may fall back to.
-func (o Overlay) HasArt() bool {
-	return o.ThumbURL != "" || o.ArtURL != ""
-}
-
 // ApplyDisplay copies present Plex fields onto t for the Plex convert path.
 // Released and AddedAt stay on the caller — Plex dates must not change
 // date-added. TMDB genres and person ids stay; Plex only enriches matching
@@ -97,21 +92,23 @@ func ApplyDisplay(t *core.Title, o Overlay) {
 	if o.ThumbURL != "" {
 		if t.Type == core.TypeEpisode {
 			if t.StillPath == "" {
-				t.StillPath = remoteArtSentinel
+				t.StillPath = RemoteArt
 			}
 		} else if t.PosterPath == "" {
-			t.PosterPath = remoteArtSentinel
+			t.PosterPath = RemoteArt
 		}
 	}
 	if o.ArtURL != "" && t.BackdropPath == "" {
-		t.BackdropPath = remoteArtSentinel
+		t.BackdropPath = RemoteArt
 	}
 	t.Cast = enrichPeople(t.Cast, o.Cast)
 	t.Directors = enrichPeople(t.Directors, o.Directors)
 	t.Writers = enrichPeople(t.Writers, o.Writers)
 }
 
-const remoteArtSentinel = "plex"
+// RemoteArt is the sentinel ApplyDisplay writes when Plex supplies artwork
+// and TMDB has none, so convert can emit a thumb URL and images can fall back.
+const RemoteArt = "plex"
 
 // SaferRating is the more mature of two stored ratings. An unrated side is
 // ignored so a missing Plex label does not hide a rated TMDB title; if both

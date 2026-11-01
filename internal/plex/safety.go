@@ -10,6 +10,35 @@ import (
 // AccessPolicy adds owner-defined restrictions to the mandatory title guard.
 type AccessPolicy = experience.AccessPolicy
 
+func (s *Server) saferFetchCount(u *core.User, want int) int {
+	if want <= 0 || !s.needPlexRatingFilter(u) {
+		return want
+	}
+	n := want * 2
+	if extra := want + 24; n > extra {
+		n = extra
+	}
+	if n > 200 {
+		n = 200
+	}
+	return n
+}
+
+func (s *Server) takeVisible(u *core.User, ts []core.Title, want int) []core.Title {
+	out := s.visibleTitles(u, ts)
+	if want > 0 && len(out) > want {
+		return out[:want]
+	}
+	return out
+}
+
+func (s *Server) catalogBrowse(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
+	if s.plexMetaOn() {
+		q.Filter.SaferPlexRating = true
+	}
+	return s.d.Catalog.Browse(ctx, q)
+}
+
 func (s *Server) visibleTitles(u *core.User, ts []core.Title) []core.Title {
 	out := s.visibility().TitlesAllowed(u, ts)
 	if !s.needPlexRatingFilter(u) || s.d.PlexMeta == nil {

@@ -153,6 +153,26 @@ func TestBreakerSuccessKeepsRetryAfter(t *testing.T) {
 	}
 }
 
+func TestPeopleThumbsMustBeAllowlisted(t *testing.T) {
+	got := peopleFrom("https://metadata.provider.plex.tv", []providerPerson{
+		{Tag: "Ada", Thumb: "/library/people/1/thumb"},
+		{Tag: "Bea", Thumb: "https://image.plex.tv/a.jpg"},
+		{Tag: "Cal", Thumb: "https://evil.example/x.jpg"},
+	})
+	if len(got) != 3 {
+		t.Fatalf("%+v", got)
+	}
+	if got[0].Thumb != "https://metadata.provider.plex.tv/library/people/1/thumb" {
+		t.Fatalf("relative %q", got[0].Thumb)
+	}
+	if got[1].Thumb != "https://image.plex.tv/a.jpg" {
+		t.Fatalf("abs %q", got[1].Thumb)
+	}
+	if got[2].Thumb != "" {
+		t.Fatalf("kept off-allowlist %q", got[2].Thumb)
+	}
+}
+
 func TestImageHostAllowlist(t *testing.T) {
 	for _, host := range []string{"metadata-static.plex.tv", "image.plex.tv", "images.plex.tv", "metadata.provider.plex.tv"} {
 		if !ImageHost(host) {

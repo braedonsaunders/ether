@@ -90,64 +90,66 @@ func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key core
 		element = "thumb"
 	}
 	raw := r.URL.Query().Get("collection")
-	if raw == "" && key.Kind() != core.KindSmart {
-		t, err := s.artworkTitle(r.Context(), key)
-		if err != nil {
-			t, err = s.scheduledEpisode(r.Context(), FromContext(r.Context()), key)
-		}
-		if r.Context().Err() != nil || err != nil || t == nil || !t.IsReleased(s.now()) || !s.visibleTitle(r.Context(), FromContext(r.Context()).User, t) {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-	}
 	if raw == "" && s.serveCollectionArtwork(w, r, key, element, width) {
 		return
 	}
 	path, defWidth, err := s.artPath(r.Context(), key, element)
-	if raw == "" && err == nil && path != "" {
-		if width <= 0 {
-			width = defWidth
-		}
-		s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
-		return
-	}
 	if raw != "" || err != nil || path == "" {
 		t, _, e := s.lookupPlaceholder(r.Context(), FromContext(r.Context()), key, raw)
 		if e != nil && raw == "" {
 			t, e = s.scheduledEpisode(r.Context(), FromContext(r.Context()), key)
 		}
-		if e == nil && t != nil {
-			path := t.PosterPath
-			if t.Type == core.TypeEpisode {
-				path = t.StillPath
-			}
-			if element == "art" || element == "background" {
-				path = t.BackdropPath
-			}
-			if element != "thumb" && element != "poster" && element != "art" && element != "background" {
-				path = ""
-			}
-			if path != "" && path != "plex" {
-				if width <= 0 {
-					if element == "art" || element == "background" {
-						width = 1280
-					} else {
-						width = 500
-					}
-				}
-				s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
+		if e != nil {
+			if s.servePlexOverlayImage(w, r, key, element) {
 				return
 			}
-		}
-	}
-	if remote := s.plexMetaRemoteImage(r.Context(), key, element); remote != "" {
-		if err := s.writeRemoteImage(w, r, remote); err == nil {
+			writeHTTPError(w, http.StatusNotFound)
 			return
 		}
-		writeHTTPError(w, http.StatusNotFound)
+		path := t.PosterPath
+		if t.Type == core.TypeEpisode {
+			path = t.StillPath
+		}
+		if element == "art" || element == "background" {
+			path = t.BackdropPath
+		}
+		if element != "thumb" && element != "poster" && element != "art" && element != "background" {
+			path = ""
+		}
+		if path == "" {
+			if s.servePlexOverlayImage(w, r, key, element) {
+				return
+			}
+			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
+		if width <= 0 {
+			if element == "art" || element == "background" {
+				width = 1280
+			} else {
+				width = 500
+			}
+		}
+		s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
 		return
 	}
-	writeHTTPError(w, http.StatusNotFound)
+	if width <= 0 {
+		width = defWidth
+	}
+	s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
+}
+
+// servePlexOverlayImage is the last-resort artwork path: only when the owner
+// toggle is on and this key already has a cached overlay URL for the element.
+func (s *Server) servePlexOverlayImage(w http.ResponseWriter, r *http.Request, key core.RatingKey, element string) bool {
+	remote := s.plexMetaRemoteImage(r.Context(), key, element)
+	if remote == "" {
+		return false
+	}
+	if err := s.writeRemoteImage(w, r, remote); err != nil {
+		writeHTTPError(w, http.StatusNotFound)
+	}
+	return true
 }
 
 func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u string) {

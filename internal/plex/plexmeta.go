@@ -111,6 +111,11 @@ func (s *Server) plexMetaRatingAllowedCached(u *core.User, t *core.Title, rows m
 }
 
 func (s *Server) plexMetaRemoteImage(ctx context.Context, key core.RatingKey, element string) string {
+	switch key.Kind() {
+	case core.KindMovie, core.KindShow, core.KindSeason, core.KindEpisode:
+	default:
+		return ""
+	}
 	o, ok := s.plexMetaCached(ctx, key)
 	if !ok {
 		return ""

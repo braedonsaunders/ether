@@ -1173,7 +1173,7 @@ func (s *Server) sectionOnDeck(w http.ResponseWriter, r *http.Request, sec Secti
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	_, size := pr.pageOf(0)
-	items, state := s.inProgressTitles(ctx, pr, sec.Type, min(size, 50))
+	items, state := s.inProgressTitles(ctx, pr, sec.Type, s.saferFetchCount(pr.User, min(size, 50)))
 	mc := s.sectionContainer(sec)
 	mc.Title2 = "On Deck"
 	mc.Mixed = model.Ptr(true)
@@ -1186,7 +1186,7 @@ func (s *Server) handleOnDeck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	_, size := pr.pageOf(0)
-	items, state := s.inProgressTitles(ctx, pr, "", min(size, 50))
+	items, state := s.inProgressTitles(ctx, pr, "", s.saferFetchCount(pr.User, min(size, 50)))
 	mc := libraryContainer()
 	mc.Mixed = model.Ptr(true)
 	mc.Metadata = s.onDeckItems(ctx, pr, items, state)
@@ -1200,7 +1200,8 @@ func (s *Server) handleOnDeck(w http.ResponseWriter, r *http.Request) {
 func (s *Server) onDeckItems(ctx context.Context, pr *Request, items []core.Title, state map[core.RatingKey]core.WatchStatus) []model.Metadata {
 	// Filter first: renderTitles drops hidden titles, and the loop below
 	// pairs its output with items by index.
-	items = s.visibleTitles(pr.User, items)
+	_, size := pr.pageOf(0)
+	items = s.takeVisible(pr.User, items, min(size, 50))
 	md := s.renderTitles(ctx, pr, items, renderOpts{media: true, detailEpisodes: true, state: state})
 	for i := range md {
 		md[i].AllowSync = model.Ptr(s.downloadsAllowed(pr.User) && isPlayable(items[i].Type))
@@ -1251,7 +1252,7 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 		if pr.User != nil {
 			q.Filter.MaxContentRating = pr.User.MaxContentRating
 		}
-		page, err := s.d.Catalog.Browse(ctx, q)
+		page, err := s.catalogBrowse(ctx, q)
 		if err != nil {
 			s.writeErr(w, r, err)
 			return

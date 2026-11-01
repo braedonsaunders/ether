@@ -465,8 +465,8 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		if level := contentrating.LevelOf(f.MaxContentRating); level != contentrating.Unrated {
 			conds = append(conds, "t.content_rating_rank>0 AND t.content_rating_rank<=?")
 			args = append(args, int(level))
-			if f.SaferPlexRating {
-				conds = append(conds, `NOT EXISTS (SELECT 1 FROM plexmeta_titles p WHERE p.rating_key=t.key AND p.rating_level>?)`)
+			if f.SaferPlexRating && c.saferRating != nil {
+				conds = append(conds, c.saferRating.HideExceeding("t.key"))
 				args = append(args, int(level))
 			}
 		} else {

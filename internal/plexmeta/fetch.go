@@ -108,20 +108,31 @@ func overlayFrom(item providerItem, base string) Overlay {
 			o.Genres = append(o.Genres, tag)
 		}
 	}
-	o.Cast = peopleFrom(item.Role)
-	o.Directors = peopleFrom(item.Director)
-	o.Writers = peopleFrom(item.Writer)
+	o.Cast = peopleFrom(base, item.Role)
+	o.Directors = peopleFrom(base, item.Director)
+	o.Writers = peopleFrom(base, item.Writer)
 	return o
 }
 
-func peopleFrom(in []providerPerson) []Person {
+func peopleFrom(base string, in []providerPerson) []Person {
 	out := make([]Person, 0, len(in))
 	for _, p := range in {
 		if name := strings.TrimSpace(p.Tag); name != "" {
-			out = append(out, Person{Name: name, Role: strings.TrimSpace(p.Role), Thumb: strings.TrimSpace(p.Thumb)})
+			out = append(out, Person{Name: name, Role: strings.TrimSpace(p.Role), Thumb: allowedPlexImage(absURL(base, p.Thumb))})
 		}
 	}
 	return out
+}
+
+func allowedPlexImage(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || !ImageHost(u.Host) {
+		return ""
+	}
+	return raw
 }
 
 func absURL(base, raw string) string {
