@@ -100,8 +100,8 @@ func TestRootPageMergesPerLibraryWindows(t *testing.T) {
 			return page(movies, q), nil
 		}
 		return page(shows, q), nil
-	}, PageExclusions: func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string) {
-		return nil, nil, nil, ""
+	}, PageExclusions: func(context.Context, *core.User) LibraryPageExclusions {
+		return LibraryPageExclusions{}
 	},
 		Children:      func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) { return nil, nil },
 		Grandchildren: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) { return nil, nil }}}

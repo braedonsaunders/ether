@@ -81,6 +81,21 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 			}
 			return a.cfg.Get().Catalog.Language
 		},
+		PlexLayer: func(_ context.Context, user int64) (trackprefs.PlexLayer, bool) {
+			if a.users == nil {
+				return trackprefs.PlexLayer{}, false
+			}
+			d, ok := a.users.PlexDefaults(user)
+			if !ok || !d.HasProfile {
+				return trackprefs.PlexLayer{}, false
+			}
+			return trackprefs.PlexLayer{
+				AudioLanguage:    d.AudioLanguage,
+				AutoSelectAudio:  d.AutoSelectAudio,
+				SubtitleLanguage: d.SubtitleLanguage,
+				SubtitleMode:     d.EtherMode(),
+			}, true
+		},
 	})
 	a.markers = markers.New(markers.Options{DB: a.db, Logger: log.With("component", "markers"), Config: func() markers.Lookup {
 		c := a.cfg.Get().Markers

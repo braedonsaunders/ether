@@ -57,10 +57,10 @@ type Filter struct {
 	// counting and pagination. Matching is case-insensitive.
 	ExcludeGenres         []string        `json:"-"`
 	ExcludeKeywords       []string        `json:"-"`
-	AddedAfter            int64           `json:"-"` // inclusive Unix timestamp bound on added/release time
-	AddedBefore           int64           `json:"-"` // inclusive Unix timestamp bound on added/release time
-	UpdatedAfter          int64           `json:"-"` // inclusive Unix timestamp bound on metadata update time
-	UpdatedBefore         int64           `json:"-"` // inclusive Unix timestamp bound on metadata update time
+	AddedAfter            int64           `json:"-"`              // inclusive Unix timestamp bound on added/release time
+	AddedBefore           int64           `json:"-"`              // inclusive Unix timestamp bound on added/release time
+	UpdatedAfter          int64           `json:"-"`              // inclusive Unix timestamp bound on metadata update time
+	UpdatedBefore         int64           `json:"-"`              // inclusive Unix timestamp bound on metadata update time
 	Type                  MediaType       `json:"type,omitempty"` // movie or show
 	Genres                []string        `json:"genres,omitempty"`
 	Keywords              []string        `json:"keywords,omitempty"` // every keyword must match (case-insensitive)
@@ -91,6 +91,14 @@ type Filter struct {
 	Query                 string          `json:"query,omitempty"` // title substring
 	TitleFilters          []StringFilter  `json:"titleFilters,omitempty"`
 	ReleasedFilters       []DateFilter    `json:"releasedFilters,omitempty"`
+	// MinContentRating is an additive share-policy predicate (plex.tv share
+	// filters). It does not replace MaxContentRating or ContentRatings.
+	MinContentRating string `json:"-"`
+	// IncludeCollectionNames / ExcludeCollectionNames match
+	// Title.CollectionName (plex.tv share label filters). An empty
+	// collection name is unmappable and is not excluded.
+	IncludeCollectionNames []string `json:"-"`
+	ExcludeCollectionNames []string `json:"-"`
 }
 
 type BrowseQuery struct {

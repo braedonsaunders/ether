@@ -343,15 +343,16 @@ type Service struct {
 	o   Options
 	log *slog.Logger
 
-	mu          sync.RWMutex
-	users       map[int64]*row  // by local id
-	byPlex      map[int64]int64 // plex id -> local id
-	tokens      map[string]int64
-	pos         map[string]cacheEntry
-	neg         map[string]time.Time
-	inflight    flight.Group[string, validation]
-	ownerPlexID int64
-	gen         atomic.Uint64
+	mu           sync.RWMutex
+	users        map[int64]*row  // by local id
+	byPlex       map[int64]int64 // plex id -> local id
+	tokens       map[string]int64
+	pos          map[string]cacheEntry
+	neg          map[string]time.Time
+	inflight     flight.Group[string, validation]
+	ownerPlexID  int64
+	plexDefaults map[int64]PlexViewerDefaults
+	gen          atomic.Uint64
 
 	incarnation uint64
 	entrySeq    uint64
@@ -598,6 +599,10 @@ func (s *Service) reload(ctx context.Context) error {
 	if err := trows.Err(); err != nil {
 		return err
 	}
+	defaults, err := s.loadPlexDefaults(ctx)
+	if err != nil {
+		return fmt.Errorf("auth: load plex defaults: %w", err)
+	}
 	s.mu.Lock()
 	oldTokens := s.tokens
 	for h, id := range oldTokens {
@@ -617,7 +622,11 @@ func (s *Service) reload(ctx context.Context) error {
 			s.tokenGen[h]++
 		}
 	}
-	s.users, s.byPlex, s.tokens, s.ownerPlexID = users, byPlex, tokens, owner
+	changed := !plexDefaultsEqual(s.plexDefaults, defaults)
+	s.users, s.byPlex, s.tokens, s.ownerPlexID, s.plexDefaults = users, byPlex, tokens, owner, defaults
+	if changed {
+		s.gen.Add(1)
+	}
 	// Cached validations may point at users whose state changed.
 	for h, e := range s.pos {
 		if u := users[e.userID]; u == nil || !u.Active {
@@ -1178,6 +1187,13 @@ WHERE auth_users.origin<>'dlna_guest'`,
 			return err
 		}
 	}
+	var ownerID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM auth_users WHERE is_owner=1`).Scan(&ownerID); err != nil {
+		return err
+	}
+	if err := upsertPlexDefaultsTx(ctx, tx, ownerID, a.ID, now, defaultsFromAccount(a)); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1251,6 +1267,17 @@ RETURNING id`,
 			}
 			keep[uid] = true
 		}
+		if uid != 0 {
+			plexID := f.PlexID
+			if f.Owned {
+				if err := tx.QueryRowContext(ctx, `SELECT COALESCE(plex_id,0) FROM auth_users WHERE id=?`, uid).Scan(&plexID); err != nil {
+					return err
+				}
+			}
+			if err := upsertPlexDefaultsTx(ctx, tx, uid, plexID, now, defaultsFromFriend(f)); err != nil {
+				return fmt.Errorf("auth: save plex defaults %d: %w", plexID, err)
+			}
+		}
 		if f.Token == "" {
 			continue // Membership is authoritative even without a shared token.
 		}
@@ -1282,6 +1309,9 @@ RETURNING id`,
 	}
 	for _, id := range gone {
 		if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET active=0, plex_shared=0, updated_at=? WHERE id=?`, now, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM auth_plex_defaults WHERE user_id=?`, id); err != nil {
 			return err
 		}
 	}

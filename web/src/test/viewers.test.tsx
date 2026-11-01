@@ -42,6 +42,22 @@ const POLICY = {
   timezone: "UTC",
 };
 
+const withPlexDefaults = (server: FakeServer) => {
+  server.state.plexDefaults[3] = {
+    hasProfile: true,
+    hasSettings: true,
+    audioLanguage: "ja",
+    autoSelectAudio: true,
+    subtitleLanguage: "en",
+    subtitleMode: "always",
+    filterMovies: "contentRating<=PG-13",
+    filterTelevision: "label!=Hidden",
+    filterMoviesParts: [{ kind: "rating-max", values: ["PG-13"] }],
+    filterTelevisionParts: [{ kind: "label-deny", values: ["Hidden"] }],
+    allowSync: false,
+  };
+};
+
 describe("Viewers", () => {
   it("lists viewers with activity and opens a profile", async () => {
     renderApp("/viewers");
@@ -150,6 +166,20 @@ describe("Viewers", () => {
     // The user record (stream limit, rating cap) was untouched.
     expect(calls(fake, "PATCH", "/users/3")).toHaveLength(0);
     await waitFor(() => expect(screen.queryByText("You have unsaved changes")).toBeNull());
+  });
+
+  it("shows read-only plex.tv share defaults on Access", async () => {
+    renderApp("/viewers/3/access", {}, withPlexDefaults);
+    expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("Up to PG-13")).toBeInTheDocument();
+    expect(screen.getByText("Hides collection Hidden")).toBeInTheDocument();
+  });
+
+  it("shows read-only plex.tv track defaults on Playback", async () => {
+    renderApp("/viewers/3/playback", { householdAudio: true }, withPlexDefaults);
+    expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("ja", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("Always on")).toBeInTheDocument();
   });
 });
 

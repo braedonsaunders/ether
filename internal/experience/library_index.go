@@ -21,17 +21,27 @@ func (s *Service) indexedLibraryPage(ctx context.Context, v *core.User, library 
 	if !indexedBrowseQuery(library, q) {
 		return core.Page{}, false, nil
 	}
-	keys, genres, keywords, maxRating := s.d.PageExclusions(ctx, v)
-	if len(keys) > maxIndexedExclusions || len(genres) > 64 || len(keywords) > 64 {
+	ex := s.d.PageExclusions(ctx, v)
+	if len(ex.Keys) > maxIndexedExclusions || len(ex.ExcludeGenres) > 64 || len(ex.ExcludeKeywords) > 64 {
 		return core.Page{}, false, nil
 	}
 	filter := q.Filter
 	filter.Type = library.Type
-	filter.ExcludeKeys = append(append([]core.RatingKey{}, q.Filter.ExcludeKeys...), keys...)
-	filter.ExcludeGenres = append(append([]string{}, genres...), q.Filter.ExcludeGenres...)
-	filter.ExcludeKeywords = append(append([]string{}, keywords...), q.Filter.ExcludeKeywords...)
+	filter.ExcludeKeys = append(append([]core.RatingKey{}, q.Filter.ExcludeKeys...), ex.Keys...)
+	filter.ExcludeGenres = append(append([]string{}, ex.ExcludeGenres...), q.Filter.ExcludeGenres...)
+	filter.ExcludeKeywords = append(append([]string{}, ex.ExcludeKeywords...), q.Filter.ExcludeKeywords...)
 	filter.MaxContentRating = tightenRating(filter.MaxContentRating, v.MaxContentRating)
-	filter.MaxContentRating = tightenRating(filter.MaxContentRating, maxRating)
+	filter.MaxContentRating = tightenRating(filter.MaxContentRating, ex.MaxContentRating)
+	share := ex.Movie
+	if library.Type == core.TypeShow || library.Type == core.TypeSeason || library.Type == core.TypeEpisode {
+		share = ex.Television
+	}
+	filter.ContentRatings = append(append([]string{}, share.ContentRatings...), filter.ContentRatings...)
+	filter.ExcludeContentRatings = append(append([]string{}, share.ExcludeContentRatings...), filter.ExcludeContentRatings...)
+	filter.MinContentRating = firstNonEmpty(filter.MinContentRating, share.MinContentRating)
+	filter.MaxContentRating = tightenRating(filter.MaxContentRating, share.MaxContentRating)
+	filter.IncludeCollectionNames = append(append([]string{}, share.IncludeCollectionNames...), filter.IncludeCollectionNames...)
+	filter.ExcludeCollectionNames = append(append([]string{}, share.ExcludeCollectionNames...), filter.ExcludeCollectionNames...)
 	page, err := s.d.Browse(ctx, core.BrowseQuery{Filter: filter, Sort: q.Sort, Desc: q.Desc, Offset: max(q.Offset, 0), Limit: q.Limit})
 	if err != nil {
 		return core.Page{}, false, err
@@ -47,6 +57,15 @@ func tightenRating(current, extra string) string {
 		return extra
 	}
 	return current
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (s *Service) indexedPageHolds(ctx context.Context, v *core.User, items []core.Title, q frontend.ItemQuery) bool {

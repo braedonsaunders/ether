@@ -136,7 +136,7 @@ func (s *Service) PutScoped(ctx context.Context, user int64, scope, id string, v
 func (s *Service) ScopedRules(ctx context.Context, user int64, scope Scope) (Rules, bool, error) {
 	r, sources, err := s.ScopedRulesWithSources(ctx, user, scope)
 	for _, source := range sources {
-		if source != "profile" {
+		if source != "profile" && source != "plex" {
 			return r, true, err
 		}
 	}
@@ -157,11 +157,22 @@ func (s *Service) ScopedRulesWithSources(ctx context.Context, user int64, scope 
 		return r, nil, err
 	}
 	sources := map[string]string{}
-	var hasProfile int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM trackprefs_rules WHERE user_id=?`, user).Scan(&hasProfile); err != nil {
-		return r, nil, err
+	if s.options.PlexLayer != nil && user > 0 {
+		if layer, ok := s.options.PlexLayer(ctx, user); ok {
+			if layer.AutoSelectAudio && layer.AudioLanguage != "" {
+				sources["audio"] = "plex"
+			}
+			if layer.SubtitleLanguage != "" {
+				sources["subtitle"] = "plex"
+			}
+			if layer.SubtitleMode != "" {
+				sources["subtitle_mode"] = "plex"
+			}
+		}
 	}
-	if hasProfile != 0 {
+	if _, ok, err := s.storedRules(ctx, user); err != nil {
+		return r, nil, err
+	} else if ok {
 		for _, field := range scopedFields {
 			if field == "appearance" && len(r.SubtitleAppearance) == 0 {
 				continue
