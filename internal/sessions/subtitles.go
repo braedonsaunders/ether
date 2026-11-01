@@ -170,17 +170,22 @@ func syncMS(r *http.Request) (int, bool) {
 }
 
 func (b *Broker) playSource(s *brokerSession) string {
-	if b.deps.Playback == nil {
+	if b.deps.Playback == nil || s == nil {
 		return ""
+	}
+	if keyer, ok := b.deps.Playback.(interface{ SourceKey(string) string }); ok {
+		if k := keyer.SourceKey(s.playID); k != "" {
+			return k
+		}
 	}
 	ps, ok := b.deps.Playback.Session(s.playID)
-	if !ok || ps == nil {
-		return ""
-	}
-	if ps.Resolution != nil && ps.Resolution.Release.ID != "" {
+	if ok && ps != nil && ps.Resolution != nil && ps.Resolution.Release.ID != "" {
 		return ps.Resolution.Release.ID
 	}
-	return b.deps.Playback.InputURL(s.playID)
+	if s.playID != "" {
+		return s.playID
+	}
+	return ""
 }
 
 func (b *Broker) openSubtitle(s *brokerSession, id, format string) (io.ReadCloser, string, error) {

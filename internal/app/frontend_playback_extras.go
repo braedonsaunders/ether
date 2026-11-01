@@ -178,6 +178,11 @@ func (s subtitleSurface) Download(ctx context.Context, viewer *core.Viewer, devi
 	if err != nil {
 		return 0, err
 	}
+	var sess *core.PlaySession
+	if s.app.playback != nil && viewer != nil {
+		sess, _ = s.app.playback.SessionFor(viewer.ID, device.ID, key)
+	}
+	s.app.startSubtitleCorrection(ctx, &detail.Title, info.ExternalURL, sess)
 	embedded := []core.StreamInfo{}
 	if s.app.playback != nil {
 		embedded = s.app.playback.Estimate(ctx, &detail.Title, core.ClientCaps{ClientID: device.ID, Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, Version: device.Version}).Streams

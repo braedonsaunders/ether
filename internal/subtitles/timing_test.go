@@ -2,8 +2,11 @@ package subtitles
 
 import (
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -13,6 +16,26 @@ func synthCues(n int, step, offset time.Duration, rate float64) []Cue {
 	for i := 0; i < n; i++ {
 		start := time.Duration(float64(time.Duration(i)*step)*rate) + offset
 		out[i] = Cue{Start: start, End: start + 800*time.Millisecond, Text: "x"}
+	}
+	return out
+}
+
+func irregularCues(n int, step, offset time.Duration) []Cue {
+	out := make([]Cue, n)
+	t := time.Duration(0)
+	for i := 0; i < n; i++ {
+		gap := time.Duration(float64(step) * (0.4 + float64((i*7)%19)/10))
+		start := t + offset
+		out[i] = Cue{Start: start, End: start + 700*time.Millisecond, Text: "x"}
+		t += gap
+	}
+	return out
+}
+
+func shiftCues(cues []Cue, d time.Duration) []Cue {
+	out := make([]Cue, len(cues))
+	for i, c := range cues {
+		out[i] = Cue{Start: c.Start + d, End: c.End + d, Text: c.Text}
 	}
 	return out
 }
@@ -99,8 +122,8 @@ func TestCorrectAppliesCachedFit(t *testing.T) {
 }
 
 func TestFitTimingLongFilmWithJitter(t *testing.T) {
-	ref := synthCues(1200, 2*time.Second, 0, 1)
-	cand := synthCues(1200, 2*time.Second, 1800*time.Millisecond, 1)
+	ref := irregularCues(1200, 2*time.Second, 0)
+	cand := shiftCues(ref, 1800*time.Millisecond)
 	for i := range cand {
 		if i%17 == 0 {
 			cand[i].Start += 80 * time.Millisecond
@@ -116,7 +139,7 @@ func TestFitTimingLongFilmWithJitter(t *testing.T) {
 }
 
 func TestFitTimingInSyncUnchanged(t *testing.T) {
-	ref := synthCues(40, 2*time.Second, 0, 1)
+	ref := irregularCues(40, 2*time.Second, 0)
 	fit, ok := FitTiming(ref, ref)
 	if !ok || !fit.Identity() {
 		t.Fatalf("in-sync %+v ok=%v", fit, ok)
@@ -124,9 +147,110 @@ func TestFitTimingInSyncUnchanged(t *testing.T) {
 }
 
 func TestFitTimingRejectsDifferentCut(t *testing.T) {
-	ref := synthCues(40, 2*time.Second, 0, 1)
-	cand := synthCues(40, 3500*time.Millisecond, 45*time.Second, 1.12)
-	if _, ok := FitTiming(cand, ref); ok {
-		t.Fatal("different cut accepted")
+	theatrical := irregularCues(80, 2*time.Second, 0)
+	inserted := irregularCues(20, 2*time.Second, theatrical[40].Start)
+	shift := 90 * time.Second
+	extended := append(append([]Cue{}, theatrical[:40]...), inserted...)
+	for _, c := range theatrical[40:] {
+		extended = append(extended, Cue{Start: c.Start + shift, End: c.End + shift, Text: c.Text})
+	}
+	if _, ok := FitTiming(theatrical, extended); ok {
+		t.Fatal("inserted scene accepted as a single offset")
+	}
+}
+
+func TestSourceKeyNeverPutsURLsInPaths(t *testing.T) {
+	if SourceKey("") != "" {
+		t.Fatal("empty")
+	}
+	if SourceKey("local:abc") != "local_abc" {
+		t.Fatalf("local: %q", SourceKey("local:abc"))
+	}
+	u := "http://127.0.0.1:32400/src/sess/tok"
+	k := SourceKey(u)
+	if k == "" || strings.ContainsAny(k, "/:\\") {
+		t.Fatalf("url key %q", k)
+	}
+	if SourceKey(u) != k {
+		t.Fatal("unstable")
+	}
+}
+
+func TestOpenFormatFromUsesSourceKey(t *testing.T) {
+	s := New(Options{CacheDir: t.TempDir()})
+	id := "local-en"
+	raw := []byte(RenderSRT(synthCues(8, time.Second, 1500*time.Millisecond, 1)))
+	if err := os.WriteFile(filepath.Join(s.dir, id+".srt"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.storeCorrection(id, SourceKey("local:rel"), correction{
+		Offset: -1500 * time.Millisecond, Rate: 1, Applied: true, Measured: true, At: s.now().UTC(),
+	})
+	r, _, err := s.OpenFormatFrom(id, "srt", "local:rel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cues, err := ParseCues(string(got))
+	if err != nil || len(cues) == 0 {
+		t.Fatalf("parse %v", err)
+	}
+	if absDuration(cues[0].Start) > timingFrameSlack {
+		t.Fatalf("first cue %s", cues[0].Start)
+	}
+}
+
+func TestOpenFormatFromWaitsForInFlight(t *testing.T) {
+	s := New(Options{CacheDir: t.TempDir()})
+	id := "wait-en"
+	raw := []byte(RenderSRT(synthCues(8, time.Second, 1500*time.Millisecond, 1)))
+	if err := os.WriteFile(filepath.Join(s.dir, id+".srt"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := SourceKey("rel-w")
+	s.correctFlights.run(id+"\x00"+src, func() {
+		time.Sleep(200 * time.Millisecond)
+		s.storeCorrection(id, src, correction{
+			Offset: -1500 * time.Millisecond, Rate: 1, Applied: true, Measured: true, At: s.now().UTC(),
+		})
+	})
+	r, _, err := s.OpenFormatFrom(id, "srt", "rel-w")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(r)
+	r.Close()
+	cues, err := ParseCues(string(got))
+	if err != nil || len(cues) == 0 || absDuration(cues[0].Start) > timingFrameSlack {
+		t.Fatalf("did not wait for correction: %v %v", err, cues)
+	}
+}
+
+func TestSyncHandlerManualAdjust(t *testing.T) {
+	s := New(Options{CacheDir: t.TempDir()})
+	id := "manual-en"
+	raw := []byte(RenderSRT(synthCues(8, time.Second, 0, 1)))
+	if err := os.WriteFile(filepath.Join(s.dir, id+".srt"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/"+id, strings.NewReader(`{"offsetMs":1500,"rate":1,"apply":true}`))
+	rec := httptest.NewRecorder()
+	s.SyncHandler().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.Bytes())
+	}
+	r, _, err := s.OpenFormatFrom(id, "srt", "other-release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(r)
+	r.Close()
+	cues, err := ParseCues(string(got))
+	if err != nil || len(cues) == 0 || absDuration(cues[0].Start-1500*time.Millisecond) > timingFrameSlack {
+		t.Fatalf("manual adjust not applied: %v %v", err, cues)
 	}
 }

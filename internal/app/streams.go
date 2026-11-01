@@ -66,8 +66,16 @@ func (p plexSubtitles) OpenFormat(id, format string) (io.ReadCloser, string, err
 	return p.a.subtitles.OpenFormat(id, format)
 }
 
+func (p plexSubtitles) OpenFormatFrom(id, format, source string) (io.ReadCloser, string, error) {
+	return p.a.subtitles.OpenFormatFrom(id, format, source)
+}
+
 func (p plexSubtitles) OpenFormatAt(id, format string, offset time.Duration) (io.ReadCloser, string, error) {
 	return p.a.subtitles.OpenFormatAt(id, format, offset)
+}
+
+func (p plexSubtitles) OpenFormatAtFrom(id, format string, offset time.Duration, source string) (io.ReadCloser, string, error) {
+	return p.a.subtitles.OpenFormatAtFrom(id, format, offset, source)
 }
 
 func (p plexSubtitles) CachedSidecars(ctx context.Context, t *core.Title, u *core.User, embedded []core.StreamInfo) []core.StreamInfo {
@@ -123,25 +131,65 @@ func (p plexSubtitles) DownloadSubtitle(ctx context.Context, t *core.Title, user
 	if err != nil {
 		return st, err
 	}
-	p.a.subtitles.StartCorrection(t, st.ExternalURL, p.a.liveReleaseAccess(t, user))
+	clientID := ""
+	if pr := plex.FromContext(ctx); pr != nil {
+		clientID = pr.ClientID
+	}
+	p.a.startSubtitleCorrection(ctx, t, st.ExternalURL, p.a.playSession(user, t, clientID))
 	return st, nil
 }
 
-func (a *App) liveReleaseAccess(t *core.Title, u *core.User) subtitles.ReleaseAccess {
-	sess := a.languageSession(u, t)
+func (a *App) playSession(user *core.User, title *core.Title, clientID string) *core.PlaySession {
+	if a.playback == nil || user == nil || title == nil || clientID == "" {
+		return nil
+	}
+	if sess, ok := a.playback.SessionFor(user.ID, clientID, title.Key); ok {
+		return sess
+	}
+	return nil
+}
+
+func (a *App) startSubtitleCorrection(ctx context.Context, t *core.Title, id string, sess *core.PlaySession) {
+	if a.subtitles == nil {
+		return
+	}
+	if sess != nil {
+		if sctx := a.playback.SessionContext(sess.ID); sctx != nil {
+			ctx = sctx
+		}
+	}
+	a.subtitles.StartCorrection(ctx, t, id, a.liveReleaseAccess(sess))
+}
+
+func (a *App) liveReleaseAccess(sess *core.PlaySession) subtitles.ReleaseAccess {
 	if sess == nil || a.playback == nil {
 		return subtitles.ReleaseAccess{}
 	}
-	src := sess.ID
-	if sess.Resolution != nil && sess.Resolution.Release.ID != "" {
+	src := a.playback.SourceKey(sess.ID)
+	if src == "" && sess.Resolution != nil {
 		src = sess.Resolution.Release.ID
 	}
-	return subtitles.ReleaseAccess{
+	if src == "" {
+		src = sess.ID
+	}
+	access := subtitles.ReleaseAccess{
 		URL:      a.playback.InputURL(sess.ID),
 		Duration: sess.Info.Duration,
 		Info:     &sess.Info,
 		Source:   src,
 	}
+	if a.transcoder != nil {
+		access.FFmpeg = a.transcoder.FFmpegPath()
+	}
+	if r, size, release, ok := a.playback.SourceReader(sess.ID); ok {
+		access.Reader = r
+		access.Size = size
+		access.Done = release
+	} else if sess.Source != nil {
+		access.Reader = sess.Source
+		access.Size = sess.Source.Size()
+	}
+	return access
 }
 
 func (p plexSubtitles) UploadSubtitle(_ context.Context, t *core.Title, _ *core.User, filename, format, language string, body []byte) (core.StreamInfo, error) {

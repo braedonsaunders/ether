@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -1069,6 +1070,29 @@ func (m *Manager) SourceKey(id string) string {
 		return ""
 	}
 	return s.current().releaseID()
+}
+
+// SourceReader is a session-scoped ReaderAt over the current generation.
+// The closer releases the generation hold; call it when the read is done.
+func (m *Manager) SourceReader(id string) (io.ReaderAt, int64, func(), bool) {
+	s := m.lookup(id)
+	if s == nil {
+		return nil, 0, nil, false
+	}
+	g := s.current()
+	if g == nil || g.src == nil || !g.acquire() {
+		return nil, 0, nil, false
+	}
+	return g.src, g.src.Size(), func() { g.release() }, true
+}
+
+// SessionContext is cancelled when the session stops.
+func (m *Manager) SessionContext(id string) context.Context {
+	s := m.lookup(id)
+	if s == nil {
+		return nil
+	}
+	return s.stopCtx
 }
 
 func (m *Manager) urlFor(g *generation) string {

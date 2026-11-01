@@ -33,7 +33,7 @@ func (s *Service) CachedSubtitles() ([]CachedSubtitle, error) {
 		if len(out) >= 1000 {
 			break
 		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasSuffix(entry.Name(), ".sync.json") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")

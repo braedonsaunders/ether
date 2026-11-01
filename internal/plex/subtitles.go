@@ -526,7 +526,19 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	reader, actual, err := timeline.OpenFormatAt(st.ExternalURL, subtitleFormat(q.Get("format")), offset)
+	source := ""
+	if keyer, ok := s.d.Playback.(interface{ SourceKey(string) string }); ok {
+		source = keyer.SourceKey(entry.playID)
+	}
+	var reader io.ReadCloser
+	var actual string
+	if from, ok := timeline.(interface {
+		OpenFormatAtFrom(string, string, time.Duration, string) (io.ReadCloser, string, error)
+	}); ok {
+		reader, actual, err = from.OpenFormatAtFrom(st.ExternalURL, subtitleFormat(q.Get("format")), offset, source)
+	} else {
+		reader, actual, err = timeline.OpenFormatAt(st.ExternalURL, subtitleFormat(q.Get("format")), offset)
+	}
 	if err != nil {
 		writeHTTPError(w, http.StatusNotFound)
 		return

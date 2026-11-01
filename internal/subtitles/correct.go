@@ -14,13 +14,15 @@ import (
 	"unicode"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 const (
 	correctBackgroundBudget = 12 * time.Second
 	correctRetryBase        = 30 * time.Second
 	correctRetryMax         = 15 * time.Minute
+	correctServeWait        = 2 * time.Second
+	sourceReadBudget        = 32 << 20
+	manualSource            = "manual"
 )
 
 // ReleaseAccess is enough of a playing session to measure a sidecar.
@@ -33,6 +35,14 @@ type ReleaseAccess struct {
 	Duration time.Duration
 	Info     *core.MediaInfo
 	Source   string
+	FFmpeg   string
+	Done     func()
+}
+
+func (a ReleaseAccess) close() {
+	if a.Done != nil {
+		a.Done()
+	}
 }
 
 type correction struct {
@@ -52,13 +62,24 @@ func (c correction) fit() TimingFit {
 	return TimingFit{Offset: c.Offset, Rate: c.Rate, Confidence: c.Confidence, Inliers: c.Inliers}
 }
 
+// SourceKey is the on-disk correction key for a release/source id.
+// URLs and path-like values are hashed so they never become path
+// components. Store and load both go through this function.
+func SourceKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.Contains(raw, "://") || strings.ContainsAny(raw, "/\\") {
+		sum := sha1.Sum([]byte(raw))
+		return hex.EncodeToString(sum[:8])
+	}
+	return sanitizeSource(raw)
+}
+
 func sourceKey(access ReleaseAccess) string {
 	if s := strings.TrimSpace(access.Source); s != "" {
-		return sanitizeSource(s)
-	}
-	if access.URL != "" {
-		sum := sha1.Sum([]byte(access.URL))
-		return hex.EncodeToString(sum[:8])
+		return SourceKey(s)
 	}
 	return ""
 }
@@ -90,7 +111,20 @@ func (s *Service) correctionPath(id, source string) string {
 	return filepath.Join(s.dir, "correct", id, source+".json")
 }
 
+func (s *Service) loadApplied(id, source string) (correction, bool) {
+	if c, ok := s.loadCorrection(id, source); ok && c.Applied {
+		return c, true
+	}
+	if source != manualSource {
+		if c, ok := s.loadCorrection(id, manualSource); ok && c.Applied {
+			return c, true
+		}
+	}
+	return correction{}, false
+}
+
 func (s *Service) loadCorrection(id, source string) (correction, bool) {
+	source = SourceKey(source)
 	p := s.correctionPath(id, source)
 	if p == "" {
 		return correction{}, false
@@ -107,6 +141,7 @@ func (s *Service) loadCorrection(id, source string) (correction, bool) {
 }
 
 func (s *Service) storeCorrection(id, source string, c correction) {
+	source = SourceKey(source)
 	p := s.correctionPath(id, source)
 	if p == "" {
 		return
@@ -126,14 +161,14 @@ type flightGroup struct {
 	m  map[string]chan struct{}
 }
 
-func (g *flightGroup) run(id string, fn func()) {
+func (g *flightGroup) run(id string, fn func()) bool {
 	g.mu.Lock()
 	if g.m == nil {
 		g.m = map[string]chan struct{}{}
 	}
 	if _, ok := g.m[id]; ok {
 		g.mu.Unlock()
-		return
+		return false
 	}
 	done := make(chan struct{})
 	g.m[id] = done
@@ -147,39 +182,74 @@ func (g *flightGroup) run(id string, fn func()) {
 		}()
 		fn()
 	}()
+	return true
 }
 
 // StartCorrection measures the cached sidecar against the live session's
-// source. It no-ops without a source handle (no prefetch).
-func (s *Service) StartCorrection(title *core.Title, id string, access ReleaseAccess) {
+// source. It no-ops without a source handle (no prefetch). The first
+// serve after a pick is uncorrected unless this measurement finishes
+// before OpenFormatFrom's short wait.
+func (s *Service) StartCorrection(ctx context.Context, title *core.Title, id string, access ReleaseAccess) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if s == nil {
+		access.close()
 		return
 	}
 	id = strings.TrimPrefix(id, URLPrefix)
 	if id == "" || strings.ContainsAny(id, "/\\") {
+		access.close()
 		return
 	}
 	src := sourceKey(access)
 	if src == "" || (access.Reader == nil && access.URL == "") {
+		access.close()
 		return
 	}
 	if c, ok := s.loadCorrection(id, src); ok {
 		if c.Measured || c.Applied {
+			access.close()
 			return
 		}
 		if c.Err != "" && !s.now().UTC().After(c.RetryAfter) {
+			access.close()
 			return
 		}
 	}
-	s.correctFlights.run(id+"\x00"+src, func() {
+	if !s.correctFlights.run(id+"\x00"+src, func() {
+		defer access.close()
 		if s.speechSem != nil {
-			s.speechSem <- struct{}{}
-			defer func() { <-s.speechSem }()
+			select {
+			case s.speechSem <- struct{}{}:
+				defer func() { <-s.speechSem }()
+			case <-ctx.Done():
+				return
+			}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), correctBackgroundBudget)
+		ctx, cancel := context.WithTimeout(ctx, correctBackgroundBudget)
 		defer cancel()
 		s.measureAndStore(ctx, title, id, src, access)
-	})
+	}) {
+		access.close()
+	}
+}
+
+func (g *flightGroup) wait(id string, d time.Duration) bool {
+	g.mu.Lock()
+	ch, ok := g.m[id]
+	g.mu.Unlock()
+	if !ok {
+		return false
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ch:
+		return true
+	case <-t.C:
+		return false
+	}
 }
 
 func (s *Service) measureAndStore(ctx context.Context, title *core.Title, id, source string, access ReleaseAccess) {
@@ -230,9 +300,15 @@ func (s *Service) cuesByCachedID(id string) ([]Cue, error) {
 	return ParseCues(string(raw))
 }
 
+func (s *Service) SetFFmpeg(path string) {
+	if s != nil {
+		s.ffmpeg = path
+	}
+}
+
 func (s *Service) measureFit(ctx context.Context, cues []Cue, access ReleaseAccess) (TimingFit, bool) {
 	if access.Reader != nil {
-		ref, err := ReadEmbeddedTextCues(ctx, access.Reader, access.Size)
+		ref, err := ReadEmbeddedTextCues(ctx, limitReaderAt(access.Reader, sourceReadBudget), access.Size)
 		if err == nil && len(ref) >= 3 {
 			if fit, ok := FitTiming(cues, ref); ok {
 				return fit, true
@@ -242,7 +318,10 @@ func (s *Service) measureFit(ctx context.Context, cues []Cue, access ReleaseAcce
 	if ctx.Err() != nil || access.URL == "" {
 		return TimingFit{}, false
 	}
-	ff := ffmpegPath()
+	ff := access.FFmpeg
+	if ff == "" && s != nil {
+		ff = s.ffmpeg
+	}
 	if ff == "" {
 		return TimingFit{}, false
 	}
@@ -253,11 +332,35 @@ func (s *Service) measureFit(ctx context.Context, cues []Cue, access ReleaseAcce
 	return FitSpeechEnergy(cues, windows)
 }
 
-func ffmpegPath() string {
-	if p := transcode.LookPath(); p != "" {
-		return p
+type limitedReaderAt struct {
+	r      io.ReaderAt
+	remain *int64
+}
+
+func limitReaderAt(r io.ReaderAt, budget int64) io.ReaderAt {
+	if r == nil || budget <= 0 {
+		return r
 	}
-	return ""
+	n := budget
+	return &limitedReaderAt{r: r, remain: &n}
+}
+
+func (l *limitedReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if l == nil || l.r == nil || l.remain == nil {
+		return 0, io.EOF
+	}
+	left := *l.remain
+	if left <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > left {
+		p = p[:left]
+	}
+	n, err := l.r.ReadAt(p, off)
+	if n > 0 {
+		*l.remain -= int64(n)
+	}
+	return n, err
 }
 
 func applyCorrection(cues []Cue, c correction) []Cue {

@@ -125,7 +125,12 @@ func correlateWindow(cues []Cue, w SpeechWindow, rate float64, opt FitOptions) (
 	if on == 0 {
 		return 0, 0, false
 	}
-	conf := float64(bestScore) / float64(on)
+	speechOn := prefix[len(speech)]
+	den := float64(int64(on) + speechOn)
+	conf := 0.0
+	if den > 0 {
+		conf = 2 * float64(bestScore) / den
+	}
 	if conf > 1 {
 		conf = 1
 	}
@@ -159,14 +164,19 @@ func speechMask(pcm []int16, frame int) []uint8 {
 	sorted := append([]float64(nil), energy...)
 	sortFloats(sorted)
 	median := sorted[len(sorted)/2]
-	p80 := sorted[len(sorted)*4/5]
 	maxE := sorted[len(sorted)-1]
-	thresh := p80
-	if median > 0 && thresh < median*3 {
-		thresh = median * 3
+	// Noise floor of the quieter half, not p80 (which caps speech at ~20%).
+	quiet := sorted[:max(1, len(sorted)/2)]
+	floor := quiet[len(quiet)/2]
+	thresh := floor * 4
+	if thresh < maxE*0.02 {
+		thresh = maxE * 0.02
 	}
-	if median == 0 {
-		thresh = maxE * 0.25
+	if median > 0 && thresh < median*1.5 {
+		thresh = median * 1.5
+	}
+	if thresh <= 0 && maxE > 0 {
+		thresh = maxE * 0.08
 	}
 	out := make([]uint8, n)
 	for i, e := range energy {
@@ -275,22 +285,35 @@ func DecodeAudioWindows(ctx context.Context, ffmpegPath, input string, duration 
 }
 
 func spreadWindows(duration time.Duration, n int, span time.Duration) []time.Duration {
-	margin := duration / 10
-	if margin < 15*time.Second {
-		margin = 15 * time.Second
+	if n < 2 {
+		n = 2
 	}
-	if duration <= span+2*margin {
-		if duration <= span {
-			return []time.Duration{0}
+	if duration <= 0 {
+		return []time.Duration{0, 0}
+	}
+	if duration <= span {
+		step := duration / time.Duration(n)
+		out := make([]time.Duration, n)
+		for i := 0; i < n; i++ {
+			out[i] = time.Duration(i) * step
 		}
-		return []time.Duration{(duration - span) / 2}
-	}
-	usable := duration - span - 2*margin
-	out := make([]time.Duration, n)
-	if n == 1 {
-		out[0] = margin + usable/2
 		return out
 	}
+	// 15s cinema margin only on long titles so an 8s clip still yields
+	// at least two windows.
+	margin := duration / 10
+	if duration >= 3*time.Minute && margin < 15*time.Second {
+		margin = 15 * time.Second
+	}
+	if margin*2+span >= duration {
+		margin = 0
+	}
+	usable := duration - span - 2*margin
+	if usable < 0 {
+		usable = duration - span
+		margin = 0
+	}
+	out := make([]time.Duration, n)
 	for i := 0; i < n; i++ {
 		out[i] = margin + time.Duration(int64(usable)*int64(i)/int64(n-1))
 	}

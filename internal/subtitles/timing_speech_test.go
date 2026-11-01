@@ -35,8 +35,9 @@ func TestFitSpeechEnergySynthetic(t *testing.T) {
 		{Start: 4500 * time.Millisecond, End: 5500 * time.Millisecond, Text: "b"},
 		{Start: 7500 * time.Millisecond, End: 8500 * time.Millisecond, Text: "c"},
 	}
-	win := toneWindow(0, 10*time.Second, on)
-	fit, ok := FitSpeechEnergyOptions(cues, []SpeechWindow{win, win}, FitOptions{MinInliers: 2, MinConfidence: 0.2, MaxOffset: 3 * time.Second})
+	win1 := toneWindow(0, 4*time.Second, on)
+	win2 := toneWindow(6*time.Second, 4*time.Second, on)
+	fit, ok := FitSpeechEnergyOptions(cues, []SpeechWindow{win1, win2}, FitOptions{MinInliers: 2, MinConfidence: 0.2, MaxOffset: 3 * time.Second})
 	if !ok {
 		t.Fatal("no fit")
 	}
@@ -77,5 +78,12 @@ func TestFitSpeechEnergyFFmpeg(t *testing.T) {
 	}
 	if absDuration(fit.Offset+500*time.Millisecond) > 200*time.Millisecond {
 		t.Fatalf("offset %s", fit.Offset)
+	}
+}
+
+func TestSpreadWindowsShortClip(t *testing.T) {
+	got := spreadWindows(8*time.Second, 3, 3*time.Second)
+	if len(got) < 2 {
+		t.Fatalf("windows %v", got)
 	}
 }

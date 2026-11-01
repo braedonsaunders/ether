@@ -135,10 +135,11 @@ func Shift(cues []Cue, offset time.Duration, rate float64) ([]Cue, error) {
 	return out, nil
 }
 
-// SyncHandler serves GET / of cached sidecars; mount behind owner auth/CSRF.
+// SyncHandler serves GET / of cached sidecars and POST /{id} as a
+// manual timing adjust written into the correction store.
 func (s *Service) SyncHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" && strings.Trim(r.URL.Path, "/") == "" {
+		if r.Method == http.MethodGet && strings.Trim(r.URL.Path, "/") == "" {
 			items, err := s.CachedSubtitles()
 			if err != nil {
 				http.Error(w, "Subtitles unavailable", 500)
@@ -148,7 +149,55 @@ func (s *Service) SyncHandler() http.Handler {
 			_ = json.NewEncoder(w).Encode(items)
 			return
 		}
-		w.Header().Set("Allow", "GET")
-		w.WriteHeader(405)
+		if r.Method == http.MethodPost {
+			s.handleManualAdjust(w, r)
+			return
+		}
+		w.Header().Set("Allow", "GET, POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
+}
+
+func (s *Service) handleManualAdjust(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(strings.Trim(r.URL.Path, "/"), URLPrefix)
+	if id == "" || strings.ContainsAny(id, "/\\") {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		OffsetMs  int64   `json:"offsetMs"`
+		Rate      float64 `json:"rate"`
+		Reference string  `json:"reference"`
+		Apply     bool    `json:"apply"`
+		Source    string  `json:"source"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body) != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	src := SourceKey(body.Source)
+	if src == "" {
+		src = manualSource
+	}
+	c := correction{
+		Offset: time.Duration(body.OffsetMs) * time.Millisecond,
+		Rate:   body.Rate, Applied: true, Measured: true,
+		Confidence: 1, Inliers: 1, At: s.now().UTC(),
+	}
+	if c.Rate == 0 {
+		c.Rate = 1
+	}
+	if body.Reference != "" {
+		cues, err := s.cuesByCachedID(id)
+		ref, rerr := ParseCues(body.Reference)
+		if err == nil && rerr == nil {
+			if fit, ok := FitTiming(cues, ref); ok {
+				c.Offset, c.Rate = fit.Offset, fit.Rate
+				c.Confidence, c.Inliers = fit.Confidence, fit.Inliers
+			}
+		}
+	}
+	s.storeCorrection(id, src, c)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"externalUrl": URLPrefix + id})
 }

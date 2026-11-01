@@ -8,7 +8,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/stream"
 )
 
-const rangeMaxSegments = 64
+const rangeMaxSegments = 256
 
 var errRangeBudget = errors.New("subtitle index read budget exhausted")
 
@@ -56,7 +56,7 @@ func (r *rangeReader) read(off int64, n int) ([]byte, error) {
 		r.seen[key] = true
 		r.segs++
 	}
-	b, err := stream.MetadataRange(r.ctx, r.src, off, n)
+	b, err := stream.IndexRange(r.ctx, r.src, off, n)
 	if err != nil && len(b) == 0 {
 		return nil, err
 	}

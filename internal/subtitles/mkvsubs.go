@@ -1,14 +1,12 @@
 package subtitles
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"io"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // Published Matroska element IDs (https://www.matroska.org/technical/elements.html).
@@ -368,110 +366,4 @@ func (r *rangeReader) mkvTextCues(size int64) ([]Cue, error) {
 		return nil, errMKV
 	}
 	return out, nil
-}
-
-func (r *rangeReader) mkvReadBlock(seg mkvElem, clusterPos, rel uint64, hasRel bool, track uint64) (string, bool) {
-	clusterOff := seg.start + int64(clusterPos)
-	if clusterOff < seg.start || clusterOff >= seg.end {
-		return "", false
-	}
-	cluster, err := r.mkvElement(clusterOff, seg.end)
-	if err != nil || cluster.id != mkvClusterID {
-		// Try a few header lengths when the CueClusterPosition is
-		// slightly off the parsed Cluster start.
-		for hdr := 5; hdr <= 12; hdr++ {
-			if text, ok := r.mkvBlockAt(clusterOff+int64(hdr)+int64(rel), seg.end, track); ok {
-				return text, true
-			}
-		}
-		return "", false
-	}
-	if hasRel {
-		if text, ok := r.mkvBlockAt(cluster.start+int64(rel), cluster.end, track); ok {
-			return text, true
-		}
-	}
-	return r.mkvScanCluster(cluster, track)
-}
-
-func (r *rangeReader) mkvScanCluster(cluster mkvElem, track uint64) (string, bool) {
-	for off, n := cluster.start, 0; off < cluster.end && n < 64; n++ {
-		e, err := r.mkvElement(off, cluster.end)
-		if err != nil {
-			return "", false
-		}
-		if e.id == mkvSimpleBlockID || e.id == mkvBlockID {
-			b, err := r.read(e.start, int(e.end-e.start))
-			if err == nil {
-				if text, ok := parseMKVBlock(b, track); ok {
-					return text, true
-				}
-			}
-		}
-		if e.id == mkvBlockGroupID {
-			body, err := r.read(e.start, int(e.end-e.start))
-			if err == nil {
-				if kids, kerr := mkvChildren(body); kerr == nil {
-					for _, k := range kids {
-						if k.id == mkvBlockID {
-							if text, ok := parseMKVBlock(k.b, track); ok {
-								return text, true
-							}
-						}
-					}
-				}
-			}
-		}
-		if e.end <= off {
-			return "", false
-		}
-		off = e.end
-	}
-	return "", false
-}
-
-func (r *rangeReader) mkvBlockAt(off, end int64, track uint64) (string, bool) {
-	if off < 0 || off >= end {
-		return "", false
-	}
-	e, err := r.mkvElement(off, end)
-	if err != nil {
-		return "", false
-	}
-	if e.id != mkvSimpleBlockID && e.id != mkvBlockID && e.id != mkvBlockGroupID {
-		return "", false
-	}
-	body, err := r.read(e.start, int(e.end-e.start))
-	if err != nil {
-		return "", false
-	}
-	if e.id == mkvBlockGroupID {
-		kids, err := mkvChildren(body)
-		if err != nil {
-			return "", false
-		}
-		for _, k := range kids {
-			if k.id == mkvBlockID {
-				return parseMKVBlock(k.b, track)
-			}
-		}
-		return "", false
-	}
-	return parseMKVBlock(body, track)
-}
-
-func parseMKVBlock(b []byte, want uint64) (string, bool) {
-	if len(b) < 4 {
-		return "", false
-	}
-	track, n, err := mkvVint(b, false)
-	if err != nil || track != want || n+3 > len(b) {
-		return "", false
-	}
-	text := string(bytes.Trim(b[n+3:], "\x00"))
-	text = strings.TrimSpace(text)
-	if text == "" || !utf8.ValidString(text) {
-		return "", false
-	}
-	return text, true
 }

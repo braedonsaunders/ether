@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 var errMP4 = errors.New("mp4 timed-text index unreadable")
@@ -103,7 +102,7 @@ func (r *rangeReader) mp4TextCues(size int64) ([]Cue, error) {
 	return nil, errMP4
 }
 
-func mp4Tracks(r *rangeReader, moov []byte, fileSize int64) ([]Cue, error) {
+func mp4Tracks(_ *rangeReader, moov []byte, _ int64) ([]Cue, error) {
 	boxes, err := mp4Boxes(moov)
 	if err != nil {
 		return nil, err
@@ -112,7 +111,7 @@ func mp4Tracks(r *rangeReader, moov []byte, fileSize int64) ([]Cue, error) {
 		if a.kind != "trak" {
 			continue
 		}
-		cues, err := mp4TextTrack(r, a.data, fileSize)
+		cues, err := mp4TextTrack(a.data)
 		if err == nil && len(cues) > 0 {
 			return cues, nil
 		}
@@ -120,7 +119,7 @@ func mp4Tracks(r *rangeReader, moov []byte, fileSize int64) ([]Cue, error) {
 	return nil, errMP4
 }
 
-func mp4TextTrack(r *rangeReader, trak []byte, fileSize int64) ([]Cue, error) {
+func mp4TextTrack(trak []byte) ([]Cue, error) {
 	mdia := mp4Child(trak, "mdia")
 	hdlr := mp4Child(mdia, "hdlr")
 	if len(hdlr) < 12 {
@@ -155,10 +154,6 @@ func mp4TextTrack(r *rangeReader, trak []byte, fileSize int64) ([]Cue, error) {
 	if err != nil {
 		return nil, err
 	}
-	offs, err := mp4SampleOffsets(stbl, len(sizes), fileSize)
-	if err != nil {
-		return nil, err
-	}
 	var out []Cue
 	for i := range sizes {
 		start := time.Duration(times[i]) * time.Second / time.Duration(scale)
@@ -166,17 +161,13 @@ func mp4TextTrack(r *rangeReader, trak []byte, fileSize int64) ([]Cue, error) {
 		if i+1 < len(times) {
 			end = time.Duration(times[i+1]) * time.Second / time.Duration(scale)
 		}
-		text := ""
-		if sizes[i] > 0 && sizes[i] <= 1<<16 && offs[i] >= 0 {
-			raw, err := r.read(offs[i], int(sizes[i]))
-			if err == nil {
-				text = parseTX3G(raw)
-			}
-		}
-		if strings.TrimSpace(text) == "" || end <= start {
+		if end <= start {
 			continue
 		}
-		out = append(out, Cue{Start: start, End: end, Text: text})
+		out = append(out, Cue{Start: start, End: end})
+		if len(out) >= 20000 {
+			break
+		}
 	}
 	if len(out) == 0 {
 		return nil, errMP4
@@ -298,24 +289,4 @@ func mp4SampleOffsets(stbl []byte, count int, fileSize int64) ([]int64, error) {
 		return nil, errMP4
 	}
 	return fixed, nil
-}
-
-func parseTX3G(b []byte) string {
-	if len(b) < 2 {
-		return ""
-	}
-	n := int(binary.BigEndian.Uint16(b))
-	if n <= 0 || 2+n > len(b) {
-		// Some writers store raw UTF-8 without the length prefix.
-		s := strings.TrimSpace(string(b))
-		if utf8.ValidString(s) {
-			return s
-		}
-		return ""
-	}
-	s := strings.TrimSpace(string(b[2 : 2+n]))
-	if !utf8.ValidString(s) {
-		return ""
-	}
-	return s
 }

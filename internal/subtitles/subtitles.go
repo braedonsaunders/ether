@@ -70,6 +70,9 @@ type Options struct {
 	// AlignLanguages are tried in order for dialogue timeline alignment
 	// (default ["en"]: the most widely subtitled language).
 	AlignLanguages []string
+	// FFmpeg is the owner-configured ffmpeg used for speech-energy
+	// measurement. Empty skips that path.
+	FFmpeg string
 }
 
 // Service is the OpenSubtitles client + disk cache.
@@ -105,6 +108,7 @@ type Service struct {
 
 	correctFlights flightGroup
 	speechSem      chan struct{}
+	ffmpeg         string
 }
 
 // New builds a Service. A disabled service returns no sidecars.
@@ -150,6 +154,7 @@ func New(opts Options) *Service {
 		negative: map[string]time.Time{}, negTTL: opts.NegativeTTL, maxWait: opts.MaxRetryAfter, now: opts.Now,
 		alignLanguages: alignLangs,
 		speechSem:      make(chan struct{}, 2),
+		ffmpeg:         opts.FFmpeg,
 	}
 }
 
@@ -1206,10 +1211,11 @@ func (s *Service) OpenFormatFrom(id, format, source string) (io.ReadCloser, stri
 		}
 		return nil, "", err
 	}
+	source = SourceKey(source)
 	if source == "" {
 		return f, format, nil
 	}
-	if corr, ok := s.loadCorrection(id, source); ok && corr.Applied {
+	apply := func(corr correction) (io.ReadCloser, string, error) {
 		raw, err := io.ReadAll(io.LimitReader(f, 32<<20))
 		f.Close()
 		if err != nil {
@@ -1225,6 +1231,17 @@ func (s *Service) OpenFormatFrom(id, format, source string) (io.ReadCloser, stri
 			text = RenderVTT(cues)
 		}
 		return io.NopCloser(strings.NewReader(text)), format, nil
+	}
+	// The first fetch after a pick is uncorrected unless a measurement
+	// already finished. If one is in flight and completes within ~2s,
+	// serve the corrected file.
+	if corr, ok := s.loadApplied(id, source); ok {
+		return apply(corr)
+	}
+	if s.correctFlights.wait(id+"\x00"+source, correctServeWait) {
+		if corr, ok := s.loadApplied(id, source); ok {
+			return apply(corr)
+		}
 	}
 	return f, format, nil
 }

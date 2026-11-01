@@ -27,7 +27,7 @@ var timingRates = []float64{
 const (
 	timingFrameSlack    = 42 * time.Millisecond // one 24 fps frame
 	timingMinInliers    = 8
-	timingMinConfidence = 0.4
+	timingMinConfidence = 0.7
 	timingMaxOffset     = 15 * time.Minute
 	timingBin           = 20 * time.Millisecond
 )
@@ -189,7 +189,31 @@ func fitRate(candidate, reference []time.Duration, rate float64, opt FitOptions)
 		denom = len(reference)
 	}
 	conf := float64(inliers) / float64(denom)
+	if !segmentConsistent(scaled, reference, offset, opt.FrameSlack) {
+		return TimingFit{}, false
+	}
 	return TimingFit{Offset: offset, Rate: rate, Confidence: conf, Inliers: inliers, Residual: residual}, true
+}
+
+// segmentConsistent rejects a single-offset fit when a mid-file recut
+// matches only part of the timeline.
+func segmentConsistent(scaled, reference []time.Duration, offset, slack time.Duration) bool {
+	if len(scaled) < 12 {
+		return true
+	}
+	ok := 0
+	for i := 0; i < 3; i++ {
+		lo := i * len(scaled) / 3
+		hi := (i + 1) * len(scaled) / 3
+		if hi-lo < 3 {
+			continue
+		}
+		inl, _ := scoreOffset(scaled[lo:hi], reference, offset, slack)
+		if float64(inl) >= float64(hi-lo)/3 {
+			ok++
+		}
+	}
+	return ok >= 2
 }
 
 func scoreOffset(scaled, reference []time.Duration, offset, slack time.Duration) (intliers int, residual time.Duration) {

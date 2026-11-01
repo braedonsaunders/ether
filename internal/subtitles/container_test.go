@@ -60,3 +60,30 @@ func TestReadEmbeddedTextCuesMP4(t *testing.T) {
 		t.Fatalf("cue 4 %s vs %s (rate %v off %s)", shifted[4].Start, got[4].Start, fit.Rate, fit.Offset)
 	}
 }
+
+func TestReadEmbeddedTextCuesManyCues(t *testing.T) {
+	ref := synthCues(1200, 2*time.Second, 0, 1)
+	for i := range ref {
+		ref[i].Text = "line"
+	}
+	for _, tc := range []struct {
+		name string
+		raw  []byte
+	}{
+		{"mkv", buildTestMKV(ref)},
+		{"mp4", buildTestMP4(ref)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ReadEmbeddedTextCues(context.Background(), bytes.NewReader(tc.raw), int64(len(tc.raw)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) < 1000 {
+				t.Fatalf("cues %d", len(got))
+			}
+			if absDuration(got[999].Start-ref[999].Start) > 50*time.Millisecond {
+				t.Fatalf("cue 999 %s vs %s", got[999].Start, ref[999].Start)
+			}
+		})
+	}
+}
