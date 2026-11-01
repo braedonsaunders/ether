@@ -514,8 +514,8 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 	if err := json.Unmarshal(approvedV0258, &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 5555 {
-		t.Fatalf("got %d v0.2.58 pairs, want 5555", len(entries))
+	if len(entries) != 5605 {
+		t.Fatalf("got %d v0.2.58 pairs, want 5605", len(entries))
 	}
 	commits := map[string]int{}
 	seen := map[approvedDifference]bool{}
@@ -526,7 +526,7 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 		seen[e] = true
 		commits[e.Commit]++
 	}
-	want := map[string]int{"77af603e": 2370, "14a6b0890+77af603e": 2765, "3654964cc+77af603e": 50, "feaa49f10": 10, "c82a7830+77af603e": 160, "b5e6074c3+14a6b0890+77af603e": 160, "b5e6074c3+c82a7830+77af603e": 40}
+	want := map[string]int{"77af603e": 2370, "14a6b0890+77af603e": 2765, "3654964cc+77af603e": 50, "feaa49f10": 10, "c82a7830+77af603e": 160, "b5e6074c3+14a6b0890+77af603e": 160, "b5e6074c3+c82a7830+77af603e": 40, "32e51bfaf": 50}
 	if !reflect.DeepEqual(commits, want) {
 		t.Fatalf("v0.2.58 commits %v", commits)
 	}
@@ -534,13 +534,21 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 	if err := json.Unmarshal(approvedV0258Token, &tokens); err != nil {
 		t.Fatal(err)
 	}
-	if len(tokens) != 60 {
-		t.Fatalf("got %d token pairs, want 60", len(tokens))
+	if len(tokens) != 385 {
+		t.Fatalf("got %d token pairs, want 385", len(tokens))
 	}
+	tokenCommits := map[string]int{}
+	seenTokens := map[approvedDifference]bool{}
 	for _, e := range tokens {
-		if e.Commit != "9b8fa7546" || e.Baseline.SHA256 == e.Candidate.SHA256 || len(e.Candidate.SHA256) != 64 {
-			t.Fatalf("token approval is not the reviewed grant pair: %+v", e)
+		if seenTokens[e] || e.Baseline.SHA256 == e.Candidate.SHA256 || len(e.Baseline.SHA256) != 64 || len(e.Candidate.SHA256) != 64 {
+			t.Fatalf("token approval is not a unique reviewed grant pair: %+v", e)
 		}
+		seenTokens[e] = true
+		tokenCommits[e.Commit]++
+	}
+	wantTokenCommits := map[string]int{"9b8fa7546": 60, "32e51bfaf": 275, "76e1dbce3": 25, "76e1dbce3+32e51bfaf": 25}
+	if !reflect.DeepEqual(tokenCommits, wantTokenCommits) {
+		t.Fatalf("token commits %v, want %v", tokenCommits, wantTokenCommits)
 	}
 	old := approvedV0258Token
 	defer func() { approvedV0258Token = old }()
@@ -563,6 +571,25 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 	b.response.Body = []byte("segment.ts?X-Ether-Stream-Token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&extra=1\n")
 	if got, err := approved(a, b); err != nil || got != "" {
 		t.Fatalf("unreviewed playlist byte approved: %q %v", got, err)
+	}
+}
+
+func TestDevicesApprovalAcceptsOnlyNonOwnerForbiddenHeaderChange(t *testing.T) {
+	baseXML := []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\">\n</MediaContainer>\n")
+	candHTML := []byte("<html><head><title>Forbidden</title></head><body><h1>403 Forbidden</h1></body></html>")
+	a := capture{viewer: "adult", client: "web", json: false, path: "/devices", response: protocol.Response{Status: 200, Headers: http.Header{"Cache-Control": {"no-cache"}, "Content-Length": {fmt.Sprintf("%d", len(baseXML))}, "Content-Type": {"text/xml;charset=utf-8"}, "X-Plex-Protocol": {"1.0"}}, Body: baseXML}}
+	b := capture{viewer: "adult", client: "web", json: false, path: "/devices", response: protocol.Response{Status: 403, Headers: http.Header{"Content-Length": {fmt.Sprintf("%d", len(candHTML))}, "Content-Type": {"text/html"}, "X-Plex-Protocol": {"1.0"}}, Body: candHTML}}
+	if !approvedDevicesHeaders(a, b) {
+		t.Fatal("expected exact non-owner /devices 403 header change")
+	}
+	ownerA, ownerB := a, b
+	ownerA.viewer, ownerB.viewer = "owner", "owner"
+	if approvedDevicesHeaders(ownerA, ownerB) {
+		t.Fatal("owner 403 accepted")
+	}
+	b.response.Headers.Set("X-Extra", "1")
+	if approvedDevicesHeaders(a, b) {
+		t.Fatal("unrelated header difference accepted")
 	}
 }
 

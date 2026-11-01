@@ -77,11 +77,12 @@ per half.
 
 These notes do not allowlist a response. Exact reviewed pairs are still required.
 
-v0.2.58 (`22c160aba`) against `7b8b053dd`, both worlds. Pairs already approved
-on an earlier baseline stayed approved: 417 release-date pairs (`77af603e`),
-129 watched-state pairs (`23d9fffb2`), and 100 DVR `refreshedAt` pairs
-(`2ef11dc0c`). The remaining 3081 in each world are the documented set, now
-exact pairs in `approved_v0258.json` and `approved_v0258_token.json`:
+v0.2.58 (`22c160aba`) against `7b8b053dd` and subsequent v0.3 commits, both
+worlds. Pairs already approved on an earlier baseline stayed approved: 417
+release-date pairs (`77af603e`), 129 watched-state pairs (`23d9fffb2`), and
+100 DVR `refreshedAt` pairs (`2ef11dc0c`). The remaining differences in each
+world are the documented set, now exact pairs in `approved_v0258.json` and
+`approved_v0258_token.json`:
 
 - addedAt only: 1631 ordinary, 1256 active-ranker, plus 15 subtitle-metadata
   responses in each world on `5da09b358` (`77af603e`).
@@ -97,9 +98,20 @@ exact pairs in `approved_v0258.json` and `approved_v0258_token.json`:
 - PMS 17-hub search order and indexed people search hubs on `/hubs/search`
   and `/hubs/search/voice`, composed with the v0.2.58 subtitle/addedAt and
   restricted-viewer pairs: 100 ordinary and 100 active-ranker (`b5e6074c3`).
+- `/devices` owner device list (`createdAt` stamped from the server clock by
+  `91f5756f6`) and non-owner `403 Forbidden`: 50 and 50 (`32e51bfaf`).
+- HLS playback documents (`start.m3u8`, `media-playlist`, `reconnect-playlist`,
+  `seek-master`, and `seek-playlist` for remux and transcode) carrying
+  `&X-Ether-Read-Token=<READ-TOKEN>` alongside `X-Ether-Stream-Token`: 250 and
+  250 (`32e51bfaf`).
+- DASH manifest (`playback:dash:manifest`) carrying
+  `&amp;X-Ether-Read-Token=<READ-TOKEN>` (`32e51bfaf`) and `minBufferTime`
+  `PT10S` to `PT5S` (`76e1dbce3`, composed as `76e1dbce3+32e51bfaf` against
+  v0.2.58): 25 and 25.
 - Content-rating label text, Play Version labels, timeout playback (#198),
-  pre-1970 date strings, section filter operators (`bd55103ff`), and iOS Home
-  hero art gating (`b1ad78851`, #210): 0.
+  pre-1970 date strings, section filter operators (`bd55103ff`), iOS Home
+  hero art gating (`b1ad78851`, #210), and `guid=` library lookups
+  (`ad2cd3c50`, Rex T1-4): 0.
 
 This note does not allowlist a route.
 
@@ -209,3 +221,44 @@ TheIntroDB's row for The Matrix is one submission from the start to 40
 seconds; that range is a studio card, not a title sequence. An intro that
 starts later, and every episode intro, stays. This note does not allowlist
 any response.
+
+Rex batch (`32e51bfaf`, merge of `64ab75605`, plus `eda0de766` and
+`91f5756f6`):
+1. `/devices` (50 pairs per world, 100 total across both worlds in
+   `approved_v0258.json`): the owner receives the 7-device list stamped with
+   the server clock (`91f5756f6`), and non-owner viewers (`adult`, `teen`,
+   `child`, `friend`) receive `403 Forbidden` instead of an empty `200`
+   container.
+2. HLS and DASH playback documents (`start.m3u8` for remux and transcode,
+   `media-playlist`, `reconnect-playlist`, `seek-master`, `seek-playlist`, and
+   `playback:dash:manifest`, 275 pairs per world in `approved_v0258_token.json`):
+   every media URI gains `&X-Ether-Read-Token=<minted per session>` alongside
+   `X-Ether-Stream-Token` (slice H, P5a session read capability, device-bound
+   and revoked with the session; masked to `<READ-TOKEN>` by `eda0de766`).
+Also intended in `32e51bfaf` and not probed by the corpus:
+- `/statistics/bandwidth|media|resources` and `/devices/{id}` are new
+  owner-only routes (recorded in `unprobedRoutes` because pre-`32e51bfaf`
+  baselines answer `404`);
+- `/video/:/transcode/universal/start` with `protocol=http` is new (Plex for
+  Mac live FFmpeg stream, recorded in `unprobedRoutes`);
+- `POST /library/metadata/{id}/subtitles` upload is owner-only;
+- section browse honours plex.tv share predicates for share-filtered viewers
+  (none in the parity world);
+- the Plex-metadata toggle is off by default (byte-identical off).
+This note does not allowlist a route.
+
+DASH startup buffer (`76e1dbce3` / `5773afc59`, Rex T1-2):
+`playback:dash:manifest` changes MPD `minBufferTime` from `PT10S` to `PT5S`
+(one segment, so Plex Web/Shaka starts after one segment instead of two; live
+MPD `timeShiftBufferDepth` stays `PT120S`). Recorded as 25 pairs per world (50
+across both worlds) in `approved_v0258_token.json` (`76e1dbce3` against
+`32e51bfaf`, and `76e1dbce3+32e51bfaf` against `v0.2.58`). This note does not
+allowlist a route.
+
+Library `guid=` lookup (`ad2cd3c50`, Rex T1-4):
+`/library/sections/{id}/all` and `/library/all` with
+`?guid=<plex://|tmdb://|imdb://|tvdb://|legacy agent guid>` (including
+`type=3` season and `type=4` episode forms) return only the matching item, or
+an empty container, instead of the whole section. The parity corpus does not
+send `guid=`, so there are 0 pairs and no signature to store. This note does
+not allowlist any response.

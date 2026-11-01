@@ -80,13 +80,15 @@ var approvedLiveTV []byte
 var approvedSearchHubs []byte
 
 // Exact v0.2.58 versus current prism pairs for the documented release-date,
-// subtitle, sidecar, account mode, restricted-search, and search-hub changes.
+// subtitle, sidecar, account mode, restricted-search, search-hub, and /devices
+// changes.
 //
 //go:embed approved_v0258.json
 var approvedV0258 []byte
 
-// The same run's playlist and DASH pairs. The candidate hash is of the body
-// after the per-response stream grant is replaced with the harness placeholder.
+// The same run's playlist and DASH pairs. Baseline and candidate hashes are of
+// the bodies after per-response stream grants and session read capabilities are
+// replaced with the harness placeholders.
 //
 //go:embed approved_v0258_token.json
 var approvedV0258Token []byte
@@ -112,9 +114,10 @@ func signature(r protocol.Response) responseSignature {
 }
 func approved(a, b capture) (string, error) {
 	before, after := signature(a.response), signature(b.response)
-	norm := b.response
-	norm.Body = normalizeResponse(b.response.Body)
-	afterNorm := signature(norm)
+	normA, normB := a.response, b.response
+	normA.Body = normalizeResponse(a.response.Body)
+	normB.Body = normalizeResponse(b.response.Body)
+	beforeNorm, afterNorm := signature(normA), signature(normB)
 	for _, registry := range []struct {
 		data               []byte
 		restricted         bool
@@ -123,16 +126,16 @@ func approved(a, b capture) (string, error) {
 		if registry.restricted && a.viewer != "teen" && a.viewer != "child" {
 			continue
 		}
-		got := after
+		wantBefore, got := before, after
 		if registry.normalizeCandidate {
-			got = afterNorm
+			wantBefore, got = beforeNorm, afterNorm
 		}
 		var entries []approvedDifference
 		if err := json.Unmarshal(registry.data, &entries); err != nil {
 			return "", fmt.Errorf("invalid approved differences: %w", err)
 		}
 		for _, entry := range entries {
-			if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == before && entry.Candidate == got {
+			if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == wantBefore && entry.Candidate == got {
 				if entry.Commit == "" && registry.restricted {
 					return "c82a7830", nil
 				}
@@ -194,6 +197,28 @@ func approvedWatchHeaders(a, b capture) bool {
 		y.Del("Content-Type")
 		y.Del("Cache-Control")
 	}
+	a.response.Headers, b.response.Headers = x, y
+	return approvedHeaders(a, b)
+}
+
+// The owner-only /devices fix replaces the empty 200 MediaContainer with a
+// 403 HTML reply for non-owner viewers, dropping Cache-Control: no-cache and
+// changing Content-Type to text/html.
+func approvedDevicesHeaders(a, b capture) bool {
+	if a.path != "/devices" || a.viewer == "owner" || a.response.Status != 200 || b.response.Status != 403 {
+		return false
+	}
+	x, y := a.response.Headers.Clone(), b.response.Headers.Clone()
+	wantType := "text/xml;charset=utf-8"
+	if a.json {
+		wantType = "application/json"
+	}
+	if x.Get("Cache-Control") != "no-cache" || x.Get("Content-Type") != wantType || y.Get("Cache-Control") != "" || y.Get("Content-Type") != "text/html" {
+		return false
+	}
+	x.Del("Cache-Control")
+	x.Del("Content-Type")
+	y.Del("Content-Type")
 	a.response.Headers, b.response.Headers = x, y
 	return approvedHeaders(a, b)
 }
