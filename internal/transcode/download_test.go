@@ -249,6 +249,78 @@ func TestConvertDownloadRespectsMaxTranscodes(t *testing.T) {
 	d.ReleaseDownload(path)
 }
 
+func TestConvertDownloadSlotAfterRemuxerSem(t *testing.T) {
+	fr := newFakeRunner()
+	started := make(chan struct{}, 1)
+	hold := make(chan struct{})
+	fr.runFunc = func(ctx context.Context, cmd Command) error {
+		if !hasArg(cmd.Args, "-movflags") {
+			return errUnhandled
+		}
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return os.WriteFile(cmd.Args[len(cmd.Args)-1], []byte("x"), 0o644)
+	}
+	m := newTestManager(t, fr, config.Transcode{MaxTranscodes: 2})
+	d, err := m.NewDownloadRemuxer(config.Downloads{MaxConcurrent: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := downloadInfo()
+	info.Streams[0].Codec = "av1"
+	req := func(viewer int64) core.DownloadRemuxRequest {
+		return core.DownloadRemuxRequest{InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: viewer}
+	}
+	done1 := make(chan error, 1)
+	go func() {
+		path, _, err := d.RemuxDownload(context.Background(), req(1), nil)
+		if err == nil {
+			d.ReleaseDownload(path)
+		}
+		done1 <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first convert did not start")
+	}
+	done2 := make(chan error, 1)
+	go func() {
+		path, _, err := d.RemuxDownload(context.Background(), req(2), nil)
+		if err == nil {
+			d.ReleaseDownload(path)
+		}
+		done2 <- err
+	}()
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		n := m.downloadEncodes
+		m.mu.Unlock()
+		if n != 1 {
+			t.Fatalf("sem waiter held a transcode slot: downloadEncodes=%d", n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := m.StartHLS(context.Background(), transcodeRequest(t, "hls-while-waiting")); err != nil {
+		t.Fatalf("HLS blocked by remuxer waiter: %v", err)
+	}
+	close(hold)
+	if err := <-done1; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done2; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRemuxDownloadBurnsImageSubtitles(t *testing.T) {
 	fr := newFakeRunner()
 	fr.runFunc = downloadRunner("burned-mp4")

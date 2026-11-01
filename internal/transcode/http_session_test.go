@@ -131,6 +131,21 @@ func TestHTTPSessionRespectsMaxTranscodes(t *testing.T) {
 	}
 }
 
+func TestHTTPSessionAudioOnlyDoesNotCount(t *testing.T) {
+	fr := newFakeRunner()
+	m := newTestManager(t, fr, config.Transcode{MaxTranscodes: 1})
+	if _, err := m.StartHLS(context.Background(), core.HLSRequest{
+		SessionID: "http-audio", InputURL: "http://127.0.0.1/src", Info: httpInfo(),
+		Decision: core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: false, Container: "mkv", AudioCodec: "aac"},
+		Protocol: core.ProtocolHTTP,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.StartHLS(context.Background(), transcodeRequest(t, "hls-video")); err != nil {
+		t.Fatalf("audio-only HTTP counted as a video encode: %v", err)
+	}
+}
+
 func TestHTTPSessionIdleDuringWrite(t *testing.T) {
 	hold := make(chan struct{})
 	started := make(chan struct{}, 1)

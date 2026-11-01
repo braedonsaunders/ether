@@ -362,11 +362,6 @@ func (d *DownloadRemuxer) convertDownload(ctx context.Context, req core.Download
 		return "", 0, err
 	}
 	defer release()
-	slot, err := d.m.acquireTranscodeSlot()
-	if err != nil {
-		return "", 0, err
-	}
-	defer slot()
 
 	opts := req.Options
 	opts.DirectPlay = false
@@ -403,6 +398,13 @@ func (d *DownloadRemuxer) runDownload(ctx context.Context, req core.DownloadRemu
 		defer func() { <-d.sem }()
 	case <-ctx.Done():
 		return "", 0, ctx.Err()
+	}
+	if kind == "convert" {
+		slot, err := d.m.acquireTranscodeSlot()
+		if err != nil {
+			return "", 0, err
+		}
+		defer slot()
 	}
 
 	d.mu.Lock()

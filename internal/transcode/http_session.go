@@ -38,15 +38,6 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 		id = randomHex(12)
 		req.SessionID = id
 	}
-	encoding := !req.Decision.VideoCopy || !req.Decision.AudioCopy
-	m.mu.Lock()
-	if encoding && m.cfg.MaxTranscodes > 0 {
-		if n := m.encodingLocked(""); n >= m.cfg.MaxTranscodes {
-			m.mu.Unlock()
-			return nil, fmt.Errorf("%w (%d running)", ErrTooManyTranscodes, n)
-		}
-	}
-	m.mu.Unlock()
 	if req.InputLease != nil {
 		if err := life.installInput(req.InputLease); err != nil {
 			return nil, err
@@ -55,6 +46,20 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 	if err := m.claimEncoderID(ctx, id, life); err != nil {
 		return nil, err
 	}
+	encoding := !req.Decision.VideoCopy
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil, errors.New("transcode: manager closed")
+	}
+	if encoding && m.cfg.MaxTranscodes > 0 {
+		if n := m.encodingLocked(""); n >= m.cfg.MaxTranscodes {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("%w (%d running)", ErrTooManyTranscodes, n)
+		}
+	}
+	life.encoding.Store(encoding)
+	m.mu.Unlock()
 	// Attach uses dir only as a cleanup key; HTTP output is a pipe.
 	dir := filepath.Join(m.tempDir, "http-"+unsafeID.ReplaceAllString(id, "_")+"-"+randomHex(4))
 	stub := &Session{
@@ -70,7 +75,6 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 	if !life.attach(stub) {
 		return nil, errors.New("transcode: session closed")
 	}
-	life.encoding.Store(encoding)
 	h := &httpSession{
 		m:          m,
 		id:         id,
@@ -185,7 +189,7 @@ func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	args := buildArgs(spec)
 	pr, pw := io.Pipe()
 	cmd := Command{Path: s.m.ffmpeg, Args: args, Stdout: pw}
-	encoding := !s.req.Decision.VideoCopy || !s.req.Decision.AudioCopy
+	encoding := !s.req.Decision.VideoCopy
 	work, err := s.life.runWork(encoding)
 	if err != nil {
 		s.mu.Unlock()
