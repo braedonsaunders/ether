@@ -36,6 +36,7 @@ func TestPolicyMatchesHistoricalFamilies(t *testing.T) {
 	}{
 		{"apple tv", Identity{Product: "Apple TV"}, "Apple TV", appleNote, []int{5, 8}, text},
 		{"tvos infuse", Identity{Product: "Infuse", Platform: "tvOS"}, "Apple TV", appleNote, []int{5, 8}, text},
+		{"appletv infuse-direct", Identity{Product: "Infuse-Direct", Device: "AppleTV"}, "Apple TV", appleNote, []int{5, 8}, text},
 		{"ios", Identity{Product: "iOS"}, "iOS", genericNote, []int{5, 8}, text},
 		{"ipados", Identity{Platform: "iPadOS"}, "iOS", genericNote, []int{5, 8}, text},
 		{"plex web", Identity{Product: "Plex Web Chrome"}, "Plex Web", browserNote, nil, text},
@@ -97,6 +98,7 @@ func TestPlaybackMatchesHistoricalProducts(t *testing.T) {
 		{"Plex for Android", "Android", "AFTSS", "AFTSS", true, false, false, 1080, true},
 		{"Plex for Roku", "Roku", "Roku Ultra", "", true, true, false, 2160, true},
 		{"Infuse", "tvOS", "Apple TV", "", true, true, true, 2160, true},
+		{"Infuse-Direct", "", "AppleTV", "", true, true, true, 2160, true},
 		{"Infuse", "", "", "", true, true, false, 2160, true},
 		{"Swiftfin tvOS", "", "", "", true, true, true, 2160, true},
 		{"Swiftfin", "tvOS", "Apple TV", "", true, true, true, 2160, true},
@@ -115,6 +117,24 @@ func TestPlaybackMatchesHistoricalProducts(t *testing.T) {
 				t.Fatalf("%+v", got)
 			}
 		})
+	}
+}
+
+func TestInfuseAndAppleTVExcludeAV1ByDefault(t *testing.T) {
+	for _, id := range []Identity{
+		{Product: "Infuse-Direct", Device: "AppleTV"},
+		{Product: "Infuse", Platform: "tvOS", Device: "Apple TV"},
+		{Product: "Infuse"},
+		{Product: "Swiftfin", Platform: "tvOS"},
+		{Product: "Swiftfin tvOS"},
+	} {
+		got := Playback(id, nil)
+		if slices.Contains(got.Video, "av1") {
+			t.Fatalf("%+v unexpectedly includes av1: %v", id, got.Video)
+		}
+		if !slices.Contains(got.Video, "h264") || !slices.Contains(got.Video, "hevc") {
+			t.Fatalf("%+v missing h264/hevc: %v", id, got.Video)
+		}
 	}
 }
 

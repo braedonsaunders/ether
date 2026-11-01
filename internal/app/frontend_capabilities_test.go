@@ -114,8 +114,32 @@ func TestSwiftfinWithoutProfileUsesAppleCodecs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(got.Client.AudioCodecs, "mp3") || !slices.Contains(got.Client.AudioCodecs, "ac3") || got.Client.MaxHeight != 2160 {
+	if !slices.Contains(got.Client.AudioCodecs, "mp3") || !slices.Contains(got.Client.AudioCodecs, "ac3") || got.Client.MaxHeight != 2160 || slices.Contains(got.Client.VideoCodecs, "av1") {
 		t.Fatalf("%+v", got.Client)
+	}
+	infuse, err := provider.Build(lan, frontend.CapabilityRequest{
+		Viewer: &core.Viewer{ID: 1},
+		Device: caps.DeviceInfo{Product: "Infuse-Direct", DeviceName: "AppleTV", Version: "8.5.9"},
+		Profile: caps.DeviceProfile{
+			TranscodingProfiles: []caps.TranscodingProfile{{Container: "mp4", Type: "Video", VideoCodec: "hevc,h264,av1", AudioCodec: "eac3,ac3,aac", Protocol: "hls"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(infuse.Client.VideoCodecs, "av1") || !infuse.Client.SupportsVideo("hevc") || !infuse.Client.SupportsVideo("h264") || !slices.Equal(infuse.Client.DVProfiles, []int{5, 8}) {
+		t.Fatalf("Infuse-Direct on AppleTV should not direct-play AV1 without explicit DirectPlayProfile: %+v", infuse.Client)
+	}
+	advertised, err := provider.Build(lan, frontend.CapabilityRequest{
+		Viewer:  &core.Viewer{ID: 1},
+		Device:  caps.DeviceInfo{Product: "Infuse-Direct", DeviceName: "AppleTV", Version: "8.5.9"},
+		Profile: caps.DeviceProfile{DirectPlayProfiles: []caps.DirectPlayProfile{{Container: "mkv,mp4", VideoCodec: "h264,hevc,av1", AudioCodec: "eac3,ac3,aac"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !advertised.Client.SupportsVideo("av1") {
+		t.Fatalf("explicitly advertised AV1 lost: %+v", advertised.Client)
 	}
 	limited, err := provider.Build(lan, frontend.CapabilityRequest{Viewer: &core.Viewer{ID: 1}, Device: caps.DeviceInfo{Product: "Swiftfin tvOS"}, Profile: caps.DeviceProfile{DirectPlayProfiles: []caps.DirectPlayProfile{{Container: "mp4", VideoCodec: "h264", AudioCodec: "aac"}}}})
 	if err != nil {

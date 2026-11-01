@@ -18,7 +18,11 @@ type ClientPolicy struct {
 }
 
 func identityOf(c core.ClientCaps) clientreg.Identity {
-	return clientreg.Identity{Product: c.Product, Platform: c.Platform, Device: c.Device, Version: c.Version}
+	device := c.Device
+	if device == "" {
+		device = c.DeviceName
+	}
+	return clientreg.Identity{Product: c.Product, Platform: c.Platform, Device: device, Version: c.Version}
 }
 
 // PlaybackDefaults is the registry baseline for a client that sent no profile.

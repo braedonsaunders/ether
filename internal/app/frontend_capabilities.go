@@ -60,10 +60,14 @@ func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityR
 func (a *App) recordFrontendFamily(ctx context.Context, surface frontend.Protocol, caps core.ClientCaps) {
 	// Store only the static family policy, not per-device declarations or viewer IDs.
 	product := strings.TrimSpace(caps.Product)
-	if product == "" || len(product) > 128 || len(caps.Platform) > 128 || len(caps.Device) > 128 {
+	device := caps.Device
+	if device == "" {
+		device = caps.DeviceName
+	}
+	if product == "" || len(product) > 128 || len(caps.Platform) > 128 || len(device) > 128 {
 		return
 	}
-	policy := transcode.ClientPolicyFor(core.ClientCaps{Protocol: surface, Product: product, Platform: caps.Platform, Device: caps.Device})
+	policy := transcode.ClientPolicyFor(core.ClientCaps{Protocol: surface, Product: product, Platform: caps.Platform, Device: device})
 	if policy.Family == "generic" || (policy.Family == "Plex Web" && surface != "plex") {
 		policy.Family = product
 	}
@@ -96,7 +100,11 @@ func (a *App) recordFrontendFamily(ctx context.Context, surface frontend.Protoco
 // unrestricted. HDR flags stay with the profile: the preset does not certify
 // a display.
 func playbackFloor(declared core.ClientCaps, overrides []core.ClientCapabilityOverride) core.ClientCaps {
-	defaults := transcode.PlaybackDefaultsFor(declared.Product, declared.Platform, declared.Device, "", declared.Version, overrides)
+	device := declared.Device
+	if device == "" {
+		device = declared.DeviceName
+	}
+	defaults := transcode.PlaybackDefaultsFor(declared.Product, declared.Platform, device, "", declared.Version, overrides)
 	if defaults.ID == "" || defaults.ID == "generic" {
 		return declared
 	}

@@ -31,6 +31,7 @@ var errRequireRemux = errors.New("playback: failover requires remux")
 func (m *Manager) openInitial(ctx context.Context, s *session, profile core.QualityProfile) (*generation, error) {
 	var res *core.Resolution
 	var cached *probeCache
+	fromResume := false
 	original := ""
 	if s.title != nil {
 		original = s.title.Language
@@ -43,16 +44,22 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		if res != nil && s.prefer != "" && res.Release.ID != s.prefer {
 			res = nil // a picked version wins over the remembered release
 		}
-		if res != nil && cached == nil {
-			// A restart drops the in-memory warm probe, but the resume
-			// record's persisted probe and keyframe index survive it.
-			cached = m.persistedProbe(ctx, s.ident.userID, s.ident.key, res.Release.ID, res.NZB)
+		if res != nil {
+			fromResume = true
+			if cached == nil {
+				// A restart drops the in-memory warm probe, but the resume
+				// record's persisted probe and keyframe index survive it.
+				cached = m.persistedProbe(ctx, s.ident.userID, s.ident.key, res.Release.ID, res.NZB)
+			}
+			if cached != nil && !rememberedInfoCodecCurrent(cached.info, s.caps) {
+				res, cached, fromResume = nil, nil, false
+			}
 		}
 	}
 	if res != nil && !releaseMatchesTitle(res.Release, s.title) {
 		// An older stored/warmed selection may predate the series identity
 		// gate. Do not reuse a same-named reboot for this show's episode.
-		res, cached = nil, nil
+		res, cached, fromResume = nil, nil, false
 	}
 	var (
 		tried      []string
@@ -69,6 +76,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 	}
 	for attempt := 0; attempt < m.opts.MaxAttempts; attempt++ {
 		if res == nil {
+			fromResume = false
 			var err error
 			res, err = m.nextResolution(ctx, s, tried, alternates)
 			if err != nil {
@@ -85,6 +93,12 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			return nil, fmt.Errorf("%w: %w", core.ErrNotAvailable, core.ErrSourceChanged)
 		}
 		g, err := m.openGeneration(ctx, s, res, fallback, cached)
+		if err == nil && fromResume && !s.exact && !rememberedInfoCodecCurrent(g.infoSnapshot(), s.caps) {
+			m.dropGeneration(g)
+			tried = append(tried, res.Release.ID)
+			res, cached, fromResume = nil, nil, false
+			continue
+		}
 		if err == nil {
 			s.mu.Lock()
 			s.tried = append(s.tried, tried...)
@@ -1041,7 +1055,7 @@ func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.R
 	if m.resume == nil || m.deps.Availability.Down() {
 		return nil
 	}
-	if res := m.resume.rememberedResolution(userID, key, profile, profileKey(profile), originalLanguage, caps.MaxBitrateKbps); res != nil && !m.releaseBlocked(ctx, res.Release.ID) && m.resumeSourceAllowed(res.Release) {
+	if res := m.resume.rememberedResolution(userID, key, profile, profileKey(profile), originalLanguage, caps); res != nil && !m.releaseBlocked(ctx, res.Release.ID) && m.resumeSourceAllowed(res.Release) {
 		return res
 	}
 	rec, err := m.resume.get(ctx, userID, key)
@@ -1049,7 +1063,7 @@ func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.R
 		m.log.Warn("resume lookup failed", "err", err)
 		return nil
 	}
-	if rec == nil || m.releaseBlocked(ctx, rec.releaseID) || rec.profile != profileKey(profile) || !rememberedOriginalAudioCurrent(profile, rec.originalLanguage, originalLanguage, rec.release) || !m.resumeSourceAllowed(rec.release) || !sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
+	if rec == nil || m.releaseBlocked(ctx, rec.releaseID) || rec.profile != profileKey(profile) || !rememberedOriginalAudioCurrent(profile, rec.originalLanguage, originalLanguage, rec.release) || !rememberedCodecCurrent(rec.release, caps) || !m.resumeSourceAllowed(rec.release) || !sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
 		return nil
 	}
 	nzb, err := m.resume.readResumeNZB(ctx, rec)
@@ -1161,7 +1175,7 @@ func (m *Manager) Remember(ctx context.Context, user *core.User, key core.Rating
 	if err != nil {
 		return err
 	}
-	if rec != nil && rec.profile == profile && rememberedOriginalAudioCurrent(prof, rec.originalLanguage, current, rec.release) && m.resumeSourceAllowed(rec.release) && sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
+	if rec != nil && rec.profile == profile && rememberedOriginalAudioCurrent(prof, rec.originalLanguage, current, rec.release) && rememberedCodecCurrent(rec.release, caps) && m.resumeSourceAllowed(rec.release) && sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
 		return nil
 	}
 	return m.resume.save(ctx, resumeRecord{
@@ -1194,7 +1208,10 @@ func (m *Manager) ResumeFor(ctx context.Context, user *core.User, key core.Ratin
 		}
 		current = lang
 	}
-	if rp.profileKey != profileKey(prof) || !rememberedOriginalAudioCurrent(prof, rp.originalLanguage, current, rp.Release) || !m.resumeSourceAllowed(rp.Release) || !sourceFitsBitrate(rp.Size, rp.Duration, 0, caps.MaxBitrateKbps) {
+	if rp.profileKey != profileKey(prof) || !rememberedOriginalAudioCurrent(prof, rp.originalLanguage, current, rp.Release) || !rememberedCodecCurrent(rp.Release, caps) || !m.resumeSourceAllowed(rp.Release) || !sourceFitsBitrate(rp.Size, rp.Duration, 0, caps.MaxBitrateKbps) {
+		return nil, nil
+	}
+	if probe := m.persistedProbe(ctx, user.ID, key, rp.Release.ID, rp.NZB); probe != nil && !rememberedInfoCodecCurrent(probe.info, caps) {
 		return nil, nil
 	}
 	rp.Profile = prof.Name // name from the profile object, not the stored column
@@ -1245,6 +1262,26 @@ func rememberedOriginalAudioCurrent(profile core.QualityProfile, stored, current
 		return false
 	}
 	return !pol.Evaluate(rel, releasepolicy.Context{OriginalLanguage: current}).Rejected
+}
+
+func rememberedCodecCurrent(rel core.Release, caps core.ClientCaps) bool {
+	if caps.Protocol == "" || caps.Protocol == "plex" || len(caps.VideoCodecs) == 0 {
+		return true
+	}
+	if rel.Info.VideoCodec != "" && !caps.SupportsVideo(rel.Info.VideoCodec) {
+		return false
+	}
+	return true
+}
+
+func rememberedInfoCodecCurrent(info core.MediaInfo, caps core.ClientCaps) bool {
+	if caps.Protocol == "" || caps.Protocol == "plex" || len(caps.VideoCodecs) == 0 {
+		return true
+	}
+	if v := info.Video(); v != nil && v.Codec != "" && !caps.SupportsVideo(v.Codec) {
+		return false
+	}
+	return true
 }
 
 func permanentSourceFailure(err error) bool {

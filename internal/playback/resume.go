@@ -527,14 +527,17 @@ func (s *resumeStore) publishLive(gen uint64, rec resumeRecord, nzb []byte) {
 	s.storeLiveLocked(rec, nzb)
 }
 
-func (s *resumeStore) rememberedResolution(userID int64, key core.RatingKey, profile core.QualityProfile, profileKey, original string, maxBitrate int) *core.Resolution {
+func (s *resumeStore) rememberedResolution(userID int64, key core.RatingKey, profile core.QualityProfile, profileKey, original string, caps core.ClientCaps) *core.Resolution {
 	s.freshMu.Lock()
 	defer s.freshMu.Unlock()
 	got, ok := s.live[resumeKey{userID, key}]
 	if !ok || got.res == nil || got.profile != profileKey || got.releaseID == "" {
 		return nil
 	}
-	if !rememberedOriginalAudioCurrent(profile, got.originalLanguage, original, got.res.Release) || !sourceFitsBitrate(got.size, got.duration, 0, maxBitrate) {
+	if !rememberedOriginalAudioCurrent(profile, got.originalLanguage, original, got.res.Release) || !rememberedCodecCurrent(got.res.Release, caps) || !sourceFitsBitrate(got.size, got.duration, 0, caps.MaxBitrateKbps) {
+		return nil
+	}
+	if got.probe != nil && !rememberedInfoCodecCurrent(got.probe.info, caps) {
 		return nil
 	}
 	cp := *got.res

@@ -25,12 +25,19 @@ func defaultProfile() core.QualityProfile {
 	}
 }
 
+func clientDevice(caps core.ClientCaps) string {
+	if caps.Device != "" {
+		return caps.Device
+	}
+	return caps.DeviceName
+}
+
 // defaultCappedAndroidClient reports whether caps describes an Android
 // mobile client whose registry playback ceiling is 1080p unless an owner
 // quality rule lifts it. The match is the registry quirk
 // android-mobile-ceiling, the same fact the capability engine uses.
 func defaultCappedAndroidClient(caps core.ClientCaps) bool {
-	return clientreg.HasQuirk(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: caps.Device, Version: caps.Version}, "android-mobile-ceiling")
+	return clientreg.HasQuirk(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, "android-mobile-ceiling")
 }
 
 // ApplyClientRules returns caps with any matching user-defined client rule
@@ -42,6 +49,11 @@ func defaultCappedAndroidClient(caps core.ClientCaps) bool {
 // default remote bitrate cap is cleared so 4K releases are not demoted below
 // 8 Mbps.
 func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) core.ClientCaps {
+	if len(caps.VideoCodecs) == 0 && caps.Protocol != "plex" && !strings.Contains(strings.ToLower(caps.Product), "plex") {
+		if defaults := clientreg.Playback(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, nil); defaults.ID != "" && defaults.ID != "generic" && len(defaults.Video) > 0 {
+			caps.VideoCodecs = append([]string(nil), defaults.Video...)
+		}
+	}
 	if caps.Download {
 		return caps
 	}

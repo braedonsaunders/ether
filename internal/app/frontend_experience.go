@@ -224,6 +224,10 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		if title.BackdropPath != "" {
 			result.Images = append(result.Images, frontend.Image{Kind: "backdrop", Path: title.BackdropPath})
 		}
+		var overrides []core.ClientCapabilityOverride
+		if a.cfg != nil {
+			overrides = a.cfg.Read().Clients.Overrides
+		}
 		// surfaceExperience.Item replaces this list with the shared artwork
 		// selection. That selection is the composited poster when overlays are on.
 		var (
@@ -232,7 +236,10 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			hasResumed     bool
 		)
 		if a.playback != nil {
-			caps := core.ClientCaps{Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
+			caps := core.ClientCaps{Protocol: protocol, Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
+			if protocol != "plex" {
+				caps = playbackFloor(caps, overrides)
+			}
 			resumedInfo, resumedRelease, hasResumed = a.playback.ResumedTracks(ctx, u, title.Key, caps)
 			info := resumedInfo
 			if !hasResumed {
@@ -251,7 +258,10 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			result.TracksEstimated = info.Estimated
 		}
 		if a.resolver != nil {
-			caps := core.ClientCaps{Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
+			caps := core.ClientCaps{Protocol: protocol, Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
+			if protocol != "plex" {
+				caps = playbackFloor(caps, overrides)
+			}
 			versions, err := scorecardVariants(ctx, a, u, title, caps)
 			if err != nil {
 				return frontend.ItemDetail{}, err

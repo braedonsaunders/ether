@@ -100,6 +100,7 @@
       "match": {
         "any": [
           {"field": "identity", "op": "contains", "value": "apple tv"},
+          {"field": "identity", "op": "contains", "value": "appletv"},
           {"field": "identity", "op": "contains", "value": "tvos"}
         ]
       }
@@ -231,9 +232,11 @@
       "match": {
         "any": [
           {"field": "product", "op": "contains", "value": "apple tv"},
+          {"field": "product", "op": "contains", "value": "appletv"},
           {"field": "product", "op": "contains", "value": "swiftfin"},
           {"field": "platform", "op": "equals", "value": "tvos"},
-          {"field": "device", "op": "contains", "value": "apple tv"}
+          {"field": "device", "op": "contains", "value": "apple tv"},
+          {"field": "device", "op": "contains", "value": "appletv"}
         ]
       }
     },
@@ -383,10 +386,16 @@
         "any": [
           {"field": "product", "op": "contains", "value": "htpc"},
           {"field": "product", "op": "contains", "value": "plex media player"},
-          {"field": "product", "op": "contains", "value": "kodi"},
-          {"field": "product", "op": "contains", "value": "infuse"}
+          {"field": "product", "op": "contains", "value": "kodi"}
         ]
       }
+    },
+    {
+      "id": "infuse",
+      "role": "playback",
+      "preset": "htpc",
+      "video": ["h264", "hevc", "vp9", "mpeg2video", "vc1", "mpeg4"],
+      "match": {"field": "product", "op": "contains", "value": "infuse"}
     },
     {
       "id": "smart-tv",

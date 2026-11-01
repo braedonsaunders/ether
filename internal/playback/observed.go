@@ -50,7 +50,7 @@ func (m *Manager) ResumedTracks(ctx context.Context, user *core.User, key core.R
 				continue
 			}
 			if g := s.current(); g != nil && g.releaseID() == rp.Release.ID {
-				if sanitized, ok := persistedProbeFacts(g.infoSnapshot()); ok {
+				if sanitized, ok := persistedProbeFacts(g.infoSnapshot()); ok && rememberedInfoCodecCurrent(sanitized, caps) {
 					m.mu.Unlock()
 					sanitized.Keyframes = nil
 					sanitized.Chapters = nil
@@ -59,6 +59,9 @@ func (m *Manager) ResumedTracks(ctx context.Context, user *core.User, key core.R
 			}
 		}
 		m.mu.Unlock()
+		return core.MediaInfo{}, "", false
+	}
+	if !rememberedInfoCodecCurrent(facts.info, caps) {
 		return core.MediaInfo{}, "", false
 	}
 	info := facts.info
