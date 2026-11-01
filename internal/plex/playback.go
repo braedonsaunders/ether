@@ -1316,6 +1316,10 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.URL.Query().Get("download") == "1" {
+		if !s.downloadsAllowed(pr.User) {
+			writeHTTPError(w, http.StatusForbidden)
+			return
+		}
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(chi.URLParam(r, "file"), "\"", "")+"\"")
 	}
 	unlockOwner()
