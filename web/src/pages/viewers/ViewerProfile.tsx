@@ -127,6 +127,10 @@ export default function ViewerProfile() {
       </div>
     );
   const name = viewerName(v);
+  // Watchlist, alerts and connected apps need server access; a viewer kept
+  // for imported history (or whose access ended) has none of them.
+  const serverAccess = v.isOwner || viewerStatus(v) === "active";
+  const view: Tab = !serverAccess && (tab === "watchlist" || tab === "alerts") ? "taste" : tab;
 
   return (
     <DetailPageLayout
@@ -172,7 +176,7 @@ export default function ViewerProfile() {
       subtabs={
         <SubtabNav
           ariaLabel={t("Viewer sections")}
-          active={tab}
+          active={view}
           onSelect={setTab}
           tabs={[
             { key: "taste", label: t("Taste") },
@@ -180,14 +184,18 @@ export default function ViewerProfile() {
             { key: "home", label: t("Their Home") },
             { key: "access", label: t("Limits & preferences") },
             { key: "playback", label: t("Audio & subtitles") },
-            { key: "watchlist", label: t("Watchlist") },
-            { key: "alerts", label: t("Alerts") },
+            ...(serverAccess
+              ? [
+                  { key: "watchlist", label: t("Watchlist") },
+                  { key: "alerts", label: t("Alerts") },
+                ]
+              : []),
             { key: "sign-in", label: t("Sign-in methods & devices") },
           ]}
         />
       }
     >
-      {tab === "taste" ? (
+      {view === "taste" ? (
         taste.error ? (
           <ErrorPanel error={taste.error} onRetry={() => void taste.reload()} />
         ) : !taste.data ? (
@@ -195,20 +203,20 @@ export default function ViewerProfile() {
         ) : (
           <TasteView userId={id} taste={taste.data} onChange={(next) => taste.setData(next)} />
         )
-      ) : tab === "activity" ? (
+      ) : view === "activity" ? (
         <Activity viewer={v} />
-      ) : tab === "home" ? (
+      ) : view === "home" ? (
         <TheirHome viewer={v} />
-      ) : tab === "access" ? (
+      ) : view === "access" ? (
         <ViewerAccess key={id} viewer={v} />
-      ) : tab === "playback" ? (
+      ) : view === "playback" ? (
         <ViewerPlayback key={id} viewer={v} />
-      ) : tab === "alerts" ? (
+      ) : view === "alerts" ? (
         <div className="space-y-6">
           <FavoriteEpisodeAlerts load={loadAlerts} />
           <NotInterested load={loadHidden} restore={restoreHidden} />
         </div>
-      ) : tab === "sign-in" ? (
+      ) : view === "sign-in" ? (
         <div className="space-y-6">
           {!v.isOwner ? (
             <Membership
@@ -218,7 +226,7 @@ export default function ViewerProfile() {
             />
           ) : null}
           <SignInMethods base={`/users/${id}`} token={getToken()} owner />
-          <ConnectApps base={`/viewers/${id}`} token={getToken()} />
+          {serverAccess ? <ConnectApps base={`/viewers/${id}`} token={getToken()} /> : null}
         </div>
       ) : (
         <div className="space-y-6">

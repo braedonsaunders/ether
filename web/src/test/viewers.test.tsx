@@ -229,3 +229,25 @@ it("filters imported history without changing Plex access", async () => {
     fake.state.calls.filter((c) => ["POST", "PUT", "PATCH", "DELETE"].includes(c.method)),
   ).toHaveLength(0);
 });
+
+it("hides server-only tabs for a viewer kept for imported history", async () => {
+  renderApp("/viewers/2/watchlist", {}, (server) => {
+    const base = server.fetch;
+    server.fetch = async (input, init) => {
+      const res = await base(input, init);
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname !== "/ether/api/viewers/2") return res;
+      const body = await res.json();
+      if (body.viewer) body.viewer.accessStatus = "imported";
+      else body.accessStatus = "imported";
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+  });
+  const tabs = await screen.findByRole("tablist", { name: "Viewer sections" }, WAIT);
+  expect(within(tabs).queryByRole("tab", { name: "Watchlist" })).toBeNull();
+  expect(within(tabs).queryByRole("tab", { name: "Alerts" })).toBeNull();
+  expect(within(tabs).getByRole("tab", { name: "Taste" })).toHaveAttribute("aria-selected", "true");
+});
