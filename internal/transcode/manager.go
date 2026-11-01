@@ -737,6 +737,18 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		// run at the nominal ramp boundary can seek back to an earlier source
 		// keyframe and replay it. TS ramps encode their opening GOPs; other
 		// copy containers keep one continuous run.
+		//
+		// Remux + audio transcode is the exception: one continuous copy run
+		// at FastStartSegment (default 2s) so the first muxed A+V segment
+		// does not wait for 4s of EAC3. Playlist is uniformly shorter —
+		// an explained Plex-visible difference vs a 4s remux. Pure copy
+		// remux (audio copies too) stays on 4s so long-GOP MKV does not
+		// restart ffmpeg and replay frames.
+		if req.SegmentDuration <= 0 {
+			if short := remuxOpenSegment(adapt, d, v); short > 0 {
+				segDur = short
+			}
+		}
 		fastStart := adapt.FastStart && v != nil && (!d.VideoCopy || d.Container == ContainerMPEGTS)
 		plan = buildTimeline(span, segDur, timelineOptions{
 			steadyMode: steadyMode,

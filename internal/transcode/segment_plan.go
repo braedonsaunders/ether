@@ -59,6 +59,24 @@ type adaptiveSettings struct {
 	SpikeMargin        float64 // e.g. 1.25
 }
 
+// remuxOpenSegment is the HLS segment length for a video-copy remux that
+// still transcodes audio. Zero means keep the session default (4s). A
+// shorter first muxed segment is what actually gates time-to-first-frame:
+// video copy and audio encode share one ffmpeg, so shortening the opening
+// chunk is the safe substitute for running two processes.
+func remuxOpenSegment(a adaptiveSettings, d core.Decision, v *core.StreamInfo) time.Duration {
+	if !a.FastStart || v == nil || !d.VideoCopy || d.AudioCopy {
+		return 0
+	}
+	if d.Container != ContainerMatroska && d.Container != ContainerFMP4 {
+		return 0
+	}
+	if a.RampDur <= 0 {
+		return 2 * time.Second
+	}
+	return a.RampDur
+}
+
 func adaptiveFromConfig(c config.Transcode) adaptiveSettings {
 	a := adaptiveSettings{
 		FastStart:          c.FastStart,

@@ -58,6 +58,9 @@ func serviceWithRules(t *testing.T, idx core.Indexer, health core.HealthChecker,
 }
 
 func TestExplicitPolicyWaitsForPrimary(t *testing.T) {
+	if !explicitReleasePolicy(core.QualityProfile{ReleaseRules: groupPolicy()}) {
+		t.Fatal("require+fallback rules must still be recognized")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		primary := signalRelease("primary", "PRIMARY", "english")
 		fallback := signalRelease("fallback", "FALLBACK", "english")
@@ -73,6 +76,22 @@ func TestExplicitPolicyWaitsForPrimary(t *testing.T) {
 		}
 		if s.recentlyFailedHealth("fallback") || s.isBad("fallback") {
 			t.Fatal("policy fallback was cached as a bad source")
+		}
+	})
+}
+
+func TestFallbackStartsAfterCriticalPathDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fallback := signalRelease("fallback", "FALLBACK", "english")
+		idx := &slowTailIndexer{fakeIndexer: fakeIndexer{releases: []core.Release{fallback}}}
+		s := serviceWithRules(t, idx, fakeHealth{}, groupPolicy())
+		start := time.Now()
+		got, err := s.Resolve(context.Background(), core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+		if err != nil || got.Release.ID != "fallback" {
+			t.Fatalf("fallback did not start after the critical-path deadline: %+v %v", got, err)
+		}
+		if elapsed := time.Since(start); elapsed != criticalPathDeadline {
+			t.Fatalf("elapsed %s, want the %s critical-path deadline", elapsed, criticalPathDeadline)
 		}
 	})
 }

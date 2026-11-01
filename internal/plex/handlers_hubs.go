@@ -274,6 +274,7 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, hc, mc.Hub, served)
+	s.warmBrowseLink(ctx, pr, mc.Hub)
 }
 
 // hubContext is the personalization context of a hubs request: the
@@ -295,6 +296,54 @@ func (s *Server) recommendHome(ctx context.Context, pr *Request, hc core.HubCont
 
 func (s *Server) recommendSection(ctx context.Context, pr *Request, t core.MediaType, hc core.HubContext, count int) ([]core.Hub, error) {
 	return (experience.HomeSelection{Source: s.d.Recommender, Visibility: s.visibility(), Restricted: s.viewerRestricted(pr.User)}).Rows(ctx, pr.User, hc, t, count)
+}
+
+// warmBrowseLink opens at most one already-visible playable after the hub
+// response is written: Continue Watching first, else the first movie/episode
+// on screen. It only resolves and opens the cached/debrid link (no opening
+// prefetch), and Prewarm's existing per-user / rate budgets still apply.
+func (s *Server) warmBrowseLink(ctx context.Context, pr *Request, rows []model.Hub) {
+	if pr == nil || pr.User == nil {
+		return
+	}
+	pw, ok := s.d.Playback.(core.Prewarmer)
+	if !ok {
+		return
+	}
+	key, ok := firstBrowseWarmKey(rows)
+	if !ok {
+		return
+	}
+	pw.Prewarm(context.WithoutCancel(ctx), pr.User, key, s.clientCaps(pr), core.PrewarmOptions{Reason: core.PrewarmBrowse})
+}
+
+func firstBrowseWarmKey(rows []model.Hub) (core.RatingKey, bool) {
+	continueWatching := func(id string) bool {
+		id = strings.ToLower(id)
+		return strings.Contains(id, "continue")
+	}
+	pick := func(onlyContinue bool) (core.RatingKey, bool) {
+		for _, row := range rows {
+			if onlyContinue && !continueWatching(row.HubIdentifier) && !continueWatching(row.Context) {
+				continue
+			}
+			for _, md := range row.Metadata {
+				if md.Type != "" && md.Type != "movie" && md.Type != "episode" {
+					continue
+				}
+				k, err := core.ParseRatingKey(md.RatingKey)
+				if err != nil || !isPlayableKey(k) {
+					continue
+				}
+				return k, true
+			}
+		}
+		return 0, false
+	}
+	if k, ok := pick(true); ok {
+		return k, true
+	}
+	return pick(false)
 }
 
 // recordImpressions hands the rows actually written, in response order, to
@@ -466,6 +515,7 @@ func (s *Server) handleSectionHubs(w http.ResponseWriter, r *http.Request) {
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, pc, mc.Hub, served)
+	s.warmBrowseLink(ctx, pr, mc.Hub)
 }
 
 // handleHubItems is /hubs/items?identifier=...: one hub with more items.

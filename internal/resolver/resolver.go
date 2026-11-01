@@ -719,7 +719,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	path := "live-complete"
 	if cached {
 		path = "cache"
-	} else if early.partial {
+	} else if early.partial.Load() {
 		path = "live-early"
 	}
 	if searchErr == nil {
@@ -1060,7 +1060,22 @@ func (s *Service) searchCached(ctx context.Context, req core.SearchRequest, fres
 	if err != nil {
 		return nil, false, err
 	}
-	// Ensure Info is populated for indexers that don't parse names.
+	s.normalizeSearchResults(req, results)
+	if partial {
+		return results, false, nil
+	} // Never cache an incomplete fleet answer.
+	s.storeSearchCache(req, results)
+	return results, false, nil
+}
+
+// rememberSearchResults normalizes a completed fleet answer and writes the
+// search cache. Used when a progressive Play start left discovery running.
+func (s *Service) rememberSearchResults(req core.SearchRequest, results []core.Release) {
+	s.normalizeSearchResults(req, results)
+	s.storeSearchCache(req, results)
+}
+
+func (s *Service) normalizeSearchResults(req core.SearchRequest, results []core.Release) {
 	for i := range results {
 		if results[i].Info.Title == "" && results[i].Info.Height == 0 && results[i].Info.Source == core.SourceUnknown {
 			results[i].Info = releaseparse.Parse(results[i].Name)
@@ -1070,10 +1085,10 @@ func (s *Service) searchCached(ctx context.Context, req core.SearchRequest, fres
 		// sees the same per-episode release ID.
 		results[i] = withTarget(results[i], req)
 	}
-	if partial {
-		return results, false, nil
-	} // Never cache an incomplete fleet answer.
+}
 
+func (s *Service) storeSearchCache(req core.SearchRequest, results []core.Release) {
+	key := searchCacheKey(req)
 	s.mu.Lock()
 	now := s.now()
 	boundMap(s.searchCache, maxSearchCache, func(e searchCacheEntry) bool { return !now.Before(e.expires) })
@@ -1083,7 +1098,6 @@ func (s *Service) searchCached(ctx context.Context, req core.SearchRequest, fres
 	}
 	s.searchCache[key] = searchCacheEntry{results: append([]core.Release(nil), results...), expires: now.Add(ttl)}
 	s.mu.Unlock()
-	return results, false, nil
 }
 
 // scoreCandidates filters and ranks search results for a request and

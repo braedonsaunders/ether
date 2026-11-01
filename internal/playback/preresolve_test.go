@@ -260,3 +260,21 @@ func TestWaitWarmProbeStopsAtTheCallerBudget(t *testing.T) {
 	}
 	close(done)
 }
+
+func TestBrowsePrewarmOpensWithoutPrefetch(t *testing.T) {
+	h := newHarness(t, []*fakeRelease{mkv("r1", 2<<30, 90*time.Minute)}, []string{"r1"})
+	caps := defaultCaps("browse")
+	if !h.m.Prewarm(context.Background(), owner, movieKey, caps, core.PrewarmOptions{Reason: core.PrewarmBrowse}) {
+		t.Fatal("browse warm skipped")
+	}
+	waitWarm(t, h, owner.ID, "browse", movieKey)
+	h.engine.mu.Lock()
+	n := len(h.engine.prefetch)
+	h.engine.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("browse warm prefetched %d times", n)
+	}
+	if info, ok := h.m.WarmProbeInfo(owner, caps, movieKey); !ok || info.Estimated {
+		t.Fatalf("browse warm did not publish a probe: ok=%v info=%+v", ok, info)
+	}
+}

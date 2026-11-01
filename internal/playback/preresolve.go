@@ -130,7 +130,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		return false
 	}
 	reason := opts.Reason
-	if reason != core.PrewarmTrailer && reason != core.PrewarmPostPlay {
+	if reason != core.PrewarmTrailer && reason != core.PrewarmPostPlay && reason != core.PrewarmBrowse {
 		reason = core.PrewarmDetail
 	}
 	cfg := m.config().Cache
@@ -143,9 +143,14 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		prefetchBytes = cfg.DetailBytes
 	}
 	if prefetchBytes <= 0 {
-		if reason == core.PrewarmDetail {
+		switch reason {
+		case core.PrewarmDetail:
 			prefetchBytes = detailPrefetchBytes
-		} else {
+		case core.PrewarmBrowse:
+			// Resolve + open the cached/debrid link. Do not pull opening
+			// bytes from a browse row — that is the expensive part.
+			prefetchBytes = 0
+		default:
 			prefetchBytes = bigWarmPrefetchBytes
 		}
 	}
@@ -316,6 +321,10 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 			e.markOpeningReady()
 		}
 		m.log.Debug("prewarm ready", "key", key, "reason", reason, "release", res.Release.Name, "prefetch", prefetchBytes)
+		if prefetchBytes <= 0 {
+			e.markOpeningReady()
+			return
+		}
 		if err := m.deps.Engine.Prefetch(ctx, res.Release.ID, res.NZB, 0, prefetchBytes); err != nil {
 			if permanentSourceFailure(err) {
 				// Probe success is not proof that the opening window is intact.

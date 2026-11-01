@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -34,19 +35,19 @@ type searchPreparation struct {
 	seen       map[string]bool
 	ranked     []candidate
 	first      time.Time
-	partial    bool // written by the owning search goroutine before it returns
+	partial    atomic.Bool // set before returning an early Play start
 }
 
 func newSearchPreparation(ctx context.Context, s *Service, req core.ResolveRequest, search core.SearchRequest, profile core.QualityProfile, pin string) *searchPreparation {
 	return &searchPreparation{ctx: ctx, svc: s, req: req, search: search, profile: profile,
-		disabled: pin != "" || req.Prefer != "" || s.resolverCfg().OptimisticStart || explicitReleasePolicy(profile),
+		disabled: pin != "" || req.Prefer != "" || s.resolverCfg().OptimisticStart,
 		byID:     map[string]*candidateCheck{}, identities: map[string]bool{}, releases: map[string]core.Release{}, seen: map[string]bool{}}
 }
 
-// explicitReleasePolicy waits for the whole search. An early healthy
-// fallback must not win while a primary match is still being discovered.
-// Disabled rules do not count. The wait is the indexer's existing budget,
-// not a new unbounded one.
+// explicitReleasePolicy reports a profile with enabled release conditions.
+// Progressive start still applies: a primary-tier healthy hit can finish
+// Play without waiting out every indexer. A require-fallback stays behind
+// criticalPathDeadline so a delayed primary can still arrive.
 func explicitReleasePolicy(profile core.QualityProfile) bool {
 	for _, r := range profile.ReleaseRules {
 		if !r.Disabled && len(r.Conditions) > 0 {
@@ -132,11 +133,18 @@ func (p *searchPreparation) pumpLocked() {
 	}
 }
 
-// A short discovery window gives concurrently dispatched indexers a chance to
-// answer. Never wait for their entire bodies or timeouts once a suitable source
-// really passed health. Known better candidates retain the normal grace.
+// discoveryWindow lets concurrently dispatched indexers answer. Play then
+// starts on the first healthy profile-passing candidate instead of the
+// slowest indexer's HTTP timeout. A require-fallback waits up to
+// criticalPathDeadline for a primary-tier hit; remaining indexers keep
+// searching in the background for a better version and failover.
+const (
+	discoveryWindow      = 500 * time.Millisecond
+	criticalPathDeadline = 4 * time.Second
+)
+
 func (p *searchPreparation) readyResults() []core.Release {
-	return p.readyResultsAfter(500 * time.Millisecond)
+	return p.readyResultsAfter(discoveryWindow)
 }
 
 func (p *searchPreparation) readyResultsAfter(window time.Duration) []core.Release {
@@ -164,6 +172,12 @@ func (p *searchPreparation) readyResultsAfter(window time.Duration) []core.Relea
 			if f.result.err != nil || !f.result.healthy {
 				continue
 			}
+			if c.policy.Fallback > 0 && time.Since(p.first) < criticalPathDeadline {
+				if lead < 0 {
+					lead = i
+				}
+				continue
+			}
 			if lead >= 0 && (!equivalentHedge(p.ranked[lead], c, margin) || time.Since(p.first) < rankedSourceGrace) {
 				continue
 			}
@@ -187,14 +201,32 @@ func (p *searchPreparation) searchLive(ctx context.Context, indexer core.Streami
 		r, e := indexer.SearchWith(ctx, req, p.arrived)
 		return r, false, e
 	}
-	searchCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// Detach from Play cancel so a first healthy hit can start while the
+	// remaining indexers finish into the search cache (better versions and
+	// failover). Close still cancels and joins via bgCtx/bgWG.
+	searchCtx, cancel := context.WithCancel(p.svc.bgCtx)
 	type answer struct {
 		releases []core.Release
 		err      error
 	}
 	done := make(chan answer, 1)
-	go func() { r, e := indexer.SearchWith(searchCtx, req, p.arrived); done <- answer{r, e} }()
+	p.svc.bgMu.Lock()
+	if p.svc.bgClosed {
+		p.svc.bgMu.Unlock()
+		cancel()
+		return nil, false, context.Canceled
+	}
+	p.svc.bgWG.Add(1)
+	p.svc.bgMu.Unlock()
+	go func() {
+		defer p.svc.bgWG.Done()
+		defer cancel()
+		r, e := indexer.SearchWith(searchCtx, req, p.arrived)
+		done <- answer{r, e}
+		if p.partial.Load() && e == nil && len(r) > 0 {
+			p.svc.rememberSearchResults(req, r)
+		}
+	}()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -203,13 +235,15 @@ func (p *searchPreparation) searchLive(ctx context.Context, indexer core.Streami
 			return a.releases, false, a.err
 		case <-ticker.C:
 			if ready := p.readyResults(); len(ready) > 0 {
-				cancel()
-				<-done // Every search/cache-check worker is joined before returning.
 				if ctx.Err() != nil {
+					cancel()
+					<-done
 					return nil, false, ctx.Err()
 				}
 				p.svc.log.Info("source discovery finished on playable candidate", "candidates", len(ready), "elapsed", time.Since(p.first))
-				p.partial = true
+				p.partial.Store(true)
+				// SearchWith keeps running on bgCtx; the worker defers cancel.
+				p.svc.keepSearchCancel(cancel)
 				return ready, true, nil
 			}
 		case <-ctx.Done():
@@ -219,6 +253,10 @@ func (p *searchPreparation) searchLive(ctx context.Context, indexer core.Streami
 		}
 	}
 }
+
+// keepSearchCancel marks cancel as owned by the background search so an
+// early Play start is not a leaked context.
+func (s *Service) keepSearchCancel(context.CancelFunc) {}
 
 func (p *searchPreparation) attach(cs []candidate) {
 	p.mu.Lock()
