@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"math"
 	"slices"
 	"sort"
@@ -716,6 +717,16 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 
 	searchStart := time.Now()
 	results, cached, searchErr := s.searchCached(ctx, sreq, forceFresh)
+	if os.Getenv("ETHER_TRACE_PLAYBACK") != "" {
+		s.log.Info("playback trace: resolver.searchCached",
+			"key", t.Key,
+			"title", t.Title,
+			"cached", cached,
+			"results", len(results),
+			"search_ms", time.Since(searchStart).Milliseconds(),
+			"err", searchErr,
+		)
+	}
 	path := "live-complete"
 	if cached {
 		path = "cache"

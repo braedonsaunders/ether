@@ -64,9 +64,16 @@ func (p *searchPreparation) arrived(batch []core.Release) {
 		return
 	}
 	var added []core.Release
+	reorder := false
 	for _, r := range batch {
 		r = withTarget(r, p.search)
-		if p.seen[r.ID] || len(p.all) >= 4000 {
+		if p.seen[r.ID] {
+			if p.svc.knownCached(r) {
+				reorder = true
+			}
+			continue
+		}
+		if len(p.all) >= 4000 {
 			continue
 		}
 		p.seen[r.ID] = true
@@ -79,14 +86,17 @@ func (p *searchPreparation) arrived(batch []core.Release) {
 	if p.first.IsZero() {
 		p.first = time.Now()
 	}
-	if len(added) == 0 {
+	if len(added) > 0 {
+		ranked, _, err := p.svc.rankCandidates(p.ctx, p.req, p.search, p.profile, added, nil, "")
+		if err != nil {
+			return
+		}
+		p.ranked = append(p.ranked, ranked...)
+	}
+	if len(added) == 0 && !reorder {
 		return
 	}
-	ranked, _, err := p.svc.rankCandidates(p.ctx, p.req, p.search, p.profile, added, nil, "")
-	if err != nil {
-		return
-	}
-	p.ranked = p.svc.orderCandidates(append(p.ranked, ranked...), p.profile, p.req.Title, nil)
+	p.ranked = p.svc.orderCandidates(p.ranked, p.profile, p.req.Title, nil)
 	p.pumpLocked()
 }
 
@@ -153,6 +163,9 @@ func (p *searchPreparation) readyResultsAfter(window time.Duration) []core.Relea
 	if p.disabled || p.first.IsZero() || time.Since(p.first) < window {
 		return nil
 	}
+	if len(p.ranked) > 1 {
+		p.ranked = p.svc.orderCandidates(p.ranked, p.profile, p.req.Title, nil)
+	}
 	p.pumpLocked()
 	margin := p.svc.resolverCfg().SourceScoreMargin
 	if margin <= 0 {
@@ -178,7 +191,10 @@ func (p *searchPreparation) readyResultsAfter(window time.Duration) []core.Relea
 				}
 				continue
 			}
-			if lead >= 0 && (!equivalentHedge(p.ranked[lead], c, margin) || time.Since(p.first) < rankedSourceGrace) {
+			leadUncachedTorrent := lead >= 0 &&
+				protocolOf(p.ranked[lead].rel) == core.ProtocolTorrent &&
+				!p.svc.knownCached(p.ranked[lead].rel)
+			if lead >= 0 && !(leadUncachedTorrent && p.svc.knownCached(c.rel)) && (!equivalentHedge(p.ranked[lead], c, margin) || time.Since(p.first) < rankedSourceGrace) {
 				continue
 			}
 			preference := p.svc.resolverCfg().SourcePreference

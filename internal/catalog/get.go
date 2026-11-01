@@ -430,8 +430,12 @@ func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Tit
 		stored := st.t
 		fetch := func(ctx context.Context) error {
 			ext, err := c.tmdb().EpisodeExternalIDs(ctx, key.TMDB(), key.Season(), key.Episode())
-			if err != nil || ext == nil || (ext.IMDBID == "" && ext.TVDBID == 0) {
+			if err != nil {
 				return err
+			}
+			if ext == nil || (ext.IMDBID == "" && ext.TVDBID == 0) {
+				c.noteRefreshMiss(refreshKey)
+				return nil
 			}
 			t := stored
 			t.IDs.IMDB = ext.IMDBID

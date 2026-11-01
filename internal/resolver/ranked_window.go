@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // validateRanked validates candidates in rank order with a sliding window:
@@ -181,12 +183,15 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 		// A healthy later candidate may overtake a lead still checking.
 		age := time.Since(startedAt[lead])
 		var wait time.Duration = -1
+		leadUncachedTorrent := protocolOf(cands[lead].rel) == core.ProtocolTorrent && !s.knownCached(cands[lead].rel)
 		for k := lead + 1; k < limit; k++ {
 			v := done[k]
 			if v == nil || !v.healthy || v.err != nil {
 				continue
 			}
 			switch {
+			case leadUncachedTorrent && s.knownCached(cands[k].rel) && cands[k].policy.Fallback <= cands[lead].policy.Fallback:
+				return win(*v, lead)
 			case equivalentHedge(cands[lead], cands[k], margin):
 				if age >= rankedSourceGrace {
 					return win(*v, lead)
