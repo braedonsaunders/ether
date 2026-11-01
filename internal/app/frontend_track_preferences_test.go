@@ -18,7 +18,7 @@ func TestTrackPreferencesAreSharedAndViewerScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "alice", "password")
+	id, err := local.CreateViewer(ctx, "alice", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestScopedTrackPreferencesReachSharedSelector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "scoped-viewer", "password")
+	id, err := local.CreateViewer(ctx, "scoped-viewer", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

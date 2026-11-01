@@ -24,7 +24,7 @@ func TestSiloSubtitlePreferenceShowsInJellyfin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "ada", "password")
+	id, err := local.CreateViewer(ctx, "ada", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

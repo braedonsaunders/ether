@@ -5,6 +5,7 @@ import { Copy, KeyRound, Link2 } from "lucide-react";
 import { Drawer } from "../../components/Drawer";
 import { PasswordInput, Segmented } from "../../components/fields";
 import { apiFetch, errorMessage } from "../../lib/api";
+import { MIN_LOCAL_PASSWORD } from "../me/SignInMethods";
 
 /** Add a viewer in a drawer: a local login, or an invite link to share. */
 export function AddViewerDrawer({
@@ -33,6 +34,10 @@ export function AddViewerDrawer({
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (mode === "local" && password.length < MIN_LOCAL_PASSWORD) {
+      setError(t("Password must be at least 12 characters."));
+      return;
+    }
     setBusy(true);
     setError("");
     setLink("");
@@ -59,6 +64,8 @@ export function AddViewerDrawer({
       setBusy(false);
     }
   }
+  const passwordTooShort =
+    mode === "local" && password !== "" && password.length < MIN_LOCAL_PASSWORD;
   return (
     <Drawer open={open} onClose={close} title={t("Add viewer")}>
       <form className="space-y-5" onSubmit={submit}>
@@ -91,11 +98,20 @@ export function AddViewerDrawer({
               <Label htmlFor="new-viewer-password">{t("Password")}</Label>
               <PasswordInput
                 id="new-viewer-password"
+                aria-invalid={passwordTooShort || undefined}
+                minLength={MIN_LOCAL_PASSWORD}
                 value={password}
                 onChange={(e) => setPassword(e.currentTarget.value)}
                 autoComplete="new-password"
                 required
               />
+              {passwordTooShort ? (
+                <p className="mt-1 text-xs text-danger" role="alert">
+                  {t("Password must be at least 12 characters.")}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-fg-muted">{t("Use at least 12 characters.")}</p>
+              )}
             </div>
           </div>
         ) : (
@@ -136,7 +152,7 @@ export function AddViewerDrawer({
             {link ? t("Done") : t("Cancel")}
           </Button>
           {link ? null : (
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || passwordTooShort}>
               {mode === "local" ? t("Create viewer") : t("Create invite")}
             </Button>
           )}

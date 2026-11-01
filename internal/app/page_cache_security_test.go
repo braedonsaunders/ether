@@ -26,7 +26,7 @@ func TestPageCacheDropsBodyWhenRestrictionOrTokenChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "child", "password")
+	id, err := local.CreateViewer(ctx, "child", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestPageCacheDropsBodyWhenRestrictionOrTokenChanges(t *testing.T) {
 		inst.Handler().ServeHTTP(w, r)
 		return w
 	}
-	login := call("POST", "/Users/AuthenticateByName", `{"Username":"child","Pw":"password"}`, "")
+	login := call("POST", "/Users/AuthenticateByName", `{"Username":"child","Pw":"password-1234"}`, "")
 	if login.Code != 200 {
 		t.Fatalf("login %d %s", login.Code, login.Body)
 	}

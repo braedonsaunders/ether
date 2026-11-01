@@ -24,7 +24,7 @@ func TestViewerPolicyRequiresOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "child", "password")
+	id, err := local.CreateViewer(ctx, "child", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

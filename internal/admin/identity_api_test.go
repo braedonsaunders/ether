@@ -29,7 +29,7 @@ func TestLocalOwnerAndPortalIsolation(t *testing.T) {
 	invites, _ := identity.NewInvite(db, time.Hour, time.Hour, nil)
 	cfg := newStore(t, nil)
 	h := admin.New(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, Invites: invites, RefreshViewers: users.RefreshViewers, LocalOwnerConfigured: func(ctx context.Context) bool { x, err := users.Owner(ctx); return err == nil && x.PlexID == 0 }})
-	setup := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret"}`))
+	setup := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret-pass1"}`))
 	if setup.Code != 200 {
 		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
 	}
@@ -100,7 +100,7 @@ func TestLocalOwnerAndPortalIsolation(t *testing.T) {
 	if res := serve(h, r); res.Code != http.StatusUnauthorized {
 		t.Fatalf("owner grant on portal: %d", res.Code)
 	}
-	login := serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret"}`))
+	login := serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret-pass1"}`))
 	if login.Code != 200 {
 		t.Fatalf("login: %d %s", login.Code, login.Body)
 	}
@@ -198,7 +198,7 @@ func TestPortalPlexLinkCannotAttachAnotherViewer(t *testing.T) {
 		t.Fatal(err)
 	}
 	local, _ := identity.NewLocal(db)
-	id, err := local.CreateOwner(ctx, "alice", "secret")
+	id, err := local.CreateOwner(ctx, "alice", "secret-pass1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestOwnerManagesLocalMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	local, _ := identity.NewLocal(db)
-	owner, err := local.CreateOwner(ctx, "owner", "secret")
+	owner, err := local.CreateOwner(ctx, "owner", "secret-pass1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestOwnerManagesLocalMembership(t *testing.T) {
 	}
 	cfg := newStore(t, func(c *config.Config) { c.SetupComplete = true })
 	h := admin.New(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, RefreshViewers: users.RefreshViewers, SetViewerActive: users.SetOwnerEnabled})
-	r := req("POST", "/ether/api/users/local", `{"username":"bob","password":"secret"}`)
+	r := req("POST", "/ether/api/users/local", `{"username":"bob","password":"secret-pass1"}`)
 	r.Header.Set("Authorization", "Bearer "+ownerToken)
 	res := serve(h, r)
 	if res.Code != 201 {
@@ -330,7 +330,7 @@ func TestLocalOwnerConsoleSessionSignOut(t *testing.T) {
 	limiter, _ := identity.NewLoginLimiter(db, time.Minute, 100, 20, nil)
 	cfg := newStore(t, nil)
 	h := admin.New(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, RefreshViewers: users.RefreshViewers, Sessions: users})
-	res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret"}`))
+	res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret-pass1"}`))
 	if res.Code != 200 {
 		t.Fatalf("setup: %d %s", res.Code, res.Body)
 	}
@@ -347,7 +347,7 @@ func TestLocalOwnerConsoleSessionSignOut(t *testing.T) {
 	if res := serve(h, r); res.Code != 200 {
 		t.Fatalf("owner header: %d", res.Code)
 	}
-	res = serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret"}`))
+	res = serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret-pass1"}`))
 	if res.Code != 200 {
 		t.Fatalf("viewer login: %d", res.Code)
 	}
@@ -370,7 +370,7 @@ func TestLocalOwnerConsoleSessionSignOut(t *testing.T) {
 		t.Fatalf("sign-out revoked independent viewer: %d", res.Code)
 	}
 	// A database failure must not falsely report successful revocation.
-	res = serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"secret"}`))
+	res = serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"secret-pass1"}`))
 	if res.Code != 200 {
 		t.Fatalf("owner login: %d", res.Code)
 	}
@@ -418,10 +418,10 @@ func TestPortalApproveDistinguishesUsedCodes(t *testing.T) {
 			return err == nil && owner.PlexID == 0
 		},
 	})
-	if setup := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret"}`)); setup.Code != 200 {
+	if setup := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret-pass1"}`)); setup.Code != 200 {
 		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
 	}
-	login := serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret"}`))
+	login := serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret-pass1"}`))
 	if login.Code != 200 {
 		t.Fatalf("login: %d %s", login.Code, login.Body)
 	}
@@ -492,7 +492,7 @@ func TestOwnerCredentialChangesAreReported(t *testing.T) {
 	cfg := newStore(t, nil)
 	h := admin.New(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, RefreshViewers: users.RefreshViewers, Sessions: users,
 		OwnerCredentialChanged: func(context.Context) { calls++ }})
-	if res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret"}`)); res.Code != 200 {
+	if res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret-pass1"}`)); res.Code != 200 {
 		t.Fatalf("setup: %d %s", res.Code, res.Body)
 	}
 	if calls != 1 {
@@ -501,10 +501,67 @@ func TestOwnerCredentialChangesAreReported(t *testing.T) {
 	if res := serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"wrong"}`)); res.Code != 401 {
 		t.Fatalf("wrong password: %d", res.Code)
 	}
-	if res := serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"secret"}`)); res.Code != 200 {
+	if res := serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"secret-pass1"}`)); res.Code != 200 {
 		t.Fatalf("owner login: %d", res.Code)
 	}
 	if calls != 2 {
 		t.Fatalf("after a failed and a good sign-in: %d calls", calls)
+	}
+}
+
+func TestLocalPasswordMinimumLength(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	users, err := auth.New(ctx, db, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, _ := identity.NewLocal(db)
+	grants, _ := identity.NewGrants(db, users, time.Hour, nil)
+	limiter, _ := identity.NewLoginLimiter(db, time.Minute, 100, 20, nil)
+	cfg := newStore(t, nil)
+	h := admin.New(admin.Deps{
+		Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter,
+		RefreshViewers: users.RefreshViewers,
+		LocalOwnerConfigured: func(ctx context.Context) bool {
+			x, err := users.Owner(ctx)
+			return err == nil && x.PlexID == 0
+		},
+	})
+	shortSetup := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"short"}`))
+	if shortSetup.Code != 400 || !strings.Contains(shortSetup.Body.String(), "at least 12 characters") {
+		t.Fatalf("short setup: %d %s", shortSetup.Code, shortSetup.Body)
+	}
+	okSetup := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret-pass1"}`))
+	if okSetup.Code != 200 {
+		t.Fatalf("ok setup: %d %s", okSetup.Code, okSetup.Body)
+	}
+	var v struct {
+		Token string `json:"token"`
+	}
+	decode(t, okSetup, &v)
+	ownerToken := v.Token
+	if err := cfg.Update(func(c *config.Config) error { c.SetupComplete = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	r := req("POST", "/ether/api/users/local", `{"username":"bob","password":"short"}`)
+	r.Header.Set("Authorization", "Bearer "+ownerToken)
+	if res := serve(h, r); res.Code != 400 || !strings.Contains(res.Body.String(), "at least 12 characters") {
+		t.Fatalf("short create viewer: %d %s", res.Code, res.Body)
+	}
+	r = req("POST", "/ether/api/users/1/password", `{"username":"alice","password":"short"}`)
+	r.Header.Set("Authorization", "Bearer "+ownerToken)
+	if res := serve(h, r); res.Code != 400 || !strings.Contains(res.Body.String(), "at least 12 characters") {
+		t.Fatalf("short owner set password: %d %s", res.Code, res.Body)
+	}
+	login := serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret-pass1"}`))
+	if login.Code != 200 {
+		t.Fatalf("me login: %d %s", login.Code, login.Body)
+	}
+	decode(t, login, &v)
+	r = req("POST", "/ether/api/me/password", `{"username":"alice","password":"short"}`)
+	r.Header.Set("Authorization", "Bearer "+v.Token)
+	if res := serve(h, r); res.Code != 400 || !strings.Contains(res.Body.String(), "at least 12 characters") {
+		t.Fatalf("short me password: %d %s", res.Code, res.Body)
 	}
 }

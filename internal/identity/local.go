@@ -51,8 +51,17 @@ var (
 	argonLegacy  = argonProfile{memory: 64 * 1024, time: 3, threads: 1}
 )
 
+const MinPasswordLength = 12
+
+var ErrPasswordTooShort = errors.New("identity: password must be at least 12 characters")
+
 // hashPassword uses a fresh salt and the current Argon2id profile.
+// New passwords must be at least MinPasswordLength bytes; existing shorter
+// passwords still verify and rehash through hashPasswordWith.
 func hashPassword(password string) (string, error) {
+	if len(password) < MinPasswordLength {
+		return "", ErrPasswordTooShort
+	}
 	return hashPasswordWith(argonCurrent, password)
 }
 
@@ -170,7 +179,7 @@ func (l *Local) Authenticate(ctx context.Context, username, password string) (vi
 // rehash replaces a legacy Argon2id encoding after it has already verified.
 // A failed rewrite leaves the old hash in place for the next sign-in.
 func (l *Local) rehash(viewerID int64, username, password string) {
-	hash, err := hashPassword(password)
+	hash, err := hashPasswordWith(argonCurrent, password)
 	if err != nil {
 		return
 	}

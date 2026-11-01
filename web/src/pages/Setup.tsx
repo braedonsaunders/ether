@@ -55,6 +55,7 @@ import {
   type HouseholdLanguage,
 } from "./setup/language";
 import { normalizeRules, type StreamRules } from "./viewers/shared";
+import { MIN_LOCAL_PASSWORD } from "./me/SignInMethods";
 
 export type WizardStepId =
   "language" | "apps" | "account" | "sources" | "indexers" | "cache" | "catalog";
@@ -702,7 +703,7 @@ export default function Setup() {
             accountReady: showLocalOwner
               ? localDone ||
                 (localUsername.trim() !== "" &&
-                  localPassword !== "" &&
+                  localPassword.length >= MIN_LOCAL_PASSWORD &&
                   localPassword === localPasswordAgain)
               : Boolean(cfg.plex.claimed && cfg.plex.token) && !plexRecovery && !claimFailed,
             providers: cfg.usenet.providers ?? [],
@@ -896,7 +897,8 @@ export default function Setup() {
   };
 
   const plexSigned = pinDone || Boolean(cfg.plex.claimed && cfg.plex.token);
-  const passwordsMatch = localPassword !== "" && localPassword === localPasswordAgain;
+  const passwordLongEnough = localPassword.length >= MIN_LOCAL_PASSWORD;
+  const passwordsMatch = passwordLongEnough && localPassword === localPasswordAgain;
 
   if (finished) return <SetupReady initialConfig={cfg} />;
 
@@ -1073,10 +1075,20 @@ export default function Setup() {
                   onChange={(e) => setLocalUsername(e.currentTarget.value)}
                 />
               </Field>
-              <Field label={t("Password")} htmlFor="setup-owner-password">
+              <Field
+                label={t("Password")}
+                htmlFor="setup-owner-password"
+                hint={t("Use at least 12 characters.")}
+                error={
+                  localPassword !== "" && !passwordLongEnough
+                    ? t("Password must be at least 12 characters.")
+                    : undefined
+                }
+              >
                 <PasswordInput
                   id="setup-owner-password"
                   autoComplete="new-password"
+                  minLength={MIN_LOCAL_PASSWORD}
                   value={localPassword}
                   onChange={(e) => setLocalPassword(e.currentTarget.value)}
                 />
@@ -1085,6 +1097,7 @@ export default function Setup() {
                 <PasswordInput
                   id="setup-owner-password-again"
                   autoComplete="new-password"
+                  minLength={MIN_LOCAL_PASSWORD}
                   value={localPasswordAgain}
                   onChange={(e) => setLocalPasswordAgain(e.currentTarget.value)}
                 />
@@ -1092,17 +1105,21 @@ export default function Setup() {
               <p className="text-sm text-fg-muted">
                 {tn(
                   3 -
-                    [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(
-                      Boolean,
-                    ).length,
+                    [
+                      localUsername.trim(),
+                      passwordLongEnough ? "ok" : "",
+                      passwordsMatch ? "ok" : "",
+                    ].filter(Boolean).length,
                   "{n} required field left",
                   "{n} required fields left",
                   {
                     n:
                       3 -
-                      [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(
-                        Boolean,
-                      ).length,
+                      [
+                        localUsername.trim(),
+                        passwordLongEnough ? "ok" : "",
+                        passwordsMatch ? "ok" : "",
+                      ].filter(Boolean).length,
                   },
                 )}
               </p>

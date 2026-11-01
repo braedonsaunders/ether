@@ -30,11 +30,11 @@ func TestFavoriteEpisodeAlertAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	local, _ := identity.NewLocal(db)
-	ownerID, err := local.CreateOwner(ctx, "owner", "password")
+	ownerID, err := local.CreateOwner(ctx, "owner", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherID, err := local.CreateViewer(ctx, "viewer", "password")
+	otherID, err := local.CreateViewer(ctx, "viewer", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

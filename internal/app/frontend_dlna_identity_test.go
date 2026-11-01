@@ -16,7 +16,7 @@ func TestDLNARequiresSelectedActiveViewerAndVerifiedLAN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(context.Background(), "viewer", "password")
+	id, err := local.CreateViewer(context.Background(), "viewer", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,14 @@ import (
 	"github.com/braedonsaunders/ether/internal/identity"
 )
 
+func writePasswordError(w http.ResponseWriter, err error, fallback string) {
+	if errors.Is(err, identity.ErrPasswordTooShort) {
+		writeError(w, 400, "invalid", "password must be at least 12 characters")
+		return
+	}
+	writeError(w, 400, "invalid", fallback)
+}
+
 type localLogin struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -92,7 +100,7 @@ func (h *Handler) handleLocalSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := h.deps.LocalIdentity.CreateOwner(r.Context(), body.Username, body.Password)
 	if err != nil {
-		writeError(w, 400, "invalid", "could not create owner")
+		writePasswordError(w, err, "could not create owner")
 		return
 	}
 	if err = h.deps.RefreshViewers(r.Context()); err != nil {
@@ -270,7 +278,7 @@ func (h *Handler) handleMePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err = h.deps.LocalIdentity.UpsertPassword(r.Context(), u.ID, body.Username, body.Password); err != nil {
-		writeError(w, 400, "invalid", "could not set password")
+		writePasswordError(w, err, "could not set password")
 		return
 	}
 	h.ownerCredentialChanged(r)
@@ -424,7 +432,7 @@ func (h *Handler) ownerIdentityManagement(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if err = h.deps.LocalIdentity.UpsertPassword(r.Context(), id, body.Username, body.Password); err != nil {
-			writeError(w, 400, "invalid", "could not set password")
+			writePasswordError(w, err, "could not set password")
 			return
 		}
 		h.ownerCredentialChanged(r)
@@ -536,7 +544,7 @@ func (h *Handler) handleCreateLocalViewer(w http.ResponseWriter, r *http.Request
 	}
 	id, err := h.deps.LocalIdentity.CreateViewer(r.Context(), body.Username, body.Password)
 	if err != nil {
-		writeError(w, 400, "invalid", "could not create viewer")
+		writePasswordError(w, err, "could not create viewer")
 		return
 	}
 	if err = h.deps.RefreshViewers(r.Context()); err != nil {

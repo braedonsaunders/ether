@@ -13,6 +13,8 @@ import { LoadingRows } from "../../components/feedback";
 import { PasswordInput } from "../../components/fields";
 import { SettingsRow } from "../../components/SettingsRow";
 
+export const MIN_LOCAL_PASSWORD = 12;
+
 type Method = { id: number; provider: string; display: string };
 type Device = {
   hash: string;
@@ -113,6 +115,10 @@ export default function SignInMethods({
   }, [load]);
   async function update(e: FormEvent) {
     e.preventDefault();
+    if (password.length < MIN_LOCAL_PASSWORD) {
+      setError(t("Password must be at least 12 characters."));
+      return;
+    }
     setBusy(true);
     setError("");
     setMessage("");
@@ -185,6 +191,7 @@ export default function SignInMethods({
       setBusy(false);
     }
   }
+  const passwordTooShort = password !== "" && password.length < MIN_LOCAL_PASSWORD;
   return (
     <div className="space-y-6">
       {error ? (
@@ -247,7 +254,7 @@ export default function SignInMethods({
           title={t("Password")}
           description={t("Choose a username and password. Saving replaces the current password.")}
           footer={
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || passwordTooShort}>
               {t("Set or reset password")}
             </Button>
           }
@@ -262,15 +269,26 @@ export default function SignInMethods({
               required
             />
           </SettingsRow>
-          <SettingsRow stacked title={t("New password")}>
+          <SettingsRow
+            stacked
+            title={t("New password")}
+            description={t("Use at least 12 characters.")}
+          >
             <PasswordInput
               id={`${base}-password`}
               aria-label={t("New password")}
+              aria-invalid={passwordTooShort || undefined}
+              minLength={MIN_LOCAL_PASSWORD}
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
               autoComplete="new-password"
               required
             />
+            {passwordTooShort ? (
+              <p className="mt-1 text-xs text-danger" role="alert">
+                {t("Password must be at least 12 characters.")}
+              </p>
+            ) : null}
           </SettingsRow>
         </SettingsSection>
       </form>

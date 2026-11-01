@@ -184,7 +184,7 @@ func TestPublicViewerPickerRequiresOptInAndOnlyActiveLocalCredentials(t *testing
 		id   int64
 		name string
 	}{{11, "plex-linked"}, {12, "inactive"}, {14, "local-viewer"}} {
-		if err := local.Create(ctx, item.id, item.name, "password"); err != nil {
+		if err := local.Create(ctx, item.id, item.name, "password-1234"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -227,7 +227,7 @@ func TestViewerTimesRequiresSurfaceCredentialAndActiveOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	viewerID, err := local.CreateViewer(ctx, "member-times", "password")
+	viewerID, err := local.CreateViewer(ctx, "member-times", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestSurfaceRefreshObservesActivityWithoutNewLogin(t *testing.T) {
 	a := setupTestApp(t, true)
 	ctx := context.Background()
 	local, _ := identity.NewLocal(a.db)
-	viewerID, err := local.CreateViewer(ctx, "refresh-times", "password")
+	viewerID, err := local.CreateViewer(ctx, "refresh-times", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestDeviceIdentityBindsSurfaceAndRejectsPlex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	viewerID, err := local.CreateViewer(ctx, "device-check", "password")
+	viewerID, err := local.CreateViewer(ctx, "device-check", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
