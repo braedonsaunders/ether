@@ -27,7 +27,8 @@ jobs:
   ci:
     name: Require successful CI for the release commit
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Main CI includes a 45-minute race suite; waiting less cancels the release.
+    timeout-minutes: 90
     steps:
       - name: Wait for exact-commit CI
         env:
