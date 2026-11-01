@@ -134,7 +134,10 @@ func (p *searchPreparation) pumpLocked() {
 			}
 			continue
 		}
-		identity := c.rel.Protocol + "|" + strings.ToLower(strings.TrimSpace(c.rel.Name)) + "|" + strconv.FormatInt(c.rel.Size, 10)
+		// Usenet reposts share a name and size, so one check covers them.
+		// Torrents with the same name can be different swarms, and only one
+		// may be cached: the info hash keeps each its own check.
+		identity := c.rel.Protocol + "|" + strings.ToLower(strings.TrimSpace(c.rel.Name)) + "|" + strconv.FormatInt(c.rel.Size, 10) + "|" + strings.ToLower(c.rel.InfoHash)
 		if p.identities[identity] {
 			continue
 		}

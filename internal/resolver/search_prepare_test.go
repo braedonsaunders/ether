@@ -271,3 +271,23 @@ func TestFailedEarlyChecksKeepCheckingArrivedCandidates(t *testing.T) {
 		t.Fatalf("want the first healthy arrived candidate without waiting for the slow indexer: %v %v", result, err)
 	}
 }
+
+// Two torrents can share a name and size but be different swarms; only one
+// may be cached. Lab: Running Man E09 had three such copies and Play waited
+// out a 30 s indexer because the cached one was never checked early.
+func TestSameNameTorrentsWithDifferentHashesAreCheckedSeparately(t *testing.T) {
+	name := "The.Signal.1999.1080p.BluRay.x264-GROUP"
+	bad := rel("bad", name, 6000)
+	bad.Protocol, bad.InfoHash = "torrent", "aaaa"
+	good := rel("good", name, 6000)
+	good.Protocol, good.InfoHash = "torrent", "bbbb"
+	idx := &slowTailIndexer{fakeIndexer: fakeIndexer{releases: []core.Release{bad, good}}}
+	s := New(idx, fakeHealth{unhealthy: map[string]bool{"nzb:bad": true}}, nil, testCfg(), Options{})
+	t.Cleanup(func() { s.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result, err := s.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	if err != nil || result.Release.ID != "good" {
+		t.Fatalf("want the cached copy without waiting for the slow indexer: %v %v", result, err)
+	}
+}
