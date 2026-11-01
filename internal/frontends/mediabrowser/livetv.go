@@ -47,7 +47,12 @@ func (i *instance) channelDTO(r *http.Request, token string, ch frontend.LiveCha
 	if err != nil {
 		return nil, false
 	}
-	item := map[string]any{"Id": id, "Name": ch.Name, "Number": ch.Number, "Type": "TvChannel", "ChannelType": "TV", "MediaType": "Video", "IsFolder": false, "UserData": map[string]any{"Key": id, "IsFavorite": ch.Favorite}}
+	item := map[string]any{
+		"Id": id, "Name": ch.Name, "Number": ch.Number, "Type": "TvChannel",
+		"ChannelType": "TV", "MediaType": "Video", "IsFolder": false,
+		"MediaSources": []any{i.liveChannelMediaSourceDTO(id, ch.Name)},
+		"UserData":     map[string]any{"Key": id, "IsFavorite": ch.Favorite},
+	}
 	if i.host.ImageGrants != nil {
 		for _, img := range ch.Images {
 			if img.Kind != frontend.ImageChannel {
@@ -61,6 +66,72 @@ func (i *instance) channelDTO(r *http.Request, token string, ch frontend.LiveCha
 		}
 	}
 	return item, true
+}
+
+func (i *instance) liveChannelMediaSourceDTO(id, name string) map[string]any {
+	media := frontend.MediaInfo{Container: "ts", Estimated: true}
+	source := i.detailMediaSourceDTO(id, media)
+	i.shapeLiveMediaSource(source, id, name, "", "", media, false)
+	i.mediaSourceDialect(source)
+	if i.protocol == "emby" {
+		i.embyMediaSourceDTO(source, id, media)
+	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinMediaSourceDTO(source, media, true)
+	}
+	return source
+}
+
+func (i *instance) shapeLiveMediaSource(source map[string]any, id, name, liveStreamID, transcodingURL string, media frontend.MediaInfo, opened bool) {
+	for _, field := range []string{"RunTimeTicks", "Size", "Chapters"} {
+		delete(source, field)
+	}
+	source["Id"] = id
+	if name != "" {
+		source["Name"] = name
+	}
+	source["Container"] = "ts"
+	source["Protocol"] = "Http"
+	source["Type"] = "Default"
+	source["IsRemote"] = false
+	source["IsInfiniteStream"] = true
+	source["ReadAtNativeFramerate"] = true
+	source["IgnoreDts"] = true
+	source["IgnoreIndex"] = false
+	source["GenPtsInput"] = false
+	source["SupportsDirectPlay"] = false
+	source["SupportsDirectStream"] = false
+	source["SupportsTranscoding"] = true
+	source["SupportsProbing"] = true
+	source["RequiresOpening"] = true
+	source["RequiresClosing"] = true
+	source["RequiresLooping"] = false
+	source["OpenToken"] = id
+	source["TranscodingSubProtocol"] = "hls"
+	source["TranscodingContainer"] = "ts"
+	if opened {
+		source["LiveStreamId"] = liveStreamID
+		source["TranscodingUrl"] = transcodingURL
+		source["MediaStreams"] = i.mediaStreams(media.Streams)
+	}
+}
+
+func defaultLiveMediaInfo(in frontend.MediaInfo) frontend.MediaInfo {
+	out := in
+	out.Container = "ts"
+	out.Duration = 0
+	out.Size = 0
+	out.Chapters = nil
+	out.Estimated = false
+	if len(out.Streams) == 0 {
+		no := false
+		eight := 8
+		out.Streams = []frontend.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, BitDepth: 8, BitsPerRawSample: &eight, PixelFormat: "yuv420p", ColorTransfer: "bt709", ColorSpace: "bt709", ColorPrimaries: "bt709", SampleAspectRatio: "1:1", DisplayAspectRatio: "16:9", Default: true, DolbyVisionConfigurationPresent: &no, HDR10Plus: &no},
+			{Index: 1, Type: "audio", Codec: "aac", Channels: 2, SampleRate: 48000, ChannelLayout: "stereo", Default: true},
+		}
+	}
+	return out
 }
 
 func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +189,71 @@ func liveChannelTypesOnly(r *http.Request) bool {
 		}
 	}
 	return saw
+}
+
+func (i *instance) writeLiveItemsByID(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer) bool {
+	values := route.Query(r.URL.Query(), "Ids")
+	if len(values) == 0 {
+		return false
+	}
+	var idsList []string
+	for _, value := range values {
+		for _, id := range strings.Split(value, ",") {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			_, chErr := ids.ParseGUID(ids.Channel, id)
+			_, prErr := ids.ParseGUID(ids.Programme, id)
+			if chErr != nil && prErr != nil {
+				return false
+			}
+			idsList = append(idsList, id)
+		}
+	}
+	if len(idsList) == 0 {
+		return false
+	}
+	if i.host.LiveTV == nil {
+		i.replyItems(w, r, i.queryResult([]any{}, 0, queryInt(r, "StartIndex", 0)))
+		return true
+	}
+	token := authhdr.MediaBrowserToken(r)
+	var allChannels []frontend.LiveChannel
+	items := make([]any, 0, len(idsList))
+	for _, wireID := range idsList {
+		if _, err := ids.ParseGUID(ids.Channel, wireID); err == nil {
+			ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), viewer, wireID)
+			if err != nil || ch.ID == "" {
+				continue
+			}
+			if item, ok := i.channelDTO(r, token, ch); ok {
+				items = append(items, item)
+			}
+			continue
+		}
+		p, err := i.host.LiveTV.ResolveProgrammeGUID(r.Context(), viewer, wireID, programmeLookupQuery(time.Now().UTC()))
+		if err != nil || p.ID == "" || p.ChannelID == "" {
+			continue
+		}
+		if allChannels == nil {
+			allChannels, _ = i.host.LiveTV.Channels(r.Context(), viewer)
+		}
+		var channel frontend.LiveChannel
+		for _, ch := range allChannels {
+			if ch.ID == p.ChannelID {
+				channel = ch
+				break
+			}
+		}
+		if item, ok := i.programmeDTO(p, channel); ok {
+			items = append(items, item)
+		}
+	}
+	offset := queryInt(r, "StartIndex", 0)
+	limit := queryInt(r, "Limit", 50)
+	i.replyItems(w, r, i.queryResult(paging.Slice(items, offset, limit), len(items), offset))
+	return true
 }
 
 func (i *instance) writeLiveChannelItems(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer) {

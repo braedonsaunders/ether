@@ -468,6 +468,63 @@ func TestApprovedLiveTVRegistryIsExact(t *testing.T) {
 	}
 }
 
+func TestApprovedV0258RegistriesAreExact(t *testing.T) {
+	var entries []approvedDifference
+	if err := json.Unmarshal(approvedV0258, &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 5325 {
+		t.Fatalf("got %d v0.2.58 pairs, want 5325", len(entries))
+	}
+	commits := map[string]int{}
+	seen := map[approvedDifference]bool{}
+	for _, e := range entries {
+		if seen[e] || e.Path == "" || e.Viewer == "" || e.Client == "" || e.Baseline.Status == 0 || e.Candidate.Status == 0 || len(e.Baseline.SHA256) != 64 || len(e.Candidate.SHA256) != 64 || e.Baseline.SHA256 == e.Candidate.SHA256 {
+			t.Fatalf("v0.2.58 approval is not a unique exact pair: %+v", e)
+		}
+		seen[e] = true
+		commits[e.Commit]++
+	}
+	want := map[string]int{"77af603e": 2340, "14a6b0890+77af603e": 2765, "3654964cc+77af603e": 50, "feaa49f10": 10, "c82a7830+77af603e": 160}
+	if !reflect.DeepEqual(commits, want) {
+		t.Fatalf("v0.2.58 commits %v", commits)
+	}
+	var tokens []approvedDifference
+	if err := json.Unmarshal(approvedV0258Token, &tokens); err != nil {
+		t.Fatal(err)
+	}
+	if len(tokens) != 60 {
+		t.Fatalf("got %d token pairs, want 60", len(tokens))
+	}
+	for _, e := range tokens {
+		if e.Commit != "9b8fa7546" || e.Baseline.SHA256 == e.Candidate.SHA256 || len(e.Candidate.SHA256) != 64 {
+			t.Fatalf("token approval is not the reviewed grant pair: %+v", e)
+		}
+	}
+	old := approvedV0258Token
+	defer func() { approvedV0258Token = old }()
+	base := []byte("segment.ts?X-Plex-Token=parity-owner\n")
+	first := []byte("segment.ts?X-Ether-Stream-Token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n")
+	second := []byte("segment.ts?X-Ether-Stream-Token=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n")
+	a := capture{viewer: "owner", client: "web", path: "livetv:playlist", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/vnd.apple.mpegurl"}}, Body: base}}
+	b := capture{viewer: a.viewer, client: a.client, path: a.path, response: protocol.Response{Status: 200, Headers: a.response.Headers, Body: first}}
+	norm := b.response
+	norm.Body = normalizeResponse(first)
+	e := approvedDifference{Viewer: a.viewer, Client: a.client, Path: a.path, Baseline: signature(a.response), Candidate: signature(norm), Commit: "9b8fa7546"}
+	approvedV0258Token, _ = json.Marshal([]approvedDifference{e})
+	if got, err := approved(a, b); err != nil || got != e.Commit {
+		t.Fatalf("normalized grant pair: %q %v", got, err)
+	}
+	b.response.Body = second
+	if got, err := approved(a, b); err != nil || got != e.Commit {
+		t.Fatalf("a second grant value was not the same pair: %q %v", got, err)
+	}
+	b.response.Body = []byte("segment.ts?X-Ether-Stream-Token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&extra=1\n")
+	if got, err := approved(a, b); err != nil || got != "" {
+		t.Fatalf("unreviewed playlist byte approved: %q %v", got, err)
+	}
+}
+
 func TestWatchApprovalAcceptsOnlyTheTypedContainerAndHandshake(t *testing.T) {
 	body := []byte("{\"MediaContainer\":{\"size\":0}}\n")
 	pair := func(extra string, contentType string) (capture, capture) {

@@ -17,6 +17,8 @@ type PlexWatchStatus struct {
 	Eligibility  string `json:"eligibility"`
 	Revoked      bool   `json:"revoked"`
 	Pending      int    `json:"pending"`
+	Held         int    `json:"held"`
+	HeldLegacy   int    `json:"heldLegacy"`
 	Dead         int    `json:"dead"`
 	InFlight     bool   `json:"inFlight"`
 	Skipped      int    `json:"skipped"`
@@ -44,6 +46,7 @@ type PlexWatch interface {
 	SetEnabled(ctx context.Context, userID, plexID int64, on bool) (PlexWatchStatus, error)
 	Disconnect(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
 	Retry(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
+	Resolve(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
 	ExportCurrent(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
 	ImportCurrent(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
 }
@@ -140,6 +143,15 @@ func (h *Handler) handlePlexWatchRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st, err := h.deps.PlexWatch.Retry(r.Context(), v.ID, v.PlexID)
+	h.writePlexWatch(w, st, err)
+}
+
+func (h *Handler) handlePlexWatchResolve(w http.ResponseWriter, r *http.Request) {
+	v, ok := h.plexWatchViewer(w, r)
+	if !ok {
+		return
+	}
+	st, err := h.deps.PlexWatch.Resolve(r.Context(), v.ID, v.PlexID)
 	h.writePlexWatch(w, st, err)
 }
 

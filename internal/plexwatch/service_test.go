@@ -259,7 +259,11 @@ func (l *lockedTime) Add(d time.Duration) {
 
 func newHarness(t *testing.T, account int64) *harness {
 	t.Helper()
-	db := store.OpenTest(t)
+	return newHarnessDB(t, account, store.OpenTest(t))
+}
+
+func newHarnessDB(t *testing.T, account int64, db *sql.DB) *harness {
+	t.Helper()
 	clock := &lockedTime{t: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)}
 	st := state.New(db, state.Options{Now: clock.Now})
 	h := &harness{st: st, now: clock}
@@ -307,8 +311,8 @@ func (h *harness) claimedIntent(t *testing.T, user int64) (state.SyncRow, string
 	}
 	attempt := h.svc.node + ":" + newID()
 	var seq int64
-	err := h.svc.db.QueryRow(`INSERT INTO state_sync_journal(user_id, rating_key, aspect, kind, occurred_at, consent_generation, claimed_by, claimed_at)
-		VALUES(?,?,?,?,?,?,?,?) RETURNING seq`,
+	err := h.svc.db.QueryRow(`INSERT INTO state_sync_journal(user_id, rating_key, aspect, kind, occurred_at, consent_generation, claimed_by, claimed_at, never_sent)
+		VALUES(?,?,?,?,?,?,?,?,1) RETURNING seq`,
 		user, int64(1), "watch", "complete", h.now.Now().UnixNano(), gen, attempt, h.now.Now().UnixNano()).Scan(&seq)
 	if err != nil {
 		t.Fatal(err)
@@ -481,77 +485,75 @@ func TestRestartDeliversOnce(t *testing.T) {
 	}
 }
 
+// ETHE-25: Retry-After and server errors are not proof of no effect, while
+// definitive refusals (400/401/403/422) clear the admission fence.
 func TestHTTPFailuresAndDisable(t *testing.T) {
-	h := newHarness(t, 42)
-	h.connect(t, 2, 42)
-	if _, err := h.svc.SetEnabled(context.Background(), 2, 42, true); err != nil {
-		t.Fatal(err)
-	}
-	key := core.MovieKey(3)
-	h.guid.forward[key] = "plex://movie/5d776b8ead5437001f7a3218"
-	if err := h.st.Rate(context.Background(), 2, key, 8); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.st.Rate(context.Background(), 2, key, 7); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.st.Rate(context.Background(), 2, key, 0); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.svc.DeliverOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	h.fake.mu.Lock()
-	if len(h.fake.posts) != 0 {
-		t.Fatalf("unproven rating sent %+v", h.fake.posts)
-	}
-	h.fake.mu.Unlock()
-	if err := h.st.Rate(context.Background(), 2, key, 10); err != nil {
-		t.Fatal(err)
-	}
-	h.fake.postStatus = http.StatusTooManyRequests
-	h.fake.retryAfter = "4"
-	if _, err := h.svc.DeliverOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	h.fake.mu.Lock()
-	if len(h.fake.posts) != 1 || h.fake.posts[0].Rating == nil || *h.fake.posts[0].Rating != 10 {
-		t.Fatalf("rating post %+v", h.fake.posts)
-	}
-	h.fake.mu.Unlock()
-	// Not claimable until Retry-After elapses.
-	if more, err := h.svc.DeliverOnce(context.Background()); err != nil || more {
-		t.Fatalf("retried before Retry-After %v %v", more, err)
-	}
-	h.now.Add(5 * time.Second)
-	h.fake.postStatus = http.StatusInternalServerError
-	if _, err := h.svc.DeliverOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	h.now.Add(time.Minute)
-	h.fake.postStatus = http.StatusUnauthorized
-	if _, err := h.svc.DeliverOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.svc.DeliverOnce(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	h.fake.mu.Lock()
-	n := len(h.fake.posts)
-	h.fake.mu.Unlock()
-	if n != 3 {
-		t.Fatalf("posts after revoke %d", n)
-	}
-	var token string
-	var revoked int
-	if err := h.svc.db.QueryRow(`SELECT token, revoked FROM plexwatch_account WHERE user_id=2`).Scan(&token, &revoked); err != nil {
-		t.Fatal(err)
-	}
-	if token != "" || revoked != 1 {
-		t.Fatalf("token %q revoked %d", token, revoked)
-	}
-	if bytes.Contains(h.logs.Bytes(), []byte(viewerToken)) {
-		t.Fatal("token logged")
+	for _, code := range []int{400, 401, 403, 422, 429, 500} {
+		t.Run(itoa(int64(code)), func(t *testing.T) {
+			h := newHarness(t, 42)
+			ctx := context.Background()
+			h.connect(t, 2, 42)
+			if _, err := h.svc.SetEnabled(ctx, 2, 42, true); err != nil {
+				t.Fatal(err)
+			}
+			key := core.MovieKey(3)
+			h.guid.forward[key] = "plex://movie/5d776b8ead5437001f7a3218"
+			// Preserve the accepted whole-star/coalescing rule: the latest clear
+			// remains local, even if an earlier queued value was a whole-star rating.
+			for _, value := range []float64{8, 7, 0} {
+				if err := h.st.Rate(ctx, 2, key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := h.svc.DeliverOnce(ctx); err != nil {
+				t.Fatal(err)
+			}
+			h.fake.mu.Lock()
+			before := len(h.fake.posts)
+			h.fake.mu.Unlock()
+			if before != 0 {
+				t.Fatalf("unsupported latest rating sent: %d", before)
+			}
+
+			if err := h.st.Rate(ctx, 2, key, 10); err != nil {
+				t.Fatal(err)
+			}
+			h.fake.postStatus = code
+			h.fake.retryAfter = "4"
+			if _, err := h.svc.DeliverOnce(ctx); err != nil {
+				t.Fatal(err)
+			}
+			h.now.Add(3 * time.Minute)
+			if _, err := h.svc.DeliverOnce(ctx); err != nil {
+				t.Fatal(err)
+			}
+			h.fake.mu.Lock()
+			n := len(h.fake.posts)
+			h.fake.mu.Unlock()
+			if n != 1 {
+				t.Fatalf("refused or uncertain send repeated: %d", n)
+			}
+			st, err := h.svc.Status(ctx, 2, 42)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if code == 401 && !st.Revoked {
+				t.Fatal("authentication refusal did not revoke")
+			}
+			if code == 403 && st.Enabled {
+				t.Fatal("eligibility refusal left sync on")
+			}
+			wantHeld := 0
+			if code == 429 || code == 500 {
+				wantHeld = 1
+			}
+			if st.Held != wantHeld {
+				t.Fatalf("held=%d want %d: %+v", st.Held, wantHeld, st)
+			}
+			if bytes.Contains(h.logs.Bytes(), []byte(viewerToken)) {
+				t.Fatal("token logged")
+			}
+		})
 	}
 }
 
@@ -1258,7 +1260,7 @@ func TestStalePermitReleaseDoesNotClearNewer(t *testing.T) {
 		t.Fatal(err)
 	}
 	row, attempt := h.claimedIntent(t, 2)
-	permitA, err := h.svc.acquireSend(ctx, row, attempt)
+	permitA, err := h.svc.acquireSend(ctx, row, attempt, postItem{GUID: "plex://movie/5d7768265af944001f1f6976", ViewState: "complete", ViewedAt: h.now.Now().UnixMilli()})
 	if err != nil || !permitA.OK || permitA.ID == "" {
 		t.Fatal(err, permitA)
 	}
@@ -1266,7 +1268,17 @@ func TestStalePermitReleaseDoesNotClearNewer(t *testing.T) {
 	if _, err := h.svc.db.Exec(`UPDATE plexwatch_permit SET until_at=? WHERE permit_id=?`, past, permitA.ID); err != nil {
 		t.Fatal(err)
 	}
-	permitB, err := h.svc.acquireSend(ctx, row, attempt)
+	// ETHE-25: the same effect cannot acquire another permit after expiry.
+	blocked, err := h.svc.acquireSend(ctx, row, attempt, postItem{GUID: "plex://movie/5d7768265af944001f1f6976", ViewState: "complete"})
+	if err != nil || blocked.OK || blocked.Terminal != "uncertain_send" {
+		t.Fatal(err, blocked)
+	}
+	row, attempt = h.claimedIntent(t, 2)
+	row.Key = core.RatingKey(2)
+	if _, err := h.svc.db.Exec(`UPDATE state_sync_journal SET rating_key=? WHERE seq=?`, int64(row.Key), row.Seq); err != nil {
+		t.Fatal(err)
+	}
+	permitB, err := h.svc.acquireSend(ctx, row, attempt, postItem{GUID: "plex://movie/5d776b8ead5437001f7a3218", ViewState: "complete", ViewedAt: h.now.Now().UnixMilli()})
 	if err != nil || !permitB.OK || permitB.ID == "" || permitB.ID == permitA.ID {
 		t.Fatal(err, permitB)
 	}
@@ -1286,53 +1298,45 @@ func TestStalePermitReleaseDoesNotClearNewer(t *testing.T) {
 	}
 }
 
+// ETHE-25: concurrent workers may admit only one uncertain effect.
 func TestConcurrentAcquireKeepsEachPermit(t *testing.T) {
 	h := newHarness(t, 42)
 	ctx := context.Background()
-	if h.svc.db.Stats().MaxOpenConnections < 2 {
-		t.Skip("concurrent permit acquisition needs PostgreSQL (ETHER_TEST_POSTGRES)")
-	}
 	h.connect(t, 2, 42)
 	if _, err := h.svc.SetEnabled(ctx, 2, 42, true); err != nil {
 		t.Fatal(err)
 	}
 	row, attempt := h.claimedIntent(t, 2)
 	var wg sync.WaitGroup
-	ids := make(chan string, 2)
+	outcomes := make(chan sendPermit, 2)
 	errs := make(chan error, 2)
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			permit, err := h.svc.acquireSend(ctx, row, attempt)
-			if err != nil || !permit.OK {
-				if err == nil {
-					err = errors.New("permit was not admitted")
-				}
-				errs <- err
-				return
-			}
-			ids <- permit.ID
+			p, err := h.svc.acquireSend(ctx, row, attempt, postItem{GUID: "plex://movie/5d7768265af944001f1f6976", ViewState: "complete", ViewedAt: h.now.Now().UnixMilli()})
+			outcomes <- p
+			errs <- err
 		}()
 	}
 	wg.Wait()
+	close(outcomes)
 	close(errs)
 	for err := range errs {
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	close(ids)
-	seen := map[string]bool{}
-	for id := range ids {
-		seen[id] = true
+	admitted, held := 0, 0
+	for p := range outcomes {
+		if p.OK {
+			admitted++
+		} else if p.Terminal == "uncertain_send" {
+			held++
+		}
 	}
-	if len(seen) != 2 {
-		t.Fatalf("permits %v", seen)
-	}
-	var n int
-	if err := h.svc.db.QueryRow(`SELECT COUNT(*) FROM plexwatch_permit WHERE user_id=2 AND until_at>?`, h.now.Now().UnixNano()).Scan(&n); err != nil || n != 2 {
-		t.Fatalf("live %d %v", n, err)
+	if admitted != 1 || held != 1 {
+		t.Fatalf("admitted=%d held=%d", admitted, held)
 	}
 }
 
@@ -1447,10 +1451,14 @@ func TestStaleDeliveryDoesNotReleaseReplacement(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	var claimed, holder string
-	if err := h.svc.db.QueryRow(`SELECT claimed_by FROM state_sync_journal WHERE user_id=2 AND delivered_at=0 AND dead=0`).Scan(&claimed); err != nil || claimed != second {
-		t.Fatalf("claim %q %v", claimed, err)
+	// ETHE-25: a committed receipt acknowledges the original intent even
+	// after claim expiry; it must not release another worker's title lock.
+	var holder string
+	var delivered int64
+	if err := h.svc.db.QueryRow(`SELECT delivered_at FROM state_sync_journal WHERE user_id=2`).Scan(&delivered); err != nil || delivered == 0 {
+		t.Fatalf("receipt not acknowledged: %d %v", delivered, err)
 	}
+
 	if err := h.svc.db.QueryRow(`SELECT holder FROM state_sync_lock WHERE user_id=2 AND rating_key=?`, int64(key)).Scan(&holder); err != nil || holder != second {
 		t.Fatalf("lock %q %v", holder, err)
 	}

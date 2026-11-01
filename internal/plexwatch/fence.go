@@ -75,7 +75,7 @@ type sendPermit struct {
 // only when the locked fence generation matches the intent's consent
 // generation and this attempt still owns that journal row. Release deletes
 // that permit id only.
-func (s *Service) acquireSend(ctx context.Context, row state.SyncRow, attempt string) (sendPermit, error) {
+func (s *Service) acquireSend(ctx context.Context, row state.SyncRow, attempt string, item postItem) (sendPermit, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return sendPermit{}, err
@@ -91,12 +91,12 @@ func (s *Service) acquireSend(ctx context.Context, row state.SyncRow, attempt st
 	if err != nil && !fenceMissing {
 		return sendPermit{}, err
 	}
-	var sealed string
+	var sealed, eligibility string
 	var enabled, revoked int
 	var tokenGen int64
 	var plexID int64
-	err = tx.QueryRowContext(ctx, `SELECT plex_id, token, enabled, revoked, token_generation FROM plexwatch_account WHERE user_id=?`, row.UserID).
-		Scan(&plexID, &sealed, &enabled, &revoked, &tokenGen)
+	err = tx.QueryRowContext(ctx, `SELECT plex_id, token, enabled, revoked, token_generation, eligibility FROM plexwatch_account WHERE user_id=?`, row.UserID).
+		Scan(&plexID, &sealed, &enabled, &revoked, &tokenGen, &eligibility)
 	accountMissing := errors.Is(err, sql.ErrNoRows)
 	if err != nil && !accountMissing {
 		return sendPermit{}, err
@@ -107,14 +107,55 @@ func (s *Service) acquireSend(ctx context.Context, row state.SyncRow, attempt st
 	}
 	stale := fenceMissing || accountMissing || consent != fenceGen || consent != row.ConsentGen
 	disabled := enabled == 0 || revoked != 0 || sealed == "" || tokenGen != fenceGen
-	if !owned || stale || disabled {
+	notEligible := eligibility != "allowed"
+	if !owned || stale || disabled || notEligible {
 		out := sendPermit{}
 		if owned && stale {
 			out.Terminal = "consent"
 		} else if owned && disabled {
 			out.Terminal = "disabled"
+		} else if owned && notEligible {
+			out.Terminal = "not_eligible"
 		}
 		return out, nil
+	}
+
+	// Conflicts belong to the remote account/GUID/aspect, not a worker lease
+	// or consent generation. Also retain local identity to fence GUID remaps.
+	// Unmapped legacy attempts conservatively fence their account/aspect.
+	var conflicts int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_attempt
+  WHERE receipt_at=0 AND aspect=? AND
+   ((user_id=? AND (rating_key=? OR guid='')) OR (plex_id=? AND (guid=? OR guid='')))`,
+		string(row.Aspect), row.UserID, int64(row.Key), plexID, item.GUID).Scan(&conflicts); err != nil {
+		return sendPermit{}, err
+	}
+	if conflicts > 0 {
+		return sendPermit{Terminal: "uncertain_send"}, nil
+	}
+	var neverSent int
+	if err := tx.QueryRowContext(ctx, `SELECT never_sent FROM state_sync_journal WHERE seq=?`, row.Seq).Scan(&neverSent); err != nil {
+		return sendPermit{}, err
+	}
+	if neverSent != 1 {
+		// Old writers may append after upgrade. A dead queue row alone is not a
+		// durable hold: compaction, consent changes and supersession can erase it.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO plexwatch_attempt(attempt_id,seq,user_id,rating_key,plex_id,generation,guid,aspect,occurred_at,payload,admitted_at,next_reconcile)
+   VALUES(?,?,?,?,?,?,'',?,?,'',0,0) ON CONFLICT(attempt_id) DO NOTHING`, "legacy:"+strconv.FormatInt(row.Seq, 10), row.Seq, row.UserID, int64(row.Key), plexID, row.ConsentGen, string(row.Aspect), row.At.UnixNano()); err != nil {
+			return sendPermit{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return sendPermit{}, err
+		}
+		return sendPermit{Terminal: "uncertain_legacy"}, nil
+	}
+	plain, _, err := config.OpenWith(s.sealer, sealed, "plexwatch", "token", strconv.FormatInt(row.UserID, 10), "scrobbles.plex.tv")
+	if err != nil {
+		return sendPermit{}, err
+	}
+	payload, err := encodeState(plexID, item)
+	if err != nil {
+		return sendPermit{}, err
 	}
 	if s.afterFenceRead != nil {
 		s.afterFenceRead()
@@ -128,14 +169,22 @@ func (s *Service) acquireSend(ctx context.Context, row state.SyncRow, attempt st
 		permitID, row.UserID, fenceGen, lease); err != nil {
 		return sendPermit{}, err
 	}
-	if err := tx.Commit(); err != nil {
+
+	if _, err := tx.ExecContext(ctx, `INSERT INTO plexwatch_attempt(attempt_id,seq,user_id,rating_key,plex_id,generation,guid,aspect,occurred_at,payload,admitted_at,next_reconcile)
+  VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, permitID, row.Seq, row.UserID, int64(row.Key), plexID, fenceGen, item.GUID, string(row.Aspect), row.At.UnixNano(), string(payload), s.now().UnixNano(), lease); err != nil {
 		return sendPermit{}, err
 	}
-	plain, _, err := config.OpenWith(s.sealer, sealed, "plexwatch", "token", strconv.FormatInt(row.UserID, 10), "scrobbles.plex.tv")
-	if err != nil {
-		s.releaseSend(ctx, permitID)
+	if _, err := tx.ExecContext(ctx, `UPDATE state_sync_journal SET never_sent=0 WHERE seq=?`, row.Seq); err != nil {
 		return sendPermit{}, err
 	}
+	commit := tx.Commit
+	if s.admissionCommit != nil {
+		commit = func() error { return s.admissionCommit(tx) }
+	}
+	if err := commit(); err != nil {
+		return sendPermit{}, err
+	}
+
 	return sendPermit{ID: permitID, Generation: fenceGen, Token: plain, PlexID: plexID, OK: true}, nil
 }
 

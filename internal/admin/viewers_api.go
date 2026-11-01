@@ -69,6 +69,7 @@ func (h *Handler) personalizationRoutes(api func(pattern string, fn http.Handler
 	api("PUT /api/viewers/{id}/plex-watch", h.handlePlexWatchEnabled)
 	api("POST /api/viewers/{id}/plex-watch/disconnect", h.handlePlexWatchDisconnect)
 	api("POST /api/viewers/{id}/plex-watch/retry", h.handlePlexWatchRetry)
+	api("POST /api/viewers/{id}/plex-watch/resolve", h.handlePlexWatchResolve)
 	api("POST /api/viewers/{id}/plex-watch/export", h.handlePlexWatchExport)
 	api("POST /api/viewers/{id}/plex-watch/import", h.handlePlexWatchImport)
 }

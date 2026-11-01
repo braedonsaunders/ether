@@ -901,9 +901,10 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	c := ss.info.Channel
 	c.StreamURL = ss.inputURL
 	analyze := len(ss.caps.VideoCodecs) > 0 || len(ss.caps.AudioCodecs) > 0 || clientreg.HasQuirk(clientreg.Identity{Product: ss.caps.Product, Platform: ss.caps.Platform, Device: ss.caps.Device, Version: ss.caps.Version}, "probe-hls-without-codecs")
+	probe := analyze || c.Transcode || ss.caps.Protocol == "jellyfin" || ss.caps.Protocol == "emby"
 	// Codec analysis overlaps the playlist prefix read. The first tune of a
 	// channel still waits on the probe; a retune inside liveProbeTTL does not.
-	probeCh, probeCancel := s.startEarlyProbe(ctx, ss, analyze || c.Transcode)
+	probeCh, probeCancel := s.startEarlyProbe(ctx, ss, probe)
 	if probeCancel != nil {
 		defer probeCancel()
 	}
@@ -924,23 +925,29 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	isHLS := strings.HasPrefix(strings.TrimSpace(string(prefix[:n])), "#EXTM3U") || strings.Contains(strings.ToLower(res.Header.Get("Content-Type")), "mpegurl")
 	var info *core.MediaInfo
 	if isHLS && !c.Transcode {
-		if s.o.Transcoder != nil && analyze {
+		if s.o.Transcoder != nil && probe {
 			info, err = s.takeEarlyProbe(ctx, ss, probeCh)
-			if err != nil {
-				return err
+			if analyze {
+				if err != nil {
+					return err
+				}
+				if info == nil || info.Video() == nil {
+					return core.ErrNotAvailable
+				}
 			}
-			if info == nil || info.Video() == nil {
-				return core.ErrNotAvailable
-			}
-			copy := *info
-			copy.Duration = 0
-			info = &copy
-			ss.info.MediaInfo = info
-			// A playlist is a transport, not evidence that its codecs are
-			// playable. MPEG-2/MP2 HLS needs conversion on Apple TV too.
-			dec := s.o.Transcoder.Decide(*info, ss.caps, core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: -1, SubtitleStream: -1})
-			if !dec.VideoCopy || !dec.AudioCopy {
-				return s.startIPTVRelay(ctx, ss, *info)
+			if err == nil && info != nil && info.Video() != nil {
+				copy := *info
+				copy.Duration = 0
+				info = &copy
+				ss.info.MediaInfo = info
+				if analyze {
+					// A playlist is a transport, not evidence that its codecs are
+					// playable. MPEG-2/MP2 HLS needs conversion on Apple TV too.
+					dec := s.o.Transcoder.Decide(*info, ss.caps, core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: -1, SubtitleStream: -1})
+					if !dec.VideoCopy || !dec.AudioCopy {
+						return s.startIPTVRelay(ctx, ss, *info)
+					}
+				}
 			}
 		}
 		ss.resources["index.m3u8"] = c.StreamURL

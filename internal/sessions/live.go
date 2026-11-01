@@ -18,6 +18,12 @@ type LiveBackend interface {
 	Stop(context.Context, *core.Viewer, string) error
 }
 
+// LiveMediaBackend optionally returns the live session's probed or output MediaInfo.
+type LiveMediaBackend interface {
+	LiveBackend
+	TuneMedia(context.Context, *core.Viewer, string, core.ClientCaps, string) (string, *core.MediaInfo, error)
+}
+
 func (b *Broker) planLive(ctx context.Context, req frontend.PlanRequest, viewer *core.Viewer) (frontend.PlayPlan, error) {
 	if b.deps.Live == nil {
 		return frontend.PlayPlan{}, core.ErrNotAvailable
@@ -29,9 +35,9 @@ func (b *Broker) planLive(ctx context.Context, req frontend.PlanRequest, viewer 
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	info := core.MediaInfo{Container: "mpegts", Estimated: true}
-	decision := core.Decision{Kind: core.DecisionRemux, Container: "mpegts"}
+	decision := core.Decision{Kind: core.DecisionRemux, Container: "mpegts", AudioStream: -1, SubtitleStream: -1}
 	if req.Intent.Estimate {
-		return frontend.PlayPlan{Estimated: true, Media: info, Decision: decision}, nil
+		return frontend.PlayPlan{Estimated: true, Media: info, Decision: decision, Transcoding: true, HLS: true, HLSContainer: "mpegts"}, nil
 	}
 	if !b.reservePlan(viewer.ID) {
 		return frontend.PlayPlan{}, core.ErrStreamLimit
@@ -44,7 +50,7 @@ func (b *Broker) planLive(ctx context.Context, req frontend.PlanRequest, viewer 
 		return frontend.PlayPlan{}, core.ErrStreamLimit
 	}
 	b.plans[id] = brokerPlan{request: req, decision: decision, created: b.deps.Now(), live: true}
-	return frontend.PlayPlan{ID: id, Media: info, Decision: decision}, nil
+	return frontend.PlayPlan{ID: id, Media: info, Decision: decision, Transcoding: true, HLS: true, HLSContainer: "mpegts"}, nil
 }
 
 func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p brokerPlan, viewer *core.Viewer) (frontend.Session, error) {
@@ -58,12 +64,19 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 	if err != nil {
 		return frontend.Session{}, err
 	}
-	liveID, err := b.deps.Live.Tune(ctx, viewer, p.request.Channel, p.request.Caps, p.request.Intent.ClientSessionID)
+	var liveID string
+	var tunedMedia *core.MediaInfo
+	if mb, ok := b.deps.Live.(LiveMediaBackend); ok {
+		liveID, tunedMedia, err = mb.TuneMedia(ctx, viewer, p.request.Channel, p.request.Caps, p.request.Intent.ClientSessionID)
+	} else {
+		liveID, err = b.deps.Live.Tune(ctx, viewer, p.request.Channel, p.request.Caps, p.request.Intent.ClientSessionID)
+	}
 	if err != nil {
 		return frontend.Session{}, capacityError(err)
 	}
+	liveMedia := normalizeLiveMedia(tunedMedia)
 	grant := rand.Text()
-	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/live/index.m3u8", Protocol: req.Protocol, ViewerID: viewer.ID, Device: p.request.Device, Channel: p.request.Channel, StartedAt: b.deps.Now()}
+	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/live/index.m3u8", Protocol: req.Protocol, ViewerID: viewer.ID, Device: p.request.Device, Channel: p.request.Channel, Media: &liveMedia, StartedAt: b.deps.Now()}
 	if req.Protocol == "silo" {
 		session.ClientSessionID = p.request.Intent.ClientSessionID
 	}
@@ -95,5 +108,84 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 		b.cluster.ownershipChanged(ctx)
 	}
 	b.publish(ctx, sessionEvent("SessionStarted", session, nil))
-	return session, nil
+	return copySession(session), nil
+}
+
+func normalizeLiveMedia(in *core.MediaInfo) core.MediaInfo {
+	var out core.MediaInfo
+	if in != nil {
+		out = publicMedia(*in)
+	}
+	out.Container = "mpegts"
+	out.Duration = 0
+	out.Size = 0
+	out.Chapters = nil
+	out.Keyframes = nil
+	out.Estimated = false
+	kept := make([]core.StreamInfo, 0, len(out.Streams))
+	haveAudioDefault := false
+	for _, s := range out.Streams {
+		if s.Type != "video" && s.Type != "audio" {
+			continue
+		}
+		if s.Type == "video" {
+			if s.Codec == "" {
+				s.Codec = "h264"
+			}
+			if s.Width <= 0 {
+				s.Width = 1920
+			}
+			if s.Height <= 0 {
+				s.Height = 1080
+			}
+			if s.BitDepth <= 0 {
+				s.BitDepth = 8
+			}
+			if s.PixelFormat == "" {
+				s.PixelFormat = "yuv420p"
+			}
+			if !s.DolbyVision && s.DolbyVisionProfile == 0 {
+				no := false
+				s.DolbyVisionConfigurationPresent = &no
+				if s.HDR10Plus == nil && s.ColorTransfer != "smpte2084" && s.ColorTransfer != "arib-std-b67" {
+					s.HDR10Plus = &no
+				}
+			}
+		}
+		if s.Type == "audio" {
+			if s.Codec == "" {
+				s.Codec = "aac"
+			}
+			if s.Channels <= 0 {
+				s.Channels = 2
+			}
+			if s.SampleRate <= 0 {
+				s.SampleRate = 48000
+			}
+			if s.Default || (s.DefaultDisposition != nil && *s.DefaultDisposition) {
+				haveAudioDefault = true
+			}
+		}
+		s.Index = len(kept)
+		kept = append(kept, s)
+	}
+	if len(kept) == 0 {
+		no := false
+		eight := 8
+		kept = []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, BitDepth: 8, BitsPerRawSample: &eight, PixelFormat: "yuv420p", ColorTransfer: "bt709", ColorSpace: "bt709", ColorPrimaries: "bt709", SampleAspectRatio: "1:1", DisplayAspectRatio: "16:9", Default: true, DolbyVisionConfigurationPresent: &no, HDR10Plus: &no},
+			{Index: 1, Type: "audio", Codec: "aac", Channels: 2, SampleRate: 48000, ChannelLayout: "stereo", Default: true},
+		}
+		haveAudioDefault = true
+	}
+	if !haveAudioDefault {
+		for i := range kept {
+			if kept[i].Type == "audio" {
+				kept[i].Default = true
+				break
+			}
+		}
+	}
+	out.Streams = kept
+	return out
 }

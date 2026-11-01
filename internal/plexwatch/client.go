@@ -204,15 +204,21 @@ type postItem struct {
 }
 
 func (c *Client) postState(ctx context.Context, token string, plexID int64, item postItem) error {
-	body, err := json.Marshal(struct {
-		Items []postItem `json:"items"`
-		User  int64      `json:"user"`
-	}{Items: []postItem{item}, User: plexID})
+	body, err := encodeState(plexID, item)
 	if err != nil {
 		return err
 	}
 	_, err = c.call(ctx, http.MethodPost, c.scrobble, "/state", token, body, nil, http.StatusCreated, http.StatusOK)
 	return err
+}
+
+// encodeState is shared by durable admission and the network writer so the
+// immutable payload is exactly the body handed to the HTTP client.
+func encodeState(plexID int64, item postItem) ([]byte, error) {
+	return json.Marshal(struct {
+		Items []postItem `json:"items"`
+		User  int64      `json:"user"`
+	}{Items: []postItem{item}, User: plexID})
 }
 
 type remotePage struct {
@@ -246,7 +252,7 @@ func (c *Client) fetchState(ctx context.Context, token string, plexID int64, cur
 	if _, err := c.call(ctx, http.MethodGet, c.scrobble, path, token, nil, &out, http.StatusOK); err != nil {
 		return remotePage{}, err
 	}
-	return remotePage{Items: out.Items, EndCursor: out.PageInfo.EndCursor, HasNextPage: out.PageInfo.HasNextPage}, nil
+	return remotePage{Items: out.Items, EndCursor: out.PageInfo.EndCursor, HasNextPage: out.PageInfo.EndCursor != "" && out.PageInfo.HasNextPage}, nil
 }
 
 func (c *Client) call(ctx context.Context, method string, base *url.URL, pathAndQuery, token string, body []byte, dest any, ok ...int) (int, error) {

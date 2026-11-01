@@ -15,6 +15,8 @@ type PlexWatchStatus = {
   revoked: boolean;
   pending: number;
   dead: number;
+  held: number;
+  heldLegacy: number;
   inFlight: boolean;
   skipped: number;
   restricted: boolean;
@@ -177,6 +179,21 @@ export function PlexWatchSync({ viewerId, plexId }: { viewerId: number; plexId: 
             "A send is still in progress. Turning sync off stops queued changes. An update already being sent may still finish.",
           )}
         </p>
+      ) : null}
+      {st.held > 0 ? (
+        <SettingsRow
+          title={t("Held sends: {count}", { count: st.held })}
+          description={
+            st.heldLegacy > 0
+              ? t("Legacy undelivered changes are held until checked against Plex.")
+              : t("Unconfirmed sends are held until checked against Plex.")
+          }
+          control={
+            <Button disabled={busy || !st.connected} onClick={() => void run("/resolve", "POST")}>
+              {t("Resolve")}
+            </Button>
+          }
+        />
       ) : null}
       {st.skipped > 0 ? (
         <p className="text-sm">

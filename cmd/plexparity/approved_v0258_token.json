@@ -1,0 +1,1022 @@
+[
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "6029b5dfaba95d1cf79eec5bdc83e07ad3ce0c3b6691da7f657c24ba486590be"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "8de291d490ad89d983e4078b6e006211cdea4b9ba20a134c5dd422fc640362d0"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "d492551ed35ded5e0d1ee4b786e1e0a5b14568ed8b95138f1102c7929a83493a"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "e0aed4525ee52cc417da6ad460706872f1471972f565ad8dfd51b1f04493d0e0"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "cb3ac2d9df56aa36f51a32250dd967bd8bf464e19510a84d6a262b5c9fb57fd4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "a7d89185d7f183ae86827d4627f0d92af338b4848391a8961d349ec0177c41b5"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "eeb0f7097ef434f3d76a438a7413737304563b4e08e92e2ad438feb3da451e1b"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "47d88f310017c5b3fb73400e5653cc6eaee51a8d7543aca06f2245fb5aa95499"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "e9414f3e39ae7d4a0cd363afa834fa90b9e2fe2b8a99918033e774fbe434d0e0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "9f2049865269d04e65ad1ece71ccebbea6106dbffc2791ebd934f3e18179b0f1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "56376298c36add31ce5ef881659517a4b588bec691d57466393d034399c8140b"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "d4f24cba5bd46e0bd7f4a61ffcc321c78e119d423136baa163d95708b290a5f8"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "399a9636337f3470c9d1cecec84fa50fe490202f421db393f3e14555fa44f3b7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "241b4a5caf6a3ffa893258ee3f8d1e3610b71049b01fe766427f6c4e4935ad71"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "d5ed95b34d11f4df3c37b140732f7854595b17ec21118b6b543a6b88c255b0e1"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "8cc98c73436134121f4f9478302f9b1cc0c72adc9fcd97b9fa063baec9d451b4"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "067df96260462d130c9613982ed9c3667787e2877872fbe3baaaa6d3146d6fc0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "1d4895ed95773fabc37c04e73f7583e6b5d9dde3b0a7310230f0814842953d74"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "084f6bf55d25b7e1e0c953f5c4a246edeb11065e40ff2dd801fffeb7290eb7b6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "834f1fcd7c3148b27ba4d133413146894761cfc8f72c7d9e70267f92f509d066"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "1ef9dc099c0dd2b1099f3991ec748e4c216bfb672b5ea5b467f7084db71fa4d5"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "e60fd3e925ccb7e197b527a2639bb2fbab4b8291a4185c1b09abcd006bdffe38"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "082d1981ad3133a21a8b4d461851c4de0542d390162391c6250fa8291f3d6af6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "2a06cc7cf653dca544153a7d71e0fbbc3d214cafa62069785b3d289b8a715252"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "7758d5c91c56540ebfbcb1acba1d0a268cccb44a864f526ee1993b6ad00ef4b0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "8ca0114e92c802eec87ecad6cf2af0bf2c7374e6e68fa4cd4ef824724233add8"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "e7d8876f5ec2612f3ee4c12627acf0e18993b67e110fe059dfb98cee818c5e5f"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "b5dfb8c857b501c99f472f2fe5623da7efe997463ac81a68605f45a816b1868f"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "iptv:dash:manifest",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "bab95ff9222d97ebd1bbd544b3b54b0e1d6c2996a70afc335afe338a5c7ac928"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/dash+xml",
+      "sha256": "0bff2d2812801c7379e99b86babcea0706191acb6455aa8533e24ea90aef4c5c"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "2cd102355cc44cb4983df2cae84d75a37674f7e7e9a6faba85bc7c26f6c77dd3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "2bc6dfd7667b7c1e0c21bd590a583dd8b79e0e2eaef10ef66ac85254b46aac66"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "ab3ac6ef2179b0e55ba3e5b65f6f78cc5969ec35d436e9876cedd9cbab05bb90"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "5670183c8be49cd6cddf538794f6b382938afe4719577448db6116953722e07f"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "0deda1838a5a1be77dff5cba0b9fcec7f6a059747f3f0f8f403d448e2fab7cd4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "de6c721fcd20b5241fc40429d9558a8c0037989b9894e7d7db86c54783a2b0b8"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "48bf7eaebf8995843f8e50797f1d37532188ecaadcccb623b1cdeefbfae879cf"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "1440f3af54f2bb706ece2cddb262afc16381ea33b81484a21b47f575bc65d818"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "d8ec9884226d38f13bdfd6d71dcc10e252db8db9be9fe28564f4e3303a854f0d"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "be2be0a6b4dd7c4da0fb0614e2c41873344ca5fda26707d9551b7ed20bb91b33"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "5819ddae34dc2450f51117c4776117dc8695bd462a38c1c83d6aae86c1aa1cc2"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "e3a13eef5a9e6f4db648f12b6dbafd13a2276035cfef0a27ec2747f439a39f5d"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "011c71e914f08c8cd56f9f5fdb6b2d9af51e3695584a50e58d5a35d0f4d2b321"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "04ae947887aaf46cf870d78f1b4fb079d223196a1597661fb8948dbf510e2ae3"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "35f01bc74d02101078958d558a2b59a0d2d902c1550b8ee3d9fd3d008e1f3251"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f5f0ff1c2c612ff9f434d2946c79be56defe140ad66a3165f3ddf6db1b969f24"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "706d5c138a2ffdb2a9d1dc0e59feafaf8be648c1f84076e1cced56abbf512385"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "de0f0c2e94c70b5279d43ee4ab8151d695a293bf690ab7f1160b9eee450acd8d"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "daa83dd4faf0bbb156a33fbbb8d1295c3ef67ffda16605bc5603008a1fa395c5"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "476e4f240d60c6a621858c7527731b27ad0ae24b1b2767ddba22a17545ff42f5"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "534f97bb6df7597df36f357f605b115df302b1a6abad576c636fe42c600bf48e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "0be5aae700e9aed2c3ba1a7db6b70b71cf184eeaa7b47b373197d618588128d7"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b6f23aaacbeb934488bdd03a0c0ebe2e5566e75d122b43c38580c6ddcf996295"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "bd0d7cb835aabb98234836834fc26c629eb2d5de832550b541546a87c8734733"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f72a2dd9f28f22b76e04a0d586510e90fedda01ce8e653f8194794bb803be0ca"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "760e746c81f4adf81a07494c9119096b6f24d55cf58ad30198a677fee91521b5"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "0f244e7aaab93232691b37c69e8be083c00fceb81bf1db9bec5ca5348b26a09d"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "224160c1f8b1a097bdca061785da5b78124e1557833229b461b2baa4e02b9dbd"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "iptv:fixture-iptv-relay:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "06bde493ebb97d2cdace5f977b00cc6f02432b1ab5a27820692b4cfe669434f3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3bb8fab2c8933899f99ebe4cb23cbfc95fe30e1214865179546e46876f979f3f"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "66ed9ba5d638c9059686698e1ba581220bff447cc87a0e8444e42a50e58ef3f6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "5a0c13359b5ab5edbd755c8a2a2895c2f7a3ee23bb8b6b54db72279b9f804f19"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f4797fba09091fc32b0cdb558293396b22402191cabb471f9baac665458a3e61"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3c97da7edcbd9478d614b5593ddf1c277beaf249b0ace3da94b0f108881dc02e"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "f55a193e42c4bbe6ced03f55b2de9e8cb896c83046276f3f6134222710691091"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "38fa6ce1b421dddf378fca797e079b5e83c067b3cc1e29e6f51793e81bab8cda"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "eb2e3ad6cafab049f144502d2afc6433acda5d1b9049cff1ad942e28b17eaa59"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "ae8dba95d0acb081df2b3d1e9273564749c63691a71031dad9b9ef124c4d197c"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "181a0d5c3b3b792bd1b7418b738198ddf057daec54381172ca99ebc66257af96"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "871515f32d0dde1d35609a88b8c0ef544aa19551f0d2641baafb2c7d47c47205"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "243a443190259dec0a77045cdfdd236c45e04462b6cb9a0b19144be90c7a121e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "a7b60be3f63ebd8f6f2977c30add05e5169a2ffb0b5f2fa45ef153568728bc74"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "7c8753831bb4123e793fd0e3e4b8a0417531e9bddea2e429a4392ba34d745cb6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "28e3c84828524efba1dbd3e5c1a9f412094e2bc11a95838be33d042a168c0259"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "fabf140426e3d73c0cf7e439a4bd26d8cc1e64ae41a5df4e82983bf5251bedf2"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "78b5960aa6b70eed7380bb598c456a91dff74acb65bd81589e4cdd0a96c348d5"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "e29a4ff588724d03b74241ed7ab31bd84abf03068776009b20fb1a94472e0ad9"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "729750349c85893a22507d8d099e30ab59fe1f687292c1edcbfc67cb155c1f9f"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "e2e2150eb6f57bfd4c60c3291f5ead8c7cb7c9735c2e769a1a40e9f0a427dbc6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "52bb1f666a05e5718dd105d935cd6cb6c9a70ad3c9d15a101115b7cc3a882c30"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "eccfc0e4dfed20682537eea2dcf6b252bfa2105b2d11d6e98ffd00b6cb41cb61"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3c9c56d2fcdae7a533909a7858483e4bd372b2347f39963d2828ed72ed2b55d6"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "be73feb5df34d7b57375821068c8cc36a4beef40c3f84f775f767f8e4ab20014"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "9fd80dbeb71785e0b315f7de88a499005cc1032cfe2294edf8d467c1fc9ddb53"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "593111c2d3207f21ea1747b07c928feb6f147af2f356f2a5067d069b2e8dc06f"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "7a67559264949fdf1e5093f3311c85ae955986c5607e6b544a98b395fe559125"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "6e8935521964255b0e3add3bd388130f0eebc0492c3876c08622b9b1ddc4e825"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "278f6226c740e7bceac3fb6b10576ffe06a091e17b63ff8d0b4c9415cdea0e31"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "iptv:fixture-iptv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "a95af7a8fecce6bd7cbd6249ad9d5158262800017d8f81c979a90efc3409f304"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "cb8ffd014108ab5fac4fda89242170260b0fc3e9fd5d2608f496baa560fab1ea"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "59fc51854b437021c81f42ce8e98f8c0ffd73af64226addb8934f995c074f293"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "59fc51854b437021c81f42ce8e98f8c0ffd73af64226addb8934f995c074f293"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "59fc51854b437021c81f42ce8e98f8c0ffd73af64226addb8934f995c074f293"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "59fc51854b437021c81f42ce8e98f8c0ffd73af64226addb8934f995c074f293"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "59fc51854b437021c81f42ce8e98f8c0ffd73af64226addb8934f995c074f293"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b6d8976a74a33d8550b7d660b37b31742fa4e43c31736a3fe9139c54648348d0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b6d8976a74a33d8550b7d660b37b31742fa4e43c31736a3fe9139c54648348d0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b6d8976a74a33d8550b7d660b37b31742fa4e43c31736a3fe9139c54648348d0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b6d8976a74a33d8550b7d660b37b31742fa4e43c31736a3fe9139c54648348d0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "b6d8976a74a33d8550b7d660b37b31742fa4e43c31736a3fe9139c54648348d0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3029e41803f5efcca079059582912a4b3c86f7029616bef93bed2f47cbbd8ba4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3029e41803f5efcca079059582912a4b3c86f7029616bef93bed2f47cbbd8ba4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3029e41803f5efcca079059582912a4b3c86f7029616bef93bed2f47cbbd8ba4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3029e41803f5efcca079059582912a4b3c86f7029616bef93bed2f47cbbd8ba4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "livetv:playlist",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "3029e41803f5efcca079059582912a4b3c86f7029616bef93bed2f47cbbd8ba4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/vnd.apple.mpegurl",
+      "sha256": "8688072b521dd12909bcf4d970aa141be3ccf666722acefe79ade429edd1f4c1"
+    },
+    "commit": "9b8fa7546"
+  }
+]

@@ -17,8 +17,13 @@ import (
 
 type playbackRequest struct {
 	MediaSourceId       string             `json:"MediaSourceId"`
+	LiveStreamId        string             `json:"LiveStreamId"`
+	OpenToken           string             `json:"OpenToken"`
+	ItemId              string             `json:"ItemId"`
+	PlaySessionId       string             `json:"PlaySessionId"`
 	DeviceProfile       caps.DeviceProfile `json:"DeviceProfile"`
 	IsPlayback          *bool              `json:"IsPlayback"`
+	AutoOpenLiveStream  *bool              `json:"AutoOpenLiveStream"`
 	EnableDirectPlay    *bool              `json:"EnableDirectPlay"`
 	EnableDirectStream  *bool              `json:"EnableDirectStream"`
 	EnableTranscoding   *bool              `json:"EnableTranscoding"`
@@ -87,6 +92,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	wireID := r.PathValue("id")
 	key, err := ids.ParseRatingKeyGUID(wireID)
 	channel := ""
+	channelName := ""
 	itemIDError := err
 	var body playbackRequest
 	if r.Body != nil && r.ContentLength != 0 {
@@ -130,14 +136,14 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 					http.NotFound(w, r)
 					return
 				}
-				channel, key = p.ChannelID, 0
+				channel, channelName, key = p.ChannelID, p.Title, 0
 			} else {
 				ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
 				if e != nil || ch.ID == "" {
 					http.NotFound(w, r)
 					return
 				}
-				channel, key = ch.ID, 0
+				channel, channelName, key = ch.ID, ch.Name, 0
 			}
 		}
 	}
@@ -154,6 +160,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
+	}
+	if channel != "" && queryBool(r, "AutoOpenLiveStream", boolValue(body.AutoOpenLiveStream, false)) {
+		playback = true
 	}
 	opts := frontend.DecideOptions{DirectPlay: queryBool(r, "EnableDirectPlay", boolValue(body.EnableDirectPlay, true)), DirectStream: queryBool(r, "EnableDirectStream", boolValue(body.EnableDirectStream, true)), AudioStream: -1, SubtitleStream: -1}
 	if body.AudioStreamIndex != nil {
@@ -211,8 +220,16 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	version := versionFromItem
 	if sourceID != "" && !strings.EqualFold(sourceID, wireID) {
-		if parsed, e := ids.ParseRatingKeyGUID(sourceID); e != nil || parsed != key || channel != "" {
-			version = sourceID
+		sameLiveChannel := false
+		if channel != "" {
+			if chGUID, e := ids.StringGUID(ids.Channel, channel); e == nil && strings.EqualFold(sourceID, chGUID) {
+				sameLiveChannel = true
+			}
+		}
+		if !sameLiveChannel {
+			if parsed, e := ids.ParseRatingKeyGUID(sourceID); e != nil || parsed != key || channel != "" {
+				version = sourceID
+			}
 		}
 	}
 	detailSource, expectedETag, resolvedRelease := "", "", ""
@@ -282,6 +299,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
 	source["IsInfiniteStream"] = channel != ""
+	if channel != "" {
+		i.shapeLiveMediaSource(source, sourceID, channelName, "", "", media, false)
+	}
 	for _, stream := range plan.Media.Streams {
 		if media.Estimated {
 			break
@@ -318,7 +338,14 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
 			url = prefix + url
 		}
-		if subtitleService := i.host.Sessions; subtitleService != nil {
+		if channel != "" {
+			if session.Media != nil {
+				media = *session.Media
+			}
+			media = defaultLiveMediaInfo(media)
+			source = i.detailMediaSourceDTO(sourceID, media)
+			i.shapeLiveMediaSource(source, sourceID, channelName, session.ID, url, media, true)
+		} else if subtitleService := i.host.Sessions; subtitleService != nil {
 			streams := i.mediaStreams(plan.Media.Streams)
 			for n, stream := range plan.Media.Streams {
 				if stream.Type != "subtitle" {
@@ -351,7 +378,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		} else {
 			source["TranscodingUrl"] = url
 			source["TranscodingSubProtocol"] = "hls"
-			if container := hlsContainerDTO(plan); container != "" {
+			if channel != "" {
+				source["TranscodingContainer"] = "ts"
+			} else if container := hlsContainerDTO(plan); container != "" {
 				source["TranscodingContainer"] = container
 			}
 		}
@@ -371,10 +400,165 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if i.protocol == "emby" || i.protocol == "jellyfin" {
+	if (i.protocol == "emby" || i.protocol == "jellyfin") && channel == "" {
 		applyPlannedStreamIndexes(source, media, plan.Decision)
 	}
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
+}
+
+func (i *instance) liveStreamsOpen(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Sessions == nil || i.host.Capabilities == nil || i.host.LiveTV == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	var body playbackRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if decode(r, &body) != nil {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+	}
+	if values := route.Query(r.URL.Query(), "OpenToken"); len(values) == 1 && values[0] != "" {
+		body.OpenToken = values[0]
+	}
+	if values := route.Query(r.URL.Query(), "ItemId"); len(values) == 1 && values[0] != "" {
+		body.ItemId = values[0]
+	}
+	wireID := body.OpenToken
+	if wireID == "" {
+		wireID = body.ItemId
+	}
+	if wireID == "" {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	channel, channelName := "", ""
+	if _, e := ids.ParseGUID(ids.Programme, wireID); e == nil {
+		p, e := i.host.LiveTV.ResolveProgrammeGUID(r.Context(), v, wireID, programmeLookupQuery(time.Now().UTC()))
+		if e != nil || p.ChannelID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		channel, channelName = p.ChannelID, p.Title
+	} else {
+		ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
+		if e != nil || ch.ID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		channel, channelName = ch.ID, ch.Name
+	}
+	dev := device(r)
+	if values := route.Query(r.URL.Query(), "MaxStreamingBitrate"); len(values) == 1 {
+		n, e := strconv.Atoi(values[0])
+		if e != nil || n < 0 {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		if body.DeviceProfile.MaxStreamingBitrate == 0 || n < body.DeviceProfile.MaxStreamingBitrate {
+			body.DeviceProfile.MaxStreamingBitrate = n
+		}
+	}
+	capability, err := i.host.Capabilities.Build(i.identityContext(r), frontend.CapabilityRequest{Viewer: v, Device: caps.DeviceInfo{Protocol: i.protocol, ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, Profile: body.DeviceProfile, UserAgent: r.UserAgent()})
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	allowed := true
+	opts := frontend.DecideOptions{DirectPlay: queryBool(r, "EnableDirectPlay", boolValue(body.EnableDirectPlay, true)), DirectStream: queryBool(r, "EnableDirectStream", boolValue(body.EnableDirectStream, true)), AudioStream: -1, SubtitleStream: -1}
+	intent := frontend.PlayIntent{Options: opts, AllowTranscoding: &allowed}
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Channel: channel, Caps: capability.Client, Intent: intent})
+	if err != nil {
+		http.Error(w, "Playback unavailable", 503)
+		return
+	}
+	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: i.protocol, PlanID: plan.ID, Viewer: v, Device: dev})
+	if err != nil {
+		http.Error(w, "Playback unavailable", 503)
+		return
+	}
+	url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: frontend.StreamHLS})
+	if err != nil {
+		_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID)
+		streamError(i.protocol, w, err)
+		return
+	}
+	if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
+		url = prefix + url
+	}
+	var media frontend.MediaInfo
+	if session.Media != nil {
+		media = *session.Media
+	}
+	media = defaultLiveMediaInfo(media)
+	source := i.detailMediaSourceDTO(wireID, media)
+	i.shapeLiveMediaSource(source, wireID, channelName, session.ID, url, media, true)
+	i.mediaSourceDialect(source)
+	if i.protocol == "emby" {
+		i.embyMediaSourceDTO(source, wireID, media)
+	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinMediaSourceDTO(source, media, true)
+		if body.DeviceProfile.AlwaysUseMostCompatibleTranscodingProfile {
+			source["UseMostCompatibleTranscodingProfile"] = true
+		}
+	}
+	jsonReply(w, map[string]any{"MediaSource": source})
+}
+
+func (i *instance) liveStreamsClose(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Sessions == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	var body struct {
+		LiveStreamId  string `json:"LiveStreamId"`
+		PlaySessionId string `json:"PlaySessionId"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if e := decode(r, &body); e != nil && !errors.Is(e, io.EOF) {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+	}
+	liveStreamID := body.LiveStreamId
+	if values := route.Query(r.URL.Query(), "liveStreamId"); len(values) > 1 {
+		http.Error(w, "Bad Request", 400)
+		return
+	} else if len(values) == 1 && values[0] != "" {
+		liveStreamID = values[0]
+	}
+	if liveStreamID == "" {
+		if values := route.Query(r.URL.Query(), "PlaySessionId"); len(values) == 1 && values[0] != "" {
+			liveStreamID = values[0]
+		} else {
+			liveStreamID = body.PlaySessionId
+		}
+	}
+	if liveStreamID == "" {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: i.protocol}
+	if err := i.host.Sessions.Stop(r.Context(), access, liveStreamID); err != nil && !errors.Is(err, frontend.ErrNotFound) {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	if i.protocol == "emby" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (i *instance) mediaSourceDialect(source map[string]any) {
@@ -532,6 +716,12 @@ func (i *instance) playbackRoutes() error {
 	if err := i.router.Handle("POST", "/Items/{id}/PlaybackInfo", http.HandlerFunc(i.playbackInfo)); err != nil {
 		return err
 	}
+	if err := i.router.Handle("POST", "/LiveStreams/Open", http.HandlerFunc(i.liveStreamsOpen)); err != nil {
+		return err
+	}
+	if err := i.router.Handle("POST", "/LiveStreams/Close", http.HandlerFunc(i.liveStreamsClose)); err != nil {
+		return err
+	}
 	for _, method := range []string{"GET", "HEAD"} {
 		if err := i.router.Handle(method, "/sessions/lazy/{path...}", http.HandlerFunc(i.lazyMedia)); err != nil {
 			return err
@@ -553,9 +743,9 @@ func (i *instance) playbackRoutes() error {
 }
 
 type timelineRequest struct {
-	PlaySessionId, ItemId, MediaSourceId string
-	PositionTicks, RunTimeTicks          json.Number
-	IsPaused                             bool
+	PlaySessionId, LiveStreamId, ItemId, MediaSourceId string
+	PositionTicks, RunTimeTicks                        json.Number
+	IsPaused                                           bool
 }
 
 func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, started bool) {
@@ -577,6 +767,9 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, sta
 	}
 	if pathItem := r.PathValue("itemId"); pathItem != "" {
 		body.ItemId = pathItem
+	}
+	if body.PlaySessionId == "" && body.LiveStreamId != "" {
+		body.PlaySessionId = body.LiveStreamId
 	}
 	ticks, err := timelineTicks(body.PositionTicks)
 	if err != nil {
@@ -614,6 +807,10 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, sta
 		}
 	}
 	if !recorded {
+		if timelineLiveItem(body) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		item, ok := timelineItem(body)
 		if !ok {
 			http.Error(w, "Bad Request", 400)
@@ -641,6 +838,21 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, sta
 		i.creditPlay(r, v, body.ItemId)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func timelineLiveItem(body timelineRequest) bool {
+	for _, value := range []string{body.ItemId, body.MediaSourceId} {
+		if value == "" {
+			continue
+		}
+		if _, err := ids.ParseGUID(ids.Channel, value); err == nil {
+			return true
+		}
+		if _, err := ids.ParseGUID(ids.Programme, value); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func timelineTicks(value json.Number) (int64, error) {
@@ -746,6 +958,16 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	if len(vals) > 1 {
 		http.Error(w, "Bad Request", 400)
 		return
+	}
+	if len(vals) == 0 || vals[0] == "" {
+		liveVals := route.Query(r.URL.Query(), "LiveStreamId")
+		if len(liveVals) > 1 {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		if len(liveVals) == 1 && liveVals[0] != "" {
+			vals = liveVals
+		}
 	}
 	sourceIDs := route.Query(r.URL.Query(), "MediaSourceId")
 	if len(sourceIDs) > 1 {

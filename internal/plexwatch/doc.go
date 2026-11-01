@@ -67,6 +67,30 @@
 // generation leaves the intent retryable. A confirmed missing or stale
 // generation does not send.
 //
+// Admission also commits an immutable plexwatch_attempt containing the exact
+// account id, consent generation, resolved GUID, aspect, original timestamp
+// and wire payload. It contains no plaintext credential. Failure or uncertainty
+// committing admission means no network send. Once admission is durable, even
+// a crash before transmission leaves an unknown-effect hold. Expiring worker
+// claims or permits never expires that hold. The remote account/GUID/aspect
+// conflict index and a local user/key/aspect check prevent aliases and remaps
+// from bypassing it. Unrelated known targets and other aspects remain usable.
+//
+// A successful response commits the attempt's receipt, import echo and original
+// journal acknowledgement together. A failed or uncertain local commit cannot
+// reopen the network path. Transport/read errors, server failures, ambiguous
+// statuses and Retry-After do not prove no effect; delivery stops until the
+// hold is reconciled against GET /state/{accountId}. Definitive refusals (HTTP
+// 400, 401, 403, 422) clear the attempt fence so later changes to that title
+// are not blocked.
+//
+// Reconciliation reads GET /state/{accountId} on a backoff schedule, on
+// reconnect/consent/remap, and on explicit viewer Resolve. If Plex already
+// reflects the admitted payload, the attempt is receipted without re-POSTing.
+// If Plex does not reflect it and no permit for that attempt is still in
+// flight, the hold is released and one fresh admission of the current intent
+// is allowed.
+//
 // A permit already inserted is in flight. Turning sync off does not delete
 // it, and a request already handed to Plex cannot be recalled. An intent
 // that has not been admitted is not sent after the fence moves, including
