@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,11 @@ import (
 )
 
 func TestSQLiteFenceBlocksWriterOnDeferredTransaction(t *testing.T) {
-	fileURL := (&url.URL{Scheme: "file", Path: filepath.Join(t.TempDir(), "policy.db")}).String() + "?_pragma=busy_timeout(0)"
+	uriPath := filepath.ToSlash(filepath.Join(t.TempDir(), "policy.db"))
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	fileURL := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "_pragma=busy_timeout(0)"}).String()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	db, err := sql.Open("sqlite", fileURL)

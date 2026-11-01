@@ -109,10 +109,10 @@ func TestHistoricalLocalObservationNeedsNoFilesystemOnReport(t *testing.T) {
 	}
 }
 func TestHistoricalLocalObservationReplacementDuringProbeIsUnknown(t *testing.T) {
+	skipOpenFileReplaceOnWindows(t)
 	h, _, path := historyFileFixture(t)
 	var replacementErr error
 	h.m.deps.AugmentMedia = func(_ context.Context, _ *core.Title, _ *core.User, _ *core.Resolution, _ core.MediaSource, _ *core.MediaInfo) {
-		skipOpenFileReplaceOnWindows(t)
 		if err := os.Rename(path, path+".original"); err != nil {
 			replacementErr = err
 			return

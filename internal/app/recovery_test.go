@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -122,7 +123,7 @@ func TestRecoveryCodeSignIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := os.Stat(filepath.Join(dataDir, recoveryCodeFile)); st.Mode().Perm()&0o077 != 0 {
+	if st, _ := os.Stat(filepath.Join(dataDir, recoveryCodeFile)); runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("code file mode %v", st.Mode())
 	}
 	code := rc.code
@@ -237,7 +238,7 @@ func TestRecoveryLocalSignIn(t *testing.T) {
 	a := &App{db: db, opts: Options{DataDir: dataDir}, log: quietLog()}
 	a.syncOwnerRecovery(context.Background())
 	st, err := os.Stat(ownerMirrorPath(dataDir))
-	if err != nil || st.Mode().Perm()&0o077 != 0 {
+	if err != nil || (runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0) {
 		t.Fatalf("mirror %v %v", st, err)
 	}
 	raw, _ := os.ReadFile(ownerMirrorPath(dataDir))
@@ -565,6 +566,9 @@ func (fakeListener) Addr() net.Addr            { return &net.TCPAddr{IP: net.IPv
 // Round 3, finding 2: a restore whose commit fails is not served; the
 // original data goes back.
 func TestFailedRestoreCommitIsNotServed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory write permission fixture requires POSIX permissions")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
@@ -857,6 +861,9 @@ func TestUnreadableRestoreRecordIsNotServed(t *testing.T) {
 	})
 
 	t.Run("read error after a failed commit", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("directory write permission fixture requires POSIX permissions")
+		}
 		if os.Geteuid() == 0 {
 			t.Skip("root ignores directory permissions")
 		}
