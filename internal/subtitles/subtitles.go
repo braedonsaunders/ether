@@ -70,6 +70,9 @@ type Options struct {
 	// AlignLanguages are tried in order for dialogue timeline alignment
 	// (default ["en"]: the most widely subtitled language).
 	AlignLanguages []string
+	// FFmpeg is the owner-configured ffmpeg used for speech-energy
+	// measurement. Empty skips that path.
+	FFmpeg string
 }
 
 // Service is the OpenSubtitles client + disk cache.
@@ -102,6 +105,10 @@ type Service struct {
 	// Viewer-driven search results awaiting a pick (see ondemand.go).
 	offersMu sync.Mutex
 	offers   map[offerKey]offer
+
+	correctFlights flightGroup
+	speechSem      chan struct{}
+	ffmpeg         string
 }
 
 // New builds a Service. A disabled service returns no sidecars.
@@ -146,6 +153,8 @@ func New(opts Options) *Service {
 		http: opts.HTTPClient, log: opts.Logger, agent: opts.UserAgent,
 		negative: map[string]time.Time{}, negTTL: opts.NegativeTTL, maxWait: opts.MaxRetryAfter, now: opts.Now,
 		alignLanguages: alignLangs,
+		speechSem:      make(chan struct{}, 2),
+		ffmpeg:         opts.FFmpeg,
 	}
 }
 
@@ -1178,16 +1187,22 @@ func (s *Service) OpenFormat(id, format string) (io.ReadCloser, string, error) {
 	if id == "" || strings.ContainsAny(id, "/\\") || strings.Contains(id, "..") {
 		return nil, "", core.ErrNotFound
 	}
-	if s.dir == "" {
+	return s.OpenFormatFrom(id, format, "")
+}
+
+// OpenFormatFrom is OpenFormat applying a cached fit only for this
+// release/source. An empty source serves the original sidecar.
+func (s *Service) OpenFormatFrom(id, format, source string) (io.ReadCloser, string, error) {
+	id = strings.TrimPrefix(id, URLPrefix)
+	format = strings.ToLower(strings.TrimPrefix(format, "."))
+	if format != "srt" && format != "vtt" {
+		return nil, "", fmt.Errorf("unsupported subtitle format %q", format)
+	}
+	if id == "" || strings.ContainsAny(id, "/\\") || strings.Contains(id, "..") {
 		return nil, "", core.ErrNotFound
 	}
-	if raw, err := os.ReadFile(filepath.Join(s.dir, id+".sync.json")); err == nil {
-		override := string(raw)
-		if len(override) == 32 {
-			if _, err := hex.DecodeString(override); err == nil {
-				id = override
-			}
-		}
+	if s.dir == "" {
+		return nil, "", core.ErrNotFound
 	}
 	f, err := os.Open(filepath.Join(s.dir, id+"."+format))
 	if err != nil {
@@ -1195,6 +1210,38 @@ func (s *Service) OpenFormat(id, format string) (io.ReadCloser, string, error) {
 			return nil, "", core.ErrNotFound
 		}
 		return nil, "", err
+	}
+	source = SourceKey(source)
+	if source == "" {
+		return f, format, nil
+	}
+	apply := func(corr correction) (io.ReadCloser, string, error) {
+		raw, err := io.ReadAll(io.LimitReader(f, 32<<20))
+		f.Close()
+		if err != nil {
+			return nil, "", err
+		}
+		cues, err := ParseCues(string(raw))
+		if err != nil {
+			return io.NopCloser(strings.NewReader(string(raw))), format, nil
+		}
+		cues = applyCorrection(cues, corr)
+		text := RenderSRT(cues)
+		if format == "vtt" {
+			text = RenderVTT(cues)
+		}
+		return io.NopCloser(strings.NewReader(text)), format, nil
+	}
+	// The first fetch after a pick is uncorrected unless a measurement
+	// already finished. If one is in flight and completes within ~2s,
+	// serve the corrected file.
+	if corr, ok := s.loadApplied(id, source); ok {
+		return apply(corr)
+	}
+	if s.correctFlights.wait(id+"\x00"+source, correctServeWait) {
+		if corr, ok := s.loadApplied(id, source); ok {
+			return apply(corr)
+		}
 	}
 	return f, format, nil
 }

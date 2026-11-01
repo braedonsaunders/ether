@@ -98,8 +98,9 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 				a.prefetch.OnTimeline(v, key, pos, dur, playState)
 			}
 		},
-		Events:       events,
-		OpenSubtitle: a.subtitles.OpenFormat,
+		Events:           events,
+		OpenSubtitle:     a.subtitles.OpenFormat,
+		OpenSubtitleFrom: a.subtitles.OpenFormatFrom,
 		ExtractSubtitle: func(ctx context.Context, input string, index int, codec string, w io.Writer) error {
 			if a.transcoder == nil {
 				return core.ErrNotAvailable

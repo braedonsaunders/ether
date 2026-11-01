@@ -264,7 +264,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		}
 		var subtitleCatalog frontend.SubtitleCatalog
 		if a.subtitles != nil {
-			subtitleCatalog = subtitleSurface{app: a, exp: experience}
+			subtitleCatalog = subtitleSurface{app: a, exp: experience, surface: string(id)}
 		}
 		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, DirectProxy: egress.ProxyFunc(egress.CapDirect), Experience: experience, LastPlayedSource: surfaceLastPlayedSource{experience: experience, state: a.state}, VersionHandles: versionHandles, SourceOffers: sourceOffers, Editions: surfaceEditions{app: a}, VirtualPaths: surfaceVirtualPaths{experience: experience, index: &pathIndex{}, stamp: func(v *core.Viewer) string {
 			if v == nil || a.catalog == nil || a.cfg == nil {

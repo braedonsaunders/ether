@@ -219,7 +219,13 @@ func (b *Broker) OpenPlexSidecar(ctx context.Context, access frontend.SessionAcc
 	if !binding.Info.External || binding.Info.ExternalURL == "" || binding.Info.Type != "subtitle" {
 		return nil, core.StreamInfo{}, core.ErrNotFound
 	}
-	reader, info, err := b.openExternalSidecar(ctx, binding.Info)
+	var sess *brokerSession
+	if binding.SessionID != "" {
+		b.mu.Lock()
+		sess = b.sessions[binding.SessionID]
+		b.mu.Unlock()
+	}
+	reader, info, err := b.openExternalSidecar(ctx, sess, binding.Info)
 	if err != nil || reader == nil {
 		if reader != nil {
 			_ = reader.Close()
@@ -243,17 +249,25 @@ func (b *Broker) plexSessionOwned(id string, viewer int64) bool {
 	return s != nil && s.public.Protocol == "plex" && s.public.ViewerID == viewer
 }
 
-func (b *Broker) openExternalSidecar(ctx context.Context, info core.StreamInfo) (io.ReadCloser, core.StreamInfo, error) {
+func (b *Broker) openExternalSidecar(ctx context.Context, s *brokerSession, info core.StreamInfo) (io.ReadCloser, core.StreamInfo, error) {
 	src := info.ExternalURL
 	if strings.HasPrefix(src, "ether-subtitle:") {
-		if b.deps.OpenSubtitle == nil {
-			return nil, core.StreamInfo{}, core.ErrNotAvailable
-		}
 		format := plexServeFrom(ctx).format
 		if format == "" {
 			format = "srt"
 		}
-		reader, actual, err := b.deps.OpenSubtitle(src, format)
+		var (
+			reader io.ReadCloser
+			actual string
+			err    error
+		)
+		if s != nil {
+			reader, actual, err = b.openSubtitle(s, src, format)
+		} else if b.deps.OpenSubtitle == nil {
+			return nil, core.StreamInfo{}, core.ErrNotAvailable
+		} else {
+			reader, actual, err = b.deps.OpenSubtitle(src, format)
+		}
 		if err != nil {
 			return nil, core.StreamInfo{}, err
 		}

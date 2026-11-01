@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -951,6 +952,20 @@ func (m *Manager) SessionForSurface(surface string, userID int64, clientID strin
 	return s.snapshot(m.now()), true
 }
 
+// SessionForSurfaceClient finds the live session for this surface and
+// client, including variant-scoped identities that SessionFor misses.
+func (m *Manager) SessionForSurfaceClient(surface string, userID int64, clientID string, key core.RatingKey) (*core.PlaySession, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	surf := playbackSurface(surface)
+	for _, s := range m.byIdent {
+		if s != nil && s.ident.userID == userID && s.ident.clientID == clientID && s.ident.key == key && s.ident.surface == surf {
+			return s.snapshot(m.now()), true
+		}
+	}
+	return nil, false
+}
+
 // MarkSurfaceOpened changes Activity visibility only after broker admission.
 func (m *Manager) MarkSurfaceOpened(id string) bool {
 	return m.setSurfacePrepared(id, false)
@@ -1069,6 +1084,29 @@ func (m *Manager) SourceKey(id string) string {
 		return ""
 	}
 	return s.current().releaseID()
+}
+
+// SourceReader is a session-scoped ReaderAt over the current generation.
+// The closer releases the generation hold; call it when the read is done.
+func (m *Manager) SourceReader(id string) (io.ReaderAt, int64, func(), bool) {
+	s := m.lookup(id)
+	if s == nil {
+		return nil, 0, nil, false
+	}
+	g := s.current()
+	if g == nil || g.src == nil || !g.acquire() {
+		return nil, 0, nil, false
+	}
+	return g.src, g.src.Size(), func() { g.release() }, true
+}
+
+// SessionContext is cancelled when the session stops.
+func (m *Manager) SessionContext(id string) context.Context {
+	s := m.lookup(id)
+	if s == nil {
+		return nil
+	}
+	return s.stopCtx
 }
 
 func (m *Manager) urlFor(g *generation) string {
