@@ -1,5 +1,5 @@
 import { Button } from "@braedonsaunders/appkit-ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { t } from "../../i18n";
 import { api } from "../../lib/api";
@@ -41,11 +41,9 @@ function enabledFrontendIds(cfg: EtherConfig | null): string[] {
  * - Consequently, the `[0..96, 0..96]` square at the center of the SVG maps 1:1 to the
  *   `112px`/`128px` Mark Stage at every viewport size, and the assembled mark never shifts
  *   by even a single pixel when transitioning from the sweeping animation to the settled state.
- * - For `"primary"` ribbons, the SVG path is the smooth C1 concatenation of:
- *   - Part A (`approachD`): a monotone sweeping curve from the viewport edge into `[0..96, 0..96]`
- *   - Part B (`markD`): the exact canonical stroke of the Ether Continuum mark (`brand-art.json`)
- *   Animating `strokeDasharray` to `<L_B> <L_total>` and `strokeDashoffset` to `-L_A` causes the
- *   viewport-spanning ribbon to flow directly into and become the permanent mark stroke.
+ * - Each `"primary"` ribbon owns a distinct, non-overlapping segment of the canonical
+ *   Ether Continuum mark (`brand-art.json`), so no two primary strokes ever stack or
+ *   toggle opacity against one another during settle.
  */
 export interface ContinuumRibbonSpec {
   id: string;
@@ -72,11 +70,11 @@ export const ETHER_READY_RIBBONS: readonly ContinuumRibbonSpec[] = [
     strokeWidth: 9,
     color: "ink",
     delayMs: 0,
-    durationMs: 2140,
+    durationMs: 2100,
   },
   // 2. Outer Continuum U-curve (bottom half of `M80 17H43C24 17 11 30 11 48S24 79 43 79H80`):
   //    sweeps in from bottom-right into the open bottom-right mouth (80, 79), glides left to (43, 79),
-  //    and curves up to meet at the left apex (11, 48).
+  //    and curves up to meet at the left apex (11, 48) at the exact same millisecond (2100ms).
   {
     id: "right-outer-bottom",
     role: "primary",
@@ -84,8 +82,8 @@ export const ETHER_READY_RIBBONS: readonly ContinuumRibbonSpec[] = [
     markD: "L 43 79 C 24 79 11 66 11 48",
     strokeWidth: 9,
     color: "ink",
-    delayMs: 45,
-    durationMs: 2140,
+    delayMs: 20,
+    durationMs: 2080,
   },
   // 3. Inner Continuum C-curve (top half of `M78 32H43C33 32 27 38 27 48S33 64 43 64H78`):
   //    sweeps in from upper-right into (78, 32), glides left to (43, 32), and curves down to (27, 48).
@@ -96,11 +94,12 @@ export const ETHER_READY_RIBBONS: readonly ContinuumRibbonSpec[] = [
     markD: "L 43 32 C 33 32 27 38 27 48",
     strokeWidth: 8,
     color: "teal-bright",
-    delayMs: 95,
-    durationMs: 2100,
+    delayMs: 70,
+    durationMs: 2050,
   },
   // 4. Inner Continuum C-curve (bottom half of `M78 32H43C33 32 27 38 27 48S33 64 43 64H78`):
-  //    sweeps in from lower-right into (78, 64), glides left to (43, 64), and curves up to (27, 48).
+  //    sweeps in from lower-right into (78, 64), glides left to (43, 64), and curves up to (27, 48)
+  //    at the exact same millisecond (2120ms).
   {
     id: "right-inner-bottom",
     role: "primary",
@@ -108,71 +107,51 @@ export const ETHER_READY_RIBBONS: readonly ContinuumRibbonSpec[] = [
     markD: "L 43 64 C 33 64 27 58 27 48",
     strokeWidth: 8,
     color: "teal-bright",
-    delayMs: 135,
-    durationMs: 2100,
+    delayMs: 90,
+    durationMs: 2030,
   },
   // 5. Central Continuum signal bar (`M45 48H80`) fed from top-left:
-  //    sweeps down from top-left across the left half of the viewport into the centerline (45, 48)
-  //    and locks onto (45, 48) -> (80, 48).
+  //    sweeps across the left half of the viewport into the centerline (45, 48)
+  //    and locks onto (45, 48) -> (80, 48) as the single permanent owner of the middle bar.
   {
-    id: "left-core-upper",
+    id: "left-core-signal",
     role: "primary",
-    approachD: "M -960 -310 C -640 -240 -330 -40 -95 34 C -25 46 15 48 45 48",
+    approachD: "M -960 -260 C -640 -195 -330 -28 -95 35 C -25 46 15 48 45 48",
     markD: "L 80 48",
     strokeWidth: 8,
     color: "teal-bright",
-    delayMs: 30,
-    durationMs: 2120,
+    delayMs: 40,
+    durationMs: 2080,
   },
-  // 6. Central Continuum signal bar (`M45 48H80`) fed from bottom-left:
-  //    sweeps up from bottom-left across the left half of the viewport into the centerline (45, 48)
-  //    and locks onto (45, 48) -> (80, 48).
-  {
-    id: "left-core-lower",
-    role: "primary",
-    approachD: "M -960 406 C -640 336 -330 136 -95 62 C -25 50 15 48 45 48",
-    markD: "L 80 48",
-    strokeWidth: 8,
-    color: "teal-bright",
-    delayMs: 75,
-    durationMs: 2120,
-  },
-  // Secondary harmonic ribbons: softer companion curves that escort the primary
-  // streams from all sides and dissolve inside the central channel as the mark locks in.
-  {
-    id: "whisper-left-upper",
-    role: "secondary",
-    approachD: "M -960 -120 C -640 -85 -330 8 -90 40 C -25 47 18 48 62 48",
-    strokeWidth: 4,
-    color: "teal-mid",
-    delayMs: 110,
-    durationMs: 1920,
-    peakOpacity: 0.52,
-  },
+  // Secondary harmonic ribbons from the left: escort the primary stream and taper
+  // smoothly into the outer/inner left apexes before the mark settles, never crossing
+  // over the central signal bar.
   {
     id: "whisper-left-lower",
     role: "secondary",
-    approachD: "M -960 216 C -640 181 -330 88 -90 56 C -25 49 18 48 62 48",
-    strokeWidth: 4,
-    color: "teal-deep",
-    delayMs: 155,
-    durationMs: 1940,
-    peakOpacity: 0.48,
+    approachD: "M -960 360 C -640 295 -340 120 -110 60 C -55 49 -15 48 11 48",
+    strokeWidth: 5,
+    color: "teal-mid",
+    delayMs: 60,
+    durationMs: 1860,
+    peakOpacity: 0.56,
   },
   {
-    id: "whisper-right-center",
+    id: "whisper-left-mid",
     role: "secondary",
-    approachD: "M 980 48 C 680 48 400 48 180 48 C 120 48 85 48 45 48",
-    strokeWidth: 3.5,
-    color: "teal-mid",
-    delayMs: 170,
-    durationMs: 1900,
-    peakOpacity: 0.44,
+    approachD: "M -960 88 C -640 78 -340 58 -110 49 C -50 48 -8 48 27 48",
+    strokeWidth: 4,
+    color: "teal-deep",
+    delayMs: 110,
+    durationMs: 1820,
+    peakOpacity: 0.46,
   },
 ];
 
 interface ThemePalette {
   ink: string;
+  inkMid: string;
+  inkNear: string;
   tealBright: string;
   tealMid: string;
   tealDeep: string;
@@ -180,6 +159,8 @@ interface ThemePalette {
 
 const DARK_PALETTE: ThemePalette = {
   ink: "#f0f0e9",
+  inkMid: "#a6ece0",
+  inkNear: "#d8f3ec",
   tealBright: "#52dfc5",
   tealMid: "#28c5ae",
   tealDeep: "#149f8b",
@@ -187,6 +168,8 @@ const DARK_PALETTE: ThemePalette = {
 
 const LIGHT_PALETTE: ThemePalette = {
   ink: "#1c2927",
+  inkMid: "#115e57",
+  inkNear: "#173f3b",
   tealBright: "#087f76",
   tealMid: "#0d9488",
   tealDeep: "#14b0a2",
@@ -210,11 +193,14 @@ function currentPalette(): ThemePalette {
 function resolveRibbonColor(
   color: ContinuumRibbonSpec["color"],
   palette: ThemePalette,
-  stage: "sweep" | "settled",
+  stage: "sweep" | "mid" | "near" | "settled",
 ): string {
   switch (color) {
     case "ink":
-      return stage === "sweep" ? palette.tealBright : palette.ink;
+      if (stage === "sweep") return palette.tealBright;
+      if (stage === "mid") return palette.inkMid;
+      if (stage === "near") return palette.inkNear;
+      return palette.ink;
     case "teal-bright":
       return palette.tealBright;
     case "teal-mid":
@@ -244,7 +230,7 @@ export interface SetupReadyProps {
   initialConfig?: EtherConfig | null;
 }
 
-export function SetupReady({ initialConfig = null }: SetupReadyProps) {
+function SetupReadyInner({ initialConfig = null }: SetupReadyProps) {
   const nav = useNavigate();
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
   const [cfg, setCfg] = useState<EtherConfig | null>(initialConfig);
@@ -261,10 +247,14 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
       .catch(() => {});
   }, [initialConfig]);
 
-  const visiblePathRefs = useRef<Record<string, SVGPathElement | null>>({});
-  const glowPathRefs = useRef<Record<string, SVGPathElement | null>>({});
-  const measureApproachRefs = useRef<Record<string, SVGPathElement | null>>({});
-  const measureMarkRefs = useRef<Record<string, SVGPathElement | null>>({});
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const pulseRef = useRef<HTMLDivElement | null>(null);
+  const markBloomRef = useRef<HTMLDivElement | null>(null);
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const subtitleRef = useRef<HTMLParagraphElement | null>(null);
+  const ctaRef = useRef<HTMLDivElement | null>(null);
+  const pillsRef = useRef<HTMLDivElement | null>(null);
+  const skipBtnRef = useRef<HTMLButtonElement | null>(null);
   const animationsRef = useRef<Animation[]>([]);
   const timersRef = useRef<number[]>([]);
 
@@ -275,56 +265,68 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
     timersRef.current = [];
   }, []);
 
-  const snapPathsToSettled = useCallback(() => {
-    for (const anim of animationsRef.current) {
-      try {
-        anim.cancel();
-      } catch {
-        // Ignore cancellation errors on detached nodes.
+  const applySettledStyles = useCallback((cancelRunning: boolean) => {
+    if (cancelRunning) {
+      for (const anim of animationsRef.current) {
+        try {
+          anim.cancel();
+        } catch {
+          // Ignore cancellation errors on detached nodes.
+        }
       }
+      animationsRef.current = [];
     }
-    animationsRef.current = [];
 
+    const svg = svgRef.current;
     const palette = currentPalette();
 
-    for (const spec of ETHER_READY_RIBBONS) {
-      const el = visiblePathRefs.current[spec.id];
-      const glowEl = glowPathRefs.current[spec.id];
-      // `left-core-lower` shares the exact same `L 80 48` mark stroke as `left-core-upper`;
-      // hiding one of the two identical overlays on settle prevents doubled glow opacity.
-      if (spec.role === "secondary" || spec.id === "left-core-lower") {
-        if (el) el.style.opacity = "0";
-        if (glowEl) glowEl.style.opacity = "0";
-        continue;
+    if (svg) {
+      for (const spec of ETHER_READY_RIBBONS) {
+        const el = svg.querySelector<SVGPathElement>(`path[data-ribbon-id="${spec.id}"]`);
+        if (spec.role === "secondary") {
+          if (el) el.style.opacity = "0";
+          continue;
+        }
+        const mA = svg.querySelector<SVGPathElement>(`path[data-measure-approach="${spec.id}"]`);
+        const mB = svg.querySelector<SVGPathElement>(`path[data-measure-mark="${spec.id}"]`);
+        const lA = safePathLength(mA, 1050);
+        const lB = safePathLength(mB, 95);
+        const total = lA + lB + 48;
+        const finalColor = resolveRibbonColor(spec.color, palette, "settled");
+        if (el) {
+          el.style.strokeDasharray = `${lB.toFixed(2)} ${total.toFixed(2)}`;
+          el.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
+          el.style.opacity = "1";
+          el.style.stroke = finalColor;
+        }
       }
-      const lA = safePathLength(measureApproachRefs.current[spec.id] ?? null, 1050);
-      const lB = safePathLength(measureMarkRefs.current[spec.id] ?? null, 95);
-      const total = lA + lB + 40;
-      const finalColor = resolveRibbonColor(spec.color, palette, "settled");
-      if (el) {
-        el.style.strokeDasharray = `${lB.toFixed(2)} ${total.toFixed(2)}`;
-        el.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
-        el.style.opacity = "1";
-        el.style.stroke = finalColor;
-      }
-      if (glowEl) {
-        glowEl.style.strokeDasharray = `${lB.toFixed(2)} ${total.toFixed(2)}`;
-        glowEl.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
-        glowEl.style.opacity = "0.24";
-        glowEl.style.stroke = resolveRibbonColor(spec.color, palette, "sweep");
+    }
+
+    if (pulseRef.current) {
+      pulseRef.current.style.opacity = "0.48";
+      pulseRef.current.style.transform = "scale3d(1, 1, 1)";
+    }
+    if (markBloomRef.current) {
+      markBloomRef.current.style.opacity = "0.34";
+      markBloomRef.current.style.transform = "scale3d(1, 1, 1)";
+    }
+    for (const node of [titleRef.current, subtitleRef.current, ctaRef.current, pillsRef.current]) {
+      if (node) {
+        node.style.opacity = "1";
+        node.style.transform = "translate3d(0, 0, 0)";
       }
     }
   }, []);
 
   const skipToSettled = useCallback(() => {
     clearScheduled();
-    snapPathsToSettled();
+    applySettledStyles(true);
     setSettled(true);
-  }, [clearScheduled, snapPathsToSettled]);
+  }, [applySettledStyles, clearScheduled]);
 
   useEffect(() => {
     if (reducedMotion) {
-      snapPathsToSettled();
+      applySettledStyles(true);
       setSettled(true);
       return;
     }
@@ -333,208 +335,130 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
       typeof Element !== "undefined" && typeof Element.prototype.animate === "function";
 
     if (!canAnimate) {
-      snapPathsToSettled();
+      applySettledStyles(true);
       const fallbackTimer = window.setTimeout(() => setSettled(true), 60);
       timersRef.current.push(fallbackTimer);
       return clearScheduled;
     }
 
+    const svg = svgRef.current;
     const palette = currentPalette();
     const createdAnimations: Animation[] = [];
-    const easing = "cubic-bezier(0.32, 0.04, 0.18, 1)";
+    const ribbonEasing = "cubic-bezier(0.25, 0.1, 0.2, 1)";
 
-    for (const spec of ETHER_READY_RIBBONS) {
-      const el = visiblePathRefs.current[spec.id];
-      const glowEl = glowPathRefs.current[spec.id];
-      if (!el) continue;
+    if (svg) {
+      for (const spec of ETHER_READY_RIBBONS) {
+        const el = svg.querySelector<SVGPathElement>(`path[data-ribbon-id="${spec.id}"]`);
+        if (!el) continue;
 
-      const sweepColor = resolveRibbonColor(spec.color, palette, "sweep");
-      const settledColor = resolveRibbonColor(spec.color, palette, "settled");
+        const sweepColor = resolveRibbonColor(spec.color, palette, "sweep");
+        const midColor = resolveRibbonColor(spec.color, palette, "mid");
+        const nearColor = resolveRibbonColor(spec.color, palette, "near");
+        const settledColor = resolveRibbonColor(spec.color, palette, "settled");
 
-      if (spec.role === "primary") {
-        const lA = safePathLength(measureApproachRefs.current[spec.id] ?? null, 1050);
-        const lB = safePathLength(measureMarkRefs.current[spec.id] ?? null, 95);
-        const total = lA + lB + 48;
-        const ribbonWindow = Math.min(Math.max(lA * 0.44, 340), lA * 0.66);
-        const midStop = -(lA * 0.52);
+        const mA = svg.querySelector<SVGPathElement>(`path[data-measure-approach="${spec.id}"]`);
+        const mB = svg.querySelector<SVGPathElement>(`path[data-measure-mark="${spec.id}"]`);
 
-        // Lock final settled styles on the element so when the animation finishes
-        // (or is cancelled), the assembled mark stroke remains cleanly in place.
-        el.style.strokeDasharray = `${lB.toFixed(2)} ${total.toFixed(2)}`;
-        el.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
-        el.style.opacity = spec.id === "left-core-lower" ? "0" : "1";
-        el.style.stroke = settledColor;
+        if (spec.role === "primary") {
+          const lA = safePathLength(mA, 1050);
+          const lB = safePathLength(mB, 95);
+          const total = lA + lB + 48;
 
-        const keyframes: Keyframe[] = [
-          {
-            strokeDasharray: `1 ${total.toFixed(2)}`,
-            strokeDashoffset: "0",
-            opacity: 0,
-            stroke: sweepColor,
-            offset: 0,
-          },
-          {
-            strokeDasharray: `${(ribbonWindow * 0.68).toFixed(2)} ${total.toFixed(2)}`,
-            strokeDashoffset: `${(midStop * 0.3).toFixed(2)}`,
-            opacity: 0.96,
-            stroke: sweepColor,
-            offset: 0.24,
-          },
-          {
-            strokeDasharray: `${ribbonWindow.toFixed(2)} ${total.toFixed(2)}`,
-            strokeDashoffset: `${midStop.toFixed(2)}`,
-            opacity: 1,
-            stroke: sweepColor,
-            offset: 0.56,
-          },
-          {
-            strokeDasharray: `${Math.max(lB * 1.35, 95).toFixed(2)} ${total.toFixed(2)}`,
-            strokeDashoffset: `${(-(lA * 0.92)).toFixed(2)}`,
-            opacity: 1,
-            stroke: sweepColor,
-            offset: 0.82,
-          },
-          {
-            strokeDasharray: `${lB.toFixed(2)} ${total.toFixed(2)}`,
-            strokeDashoffset: `${(-lA).toFixed(2)}`,
-            opacity: spec.id === "left-core-lower" ? 0 : 1,
-            stroke: settledColor,
-            offset: 1,
-          },
-        ];
+          // Strictly monotonic [s_tail, s_head] progression along the combined path:
+          // neither s_tail nor s_head ever retracts or overshoots for any (lA, lB).
+          const stops = [
+            { offset: 0, tail: 0, head: 2, opacity: 0, stroke: sweepColor },
+            {
+              offset: 0.18,
+              tail: 0.04 * lA,
+              head: 0.36 * lA,
+              opacity: 0.94,
+              stroke: sweepColor,
+            },
+            {
+              offset: 0.5,
+              tail: 0.34 * lA,
+              head: 0.78 * lA,
+              opacity: 1,
+              stroke: sweepColor,
+            },
+            {
+              offset: 0.78,
+              tail: 0.76 * lA,
+              head: lA + 0.72 * lB,
+              opacity: 1,
+              stroke: midColor,
+            },
+            {
+              offset: 0.92,
+              tail: 0.94 * lA,
+              head: lA + 0.96 * lB,
+              opacity: 1,
+              stroke: nearColor,
+            },
+            {
+              offset: 1,
+              tail: lA,
+              head: lA + lB,
+              opacity: 1,
+              stroke: settledColor,
+            },
+          ];
 
-        createdAnimations.push(
-          el.animate(keyframes, {
-            duration: spec.durationMs,
-            delay: spec.delayMs,
-            easing,
-            fill: "both",
-          }),
-        );
-
-        if (glowEl) {
-          glowEl.style.strokeDasharray = `${lB.toFixed(2)} ${total.toFixed(2)}`;
-          glowEl.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
-          glowEl.style.opacity = spec.id === "left-core-lower" ? "0" : "0.24";
-          glowEl.style.stroke = sweepColor;
+          // Lock final settled styles underneath so when the animation completes,
+          // the element already matches its final state without needing anim.cancel().
+          el.style.strokeDasharray = `${lB.toFixed(2)} ${total.toFixed(2)}`;
+          el.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
+          el.style.opacity = "1";
+          el.style.stroke = settledColor;
 
           createdAnimations.push(
-            glowEl.animate(
-              [
-                {
-                  strokeDasharray: `1 ${total.toFixed(2)}`,
-                  strokeDashoffset: "0",
-                  opacity: 0,
-                  offset: 0,
-                },
-                {
-                  strokeDasharray: `${(ribbonWindow * 0.72).toFixed(2)} ${total.toFixed(2)}`,
-                  strokeDashoffset: `${(midStop * 0.3).toFixed(2)}`,
-                  opacity: 0.5,
-                  offset: 0.26,
-                },
-                {
-                  strokeDasharray: `${ribbonWindow.toFixed(2)} ${total.toFixed(2)}`,
-                  strokeDashoffset: `${midStop.toFixed(2)}`,
-                  opacity: 0.58,
-                  offset: 0.58,
-                },
-                {
-                  strokeDasharray: `${lB.toFixed(2)} ${total.toFixed(2)}`,
-                  strokeDashoffset: `${(-lA).toFixed(2)}`,
-                  opacity: spec.id === "left-core-lower" ? 0 : 0.24,
-                  offset: 1,
-                },
-              ],
+            el.animate(
+              stops.map((s) => ({
+                strokeDasharray: `${Math.max(1, s.head - s.tail).toFixed(2)} ${total.toFixed(2)}`,
+                strokeDashoffset: `${(-s.tail).toFixed(2)}`,
+                opacity: s.opacity,
+                stroke: s.stroke,
+                offset: s.offset,
+              })),
               {
                 duration: spec.durationMs,
                 delay: spec.delayMs,
-                easing,
+                easing: ribbonEasing,
                 fill: "both",
               },
             ),
           );
-        }
-      } else {
-        const lA = safePathLength(measureApproachRefs.current[spec.id] ?? null, 1050);
-        const total = lA + 60;
-        const tailLen = Math.min(Math.max(lA * 0.35, 260), 460);
-        const peak = spec.peakOpacity ?? 0.42;
+        } else {
+          const lA = safePathLength(mA, 1050);
+          const total = lA + 60;
+          const peak = spec.peakOpacity ?? 0.46;
 
-        el.style.strokeDasharray = `0 ${total.toFixed(2)}`;
-        el.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
-        el.style.opacity = "0";
-        el.style.stroke = sweepColor;
+          const secondaryStops = [
+            { offset: 0, tail: 0, head: 2, opacity: 0 },
+            { offset: 0.22, tail: 0.06 * lA, head: 0.4 * lA, opacity: peak },
+            { offset: 0.55, tail: 0.38 * lA, head: 0.76 * lA, opacity: peak * 0.88 },
+            { offset: 0.82, tail: 0.74 * lA, head: 0.96 * lA, opacity: peak * 0.42 },
+            { offset: 1, tail: lA, head: lA + 0.5, opacity: 0 },
+          ];
 
-        createdAnimations.push(
-          el.animate(
-            [
-              {
-                strokeDasharray: `1 ${total.toFixed(2)}`,
-                strokeDashoffset: "0",
-                opacity: 0,
-                offset: 0,
-              },
-              {
-                strokeDasharray: `${tailLen.toFixed(2)} ${total.toFixed(2)}`,
-                strokeDashoffset: `${(-(lA * 0.28)).toFixed(2)}`,
-                opacity: peak,
-                offset: 0.34,
-              },
-              {
-                strokeDasharray: `${(tailLen * 0.65).toFixed(2)} ${total.toFixed(2)}`,
-                strokeDashoffset: `${(-(lA * 0.78)).toFixed(2)}`,
-                opacity: peak * 0.65,
-                offset: 0.76,
-              },
-              {
-                strokeDasharray: `1 ${total.toFixed(2)}`,
-                strokeDashoffset: `${(-lA).toFixed(2)}`,
-                opacity: 0,
-                offset: 1,
-              },
-            ],
-            {
-              duration: spec.durationMs,
-              delay: spec.delayMs,
-              easing,
-              fill: "both",
-            },
-          ),
-        );
-
-        if (glowEl) {
-          glowEl.style.strokeDasharray = `0 ${total.toFixed(2)}`;
-          glowEl.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
-          glowEl.style.opacity = "0";
-          glowEl.style.stroke = sweepColor;
+          el.style.strokeDasharray = `0.5 ${total.toFixed(2)}`;
+          el.style.strokeDashoffset = `${(-lA).toFixed(2)}`;
+          el.style.opacity = "0";
+          el.style.stroke = sweepColor;
 
           createdAnimations.push(
-            glowEl.animate(
-              [
-                {
-                  strokeDasharray: `1 ${total.toFixed(2)}`,
-                  strokeDashoffset: "0",
-                  opacity: 0,
-                  offset: 0,
-                },
-                {
-                  strokeDasharray: `${tailLen.toFixed(2)} ${total.toFixed(2)}`,
-                  strokeDashoffset: `${(-(lA * 0.28)).toFixed(2)}`,
-                  opacity: peak * 0.55,
-                  offset: 0.36,
-                },
-                {
-                  strokeDasharray: `1 ${total.toFixed(2)}`,
-                  strokeDashoffset: `${(-lA).toFixed(2)}`,
-                  opacity: 0,
-                  offset: 1,
-                },
-              ],
+            el.animate(
+              secondaryStops.map((s) => ({
+                strokeDasharray: `${Math.max(0.5, s.head - s.tail).toFixed(2)} ${total.toFixed(2)}`,
+                strokeDashoffset: `${(-s.tail).toFixed(2)}`,
+                opacity: s.opacity,
+                offset: s.offset,
+              })),
               {
                 duration: spec.durationMs,
                 delay: spec.delayMs,
-                easing,
+                easing: ribbonEasing,
                 fill: "both",
               },
             ),
@@ -543,14 +467,108 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
       }
     }
 
+    // Drive the pre-rendered radial glow halo on the exact same WAAPI timeline:
+    // swells smoothly as the ribbons enter the mark (1350ms..2050ms) and eases
+    // gently into its resting glow (2050ms..2650ms) via GPU opacity + scale3d.
+    if (pulseRef.current) {
+      pulseRef.current.style.opacity = "0.48";
+      pulseRef.current.style.transform = "scale3d(1, 1, 1)";
+      createdAnimations.push(
+        pulseRef.current.animate(
+          [
+            { opacity: 0, transform: "scale3d(0.78, 0.78, 1)", offset: 0 },
+            { opacity: 0.28, transform: "scale3d(0.92, 0.92, 1)", offset: 0.28 },
+            { opacity: 0.74, transform: "scale3d(1.05, 1.05, 1)", offset: 0.56 },
+            { opacity: 0.56, transform: "scale3d(1.01, 1.01, 1)", offset: 0.8 },
+            { opacity: 0.48, transform: "scale3d(1, 1, 1)", offset: 1 },
+          ],
+          {
+            delay: 1350,
+            duration: 1300,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            fill: "both",
+          },
+        ),
+      );
+    }
+
+    // Drive the pre-rendered blurred Continuum mark bloom layer via GPU opacity + scale3d
+    // (never animating filter or strokeDasharray on a blurred element).
+    if (markBloomRef.current) {
+      markBloomRef.current.style.opacity = "0.34";
+      markBloomRef.current.style.transform = "scale3d(1, 1, 1)";
+      createdAnimations.push(
+        markBloomRef.current.animate(
+          [
+            { opacity: 0, transform: "scale3d(0.92, 0.92, 1)", offset: 0 },
+            { opacity: 0.24, transform: "scale3d(0.97, 0.97, 1)", offset: 0.26 },
+            { opacity: 0.82, transform: "scale3d(1.03, 1.03, 1)", offset: 0.56 },
+            { opacity: 0.46, transform: "scale3d(1.005, 1.005, 1)", offset: 0.82 },
+            { opacity: 0.34, transform: "scale3d(1, 1, 1)", offset: 1 },
+          ],
+          {
+            delay: 1400,
+            duration: 1250,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            fill: "both",
+          },
+        ),
+      );
+    }
+
+    // Drive the welcome copy and actions on the same continuous WAAPI timeline
+    // so no React state re-render or CSS class flip happens during the glow peak.
+    const revealItems: { el: HTMLElement | null; delay: number }[] = [
+      { el: titleRef.current, delay: 1920 },
+      { el: subtitleRef.current, delay: 1990 },
+      { el: ctaRef.current, delay: 2070 },
+      { el: pillsRef.current, delay: 2150 },
+    ];
+    for (const item of revealItems) {
+      if (!item.el) continue;
+      item.el.style.opacity = "1";
+      item.el.style.transform = "translate3d(0, 0, 0)";
+      createdAnimations.push(
+        item.el.animate(
+          [
+            { opacity: 0, transform: "translate3d(0, 10px, 0)", offset: 0 },
+            { opacity: 1, transform: "translate3d(0, 0, 0)", offset: 1 },
+          ],
+          {
+            delay: item.delay,
+            duration: 620,
+            easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+            fill: "both",
+          },
+        ),
+      );
+    }
+
+    if (skipBtnRef.current) {
+      createdAnimations.push(
+        skipBtnRef.current.animate(
+          [
+            { opacity: 1, offset: 0 },
+            { opacity: 1, offset: 0.78 },
+            { opacity: 0, offset: 1 },
+          ],
+          {
+            delay: 0,
+            duration: 2100,
+            easing: "ease-out",
+            fill: "both",
+          },
+        ),
+      );
+    }
+
     animationsRef.current = createdAnimations;
 
-    // Trigger the settled glow pulse and staggered welcome reveal right as the
-    // primary ribbons finish locking into the Continuum mark (~2.22s).
+    // Mark the scene settled once the unified WAAPI timeline has finished,
+    // without cancelling or snapping any animations.
     const settleTimer = window.setTimeout(() => {
-      snapPathsToSettled();
       setSettled(true);
-    }, 2220);
+    }, 2780);
     timersRef.current.push(settleTimer);
 
     return () => {
@@ -563,7 +581,7 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
         }
       }
     };
-  }, [clearScheduled, reducedMotion, snapPathsToSettled]);
+  }, [applySettledStyles, clearScheduled, reducedMotion]);
 
   // Keep settled stroke colors in sync if the user toggles the theme while on the ready screen.
   useEffect(() => {
@@ -571,14 +589,14 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
       return;
     }
     const observer = new MutationObserver(() => {
-      snapPathsToSettled();
+      applySettledStyles(false);
     });
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class"],
     });
     return () => observer.disconnect();
-  }, [settled, snapPathsToSettled]);
+  }, [applySettledStyles, settled]);
 
   useEffect(() => {
     if (settled) return;
@@ -654,14 +672,49 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
             The full-viewport SVG is anchored to the exact center of this box so [0..96, 0..96]
             maps 1:1 to this stage across all viewport sizes. */}
         <div className="relative size-28 shrink-0 sm:size-32">
+          {/* Layer 1: Wide radial ambient halo animated purely via GPU opacity + scale3d */}
           <div
+            ref={pulseRef}
             aria-hidden="true"
-            className={`ether-ready-pulse pointer-events-none absolute -inset-10 rounded-full ${
-              settled ? "ether-ready-pulse-active" : ""
-            }`}
+            className="ether-ready-pulse pointer-events-none absolute -inset-16 rounded-full sm:-inset-20"
           />
 
+          {/* Layer 2: Pre-rendered static blurred Continuum mark bloom layer.
+              Blurred once as a static 128x128 GPU texture; only its container opacity
+              and scale3d animate on the WAAPI timeline (never animating filter or dashes). */}
+          <div
+            ref={markBloomRef}
+            aria-hidden="true"
+            className="ether-ready-bloom pointer-events-none absolute inset-0"
+          >
+            <svg viewBox="0 0 96 96" className="size-full overflow-visible" fill="none">
+              <path
+                d="M80 17H43C24 17 11 30 11 48S24 79 43 79H80"
+                stroke={palette.tealBright}
+                strokeWidth="12"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M78 32H43C33 32 27 38 27 48S33 64 43 64H78"
+                stroke={palette.tealBright}
+                strokeWidth="11"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M45 48H80"
+                stroke={palette.tealBright}
+                strokeWidth="11"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+
+          {/* Layer 3: Crisp full-viewport vector ribbons (zero CSS filter on any path) */}
           <svg
+            ref={svgRef}
             aria-hidden="true"
             viewBox="-852 -552 1800 1200"
             className="ether-ready-svg pointer-events-none absolute top-1/2 left-1/2 h-[1250%] w-[1875%] max-w-none -translate-x-1/2 -translate-y-1/2 overflow-visible"
@@ -671,17 +724,10 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
             <defs>
               {ETHER_READY_RIBBONS.map((spec) => (
                 <g key={`measure-${spec.id}`}>
-                  <path
-                    ref={(el) => {
-                      measureApproachRefs.current[spec.id] = el;
-                    }}
-                    d={spec.approachD}
-                  />
+                  <path data-measure-approach={spec.id} d={spec.approachD} />
                   {spec.markD && (
                     <path
-                      ref={(el) => {
-                        measureMarkRefs.current[spec.id] = el;
-                      }}
+                      data-measure-mark={spec.id}
                       d={`M ${spec.approachD.split(/\s+/).slice(-2).join(" ")} ${spec.markD}`}
                     />
                   )}
@@ -689,38 +735,16 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
               ))}
             </defs>
 
-            {/* Luminous under-glow layer */}
-            {ETHER_READY_RIBBONS.map((spec) => {
-              const fullD = spec.markD ? `${spec.approachD} ${spec.markD}` : spec.approachD;
-              return (
-                <path
-                  key={`glow-${spec.id}`}
-                  ref={(el) => {
-                    glowPathRefs.current[spec.id] = el;
-                  }}
-                  d={fullD}
-                  stroke={resolveRibbonColor(spec.color, palette, "sweep")}
-                  strokeWidth={spec.strokeWidth * 2.15}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="ether-ready-ribbon-glow"
-                />
-              );
-            })}
-
             {/* Crisp foreground ribbons that converge from viewport edges and lock into the Ether mark */}
             {ETHER_READY_RIBBONS.map((spec) => {
               const fullD = spec.markD ? `${spec.approachD} ${spec.markD}` : spec.approachD;
               return (
                 <path
                   key={spec.id}
-                  ref={(el) => {
-                    visiblePathRefs.current[spec.id] = el;
-                  }}
                   data-ribbon-id={spec.id}
                   data-ribbon-role={spec.role}
                   d={fullD}
-                  stroke={resolveRibbonColor(spec.color, palette, settled ? "settled" : "sweep")}
+                  stroke={resolveRibbonColor(spec.color, palette, "settled")}
                   strokeWidth={spec.strokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -731,23 +755,23 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
         </div>
 
         {/* Welcome typography, explanatory sentence, primary action, and secondary pills.
-            Always stays in DOM flow so the Mark Stage never jumps vertically on settle. */}
-        <div
-          aria-hidden={!settled}
-          inert={!settled ? true : undefined}
-          className={`mt-8 flex flex-col items-center ${
-            settled ? "ether-ready-content-visible" : "ether-ready-content-hidden"
-          }`}
-        >
-          <h1 className="ether-ready-title text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
+            Driven on the same single WAAPI timeline so no React re-render interrupts the glow. */}
+        <div className="mt-8 flex flex-col items-center">
+          <h1
+            ref={titleRef}
+            className="ether-ready-title text-2xl font-semibold tracking-tight text-fg sm:text-3xl"
+          >
             {t("Ether is ready")}
           </h1>
 
-          <p className="ether-ready-subtitle mt-2.5 max-w-md text-sm leading-relaxed text-fg-muted">
+          <p
+            ref={subtitleRef}
+            className="ether-ready-subtitle mt-2.5 max-w-md text-sm leading-relaxed text-fg-muted"
+          >
             {summaryLine}
           </p>
 
-          <div className="ether-ready-cta mt-6">
+          <div ref={ctaRef} className="ether-ready-cta mt-6">
             <Button
               size="lg"
               className="min-w-48 px-8"
@@ -761,7 +785,10 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
           </div>
 
           {pills.length > 0 && (
-            <div className="ether-ready-pills mt-5 flex flex-wrap items-center justify-center gap-2">
+            <div
+              ref={pillsRef}
+              className="ether-ready-pills mt-5 flex flex-wrap items-center justify-center gap-2"
+            >
               {pills.map((pill) => (
                 <button
                   key={`${pill.to}-${pill.label}`}
@@ -783,6 +810,7 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
       {/* Subtle Skip affordance anchored near the bottom edge while the ribbon convergence plays */}
       {!settled && (
         <button
+          ref={skipBtnRef}
           type="button"
           onClick={(e) => {
             e.stopPropagation();
@@ -797,4 +825,5 @@ export function SetupReady({ initialConfig = null }: SetupReadyProps) {
   );
 }
 
+export const SetupReady = memo(SetupReadyInner);
 export default SetupReady;

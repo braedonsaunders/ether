@@ -314,7 +314,9 @@
   }
 }
 
-/* Setup completion moment: full-viewport Continuum ribbon assembly + welcome hero. */
+/* Setup completion moment: full-viewport Continuum ribbon assembly + welcome hero.
+ * All layers use GPU-composited opacity/transform on a single WAAPI timeline
+ * with pre-rendered multi-stop radial gradients (no CSS blur filter repaints). */
 .ether-ready-atmosphere {
   background: radial-gradient(
     circle at 50% 40%,
@@ -334,80 +336,36 @@
 .ether-ready-pulse {
   background: radial-gradient(
     circle,
-    rgb(8 127 118 / 0.26) 0%,
-    rgb(8 127 118 / 0.08) 52%,
-    transparent 76%
+    rgb(8 127 118 / 0.22) 0%,
+    rgb(8 127 118 / 0.12) 28%,
+    rgb(8 127 118 / 0.04) 52%,
+    transparent 74%
   );
-  filter: blur(22px);
   opacity: 0;
-  transform: scale(0.78);
+  transform: scale3d(0.76, 0.76, 1);
+  will-change: transform, opacity;
 }
 .dark .ether-ready-pulse {
   background: radial-gradient(
     circle,
-    rgb(82 223 197 / 0.34) 0%,
-    rgb(82 223 197 / 0.1) 52%,
-    transparent 76%
+    rgb(82 223 197 / 0.28) 0%,
+    rgb(82 223 197 / 0.15) 28%,
+    rgb(82 223 197 / 0.05) 52%,
+    transparent 74%
   );
 }
-.ether-ready-pulse-active {
-  animation: ether-ready-glow-pulse 1.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-@keyframes ether-ready-glow-pulse {
-  0% {
-    opacity: 0;
-    transform: scale(0.78);
-  }
-  42% {
-    opacity: 1;
-    transform: scale(1.16);
-  }
-  100% {
-    opacity: 0.62;
-    transform: scale(1);
-  }
-}
-.ether-ready-ribbon-glow {
-  filter: blur(6px);
-}
-.ether-ready-signal {
-  animation: ether-breathe 4s ease-in-out 0.4s infinite;
-}
-.ether-ready-content-hidden .ether-ready-title,
-.ether-ready-content-hidden .ether-ready-subtitle,
-.ether-ready-content-hidden .ether-ready-cta,
-.ether-ready-content-hidden .ether-ready-pills {
+.ether-ready-bloom {
+  filter: blur(10px);
   opacity: 0;
-  transform: translateY(10px);
-  pointer-events: none;
+  transform: scale3d(0.92, 0.92, 1);
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
-.ether-ready-content-visible .ether-ready-title {
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.ether-ready-content-visible .ether-ready-subtitle {
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.07s,
-    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.07s;
-}
-.ether-ready-content-visible .ether-ready-cta {
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.14s,
-    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.14s;
-}
-.ether-ready-content-visible .ether-ready-pills {
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.22s,
-    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.22s;
+.ether-ready-title,
+.ether-ready-subtitle,
+.ether-ready-cta,
+.ether-ready-pills {
+  will-change: transform, opacity;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -420,22 +378,18 @@
   .ether-approve-glow,
   .ether-approve-ring,
   .ether-approve-burst span,
-  .ether-settle,
-  .ether-ready-signal {
+  .ether-settle {
     animation: none !important;
   }
-  .ether-ready-pulse-active {
+  .ether-ready-pulse {
     animation: none !important;
-    opacity: 0.55;
-    transform: scale(1);
+    opacity: 0.48;
+    transform: scale3d(1, 1, 1);
   }
-  .ether-ready-content-visible .ether-ready-title,
-  .ether-ready-content-visible .ether-ready-subtitle,
-  .ether-ready-content-visible .ether-ready-cta,
-  .ether-ready-content-visible .ether-ready-pills {
-    transition: none;
-    transform: none;
-    animation: ether-settle-in 0.35s ease both;
+  .ether-ready-bloom {
+    animation: none !important;
+    opacity: 0.34;
+    transform: scale3d(1, 1, 1);
   }
   .ether-approve-check {
     stroke-dashoffset: 0;
