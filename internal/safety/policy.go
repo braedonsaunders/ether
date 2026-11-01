@@ -36,6 +36,9 @@ type Policy struct {
 	// AllowedHours is empty for any time, otherwise hours 0..23 in Timezone.
 	AllowedHours []int  `json:"allowedHours"`
 	Timezone     string `json:"timezone"`
+	// AllowDownloads is an owner override of plex.tv allowSync. Nil means
+	// the plex.tv default (and the server AllowFriends setting) still apply.
+	AllowDownloads *bool `json:"allowDownloads,omitempty"`
 }
 
 type Service struct {
@@ -47,6 +50,9 @@ type Service struct {
 	invalMu sync.Mutex
 	inval   *clusterbus.Invalidator // nil on a standalone server
 	gen     atomic.Uint64
+
+	plexShare        func(*core.User) PlexShare
+	friendsDownloads func() bool
 
 	playbackMu    sync.Mutex
 	playbackEpoch map[int64]playbackConfirm
@@ -193,7 +199,36 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 	if u == nil {
 		return true
 	}
-	return AllowedWithPolicy(u, t, s.ForUser(u))
+	if !AllowedWithPolicy(u, t, s.ForUser(u)) {
+		return false
+	}
+	share := s.shareFor(u)
+	spec := shareFilter(t, share)
+	if spec == "" {
+		return true
+	}
+	p := s.Get(u.ID)
+	if ownerSetsRating(u, p) {
+		filtered := dropContentRating(spec)
+		return sharePasses(t, filtered)
+	}
+	return sharePasses(t, spec)
+}
+
+func dropContentRating(spec string) string {
+	var kept []string
+	for _, raw := range strings.Split(spec, "|") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		c, ok := parseShareClause(raw)
+		if !ok || c.field == "contentRating" {
+			continue
+		}
+		kept = append(kept, raw)
+	}
+	return strings.Join(kept, "|")
 }
 
 // AllowedWithPolicy evaluates caller-owned policy facts. The caller must
@@ -372,5 +407,7 @@ func (s *Service) Restricted(u *core.User) bool {
 		return true
 	}
 	p := s.ForUser(u)
-	return u.MaxContentRating != "" || len(u.AllowedSections) > 0 || p.MaxContentRating != "" || len(p.BlockedGenres) > 0 || len(p.BlockedKeywords) > 0
+	share := s.shareFor(u)
+	return u.MaxContentRating != "" || len(u.AllowedSections) > 0 || p.MaxContentRating != "" || len(p.BlockedGenres) > 0 || len(p.BlockedKeywords) > 0 ||
+		share.FilterMovies != "" || share.FilterTelevision != ""
 }
