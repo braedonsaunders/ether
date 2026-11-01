@@ -1,16 +1,13 @@
 package mediabrowser
 
 import (
-	"context"
 	"net/http"
 
-	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
-func nextUpSeries(r *http.Request) core.RatingKey {
+func nextUpSeries(r *http.Request) frontend.RatingKey {
 	raw := firstQuery(r, "seriesId")
 	if raw == "" {
 		raw = firstQuery(r, "parentId")
@@ -23,24 +20,17 @@ func nextUpSeries(r *http.Request) core.RatingKey {
 		return 0
 	}
 	switch key.Kind() {
-	case core.KindShow:
+	case frontend.KindShow:
 		return key
-	case core.KindSeason, core.KindEpisode:
-		return core.ShowKey(key.TMDB())
+	case frontend.KindSeason, frontend.KindEpisode:
+		return frontend.ShowKey(key.TMDB())
 	default:
 		return 0
 	}
 }
 
-func (i *instance) seriesNextUp(r *http.Request, v *frontend.Viewer, series core.RatingKey) ([]frontend.Title, error) {
-	title, err := experience.LoadSeriesNextUp(r.Context(), series, queryBool(r, "EnableResumable", true),
-		func(ctx context.Context, key core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
-			return i.host.Experience.Children(ctx, v, device(r), key, q)
-		},
-		func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
-			return i.host.Experience.UserData(ctx, v, keys)
-		},
-	)
+func (i *instance) seriesNextUp(r *http.Request, v *frontend.Viewer, series frontend.RatingKey) ([]frontend.Title, error) {
+	title, err := frontend.LoadSeriesNextUp(r.Context(), i.host.Experience, v, device(r), series, queryBool(r, "EnableResumable", true))
 	if err != nil || title == nil {
 		return nil, err
 	}
