@@ -22,7 +22,7 @@ func TestDASHEncodeLadderUsesShortSharedGrid(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	s.ServeManifest(rec, httptest.NewRequest(http.MethodGet, "/start.mpd", nil))
-	if body := rec.Body.String(); !strings.Contains(body, `minBufferTime="PT4S"`) || strings.Count(body, `duration="2"`) != 2 {
+	if body := rec.Body.String(); !strings.Contains(body, `minBufferTime="PT2S"`) || strings.Count(body, `duration="2"`) != 2 {
 		t.Fatalf("video and audio must share the short grid: %s", body)
 	}
 	for _, n := range []int{0, 60, 5} {

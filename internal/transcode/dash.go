@@ -102,7 +102,9 @@ func renderMPD(duration, segDur time.Duration, initURL, mediaURL string, reps []
 	b.WriteString("\t" + `type="static"` + "\n")
 	fmt.Fprintf(&b, "\tmediaPresentationDuration=%q\n", mpdDuration(duration))
 	fmt.Fprintf(&b, "\tmaxSegmentDuration=%q\n", mpdSeconds(2*segDur))
-	fmt.Fprintf(&b, "\tminBufferTime=%q>\n", mpdSeconds(2*segDur))
+	// One segment: Shaka (Plex Web) waits for max(minBufferTime, 2s)
+	// before starting. Two segments held every start for a second GOP.
+	fmt.Fprintf(&b, "\tminBufferTime=%q>\n", mpdSeconds(segDur))
 	fmt.Fprintf(&b, "\t<Period start=\"PT0S\" id=\"0\" duration=%q>\n", mpdDuration(duration))
 	// Several video representations form one AdaptationSet (an ABR
 	// ladder the player may switch within); a single video keeps the
@@ -443,7 +445,7 @@ func renderLiveMPD(start, now time.Time, segDur time.Duration, last int, initURL
 	}
 	first := max(0, last-int(120*time.Second/segDur)+1)
 	var b bytes.Buffer
-	fmt.Fprintf(&b, `<?xml version="1.0" encoding="utf-8"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" profiles="urn:mpeg:dash:profile:isoff-live:2011" availabilityStartTime="%s" publishTime="%s" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT120S" suggestedPresentationDelay="PT8S" minBufferTime="PT4S"><Period id="0" start="PT0S">`, start.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano))
+	fmt.Fprintf(&b, `<?xml version="1.0" encoding="utf-8"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" profiles="urn:mpeg:dash:profile:isoff-live:2011" availabilityStartTime="%s" publishTime="%s" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT120S" suggestedPresentationDelay="PT8S" minBufferTime="%s"><Period id="0" start="PT0S">`, start.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano), mpdSeconds(segDur))
 	for _, r := range reps {
 		fmt.Fprintf(&b, `<AdaptationSet segmentAlignment="true" contentType="%s"><SegmentTemplate timescale="1000" initialization="%s" media="%s" startNumber="%d"><SegmentTimeline>`, r.Kind, html.EscapeString(initURL), html.EscapeString(mediaURL), first)
 		if last >= 0 {

@@ -520,6 +520,10 @@ func virtualReps(info core.MediaInfo) []virtualRep {
 	return reps
 }
 
+func liveMPDSeconds(d time.Duration) string {
+	return "PT" + strconv.FormatFloat(d.Seconds(), 'f', -1, 64) + "S"
+}
+
 // renderVirtualLiveMPD writes a dynamic live MPD. The attributes match
 // transcode.renderLiveMPD, which follows a recorded PMS live DASH manifest:
 // one period, a segment timeline, and no invented end. Durations follow the
@@ -527,7 +531,7 @@ func virtualReps(info core.MediaInfo) []virtualRep {
 // HLS playlist's last segment is.
 func renderVirtualLiveMPD(origin, published time.Time, startNumber int, segs []dashPiece, initURL, mediaURL string, reps []virtualRep) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, `<?xml version="1.0" encoding="utf-8"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" profiles="urn:mpeg:dash:profile:isoff-live:2011" availabilityStartTime="%s" publishTime="%s" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT120S" suggestedPresentationDelay="PT8S" minBufferTime="PT4S"><Period id="0" start="PT0S">`, origin.UTC().Format(time.RFC3339Nano), published.UTC().Format(time.RFC3339Nano))
+	fmt.Fprintf(&b, `<?xml version="1.0" encoding="utf-8"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" profiles="urn:mpeg:dash:profile:isoff-live:2011" availabilityStartTime="%s" publishTime="%s" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT120S" suggestedPresentationDelay="PT8S" minBufferTime="%s"><Period id="0" start="PT0S">`, origin.UTC().Format(time.RFC3339Nano), published.UTC().Format(time.RFC3339Nano), liveMPDSeconds(segmentDuration))
 	for _, rep := range reps {
 		fmt.Fprintf(&b, `<AdaptationSet segmentAlignment="true" contentType="%s"><SegmentTemplate timescale="1000" initialization="%s" media="%s" startNumber="%d"><SegmentTimeline>`, rep.kind, html.EscapeString(initURL), html.EscapeString(mediaURL), startNumber)
 		writeTimeline(&b, origin, segs)

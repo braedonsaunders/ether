@@ -160,6 +160,15 @@ func TestVirtualDASHFailureIsNotABare503(t *testing.T) {
 	}
 }
 
+func TestVirtualLiveMPDBufferIsOneSegment(t *testing.T) {
+	origin := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	reps := []virtualRep{{id: 0, kind: "video", codecs: "avc1.640028", bandwidth: 4000000}}
+	early := renderVirtualLiveMPD(origin, origin.Add(10*time.Second), 0, []dashPiece{{seq: 0, at: origin, dur: segmentDuration}}, "i", "m", reps)
+	if !strings.Contains(early, `minBufferTime="PT4S"`) || !strings.Contains(early, `timeShiftBufferDepth="PT120S"`) {
+		t.Fatalf("live MPD must keep PT120S rewind and one-segment start buffer: %s", early)
+	}
+}
+
 type hlsOnlyTranscoder struct{ *fakeTranscoder }
 
 func (f *hlsOnlyTranscoder) StartHLS(ctx context.Context, r core.HLSRequest) (core.HLSSession, error) {

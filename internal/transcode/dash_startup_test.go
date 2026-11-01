@@ -20,7 +20,7 @@ func TestEncodedDASHAdvertisesShortBufferAndServesSeekSegments(t *testing.T) {
 	r := httptest.NewRecorder()
 	s.ServePlaylist(r, httptest.NewRequest(http.MethodGet, "/start.mpd", nil))
 	body := r.Body.String()
-	if !strings.Contains(body, `minBufferTime="PT4S"`) || !strings.Contains(body, `duration="2"`) {
+	if !strings.Contains(body, `minBufferTime="PT2S"`) || !strings.Contains(body, `duration="2"`) {
 		t.Fatalf("encoded DASH retained the long startup buffer: %s", body)
 	}
 	for _, n := range []int{0, 60, 5} {
