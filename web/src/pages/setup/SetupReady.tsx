@@ -4,22 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { t } from "../../i18n";
 import { api } from "../../lib/api";
 import type { EtherConfig } from "../../lib/types";
-import { appPath, appRank } from "../apps/catalog";
+import { connectDevicePath } from "./connect-path";
 
-const CONNECT_PANEL_APPS = ["jellyfin", "emby", "silo", "dlna"];
-
-/** The finish chip opens the app that shows a server address, not the Apps overview. */
-export function connectDevicePath(frontends: EtherConfig["frontends"]): string {
-  const enabled = Object.entries(frontends ?? {})
-    .filter(([, row]) => row?.enabled)
-    .map(([id]) => id)
-    .sort((a, b) => appRank(a) - appRank(b));
-  const panel = enabled.find((id) => CONNECT_PANEL_APPS.includes(id));
-  const id = panel ?? enabled[0];
-  if (!id) return "/apps";
-  if (["stremio", "webdav", "m3u"].includes(id)) return "/me";
-  return `/apps/${appPath(id)}?connect=1`;
-}
+export { connectDevicePath };
 
 function enabledFrontendIds(cfg: EtherConfig | null): string[] {
   if (!cfg) return [];
@@ -641,7 +628,11 @@ function SetupReadyInner({ initialConfig = null }: SetupReadyProps) {
     pills.push({ label: t("Connect a device"), to: connectDevicePath(cfg?.frontends) });
   }
   pills.push({ label: t("Add viewers"), to: "/viewers" });
-  pills.push({ label: t("Choose playback quality"), to: "/releases/quality" });
+  const homeProfile = cfg?.quality?.default?.trim() || "1080p";
+  pills.push({
+    label: t("Playback quality: {profile} at home · change", { profile: homeProfile }),
+    to: "/releases/quality",
+  });
 
   const summaryLine =
     debridOn || usenetOn

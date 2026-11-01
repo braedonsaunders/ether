@@ -12,7 +12,7 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { Check, ExternalLink, KeyRound, Newspaper, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAppOptional } from "../app-context";
 import { RestartButton } from "../components/RestartDrawer";
 import { EtherMark } from "../components/brand";
@@ -360,6 +360,8 @@ export function canAdvance(
     skipped: Record<string, boolean>;
     /** The owner chose a torrent addon and will paste the link on the next step. */
     readyMade?: boolean;
+    /** Indexer id to URL already saved on the server. Unchanged rows count as tested. */
+    savedIndexers?: Record<string, string>;
   },
 ): boolean {
   switch (step) {
@@ -387,7 +389,12 @@ export function canAdvance(
       const enabled = opts.indexers.filter((i) => i.enabled);
       if (enabled.length === 0) return false;
       if (opts.skipped[step]) return true;
-      return enabled.every((i) => i.url.trim() && opts.indexerTests[i.id]?.status === "ok");
+      return enabled.every((i) => {
+        const url = i.url.trim();
+        if (!url) return false;
+        if (opts.indexerTests[i.id]?.status === "ok") return true;
+        return opts.savedIndexers?.[i.id] === url;
+      });
     }
     case "catalog":
       // Without TMDB there is no catalogue to browse. Finishing later is a separate button.
@@ -432,7 +439,17 @@ export default function Setup() {
   useEffect(() => {
     void api
       .bootstrap()
-      .then((boot) => setLocalDone(Boolean(boot.ownerConfigured)))
+      .then((boot) => {
+        setLocalDone(Boolean(boot.ownerConfigured));
+        if (!boot.ownerConfigured) return;
+        void api
+          .viewers()
+          .then((list) => {
+            const owner = list.find((viewer) => viewer.isOwner);
+            if (owner) setOwnerName(owner.title || owner.username);
+          })
+          .catch(() => {});
+      })
       .catch(() => {});
     api
       .setupStatus()
@@ -449,6 +466,8 @@ export default function Setup() {
   const [pin, setPin] = useState<{ id: string; code: string; authUrl: string } | null>(null);
   const [pinDone, setPinDone] = useState(false);
   const [localDone, setLocalDone] = useState(false);
+  const [ownerName, setOwnerName] = useState("");
+  const [editingIndexers, setEditingIndexers] = useState<Record<string, boolean>>({});
   const [localUsername, setLocalUsername] = useState("");
   const [localPassword, setLocalPassword] = useState("");
   const [localPasswordAgain, setLocalPasswordAgain] = useState("");
@@ -467,6 +486,7 @@ export default function Setup() {
   const pinRun = useRef(0);
   const claimRun = useRef(0);
   const claiming = useRef(false);
+  const savedIndexerURLs = useRef<Record<string, string> | null>(null);
 
   const load = useCallback(() => {
     Promise.all([
@@ -496,6 +516,13 @@ export default function Setup() {
           });
           languageBaseline.current = choice;
           setLanguageChoice(choice);
+        }
+        if (!savedIndexerURLs.current) {
+          savedIndexerURLs.current = Object.fromEntries(
+            (c.indexers ?? [])
+              .filter((ix) => ix.id && ix.url.trim())
+              .map((ix) => [ix.id, ix.url.trim()]),
+          );
         }
         setCfg(c);
         setPinDone(Boolean(c.plex.token));
@@ -686,6 +713,7 @@ export default function Setup() {
               optTests.tmdb?.status === "ok" || cfg.catalog.tmdbKey === "••••" || tmdbBundled,
             skipped,
             readyMade,
+            savedIndexers: savedIndexerURLs.current ?? {},
           })
         : false,
     [
@@ -789,6 +817,7 @@ export default function Setup() {
         setLocalPassword("");
         setLocalPasswordAgain("");
         setLocalDone(true);
+        setOwnerName((name) => name || localUsername.trim());
         const status = await api.setupStatus();
         setServerSteps(Object.fromEntries(status.steps.map((item) => [item.id, item.complete])));
       }
@@ -885,7 +914,9 @@ export default function Setup() {
           <ol className="mt-4 flex gap-1.5" aria-label={t("Setup progress")}>
             {steps.map((s, i) => {
               const later = s.id === "account" && plexSelected && plexLater && !plexSigned;
-              const label = later ? `${s.title} · ${t("Plex comes later")}` : s.title;
+              const accountDone = s.id === "account" && (localDone || plexSigned);
+              const recorded = s.id !== "account" && (!(s.id in serverSteps) || serverSteps[s.id]);
+              const done = i < step && (accountDone || recorded);
               return (
                 <li key={i} className="min-w-0 flex-1">
                   <button
@@ -893,7 +924,7 @@ export default function Setup() {
                     disabled={i > step}
                     onClick={() => setStep(i)}
                     aria-current={i === step ? "step" : undefined}
-                    title={label}
+                    title={later ? `${s.title}. ${t("Plex later")}` : s.title}
                     className={cn(
                       "w-full min-w-0 text-left disabled:cursor-not-allowed",
                       i <= step ? "text-fg" : "text-fg-subtle",
@@ -905,16 +936,20 @@ export default function Setup() {
                         i < step ? "bg-primary" : i === step ? "bg-primary/60" : "bg-border",
                       )}
                     />
-                    <span className="mt-1.5 flex min-w-0 items-center gap-1 text-xs font-medium">
-                      {i < step &&
-                      !(s.id === "account" && plexSelected && plexLater && !plexSigned) &&
-                      (!((s.id === "account" ? "plex" : s.id) in serverSteps) ||
-                        serverSteps[s.id === "account" ? "plex" : s.id]) ? (
-                        <Check size={12} className="shrink-0 text-primary" />
+                    <span className="mt-1.5 flex min-w-0 items-start gap-1 text-xs font-medium">
+                      {done ? (
+                        <Check size={12} className="mt-0.5 shrink-0 text-primary" />
                       ) : (
                         <span className="shrink-0 tabular-nums">{i + 1}.</span>
-                      )}{" "}
-                      <span className="truncate">{label}</span>
+                      )}
+                      <span className="min-w-0 whitespace-normal leading-snug">
+                        {s.title}
+                        {later ? (
+                          <span className="mt-0.5 block font-normal text-fg-muted">
+                            {t("Plex later")}
+                          </span>
+                        ) : null}
+                      </span>
                     </span>
                   </button>
                 </li>
@@ -971,7 +1006,11 @@ export default function Setup() {
         </div>
       }
     >
-      <h2 className="text-base font-semibold text-fg">{steps[step]?.heading}</h2>
+      <h2 className="text-base font-semibold text-fg">
+        {stepId === "account" && showLocalOwner && localDone
+          ? t("Owner account")
+          : steps[step]?.heading}
+      </h2>
       <MutationError error={error} />
 
       {stepId === "language" && languageChoice ? (
@@ -1015,7 +1054,13 @@ export default function Setup() {
             </p>
           ) : null}
           {localDone ? (
-            <p className="text-sm text-fg-muted">{t("Owner created")}</p>
+            <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
+              <Check size={14} className="text-primary" />
+              {ownerName ? t("Owner: {name}", { name: ownerName }) : t("Owner account")}
+              <Link className="font-medium underline" to="/profile">
+                {t("Change")}
+              </Link>
+            </p>
           ) : (
             <>
               <Field label={t("Username")} htmlFor="setup-owner-username">
@@ -1394,6 +1439,31 @@ export default function Setup() {
           {indexers.map((ix, i) => {
             const type = indexerType(ix);
             const addon = type === "stremio";
+            const savedURL = savedIndexerURLs.current?.[ix.id];
+            const alreadyPassed = Boolean(savedURL && savedURL === ix.url.trim());
+            if (alreadyPassed && !editingIndexers[ix.id]) {
+              return (
+                <fieldset
+                  key={ix.id || i}
+                  className="rounded-xl border border-border bg-surface p-4"
+                >
+                  <legend className="px-1 text-sm font-medium text-fg">
+                    {ix.name || t("Indexer {number}", { number: i + 1 })}
+                  </legend>
+                  <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
+                    <Check size={14} className="text-primary" />
+                    {t("Done")}
+                    <Button
+                      variant="link"
+                      size="sm"
+                      onClick={() => setEditingIndexers((open) => ({ ...open, [ix.id]: true }))}
+                    >
+                      {t("Change")}
+                    </Button>
+                  </p>
+                </fieldset>
+              );
+            }
             return (
               <fieldset key={ix.id || i} className="rounded-xl border border-border bg-surface p-4">
                 <legend className="px-1 text-sm font-medium text-fg">

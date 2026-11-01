@@ -23,9 +23,9 @@ const french = (source: string) => {
 
 it("opens the enabled app's connect panel", () => {
   expect(connectDevicePath({ jellyfin: { enabled: true } })).toBe("/apps/jellyfin?connect=1");
-  expect(
-    connectDevicePath({ plex: { enabled: true }, jellyfin: { enabled: true } }),
-  ).toBe("/apps/jellyfin?connect=1");
+  expect(connectDevicePath({ plex: { enabled: true }, jellyfin: { enabled: true } })).toBe(
+    "/apps/jellyfin?connect=1",
+  );
   expect(connectDevicePath({ plex: { enabled: true } })).toBe("/apps/plex?connect=1");
   expect(connectDevicePath({ stremio: { enabled: true } })).toBe("/me");
   expect(connectDevicePath({})).toBe("/apps");
@@ -95,6 +95,14 @@ describe("canAdvance gating", () => {
   it("blocks indexers until tested; the skip escape hatch always passes", () => {
     expect(canAdvance("indexers", base)).toBe(false);
     expect(canAdvance("indexers", { ...base, indexerTests: { i1: { status: "ok" } } })).toBe(true);
+    expect(canAdvance("indexers", { ...base, savedIndexers: { i1: indexer.url } })).toBe(true);
+    expect(
+      canAdvance("indexers", {
+        ...base,
+        indexers: [{ ...indexer, url: "https://other.example" }],
+        savedIndexers: { i1: indexer.url },
+      }),
+    ).toBe(false);
     expect(canAdvance("account", { ...base, skipped: { account: true } })).toBe(true);
     expect(canAdvance("sources", { ...base, skipped: { sources: true } })).toBe(true);
   });
@@ -837,9 +845,8 @@ describe("setup wizard", () => {
       f.state.config.frontends = { jellyfin: { enabled: true, settings: { serverName: "House" } } };
       f.state.boot.ownerConfigured = true;
     });
-    expect(
-      await screen.findByRole("heading", { name: "Create your owner account" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Owner account" })).toBeInTheDocument();
+    expect(await screen.findByText("Owner: Alex Rivera")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Set up Ether" })).toBeInTheDocument();
     expect(screen.queryAllByRole("link", { name: "Finish setup" })).toHaveLength(0);
   });
@@ -950,7 +957,9 @@ describe("setup wizard", () => {
     expect(screen.getByRole("button", { name: "Connect Plex" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect a device" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add viewers" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Choose playback quality" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Playback quality: 1080p at home · change" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Get started" }));
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
@@ -974,9 +983,78 @@ describe("setup wizard", () => {
       fireEvent.keyDown(window, { key: "Escape" });
     }
     expect(readyRegion).toHaveAttribute("data-ready-state", "settled");
-    fireEvent.click(screen.getByRole("button", { name: "Choose playback quality" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Playback quality: 1080p at home · change" }),
+    );
     expect(await screen.findByRole("heading", { name: "Releases" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Overview" }).length).toBeGreaterThan(0);
+  });
+
+  it("checks off the account step without clipping Plex later", async () => {
+    renderWizard((f) => {
+      f.state.config.plex.token = "";
+      f.state.config.plex.claimed = false;
+      f.state.config.plex.ownerUsername = "";
+    });
+    vi.spyOn(api, "localSetup").mockResolvedValue({ token: "local-session" });
+    await selectPlex();
+    fireEvent.click(await screen.findByRole("button", { name: "Connect Plex later" }));
+    await screen.findByRole("heading", { name: "Create your owner account" });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "morgan" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await screen.findByRole("heading", { name: "Where Ether streams from" });
+    const account = screen.getByRole("button", { name: /Account/ });
+    expect(account).toHaveTextContent("Plex later");
+    expect(account).not.toHaveTextContent("Plex comes later");
+    expect(account).not.toHaveTextContent("3.");
+    expect(account.querySelector(".truncate")).toBeNull();
+    expect(account.querySelector("svg")).not.toBeNull();
+  });
+
+  it("shows an existing owner as done on a re-run", async () => {
+    renderWizard((f) => {
+      sessionStorage.setItem(SETUP_STEP_KEY, "2");
+      f.state.boot.ownerConfigured = true;
+      f.state.config.frontends = { jellyfin: { enabled: true } };
+    });
+    expect(await screen.findByRole("heading", { name: "Owner account" })).toBeInTheDocument();
+    expect(await screen.findByText("Owner: Alex Rivera")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Change" })).toHaveAttribute("href", "/profile");
+    expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save and continue" })).toBeEnabled();
+  });
+
+  it("keeps a saved indexer without another test", async () => {
+    renderWizard((f) => {
+      sessionStorage.setItem(SETUP_STEP_KEY, "4");
+      f.state.config.indexers = [
+        {
+          id: "t1",
+          name: "Torrentio",
+          url: "https://torrentio.strem.fun/manifest.json",
+          apiKey: "",
+          dailyLimit: 0,
+          dailyGrabs: 0,
+          priority: 0,
+          enabled: true,
+          movieCategories: null,
+          tvCategories: null,
+          protocol: "torrent",
+          kind: "stremio",
+        },
+      ];
+    });
+    expect(await screen.findByRole("heading", { name: "Indexers and addons" })).toBeInTheDocument();
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Test$/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save and continue" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.change(screen.getByDisplayValue("https://torrentio.strem.fun/manifest.json"), {
+      target: { value: "https://other.example/manifest.json" },
+    });
+    expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
   });
 });
 

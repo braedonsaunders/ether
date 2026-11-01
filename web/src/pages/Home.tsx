@@ -18,6 +18,7 @@ import {
 import {
   Activity,
   BarChart3,
+  Check,
   Film,
   HeartPulse,
   MonitorPlay,
@@ -36,7 +37,7 @@ import { ServerPanel } from "../components/ServerPanel";
 import { LevelBadge, StatusDot } from "../components/status";
 import { getLocale, localized, t, tn, tx } from "../i18n";
 import { api } from "../lib/api";
-import type { ActivityDay, RowInsight } from "../lib/contract";
+import type { ActivityDay, RowInsight, Viewer } from "../lib/contract";
 import { formatNumber, formatPercent, formatRate, relativeTime } from "../lib/format";
 import {
   countsOverall,
@@ -47,7 +48,96 @@ import {
 } from "../lib/health";
 import { useAsync } from "../lib/hooks";
 import { useTitle } from "../lib/titles";
+import type { EtherConfig } from "../lib/types";
 import { useLocale } from "../i18n/react";
+import { connectDevicePath } from "./setup/connect-path";
+
+const GETTING_STARTED_KEY = "ether.getting-started.dismissed";
+
+function sourceReady(cfg: EtherConfig): boolean {
+  const debrid = (cfg.debrid?.providers ?? []).some(
+    (provider) => provider.enabled && provider.apiKey.trim() !== "",
+  );
+  const usenet = (cfg.usenet?.providers ?? []).some(
+    (provider) => provider.enabled && provider.host.trim() !== "",
+  );
+  return debrid || usenet;
+}
+
+function GettingStarted({ sessions }: { sessions: NowPlaying[] }) {
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(GETTING_STARTED_KEY) === "1",
+  );
+  const config = useAsync(() => api.getConfig(), []);
+  const viewers = useAsync(() => api.viewers(), []);
+  if (dismissed) return null;
+  const cfg = config.data;
+  const people = viewers.data;
+  if (!cfg || !people) return null;
+  const profile = cfg.quality?.default?.trim() || "1080p";
+  const items = [
+    { id: "source", done: sourceReady(cfg), label: t("Add a source"), to: "/sources" },
+    {
+      id: "device",
+      done:
+        sessions.length > 0 ||
+        people.some((viewer: Viewer) => !viewer.isOwner && Boolean(viewer.lastActive)),
+      label: t("Connect a device"),
+      to: connectDevicePath(cfg.frontends),
+    },
+    {
+      id: "viewers",
+      done: people.some((viewer) => !viewer.isOwner),
+      label: t("Add viewers"),
+      to: "/viewers",
+    },
+    {
+      id: "quality",
+      done: profile !== "1080p",
+      label: t("Playback quality: {profile} at home · change", { profile }),
+      to: "/releases/quality",
+    },
+  ];
+  if (items.every((item) => item.done)) return <span hidden data-testid="getting-started-clear" />;
+  return (
+    <section
+      aria-label={t("Getting started")}
+      className="shrink-0 rounded-xl border border-border bg-surface p-4"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-fg">{t("Getting started")}</h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            localStorage.setItem(GETTING_STARTED_KEY, "1");
+            setDismissed(true);
+          }}
+        >
+          {t("Dismiss")}
+        </Button>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={item.id} className="flex items-center gap-2 text-sm">
+            {item.done ? (
+              <Check size={14} className="shrink-0 text-primary" aria-hidden />
+            ) : (
+              <span className="size-3.5 shrink-0" />
+            )}
+            {item.done ? (
+              <span className="text-fg-muted">{item.label}</span>
+            ) : (
+              <Link className="font-medium underline" to={item.to}>
+                {item.label}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
@@ -136,7 +226,9 @@ export default function Home() {
                 })}
               </AlertDescription>
             </Alert>
-          ) : null}
+          ) : (
+            <GettingStarted sessions={sessions} />
+          )}
           {dashboardError && !dashboard ? (
             <div className="shrink-0">
               <ErrorPanel error={dashboardError} onRetry={() => void refreshDashboard()} />

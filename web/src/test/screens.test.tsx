@@ -1,5 +1,5 @@
 import { fireEvent, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { calls, renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
@@ -153,5 +153,56 @@ describe("Updates settings", () => {
     expect(screen.getByLabelText("Maintenance window ends")).toHaveValue("06:00");
     expect(screen.getByLabelText("Update feed")).toHaveValue("");
     expect(screen.getByLabelText("Wait for playback to finish")).toHaveValue("");
+  });
+});
+
+describe("Getting started", () => {
+  afterEach(() => localStorage.removeItem("ether.getting-started.dismissed"));
+
+  it("lists the remaining fresh-install steps and hides when dismissed", async () => {
+    localStorage.removeItem("ether.getting-started.dismissed");
+    renderApp("/", {}, (fake) => {
+      fake.state.config.debrid = { ...fake.state.config.debrid!, providers: [] };
+      fake.state.config.usenet.providers = [];
+      fake.state.config.quality.default = "1080p";
+      const original = fake.fetch;
+      fake.fetch = async (input, init) => {
+        const response = await original(input, init);
+        const url = String(input);
+        if (url.endsWith("/dashboard")) {
+          const body = await response.json();
+          body.sections.sessions = [];
+          return new Response(JSON.stringify(body), { status: 200 });
+        }
+        if (url.endsWith("/viewers")) {
+          const body = await response.json();
+          const viewers = (body.viewers ?? body).filter(
+            (viewer: { isOwner?: boolean }) => viewer.isOwner,
+          );
+          return new Response(JSON.stringify({ viewers }), { status: 200 });
+        }
+        return response;
+      };
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Getting started" }, WAIT),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add a source" })).toHaveAttribute("href", "/sources");
+    expect(screen.getByRole("link", { name: "Connect a device" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add viewers" })).toHaveAttribute("href", "/viewers");
+    expect(
+      screen.getByRole("link", { name: "Playback quality: 1080p at home · change" }),
+    ).toHaveAttribute("href", "/releases/quality");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("heading", { name: "Getting started" })).not.toBeInTheDocument();
+  });
+
+  it("hides once source, device, viewers, and quality are done", async () => {
+    localStorage.removeItem("ether.getting-started.dismissed");
+    renderApp("/", {}, (fake) => {
+      fake.state.config.quality.default = "4K";
+    });
+    expect(await screen.findByTestId("getting-started-clear", {}, WAIT)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Getting started" })).not.toBeInTheDocument();
   });
 });
