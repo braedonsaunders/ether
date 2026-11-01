@@ -688,6 +688,13 @@ func decodeOverDefaults(defaults Config, b []byte) (Config, bool, error) {
 	doc := toDoc(defaults)
 	mergeDoc(doc, file)
 	cfg, err := fromDoc(doc)
+	if err == nil {
+		for i := range cfg.Quality.Profiles {
+			if len(cfg.Quality.Profiles[i].Ranking) == 0 {
+				cfg.Quality.Profiles[i].Ranking = core.DefaultRanking(cfg.Quality.Profiles[i].ReleaseRules)
+			}
+		}
+	}
 	return cfg, dropped, err
 }
 

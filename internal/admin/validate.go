@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/libraryfilter"
 	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
@@ -344,6 +345,9 @@ func ValidateConfig(cfg config.Config) []FieldError {
 			v.add(f+".releaseRules", "%s", err)
 		} else if msg := releasepolicy.Conflict(p.ReleaseRules); msg != "" {
 			v.add(f+".releaseRules", "%s", msg)
+		}
+		if err := core.ValidateRanking(p.Ranking, p.ReleaseRules); err != nil {
+			v.add(f+".ranking", "%s", err)
 		}
 		if p.MinHeight < 0 || p.MaxHeight < 0 || (p.MaxHeight > 0 && p.MinHeight > p.MaxHeight) {
 			v.add(f+".minHeight", "must be <= maxHeight")

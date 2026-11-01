@@ -117,6 +117,7 @@ func DefaultQuality() Quality {
 				PreferredAudio:   []string{"truehd", "eac3", "dtshd", "ac3", "aac"},
 				MinSizeMBPerMin:  15,
 				MaxSizeMBPerMin:  1000,
+				Ranking:          core.DefaultRanking(nil),
 			},
 			{
 				Name:             "1080p",
@@ -127,6 +128,7 @@ func DefaultQuality() Quality {
 				PreferredAudio:   []string{"eac3", "ac3", "aac"},
 				MinSizeMBPerMin:  5,
 				MaxSizeMBPerMin:  150,
+				Ranking:          core.DefaultRanking(nil),
 			},
 			{
 				Name:             "720p",
@@ -137,6 +139,7 @@ func DefaultQuality() Quality {
 				PreferredAudio:   []string{"aac", "ac3", "eac3"},
 				MinSizeMBPerMin:  2,
 				MaxSizeMBPerMin:  60,
+				Ranking:          core.DefaultRanking(nil),
 			},
 		},
 		Rules: []QualityRule{

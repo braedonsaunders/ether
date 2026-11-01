@@ -94,6 +94,7 @@ func ImportQualityProfile(data []byte) (QualityImport, error) {
 		PreferredAudio:       []string{"eac3", "ac3", "aac"},
 		MinSizeMBPerMin:      5, // the same fake filter as a new profile; scaled down for SD
 		MinCustomFormatScore: &native.MinFormatScore,
+		Ranking:              core.DefaultRanking(nil),
 	}
 	seenQuality := map[string]bool{}
 	seenSource := map[core.Source]bool{}
@@ -481,6 +482,7 @@ func (p QualityImportPlan) Apply(c *config.Config, name string) error {
 	prof.PreferredCodecs = slices.Clone(prof.PreferredCodecs)
 	prof.PreferredAudio = slices.Clone(prof.PreferredAudio)
 	prof.PreferredLanguages = slices.Clone(prof.PreferredLanguages)
+	prof.Ranking = slices.Clone(prof.EffectiveRanking())
 	if prof.MinCustomFormatScore != nil {
 		v := *prof.MinCustomFormatScore
 		prof.MinCustomFormatScore = &v
