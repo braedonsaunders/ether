@@ -399,8 +399,8 @@ func TestLiveHTTPMatroska(t *testing.T) {
 	for _, r := range tc.requests {
 		if r.Protocol == core.ProtocolHTTP {
 			sawHTTP = true
-			if !r.LiveInput {
-				t.Fatal("live HTTP must mark LiveInput")
+			if r.LiveInput {
+				t.Fatal("virtual-channel HTTP must not permit live playlist input")
 			}
 		}
 	}

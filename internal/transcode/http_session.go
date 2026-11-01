@@ -60,6 +60,7 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 		log:     m.log.With("session", id, "protocol", core.ProtocolHTTP),
 		created: time.Now(),
 		encoder: life,
+		sessionDelivery: sessionDelivery{changed: make(chan struct{})},
 	}
 	if !life.attach(stub) {
 		return nil, errors.New("transcode: session closed")

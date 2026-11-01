@@ -1120,6 +1120,7 @@ func videoBitrate(info core.MediaInfo, d core.Decision) int {
 // stdout.
 func subtitleArgs(input string, streamIndex int) []string {
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error"}
+	input = backgroundReadURL(input)
 	args = append(args, inputSafetyArgs(input, false)...)
 	args = append(args, httpInputArgs(input, true)...)
 	return append(args, "-i", input, "-map", fmt.Sprintf("0:%d", streamIndex), "-c:s", "webvtt", "-f", "webvtt", "pipe:1")

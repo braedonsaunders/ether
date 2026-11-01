@@ -72,13 +72,24 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 		dec.VideoCopy, dec.AudioCopy = true, true
 	}
 	dec.Container = "mkv"
-	input, err := s.relayInput(ss)
-	if err != nil {
-		ss.mu.Unlock()
-		return nil, err
+	liveInput := ss.info.Channel.Kind != "virtual"
+	var input string
+	if liveInput {
+		var err error
+		input, err = s.relayInput(ss)
+		if err != nil {
+			ss.mu.Unlock()
+			return nil, err
+		}
+	} else {
+		if s.o.Playback == nil || len(ss.tracks) == 0 || ss.tracks[0].playbackID == "" {
+			ss.mu.Unlock()
+			return nil, core.ErrNotAvailable
+		}
+		input = s.o.Playback.InputURL(ss.tracks[0].playbackID)
 	}
 	hs, err := s.o.Transcoder.StartHLS(s.ctx, core.HLSRequest{
-		SessionID: "livetv-http-" + id, InputURL: input, LiveInput: true,
+		SessionID: "livetv-http-" + id, InputURL: input, LiveInput: liveInput,
 		Info: copyInfo, Decision: dec, Protocol: core.ProtocolHTTP, SegmentDuration: segmentDuration,
 	})
 	if err != nil {
