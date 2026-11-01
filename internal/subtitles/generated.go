@@ -128,13 +128,21 @@ func (s *Service) ManualSidecars(title *core.Title, embedded []core.StreamInfo) 
 	}
 	manual := s.manualSelections(title.Key)
 	var out []core.StreamInfo
-	for _, lang := range sortedLanguages(manual) {
-		sel := manual[lang]
+	add := func(sel selection, lang string) {
 		if present[URLPrefix+sel.ID] {
-			continue
+			return
 		}
+		present[URLPrefix+sel.ID] = true
 		out = append(out, sidecarStream(next, lang, sel))
 		next++
+	}
+	for _, lang := range sortedLanguages(manual) {
+		add(manual[lang], lang)
+	}
+	for _, e := range s.titleSelections(title.Key) {
+		if e.sig == uploadSig {
+			add(e.sel, e.lang)
+		}
 	}
 	return out
 }

@@ -81,13 +81,74 @@ func toUTF8Lang(b []byte, lang string) string {
 		}
 	}
 	if utf8.Valid(b) {
-		return string(b)
+		return RepairMojibake(string(b))
 	}
 	out, err := legacyCharmap(lang).NewDecoder().Bytes(b)
 	if err != nil {
 		return strings.ToValidUTF8(string(b), string(utf8.RuneError))
 	}
-	return string(out)
+	return RepairMojibake(string(out))
+}
+
+// mojibakeRe matches UTF-8 that was decoded as Windows-1252/Latin-1 and
+// saved again (â™ª for ♪, Ã© for é).
+var mojibakeRe = regexp.MustCompile(`(?:Ã[\x80-\xBF]|Â[\x80-\xBF]|â[€™œž‘’“”]|ðŸ|Ã[©®±¼½¾]|â™)`)
+
+// HasMojibake reports UTF-8 that still looks like a 1252 mis-decode.
+// Only the two-byte pair patterns count: a single Å/Ä/Ã is a real
+// Nordic or German letter, not mojibake.
+func HasMojibake(s string) bool {
+	return mojibakeRe.MatchString(s)
+}
+
+func mojibakeScore(s string) int {
+	n := 0
+	for _, r := range s {
+		switch {
+		case r == 'Ã' || r == 'Â' || r == 'Å' || r == 'Ä':
+			n += 2
+		case r == 'â' || r == 'ð' || r == 'ï':
+			n++
+		case r == '\uFFFD':
+			n += 3
+		}
+	}
+	return n
+}
+
+// RepairMojibake undoes UTF-8 that was read as Windows-1252 or Latin-1
+// and written back as UTF-8. Unchanged when the reverse is not valid
+// UTF-8 or does not look cleaner.
+func RepairMojibake(s string) string {
+	if s == "" || !HasMojibake(s) {
+		return s
+	}
+	if out, ok := undoMojibake(s, charmap.Windows1252); ok {
+		return out
+	}
+	if out, ok := undoMojibake(s, charmap.ISO8859_1); ok {
+		return out
+	}
+	return s
+}
+
+func undoMojibake(s string, page *charmap.Charmap) (string, bool) {
+	raw := make([]byte, 0, len(s))
+	for _, r := range s {
+		b, ok := page.EncodeRune(r)
+		if !ok {
+			return "", false
+		}
+		raw = append(raw, b)
+	}
+	if !utf8.Valid(raw) {
+		return "", false
+	}
+	out := string(raw)
+	if mojibakeScore(out) >= mojibakeScore(s) || HasMojibake(out) && mojibakeScore(out) > 0 {
+		return "", false
+	}
+	return out, true
 }
 
 func decodeUTF16(b []byte, littleEndian bool) string {

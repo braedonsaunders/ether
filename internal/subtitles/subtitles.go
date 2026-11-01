@@ -413,6 +413,9 @@ func Rank(cands []Candidate, releaseName string) {
 		if c.HearingImp {
 			score -= 2
 		}
+		if HasMojibake(c.FileName) || HasMojibake(c.Release) {
+			score -= 8
+		}
 		if c.HashMatch {
 			score += 1000
 		}

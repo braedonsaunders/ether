@@ -28,7 +28,10 @@ import (
 
 // manualSig is the index-file signature of a viewer-picked track. Release
 // signatures are hex or "any", so it cannot collide with one.
-const manualSig = "manual"
+const (
+	manualSig = "manual"
+	uploadSig = "upload"
+)
 
 const (
 	offerTTL  = time.Hour
@@ -125,6 +128,10 @@ func (s *Service) manualPath(key core.RatingKey, lang string) string {
 	return filepath.Join(s.dir, "index", fmt.Sprintf("%d.%s.%s.json", int64(key), lang, manualSig))
 }
 
+func (s *Service) uploadPath(key core.RatingKey, lang string) string {
+	return filepath.Join(s.dir, "index", fmt.Sprintf("%d.%s.%s.json", int64(key), lang, uploadSig))
+}
+
 // CachedSidecars lists, without any network call, the sidecars already on
 // disk for a title: viewer-picked tracks, then for each of the viewer's
 // preferred languages missing from embedded the most recently fetched
@@ -141,10 +148,15 @@ func (s *Service) CachedSidecars(title *core.Title, user *core.User, embedded []
 		return nil
 	}
 	manual := map[string]selection{}
+	uploads := map[string]selection{}
 	newest := map[string]selection{}
 	for _, e := range all {
 		if e.sig == manualSig {
 			manual[e.lang] = e.sel
+			continue
+		}
+		if e.sig == uploadSig {
+			uploads[e.lang] = e.sel
 			continue
 		}
 		if e.sel.Preference != prefSig(pref) && !((e.sel.Preference == "" || e.sel.Preference == prefSig(Preferences{})) && selectionSatisfies(e.sel, pref)) {
@@ -183,6 +195,9 @@ func (s *Service) CachedSidecars(title *core.Title, user *core.User, embedded []
 	}
 	for _, lang := range sortedLanguages(manual) {
 		add(lang, manual[lang])
+	}
+	for _, lang := range sortedLanguages(uploads) {
+		add(lang, uploads[lang])
 	}
 	return out
 }
