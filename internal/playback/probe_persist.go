@@ -155,6 +155,9 @@ func (m *Manager) persistedProbe(ctx context.Context, userID int64, key core.Rat
 	if m.resume == nil || releaseID == "" {
 		return nil
 	}
+	if live := m.resume.liveProbe(userID, key, releaseID, nzb); live != nil {
+		return live
+	}
 	facts, err := m.resume.loadProbe(ctx, userID, key, releaseID, nzb)
 	if err != nil {
 		m.log.Debug("persisted probe lookup failed", "key", key, "release", releaseID, "err", err)

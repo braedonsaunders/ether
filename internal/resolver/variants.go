@@ -597,9 +597,6 @@ func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 		bitrate = int(float64(rel.Size) * 8 / dur.Seconds() / 1000)
 	case rel.Size > 0:
 		bitrate = typicalVariantKbps(height, codec)
-		if bitrate > 0 {
-			dur = time.Duration(float64(rel.Size) * 8 / (float64(bitrate) * 1000) * float64(time.Second))
-		}
 	default:
 		bitrate = typicalVariantKbps(height, codec)
 	}

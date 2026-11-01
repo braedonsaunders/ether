@@ -1079,9 +1079,19 @@ func (m *Manager) saveResume(ctx context.Context, s *session, g *generation) {
 	}
 	nzb := append([]byte(nil), g.res.NZB...)
 	points := append([]core.KeyframePoint(nil), info.Keyframes...)
+	var liveProbe *probeCache
+	if facts, ok := persistedProbeFacts(info); ok {
+		liveProbe = &probeCache{
+			releaseID:    rec.release.ID,
+			info:         facts,
+			points:       indexPointsOf(points),
+			needsAugment: true,
+			nzbHash:      nzbHash(nzb),
+		}
+	}
 	// The next prepare reads this copy. The durable row, including its NZB
 	// rename, follows after the response so a slow disk cannot stall it.
-	m.resume.noteLive(rec, nzb)
+	m.resume.noteLive(rec, nzb, liveProbe)
 	m.beginResumeSave()
 	go func() {
 		defer m.endResumeSave()

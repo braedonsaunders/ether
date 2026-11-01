@@ -1054,6 +1054,9 @@ func (i *instance) jellyfinKnownVersionFacts(dto map[string]any, versions []fron
 	if version.Media.Container != "" {
 		dto["Container"] = version.Media.Container
 	}
+	if !version.Media.Estimated && version.Media.Duration > 0 {
+		dto["RunTimeTicks"] = version.Media.Duration.Nanoseconds() / 100
+	}
 	if !version.Media.Estimated && len(version.Media.Streams) > 0 {
 		dto["MediaStreams"] = i.mediaStreams(version.Media.Streams)
 		dto["HasSubtitles"] = mediaHasSubtitles(version.Media)

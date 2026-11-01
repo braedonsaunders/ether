@@ -226,9 +226,18 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		}
 		// surfaceExperience.Item replaces this list with the shared artwork
 		// selection. That selection is the composited poster when overlays are on.
+		var (
+			resumedInfo    core.MediaInfo
+			resumedRelease string
+			hasResumed     bool
+		)
 		if a.playback != nil {
 			caps := core.ClientCaps{Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
-			info := a.playback.Estimate(ctx, title, caps)
+			resumedInfo, resumedRelease, hasResumed = a.playback.ResumedTracks(ctx, u, title.Key, caps)
+			info := resumedInfo
+			if !hasResumed {
+				info = a.playback.Estimate(ctx, title, caps)
+			}
 			markerInfo := experience.MarkerMedia(u, device, title.Key, info, a.playback.SessionFor)
 			if a.markers != nil {
 				result.Markers = experience.ItemMarkers(ctx, a.markers, title.Key, markerInfo)
@@ -248,6 +257,14 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 				return frontend.ItemDetail{}, err
 			}
 			for _, version := range versions {
+				if hasResumed && (version.ID == resumedRelease || (version.Auto && resumedRelease != "")) {
+					merged := core.CloneMediaInfo(resumedInfo)
+					merged.Estimated = false
+					if len(version.Info.Chapters) > 0 && len(merged.Chapters) == 0 {
+						merged.Chapters = version.Info.Chapters
+					}
+					version.Info = merged
+				}
 				result.Versions = append(result.Versions, frontendVersion(title, version))
 			}
 			if len(versions) > 0 {

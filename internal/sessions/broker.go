@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"io"
 	"maps"
 	"slices"
@@ -513,10 +515,11 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		release = chosen.ID
 	}
 	prepareExact := req.Intent.ExactVersion
+	rememberedFallback := false
 	if remembered, rememberErr := b.rememberedDeliveryRelease(ctx, v.ID, string(req.Protocol), req.Device.ID, req.Item, req.Intent.ClientSessionID); rememberErr != nil {
 		return frontend.PlayPlan{}, rememberErr
 	} else if remembered != "" && release == "" && !prepareExact {
-		release, prepareExact = remembered, true
+		release, prepareExact, rememberedFallback = remembered, true, true
 	}
 	previous, existed := playback.SessionForSurface(string(req.Protocol), v.ID, req.Caps.ClientID, req.Item, release, prepareExact)
 	if detail != nil {
@@ -526,17 +529,45 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	}
 	useCachedDetail := detail != nil && existed && previous != nil && sourceRevision(previous) == detail.revision && previous.Resolution != nil && previous.Resolution.Release.ID == detail.release
 	if detail != nil && !useCachedDetail {
-		release, prepareExact = detail.release, true
+		release, prepareExact, rememberedFallback = detail.release, true, false
 		previous, existed = playback.SessionForSurface(string(req.Protocol), v.ID, req.Caps.ClientID, req.Item, release, prepareExact)
 	}
 	if req.ExpectedSourceETag != "" && detail == nil && (!existed || previous == nil || sourceRevision(previous) != req.ExpectedSourceETag) {
 		return frontend.PlayPlan{}, frontend.ErrSourceGone
 	}
 	var ps *core.PlaySession
+	prepStarted := time.Now()
 	if useCachedDetail {
 		ps = previous
 	} else {
 		ps, err = playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, prepareExact)
+		// If the remembered release (or a non-detail MediaSourceId handle when
+		// no ExpectedSourceETag was pinned) is no longer available or changed,
+		// fall back cleanly to the next healthy candidate instead of failing
+		// replay with "not available yet: playback: source revision changed".
+		if err != nil && detail == nil && req.ExpectedSourceETag == "" && (rememberedFallback || (chosen != nil && chosen.Auto) || errors.Is(err, core.ErrSourceChanged)) {
+			if fallbackPS, fallbackErr := playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, false); fallbackErr == nil && fallbackPS != nil {
+				ps, err = fallbackPS, nil
+				prepareExact = false
+				req.Intent.ExactVersion = false
+				if ps.Resolution != nil && ps.Resolution.Release.ID != "" {
+					req.Version = ps.Resolution.Release.ID
+					release = ps.Resolution.Release.ID
+				}
+			}
+		}
+	}
+	if os.Getenv("ETHER_TRACE_PLAYBACK") != "" {
+		slog.Info("playback trace: broker.Plan PrepareSurface",
+			"item", req.Item,
+			"protocol", req.Protocol,
+			"release_req", release,
+			"exact", prepareExact,
+			"cached_detail", useCachedDetail,
+			"existed", existed,
+			"prepare_ms", time.Since(prepStarted).Milliseconds(),
+			"err", err,
+		)
 	}
 	if err != nil {
 		if detail != nil && (errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrSourceChanged)) {

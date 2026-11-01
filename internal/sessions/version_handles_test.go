@@ -281,3 +281,91 @@ func TestResolvedReleasePlanDoesNotListOffers(t *testing.T) {
 		t.Fatal("mismatched release listed offers")
 	}
 }
+
+
+type sourceChangedPlayback struct {
+	*fakePlayback
+	exactCalls    int
+	fallbackCalls int
+}
+
+func (p *sourceChangedPlayback) PrepareSurface(ctx context.Context, v *core.User, key core.RatingKey, caps core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
+	if exact {
+		p.exactCalls++
+		return nil, core.ErrSourceChanged
+	}
+	p.fallbackCalls++
+	ps, err := p.fakePlayback.Prepare(ctx, v, key, caps)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ps.Resolution = &core.Resolution{Release: core.Release{ID: "fallback-release"}}
+	ps.Info.Duration = 2*time.Hour + 16*time.Minute + 20*time.Second
+	ps.Info.Estimated = false
+	return ps, nil
+}
+
+func TestReplayFallsBackWhenRememberedReleaseRevisionChanges(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	bus := NewEventBus(nil, active)
+	defer bus.Close()
+	playback := &sourceChangedPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 4}}
+	broker, err := NewBroker(BrokerDeps{
+		DB:           db,
+		Events:       bus,
+		Playback:     playback,
+		Transcoder:   fakeBrokerTranscoder{},
+		Progress:     &fakeProgress{},
+		ActiveViewer: active,
+		CanPlay:      func(*core.Viewer, bool, time.Time) bool { return true },
+		BitrateLimit: func(*core.Viewer) int { return 0 },
+		OnTimeline:   func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: k}, nil
+		},
+		Variants: func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error) {
+			return []core.ReleaseVariant{
+				{ID: "stale-release", Auto: true},
+				{ID: "fallback-release", Auto: false},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	service, err := NewVersionHandles(db, broker, "jellyfin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, device := &core.Viewer{ID: 1}, core.Device{ID: "appletv"}
+	scope := frontend.VersionScope{Viewer: viewer, Device: device, Protocol: "jellyfin"}
+	item := core.EpisodeKey(280945, 1, 1)
+	handle, err := service.Issue(ctx, scope, item, "stale-release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := frontend.PlanRequest{
+		Viewer:   viewer,
+		Device:   device,
+		Protocol: "jellyfin",
+		Item:     item,
+		Version:  handle,
+		Intent:   frontend.PlayIntent{ExactVersion: true, Options: core.DecideOptions{DirectPlay: true}},
+	}
+	plan, err := broker.Plan(ctx, req)
+	if err != nil {
+		t.Fatalf("replay failed with source revision changed instead of falling back: %v", err)
+	}
+	if playback.exactCalls != 1 || playback.fallbackCalls != 1 {
+		t.Fatalf("expected 1 exact call and 1 fallback call, got exact=%d fallback=%d", playback.exactCalls, playback.fallbackCalls)
+	}
+	wantDur := 2*time.Hour + 16*time.Minute + 20*time.Second
+	if plan.Media.Duration != wantDur || plan.Estimated {
+		t.Fatalf("expected probed duration %v (estimated=false), got %v (estimated=%v)", wantDur, plan.Media.Duration, plan.Estimated)
+	}
+}

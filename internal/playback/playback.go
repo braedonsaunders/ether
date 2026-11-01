@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -846,7 +847,24 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 	s.playbackGroup = m.channelGroups[id]
 	m.mu.Unlock()
 
+	openStart := time.Now()
 	g, err := m.openInitial(ctx, s, profile)
+	if os.Getenv("ETHER_TRACE_PLAYBACK") != "" {
+		var relID string
+		var dur time.Duration
+		if g != nil {
+			relID = g.releaseID()
+			dur = g.infoSnapshot().Duration
+		}
+		log.Info("playback trace: prepare.openInitial",
+			"prefer", prefer,
+			"exact", exact,
+			"release", relID,
+			"duration_s", int(dur.Seconds()),
+			"open_ms", time.Since(openStart).Milliseconds(),
+			"err", err,
+		)
+	}
 	if err != nil {
 		log.Info("prepare failed", "err", err)
 		return nil, err
@@ -942,8 +960,27 @@ func (m *Manager) SessionFor(userID int64, clientID string, key core.RatingKey) 
 }
 
 func (m *Manager) SessionForSurface(surface string, userID int64, clientID string, key core.RatingKey, release string, exact bool) (*core.PlaySession, bool) {
+	surf := playbackSurface(surface)
 	m.mu.Lock()
-	s := m.byIdent[identity{userID: userID, clientID: clientID, key: key, surface: playbackSurface(surface), variant: release, exact: exact}]
+	s := m.byIdent[identity{userID: userID, clientID: clientID, key: key, surface: surf, variant: release, exact: exact}]
+	if s == nil && release != "" {
+		if def := m.byIdent[identity{userID: userID, clientID: clientID, key: key, surface: surf}]; def != nil && !def.closed {
+			if g := def.current(); g != nil && g.releaseID() == release {
+				s = def
+			}
+		}
+	}
+	if s == nil && !exact {
+		for id, cand := range m.byIdent {
+			if cand == nil || cand.closed || id.userID != userID || id.clientID != clientID || id.key != key || id.surface != surf {
+				continue
+			}
+			if g := cand.current(); g != nil && (release == "" || g.releaseID() == release) {
+				s = cand
+				break
+			}
+		}
+	}
 	m.mu.Unlock()
 	if s == nil {
 		return nil, false

@@ -171,6 +171,7 @@ type resumeLive struct {
 	size             int64
 	duration         time.Duration
 	res              *core.Resolution
+	probe            *probeCache
 }
 
 type resumeFresh struct {
@@ -457,24 +458,54 @@ func (s *resumeStore) bumpLiveGenLocked(k resumeKey) uint64 {
 	return s.liveGen[k]
 }
 
-func (s *resumeStore) storeLiveLocked(rec resumeRecord, nzb []byte) {
+func (s *resumeStore) storeLiveLocked(rec resumeRecord, nzb []byte, probe ...*probeCache) {
 	res := &core.Resolution{Title: rec.key, Release: rec.release, NZB: append([]byte(nil), nzb...), ResolvedAt: rec.updatedAt}
 	if s.live == nil {
 		s.live = map[resumeKey]resumeLive{}
 	}
-	s.live[resumeKey{rec.userID, rec.key}] = resumeLive{
+	k := resumeKey{rec.userID, rec.key}
+	var pc *probeCache
+	if len(probe) > 0 && probe[0] != nil {
+		pc = probe[0]
+	} else if prev, ok := s.live[k]; ok && prev.releaseID == rec.release.ID {
+		pc = prev.probe
+	}
+	s.live[k] = resumeLive{
 		profile: rec.profile, originalLanguage: rec.originalLanguage, releaseID: rec.release.ID,
-		size: rec.size, duration: rec.duration, res: res,
+		size: rec.size, duration: rec.duration, res: res, probe: pc,
 	}
 }
 
 // noteLive publishes a resume for the next prepare immediately. It supersedes
 // any save that has not published yet.
-func (s *resumeStore) noteLive(rec resumeRecord, nzb []byte) {
+func (s *resumeStore) noteLive(rec resumeRecord, nzb []byte, probe ...*probeCache) {
 	s.freshMu.Lock()
 	defer s.freshMu.Unlock()
 	s.bumpLiveGenLocked(resumeKey{rec.userID, rec.key})
-	s.storeLiveLocked(rec, nzb)
+	s.storeLiveLocked(rec, nzb, probe...)
+}
+
+func (s *resumeStore) liveProbe(userID int64, key core.RatingKey, releaseID string, nzb []byte) *probeCache {
+	if s == nil || releaseID == "" {
+		return nil
+	}
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	got, ok := s.live[resumeKey{userID, key}]
+	if !ok || got.probe == nil || got.releaseID != releaseID {
+		return nil
+	}
+	if len(nzb) > 0 && got.probe.nzbHash != "" && got.probe.nzbHash != nzbHash(nzb) {
+		return nil
+	}
+	copyInfo := core.CloneMediaInfo(got.probe.info)
+	return &probeCache{
+		releaseID:    got.probe.releaseID,
+		info:         copyInfo,
+		points:       append([]IndexPoint(nil), got.probe.points...),
+		needsAugment: got.probe.needsAugment,
+		nzbHash:      got.probe.nzbHash,
+	}
 }
 
 // claimLive reserves the next publish. A forget between the claim and
