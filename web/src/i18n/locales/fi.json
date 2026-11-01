@@ -218,7 +218,6 @@
   "m_014d347ce75e4d": "Lisätty Etheriin",
   "m_014e77626c919b": "Joku",
   "m_014f0a55186cc3": "Päivittäin",
-  "m_014f17c33ae5ca": "Asetuksesi on tallennettu — lisää seuraavaksi debrid- tai Usenet-tili, jotta nimikkeitä voi toistaa.",
   "m_0152bbbd7a10b9": "Poista: {title}",
   "m_01568577258ecb": "Kirjaa tämän palvelimen Plex-tilillesi, jotta Plex-sovellukset löytävät sen.",
   "m_015ab35e457cd4": "Lähetä ladattu varmuuskopio",
@@ -3842,6 +3841,7 @@
   "m_17d70445db7cd8": "Kaikki, joilla on Live-TV-oikeus",
   "m_17d95d5941a2a2": "Peräkkäin",
   "m_17dd578a313a44": "Simklin valtuutus on vanhentunut tai peruttu. Yhdistä uudelleen jatkaaksesi.",
+  "m_17e1611f847066": "Asetukset on tallennettu. Lisää debrid- tai Usenet-tili, jotta nimikkeitä voi toistaa.",
   "m_17e187387b459c": "Syötä televisiossa näkyvä koodi",
   "m_17e1ea676b52a8": "Luvut ja ohitusmerkinnät",
   "m_17e280c82d8638": "Odotetaan toistolähdettä · {date}",
@@ -3956,7 +3956,6 @@
   "m_1890e0dc631181": "Nähty tällä palvelimella, viimeksi {when}",
   "m_1890e30548b2a2": "Mikään lähteessä ei vastaa.",
   "m_1891902f870258": "Tulossa olevat nimikkeet vaativat koko katalogin lähteen ja etä-TMDB-haun.",
-  "m_1894395fd1bc40": "Asetuksesi on tallennettu ja palvelin on käynnissä — avaa Yleiskatsaus tai valitse seuraava vaihe alta.",
   "m_1894cd64b6f8df": {
     "one": "{count} avoin tiedosto",
     "other": "{count} avointa tiedostoa"
@@ -4527,6 +4526,7 @@
   "m_1c211087237733": "Katalogin oletus",
   "m_1c22b36f777d20": "Kaikki sovellukset käyttävät oletuslaatuprofiileja.",
   "m_1c245bd4ba0d6f": "Ohita",
+  "m_1c24f4ce212d47": "Asetukset on tallennettu ja Ether on käynnissä. Valitse seuraava vaihe alta.",
   "m_1c25f0d0bd2dd4": "Pilkuilla erotettuna, esim. Kauhu, Trilleri.",
   "m_1c26dab5c84e33": "Maailmanlaajuinen nousu",
   "m_1c27719c615eef": "Nimet ja päivämäärät",

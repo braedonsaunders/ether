@@ -645,10 +645,8 @@ function SetupReadyInner({ initialConfig = null }: SetupReadyProps) {
 
   const summaryLine =
     debridOn || usenetOn
-      ? t(
-          "Your settings are saved and your server is running — open Overview or pick a next step below.",
-        )
-      : t("Your settings are saved — add a debrid or Usenet account next so titles can play.");
+      ? t("Your settings are saved and Ether is running. Pick a next step below.")
+      : t("Your settings are saved. Add a debrid or Usenet account so titles can play.");
 
   const palette = currentPalette();
 

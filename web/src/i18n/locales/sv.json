@@ -218,7 +218,6 @@
   "m_014d347ce75e4d": "Tillagd i Ether",
   "m_014e77626c919b": "Någon",
   "m_014f0a55186cc3": "Dagligen",
-  "m_014f17c33ae5ca": "Dina inställningar är sparade — lägg till ett debrid- eller Usenet-konto härnäst så att titlar kan spelas upp.",
   "m_0152bbbd7a10b9": "Ta bort {title}",
   "m_01568577258ecb": "Loggar in den här servern på ditt Plex-konto så att Plex-appar kan hitta den.",
   "m_015ab35e457cd4": "Ladda upp en nedladdad säkerhetskopia",
@@ -3842,6 +3841,7 @@
   "m_17d70445db7cd8": "Alla med Live-TV-åtkomst",
   "m_17d95d5941a2a2": "I följd",
   "m_17dd578a313a44": "Simkl-behörigheten har gått ut eller återkallats. Återanslut för att fortsätta.",
+  "m_17e1611f847066": "Dina inställningar är sparade. Lägg till ett debrid- eller Usenet-konto så att titlar kan spelas upp.",
   "m_17e187387b459c": "Ange koden som visas på din TV",
   "m_17e1ea676b52a8": "Kapitel och hoppa över-markörer",
   "m_17e280c82d8638": "Väntar på en ström · {date}",
@@ -3956,7 +3956,6 @@
   "m_1890e0dc631181": "Sedd på den här servern, senast {when}",
   "m_1890e30548b2a2": "Inget i källan matchar.",
   "m_1891902f870258": "Kommande titlar kräver källan Hela katalogen och fjärr-TMDB-discovery.",
-  "m_1894395fd1bc40": "Dina inställningar är sparade och servern är igång — öppna Översikt eller välj nästa steg nedan.",
   "m_1894cd64b6f8df": {
     "one": "{count} öppen fil",
     "other": "{count} öppna filer"
@@ -4527,6 +4526,7 @@
   "m_1c211087237733": "Katalogens standard",
   "m_1c22b36f777d20": "Alla appar använder standardkvalitetsprofilerna.",
   "m_1c245bd4ba0d6f": "Hoppa över",
+  "m_1c24f4ce212d47": "Dina inställningar är sparade och Ether körs. Välj ett nästa steg nedan.",
   "m_1c25f0d0bd2dd4": "Kommaseparerade, t.ex. Skräck, Thriller.",
   "m_1c26dab5c84e33": "Globala trender",
   "m_1c27719c615eef": "Namn och datum",

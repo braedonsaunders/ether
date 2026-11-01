@@ -218,7 +218,6 @@
   "m_014d347ce75e4d": "Tilføjet til Ether",
   "m_014e77626c919b": "Nogen",
   "m_014f0a55186cc3": "Dagligt",
-  "m_014f17c33ae5ca": "Dine indstillinger er gemt — tilføj en debrid- eller Usenet-konto som det næste, så titler kan afspilles.",
   "m_0152bbbd7a10b9": "Fjern {title}",
   "m_01568577258ecb": "Logger denne server ind på din Plex-konto, så Plex-apps kan finde den.",
   "m_015ab35e457cd4": "Upload en downloadet backup",
@@ -3842,6 +3841,7 @@
   "m_17d70445db7cd8": "Alle med adgang til Live-tv",
   "m_17d95d5941a2a2": "I forlængelse",
   "m_17dd578a313a44": "Simkl-godkendelsen er udløbet eller blevet tilbagekaldt. Opret forbindelse igen for at fortsætte.",
+  "m_17e1611f847066": "Dine indstillinger er gemt. Tilføj en debrid- eller Usenet-konto, så titler kan afspilles.",
   "m_17e187387b459c": "Indtast koden, der vises på dit tv",
   "m_17e1ea676b52a8": "Kapitler og spring-over-markører",
   "m_17e280c82d8638": "Venter på en stream · {date}",
@@ -3956,7 +3956,6 @@
   "m_1890e0dc631181": "Set på denne server, senest {when}",
   "m_1890e30548b2a2": "Intet i kilden matcher.",
   "m_1891902f870258": "Kommende titler kræver kilden Hele kataloget og ekstern TMDB-discover.",
-  "m_1894395fd1bc40": "Dine indstillinger er gemt, og serveren kører — åbn Oversigt eller vælg et næste trin nedenfor.",
   "m_1894cd64b6f8df": {
     "one": "{count} åben fil",
     "other": "{count} åbne filer"
@@ -4527,6 +4526,7 @@
   "m_1c211087237733": "Katalogets standard",
   "m_1c22b36f777d20": "Alle apps bruger standardkvalitetsprofilerne.",
   "m_1c245bd4ba0d6f": "Spring over",
+  "m_1c24f4ce212d47": "Dine indstillinger er gemt, og Ether kører. Vælg et næste trin nedenfor.",
   "m_1c25f0d0bd2dd4": "Adskilt af kommaer, f.eks. Gyser, Thriller.",
   "m_1c26dab5c84e33": "Globale trends",
   "m_1c27719c615eef": "Navne og datoer",

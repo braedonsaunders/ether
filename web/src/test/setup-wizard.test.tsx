@@ -943,7 +943,7 @@ describe("setup wizard", () => {
     expect(screen.getByRole("heading", { name: "Ether is ready" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Your settings are saved — add a debrid or Usenet account next so titles can play.",
+        "Your settings are saved. Add a debrid or Usenet account so titles can play.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add a debrid account" })).toBeInTheDocument();

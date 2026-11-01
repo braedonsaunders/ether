@@ -218,7 +218,6 @@
   "m_014d347ce75e4d": "Added to Ether",
   "m_014e77626c919b": "Someone",
   "m_014f0a55186cc3": "Daily",
-  "m_014f17c33ae5ca": "Your settings are saved — add a debrid or Usenet account next so titles can play.",
   "m_0152bbbd7a10b9": "Remove {title}",
   "m_01568577258ecb": "Signs this server in to your Plex account so Plex apps can find it.",
   "m_015ab35e457cd4": "Upload a downloaded backup",
@@ -3842,6 +3841,7 @@
   "m_17d70445db7cd8": "Everyone with Live TV access",
   "m_17d95d5941a2a2": "Back to back",
   "m_17dd578a313a44": "Simkl authorization expired or was revoked. Reconnect to continue.",
+  "m_17e1611f847066": "Your settings are saved. Add a debrid or Usenet account so titles can play.",
   "m_17e187387b459c": "Enter the code shown on your TV",
   "m_17e1ea676b52a8": "Chapters and skip markers",
   "m_17e280c82d8638": "Waiting for a stream · {date}",
@@ -3956,7 +3956,6 @@
   "m_1890e0dc631181": "Seen on this server, last {when}",
   "m_1890e30548b2a2": "Nothing in the source matches.",
   "m_1891902f870258": "Upcoming titles require the whole catalogue source and remote TMDB discovery.",
-  "m_1894395fd1bc40": "Your settings are saved and your server is running — open Overview or pick a next step below.",
   "m_1894cd64b6f8df": {
     "one": "{count} open file",
     "other": "{count} open files"
@@ -4527,6 +4526,7 @@
   "m_1c211087237733": "Catalogue default",
   "m_1c22b36f777d20": "Every app uses the default quality profiles.",
   "m_1c245bd4ba0d6f": "Skip",
+  "m_1c24f4ce212d47": "Your settings are saved and Ether is running. Pick a next step below.",
   "m_1c25f0d0bd2dd4": "Comma-separated, e.g. Horror, Thriller.",
   "m_1c26dab5c84e33": "Global trending",
   "m_1c27719c615eef": "Names and dates",
