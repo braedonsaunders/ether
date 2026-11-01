@@ -280,59 +280,71 @@ func (i *instance) browseRoutes() error {
 				http.Error(w, "Unavailable", 503)
 				return
 			}
-			rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: frontend.PlacementHome, Purpose: purpose, Limit: queryInt(r, "Limit", 0)})
-			if err != nil {
-				http.Error(w, "Unavailable", 503)
-				return
-			}
 			type rowSpan struct {
 				start, end int
 				handle     string
 			}
 			spans := []rowSpan{}
 			titles := []frontend.Title{}
-			for _, row := range rows {
-				if row.Purpose != purpose {
-					continue
-				}
-				start := len(titles)
-				if len(row.Entries) > 0 {
-					for _, entry := range row.Entries {
-						if entry.Kind == frontend.RowEntryTitle && entry.Title != nil {
-							titles = append(titles, *entry.Title)
-						}
-					}
-				} else {
-					titles = append(titles, row.Items...)
-				}
-				if row.Handle != "" && len(titles) > start {
-					spans = append(spans, rowSpan{start, len(titles), row.Handle})
-				}
+			var series frontend.RatingKey
+			if purpose == frontend.RowNextUp {
+				series = nextUpSeries(r)
 			}
-			// Jellyfin Next Up is the next episode after something the viewer
-			// watched. That episode is carried on the continue row when no
-			// home row is labeled next-up.
-			if purpose == frontend.RowNextUp && len(titles) == 0 {
+			if series != 0 {
+				titles, err = i.seriesNextUp(r, v, series)
+				if err != nil {
+					http.Error(w, "Unavailable", 503)
+					return
+				}
+			} else {
+				rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: frontend.PlacementHome, Purpose: purpose, Limit: queryInt(r, "Limit", 0)})
+				if err != nil {
+					http.Error(w, "Unavailable", 503)
+					return
+				}
 				for _, row := range rows {
-					if row.Purpose != frontend.RowContinue {
+					if row.Purpose != purpose {
 						continue
 					}
 					start := len(titles)
 					if len(row.Entries) > 0 {
 						for _, entry := range row.Entries {
-							if entry.Kind == frontend.RowEntryTitle && entry.Title != nil && entry.Title.Type == "episode" {
+							if entry.Kind == frontend.RowEntryTitle && entry.Title != nil {
 								titles = append(titles, *entry.Title)
 							}
 						}
 					} else {
-						for _, title := range row.Items {
-							if title.Type == "episode" {
-								titles = append(titles, title)
-							}
-						}
+						titles = append(titles, row.Items...)
 					}
 					if row.Handle != "" && len(titles) > start {
 						spans = append(spans, rowSpan{start, len(titles), row.Handle})
+					}
+				}
+				// Jellyfin Next Up is the next episode after something the viewer
+				// watched. That episode is carried on the continue row when no
+				// home row is labeled next-up.
+				if purpose == frontend.RowNextUp && len(titles) == 0 {
+					for _, row := range rows {
+						if row.Purpose != frontend.RowContinue {
+							continue
+						}
+						start := len(titles)
+						if len(row.Entries) > 0 {
+							for _, entry := range row.Entries {
+								if entry.Kind == frontend.RowEntryTitle && entry.Title != nil && entry.Title.Type == "episode" {
+									titles = append(titles, *entry.Title)
+								}
+							}
+						} else {
+							for _, title := range row.Items {
+								if title.Type == "episode" {
+									titles = append(titles, title)
+								}
+							}
+						}
+						if row.Handle != "" && len(titles) > start {
+							spans = append(spans, rowSpan{start, len(titles), row.Handle})
+						}
 					}
 				}
 			}
