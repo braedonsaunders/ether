@@ -5,17 +5,49 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/clusterconfig"
 	"github.com/braedonsaunders/ether/internal/config"
 )
+
+func init() {
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		dt.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				host = addr
+			}
+			ip := net.ParseIP(host)
+			if strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback()) {
+				return dialer.DialContext(ctx, network, addr)
+			}
+			return nil, fmt.Errorf("external dial blocked in test: %s %s", network, addr)
+		}
+	}
+}
+
+type fakePlexTVTransport struct{}
+
+func (fakePlexTVTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"errors":[{"code":1001,"message":"User could not be authenticated"}]}`)),
+		Request:    r,
+	}, nil
+}
 
 func setupTestApp(t *testing.T, complete bool) *App {
 	t.Helper()
@@ -41,6 +73,9 @@ func setupTestAppWith(t *testing.T, complete bool, opts Options) *App {
 	opts.DataDir = dir
 	opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	opts.clusterSetup = s
+	if opts.plextvHTTP == nil {
+		opts.plextvHTTP = &http.Client{Transport: fakePlexTVTransport{}}
+	}
 	a, err := New(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)

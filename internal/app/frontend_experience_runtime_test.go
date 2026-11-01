@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
 
+	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -80,6 +82,7 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	}
 	source := *a.artwork
 	source.Variants = func(*core.Title, string) (*tmdb.Images, bool) { return &tmdb.Images{}, true }
+	source.Images = artworkservice.NewRemoteCache(1024, &http.Client{Transport: disabledArtworkTransport{}})
 	exp, err := a.newSurfaceExperience("jellyfin", source)
 	if err != nil {
 		t.Fatal(err)

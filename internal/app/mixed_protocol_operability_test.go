@@ -227,6 +227,7 @@ func TestMixedProtocolOperability(t *testing.T) {
 		Logger:            slog.New(slog.NewTextHandler(&logs, nil)),
 		FixtureMedia:      media,
 		FixtureTranscoder: budget,
+		plextvHTTP:        &http.Client{Transport: fakePlexTVTransport{}},
 	})
 	if err != nil {
 		t.Fatal(err)

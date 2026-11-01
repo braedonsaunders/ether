@@ -771,7 +771,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}); e != nil {
 		t.Fatal(e)
 	}
-	a, e = New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	a, e = New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), plextvHTTP: &http.Client{Transport: fakePlexTVTransport{}}})
 	if e != nil {
 		t.Fatal(e)
 	}

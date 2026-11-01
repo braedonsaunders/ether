@@ -116,6 +116,8 @@ type Options struct {
 	// CatalogNow, when set, is the catalog clock from construction. Tests
 	// pin it so a minute snapshot cannot expire while a background browse runs.
 	CatalogNow func() time.Time
+	// plextvHTTP, when set, is the HTTP client used by the plex.tv client in tests.
+	plextvHTTP *http.Client
 	// front is Serve's listener, bound before the database opens; nil
 	// when an App is run on its own (tests), which then binds in Run.
 	front *frontDoor

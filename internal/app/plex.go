@@ -80,12 +80,14 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		return plexguid.ClientIdentifier(cfg.Plex.ClientIdentifier, cfg.Server.MachineIdentifier)
 	}
 	deps.PlexGUID = plexguid.New(a.db, plexguid.Options{
+		HTTP:             a.opts.plextvHTTP,
 		Token:            func() string { return a.cfg.Read().Plex.Token },
 		ClientIdentifier: clientID,
 		Background:       true,
 	})
 	a.plexGUID = deps.PlexGUID
 	deps.PlexMeta = plexmeta.New(a.db, plexmeta.Options{
+		HTTP:             a.opts.plextvHTTP,
 		Token:            func() string { return a.cfg.Read().Plex.Token },
 		ClientIdentifier: clientID,
 		GUID: func(ctx context.Context, k core.RatingKey) string {
