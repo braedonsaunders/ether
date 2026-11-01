@@ -188,6 +188,70 @@ the clearance it returns.
 Sign-ins that need a captcha are not supported; if the definition offers
 cookie sign-in, paste the cookie from a signed-in browser instead.
 
+### User agent and indexer requests
+
+Ether tells a Newznab or Torznab indexer who it is on every request: the
+capabilities read, searches, rescue searches, recent feeds, connection tests,
+NZB grabs and `.torrent` fetches. By default it presents itself as Ether.
+Under **Sources › Indexers › User agent** (below the indexer list) you can present one of the
+clients Ether replaces instead. **Check each site's rules first:** some sites
+disallow or restrict third-party clients, and you are responsible for using an
+identity you are entitled to.
+
+The policy is split by purpose and media:
+
+| | Search | Grab |
+| :--- | :--- | :--- |
+| **TV** | TV search identity | TV grab identity (default **Same as search**) |
+| **Movies** | movie search identity | movie grab identity (default **Same as search**) |
+
+Every value defaults to Ether. **Standard Servarr stack** sets TV search to
+Sonarr and movie search to Radarr, leaving both grabs following their search.
+
+Precedence, highest first:
+
+1. the indexer's own search or grab override;
+2. the global value for that purpose and media;
+3. Ether.
+
+An indexer override is per purpose, not per media: overriding search to
+Prowlarr applies it to both TV and movie searches on that indexer, while grabs
+keep inheriting the global grab values. The indexer drawer shows the effective
+TV and movie value it inherits under each selector.
+
+The presets are a dated snapshot of what each client sends. Refresh them by
+editing the table in `internal/newznab/identity.go`; each entry carries the
+user agent, fixed headers and Newznab query style.
+
+| Preset | User agent | Headers |
+| :--- | :--- | :--- |
+| Ether | `Ether/<build version>` | none |
+| Prowlarr | `Prowlarr/2.7.0.5723 (alpine 3.24.2)` | RSS `Accept` |
+| Sonarr | `Sonarr/4.0.20.3014 (alpine 3.24.2)` | RSS `Accept` |
+| Radarr | `Radarr/6.4.4.10685 (alpine 3.24.2)` | RSS `Accept` |
+| NZBHydra2 | `NZBHydra2 9.2.0` | XML `Accept` and `Content-Type` |
+| Custom | the user agent you enter | the headers you enter |
+
+Choosing **Custom** at the global or indexer level adds a user agent field and
+header rows. A custom value cannot contain a carriage return or line feed, and
+framing and proxy headers such as `Host`, `Content-Length` and
+`Proxy-Authorization` are rejected. Header values are stored encrypted, shown
+as `••••` afterwards, and redacted in logs and support packs. Leave the
+placeholder to keep a stored value.
+
+Persona presets send the query shape that client sends, including `offset` on
+the first page, and ask for a `.torrent` body on torrent grabs. Ether's own
+identity keeps Ether's existing query shape. Capabilities are cached for 7
+days per indexer and identity.
+
+When either the TV or movie search identity is a persona, recent-release
+monitoring polls two feeds per indexer, `<id>#tv` and `<id>#movie`, each with
+`t=tvsearch` or `t=movie` and its own cursor. Both sides count toward the
+availability feed allowance; **Availability** warns when the selected feeds
+need more daily requests than the allowance, and you can lower the poll
+frequency, pages or selected indexers. With Ether for both media the single
+mixed feed remains.
+
 ## Share with viewers
 
 Use Plex library sharing to invite people or remove their access. They appear
