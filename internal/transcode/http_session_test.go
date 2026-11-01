@@ -67,6 +67,9 @@ func TestHTTPSessionServesMatroska(t *testing.T) {
 	if !strings.Contains(joined, "-ss") || !strings.Contains(joined, "-copyts") {
 		t.Fatalf("args %q missing VOD seek", joined)
 	}
+	if strings.Contains(joined, "-c:a copy") || strings.Contains(joined, "-c copy") {
+		t.Fatalf("args %q copied AAC into piped Matroska", joined)
+	}
 
 	head := httptest.NewRecorder()
 	stream.ServeHTTP(head, httptest.NewRequest(http.MethodHead, "/", nil))

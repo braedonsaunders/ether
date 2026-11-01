@@ -124,9 +124,19 @@ func TestSessionReadAuth(t *testing.T) {
 		t.Fatal(start.Code, start.Body.String())
 	}
 	path := "/video/:/transcode/universal/session/live-session/base/init.mp4"
-	// Live session id on a playlist/segment read, matching device.
-	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code != 200 {
-		t.Fatalf("session id: %d", rec.Code)
+	// Live session id on playlist/segment follow-up fetches, matching device.
+	for _, p := range []string{
+		path,
+		"/video/:/transcode/universal/session/live-session/base/index.m3u8",
+		"/video/:/transcode/universal/session/live-session/base/00000.ts",
+	} {
+		if rec := f.request(t, http.MethodGet, p, map[string]string{"X-Plex-Token": ""}); rec.Code != 200 {
+			t.Fatalf("session id %s: %d", p, rec.Code)
+		}
+	}
+	f.srv.transcodes.put(&transcodeEntry{id: "dash-session", userID: ownerUser.ID, clientID: "client-1", started: true})
+	if rec := f.request(t, http.MethodGet, "/video/:/transcode/universal/session/dash-session/0/header", map[string]string{"X-Plex-Token": ""}); rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+		t.Fatalf("dash session id: %d", rec.Code)
 	}
 	// Stale token next to the live session still passes via the session.
 	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
@@ -147,6 +157,8 @@ func TestSessionReadAuth(t *testing.T) {
 	// Control routes stay gated: start, ping, stop.
 	for _, p := range []string{
 		"/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session",
+		"/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session",
+		"/video/:/transcode/universal/start?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session&protocol=http",
 		"/video/:/transcode/universal/ping?session=live-session",
 		"/video/:/transcode/universal/stop?session=live-session",
 	} {

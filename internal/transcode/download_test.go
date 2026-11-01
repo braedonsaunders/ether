@@ -155,7 +155,9 @@ func TestRemuxDownloadConvertsIncompatibleCodecs(t *testing.T) {
 	d := newDownloadRemuxer(t, fr, config.Downloads{})
 	for name, mutate := range map[string]func(*core.MediaInfo){
 		"av1 video":    func(i *core.MediaInfo) { i.Streams[0].Codec = "av1" },
+		"vp9 video":    func(i *core.MediaInfo) { i.Streams[0].Codec = "vp9" },
 		"truehd audio": func(i *core.MediaInfo) { i.Streams[1].Codec = "truehd" },
+		"dts audio":    func(i *core.MediaInfo) { i.Streams[1].Codec = "dts" },
 	} {
 		info := downloadInfo()
 		mutate(&info)
@@ -185,6 +187,37 @@ func TestRemuxDownloadConvertsIncompatibleCodecs(t *testing.T) {
 	joined := strings.Join(convert, " ")
 	if !strings.Contains(joined, "-f mp4") || !strings.Contains(joined, "-movflags +faststart") {
 		t.Fatalf("convert args %q missing mp4 faststart", joined)
+	}
+}
+
+func TestRemuxDownloadBurnsImageSubtitles(t *testing.T) {
+	fr := newFakeRunner()
+	fr.runFunc = downloadRunner("burned-mp4")
+	d := newDownloadRemuxer(t, fr, config.Downloads{})
+	path, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: downloadInfo(), AudioStream: -1, ViewerID: 4,
+		Options: core.DecideOptions{BurnSubtitles: true, AudioStream: -1},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.ReleaseDownload(path)
+	fr.mu.Lock()
+	var convert []string
+	for _, c := range fr.runCalls {
+		joined := strings.Join(c, " ")
+		if hasArg(c, "-movflags") && !strings.Contains(joined, "-c copy") {
+			convert = c
+			break
+		}
+	}
+	fr.mu.Unlock()
+	if len(convert) == 0 {
+		t.Fatal("burn request remuxed instead of converting")
+	}
+	joined := strings.Join(convert, " ")
+	if !strings.Contains(joined, "overlay=") && !strings.Contains(joined, "subtitles=") {
+		t.Fatalf("convert args %q missing image-subtitle burn", joined)
 	}
 }
 

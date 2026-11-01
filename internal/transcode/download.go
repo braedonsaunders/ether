@@ -314,11 +314,34 @@ func (d *DownloadRemuxer) RemuxDownload(ctx context.Context, req core.DownloadRe
 		return "", 0, errors.New("transcode: download: empty input URL")
 	}
 	video, audio, ok := DownloadCopyable(req.Info, req.AudioStream)
-	if ok {
+	if ok && !downloadBurnsImage(req) {
 		return d.runDownload(ctx, req, progress, estimateBytes(req.Info), "remux",
 			func(part string) []string { return downloadArgs(req.InputURL, video, audio, part) })
 	}
 	return d.convertDownload(ctx, req, progress)
+}
+
+func firstImageSubtitle(info core.MediaInfo) *core.StreamInfo {
+	for i := range info.Streams {
+		s := &info.Streams[i]
+		if s.Type == "subtitle" && IsImageSubtitle(s.Codec) {
+			return s
+		}
+	}
+	return nil
+}
+
+// downloadBurnsImage is true when the request asked to burn and the
+// source has a bitmap subtitle. Those cannot ride along in the MP4
+// remux, so the download converts and burns (or, without this flag,
+// remux/convert drop them).
+func downloadBurnsImage(req core.DownloadRemuxRequest) bool {
+	sub := pickSubtitle(req.Info, req.Options.SubtitleStream)
+	if sub == nil && req.Options.BurnSubtitles {
+		sub = firstImageSubtitle(req.Info)
+	}
+	return sub != nil && IsImageSubtitle(sub.Codec) &&
+		(req.Options.BurnSubtitles || req.Options.SubtitleStream >= 0)
 }
 
 func (d *DownloadRemuxer) convertDownload(ctx context.Context, req core.DownloadRemuxRequest, progress func(float64)) (string, int64, error) {
@@ -335,7 +358,14 @@ func (d *DownloadRemuxer) convertDownload(ctx context.Context, req core.Download
 	opts.DirectPlay = false
 	opts.DirectStream = true
 	opts.AudioStream = req.AudioStream
-	if !opts.BurnSubtitles && opts.SubtitleStream == 0 {
+	if downloadBurnsImage(req) {
+		opts.BurnSubtitles = true
+		if pickSubtitle(req.Info, opts.SubtitleStream) == nil {
+			if sub := firstImageSubtitle(req.Info); sub != nil {
+				opts.SubtitleStream = sub.Index
+			}
+		}
+	} else if opts.SubtitleStream == 0 {
 		opts.SubtitleStream = -1
 	}
 	dec := d.m.Decide(req.Info, downloadProfile(req.Caps), opts)
