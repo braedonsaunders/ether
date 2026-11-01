@@ -146,6 +146,12 @@ func (s *Server) servePlexOverlayImage(w http.ResponseWriter, r *http.Request, k
 	if remote == "" {
 		return false
 	}
+	// This runs when the catalogue art path refused or had nothing, which
+	// includes titles this viewer may not see: check before serving.
+	t, err := s.d.Catalog.Get(r.Context(), key)
+	if err != nil || t == nil || t.Adult || !t.IsReleased(s.now()) || !s.visibleTitle(r.Context(), FromContext(r.Context()).User, t) {
+		return false
+	}
 	if err := s.writeRemoteImage(w, r, remote); err != nil {
 		writeHTTPError(w, http.StatusNotFound)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -207,5 +208,26 @@ func TestPlexMetaNoGUIDDoesNotSchedule(t *testing.T) {
 	meta.Wait()
 	if rt.calls.Load() != 0 {
 		t.Fatal("scheduled a title with no plex guid")
+	}
+}
+
+// The Plex overlay image is the fallback when the catalogue art path
+// refused a title; it must not hand a hidden title's art to the viewer.
+func TestPlexMetaOverlayImageChecksViewerVisibility(t *testing.T) {
+	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
+	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R", ThumbURL: "https://metadata-static.plex.tv/fight-club.jpg"})
+	pg := f.catalog.titles[fightClub.Key]
+	pg.ContentRating = "PG"
+	f.catalog.titles[fightClub.Key] = pg
+	serve := func(u *core.User) bool {
+		req := httptest.NewRequest(http.MethodGet, "/library/metadata/"+fightClub.Key.String()+"/thumb", nil)
+		req = req.WithContext(withRequest(req.Context(), &Request{User: u}))
+		return f.srv.servePlexOverlayImage(httptest.NewRecorder(), req, fightClub.Key, "thumb")
+	}
+	if serve(&core.User{ID: 30, Username: "kid", MaxContentRating: "PG"}) {
+		t.Fatal("served Plex art for a title the viewer may not see")
+	}
+	if !serve(&ownerUser) {
+		t.Fatal("owner should get the Plex overlay art")
 	}
 }
