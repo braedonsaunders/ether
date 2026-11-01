@@ -23,6 +23,10 @@ func (l sessionLive) Tune(ctx context.Context, viewer *core.Viewer, id string, c
 	info, err := l.service.TuneWithSession(ctx, viewer, id, caps, clientSession)
 	return info.ID, err
 }
+func (l sessionLive) TuneMedia(ctx context.Context, viewer *core.Viewer, id string, caps core.ClientCaps, clientSession string) (string, *core.MediaInfo, error) {
+	info, err := l.service.TuneWithSession(ctx, viewer, id, caps, clientSession)
+	return info.ID, info.MediaInfo, err
+}
 func (l sessionLive) Stop(ctx context.Context, viewer *core.Viewer, id string) error {
 	return l.service.Stop(ctx, id, viewer)
 }

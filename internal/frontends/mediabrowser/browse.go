@@ -874,6 +874,9 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		i.writeLiveChannelItems(w, r, v)
 		return
 	}
+	if i.writeLiveItemsByID(w, r, v) {
+		return
+	}
 	if i.host.Experience == nil {
 		http.Error(w, "Unavailable", 503)
 		return

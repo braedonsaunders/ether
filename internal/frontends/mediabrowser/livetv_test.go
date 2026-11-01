@@ -2,6 +2,7 @@ package mediabrowser
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -223,7 +224,7 @@ func TestSwiftfinLiveTVChannelsProgramsAndTune(t *testing.T) {
 		t.Fatal(err)
 	}
 	var libraryCalls int
-	var tuned string
+	var tuned, stoppedID string
 	live := frontendtest.LiveTV{
 		ChannelsFunc: func(context.Context, *frontend.Viewer) ([]frontend.LiveChannel, error) {
 			return []frontend.LiveChannel{
@@ -248,25 +249,53 @@ func TestSwiftfinLiveTVChannelsProgramsAndTune(t *testing.T) {
 		libraryCalls++
 		return core.Page{Items: []frontend.Title{{Key: core.MovieKey(1), Type: "movie", Title: "Film"}}, Total: 1}, nil
 	}}
+	no := false
+	eight := 8
+	probedMedia := core.MediaInfo{
+		Container: "mpegts",
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Profile: "High", Level: 40, Width: 1920, Height: 1080, BitDepth: 8, BitsPerRawSample: &eight, PixelFormat: "yuv420p", FrameRate: 29.97, BitrateKbps: 5000, ColorTransfer: "bt709", ColorSpace: "bt709", ColorPrimaries: "bt709", SampleAspectRatio: "1:1", DisplayAspectRatio: "16:9", Default: true, DolbyVisionConfigurationPresent: &no, HDR10Plus: &no},
+			{Index: 1, Type: "audio", Codec: "aac", Profile: "LC", Channels: 2, SampleRate: 48000, BitrateKbps: 192, ChannelLayout: "stereo", Language: "eng", Default: true},
+		},
+	}
 	sessions := frontendtest.Sessions{
 		PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 			if r.Item != 0 || r.Channel != "abc" {
 				t.Fatal(r.Item, r.Channel)
 			}
 			tuned = r.Channel
-			return frontend.PlayPlan{ID: "plan", Decision: core.Decision{Kind: core.DecisionRemux}, Media: core.MediaInfo{Container: "mpegts"}}, nil
+			return frontend.PlayPlan{ID: "plan", Decision: core.Decision{Kind: core.DecisionRemux, Container: "mpegts", AudioStream: -1, SubtitleStream: -1}, Media: core.MediaInfo{Container: "mpegts", Estimated: true}, Transcoding: true, HLS: true, HLSContainer: "mpegts"}, nil
 		},
 		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
-			return frontend.Session{ID: "session"}, nil
+			m := probedMedia
+			return frontend.Session{ID: "session", Media: &m}, nil
 		},
 		StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
 			return "/sessions/media/session/grant/live/index.m3u8", nil
 		},
+		StopFunc: func(_ context.Context, _ frontend.SessionAccess, id string) error {
+			stoppedID = id
+			return nil
+		},
+	}
+	swiftfinBody, err := os.ReadFile("../../sessions/testdata/swiftfin-tvos-1.4.1-playbackinfo.json")
+	if err != nil {
+		t.Fatal(err)
 	}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
 	for _, front := range []frontend.Frontend{Jellyfin{MachineID: "test"}, Emby{MachineID: "test"}} {
 		libraryCalls = 0
 		tuned = ""
+		stoppedID = ""
+		proto := string(front.Describe().ID)
+		spec, specErr := openapi.CachedSpec("../../conform/specs/manifest.json", proto, "")
+		var doc *openapi.Document
+		if specErr == nil {
+			doc, specErr = openapi.Parse(spec)
+		}
+		if specErr != nil && !os.IsNotExist(specErr) {
+			t.Fatal(specErr)
+		}
 		inst, err := front.Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, LiveTV: live, Sessions: sessions, Capabilities: frontendtest.Capabilities{}})
 		if err != nil {
 			t.Fatal(err)
@@ -276,37 +305,89 @@ func TestSwiftfinLiveTVChannelsProgramsAndTune(t *testing.T) {
 			r := httptest.NewRequest(method, path, strings.NewReader(body))
 			r.Header.Set("X-Emby-Token", "grant")
 			inst.Handler().ServeHTTP(w, r)
+			if doc != nil && w.Code < 400 && (!strings.HasPrefix(path, "/Users/") || proto == "emby") && (path != "/LiveTv/Recordings" || proto != "emby") && !(method == "GET" && strings.HasPrefix(path, "/Items/") && proto == "emby") && !(path == "/Sessions/Playing/Stopped" && proto == "emby") {
+				if err := doc.Validate(method, path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+					t.Fatalf("%s %s %s: %v\n%s", proto, method, path, err, w.Body.String())
+				}
+			}
 			return w
 		}
 		list := call("GET", "/Items?IncludeItemTypes=LiveTvChannel&Recursive=true&SortBy=SortName&SortOrder=Ascending&Limit=1", "")
-		if list.Code != 200 || libraryCalls != 0 || !strings.Contains(list.Body.String(), `"Name":"ABC10"`) || strings.Contains(list.Body.String(), "Virtual") || !strings.Contains(list.Body.String(), `"TotalRecordCount":2`) || !strings.Contains(list.Body.String(), `"Type":"TvChannel"`) {
-			t.Fatal(front.Describe().ID, list.Code, libraryCalls, list.Body.String())
+		if list.Code != 200 || libraryCalls != 0 || !strings.Contains(list.Body.String(), `"Name":"ABC10"`) || strings.Contains(list.Body.String(), "Virtual") || !strings.Contains(list.Body.String(), `"TotalRecordCount":2`) || !strings.Contains(list.Body.String(), `"Type":"TvChannel"`) || !strings.Contains(list.Body.String(), `"MediaSources":[`) {
+			t.Fatal(proto, list.Code, libraryCalls, list.Body.String())
+		}
+		byIDs := call("GET", "/Items?Ids="+channelID+"&Fields=MediaSources,ParentId", "")
+		if byIDs.Code != 200 || libraryCalls != 0 || !strings.Contains(byIDs.Body.String(), `"Name":"ABC10"`) || !strings.Contains(byIDs.Body.String(), `"OpenToken":"`+channelID+`"`) {
+			t.Fatal(proto, byIDs.Code, libraryCalls, byIDs.Body.String())
 		}
 		movies := call("GET", "/Items?IncludeItemTypes=Movie&Recursive=true&Limit=5", "")
 		if movies.Code != 200 || libraryCalls != 1 || !strings.Contains(movies.Body.String(), "Film") {
-			t.Fatal(front.Describe().ID, movies.Code, libraryCalls, movies.Body.String())
+			t.Fatal(proto, movies.Code, libraryCalls, movies.Body.String())
 		}
 		recordings := call("GET", "/LiveTv/Recordings", "")
 		if recordings.Code != 200 || !strings.Contains(recordings.Body.String(), `"Items":[]`) || !strings.Contains(recordings.Body.String(), `"TotalRecordCount":0`) {
-			t.Fatal(front.Describe().ID, recordings.Code, recordings.Body.String())
+			t.Fatal(proto, recordings.Code, recordings.Body.String())
 		}
 		for _, path := range []string{"/Items/" + progID, "/Users/" + userID + "/Items/" + progID, "/LiveTv/Programs/" + progID} {
 			got := call("GET", path, "")
 			if got.Code != 200 || !strings.Contains(got.Body.String(), `"Type":"Program"`) || !strings.Contains(got.Body.String(), `"Name":"ABC10 News"`) || !strings.Contains(got.Body.String(), `"ChannelId":"`+channelID+`"`) || !strings.Contains(got.Body.String(), `"StartDate":"2026-01-01T12:00:00.0000000Z"`) || strings.Contains(got.Body.String(), `"Items"`) {
-				t.Fatal(front.Describe().ID, path, got.Code, got.Body.String())
+				t.Fatal(proto, path, got.Code, got.Body.String())
 			}
 		}
 		one := call("GET", "/Items/"+channelID, "")
-		if one.Code != 200 || !strings.Contains(one.Body.String(), `"Type":"TvChannel"`) || !strings.Contains(one.Body.String(), `"Name":"ABC10"`) {
-			t.Fatal(front.Describe().ID, one.Code, one.Body.String())
+		if one.Code != 200 || !strings.Contains(one.Body.String(), `"Type":"TvChannel"`) || !strings.Contains(one.Body.String(), `"Name":"ABC10"`) || !strings.Contains(one.Body.String(), `"OpenToken":"`+channelID+`"`) {
+			t.Fatal(proto, one.Code, one.Body.String())
 		}
 		usersChannel := call("GET", "/Users/"+userID+"/Items/"+channelID, "")
-		if usersChannel.Code != 200 || !strings.Contains(usersChannel.Body.String(), `"Type":"TvChannel"`) {
-			t.Fatal(front.Describe().ID, usersChannel.Code, usersChannel.Body.String())
+		if usersChannel.Code != 200 || !strings.Contains(usersChannel.Body.String(), `"Type":"TvChannel"`) || !strings.Contains(usersChannel.Body.String(), `"MediaSources":[`) {
+			t.Fatal(proto, usersChannel.Code, usersChannel.Body.String())
 		}
-		play := call("POST", "/Items/"+progID+"/PlaybackInfo", `{"IsPlayback":true}`)
-		if play.Code != 200 || tuned != "abc" || !strings.Contains(play.Body.String(), "/sessions/media/") {
-			t.Fatal(front.Describe().ID, play.Code, tuned, play.Body.String())
+		var reqMap map[string]any
+		if err := json.Unmarshal(swiftfinBody, &reqMap); err != nil {
+			t.Fatal(err)
+		}
+		reqMap["MediaSourceId"] = channelID
+		reqBytes, _ := json.Marshal(reqMap)
+		play := call("POST", "/Items/"+channelID+"/PlaybackInfo?UserId="+userID+"&StartTimeTicks=0&IsPlayback=true&AutoOpenLiveStream=true&MaxStreamingBitrate=128012886&MediaSourceId="+channelID, string(reqBytes))
+		if play.Code != 200 || tuned != "abc" {
+			t.Fatal(proto, play.Code, tuned, play.Body.String())
+		}
+		var pbResp struct {
+			PlaySessionId string           `json:"PlaySessionId"`
+			MediaSources  []map[string]any `json:"MediaSources"`
+		}
+		if err := json.Unmarshal(play.Body.Bytes(), &pbResp); err != nil || len(pbResp.MediaSources) != 1 {
+			t.Fatal(proto, err, play.Body.String())
+		}
+		ms := pbResp.MediaSources[0]
+		streams, _ := ms["MediaStreams"].([]any)
+		if ms["Id"] != channelID || ms["OpenToken"] != channelID || ms["LiveStreamId"] != "session" || pbResp.PlaySessionId != "session" ||
+			ms["Container"] != "ts" || ms["Protocol"] != "Http" || ms["IsRemote"] != false || ms["IsInfiniteStream"] != true ||
+			ms["ReadAtNativeFramerate"] != true || ms["SupportsDirectPlay"] != false || ms["SupportsDirectStream"] != false ||
+			ms["SupportsTranscoding"] != true || ms["SupportsProbing"] != true || ms["RequiresOpening"] != true || ms["RequiresClosing"] != true ||
+			ms["TranscodingUrl"] != "/sessions/media/session/grant/live/index.m3u8" || ms["TranscodingSubProtocol"] != "hls" || ms["TranscodingContainer"] != "ts" ||
+			len(streams) != 2 || ms["DefaultAudioStreamIndex"] != float64(1) {
+			t.Fatalf("%s live MediaSource mismatch: %+v", proto, ms)
+		}
+		openResp := call("POST", "/LiveStreams/Open?OpenToken="+channelID, string(reqBytes))
+		if openResp.Code != 200 || !strings.Contains(openResp.Body.String(), `"/sessions/media/session/grant/live/index.m3u8"`) {
+			t.Fatal(proto, openResp.Code, openResp.Body.String())
+		}
+		closeResp := call("POST", "/LiveStreams/Close?liveStreamId=session", `{}`)
+		wantCloseCode := 204
+		if proto == "emby" {
+			wantCloseCode = 200
+		}
+		if closeResp.Code != wantCloseCode || stoppedID != "session" {
+			t.Fatal(proto, closeResp.Code, stoppedID, closeResp.Body.String())
+		}
+		stopped := call("POST", "/Sessions/Playing/Stopped", `{"ItemId":"`+channelID+`","MediaSourceId":"`+channelID+`","LiveStreamId":"session"}`)
+		if stopped.Code != 204 {
+			t.Fatal(proto, stopped.Code, stopped.Body.String())
+		}
+		playProg := call("POST", "/Items/"+progID+"/PlaybackInfo", `{"IsPlayback":true}`)
+		if playProg.Code != 200 || tuned != "abc" || !strings.Contains(playProg.Body.String(), "/sessions/media/") {
+			t.Fatal(proto, playProg.Code, tuned, playProg.Body.String())
 		}
 		if libraryCalls != 1 {
 			t.Fatal(libraryCalls)

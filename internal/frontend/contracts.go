@@ -590,6 +590,7 @@ type Session struct {
 	Device          core.Device
 	Item            core.RatingKey
 	Channel         string
+	Media           *core.MediaInfo
 	StartedAt       time.Time
 	Capabilities    *SessionCapabilities
 }

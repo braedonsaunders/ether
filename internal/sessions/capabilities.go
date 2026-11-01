@@ -41,6 +41,10 @@ func copySession(s frontend.Session) frontend.Session {
 		c := copyCapabilities(*s.Capabilities)
 		s.Capabilities = &c
 	}
+	if s.Media != nil {
+		m := publicMedia(*s.Media)
+		s.Media = &m
+	}
 	return s
 }
 func (b *Broker) capabilityKey(ctx context.Context, a frontend.SessionAccess) (deviceKey, error) {
