@@ -291,7 +291,7 @@ export function UsenetProviders({
                   ]
                     .filter(Boolean)
                     .join(" · ")}
-                  problem={usenetFix(p.enabled, stat?.state)}
+                  problem={usenetFix(p.enabled, stat?.state, stat?.lastError)}
                   meta={
                     <>
                       {!p.enabled ? <Badge variant="secondary">{t("Off")}</Badge> : null}
@@ -300,7 +300,7 @@ export function UsenetProviders({
                           {stat.state === "ok"
                             ? t("Connected")
                             : stat.state != null
-                              ? String(stat.state)
+                              ? t("Needs attention")
                               : t("Unknown")}
                         </Badge>
                       ) : null}

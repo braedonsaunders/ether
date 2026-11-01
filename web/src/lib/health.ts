@@ -95,6 +95,53 @@ function torrentioReady(indexers: unknown): boolean {
   });
 }
 
+/** Plain-language reason a Usenet provider is failing, or null when it is fine. */
+export function usenetProblem(state: unknown, lastError?: unknown): string | null {
+  const s = str(state);
+  const err = str(lastError);
+  if (!s || s === "ok") return null;
+  const lower = err.toLowerCase();
+  if (
+    s === "auth_failed" ||
+    lower.includes("authentication failed") ||
+    lower.includes("481") ||
+    lower.includes("482") ||
+    lower.includes("rejected")
+  ) {
+    return t("Login rejected. Check the username and password.");
+  }
+  if (
+    lower.includes("no such host") ||
+    lower.includes("lookup ") ||
+    lower.includes("name resolution") ||
+    lower.includes("nodename nor servname") ||
+    lower.includes("getaddrinfo") ||
+    lower.includes("nxdomain") ||
+    lower.includes("server misbehaving")
+  ) {
+    return t("Host not found (DNS lookup failed). Check the hostname.");
+  }
+  if (lower.includes("connection refused")) {
+    return t("Connection refused. Check the host and port.");
+  }
+  if (
+    lower.includes("tls") ||
+    lower.includes("certificate") ||
+    lower.includes("x509") ||
+    lower.includes("handshake")
+  ) {
+    return t("TLS connection failed. Check the port and TLS setting.");
+  }
+  if (
+    lower.includes("timeout") ||
+    lower.includes("deadline exceeded") ||
+    lower.includes("timed out")
+  ) {
+    return t("Connection timed out. Check the host and port.");
+  }
+  return t("Could not connect to this provider. Check the host and port.");
+}
+
 export function usenetHealth(v: unknown, debrid?: unknown, indexers?: unknown): HealthItem {
   const base = {
     id: "usenet" as const,
@@ -128,9 +175,10 @@ export function usenetHealth(v: unknown, debrid?: unknown, indexers?: unknown): 
     0,
   );
   const details = providers.map((p) => {
+    const problem = usenetProblem(p.state, p.lastError);
     const values = {
       name: str(p.name) || str(p.host) || str(p.id),
-      state: str(p.state) || t("unknown"),
+      state: problem ?? (str(p.state) || t("unknown")),
       active: num(p.activeConnections),
       max: num(p.configuredConnections ?? p.maxConnections),
     };
@@ -141,6 +189,13 @@ export function usenetHealth(v: unknown, debrid?: unknown, indexers?: unknown): 
   let level: HealthLevel = "ok";
   if (primary.length > 0 && primaryBad.length === primary.length) level = "error";
   else if (bad.length > 0) level = "warn";
+  const firstProblem = bad.length > 0 ? usenetProblem(bad[0]!.state, bad[0]!.lastError) : null;
+  const degradedCount = tn(
+    providers.length,
+    "{bad} of {count} provider degraded",
+    "{bad} of {count} providers degraded",
+    { bad: bad.length },
+  );
   const summary =
     level === "ok"
       ? tn(
@@ -149,17 +204,17 @@ export function usenetHealth(v: unknown, debrid?: unknown, indexers?: unknown): 
           "{count} providers healthy · {active}/{configured} connections busy",
           { active, configured },
         )
-      : tn(
-          providers.length,
-          "{bad} of {count} provider degraded",
-          "{bad} of {count} providers degraded",
-          { bad: bad.length },
-        );
+      : providers.length === 1 && firstProblem
+        ? firstProblem
+        : firstProblem
+          ? `${degradedCount} · ${firstProblem}`
+          : degradedCount;
   return {
     ...base,
     level,
     summary,
     details,
+    statusLabel: level === "ok" ? undefined : t("Needs attention"),
     fill: configured > 0 ? active / configured : undefined,
   };
 }

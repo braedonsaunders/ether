@@ -274,7 +274,7 @@ func (b *breaker) state() (state string, until time.Time, lastErr error, lastAt 
 	switch {
 	case b.authErr != nil:
 		return StateAuthFail, b.authUntil, b.lastErr, b.lastAt
-	case b.now().Before(b.blockedUntil()):
+	case b.now().Before(b.blockedUntil()) || b.connectFailures > 0 || b.commandFailures >= b.failThreshold:
 		state = StateBackoff
 	default:
 		state = StateOK
@@ -311,27 +311,25 @@ func (b *breaker) waitReady(ctx context.Context) error {
 	for {
 		b.mu.Lock()
 		if b.authErr != nil {
+			err := b.authErr
 			b.mu.Unlock()
-			return ErrProviderDisabled
+			return fmt.Errorf("%w: %v", ErrProviderDisabled, err)
 		}
-		delay := b.blockedUntil().Sub(b.now())
-		if delay <= 0 && !b.networkProbe {
-			b.mu.Unlock()
+		wait := b.blockedUntil().Sub(b.now())
+		ch := b.changed
+		b.mu.Unlock()
+		if wait <= 0 {
 			return nil
 		}
-		changed := b.changed
-		if delay <= 0 {
-			delay = time.Minute
-		} // wake on probe completion, bounded by ctx
-		b.mu.Unlock()
-		timer := time.NewTimer(delay)
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-changed:
-			timer.Stop()
-		case <-timer.C:
+			t.Stop()
+			return ctxErr(ctx)
+		case <-ch:
+			t.Stop()
+		case <-t.C:
+			return nil
 		}
 	}
 }

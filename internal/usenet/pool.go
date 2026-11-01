@@ -578,6 +578,7 @@ func (p *pool) warmLoop() {
 			return
 		}
 		p.bgRedials.Add(1)
+		p.brk.connectOK()
 		p.mu.Lock()
 		p.warmFails = 0
 		p.warmNext = time.Time{}

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { DragHandle, type DragHandleProps } from "../../components/Sortable";
 import { Drawer } from "../../components/Drawer";
 import { t } from "../../i18n";
+import { usenetProblem } from "../../lib/health";
 import type { DebridKind } from "../../lib/types";
 import { StremioMark, debridMark } from "./marks";
 
@@ -70,13 +71,9 @@ export function debridFix(enabled: boolean, state: string | undefined): string |
 }
 
 /** Plain-language reason a Usenet provider will not be used, or null when it is fine. */
-export function usenetFix(enabled: boolean, state: unknown): string | null {
+export function usenetFix(enabled: boolean, state: unknown, lastError?: unknown): string | null {
   if (!enabled) return t("This provider is off, so Ether skips it. Turn it on to use it.");
-  if (typeof state === "string" && state !== "" && state !== "ok")
-    return t(
-      "Ether could not use this provider. Check the host, username and password, then test the connection.",
-    );
-  return null;
+  return usenetProblem(state, lastError);
 }
 
 /** One configured source: order, health and the next thing to do, edited from the card. */

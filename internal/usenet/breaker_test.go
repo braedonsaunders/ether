@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -156,5 +159,60 @@ func TestTransientAuthOutageSelfHeals(t *testing.T) {
 	}
 	if got, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive); err != nil || string(got) != "data" {
 		t.Fatalf("after recovery: %q %v", got, err)
+	}
+}
+
+func TestDeadProviderRemainsInBackoffUntilReachable(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{})
+	var dnsFail atomic.Bool
+	dnsFail.Store(true)
+	dialer := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if dnsFail.Load() {
+			return nil, &net.OpError{
+				Op:  "dial",
+				Net: network,
+				Err: &net.DNSError{Err: "no such host", Name: "news.placeholder.invalid", IsNotFound: true},
+			}
+		}
+		var d net.Dialer
+		return d.DialContext(ctx, network, addr)
+	}
+	p := s.Provider("dead", 2)
+	f := newFetcher(t, []config.UsenetProvider{p}, Options{
+		DialContext:   dialer,
+		BackoffMin:    40 * time.Millisecond,
+		BackoffMax:    80 * time.Millisecond,
+		FailThreshold: 2,
+		KeepAlive:     100 * time.Millisecond,
+		MinIdle:       1,
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for statsFor(f, "dead").RedialFailures == 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("background warm dial never failed: %+v", statsFor(f, "dead"))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Even after a single background dial failure (below FailThreshold) and
+	// after BackoffMin has elapsed, the provider must remain in StateBackoff
+	// rather than reverting to StateOK between janitor sweeps.
+	time.Sleep(120 * time.Millisecond)
+	st := statsFor(f, "dead")
+	if st.State != StateBackoff {
+		t.Fatalf("dead provider reported %q, want %q: %+v", st.State, StateBackoff, st)
+	}
+	if !strings.Contains(st.LastError, "no such host") {
+		t.Fatalf("lastError = %q, want DNS failure", st.LastError)
+	}
+
+	// Once the host resolves and accepts connections, background warming clears
+	// the connect failure and returns the provider to StateOK.
+	dnsFail.Store(false)
+	deadline = time.Now().Add(2 * time.Second)
+	for statsFor(f, "dead").State != StateOK {
+		if time.Now().After(deadline) {
+			t.Fatalf("provider did not recover after DNS healed: %+v", statsFor(f, "dead"))
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
