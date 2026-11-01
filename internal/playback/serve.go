@@ -54,7 +54,13 @@ func (m *Manager) ServeRange(w http.ResponseWriter, r *http.Request, sessionID s
 	}
 	s.mu.Unlock()
 	rep.body = func(w io.Writer, start, length int64) error {
-		return m.streamClient(r.Context(), w, s, start, length)
+		began := time.Now()
+		err := m.streamClient(r.Context(), w, s, start, length)
+		if m.opts.TracePlayback {
+			m.log.Info("direct range", "session", s.id, "offset", start, "length", length,
+				"took", time.Since(began), "err", err)
+		}
+		return err
 	}
 	if err := serveRepresentation(w, r, rep); err != nil && r.Context().Err() == nil {
 		m.log.Debug("direct play response ended early", "session", s.id, "err", err)

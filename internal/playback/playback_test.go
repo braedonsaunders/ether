@@ -319,6 +319,40 @@ func TestServeRange(t *testing.T) {
 		t.Fatalf("unknown session: %d", rec.Code)
 	}
 
+	// A Range at 85% of a large file must not walk 0→offset. Probe may
+	// have touched the header and cues; the request itself stays at the
+	// requested offset.
+	t.Run("far-offset", func(t *testing.T) {
+		const big = 8_000_000
+		rel := mkv("A", big, 100*time.Second)
+		rel.ReadDelay = 80 * time.Millisecond
+		h := newHarness(t, []*fakeRelease{rel}, []string{"A"})
+		ps := h.prepare(owner, movieKey, "c1")
+		before := map[*fakeSource]int{}
+		for _, src := range h.engine.sources {
+			before[src] = len(src.readSpans())
+		}
+		srv := directPlayServer(t, h.m, ps.ID)
+		off := int64(big) * 85 / 100
+		started := time.Now()
+		resp, body, err := get(t, srv.URL, map[string]string{"Range": fmt.Sprintf("bytes=%d-%d", off, off+4095)})
+		if err != nil || resp.StatusCode != 206 || !bytes.Equal(body, expected("A", off, 4096)) {
+			t.Fatalf("far range: %d %v len=%d", resp.StatusCode, err, len(body))
+		}
+		if d := time.Since(started); d > time.Second {
+			t.Fatalf("85%% range took %s (sequential fill?)", d)
+		}
+		for _, src := range h.engine.sources {
+			for _, span := range src.readSpans()[before[src]:] {
+				// A few header bytes for the time map are fine; walking
+				// the file toward the offset is not.
+				if span[0] < off-int64(h.m.opts.ChunkSize) && span[1]-span[0] > headerLen {
+					t.Fatalf("ServeRange at %d also read [%d,%d)", off, span[0], span[1])
+				}
+			}
+		}
+	})
+
 	// Status details.
 	st, _ := h.m.Session(ps.ID)
 	if st.Decision != core.DecisionDirectPlay || st.BytesServed < 2*size || st.TitleName != "The Signal (1999)" ||

@@ -411,6 +411,110 @@ func TestColdRemoteFirstByteBeatsOwnerTarget(t *testing.T) {
 	}
 }
 
+func TestSeekAt85PercentDoesNotFillSequentially(t *testing.T) {
+	const size = 16 << 20
+	r := newEngineRig(t, size, -1)
+	cfg := r.svc.Config()
+	cfg.MaxConnections = 1
+	r.svc.UpdateConfig(cfg)
+	r.media.pace = 25 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	prefDone := make(chan error, 1)
+	go func() { prefDone <- r.eng.Prefetch(ctx, r.rel.ID, r.pl, 0, 8<<20) }()
+	deadline := time.Now().Add(time.Second)
+	for r.media.requests.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if r.media.requests.Load() == 0 {
+		t.Fatal("prefetch never reached the media server")
+	}
+
+	src, err := r.eng.Open(ctx, r.rel.ID, r.pl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	off := int64(size) * 85 / 100
+	buf := make([]byte, 4096)
+	started := time.Now()
+	n, err := src.(readAtContexter).ReadAtContext(ctx, buf, off)
+	took := time.Since(started)
+	if err != nil || n != len(buf) || !bytes.Equal(buf, r.media.data[off:off+int64(n)]) {
+		t.Fatalf("85%% read n=%d err=%v", n, err)
+	}
+	if took > time.Second {
+		t.Fatalf("85%% range took %s; filled 0→offset behind prefetch", took)
+	}
+	wantPrefix := fmt.Sprintf("bytes=%d-", off/testBlock*testBlock)
+	found := false
+	for _, rg := range mediaRanges(r.media) {
+		if strings.HasPrefix(rg, wantPrefix) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no ranged GET at 85%%: %v", mediaRanges(r.media))
+	}
+	if got := r.eng.Stats().BlocksFetched; got > int64((8<<20)/testBlock+freshRunBlocks+16) {
+		t.Fatalf("fetched %d blocks (sequential prefix fill?)", got)
+	}
+	select {
+	case <-prefDone:
+	case <-time.After(3 * time.Second):
+	}
+}
+
+func TestPrefetchYieldsToForegroundSeek(t *testing.T) {
+	const size = 16 << 20
+	r := newEngineRig(t, size, -1)
+	cfg := r.svc.Config()
+	cfg.MaxConnections = 2
+	r.svc.UpdateConfig(cfg)
+	r.media.pace = 30 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	head, err := r.eng.Open(ctx, r.rel.ID, r.pl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer head.Close()
+	seqDone := make(chan struct{})
+	go func() {
+		defer close(seqDone)
+		buf := make([]byte, 64<<10)
+		// Keep a sequential urgent reader on the head so it, plus
+		// read-ahead, would occupy both connections without yield.
+		for off := int64(0); off < 8<<20 && ctx.Err() == nil; off += 64 << 10 {
+			_, _ = head.(readAtContexter).ReadAtContext(ctx, buf, off)
+		}
+	}()
+	deadline := time.Now().Add(time.Second)
+	for r.media.requests.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	seeker, err := r.eng.Open(ctx, r.rel.ID, r.pl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seeker.Close()
+	off := int64(size) * 85 / 100
+	got := make([]byte, 2048)
+	started := time.Now()
+	n, err := seeker.(readAtContexter).ReadAtContext(ctx, got, off)
+	if err != nil || n != len(got) || !bytes.Equal(got, r.media.data[off:off+int64(n)]) {
+		t.Fatalf("foreground seek n=%d err=%v", n, err)
+	}
+	if d := time.Since(started); d > time.Second {
+		t.Fatalf("foreground seek waited %s on the sequential reader", d)
+	}
+	<-seqDone
+}
+
 func TestHTTPSourceOriginNamesService(t *testing.T) {
 	for kind, want := range map[string]string{"realdebrid": "Real-Debrid", "torbox": "TorBox", KindHTTP: "HTTP", "newsvc": "newsvc", "": "Debrid"} {
 		s := &httpSource{f: &remoteFile{pl: Payload{Kind: kind}}}

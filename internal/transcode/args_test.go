@@ -414,7 +414,10 @@ func TestOutputSize(t *testing.T) {
 
 func TestSubtitleArgs(t *testing.T) {
 	args := subtitleArgs("http://h/x", 4)
-	mustContain(t, args, "-i http://h/x -map 0:4 -c:s webvtt -f webvtt pipe:1")
+	mustContain(t, args, "-i http://h/x?background=1 -map 0:4 -c:s webvtt -f webvtt pipe:1")
+	if got := subtitleArgs("fixture.mkv", 1); strings.Contains(strings.Join(got, " "), "background=1") {
+		t.Fatal("local files must not grow a loopback query")
+	}
 }
 
 func TestVideoBitrate(t *testing.T) {

@@ -461,9 +461,11 @@ const (
 )
 
 type blockFlight struct {
-	done chan struct{}
-	data []byte
-	err  error
+	done  chan struct{}
+	data  []byte
+	err   error
+	mode  fetchMode
+	first int64 // run start; urgent readers steal later blocks of a prefetch run
 }
 
 type remoteFile struct {
@@ -498,16 +500,63 @@ type remoteFile struct {
 
 	conns   chan struct{} // all requests
 	raSlots chan struct{} // read-ahead and prefetch (leaves one connection for urgent reads)
+
+	// yieldSig is closed when an urgent seek is in flight so prefetch and
+	// read-ahead abandon their connections instead of filling toward the
+	// new offset. Recreated when the last urgent seek ends.
+	urgentMu   sync.Mutex
+	urgentWait int
+	yieldSig   chan struct{}
 }
 
 func (e *Engine) newFile(id string, p Payload) *remoteFile {
 	_, conns, _ := e.tuning()
 	f := &remoteFile{e: e, id: id, tag: p.fileTag(), size: p.Size, pl: p,
 		flights: map[int64]*blockFlight{}, mem: lru.New(lru.Options[int64, []byte]{MaxEntries: memBlocksPerFile}), stored: map[int64]bool{}, failedGen: -1,
-		conns: make(chan struct{}, conns), raSlots: make(chan struct{}, max(1, conns-1))}
+		conns: make(chan struct{}, conns), raSlots: make(chan struct{}, max(1, conns-1)),
+		yieldSig: make(chan struct{})}
 	f.nblocks = (p.Size + e.block - 1) / e.block
 	f.ctx, f.cancel = context.WithCancel(e.ctx)
 	return f
+}
+
+func (f *remoteFile) beginUrgentSeek() {
+	f.urgentMu.Lock()
+	f.urgentWait++
+	if f.urgentWait == 1 {
+		close(f.yieldSig)
+	}
+	f.urgentMu.Unlock()
+}
+
+func (f *remoteFile) endUrgentSeek() {
+	f.urgentMu.Lock()
+	f.urgentWait--
+	if f.urgentWait == 0 {
+		f.yieldSig = make(chan struct{})
+	}
+	f.urgentMu.Unlock()
+}
+
+// yieldCtx is cancelled when an urgent seek arrives so a prefetch or
+// read-ahead range GET drops its connection instead of blocking it.
+func (f *remoteFile) yieldCtx(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	f.urgentMu.Lock()
+	wait, sig := f.urgentWait, f.yieldSig
+	f.urgentMu.Unlock()
+	if wait > 0 {
+		cancel()
+		return ctx, cancel
+	}
+	go func() {
+		select {
+		case <-sig:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
 }
 
 // adopt takes a fresher link from a payload handed in by a caller.
@@ -660,6 +709,25 @@ func (f *remoteFile) block(ctx context.Context, idx int64, mode fetchMode, runBl
 			return d, nil
 		}
 		fl := f.flights[idx]
+		if fl != nil && mode == fetchUrgent && fl.mode != fetchUrgent && fl.first < idx {
+			// A prefetch/read-ahead run started earlier in the file has
+			// claimed this block but has not reached it. Waiting would
+			// fill sequentially up to the offset. Steal this block and
+			// the unread tail so the urgent GET can cover a full window.
+			select {
+			case <-fl.done:
+			default:
+				runFirst := fl.first
+				for i := idx; i < f.nblocks; i++ {
+					of := f.flights[i]
+					if of == nil || of.first != runFirst || of.mode == fetchUrgent {
+						break
+					}
+					delete(f.flights, i)
+				}
+				fl = nil
+			}
+		}
 		f.bmu.Unlock()
 		if fl == nil {
 			if d, ok := f.diskGet(idx); ok {
@@ -687,6 +755,12 @@ func (f *remoteFile) block(ctx context.Context, idx int64, mode fetchMode, runBl
 		if !errors.Is(fl.err, errRunCancelled) {
 			return nil, fl.err
 		}
+		if mode != fetchUrgent {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return nil, errRunCancelled
+		}
 		runCtx, mode = nil, fetchUrgent
 	}
 	return nil, fmt.Errorf("debrid: block %d: %w", idx, core.ErrSourceUnavailable)
@@ -707,7 +781,7 @@ func (f *remoteFile) startRun(ctx context.Context, idx, n int64, mode fetchMode,
 		if i > idx && f.presentLocked(i) {
 			break
 		}
-		fl := &blockFlight{done: make(chan struct{})}
+		fl := &blockFlight{done: make(chan struct{}), mode: mode, first: idx}
 		f.flights[i] = fl
 		fls = append(fls, fl)
 	}
@@ -732,9 +806,15 @@ func (f *remoteFile) finish(idx int64, fl *blockFlight, data []byte, err error, 
 // fetchRun reads blocks [first, first+len(fls)) with one range request,
 // publishing each block as soon as its bytes arrive.
 func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlight, mode fetchMode, slotHeld bool) {
+	reqCtx := ctx
+	if mode == fetchReadAhead || mode == fetchPrefetch {
+		var stop context.CancelFunc
+		reqCtx, stop = f.yieldCtx(ctx)
+		defer stop()
+	}
 	i := 0
 	fail := func(err error) {
-		if ctx.Err() != nil {
+		if reqCtx.Err() != nil {
 			err = errRunCancelled // the run was abandoned; waiters fetch again
 		}
 		// Retire the entire failed tail before waking any reader. A caller
@@ -759,17 +839,17 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 		select {
 		case f.raSlots <- struct{}{}:
 			defer func() { <-f.raSlots }()
-		case <-ctx.Done():
-			fail(ctx.Err())
+		case <-reqCtx.Done():
+			fail(reqCtx.Err())
 			return
 		}
 	}
 	start := first * f.e.block
 	end := min((first+int64(len(fls)))*f.e.block, f.size) - 1
 	began := f.e.now()
-	body, tm, err := f.rangeGet(ctx, start, end, mode == fetchUrgent || mode == fetchDurable)
+	body, tm, err := f.rangeGet(reqCtx, start, end, mode == fetchUrgent || mode == fetchDurable)
 	if err != nil {
-		if ctx.Err() == nil {
+		if ctx.Err() == nil && reqCtx.Err() == nil {
 			f.e.log.Warn("debrid range failed", "release", f.id, "offset", start, "err", sanitize(err))
 		}
 		fail(err)
@@ -787,7 +867,7 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 		buf := make([]byte, f.blockLen(idx))
 		for {
 			_, err = io.ReadFull(body, buf)
-			if err == nil || ctx.Err() != nil || bodyRetries >= maxRangeAttempts-1 {
+			if err == nil || reqCtx.Err() != nil || bodyRetries >= maxRangeAttempts-1 {
 				break
 			}
 			// Headers and the first byte can succeed before the CDN drops
@@ -803,12 +883,12 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 				"offset", idx*f.e.block, "attempt", bodyRetries, "err", sanitize(err))
 			if bodyRetries == 1 {
 				_, gen := f.payload()
-				if _, _, refreshErr := f.link(ctx, true, gen); refreshErr != nil {
+				if _, _, refreshErr := f.link(reqCtx, true, gen); refreshErr != nil {
 					err = refreshErr
 					break
 				}
 			}
-			body, tm, err = f.rangeGet(ctx, idx*f.e.block, end, mode == fetchUrgent || mode == fetchDurable)
+			body, tm, err = f.rangeGet(reqCtx, idx*f.e.block, end, mode == fetchUrgent || mode == fetchDurable)
 			if err != nil {
 				break
 			}
@@ -1532,11 +1612,14 @@ func (s *httpSource) read(ctx context.Context, p []byte, off int64, mode fetchMo
 			sequential = f.presentLocked(first)
 			f.bmu.Unlock()
 		}
-		if !sequential && s.last >= 0 {
-			// A seek: abandon speculative reads for the old position and
-			// serve the new one with a fresh request immediately.
+		// A seek, or the first read far from the head: drop speculative
+		// fills of the start of the file and take a connection now.
+		far := first > 2
+		if !sequential && (s.last >= 0 || far) {
 			s.raCancel()
 			s.raCtx, s.raCancel = context.WithCancel(f.ctx)
+			f.beginUrgentSeek()
+			defer f.endUrgentSeek()
 		}
 		if sequential {
 			runLen = min(maxRun, 4)
