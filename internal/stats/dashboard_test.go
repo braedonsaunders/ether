@@ -79,6 +79,17 @@ func TestDashboardMediaRollups(t *testing.T) {
 	}
 }
 
+func TestDashboardMediaDurationSumsSeconds(t *testing.T) {
+	now := time.Date(2026, 10, 31, 15, 4, 5, 0, time.UTC)
+	d := NewDashboard(DashboardOptions{Now: func() time.Time { return now }, Loc: time.UTC})
+	d.RecordPlay(1, "owner", "web", 1, 3600)
+	d.RecordPlay(1, "owner", "web", 1, 1800)
+	got := d.Media(Query{Timespans: []int{hoststat.SpanHour}})
+	if got.TotalSize != 1 || got.Media[0].Count != 2 || got.Media[0].Duration != 5400 {
+		t.Fatalf("duration is item seconds summed per bucket: %+v", got.Media)
+	}
+}
+
 func TestDashboardAnonymousDevice(t *testing.T) {
 	d := NewDashboard(DashboardOptions{Now: func() time.Time { return time.Unix(1, 0) }, Loc: time.UTC})
 	devs := d.Devices()

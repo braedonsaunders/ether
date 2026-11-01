@@ -154,9 +154,10 @@ func TestStatisticsMediaAndDevices(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.srv.d.Dashboard = stats.NewDashboard(stats.DashboardOptions{Now: func() time.Time { return fixedNow }, Loc: time.UTC})
-	f.srv.d.Dashboard.RecordPlay(1, "owner", "web", 1, 1000)
+	f.srv.d.Dashboard.RecordPlay(1, "owner", "web", 1, 3600)
+	f.srv.d.Dashboard.RecordPlay(1, "owner", "web", 1, 1800)
 	rec := f.get(t, "/statistics/media?timespan=4")
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `metadataType="1"`) || !strings.Contains(rec.Body.String(), `count="1"`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `metadataType="1"`) || !strings.Contains(rec.Body.String(), `count="2"`) || !strings.Contains(rec.Body.String(), `duration="5400"`) {
 		t.Fatalf("media: %d %s", rec.Code, rec.Body.String())
 	}
 	rec = f.get(t, "/devices")

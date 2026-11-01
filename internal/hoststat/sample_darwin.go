@@ -3,8 +3,8 @@
 package hoststat
 
 import (
+	"encoding/binary"
 	"syscall"
-	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -28,37 +28,63 @@ func (r *Resources) hostSample() (Sample, bool) {
 	if dt <= 0 || proc < prev.proc {
 		return Sample{}, false
 	}
-	procCPU := clampPct(float64(proc-prev.proc) / 1e9 / dt * 100)
-	hostCPU := darwinHostCPU()
-	hostMem, procMem := darwinMem(uint64(ru.Maxrss))
-	return Sample{HostCPU: hostCPU, ProcessCPU: procCPU, HostMem: hostMem, ProcessMem: procMem}, true
-}
-
-func darwinHostCPU() float64 {
 	ncpu, err := unix.SysctlUint32("hw.ncpu")
 	if err != nil || ncpu == 0 {
-		return 0
+		return Sample{}, false
 	}
-	var load [3]float64
-	if _, err := unix.Getloadavg(&load, 3); err != nil {
-		return 0
-	}
-	return clampPct(load[0] / float64(ncpu) * 100)
+	// Wall-time process share, then divide by cores so 1-of-N is 100/N
+	// like Linux /proc (not a per-core value capped at 100).
+	procCPU := clampPct(float64(proc-prev.proc) / 1e9 / dt / float64(ncpu) * 100)
+	// host_statistics is not reachable in pure Go; 1-minute load / ncpu.
+	hostCPU := darwinHostCPU(ncpu)
+	// Current RSS needs Mach task_info (cgo). Maxrss is a peak: omit it.
+	return Sample{HostCPU: hostCPU, ProcessCPU: procCPU, HostMem: darwinHostMem(), ProcessMem: 0}, true
 }
 
-func darwinMem(rss uint64) (host, proc float64) {
+func darwinHostCPU(ncpu uint32) float64 {
+	load, ok := darwinLoadavg()
+	if !ok {
+		return 0
+	}
+	return clampPct(load / float64(ncpu) * 100)
+}
+
+func darwinLoadavg() (float64, bool) {
+	raw, err := unix.SysctlRaw("vm.loadavg")
+	if err != nil || len(raw) < 16 {
+		return 0, false
+	}
+	ld0 := binary.LittleEndian.Uint32(raw[0:4])
+	var fscale uint64
+	switch {
+	case len(raw) >= 24:
+		fscale = binary.LittleEndian.Uint64(raw[16:24])
+	default:
+		fscale = uint64(binary.LittleEndian.Uint32(raw[12:16]))
+	}
+	if fscale == 0 {
+		return 0, false
+	}
+	return float64(ld0) / float64(fscale), true
+}
+
+func darwinHostMem() float64 {
 	total, err := unix.SysctlUint64("hw.memsize")
 	if err != nil || total == 0 {
-		return 0, 0
+		return 0
+	}
+	free, err := unix.SysctlUint32("vm.page_free_count")
+	if err != nil {
+		return 0
+	}
+	inactive, err := unix.SysctlUint32("vm.page_inactive_count")
+	if err != nil {
+		return 0
 	}
 	page := uint64(unix.Getpagesize())
-	free, _ := unix.SysctlUint64("vm.page_free_count")
-	inactive, _ := unix.SysctlUint64("vm.page_inactive_count")
-	avail := (free + inactive) * page
+	avail := (uint64(free) + uint64(inactive)) * page
 	if avail > total {
 		avail = total
 	}
-	host = clampPct((1 - float64(avail)/float64(total)) * 100)
-	proc = float64(rss) / float64(total) * 100
-	return host, proc
+	return clampPct((1 - float64(avail)/float64(total)) * 100)
 }

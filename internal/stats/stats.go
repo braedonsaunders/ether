@@ -210,7 +210,7 @@ func (s *Service) ObserveState(ev state.Event) {
 			if s.opts.AccountName != nil {
 				name = s.opts.AccountName(ev.UserID)
 			}
-			s.dash.RecordPlay(ev.UserID, name, ev.Origin.ClientID, typ, ev.Duration.Milliseconds())
+			s.dash.RecordPlay(ev.UserID, name, ev.Origin.ClientID, typ, int64(ev.Duration/time.Second))
 		}
 	}
 }

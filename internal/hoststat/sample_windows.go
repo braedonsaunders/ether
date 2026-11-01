@@ -8,6 +8,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// x/sys/windows has no wrappers for these three; the lazy procs stay package-level.
 var (
 	modkernel32              = windows.NewLazySystemDLL("kernel32.dll")
 	modpsapi                 = windows.NewLazySystemDLL("psapi.dll")

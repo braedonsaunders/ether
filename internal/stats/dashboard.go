@@ -54,7 +54,7 @@ type MediaRow struct {
 	At           int64
 	MetadataType int
 	Count        int64
-	Duration     int64
+	Duration     int64 // sum of item lengths in seconds
 }
 
 // Query is the parsed Dashboard filter. Timespans empty means "every kept
@@ -245,10 +245,14 @@ func (d *Dashboard) RecordBytes(accountID int64, accountName, clientID, deviceNa
 	}
 }
 
-// RecordPlay counts one completed play into the media series.
-func (d *Dashboard) RecordPlay(accountID int64, accountName, clientID string, metadataType int, durationMs int64) {
+// RecordPlay counts one completed play into the media series. durationSec is
+// the item's length in seconds (PMS StatisticsMedia duration), summed per bucket.
+func (d *Dashboard) RecordPlay(accountID int64, accountName, clientID string, metadataType int, durationSec int64) {
 	if metadataType <= 0 {
 		return
+	}
+	if durationSec < 0 {
+		durationSec = 0
 	}
 	d.devMu.Lock()
 	if accountName != "" {
@@ -262,7 +266,7 @@ func (d *Dashboard) RecordPlay(accountID int64, accountName, clientID string, me
 	defer d.mu.Unlock()
 	// Media keeps hour and coarser, not per-second.
 	for _, span := range []int{hoststat.SpanHour, hoststat.SpanDay, hoststat.SpanWeek, hoststat.SpanMonth, hoststat.SpanYear} {
-		d.addMediaLocked(span, now, key, durationMs)
+		d.addMediaLocked(span, now, key, durationSec)
 	}
 }
 
@@ -299,7 +303,7 @@ func (d *Dashboard) dropOldBWLocked(span int) {
 	}
 }
 
-func (d *Dashboard) addMediaLocked(span int, now time.Time, key mediaSeriesKey, durationMs int64) {
+func (d *Dashboard) addMediaLocked(span int, now time.Time, key mediaSeriesKey, durationSec int64) {
 	tier := d.media[span]
 	if tier == nil {
 		return
@@ -309,12 +313,10 @@ func (d *Dashboard) addMediaLocked(span int, now time.Time, key mediaSeriesKey, 
 	if i < len(tier.buckets) && tier.buckets[i].at == at {
 		v := tier.buckets[i].rows[key]
 		v.count++
-		if durationMs > 0 {
-			v.duration = durationMs
-		}
+		v.duration += durationSec
 		tier.buckets[i].rows[key] = v
 	} else {
-		b := mediaBucket{at: at, rows: map[mediaSeriesKey]mediaVal{key: {count: 1, duration: durationMs}}}
+		b := mediaBucket{at: at, rows: map[mediaSeriesKey]mediaVal{key: {count: 1, duration: durationSec}}}
 		tier.buckets = append(tier.buckets, mediaBucket{})
 		copy(tier.buckets[i+1:], tier.buckets[i:])
 		tier.buckets[i] = b
@@ -339,7 +341,8 @@ func (d *Dashboard) Bandwidth(q Query) Page {
 		if tier == nil {
 			continue
 		}
-		for _, b := range tier.buckets {
+		lo, hi := bwBucketRange(tier.buckets, q)
+		for _, b := range tier.buckets[lo:hi] {
 			if !matchAt(q, b.at) {
 				continue
 			}
@@ -370,7 +373,8 @@ func (d *Dashboard) Media(q Query) Page {
 		if tier == nil {
 			continue
 		}
-		for _, b := range tier.buckets {
+		lo, hi := mediaBucketRange(tier.buckets, q)
+		for _, b := range tier.buckets[lo:hi] {
 			if !matchAt(q, b.at) {
 				continue
 			}
@@ -390,6 +394,38 @@ func (d *Dashboard) Media(q Query) Page {
 	page := Page{Media: rows, Devices: d.lookupMediaDevices(rows), Accounts: d.lookupMediaAccounts(rows), TotalSize: total}
 	d.devMu.Unlock()
 	return page
+}
+
+func bwBucketRange(buckets []bwBucket, q Query) (int, int) {
+	return atRange(len(buckets), q, func(i int) int64 { return buckets[i].at })
+}
+
+func mediaBucketRange(buckets []mediaBucket, q Query) (int, int) {
+	return atRange(len(buckets), q, func(i int) int64 { return buckets[i].at })
+}
+
+func atRange(n int, q Query, at func(int) int64) (int, int) {
+	if n == 0 {
+		return 0, 0
+	}
+	if q.HasExact {
+		i := sort.Search(n, func(i int) bool { return at(i) >= q.ExactAt })
+		if i < n && at(i) == q.ExactAt {
+			return i, i + 1
+		}
+		return 0, 0
+	}
+	lo, hi := 0, n
+	if q.HasAtMin {
+		lo = sort.Search(n, func(i int) bool { return at(i) >= q.AtMin })
+	}
+	if q.HasAtMax {
+		hi = sort.Search(n, func(i int) bool { return at(i) > q.AtMax })
+	}
+	if lo > hi {
+		return 0, 0
+	}
+	return lo, hi
 }
 
 func matchAt(q Query, at int64) bool {
