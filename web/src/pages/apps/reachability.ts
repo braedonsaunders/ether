@@ -32,11 +32,24 @@ export function usableAddresses(status: ReachabilityStatus | null | undefined): 
   return (status?.addresses ?? []).filter((item) => item && !isLoopbackAddress(item));
 }
 
-export function homeSummary(status: ReachabilityStatus | null | undefined): {
+/** The address the connect control selects until the owner picks another. */
+export function chosenAddress(
+  status: ReachabilityStatus | null | undefined,
+  selected?: string,
+): string {
+  const addresses = usableAddresses(status);
+  if (selected && addresses.includes(selected)) return selected;
+  return addresses[0] ?? "";
+}
+
+export function homeSummary(
+  status: ReachabilityStatus | null | undefined,
+  selected?: string,
+): {
   title: string;
   detail: string;
 } {
-  const address = usableAddresses(status).join(", ");
+  const address = chosenAddress(status, selected);
   const lan = status?.lan || "unknown";
   if (lan === "reachable") {
     return {

@@ -23,7 +23,8 @@ import { SchemaField, type FieldDef } from "../settings/SchemaForm";
 import * as schema from "../settings/schema";
 import { PlexStatus } from "../settings/sections";
 import { plexAccountClaimed } from "./plex-account";
-import { awaySummary, claimSummary, homeSummary, type ReachabilityStatus } from "./reachability";
+import { HomeStatusRow } from "./HomeStatus";
+import { awaySummary, claimSummary, type ReachabilityStatus } from "./reachability";
 
 type Obj = Record<string, unknown>;
 type PlexDraft = { port: number; bindAddress: string; plex: Obj };
@@ -382,13 +383,12 @@ export function PlexApp({
     { key: "compatibility", label: t("Compatibility") },
   ];
   const plex = config.data.plex;
-  const home = homeSummary(status);
   const away = awaySummary(status, { remoteAccess: plex.remoteAccess !== false });
 
   return (
     <>
       <SettingsSection title={t("Status")}>
-        <SettingsRow title={home.title} description={home.detail} />
+        <HomeStatusRow status={status} />
         <SettingsRow title={away.title} description={away.detail} />
         <SettingsRow
           title={t("Plex account")}

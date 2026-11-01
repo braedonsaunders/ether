@@ -32,7 +32,7 @@ disabled services = {
 
 func TestExplainStartFailure(t *testing.T) {
 	reason, can := explainStartFailure(errors.New("launchctl load: input/output error"), true)
-	if reason != leftoverLaunchReason || !can {
+	if reason != serviceOffReason || !can {
 		t.Fatalf("reason=%q can=%v", reason, can)
 	}
 	reason, can = explainStartFailure(errors.New("permission denied"), false)
@@ -54,10 +54,10 @@ func TestStartFailureStaysVisible(t *testing.T) {
 		t.Fatal("expected start error")
 	}
 	n := a.currentNotice()
-	if n.Reason != leftoverLaunchReason || !n.CanEnable {
+	if n.Reason != serviceOffReason || !n.CanEnable {
 		t.Fatalf("notice=%+v", n)
 	}
-	if len(notes) != 1 || !strings.Contains(notes[0], "Fix and start") {
+	if len(notes) != 1 || !strings.Contains(notes[0], "Turn it on and start") || !strings.Contains(notes[0], "Start once") {
 		t.Fatalf("notes=%v", notes)
 	}
 	// A later status refresh must not be the only thing the menu can show.

@@ -248,6 +248,7 @@ describe("setup wizard", () => {
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     }
     await screen.findByRole("heading", { name: "Cache folder and disk budget" });
+    expect(screen.getByText(/Using your \/cache folder/)).toBeInTheDocument();
     await waitFor(() => expect(pending).toHaveLength(1));
     fireEvent.change(screen.getByDisplayValue(fake.state.config.cache.dir), {
       target: { value: "/new-cache" },
@@ -509,11 +510,21 @@ describe("setup wizard", () => {
         fireEvent.click(torrentio());
         expect(torrentio()).toHaveAttribute("aria-pressed", "true");
         expect(screen.getByText("finds releases; needs debrid to play")).toBeInTheDocument();
+        expect(
+          screen.getAllByText(
+            "Lookups go to torrentio.strem.fun. Prefer your own? Use Torznab (Prowlarr, Jackett, Zilean).",
+          ),
+        ).toHaveLength(1);
         fireEvent.click(torrentio());
         expect(torrentio()).toHaveAttribute("aria-pressed", "false");
         fireEvent.click(torrentio());
         fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
         await screen.findByRole("heading", { name: "Indexers and addons" });
+        expect(
+          screen.queryByText(
+            "Lookups go to torrentio.strem.fun. Prefer your own? Use Torznab (Prowlarr, Jackett, Zilean).",
+          ),
+        ).not.toBeInTheDocument();
         fireEvent.change(screen.getByDisplayValue("https://torrentio.strem.fun/manifest.json"), {
           target: { value: "" },
         });

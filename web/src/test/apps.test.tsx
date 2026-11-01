@@ -162,6 +162,64 @@ describe("Apps", () => {
     expect(screen.queryByRole("textbox", { name: "Server name" })).not.toBeInTheDocument();
   });
 
+  it("shows the chosen Jellyfin address and hides the rest", async () => {
+    const urls = [
+      "http://192.168.68.65:32400/jellyfin",
+      "http://192.168.68.65:8098",
+      "http://[fd79:f184::1]:32400/jellyfin",
+      "http://100.65.221.123:8098",
+      "http://10.255.0.2:32400/jellyfin",
+    ];
+    apiFetch.mockImplementation(async (path: string) => {
+      if (path === "/frontends") {
+        return [
+          row("jellyfin", "Jellyfin", true, {
+            status: {
+              addresses: urls,
+              connectUrls: urls,
+              lan: "unknown",
+              wan: "unknown",
+              clients24h: 0,
+              clients24hKnown: false,
+              liveStreams: 0,
+              liveStreamsKnown: false,
+              targetVersion: "1",
+              conformance: "passing",
+            },
+          }),
+        ];
+      }
+      if (path === "/frontends/jellyfin/settings") return { serverName: "House", port: 8096 };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderApps("/apps/jellyfin");
+    const line = await screen.findByText(/Not checked yet/);
+    expect(line.textContent).toContain("http://192.168.68.65:32400/jellyfin");
+    expect(line.textContent).not.toMatch(/fd79|100\.65|10\.255|:8098/);
+    expect(screen.queryByText("http://[fd79:f184::1]:32400/jellyfin")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Other addresses" }));
+    expect(screen.getByText("http://[fd79:f184::1]:32400/jellyfin")).toBeInTheDocument();
+    expect(line.textContent).not.toMatch(/fd79/);
+    fireEvent.click(screen.getByRole("button", { name: "Connect a device" }));
+    expect(screen.queryByRole("button", { name: "Connect a device" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Server address" }), {
+      target: { value: "http://192.168.68.65:8098" },
+    });
+    expect(screen.getByText(/Not checked yet/).textContent).toContain("http://192.168.68.65:8098");
+    expect(screen.getByText(/Not checked yet/).textContent).not.toContain("32400/jellyfin");
+  });
+
+  it("hides Connect a device when the panel is already open", async () => {
+    apiFetch.mockImplementation(async (path: string) => {
+      if (path === "/frontends") return [row("jellyfin", "Jellyfin", true)];
+      if (path === "/frontends/jellyfin/settings") return { serverName: "House", port: 8096 };
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    renderApps("/apps/jellyfin?connect=1");
+    expect(await screen.findByText(/Enter this server address/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect a device" })).not.toBeInTheDocument();
+  });
+
   it("sends a disabled app's deep link back to the overview", async () => {
     apiFetch.mockImplementation(async (path: string) => {
       if (path === "/frontends") return [row("jellyfin", "Jellyfin", false)];

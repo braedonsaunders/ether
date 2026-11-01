@@ -8,7 +8,7 @@ import (
 // serviceLabel is the launchd label of the server (not the tray login item).
 const serviceLabel = "ether"
 
-const leftoverLaunchReason = "Couldn't start: a leftover launch setting is blocking it."
+const serviceOffReason = "Ether's background service is turned off on this Mac."
 
 // startNotice is the durable tray explanation for a failed Start.
 // refreshStatus keeps showing it until the server is actually running.
@@ -54,9 +54,9 @@ func (a *app) recordStartFailure(err error) {
 	}
 	body := reason
 	if can {
-		body += " Choose Fix and start, or Start directly."
+		body += " Choose Turn it on and start, or Start once."
 	} else {
-		body += " Choose Start directly."
+		body += " Choose Start once."
 	}
 	if a.notify != nil {
 		a.notify("Ether", body)
@@ -70,7 +70,7 @@ func (a *app) recordStartFailure(err error) {
 
 func explainStartFailure(err error, disabled bool) (string, bool) {
 	if disabled {
-		return leftoverLaunchReason, true
+		return serviceOffReason, true
 	}
 	if err == nil {
 		return "Couldn't start the server.", false

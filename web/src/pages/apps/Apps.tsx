@@ -30,7 +30,8 @@ import { useAsync, useInterval } from "../../lib/hooks";
 import { viewerStatus } from "../viewers/ViewerStatus";
 import { PlexApp } from "./PlexApp";
 import { appLabel, appPath, appPurpose, appRank } from "./catalog";
-import { awaySummary, homeSummary } from "./reachability";
+import { HomeStatusRow } from "./HomeStatus";
+import { awaySummary, usableAddresses } from "./reachability";
 
 type FrontendInfo = {
   descriptor: {
@@ -136,11 +137,23 @@ function connectionStep(code: string) {
   }
 }
 
-function ConnectDevice({ info, startOpen = false }: { info: FrontendInfo; startOpen?: boolean }) {
+function ConnectDevice({
+  info,
+  startOpen = false,
+  selectedURL: selectedURLProp,
+  onSelectedURL,
+}: {
+  info: FrontendInfo;
+  startOpen?: boolean;
+  selectedURL?: string;
+  onSelectedURL?: (url: string) => void;
+}) {
   const [open, setOpen] = useState(startOpen);
   const [showOther, setShowOther] = useState(false);
   const [qr, setQR] = useState<string>();
-  const [selectedURL, setSelectedURL] = useState("");
+  const [selectedURLState, setSelectedURLState] = useState("");
+  const selectedURL = selectedURLProp ?? selectedURLState;
+  const setSelectedURL = onSelectedURL ?? setSelectedURLState;
   const urls = info.status.connectUrls ?? [];
   const likely = urls.slice(0, Math.min(2, urls.length));
   const other = urls.slice(likely.length);
@@ -175,10 +188,10 @@ function ConnectDevice({ info, startOpen = false }: { info: FrontendInfo; startO
   if (!url) return null;
   return (
     <div>
-      <Button onClick={() => setOpen(!open)} aria-expanded={open}>
-        {t("Connect a device")}
-      </Button>
-      {open && (
+      {open ? null : (
+        <Button onClick={() => setOpen(true)}>{t("Connect a device")}</Button>
+      )}
+      {open ? (
         <div className="space-y-2 pt-3">
           <p>{t("Enter this server address in a supported app:")}</p>
           {shown.length > 1 ? (
@@ -228,7 +241,7 @@ function ConnectDevice({ info, startOpen = false }: { info: FrontendInfo; startO
             </p>
           )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -557,11 +570,13 @@ function AppStatus({ info }: { info: FrontendInfo }) {
 }
 
 function AppDetail({ info, startOpen = false }: { info: FrontendInfo; startOpen?: boolean }) {
-  const home = homeSummary(info.status);
+  const addresses = usableAddresses(info.status);
+  const [selectedURL, setSelectedURL] = useState("");
+  const chosen = addresses.includes(selectedURL) ? selectedURL : addresses[0];
   const away = awaySummary(info.status, { homeNetwork: true });
   return (
     <SettingsSection title={t("Status")}>
-      <SettingsRow title={home.title} description={home.detail} />
+      <HomeStatusRow status={info.status} address={chosen} />
       <SettingsRow title={away.title} description={away.detail} />
       {info.status.error ? (
         <p className="px-5 py-3 text-sm text-danger">{info.status.error}</p>
@@ -572,7 +587,12 @@ function AppDetail({ info, startOpen = false }: { info: FrontendInfo; startOpen?
         </p>
       ))}
       <div className="px-5 py-3">
-        <ConnectDevice info={info} startOpen={startOpen} />
+        <ConnectDevice
+          info={info}
+          startOpen={startOpen}
+          selectedURL={chosen}
+          onSelectedURL={setSelectedURL}
+        />
       </div>
     </SettingsSection>
   );

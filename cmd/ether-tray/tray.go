@@ -83,8 +83,8 @@ func (t *tray) onReady() {
 	startItem := systray.AddMenuItem("Start server", "Start the Ether service")
 	stopItem := systray.AddMenuItem("Stop server", "Stop the Ether service")
 	restartItem := systray.AddMenuItem("Restart server", "Restart the Ether service")
-	t.fixItem = systray.AddMenuItem("Fix and start", "Clear the blocked login item and start the server")
-	t.directItem = systray.AddMenuItem("Start directly", "Start the server without the login item")
+	t.fixItem = systray.AddMenuItem("Turn it on and start", "Turn Ether's background service on and start the server")
+	t.directItem = systray.AddMenuItem("Start once", "Start the server this time, without turning the background service on")
 	t.fixItem.Hide()
 	t.directItem.Hide()
 	if t.a.svc == nil {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -21,11 +22,27 @@ func launchdLabelDisabled(label string) bool {
 func enableLaunchdLabel(label string) error {
 	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
 	if out, err := exec.Command("launchctl", "enable", target).CombinedOutput(); err != nil {
-		msg := string(out)
+		msg := strings.TrimSpace(string(out))
 		if msg == "" {
-			return fmt.Errorf("enable launch setting: %w", err)
+			return fmt.Errorf("enable background service: %w", err)
 		}
-		return fmt.Errorf("enable launch setting: %s", msg)
+		return fmt.Errorf("enable background service: %s", msg)
+	}
+	return nil
+}
+
+// bootstrapLaunchAgent loads a plist into the current user's GUI domain.
+// This is the same enable-then-bootstrap step "Turn it on and start" relies
+// on. The plist may live outside ~/Library/LaunchAgents.
+func bootstrapLaunchAgent(plist string) error {
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	out, err := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			return fmt.Errorf("bootstrap background service: %w", err)
+		}
+		return fmt.Errorf("bootstrap background service: %s", msg)
 	}
 	return nil
 }

@@ -1445,13 +1445,6 @@ export default function Setup() {
                           if (name) patchIndexer(i, { name });
                         }}
                       />
-                      {ix.url.includes("torrentio.strem.fun") ? (
-                        <p className="text-sm text-fg-muted">
-                          {t(
-                            "Lookups go to torrentio.strem.fun. Prefer your own? Use Torznab (Prowlarr, Jackett, Zilean).",
-                          )}
-                        </p>
-                      ) : null}
                     </Field>
                   ) : (
                     <>
@@ -1539,7 +1532,7 @@ export default function Setup() {
           <Field
             label={t("Cache folder")}
             hint={t(
-              "Posters and artwork stay in the configuration folder. A mounted /cache volume is already in use when this page shows it.",
+              "Posters and artwork stay in the configuration folder. Using your /cache folder.",
             )}
           >
             <div className="flex gap-2">

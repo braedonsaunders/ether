@@ -26,6 +26,25 @@ describe("app reachability copy", () => {
     );
   });
 
+  it("names only the chosen address when several are published", () => {
+    const status = {
+      lan: "unknown",
+      connectUrls: [
+        "http://192.168.68.65:32400/jellyfin",
+        "http://192.168.68.65:8098",
+        "http://[fd79:f184::1]:32400/jellyfin",
+        "http://100.65.221.123:8098",
+        "http://10.255.0.2:32400/jellyfin",
+      ],
+    };
+    const detail = homeSummary(status).detail;
+    expect(detail).toContain("http://192.168.68.65:32400/jellyfin");
+    expect(detail).not.toMatch(/fd79|100\.65|10\.255|:8098/);
+    const chosen = homeSummary(status, "http://192.168.68.65:8098").detail;
+    expect(chosen).toContain("http://192.168.68.65:8098");
+    expect(chosen).not.toContain("32400/jellyfin");
+  });
+
   it("names the address people use when home reachability was not checked", () => {
     expect(
       homeSummary({
