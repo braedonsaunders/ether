@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/livetv"
 )
+
+var liveTagURI = regexp.MustCompile(`URI="([^"]+)"`)
 
 type sessionLive struct {
 	service *livetv.Service
@@ -31,6 +34,21 @@ func (l sessionLive) Stop(ctx context.Context, viewer *core.Viewer, id string) e
 	return l.service.Stop(ctx, id, viewer)
 }
 
+func normalizeLiveTail(tail string) string {
+	if rest, ok := strings.CutPrefix(tail, "resource-"); ok && rest != "" && !strings.Contains(rest, "/") {
+		return "resource/" + rest
+	}
+	if rest, ok := strings.CutPrefix(tail, "relay-"); ok && rest != "" && !strings.Contains(rest, "/") {
+		return "relay/" + rest
+	}
+	if rest, ok := strings.CutPrefix(tail, "program-"); ok && !strings.Contains(rest, "/") {
+		if start, seg, ok := strings.Cut(rest, "-"); ok && start != "" && seg != "" {
+			return "program/" + start + "/" + seg
+		}
+	}
+	return tail
+}
+
 func (l sessionLive) Serve(w http.ResponseWriter, r *http.Request, viewer *core.Viewer, id, tail, base string) {
 	// Live TV's Plex adapter can propagate Plex credentials into playlists.
 	// Scoped broker paths carry the grant already, so strip credential inputs.
@@ -38,8 +56,17 @@ func (l sessionLive) Serve(w http.ResponseWriter, r *http.Request, viewer *core.
 	clean.Header = r.Header.Clone()
 	clean.Header.Del("X-Plex-Token")
 	clean.URL.RawQuery = ""
-	p := &livePlaylistWriter{ResponseWriter: w, from: []byte("/livetv/sessions/" + id + "/0/"), to: []byte(base)}
+	sessionPrefix := "/livetv/sessions/" + id + "/0/"
+	p := &livePlaylistWriter{
+		ResponseWriter: w,
+		from:           []byte(sessionPrefix),
+		to:             []byte(base),
+		flatSegments:   strings.HasSuffix(base, "/segment/"),
+		sessionPrefix:  sessionPrefix,
+		base:           base,
+	}
 	defer p.finish()
+	tail = normalizeLiveTail(tail)
 	parts := strings.Split(tail, "/")
 	switch {
 	case tail == "index.m3u8":
@@ -69,6 +96,9 @@ func (l sessionLive) Serve(w http.ResponseWriter, r *http.Request, viewer *core.
 type livePlaylistWriter struct {
 	http.ResponseWriter
 	from, to          []byte
+	flatSegments      bool
+	sessionPrefix     string
+	base              string
 	buf               bytes.Buffer
 	decided, playlist bool
 	status            int
@@ -110,6 +140,60 @@ func (w *livePlaylistWriter) finish() {
 		if w.status != 0 {
 			w.ResponseWriter.WriteHeader(w.status)
 		}
+		if w.flatSegments {
+			_, _ = w.ResponseWriter.Write(rewriteSiloLivePlaylist(w.buf.Bytes(), w.sessionPrefix, w.base))
+			return
+		}
 		_, _ = w.ResponseWriter.Write(bytes.ReplaceAll(w.buf.Bytes(), w.from, w.to))
 	}
+}
+
+func rewriteSiloLivePlaylist(body []byte, sessionPrefix, base string) []byte {
+	lines := strings.Split(string(body), "\n")
+	for i, line := range lines {
+		trim := strings.TrimSpace(line)
+		if trim == "" {
+			continue
+		}
+		if !strings.HasPrefix(trim, "#") {
+			lines[i] = rewriteSiloLiveURI(trim, sessionPrefix, base)
+			continue
+		}
+		lines[i] = liveTagURI.ReplaceAllStringFunc(line, func(m string) string {
+			parts := liveTagURI.FindStringSubmatch(m)
+			if len(parts) < 2 {
+				return m
+			}
+			return `URI="` + rewriteSiloLiveURI(parts[1], sessionPrefix, base) + `"`
+		})
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
+func rewriteSiloLiveURI(raw, sessionPrefix, base string) string {
+	rel := strings.TrimSpace(raw)
+	if strings.HasPrefix(rel, sessionPrefix) {
+		rel = strings.TrimPrefix(rel, sessionPrefix)
+	}
+	rel, _, _ = strings.Cut(rel, "?")
+	switch {
+	case rel == "index.m3u8":
+		return base + "index.m3u8"
+	case strings.HasPrefix(rel, "resource/"):
+		key := strings.TrimPrefix(rel, "resource/")
+		if key != "" && !strings.Contains(key, "/") {
+			return base + "resource-" + key
+		}
+	case strings.HasPrefix(rel, "relay/"):
+		seg := strings.TrimPrefix(rel, "relay/")
+		if seg != "" && !strings.Contains(seg, "/") {
+			return base + "relay-" + seg
+		}
+	case strings.HasPrefix(rel, "program/"):
+		parts := strings.Split(strings.TrimPrefix(rel, "program/"), "/")
+		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+			return base + "program-" + parts[0] + "-" + parts[1]
+		}
+	}
+	return strings.ReplaceAll(raw, sessionPrefix, base)
 }

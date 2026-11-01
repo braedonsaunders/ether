@@ -157,6 +157,9 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		playbackError(w, err)
 		return
 	}
+	if liveFile {
+		hydrateLivePlan(&plan, session.Media)
+	}
 	access := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "silo"}
 	matchOffer := func() error {
 		if liveFile {
@@ -397,6 +400,49 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	reply(w, 201, document)
 }
 
+func hydrateLivePlan(plan *frontend.PlayPlan, sessionMedia *frontend.MediaInfo) {
+	if sessionMedia != nil && len(sessionMedia.Streams) > 0 {
+		plan.Media = *sessionMedia
+	} else if len(plan.Media.Streams) == 0 {
+		no := false
+		eight := 8
+		plan.Media.Container = "mpegts"
+		plan.Media.Streams = []frontend.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, BitDepth: 8, BitsPerRawSample: &eight, PixelFormat: "yuv420p", ColorTransfer: "bt709", ColorSpace: "bt709", ColorPrimaries: "bt709", SampleAspectRatio: "1:1", DisplayAspectRatio: "16:9", Default: true, DolbyVisionConfigurationPresent: &no, HDR10Plus: &no},
+			{Index: 1, Type: "audio", Codec: "aac", Channels: 2, SampleRate: 48000, ChannelLayout: "stereo", Default: true},
+		}
+	}
+	plan.Media.Estimated = false
+	if plan.Media.Container == "" {
+		plan.Media.Container = "mpegts"
+	}
+	plan.Decision.VideoCopy = true
+	plan.Decision.AudioCopy = true
+	for _, s := range plan.Media.Streams {
+		if s.Type == "video" && s.Codec != "" {
+			plan.Decision.VideoCodec = s.Codec
+		}
+		if s.Type == "audio" && plan.Decision.AudioStream < 0 {
+			plan.Decision.AudioStream = s.Index
+			if s.Codec != "" {
+				plan.Decision.AudioCodec = s.Codec
+			}
+			if s.Channels > 0 {
+				plan.Decision.AudioChannels = s.Channels
+			}
+		}
+	}
+	if plan.Decision.VideoCodec == "" {
+		plan.Decision.VideoCodec = "h264"
+	}
+	if plan.Decision.AudioCodec == "" {
+		plan.Decision.AudioCodec = "aac"
+	}
+	if plan.Decision.Reason == "" {
+		plan.Decision.Reason = "live_remux_hls"
+	}
+}
+
 // siloMediaURL is the only stream address the Apple TV client will play.
 // Direct play is the session itself. HLS, including remux and transcode, is
 // the session master. A grant in the path is rejected before the request.
@@ -408,8 +454,11 @@ func (i *instance) resolveLiveFile(r *http.Request, v *frontend.Viewer, fileID s
 	if _, err := ids.ParseGUID(ids.Channel, fileID); err == nil {
 		channelGUID = fileID
 	} else if isLiveChannelFileID(fileID) {
-		channelGUID = i.resolveLiveChannelFileID(r.Context(), v, fileID)
-		if channelGUID == "" {
+		if chID, guid := i.resolveLiveChannelFileID(r.Context(), v, fileID); chID != "" {
+			return chID, true, nil
+		} else if guid != "" {
+			channelGUID = guid
+		} else {
 			return "", false, frontend.ErrNotFound
 		}
 	} else {
@@ -428,16 +477,16 @@ func (i *instance) resolveLiveFile(r *http.Request, v *frontend.Viewer, fileID s
 	return ch.ID, true, nil
 }
 
-func (i *instance) resolveLiveChannelFileID(ctx context.Context, v *frontend.Viewer, fileID string) string {
+func (i *instance) resolveLiveChannelFileID(ctx context.Context, v *frontend.Viewer, fileID string) (string, string) {
 	if guid := i.rememberedLiveChannel(fileID); guid != "" {
-		return guid
+		return "", guid
 	}
 	if i.host.LiveTV == nil {
-		return ""
+		return "", ""
 	}
 	channels, err := i.host.LiveTV.Channels(ctx, v)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	for _, ch := range channels {
 		guid, err := ids.StringGUID(ids.Channel, ch.ID)
@@ -450,10 +499,10 @@ func (i *instance) resolveLiveChannelFileID(ctx context.Context, v *frontend.Vie
 		}
 		if candidate == fileID {
 			_, _ = i.rememberLiveChannel(guid, liveChannelCardMeta{})
-			return guid
+			return ch.ID, guid
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func siloMediaURL(sessionID string, format frontend.StreamFormat) string {

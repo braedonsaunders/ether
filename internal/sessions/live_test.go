@@ -105,7 +105,7 @@ func TestSiloLiveMasterRewritesToThePublicPlaylist(t *testing.T) {
 	}
 	out := httptest.NewRecorder()
 	b.ServeSessionMedia(out, httptest.NewRequest(http.MethodGet, "/api/v2/playback/transcode/"+s.ID+"/master.m3u8", nil), access, s.ID, "master.m3u8")
-	want := "/api/v2/playback/transcode/" + s.ID + "/live/index.m3u8"
+	want := "/api/v2/playback/transcode/" + s.ID + "/segment/index.m3u8"
 	if out.Code != 200 || !strings.Contains(out.Body.String(), want) || strings.Contains(out.Body.String(), "/sessions/media/") {
 		t.Fatalf("master %d %s", out.Code, out.Body.String())
 	}

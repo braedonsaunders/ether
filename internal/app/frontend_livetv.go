@@ -144,20 +144,47 @@ func (s surfaceLiveTV) ResolveChannelGUID(ctx context.Context, v *core.Viewer, g
 	if err != nil {
 		return frontend.LiveChannel{}, err
 	}
-	rows, err := s.Channels(ctx, v)
+	viewer, err := s.viewer(ctx, v)
 	if err != nil {
 		return frontend.LiveChannel{}, err
 	}
-	var found *frontend.LiveChannel
-	for _, row := range rows {
-		id, _ := ids.StringGUID(ids.Channel, row.ID)
-		if strings.EqualFold(id, normalized) {
-			if found != nil {
-				return frontend.LiveChannel{}, core.ErrUnauthorized
-			}
-			copy := row
-			found = &copy
+	if s.app.livetv == nil {
+		return frontend.LiveChannel{}, core.ErrNotAvailable
+	}
+	channels, err := s.app.livetv.Channels(ctx)
+	if err != nil {
+		return frontend.LiveChannel{}, err
+	}
+	if len(channels) > maxLiveChannels {
+		return frontend.LiveChannel{}, errLiveQuery
+	}
+	var matched []livetv.Channel
+	for _, c := range channels {
+		if !c.Enabled {
+			continue
 		}
+		id, _ := ids.StringGUID(ids.Channel, c.ID)
+		if strings.EqualFold(id, normalized) {
+			matched = append(matched, c)
+		}
+	}
+	var cached func(context.Context, core.RatingKey) (*core.Title, error)
+	if s.app.catalog != nil {
+		cached = s.app.catalog.CachedGet
+	}
+	var found *frontend.LiveChannel
+	for _, c := range matched {
+		if err := s.app.livetv.AllowedChannelCached(ctx, viewer, c.ID, cached); err != nil {
+			if errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrUnauthorized) {
+				continue
+			}
+			return frontend.LiveChannel{}, err
+		}
+		if found != nil {
+			return frontend.LiveChannel{}, core.ErrUnauthorized
+		}
+		row := s.liveChannel(viewer, c)
+		found = &row
 	}
 	if found == nil {
 		return frontend.LiveChannel{}, core.ErrNotFound

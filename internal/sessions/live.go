@@ -35,7 +35,7 @@ func (b *Broker) planLive(ctx context.Context, req frontend.PlanRequest, viewer 
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	info := core.MediaInfo{Container: "mpegts", Estimated: true}
-	decision := core.Decision{Kind: core.DecisionRemux, Container: "mpegts", AudioStream: -1, SubtitleStream: -1}
+	decision := core.Decision{Kind: core.DecisionRemux, Container: "mpegts", VideoCodec: "h264", AudioCodec: "aac", VideoCopy: true, AudioCopy: true, AudioChannels: 2, AudioStream: -1, SubtitleStream: -1, Reason: "live_remux_hls"}
 	if req.Intent.Estimate {
 		return frontend.PlayPlan{Estimated: true, Media: info, Decision: decision, Transcoding: true, HLS: true, HLSContainer: "mpegts"}, nil
 	}

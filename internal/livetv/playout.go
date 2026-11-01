@@ -926,8 +926,17 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	var info *core.MediaInfo
 	if isHLS && !c.Transcode {
 		if s.o.Transcoder != nil && probe {
-			info, err = s.takeEarlyProbe(ctx, ss, probeCh)
-			if analyze {
+			probeWaitCtx := ctx
+			var waitCancel context.CancelFunc
+			if ss.caps.Protocol == "silo" {
+				// Silo playback/start has a < 1s budget. Wait briefly for a
+				// cached or fast probe, then proceed with HLS passthrough if
+				// live ffprobe is still sampling segments.
+				probeWaitCtx, waitCancel = context.WithTimeout(ctx, 350*time.Millisecond)
+				defer waitCancel()
+			}
+			info, err = s.takeEarlyProbe(probeWaitCtx, ss, probeCh)
+			if analyze && ss.caps.Protocol != "silo" {
 				if err != nil {
 					return err
 				}

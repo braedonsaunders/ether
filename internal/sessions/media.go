@@ -282,11 +282,15 @@ func (b *Broker) ServeSessionMedia(w http.ResponseWriter, r *http.Request, a fro
 	resourcePath := resource
 	liveBase := ""
 	// Silo plays the session master. A live tune's playlist and segments stay
-	// under that same public prefix so the client never sees the media grant.
+	// under Silo's scoped /segment/<name> prefix so the client never sees the
+	// media grant and every URI satisfies PlaybackMediaAuthorization.Scope.
 	if tuned && a.Protocol == "silo" {
-		liveBase = "/api/v2/playback/transcode/" + sessionID + "/live/"
-		if resource == "master.m3u8" {
+		liveBase = "/api/v2/playback/transcode/" + sessionID + "/segment/"
+		switch {
+		case resource == "master.m3u8":
 			resourcePath = "live/index.m3u8"
+		case strings.HasPrefix(resource, "segment/"):
+			resourcePath = "live/" + siloLiveSegmentPath(strings.TrimPrefix(resource, "segment/"))
 		}
 	}
 	forward := r.Clone(r.Context())
@@ -299,6 +303,24 @@ func (b *Broker) ServeSessionMedia(w http.ResponseWriter, r *http.Request, a fro
 		return
 	}
 	b.ServeMediaAccess(w, forward, a)
+}
+
+func siloLiveSegmentPath(seg string) string {
+	if seg == "index.m3u8" {
+		return "index.m3u8"
+	}
+	if rest, ok := strings.CutPrefix(seg, "resource-"); ok && rest != "" && !strings.Contains(rest, "/") {
+		return "resource/" + rest
+	}
+	if rest, ok := strings.CutPrefix(seg, "relay-"); ok && rest != "" && !strings.Contains(rest, "/") {
+		return "relay/" + rest
+	}
+	if rest, ok := strings.CutPrefix(seg, "program-"); ok && !strings.Contains(rest, "/") {
+		if start, file, ok := strings.Cut(rest, "-"); ok && start != "" && file != "" {
+			return "program/" + start + "/" + file
+		}
+	}
+	return seg
 }
 
 func sessionResource(sessionID, resource string) bool {
@@ -469,7 +491,7 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 						}
 					}
 				}
-			} else if rung == "base" {
+			} else if rung == "base" || rung == "segment" {
 				if name == "index.m3u8" {
 					hs.ServePlaylist(w, r)
 					return
