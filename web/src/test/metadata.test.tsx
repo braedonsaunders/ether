@@ -309,6 +309,16 @@ describe("Metadata artwork studio", () => {
     );
   });
 
+  it("saves the Plex metadata toggle for a claimed server", async () => {
+    const { fake } = renderAppWith("/metadata/artwork", () => undefined);
+    await screen.findByLabelText("Ether posters", {}, WAIT);
+    const toggle = await screen.findByLabelText("Use Plex's metadata for Plex apps", {}, WAIT);
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(calls(fake, "PUT", "/config/plex")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/plex")[0]!.body).toEqual({ usePlexMetadata: true });
+  });
+
   it("opens Home at /home", async () => {
     renderAppWith("/home", () => undefined);
     expect(await screen.findByRole("heading", { name: "Home" }, WAIT)).toBeInTheDocument();

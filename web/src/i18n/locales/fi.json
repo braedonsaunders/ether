@@ -359,6 +359,7 @@
   "m_0220472ffbe48f": "Tapahtumia ei ole valittu",
   "m_0222374b35614a": "Indeksoijia ei ole määritetty",
   "m_022286a805afd9": "Malli, esim. because.*",
+  "m_0222a7e49fb0bb": "Plex-sovellukset käyttävät Plexin tietoja, kun teos täsmää. Muut sovellukset jäävät TMDB:hen.",
   "m_02233ed4cd71da": "pisteet {score}",
   "m_0224373d51d231": "Seuraava välimuistisivu",
   "m_0226aef86209ed": "Avaa plex.tv-kirjautuminen",
@@ -844,6 +845,7 @@
   "m_0510e9fcc31885": "Indeksoija tallennettu",
   "m_0511753a7df5ef": "Yhdistä sovellus",
   "m_051312cddc9852": "Rajaa kanava nimikkeisiin, jotka kotitalous on katsonut loppuun tai jättänyt kesken.",
+  "m_0514715a519ee0": "Käytä Plexin metatietoja Plex-sovelluksissa",
   "m_0514b7f2fb419d": "Tuntematon",
   "m_0514ca33051f50": "Kokoelman esikatselu",
   "m_05178786e24c93": "Oma pisteytys",
@@ -4013,6 +4015,7 @@
   "m_18ca1c5dc775ca": "Tällä katselijalla ei ole enää palvelimen käyttöoikeutta. Hänen historiansa säilyy.",
   "m_18cac20f7cbd3e": "Latauksia kerrallaan katselijaa kohti",
   "m_18cb5aae13b5b6": "Jäähtyy",
+  "m_18ce6fc7682991": "Varaa tämä palvelin, jotta voit ottaa tämän käyttöön.",
   "m_18ce53b1a2aab0": {
     "one": "{name} · {count} nimike",
     "other": "{name} · {count} nimikettä"

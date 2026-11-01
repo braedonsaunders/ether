@@ -27,10 +27,13 @@ func TestExactIdentityRequiredAndCached(t *testing.T) {
 				if r.URL.Query().Get("guid") != "tmdb://550" || r.Header.Get("X-Plex-Token") != "fixture" {
 					t.Fatal("request identity")
 				}
+				if r.Header.Get("X-Plex-Client-Identifier") != "install-id" {
+					t.Fatalf("client id %q", r.Header.Get("X-Plex-Client-Identifier"))
+				}
 				w.Write([]byte(`{"MediaContainer":{"Metadata":[{"guid":"plex://movie/5d7768265af944001f1f6976","type":"movie","Guid":` + tc.ids + `}]}}`))
 			}))
 			defer srv.Close()
-			s := New(db, Options{BaseURL: srv.URL, Token: func() string { return "fixture" }})
+			s := New(db, Options{BaseURL: srv.URL, Token: func() string { return "fixture" }, ClientIdentifier: func() string { return "install-id" }})
 			for i := 0; i < 2; i++ {
 				guid, e := s.Resolve(ctx, core.MovieKey(550))
 				if e != nil || guid != tc.want {
@@ -60,28 +63,24 @@ func TestPerInstallClientIdentifier(t *testing.T) {
 	defer srv.Close()
 
 	const machineID = "0123456789abcdef0123456789abcdef01234567"
-	if got := ClientIdentifier(machineID); got != machineID+"-metadata" {
-		t.Fatalf("ClientIdentifier(%q) = %q, want %q", machineID, got, machineID+"-metadata")
-	}
-
 	s := New(db, Options{
-		BaseURL:           srv.URL,
-		Token:             func() string { return "fixture" },
-		MachineIdentifier: machineID,
+		BaseURL:          srv.URL,
+		Token:            func() string { return "fixture" },
+		ClientIdentifier: func() string { return ClientIdentifier("", machineID) },
 	})
 	if _, err := s.Resolve(ctx, core.MovieKey(550)); err != nil {
 		t.Fatal(err)
 	}
-	if gotHeader != machineID+"-metadata" {
-		t.Fatalf("X-Plex-Client-Identifier = %q, want %q", gotHeader, machineID+"-metadata")
+	if gotHeader != machineID {
+		t.Fatalf("X-Plex-Client-Identifier = %q, want %q", gotHeader, machineID)
 	}
 	if gotHeader == "ether-metadata" {
 		t.Fatal("used fixed shared client identifier")
 	}
 
 	// Two unconfigured instances must still receive distinct client identifiers.
-	a := ClientIdentifier("")
-	b := ClientIdentifier("")
+	a := New(db, Options{BaseURL: srv.URL}).ClientIdentifier()
+	b := New(db, Options{BaseURL: srv.URL}).ClientIdentifier()
 	if a == "" || b == "" || a == "ether-metadata" || a == b {
 		t.Fatalf("fallback ClientIdentifier should be unique per instance: a=%q b=%q", a, b)
 	}

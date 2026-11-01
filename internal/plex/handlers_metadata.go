@@ -58,7 +58,7 @@ func (s *Server) itemContainer(t core.MediaType) *model.MediaContainer {
 
 // titleVisible reports whether the user may see the title's section.
 func (s *Server) titleVisible(u *core.User, t *core.Title) bool {
-	return s.visibility().TitleAllowed(u, t)
+	return s.visibility().TitleAllowed(u, t) && s.plexMetaRatingAllowed(u, t)
 }
 
 // metadataKeys parses a detail key. Numeric rating keys stay as they are.

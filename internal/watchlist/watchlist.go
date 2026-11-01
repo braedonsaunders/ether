@@ -118,7 +118,7 @@ func New(db *sql.DB, o Options) *Service {
 		o.PlexBaseURL = "https://discover.provider.plex.tv"
 	}
 	if o.ClientIdentifier == "" {
-		o.ClientIdentifier = plexguid.ClientIdentifier("")
+		o.ClientIdentifier = plexguid.ClientIdentifier("", "")
 	}
 	if o.PrewarmBytes <= 0 {
 		o.PrewarmBytes = 8 << 20

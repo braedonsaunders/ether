@@ -10,7 +10,7 @@ import { TitleSearch } from "../../components/pickers";
 import { titleSubtitle } from "../../components/Poster";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { localized, t } from "../../i18n";
-import { api, apiFetch } from "../../lib/api";
+import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { TitleCard } from "../../lib/contract";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
 import { blankSpec } from "../../lib/rules";
@@ -189,6 +189,7 @@ export function ArtworkSettings() {
                 onChange={(e) => set({ enabled: e.currentTarget.checked })}
               />
             </div>
+            <PlexMetadataToggle />
             <PosterProviders onSaved={() => setNonce((n) => n + 1)} />
             <section className="metadata-control-section" aria-label={t("Design presets")}>
               <div className="metadata-section-title">
@@ -724,5 +725,41 @@ function TitleArtworkDrawer({
         </div>
       )}
     </Drawer>
+  );
+}
+
+type plexSettings = { claimed?: boolean; usePlexMetadata?: boolean };
+
+function PlexMetadataToggle() {
+  const doc = useAsync(async () => (await api.getConfig()).plex as plexSettings | undefined, []);
+  const [saving, setSaving] = useState(false);
+  const claimed = Boolean(doc.data?.claimed);
+  const on = Boolean(doc.data?.usePlexMetadata);
+  return (
+    <div className="metadata-enable">
+      <div>
+        <label htmlFor="plex-metadata">{t("Use Plex's metadata for Plex apps")}</label>
+        <p>
+          {claimed
+            ? t("Plex apps use Plex's details when a title is matched. Other apps stay on TMDB.")
+            : t("Claim this server to turn this on.")}
+        </p>
+      </div>
+      <Switch
+        id="plex-metadata"
+        aria-label={t("Use Plex's metadata for Plex apps")}
+        checked={on}
+        disabled={!claimed || saving || !doc.data}
+        onChange={(e) => {
+          const next = e.currentTarget.checked;
+          setSaving(true);
+          void api
+            .putSection("plex", { usePlexMetadata: next })
+            .then(() => doc.setData({ ...(doc.data ?? {}), usePlexMetadata: next }))
+            .catch((err) => toast.error(t("Couldn't save"), { description: errorMessage(err) }))
+            .finally(() => setSaving(false));
+        }}
+      />
+    </div>
   );
 }

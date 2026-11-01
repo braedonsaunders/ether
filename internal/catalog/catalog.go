@@ -285,6 +285,17 @@ type Catalog struct {
 
 	personMu       sync.Mutex
 	personHydrated map[int64]time.Time
+
+	saferRating SaferRatingSQL
+}
+
+// SaferRatingSQL is the optional Plex overlay predicate for viewer limits.
+type SaferRatingSQL interface {
+	HideExceeding(keyColumn string) string
+}
+
+func WithSaferRatingSQL(f SaferRatingSQL) Option {
+	return func(c *Catalog) { c.saferRating = f }
 }
 
 type cachedStoredTitle struct {

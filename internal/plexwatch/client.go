@@ -70,7 +70,7 @@ type Client struct {
 
 func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*Client, error) {
 	if clientID == "" {
-		clientID = plexguid.ClientIdentifier("")
+		clientID = plexguid.ClientIdentifier("", "")
 	}
 	if now == nil {
 		now = time.Now

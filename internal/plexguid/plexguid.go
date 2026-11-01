@@ -4,9 +4,7 @@ package plexguid
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,36 +37,18 @@ const (
 	maxChildrenItems = 2500
 )
 
-// ClientIdentifier derives a stable per-install X-Plex-Client-Identifier for
-// Plex metadata provider requests from the server's machineIdentifier. When
-// machineIdentifier is empty (unconfigured test fixtures), a fresh per-instance
-// identifier is generated so installs never share a fixed client identifier.
-func ClientIdentifier(machineIdentifier string) string {
-	id := strings.TrimSpace(machineIdentifier)
-	if id == "" {
-		var b [16]byte
-		_, _ = rand.Read(b[:])
-		id = hex.EncodeToString(b[:])
-	}
-	if strings.HasSuffix(id, "-metadata") {
-		return id
-	}
-	return id + "-metadata"
-}
-
 type Options struct {
-	HTTP              *http.Client
-	BaseURL           string
-	Token             func() string
-	MachineIdentifier string
-	ClientIdentifier  string
-	Background        bool
+	HTTP *http.Client
+	// ClientIdentifier is the per-install X-Plex-Client-Identifier.
+	ClientIdentifier func() string
+	BaseURL          string
+	Token            func() string
+	Background       bool
 }
 
 type Service struct {
-	db       *sql.DB
-	o        Options
-	clientID string
+	db *sql.DB
+	o  Options
 
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -88,19 +68,19 @@ func New(db *sql.DB, o Options) *Service {
 	if o.BaseURL == "" {
 		o.BaseURL = "https://metadata.provider.plex.tv"
 	}
-	clientID := strings.TrimSpace(o.ClientIdentifier)
-	if clientID == "" {
-		clientID = ClientIdentifier(o.MachineIdentifier)
+	if o.ClientIdentifier == nil {
+		// Unconfigured fixtures still get an id of their own, fixed for
+		// this Service, never one shared across installs.
+		fixed := ClientIdentifier("", "")
+		o.ClientIdentifier = func() string { return fixed }
 	}
-	o.ClientIdentifier = clientID
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{
-		db:       db,
-		o:        o,
-		clientID: clientID,
-		ctx:      ctx,
-		cancel:   cancel,
-		pending:  map[core.RatingKey]bool{},
+		db:      db,
+		o:       o,
+		ctx:     ctx,
+		cancel:  cancel,
+		pending: map[core.RatingKey]bool{},
 	}
 	s.idle = sync.NewCond(&s.mu)
 	if o.Background {
@@ -126,7 +106,7 @@ func (s *Service) ClientIdentifier() string {
 	if s == nil {
 		return ""
 	}
-	return s.clientID
+	return s.clientIdentifier()
 }
 
 func (s *Service) Close() {
@@ -345,7 +325,7 @@ func (s *Service) getPage(ctx context.Context, path string, q url.Values) ([]pro
 	req.Header.Set("X-Plex-Token", s.o.Token())
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", "Ether")
-	req.Header.Set("X-Plex-Client-Identifier", s.clientID)
+	req.Header.Set("X-Plex-Client-Identifier", s.clientIdentifier())
 	// Never forward account credentials to a redirect target.
 	client := *s.o.HTTP
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -404,6 +384,15 @@ func (s *Service) getChildren(ctx context.Context, hex string) ([]providerItem, 
 		}
 	}
 	return all, nil
+}
+
+func (s *Service) clientIdentifier() string {
+	if s.o.ClientIdentifier != nil {
+		if id := strings.TrimSpace(s.o.ClientIdentifier()); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 func validKindGUID(guid, kind string) bool {
