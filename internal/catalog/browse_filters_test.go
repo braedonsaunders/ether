@@ -192,6 +192,48 @@ func TestBrowseFilterNegationAndOperators(t *testing.T) {
 		})
 	}
 
+	// Secondary sorts in SQL (e.g. SortYear desc, then SortRating desc/asc).
+	if err := c.UpsertTitle(ctx, core.Title{
+		Key: core.MovieKey(553), Type: core.TypeMovie, IDs: core.IDs{TMDB: 553},
+		Title: "Matrix", SortTitle: "matrix",
+		Year: 1999, Released: time.Date(1999, 3, 31, 0, 0, 0, 0, time.UTC),
+		Runtime: 136 * time.Minute, Rating: 9.2, Popularity: 90,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	pageDesc, err := c.Browse(ctx, core.BrowseQuery{
+		Filter:         core.Filter{Type: core.TypeMovie},
+		Sort:           core.SortYear,
+		Desc:           true,
+		SecondarySorts: []core.SortSpec{{Sort: core.SortRating, Desc: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotDesc []string
+	for _, it := range pageDesc.Items {
+		gotDesc = append(gotDesc, it.Title)
+	}
+	if !slices.Equal(gotDesc, []string{"Family Fun", "Matrix", "Fjord Harbor", "Old Classic"}) {
+		t.Fatalf("year:desc,rating:desc got %v", gotDesc)
+	}
+	pageAsc, err := c.Browse(ctx, core.BrowseQuery{
+		Filter:         core.Filter{Type: core.TypeMovie},
+		Sort:           core.SortYear,
+		Desc:           true,
+		SecondarySorts: []core.SortSpec{{Sort: core.SortRating, Desc: false}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotAsc []string
+	for _, it := range pageAsc.Items {
+		gotAsc = append(gotAsc, it.Title)
+	}
+	if !slices.Equal(gotAsc, []string{"Family Fun", "Fjord Harbor", "Matrix", "Old Classic"}) {
+		t.Fatalf("year:desc,rating:asc got %v", gotAsc)
+	}
+
 	// Verify EXPLAIN uses indexes for credit/genre/country filters.
 	where, args, err := c.browseWhere(core.Filter{
 		Type:             core.TypeMovie,

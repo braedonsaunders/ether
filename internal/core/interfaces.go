@@ -15,10 +15,18 @@ const (
 	SortPopularity SortOrder = "popularity"
 	SortTitle      SortOrder = "title"
 	SortReleased   SortOrder = "released"
+	SortYear       SortOrder = "year"
 	SortRating     SortOrder = "rating"
+	SortDuration   SortOrder = "duration"
 	SortAdded      SortOrder = "added"   // movie/episode release or air date; series and seasons use the latest aired episode, then the premiere
 	SortUpdated    SortOrder = "updated" // actual catalogue metadata update time
 )
+
+// SortSpec pairs a catalogue sort column with its direction.
+type SortSpec struct {
+	Sort SortOrder `json:"sort,omitempty"`
+	Desc bool      `json:"desc,omitempty"`
+}
 
 // StringFilter narrows a string column with a Plex string operator
 // ("=", "!=", "==", "!==", "<=", ">=").
@@ -94,11 +102,12 @@ type Filter struct {
 }
 
 type BrowseQuery struct {
-	Filter Filter
-	Sort   SortOrder
-	Desc   bool
-	Offset int
-	Limit  int
+	Filter         Filter
+	Sort           SortOrder
+	Desc           bool
+	SecondarySorts []SortSpec
+	Offset         int
+	Limit          int
 	// NoTotal skips counting the filter's matches, which reads every title
 	// the filter admits. Page.Total is then offset plus the items returned.
 	NoTotal bool

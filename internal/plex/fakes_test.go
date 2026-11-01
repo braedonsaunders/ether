@@ -2,6 +2,7 @@ package plex
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"image/jpeg"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -143,46 +145,26 @@ func (c *fakeCatalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, 
 		}
 		all = append(all, t)
 	}
-	sort.Slice(all, func(i, j int) bool {
-		switch q.Sort {
-		case "":
+	slices.SortStableFunc(all, func(a, b core.Title) int {
+		if q.Sort == "" {
 			if q.Desc {
-				return all[i].Key > all[j].Key
+				return cmp.Compare(b.Key, a.Key)
 			}
-			return all[i].Key < all[j].Key
-		case core.SortTitle:
-			if all[i].Title != all[j].Title {
-				if q.Desc {
-					return all[i].Title > all[j].Title
-				}
-				return all[i].Title < all[j].Title
+			if c := cmp.Compare(a.Key, b.Key); c != 0 {
+				return c
 			}
-			return all[i].Key < all[j].Key
-		case core.SortAdded, core.SortReleased:
-			ai := unixOrZero(all[i].DateAdded(fixedNow))
-			aj := unixOrZero(all[j].DateAdded(fixedNow))
-			if ai != aj {
-				if q.Desc {
-					return ai > aj
-				}
-				return ai < aj
+		} else {
+			primary := core.SortSpec{Sort: q.Sort, Desc: q.Desc}
+			if c := compareTitlesBySpec(a, b, primary, fixedNow); c != 0 {
+				return c
 			}
-			return all[i].Key < all[j].Key
-		case core.SortUpdated:
-			ui := unixOrZero(all[i].UpdatedAt)
-			uj := unixOrZero(all[j].UpdatedAt)
-			if ui != uj {
-				if q.Desc {
-					return ui > uj
-				}
-				return ui < uj
-			}
-			return all[i].Key < all[j].Key
 		}
-		if all[i].Popularity != all[j].Popularity {
-			return all[i].Popularity > all[j].Popularity
+		for _, sec := range q.SecondarySorts {
+			if c := compareTitlesBySpec(a, b, sec, fixedNow); c != 0 {
+				return c
+			}
 		}
-		return all[i].Key < all[j].Key
+		return cmp.Compare(a.Key, b.Key)
 	})
 	total := len(all)
 	lo := min(q.Offset, total)

@@ -1,7 +1,9 @@
 package plex
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -313,15 +315,20 @@ func (s *Server) meta(sec Section, t core.MediaType, activeSort string) *model.M
 	}
 }
 
-func parseSortParam(s string) (key, dir string) {
-	first, _, _ := strings.Cut(s, ",")
-	key, opts, _ := strings.Cut(first, ":")
+func parseSortTerm(term string) (key, dir string) {
+	key, opts, _ := strings.Cut(strings.TrimSpace(term), ":")
+	key = stripFieldTypePrefix(key)
 	for _, o := range strings.Split(opts, ":") {
 		if o == "desc" || o == "asc" {
 			dir = o
 		}
 	}
 	return key, dir
+}
+
+func parseSortParam(s string) (key, dir string) {
+	first, _, _ := strings.Cut(s, ",")
+	return parseSortTerm(first)
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +340,7 @@ type browseRequest struct {
 	inProgress       *bool // true = in progress (ViewOffset > 0), false = not in progress (ViewOffset == 0)
 	sortLastViewed   bool
 	lastViewedDesc   bool
+	invalidSort      bool
 	lastViewedAfter  int64
 	lastViewedBefore int64
 	limit            int // "limit" param; 0 = none
@@ -840,45 +848,101 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 			}
 		}
 	}
-	key, dir := parseSortParam(q.Get("sort"))
-	if key == "" && (t == core.TypeEpisode || t == core.TypeSeason) {
-		br.q.Sort, br.q.Desc = "", false
-	} else {
-		br.q.Sort, br.q.Desc = sortFor(key, dir)
-	}
-	if key == "lastViewedAt" {
-		br.sortLastViewed = true
-		br.lastViewedDesc = dir != "asc"
-	}
+	br.applySortParam(q.Get("sort"), t)
 	br.q.Filter = f
 	return br
 }
 
+func (br *browseRequest) applySortParam(raw string, t core.MediaType) {
+	if strings.TrimSpace(raw) == "" {
+		if t == core.TypeEpisode || t == core.TypeSeason {
+			br.q.Sort, br.q.Desc = "", false
+		} else {
+			br.q.Sort, br.q.Desc = core.SortTitle, false
+		}
+		return
+	}
+	terms := strings.Split(raw, ",")
+	for i, term := range terms {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		key, dir := parseSortTerm(term)
+		so, desc, lastViewed, ok := sortSpecFor(key, dir)
+		if !ok {
+			br.invalidSort = true
+			return
+		}
+		if i == 0 {
+			if lastViewed {
+				br.sortLastViewed = true
+				br.lastViewedDesc = desc
+				if t == core.TypeEpisode || t == core.TypeSeason {
+					br.q.Sort, br.q.Desc = "", false
+				} else {
+					br.q.Sort, br.q.Desc = core.SortTitle, false
+				}
+			} else {
+				br.q.Sort, br.q.Desc = so, desc
+			}
+		} else if !lastViewed {
+			br.q.SecondarySorts = append(br.q.SecondarySorts, core.SortSpec{Sort: so, Desc: desc})
+		}
+	}
+	if len(br.q.SecondarySorts) > 0 && t != core.TypeEpisode && t != core.TypeSeason {
+		hasTitle := br.q.Sort == core.SortTitle
+		for _, s := range br.q.SecondarySorts {
+			if s.Sort == core.SortTitle {
+				hasTitle = true
+				break
+			}
+		}
+		if !hasTitle {
+			br.q.SecondarySorts = append(br.q.SecondarySorts, core.SortSpec{Sort: core.SortTitle, Desc: false})
+		}
+	}
+}
+
 // sortFor maps a Plex sort key to a catalogue sort.
 func sortFor(key, dir string) (core.SortOrder, bool) {
-	var so core.SortOrder
+	so, desc, _, _ := sortSpecFor(key, dir)
+	return so, desc
+}
+
+func sortSpecFor(key, dir string) (so core.SortOrder, desc, lastViewed, valid bool) {
 	def := true // desc
+	valid = true
 	switch key {
 	case "titleSort", "title", "":
 		so, def = core.SortTitle, false
-	case "originallyAvailableAt", "year", "releaseDate":
+	case "originallyAvailableAt", "releaseDate":
 		so = core.SortReleased
+	case "year":
+		so = core.SortYear
 	case "rating", "audienceRating", "userRating":
 		so = core.SortRating
-	case "addedAt", "lastViewedAt":
+	case "addedAt", "createdAt":
 		so = core.SortAdded
+	case "lastViewedAt", "viewCount":
+		so, lastViewed = core.SortTitle, true
 	case "updatedAt":
 		so = core.SortUpdated
+	case "duration":
+		so = core.SortDuration
+	case "popularity", "random":
+		so = core.SortPopularity
 	default:
 		so = core.SortPopularity
+		valid = false
 	}
 	switch dir {
 	case "desc":
-		return so, true
+		return so, true, lastViewed, valid
 	case "asc":
-		return so, false
+		return so, false, lastViewed, valid
 	}
-	return so, def
+	return so, def, lastViewed, valid
 }
 
 // maxPageSize bounds an explicit X-Plex-Container-Size handed to backends:
@@ -903,9 +967,45 @@ func (pr *Request) pageOf(limit int) (offset, size int) {
 	return offset, size
 }
 
+func titleSortKey(t core.Title) string {
+	if t.SortTitle != "" {
+		return strings.ToLower(t.SortTitle)
+	}
+	return strings.ToLower(t.Title)
+}
+
+func compareTitlesBySpec(a, b core.Title, spec core.SortSpec, now time.Time) int {
+	var c int
+	switch spec.Sort {
+	case core.SortTitle:
+		c = cmp.Compare(titleSortKey(a), titleSortKey(b))
+	case core.SortYear:
+		c = cmp.Compare(a.Year, b.Year)
+	case core.SortReleased:
+		c = cmp.Compare(a.Released.Unix(), b.Released.Unix())
+	case core.SortAdded:
+		c = cmp.Compare(a.DateAdded(now).Unix(), b.DateAdded(now).Unix())
+	case core.SortUpdated:
+		c = cmp.Compare(a.UpdatedAt.Unix(), b.UpdatedAt.Unix())
+	case core.SortRating:
+		c = cmp.Compare(a.Rating, b.Rating)
+	case core.SortDuration:
+		c = cmp.Compare(a.Runtime, b.Runtime)
+	default:
+		c = cmp.Compare(a.Popularity, b.Popularity)
+	}
+	if spec.Desc {
+		return -c
+	}
+	return c
+}
+
 // browse runs a catalogue query honouring paging and watch-state filters.
 func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]core.Title, int, int, error) {
 	offset, size := pr.pageOf(br.limit)
+	if br.invalidSort {
+		return nil, 0, offset, fmt.Errorf("plex: unknown sort")
+	}
 	_, hasBrowseBlocks := s.d.AccessPolicy.(interface {
 		BrowseBlocks(*core.User) ([]string, []string, string)
 	})
@@ -993,6 +1093,8 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 		}
 	}
 	if br.sortLastViewed {
+		now := s.now()
+		isChildType := br.q.Filter.Type == core.TypeEpisode || br.q.Filter.Type == core.TypeSeason
 		sort.SliceStable(allMatched, func(i, j int) bool {
 			vi, vj := viewTimes[allMatched[i].Key], viewTimes[allMatched[j].Key]
 			if vi != vj {
@@ -1000,6 +1102,16 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]c
 					return vi > vj
 				}
 				return vi < vj
+			}
+			for _, spec := range br.q.SecondarySorts {
+				if c := compareTitlesBySpec(allMatched[i], allMatched[j], spec, now); c != 0 {
+					return c < 0
+				}
+			}
+			if !isChildType {
+				if c := cmp.Compare(titleSortKey(allMatched[i]), titleSortKey(allMatched[j])); c != 0 {
+					return c < 0
+				}
 			}
 			return allMatched[i].Key < allMatched[j].Key
 		})
@@ -1126,9 +1238,13 @@ func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section
 		mc.Title2 = "Unwatched"
 	case "newest":
 		br.q.Sort, br.q.Desc = core.SortReleased, true
+		br.q.SecondarySorts = nil
+		br.sortLastViewed = false
 		mc.Title2 = "Recently Released"
 	case "recentlyAdded":
 		br.q.Sort, br.q.Desc = core.SortAdded, true
+		br.q.SecondarySorts = nil
+		br.sortLastViewed = false
 		br.q.Filter.KnownAddedDate = true
 		mc.Title2 = "Recently Added"
 	case "search", "autocomplete":

@@ -49,7 +49,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
 	ckey := browseFilterKey(q.Filter)
-	bkey := fmt.Sprintf("%s|%s|%v|%d|%d|%v", ckey, q.Sort, q.Desc, offset, limit, q.NoTotal)
+	bkey := fmt.Sprintf("%s|%s|%v|%v|%d|%d|%v", ckey, q.Sort, q.Desc, q.SecondarySorts, offset, limit, q.NoTotal)
 	c.cacheMu.RLock()
 	if ent, ok := c.browseCache[bkey]; ok && ent.gen == gen && ent.minute == minBucket {
 		items := make([]core.Title, len(ent.page.Items))
@@ -136,8 +136,10 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		if q.Desc {
 			dir = "DESC"
 		}
+		secOrder := browseSecondaryOrder("t", q.SecondarySorts)
+		outerSecOrder := browseSecondaryOrder("t", q.SecondarySorts)
 		query = `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t JOIN (SELECT t.key AS page_key, ` + airAddedSQL + ` AS page_added FROM catalog_titles t WHERE ` + pageWhere +
-			` ORDER BY page_added ` + dir + `, t.key ASC LIMIT ? OFFSET ?) p ON t.key=p.page_key ORDER BY p.page_added ` + dir + `, p.page_key ASC`
+			` ORDER BY page_added ` + dir + secOrder + `, t.key ASC LIMIT ? OFFSET ?) p ON t.key=p.page_key ORDER BY p.page_added ` + dir + outerSecOrder + `, p.page_key ASC`
 	}
 	queryArgs := append(append([]any{}, pageArgs...), orderArgs...)
 	if computedAdded {
@@ -146,7 +148,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	}
 	var items []core.Title
 	walked := false
-	if computedAdded && q.Desc && q.Filter.Type == core.TypeShow && (q.NoTotal || total >= recentWalkMinTotal) {
+	if computedAdded && q.Desc && len(q.SecondarySorts) == 0 && q.Filter.Type == core.TypeShow && (q.NoTotal || total >= recentWalkMinTotal) {
 		// Newest-first series by date added, from the aired-episode index.
 		page, ok, err := c.recentShowsPage(ctx, where, args, asOf, offset, limit)
 		if err != nil {
@@ -165,7 +167,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	}
 	switch {
 	case walked:
-	case q.Filter.Type == "" && !computedAdded && q.Sort != core.SortTitle && offset+limit <= mergedPageMax:
+	case q.Filter.Type == "" && !computedAdded && len(q.SecondarySorts) == 0 && q.Sort != core.SortTitle && offset+limit <= mergedPageMax:
 		// Movies and series together: no index orders both types, so the
 		// sorted query reads every browsable title. Each type's page comes
 		// from its own index and the two merge.
@@ -216,22 +218,45 @@ func prefixedCols(prefix string) string {
 	return strings.Join(parts, ",")
 }
 
-func browseOrder(q core.BrowseQuery) string {
-	col := "t.popularity"
-	switch q.Sort {
+func sortColumn(alias string, so core.SortOrder) string {
+	switch so {
 	case core.SortTitle:
-		col = "t.sort_title"
-	case core.SortReleased:
-		col = "t.released_ts"
+		return alias + ".sort_title"
+	case core.SortReleased, core.SortAdded:
+		return alias + ".released_ts"
+	case core.SortYear:
+		return alias + ".year"
 	case core.SortRating:
-		col = "t.rating"
-	case core.SortAdded:
-		col = "t.released_ts"
+		return alias + ".rating"
+	case core.SortDuration:
+		return alias + ".runtime_sec"
 	case core.SortUpdated:
-		col = "t.fetched_at"
-	case core.SortPopularity, "":
-		col = "t.popularity"
+		return alias + ".fetched_at"
+	default:
+		return alias + ".popularity"
 	}
+}
+
+func browseSecondaryOrder(alias string, specs []core.SortSpec) string {
+	if len(specs) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, s := range specs {
+		dir := "ASC"
+		if s.Desc {
+			dir = "DESC"
+		}
+		b.WriteString(", ")
+		b.WriteString(sortColumn(alias, s.Sort))
+		b.WriteString(" ")
+		b.WriteString(dir)
+	}
+	return b.String()
+}
+
+func browseOrder(q core.BrowseQuery) string {
+	col := sortColumn("t", q.Sort)
 	dir := "ASC"
 	if q.Desc {
 		dir = "DESC"
@@ -240,7 +265,7 @@ func browseOrder(q core.BrowseQuery) string {
 	if q.Sort == "" && !q.Desc {
 		dir = "DESC"
 	}
-	return col + " " + dir
+	return col + " " + dir + browseSecondaryOrder("t", q.SecondarySorts)
 }
 
 // CountBrowsable is the library size behind a view list. The (type, browsable,

@@ -314,8 +314,8 @@ func (c *Catalog) BrowseStoredEpisodes(ctx context.Context, q core.BrowseQuery) 
 	offset := max(q.Offset, 0)
 	gen, minBucket := c.writeGen.Load(), c.minuteBucket()
 	ckey := fmt.Sprintf("ep:%+v", q.Filter)
-	bkey := fmt.Sprintf("%s|%s|%v|%d|%d|%v", ckey, q.Sort, q.Desc, offset, limit, q.NoTotal)
-	cursorPrefix := fmt.Sprintf("cursor:%s|%s|%v|", ckey, q.Sort, q.Desc)
+	bkey := fmt.Sprintf("%s|%s|%v|%v|%d|%d|%v", ckey, q.Sort, q.Desc, q.SecondarySorts, offset, limit, q.NoTotal)
+	cursorPrefix := fmt.Sprintf("cursor:%s|%s|%v|%v|", ckey, q.Sort, q.Desc, q.SecondarySorts)
 
 	c.cacheMu.RLock()
 	if ent, ok := c.browseCache[bkey]; ok && ent.gen == gen && ent.minute == minBucket {
@@ -348,8 +348,8 @@ func (c *Catalog) BrowseStoredEpisodes(ctx context.Context, q core.BrowseQuery) 
 		}
 	}
 
-	keyOrder := q.Sort == "" || (q.Sort == core.SortPopularity && !q.Desc)
-	if !keyOrder && q.Sort == core.SortPopularity {
+	keyOrder := len(q.SecondarySorts) == 0 && (q.Sort == "" || (q.Sort == core.SortPopularity && !q.Desc))
+	if !keyOrder && len(q.SecondarySorts) == 0 && q.Sort == core.SortPopularity {
 		if unranked, err := c.EpisodesUnranked(ctx); err == nil && unranked {
 			keyOrder = true
 		}
@@ -416,8 +416,12 @@ func storedChildOrder(alias string, q core.BrowseQuery) string {
 		col = alias + ".sort_title"
 	case core.SortReleased, core.SortAdded:
 		col = alias + ".released_ts"
+	case core.SortYear:
+		col = alias + ".year"
 	case core.SortRating:
 		col = alias + ".rating"
+	case core.SortDuration:
+		col = alias + ".runtime_sec"
 	case core.SortUpdated:
 		col = alias + ".fetched_at"
 	case core.SortPopularity:
@@ -427,7 +431,7 @@ func storedChildOrder(alias string, q core.BrowseQuery) string {
 	if q.Desc {
 		dir = "DESC"
 	}
-	return col + " " + dir
+	return col + " " + dir + browseSecondaryOrder(alias, q.SecondarySorts)
 }
 
 // storedSeasonsWhere selects stored, non-adult seasons (s) whose series (t)
@@ -567,8 +571,8 @@ func (c *Catalog) BrowseStoredSeasons(ctx context.Context, q core.BrowseQuery) (
 	offset := max(q.Offset, 0)
 	gen, minBucket := c.writeGen.Load(), c.minuteBucket()
 	ckey := fmt.Sprintf("sn:%+v", q.Filter)
-	bkey := fmt.Sprintf("%s|%s|%v|%d|%d|%v", ckey, q.Sort, q.Desc, offset, limit, q.NoTotal)
-	cursorPrefix := fmt.Sprintf("cursor:%s|%s|%v|", ckey, q.Sort, q.Desc)
+	bkey := fmt.Sprintf("%s|%s|%v|%v|%d|%d|%v", ckey, q.Sort, q.Desc, q.SecondarySorts, offset, limit, q.NoTotal)
+	cursorPrefix := fmt.Sprintf("cursor:%s|%s|%v|%v|", ckey, q.Sort, q.Desc, q.SecondarySorts)
 
 	c.cacheMu.RLock()
 	if ent, ok := c.browseCache[bkey]; ok && ent.gen == gen && ent.minute == minBucket {
@@ -601,7 +605,7 @@ func (c *Catalog) BrowseStoredSeasons(ctx context.Context, q core.BrowseQuery) (
 		}
 	}
 
-	keyOrder := q.Sort == "" || (q.Sort == core.SortPopularity && !q.Desc)
+	keyOrder := len(q.SecondarySorts) == 0 && (q.Sort == "" || (q.Sort == core.SortPopularity && !q.Desc))
 	now := c.now()
 	var items []core.Title
 	switch {

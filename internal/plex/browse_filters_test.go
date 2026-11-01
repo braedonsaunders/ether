@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -405,5 +406,92 @@ func TestBrowseFilterNegationAndAdvertisedOperators(t *testing.T) {
 				t.Fatalf("%s: got %v, want %v", tc.path, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestBrowseSortsGrammarLastViewedAndUnknown(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+
+	// Seed a third movie in the same year as Fjord Harbor (1999) so secondary sorts can be tested.
+	matrix := core.Title{
+		Key: core.MovieKey(603), Type: core.TypeMovie, IDs: core.IDs{TMDB: 603},
+		Title: "Matrix", SortTitle: "matrix",
+		Year: 1999, Released: time.Date(1999, 3, 31, 0, 0, 0, 0, time.UTC),
+		Runtime: 136 * time.Minute, Rating: 9.2, Popularity: 90,
+		UpdatedAt: time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC),
+	}
+	alienRich := alien
+	alienRich.Released = time.Date(1979, 5, 25, 0, 0, 0, 0, time.UTC)
+	alienRich.Rating = 8.5
+	f.catalog.titles[alienRich.Key] = alienRich
+	f.catalog.titles[matrix.Key] = matrix
+
+	// Unknown sort keys must return HTTP 500 (matching PMS), not silently default to popularity.
+	for _, bad := range []string{
+		"/library/sections/1/all?sort=bogus",
+		"/library/sections/1/all?sort=leafCount:desc",
+		"/library/sections/1/all?sort=year:desc,bogus:asc",
+		"/library/all?type=1&sort=unknownField",
+	} {
+		rec := f.get(t, bad)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("%s: status = %d, want 500", bad, rec.Code)
+		}
+	}
+
+	// Type-prefixed and multi-colon modifier sorts: movie.titleSort:desc:nocollate
+	got := browseTitles(t, f, "/library/sections/1/all?sort=movie.titleSort:desc:nocollate")
+	want := []string{"Matrix", "Fjord Harbor", "Alien"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("movie.titleSort:desc:nocollate: got %v, want %v", got, want)
+	}
+
+	// Secondary sorts: sort=year:desc,rating:desc vs sort=year:desc,rating:asc
+	// 1999 movies are Matrix (9.2) and Fjord Harbor (8.43); 1979 is Alien (8.5).
+	gotDesc := browseTitles(t, f, "/library/sections/1/all?sort=year:desc,rating:desc")
+	wantDesc := []string{"Matrix", "Fjord Harbor", "Alien"}
+	if !slices.Equal(gotDesc, wantDesc) {
+		t.Fatalf("year:desc,rating:desc: got %v, want %v", gotDesc, wantDesc)
+	}
+	gotAsc := browseTitles(t, f, "/library/sections/1/all?sort=year:desc,rating:asc")
+	wantAsc := []string{"Fjord Harbor", "Matrix", "Alien"}
+	if !slices.Equal(gotAsc, wantAsc) {
+		t.Fatalf("year:desc,rating:asc: got %v, want %v", gotAsc, wantAsc)
+	}
+
+	// Tie-breaker on secondary sort falls back to titleSort ascending:
+	// Give Matrix and Fjord Harbor the same year (1999) and sort by year:desc,titleSort:desc vs year:desc.
+	gotSecTitleDesc := browseTitles(t, f, "/library/sections/1/all?sort=year:desc,titleSort:desc")
+	if !slices.Equal(gotSecTitleDesc, []string{"Matrix", "Fjord Harbor", "Alien"}) {
+		t.Fatalf("year:desc,titleSort:desc: got %v", gotSecTitleDesc)
+	}
+
+	// Per-viewer lastViewedAt sort:
+	// Owner watched Alien most recently (fixedNow), Matrix earlier (fixedNow - 2h), and never watched Fjord Harbor.
+	// Friend watched Fjord Harbor most recently (fixedNow), and never watched Alien or Matrix.
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: alienRich.Key, ViewCount: 1, LastViewedAt: fixedNow})
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: matrix.Key, ViewCount: 1, LastViewedAt: fixedNow.Add(-2 * time.Hour)})
+	f.state.set(friendUser.ID, core.WatchStatus{Key: fightClub.Key, ViewCount: 1, LastViewedAt: fixedNow})
+
+	// Owner lastViewedAt:desc -> Alien (newest view), Matrix (older view), Fjord Harbor (unviewed last).
+	gotOwnerDesc := browseTitles(t, f, "/library/sections/1/all?sort=lastViewedAt:desc")
+	if !slices.Equal(gotOwnerDesc, []string{"Alien", "Matrix", "Fjord Harbor"}) {
+		t.Fatalf("owner lastViewedAt:desc: got %v, want [Alien Matrix Fjord Harbor]", gotOwnerDesc)
+	}
+	// Owner lastViewedAt:asc -> Fjord Harbor (unviewed sorts below viewed, so first on asc), Matrix, Alien.
+	gotOwnerAsc := browseTitles(t, f, "/library/sections/1/all?sort=lastViewedAt:asc")
+	if !slices.Equal(gotOwnerAsc, []string{"Fjord Harbor", "Matrix", "Alien"}) {
+		t.Fatalf("owner lastViewedAt:asc: got %v, want [Fjord Harbor Matrix Alien]", gotOwnerAsc)
+	}
+
+	// Friend lastViewedAt:desc -> Fjord Harbor (viewed), then Alien, Matrix (unviewed tied, titleSort ASC!).
+	mcFriend := decodeJSON(t, f.request(t, http.MethodGet, "/library/sections/1/all?sort=lastViewedAt:desc", map[string]string{"X-Plex-Token": friendToken, "Accept": "application/json"}))
+	var gotFriendDesc []string
+	for _, r := range mcFriend["Metadata"].([]any) {
+		gotFriendDesc = append(gotFriendDesc, r.(map[string]any)["title"].(string))
+	}
+	if !slices.Equal(gotFriendDesc, []string{"Fjord Harbor", "Alien", "Matrix"}) {
+		t.Fatalf("friend lastViewedAt:desc: got %v, want [Fjord Harbor Alien Matrix]", gotFriendDesc)
 	}
 }
