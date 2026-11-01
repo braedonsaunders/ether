@@ -5,16 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
+
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// ImportTitlesTx is the collections-owned writer for a reviewed import. The
+// ImportTitlesTx is the collections-owned writer for a reviewed import. It
+// takes a time, not a number, so the caller cannot pick the wrong unit. The
 // caller commits its migration bookkeeping in the same transaction. Imported
 // lists retain stable IDs and can never replace built-ins or another viewer's.
-func ImportTitlesTx(ctx context.Context, tx *sql.Tx, id, userID int64, name string, keys []core.RatingKey, now int64) (int64, error) {
+func ImportTitlesTx(ctx context.Context, tx *sql.Tx, id, userID int64, name string, keys []core.RatingKey, at time.Time) (int64, error) {
 	if userID <= 0 || name == "" {
 		return 0, errors.New("invalid imported collection")
 	}
+	now := at.Unix() // collections_specs stamps are unix seconds
 	if id == 0 {
 		var err error
 		if id, err = nextSpecID(ctx, tx); err != nil {

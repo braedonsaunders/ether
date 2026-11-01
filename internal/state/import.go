@@ -171,10 +171,11 @@ func (s *State) importTx(ctx context.Context, tx *sql.Tx, b ImportBatch) ([]Even
 }
 
 // ImportPlaylistTx preserves imported playlist IDs while enforcing ownership.
-func ImportPlaylistTx(ctx context.Context, tx *sql.Tx, id, userID int64, title string, keys []core.RatingKey, now int64) (int64, error) {
+func ImportPlaylistTx(ctx context.Context, tx *sql.Tx, id, userID int64, title string, keys []core.RatingKey, at time.Time) (int64, error) {
 	if userID <= 0 || title == "" {
 		return 0, errors.New("invalid imported playlist")
 	}
+	now := at.UnixNano() // state_playlists stamps are unix nanoseconds
 	if id == 0 {
 		if err := tx.QueryRowContext(ctx, `INSERT INTO state_playlists(user_id,title,updated_at) VALUES(?,?,?) RETURNING id`, userID, title, now).Scan(&id); err != nil {
 			return 0, err

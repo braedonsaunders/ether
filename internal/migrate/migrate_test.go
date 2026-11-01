@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type catalogFake struct{ core.Catalog }
@@ -103,6 +104,21 @@ func TestPMSDryRunAndIdempotentImport(t *testing.T) {
 		if e = db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); e != nil || n != 1 {
 			t.Fatalf("%s count=%d err=%v", table, n, e)
 		}
+	}
+	// Each list owner stamps in its own unit: collections in seconds,
+	// playlists in nanoseconds (GitHub #180).
+	var collStamp, playlistStamp int64
+	if e = db.QueryRow(`SELECT updated_at FROM collections_specs`).Scan(&collStamp); e != nil {
+		t.Fatal(e)
+	}
+	if e = db.QueryRow(`SELECT updated_at FROM state_playlists`).Scan(&playlistStamp); e != nil {
+		t.Fatal(e)
+	}
+	if d := time.Since(time.Unix(collStamp, 0)); d < 0 || d > time.Hour {
+		t.Fatalf("collection stamp %d is not unix seconds", collStamp)
+	}
+	if d := time.Since(time.Unix(0, playlistStamp)); d < 0 || d > time.Hour {
+		t.Fatalf("playlist stamp %d is not unix nanoseconds", playlistStamp)
 	}
 	var count int
 	var offset int64

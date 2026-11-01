@@ -138,9 +138,16 @@ func (h *Handler) handleListCollections(w http.ResponseWriter, r *http.Request) 
 		}
 		return false
 	})
-	out := make([]collectionView, 0, len(specs))
+	// Each collection is encoded on its own, so one that cannot be encoded
+	// is left out with a logged warning instead of failing the whole list.
+	out := make([]json.RawMessage, 0, len(specs))
 	for _, s := range specs {
-		out = append(out, viewOf(s))
+		b, err := json.Marshal(viewOf(s))
+		if err != nil {
+			h.log.Warn("admin: collection left out of the list; it could not be encoded", "id", s.ID, "name", s.Name, "err", err)
+			continue
+		}
+		out = append(out, b)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"collections": out})
 }
