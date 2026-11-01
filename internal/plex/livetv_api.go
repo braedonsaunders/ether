@@ -170,7 +170,9 @@ func (s *Server) registerLiveTVRoutes(r chi.Router) {
 			writeHTTPError(w, 404)
 			return
 		}
-		s.d.LiveTV.ServeRelaySegment(w, r, chi.URLParam(r, "session"), n, FromContext(r.Context()).User)
+		cw := s.newCountWriter(w, r)
+		s.d.LiveTV.ServeRelaySegment(cw, r, chi.URLParam(r, "session"), n, FromContext(r.Context()).User)
+		cw.finish()
 	})
 
 	get("/livetv/sessions/{session}/{consumer}/resource/{resource}", func(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +185,9 @@ func (s *Server) registerLiveTVRoutes(r chi.Router) {
 			writeHTTPError(w, 404)
 			return
 		}
-		s.d.LiveTV.ServeSegment(w, r, chi.URLParam(r, "session"), start, n, FromContext(r.Context()).User)
+		cw := s.newCountWriter(w, r)
+		s.d.LiveTV.ServeSegment(cw, r, chi.URLParam(r, "session"), start, n, FromContext(r.Context()).User)
+		cw.finish()
 	})
 }
 func (s *Server) liveDevices(r *http.Request) ([]liveDevice, error) {

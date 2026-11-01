@@ -29,21 +29,35 @@ var resourceCaps = map[int]int{
 
 var resourceOrder = []int{SpanSec, SpanHour, SpanDay, SpanWeek, SpanMonth, SpanYear}
 
-// Sample is one host/process observation at a bucket start.
+// Sample is one host/process observation at a bucket start. n is the number
+// of observations folded into the averages and is not on the wire.
 type Sample struct {
 	At         time.Time
 	HostCPU    float64
 	ProcessCPU float64
 	HostMem    float64
 	ProcessMem float64
+	n          int
 }
 
-// Resources holds a bounded ring of host samples. Cluster answers come from
-// this node only.
+type cpuSnap struct {
+	total, idle, proc uint64
+	wall              time.Time
+}
+
+type cpuState struct {
+	mu   sync.Mutex
+	last cpuSnap
+	have bool
+}
+
+// Resources holds a bounded ring of host samples for this node. Clustered
+// nodes each sample themselves; a client reads the node it connected to.
 type Resources struct {
 	now    func() time.Time
 	loc    *time.Location
 	sample func() (Sample, bool)
+	cpu    cpuState
 
 	mu    sync.Mutex
 	tiers map[int]*resourceTier
@@ -69,10 +83,12 @@ func NewResources(opts Options) *Resources {
 	if opts.Loc == nil {
 		opts.Loc = time.Local
 	}
-	if opts.Sample == nil {
-		opts.Sample = hostSample
+	r := &Resources{now: opts.Now, loc: opts.Loc, tiers: map[int]*resourceTier{}}
+	if opts.Sample != nil {
+		r.sample = opts.Sample
+	} else {
+		r.sample = r.hostSample
 	}
-	r := &Resources{now: opts.Now, loc: opts.Loc, sample: opts.Sample, tiers: map[int]*resourceTier{}}
 	for _, span := range resourceOrder {
 		r.tiers[span] = &resourceTier{span: span}
 	}
@@ -98,14 +114,19 @@ func (r *Resources) Run(ctx context.Context) {
 	}
 }
 
-// Add records a sample into the per-second tier and rolls older points up.
+// Add records a sample into every kept timespan using a weighted average.
 func (r *Resources) Add(s Sample) {
 	if s.At.IsZero() {
 		s.At = r.now()
 	}
+	if s.n <= 0 {
+		s.n = 1
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.addLocked(SpanSec, s)
+	for _, span := range resourceOrder {
+		r.addLocked(span, s)
+	}
 }
 
 func (r *Resources) addLocked(span int, s Sample) {
@@ -116,36 +137,49 @@ func (r *Resources) addLocked(span int, s Sample) {
 	}
 	if n := len(tier.points); n > 0 && tier.points[n-1].At.Equal(s.At) {
 		tier.points[n-1] = mergeResource(tier.points[n-1], s)
+	} else {
+		tier.points = append(tier.points, s)
+	}
+	r.dropOldLocked(span)
+}
+
+func (r *Resources) dropOldLocked(span int) {
+	tier := r.tiers[span]
+	if span == SpanSec {
+		cutoff := r.now().Add(-time.Hour)
+		i := 0
+		for i < len(tier.points) && tier.points[i].At.Before(cutoff) {
+			i++
+		}
+		if i > 0 {
+			tier.points = tier.points[i:]
+		}
 		return
 	}
-	tier.points = append(tier.points, s)
 	capN := resourceCaps[span]
-	for len(tier.points) > capN {
-		old := tier.points[0]
-		tier.points = tier.points[1:]
-		if next, ok := nextResourceSpan(span); ok {
-			r.addLocked(next, old)
-		}
+	if len(tier.points) > capN {
+		tier.points = tier.points[len(tier.points)-capN:]
 	}
 }
 
 func mergeResource(a, b Sample) Sample {
+	na, nb := a.n, b.n
+	if na <= 0 {
+		na = 1
+	}
+	if nb <= 0 {
+		nb = 1
+	}
+	n := na + nb
+	fn, fa, fb := float64(n), float64(na), float64(nb)
 	return Sample{
 		At:         a.At,
-		HostCPU:    (a.HostCPU + b.HostCPU) / 2,
-		ProcessCPU: (a.ProcessCPU + b.ProcessCPU) / 2,
-		HostMem:    (a.HostMem + b.HostMem) / 2,
-		ProcessMem: (a.ProcessMem + b.ProcessMem) / 2,
+		HostCPU:    (a.HostCPU*fa + b.HostCPU*fb) / fn,
+		ProcessCPU: (a.ProcessCPU*fa + b.ProcessCPU*fb) / fn,
+		HostMem:    (a.HostMem*fa + b.HostMem*fb) / fn,
+		ProcessMem: (a.ProcessMem*fa + b.ProcessMem*fb) / fn,
+		n:          n,
 	}
-}
-
-func nextResourceSpan(span int) (int, bool) {
-	for i, s := range resourceOrder {
-		if s == span && i+1 < len(resourceOrder) {
-			return resourceOrder[i+1], true
-		}
-	}
-	return 0, false
 }
 
 // Query returns samples for one kept timespan, oldest first. Unknown spans
@@ -204,4 +238,14 @@ func BucketStart(t time.Time, span int, loc *time.Location) time.Time {
 	default:
 		return t.Truncate(time.Second)
 	}
+}
+
+func clampPct(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
 }

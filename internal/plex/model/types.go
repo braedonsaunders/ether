@@ -649,7 +649,7 @@ type StatisticsBandwidth struct {
 	DeviceID  int64 `plex:"deviceID"`
 	Timespan  int   `plex:"timespan"`
 	At        int64 `plex:"at"`
-	Lan       int   `plex:"lan"`
+	Lan       bool  `plex:"lan"`
 	Bytes     int64 `plex:"bytes"`
 }
 
@@ -671,6 +671,7 @@ type StatisticsMedia struct {
 	At           int64 `plex:"at"`
 	MetadataType int   `plex:"metadataType"`
 	Count        int64 `plex:"count"`
+	Duration     int64 `plex:"duration"`
 }
 
 type Activity struct {

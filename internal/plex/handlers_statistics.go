@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -18,7 +19,7 @@ var (
 	resourceSpans  = []int{hoststat.SpanSec}
 
 	bandwidthSort = map[string]bool{"at": true, "accountID": true, "deviceID": true, "timespan": true, "lan": true, "bytes": true}
-	mediaSort     = map[string]bool{"at": true, "accountID": true, "deviceID": true, "timespan": true, "count": true}
+	mediaSort     = map[string]bool{"at": true, "accountID": true, "deviceID": true, "timespan": true, "count": true, "duration": true}
 	resourceSort  = map[string]bool{"at": true, "timespan": true, "hostCpuUtilization": true, "processCpuUtilization": true, "hostMemoryUtilization": true, "processMemoryUtilization": true}
 )
 
@@ -49,6 +50,8 @@ func modelDevice(d stats.Device) model.Device {
 	return model.Device{ID: d.ID, Name: d.Name, Platform: d.Platform, ClientIdentifier: d.ClientIdentifier, CreatedAt: d.CreatedAt}
 }
 
+// handleStatisticsBandwidth answers this node's bandwidth series. There is
+// no cluster pin; the client reads the node it connected to.
 func (s *Server) handleStatisticsBandwidth(w http.ResponseWriter, r *http.Request) {
 	q, ok := s.parseStatQuery(w, r, bandwidthSpans, bandwidthSort)
 	if !ok {
@@ -58,7 +61,7 @@ func (s *Server) handleStatisticsBandwidth(w http.ResponseWriter, r *http.Reques
 	mc := statisticsContainer(page.TotalSize, len(page.Rows)+len(page.Devices)+len(page.Accounts), q.Offset)
 	for _, row := range page.Rows {
 		mc.StatisticsBandwidth = append(mc.StatisticsBandwidth, model.StatisticsBandwidth{
-			AccountID: row.AccountID, DeviceID: row.DeviceID, Timespan: row.Timespan, At: row.At, Lan: row.Lan, Bytes: row.Bytes,
+			AccountID: row.AccountID, DeviceID: row.DeviceID, Timespan: row.Timespan, At: row.At, Lan: row.Lan == 1, Bytes: row.Bytes,
 		})
 	}
 	appendLookups(mc, page)
@@ -74,7 +77,7 @@ func (s *Server) handleStatisticsMedia(w http.ResponseWriter, r *http.Request) {
 	mc := statisticsContainer(page.TotalSize, len(page.Media)+len(page.Devices)+len(page.Accounts), q.Offset)
 	for _, row := range page.Media {
 		mc.StatisticsMedia = append(mc.StatisticsMedia, model.StatisticsMedia{
-			AccountID: row.AccountID, DeviceID: row.DeviceID, Timespan: row.Timespan, At: row.At, MetadataType: row.MetadataType, Count: row.Count,
+			AccountID: row.AccountID, DeviceID: row.DeviceID, Timespan: row.Timespan, At: row.At, MetadataType: row.MetadataType, Count: row.Count, Duration: row.Duration,
 		})
 	}
 	appendLookups(mc, page)
@@ -133,7 +136,7 @@ func (s *Server) parseStatQuery(w http.ResponseWriter, r *http.Request, kept []i
 	var q stats.Query
 	values := r.URL.Query()
 	if raw, present := firstQuery(values, "timespan"); present {
-		n, ok := parseWhole(raw)
+		n, ok := parseWhole32(raw)
 		if !ok {
 			writeHTTPError(w, http.StatusBadRequest)
 			return q, false
@@ -210,7 +213,7 @@ func (s *Server) parseStatQuery(w http.ResponseWriter, r *http.Request, kept []i
 		limitRaw, hasLimit = firstQuery(values, "count")
 	}
 	if hasLimit {
-		n, ok := parseWhole(limitRaw)
+		n, ok := parseWhole32(limitRaw)
 		if !ok {
 			writeHTTPError(w, http.StatusBadRequest)
 			return q, false
@@ -227,13 +230,13 @@ func (s *Server) parseStatQuery(w http.ResponseWriter, r *http.Request, kept []i
 	} else if pr := FromContext(r.Context()); pr.HasPage {
 		q.Offset = pr.Start
 		if !hasLimit && pr.Size >= 0 {
-			q.Limit = pr.Size
+			q.Limit, q.HasLimit = pr.Size, true
 		}
 	}
 	if raw, present := firstQuery(values, "sort"); present {
 		field, desc, ok := parseSort(raw)
 		if !ok || !keys[field] {
-			writeHTTPError(w, http.StatusInternalServerError)
+			writeHTTPError(w, http.StatusBadRequest)
 			return q, false
 		}
 		q.Sort, q.Desc = field, desc
@@ -330,13 +333,52 @@ func cmpFloat(a, b float64) int {
 
 type countWriter struct {
 	http.ResponseWriter
-	n int64
+	now   func() time.Time
+	flush func(int64)
+	n     int64
+	last  int64
+	t0    time.Time
+}
+
+func (s *Server) newCountWriter(w http.ResponseWriter, r *http.Request) *countWriter {
+	now := s.d.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &countWriter{ResponseWriter: w, now: now, flush: func(n int64) { s.noteStreamBytes(r, n) }}
 }
 
 func (w *countWriter) Write(p []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(p)
 	w.n += int64(n)
+	if w.flush == nil {
+		return n, err
+	}
+	t := w.now()
+	if w.t0.IsZero() {
+		w.t0 = t
+		return n, err
+	}
+	if t.Sub(w.t0) >= time.Second {
+		w.emit(t)
+	}
 	return n, err
+}
+
+func (w *countWriter) emit(t time.Time) {
+	delta := w.n - w.last
+	if delta > 0 {
+		w.flush(delta)
+		w.last = w.n
+	}
+	w.t0 = t
+}
+
+func (w *countWriter) finish() {
+	if w.flush == nil {
+		return
+	}
+	w.emit(w.now())
 }
 
 func (w *countWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

@@ -1059,9 +1059,9 @@ func (s *Server) handleTranscodeSession(w http.ResponseWriter, r *http.Request) 
 					writeHTTPError(w, http.StatusNotFound)
 					return
 				}
-				cw := &countWriter{ResponseWriter: w}
+				cw := s.newCountWriter(w, r)
 				ls.ServeRungSegment(cw, r, rungID, n)
-				s.noteStreamBytes(r, cw.n)
+				cw.finish()
 				return
 			}
 		}
@@ -1075,9 +1075,9 @@ func (s *Server) handleTranscodeSession(w http.ResponseWriter, r *http.Request) 
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	cw := &countWriter{ResponseWriter: w}
+	cw := s.newCountWriter(w, r)
 	hs.ServeSegment(cw, r, n)
-	s.noteStreamBytes(r, cw.n)
+	cw.finish()
 }
 
 // segmentNumber extracts the segment index from names like "00012.ts",
@@ -1323,9 +1323,9 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(chi.URLParam(r, "file"), "\"", "")+"\"")
 	}
 	unlockOwner()
-	cw := &countWriter{ResponseWriter: w}
+	cw := s.newCountWriter(w, r)
 	s.d.Playback.ServeRange(cw, r, ps.ID)
-	s.noteStreamBytes(r, cw.n)
+	cw.finish()
 }
 
 // partSelectsTitle reports whether bindingKey is the title this part select

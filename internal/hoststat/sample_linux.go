@@ -6,18 +6,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 )
 
-type cpuSnap struct {
-	total, idle, proc uint64
-}
-
-var cpuMu sync.Mutex
-var lastCPU cpuSnap
-var haveCPU bool
-
-func hostSample() (Sample, bool) {
+func (r *Resources) hostSample() (Sample, bool) {
 	hostTotal, hostIdle, ok := readHostCPU("/proc/stat")
 	if !ok {
 		return Sample{}, false
@@ -27,30 +18,18 @@ func hostSample() (Sample, bool) {
 		return Sample{}, false
 	}
 	hostMem, procMem := readMem("/proc/meminfo", "/proc/self/status")
-	cpuMu.Lock()
-	prev, ready := lastCPU, haveCPU
-	lastCPU = cpuSnap{total: hostTotal, idle: hostIdle, proc: proc}
-	haveCPU = true
-	cpuMu.Unlock()
+	r.cpu.mu.Lock()
+	prev, ready := r.cpu.last, r.cpu.have
+	r.cpu.last = cpuSnap{total: hostTotal, idle: hostIdle, proc: proc}
+	r.cpu.have = true
+	r.cpu.mu.Unlock()
 	if !ready || hostTotal <= prev.total {
 		return Sample{}, false
 	}
 	dt := float64(hostTotal - prev.total)
-	hostCPU := (1 - float64(hostIdle-prev.idle)/dt) * 100
-	if hostCPU < 0 {
-		hostCPU = 0
-	}
-	if hostCPU > 100 {
-		hostCPU = 100
-	}
+	hostCPU := clampPct((1 - float64(hostIdle-prev.idle)/dt) * 100)
 	// USER_HZ is 100 on Linux; process ticks over the same host total.
-	procCPU := float64(proc-prev.proc) / dt * 100
-	if procCPU < 0 {
-		procCPU = 0
-	}
-	if procCPU > 100 {
-		procCPU = 100
-	}
+	procCPU := clampPct(float64(proc-prev.proc) / dt * 100)
 	return Sample{HostCPU: hostCPU, ProcessCPU: procCPU, HostMem: hostMem, ProcessMem: procMem}, true
 }
 
@@ -104,10 +83,7 @@ func readMem(meminfo, status string) (host, proc float64) {
 	if !ok || total == 0 {
 		return 0, 0
 	}
-	host = (1 - float64(avail)/float64(total)) * 100
-	if host < 0 {
-		host = 0
-	}
+	host = clampPct((1 - float64(avail)/float64(total)) * 100)
 	if rss, ok := statusRSS(status); ok {
 		proc = float64(rss) / float64(total) * 100
 	}

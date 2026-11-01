@@ -52,9 +52,9 @@ func TestDashboardBandwidthBuckets(t *testing.T) {
 func TestDashboardMediaRollups(t *testing.T) {
 	now := time.Date(2026, 10, 31, 15, 4, 5, 0, time.UTC)
 	d := NewDashboard(DashboardOptions{Now: func() time.Time { return now }, Loc: time.UTC})
-	d.RecordPlay(1, "owner", "web", 1)
-	d.RecordPlay(1, "owner", "web", 1)
-	d.RecordPlay(1, "owner", "web", 4)
+	d.RecordPlay(1, "owner", "web", 1, 1000)
+	d.RecordPlay(1, "owner", "web", 1, 1000)
+	d.RecordPlay(1, "owner", "web", 4, 2000)
 	got := d.Media(Query{Timespans: []int{hoststat.SpanHour, hoststat.SpanDay}})
 	if got.TotalSize != 4 { // two types × two spans
 		t.Fatalf("media: %+v", got)
@@ -91,5 +91,18 @@ func TestDashboardAnonymousDevice(t *testing.T) {
 	}
 	if _, ok := d.Device(99); ok {
 		t.Fatal("unknown device")
+	}
+}
+
+func TestDashboardSecondsAreWallHour(t *testing.T) {
+	start := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	clock := start
+	d := NewDashboard(DashboardOptions{Now: func() time.Time { return clock }, Loc: time.UTC})
+	d.RecordBytes(1, "owner", "web", "Chrome", "Chrome", false, 10)
+	clock = start.Add(2 * time.Hour)
+	d.RecordBytes(1, "owner", "web", "Chrome", "Chrome", false, 20)
+	sec := d.Bandwidth(Query{Timespans: []int{hoststat.SpanSec}})
+	if sec.TotalSize != 1 || sec.Rows[0].Bytes != 20 {
+		t.Fatalf("old second dropped: %+v", sec)
 	}
 }

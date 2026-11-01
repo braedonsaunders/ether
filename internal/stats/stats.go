@@ -204,13 +204,13 @@ func (s *Service) ObserveState(ev state.Event) {
 	if err != nil {
 		s.opts.Logger.Warn("record timeline stats", "err", err)
 	}
-	if ev.Completed && s.dash != nil && s.opts.MetadataType != nil {
+	if ev.Kind == state.EventCompleted && s.dash != nil && s.opts.MetadataType != nil {
 		if typ := s.opts.MetadataType(ev.Key); typ > 0 {
 			name := ""
 			if s.opts.AccountName != nil {
 				name = s.opts.AccountName(ev.UserID)
 			}
-			s.dash.RecordPlay(ev.UserID, name, ev.Origin.ClientID, typ)
+			s.dash.RecordPlay(ev.UserID, name, ev.Origin.ClientID, typ, ev.Duration.Milliseconds())
 		}
 	}
 }

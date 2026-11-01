@@ -182,9 +182,9 @@ func (s *Server) handleDASHSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ds, rep, ok := s.dashSession(w, r); ok {
-		cw := &countWriter{ResponseWriter: w}
+		cw := s.newCountWriter(w, r)
 		ds.ServeMedia(cw, r, rep, n)
-		s.noteStreamBytes(r, cw.n)
+		cw.finish()
 	}
 }
 

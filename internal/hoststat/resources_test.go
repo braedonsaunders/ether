@@ -29,22 +29,38 @@ func TestBucketStart(t *testing.T) {
 }
 
 func TestResourcesRollsSecondsIntoHours(t *testing.T) {
-	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
-	r := NewResources(Options{Now: func() time.Time { return now }, Loc: time.UTC})
+	start := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	clock := start
+	r := NewResources(Options{Now: func() time.Time { return clock }, Loc: time.UTC})
 	for i := 0; i < 3602; i++ {
-		r.Add(Sample{At: now.Add(time.Duration(i) * time.Second), HostCPU: 10})
+		clock = start.Add(time.Duration(i) * time.Second)
+		r.Add(Sample{At: clock, HostCPU: 10})
 	}
 	secs := r.Query(SpanSec, 0, 0, 0, false, false, false)
-	if len(secs) != 3600 {
+	if len(secs) < 3600 || len(secs) > 3601 {
 		t.Fatalf("seconds kept %d", len(secs))
 	}
 	hours := r.Query(SpanHour, 0, 0, 0, false, false, false)
 	if len(hours) == 0 {
 		t.Fatal("expected rolled-up hour rows")
 	}
+	if hours[0].HostCPU != 10 {
+		t.Fatalf("hour average %v", hours[0].HostCPU)
+	}
 	// A timespan the sampler does not keep stays empty.
 	if got := r.Query(5, 0, 0, 0, false, false, false); len(got) != 0 {
 		t.Fatalf("span 5: %d", len(got))
+	}
+}
+
+func TestResourcesAverages(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	r := NewResources(Options{Now: func() time.Time { return now }, Loc: time.UTC})
+	r.Add(Sample{At: now, HostCPU: 10})
+	r.Add(Sample{At: now.Add(time.Second), HostCPU: 30})
+	hours := r.Query(SpanHour, 0, 0, 0, false, false, false)
+	if len(hours) != 1 || hours[0].HostCPU != 20 {
+		t.Fatalf("average: %+v", hours)
 	}
 }
 

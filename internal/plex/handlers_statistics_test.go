@@ -2,6 +2,7 @@ package plex
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -9,13 +10,14 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/hoststat"
+	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/stats"
 )
 
 func TestStatisticsOwnerOnly(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	for _, path := range []string{"/statistics/bandwidth?timespan=6", "/statistics/resources?timespan=6", "/statistics/media?timespan=4"} {
+	for _, path := range []string{"/statistics/bandwidth?timespan=6", "/statistics/resources?timespan=6", "/statistics/media?timespan=4", "/devices", "/devices/1"} {
 		rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": friendToken})
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s friend: %d", path, rec.Code)
@@ -61,8 +63,12 @@ func TestStatisticsBandwidthShapeAndFilters(t *testing.T) {
 
 	rec := f.get(t, "/statistics/bandwidth?timespan=6")
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, `StatisticsBandwidth`) || !strings.Contains(body, `bytes="4096"`) {
+	if rec.Code != http.StatusOK || !strings.Contains(body, `StatisticsBandwidth`) || !strings.Contains(body, `bytes="4096"`) || !strings.Contains(body, `lan="1"`) {
 		t.Fatalf("shape: %d %s", rec.Code, body)
+	}
+	js, err := model.Marshal(&model.MediaContainer{StatisticsBandwidth: []model.StatisticsBandwidth{{Lan: true, Bytes: 1}}}, model.JSON)
+	if err != nil || !strings.Contains(string(js), `"lan":true`) {
+		t.Fatalf("json lan bool: %s %v", js, err)
 	}
 	if !strings.Contains(body, `name="Chrome"`) || !strings.Contains(body, `name="owner"`) {
 		t.Fatalf("lookup: %s", body)
@@ -108,7 +114,7 @@ func TestStatisticsBandwidthShapeAndFilters(t *testing.T) {
 		t.Fatalf("limit=-1: %d %s", rec.Code, rec.Body.String())
 	}
 	rec = f.get(t, "/statistics/bandwidth?timespan=6&sort=nope")
-	if rec.Code != http.StatusInternalServerError {
+	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown sort: %d", rec.Code)
 	}
 
@@ -148,7 +154,7 @@ func TestStatisticsMediaAndDevices(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.srv.d.Dashboard = stats.NewDashboard(stats.DashboardOptions{Now: func() time.Time { return fixedNow }, Loc: time.UTC})
-	f.srv.d.Dashboard.RecordPlay(1, "owner", "web", 1)
+	f.srv.d.Dashboard.RecordPlay(1, "owner", "web", 1, 1000)
 	rec := f.get(t, "/statistics/media?timespan=4")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `metadataType="1"`) || !strings.Contains(rec.Body.String(), `count="1"`) {
 		t.Fatalf("media: %d %s", rec.Code, rec.Body.String())
@@ -162,8 +168,12 @@ func TestStatisticsMediaAndDevices(t *testing.T) {
 		t.Fatalf("devices/abc: %d", rec.Code)
 	}
 	rec = f.get(t, "/statistics/media?timespan=4&sort=metadataType")
-	if rec.Code != http.StatusInternalServerError {
+	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("metadataType sort: %d", rec.Code)
+	}
+	rec = f.get(t, "/statistics/media?timespan=4&sort=duration")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("duration sort: %d", rec.Code)
 	}
 	rec = f.get(t, "/statistics/media?timespan=4&accountID=99")
 	if !strings.Contains(rec.Body.String(), `size="0"`) || strings.Contains(rec.Body.String(), `Device`) {
@@ -172,6 +182,33 @@ func TestStatisticsMediaAndDevices(t *testing.T) {
 	rec = f.get(t, "/statistics/media?timespan=4&deviceID=abc")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("media bad device: %d", rec.Code)
+	}
+}
+
+func TestCountWriterFlushesEachSecond(t *testing.T) {
+	clock := time.Unix(1000, 0)
+	var got []int64
+	w := &countWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		now:            func() time.Time { return clock },
+		flush:          func(n int64) { got = append(got, n) },
+	}
+	if _, err := w.Write([]byte("abcd")); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("no flush on first write: %v", got)
+	}
+	clock = clock.Add(time.Second)
+	if _, err := w.Write([]byte("ef")); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != 6 {
+		t.Fatalf("second flush: %v", got)
+	}
+	w.finish()
+	if len(got) != 1 {
+		t.Fatalf("finish after flush: %v", got)
 	}
 }
 

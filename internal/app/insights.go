@@ -13,6 +13,7 @@ import (
 
 func (a *App) buildInsights() {
 	a.notifications = notify.New(a.db, notify.Options{Sealer: a.cfg, Providers: a.fetcher.Stats, CacheUsage: a.cache.Usage, NodeID: a.clusterNodeID(), Logger: a.log.With("component", "notifications")})
+	// Per-node Dashboard rings: a clustered client reads the node it reached.
 	a.hostResources = hoststat.NewResources(hoststat.Options{})
 	a.stats = stats.New(a.db, stats.Options{NodeID: a.clusterNodeID(), Availability: a.dbAvail, Playback: a.playback, SessionExists: func(id string) bool { _, ok := (ownerPlayback{Playback: a.playback, app: a}).Session(id); return ok }, Providers: a.fetcher.Stats, Indexers: a.indexers.Remaining, Logger: a.log.With("component", "stats"), StopSession: a.stopOwnerSession, MetadataType: func(key core.RatingKey) int {
 		if a.catalog == nil {

@@ -156,10 +156,11 @@ type Deps struct {
 	SessionHeartbeat time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
-	// Dashboard is the in-memory Plex Web Dashboard store. Nil is replaced
-	// with a process-local store at NewServer.
+	// Dashboard is this node's in-memory Plex Web Dashboard store. Nil is
+	// replaced with a process-local store at NewServer. Statistics are not
+	// clustered; a client reads the node it connected to.
 	Dashboard *stats.Dashboard
-	// Resources is the in-memory host sample ring for /statistics/resources.
+	// Resources is this node's host sample ring for /statistics/resources.
 	Resources *hoststat.Resources
 	// Support records neutral request and playback facts. Nil leaves playback unchanged.
 	Support *diagnostics.Recorder

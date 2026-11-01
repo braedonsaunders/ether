@@ -710,7 +710,9 @@ func (s *Server) handleDownloadItemMedia(w http.ResponseWriter, r *http.Request)
 	name := downloadFilename(title)
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Disposition", contentDisposition(name))
-	http.ServeContent(w, r, name, readyAt, f)
+	cw := s.newCountWriter(w, r)
+	http.ServeContent(cw, r, name, readyAt, f)
+	cw.finish()
 }
 
 // downloadFilename is the client-visible file name for a download.

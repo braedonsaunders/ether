@@ -8,18 +8,21 @@ import (
 	"github.com/braedonsaunders/ether/internal/hoststat"
 )
 
-// Dashboard is the in-memory Plex Dashboard store: devices, per-second
-// bandwidth, and completed-play counts. Request paths only walk the
-// requested buckets. Cluster answers come from this node.
+// Dashboard is this node's in-memory Plex Dashboard store: devices,
+// per-second bandwidth, and completed-play counts. Clustered nodes each
+// keep their own rings; there is no request pin, so a client reads the
+// node it connected to. Request paths only walk the requested buckets.
 type Dashboard struct {
 	now func() time.Time
 	loc *time.Location
 
+	devMu    sync.Mutex
+	nextDev  int64
+	byClient map[string]*Device
+	byID     map[int64]*Device
+	accounts map[int64]string
+
 	mu        sync.Mutex
-	nextDev   int64
-	byClient  map[string]*Device
-	byID      map[int64]*Device
-	accounts  map[int64]string
 	bandwidth map[int]*bwTier
 	media     map[int]*mediaTier
 }
@@ -51,6 +54,7 @@ type MediaRow struct {
 	At           int64
 	MetadataType int
 	Count        int64
+	Duration     int64
 }
 
 // Query is the parsed Dashboard filter. Timespans empty means "every kept
@@ -87,27 +91,38 @@ type AccountRef struct {
 	Name string
 }
 
-type bwKey struct {
+type bwSeriesKey struct {
 	account, device int64
 	lan             int
-	at              int64
 }
 
-type mediaKey struct {
-	account, device, at int64
-	metadataType        int
+type mediaSeriesKey struct {
+	account, device int64
+	metadataType    int
+}
+
+type mediaVal struct {
+	count, duration int64
+}
+
+type bwBucket struct {
+	at   int64
+	rows map[bwSeriesKey]int64
+}
+
+type mediaBucket struct {
+	at   int64
+	rows map[mediaSeriesKey]mediaVal
 }
 
 type bwTier struct {
-	span int
-	rows map[bwKey]int64
-	ats  []int64
+	span    int
+	buckets []bwBucket
 }
 
 type mediaTier struct {
-	span int
-	rows map[mediaKey]int64
-	ats  []int64
+	span    int
+	buckets []mediaBucket
 }
 
 var dashCaps = map[int]int{
@@ -146,8 +161,8 @@ func NewDashboard(opts DashboardOptions) *Dashboard {
 		media:     map[int]*mediaTier{},
 	}
 	for _, span := range dashOrder {
-		d.bandwidth[span] = &bwTier{span: span, rows: map[bwKey]int64{}}
-		d.media[span] = &mediaTier{span: span, rows: map[mediaKey]int64{}}
+		d.bandwidth[span] = &bwTier{span: span}
+		d.media[span] = &mediaTier{span: span}
 	}
 	anon := &Device{ID: 1, CreatedAt: opts.Now().Unix()}
 	d.nextDev = 2
@@ -158,8 +173,8 @@ func NewDashboard(opts DashboardOptions) *Dashboard {
 
 // SeeDevice records or updates a client. An empty client identifier is device 1.
 func (d *Dashboard) SeeDevice(clientID, name, platform string) Device {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.devMu.Lock()
+	defer d.devMu.Unlock()
 	return d.seeLocked(clientID, name, platform)
 }
 
@@ -185,8 +200,8 @@ func (d *Dashboard) seeLocked(clientID, name, platform string) Device {
 
 // Devices lists every device this process has seen, id order.
 func (d *Dashboard) Devices() []Device {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.devMu.Lock()
+	defer d.devMu.Unlock()
 	out := make([]Device, 0, len(d.byID))
 	for _, dev := range d.byID {
 		out = append(out, *dev)
@@ -197,8 +212,8 @@ func (d *Dashboard) Devices() []Device {
 
 // Device returns one row by numeric id.
 func (d *Dashboard) Device(id int64) (Device, bool) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.devMu.Lock()
+	defer d.devMu.Unlock()
 	dev, ok := d.byID[id]
 	if !ok {
 		return Device{}, false
@@ -211,161 +226,173 @@ func (d *Dashboard) RecordBytes(accountID int64, accountName, clientID, deviceNa
 	if n <= 0 {
 		return
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.devMu.Lock()
 	if accountName != "" {
 		d.accounts[accountID] = accountName
 	}
 	dev := d.seeLocked(clientID, deviceName, platform)
+	d.devMu.Unlock()
 	lanN := 0
 	if lan {
 		lanN = 1
 	}
 	now := d.now()
+	key := bwSeriesKey{account: accountID, device: dev.ID, lan: lanN}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	for _, span := range []int{hoststat.SpanSec, hoststat.SpanHour, hoststat.SpanDay, hoststat.SpanWeek, hoststat.SpanMonth, hoststat.SpanYear} {
-		d.addBWLocked(span, bwKey{account: accountID, device: dev.ID, lan: lanN, at: now.Unix()}, n)
+		d.addBWLocked(span, now, key, n)
 	}
 }
 
 // RecordPlay counts one completed play into the media series.
-func (d *Dashboard) RecordPlay(accountID int64, accountName, clientID string, metadataType int) {
+func (d *Dashboard) RecordPlay(accountID int64, accountName, clientID string, metadataType int, durationMs int64) {
 	if metadataType <= 0 {
 		return
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.devMu.Lock()
 	if accountName != "" {
 		d.accounts[accountID] = accountName
 	}
 	dev := d.seeLocked(clientID, "", "")
+	d.devMu.Unlock()
 	now := d.now()
+	key := mediaSeriesKey{account: accountID, device: dev.ID, metadataType: metadataType}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	// Media keeps hour and coarser, not per-second.
 	for _, span := range []int{hoststat.SpanHour, hoststat.SpanDay, hoststat.SpanWeek, hoststat.SpanMonth, hoststat.SpanYear} {
-		d.addMediaLocked(span, mediaKey{account: accountID, device: dev.ID, metadataType: metadataType, at: now.Unix()}, 1)
+		d.addMediaLocked(span, now, key, durationMs)
 	}
 }
 
-func (d *Dashboard) addBWLocked(span int, key bwKey, n int64) {
+func (d *Dashboard) addBWLocked(span int, now time.Time, key bwSeriesKey, n int64) {
 	tier := d.bandwidth[span]
 	if tier == nil {
 		return
 	}
-	key.at = hoststat.BucketStart(time.Unix(key.at, 0).In(d.loc), span, d.loc).Unix()
-	if _, ok := tier.rows[key]; !ok {
-		tier.ats = insertAt(tier.ats, key.at)
+	at := hoststat.BucketStart(now.In(d.loc), span, d.loc).Unix()
+	i := sort.Search(len(tier.buckets), func(i int) bool { return tier.buckets[i].at >= at })
+	if i < len(tier.buckets) && tier.buckets[i].at == at {
+		tier.buckets[i].rows[key] += n
+	} else {
+		b := bwBucket{at: at, rows: map[bwSeriesKey]int64{key: n}}
+		tier.buckets = append(tier.buckets, bwBucket{})
+		copy(tier.buckets[i+1:], tier.buckets[i:])
+		tier.buckets[i] = b
 	}
-	tier.rows[key] += n
 	d.dropOldBWLocked(span)
 }
 
 func (d *Dashboard) dropOldBWLocked(span int) {
 	tier := d.bandwidth[span]
-	capN := dashCaps[span]
-	for len(tier.ats) > capN {
-		old := tier.ats[0]
-		tier.ats = tier.ats[1:]
-		for key := range tier.rows {
-			if key.at == old {
-				delete(tier.rows, key)
-			}
+	if span == hoststat.SpanSec {
+		cutoff := d.now().Add(-time.Hour).Unix()
+		for len(tier.buckets) > 0 && tier.buckets[0].at < cutoff {
+			tier.buckets = tier.buckets[1:]
 		}
+		return
+	}
+	capN := dashCaps[span]
+	if len(tier.buckets) > capN {
+		tier.buckets = tier.buckets[len(tier.buckets)-capN:]
 	}
 }
 
-func (d *Dashboard) addMediaLocked(span int, key mediaKey, n int64) {
+func (d *Dashboard) addMediaLocked(span int, now time.Time, key mediaSeriesKey, durationMs int64) {
 	tier := d.media[span]
 	if tier == nil {
 		return
 	}
-	key.at = hoststat.BucketStart(time.Unix(key.at, 0).In(d.loc), span, d.loc).Unix()
-	if _, ok := tier.rows[key]; !ok {
-		tier.ats = insertAt(tier.ats, key.at)
+	at := hoststat.BucketStart(now.In(d.loc), span, d.loc).Unix()
+	i := sort.Search(len(tier.buckets), func(i int) bool { return tier.buckets[i].at >= at })
+	if i < len(tier.buckets) && tier.buckets[i].at == at {
+		v := tier.buckets[i].rows[key]
+		v.count++
+		if durationMs > 0 {
+			v.duration = durationMs
+		}
+		tier.buckets[i].rows[key] = v
+	} else {
+		b := mediaBucket{at: at, rows: map[mediaSeriesKey]mediaVal{key: {count: 1, duration: durationMs}}}
+		tier.buckets = append(tier.buckets, mediaBucket{})
+		copy(tier.buckets[i+1:], tier.buckets[i:])
+		tier.buckets[i] = b
 	}
-	tier.rows[key] += n
 	d.dropOldMediaLocked(span)
 }
 
 func (d *Dashboard) dropOldMediaLocked(span int) {
 	tier := d.media[span]
 	capN := dashCaps[span]
-	for len(tier.ats) > capN {
-		old := tier.ats[0]
-		tier.ats = tier.ats[1:]
-		for key := range tier.rows {
-			if key.at == old {
-				delete(tier.rows, key)
-			}
-		}
+	if len(tier.buckets) > capN {
+		tier.buckets = tier.buckets[len(tier.buckets)-capN:]
 	}
-}
-
-func insertAt(ats []int64, at int64) []int64 {
-	i := sort.Search(len(ats), func(i int) bool { return ats[i] >= at })
-	if i < len(ats) && ats[i] == at {
-		return ats
-	}
-	ats = append(ats, 0)
-	copy(ats[i+1:], ats[i:])
-	ats[i] = at
-	return ats
 }
 
 // Bandwidth returns the filtered, paged bandwidth series.
 func (d *Dashboard) Bandwidth(q Query) Page {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	var rows []BandwidthRow
 	for _, span := range q.Timespans {
 		tier := d.bandwidth[span]
 		if tier == nil {
 			continue
 		}
-		for key, n := range tier.rows {
-			if !matchSeries(q, key.account, key.device, key.lan, key.at) {
+		for _, b := range tier.buckets {
+			if !matchAt(q, b.at) {
 				continue
 			}
-			rows = append(rows, BandwidthRow{AccountID: key.account, DeviceID: key.device, Timespan: span, At: key.at, Lan: key.lan, Bytes: n})
+			for key, n := range b.rows {
+				if !matchIDs(q, key.account, key.device, key.lan) {
+					continue
+				}
+				rows = append(rows, BandwidthRow{AccountID: key.account, DeviceID: key.device, Timespan: span, At: b.at, Lan: key.lan, Bytes: n})
+			}
 		}
 	}
+	d.mu.Unlock()
 	sortBandwidth(rows, q.Sort, q.Desc)
 	total := len(rows)
 	rows = pageRows(rows, q.Offset, q.Limit, q.HasLimit)
-	return Page{Rows: rows, Devices: d.lookupDevices(rows), Accounts: d.lookupAccounts(rows), TotalSize: total}
+	d.devMu.Lock()
+	page := Page{Rows: rows, Devices: d.lookupDevices(rows), Accounts: d.lookupAccounts(rows), TotalSize: total}
+	d.devMu.Unlock()
+	return page
 }
 
 // Media returns the filtered, paged completed-play series.
 func (d *Dashboard) Media(q Query) Page {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	var rows []MediaRow
 	for _, span := range q.Timespans {
 		tier := d.media[span]
 		if tier == nil {
 			continue
 		}
-		for key, n := range tier.rows {
-			if !matchSeries(q, key.account, key.device, -1, key.at) {
+		for _, b := range tier.buckets {
+			if !matchAt(q, b.at) {
 				continue
 			}
-			rows = append(rows, MediaRow{AccountID: key.account, DeviceID: key.device, Timespan: span, At: key.at, MetadataType: key.metadataType, Count: n})
+			for key, v := range b.rows {
+				if !matchIDs(q, key.account, key.device, -1) {
+					continue
+				}
+				rows = append(rows, MediaRow{AccountID: key.account, DeviceID: key.device, Timespan: span, At: b.at, MetadataType: key.metadataType, Count: v.count, Duration: v.duration})
+			}
 		}
 	}
+	d.mu.Unlock()
 	sortMedia(rows, q.Sort, q.Desc)
 	total := len(rows)
 	rows = pageRows(rows, q.Offset, q.Limit, q.HasLimit)
-	return Page{Media: rows, Devices: d.lookupMediaDevices(rows), Accounts: d.lookupMediaAccounts(rows), TotalSize: total}
+	d.devMu.Lock()
+	page := Page{Media: rows, Devices: d.lookupMediaDevices(rows), Accounts: d.lookupMediaAccounts(rows), TotalSize: total}
+	d.devMu.Unlock()
+	return page
 }
 
-func matchSeries(q Query, account, device int64, lan int, at int64) bool {
-	if q.HasAccount && account != q.AccountID {
-		return false
-	}
-	if q.HasDevice && device != q.DeviceID {
-		return false
-	}
-	if q.HasLan && lan >= 0 && lan != q.Lan {
-		return false
-	}
+func matchAt(q Query, at int64) bool {
 	if q.HasExact && at != q.ExactAt {
 		return false
 	}
@@ -373,6 +400,19 @@ func matchSeries(q Query, account, device int64, lan int, at int64) bool {
 		return false
 	}
 	if q.HasAtMax && at > q.AtMax {
+		return false
+	}
+	return true
+}
+
+func matchIDs(q Query, account, device int64, lan int) bool {
+	if q.HasAccount && account != q.AccountID {
+		return false
+	}
+	if q.HasDevice && device != q.DeviceID {
+		return false
+	}
+	if q.HasLan && lan >= 0 && lan != q.Lan {
 		return false
 	}
 	return true
@@ -497,6 +537,8 @@ func sortMedia(rows []MediaRow, key string, desc bool) {
 			cmp = cmpI64(int64(a.Timespan), int64(b.Timespan))
 		case "count":
 			cmp = cmpI64(a.Count, b.Count)
+		case "duration":
+			cmp = cmpI64(a.Duration, b.Duration)
 		default:
 			cmp = cmpI64(a.At, b.At)
 		}
