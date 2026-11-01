@@ -35,8 +35,14 @@ type searchPreparation struct {
 	seen       map[string]bool
 	ranked     []candidate
 	first      time.Time
+	closed     bool        // set by close; no check starts after it
 	partial    atomic.Bool // set before returning an early Play start
 }
+
+// earlyCheckLimit caps speculative checks per Play. Four run at once; a
+// failed check frees its slot for the next arrived candidate, so a fast
+// indexer's answer is worked through without waiting for slow ones.
+const earlyCheckLimit = 32
 
 func newSearchPreparation(ctx context.Context, s *Service, req core.ResolveRequest, search core.SearchRequest, profile core.QualityProfile, pin string) *searchPreparation {
 	return &searchPreparation{ctx: ctx, svc: s, req: req, search: search, profile: profile,
@@ -103,6 +109,9 @@ func (p *searchPreparation) arrived(batch []core.Release) {
 // Four in flight, twelve total, with the next ranked candidate replacing a
 // failed check immediately. Reposts do not consume every speculative slot.
 func (p *searchPreparation) pumpLocked() {
+	if p.closed {
+		return
+	}
 	active := 0
 	for _, c := range p.byID {
 		select {
@@ -112,7 +121,7 @@ func (p *searchPreparation) pumpLocked() {
 		}
 	}
 	for _, c := range p.ranked {
-		if active >= 4 || len(p.byID) >= 12 {
+		if active >= 4 || len(p.byID) >= earlyCheckLimit {
 			break
 		}
 		if prior := p.byID[c.rel.ID]; prior != nil {
@@ -140,7 +149,22 @@ func (p *searchPreparation) pumpLocked() {
 		}
 		p.byID[c.rel.ID] = check
 		active++
+		go p.refillAfter(check)
 	}
+}
+
+// refillAfter starts the next arrived candidate when check ends without a
+// healthy result. Before, more checks started only when another indexer
+// answered, so a page of failed top candidates waited out the slowest
+// indexer's timeout.
+func (p *searchPreparation) refillAfter(check *candidateCheck) {
+	<-check.done
+	if check.result.healthy && check.result.err == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pumpLocked()
 }
 
 // discoveryWindow lets concurrently dispatched indexers answer. Play then
@@ -284,4 +308,9 @@ func (p *searchPreparation) attach(cs []candidate) {
 		}
 	}
 }
-func (p *searchPreparation) close() { p.checks.close() }
+func (p *searchPreparation) close() {
+	p.mu.Lock()
+	p.closed = true
+	p.mu.Unlock()
+	p.checks.close()
+}

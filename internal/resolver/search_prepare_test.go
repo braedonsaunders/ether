@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -243,4 +244,30 @@ func TestBackgroundSearchCachesCompleteFleet(t *testing.T) {
 			t.Fatalf("background search did not cache the complete fleet: ok=%v n=%d", ok, len(cached))
 		}
 	})
+}
+
+// One fast indexer answers with many releases at once while another never
+// finishes. The top-ranked candidates all fail their check; Play must keep
+// checking further down the arrived list instead of waiting out the slow
+// indexer (lab: 60 s to start a never-played episode).
+func TestFailedEarlyChecksKeepCheckingArrivedCandidates(t *testing.T) {
+	var releases []core.Release
+	unhealthy := map[string]bool{}
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("bad%02d", i)
+		releases = append(releases, rel(id, fmt.Sprintf("The.Signal.1999.1080p.BluRay.x264-G%02d", i), 6000+int64(i)))
+		unhealthy["nzb:"+id] = true
+	}
+	releases = append(releases, rel("good", "The.Signal.1999.720p.WEB-DL.x264-GOOD", 2000))
+	idx := &slowTailIndexer{fakeIndexer: fakeIndexer{releases: releases}}
+	cfg := testCfg()
+	cfg.Resolver.MaxCandidates = 40
+	s := New(idx, fakeHealth{unhealthy: unhealthy}, nil, cfg, Options{})
+	t.Cleanup(func() { s.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result, err := s.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	if err != nil || result.Release.ID != "good" {
+		t.Fatalf("want the first healthy arrived candidate without waiting for the slow indexer: %v %v", result, err)
+	}
 }
