@@ -77,6 +77,27 @@ per half.
 
 These notes do not allowlist a response. Exact reviewed pairs are still required.
 
+v0.2.58 (`22c160aba`) against `7b8b053dd`, both worlds. Pairs already approved
+on an earlier baseline stayed approved: 417 release-date pairs (`77af603e`),
+129 watched-state pairs (`23d9fffb2`), and 100 DVR `refreshedAt` pairs
+(`2ef11dc0c`). The remaining 3081 in each world are the documented set, now
+exact pairs in `approved_v0258.json` and `approved_v0258_token.json`:
+
+- addedAt only: 1631 ordinary, 1256 active-ranker (`77af603e`).
+- Subtitle stream identity, which also carries addedAt: 1250 and 1625
+  (`14a6b0890+77af603e`).
+- Sidecar location on `tracks:probe` and `tracks:selected`: 50 and 50
+  (`3654964cc+77af603e`).
+- `/accounts` subtitleMode: 10 and 10 (`feaa49f10`).
+- Live TV, IPTV, and DASH grant name: 60 and 60 (`9b8fa7546`). The grant
+  value is a fresh secret, so the candidate hash uses the harness placeholder.
+- Child and teen search and postplay, which also carry addedAt: 80 and 80
+  (`c82a7830+77af603e`).
+- Content-rating label text, Play Version labels, timeout playback (#198),
+  and pre-1970 date strings: 0.
+
+This note does not allowlist a route.
+
 Intentional track selection: a viewer with no audio list no longer follows the
 file's default flag ahead of a language they can use. The order is the
 viewer's trackprefs audio languages (their row, otherwise user 0, which the

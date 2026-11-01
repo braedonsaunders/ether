@@ -73,6 +73,18 @@ var approvedWatch []byte
 //go:embed approved_livetv.json
 var approvedLiveTV []byte
 
+// Exact v0.2.58 versus current prism pairs for the documented release-date,
+// subtitle, sidecar, account mode, and restricted-search changes.
+//
+//go:embed approved_v0258.json
+var approvedV0258 []byte
+
+// The same run's playlist and DASH pairs. The candidate hash is of the body
+// after the per-response stream grant is replaced with the harness placeholder.
+//
+//go:embed approved_v0258_token.json
+var approvedV0258Token []byte
+
 type responseSignature struct {
 	Status      int    `json:"status"`
 	ContentType string `json:"content_type"`
@@ -94,19 +106,27 @@ func signature(r protocol.Response) responseSignature {
 }
 func approved(a, b capture) (string, error) {
 	before, after := signature(a.response), signature(b.response)
+	norm := b.response
+	norm.Body = normalizeResponse(b.response.Body)
+	afterNorm := signature(norm)
 	for _, registry := range []struct {
-		data       []byte
-		restricted bool
-	}{{approvedSearch, true}, {approvedScopes, false}, {approvedResume, false}, {approvedDateAdded, false}, {approvedComposite, false}, {approvedActiveDate, false}, {approvedActiveResume, false}, {approvedActiveSubtitleDate, false}, {approvedWatch, false}, {approvedLiveTV, false}} {
+		data               []byte
+		restricted         bool
+		normalizeCandidate bool
+	}{{approvedSearch, true, false}, {approvedScopes, false, false}, {approvedResume, false, false}, {approvedDateAdded, false, false}, {approvedComposite, false, false}, {approvedActiveDate, false, false}, {approvedActiveResume, false, false}, {approvedActiveSubtitleDate, false, false}, {approvedWatch, false, false}, {approvedLiveTV, false, false}, {approvedV0258, false, false}, {approvedV0258Token, false, true}} {
 		if registry.restricted && a.viewer != "teen" && a.viewer != "child" {
 			continue
+		}
+		got := after
+		if registry.normalizeCandidate {
+			got = afterNorm
 		}
 		var entries []approvedDifference
 		if err := json.Unmarshal(registry.data, &entries); err != nil {
 			return "", fmt.Errorf("invalid approved differences: %w", err)
 		}
 		for _, entry := range entries {
-			if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == before && entry.Candidate == after {
+			if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == before && entry.Candidate == got {
 				if entry.Commit == "" && registry.restricted {
 					return "c82a7830", nil
 				}
