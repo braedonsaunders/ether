@@ -28,6 +28,8 @@ type providerItem struct {
 	Art                   string  `json:"art"`
 	Rating                float64 `json:"rating"`
 	AudienceRating        float64 `json:"audienceRating"`
+	RatingImage           string  `json:"ratingImage"`
+	AudienceRatingImage   string  `json:"audienceRatingImage"`
 	Index                 *int    `json:"index"`
 	ParentIndex           *int    `json:"parentIndex"`
 	Genre                 []struct {
@@ -78,73 +80,22 @@ func (s *Service) refresh(ctx context.Context, k core.RatingKey) error {
 	if err := s.store(ctx, k, guid, found, now); err != nil {
 		return err
 	}
-	if kind == "show" || kind == "season" {
-		_ = s.refreshChildren(ctx, k, hex, kind)
-	}
 	return nil
-}
-
-func (s *Service) refreshChildren(ctx context.Context, parent core.RatingKey, hex, kind string) error {
-	showID := parent.TMDB()
-	if showID <= 0 {
-		return nil
-	}
-	start := 0
-	for {
-		items, total, err := s.getItems(ctx, "/library/metadata/"+url.PathEscape(hex)+"/children", nil, start)
-		if err != nil {
-			return err
-		}
-		if len(items) == 0 {
-			return nil
-		}
-		now := s.o.Now()
-		for _, item := range items {
-			child, childKind := keyForChild(showID, parent, kind, item)
-			if child == 0 {
-				continue
-			}
-			_ = s.store(ctx, child, item.GUID, overlayFrom(item, s.o.BaseURL), now)
-			if childKind == "season" {
-				if seasonHex, _ := guidHex(item.GUID); seasonHex != "" {
-					_ = s.refreshChildren(ctx, child, seasonHex, "season")
-				}
-			}
-		}
-		start += len(items)
-		if total > 0 && start >= total {
-			return nil
-		}
-		if total == 0 && len(items) < pageSize {
-			return nil
-		}
-	}
-}
-
-func keyForChild(showID int64, parent core.RatingKey, parentKind string, item providerItem) (core.RatingKey, string) {
-	if item.Index == nil {
-		return 0, ""
-	}
-	switch {
-	case parentKind == "show" && item.Type == "season" && *item.Index >= 0 && *item.Index < 9000:
-		return core.SeasonKey(showID, *item.Index), "season"
-	case parentKind == "season" && item.Type == "episode" && *item.Index > 0:
-		return core.EpisodeKey(showID, parent.Season(), *item.Index), "episode"
-	}
-	return 0, ""
 }
 
 func overlayFrom(item providerItem, base string) Overlay {
 	o := Overlay{
-		ContentRating:  strings.TrimSpace(item.ContentRating),
-		Year:           item.Year,
-		Summary:        strings.TrimSpace(item.Summary),
-		Tagline:        strings.TrimSpace(item.Tagline),
-		Studio:         strings.TrimSpace(item.Studio),
-		ThumbURL:       absURL(base, item.Thumb),
-		ArtURL:         absURL(base, item.Art),
-		Rating:         item.Rating,
-		AudienceRating: item.AudienceRating,
+		ContentRating:       strings.TrimSpace(item.ContentRating),
+		Year:                item.Year,
+		Summary:             strings.TrimSpace(item.Summary),
+		Tagline:             strings.TrimSpace(item.Tagline),
+		Studio:              strings.TrimSpace(item.Studio),
+		ThumbURL:            absURL(base, item.Thumb),
+		ArtURL:              absURL(base, item.Art),
+		Rating:              item.Rating,
+		AudienceRating:      item.AudienceRating,
+		RatingImage:         strings.TrimSpace(item.RatingImage),
+		AudienceRatingImage: strings.TrimSpace(item.AudienceRatingImage),
 	}
 	if t, err := time.Parse("2006-01-02", item.OriginallyAvailableAt); err == nil {
 		o.AvailableAt = t
@@ -211,7 +162,7 @@ func (s *Service) getItems(ctx context.Context, path string, q url.Values, start
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", "Ether")
-	req.Header.Set("X-Plex-Client-Identifier", s.clientIdentifier())
+	req.Header.Set("X-Plex-Client-Identifier", s.clientID())
 	req.Header.Set("X-Plex-Container-Start", strconv.Itoa(start))
 	req.Header.Set("X-Plex-Container-Size", strconv.Itoa(pageSize))
 	client := *s.o.HTTP
@@ -275,5 +226,5 @@ func ImageHost(host string) bool {
 	case "metadata-static.plex.tv", "image.plex.tv", "images.plex.tv", "metadata.provider.plex.tv":
 		return true
 	}
-	return strings.HasSuffix(h, ".plex.tv") && (strings.Contains(h, "image") || strings.Contains(h, "metadata"))
+	return false
 }

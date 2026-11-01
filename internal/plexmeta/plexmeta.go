@@ -9,14 +9,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/egress"
-	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
 func init() {
 	store.Register("plexmeta", 1, `CREATE TABLE plexmeta_titles(rating_key INTEGER PRIMARY KEY,guid TEXT NOT NULL,payload TEXT NOT NULL,fetched_at INTEGER NOT NULL);`)
+	store.Register("plexmeta", 2, `ALTER TABLE plexmeta_titles ADD COLUMN rating_level INTEGER NOT NULL DEFAULT 0;`)
 }
 
 const (
@@ -122,13 +123,11 @@ func (s *Service) on() bool {
 	return s != nil && s.o.Enabled != nil && s.o.Enabled()
 }
 
-func (s *Service) clientIdentifier() string {
+func (s *Service) clientID() string {
 	if s.o.ClientIdentifier != nil {
-		if id := strings.TrimSpace(s.o.ClientIdentifier()); id != "" {
-			return id
-		}
+		return strings.TrimSpace(s.o.ClientIdentifier())
 	}
-	return plexguid.ClientIdentifier("", "")
+	return ""
 }
 
 // Schedule queues keys that have a verified plex:// guid. Safe on request paths.
@@ -268,20 +267,11 @@ func (s *Service) CachedMany(ctx context.Context, keys []core.RatingKey) map[cor
 	return out
 }
 
-// StoreForTest writes a cache row. Tests only.
-func (s *Service) StoreForTest(k core.RatingKey, guid string, o Overlay) error {
-	now := time.Now()
-	if s.o.Now != nil {
-		now = s.o.Now()
-	}
-	return s.store(context.Background(), k, guid, o, now)
-}
-
 func (s *Service) store(ctx context.Context, k core.RatingKey, guid string, o Overlay, now time.Time) error {
 	raw, err := json.Marshal(o)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO plexmeta_titles(rating_key,guid,payload,fetched_at) VALUES(?,?,?,?) ON CONFLICT(rating_key) DO UPDATE SET guid=excluded.guid,payload=excluded.payload,fetched_at=excluded.fetched_at`, int64(k), guid, string(raw), now.Unix())
+	_, err = s.db.ExecContext(ctx, `INSERT INTO plexmeta_titles(rating_key,guid,payload,fetched_at,rating_level) VALUES(?,?,?,?,?) ON CONFLICT(rating_key) DO UPDATE SET guid=excluded.guid,payload=excluded.payload,fetched_at=excluded.fetched_at,rating_level=excluded.rating_level`, int64(k), guid, string(raw), now.Unix(), int(contentrating.LevelOf(o.ContentRating)))
 	return err
 }

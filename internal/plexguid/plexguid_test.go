@@ -24,13 +24,13 @@ func TestExactIdentityRequiredAndCached(t *testing.T) {
 				if r.URL.Query().Get("guid") != "tmdb://550" || r.Header.Get("X-Plex-Token") != "fixture" {
 					t.Fatal("request identity")
 				}
-				if r.Header.Get("X-Plex-Client-Identifier") != "ether-metadata" {
+				if r.Header.Get("X-Plex-Client-Identifier") != "install-id" {
 					t.Fatalf("client id %q", r.Header.Get("X-Plex-Client-Identifier"))
 				}
 				w.Write([]byte(`{"MediaContainer":{"Metadata":[{"guid":"plex://movie/5d7768265af944001f1f6976","type":"movie","Guid":` + tc.ids + `}]}}`))
 			}))
 			defer srv.Close()
-			s := New(db, Options{BaseURL: srv.URL, Token: func() string { return "fixture" }})
+			s := New(db, Options{BaseURL: srv.URL, Token: func() string { return "fixture" }, ClientIdentifier: func() string { return "install-id" }})
 			for i := 0; i < 2; i++ {
 				guid, e := s.Resolve(ctx, core.MovieKey(550))
 				if e != nil || guid != tc.want {

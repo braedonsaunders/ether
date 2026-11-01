@@ -12,12 +12,21 @@ type AccessPolicy = experience.AccessPolicy
 
 func (s *Server) visibleTitles(u *core.User, ts []core.Title) []core.Title {
 	out := s.visibility().TitlesAllowed(u, ts)
-	if !s.plexMetaOn() {
+	if !s.needPlexRatingFilter(u) || s.d.PlexMeta == nil {
 		return out
+	}
+	keys := make([]core.RatingKey, 0, len(out))
+	for i := range out {
+		keys = append(keys, out[i].Key)
+	}
+	rows := s.d.PlexMeta.CachedMany(context.Background(), keys)
+	var guids map[core.RatingKey]string
+	if s.d.PlexGUID != nil {
+		guids = s.d.PlexGUID.CachedMany(context.Background(), keys)
 	}
 	kept := out[:0]
 	for i := range out {
-		if s.plexMetaRatingAllowed(u, &out[i]) {
+		if s.plexMetaRatingAllowedCached(u, &out[i], rows, guids) {
 			kept = append(kept, out[i])
 		}
 	}

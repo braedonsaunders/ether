@@ -26,7 +26,6 @@ func (b *breaker) Success() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.failures = 0
-	b.openUntil = time.Time{}
 }
 
 func (b *breaker) Failure(retryAfter time.Duration) {

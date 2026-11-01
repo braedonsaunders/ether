@@ -112,7 +112,7 @@ type Plex struct {
 	ClientIdentifier string `json:"clientIdentifier"` // X-Plex-Client-Identifier Ether uses towards plex.tv
 	OwnerPlexID      int64  `json:"ownerPlexId"`
 	OwnerUsername    string `json:"ownerUsername"`
-	Claimed bool `json:"claimed"`
+	Claimed          bool   `json:"claimed"`
 	// UsePlexMetadata serves cached Plex metadata-provider fields to Plex
 	// apps when a title has a verified plex:// guid. Off by default.
 	// Other frontends and the owner console keep TMDB. Viewer limits use

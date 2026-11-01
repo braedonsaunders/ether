@@ -475,6 +475,7 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 	if u != nil {
 		f.MaxContentRating = u.MaxContentRating
 	}
+	f.SaferPlexRating = s.plexMetaOn()
 	splitVals := func(v string) []string {
 		var out []string
 		for _, p := range strings.Split(v, ",") {
@@ -1246,7 +1247,7 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 		if wantSection > 0 && sec.ID != wantSection || wantType != "" && wantType != sec.Type {
 			continue
 		}
-		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: size}
+		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type, KnownAddedDate: true, SaferPlexRating: s.plexMetaOn()}, Sort: core.SortAdded, Desc: true, Limit: size}
 		if pr.User != nil {
 			q.Filter.MaxContentRating = pr.User.MaxContentRating
 		}

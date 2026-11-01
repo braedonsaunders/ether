@@ -2,6 +2,8 @@ package plex
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -11,11 +13,25 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/store"
 )
+
+func storePlexOverlay(t *testing.T, db *sql.DB, k core.RatingKey, guid string, o plexmeta.Overlay) {
+	t.Helper()
+	raw, err := json.Marshal(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO plexmeta_titles(rating_key,guid,payload,fetched_at,rating_level) VALUES(?,?,?,?,?)`,
+		int64(k), guid, string(raw), time.Now().Unix(), int(contentrating.LevelOf(o.ContentRating)))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
 const plexMetaGUID = "plex://movie/5d7768265af944001f1f6976"
 
@@ -80,11 +96,9 @@ func (p *plexMetaRoundTrip) RoundTrip(*http.Request) (*http.Response, error) {
 
 func TestPlexMetaOffIsByteIdentical(t *testing.T) {
 	rt := &plexMetaRoundTrip{body: `{"MediaContainer":{"Metadata":[]}}`}
-	f, meta := plexMetaFixture(t, false, rt)
+	f, _ := plexMetaFixture(t, false, rt)
 	want := f.getWarm(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
-	if err := meta.StoreForTest(fightClub.Key, plexMetaGUID, plexmeta.Overlay{Summary: "Plex summary", Studio: "Plex Studio"}); err != nil {
-		t.Fatal(err)
-	}
+	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{Summary: "Plex summary", Studio: "Plex Studio"})
 	got := f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
 	if want.Body.String() != got.Body.String() {
 		t.Fatalf("toggle off applied cached Plex fields\nwant %s\ngot %s", want.Body.String(), got.Body.String())
@@ -95,14 +109,12 @@ func TestPlexMetaOffIsByteIdentical(t *testing.T) {
 }
 
 func TestPlexMetaOnServesPlexFieldsOnlyOnPlex(t *testing.T) {
-	f, meta := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
-	if err := meta.StoreForTest(fightClub.Key, plexMetaGUID, plexmeta.Overlay{
+	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
+	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{
 		Summary: "Plex summary", Tagline: "Plex tagline", Studio: "Plex Studio",
 		ContentRating: "NC-17", Year: 2001, AvailableAt: time.Date(2001, 2, 3, 0, 0, 0, 0, time.UTC),
-		AudienceRating: 9.2,
-	}); err != nil {
-		t.Fatal(err)
-	}
+		AudienceRating: 9.2, AudienceRatingImage: "imdb://image.rating",
+	})
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
 	body := rec.Body.String()
 	if !strings.Contains(body, `"summary":"Plex summary"`) || !strings.Contains(body, `"studio":"Plex Studio"`) {
@@ -116,6 +128,15 @@ func TestPlexMetaOnServesPlexFieldsOnlyOnPlex(t *testing.T) {
 	}
 	if strings.Contains(body, `"addedAt":`+strconv.FormatInt(time.Date(2001, 2, 3, 0, 0, 0, 0, time.UTC).Unix(), 10)) {
 		t.Fatal("Plex date changed addedAt")
+	}
+	if !strings.Contains(body, `"audienceRatingImage":"imdb://image.rating"`) {
+		t.Fatalf("Plex rating image missing: %s", body)
+	}
+	if strings.Contains(body, `"audienceRatingImage":"themoviedb://image.rating"`) {
+		t.Fatal("Plex audience rating used TMDB badge")
+	}
+	if !strings.Contains(body, `"tagKey":"tmdb-person-287"`) {
+		t.Fatalf("TMDB person id dropped: %s", body)
 	}
 	catalog := f.catalog.titles[fightClub.Key]
 	if catalog.Summary != fightClub.Summary {
@@ -142,10 +163,8 @@ func TestPlexMetaRequestPathDoesNotWait(t *testing.T) {
 }
 
 func TestPlexMetaSaferRatingHidesTitle(t *testing.T) {
-	f, meta := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
-	if err := meta.StoreForTest(fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R"}); err != nil {
-		t.Fatal(err)
-	}
+	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
+	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R"})
 	f.srv.d.Auth.(*fakeAuth).users["kid"] = core.User{ID: 30, Username: "kid", MaxContentRating: "PG"}
 	pg := f.catalog.titles[fightClub.Key]
 	pg.ContentRating = "PG"
@@ -153,5 +172,27 @@ func TestPlexMetaSaferRatingHidesTitle(t *testing.T) {
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(), "X-Plex-Token", "kid", "Accept", "application/json")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("kid saw Plex-R title: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPlexMetaGUIDMismatchIgnored(t *testing.T) {
+	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
+	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, "plex://movie/000000000000000000000000", plexmeta.Overlay{Summary: "stale remap"})
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
+	if strings.Contains(rec.Body.String(), "stale remap") {
+		t.Fatalf("served remapped overlay: %s", rec.Body.String())
+	}
+}
+
+func TestPlexMetaNoGUIDDoesNotSchedule(t *testing.T) {
+	rt := &plexMetaRoundTrip{body: `{"MediaContainer":{"Metadata":[]}}`}
+	f, meta := plexMetaFixture(t, true, rt)
+	if _, err := f.srv.d.DB.Exec(`DELETE FROM plexguid_mappings`); err != nil {
+		t.Fatal(err)
+	}
+	f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
+	meta.Wait()
+	if rt.calls.Load() != 0 {
+		t.Fatal("scheduled a title with no plex guid")
 	}
 }

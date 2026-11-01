@@ -76,17 +76,20 @@ type Filter struct {
 	ContentRatings        []string        `json:"contentRatings,omitempty"`
 	ExcludeContentRatings []string        `json:"excludeContentRatings,omitempty"`
 	MaxContentRating      string          `json:"maxContentRating,omitempty"` // per-user limit
-	Collection            int64           `json:"collection,omitempty"`
-	Collections           []int64         `json:"collections,omitempty"`
-	ExcludeCollections    []int64         `json:"excludeCollections,omitempty"`
-	Person                int64           `json:"person,omitempty"` // cast or crew TMDB id
-	Credits               []CreditFilter  `json:"credits,omitempty"`
-	Studio                string          `json:"studio,omitempty"`
-	StudioFilters         []StringFilter  `json:"studioFilters,omitempty"`
-	FirstCharacter        string          `json:"firstCharacter,omitempty"`
-	Query                 string          `json:"query,omitempty"` // title substring
-	TitleFilters          []StringFilter  `json:"titleFilters,omitempty"`
-	ReleasedFilters       []DateFilter    `json:"releasedFilters,omitempty"`
+	// SaferPlexRating applies cached Plex content-rating levels in SQL
+	// together with MaxContentRating so paging and counts stay correct.
+	SaferPlexRating    bool           `json:"-"`
+	Collection         int64          `json:"collection,omitempty"`
+	Collections        []int64        `json:"collections,omitempty"`
+	ExcludeCollections []int64        `json:"excludeCollections,omitempty"`
+	Person             int64          `json:"person,omitempty"` // cast or crew TMDB id
+	Credits            []CreditFilter `json:"credits,omitempty"`
+	Studio             string         `json:"studio,omitempty"`
+	StudioFilters      []StringFilter `json:"studioFilters,omitempty"`
+	FirstCharacter     string         `json:"firstCharacter,omitempty"`
+	Query              string         `json:"query,omitempty"` // title substring
+	TitleFilters       []StringFilter `json:"titleFilters,omitempty"`
+	ReleasedFilters    []DateFilter   `json:"releasedFilters,omitempty"`
 }
 
 type BrowseQuery struct {

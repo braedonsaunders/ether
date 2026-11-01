@@ -89,57 +89,69 @@ func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key core
 	if element == "composite" || element == "squareArt" {
 		element = "thumb"
 	}
-	if remote := s.plexMetaRemoteImage(r.Context(), key, element); remote != "" {
-		s.serveRemoteImage(w, r, remote)
-		return
-	}
 	raw := r.URL.Query().Get("collection")
+	if raw == "" && key.Kind() != core.KindSmart {
+		t, err := s.artworkTitle(r.Context(), key)
+		if err != nil {
+			t, err = s.scheduledEpisode(r.Context(), FromContext(r.Context()), key)
+		}
+		if r.Context().Err() != nil || err != nil || t == nil || !t.IsReleased(s.now()) || !s.visibleTitle(r.Context(), FromContext(r.Context()).User, t) {
+			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
+	}
 	if raw == "" && s.serveCollectionArtwork(w, r, key, element, width) {
 		return
 	}
 	path, defWidth, err := s.artPath(r.Context(), key, element)
+	if raw == "" && err == nil && path != "" {
+		if width <= 0 {
+			width = defWidth
+		}
+		s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
+		return
+	}
 	if raw != "" || err != nil || path == "" {
 		t, _, e := s.lookupPlaceholder(r.Context(), FromContext(r.Context()), key, raw)
 		if e != nil && raw == "" {
 			t, e = s.scheduledEpisode(r.Context(), FromContext(r.Context()), key)
 		}
-		if e != nil {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-		path := t.PosterPath
-		if t.Type == core.TypeEpisode {
-			path = t.StillPath
-		}
-		if element == "art" || element == "background" {
-			path = t.BackdropPath
-		}
-		if element != "thumb" && element != "poster" && element != "art" && element != "background" {
-			path = ""
-		}
-		if path == "" {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-		if width <= 0 {
+		if e == nil && t != nil {
+			path := t.PosterPath
+			if t.Type == core.TypeEpisode {
+				path = t.StillPath
+			}
 			if element == "art" || element == "background" {
-				width = 1280
-			} else {
-				width = 500
+				path = t.BackdropPath
+			}
+			if element != "thumb" && element != "poster" && element != "art" && element != "background" {
+				path = ""
+			}
+			if path != "" && path != "plex" {
+				if width <= 0 {
+					if element == "art" || element == "background" {
+						width = 1280
+					} else {
+						width = 500
+					}
+				}
+				s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
+				return
 			}
 		}
-		s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
+	}
+	if remote := s.plexMetaRemoteImage(r.Context(), key, element); remote != "" {
+		if err := s.writeRemoteImage(w, r, remote); err == nil {
+			return
+		}
+		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	if width <= 0 {
-		width = defWidth
-	}
-	s.serveRemoteImage(w, r, s.d.ImageURL(path, tmdbSize(width)))
+	writeHTTPError(w, http.StatusNotFound)
 }
 
 func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u string) {
-	img, err := s.images.Get(r.Context(), u, s.now())
-	if err != nil {
+	if err := s.writeRemoteImage(w, r, u); err != nil {
 		if errors.Is(err, errImageNotFound) {
 			writeHTTPError(w, http.StatusNotFound)
 			return
@@ -148,7 +160,13 @@ func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u stri
 			s.log.Debug("image fetch failed", "url", u, "err", err)
 		}
 		writeHTTPError(w, http.StatusBadGateway)
-		return
+	}
+}
+
+func (s *Server) writeRemoteImage(w http.ResponseWriter, r *http.Request, u string) error {
+	img, err := s.images.Get(r.Context(), u, s.now())
+	if err != nil {
+		return err
 	}
 	h := w.Header()
 	setArtworkHeaders(h, img.ContentType)
@@ -159,6 +177,7 @@ func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u stri
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(img.Data)
 	}
+	return nil
 }
 
 // Person artwork is scoped to one title so authorization requires one catalog lookup.
@@ -193,6 +212,16 @@ func (s *Server) servePersonImage(w http.ResponseWriter, r *http.Request, key co
 		if person.ThumbPath == string(raw) {
 			imagePath = person.ThumbPath
 			break
+		}
+	}
+	if imagePath == "" {
+		if ov, ok := s.plexMetaCached(r.Context(), key); ok {
+			for _, person := range overlayPeople(ov, kind) {
+				if person.Thumb == string(raw) {
+					imagePath = person.Thumb
+					break
+				}
+			}
 		}
 	}
 	if imagePath == "" {

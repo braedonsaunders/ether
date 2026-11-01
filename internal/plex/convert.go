@@ -15,6 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
@@ -115,19 +116,34 @@ func imageStamp(t *core.Title) string {
 	return "1"
 }
 
+func overlayImageStamp(t *core.Title, row plexmeta.Cached, ok bool) string {
+	if ok && row.HasArt() && !row.FetchedAt.IsZero() {
+		return strconv.FormatInt(row.FetchedAt.Unix(), 10)
+	}
+	return imageStamp(t)
+}
+
 // thumbURL / artURL are our own artwork endpoints for an item.
 func thumbURL(t *core.Title) string {
+	return stampedThumbURL(t, imageStamp(t))
+}
+
+func stampedThumbURL(t *core.Title, stamp string) string {
 	if t.PosterPath == "" && t.StillPath == "" {
 		return ""
 	}
-	return "/library/metadata/" + t.Key.String() + "/thumb/" + imageStamp(t)
+	return "/library/metadata/" + t.Key.String() + "/thumb/" + stamp
 }
 
 func artURL(t *core.Title) string {
+	return stampedArtURL(t, imageStamp(t))
+}
+
+func stampedArtURL(t *core.Title, stamp string) string {
 	if t.BackdropPath == "" {
 		return ""
 	}
-	return "/library/metadata/" + t.Key.String() + "/art/" + imageStamp(t)
+	return "/library/metadata/" + t.Key.String() + "/art/" + stamp
 }
 
 func seasonTitle(t *core.Title) string {
@@ -146,8 +162,9 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	added := t.DateAdded(s.now())
 	ov, hasPlex := s.plexMetaOverlay(ctx, t.Key)
 	if hasPlex {
-		t = applyPlexMetaTitle(t, ov)
+		t = applyPlexMetaTitle(t, ov.Overlay)
 	}
+	stamp := overlayImageStamp(t, ov, hasPlex)
 	show := s.showOf(t)
 	m := model.Metadata{
 		RatingKey:     t.Key.String(),
@@ -159,8 +176,8 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		Tagline:       t.Tagline,
 		Year:          t.Year,
 		ContentRating: t.ContentRating,
-		Thumb:         thumbURL(t),
-		Art:           artURL(t),
+		Thumb:         stampedThumbURL(t, stamp),
+		Art:           stampedArtURL(t, stamp),
 		AddedAt:       unixOrZero(added),
 		UpdatedAt:     unixOrZero(t.UpdatedAt),
 	}
@@ -181,7 +198,14 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	}
 	if t.Rating > 0 {
 		m.AudienceRating = math.Round(t.Rating*10) / 10
-		m.AudienceRatingImage = "themoviedb://image.rating"
+		if hasPlex {
+			m.AudienceRatingImage = ov.AudienceRatingImage
+		} else {
+			m.AudienceRatingImage = "themoviedb://image.rating"
+		}
+	}
+	if hasPlex && ov.RatingImage != "" {
+		m.RatingImage = ov.RatingImage
 	}
 	if len(t.Studios) > 0 {
 		m.Studio = t.Studios[0]
@@ -278,7 +302,7 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		m.Year, m.TitleSort, m.Studio = 0, "", ""
 	}
 	if hasPlex {
-		applyPlexMetaDates(t, &m, ov)
+		applyPlexMetaDates(t, &m, ov.Overlay)
 		if ov.Rating > 0 && t.Type != core.TypeSeason && t.Type != core.TypeEpisode {
 			m.Rating = ov.Rating
 		}
@@ -351,12 +375,18 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	}
 	if detail {
 		if t.Rating > 0 {
-			m.Rating_ = []model.RatingTag{{Image: "themoviedb://image.rating", Value: math.Round(t.Rating*10) / 10, Type: "audience"}}
+			img := "themoviedb://image.rating"
+			if hasPlex {
+				img = ov.AudienceRatingImage
+			}
+			if img != "" {
+				m.Rating_ = []model.RatingTag{{Image: img, Value: math.Round(t.Rating*10) / 10, Type: "audience"}}
+			}
 		}
 	}
 	// PMS sends Image (and, for movies and shows, UltraBlurColors) on
 	// every item, in listings and hubs as well as detail pages.
-	m.Image = s.imageTags(t, show)
+	m.Image = s.imageTags(t, show, stamp)
 	if ultraBlurType(t.Type) {
 		m.UltraBlurColors = s.ultraBlurFor(t.Key, t.BackdropPath)
 	}
@@ -387,13 +417,15 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 //
 // Only artwork Ether can serve is listed; the show's clear logo needs the
 // show's detail (show), which may not be cached on the first render.
-func (s *Server) imageTags(t *core.Title, show *core.Title) []model.Image {
+func (s *Server) imageTags(t *core.Title, show *core.Title, stamp string) []model.Image {
 	alt := t.Title
 	if alt == "" && t.Type == core.TypeSeason {
 		alt = seasonTitle(t)
 	}
 	img := func(typ, url string) model.Image { return model.Image{Alt: alt, Type: typ, URL: url} }
-	stamp := imageStamp(t)
+	if stamp == "" {
+		stamp = imageStamp(t)
+	}
 	var out []model.Image
 	switch t.Type {
 	case core.TypeSeason, core.TypeEpisode:
@@ -406,18 +438,18 @@ func (s *Server) imageTags(t *core.Title, show *core.Title) []model.Image {
 		}
 		showPath := "/library/metadata/" + showKey.String()
 		if t.Type == core.TypeSeason {
-			if th := thumbURL(t); th != "" {
+			if th := stampedThumbURL(t, stamp); th != "" {
 				out = append(out, img("coverPoster", th))
 			} else {
 				out = append(out, img("coverPoster", showPath+"/thumb/"+stamp))
 			}
 		} else {
 			out = append(out, img("coverPoster", showPath+"/thumb/"+stamp))
-			if th := thumbURL(t); th != "" {
+			if th := stampedThumbURL(t, stamp); th != "" {
 				out = append(out, img("snapshot", th))
 			}
 		}
-		if a := artURL(t); a != "" {
+		if a := stampedArtURL(t, stamp); a != "" {
 			out = append(out, img("background", a))
 		} else {
 			out = append(out, img("background", showPath+"/art/"+stamp))
@@ -426,10 +458,10 @@ func (s *Server) imageTags(t *core.Title, show *core.Title) []model.Image {
 			out = append(out, img("clearLogo", showPath+"/clearLogo/"+stamp))
 		}
 	default:
-		if th := thumbURL(t); th != "" {
+		if th := stampedThumbURL(t, stamp); th != "" {
 			out = append(out, img("coverPoster", th))
 		}
-		if a := artURL(t); a != "" {
+		if a := stampedArtURL(t, stamp); a != "" {
 			out = append(out, img("background", a))
 		}
 		if t.LogoPath != "" {
@@ -1122,7 +1154,7 @@ func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []core.Title,
 	if s.d.PlexGUID != nil {
 		guids = s.d.PlexGUID.CachedMany(ctx, lookup)
 	}
-	ctx = s.withPlexMeta(ctx, lookup)
+	ctx = s.withPlexMeta(ctx, lookup, guids)
 	order := s.episodeOrderList(ctx, pr, ts, o.detail)
 	out := make([]model.Metadata, 0, len(ts))
 	for i := range ts {

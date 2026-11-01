@@ -37,8 +37,7 @@ const (
 
 type Options struct {
 	HTTP *http.Client
-	// ClientIdentifier is the per-install X-Plex-Client-Identifier. Nil or
-	// empty falls back to ClientIdentifier("", "").
+	// ClientIdentifier is the per-install X-Plex-Client-Identifier.
 	ClientIdentifier func() string
 	BaseURL          string
 	Token            func() string

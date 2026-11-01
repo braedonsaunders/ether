@@ -12,6 +12,11 @@ import (
 
 type plexMetaCtxKey struct{}
 
+type plexMetaBatch struct {
+	rows  map[core.RatingKey]plexmeta.Cached
+	guids map[core.RatingKey]string
+}
+
 func (s *Server) plexMetaOn() bool {
 	if s == nil || s.d.PlexMeta == nil || s.d.Config == nil {
 		return false
@@ -20,7 +25,7 @@ func (s *Server) plexMetaOn() bool {
 	return cfg.Plex.Claimed && cfg.Plex.UsePlexMetadata
 }
 
-func (s *Server) withPlexMeta(ctx context.Context, keys []core.RatingKey) context.Context {
+func (s *Server) withPlexMeta(ctx context.Context, keys []core.RatingKey, guids map[core.RatingKey]string) context.Context {
 	if !s.plexMetaOn() {
 		return ctx
 	}
@@ -33,39 +38,80 @@ func (s *Server) withPlexMeta(ctx context.Context, keys []core.RatingKey) contex
 			continue
 		}
 		seen[k] = true
-		if row, ok := cached[k]; !ok || row.Stale(now) {
+		guid := guids[k]
+		if guid == "" {
+			continue
+		}
+		row, ok := cached[k]
+		if !ok || row.Stale(now) || row.GUID != guid {
 			refresh = append(refresh, k)
 		}
 	}
 	s.d.PlexMeta.Schedule(refresh...)
-	return context.WithValue(ctx, plexMetaCtxKey{}, cached)
+	return context.WithValue(ctx, plexMetaCtxKey{}, plexMetaBatch{rows: cached, guids: guids})
 }
 
-func (s *Server) plexMetaOverlay(ctx context.Context, k core.RatingKey) (plexmeta.Overlay, bool) {
+func (s *Server) plexMetaCached(ctx context.Context, k core.RatingKey) (plexmeta.Cached, bool) {
 	if !s.plexMetaOn() || k == 0 {
-		return plexmeta.Overlay{}, false
+		return plexmeta.Cached{}, false
 	}
-	if cached, ok := ctx.Value(plexMetaCtxKey{}).(map[core.RatingKey]plexmeta.Cached); ok {
-		row, ok := cached[k]
-		return row.Overlay, ok && !row.Empty()
+	var (
+		row  plexmeta.Cached
+		ok   bool
+		guid string
+	)
+	if batch, has := ctx.Value(plexMetaCtxKey{}).(plexMetaBatch); has {
+		row, ok = batch.rows[k]
+		guid = batch.guids[k]
+	} else {
+		row, ok = s.d.PlexMeta.Cached(ctx, k)
+		if s.d.PlexGUID != nil {
+			guid = s.d.PlexGUID.Cached(ctx, k)
+		}
 	}
-	row, ok := s.d.PlexMeta.Cached(ctx, k)
-	return row.Overlay, ok && !row.Empty()
+	if !ok || row.Empty() || guid == "" || row.GUID != guid {
+		return plexmeta.Cached{}, false
+	}
+	return row, true
+}
+
+func (s *Server) plexMetaOverlay(ctx context.Context, k core.RatingKey) (plexmeta.Cached, bool) {
+	return s.plexMetaCached(ctx, k)
 }
 
 func (s *Server) plexMetaRatingAllowed(u *core.User, t *core.Title) bool {
-	if u == nil || t == nil || u.MaxContentRating == "" || !s.plexMetaOn() {
+	if !s.needPlexRatingFilter(u) || t == nil {
 		return true
 	}
-	o, ok := s.plexMetaOverlay(context.Background(), t.Key)
-	if !ok || o.ContentRating == "" {
+	row, ok := s.plexMetaCached(context.Background(), t.Key)
+	return s.plexMetaRatingOK(u, t, row, ok)
+}
+
+func (s *Server) needPlexRatingFilter(u *core.User) bool {
+	return u != nil && u.MaxContentRating != "" && s.plexMetaOn()
+}
+
+func (s *Server) plexMetaRatingOK(u *core.User, t *core.Title, row plexmeta.Cached, ok bool) bool {
+	if !ok || row.ContentRating == "" {
 		return true
 	}
-	return !contentrating.Exceeds(plexmeta.SaferRating(t.ContentRating, o.ContentRating), u.MaxContentRating)
+	return !contentrating.Exceeds(plexmeta.SaferRating(t.ContentRating, row.ContentRating), u.MaxContentRating)
+}
+
+func (s *Server) plexMetaRatingAllowedCached(u *core.User, t *core.Title, rows map[core.RatingKey]plexmeta.Cached, guids map[core.RatingKey]string) bool {
+	if !s.needPlexRatingFilter(u) || t == nil {
+		return true
+	}
+	guid := guids[t.Key]
+	row, ok := rows[t.Key]
+	if !ok || row.Empty() || guid == "" || row.GUID != guid {
+		return true
+	}
+	return s.plexMetaRatingOK(u, t, row, true)
 }
 
 func (s *Server) plexMetaRemoteImage(ctx context.Context, key core.RatingKey, element string) string {
-	o, ok := s.plexMetaOverlay(ctx, key)
+	o, ok := s.plexMetaCached(ctx, key)
 	if !ok {
 		return ""
 	}
@@ -73,10 +119,7 @@ func (s *Server) plexMetaRemoteImage(ctx context.Context, key core.RatingKey, el
 	case "thumb", "poster":
 		return o.ThumbURL
 	case "art", "background":
-		if o.ArtURL != "" {
-			return o.ArtURL
-		}
-		return o.ThumbURL
+		return o.ArtURL
 	}
 	return ""
 }
@@ -87,6 +130,18 @@ func plexImageURL(raw string) bool {
 		return false
 	}
 	return plexmeta.ImageHost(u.Host)
+}
+
+func overlayPeople(o plexmeta.Cached, kind string) []plexmeta.Person {
+	switch kind {
+	case "actor":
+		return o.Cast
+	case "director":
+		return o.Directors
+	case "writer":
+		return o.Writers
+	}
+	return nil
 }
 
 func applyPlexMetaTitle(t *core.Title, o plexmeta.Overlay) *core.Title {

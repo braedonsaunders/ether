@@ -201,7 +201,11 @@ func traceSecretQuery(k string) bool {
 func (s *Server) parse(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pr := ParseRequest(r, identity.ProxyPrefixes(s.cfg().Server.TrustedProxyCIDRs)...)
-		next.ServeHTTP(w, r.WithContext(withRequest(r.Context(), pr)))
+		ctx := withRequest(r.Context(), pr)
+		if s.plexMetaOn() {
+			ctx = core.WithPlexSaferRating(ctx)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

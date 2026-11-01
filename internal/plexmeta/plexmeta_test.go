@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -137,38 +136,53 @@ func TestBreakerOn429(t *testing.T) {
 	}
 }
 
-func TestShowChildrenPaged(t *testing.T) {
-	const showGUID = "plex://show/5d9c086c46115600200aa2fe"
-	s := testService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/library/metadata/5d9c086c46115600200aa2fe":
-			w.Write([]byte(`{"MediaContainer":{"Metadata":[{"guid":"` + showGUID + `","type":"show","summary":"Show"}]}}`))
-		case strings.HasSuffix(r.URL.Path, "/children"):
-			start := r.Header.Get("X-Plex-Container-Start")
-			if start == "0" {
-				w.Write([]byte(`{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"guid":"plex://season/aaaaaaaaaaaaaaaaaaaaaaaa","type":"season","index":1,"summary":"S1"}]}}`))
-				return
-			}
-			w.Write([]byte(`{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"guid":"plex://season/bbbbbbbbbbbbbbbbbbbbbbbb","type":"season","index":2,"summary":"S2"}]}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}), true)
-	s.o.GUID = func(_ context.Context, k core.RatingKey) string {
-		if k == core.ShowKey(1396) {
-			return showGUID
-		}
-		return ""
+func TestBreakerSuccessKeepsRetryAfter(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	b := breaker{cooldown: time.Minute, threshold: 5, now: func() time.Time { return now }}
+	b.Failure(2 * time.Minute)
+	if !b.Open() {
+		t.Fatal("expected open after 429")
 	}
-	s.Schedule(core.ShowKey(1396))
-	s.Wait()
-	s1, ok := s.Cached(context.Background(), core.SeasonKey(1396, 1))
-	if !ok || s1.Summary != "S1" {
-		t.Fatalf("season 1 %+v ok=%v", s1, ok)
+	b.Success()
+	if !b.Open() {
+		t.Fatal("success cleared Retry-After")
 	}
-	s2, ok := s.Cached(context.Background(), core.SeasonKey(1396, 2))
-	if !ok || s2.Summary != "S2" {
-		t.Fatalf("season 2 %+v ok=%v", s2, ok)
+	now = now.Add(2 * time.Minute)
+	if b.Open() {
+		t.Fatal("still open after Retry-After")
+	}
+}
+
+func TestImageHostAllowlist(t *testing.T) {
+	for _, host := range []string{"metadata-static.plex.tv", "image.plex.tv", "images.plex.tv", "metadata.provider.plex.tv"} {
+		if !ImageHost(host) {
+			t.Fatalf("rejected %s", host)
+		}
+	}
+	for _, host := range []string{"evil.plex.tv", "cdn.image.plex.tv", "example.com", "metadata.provider.plex.tv.evil.com"} {
+		if ImageHost(host) {
+			t.Fatalf("allowed %s", host)
+		}
+	}
+}
+
+func TestApplyDisplayKeepsTMDBPeopleAndGenres(t *testing.T) {
+	title := core.Title{
+		Genres: []string{"Drama"},
+		Cast:   []core.Person{{TMDB: 42, Name: "Theo Varga", Role: "Old", ThumbPath: "/tmdb.jpg"}},
+	}
+	ApplyDisplay(&title, Overlay{
+		Genres: []string{"PlexGenre"},
+		Cast: []Person{
+			{Name: "Theo Varga", Role: "Alex", Thumb: "https://image.plex.tv/a.jpg"},
+			{Name: "Only Plex", Role: "Extra"},
+		},
+	})
+	if len(title.Genres) != 1 || title.Genres[0] != "Drama" {
+		t.Fatalf("genres %+v", title.Genres)
+	}
+	if len(title.Cast) != 1 || title.Cast[0].TMDB != 42 || title.Cast[0].Role != "Alex" || title.Cast[0].ThumbPath != "https://image.plex.tv/a.jpg" {
+		t.Fatalf("cast %+v", title.Cast)
 	}
 }
 

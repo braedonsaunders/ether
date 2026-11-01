@@ -61,6 +61,10 @@ func (c *Catalog) CountUnplayedAired(ctx context.Context, userID int64, keys []c
 		if restrict {
 			ratingSQL = ` AND e.content_rating_rank>0 AND e.content_rating_rank<=?`
 			args = append(args, rank)
+			if core.PlexSaferRating(ctx) {
+				ratingSQL += ` AND NOT EXISTS (SELECT 1 FROM plexmeta_titles p WHERE p.rating_key=e.key AND p.rating_level>?)`
+				args = append(args, rank)
+			}
 		}
 		rows, err := c.db.QueryContext(ctx, `SELECT e.show_key, e.season, COUNT(*)
 FROM catalog_titles e
