@@ -23,6 +23,17 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request, id string, u
 	return nil
 }
 
+func liveHTTP(ss *session) core.HTTPSession {
+	if ss.http == nil {
+		return nil
+	}
+	if c, ok := ss.http.(interface{ Closed() bool }); ok && c.Closed() {
+		ss.http = nil
+		return nil
+	}
+	return ss.http
+}
+
 func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.HTTPSession, error) {
 	ss.mu.Lock()
 	if ss.closed {
@@ -30,8 +41,7 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 		return nil, core.ErrNotFound
 	}
 	ss.consumed = true
-	if ss.http != nil {
-		h := ss.http
+	if h := liveHTTP(ss); h != nil {
 		ss.mu.Unlock()
 		return h, nil
 	}
@@ -40,8 +50,12 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 		return nil, core.ErrNotAvailable
 	}
 	info := ss.info.MediaInfo
+	caps := ss.caps
+	liveInput := ss.info.Channel.Kind != "virtual"
+	gen := ss.generation
+	ss.mu.Unlock()
+
 	if info == nil {
-		ss.mu.Unlock()
 		probed, err := s.probeSessionInput(ctx, ss)
 		if err != nil {
 			return nil, err
@@ -49,22 +63,11 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 		if probed == nil {
 			return nil, core.ErrNotAvailable
 		}
-		ss.mu.Lock()
-		if ss.closed {
-			ss.mu.Unlock()
-			return nil, core.ErrNotFound
-		}
-		if ss.http != nil {
-			h := ss.http
-			ss.mu.Unlock()
-			return h, nil
-		}
 		info = probed
-		ss.info.MediaInfo = probed
 	}
 	copyInfo := *info
 	copyInfo.Duration = 0
-	dec := s.o.Transcoder.Decide(copyInfo, ss.caps, core.DecideOptions{
+	dec := s.o.Transcoder.Decide(copyInfo, caps, core.DecideOptions{
 		DirectStream: true, AudioStream: -1, SubtitleStream: -1, Protocol: core.ProtocolHTTP,
 	})
 	if dec.Kind == core.DecisionDirectPlay {
@@ -72,7 +75,17 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 		dec.VideoCopy, dec.AudioCopy = true, true
 	}
 	dec.Container = "mkv"
-	liveInput := ss.info.Channel.Kind != "virtual"
+
+	ss.mu.Lock()
+	if ss.closed || ss.generation != gen {
+		ss.mu.Unlock()
+		return nil, core.ErrNotFound
+	}
+	if h := liveHTTP(ss); h != nil {
+		ss.mu.Unlock()
+		return h, nil
+	}
+	ss.info.MediaInfo = info
 	var input string
 	if liveInput {
 		var err error
@@ -88,19 +101,31 @@ func (s *Service) ensureHTTP(ctx context.Context, ss *session, id string) (core.
 		}
 		input = s.o.Playback.InputURL(ss.tracks[0].playbackID)
 	}
+	ss.mu.Unlock()
+
 	hs, err := s.o.Transcoder.StartHLS(s.ctx, core.HLSRequest{
 		SessionID: "livetv-http-" + id, InputURL: input, LiveInput: liveInput,
 		Info: copyInfo, Decision: dec, Protocol: core.ProtocolHTTP, SegmentDuration: segmentDuration,
 	})
 	if err != nil {
-		ss.mu.Unlock()
 		return nil, err
 	}
 	stream, ok := hs.(core.HTTPSession)
 	if !ok {
 		hs.Close()
-		ss.mu.Unlock()
 		return nil, core.ErrNotAvailable
+	}
+
+	ss.mu.Lock()
+	if ss.closed || ss.generation != gen {
+		ss.mu.Unlock()
+		stream.Close()
+		return nil, core.ErrNotFound
+	}
+	if h := liveHTTP(ss); h != nil {
+		ss.mu.Unlock()
+		stream.Close()
+		return h, nil
 	}
 	ss.http = stream
 	ss.mu.Unlock()

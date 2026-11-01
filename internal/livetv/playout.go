@@ -141,6 +141,8 @@ func (ss *session) close(s *Service) {
 	relayCancel := ss.relayCancel
 	dash := ss.dash
 	httpStream := ss.http
+	ss.dash = nil
+	ss.http = nil
 	reserved := ss.reserved
 	ss.mu.Unlock()
 	s.revokeInput(ss)

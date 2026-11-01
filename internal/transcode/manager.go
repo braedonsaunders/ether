@@ -207,7 +207,8 @@ type Manager struct {
 	cfg      config.Transcode
 	sessions     map[string]*Session
 	httpSessions map[string]*httpSession
-	closed       bool
+	downloadEncodes int
+	closed          bool
 
 	stop chan struct{}
 	wg   sync.WaitGroup
@@ -563,7 +564,7 @@ func randomHex(n int) string {
 // encoder: transcodes, and copy sessions while their fast-start ramp, a
 // governor clamp or a lower rung is being encoded. Caller holds m.mu.
 func (m *Manager) encodingLocked(except string) int {
-	n := 0
+	n := m.downloadEncodes
 	for life := range m.encoders {
 		if current := m.sessions[except]; except != "" && current != nil && current.encoder == life {
 			continue // planning a replacement; admission still requires old Close
@@ -981,11 +982,28 @@ func (m *Manager) reapIdle(now time.Time) {
 	}
 	m.mu.Unlock()
 	for _, h := range httpIdle {
+		if h.busy() {
+			continue
+		}
 		if idle := now.Sub(h.LastAccess()); idle > m.opts.idleTimeout {
 			h.log.Info("closing idle http session", "idle", idle.Round(time.Second))
 			_ = h.Close()
 		}
 	}
+}
+
+func (m *Manager) acquireTranscodeSlot() (func(), error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cfg.MaxTranscodes > 0 && m.encodingLocked("") >= m.cfg.MaxTranscodes {
+		return nil, fmt.Errorf("%w (%d running)", ErrTooManyTranscodes, m.encodingLocked(""))
+	}
+	m.downloadEncodes++
+	return func() {
+		m.mu.Lock()
+		m.downloadEncodes--
+		m.mu.Unlock()
+	}, nil
 }
 
 // Close stops every session and the reaper.

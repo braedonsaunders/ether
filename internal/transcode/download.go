@@ -37,14 +37,23 @@ var (
 
 // DownloadCopyable reports whether info's video (and chosen audio) can be
 // stream-copied to MP4, returning the streams a remux would keep.
-func DownloadCopyable(info core.MediaInfo, audioStream int) (video, audio *core.StreamInfo, ok bool) {
+func DownloadCopyable(info core.MediaInfo, audioStream int, caps core.ClientCaps) (video, audio *core.StreamInfo, ok bool) {
 	v := info.Video()
 	if v == nil || !mp4CopyVideo[strings.ToLower(v.Codec)] {
 		return nil, nil, false
 	}
-	a := pickAudio(info, audioStream)
-	if a != nil && !mp4CopyAudio[strings.ToLower(a.Codec)] {
+	if len(caps.VideoCodecs) > 0 && !caps.SupportsVideo(strings.ToLower(v.Codec)) {
 		return nil, nil, false
+	}
+	a := pickAudio(info, audioStream)
+	if a != nil {
+		ac := strings.ToLower(a.Codec)
+		if !mp4CopyAudio[ac] {
+			return nil, nil, false
+		}
+		if len(caps.AudioCodecs) > 0 && !caps.SupportsAudio(ac) {
+			return nil, nil, false
+		}
 	}
 	return v, a, true
 }
@@ -313,7 +322,7 @@ func (d *DownloadRemuxer) RemuxDownload(ctx context.Context, req core.DownloadRe
 	if req.InputURL == "" {
 		return "", 0, errors.New("transcode: download: empty input URL")
 	}
-	video, audio, ok := DownloadCopyable(req.Info, req.AudioStream)
+	video, audio, ok := DownloadCopyable(req.Info, req.AudioStream, req.Caps)
 	if ok && !downloadBurnsImage(req) {
 		return d.runDownload(ctx, req, progress, estimateBytes(req.Info), "remux",
 			func(part string) []string { return downloadArgs(req.InputURL, video, audio, part) })
@@ -353,6 +362,11 @@ func (d *DownloadRemuxer) convertDownload(ctx context.Context, req core.Download
 		return "", 0, err
 	}
 	defer release()
+	slot, err := d.m.acquireTranscodeSlot()
+	if err != nil {
+		return "", 0, err
+	}
+	defer slot()
 
 	opts := req.Options
 	opts.DirectPlay = false

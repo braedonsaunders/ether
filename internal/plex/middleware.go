@@ -190,7 +190,8 @@ func redactTraceQuery(q url.Values) string {
 
 func traceSecretQuery(k string) bool {
 	switch strings.ToLower(k) {
-	case "x-plex-token", "token", "accesstoken", "access_token":
+	case "x-plex-token", "token", "accesstoken", "access_token",
+		strings.ToLower(streamGrantParam), strings.ToLower(readCapParam):
 		return true
 	default:
 		return false
@@ -252,7 +253,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			case err == nil, errors.Is(err, core.ErrUnauthorized), errors.Is(err, core.ErrNotFound):
 				// Stale or unknown token: playlist/segment reads may still
-				// pass with a live stream grant or session id.
+				// pass with a live stream grant or minted read capability.
 			case errors.Is(err, r.Context().Err()):
 				return
 			default:

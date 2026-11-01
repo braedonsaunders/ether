@@ -974,8 +974,7 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError)
 		return
 	}
-	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-	s.transcodes.put(entry)
+	s.bindTranscodeStarted(entry, dec, p.offset)
 	s.notePlexEncoder(p.sessionID, frontend.StreamHLS, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()
@@ -1006,7 +1005,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 				if rg.FrameRate > 0 {
 					line += fmt.Sprintf(",FRAME-RATE=%.3f", rg.FrameRate)
 				}
-				uri := streamGrantURL("session/"+sessionID+"/"+rg.ID+"/index.m3u8", entry.streamToken)
+				uri := s.mediaURL("session/"+sessionID+"/"+rg.ID+"/index.m3u8", sessionID, entry.streamToken)
 				b.WriteString(line + "\n" + uri + "\n")
 			}
 			body := b.String()
@@ -1040,7 +1039,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		}
 	}
 	line += transcode.HLSVariantAttributes(info, dec)
-	body := "#EXTM3U\n" + line + "\n" + streamGrantURL("session/"+sessionID+"/base/index.m3u8", entry.streamToken) + "\n"
+	body := "#EXTM3U\n" + line + "\n" + s.mediaURL("session/"+sessionID+"/base/index.m3u8", sessionID, entry.streamToken) + "\n"
 	h := w.Header()
 	h.Set("Content-Type", "application/vnd.apple.mpegurl")
 	h.Set("Cache-Control", "no-cache")
@@ -1210,7 +1209,7 @@ func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
 		if s.d.Transcoder != nil {
 			s.d.Transcoder.Stop(id)
 		}
-		s.transcodes.remove(id)
+		s.dropTranscode(id)
 	}
 	w.WriteHeader(http.StatusOK)
 }

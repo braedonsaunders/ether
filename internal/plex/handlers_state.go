@@ -123,7 +123,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 				if s.d.Transcoder != nil {
 					s.d.Transcoder.Stop(id)
 				}
-				s.transcodes.remove(id)
+				s.dropTranscode(id)
 			}
 			unlock()
 		}

@@ -184,6 +184,7 @@ type Server struct {
 	playbackOwners    *sessions.PlaybackOwners
 	playbackLifecycle *sessions.Lifecycle
 	transcodes        *transcodeTable
+	readCaps          *readCapabilityStore
 	extraPlay         *extraPlayStore
 	selections        *selectionStore
 	notifier          *notifier
@@ -244,6 +245,7 @@ func NewServer(d Deps) *Server {
 		playbackOwners:    coord.Owners,
 		playbackLifecycle: coord.Gates,
 		transcodes:        newTranscodeTable(),
+		readCaps:          newReadCapabilityStore(),
 		extraPlay:         newExtraPlayStore(d.DirectHTTP),
 		selections:        newSelectionStore(),
 		notifier:          newNotifier(),
@@ -536,7 +538,7 @@ func (s *Server) releaseMountedPlayback() {
 		if s.d.Transcoder != nil {
 			s.d.Transcoder.Stop(id)
 		}
-		s.transcodes.remove(id)
+		s.dropTranscode(id)
 	}
 	s.releaseTrickplayHolders()
 	s.releaseAllDownloads()

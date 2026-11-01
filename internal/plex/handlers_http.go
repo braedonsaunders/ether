@@ -13,6 +13,9 @@ import (
 // handleStartHTTP is /video/:/transcode/universal/start (no extension):
 // Plex for Mac / Desktop's protocol=http Matroska stream.
 func (s *Server) handleStartHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.refuseCapability(w, r) {
+		return
+	}
 	if s.handleLiveTVPlayback(w, r) {
 		return
 	}
@@ -127,8 +130,7 @@ func (s *Server) handleStartHTTP(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError)
 		return
 	}
-	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-	s.transcodes.put(entry)
+	s.bindTranscodeStarted(entry, dec, p.offset)
 	s.notePlexEncoder(p.sessionID, frontend.StreamHTTP, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()

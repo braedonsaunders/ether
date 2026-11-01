@@ -40,7 +40,7 @@ func (s *Server) cleanSupersededEncoders(ctx context.Context, user int64, client
 			if s.d.Transcoder != nil {
 				s.d.Transcoder.Stop(id)
 			}
-			s.transcodes.remove(id)
+			s.dropTranscode(id)
 		}
 		unlock()
 	}

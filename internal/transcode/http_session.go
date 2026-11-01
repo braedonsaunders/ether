@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -39,6 +38,15 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 		id = randomHex(12)
 		req.SessionID = id
 	}
+	encoding := !req.Decision.VideoCopy || !req.Decision.AudioCopy
+	m.mu.Lock()
+	if encoding && m.cfg.MaxTranscodes > 0 {
+		if n := m.encodingLocked(""); n >= m.cfg.MaxTranscodes {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("%w (%d running)", ErrTooManyTranscodes, n)
+		}
+	}
+	m.mu.Unlock()
 	if req.InputLease != nil {
 		if err := life.installInput(req.InputLease); err != nil {
 			return nil, err
@@ -47,11 +55,8 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 	if err := m.claimEncoderID(ctx, id, life); err != nil {
 		return nil, err
 	}
-	safe := unsafeID.ReplaceAllString(id, "_")
-	dir := filepath.Join(m.tempDir, "http-"+safe)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("transcode: http session dir: %w", err)
-	}
+	// Attach uses dir only as a cleanup key; HTTP output is a pipe.
+	dir := filepath.Join(m.tempDir, "http-"+unsafeID.ReplaceAllString(id, "_")+"-"+randomHex(4))
 	stub := &Session{
 		id:      id,
 		proto:   core.ProtocolHTTP,
@@ -65,6 +70,7 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 	if !life.attach(stub) {
 		return nil, errors.New("transcode: session closed")
 	}
+	life.encoding.Store(encoding)
 	h := &httpSession{
 		m:          m,
 		id:         id,
@@ -77,7 +83,6 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 	m.mu.Lock()
 	if m.closed || ctx.Err() != nil || life.sealed {
 		m.mu.Unlock()
-		_ = os.RemoveAll(dir)
 		return nil, errors.New("transcode: manager closed or start canceled")
 	}
 	if m.httpSessions == nil {
@@ -127,6 +132,27 @@ func (s *httpSession) Touch() {
 	s.mu.Unlock()
 }
 
+func (s *httpSession) Closed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
+}
+
+func (s *httpSession) busy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.proc != nil
+}
+
+func (s *httpSession) writeHTTPHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Content-Type", "video/x-matroska")
+	h.Set("Accept-Ranges", "none")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Connection", "close")
+	w.WriteHeader(http.StatusOK)
+}
+
 func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	if s.closed {
@@ -135,6 +161,11 @@ func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.lastAccess = time.Now()
+	if r.Method == http.MethodHead {
+		s.mu.Unlock()
+		s.writeHTTPHeaders(w)
+		return
+	}
 	if s.proc != nil {
 		s.proc.Stop()
 		s.proc = nil
@@ -153,9 +184,21 @@ func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	args := buildArgs(spec)
 	pr, pw := io.Pipe()
 	cmd := Command{Path: s.m.ffmpeg, Args: args, Stdout: pw}
+	encoding := !s.req.Decision.VideoCopy || !s.req.Decision.AudioCopy
+	work, err := s.life.runWork(encoding)
+	if err != nil {
+		s.mu.Unlock()
+		_ = pw.Close()
+		_ = pr.Close()
+		http.Error(w, "transcode failed", http.StatusServiceUnavailable)
+		return
+	}
 	proc, err := s.m.runner.Start(cmd)
 	if err != nil {
 		s.mu.Unlock()
+		for _, w := range work {
+			w.finish()
+		}
 		_ = pw.Close()
 		_ = pr.Close()
 		s.log.Warn("http ffmpeg start", "err", err)
@@ -164,26 +207,19 @@ func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.proc = proc
 	s.life.markStarted()
-	s.life.encoding.Store(!s.req.Decision.VideoCopy)
+	s.life.encoding.Store(encoding)
 	s.mu.Unlock()
 
 	go func() {
 		<-proc.Done()
 		_ = pw.Close()
+		for _, w := range work {
+			w.finish()
+		}
 	}()
 
-	h := w.Header()
-	h.Set("Content-Type", "video/x-matroska")
-	h.Set("Accept-Ranges", "none")
-	h.Set("Cache-Control", "no-store")
-	h.Set("Connection", "close")
-	w.WriteHeader(http.StatusOK)
-	if r.Method == http.MethodHead {
-		_ = pr.Close()
-		proc.Stop()
-		return
-	}
-	_, _ = io.Copy(flushWriter{w}, pr)
+	s.writeHTTPHeaders(w)
+	_, _ = io.Copy(flushWriter{ResponseWriter: w, s: s}, pr)
 	_ = pr.Close()
 	if r.Context().Err() != nil {
 		proc.Stop()
@@ -208,6 +244,7 @@ func (s *httpSession) Close() error {
 	s.mu.Unlock()
 	if proc != nil {
 		proc.Stop()
+		<-proc.Done()
 	}
 	s.m.mu.Lock()
 	if s.m.httpSessions[s.id] == s {
@@ -220,9 +257,15 @@ func (s *httpSession) Close() error {
 	return nil
 }
 
-type flushWriter struct{ http.ResponseWriter }
+type flushWriter struct {
+	http.ResponseWriter
+	s *httpSession
+}
 
 func (w flushWriter) Write(p []byte) (int, error) {
+	if w.s != nil {
+		w.s.Touch()
+	}
 	n, err := w.ResponseWriter.Write(p)
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()

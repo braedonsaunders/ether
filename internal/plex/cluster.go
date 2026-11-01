@@ -427,7 +427,7 @@ func (s *Server) endLocalSession(tid string, offset time.Duration) {
 			if s.d.Transcoder != nil {
 				s.d.Transcoder.Stop(id)
 			}
-			s.transcodes.remove(id)
+			s.dropTranscode(id)
 		}
 		unlock()
 	}

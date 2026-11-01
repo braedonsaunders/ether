@@ -190,6 +190,65 @@ func TestRemuxDownloadConvertsIncompatibleCodecs(t *testing.T) {
 	}
 }
 
+func TestDownloadCopyableHonorsCaps(t *testing.T) {
+	info := downloadInfo()
+	info.Streams[0].Codec = "hevc"
+	if _, _, ok := DownloadCopyable(info, -1, core.ClientCaps{}); !ok {
+		t.Fatal("empty caps should copy HEVC")
+	}
+	if _, _, ok := DownloadCopyable(info, -1, core.ClientCaps{VideoCodecs: []string{"h264"}}); ok {
+		t.Fatal("HEVC copied for a profile without HEVC")
+	}
+	fr := newFakeRunner()
+	fr.runFunc = downloadRunner("converted-hevc")
+	d := newDownloadRemuxer(t, fr, config.Downloads{})
+	path, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 8,
+		Caps: core.ClientCaps{VideoCodecs: []string{"h264"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.ReleaseDownload(path)
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	for _, c := range fr.runCalls {
+		if hasArg(c, "-movflags") && strings.Contains(strings.Join(c, " "), "-c copy") {
+			t.Fatalf("unsupported HEVC was copied: %v", c)
+		}
+	}
+}
+
+func TestConvertDownloadRespectsMaxTranscodes(t *testing.T) {
+	fr := newFakeRunner()
+	fr.runFunc = downloadRunner("converted-mp4")
+	m := newTestManager(t, fr, config.Transcode{MaxTranscodes: 1})
+	d, err := m.NewDownloadRemuxer(config.Downloads{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := m.acquireTranscodeSlot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := downloadInfo()
+	info.Streams[0].Codec = "av1"
+	_, _, err = d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 9,
+	}, nil)
+	if !errors.Is(err, ErrTooManyTranscodes) {
+		t.Fatalf("convert at cap: %v", err)
+	}
+	release()
+	path, _, err := d.RemuxDownload(context.Background(), core.DownloadRemuxRequest{
+		InputURL: "http://x", Info: info, AudioStream: -1, ViewerID: 9,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.ReleaseDownload(path)
+}
+
 func TestRemuxDownloadBurnsImageSubtitles(t *testing.T) {
 	fr := newFakeRunner()
 	fr.runFunc = downloadRunner("burned-mp4")

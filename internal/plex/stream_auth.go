@@ -120,26 +120,33 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	return true
 }
 
-// authenticateSessionRead authorizes playlist and segment GET/HEAD by the
-// live transcode session id: unguessable to anyone who does not already
-// have the path, bound to the device that started the session, and gone
-// when the session is. Control routes (start/ping/stop) never use it.
+// authenticateSessionRead authorizes playlist and segment GET/HEAD by a
+// server-minted read capability bound to the starting device. The
+// client-chosen session id in the path is not a credential. Native
+// loaders that drop headers keep using stream grants.
 func (s *Server) authenticateSessionRead(r *http.Request, pr *Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
-	id := transcodeSessionID(r.URL.Path)
-	if id == "" {
+	if !capabilityPathOK(r) {
 		return false
 	}
-	e, ok := s.transcodes.get(id)
+	cap, ok := s.readCaps.lookup(readCapFrom(r))
+	if !ok {
+		return false
+	}
+	id := transcodeSessionID(r.URL.Path)
+	if id == "" || id != cap.sessionID {
+		return false
+	}
+	if pr.ClientID == "" || cap.clientID == "" || pr.ClientID != cap.clientID {
+		return false
+	}
+	e, ok := s.transcodes.get(cap.sessionID)
 	if !ok || !e.started {
 		return false
 	}
-	if pr.ClientID != "" && e.clientID != "" && pr.ClientID != e.clientID {
-		return false
-	}
-	u := s.activeViewer(r.Context(), e.userID)
+	u := s.activeViewer(r.Context(), cap.userID)
 	if u == nil {
 		return false
 	}
@@ -150,6 +157,7 @@ func (s *Server) authenticateSessionRead(r *http.Request, pr *Request) bool {
 		return false
 	}
 	pr.User = u
+	pr.Capability = true
 	return true
 }
 
@@ -203,7 +211,7 @@ func (s *Server) serveStreamManifest(w http.ResponseWriter, r *http.Request, id 
 			if xml {
 				raw = html.UnescapeString(raw)
 			}
-			raw = streamGrantURL(raw, e.streamToken)
+			raw = s.mediaURL(raw, e.id, e.streamToken)
 			if xml {
 				raw = html.EscapeString(raw)
 			}
@@ -213,7 +221,7 @@ func (s *Server) serveStreamManifest(w http.ResponseWriter, r *http.Request, id 
 			lines := strings.Split(body, "\n")
 			for i, line := range lines {
 				if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
-					lines[i] = streamGrantURL(line, e.streamToken)
+					lines[i] = s.mediaURL(line, e.id, e.streamToken)
 				}
 			}
 			body = strings.Join(lines, "\n")

@@ -516,8 +516,7 @@ func (s *Server) extraStart(w http.ResponseWriter, r *http.Request, pr *Request,
 		s.extraPlay.put(sess)
 	}
 	if entry, ok := s.transcodes.get(p.sessionID); ok {
-		entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
-		s.transcodes.put(entry)
+		s.bindTranscodeStarted(entry, dec, p.offset)
 	}
 	if dash {
 		ds, ok := hs.(core.DASHSession)

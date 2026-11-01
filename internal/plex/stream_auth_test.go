@@ -28,7 +28,7 @@ func TestStreamGrantIsolation(t *testing.T) {
 		path, token string
 		want        int
 	}{
-		{path, "", 200}, {streamGrantURL(path, "wrong"), "", 200},
+		{path, "", 401}, {streamGrantURL(path, "wrong"), "", 401},
 		{streamGrantURL(path, e.streamToken), "", 200}, {path, ownerToken, 200},
 		{streamGrantURL(path, e.streamToken), friendToken, 403},
 	} {
@@ -85,6 +85,7 @@ func TestEncodedSlashCapabilityCannotReachDecision(t *testing.T) {
 	for _, tc := range []struct{ name, target string }{
 		{"stream grant", streamGrantURL(encoded, e.streamToken)},
 		{"session id", encoded},
+		{"read capability", readCapURL(encoded, f.srv.readCaps.token("path-escape"))},
 	} {
 		before := f.playback.prepared
 		rec := f.request(t, http.MethodGet, tc.target, map[string]string{"X-Plex-Token": ""})
@@ -123,38 +124,45 @@ func TestSessionReadAuth(t *testing.T) {
 	if start.Code != 200 {
 		t.Fatal(start.Code, start.Body.String())
 	}
+	token := f.srv.readCaps.token("live-session")
+	if token == "" || !strings.Contains(start.Body.String(), token) {
+		t.Fatal("master missing minted read capability")
+	}
 	path := "/video/:/transcode/universal/session/live-session/base/init.mp4"
-	// Live session id on playlist/segment follow-up fetches, matching device.
+	granted := readCapURL(path, token)
 	for _, p := range []string{
-		path,
-		"/video/:/transcode/universal/session/live-session/base/index.m3u8",
-		"/video/:/transcode/universal/session/live-session/base/00000.ts",
+		granted,
+		readCapURL("/video/:/transcode/universal/session/live-session/base/index.m3u8", token),
+		readCapURL("/video/:/transcode/universal/session/live-session/base/00000.ts", token),
 	} {
 		if rec := f.request(t, http.MethodGet, p, map[string]string{"X-Plex-Token": ""}); rec.Code != 200 {
-			t.Fatalf("session id %s: %d", p, rec.Code)
+			t.Fatalf("minted read cap %s: %d", p, rec.Code)
 		}
 	}
-	f.srv.transcodes.put(&transcodeEntry{id: "dash-session", userID: ownerUser.ID, clientID: "client-1", started: true})
-	if rec := f.request(t, http.MethodGet, "/video/:/transcode/universal/session/dash-session/0/header", map[string]string{"X-Plex-Token": ""}); rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
-		t.Fatalf("dash session id: %d", rec.Code)
+	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code != 401 {
+		t.Fatalf("path session id alone: %d", rec.Code)
 	}
-	// Stale token next to the live session still passes via the session.
-	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
-		t.Fatalf("stale token + session: %d", rec.Code)
+	f.srv.transcodes.put(&transcodeEntry{id: "dash-session", userID: ownerUser.ID, clientID: "client-1", started: true})
+	dashTok := f.srv.mintReadCapability("dash-session", "client-1", ownerUser.ID)
+	if rec := f.request(t, http.MethodGet, readCapURL("/video/:/transcode/universal/session/dash-session/0/header", dashTok), map[string]string{"X-Plex-Token": ""}); rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+		t.Fatalf("dash read cap: %d", rec.Code)
+	}
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
+		t.Fatalf("stale token + read cap: %d", rec.Code)
 	}
 	e, _ := f.srv.transcodes.get("live-session")
 	if rec := f.request(t, http.MethodGet, streamGrantURL(path, e.streamToken), map[string]string{"X-Plex-Token": "expired-token"}); rec.Code != 200 {
 		t.Fatalf("stale token + grant: %d", rec.Code)
 	}
-	// Guessing a session that does not exist.
-	if rec := f.request(t, http.MethodGet, "/video/:/transcode/universal/session/not-a-session/base/init.mp4", map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
-		t.Fatal("guessed session id was accepted")
+	if rec := f.request(t, http.MethodGet, readCapURL("/video/:/transcode/universal/session/not-a-session/base/init.mp4", token), map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("read cap authorized a different session")
 	}
-	// Wrong device.
-	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": "other-device"}); rec.Code == 200 {
-		t.Fatal("cross-device session read was accepted")
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": "other-device"}); rec.Code == 200 {
+		t.Fatal("cross-device read cap was accepted")
 	}
-	// Control routes stay gated: start, ping, stop.
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": ""}); rec.Code == 200 {
+		t.Fatal("headerless read cap was accepted")
+	}
 	for _, p := range []string{
 		"/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session",
 		"/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=live-session",
@@ -162,16 +170,15 @@ func TestSessionReadAuth(t *testing.T) {
 		"/video/:/transcode/universal/ping?session=live-session",
 		"/video/:/transcode/universal/stop?session=live-session",
 	} {
-		if rec := f.request(t, http.MethodGet, p, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
-			t.Fatalf("%s: session id authorized a non-segment route", p)
+		if rec := f.request(t, http.MethodGet, readCapURL(p, token), map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+			t.Fatalf("%s: read cap authorized a non-segment route", p)
 		}
 	}
-	// Expired session: stop it, then the segment is refused.
 	if rec := f.get(t, "/video/:/transcode/universal/stop?session=live-session"); rec.Code != 200 {
 		t.Fatalf("stop: %d", rec.Code)
 	}
-	if rec := f.request(t, http.MethodGet, path, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
-		t.Fatal("expired session was accepted")
+	if rec := f.request(t, http.MethodGet, granted, map[string]string{"X-Plex-Token": ""}); rec.Code == 200 {
+		t.Fatal("revoked read cap was accepted")
 	}
 }
 
