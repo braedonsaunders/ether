@@ -1,11 +1,11 @@
 package safety
 
 import (
-	"net/url"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/sharefilter"
 )
 
 // PlexShare is the cached plex.tv grant for one viewer. Ether owner policy
@@ -18,8 +18,9 @@ type PlexShare struct {
 
 // LabelMapNote records what a plex.tv label clause can match on Ether.
 // Owner collections and Plex item labels are not stored on the title row;
-// looking them up on a browse path would scale with library size.
-const LabelMapNote = "TMDB collection name only. Owner collections and Plex item labels are not on the title row."
+// looking them up on a browse path would scale with library size. A title
+// without a TMDB collection name is allowed (the clause is a no-op).
+const LabelMapNote = "TMDB collection name only. Titles without a collection name are not hidden. Owner collections and Plex item labels are not on the title row."
 
 type shareClause struct {
 	field  string
@@ -29,9 +30,26 @@ type shareClause struct {
 	values []string
 }
 
+type compiledFilter struct {
+	allowRatings, denyRatings []string
+	maxRating, minRating      string
+	allowLabels, denyLabels   []string
+}
+
+type compiledShare struct {
+	movies, tv compiledFilter
+	allowSync  *bool
+}
+
+type cachedShare struct {
+	src PlexShare
+	out compiledShare
+}
+
 func (s *Service) SetPlexShare(fn func(*core.User) PlexShare) {
 	s.mu.Lock()
 	s.plexShare = fn
+	s.shareCache = nil
 	s.mu.Unlock()
 }
 
@@ -54,121 +72,149 @@ func (s *Service) shareFor(u *core.User) PlexShare {
 	return fn(u)
 }
 
-func shareFilter(t *core.Title, share PlexShare) string {
+func (s *Service) compiledFor(u *core.User) compiledShare {
+	if s == nil || u == nil {
+		return compiledShare{}
+	}
+	raw := s.shareFor(u)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.shareCache == nil {
+		s.shareCache = map[int64]cachedShare{}
+	}
+	if have, ok := s.shareCache[u.ID]; ok && shareSame(have.src, raw) {
+		return have.out
+	}
+	out := compileShare(raw)
+	if have, ok := s.shareCache[u.ID]; !ok || !compiledSame(have.out, out) {
+		if ok {
+			s.gen.Add(1)
+		}
+	}
+	s.shareCache[u.ID] = cachedShare{src: raw, out: out}
+	return out
+}
+
+func shareSame(a, b PlexShare) bool {
+	if a.FilterMovies != b.FilterMovies || a.FilterTelevision != b.FilterTelevision {
+		return false
+	}
+	if a.AllowSync == nil && b.AllowSync == nil {
+		return true
+	}
+	return a.AllowSync != nil && b.AllowSync != nil && *a.AllowSync == *b.AllowSync
+}
+
+func compiledSame(a, b compiledShare) bool {
+	return filterSame(a.movies, b.movies) && filterSame(a.tv, b.tv) && shareSame(PlexShare{AllowSync: a.allowSync}, PlexShare{AllowSync: b.allowSync})
+}
+
+func filterSame(a, b compiledFilter) bool {
+	return strings.Join(a.allowRatings, "\x00") == strings.Join(b.allowRatings, "\x00") &&
+		strings.Join(a.denyRatings, "\x00") == strings.Join(b.denyRatings, "\x00") &&
+		a.maxRating == b.maxRating && a.minRating == b.minRating &&
+		strings.Join(a.allowLabels, "\x00") == strings.Join(b.allowLabels, "\x00") &&
+		strings.Join(a.denyLabels, "\x00") == strings.Join(b.denyLabels, "\x00")
+}
+
+func compileShare(s PlexShare) compiledShare {
+	return compiledShare{
+		movies:    compileFilter(s.FilterMovies),
+		tv:        compileFilter(s.FilterTelevision),
+		allowSync: s.AllowSync,
+	}
+}
+
+func compileFilter(spec string) compiledFilter {
+	var out compiledFilter
+	for _, c := range sharefilter.Parse(spec) {
+		switch c.Field {
+		case "contentRating":
+			switch {
+			case c.LTE && len(c.Values) > 0:
+				out.maxRating = c.Values[0]
+			case c.GTE && len(c.Values) > 0:
+				out.minRating = c.Values[0]
+			case c.Negate:
+				out.denyRatings = append(out.denyRatings, c.Values...)
+			default:
+				out.allowRatings = append(out.allowRatings, c.Values...)
+			}
+		case "label":
+			if c.Negate {
+				out.denyLabels = append(out.denyLabels, c.Values...)
+			} else {
+				out.allowLabels = append(out.allowLabels, c.Values...)
+			}
+		}
+	}
+	return out
+}
+
+func (c compiledFilter) forType(typ core.MediaType, ownerRating bool) core.Filter {
+	var f core.Filter
+	if !ownerRating {
+		f.ContentRatings = append([]string(nil), c.allowRatings...)
+		f.ExcludeContentRatings = append([]string(nil), c.denyRatings...)
+		f.MaxContentRating = c.maxRating
+		f.MinContentRating = c.minRating
+	}
+	f.IncludeCollections = append([]string(nil), c.allowLabels...)
+	f.ExcludeCollections = append([]string(nil), c.denyLabels...)
+	_ = typ
+	return f
+}
+
+func shareFilterFor(t *core.Title, share compiledShare) compiledFilter {
 	if t == nil {
-		return ""
+		return compiledFilter{}
 	}
 	switch t.Type {
 	case core.TypeShow, core.TypeSeason, core.TypeEpisode:
-		return share.FilterTelevision
+		return share.tv
 	default:
-		return share.FilterMovies
+		return share.movies
 	}
 }
 
-func parseShareFilter(spec string) []shareClause {
-	spec = strings.TrimSpace(spec)
-	if spec == "" {
-		return nil
-	}
-	var out []shareClause
-	for _, raw := range strings.Split(spec, "|") {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-		c, ok := parseShareClause(raw)
-		if ok {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-func parseShareClause(raw string) (shareClause, bool) {
-	var c shareClause
-	switch {
-	case strings.Contains(raw, "!="):
-		field, values, ok := strings.Cut(raw, "!=")
-		if !ok {
-			return c, false
-		}
-		c.field, c.negate, c.values = strings.TrimSpace(field), true, splitShareValues(values)
-	case strings.Contains(raw, "<<="):
-		field, values, ok := strings.Cut(raw, "<<=")
-		if !ok {
-			return c, false
-		}
-		c.field, c.lte, c.values = strings.TrimSpace(field), true, splitShareValues(values)
-	case strings.Contains(raw, ">>="):
-		field, values, ok := strings.Cut(raw, ">>=")
-		if !ok {
-			return c, false
-		}
-		c.field, c.gte, c.values = strings.TrimSpace(field), true, splitShareValues(values)
-	case strings.Contains(raw, "<="):
-		field, values, ok := strings.Cut(raw, "<=")
-		if !ok {
-			return c, false
-		}
-		c.field, c.lte, c.values = strings.TrimSpace(field), true, splitShareValues(values)
-	case strings.Contains(raw, ">="):
-		field, values, ok := strings.Cut(raw, ">=")
-		if !ok {
-			return c, false
-		}
-		c.field, c.gte, c.values = strings.TrimSpace(field), true, splitShareValues(values)
-	default:
-		field, values, ok := strings.Cut(raw, "=")
-		if !ok {
-			return c, false
-		}
-		c.field, c.values = strings.TrimSpace(field), splitShareValues(values)
-	}
-	switch c.field {
-	case "contentRating", "label":
-		return c, true
-	default:
-		return shareClause{}, false
-	}
-}
-
-func splitShareValues(raw string) []string {
-	var out []string
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if decoded, err := url.QueryUnescape(part); err == nil {
-			part = decoded
-		}
-		out = append(out, part)
-	}
-	return out
-}
-
-func sharePasses(t *core.Title, spec string) bool {
-	if t == nil || spec == "" {
+func sharePassesCompiled(t *core.Title, f compiledFilter) bool {
+	if t == nil {
 		return true
 	}
-	for _, c := range parseShareFilter(spec) {
-		if !shareClausePasses(t, c) {
+	if !ratingCompiledPasses(t.ContentRating, f) {
+		return false
+	}
+	return labelCompiledPasses(t, f)
+}
+
+func ratingCompiledPasses(rating string, f compiledFilter) bool {
+	if f.maxRating != "" {
+		if !ratingClausePasses(rating, shareClause{lte: true, values: []string{f.maxRating}}) {
 			return false
 		}
+	}
+	if f.minRating != "" {
+		if !ratingClausePasses(rating, shareClause{gte: true, values: []string{f.minRating}}) {
+			return false
+		}
+	}
+	if len(f.allowRatings) > 0 && !ratingClausePasses(rating, shareClause{values: f.allowRatings}) {
+		return false
+	}
+	if len(f.denyRatings) > 0 && !ratingClausePasses(rating, shareClause{negate: true, values: f.denyRatings}) {
+		return false
 	}
 	return true
 }
 
-func shareClausePasses(t *core.Title, c shareClause) bool {
-	switch c.field {
-	case "contentRating":
-		return ratingClausePasses(t.ContentRating, c)
-	case "label":
-		return labelClausePasses(t, c)
-	default:
-		return true
+func labelCompiledPasses(t *core.Title, f compiledFilter) bool {
+	if len(f.allowLabels) > 0 && !labelClausePasses(t, shareClause{values: f.allowLabels}) {
+		return false
 	}
+	if len(f.denyLabels) > 0 && !labelClausePasses(t, shareClause{negate: true, values: f.denyLabels}) {
+		return false
+	}
+	return true
 }
 
 func ratingClausePasses(rating string, c shareClause) bool {
@@ -218,6 +264,10 @@ func isNoneRating(v string) bool {
 
 func labelClausePasses(t *core.Title, c shareClause) bool {
 	have := strings.TrimSpace(t.CollectionName)
+	if have == "" {
+		// Unmappable: no TMDB collection name. Do not hide the title.
+		return true
+	}
 	match := false
 	for _, want := range c.values {
 		if want != "" && strings.EqualFold(have, want) {
@@ -249,8 +299,8 @@ func (s *Service) AllowDownloads(u *core.User) bool {
 	if p.AllowDownloads != nil {
 		return *p.AllowDownloads
 	}
-	share := s.shareFor(u)
-	if share.AllowSync != nil && !*share.AllowSync {
+	share := s.compiledFor(u)
+	if share.allowSync != nil && !*share.allowSync {
 		return false
 	}
 	s.mu.RLock()
@@ -261,3 +311,16 @@ func (s *Service) AllowDownloads(u *core.User) bool {
 	}
 	return true
 }
+
+// FormatShareFilter turns a plex.tv filter spec into owner-readable parts.
+func FormatShareFilter(spec string) []ShareFilterPart {
+	parts := sharefilter.Format(spec)
+	out := make([]ShareFilterPart, len(parts))
+	for i, p := range parts {
+		out[i] = ShareFilterPart{Kind: p.Kind, Values: p.Values}
+	}
+	return out
+}
+
+// ShareFilterPart is one owner-readable clause of a plex.tv share filter.
+type ShareFilterPart = sharefilter.Part

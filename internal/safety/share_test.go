@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"strings"
+
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -78,6 +80,77 @@ func TestPlexShareLabelUnmapped(t *testing.T) {
 	}
 	if LabelMapNote == "" {
 		t.Fatal("document the unmapped labels")
+	}
+}
+
+func TestPlexShareUnescapesMultiValueAllowAndDeny(t *testing.T) {
+	s := shareService(t, PlexShare{
+		FilterMovies:     "contentRating=G%2CPG%2CPG-13",
+		FilterTelevision: "contentRating!=TV-MA%2CNC-17|label!=Hidden%2CKids",
+	})
+	u := &core.User{ID: 8}
+	if !s.Allowed(u, &core.Title{Type: core.TypeMovie, ContentRating: "PG"}) {
+		t.Fatal("PG is in G,PG,PG-13")
+	}
+	if !s.Allowed(u, &core.Title{Type: core.TypeMovie, ContentRating: "G"}) {
+		t.Fatal("G is in the allow list")
+	}
+	if s.Allowed(u, &core.Title{Type: core.TypeMovie, ContentRating: "R"}) {
+		t.Fatal("R is not in G,PG,PG-13")
+	}
+	if s.Allowed(u, &core.Title{Type: core.TypeMovie, ContentRating: "G,PG,PG-13"}) {
+		t.Fatal("literal joined value must not match")
+	}
+	if !s.Allowed(u, &core.Title{Type: core.TypeShow, ContentRating: "TV-PG"}) {
+		t.Fatal("TV-PG is not denied")
+	}
+	if s.Allowed(u, &core.Title{Type: core.TypeShow, ContentRating: "TV-MA"}) {
+		t.Fatal("TV-MA is denied")
+	}
+	if s.Allowed(u, &core.Title{Type: core.TypeShow, ContentRating: "TV-PG", CollectionName: "Kids"}) {
+		t.Fatal("Kids is a denied label")
+	}
+}
+
+func TestPlexShareEmptyCollectionIsNoop(t *testing.T) {
+	s := shareService(t, PlexShare{
+		FilterMovies:     "label=Kids",
+		FilterTelevision: "label!=Hidden",
+	})
+	u := &core.User{ID: 9}
+	if !s.Allowed(u, &core.Title{Type: core.TypeMovie}) {
+		t.Fatal("allow-label must not hide a title without a collection name")
+	}
+	if !s.Allowed(u, &core.Title{Type: core.TypeShow}) {
+		t.Fatal("deny-label must not hide a title without a collection name")
+	}
+	if s.Allowed(u, &core.Title{Type: core.TypeMovie, CollectionName: "Other"}) {
+		t.Fatal("allow-label still hides a different collection")
+	}
+	if s.Allowed(u, &core.Title{Type: core.TypeShow, CollectionName: "Hidden"}) {
+		t.Fatal("deny-label still hides the named collection")
+	}
+}
+
+func TestFormatShareFilterSplitsEscapedValues(t *testing.T) {
+	parts := FormatShareFilter("contentRating=G%2CPG|label!=Hidden")
+	if len(parts) != 2 || parts[0].Kind != "rating-allow" || strings.Join(parts[0].Values, ",") != "G,PG" {
+		t.Fatalf("rating %+v", parts)
+	}
+	if parts[1].Kind != "label-deny" || strings.Join(parts[1].Values, ",") != "Hidden" {
+		t.Fatalf("label %+v", parts)
+	}
+}
+
+func TestBrowseShareFilterDropsRatingWhenOwnerCaps(t *testing.T) {
+	s := shareService(t, PlexShare{FilterMovies: "contentRating<=PG|label=Kids"})
+	f := s.BrowseShareFilter(&core.User{ID: 10, MaxContentRating: "PG-13"}, core.TypeMovie)
+	if f.MaxContentRating != "" || len(f.IncludeCollections) != 1 || f.IncludeCollections[0] != "Kids" {
+		t.Fatalf("owner cap must drop rating clauses: %+v", f)
+	}
+	raw := s.BrowseShareFilter(&core.User{ID: 11}, core.TypeMovie)
+	if raw.MaxContentRating != "PG" || len(raw.IncludeCollections) != 1 {
+		t.Fatalf("share ceiling %+v", raw)
 	}
 }
 

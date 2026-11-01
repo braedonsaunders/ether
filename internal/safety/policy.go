@@ -53,6 +53,7 @@ type Service struct {
 
 	plexShare        func(*core.User) PlexShare
 	friendsDownloads func() bool
+	shareCache       map[int64]cachedShare
 
 	playbackMu    sync.Mutex
 	playbackEpoch map[int64]playbackConfirm
@@ -202,33 +203,14 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 	if !AllowedWithPolicy(u, t, s.ForUser(u)) {
 		return false
 	}
-	share := s.shareFor(u)
-	spec := shareFilter(t, share)
-	if spec == "" {
-		return true
+	compiled := shareFilterFor(t, s.compiledFor(u))
+	if ownerSetsRating(u, s.Get(u.ID)) {
+		compiled.allowRatings = nil
+		compiled.denyRatings = nil
+		compiled.maxRating = ""
+		compiled.minRating = ""
 	}
-	p := s.Get(u.ID)
-	if ownerSetsRating(u, p) {
-		filtered := dropContentRating(spec)
-		return sharePasses(t, filtered)
-	}
-	return sharePasses(t, spec)
-}
-
-func dropContentRating(spec string) string {
-	var kept []string
-	for _, raw := range strings.Split(spec, "|") {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-		c, ok := parseShareClause(raw)
-		if !ok || c.field == "contentRating" {
-			continue
-		}
-		kept = append(kept, raw)
-	}
-	return strings.Join(kept, "|")
+	return sharePassesCompiled(t, compiled)
 }
 
 // AllowedWithPolicy evaluates caller-owned policy facts. The caller must
@@ -373,6 +355,21 @@ func (s *Service) BrowseBlocks(u *core.User) (genres, keywords []string, maxRati
 	}
 	p := s.ForUser(u)
 	return append([]string(nil), p.BlockedGenres...), append([]string(nil), p.BlockedKeywords...), p.MaxContentRating
+}
+
+// BrowseShareFilter is the parsed plex.tv share predicate for one library
+// type, ready to push into catalog SQL. Owner rating caps drop plex.tv
+// rating clauses and keep label clauses.
+func (s *Service) BrowseShareFilter(u *core.User, typ core.MediaType) core.Filter {
+	if s == nil || u == nil {
+		return core.Filter{}
+	}
+	c := s.compiledFor(u)
+	f := c.movies
+	if typ == core.TypeShow || typ == core.TypeSeason || typ == core.TypeEpisode {
+		f = c.tv
+	}
+	return f.forType(typ, ownerSetsRating(u, s.Get(u.ID)))
 }
 
 // ForUser is u's policy.
