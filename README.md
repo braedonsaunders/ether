@@ -19,7 +19,6 @@
 <p align="center">
   <a href="#why-ether-exists">Why Ether exists</a> ·
   <a href="#every-app-one-server">Every app, one server</a> ·
-  <a href="#faster-than-the-real-servers">Performance</a> ·
   <a href="#alongside-your-local-library">Alongside your library</a> ·
   <a href="#under-the-hood">Under the hood</a> ·
   <a href="#the-owner-experience">Owner console</a> ·
@@ -71,26 +70,6 @@ Ether is a Plex server to one app and a Jellyfin server to another, at the same 
 - **One playback engine:** Every protocol routes through one session broker (`internal/sessions`). Concurrent stream limits, bandwidth budgets, household safety rules, and owner **Stop** actions apply across all apps together, and concurrent plays of the same release share one upstream fetch.
 - **Verified protocol conformance:** Jellyfin (target 12.4), Emby (target 4.10.2), and Silo responses are verified offline against recorded reference corpora (`internal/conform`, `cmd/conformdiff`) with zero blocking diffs. Plex responses are checked against recorded Plex Media Server fixtures (`internal/pmsconform`, `cmd/pmsdiff`) with a CI gate on load-bearing fields.
 - **No borrowed web clients:** Ether ships no third-party web client code. Opening `/web` on a Jellyfin or Emby listener serves a translated Ether page naming the supported native apps and how to connect.
-
----
-
-## Faster than the real servers
-
-Ether is architected so that no request path scales with library size (`docs/performance.md`). Search uses SQLite FTS5 trigram and people word-prefix indexes (or PostgreSQL `pg_trgm`), browse totals read narrow covering indexes, and per-viewer caches are stamped with the catalogue write generation and viewer-policy epoch.
-
-On a matched 2-CPU, 6 GB head-to-head benchmark (`docs/scorecard.md`, `docs/scorecard.json`) against reference Jellyfin 12.4 and Emby 4.10.2 containers serving the same media file, and on a 264,000-title production catalogue snapshot (`docs/performance.md`):
-
-| Measurement | Ether | Reference server | Context |
-| :--- | :--- | :--- | :--- |
-| **Home views (`GET /Users/{id}/Views`, p50 / p95)** | **6.2 / 11.5 ms** (JF) · **1.15 / 3.06 ms** (Emby) | 31.5 / 50.0 ms (JF) · 1.49 / 5.04 ms (Emby) | Matched 2-CPU lab (`docs/scorecard.json`) |
-| **Direct play to first media byte (p50 / p95)** | **7.68 / 23.39 ms** (JF) · **4.28 / 9.69 ms** (Emby) | 38.63 / 57.66 ms (JF) · 5.28 / 7.21 ms (Emby) | `PlaybackInfo` + first byte (`docs/scorecard.md`) |
-| **Seek to first media byte (p50 / p95)** | **4.78 / 6.22 ms** (JF) · **4.34 / 6.77 ms** (Emby) | 40.57 / 56.71 ms (JF) · 5.42 / 7.14 ms (Emby) | Mid-stream range seek (`docs/scorecard.md`) |
-| **Resume to first media byte (p50 / p95)** | **4.84 / 8.36 ms** (JF) · **4.13 / 13.83 ms** (Emby) | 42.18 / 57.30 ms (JF) · 5.47 / 7.33 ms (Emby) | Resume from saved offset (`docs/scorecard.md`) |
-| **Large-library Home & On Deck (cold)** | **0.13–0.20 s** | 35–90 s (pre-0.3 Ether) | 264k catalogue rows, 51k history rows (`docs/performance.md`) |
-| **Large-library search (`query=star`, cold)** | **0.08 s** (Plex) · **0.12–0.29 s** (Infuse) · **0.05–0.17 s** (Emby) | 3.7–26 s (pre-0.3 Ether) | 264k catalogue rows (`docs/performance.md`) |
-| **540k-title recursive episode page (400 items)** | **54 ms** (14 ms DB, 600 statements) | 14.4 s (10.3 s DB, 270k statements) | Synthetic 540k-row CI performance gate |
-
-**Where Ether trails:** On the shared lab host (`docs/scorecard.md`), Ether's Emby p95 trailed reference Emby on direct play (9.69 ms vs 7.21 ms) and resume (13.83 ms vs 7.33 ms). On the earlier pre-fast-forward scorecard snapshot (`e3792dab4`), uncached 40-episode `/Items` lists (458 ms p50 vs 36 ms on Jellyfin; 510 ms vs 4.9 ms on Emby) and 4-movie Emby lists (56 ms vs 2.2 ms) were slower than the local-file reference servers because of per-item metadata checks that were subsequently moved off the request path. For cold on-demand playback of a title that has not been warmed on a detail page, first start also includes indexer search and Usenet/debrid source verification (typically 0.4–6 s when cached on debrid or Usenet, and longer if an external indexer times out).
 
 ---
 
