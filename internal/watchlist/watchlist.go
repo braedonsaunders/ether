@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/egress"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/schedule"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -63,7 +64,8 @@ type Options struct {
 	Allowed      func(*core.User, *core.Title) bool
 	Notifier     Notifier
 	Client       *http.Client
-	PlexBaseURL  string
+	PlexBaseURL      string
+	ClientIdentifier string
 	Now          func() time.Time
 	PrewarmBytes int64
 	// SyncInterval is how often Run passes over every viewer (30m).
@@ -113,6 +115,9 @@ func New(db *sql.DB, o Options) *Service {
 	}
 	if o.PlexBaseURL == "" {
 		o.PlexBaseURL = "https://discover.provider.plex.tv"
+	}
+	if o.ClientIdentifier == "" {
+		o.ClientIdentifier = plexguid.ClientIdentifier("")
 	}
 	if o.PrewarmBytes <= 0 {
 		o.PrewarmBytes = 8 << 20

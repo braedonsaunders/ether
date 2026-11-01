@@ -24,6 +24,9 @@ func (s *Service) plex(ctx context.Context, token string) ([]core.Title, error) 
 		req.Header.Set("X-Plex-Token", token)
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-Plex-Product", "Ether")
+		if s.o.ClientIdentifier != "" {
+			req.Header.Set("X-Plex-Client-Identifier", s.o.ClientIdentifier)
+		}
 		resp, err := s.o.Client.Do(req)
 		if err != nil {
 			return nil, errors.New("Plex watchlist request failed")

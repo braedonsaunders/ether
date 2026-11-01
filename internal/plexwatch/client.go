@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/egress"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/retryafter"
 )
 
@@ -69,7 +70,7 @@ type Client struct {
 
 func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*Client, error) {
 	if clientID == "" {
-		clientID = "ether-plex-watch"
+		clientID = plexguid.ClientIdentifier("")
 	}
 	if now == nil {
 		now = time.Now
