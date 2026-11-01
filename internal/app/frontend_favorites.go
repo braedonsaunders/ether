@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,11 @@ func (a *App) favoriteSignals(ctx context.Context, viewer *core.User) ([]persona
 	var out []personalize.FavoriteSignal
 	for _, kind := range []favorites.Kind{favorites.KindTitle, favorites.KindPerson} {
 		entries, err := a.favorites.List(ctx, viewer, kind, 0)
+		if errors.Is(err, favorites.ErrForbidden) {
+			// A viewer without server access (imported history only) has no
+			// favorites to weigh; their taste still builds from history.
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}

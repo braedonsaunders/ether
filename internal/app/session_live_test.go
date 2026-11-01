@@ -182,9 +182,9 @@ func (p *liveTestPlayback) PrepareSurface(ctx context.Context, u *core.User, k c
 func (p *liveTestPlayback) SessionForSurface(string, int64, string, core.RatingKey, string, bool) (*core.PlaySession, bool) {
 	return nil, false
 }
-func (p *liveTestPlayback) MarkSurfaceOpened(string) bool                        { return true }
-func (p *liveTestPlayback) MarkSurfacePrepared(string) bool                      { return true }
-func (p *liveTestPlayback) Session(string) (*core.PlaySession, bool)             { return nil, false }
+func (p *liveTestPlayback) MarkSurfaceOpened(string) bool            { return true }
+func (p *liveTestPlayback) MarkSurfacePrepared(string) bool          { return true }
+func (p *liveTestPlayback) Session(string) (*core.PlaySession, bool) { return nil, false }
 func (p *liveTestPlayback) SessionFor(int64, string, core.RatingKey) (*core.PlaySession, bool) {
 	return nil, false
 }
@@ -274,16 +274,20 @@ func TestSwiftfinLiveTVSequenceIPTVAndVirtual(t *testing.T) {
 	events := sessions.NewEventBus(nil, activeViewer)
 	defer events.Close()
 	broker, err := sessions.NewBroker(sessions.BrokerDeps{
-		Events:       events,
-		Playback:     pb,
-		Transcoder:   tc,
-		Live:         sessionLive{service: service, cached: func(_ context.Context, k core.RatingKey) (*core.Title, error) { return &core.Title{Key: k, Title: "Feature Film"}, nil }},
+		Events:     events,
+		Playback:   pb,
+		Transcoder: tc,
+		Live: sessionLive{service: service, cached: func(_ context.Context, k core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: k, Title: "Feature Film"}, nil
+		}},
 		Progress:     watch,
 		ActiveViewer: activeViewer,
 		CanPlay:      func(*core.Viewer, bool, time.Time) bool { return true },
 		BitrateLimit: func(*core.Viewer) int { return 0 },
 		OnTimeline:   func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
-		Lookup:       func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) { return &core.Title{Key: k, Title: "Feature Film"}, nil },
+		Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: k, Title: "Feature Film"}, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -588,16 +592,20 @@ func TestSiloLiveTVSequenceIPTVVirtualAndReplan(t *testing.T) {
 	events := sessions.NewEventBus(nil, activeViewer)
 	defer events.Close()
 	broker, err := sessions.NewBroker(sessions.BrokerDeps{
-		Events:       events,
-		Playback:     pb,
-		Transcoder:   tc,
-		Live:         sessionLive{service: service, cached: func(_ context.Context, k core.RatingKey) (*core.Title, error) { return &core.Title{Key: k, Title: "Cached Programme"}, nil }},
+		Events:     events,
+		Playback:   pb,
+		Transcoder: tc,
+		Live: sessionLive{service: service, cached: func(_ context.Context, k core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: k, Title: "Cached Programme"}, nil
+		}},
 		Progress:     watch,
 		ActiveViewer: activeViewer,
 		CanPlay:      func(*core.Viewer, bool, time.Time) bool { return true },
 		BitrateLimit: func(*core.Viewer) int { return 0 },
 		OnTimeline:   func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
-		Lookup:       func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) { return &core.Title{Key: k, Title: "Cached Programme"}, nil },
+		Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: k, Title: "Cached Programme"}, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

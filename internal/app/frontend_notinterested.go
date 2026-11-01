@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/notinterested"
 	"github.com/braedonsaunders/ether/internal/personalize"
 )
 
@@ -14,6 +16,9 @@ func (a *App) notInterestedSignals(ctx context.Context, u *core.User) ([]persona
 		return nil, nil
 	}
 	entries, err := a.notInterested.List(ctx, u, 0)
+	if errors.Is(err, notinterested.ErrForbidden) {
+		return nil, nil // no server access: nothing hidden to weigh
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -29,6 +34,9 @@ func (a *App) notInterestedSnapshot(ctx context.Context, u *core.User) ([]person
 		return nil, 0, nil
 	}
 	entries, revision, err := a.notInterested.Snapshot(ctx, u)
+	if errors.Is(err, notinterested.ErrForbidden) {
+		return nil, 0, nil
+	}
 	if err != nil {
 		return nil, 0, err
 	}
