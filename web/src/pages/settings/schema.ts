@@ -378,11 +378,11 @@ export const CATALOG: FieldGroup[] = localized(() => [
   },
 ]);
 
-/** How many same-quality copies Plex lists after Auto. Edited on Quality profiles. */
+/** How many same-quality copies apps list after Auto. Edited on Releases → Searching. */
 export const PLAY_VERSIONS: FieldGroup[] = localized(() => [
   {
     title: t("Versions in the app"),
-    description: t("Extra copies of the same picture, after Auto in Plex."),
+    description: t("Extra copies of the same picture, after Auto."),
     fields: [
       {
         key: "sameQualityAlternatives",
@@ -391,29 +391,28 @@ export const PLAY_VERSIONS: FieldGroup[] = localized(() => [
         min: 0,
         max: 3,
         step: 1,
-        help: t("Listed after Auto in Plex's Play Version menu."),
+        help: t("Listed after Auto in the app's version menu."),
       },
       {
         key: "offerHigherVersions",
         label: t("Offer higher versions"),
         kind: "bool",
         help: t(
-          "Play Version can list releases taller than the profile. Off keeps the ceiling you set. HDR and file-size limits still apply.",
+          "Version menus can list releases taller than the profile. Off keeps the ceiling you set. HDR and file-size limits still apply.",
         ),
       },
     ],
   },
 ]);
 
-/** Engine search memory. Edited under More options on Releases → Quality. */
+/** Engine search memory. Edited on Releases → Searching. */
 export const RELEASE_SEARCH: FieldGroup[] = localized(() => [
   {
     title: t("How Ether searches"),
     description: t(
       "How many releases Ether keeps ready, and how long it remembers a search. The defaults are enough for a household.",
     ),
-    fields: [],
-    more: [
+    fields: [
       {
         key: "maxCandidates",
         label: t("Releases to keep ready"),

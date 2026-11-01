@@ -105,7 +105,7 @@ function GettingStarted({ sessions }: { sessions: NowPlaying[] }) {
       id: "quality",
       todo: profile === "1080p",
       label: t("Playback quality: {profile} at home · change", { profile }),
-      to: "/releases/quality",
+      to: "/releases/profiles",
     },
   ].filter((step) => step.todo);
   if (steps.length === 0) return <span hidden data-testid="getting-started-clear" />;

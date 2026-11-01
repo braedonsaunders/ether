@@ -194,7 +194,7 @@ describe("Release history", () => {
 
   it("does not keep a /releases/search page", async () => {
     const { fake } = renderApp("/releases/search?key=1000000000000550&title=Fight%20Club%20(1999)");
-    expect(await screen.findByRole("tab", { name: "Quality profiles" }, WAIT)).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Profiles" }, WAIT)).toBeInTheDocument();
     expect(calls(fake, "GET", "/releases/search?key=1000000000000550")).toHaveLength(0);
   });
 });

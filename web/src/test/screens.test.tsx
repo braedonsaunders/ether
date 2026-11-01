@@ -191,7 +191,7 @@ describe("Getting started", () => {
     expect(screen.getByRole("link", { name: "Add viewers" })).toHaveAttribute("href", "/viewers");
     expect(
       screen.getByRole("link", { name: "Playback quality: 1080p at home · change" }),
-    ).toHaveAttribute("href", "/releases/quality");
+    ).toHaveAttribute("href", "/releases/profiles");
     expect(within(steps).queryByRole("link", { name: "Connect Plex" })).toBeNull(); // Plex is off
     fireEvent.click(within(steps).getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("region", { name: "Next steps" })).not.toBeInTheDocument();

@@ -184,10 +184,10 @@ export const PAGES = localized<PageDef[]>(() => [
     title: t("Releases"),
     sections: [
       {
-        key: "quality",
-        title: t("Quality profiles"),
+        key: "profiles",
+        title: t("Profiles"),
         keywords: searchTerms(
-          msg("resolution 4k 1080p remote cam scoring trash custom formats versions"),
+          msg("quality profiles resolution 4k 1080p remote cam scoring trash custom formats rules ranking"),
         ),
       },
       {
@@ -196,14 +196,19 @@ export const PAGES = localized<PageDef[]>(() => [
         keywords: searchTerms(msg("device client profile")),
       },
       {
-        key: "pinned",
-        title: t("Pinned"),
-        keywords: searchTerms(msg("pin release override search interactive manual pick find")),
+        key: "searching",
+        title: t("Searching"),
+        keywords: searchTerms(msg("how ether searches versions cache health samples candidates")),
       },
       {
         key: "blocklist",
         title: t("Blocklist"),
         keywords: searchTerms(msg("blocked bad release unblock terms groups")),
+      },
+      {
+        key: "pinned",
+        title: t("Pinned"),
+        keywords: searchTerms(msg("pin release override search interactive manual pick find")),
       },
       {
         key: "history",

@@ -4,13 +4,12 @@ import {
   Input,
   SearchSelect,
   Select,
-  SettingsSection,
   Switch,
   Textarea,
 } from "@braedonsaunders/appkit-ui";
 import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2, Upload, Download } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { DragHandle, SortableList } from "../../components/Sortable";
+import { DragHandle, type DragHandleProps } from "../../components/Sortable";
 import { t, getLocale, localized } from "../../i18n";
 import { useLocale } from "../../i18n/react";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
@@ -19,13 +18,113 @@ import type { QualityProfile, ReleaseCondition, ReleaseRule } from "../../lib/ty
 import type { ConsoleRelease } from "../../lib/releases";
 import { TitlePicker } from "./Search";
 
+export const DEFAULT_BUILTIN_RANKING = [
+  "language",
+  "connection",
+  "resolution",
+  "releaseType",
+  "hdr",
+  "verified",
+  "videoCodec",
+  "audioFormat",
+  "size",
+] as const;
+
+const BUILTIN_SET = new Set<string>(DEFAULT_BUILTIN_RANKING);
+
+/**
+ * Mirrors internal/core.NormalizeProfileRanking: Prefer rules sit at the top
+ * by default in their rule order, followed by the built-in steps.
+ */
+export function normalizeRanking(profile: Pick<QualityProfile, "ranking" | "releaseRules">): string[] {
+  const rules = profile.releaseRules ?? [];
+  const preferSteps: string[] = [];
+  const validPrefer = new Set<string>();
+  for (const r of rules) {
+    if (r.action === "prefer" && r.id) {
+      const key = `rule:${r.id}`;
+      if (!validPrefer.has(key)) {
+        validPrefer.add(key);
+        preferSteps.push(key);
+      }
+    }
+  }
+  const raw = profile.ranking ?? [];
+  if (raw.length === 0) {
+    return [...preferSteps, ...DEFAULT_BUILTIN_RANKING];
+  }
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const step of raw) {
+    if (seen.has(step)) continue;
+    if (step.startsWith("rule:")) {
+      if (validPrefer.has(step)) {
+        seen.add(step);
+        kept.push(step);
+      }
+      continue;
+    }
+    if (BUILTIN_SET.has(step)) {
+      seen.add(step);
+      kept.push(step);
+    }
+  }
+  const missingPrefer = preferSteps.filter((step) => !seen.has(step));
+  const out = [...missingPrefer, ...kept];
+  for (const step of DEFAULT_BUILTIN_RANKING) {
+    if (!seen.has(step)) {
+      out.push(step);
+    }
+  }
+  return out;
+}
+
+/** Keeps the relative order of Prefer rules in releaseRules aligned with ranking. */
+export function syncRulesWithRanking(rules: ReleaseRule[], ranking: string[]): ReleaseRule[] {
+  const byId = new Map<string, ReleaseRule>();
+  for (const r of rules) {
+    if (r.action === "prefer" && r.id) {
+      byId.set(r.id, r);
+    }
+  }
+  const orderedPrefer: ReleaseRule[] = [];
+  const used = new Set<string>();
+  for (const step of ranking) {
+    if (!step.startsWith("rule:")) continue;
+    const id = step.slice(5);
+    const r = byId.get(id);
+    if (r && !used.has(id)) {
+      used.add(id);
+      orderedPrefer.push(r);
+    }
+  }
+  for (const r of rules) {
+    if (r.action === "prefer" && !used.has(r.id)) {
+      orderedPrefer.push(r);
+    }
+  }
+  let preferIdx = 0;
+  return rules.map((r) => (r.action === "prefer" ? orderedPrefer[preferIdx++]! : r));
+}
+
+/** Inserts a new Prefer rule at the end of the leading Prefer-rule block in ranking. */
+export function insertPreferRuleInRanking(ranking: string[], ruleId: string): string[] {
+  const key = `rule:${ruleId}`;
+  const without = ranking.filter((s) => s !== key);
+  let insertAt = 0;
+  while (insertAt < without.length && without[insertAt]!.startsWith("rule:")) {
+    insertAt++;
+  }
+  return [...without.slice(0, insertAt), key, ...without.slice(insertAt)];
+}
+
 const FIELDS = localized((): [string, string][] => [
   ["language", t("Declared audio language")],
   ["subtitles", t("Declared subtitle language")],
   ["audio_matches_original", t("Original-language audio")],
   ["name", t("Release name")],
   ["group", t("Release group")],
-  ["source", t("Source")],
+  ["source", t("Release type")],
   ["video", t("Video codec")],
   ["audio", t("Audio codec")],
   ["height", t("Resolution")],
@@ -94,7 +193,7 @@ function retarget(current: ReleaseCondition, field: string): ReleaseCondition {
   return next;
 }
 
-function rule(
+function createRule(
   name: string,
   c: ReleaseCondition,
   action: ReleaseRule["action"] = "prefer",
@@ -120,7 +219,7 @@ export function releaseRuleConflict(rules: ReleaseRule[]): string {
       const prev = seen.get(c.field);
       if (prev != null && prev.toLowerCase() !== (c.value ?? "").toLowerCase()) {
         return t(
-          "Required preference {name} cannot match: {field} would have to equal both {left} and {right}.",
+          "Required rule {name} cannot match: {field} would have to equal both {left} and {right}.",
           { name: r.name, field: fieldLabel(c.field), left: prev, right: c.value ?? "" },
         );
       }
@@ -134,7 +233,7 @@ export function releaseRuleConflict(rules: ReleaseRule[]): string {
       const b = needs[j]!;
       if (a.field === b.field && a.value.toLowerCase() !== b.value.toLowerCase()) {
         return t(
-          "Required preferences {a} and {b} cannot match the same release: {field} would have to equal both {left} and {right}.",
+          "Required rules {a} and {b} cannot match the same release: {field} would have to equal both {left} and {right}.",
           { a: a.name, b: b.name, field: fieldLabel(a.field), left: a.value, right: b.value },
         );
       }
@@ -300,33 +399,220 @@ function ConditionGroup({
   );
 }
 
+export function RuleEditorCard({
+  rule: r,
+  handle,
+  stepNumber,
+  canMoveUp,
+  canMoveDown,
+  onMove,
+  onChange,
+  onRemove,
+}: {
+  rule: ReleaseRule;
+  handle?: DragHandleProps;
+  stepNumber?: number;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMove?: (dir: -1 | 1) => void;
+  onChange: (patch: Partial<ReleaseRule>) => void;
+  onRemove: () => void;
+}) {
+  const [advanced, setAdvanced] = useState(false);
+  return (
+    <article className={`space-y-3 px-3 py-3 ${r.disabled ? "opacity-60" : ""}`}>
+      <div className="flex items-center gap-2">
+        {handle ? <DragHandle handle={handle} label={t("Move rule")} /> : null}
+        {stepNumber != null ? (
+          <span className="w-5 text-xs tabular-nums text-fg-muted">{stepNumber}</span>
+        ) : null}
+        <Input
+          aria-label={t("Rule name")}
+          value={r.name}
+          className="min-w-0 flex-1 font-medium"
+          onChange={(e) => onChange({ name: e.target.value })}
+        />
+        <Switch
+          aria-label={t("Enabled")}
+          checked={!r.disabled}
+          onChange={(e) => onChange({ disabled: !e.currentTarget.checked })}
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t("Remove rule")}
+          onClick={onRemove}
+        >
+          <Trash2 size={14} />
+        </Button>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Select
+          aria-label={t("Action")}
+          className="w-full font-medium sm:w-36"
+          value={r.action}
+          onChange={(e) =>
+            onChange({
+              action: e.target.value as ReleaseRule["action"],
+              fallback: e.target.value === "require" ? r.fallback : [],
+            })
+          }
+        >
+          <option value="require">{t("Only play")}</option>
+          <option value="prefer">{t("Prefer")}</option>
+          <option value="avoid">{t("Never play")}</option>
+        </Select>
+        <span className="text-xs text-fg-muted">
+          {r.action === "require"
+            ? t("Must match to play.")
+            : r.action === "avoid"
+              ? t("Matching releases are skipped.")
+              : t("Ranks ahead of lower steps.")}
+        </span>
+      </div>
+      {r.conditions[0] && (
+        <ConditionEditor
+          value={r.conditions[0]}
+          onChange={(v) => onChange({ conditions: [v, ...r.conditions.slice(1)] })}
+        />
+      )}
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-expanded={advanced}
+          onClick={() => setAdvanced((v) => !v)}
+        >
+          {t("Advanced")}
+          <ChevronDown size={13} />
+        </Button>
+        <span className="flex-1" />
+        {onMove ? (
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              disabled={!canMoveUp}
+              aria-label={t("Move up")}
+              onClick={() => onMove(-1)}
+            >
+              <ArrowUp size={13} />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              disabled={!canMoveDown}
+              aria-label={t("Move down")}
+              onClick={() => onMove(1)}
+            >
+              <ArrowDown size={13} />
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {advanced && (
+        <div className="space-y-4 border-t border-border pt-3">
+          <Select
+            aria-label={t("Match conditions")}
+            value={r.match ?? "all"}
+            onChange={(e) => onChange({ match: e.target.value as "all" | "any" })}
+          >
+            <option value="all">{t("Match all conditions")}</option>
+            <option value="any">{t("Match any condition")}</option>
+          </Select>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">{t("Other conditions")}</p>
+            <ConditionGroup
+              values={r.conditions.slice(1)}
+              onChange={(rest) =>
+                onChange({ conditions: [r.conditions[0]!, ...rest].filter(Boolean) })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">{t("Except when any matches")}</p>
+            <ConditionGroup
+              values={r.unless ?? []}
+              onChange={(unless) => onChange({ unless })}
+            />
+          </div>
+          {r.action === "require" && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t("Fallbacks")}</p>
+              <p className="text-xs text-fg-muted">
+                {t(
+                  "Empty means no fallback. Matching alternatives are tried after primary matches.",
+                )}
+              </p>
+              <ConditionGroup
+                values={r.fallback ?? []}
+                onChange={(fallback) => onChange({ fallback })}
+              />
+            </div>
+          )}
+          <p className="text-xs text-fg-muted">
+            {t("Expressions ignore case. Lookarounds and backreferences are not supported.")}
+          </p>
+        </div>
+      )}
+    </article>
+  );
+}
+
 type PreviewBody = { releases?: ConsoleRelease[]; warning?: string; note?: string };
 
-export function ReleasePreferences({
+/**
+ * Filter rules (Only play / Never play) plus the rule builder and import/export
+ * controls inside Section 1 ("Never play"). Adding a Prefer rule appends it to
+ * releaseRules and places its step at the top of the Section 2 ranking ladder.
+ */
+export function FilterRulesEditor({
   profile,
   onChange,
   error,
 }: {
   profile: QualityProfile;
-  onChange: (v: ReleaseRule[]) => void;
+  onChange: (patch: Pick<QualityProfile, "releaseRules" | "ranking">) => void;
   error?: string;
 }) {
   useLocale();
   const rules = profile.releaseRules ?? [];
+  const filterRules = rules.filter((r) => r.action === "require" || r.action === "avoid");
   const [term, setTerm] = useState("");
   const [field, setField] = useState("name");
   const [action, setAction] = useState<ReleaseRule["action"]>("prefer");
-  const [advanced, setAdvanced] = useState<string | null>(null);
   const [importError, setImportError] = useState("");
   const file = useRef<HTMLInputElement>(null);
-  const rulesRef = useRef(rules);
+  const profileRef = useRef(profile);
   const importAbort = useRef<AbortController | null>(null);
-  rulesRef.current = rules;
+  profileRef.current = profile;
   useEffect(() => () => importAbort.current?.abort(), []);
 
-  const patch = (id: string, v: Partial<ReleaseRule>) =>
-    onChange(rules.map((r) => (r.id === id ? { ...r, ...v } : r)));
   const conflict = releaseRuleConflict(rules);
+
+  function updateRule(id: string, patch: Partial<ReleaseRule>) {
+    const nextRules = rules.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    const currentRanking = normalizeRanking(profile);
+    let nextRanking = currentRanking;
+    if (patch.action === "prefer") {
+      nextRanking = insertPreferRuleInRanking(currentRanking, id);
+    } else if (patch.action === "require" || patch.action === "avoid") {
+      nextRanking = currentRanking.filter((s) => s !== `rule:${id}`);
+    }
+    onChange({
+      releaseRules: syncRulesWithRanking(nextRules, nextRanking),
+      ranking: nextRanking,
+    });
+  }
+
+  function removeRule(id: string) {
+    const nextRules = rules.filter((r) => r.id !== id);
+    const nextRanking = normalizeRanking(profile).filter((s) => s !== `rule:${id}`);
+    onChange({
+      releaseRules: nextRules,
+      ranking: nextRanking,
+    });
+  }
 
   function addTerm() {
     const value = term.trim();
@@ -341,12 +627,22 @@ export function ReleasePreferences({
     } else {
       c.value = value;
     }
-    onChange([...rules, rule(value, c, action)]);
+    const added = createRule(value, c, action);
+    const nextRules = [...rules, added];
+    const currentRanking = normalizeRanking(profile);
+    const nextRanking =
+      action === "prefer"
+        ? insertPreferRuleInRanking(currentRanking, added.id)
+        : currentRanking;
+    onChange({
+      releaseRules: syncRulesWithRanking(nextRules, nextRanking),
+      ranking: nextRanking,
+    });
     setTerm("");
   }
 
   async function importRules(f: File) {
-    const start = JSON.stringify(rulesRef.current);
+    const startRules = JSON.stringify(profileRef.current.releaseRules ?? []);
     const controller = new AbortController();
     importAbort.current?.abort();
     importAbort.current = controller;
@@ -359,24 +655,39 @@ export function ReleasePreferences({
         reader.readAsText(f);
       });
       const data = JSON.parse(text) as ReleaseRule[];
-      if (!Array.isArray(data) || data.length + rulesRef.current.length > 32)
-        throw Error(t("Use a rules export with at most 32 preferences."));
+      const currentRules = profileRef.current.releaseRules ?? [];
+      if (!Array.isArray(data) || data.length + currentRules.length > 32)
+        throw Error(t("Use a rules export with at most 32 rules."));
       const next = data.map((r) => ({ ...r, id: crypto.randomUUID() }));
+      const mergedRules = [...currentRules, ...next];
+      let nextRanking = normalizeRanking(profileRef.current);
+      for (const r of next) {
+        if (r.action === "prefer") {
+          nextRanking = insertPreferRuleInRanking(nextRanking, r.id);
+        }
+      }
       const body = await apiFetch<PreviewBody>("/releases/rules/preview", {
         method: "POST",
         signal: controller.signal,
         body: JSON.stringify({
-          profile: { ...profile, releaseRules: [...rulesRef.current, ...next] },
+          profile: {
+            ...profileRef.current,
+            releaseRules: mergedRules,
+            ranking: nextRanking,
+          },
           names: [],
         }),
       });
       if (controller.signal.aborted) return;
-      if (JSON.stringify(rulesRef.current) !== start) {
+      if (JSON.stringify(profileRef.current.releaseRules ?? []) !== startRules) {
         setImportError(t("The profile changed during import. Nothing was added."));
         return;
       }
       if (body.warning) throw Error(body.warning);
-      onChange([...rulesRef.current, ...next]);
+      onChange({
+        releaseRules: syncRulesWithRanking(mergedRules, nextRanking),
+        ranking: nextRanking,
+      });
       setImportError("");
     } catch (e) {
       if (isAbort(e) || controller.signal.aborted) return;
@@ -390,256 +701,107 @@ export function ReleasePreferences({
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = "release-preferences.json";
+    a.download = "release-rules.json";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   return (
-    <SettingsSection
-      title={t("Release preferences")}
-      description={t(
-        "Set your must-haves, then put preferences in priority order. TRaSH scores break ties.",
-      )}
-    >
-      <div className="space-y-4 px-5 py-4">
-        <p className="text-sm text-fg-muted">
+    <div className="space-y-4 border-t border-border px-5 py-4">
+      <div className="space-y-1">
+        <h4 className="text-sm font-medium text-fg">{t("Rules")}</h4>
+        <p className="text-xs text-fg-muted">
           {t(
-            "Release tags are declarations, not verified tracks. Missing facts cannot satisfy a requirement. Pins and explicit version picks can override profile rules.",
+            "Only play and Never play rules filter releases here. Prefer rules become steps in What matters most below.",
           )}
         </p>
-        <div className="space-y-2">
-          <Input
-            aria-label={t("Add preference")}
-            placeholder={t("Type a language, tag or release group…")}
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && term.trim() && rules.length < 32) {
-                e.preventDefault();
-                addTerm();
-              }
-            }}
-          />
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="min-w-0 sm:flex-1">
-              <SearchSelect
-                {...searchSelectLabels()}
-                ariaLabel={t("What it describes")}
-                value={field}
-                options={FIELDS.map(([value, label]) => ({ value, label }))}
-                onChange={setField}
-              />
-            </div>
-            <Select
-              aria-label={t("Action")}
-              className="w-full sm:w-36"
-              value={action}
-              onChange={(e) => setAction(e.target.value as ReleaseRule["action"])}
-            >
-              <option value="require">{t("Require")}</option>
-              <option value="prefer">{t("Prefer")}</option>
-              <option value="avoid">{t("Avoid")}</option>
-            </Select>
-            <Button size="sm" disabled={rules.length >= 32 || !term.trim()} onClick={addTerm}>
-              <Plus size={14} />
-              {t("Add preference")}
-            </Button>
-          </div>
-          <p className="text-xs text-fg-muted">
-            {t("Suggestions are optional. You can type any language, region, group or text.")}
-          </p>
-          {field === "audio_matches_original" && (
-            <p className="text-xs text-fg-muted">
-              {t(
-                "Declared audio must match this title's original language. Subtitles do not count, and a filename alone cannot make the comparison.",
-              )}
-            </p>
-          )}
-        </div>
-        {(error || importError || conflict) && (
-          <p role="alert" className="text-sm text-danger">
-            {error || importError || conflict}
-          </p>
-        )}
-        {!rules.length && (
-          <p className="text-sm text-fg-muted">
-            {t("Type a term to start, then choose what it describes.")}
-          </p>
-        )}
-        <SortableList
-          items={rules}
-          getId={(r) => r.id}
-          onReorder={onChange}
-          className="divide-y divide-border overflow-hidden rounded-lg border border-border"
-          renderItem={(r, handle, index) => (
-            <article className={`space-y-3 px-3 py-3 ${r.disabled ? "opacity-60" : ""}`}>
-              <div className="flex items-center gap-2">
-                <DragHandle handle={handle} label={t("Move preference")} />
-                <span className="w-5 text-xs tabular-nums text-fg-muted">{index + 1}</span>
-                <Input
-                  aria-label={t("Preference name")}
-                  value={r.name}
-                  className="min-w-0 flex-1 font-medium"
-                  onChange={(e) => patch(r.id, { name: e.target.value })}
-                />
-                <Switch
-                  aria-label={t("Enabled")}
-                  checked={!r.disabled}
-                  onChange={(e) => patch(r.id, { disabled: !e.currentTarget.checked })}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t("Remove preference")}
-                  onClick={() => onChange(rules.filter((x) => x.id !== r.id))}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Select
-                  aria-label={t("Action")}
-                  className="w-full font-medium sm:w-36"
-                  value={r.action}
-                  onChange={(e) =>
-                    patch(r.id, {
-                      action: e.target.value as ReleaseRule["action"],
-                      fallback: e.target.value === "require" ? r.fallback : [],
-                    })
-                  }
-                >
-                  <option value="require">{t("Require")}</option>
-                  <option value="prefer">{t("Prefer")}</option>
-                  <option value="avoid">{t("Avoid")}</option>
-                </Select>
-                <span className="text-xs text-fg-muted">
-                  {r.action === "require"
-                    ? t("Must match to play.")
-                    : r.action === "avoid"
-                      ? t("Matching releases are excluded.")
-                      : t("Ranks ahead of lower preferences.")}
-                </span>
-              </div>
-              {r.conditions[0] && (
-                <ConditionEditor
-                  value={r.conditions[0]}
-                  onChange={(v) => patch(r.id, { conditions: [v, ...r.conditions.slice(1)] })}
-                />
-              )}
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-expanded={advanced === r.id}
-                  onClick={() => setAdvanced(advanced === r.id ? null : r.id)}
-                >
-                  {t("Advanced")}
-                  <ChevronDown size={13} />
-                </Button>
-                <span className="flex-1" />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  disabled={index === 0}
-                  aria-label={t("Move up")}
-                  onClick={() => {
-                    const next = [...rules];
-                    [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
-                    onChange(next);
-                  }}
-                >
-                  <ArrowUp size={13} />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  disabled={index === rules.length - 1}
-                  aria-label={t("Move down")}
-                  onClick={() => {
-                    const next = [...rules];
-                    [next[index + 1], next[index]] = [next[index]!, next[index + 1]!];
-                    onChange(next);
-                  }}
-                >
-                  <ArrowDown size={13} />
-                </Button>
-              </div>
-              {advanced === r.id && (
-                <div className="space-y-4 border-t border-border pt-3">
-                  <Select
-                    aria-label={t("Match conditions")}
-                    value={r.match ?? "all"}
-                    onChange={(e) => patch(r.id, { match: e.target.value as "all" | "any" })}
-                  >
-                    <option value="all">{t("Match all conditions")}</option>
-                    <option value="any">{t("Match any condition")}</option>
-                  </Select>
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">{t("Other conditions")}</p>
-                    <ConditionGroup
-                      values={r.conditions.slice(1)}
-                      onChange={(rest) =>
-                        patch(r.id, { conditions: [r.conditions[0]!, ...rest].filter(Boolean) })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">{t("Except when any matches")}</p>
-                    <ConditionGroup
-                      values={r.unless ?? []}
-                      onChange={(unless) => patch(r.id, { unless })}
-                    />
-                  </div>
-                  {r.action === "require" && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">{t("Fallbacks")}</p>
-                      <p className="text-xs text-fg-muted">
-                        {t(
-                          "Empty means no fallback. Matching alternatives are tried after primary matches.",
-                        )}
-                      </p>
-                      <ConditionGroup
-                        values={r.fallback ?? []}
-                        onChange={(fallback) => patch(r.id, { fallback })}
-                      />
-                    </div>
-                  )}
-                  <p className="text-xs text-fg-muted">
-                    {t(
-                      "Expressions ignore case. Lookarounds and backreferences are not supported.",
-                    )}
-                  </p>
-                </div>
-              )}
-            </article>
-          )}
-        />
-        <div className="flex flex-wrap gap-2">
-          <Button variant="ghost" size="sm" onClick={() => file.current?.click()}>
-            <Upload size={14} />
-            {t("Import preferences")}
-          </Button>
-          <Button variant="ghost" size="sm" disabled={!rules.length} onClick={exportRules}>
-            <Download size={14} />
-            {t("Export preferences")}
-          </Button>
-          <input
-            ref={file}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            aria-label={t("Import preferences")}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void importRules(f);
-              e.target.value = "";
-            }}
-          />
-        </div>
-        <RulePreview profile={profile} />
       </div>
-    </SettingsSection>
+      <div className="space-y-2">
+        <Input
+          aria-label={t("Add rule")}
+          placeholder={t("Type a language, tag or release group…")}
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && term.trim() && rules.length < 32) {
+              e.preventDefault();
+              addTerm();
+            }
+          }}
+        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 sm:flex-1">
+            <SearchSelect
+              {...searchSelectLabels()}
+              ariaLabel={t("What it describes")}
+              value={field}
+              options={FIELDS.map(([value, label]) => ({ value, label }))}
+              onChange={setField}
+            />
+          </div>
+          <Select
+            aria-label={t("Action")}
+            className="w-full sm:w-36"
+            value={action}
+            onChange={(e) => setAction(e.target.value as ReleaseRule["action"])}
+          >
+            <option value="require">{t("Only play")}</option>
+            <option value="prefer">{t("Prefer")}</option>
+            <option value="avoid">{t("Never play")}</option>
+          </Select>
+          <Button size="sm" disabled={rules.length >= 32 || !term.trim()} onClick={addTerm}>
+            <Plus size={14} />
+            {t("Add rule")}
+          </Button>
+        </div>
+        {field === "audio_matches_original" && (
+          <p className="text-xs text-fg-muted">
+            {t(
+              "Declared audio must match this title's original language. Subtitles do not count, and a filename alone cannot make the comparison.",
+            )}
+          </p>
+        )}
+      </div>
+      {(error || importError || conflict) && (
+        <p role="alert" className="text-sm text-danger">
+          {error || importError || conflict}
+        </p>
+      )}
+      {filterRules.length > 0 && (
+        <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+          {filterRules.map((r) => (
+            <RuleEditorCard
+              key={r.id}
+              rule={r}
+              onChange={(patch) => updateRule(r.id, patch)}
+              onRemove={() => removeRule(r.id)}
+            />
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="ghost" size="sm" onClick={() => file.current?.click()}>
+          <Upload size={14} />
+          {t("Import rules")}
+        </Button>
+        <Button variant="ghost" size="sm" disabled={!rules.length} onClick={exportRules}>
+          <Download size={14} />
+          {t("Export rules")}
+        </Button>
+        <input
+          ref={file}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          aria-label={t("Import rules")}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void importRules(f);
+            e.target.value = "";
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -667,7 +829,7 @@ function explanationLabel(outcome: string, state: string, original: boolean) {
   return t("Does not match");
 }
 
-function RulePreview({ profile }: { profile: QualityProfile }) {
+export function RulePreview({ profile }: { profile: QualityProfile }) {
   const [mode, setMode] = useState<"names" | "title">("names");
   const [names, setNames] = useState("");
   const [key, setKey] = useState("");
@@ -728,7 +890,7 @@ function RulePreview({ profile }: { profile: QualityProfile }) {
     };
   }, [serialized, names, key, mode, requested, attempt]);
   return (
-    <div className="space-y-3 border-t border-border pt-4">
+    <div className="space-y-3 border-t border-border px-5 py-4">
       <h4 className="text-sm font-medium">{t("Try before saving")}</h4>
       <Select
         aria-label={t("Preview source")}
@@ -767,7 +929,7 @@ function RulePreview({ profile }: { profile: QualityProfile }) {
       <p className="text-xs text-fg-muted">
         {mode === "names"
           ? t(
-              "Filename preview checks these preferences only. Search a title to include quality and TRaSH rules.",
+              "Filename preview checks rules only. Search a title to include full profile ranking.",
             )
           : t(
               "Uses your indexers. No settings are saved and no media is downloaded. Device limits apply when playing.",
