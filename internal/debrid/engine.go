@@ -31,9 +31,9 @@ const (
 	freshRunBlocks      = 8         // first request at a new position: 4 MiB of 512 KiB blocks
 	defaultConnections  = 4         // config.Debrid.MaxConnections default
 	minReadAheadBytes   = 8 << 20
-	maxReadAheadBytes   = 96 << 20
+	maxReadAheadBytes   = 32 << 20
 	readAheadSeconds    = 10 // adaptive window: seconds of measured throughput
-	memBlocksPerFile    = 32 // in-memory blocks per open file (16 MiB)
+	memBlocksPerFile    = 24 // in-memory blocks per open file (12 MiB)
 	defaultHedgeDelay   = 400 * time.Millisecond
 	idleFileTTL         = 15 * time.Minute
 	tailPrefetchBytes   = 2 << 20 // container index (MKV Cues / MP4 moov) at the end
@@ -216,6 +216,9 @@ func NewEngine(svc *Service, opts EngineOptions) *Engine {
 	}
 	if e.block <= 0 {
 		e.block = defaultBlockSize
+	}
+	if svc != nil {
+		svc.setMediaPauseChecker(e.checkMediaPause)
 	}
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 	return e
@@ -429,10 +432,10 @@ func (e *Engine) releaseFile(f *remoteFile) {
 	replaced := idle && e.files[f.id] != f
 	e.mu.Unlock()
 	if replaced {
+		f.dropMemory()
 		f.cancel()
 	}
 	if idle {
-		f.dropMemory()
 		e.kickLeases()
 	}
 }
@@ -442,6 +445,7 @@ func (e *Engine) trimLocked() {
 	now := e.now()
 	for id, f := range e.files {
 		if f.refs <= 0 && now.Sub(f.lastUsed) > idleFileTTL {
+			f.dropMemory()
 			f.cancel()
 			delete(e.files, id)
 		}
@@ -458,6 +462,7 @@ const (
 	fetchReadAhead                  // speculative; cancelled by seeks
 	fetchPrefetch                   // background warm-up; disk only
 	fetchDurable                    // urgent, but published only once on disk (health checks)
+	fetchMetadata                   // container index/metadata reads: single-conn, no hedge
 )
 
 type blockFlight struct {
@@ -835,7 +840,7 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 	}
 	if slotHeld {
 		defer func() { <-f.raSlots }()
-	} else if mode == fetchReadAhead || mode == fetchPrefetch {
+	} else if mode == fetchReadAhead || mode == fetchPrefetch || mode == fetchMetadata {
 		select {
 		case f.raSlots <- struct{}{}:
 			defer func() { <-f.raSlots }()
@@ -926,8 +931,16 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 	f.e.svc.RecordStream(p.Provider, tm.connect, tm.ttfb, got, elapsed)
 }
 
+func (f *remoteFile) isRateLimited() bool {
+	p, _ := f.payload()
+	return errors.Is(f.checkMediaPause(p.Provider, p.URL), ErrRateLimited)
+}
+
 // prefetch warms byte ranges into the cache with bounded concurrency.
 func (f *remoteFile) prefetch(ctx context.Context, ranges [][2]int64) error {
+	if f.isRateLimited() {
+		return nil
+	}
 	maxRun, _, _ := f.e.tuning()
 	var wg sync.WaitGroup
 	errc := make(chan error, 1)
@@ -1103,12 +1116,27 @@ func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool
 				if resp.StatusCode == http.StatusTooManyRequests {
 					// The host counts our connections: open fewer for a while.
 					f.e.reduceHostCap(resp.Request.URL.String())
+					if attempt == 0 && urgent && ra > 0 && ra <= 3*time.Second {
+						jitter := time.Duration(uint64(start)%250) * time.Millisecond
+						if err := sleep(ctx, ra+jitter); err != nil {
+							return nil, tm, err
+						}
+						continue
+					}
 				}
 				// A rate-limited CDN cannot become a healthy candidate by
 				// retrying each block four times before Retry-After expires.
 				// Share its pause across this account's files, return promptly
 				// to source selection, and preserve transient classification.
-				return nil, tm, f.pauseMedia(payload.Provider, u, resp.StatusCode, ra)
+				pauseErr := f.pauseMedia(payload.Provider, u, resp.StatusCode, ra)
+				if resp.StatusCode == http.StatusTooManyRequests && attempt == 0 && urgent && !payload.IsDirect() && f.e != nil && f.e.svc != nil && len(f.e.svc.active()) > 1 {
+					if _, _, rerr := f.link(ctx, true, gen); rerr == nil {
+						if np, _ := f.payload(); np.Provider != "" && np.Provider != payload.Provider {
+							continue
+						}
+					}
+				}
+				return nil, tm, pauseErr
 			}
 			drain(resp)
 		default:
@@ -1543,7 +1571,9 @@ func (s *httpSource) Origin() string {
 
 // RetryDirectPlay keeps the file representation stable across a temporary CDN
 // failure: native clients retry the same Range URL without a new decision.
-func (s *httpSource) RetryDirectPlay() bool { return true }
+func (s *httpSource) RetryDirectPlay() bool {
+	return s == nil || s.f == nil || !s.f.isRateLimited()
+}
 
 func (s *httpSource) Close() error {
 	s.mu.Lock()
@@ -1576,7 +1606,7 @@ func (s *httpSource) ReadAtPrefetchContext(ctx context.Context, p []byte, off in
 // ReadMetadataAtContext serves container-index reads: urgent, but they jump
 // around the file, so they neither count as seeks nor trigger read-ahead.
 func (s *httpSource) ReadMetadataAtContext(ctx context.Context, p []byte, off int64) (int, error) {
-	return s.read(ctx, p, off, fetchUrgent, false)
+	return s.read(ctx, p, off, fetchMetadata, false)
 }
 
 func (s *httpSource) read(ctx context.Context, p []byte, off int64, mode fetchMode, live bool) (int, error) {
@@ -1598,6 +1628,9 @@ func (s *httpSource) read(ctx context.Context, p []byte, off int64, mode fetchMo
 	// request that covers what the reader will want next beats a ramp of
 	// small ones (TorBox answers bursts with a five-minute 429).
 	runLen := min(maxRun, freshRunBlocks)
+	if !live {
+		runLen = min(maxRun, max(1, lastBlock-first+1))
+	}
 	if live {
 		s.mu.Lock()
 		if s.closed {
@@ -1653,7 +1686,7 @@ func (s *httpSource) read(ctx context.Context, p []byte, off int64, mode fetchMo
 func (s *httpSource) readAhead(from int64) {
 	f := s.f
 	maxRun, _, fixed := f.e.tuning()
-	if fixed < 0 {
+	if fixed < 0 || f.isRateLimited() {
 		return
 	}
 	window := fixed

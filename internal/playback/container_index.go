@@ -670,14 +670,23 @@ func (r *indexReader) matroska() ([]IndexPoint, error) {
 	}
 	// Walk segment-level elements, skipping Clusters by offset (their
 	// payloads are never read), so Cues written at the end of the file
-	// are found even without a SeekHead pointing at them. SeekHead
-	// targets below cover files whose cluster count exceeds the cap.
+	// are found even without a SeekHead pointing at them. When SeekHead
+	// already locates Cues, stop at the first Cluster instead of reading
+	// cluster headers across a remote file; without SeekHead, bound cluster
+	// skips so a large unindexed file does not trigger hundreds of range GETs.
+	clusters := 0
 	for off, n := seg.start, 0; off < seg.end && n < 8192; n++ {
 		e, err := r.element(off, seg.end)
 		if err != nil {
 			return nil, err
 		}
 		visited[off] = true
+		if e.id == 0x1f43b675 {
+			clusters++
+			if targets[0x1c53bb6b] > 0 || cues != nil || clusters > 64 {
+				break
+			}
+		}
 		if err = inspect(e); err != nil {
 			return nil, err
 		}

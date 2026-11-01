@@ -86,6 +86,9 @@ type Service struct {
 
 	direct directClients // direct HTTP streams (direct.go)
 
+	mediaPausedMu sync.RWMutex
+	mediaPaused   func(provider, rawURL string) error
+
 	// Cluster (cluster.go); all nil/zero on a standalone server.
 	clusterMu sync.RWMutex
 	node      clusterbus.Node
@@ -1041,6 +1044,22 @@ func (s *Service) acquireOn(ctx context.Context, e *entry, base Payload, choose 
 	return p, nil
 }
 
+func (s *Service) setMediaPauseChecker(fn func(provider, rawURL string) error) {
+	s.mediaPausedMu.Lock()
+	s.mediaPaused = fn
+	s.mediaPausedMu.Unlock()
+}
+
+func (s *Service) checkMediaPaused(provider, rawURL string) error {
+	s.mediaPausedMu.RLock()
+	fn := s.mediaPaused
+	s.mediaPausedMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(provider, rawURL)
+}
+
 // fresh reports whether a payload's direct link is usable now.
 func (s *Service) fresh(p Payload) bool {
 	return p.URL != "" && (p.Expires.IsZero() || s.now().Add(linkMargin).Before(p.Expires))
@@ -1084,6 +1103,8 @@ func (s *Service) Refresh(ctx context.Context, p Payload, force bool) (Payload, 
 	if e := s.entryByID(p.Provider); e != nil {
 		if err := e.blocked(s.now()); err != nil {
 			errs = append(errs, err)
+		} else if pauseErr := s.checkMediaPaused(p.Provider, p.URL); pauseErr != nil {
+			errs = append(errs, pauseErr)
 		} else {
 			out, err := s.relink(ctx, e, p)
 			if err == nil {
