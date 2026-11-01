@@ -106,7 +106,10 @@ func TestScopedSubtitleExtractionAndSidecars(t *testing.T) {
 	}
 }
 
-func TestExternalSubtitleAlignsToEmbeddedReference(t *testing.T) {
+// A sidecar serves with its stored timing: correction is measured only when
+// a viewer picks it (subtitles.StartCorrection), never on serve. A manual
+// shift still applies.
+func TestExternalSubtitleServesStoredTimingAndManualShift(t *testing.T) {
 	ctx := context.Background()
 	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 1}
 	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
@@ -155,12 +158,12 @@ func TestExternalSubtitleAlignsToEmbeddedReference(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	b.ServeMedia(w, httptest.NewRequest(http.MethodGet, path, nil))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "00:00:03.000") || strings.Contains(w.Body.String(), "00:00:01.000") {
-		t.Fatalf("aligned %d %s", w.Code, w.Body.String())
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "00:00:01.000") {
+		t.Fatalf("stored timing %d %s", w.Code, w.Body.String())
 	}
 	shifted := httptest.NewRecorder()
 	b.ServeMedia(shifted, httptest.NewRequest(http.MethodGet, path+"?sync_ms=1000", nil))
-	if shifted.Code != 200 || !strings.Contains(shifted.Body.String(), "00:00:04.000") {
+	if shifted.Code != 200 || !strings.Contains(shifted.Body.String(), "00:00:02.000 --> 00:00:03.000") {
 		t.Fatalf("sync %d %s", shifted.Code, shifted.Body.String())
 	}
 }
