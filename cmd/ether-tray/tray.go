@@ -42,6 +42,8 @@ type tray struct {
 	statusItem *systray.MenuItem
 	updateItem *systray.MenuItem
 	loginItem  *systray.MenuItem
+	fixItem    *systray.MenuItem
+	directItem *systray.MenuItem
 	mu         sync.Mutex
 	pendingUpd *updater.Update
 	// updating is set while an update click (a feed check or an installer
@@ -81,6 +83,10 @@ func (t *tray) onReady() {
 	startItem := systray.AddMenuItem("Start server", "Start the Ether service")
 	stopItem := systray.AddMenuItem("Stop server", "Stop the Ether service")
 	restartItem := systray.AddMenuItem("Restart server", "Restart the Ether service")
+	t.fixItem = systray.AddMenuItem("Fix and start", "Clear the blocked login item and start the server")
+	t.directItem = systray.AddMenuItem("Start directly", "Start the server without the login item")
+	t.fixItem.Hide()
+	t.directItem.Hide()
 	if t.a.svc == nil {
 		startItem.Disable()
 		stopItem.Disable()
@@ -120,6 +126,16 @@ func (t *tray) onReady() {
 				t.doService("stop")
 			case <-restartItem.ClickedCh:
 				t.doService("restart")
+			case <-t.fixItem.ClickedCh:
+				if err := t.a.fixAndStart(); err != nil {
+					t.a.log.Warn("tray: fix and start", "err", err)
+				}
+				t.refreshStatus()
+			case <-t.directItem.ClickedCh:
+				if err := t.a.startDirectly(); err != nil {
+					t.a.log.Warn("tray: start directly", "err", err)
+				}
+				t.refreshStatus()
 			case <-t.updateItem.ClickedCh:
 				// A download can take minutes; keep the menu (Quit included)
 				// responsive meanwhile. Repeated clicks are ignored.
@@ -157,7 +173,24 @@ func (t *tray) refreshStatus() {
 	ctx, cancel := context.WithTimeout(t.ctx, 4*time.Second)
 	defer cancel()
 	st := t.a.pollOnce(ctx)
-	t.statusItem.SetTitle(statusLine(st))
+	if st.Running {
+		t.a.clearStartNotice()
+	}
+	line := statusLine(st)
+	notice := t.a.currentNotice()
+	if !st.Running && notice.Reason != "" {
+		line = notice.Reason
+		if notice.CanEnable {
+			t.fixItem.Show()
+		} else {
+			t.fixItem.Hide()
+		}
+		t.directItem.Show()
+	} else {
+		t.fixItem.Hide()
+		t.directItem.Hide()
+	}
+	t.statusItem.SetTitle(line)
 	if runtime.GOOS != "darwin" {
 		if st.Running {
 			systray.SetIcon(iconPNG)
@@ -165,7 +198,7 @@ func (t *tray) refreshStatus() {
 			systray.SetIcon(iconOffPNG)
 		}
 	}
-	systray.SetTooltip(statusLine(st))
+	systray.SetTooltip(line)
 }
 
 // updateLoop checks the feed at startup (after a short settle) and daily,
@@ -246,10 +279,11 @@ func (t *tray) toggleLogin() {
 func (t *tray) doService(action string) {
 	if err := t.a.serviceAction(action); err != nil {
 		t.a.log.Warn("tray: service action failed", "action", action, "err", err)
-		t.statusItem.SetTitle("Ether: " + action + " failed")
+		t.refreshStatus()
 		return
 	}
-	// Give the service a moment, then refresh.
+	// Give the service a moment, then refresh. A failed start keeps its
+	// reason in the menu instead of falling back to "not running".
 	go func() {
 		time.Sleep(1500 * time.Millisecond)
 		t.refreshStatus()

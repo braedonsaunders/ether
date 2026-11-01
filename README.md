@@ -215,7 +215,7 @@ Dial your storage footprint from **Pass-through (0 GiB)** to **Everyday (32 GiB)
 
 | Platform | Download / Image | Details |
 | :--- | :--- | :--- |
-| **macOS 13+** | [`Ether-<version>.dmg`](https://github.com/braedonsaunders/ether/releases/latest) | No terminal needed. Universal menu-bar app (Apple Silicon & Intel) with bundled FFmpeg. *(Ad-hoc signed: right-click → Open on first launch.)* |
+| **macOS 13+** | [`Ether-<version>.dmg`](https://github.com/braedonsaunders/ether/releases/latest) | No terminal needed. Universal menu-bar app (Apple Silicon & Intel) with bundled FFmpeg. Signed releases open normally; an unsigned build needs one right-click → Open the first time. |
 | **Windows (x64)** | [`EtherSetup-<version>.exe`](https://github.com/braedonsaunders/ether/releases/latest) | No terminal needed. Windows service + system tray app with bundled FFmpeg and automatic firewall rule. |
 | **Linux** | [`.deb` / `.rpm`](https://github.com/braedonsaunders/ether/releases/latest) (`amd64`, `arm64`) | Dedicated `ether` systemd service, hardware transcoding group setup (`render`/`video`), bundled FFmpeg. |
 | **Docker** | `ghcr.io/braedonsaunders/ether:latest` | Multi-arch (`amd64`, `arm64`). Ready-made templates for **Unraid, TrueNAS SCALE, Proxmox, and Synology** in [`packaging/community`](packaging/community/README.md). |

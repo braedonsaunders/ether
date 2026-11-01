@@ -67,6 +67,24 @@ func TestConsoleConnectURLsTrustForwardedHostFromLoopback(t *testing.T) {
 	}
 }
 
+func TestConsoleConnectURLsPreferLANOverLoopback(t *testing.T) {
+	r := httptestRequest("127.0.0.1:32400")
+	got := consoleConnectURLs(r, "jellyfin", []string{
+		"http://127.0.0.1:8096",
+		"http://[::1]:8096",
+		"http://10.255.0.1:8096",
+		"http://100.64.0.2:8096",
+		"http://192.168.68.66:8096",
+		"http://192.168.68.66:32400/jellyfin",
+	}, config.Config{}, nil)
+	if len(got) < 2 || got[0] != "http://192.168.68.66:32400/jellyfin" || got[1] != "http://192.168.68.66:8096" {
+		t.Fatalf("connect URLs = %#v", got)
+	}
+	if got[len(got)-1] == "http://192.168.68.66:8096" {
+		t.Fatal("loopback should not outrank the LAN address")
+	}
+}
+
 func httptestRequest(host string) *http.Request {
 	r, err := http.NewRequest(http.MethodGet, "/ether/api/frontends/jellyfin/status", nil)
 	if err != nil {

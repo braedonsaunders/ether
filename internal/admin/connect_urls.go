@@ -64,7 +64,92 @@ func consoleConnectURLs(r *http.Request, id string, urls []string, cfg config.Co
 		}
 		add(raw)
 	}
+	return rankConnectURLs(out, host)
+}
+
+// rankConnectURLs puts the address the owner can hand to a device first.
+// A hostname or the LAN the console is already using wins. Home LAN
+// (192.168.0.0/16) beats other private ranges, which are often VPNs.
+// Loopback stays available but is not the default when a better address exists.
+func rankConnectURLs(urls []string, originHost string) []string {
+	type scored struct {
+		url   string
+		score int
+		index int
+	}
+	rows := make([]scored, len(urls))
+	for i, raw := range urls {
+		rows[i] = scored{url: raw, score: connectScore(raw, originHost), index: i}
+	}
+	for i := 1; i < len(rows); i++ {
+		row := rows[i]
+		j := i
+		for j > 0 && (rows[j-1].score < row.score || (rows[j-1].score == row.score && rows[j-1].index > row.index)) {
+			rows[j] = rows[j-1]
+			j--
+		}
+		rows[j] = row
+	}
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		out[i] = row.url
+	}
 	return out
+}
+
+var tailscaleNet = netip.MustParsePrefix("100.64.0.0/10")
+
+func connectScore(raw, originHost string) int {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return -1
+	}
+	host := hostOnly(u.Hostname())
+	score := 15
+	ip, ipErr := netip.ParseAddr(host)
+	if ipErr != nil {
+		if strings.EqualFold(host, "localhost") {
+			score = 0
+		} else {
+			score = 70
+		}
+	} else {
+		ip = ip.Unmap()
+		switch {
+		case ip.IsLoopback():
+			score = 0
+		case ip.Is4() && homeLAN(ip):
+			score = 80
+		case tailscaleNet.Contains(ip):
+			score = 20
+		case ip.IsPrivate():
+			score = 40
+		case ip.Is6():
+			score = 10
+		}
+	}
+	if originHost != "" && sameHost(host, originHost) && score >= 40 {
+		score += 25
+	}
+	// Prefer the port the console is already open on, so the default matches
+	// the address the owner is looking at.
+	if originPort(originHost) != "" && originPort(originHost) == u.Port() && score >= 40 {
+		score += 5
+	}
+	return score
+}
+
+func originPort(hostport string) string {
+	_, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return ""
+	}
+	return port
+}
+
+func homeLAN(ip netip.Addr) bool {
+	b := ip.As4()
+	return b[0] == 192 && b[1] == 168
 }
 
 func advertisedOrigin(cfg config.Config) (scheme, host string, ok bool) {

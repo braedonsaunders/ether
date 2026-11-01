@@ -11,9 +11,8 @@ open it, and follow the wizard in the browser. No terminal is needed.
 Linux packages and Docker are further down. Packaged installers bundle
 FFmpeg and FFprobe.
 
-The v0.2.4 macOS app is ad-hoc signed and **not notarised**; macOS may require
-**System Settings › Privacy & Security › Open Anyway** after you attempt to
-open it. The Windows installer is unsigned and may trigger SmartScreen.
+Signed macOS releases open normally. An unsigned build needs one right-click → Open the first time.
+The Windows installer is unsigned and may trigger SmartScreen.
 The automatic-update manifest is signed separately with Ether's release key.
 
 If you already have an Ether executable, run it and open
@@ -27,6 +26,8 @@ Without zscale, Ether uses libplacebo, then an OpenCL or hardware tone map
 when the binary has one. If none of those are available it does not guess a
 picture: playback reports that this FFmpeg cannot tone-map and tries another
 release.
+
+The ready-made Torrentio source looks titles up on torrentio.strem.fun. To keep lookups on a server you run, add a Torznab indexer (Prowlarr, Jackett, or Zilean) instead.
 
 After any install, open the web UI and finish the setup wizard. Choose your
 app integrations, sign in with Plex if selected or create a local Ether owner

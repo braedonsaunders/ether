@@ -19,6 +19,21 @@ func (a *app) ensureMacServer(ctx context.Context) error {
 	if goos != "darwin" || a.svc == nil {
 		return nil
 	}
+	// App Translocation runs a quarantined app from a temporary mount that
+	// disappears when the process exits. Pointing launchd at that path, or
+	// moving either copy, is what makes the app look deleted. Start the
+	// server from the copy macOS already opened and leave both in place.
+	if appTranslocated(a.serverBinary()) {
+		if a.log != nil {
+			a.log.Warn("tray: macOS opened a temporary copy; starting the server directly and leaving the app in place")
+		}
+		if err := a.launchDirect(); err != nil {
+			a.recordStartFailure(err)
+			return err
+		}
+		a.clearStartNotice()
+		return nil
+	}
 	if a.status != nil {
 		if st, err := a.pollStatus(ctx); err == nil && st.Running {
 			return nil
@@ -34,10 +49,16 @@ func (a *app) ensureMacServer(ctx context.Context) error {
 			return fmt.Errorf("server service cannot be installed")
 		}
 		if err := installer.Install(); err != nil {
+			a.recordStartFailure(err)
 			return fmt.Errorf("install server service: %w", err)
 		}
 	}
-	return a.svc.Start()
+	if err := a.svc.Start(); err != nil {
+		a.recordStartFailure(err)
+		return err
+	}
+	a.clearStartNotice()
+	return nil
 }
 
 // trayVersion is the release this tray was built as ("dev" for development

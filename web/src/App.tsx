@@ -228,11 +228,7 @@ function HealthIndicator() {
           </p>
         ) : gettingStarted ? (
           <p className="px-2 pb-2 text-sm text-fg-muted">
-            {tn(
-              setupGaps.length,
-              "{count} thing to set up",
-              "{count} things to set up",
-            )}
+            {tn(setupGaps.length, "{count} thing to set up", "{count} things to set up")}
           </p>
         ) : null}
         {dashboardError && !dashboard ? (
@@ -252,7 +248,7 @@ function HealthIndicator() {
                     {h.label}
                     <LevelBadge level={h.level} label={h.statusLabel} />
                   </span>
-                  <span className="block truncate text-xs text-fg-muted">{h.summary}</span>
+                  <span className="block text-pretty text-xs text-fg-muted">{h.summary}</span>
                   {h.note ? (
                     <span className="mt-1 block text-xs text-fg-subtle">{h.note}</span>
                   ) : null}

@@ -401,33 +401,33 @@ export function IndexerList({
         )}
         actions={
           <ActionMenu
-              label={t("Add indexer")}
-              variant="default"
-              size="sm"
-              items={[
-                {
-                  key: "site",
-                  label: t("Site…"),
-                  icon: Globe,
-                  onSelect: () => {
-                    setEditing(null);
-                    setPicking(true);
-                  },
+            label={t("Add indexer")}
+            variant="default"
+            size="sm"
+            items={[
+              {
+                key: "site",
+                label: t("Site…"),
+                icon: Globe,
+                onSelect: () => {
+                  setEditing(null);
+                  setPicking(true);
                 },
-                {
-                  key: "newznab",
-                  label: t("Newznab or Torznab URL…"),
-                  icon: Link2,
-                  onSelect: () => open(indexers.length, blankIndexer(indexers.length)),
-                },
-                {
-                  key: "stremio",
-                  label: t("Stremio addon URL…"),
-                  icon: Puzzle,
-                  onSelect: () => open(indexers.length, blankStremioIndexer(indexers.length)),
-                },
-              ]}
-            >
+              },
+              {
+                key: "newznab",
+                label: t("Newznab or Torznab URL…"),
+                icon: Link2,
+                onSelect: () => open(indexers.length, blankIndexer(indexers.length)),
+              },
+              {
+                key: "stremio",
+                label: t("Stremio addon URL…"),
+                icon: Puzzle,
+                onSelect: () => open(indexers.length, blankStremioIndexer(indexers.length)),
+              },
+            ]}
+          >
             <Plus size={14} /> {t("Add indexer")}
           </ActionMenu>
         }
@@ -736,6 +736,13 @@ export function IndexerList({
                   error={errors.url}
                   onChange={(v) => set({ url: v })}
                 />
+                {draft.url.includes("torrentio.strem.fun") ? (
+                  <p className="px-5 text-sm text-fg-muted">
+                    {t(
+                      "Lookups go to torrentio.strem.fun. Prefer your own? Use Torznab (Prowlarr, Jackett, Zilean).",
+                    )}
+                  </p>
+                ) : null}
                 {addonUrlHasDebridKey(draft.url) ? (
                   <Alert variant="warning" role="status">
                     <AlertDescription>

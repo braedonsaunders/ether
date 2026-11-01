@@ -17,7 +17,13 @@ import { useAppOptional } from "../app-context";
 import { RestartButton } from "../components/RestartDrawer";
 import { EtherMark } from "../components/brand";
 import { IntegrationAppCard } from "../components/IntegrationAppCard";
-import { EmbyMark, JellyfinMark, PlexMark, SiloMark } from "../components/integration-brands";
+import {
+  EmbyMark,
+  householdIcon,
+  JellyfinMark,
+  PlexMark,
+  SiloMark,
+} from "../components/integration-brands";
 import { StremioMark } from "./sources/marks";
 import { ErrorPanel, MutationError } from "../components/feedback";
 import {
@@ -32,7 +38,7 @@ import { loadLocale, localized, rememberLocale, t, tn, tx } from "../i18n";
 import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
-import { appLabel, appPurpose, appRank } from "./apps/catalog";
+import { appLabel, appPath, appPurpose, appRank } from "./apps/catalog";
 import { CachePresetCards, cachePresetKey, presetForFreeBytes } from "./cache/presets";
 import { ProwlarrImport } from "../components/ProwlarrImport";
 import { DEBRID_KINDS } from "./sources/Debrid";
@@ -113,10 +119,13 @@ function storedStep(): number {
 export function appCatalog(
   list: { descriptor: { id: string; name: string } }[] | null,
 ): SetupApp[] {
-  const rows = (list?.length
-    ? list.map((item) => ({ id: item.descriptor.id, name: item.descriptor.name }))
-    : FALLBACK_APPS
-  ).slice().sort((a, b) => appRank(a.id) - appRank(b.id));
+  const rows = (
+    list?.length
+      ? list.map((item) => ({ id: item.descriptor.id, name: item.descriptor.name }))
+      : FALLBACK_APPS
+  )
+    .slice()
+    .sort((a, b) => appRank(a.id) - appRank(b.id));
   return rows.map((row) => {
     return {
       id: row.id,
@@ -215,6 +224,8 @@ function SourceChoice({
   logo,
   title,
   line,
+  detail,
+  note,
   children,
 }: {
   pressed: boolean;
@@ -222,13 +233,15 @@ function SourceChoice({
   logo: ReactNode;
   title: string;
   line: string;
+  detail?: string;
+  note?: string;
   children?: ReactNode;
 }) {
   return (
     <section
       className={cn(
-        "rounded-xl border bg-surface",
-        pressed ? "border-primary" : "border-border",
+        "rounded-xl border",
+        pressed ? "border-primary bg-primary/10" : "border-border bg-surface",
       )}
     >
       <button
@@ -238,11 +251,14 @@ function SourceChoice({
         className="flex w-full items-center gap-3 p-4 text-left"
       >
         <span className="grid size-7 shrink-0 place-items-center text-fg">{logo}</span>
-        <span>
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium text-fg">{title}</span>
           <span className="block text-sm text-fg-muted">{line}</span>
+          {detail ? <span className="mt-1 block text-sm text-fg-muted">{detail}</span> : null}
         </span>
+        {pressed ? <Check size={18} className="shrink-0 text-primary" aria-hidden /> : null}
       </button>
+      {pressed && note ? <p className="px-4 pb-3 text-sm text-fg">{note}</p> : null}
       {pressed && children ? <div className="space-y-4 px-4 pb-4">{children}</div> : null}
     </section>
   );
@@ -268,8 +284,23 @@ function setupAppLogo(id: string) {
     case "stremio":
       return <StremioMark />;
     default:
-      return undefined;
+      return householdIcon(id);
   }
+}
+
+const CONNECT_PANEL_APPS = ["jellyfin", "emby", "silo", "dlna"];
+
+/** The finish chip opens the app that shows a server address, not the Apps overview. */
+export function connectDevicePath(frontends: EtherConfig["frontends"]): string {
+  const enabled = Object.entries(frontends ?? {})
+    .filter(([, row]) => row?.enabled)
+    .map(([id]) => id)
+    .sort((a, b) => appRank(a) - appRank(b));
+  const panel = enabled.find((id) => CONNECT_PANEL_APPS.includes(id));
+  const id = panel ?? enabled[0];
+  if (!id) return "/apps";
+  if (["stremio", "webdav", "m3u"].includes(id)) return "/me";
+  return `/apps/${appPath(id)}?connect=1`;
 }
 
 function SetupReady() {
@@ -299,9 +330,7 @@ function SetupReady() {
   const debridOn = (cfg?.debrid?.providers ?? []).some((row) => row.enabled && row.apiKey.trim());
   const usenetOn = (cfg?.usenet.providers ?? []).some((row) => row.enabled && row.host.trim());
   const plexOpen = Boolean(cfg?.frontends?.plex?.enabled) && !cfg?.plex.claimed;
-  const anyApp = cfg?.frontends
-    ? Object.values(cfg.frontends).some((row) => row?.enabled)
-    : false;
+  const anyApp = cfg?.frontends ? Object.values(cfg.frontends).some((row) => row?.enabled) : false;
   const go = (to: string) => navigate(to);
 
   return (
@@ -317,7 +346,7 @@ function SetupReady() {
                 variant="outline"
                 size="sm"
                 className="rounded-full"
-                onClick={() => go("/apps")}
+                onClick={() => go(connectDevicePath(cfg?.frontends))}
               >
                 {t("Connect a device")}
               </Button>
@@ -965,41 +994,43 @@ export default function Setup() {
             </div>
           </div>
           <ol className="mt-4 flex gap-1.5" aria-label={t("Setup progress")}>
-            {steps.map((s, i) => (
-              <li key={i} className="flex-1">
-                <button
-                  type="button"
-                  disabled={i > step}
-                  onClick={() => setStep(i)}
-                  aria-current={i === step ? "step" : undefined}
-                  className={cn(
-                    "w-full text-left disabled:cursor-not-allowed",
-                    i <= step ? "text-fg" : "text-fg-subtle",
-                  )}
-                >
-                  <span
+            {steps.map((s, i) => {
+              const later = s.id === "account" && plexSelected && plexLater && !plexSigned;
+              const label = later ? `${s.title} · ${t("Plex comes later")}` : s.title;
+              return (
+                <li key={i} className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    disabled={i > step}
+                    onClick={() => setStep(i)}
+                    aria-current={i === step ? "step" : undefined}
+                    title={label}
                     className={cn(
-                      "block h-1 rounded-full",
-                      i < step ? "bg-primary" : i === step ? "bg-primary/60" : "bg-border",
+                      "w-full min-w-0 text-left disabled:cursor-not-allowed",
+                      i <= step ? "text-fg" : "text-fg-subtle",
                     )}
-                  />
-                  <span className="mt-1.5 flex items-center gap-1 text-xs font-medium">
-                    {i < step &&
-                    !(s.id === "account" && plexSelected && plexLater && !plexSigned) &&
-                    (!((s.id === "account" ? "plex" : s.id) in serverSteps) ||
-                      serverSteps[s.id === "account" ? "plex" : s.id]) ? (
-                      <Check size={12} className="text-primary" />
-                    ) : (
-                      <span className="tabular-nums">{i + 1}.</span>
-                    )}{" "}
-                    {s.title}
-                    {s.id === "account" && plexSelected && plexLater && !plexSigned
-                      ? ` · ${t("Plex comes later")}`
-                      : ""}
-                  </span>
-                </button>
-              </li>
-            ))}
+                  >
+                    <span
+                      className={cn(
+                        "block h-1 rounded-full",
+                        i < step ? "bg-primary" : i === step ? "bg-primary/60" : "bg-border",
+                      )}
+                    />
+                    <span className="mt-1.5 flex min-w-0 items-center gap-1 text-xs font-medium">
+                      {i < step &&
+                      !(s.id === "account" && plexSelected && plexLater && !plexSigned) &&
+                      (!((s.id === "account" ? "plex" : s.id) in serverSteps) ||
+                        serverSteps[s.id === "account" ? "plex" : s.id]) ? (
+                        <Check size={12} className="shrink-0 text-primary" />
+                      ) : (
+                        <span className="shrink-0 tabular-nums">{i + 1}.</span>
+                      )}{" "}
+                      <span className="truncate">{label}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ol>
         </div>
       }
@@ -1023,7 +1054,11 @@ export default function Setup() {
               </label>
             ) : null}
             <span className="flex-1" />
-            <Button className="shrink-0" disabled={!advanceOk || saving} onClick={() => void next()}>
+            <Button
+              className="shrink-0"
+              disabled={!advanceOk || saving}
+              onClick={() => void next()}
+            >
               {saving
                 ? t("Saving…")
                 : step === steps.length - 1
@@ -1085,7 +1120,9 @@ export default function Setup() {
         <div className="space-y-4">
           {plexSelected && plexLater ? (
             <p className="text-sm text-fg-muted">
-              {t("Plex comes later. This login is only for Ether. You will connect Plex from Apps.")}
+              {t(
+                "Plex comes later. This login is only for Ether. You will connect Plex from Apps.",
+              )}
             </p>
           ) : null}
           {localDone ? (
@@ -1306,7 +1343,11 @@ export default function Setup() {
                 setProviders([blankProvider()]);
                 return;
               }
-              if (providers.every((row) => !row.host.trim() && !row.username.trim() && !row.name.trim())) {
+              if (
+                providers.every(
+                  (row) => !row.host.trim() && !row.username.trim() && !row.name.trim(),
+                )
+              ) {
                 setProviders([]);
               }
             }}
@@ -1407,12 +1448,26 @@ export default function Setup() {
             </Button>
           </SourceChoice>
           <SourceChoice
-            pressed={readyMade || indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL)}
+            pressed={
+              readyMade ||
+              indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL)
+            }
             logo={<StremioMark />}
             title="Torrentio"
             line={t("finds releases; needs debrid to play")}
+            detail={t(
+              "Lookups go to torrentio.strem.fun. Prefer your own? Use Torznab (Prowlarr, Jackett, Zilean).",
+            )}
+            note={
+              readyMade ||
+              indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL)
+                ? t("Added. You'll test it on the next step.")
+                : undefined
+            }
             onClick={() => {
-              const chosen = indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL);
+              const chosen = indexers.some(
+                (item) => isStremio(item) && item.url.trim() === TORRENTIO_URL,
+              );
               if (readyMade || chosen) {
                 const removed = indexers.filter(
                   (item) => isStremio(item) && item.url.trim() === TORRENTIO_URL,
@@ -1501,6 +1556,13 @@ export default function Setup() {
                           if (name) patchIndexer(i, { name });
                         }}
                       />
+                      {ix.url.includes("torrentio.strem.fun") ? (
+                        <p className="text-sm text-fg-muted">
+                          {t(
+                            "Lookups go to torrentio.strem.fun. Prefer your own? Use Torznab (Prowlarr, Jackett, Zilean).",
+                          )}
+                        </p>
+                      ) : null}
                     </Field>
                   ) : (
                     <>
@@ -1628,7 +1690,7 @@ export default function Setup() {
                 total: formatBytes(disk.totalBytes),
               })}{" "}
               {cachePresetKey(cfg.cache) === "everyday"
-                ? t("Suggested because {free} is free. 32 GiB is enough to start.", {
+                ? t("Everyday (32 GiB) is plenty to start; you have {free} free.", {
                     free: formatBytes(disk.freeBytes),
                   })
                 : t("Suggested because only {free} is free on this disk.", {

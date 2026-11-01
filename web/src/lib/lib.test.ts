@@ -405,7 +405,11 @@ describe("health", () => {
     expect(tone?.level).toBe("warn");
     expect(tone?.summary).toContain("tone-map");
     expect(tone?.details).toEqual(["filter list unread"]);
-    expect(computeHealth({ ...LIVE, hwaccel: { notice: "no colours" } }, now).some((x) => x.id === "transcode")).toBe(true);
+    expect(
+      computeHealth({ ...LIVE, hwaccel: { notice: "no colours" } }, now).some(
+        (x) => x.id === "transcode",
+      ),
+    ).toBe(true);
   });
   it("accepts debrid in place of Usenet", () => {
     expect(usenetHealth([], { enabled: true }).level).toBe("off");
@@ -446,9 +450,7 @@ describe("health", () => {
       now,
     );
     expect(correcting.level).toBe("ok");
-    expect(correcting.details.some((line) => line.includes("12") && line.includes("4"))).toBe(
-      true,
-    );
+    expect(correcting.details.some((line) => line.includes("12") && line.includes("4"))).toBe(true);
     const finished = catalogHealth(
       {
         lastSync: "2026-10-30T00:00:00Z",
@@ -484,6 +486,9 @@ describe("health", () => {
       "usenet",
       "catalog",
     ]);
+    expect(fresh.find((item) => item.id === "usenet")?.summary).toBe(
+      "Torrentio finds releases; add a debrid or Usenet account to play.",
+    );
     expect(overallLevel(fresh)).toBe("ok");
     expect(
       remoteHealth({ claimed: true, remoteAccess: true, presence: { connected: false } }).level,

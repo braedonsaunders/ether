@@ -11,7 +11,13 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useApp } from "../../app-context";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
-import { EmbyMark, JellyfinMark, PlexMark, SiloMark } from "../../components/integration-brands";
+import {
+  EmbyMark,
+  householdIcon,
+  JellyfinMark,
+  PlexMark,
+  SiloMark,
+} from "../../components/integration-brands";
 import { StremioMark } from "../sources/marks";
 import { MoreOptions } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
@@ -90,8 +96,29 @@ function appLogo(id: string): ReactNode | undefined {
     case "stremio":
       return <StremioMark />;
     default:
-      return undefined;
+      return householdIcon(id);
   }
+}
+
+function frontendWarning(warning: string): string {
+  const port =
+    /^Another server on this computer is using port (\d+); Ether still works at (.+)$/.exec(
+      warning,
+    );
+  if (port) {
+    return t(
+      "Another server on this computer is using port {port}; Ether still works at {address}",
+      { port: port[1], address: port[2] },
+    );
+  }
+  const discovery =
+    /^Another server on this computer is using discovery; Ether still works at (.+)$/.exec(warning);
+  if (discovery) {
+    return t("Another server on this computer is using discovery; Ether still works at {address}", {
+      address: discovery[1],
+    });
+  }
+  return warning;
 }
 
 function connectionStep(code: string) {
@@ -109,12 +136,16 @@ function connectionStep(code: string) {
   }
 }
 
-function ConnectDevice({ info }: { info: FrontendInfo }) {
-  const [open, setOpen] = useState(false);
+function ConnectDevice({ info, startOpen = false }: { info: FrontendInfo; startOpen?: boolean }) {
+  const [open, setOpen] = useState(startOpen);
+  const [showOther, setShowOther] = useState(false);
   const [qr, setQR] = useState<string>();
   const [selectedURL, setSelectedURL] = useState("");
   const urls = info.status.connectUrls ?? [];
-  const url = urls.includes(selectedURL) ? selectedURL : urls[0];
+  const likely = urls.slice(0, Math.min(2, urls.length));
+  const other = urls.slice(likely.length);
+  const shown = showOther ? urls : likely;
+  const url = urls.includes(selectedURL) ? selectedURL : likely[0];
   useEffect(() => {
     if (!open || !url) return;
     const controller = new AbortController();
@@ -150,11 +181,11 @@ function ConnectDevice({ info }: { info: FrontendInfo }) {
       {open && (
         <div className="space-y-2 pt-3">
           <p>{t("Enter this server address in a supported app:")}</p>
-          {urls.length > 1 ? (
+          {shown.length > 1 ? (
             <label>
               {t("Server address")}
               <select value={url} onChange={(event) => setSelectedURL(event.currentTarget.value)}>
-                {urls.map((address) => (
+                {shown.map((address) => (
                   <option key={address} value={address}>
                     {address}
                   </option>
@@ -164,6 +195,13 @@ function ConnectDevice({ info }: { info: FrontendInfo }) {
           ) : (
             <code>{url}</code>
           )}
+          {other.length > 0 ? (
+            <div>
+              <Button variant="ghost" size="sm" onClick={() => setShowOther((value) => !value)}>
+                {showOther ? t("Likely addresses") : t("Other addresses")}
+              </Button>
+            </div>
+          ) : null}
           {qr && (
             <img src={qr} alt={t("QR code for the server address")} width={192} height={192} />
           )}
@@ -518,7 +556,7 @@ function AppStatus({ info }: { info: FrontendInfo }) {
   );
 }
 
-function AppDetail({ info }: { info: FrontendInfo }) {
+function AppDetail({ info, startOpen = false }: { info: FrontendInfo; startOpen?: boolean }) {
   const home = homeSummary(info.status);
   const away = awaySummary(info.status, { homeNetwork: true });
   return (
@@ -530,11 +568,11 @@ function AppDetail({ info }: { info: FrontendInfo }) {
       ) : null}
       {info.status.warnings?.map((warning) => (
         <p key={warning} className="px-5 py-3 text-sm text-fg-muted">
-          {warning}
+          {frontendWarning(warning)}
         </p>
       ))}
       <div className="px-5 py-3">
-        <ConnectDevice info={info} />
+        <ConnectDevice info={info} startOpen={startOpen} />
       </div>
     </SettingsSection>
   );
@@ -545,6 +583,7 @@ export default function Apps() {
   const state = useAsync((signal) => apiFetch<FrontendInfo[]>("/frontends", { signal }), []);
   const { tab: routeTab, section: routeSection } = useParams();
   const [searchParams] = useSearchParams();
+  const connectOpen = searchParams.get("connect") === "1";
   const navigate = useNavigate();
   const querySection = searchParams.get("section");
   const apps = [...(state.data ?? [])].sort(
@@ -634,22 +673,22 @@ export default function Apps() {
               </p>
             ) : null}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {state.data.map((info) => (
-              <IntegrationAppCard
-                key={info.descriptor.id}
-                identity={{ id: info.descriptor.id, name: nameFor(info) }}
-                logo={appLogo(info.descriptor.id)}
-                description={appPurpose(info.descriptor.id)}
-                status={<AppStatus info={info} />}
-                enabled={info.enabled}
-                busy={busy === info.descriptor.id}
-                disabled={busy != null && busy !== info.descriptor.id}
-                toggleLabel={t("{app} enabled", { app: nameFor(info) })}
-                onToggle={(enabled) => void toggle(info, enabled)}
-                configureHref={info.enabled ? `/apps/${pathFor(info.descriptor.id)}` : undefined}
-                configureLabel={t("Settings")}
-              />
-            ))}
+              {state.data.map((info) => (
+                <IntegrationAppCard
+                  key={info.descriptor.id}
+                  identity={{ id: info.descriptor.id, name: nameFor(info) }}
+                  logo={appLogo(info.descriptor.id)}
+                  description={appPurpose(info.descriptor.id)}
+                  status={<AppStatus info={info} />}
+                  enabled={info.enabled}
+                  busy={busy === info.descriptor.id}
+                  disabled={busy != null && busy !== info.descriptor.id}
+                  toggleLabel={t("{app} enabled", { app: nameFor(info) })}
+                  onToggle={(enabled) => void toggle(info, enabled)}
+                  configureHref={info.enabled ? `/apps/${pathFor(info.descriptor.id)}` : undefined}
+                  configureLabel={t("Settings")}
+                />
+              ))}
             </div>
           </div>
         ))}
@@ -662,7 +701,7 @@ export default function Apps() {
           const info = apps.find((app) => pathFor(app.descriptor.id) === item.key);
           return (
             <div key={item.key}>
-              {tab === item.key && info ? <AppDetail info={info} /> : null}
+              {tab === item.key && info ? <AppDetail info={info} startOpen={connectOpen} /> : null}
               <ProtocolSettings id={protocolFor(item.key)} hidden={tab !== item.key} />
             </div>
           );

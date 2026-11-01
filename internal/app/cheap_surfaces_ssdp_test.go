@@ -43,7 +43,7 @@ func TestCheapSurfacesMountedSSDP(t *testing.T) {
 		t.Fatal("DLNA not mounted")
 	}
 	for _, warning := range inst.Status(ctx).Warnings {
-		if strings.HasPrefix(warning, "Discovery unavailable:") {
+		if strings.Contains(warning, "using discovery") {
 			interfaces, e := net.Interfaces()
 			if e != nil {
 				t.Fatal(e)

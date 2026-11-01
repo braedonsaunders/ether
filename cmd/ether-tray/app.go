@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -69,6 +70,18 @@ type app struct {
 	// staleChecked is set once the restart-after-upgrade decision has been
 	// made for this tray start (see restartStaleServer).
 	staleChecked atomic.Bool
+
+	// serverExe overrides the bundle lookup in tests.
+	serverExe string
+	// launchdDisabled, enableLaunchd and launchDirectFn are test seams.
+	// Nil uses the macOS launchctl helpers.
+	launchdDisabled func(label string) bool
+	enableLaunchd   func(label string) error
+	launchDirectFn  func() error
+	notify          func(title, body string)
+
+	noticeMu sync.Mutex
+	notice   startNotice
 }
 
 func newApp(log *slog.Logger) *app {
@@ -248,11 +261,23 @@ func (a *app) serviceAction(action string) error {
 	}
 	switch action {
 	case "start":
-		return a.svc.Start()
+		err := a.svc.Start()
+		if err != nil {
+			a.recordStartFailure(err)
+			return err
+		}
+		a.clearStartNotice()
+		return nil
 	case "stop":
 		return a.svc.Stop()
 	case "restart":
-		return a.svc.Restart()
+		err := a.svc.Restart()
+		if err != nil {
+			a.recordStartFailure(err)
+			return err
+		}
+		a.clearStartNotice()
+		return nil
 	default:
 		return fmt.Errorf("unknown service action %q", action)
 	}

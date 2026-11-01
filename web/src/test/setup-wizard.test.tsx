@@ -8,6 +8,7 @@ import { createFakeServer } from "../mock/server";
 import Setup, {
   SETUP_STEP_KEY,
   canAdvance,
+  connectDevicePath,
   mergeFrontendSelection,
   savedDraft,
 } from "../pages/Setup";
@@ -19,6 +20,16 @@ const french = (source: string) => {
   const entry = (fr as MessageCatalog)[systemMessageKey(source)];
   return typeof entry === "string" ? entry : source;
 };
+
+it("opens the enabled app's connect panel", () => {
+  expect(connectDevicePath({ jellyfin: { enabled: true } })).toBe("/apps/jellyfin?connect=1");
+  expect(
+    connectDevicePath({ plex: { enabled: true }, jellyfin: { enabled: true } }),
+  ).toBe("/apps/jellyfin?connect=1");
+  expect(connectDevicePath({ plex: { enabled: true } })).toBe("/apps/plex?connect=1");
+  expect(connectDevicePath({ stremio: { enabled: true } })).toBe("/me");
+  expect(connectDevicePath({})).toBe("/apps");
+});
 
 afterEach(async () => {
   localStorage.removeItem("ether.locale");

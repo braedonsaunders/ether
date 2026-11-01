@@ -40,6 +40,7 @@ type runningFrontend struct {
 	listeners       []net.Listener
 	announcers      []frontend.Announcer
 	warnings        []string
+	busyPort        string
 	prefixes        []string
 	sharedPrefixes  []string
 	sharedDiscovery bool
@@ -116,7 +117,7 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 		_, requestedPort, requestedErr := net.SplitHostPort(spec.Address)
 		_, actualPort, actualErr := net.SplitHostPort(ln.Addr().String())
 		if requestedErr == nil && actualErr == nil && requestedPort != "0" && requestedPort != actualPort {
-			run.warnings = append(run.warnings, fmt.Sprintf("Port %s was unavailable; listening on %s", requestedPort, actualPort))
+			run.busyPort = requestedPort
 		}
 		handler := m.observe(id, inst.Handler())
 		if handler == nil {
@@ -268,9 +269,22 @@ func (m *frontendListeners) status(ctx context.Context, id frontend.Protocol) fr
 			}
 		}
 		st.Warnings = append(st.Warnings, run.warnings...)
+		if run.busyPort != "" {
+			st.Warnings = append(st.Warnings, busyPortWarning(run.busyPort, st.ConnectURLs))
+		}
 		if run.sharedDiscovery && m.discovery != nil {
 			if err := m.discovery.error(); err != nil {
-				st.Warnings = append(st.Warnings, "Discovery unavailable: "+err.Error())
+				msg := discoveryBusyWarning(st.ConnectURLs)
+				replaced := false
+				for i, warning := range st.Warnings {
+					if strings.Contains(warning, "using discovery") || strings.HasPrefix(warning, "Discovery unavailable:") {
+						st.Warnings[i] = msg
+						replaced = true
+					}
+				}
+				if !replaced {
+					st.Warnings = append(st.Warnings, msg)
+				}
 			}
 		}
 	}
@@ -342,6 +356,56 @@ func listenFrontendWith(id frontend.Protocol, address string, listen func(string
 		}
 	}
 	return nil, err
+}
+
+func busyPortWarning(port string, urls []string) string {
+	return fmt.Sprintf("Another server on this computer is using port %s; Ether still works at %s", port, reachableAddress(urls))
+}
+
+func discoveryBusyWarning(urls []string) string {
+	return fmt.Sprintf("Another server on this computer is using discovery; Ether still works at %s", reachableAddress(urls))
+}
+
+func reachableAddress(urls []string) string {
+	best := ""
+	bestScore := -1
+	for _, raw := range urls {
+		score := reachableScore(raw)
+		if score > bestScore {
+			best, bestScore = raw, score
+		}
+	}
+	if best == "" {
+		return "this server"
+	}
+	return best
+}
+
+func reachableScore(raw string) int {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return -1
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip == nil {
+		if strings.EqualFold(u.Hostname(), "localhost") {
+			return 0
+		}
+		return 70
+	}
+	if ip.IsLoopback() {
+		return 0
+	}
+	if v4 := ip.To4(); v4 != nil && v4[0] == 192 && v4[1] == 168 {
+		return 80
+	}
+	if ip.IsPrivate() {
+		return 40
+	}
+	if ip.To4() == nil {
+		return 10
+	}
+	return 15
 }
 
 // connectionURLs converts actual bound addresses into LAN URLs, avoiding

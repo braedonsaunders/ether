@@ -39,7 +39,7 @@ func (s *ssdp) Start(ctx context.Context) error {
 	conn, packet, joined, err := listenSSDP(group)
 	if err != nil {
 		s.mu.Lock()
-		s.warning = "Discovery unavailable: " + err.Error()
+		s.warning = "Another server on this computer is using discovery; Ether still works at this server"
 		s.mu.Unlock()
 		return nil
 	}

@@ -85,7 +85,17 @@ function toSetUp(item: HealthItem): HealthItem {
   };
 }
 
-export function usenetHealth(v: unknown, debrid?: unknown): HealthItem {
+function torrentioReady(indexers: unknown): boolean {
+  if (!Array.isArray(indexers)) return false;
+  return indexers.some((row) => {
+    if (!isPlainObject(row) || row.enabled === false) return false;
+    const name = `${str(row.indexer)} ${str(row.name)}`.toLowerCase();
+    const url = str(row.url).toLowerCase();
+    return name.includes("torrentio") || url.includes("torrentio.strem.fun");
+  });
+}
+
+export function usenetHealth(v: unknown, debrid?: unknown, indexers?: unknown): HealthItem {
   const base = {
     id: "usenet" as const,
     label: "Usenet",
@@ -104,7 +114,9 @@ export function usenetHealth(v: unknown, debrid?: unknown): HealthItem {
           label: t("Sources"),
           href: "/sources",
           level: "error",
-          summary: t("No debrid account or Usenet provider yet"),
+          summary: torrentioReady(indexers)
+            ? t("Torrentio finds releases; add a debrid or Usenet account to play.")
+            : t("No debrid account or Usenet provider yet"),
           details: [],
         });
   const primary = providers.filter((p) => !p.backfill);
@@ -312,8 +324,7 @@ export function catalogHealth(v: unknown, now = new Date()): HealthItem {
       details,
     };
   }
-  if (!last)
-    return toSetUp({ ...base, level: "warn", summary: t("Not synced yet"), details });
+  if (!last) return toSetUp({ ...base, level: "warn", summary: t("Not synced yet"), details });
   const ageDays = (now.getTime() - last.getTime()) / 86400000;
   const level: HealthLevel =
     typeof sync.error === "string" && sync.error ? "warn" : ageDays > 3 ? "warn" : "ok";
@@ -656,7 +667,7 @@ export function computeHealth(
   const s = sections ?? {};
   const plexOn = opts?.plexEnabled !== false;
   const items: HealthItem[] = [
-    usenetHealth(s.providers, s.debrid),
+    usenetHealth(s.providers, s.debrid, s.indexers),
     indexersHealth(s.indexers, s.debrid),
     cacheHealth(s.cache),
     catalogHealth(s.catalog, now),

@@ -59,3 +59,19 @@ func TestAddrInUse(t *testing.T) {
 		t.Fatal("false positive")
 	}
 }
+
+func TestBusyWarningUsesTheLANAddress(t *testing.T) {
+	urls := []string{
+		"http://[fd79::1]:8099",
+		"http://127.0.0.1:8099",
+		"http://192.168.68.65:8099",
+	}
+	got := busyPortWarning("8096", urls)
+	want := "Another server on this computer is using port 8096; Ether still works at http://192.168.68.65:8099"
+	if got != want {
+		t.Fatal(got)
+	}
+	if discoveryBusyWarning(urls) != "Another server on this computer is using discovery; Ether still works at http://192.168.68.65:8099" {
+		t.Fatal(discoveryBusyWarning(urls))
+	}
+}

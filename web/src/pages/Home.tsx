@@ -77,9 +77,7 @@ export default function Home() {
   );
   const hw = dashboard?.sections.hwaccel as
     { hwaccel?: { name?: string }; ffmpeg?: string; error?: string } | undefined;
-  const problems = health.filter(
-    (h) => !h.setupGap && (h.level === "error" || h.level === "warn"),
-  );
+  const problems = health.filter((h) => !h.setupGap && (h.level === "error" || h.level === "warn"));
   const setupGaps = health.filter((h) => h.setupGap);
 
   const status = !dashboard
@@ -299,9 +297,7 @@ function HealthPanel({
   items: HealthItem[];
   className?: string;
 }) {
-  const problems = items.filter(
-    (h) => !h.setupGap && (h.level === "error" || h.level === "warn"),
-  );
+  const problems = items.filter((h) => !h.setupGap && (h.level === "error" || h.level === "warn"));
   const setupGaps = items.filter((h) => h.setupGap);
   const rest = items.filter((h) => !problems.includes(h) && !h.setupGap);
   const severe = problems.some((h) => h.level === "error");
@@ -311,28 +307,29 @@ function HealthPanel({
       icon={<HeartPulse size={16} />}
       className={className}
       bodyClassName={cn("px-3 py-2", scrollBody)}
-      actions={
-        loading ? null : problems.length ? (
-          <Badge variant={severe ? "destructive" : "warning"}>
-            {tn(problems.length, "{count} to fix", "{count} to fix")}
-          </Badge>
-        ) : setupGaps.length ? (
-          <Badge variant="secondary">
-            {tn(setupGaps.length, "{count} thing to set up", "{count} things to set up")}
-          </Badge>
-        ) : items.some((h) => h.level === "unknown" && countsOverall(h)) ? (
-          <LevelBadge level="unknown" label={t("Status incomplete")} />
-        ) : hasExemptDiagnostic(items) ? (
-          <LevelBadge level="ok" label={t("Operational")} />
-        ) : (
-          <LevelBadge level="ok" label={t("All healthy")} />
-        )
-      }
+      actions={null}
     >
       {loading ? (
         <LoadingRows rows={4} />
       ) : (
         <>
+          <div className="mb-2">
+            {problems.length ? (
+              <Badge variant={severe ? "destructive" : "warning"} className="whitespace-nowrap">
+                {tn(problems.length, "{count} to fix", "{count} to fix")}
+              </Badge>
+            ) : setupGaps.length ? (
+              <Badge variant="secondary" className="whitespace-nowrap">
+                {tn(setupGaps.length, "{count} thing to set up", "{count} things to set up")}
+              </Badge>
+            ) : items.some((h) => h.level === "unknown" && countsOverall(h)) ? (
+              <LevelBadge level="unknown" label={t("Status incomplete")} />
+            ) : hasExemptDiagnostic(items) ? (
+              <LevelBadge level="ok" label={t("Operational")} />
+            ) : (
+              <LevelBadge level="ok" label={t("All healthy")} />
+            )}
+          </div>
           {problems.length ? (
             <section
               role="region"
@@ -416,7 +413,7 @@ function HealthRow({ h, fix = false }: { h: HealthItem; fix?: boolean }) {
             </span>
           )}
         </span>
-        <span className="block truncate text-xs text-fg-muted">{h.summary}</span>
+        <span className="block text-pretty text-xs text-fg-muted">{h.summary}</span>
         {h.note ? <span className="mt-1 block text-xs text-fg-subtle">{h.note}</span> : null}
       </span>
     </li>
