@@ -117,10 +117,15 @@ jobs:
         # -race needs CGO; the code under test is identical to the CGO=0
         # build except the macOS tray GUI file, which is excluded here on
         # macOS by CGO_ENABLED=0 for the test step below instead.
-        if: runner.os != 'macOS'
+        if: runner.os == 'Linux'
         # Guardian subprocesses inherit race instrumentation; the expanded
         # real-media suite needs more than Go's default ten-minute package cap.
         run: go test -race -timeout 20m ./...
+      - name: Test (Windows)
+        # The race detector makes the real-media suite exceed any sane
+        # package cap on Windows runners; races are covered on Linux.
+        if: runner.os == 'Windows'
+        run: go test -timeout 40m ./...
       - name: Test (macOS, headless tray)
         if: runner.os == 'macOS'
         env:

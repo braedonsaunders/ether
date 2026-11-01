@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -54,6 +55,7 @@ func TestLocalFileRevisionDetectsTouchReplaceAndMove(t *testing.T) {
 		if SourceRevision(ps) == "" {
 			t.Fatal("missing original revision")
 		}
+		skipOpenFileReplaceOnWindows(t)
 		if err := os.Rename(path, path+".old"); err != nil {
 			t.Fatal(err)
 		}
@@ -69,6 +71,7 @@ func TestLocalFileRevisionDetectsTouchReplaceAndMove(t *testing.T) {
 		if SourceRevision(ps) == "" {
 			t.Fatal("missing original revision")
 		}
+		skipOpenFileReplaceOnWindows(t)
 		if err := os.Rename(path, path+".moved"); err != nil {
 			t.Fatal(err)
 		}
@@ -76,4 +79,14 @@ func TestLocalFileRevisionDetectsTouchReplaceAndMove(t *testing.T) {
 			t.Fatalf("moved file accepted: %q", got)
 		}
 	})
+}
+
+// skipOpenFileReplaceOnWindows skips a step that renames or removes a file
+// another handle holds open. Windows refuses that (sharing violation), so
+// the replaced-while-open case these steps exercise cannot occur there.
+func skipOpenFileReplaceOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot rename or remove a file that is open; the replaced-while-open case does not occur there")
+	}
 }

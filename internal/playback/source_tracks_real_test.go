@@ -207,6 +207,7 @@ func TestSourceTrackSelectionOnRealOpenedMedia(t *testing.T) {
 	if frequency < 750 || frequency > 1000 {
 		t.Fatalf("wrong selected audio frequency %.1f Hz", frequency)
 	}
+	skipOpenFileReplaceOnWindows(t)
 	if err := os.Rename(path, path+".old"); err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -40,6 +41,9 @@ func TestFailuresAreInconclusive(t *testing.T) {
 }
 
 func TestMeasuresFirstByteSeparatelyFromBody(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows timer resolution is too coarse to separate first-byte from body time on a local server")
+	}
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()

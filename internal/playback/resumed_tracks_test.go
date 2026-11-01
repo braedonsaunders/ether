@@ -33,7 +33,7 @@ func TestResumedTracksFollowTheResumeRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	rs, err := newResumeStore(db, t.TempDir())
+	rs, err := newResumeStore(db, payloadTempDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

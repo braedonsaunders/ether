@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestQueryStatsCountsStatementsRowsAndTransactions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows timer resolution can round fast in-memory statements to zero driver time")
+	}
 	ctx := context.Background()
 	db, err := OpenPath(ctx, filepath.Join(t.TempDir(), "stats.db"))
 	if err != nil {

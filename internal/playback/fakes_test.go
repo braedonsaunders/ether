@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -629,7 +631,7 @@ func newHarness(t *testing.T, rels []*fakeRelease, ids []string, opts ...harness
 		cache:   newFakeCache(),
 		state:   newFakeState(),
 		clock:   &fakeClock{t: time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)},
-		dataDir: t.TempDir(),
+		dataDir: payloadTempDir(t),
 	}
 	h.tr = newFakeTranscoder(h.engine)
 	h.cfg = config.Defaults(h.dataDir)
@@ -705,4 +707,21 @@ func mkv(id string, size int64, dur time.Duration) *fakeRelease {
 
 func (r *fakeResolver) ReleaseBlocked(_ context.Context, id string) (bool, error) {
 	return r.isBad(id), nil
+}
+
+// payloadTempDir is a data directory for tests that leave a payload owner
+// lock held on purpose (unknown cleanup responsibility survives the
+// Manager). Windows cannot delete that open lock file, so cleanup there is
+// best effort instead of failing the test.
+func payloadTempDir(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return t.TempDir()
+	}
+	dir, err := os.MkdirTemp("", "ether-payload-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -295,7 +296,8 @@ func TestWriteJSONLeavesNoTemporaryFile(t *testing.T) {
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Fatalf("entries = %v", entries)
 	}
-	if st, _ := os.Stat(filepath.Join(dir, "x.json")); st.Mode().Perm()&0o077 != 0 {
+	// Windows reports ACL-protected files as 0666; the mode check is POSIX.
+	if st, _ := os.Stat(filepath.Join(dir, "x.json")); runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("mode = %v", st.Mode())
 	}
 }

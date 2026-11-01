@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -84,6 +85,7 @@ func TestPinnedLocalMediaRejectsFileReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	skipOpenFileReplaceOnWindows(t)
 	if err := os.Rename(path, path+".old"); err != nil {
 		t.Fatal(err)
 	}
@@ -99,5 +101,15 @@ func TestPinnedLocalMediaRejectsFileReplacement(t *testing.T) {
 	b.ServeMediaFor("jellyfin", head, httptest.NewRequest(http.MethodHead, mediaPath, nil))
 	if head.Code != http.StatusNotFound || head.Body.Len() != 0 {
 		t.Fatalf("replacement HEAD: %d %q", head.Code, head.Body.String())
+	}
+}
+
+// skipOpenFileReplaceOnWindows skips a step that renames or removes a file
+// another handle holds open. Windows refuses that (sharing violation), so
+// the replaced-while-open case these steps exercise cannot occur there.
+func skipOpenFileReplaceOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot rename or remove a file that is open; the replaced-while-open case does not occur there")
 	}
 }

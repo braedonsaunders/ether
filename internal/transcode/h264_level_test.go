@@ -75,7 +75,7 @@ func TestH264FastStart4KOutputProfile(t *testing.T) {
 	for _, flag := range []string{"constraint_set0_flag", "constraint_set1_flag", "constraint_set2_flag", "constraint_set3_flag", "constraint_set4_flag", "constraint_set5_flag"} {
 		matched := false
 		for _, line := range strings.Split(string(trace), "\n") {
-			if strings.Contains(line, flag) && strings.HasSuffix(line, "= 0") {
+			if line = strings.TrimRight(line, "\r"); strings.Contains(line, flag) && strings.HasSuffix(line, "= 0") {
 				matched = true
 				break
 			}

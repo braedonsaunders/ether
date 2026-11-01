@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -89,6 +90,9 @@ func TestFixAndStartEnablesThenStarts(t *testing.T) {
 }
 
 func TestTranslocatedBundleStartsDirectly(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS App Translocation paths only exist on macOS")
+	}
 	svc := &bootstrapService{state: service.StatusUnknown, statusErr: errors.New("not installed")}
 	direct := 0
 	a := &app{

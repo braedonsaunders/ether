@@ -361,6 +361,7 @@ func runMediaBrowserLazyHLSRealSegments(t *testing.T, protocol, container string
 		}
 	}
 	grants.revoked.Store(false)
+	skipOpenFileReplaceOnWindows(t)
 	if err := os.Rename(path, path+".old"); err != nil {
 		t.Fatal(err)
 	}

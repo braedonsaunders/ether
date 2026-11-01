@@ -109,6 +109,7 @@ func TestSourceOffersTwoBrokerDetailPlayKeepsExactGeneration(t *testing.T) {
 	if firstPrepares != 1 || secondPrepares != 1 {
 		t.Fatalf("unexpected prepare/reprobe calls same-node=%d second-node=%d", firstPrepares, secondPrepares)
 	}
+	skipOpenFileReplaceOnWindows(t)
 	if err = os.Rename(path, path+".old"); err != nil {
 		t.Fatal(err)
 	}

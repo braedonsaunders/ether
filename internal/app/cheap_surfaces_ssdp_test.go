@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,9 @@ import (
 )
 
 func TestCheapSurfacesMountedSSDP(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows hosts run their own SSDP service on port 1900, so discovery cannot be mounted there in CI")
+	}
 	ctx := context.Background()
 	a := setupTestApp(t, true)
 	if err := a.frontends.control.Toggle(ctx, "plex", false); err != nil {

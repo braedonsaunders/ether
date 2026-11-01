@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -207,6 +208,7 @@ func TestLazyHLSUsesResolvedSourceAndRealSegments(t *testing.T) {
 		t.Fatalf("revoked segment status %d", denied.Code)
 	}
 	grants.revoked.Store(false)
+	skipOpenFileReplaceOnWindows(t)
 	if err := os.Rename(path, path+".old"); err != nil {
 		t.Fatal(err)
 	}
@@ -215,5 +217,15 @@ func TestLazyHLSUsesResolvedSourceAndRealSegments(t *testing.T) {
 	}
 	if changed := fetch(base + "base/" + segmentName); changed.Code != http.StatusNotFound {
 		t.Fatalf("changed source status %d", changed.Code)
+	}
+}
+
+// skipOpenFileReplaceOnWindows skips a step that renames or removes a file
+// another handle holds open. Windows refuses that (sharing violation), so
+// the replaced-while-open case these steps exercise cannot occur there.
+func skipOpenFileReplaceOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot rename or remove a file that is open; the replaced-while-open case does not occur there")
 	}
 }

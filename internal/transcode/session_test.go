@@ -1001,9 +1001,10 @@ func TestSessionHEVCEncoderFallbackWarnsOncePerSession(t *testing.T) {
 func sessionStartedCopy(fr *fakeRunner, sessionID string) bool {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	needle := "/s-" + sessionID + "-"
+	needle := "s-" + sessionID + "-"
 	for _, args := range fr.starts {
-		if strings.Contains(strings.Join(args, " "), needle) && argValue(args, "-c:v") == "copy" {
+		joined := strings.Join(args, " ")
+		if (strings.Contains(joined, "/"+needle) || strings.Contains(joined, `\`+needle)) && argValue(args, "-c:v") == "copy" {
 			return true
 		}
 	}

@@ -168,8 +168,16 @@ func TestGrandchildrenLoadsSeasonWhoseEpisodeCountGrew(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.c.WaitRefreshes()
-	if got := f.fake.fetched(); fmt.Sprint(got) != fmt.Sprint(map[int]int{2: 1, 3: 1}) {
-		t.Fatalf("stale: season fetches %v, want seasons 2 and 3", got)
+	// If the show refresh lands before the season refreshes are planned,
+	// the new season 4 is loaded in the same pass; either way every season
+	// is fetched exactly once across the two reads.
+	stale := f.fake.fetched()
+	if stale[2] != 1 || stale[3] != 1 || stale[4] > 1 || len(stale) > 3 {
+		t.Fatalf("stale: season fetches %v, want seasons 2 and 3 (and at most season 4)", stale)
 	}
-	f.read(t, "new season", want, map[int]int{4: 1})
+	next := map[int]int{4: 1}
+	if stale[4] == 1 {
+		next = map[int]int{}
+	}
+	f.read(t, "new season", want, next)
 }

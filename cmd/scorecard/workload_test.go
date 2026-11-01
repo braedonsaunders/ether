@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -90,7 +91,7 @@ func TestWorkloadCancellationAndCleanupFailureAreCounted(t *testing.T) {
 }
 func TestWorkloadRejectsNonStagingAndUnmatchedMedia(t *testing.T) {
 	hash := strings.Repeat("a", 64)
-	cfg := workloadConfig{ReservationID: "slot", Concurrency: 1, Repetitions: 1, TimeoutMS: 1000, FFmpeg: "/usr/bin/ffmpeg", FFmpegSHA256: hash, ManifestSHA256: hash, CacheState: "warm", Reference: workloadTarget{BaseURL: "http://127.0.0.1:8096", Variables: map[string]string{"hash": hash}}, Ether: workloadTarget{BaseURL: "http://127.0.0.1:18096", Variables: map[string]string{"hash": hash}}, Flows: map[string]workloadFlow{"play": {RequiresMedia: true, Steps: []workloadStep{{Kind: "media", Method: "GET", Path: "/video", ExpectedStatus: 200, MaxBytes: 100, ExpectedSHA256: "${hash}", ExpectedDurationMS: 1000}, {Kind: "cleanup", Method: "POST", Path: "/logout", ExpectedStatus: 204, MaxBytes: 100}}}}, Trace: []workloadArrival{{Client: "c", Flow: "play"}}}
+	cfg := workloadConfig{ReservationID: "slot", Concurrency: 1, Repetitions: 1, TimeoutMS: 1000, FFmpeg: absFFmpeg(), FFmpegSHA256: hash, ManifestSHA256: hash, CacheState: "warm", Reference: workloadTarget{BaseURL: "http://127.0.0.1:8096", Variables: map[string]string{"hash": hash}}, Ether: workloadTarget{BaseURL: "http://127.0.0.1:18096", Variables: map[string]string{"hash": hash}}, Flows: map[string]workloadFlow{"play": {RequiresMedia: true, Steps: []workloadStep{{Kind: "media", Method: "GET", Path: "/video", ExpectedStatus: 200, MaxBytes: 100, ExpectedSHA256: "${hash}", ExpectedDurationMS: 1000}, {Kind: "cleanup", Method: "POST", Path: "/logout", ExpectedStatus: 204, MaxBytes: 100}}}}, Trace: []workloadArrival{{Client: "c", Flow: "play"}}}
 	if e := validateWorkload(cfg); e != nil {
 		t.Fatal(e)
 	}
@@ -187,4 +188,12 @@ func TestWorkloadDecodeTimeoutIsCountedAndCleanupRuns(t *testing.T) {
 	if !ev.TimedOut || ev.Error != "timeout" || ev.Completed || cleanup.Load() != 1 {
 		t.Fatalf("timeout or cleanup lost: %+v", ev)
 	}
+}
+
+// absFFmpeg is an absolute ffmpeg path on this OS.
+func absFFmpeg() string {
+	if runtime.GOOS == "windows" {
+		return `C:\ffmpeg\ffmpeg.exe`
+	}
+	return "/usr/bin/ffmpeg"
 }

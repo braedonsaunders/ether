@@ -178,6 +178,7 @@ func TestSourceOfferHTTPAdmissionExpiryAndRevocationBoundaries(t *testing.T) {
 						t.Fatal("admission boundary timeout")
 					}
 					if change == "source-replacement" {
+						skipOpenFileReplaceOnWindows(t)
 						if err = os.Rename(path, path+".old"); err == nil {
 							err = os.WriteFile(path, []byte("different source"), 0600)
 						}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -33,6 +34,9 @@ func TestGDMRejoinKeepsAnswering(t *testing.T) {
 }
 
 func TestGDMFailedRejoinKeepsAnswering(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows forbids the overlapping UDP bind this test uses to force a failed rejoin")
+	}
 	testGDMRejoinLifecycle(t, false)
 }
 
