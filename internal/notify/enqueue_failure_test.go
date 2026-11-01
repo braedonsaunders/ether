@@ -24,6 +24,9 @@ func TestOutageAlertsRetryAfterQueueFailure(t *testing.T) {
 			if err := s.Save(ctx, Channel{ID: "hook", Kind: "webhook", Enabled: true, Endpoint: "https://fixture.example/hook", Events: []string{"*"}}); err != nil {
 				t.Fatal(err)
 			}
+			if store.DialectOf(db) == store.Postgres {
+				t.Skip("the queue failure is injected with a SQLite trigger")
+			}
 			if _, err := db.Exec(`CREATE TRIGGER reject_notification BEFORE INSERT ON notify_queue BEGIN SELECT RAISE(ABORT,'temporary failure'); END`); err != nil {
 				t.Fatal(err)
 			}
@@ -74,6 +77,9 @@ func TestEmitQueuesAllChannelsAtomically(t *testing.T) {
 		if err := s.Save(ctx, Channel{ID: id, Kind: "webhook", Enabled: true, Endpoint: "https://fixture.example/hook", Events: []string{"*"}}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if store.DialectOf(db) == store.Postgres {
+		t.Skip("the queue failure is injected with a SQLite trigger")
 	}
 	if _, err := db.Exec(`CREATE TRIGGER reject_notification BEFORE INSERT ON notify_queue WHEN NEW.channel='b' BEGIN SELECT RAISE(ABORT,'temporary failure'); END`); err != nil {
 		t.Fatal(err)
