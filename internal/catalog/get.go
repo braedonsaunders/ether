@@ -590,6 +590,16 @@ func (c *Catalog) Grandchildren(ctx context.Context, key core.RatingKey) ([]core
 		return nil, err
 	}
 	if len(seasons) == 0 {
+		if c.tmdb() == nil {
+			var seasonRows int
+			if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles WHERE type='season' AND show_key=?`, int64(key)).Scan(&seasonRows); err == nil && seasonRows == 0 {
+				out, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE type='episode' AND show_key=? ORDER BY season ASC, episode ASC`, int64(key))
+				if out == nil && err == nil {
+					out = []core.Title{}
+				}
+				return out, err
+			}
+		}
 		return []core.Title{}, nil
 	}
 	if err := c.loadSeasons(ctx, key.TMDB(), seasons); err != nil {

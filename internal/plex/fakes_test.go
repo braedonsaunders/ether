@@ -144,13 +144,45 @@ func (c *fakeCatalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, 
 		all = append(all, t)
 	}
 	sort.Slice(all, func(i, j int) bool {
-		if q.Sort == core.SortTitle {
+		switch q.Sort {
+		case "":
 			if q.Desc {
-				return all[i].Title > all[j].Title
+				return all[i].Key > all[j].Key
 			}
-			return all[i].Title < all[j].Title
+			return all[i].Key < all[j].Key
+		case core.SortTitle:
+			if all[i].Title != all[j].Title {
+				if q.Desc {
+					return all[i].Title > all[j].Title
+				}
+				return all[i].Title < all[j].Title
+			}
+			return all[i].Key < all[j].Key
+		case core.SortAdded, core.SortReleased:
+			ai := unixOrZero(all[i].DateAdded(fixedNow))
+			aj := unixOrZero(all[j].DateAdded(fixedNow))
+			if ai != aj {
+				if q.Desc {
+					return ai > aj
+				}
+				return ai < aj
+			}
+			return all[i].Key < all[j].Key
+		case core.SortUpdated:
+			ui := unixOrZero(all[i].UpdatedAt)
+			uj := unixOrZero(all[j].UpdatedAt)
+			if ui != uj {
+				if q.Desc {
+					return ui > uj
+				}
+				return ui < uj
+			}
+			return all[i].Key < all[j].Key
 		}
-		return all[i].Popularity > all[j].Popularity
+		if all[i].Popularity != all[j].Popularity {
+			return all[i].Popularity > all[j].Popularity
+		}
+		return all[i].Key < all[j].Key
 	})
 	total := len(all)
 	lo := min(q.Offset, total)

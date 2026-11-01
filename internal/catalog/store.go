@@ -234,11 +234,12 @@ func (c *Catalog) hydrateTrailers(ctx context.Context, items []core.Title, idx m
 }
 
 type seriesIdentity struct {
-	imdb, original string
-	tvdb           int64
-	year           int
-	keywords       []string
-	altTitles      []string
+	title, contentRating string
+	imdb, original       string
+	tvdb                 int64
+	year                 int
+	keywords             []string
+	altTitles            []string
 }
 
 type creditFact struct {
@@ -387,14 +388,14 @@ func (c *Catalog) hydrateShows(ctx context.Context, items []core.Title) error {
 	for start := 0; start < len(showArgs); start += batch {
 		part := showArgs[start:min(start+batch, len(showArgs))]
 		ph := placeholders(len(part))
-		q := `SELECT tag, key, a, b, c, d FROM (
-SELECT 'id' AS tag, key, imdb AS a, CAST(tvdb AS TEXT) AS b, CAST(year AS TEXT) AS c, original_title AS d FROM catalog_titles WHERE key IN (` + ph + `)
+		q := `SELECT tag, key, a, b, c, d, e, f FROM (
+SELECT 'id' AS tag, key, imdb AS a, CAST(tvdb AS TEXT) AS b, CAST(year AS TEXT) AS c, original_title AS d, title AS e, content_rating AS f FROM catalog_titles WHERE key IN (` + ph + `)
 UNION ALL
-SELECT 'kw', key, keyword, '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
+SELECT 'kw', key, keyword, '', '', '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
 UNION ALL
-SELECT 'alt', key, title, '', '', '' FROM catalog_alt_titles WHERE key IN (` + ph + `)
+SELECT 'alt', key, title, '', '', '', '', '' FROM catalog_alt_titles WHERE key IN (` + ph + `)
 UNION ALL
-SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', '' FROM catalog_titles WHERE type='season' AND season>0 AND show_key IN (` + ph + `)
+SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', '', '', '' FROM catalog_titles WHERE type='season' AND season>0 AND show_key IN (` + ph + `)
 )`
 		bound := make([]any, 0, len(part)*4)
 		for i := 0; i < 4; i++ {
@@ -406,8 +407,8 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 		}
 		for rows.Next() {
 			var key int64
-			var tag, a, b, ccol, d string
-			if err := rows.Scan(&tag, &key, &a, &b, &ccol, &d); err != nil {
+			var tag, a, b, ccol, d, e, f string
+			if err := rows.Scan(&tag, &key, &a, &b, &ccol, &d, &e, &f); err != nil {
 				rows.Close()
 				return err
 			}
@@ -417,7 +418,7 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 				if show := shows[k]; show != nil {
 					tvdb, _ := strconv.ParseInt(b, 10, 64)
 					year, _ := strconv.Atoi(ccol)
-					show.imdb, show.tvdb, show.year, show.original = a, tvdb, year, d
+					show.imdb, show.tvdb, show.year, show.original, show.title, show.contentRating = a, tvdb, year, d, e, f
 				}
 			case "kw":
 				if show := shows[k]; show != nil {
@@ -453,6 +454,12 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 		}
 		if len(items[i].Keywords) == 0 && len(show.keywords) > 0 && (items[i].Type == core.TypeSeason || items[i].Type == core.TypeEpisode) {
 			items[i].Keywords = uniqueStrings(append([]string(nil), show.keywords...))
+		}
+		if items[i].ShowTitle == "" && show.title != "" {
+			items[i].ShowTitle = show.title
+		}
+		if items[i].ContentRating == "" && show.contentRating != "" && items[i].Type == core.TypeEpisode {
+			items[i].ContentRating = show.contentRating
 		}
 		if items[i].ShowYear == 0 {
 			items[i].ShowYear = show.year
@@ -608,6 +615,46 @@ func (c *Catalog) upsertMany(ctx context.Context, titles []core.Title, o upsertO
 	return nil
 }
 
+// materialTitleChangeSQL is true when an upsert changes a user-visible column on
+// catalog_titles (excluding TMDB popularity/vote jitter), so fetched_at
+// (UpdatedAt) stays stable across no-op background refreshes.
+const materialTitleChangeSQL = `(
+ catalog_titles.fetched_at=0 OR
+ catalog_titles.type<>excluded.type OR
+ catalog_titles.tmdb_id<>excluded.tmdb_id OR
+ catalog_titles.adult<>excluded.adult OR
+ (excluded.imdb<>'' AND catalog_titles.imdb<>excluded.imdb) OR
+ (excluded.tvdb<>0 AND catalog_titles.tvdb<>excluded.tvdb) OR
+ catalog_titles.show_key<>excluded.show_key OR
+ catalog_titles.show_tmdb<>excluded.show_tmdb OR
+ catalog_titles.show_title<>excluded.show_title OR
+ catalog_titles.season_title<>excluded.season_title OR
+ catalog_titles.season<>excluded.season OR
+ catalog_titles.episode<>excluded.episode OR
+ (excluded.title<>'' AND catalog_titles.title<>excluded.title) OR
+ (excluded.original_title<>'' AND catalog_titles.original_title<>excluded.original_title) OR
+ (excluded.sort_title<>'' AND catalog_titles.sort_title<>excluded.sort_title) OR
+ (excluded.tagline<>'' AND catalog_titles.tagline<>excluded.tagline) OR
+ (excluded.summary<>'' AND catalog_titles.summary<>excluded.summary) OR
+ ((excluded.detail=1 OR (catalog_titles.detail=0 AND excluded.year<>0)) AND catalog_titles.year<>excluded.year) OR
+ ((excluded.detail=1 OR (catalog_titles.detail=0 AND excluded.released_ts<>0)) AND catalog_titles.released_ts<>excluded.released_ts) OR
+ (excluded.runtime_sec<>0 AND catalog_titles.runtime_sec<>excluded.runtime_sec) OR
+ (excluded.status<>'' AND catalog_titles.status<>excluded.status) OR
+ (excluded.last_air_ts<>0 AND catalog_titles.last_air_ts<>excluded.last_air_ts) OR
+ (excluded.language<>'' AND catalog_titles.language<>excluded.language) OR
+ (excluded.content_rating<>'' AND catalog_titles.content_rating<>excluded.content_rating) OR
+ (excluded.poster<>'' AND catalog_titles.poster<>excluded.poster) OR
+ (excluded.backdrop<>'' AND catalog_titles.backdrop<>excluded.backdrop) OR
+ (excluded.still<>'' AND catalog_titles.still<>excluded.still) OR
+ (excluded.logo<>'' AND catalog_titles.logo<>excluded.logo) OR
+ (excluded.collection_id<>0 AND catalog_titles.collection_id<>excluded.collection_id) OR
+ (excluded.collection_name<>'' AND catalog_titles.collection_name<>excluded.collection_name) OR
+ (excluded.child_count<>0 AND catalog_titles.child_count<>excluded.child_count) OR
+ (excluded.leaf_count<>0 AND catalog_titles.leaf_count<>excluded.leaf_count) OR
+ excluded.browsable>catalog_titles.browsable OR
+ excluded.detail>catalog_titles.detail
+)`
+
 func upsertOne(ctx context.Context, tx *sql.Tx, t core.Title, o upsertOpts, now int64) error {
 	if t.Key == 0 {
 		return fmt.Errorf("catalog: upsert title with zero key")
@@ -696,7 +743,7 @@ ON CONFLICT(key) DO UPDATE SET
  browsable=CASE WHEN excluded.browsable>catalog_titles.browsable THEN excluded.browsable ELSE catalog_titles.browsable END,
  added_at=CASE WHEN catalog_titles.added_at<>0 THEN catalog_titles.added_at
                WHEN excluded.browsable=1 THEN excluded.added_at ELSE 0 END,
- fetched_at=excluded.fetched_at,
+ fetched_at=CASE WHEN `+materialTitleChangeSQL+` THEN excluded.fetched_at ELSE catalog_titles.fetched_at END,
  detail=CASE WHEN excluded.detail>catalog_titles.detail THEN excluded.detail ELSE catalog_titles.detail END,
  detail_at=CASE WHEN excluded.detail=1 THEN excluded.detail_at ELSE catalog_titles.detail_at END`,
 		int64(t.Key), string(t.Type), t.IDs.TMDB, t.IDs.IMDB, t.IDs.TVDB, int64(t.ShowKey), showTMDB, t.ShowTitle, t.SeasonTitle, t.Season, t.Episode,
@@ -718,7 +765,7 @@ ON CONFLICT(key) DO UPDATE SET
 		}
 	}
 	if o.airDates && !o.detail {
-		if _, err := tx.ExecContext(ctx, `UPDATE catalog_titles SET released_ts=?, year=? WHERE key=?`, releasedTS, t.Year, int64(t.Key)); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE catalog_titles SET fetched_at=CASE WHEN released_ts<>? OR year<>? THEN ? ELSE fetched_at END, released_ts=?, year=? WHERE key=?`, releasedTS, t.Year, now, releasedTS, t.Year, int64(t.Key)); err != nil {
 			return fmt.Errorf("catalog: upsert %d air date: %w", t.Key, err)
 		}
 	}
@@ -727,32 +774,44 @@ ON CONFLICT(key) DO UPDATE SET
 	}
 	// Replace join rows only when the incoming title carries that facet, so
 	// summary upserts don't wipe detail-fetched genres/credits.
+	joinChanged := false
 	if t.Genres != nil {
-		if err := replacePairs(ctx, tx, "catalog_genres", "genre", int64(t.Key), t.Genres); err != nil {
+		changed, err := replacePairs(ctx, tx, "catalog_genres", "genre", int64(t.Key), t.Genres)
+		if err != nil {
 			return err
 		}
+		joinChanged = joinChanged || changed
 	}
 	if t.Keywords != nil {
-		if err := replacePairs(ctx, tx, "catalog_keywords", "keyword", int64(t.Key), t.Keywords); err != nil {
+		changed, err := replacePairs(ctx, tx, "catalog_keywords", "keyword", int64(t.Key), t.Keywords)
+		if err != nil {
 			return err
 		}
+		joinChanged = joinChanged || changed
 	}
 	if t.AlternativeTitles != nil {
-		if err := replacePairs(ctx, tx, "catalog_alt_titles", "title", int64(t.Key), t.AlternativeTitles); err != nil {
+		changed, err := replacePairs(ctx, tx, "catalog_alt_titles", "title", int64(t.Key), t.AlternativeTitles)
+		if err != nil {
 			return err
 		}
+		joinChanged = joinChanged || changed
 	}
 	if t.Studios != nil {
-		if err := replacePairs(ctx, tx, "catalog_studios", "studio", int64(t.Key), t.Studios); err != nil {
+		changed, err := replacePairs(ctx, tx, "catalog_studios", "studio", int64(t.Key), t.Studios)
+		if err != nil {
 			return err
 		}
+		joinChanged = joinChanged || changed
 	}
 	if t.Countries != nil {
-		if err := replacePairs(ctx, tx, "catalog_countries", "country", int64(t.Key), t.Countries); err != nil {
+		changed, err := replacePairs(ctx, tx, "catalog_countries", "country", int64(t.Key), t.Countries)
+		if err != nil {
 			return err
 		}
+		joinChanged = joinChanged || changed
 	}
 	if (t.Cast != nil || t.Directors != nil || t.Writers != nil || t.Crew != nil) && !creditsUnchanged(ctx, tx, t) {
+		joinChanged = true
 		if _, err := tx.ExecContext(ctx, `DELETE FROM catalog_credits WHERE key=?`, int64(t.Key)); err != nil {
 			return err
 		}
@@ -780,6 +839,11 @@ ON CONFLICT(key) DO UPDATE SET
 			return err
 		}
 		if err := insert(t.Crew, "crew"); err != nil {
+			return err
+		}
+	}
+	if joinChanged || (t.Type == core.TypeMovie && len(t.Genres) > 0) {
+		if _, err := tx.ExecContext(ctx, `UPDATE catalog_titles SET fetched_at=? WHERE key=?`, now, int64(t.Key)); err != nil {
 			return err
 		}
 	}
@@ -857,7 +921,7 @@ func uniqueStrings(in []string) []string {
 	return out
 }
 
-func replacePairs(ctx context.Context, tx *sql.Tx, table, col string, key int64, vals []string) error {
+func replacePairs(ctx context.Context, tx *sql.Tx, table, col string, key int64, vals []string) (bool, error) {
 	want := map[string]bool{}
 	for _, v := range vals {
 		if v != "" {
@@ -867,10 +931,10 @@ func replacePairs(ctx context.Context, tx *sql.Tx, table, col string, key int64,
 	// A refresh usually brings the same values. Leaving the rows alone keeps
 	// policy triggers (and the search index) from firing for nothing.
 	if same, err := pairsEqual(ctx, tx, table, col, key, want); err != nil || same {
-		return err
+		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE key=?`, key); err != nil {
-		return err
+		return false, err
 	}
 	seen := map[string]bool{}
 	for _, v := range vals {
@@ -879,10 +943,10 @@ func replacePairs(ctx context.Context, tx *sql.Tx, table, col string, key int64,
 		}
 		seen[v] = true
 		if _, err := tx.ExecContext(ctx, `INSERT INTO `+table+`(key,`+col+`) VALUES(?,?) ON CONFLICT DO NOTHING`, key, v); err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+	return true, nil
 }
 
 // pairsEqual reports whether key's stored values in table are exactly want.

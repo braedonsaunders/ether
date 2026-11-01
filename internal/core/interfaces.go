@@ -57,6 +57,10 @@ type Filter struct {
 	// counting and pagination. Matching is case-insensitive.
 	ExcludeGenres         []string        `json:"-"`
 	ExcludeKeywords       []string        `json:"-"`
+	AddedAfter            int64           `json:"-"` // inclusive Unix timestamp bound on added/release time
+	AddedBefore           int64           `json:"-"` // inclusive Unix timestamp bound on added/release time
+	UpdatedAfter          int64           `json:"-"` // inclusive Unix timestamp bound on metadata update time
+	UpdatedBefore         int64           `json:"-"` // inclusive Unix timestamp bound on metadata update time
 	Type                  MediaType       `json:"type,omitempty"` // movie or show
 	Genres                []string        `json:"genres,omitempty"`
 	Keywords              []string        `json:"keywords,omitempty"` // every keyword must match (case-insensitive)

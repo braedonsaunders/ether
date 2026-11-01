@@ -154,6 +154,13 @@ CREATE INDEX catalog_titles_episode_aired ON catalog_titles(show_key, released_t
 CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, season, released_ts DESC) WHERE type='episode' AND release_known=1;
 CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
 `)
+	store.Register("catalog", 23, `
+CREATE INDEX catalog_titles_type_browse_updated ON catalog_titles(type, browsable, adult, fetched_at DESC, key ASC);
+CREATE INDEX catalog_titles_episode_updated ON catalog_titles(fetched_at DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
+CREATE INDEX catalog_titles_season_key ON catalog_titles(key ASC) WHERE type='season' AND adult=0;
+CREATE INDEX catalog_titles_season_updated ON catalog_titles(fetched_at DESC, key ASC) WHERE type='season' AND adult=0;
+CREATE INDEX catalog_titles_season_released ON catalog_titles(released_ts DESC, key ASC) WHERE type='season' AND release_known=1 AND adult=0;
+`)
 	store.Register("catalog", 7, `
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC);
 CREATE INDEX catalog_titles_browse_warm ON catalog_titles(browsable, detail, adult, popularity DESC, vote_count DESC);

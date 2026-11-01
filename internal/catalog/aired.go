@@ -63,6 +63,7 @@ func applyAiredCounts(ctx context.Context, db *sql.DB, now time.Time, items []*c
 		season int
 	}
 	seasons := map[seasonID]*seasonAired{}
+	hasSeasonRows := map[core.RatingKey]bool{}
 	var order []seasonID
 	nowTS := now.Unix()
 	// Chunk the deduplicated showArgs (same 200 as hydrateSlice): a single
@@ -83,6 +84,7 @@ func applyAiredCounts(ctx context.Context, db *sql.DB, now time.Time, items []*c
 				rows.Close()
 				return err
 			}
+			hasSeasonRows[core.RatingKey(show)] = true
 			if !episodeKeyFits(season, 0) {
 				continue
 			}
@@ -114,7 +116,14 @@ func applyAiredCounts(ctx context.Context, db *sql.DB, now time.Time, items []*c
 				rows.Close()
 				return err
 			}
-			if s := seasons[seasonID{core.RatingKey(show), season}]; s != nil && total > 0 {
+			id := seasonID{core.RatingKey(show), season}
+			s := seasons[id]
+			if s == nil && !hasSeasonRows[core.RatingKey(show)] && aired > 0 && episodeKeyFits(season, 0) {
+				s = &seasonAired{date: earliest, released: earliest != 0 && earliest <= nowTS}
+				seasons[id] = s
+				order = append(order, id)
+			}
+			if s != nil && total > 0 {
 				s.mirrored, s.airedCount = true, aired
 				// Specials often have no season premiere. A dated aired child is
 				// sufficient to open this container, but never overrides a future date.

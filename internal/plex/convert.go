@@ -33,6 +33,9 @@ type renderOpts struct {
 	state map[core.RatingKey]core.WatchStatus
 	// skipLeafCounts skips applyListLeafCounts when the caller calls applyLeafCounts itself.
 	skipLeafCounts bool
+	// storedOnly renders from stored catalogue rows only without scheduling
+	// background TMDB detail, show-children, or Plex GUID refreshes.
+	storedOnly bool
 }
 
 // metadataKey is the item's "key": children list for containers, the item
@@ -142,8 +145,10 @@ func seasonTitle(t *core.Title) string {
 
 // metadata renders one title.
 func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o renderOpts) model.Metadata {
-	t = s.enrich(t)
-	show := s.showOf(t)
+	if !o.storedOnly {
+		t = s.enrich(t)
+	}
+	show := s.showOfOpts(t, o.storedOnly)
 	m := model.Metadata{
 		RatingKey:     t.Key.String(),
 		Key:           metadataKey(t.Key, t.Type),
@@ -231,6 +236,9 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 				m.ParentTitle = show.Title
 				m.ParentSlug = slugify(show.Title)
 			}
+		}
+		if m.ParentYear == 0 && t.ShowYear > 0 {
+			m.ParentYear = t.ShowYear
 		}
 		m.LeafCount = model.Ptr(t.ChildCount)
 		m.ViewedLeafCount = model.Ptr(0)
@@ -586,7 +594,7 @@ func partFileName(t *core.Title, ext string) string {
 		}
 	}
 	name = strings.Map(func(r rune) rune {
-		if strings.ContainsRune(`/\:*?"<>|`, r) {
+		if strings.ContainsRune(`/\\:*?"<>|`, r) {
 			return -1
 		}
 		return r
@@ -1111,11 +1119,16 @@ func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []core.Title,
 		}
 		guids = s.d.PlexGUID.CachedMany(ctx, lookup)
 	}
-	order := s.episodeOrderList(ctx, pr, ts, o.detail)
+	var order episodeOrderView
+	if !o.storedOnly {
+		order = s.episodeOrderList(ctx, pr, ts, o.detail)
+	}
 	out := make([]model.Metadata, 0, len(ts))
 	for i := range ts {
 		m := s.metadata(ctx, pr, &ts[i], o)
-		s.applyEpisodeOrder(ctx, pr, &ts[i], &m, order)
+		if !o.storedOnly {
+			s.applyEpisodeOrder(ctx, pr, &ts[i], &m, order)
+		}
 		if s.d.PlexGUID != nil {
 			k := ts[i].Key
 			if guid := guids[k]; guid != "" {
@@ -1145,11 +1158,11 @@ func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []core.Title,
 		}
 		out = append(out, m)
 	}
-	if s.d.PlexGUID != nil && len(missingGUIDs) > 0 {
+	if s.d.PlexGUID != nil && len(missingGUIDs) > 0 && !o.storedOnly {
 		s.d.PlexGUID.Schedule(missingGUIDs...)
 	}
 	if !o.detail && !o.skipLeafCounts {
-		s.applyListLeafCounts(ctx, pr, out, ts)
+		s.applyListLeafCountsOpts(ctx, pr, out, ts, o.storedOnly)
 	}
 	return out
 }
@@ -1167,6 +1180,10 @@ type watchedEpisodesOfReader interface {
 // episodes are watched) on shows and seasons in list/search/hub responses,
 // touching only shows that have at least one watched episode for the user.
 func (s *Server) applyListLeafCounts(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title) {
+	s.applyListLeafCountsOpts(ctx, pr, items, ts, false)
+}
+
+func (s *Server) applyListLeafCountsOpts(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title, storedOnly bool) {
 	if s.d.State == nil || pr.User == nil || len(items) == 0 {
 		return
 	}
@@ -1219,15 +1236,17 @@ func (s *Server) applyListLeafCounts(ctx context.Context, pr *Request, items []m
 	if len(subset) == 0 {
 		return
 	}
-	memo, states := s.prefetchListEpisodes(ctx, pr, subset)
-	s.applyLeafCountsWith(ctx, pr, items, subset, memo, states)
+	if !storedOnly {
+		memo, states := s.prefetchListEpisodes(ctx, pr, subset)
+		s.applyLeafCountsWith(ctx, pr, items, subset, memo, states)
+	}
 	byKey := make(map[string]int, len(items))
 	for i := range items {
 		byKey[items[i].RatingKey] = i
 	}
 	for _, title := range subset {
 		i, ok := byKey[title.Key.String()]
-		if !ok || items[i].ViewedLeafCount != nil {
+		if !ok || (!storedOnly && items[i].ViewedLeafCount != nil && *items[i].ViewedLeafCount > 0) {
 			continue
 		}
 		viewed := 0

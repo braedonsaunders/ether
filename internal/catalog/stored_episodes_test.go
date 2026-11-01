@@ -67,6 +67,87 @@ func TestStoredEpisodesByKey(t *testing.T) {
 	}
 }
 
+func TestBrowseStoredSeasonsAndEpisodesAndStableFetchedAt(t *testing.T) {
+	ctx := context.Background()
+	c := newChunkTestCatalog(t)
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	c.SetNow(func() time.Time { return now })
+
+	t1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 2, 10, 0, 0, 0, 0, time.UTC)
+	show := core.Title{
+		Key: core.ShowKey(77), Type: core.TypeShow, IDs: core.IDs{TMDB: 77},
+		Title: "Signal", Released: t1, Genres: []string{"Drama"},
+	}
+	if err := c.UpsertDetailedTitle(ctx, show); err != nil {
+		t.Fatal(err)
+	}
+	s1 := core.Title{
+		Key: core.SeasonKey(77, 1), Type: core.TypeSeason, ShowKey: show.Key,
+		IDs: core.IDs{TMDB: 77}, Season: 1, Title: "Season 1", Released: t1,
+	}
+	e1 := core.Title{
+		Key: core.EpisodeKey(77, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key,
+		IDs: core.IDs{TMDB: 77, IMDB: "tt0000001"}, Season: 1, Episode: 1, Title: "Ep 1", Released: t1,
+	}
+	e2 := core.Title{
+		Key: core.EpisodeKey(77, 1, 2), Type: core.TypeEpisode, ShowKey: show.Key,
+		IDs: core.IDs{TMDB: 77, IMDB: "tt0000002"}, Season: 1, Episode: 2, Title: "Ep 2", Released: t2,
+	}
+	for _, it := range []core.Title{s1, e1, e2} {
+		if err := c.UpsertTitle(ctx, it, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Advancing clock and re-upserting with only popularity/vote_count jitter
+	// must NOT advance fetched_at.
+	later := now.Add(2 * time.Hour)
+	c.SetNow(func() time.Time { return later })
+	jitter := show
+	jitter.Popularity = 999.9
+	jitter.VoteCount = 5000
+	if err := c.UpsertTitle(ctx, jitter, true); err != nil {
+		t.Fatal(err)
+	}
+	gotShow, err := c.Get(ctx, show.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gotShow.UpdatedAt.Equal(now) {
+		t.Fatalf("UpdatedAt moved on popularity jitter: got %v want %v", gotShow.UpdatedAt, now)
+	}
+
+	// Changing material metadata advances fetched_at.
+	changed := e2
+	changed.Summary = "Updated synopsis"
+	if err := c.UpsertTitle(ctx, changed, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Browse episodes in key order and by updatedAt:desc.
+	epPage, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeEpisode}, Limit: 10})
+	if err != nil || epPage.Total != 2 || len(epPage.Items) != 2 || epPage.Items[0].Key != e1.Key || epPage.Items[1].Key != e2.Key {
+		t.Fatalf("episode browse by key: %+v (%v)", epPage, err)
+	}
+	epUpdated, err := c.Browse(ctx, core.BrowseQuery{
+		Filter: core.Filter{Type: core.TypeEpisode, UpdatedAfter: later.Unix()},
+		Sort:   core.SortUpdated, Desc: true, Limit: 10,
+	})
+	if err != nil || epUpdated.Total != 1 || len(epUpdated.Items) != 1 || epUpdated.Items[0].Key != e2.Key {
+		t.Fatalf("episode incremental browse: %+v (%v)", epUpdated, err)
+	}
+
+	// Browse seasons in key order: ChildCount reflects aired episodes (2), AddedAt reflects latest aired episode (t2).
+	sePage, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeSeason}, Limit: 10})
+	if err != nil || sePage.Total != 1 || len(sePage.Items) != 1 {
+		t.Fatalf("season browse: %+v (%v)", sePage, err)
+	}
+	if sePage.Items[0].ChildCount != 2 || !sePage.Items[0].AddedAt.Equal(t2) {
+		t.Fatalf("season counts/dates: %+v", sePage.Items[0])
+	}
+}
+
 func TestRecentAirSkipsExcludedTitles(t *testing.T) {
 	ctx := context.Background()
 	c := newChunkTestCatalog(t)

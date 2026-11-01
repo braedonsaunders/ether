@@ -19,6 +19,12 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	if err := c.admitFallbacks(ctx); err != nil {
 		return core.Page{}, err
 	}
+	switch q.Filter.Type {
+	case core.TypeEpisode:
+		return c.BrowseStoredEpisodes(ctx, q)
+	case core.TypeSeason:
+		return c.BrowseStoredSeasons(ctx, q)
+	}
 	if q.Filter.Person > 0 {
 		c.ensurePersonCredits(ctx, q.Filter.Person)
 	}
@@ -100,6 +106,11 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		}
 		return page, nil
 	}
+	pageWhere, pageArgs := where, args
+	if q.Sort == core.SortUpdated && q.Filter.UpdatedAfter == 0 {
+		pageWhere += " AND t.fetched_at>=?"
+		pageArgs = append(append([]any{}, args...), int64(0))
+	}
 	order := browseOrder(q)
 	orderArgs := []any{}
 	asOf := c.now()
@@ -116,7 +127,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	// movies released by now, so browseOrder's t.released_ts gives the same
 	// order from the (type, browsable, released_ts) index instead of a
 	// computed expression sorted over the whole library.
-	query := `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t WHERE ` + where + ` ORDER BY ` + order + `, t.key ASC LIMIT ? OFFSET ?`
+	query := `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t WHERE ` + pageWhere + ` ORDER BY ` + order + `, t.key ASC LIMIT ? OFFSET ?`
 	if computedAdded {
 		// The computed date added has no index, so the whole filtered set is
 		// sorted. Sort narrow (key, date) rows from the covering index and
@@ -125,13 +136,13 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		if q.Desc {
 			dir = "DESC"
 		}
-		query = `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t JOIN (SELECT t.key AS page_key, ` + airAddedSQL + ` AS page_added FROM catalog_titles t WHERE ` + where +
+		query = `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t JOIN (SELECT t.key AS page_key, ` + airAddedSQL + ` AS page_added FROM catalog_titles t WHERE ` + pageWhere +
 			` ORDER BY page_added ` + dir + `, t.key ASC LIMIT ? OFFSET ?) p ON t.key=p.page_key ORDER BY p.page_added ` + dir + `, p.page_key ASC`
 	}
-	queryArgs := append(append([]any{}, args...), orderArgs...)
+	queryArgs := append(append([]any{}, pageArgs...), orderArgs...)
 	if computedAdded {
 		// The date expression comes before the filter in the narrow subquery.
-		queryArgs = append(append([]any{}, orderArgs...), args...)
+		queryArgs = append(append([]any{}, orderArgs...), pageArgs...)
 	}
 	var items []core.Title
 	walked := false
@@ -158,7 +169,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		// Movies and series together: no index orders both types, so the
 		// sorted query reads every browsable title. Each type's page comes
 		// from its own index and the two merge.
-		keys, err := c.mergedTypeKeys(ctx, where, args, q, offset, limit)
+		keys, err := c.mergedTypeKeys(ctx, pageWhere, pageArgs, q, offset, limit)
 		if err != nil {
 			return core.Page{}, err
 		}
@@ -313,6 +324,7 @@ func browseFilterKey(f core.Filter) string {
 func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	var conds []string
 	var args []any
+	nowTS := c.now().Unix()
 	conds = append(conds, "t.browsable=1", "t.adult=0")
 	if f.KnownAddedDate {
 		// Same membership as airAddedSQL<>0. Browse already requires the
@@ -321,7 +333,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		// episodes. The sort still uses airAddedSQL. released_ts>0 would drop
 		// a pre-1970 premiere.
 		conds = append(conds, "t.release_known=1 AND t.released_ts<=?")
-		args = append(args, c.now().Unix())
+		args = append(args, nowTS)
 	}
 	if f := c.visibilityFilter(); f != nil {
 		q, a := f.SQLHidden()
@@ -330,7 +342,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	}
 	if c.config().GateMoviesByHomeRelease && f.IncludeKeys == nil {
 		conds = append(conds, homeReleaseSQL("t"))
-		args = append(args, c.now().Unix(), c.now().Unix()-int64(homeReleaseGrace.Seconds()))
+		args = append(args, nowTS, nowTS-int64(homeReleaseGrace.Seconds()))
 	}
 	if f.IncludeKeys != nil {
 		if len(f.IncludeKeys) == 0 {
@@ -356,6 +368,32 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		conds = append(conds, "t.type IN ('movie','show')")
 	default:
 		return "", nil, fmt.Errorf("catalog: browse: unsupported type %q", f.Type)
+	}
+	if f.UpdatedAfter != 0 {
+		conds = append(conds, "t.fetched_at>=?")
+		args = append(args, f.UpdatedAfter)
+	}
+	if f.UpdatedBefore != 0 {
+		conds = append(conds, "t.fetched_at<=? AND t.fetched_at>0")
+		args = append(args, f.UpdatedBefore)
+	}
+	if f.AddedAfter != 0 {
+		if f.Type == core.TypeMovie {
+			conds = append(conds, "t.released_ts>=?")
+			args = append(args, f.AddedAfter)
+		} else {
+			conds = append(conds, `(t.released_ts>=? OR (t.type='show' AND t.key IN (SELECT show_key FROM catalog_titles WHERE type='episode' AND release_known=1 AND adult=0 AND released_ts>=? AND released_ts<=?)))`)
+			args = append(args, f.AddedAfter, f.AddedAfter, nowTS)
+		}
+	}
+	if f.AddedBefore != 0 {
+		if f.Type == core.TypeMovie {
+			conds = append(conds, "t.released_ts<=?")
+			args = append(args, f.AddedBefore)
+		} else {
+			conds = append(conds, `(t.released_ts<=? AND (t.type<>'show' OR t.key NOT IN (SELECT show_key FROM catalog_titles WHERE type='episode' AND release_known=1 AND adult=0 AND released_ts>? AND released_ts<=?)))`)
+			args = append(args, f.AddedBefore, f.AddedBefore, nowTS)
+		}
 	}
 	if len(f.Genres) > 0 {
 		conds = append(conds, `EXISTS (SELECT 1 FROM catalog_genres g WHERE g.key=t.key AND g.genre IN (`+placeholders(len(f.Genres))+`))`)
@@ -623,7 +661,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		}
 	}
 	conds = append(conds, "t.release_known=1 AND t.released_ts<=?")
-	args = append(args, c.now().Unix())
+	args = append(args, nowTS)
 	return strings.Join(conds, " AND "), args, nil
 }
 

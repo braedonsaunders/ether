@@ -32,8 +32,26 @@ func fakeFilterMatch(t core.Title, f core.Filter) bool {
 	if f.Type != "" && t.Type != f.Type {
 		return false
 	}
+	if t.Adult {
+		return false
+	}
+	if t.Type == core.TypeEpisode && (t.Released.IsZero() || t.Released.After(fixedNow)) {
+		return false
+	}
 	if f.KnownAddedDate && t.DateAdded(fixedNow).IsZero() {
 		return false
+	}
+	if f.AddedAfter > 0 || f.AddedBefore > 0 {
+		added := unixOrZero(t.DateAdded(fixedNow))
+		if added <= 0 || (f.AddedAfter > 0 && added < f.AddedAfter) || (f.AddedBefore > 0 && added > f.AddedBefore) {
+			return false
+		}
+	}
+	if f.UpdatedAfter > 0 || f.UpdatedBefore > 0 {
+		updated := unixOrZero(t.UpdatedAt)
+		if updated <= 0 || (f.UpdatedAfter > 0 && updated < f.UpdatedAfter) || (f.UpdatedBefore > 0 && updated > f.UpdatedBefore) {
+			return false
+		}
 	}
 	if len(f.Genres) > 0 {
 		match := false
