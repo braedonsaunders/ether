@@ -123,7 +123,7 @@ describe("Overview", () => {
     expect(within(attention).getByText("Every provider refused the login")).toBeInTheDocument();
     expect(within(attention).getByRole("link", { name: "Fix" })).toHaveAttribute(
       "href",
-      "/sources/yours/usenet",
+      "/sources/usenet",
     );
   });
 });

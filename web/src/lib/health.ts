@@ -99,7 +99,7 @@ export function usenetHealth(v: unknown, debrid?: unknown, indexers?: unknown): 
   const base = {
     id: "usenet" as const,
     label: "Usenet",
-    href: "/sources/yours/usenet",
+    href: "/sources/usenet",
   };
   const err = errorOf(v);
   if (err) return { ...base, level: "error", summary: err, details: [] };
@@ -178,7 +178,7 @@ export function indexersHealth(v: unknown, debrid?: unknown): HealthItem {
   const base = {
     id: "indexers" as const,
     label: t("Indexers"),
-    href: "/sources/yours/indexers",
+    href: "/sources/indexers",
   };
   const err = errorOf(v);
   if (err) return { ...base, level: "error", summary: err, details: [] };

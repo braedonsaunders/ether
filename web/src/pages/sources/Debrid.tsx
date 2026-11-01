@@ -339,7 +339,7 @@ export function DebridSources({
             <AlertDescription>
               {tx("Debrid is connected but no torrent source is set up yet. {action}", {
                 action: (
-                  <Link to="/sources/yours/indexers" className="font-medium underline underline-offset-2">
+                  <Link to="/sources/indexers" className="font-medium underline underline-offset-2">
                     {t("Add one")}
                   </Link>
                 ),

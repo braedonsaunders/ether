@@ -1,5 +1,5 @@
 import { localized, t } from "../../i18n";
-import { Button, SubtabNav } from "@braedonsaunders/appkit-ui";
+import { Button } from "@braedonsaunders/appkit-ui";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -17,39 +17,25 @@ import type { DebridKind } from "../../lib/types";
 const TABS = localized(
   () =>
     [
-      { key: "yours", label: t("Your sources") },
+      { key: "debrid", label: t("Debrid") },
+      { key: "usenet", label: t("Usenet") },
+      { key: "indexers", label: t("Indexers") },
       { key: "stats", label: t("Stats") },
     ] as const,
 );
 
-const SOURCE_SUBS = localized(
-  () =>
-    [
-      { key: "debrid", label: t("Debrid") },
-      { key: "usenet", label: t("Usenet") },
-      { key: "indexers", label: t("Indexers") },
-    ] as const,
-);
-
-type SourceSub = (typeof SOURCE_SUBS)[number]["key"];
-
 type AddDebrid = { nonce: number; kind: DebridKind };
 type AddIndexer = { nonce: number; type: "site" | "newznab" | "stremio" };
 
-function isSourceSub(value: string | undefined): value is SourceSub {
-  return value === "debrid" || value === "usenet" || value === "indexers";
-}
-
 /**
- * Where playback comes from. Each source type has its own sub-tab under
- * /sources/yours. An unknown address opens Your sources, not a renamed page.
+ * Where playback comes from: one tab per source type, plus Stats.
+ * An unknown address opens Debrid.
  * Adding one starts from a gallery, then a drawer.
  */
 export default function Sources() {
-  const { tab: raw, sub: rawSub } = useParams();
+  const { tab: raw } = useParams();
   const navigate = useNavigate();
-  const top = TABS.find((item) => item.key === raw)?.key ?? "yours";
-  const sourceSub: SourceSub = top === "yours" && isSourceSub(rawSub) ? rawSub : "debrid";
+  const top = TABS.find((item) => item.key === raw)?.key ?? "debrid";
   const [importing, setImporting] = useState(false);
   const [gallery, setGallery] = useState(false);
   const [version, setVersion] = useState(0);
@@ -61,16 +47,16 @@ export default function Sources() {
     const nonce = Date.now();
     setGallery(false);
     if (choice.type === "debrid") {
-      navigate("/sources/yours/debrid");
+      navigate("/sources/debrid");
       setDebridAdd({ nonce, kind: choice.kind });
     } else if (choice.type === "usenet") {
-      navigate("/sources/yours/usenet");
+      navigate("/sources/usenet");
       setUsenetAdd(nonce);
     } else if (choice.type === "prowlarr") {
-      navigate("/sources/yours/indexers");
+      navigate("/sources/indexers");
       setImporting(true);
     } else {
-      navigate("/sources/yours/indexers");
+      navigate("/sources/indexers");
       setIndexerAdd({ nonce, type: choice.type });
     }
   }
@@ -83,7 +69,7 @@ export default function Sources() {
       active={top}
       status={<HealthStrip ids={["usenet", "indexers"]} />}
       actions={
-        top === "yours" ? (
+        top !== "stats" ? (
           <>
             <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
               {t("Import from Prowlarr")}
@@ -95,24 +81,14 @@ export default function Sources() {
         ) : null
       }
     >
-      {top === "yours" ? (
-        <>
-          <SubtabNav
-            ariaLabel={t("Source types")}
-            active={sourceSub}
-            onSelect={(key) => navigate(`/sources/yours/${key}`)}
-            tabs={SOURCE_SUBS.map((item) => ({ key: item.key, label: item.label }))}
-          />
-          <p className="text-sm text-fg-muted">
-            {t("Drag a card to choose which account Ether tries first.")}
-          </p>
-          {sourceSub === "debrid" ? <DebridSources addKind={debridAdd} /> : null}
-          {sourceSub === "usenet" ? <UsenetProviders addNonce={usenetAdd} /> : null}
-          {sourceSub === "indexers" ? (
-            <IndexerList version={version} addRequest={indexerAdd} />
-          ) : null}
-        </>
+      {top !== "stats" ? (
+        <p className="text-sm text-fg-muted">
+          {t("Drag a card to choose which account Ether tries first.")}
+        </p>
       ) : null}
+      {top === "debrid" ? <DebridSources addKind={debridAdd} /> : null}
+      {top === "usenet" ? <UsenetProviders addNonce={usenetAdd} /> : null}
+      {top === "indexers" ? <IndexerList version={version} addRequest={indexerAdd} /> : null}
       {top === "stats" ? <SourceUsage /> : null}
       <AddSourceGallery open={gallery} onClose={() => setGallery(false)} onPick={pick} />
       <Drawer

@@ -18,17 +18,17 @@ const ACTIONS = localized(() => [
   },
   {
     title: t("Add an indexer"),
-    href: "/sources/yours/indexers",
+    href: "/sources/indexers",
     keywords: searchTerms(msg("newznab prowlarr")),
   },
   {
     title: t("Add a Usenet provider"),
-    href: "/sources/yours/usenet",
+    href: "/sources/usenet",
     keywords: searchTerms(msg("nntp")),
   },
   {
     title: t("Add a debrid provider"),
-    href: "/sources/yours/debrid",
+    href: "/sources/debrid",
     keywords: searchTerms(
       msg("real-debrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent"),
     ),

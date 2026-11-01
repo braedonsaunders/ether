@@ -448,7 +448,7 @@ function Shell() {
               <Route path="/calendar/:view?" element={<Calendar />} />
               <Route path="/catalog/:tab?" element={<Catalog />} />
               <Route path="/metadata/:tab?" element={<Metadata />} />
-              <Route path="/sources/:tab?/:sub?" element={<Sources />} />
+              <Route path="/sources/:tab?" element={<Sources />} />
               <Route path="/releases/:tab?" element={<Releases />} />
               <Route path="/cache/:tab?" element={<Cache />} />
               <Route path="/playback/:tab?/:section?" element={<Playback />} />

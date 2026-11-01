@@ -150,34 +150,25 @@ export const PAGES = localized<PageDef[]>(() => [
     title: t("Sources"),
     sections: [
       {
-        key: "yours",
-        title: t("Your sources"),
-        keywords: searchTerms(
-          msg(
-            "debrid usenet indexer health order real-debrid torbox newznab prowlarr fastest equal quality",
-          ),
-        ),
-      },
-      {
-        key: "yours/usenet",
-        title: t("Usenet providers"),
-        keywords: searchTerms(msg("nntp backfill connections")),
-      },
-      {
-        key: "yours/indexers",
-        title: t("Indexers"),
-        keywords: searchTerms(
-          msg(
-            "newznab torznab torrent built-in sites definitions cardigann flaresolverr prowlarr stremio addon budget api",
-          ),
-        ),
-      },
-      {
-        key: "yours/debrid",
+        key: "debrid",
         title: t("Debrid"),
         keywords: searchTerms(
           msg(
             "real-debrid realdebrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent cached",
+          ),
+        ),
+      },
+      {
+        key: "usenet",
+        title: t("Usenet"),
+        keywords: searchTerms(msg("nntp backfill connections")),
+      },
+      {
+        key: "indexers",
+        title: t("Indexers"),
+        keywords: searchTerms(
+          msg(
+            "newznab torznab torrent built-in sites definitions cardigann flaresolverr prowlarr stremio addon budget api",
           ),
         ),
       },

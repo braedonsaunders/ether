@@ -366,14 +366,14 @@ describe("Cluster details elsewhere", () => {
   });
 
   it("shows this node's share of provider connections", async () => {
-    renderApp("/sources/yours/usenet", { cluster: true });
+    renderApp("/sources/usenet", { cluster: true });
     expect(
       await screen.findByText(/6 of 7 connections busy · this node: 7 of 20 connections/, {}, WAIT),
     ).toBeInTheDocument();
   });
 
   it("shows this node's share of debrid API connections", async () => {
-    renderApp("/sources/yours/debrid", { cluster: true });
+    renderApp("/sources/debrid", { cluster: true });
     const list = await screen.findByRole("region", { name: "Debrid providers" }, WAIT);
     expect(
       (await within(list).findAllByText(/this node: 2 of 6 API connections/, {}, WAIT)).length,
@@ -381,7 +381,7 @@ describe("Cluster details elsewhere", () => {
   });
 
   it("shows no node share on a standalone server", async () => {
-    renderApp("/sources/yours/usenet");
+    renderApp("/sources/usenet");
     expect(await screen.findByText(/6 of 20 connections busy/, {}, WAIT)).toBeInTheDocument();
     expect(screen.queryByText(/this node:/)).toBeNull();
   });
