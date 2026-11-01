@@ -22,7 +22,7 @@ import type { EtherConfig } from "../../lib/types";
 import { SchemaField, type FieldDef } from "../settings/SchemaForm";
 import * as schema from "../settings/schema";
 import { PlexStatus } from "../settings/sections";
-import { plexAccountClaimed } from "./plex-account";
+import { claimFailureMessage, plexAccountClaimed } from "./plex-account";
 import { awaySummary, claimSummary, homeSummary, type ReachabilityStatus } from "./reachability";
 
 type Obj = Record<string, unknown>;
@@ -116,7 +116,7 @@ function PlexAccount({
     } catch (error) {
       if (!mounted.current) return;
       setClaimFailed(true);
-      setNotice(t("Signed in, but claiming failed: {error}", { error: (error as Error).message }));
+      setNotice(claimFailureMessage(error));
     } finally {
       if (mounted.current) setBusy(false);
     }

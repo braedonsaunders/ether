@@ -33,6 +33,7 @@ import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
 import { appLabel, appPurpose, appRank } from "./apps/catalog";
+import { claimFailureMessage } from "./apps/plex-account";
 import { CachePresetCards, cachePresetKey, presetForFreeBytes } from "./cache/presets";
 import { ProwlarrImport } from "../components/ProwlarrImport";
 import { DEBRID_KINDS } from "./sources/Debrid";
@@ -649,9 +650,10 @@ export default function Setup() {
         setClaimFailed(false);
       } catch (e) {
         if (!current()) return;
-        setClaimMsg(t("Signed in, but claiming failed: {error}", { error: (e as Error).message }));
+        const msg = claimFailureMessage(e);
+        setClaimMsg(msg);
         setClaimFailed(true);
-        setError(e);
+        setError(new Error(msg));
       }
       // PIN approval and claiming update the server, not the wizard's draft.
       // Refresh only Plex so the next full-config save retains those credentials.

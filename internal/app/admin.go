@@ -210,9 +210,10 @@ func (a *App) cacheStatus(context.Context) any {
 
 // plexAuth adapts the plex.tv PIN sign-in and claim flow to the wizard.
 type plexAuth struct {
-	app  *App
-	mu   sync.Mutex
-	pins map[string]*plextv.PIN
+	app       *App
+	mu        sync.Mutex
+	pins      map[string]*plextv.PIN
+	userToken string
 }
 
 func (p *plexAuth) client() *plextv.Client { return p.app.registrar.SignInClient() }
@@ -257,7 +258,9 @@ func (p *plexAuth) PollPIN(ctx context.Context, id string) (bool, error) {
 			ownerRejected = true
 			return errors.New("this Plex account does not own the server; sign in as the existing owner")
 		}
-		c.Plex.Token = got.AuthToken
+		if !c.Plex.Claimed {
+			c.Plex.Token = ""
+		}
 		c.Plex.OwnerPlexID = acct.ID
 		c.Plex.OwnerUsername = acct.Username
 		return nil
@@ -270,19 +273,30 @@ func (p *plexAuth) PollPIN(ctx context.Context, id string) (bool, error) {
 		return false, err
 	}
 	p.mu.Lock()
+	p.userToken = got.AuthToken
 	delete(p.pins, id)
 	p.mu.Unlock()
 	return true, p.app.users.BootstrapOwner(ctx, p.app.cfg.Get().Plex)
 }
 
 func (p *plexAuth) Claim(ctx context.Context) error {
-	tok := p.app.cfg.Get().Plex.Token
+	p.mu.Lock()
+	tok := p.userToken
+	p.mu.Unlock()
+	if tok == "" {
+		tok = p.app.cfg.Get().Plex.Token
+	}
 	if tok == "" {
 		return errors.New("sign in to plex.tv first")
 	}
 	if _, err := p.app.registrar.Claim(ctx, tok); err != nil {
 		return err
 	}
+	p.mu.Lock()
+	if p.userToken == tok {
+		p.userToken = ""
+	}
+	p.mu.Unlock()
 	return p.app.users.BootstrapOwner(ctx, p.app.cfg.Get().Plex)
 }
 

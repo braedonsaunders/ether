@@ -280,25 +280,37 @@ func extractAuthToken(body []byte) string {
 	return ""
 }
 
-// Claim methods reported in ClaimResult.
-const (
-	ClaimExchange   = "claim-exchange"
-	ClaimOwnerToken = "owner-token"
-)
+// ErrClaimExchangeFailed matches any *ClaimExchangeError via errors.Is.
+var ErrClaimExchangeFailed = errors.New("plextv: claim exchange failed")
+
+// ClaimExchangeError reports that plex.tv refused or failed the claim-token
+// exchange that mints a server-specific token.
+type ClaimExchangeError struct {
+	Err error
+}
+
+func (e *ClaimExchangeError) Error() string {
+	return fmt.Sprintf("plextv: claim exchange failed: %v", e.Err)
+}
+
+func (e *ClaimExchangeError) Unwrap() error {
+	return e.Err
+}
+
+func (e *ClaimExchangeError) Is(target error) bool {
+	return target == ErrClaimExchangeFailed
+}
 
 // ClaimResult is the outcome of claiming the server.
 type ClaimResult struct {
 	ServerToken string
 	Owner       Account
-	Method      string
 }
 
 // Claim claims this server for the user behind userToken, the way a fresh
 // PMS install is claimed: fetch a claim token for the user, exchange it
 // under the server identity for the server's own token, then confirm the
-// owner. If the exchange is refused for a reason other than a bad user
-// token, it falls back to using the owner's token directly (how PMS worked
-// before claim tokens existed) and reports Method = ClaimOwnerToken.
+// owner.
 //
 // c must carry the server identity.
 func (c *Client) Claim(ctx context.Context, userToken string) (*ClaimResult, error) {
@@ -307,23 +319,25 @@ func (c *Client) Claim(ctx context.Context, userToken string) (*ClaimResult, err
 		return nil, fmt.Errorf("plextv: claim: verify user: %w", err)
 	}
 	claim, err := c.ClaimToken(ctx, userToken)
-	if err == nil {
-		var serverToken string
-		serverToken, err = c.ExchangeClaim(ctx, claim)
-		if err == nil {
-			acct, verr := c.User(ctx, serverToken)
-			if verr == nil && acct.ID != owner.ID {
-				return nil, fmt.Errorf("plextv: claim: server token belongs to account %d, not %d", acct.ID, owner.ID)
-			}
-			if verr != nil {
-				c.log.Warn("could not verify server token owner", "err", verr)
-			}
-			return &ClaimResult{ServerToken: serverToken, Owner: *owner, Method: ClaimExchange}, nil
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
+		return nil, &ClaimExchangeError{Err: err}
 	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	serverToken, err := c.ExchangeClaim(ctx, claim)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, &ClaimExchangeError{Err: err}
 	}
-	c.log.Warn("claim token exchange failed; using owner token as server token", "err", err)
-	return &ClaimResult{ServerToken: userToken, Owner: *owner, Method: ClaimOwnerToken}, nil
+	acct, verr := c.User(ctx, serverToken)
+	if verr == nil && acct.ID != owner.ID {
+		return nil, fmt.Errorf("plextv: claim: server token belongs to account %d, not %d", acct.ID, owner.ID)
+	}
+	if verr != nil {
+		c.log.Warn("could not verify server token owner", "err", verr)
+	}
+	return &ClaimResult{ServerToken: serverToken, Owner: *owner}, nil
 }

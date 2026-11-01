@@ -50,7 +50,7 @@ type PlexAuth interface {
 	// 4-character code shown to the owner, authURL is the plex.tv page to open.
 	StartPIN(ctx context.Context) (id, code, authURL string, err error)
 	// PollPIN reports whether the owner has approved the PIN yet. When done
-	// is true the implementation has stored the owner token in config.
+	// is true the implementation has recorded the owner account for Claim.
 	PollPIN(ctx context.Context, id string) (done bool, err error)
 	// Claim claims this server to the signed-in account.
 	Claim(ctx context.Context) error

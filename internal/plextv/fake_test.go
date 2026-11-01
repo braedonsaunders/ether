@@ -328,7 +328,7 @@ func (f *fakePlexTV) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := append([]Resource{}, f.resources[token]...)
-		if strings.HasPrefix(token, "server-token-") || token == "owner-token" {
+		if strings.HasPrefix(token, "server-token-") {
 			var conns []ResourceConnection
 			for _, u := range f.published {
 				if u == "" {

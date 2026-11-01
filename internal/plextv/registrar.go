@@ -1188,7 +1188,7 @@ func (r *Registrar) Claim(ctx context.Context, userToken string) (*ClaimResult, 
 		r.mu.Unlock()
 	}
 	r.refreshConfigStatus(r.o.Config.Get())
-	r.log.Info("server claimed", "owner", res.Owner.Username, "method", res.Method)
+	r.log.Info("server claimed", "owner", res.Owner.Username)
 	r.Trigger()
 	return res, nil
 }

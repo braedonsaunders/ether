@@ -3756,6 +3756,7 @@
   "m_1721ac81d2a5c0": "Eigene",
   "m_17247cdd2a5e14": "Geändert",
   "m_1725184d0be3a5": "Ausgeblendet: {movies} · {shows}",
+  "m_17263d69e79290": "Plex konnte diesen Server nicht verknüpfen. Versuche es in einer Minute erneut.",
   "m_17269aaeba184d": "Websites, die diese Seite einbetten dürfen",
   "m_172cd37bfd4d77": "Binde dieselbe NAS-Freigabe auf jedem beteiligten Knoten ein. Jeder Knoten darf einen anderen Mount-Pfad verwenden. Budgets, Aufbewahrung, Anheftungen und Vorladen werden gemeinsam genutzt; das Speichern dieser Richtlinie aktualisiert alle Mitglieder des Pools.",
   "m_172d09b2c53ab0": "am oder vor dem",

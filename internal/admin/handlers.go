@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
@@ -215,7 +217,11 @@ func (h *Handler) handleClaim(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.deps.TestTimeout)
 	defer cancel()
 	if err := h.deps.PlexAuth.Claim(ctx); err != nil {
-		writeError(w, http.StatusBadGateway, "plex_claim_failed", err.Error())
+		msg := err.Error()
+		if errors.Is(err, plextv.ErrClaimExchangeFailed) {
+			msg = "Plex couldn't link this server. Try again in a minute."
+		}
+		writeError(w, http.StatusBadGateway, "plex_claim_failed", msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
