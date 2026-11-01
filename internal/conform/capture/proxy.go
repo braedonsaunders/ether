@@ -396,6 +396,8 @@ func plexIdentityPlaceholder(name string) string {
 		return "${session}"
 	case "x-plex-device-name":
 		return "${device_name}"
+	case "x-plex-model":
+		return "${model}"
 	}
 	return ""
 }

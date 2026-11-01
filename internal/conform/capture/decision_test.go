@@ -97,7 +97,7 @@ func TestPlexProxyRedactsOwnerIdentifiers(t *testing.T) {
 	}
 	proxy := httptest.NewServer(rec)
 	defer proxy.Close()
-	req, _ := http.NewRequest("GET", proxy.URL+"/library/sections?X-Plex-Client-Identifier=owner-client-id&X-Plex-Session-Identifier=owner-session-id&session=owner-session&X-Plex-Device-Name=Braedons-MacBook", nil)
+	req, _ := http.NewRequest("GET", proxy.URL+"/library/sections?X-Plex-Client-Identifier=owner-client-id&X-Plex-Session-Identifier=owner-session-id&session=owner-session&X-Plex-Device-Name=Braedons-MacBook&X-Plex-Model=MacBookPro18%2C3", nil)
 	req.Header.Set("X-Plex-Client-Identifier", "owner-client-id")
 	req.Header.Set("X-Plex-Device-Name", "Braedons-MacBook")
 	req.Header.Set("X-Plex-Model", "MacBookPro18,3")
@@ -114,7 +114,7 @@ func TestPlexProxyRedactsOwnerIdentifiers(t *testing.T) {
 			t.Fatalf("owner identifier leaked %q: path=%s headers=%v", leak, entry.Request.Path, entry.Request.Headers)
 		}
 	}
-	for _, placeholder := range []string{"${client_identifier}", "${session_identifier}", "${session}", "${device_name}"} {
+	for _, placeholder := range []string{"${client_identifier}", "${session_identifier}", "${session}", "${device_name}", "${model}"} {
 		if !strings.Contains(entry.Request.Path, placeholder) {
 			t.Fatalf("query missing %s: %s", placeholder, entry.Request.Path)
 		}

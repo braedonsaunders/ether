@@ -336,6 +336,9 @@ type browseRequest struct {
 	lastViewedAfter  int64
 	lastViewedBefore int64
 	limit            int // "limit" param; 0 = none
+	// none: the viewer's plex.tv share and the request's own filter admit
+	// no rating in common, so the listing is empty.
+	none bool
 }
 
 func stripFieldTypePrefix(key string) string {
@@ -852,6 +855,13 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 		br.sortLastViewed = true
 		br.lastViewedDesc = dir != "asc"
 	}
+	if share, ok := s.d.AccessPolicy.(interface {
+		BrowseShareFilter(*core.User, core.MediaType) core.Filter
+	}); ok && u != nil {
+		// The plex.tv share predicate goes into the SQL, so pages fill
+		// and totals count only what this viewer may see.
+		f, br.none = experience.MergeShareFilter(f, share.BrowseShareFilter(u, t))
+	}
 	br.q.Filter = f
 	return br
 }
@@ -908,6 +918,9 @@ func (pr *Request) pageOf(limit int) (offset, size int) {
 // browse runs a catalogue query honouring paging and watch-state filters.
 func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]core.Title, int, int, error) {
 	offset, size := pr.pageOf(br.limit)
+	if br.none {
+		return nil, 0, offset, nil
+	}
 	_, hasBrowseBlocks := s.d.AccessPolicy.(interface {
 		BrowseBlocks(*core.User) ([]string, []string, string)
 	})

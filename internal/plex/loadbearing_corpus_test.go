@@ -79,12 +79,6 @@ var loadBearingSkips = func() []loadBearingSkip {
 		add(ep+"-hub-xml-"+strconv.Itoa(i), ep, p[0], hubSectionReason)
 		add(ep+"-hub-json-"+strconv.Itoa(i), ep, p[1], hubSectionReason)
 	}
-	search := "/hubs/search?query=burbs&limit=10&includeCollections=1"
-	add(search+"-id-xml", search, "/MediaContainer/Hub/@hubIdentifier", hubSearchReason)
-	add(search+"-id-json", search, "$/MediaContainer/Hub[]/hubIdentifier", hubSearchReason)
-	add(search+"-type-xml", search, "/MediaContainer/Hub/@type", hubSearchReason)
-	add(search+"-type-json", search, "$/MediaContainer/Hub[]/type", hubSearchReason)
-
 	for _, pref := range []string{"/library/sections/{{movieSection}}/prefs", "/library/sections/{{showSection}}/prefs"} {
 		add(pref+"-size-xml", pref, "/MediaContainer/@size", prefsReason)
 		add(pref+"-size-json", pref, "$/MediaContainer/size", prefsReason)
