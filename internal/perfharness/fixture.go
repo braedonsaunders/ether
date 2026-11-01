@@ -340,15 +340,15 @@ func (g *generator) viewers(s Scale) error {
 	return g.flush()
 }
 
-// ratings finishes what the catalogue's writer derives: an episode takes
-// its series' rating, and every rated title stores its rank, which the
+// ratings finishes what the catalogue derives: seasons and episodes take
+// their series' rating, and every rated title stores its rank, which the
 // rating-cap SQL compares.
 func (g *generator) ratings() error {
 	if err := g.flush(); err != nil {
 		return err
 	}
 	if _, err := g.db.ExecContext(g.ctx, `UPDATE catalog_titles SET content_rating=(SELECT s.content_rating FROM catalog_titles s WHERE s.key=catalog_titles.show_key)
-		WHERE type='episode' AND content_rating=''`); err != nil {
+		WHERE type IN ('season','episode') AND content_rating=''`); err != nil {
 		return err
 	}
 	for _, r := range []string{"G", "PG", "PG-13", "R", "TV-G", "TV-PG", "TV-14", "TV-MA"} {

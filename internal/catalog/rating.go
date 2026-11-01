@@ -115,6 +115,90 @@ func (c *Catalog) rankRatings(ctx context.Context) error {
 	return c.setMeta(ctx, ratingRankedKey, ratingLevels)
 }
 
+// childRatingsKey records the last series key whose unrated seasons and
+// episodes took its rating; "done" once every series is covered.
+const (
+	childRatingsKey   = "child_ratings_backfill"
+	childRatingsBatch = 500
+)
+
+// backfillChildRatings gives unrated seasons and episodes their series'
+// rating, a batch of series at a time in key order, resuming from the last
+// batch after a restart. Writes now store it; this covers rows stored before.
+func (c *Catalog) backfillChildRatings(ctx context.Context) error {
+	cursor := c.getMeta(ctx, childRatingsKey)
+	if cursor == "done" {
+		return nil
+	}
+	after, _ := strconv.ParseInt(cursor, 10, 64)
+	for ctx.Err() == nil {
+		n, last, err := c.childRatingsBatch(ctx, after)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return c.setMeta(ctx, childRatingsKey, "done")
+		}
+		after = last
+		if err := c.setMeta(ctx, childRatingsKey, strconv.FormatInt(after, 10)); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+// childRatingsBatch covers the next series after key after: it returns how
+// many series it read and the last key.
+func (c *Catalog) childRatingsBatch(ctx context.Context, after int64) (int, int64, error) {
+	rows, err := c.db.QueryContext(ctx, `SELECT key,content_rating,content_rating_source FROM catalog_titles
+		WHERE type='show' AND key>? ORDER BY key ASC LIMIT ?`, after, childRatingsBatch)
+	if err != nil {
+		return 0, 0, err
+	}
+	type series struct {
+		key         int64
+		rating, src string
+	}
+	var batch []series
+	for rows.Next() {
+		var s series
+		if err := rows.Scan(&s.key, &s.rating, &s.src); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		batch = append(batch, s)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || len(batch) == 0 {
+		return 0, 0, err
+	}
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+	var changed int64
+	for _, s := range batch {
+		if s.rating == "" {
+			continue
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE catalog_titles SET content_rating=?,content_rating_rank=?,content_rating_source=?
+			WHERE show_key=? AND type IN ('season','episode') AND content_rating=''`, s.rating, int(contentrating.LevelOf(s.rating)), s.src, s.key)
+		if err != nil {
+			return 0, 0, err
+		}
+		n, _ := res.RowsAffected()
+		changed += n
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+	if changed > 0 {
+		c.writeGen.Add(1)
+	}
+	return len(batch), batch[len(batch)-1].key, nil
+}
+
 // ratingsTMDB is the light TMDB surface for rating re-selection.
 // *tmdb.Client satisfies it.
 type ratingsTMDB interface {

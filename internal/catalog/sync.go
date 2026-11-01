@@ -181,6 +181,11 @@ func (c *Catalog) Run(ctx context.Context) {
 	if err := c.rankRatings(ctx); err != nil && ctx.Err() == nil {
 		c.log.Error("catalog: re-rank content ratings", "err", err)
 	}
+	go func() {
+		if err := c.backfillChildRatings(ctx); err != nil && ctx.Err() == nil {
+			c.log.Warn("catalog: season and episode ratings", "err", err)
+		}
+	}()
 	go c.refreshRatingsLoop(ctx)
 	go c.correctMovieYears(ctx)
 	full := schedule.New(c.now(), c.untilDue(ctx))

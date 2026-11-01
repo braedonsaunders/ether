@@ -319,6 +319,11 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 			if res.Status != http.StatusOK {
 				t.Errorf("%s: restricted viewer %s answered %d", name, res.Step, res.Status)
 			}
+			// Page 1 of each listing must hold titles: an empty container
+			// would pass the scale comparison without measuring anything.
+			if res.Step != "/library/sections" && !strings.HasSuffix(res.Step, "deep") && res.Bytes < 4096 {
+				t.Errorf("%s: restricted viewer %s listed nothing (%d bytes)", name, res.Step, res.Bytes)
+			}
 		}
 	}
 	if fi, err := os.Stat(filepath.Join(dir, "ether.db-wal")); err == nil {
