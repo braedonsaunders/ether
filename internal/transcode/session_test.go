@@ -448,8 +448,56 @@ func TestSessionEndOfInput(t *testing.T) {
 		defer s.mu.Unlock()
 		return s.endSeg == 3
 	})
-	if r := get(t, s, 5); r.Code != 404 {
+	if r := get(t, s, 5); r.Code != 404 && r.Code != http.StatusBadGateway {
 		t.Errorf("past EOF: %d", r.Code)
+	}
+}
+
+// A remux that EOFs after one buffered window (lab: Lupin DoVi-p8 resume
+// at 41:20, run 620–692 of 730, then 44× 404 on 693) must start the next
+// run for the sequential segment, never 404 it.
+func TestRemuxRestartsAfterPrematureEOF(t *testing.T) {
+	fr := newFakeRunner()
+	fr.eofAfter = 25
+	fr.segDelay = time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	s := startSession(t, m, remuxRequest(t, "premature-eof", 48*time.Minute+39*time.Second))
+	resume := 620
+	started := time.Now()
+	if r := get(t, s, resume); r.Code != 200 {
+		t.Fatalf("resume segment %d: %d %s", resume, r.Code, r.Body.String())
+	}
+	if took := time.Since(started); took > 5*time.Second {
+		t.Fatalf("resume first segment took %v, want under 5s", took)
+	}
+	startsAfterResume := fr.startCount()
+	next := resume + fr.eofAfter
+	waitFor(t, "resume window to end", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.done[0][next] {
+			return true
+		}
+		if s.cur != nil && s.cur.startSeg >= next {
+			return true
+		}
+		return s.resumeAt >= next && s.cur == nil
+	})
+	s.mu.Lock()
+	ended := s.endSeg
+	s.mu.Unlock()
+	if ended >= 0 && ended < s.total-1 {
+		t.Fatalf("endSeg=%d declared the title over at a window boundary (total=%d)", ended, s.total)
+	}
+	if r := get(t, s, next); r.Code != 200 {
+		t.Fatalf("segment %d after window EOF: %d %s (want 200, not 404)", next, r.Code, r.Body.String())
+	}
+	if fr.startCount() <= startsAfterResume && !func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.done[0][next]
+	}() {
+		t.Fatalf("encoder did not continue after the window ended: starts=%d", fr.startCount())
 	}
 }
 

@@ -260,8 +260,27 @@ func (s *Session) finish(r *run) {
 			log.Info("transcode run reached its segment cap ahead of the player", "segment", r.planEnd, "playhead", s.lastReq)
 			return
 		}
-		// ffmpeg reached the end of the input.
+		// ffmpeg reached the end of this run's input. That is not the
+		// end of the title when the playlist still lists later
+		// segments: a remux of a cached debrid source often EOFs after
+		// one buffered window (lab: 620–692 of 730). Declaring endSeg
+		// there 404s the next sequential fetch and the player sits on
+		// "seeking". Hold a resume, or chain if the playhead is already
+		// there. A run that produced nothing at n is a real short file.
 		if r.produced > 0 {
+			if s.total > 0 && r.maxDone < s.total-1 {
+				next := r.maxDone + 1
+				if s.clientNearLocked(next) {
+					log.Info("transcode run ended before the title; continuing", "segment", next, "playhead", s.lastReq, "total", s.total)
+					if err := s.startRunForLocked(next, false, "title continues"); err != nil {
+						s.failErr = err
+					}
+					return
+				}
+				s.resumeAt = next
+				log.Info("transcode run ended before the title", "lastSegment", r.maxDone, "resumeAt", next, "playhead", s.lastReq, "total", s.total)
+				return
+			}
 			s.endSeg = r.maxDone
 		} else {
 			s.endSeg = r.startSeg - 1

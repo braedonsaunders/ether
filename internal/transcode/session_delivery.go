@@ -94,7 +94,9 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 			writeStartError(w, errInputExhausted)
 			return
 		}
-		if s.endSeg >= 0 && n > s.endSeg {
+		if s.endSeg >= 0 && n > s.endSeg && (s.total == 0 || n >= s.total) {
+			// A known VOD playlist still listing n is not past the
+			// title. A previous run's window EOF must restart, not 404.
 			s.mu.Unlock()
 			http.NotFound(w, r)
 			return

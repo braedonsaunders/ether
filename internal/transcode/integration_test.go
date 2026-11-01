@@ -202,6 +202,38 @@ func TestIntegrationRemuxSeekAndSwap(t *testing.T) {
 	}
 }
 
+// Plex tvOS resume starts the session at 0, then jumps to the resume
+// segment. That first media GET must return under 5s on a local source
+// (the cached-debrid bar).
+func TestIntegrationRemuxResumeFirstFrame(t *testing.T) {
+	e := newRealEnv(t, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	e.gen(t, "resume.mkv", 24, "-c:v", "libx264", "-preset", "ultrafast", "-g", "24", "-c:a", "aac", "-ac", "2")
+	ctx := context.Background()
+	info, err := e.m.Probe(ctx, e.url("resume.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := e.m.Decide(*info, plexWeb, allow())
+	if d.Kind != core.DecisionRemux {
+		t.Fatalf("decision %+v", d)
+	}
+	hs, err := e.m.StartHLS(ctx, core.HLSRequest{
+		SessionID: "it-resume", InputURL: e.url("resume.mkv"), Info: *info, Decision: d,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	seg := fetch(t, hs, 3)
+	if took := time.Since(started); took > 5*time.Second {
+		t.Fatalf("resume segment 3 took %v, want under 5s", took)
+	}
+	if len(seg) < 188 || seg[0] != 0x47 {
+		t.Fatalf("segment 3 is not MPEG-TS (%d bytes)", len(seg))
+	}
+	e.m.Stop("it-resume")
+}
+
 func TestIntegrationTranscode(t *testing.T) {
 	e := newRealEnv(t)
 	e.gen(t, "t.mkv", 16, "-c:v", "libx264", "-preset", "ultrafast", "-g", "48", "-c:a", "aac", "-ac", "2")

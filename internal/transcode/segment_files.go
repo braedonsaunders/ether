@@ -26,6 +26,12 @@ func (s *Session) segmentFilesLocked(track, n int, method string) ([]string, seg
 	if s.container == ContainerMatroska {
 		prev, served := s.mkvDelivery[track]
 		seek := !served || (prev.segment != n-1 && prev.segment != n) || (prev.segment == n && prev.seek)
+		if !seek && n > 0 && s.inflight[n-1] > 0 {
+			// The covering GOP is still on the wire. An empty Cluster
+			// here is the first bytes a resume client would decode, and
+			// Plex tvOS never leaves "seeking".
+			seek = true
+		}
 		if seek {
 			path, ok := s.decodableMKVLocked(track, n)
 			if !ok {
