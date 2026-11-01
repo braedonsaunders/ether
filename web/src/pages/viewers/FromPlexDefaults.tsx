@@ -81,7 +81,7 @@ export function FromPlexDefaults({
 }) {
   const data = useAsync(
     (signal) =>
-      apiFetch<PlexViewerDefaults>(`/viewers/plex-defaults/${viewerId}`, { signal }).catch(
+      apiFetch<PlexViewerDefaults>(`/viewer-plex-defaults/${viewerId}`, { signal }).catch(
         () => null,
       ),
     [viewerId],

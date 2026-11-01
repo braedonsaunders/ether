@@ -63,13 +63,13 @@ func (m *Manager) startHTTP(ctx context.Context, req core.HLSRequest, life *enco
 	// Attach uses dir only as a cleanup key; HTTP output is a pipe.
 	dir := filepath.Join(m.tempDir, "http-"+unsafeID.ReplaceAllString(id, "_")+"-"+randomHex(4))
 	stub := &Session{
-		id:      id,
-		proto:   core.ProtocolHTTP,
-		m:       m,
-		dir:     dir,
-		log:     m.log.With("session", id, "protocol", core.ProtocolHTTP),
-		created: time.Now(),
-		encoder: life,
+		id:              id,
+		proto:           core.ProtocolHTTP,
+		m:               m,
+		dir:             dir,
+		log:             m.log.With("session", id, "protocol", core.ProtocolHTTP),
+		created:         time.Now(),
+		encoder:         life,
 		sessionDelivery: sessionDelivery{changed: make(chan struct{})},
 	}
 	if !life.attach(stub) {

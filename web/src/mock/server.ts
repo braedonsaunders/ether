@@ -1919,7 +1919,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
 
   async function handle(method: string, url: URL, body: unknown): Promise<Response> {
     const p = url.pathname.replace(/^\/ether\/api/, "");
-    if (method === "GET" && p.startsWith("/viewers/plex-defaults/")) {
+    if (method === "GET" && p.startsWith("/viewer-plex-defaults/")) {
       const id = Number(p.split("/").pop());
       return json({
         hasProfile: false,

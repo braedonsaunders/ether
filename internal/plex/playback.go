@@ -1366,7 +1366,10 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.URL.Query().Get("download") == "1" {
-		if !s.downloadsAllowed(pr.User) {
+		// Plex Web's Download button is a plain part read; only the viewer
+		// policy (an owner override or plex.tv allowSync=0) refuses it. The
+		// download queue being off is a different feature.
+		if p, ok := s.d.AccessPolicy.(core.DownloadAccessPolicy); ok && !p.AllowDownloads(pr.User) {
 			writeHTTPError(w, http.StatusForbidden)
 			return
 		}

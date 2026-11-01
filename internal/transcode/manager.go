@@ -203,10 +203,10 @@ type Manager struct {
 	// graphErr is the latest owner-visible reason a graph could not be built.
 	graphErr string
 
-	mu       sync.Mutex
-	cfg      config.Transcode
-	sessions     map[string]*Session
-	httpSessions map[string]*httpSession
+	mu              sync.Mutex
+	cfg             config.Transcode
+	sessions        map[string]*Session
+	httpSessions    map[string]*httpSession
 	downloadEncodes int
 	closed          bool
 
@@ -229,10 +229,10 @@ func New(cfg config.Transcode, logger *slog.Logger, opts ...Option) (*Manager, e
 		fn(&o)
 	}
 	m := &Manager{
-		log:        logger.With("component", "transcode"),
-		opts:       o,
-		runner:     o.runner,
-		cfg:        cfg,
+		log:          logger.With("component", "transcode"),
+		opts:         o,
+		runner:       o.runner,
+		cfg:          cfg,
 		sessions:     map[string]*Session{},
 		httpSessions: map[string]*httpSession{},
 		stop:         make(chan struct{}),
