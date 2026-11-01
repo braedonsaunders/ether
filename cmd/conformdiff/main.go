@@ -31,7 +31,7 @@ func main() {
 }
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: conformdiff record|compare|live|drift [flags]")
+		return fmt.Errorf("usage: conformdiff record|compare|live|drift|proxy|decisions-from-capture [flags]")
 	}
 	cmd := args[0]
 	if cmd == "drift" {
@@ -51,6 +51,9 @@ func run(args []string) error {
 	}
 	if cmd == "validate" {
 		return validateFixture(args[1:])
+	}
+	if cmd == "decisions-from-capture" {
+		return decisionsFromCapture(args[1:])
 	}
 	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	ref := f.String("reference", "", "reference server URL")

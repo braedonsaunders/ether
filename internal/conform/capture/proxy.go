@@ -72,7 +72,7 @@ const binaryLimit = 65536
 // New constructs a proxy without opening a listener.
 func New(protocol, client, dir string, upstream *url.URL) (*Recorder, error) {
 	switch protocol {
-	case "jellyfin", "emby", "silo":
+	case "jellyfin", "emby", "silo", "plex":
 	default:
 		return nil, fmt.Errorf("unknown protocol %q", protocol)
 	}
@@ -306,6 +306,12 @@ func (r *Recorder) safePath(u *url.URL) string {
 		}
 	}
 	path := strings.Join(parts, "/")
+	if r.protocol == "plex" {
+		if q := r.safeRawQuery(u.RawQuery); q != "" {
+			path += "?" + q
+		}
+		return path
+	}
 	query := u.Query()
 	for k, vs := range query {
 		for i, v := range vs {
@@ -345,9 +351,63 @@ func (r *Recorder) safePath(u *url.URL) string {
 	}
 	return path
 }
+
+func (r *Recorder) safeRawQuery(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var parts []string
+	for raw != "" {
+		var pair string
+		pair, raw, _ = strings.Cut(raw, "&")
+		if pair == "" {
+			continue
+		}
+		k, v, _ := strings.Cut(pair, "=")
+		name, _ := url.QueryUnescape(k)
+		value, _ := url.QueryUnescape(v)
+		switch {
+		case sensitiveKey(name):
+			value = "${access_token}"
+		case strings.EqualFold(name, "path") || strings.EqualFold(name, "uri") || strings.EqualFold(name, "url"):
+			value = plexLibraryPath(value)
+		case (strings.HasSuffix(strings.ToLower(name), "id") || strings.HasSuffix(strings.ToLower(name), "_id")) && value != "":
+			value = "${" + r.slot(value) + "}"
+		case opaqueID.MatchString(value):
+			value = "${" + r.slot(value) + "}"
+		default:
+			value = string(conform.Redact([]byte(value)))
+		}
+		enc := url.QueryEscape(name) + "=" + preserveQueryValue(v, value)
+		parts = append(parts, enc)
+	}
+	return strings.Join(parts, "&")
+}
+
+func plexLibraryPath(v string) string {
+	const prefix = "/library/metadata/"
+	if strings.HasPrefix(v, prefix) {
+		rest := strings.TrimPrefix(v, prefix)
+		if rest != "" && !strings.ContainsAny(rest, "/?") {
+			return prefix + "{{ratingKey}}"
+		}
+	}
+	return string(conform.Redact([]byte(v)))
+}
+
+func preserveQueryValue(original, redacted string) string {
+	if strings.Contains(redacted, "{{") || strings.Contains(redacted, "${") {
+		return strings.ReplaceAll(strings.ReplaceAll(url.QueryEscape(redacted), "%7B", "{"), "%7D", "}")
+	}
+	if original == "" {
+		return url.QueryEscape(redacted)
+	}
+	return original
+}
+
 func safeRequestHeaders(h http.Header, secrets []string) http.Header {
 	out := http.Header{}
-	for _, k := range []string{"Accept", "Content-Type", "Range", "If-Range", "User-Agent", "X-Silo-Client", "X-Silo-Client-Version", "X-Emby-Client", "X-Emby-Client-Version", "Connection", "Upgrade", "Sec-Websocket-Version", "Sec-Websocket-Protocol", "Sec-Websocket-Extensions"} {
+	for _, k := range []string{"Accept", "Content-Type", "Range", "If-Range", "User-Agent", "X-Silo-Client", "X-Silo-Client-Version", "X-Emby-Client", "X-Emby-Client-Version", "X-Plex-Product", "X-Plex-Version", "X-Plex-Client-Identifier", "X-Plex-Platform", "X-Plex-Platform-Version", "X-Plex-Device", "X-Plex-Device-Name", "X-Plex-Device-Screen-Resolution", "X-Plex-Language", "X-Plex-Features", "X-Plex-Model", "X-Plex-Provides", "X-Plex-Client-Profile-Name", "X-Plex-Client-Profile-Extra", "X-Plex-Client-Capabilities", "Connection", "Upgrade", "Sec-Websocket-Version", "Sec-Websocket-Protocol", "Sec-Websocket-Extensions"} {
 		if v := h.Values(k); len(v) > 0 {
 			out[http.CanonicalHeaderKey(k)] = append([]string(nil), v...)
 		}
@@ -379,6 +439,12 @@ func safeRequestHeaders(h http.Header, secrets []string) http.Header {
 	}
 	if h.Get("X-Silo-Device-Id") != "" {
 		out.Set("X-Silo-Device-Id", "${device_id}")
+	}
+	if h.Get("X-Plex-Token") != "" {
+		out.Set("X-Plex-Token", "[REDACTED]")
+	}
+	if h.Get("X-Plex-Client-Identifier") != "" {
+		out.Set("X-Plex-Client-Identifier", "${client_identifier}")
 	}
 	for k, values := range out {
 		if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "X-Emby-Authorization") || strings.EqualFold(k, "X-Emby-Token") || strings.EqualFold(k, "Cookie") {
