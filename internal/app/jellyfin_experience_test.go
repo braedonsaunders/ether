@@ -30,7 +30,7 @@ func TestMediaBrowserRealExperience(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = local.Create(ctx, owner.ID, "viewer", "password"); err != nil {
+	if err = local.Create(ctx, owner.ID, "viewer", "password-1234"); err != nil {
 		t.Fatal(err)
 	}
 	key := core.MovieKey(23)
@@ -53,7 +53,7 @@ func TestMediaBrowserRealExperience(t *testing.T) {
 				inst.Handler().ServeHTTP(w, r)
 				return w
 			}
-			login := call("POST", "/Users/AuthenticateByName", `{"Username":"viewer","Pw":"password"}`, "")
+			login := call("POST", "/Users/AuthenticateByName", `{"Username":"viewer","Pw":"password-1234"}`, "")
 			if login.Code != 200 {
 				t.Fatalf("login %d %s", login.Code, login.Body)
 			}
@@ -163,7 +163,7 @@ func TestMediaBrowserSearchAnswersWhenMetadataIsDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = local.Create(ctx, owner.ID, "viewer", "password"); err != nil {
+	if err = local.Create(ctx, owner.ID, "viewer", "password-1234"); err != nil {
 		t.Fatal(err)
 	}
 	released := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -191,7 +191,7 @@ func TestMediaBrowserSearchAnswersWhenMetadataIsDown(t *testing.T) {
 				inst.Handler().ServeHTTP(w, r)
 				return w
 			}
-			login := call("POST", "/Users/AuthenticateByName", `{"Username":"viewer","Pw":"password"}`, "")
+			login := call("POST", "/Users/AuthenticateByName", `{"Username":"viewer","Pw":"password-1234"}`, "")
 			if login.Code != 200 {
 				t.Fatalf("login %d %s", login.Code, login.Body)
 			}

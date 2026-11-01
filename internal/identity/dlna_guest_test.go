@@ -52,7 +52,7 @@ func TestDLNAGuestIsPasswordlessAndSurfaceRestricted(t *testing.T) {
 	if _, err = grants.Issue(ctx, id, nil, "dlna", core.Device{}); err != nil {
 		t.Fatalf("dlna grant: %v", err)
 	}
-	if err = local.UpsertPassword(ctx, id, "guest", "password"); !errors.Is(err, core.ErrUnauthorized) {
+	if err = local.UpsertPassword(ctx, id, "guest", "password-1234"); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("password link: %v", err)
 	}
 	invites, err := identity.NewInvite(db, time.Hour, time.Hour, nil)
@@ -85,7 +85,7 @@ func TestGuestOriginRejectsPreviouslyIssuedNonDLNACredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "legacy-guest", "password")
+	id, err := local.CreateViewer(ctx, "legacy-guest", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestGuestOriginRejectsPreviouslyIssuedNonDLNACredentials(t *testing.T) {
 	if _, _, err = grants.Refresh(ctx, "silo", refresh, device); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("refresh: %v", err)
 	}
-	if _, _, err = local.Authenticate(ctx, "legacy-guest", "password"); !errors.Is(err, core.ErrUnauthorized) {
+	if _, _, err = local.Authenticate(ctx, "legacy-guest", "password-1234"); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("local auth: %v", err)
 	}
 	viewers, err := local.PublicViewers(ctx)
@@ -135,7 +135,7 @@ func TestGuestOriginRejectsLegacyPlexAndDelegationCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "guest-legacy-plex", "password")
+	id, err := local.CreateViewer(ctx, "guest-legacy-plex", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

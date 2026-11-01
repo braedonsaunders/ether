@@ -34,7 +34,7 @@ func TestFrontendLiveTVUsesViewerPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	local, _ := identity.NewLocal(a.db)
-	viewerID, err := local.CreateViewer(ctx, "viewer", "password")
+	viewerID, err := local.CreateViewer(ctx, "viewer", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	viewerID, err := local.CreateViewer(ctx, "channelviewer", "password")
+	viewerID, err := local.CreateViewer(ctx, "channelviewer", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

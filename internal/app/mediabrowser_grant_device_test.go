@@ -28,7 +28,7 @@ func TestMediaBrowserRealGrantDeviceTokenOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := local.Create(ctx, owner.ID, "viewer", "password"); err != nil {
+	if err := local.Create(ctx, owner.ID, "viewer", "password-1234"); err != nil {
 		t.Fatal(err)
 	}
 	key := core.MovieKey(23)
@@ -56,7 +56,7 @@ func TestMediaBrowserRealGrantDeviceTokenOnly(t *testing.T) {
 				inst.Handler().ServeHTTP(w, r)
 				return w
 			}
-			login := call("POST", "/Users/AuthenticateByName", `{"Username":"viewer","Pw":"password"}`, "", "stored-device")
+			login := call("POST", "/Users/AuthenticateByName", `{"Username":"viewer","Pw":"password-1234"}`, "", "stored-device")
 			var signed struct{ AccessToken string }
 			if login.Code != 200 || json.Unmarshal(login.Body.Bytes(), &signed) != nil || signed.AccessToken == "" {
 				t.Fatal("login", login.Code)

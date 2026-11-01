@@ -340,6 +340,7 @@ function defaultConfig(): EtherConfig {
     openSubtitles: { enabled: false, apiKey: "", username: "", password: "" },
     llm: { enabled: true, provider: "ollama", baseUrl: "", apiKey: "", model: "llama3" },
     updates: {
+      enabled: true,
       channel: "stable",
       autoUpdate: true,
       feedUrl: "",

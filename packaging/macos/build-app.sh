@@ -39,7 +39,8 @@ mkdir -p "$MACOS" "$RES" "$ROOT/dist/tmp-mac"
 LDFLAGS="-s -w \
   -X github.com/braedonsaunders/ether/internal/updater.Version=$VERSION \
   -X github.com/braedonsaunders/ether/internal/updater.Commit=${COMMIT:-} \
-  -X github.com/braedonsaunders/ether/internal/updater.PublicKeyB64=${ETHER_UPDATE_PUBLIC_KEY:-}"
+  -X github.com/braedonsaunders/ether/internal/updater.PublicKeyB64=${ETHER_UPDATE_PUBLIC_KEY:-} \
+  -X github.com/braedonsaunders/ether/internal/tmdb.BundledKey=${ETHER_TMDB_BUNDLED_KEY:-}"
 
 echo "==> building server (universal, CGO_ENABLED=0)"
 for arch in amd64 arm64; do

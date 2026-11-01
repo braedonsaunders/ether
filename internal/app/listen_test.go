@@ -75,3 +75,23 @@ func TestBusyWarningUsesTheLANAddress(t *testing.T) {
 		t.Fatal(discoveryBusyWarning(urls))
 	}
 }
+
+func TestStartupNextStep(t *testing.T) {
+	var cfg config.Config
+	ui := "http://localhost:32400/ether/"
+	if got := startupNextStep(cfg, ui); got != "Open http://localhost:32400/ether/ to finish setup" {
+		t.Fatalf("unfinished setup: got %q", got)
+	}
+	cfg.SetupComplete = true
+	if got := startupNextStep(cfg, ui); got != "Add a TMDB API key in Integrations" {
+		t.Fatalf("missing TMDB key: got %q", got)
+	}
+	cfg.Catalog.TMDBKey = "test-key"
+	if got := startupNextStep(cfg, ui); got != "Add a debrid or Usenet account in Sources" {
+		t.Fatalf("missing source: got %q", got)
+	}
+	cfg.Debrid.Providers = []config.DebridProvider{{Enabled: true, APIKey: "rd-token"}}
+	if got := startupNextStep(cfg, ui); got != "" {
+		t.Fatalf("ready config: got %q", got)
+	}
+}

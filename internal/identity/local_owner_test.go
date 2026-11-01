@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	_ "github.com/braedonsaunders/ether/internal/auth"
@@ -18,15 +19,18 @@ func TestCreateLocalOwnerAtomic(t *testing.T) {
 	if _, err = l.CreateOwner(ctx, "owner", ""); err == nil {
 		t.Fatal("empty password accepted")
 	}
-	id, err := l.CreateOwner(ctx, "owner", "secret")
+	if _, err = l.CreateOwner(ctx, "owner", "short"); !errors.Is(err, ErrPasswordTooShort) {
+		t.Fatalf("short owner password accepted: %v", err)
+	}
+	id, err := l.CreateOwner(ctx, "owner", "secret-pass1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := l.Authenticate(ctx, "owner", "secret")
+	got, _, err := l.Authenticate(ctx, "owner", "secret-pass1")
 	if err != nil || got != id {
 		t.Fatalf("authenticate %d %v", got, err)
 	}
-	if _, err = l.CreateOwner(ctx, "another", "secret"); err == nil {
+	if _, err = l.CreateOwner(ctx, "another", "secret-pass1"); err == nil {
 		t.Fatal("second owner accepted")
 	}
 	var count int
@@ -45,13 +49,16 @@ func TestOwnerLocalCredentialForRecovery(t *testing.T) {
 	if _, ok, err := OwnerLocalCredential(ctx, db); ok || err != nil {
 		t.Fatalf("credential before any owner: %v %v", ok, err)
 	}
+	if _, err := l.CreateViewer(ctx, "viewer", "short"); !errors.Is(err, ErrPasswordTooShort) {
+		t.Fatalf("short viewer password accepted: %v", err)
+	}
 	if _, err := l.CreateViewer(ctx, "viewer", "viewer-secret"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, _ := OwnerLocalCredential(ctx, db); ok {
 		t.Fatal("a viewer's credential was returned as the owner's")
 	}
-	id, err := l.CreateOwner(ctx, "owner", "secret")
+	id, err := l.CreateOwner(ctx, "owner", "secret-pass1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,10 +66,10 @@ func TestOwnerLocalCredentialForRecovery(t *testing.T) {
 	if err != nil || !ok || cred.ViewerID != id || cred.Username != "owner" || cred.IdentityID == 0 {
 		t.Fatalf("credential = %+v %v %v", cred, ok, err)
 	}
-	if !VerifyOwnerCredential(cred, "owner", "secret") {
+	if !VerifyOwnerCredential(cred, "owner", "secret-pass1") {
 		t.Fatal("owner password rejected")
 	}
-	for _, c := range [][2]string{{"owner", "wrong"}, {"Owner", "secret"}, {"owner", ""}} {
+	for _, c := range [][2]string{{"owner", "wrong"}, {"Owner", "secret-pass1"}, {"owner", ""}} {
 		if VerifyOwnerCredential(cred, c[0], c[1]) {
 			t.Fatalf("accepted %q/%q", c[0], c[1])
 		}

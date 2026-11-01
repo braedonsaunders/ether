@@ -53,6 +53,19 @@ it("explains how to enable HTTPS when Stremio has no secure address", async () =
   );
 });
 
+it("explains what to configure when no server address is available", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) =>
+    init?.method === "POST"
+      ? new Response(JSON.stringify({ error: { code: "address_unavailable" } }), { status: 503 })
+      : new Response(JSON.stringify({ apps: ["jellyfin"] }), { status: 200 }),
+  );
+  render(<ConnectApps base="/me" token="portal" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Create connection" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Server address unavailable. Set Custom server URLs under Apps → Plex → Remote access.",
+  );
+});
+
 it("does not show a previous viewer's secret after changing profiles", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(
     async (_url, init) =>

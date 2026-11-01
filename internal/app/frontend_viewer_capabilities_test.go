@@ -20,7 +20,7 @@ func TestViewerCapabilitiesPolicyAndMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := local.CreateViewer(ctx, "alice", "password")
+	id, err := local.CreateViewer(ctx, "alice", "password-1234")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -517,14 +517,14 @@ func (r *Registrar) runDue(ctx context.Context) {
 		r.refreshCertTrust(ctx)
 	}
 	claimed := cfg.Plex.Claimed && cfg.Plex.Token != ""
-	if !claimed {
+	if !claimed || !plexAppsEnabled(cfg) {
 		return
 	}
 	r.mu.Lock()
 	force := r.forcePub
 	generation := r.pubGeneration
 	r.mu.Unlock()
-	if plexAppsEnabled(cfg) && (force || r.due(taskPublish, r.o.PublishInterval)) {
+	if force || r.due(taskPublish, r.o.PublishInterval) {
 		if err := r.PublishNow(ctx); err != nil && ctx.Err() == nil && plexAppsEnabled(r.o.Config.Get()) {
 			r.mu.Lock()
 			r.pubFail++
@@ -547,13 +547,13 @@ func (r *Registrar) runDue(ctx context.Context) {
 			r.schedule(taskOwner, r.o.Now().Add(10*time.Minute))
 		}
 	}
-	if plexAppsEnabled(cfg) && cfg.Plex.RemoteAccess && r.due(taskReach, r.o.ReachabilityInterval) {
+	if cfg.Plex.RemoteAccess && r.due(taskReach, r.o.ReachabilityInterval) {
 		r.CheckReachability(ctx)
 	}
 }
 
 func (r *Registrar) ensureMapping(ctx context.Context, cfg config.Config) {
-	want := cfg.Plex.RemoteAccess && cfg.Plex.UseUPnP
+	want := plexAppsEnabled(cfg) && cfg.Plex.RemoteAccess && cfg.Plex.UseUPnP
 	r.mu.Lock()
 	on := r.mappingOn
 	r.mu.Unlock()
@@ -629,7 +629,7 @@ func (r *Registrar) refreshAddresses(ctx context.Context, cfg config.Config) {
 		r.log.Warn("lan address enumeration failed", "err", err)
 	}
 	wan, wanErr := "", ""
-	if cfg.Plex.RemoteAccess {
+	if plexAppsEnabled(cfg) && cfg.Plex.RemoteAccess {
 		switch {
 		case cfg.Plex.PublicHost != "":
 			wan = cfg.Plex.PublicHost
@@ -1002,6 +1002,9 @@ func (r *Registrar) SyncFriendsNow(ctx context.Context) error {
 // SyncFriendsOnUnknownToken re-reads friends and access tokens when an
 // unrecognised token arrives, rate-limited by UnknownTokenSyncMinSpacing.
 func (r *Registrar) SyncFriendsOnUnknownToken(ctx context.Context) error {
+	if !plexAppsEnabled(r.o.Config.Get()) {
+		return nil
+	}
 	now := r.o.Now()
 	r.mu.Lock()
 	if !r.lastUnknownTokenSync.IsZero() && now.Round(0).Sub(r.lastUnknownTokenSync.Round(0)) < r.o.UnknownTokenSyncMinSpacing {
@@ -1056,7 +1059,11 @@ func (r *Registrar) RenewCertificate(ctx context.Context, force bool) error {
 	hosts := slices.Clone(r.lastLAN)
 	r.mu.Unlock()
 	before := r.o.Certs.Info()
-	info, err := r.o.Certs.Ensure(ctx, cfg.Plex.Token, hosts, force)
+	token := cfg.Plex.Token
+	if !force && !plexAppsEnabled(cfg) {
+		token = ""
+	}
+	info, err := r.o.Certs.Ensure(ctx, token, hosts, force)
 	r.mu.Lock()
 	r.st.CertError = ""
 	if err != nil {
@@ -1270,8 +1277,13 @@ func (r *Registrar) onConfig(c config.Config) {
 		default:
 		}
 		if enabled {
-			r.RequestPublish()
+			r.mu.Lock()
+			r.next[taskCert] = time.Time{}
+			r.next[taskFriends] = time.Time{}
+			r.next[taskOwner] = time.Time{}
+			r.mu.Unlock()
 		}
+		r.Trigger()
 	}
 	r.mu.Lock()
 	prev := r.claimedToken

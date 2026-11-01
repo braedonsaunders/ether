@@ -7,12 +7,16 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/remote"
 )
+
+var portalDockerBridge = netip.MustParsePrefix("172.16.0.0/12")
 
 func (r *frontendRuntime) surfaceURL(ctx context.Context, id frontend.Protocol, req *http.Request) (string, error) {
 	ip, ok := r.app.frontendClientIP(req)
@@ -33,12 +37,29 @@ func (r *frontendRuntime) surfaceURL(ctx context.Context, id frontend.Protocol, 
 	if run == nil {
 		return "", errors.New("frontend unavailable")
 	}
+	var cfg config.Config
+	var trusted []netip.Prefix
+	if r.app != nil && r.app.cfg != nil {
+		cfg = r.app.cfg.Get()
+		trusted = r.app.trustedProxyPrefixes()
+	}
+	if base, ok := configuredOrigin(cfg, r.mainPort()); ok {
+		if len(shared) > 0 {
+			if resolved, err := surfaceSharedAddress(strings.TrimRight(base, "/")+"/ether/me", shared); err == nil {
+				return resolved, nil
+			}
+		}
+		if len(prefixes) > 0 && prefixes[0] != "" {
+			return strings.TrimRight(strings.TrimRight(base, "/")+prefixes[0], "/"), nil
+		}
+		return strings.TrimRight(base, "/"), nil
+	}
 	local, _ := req.Context().Value(http.LocalAddrContextKey).(net.Addr)
 	var interfaces []remote.InterfaceAddr
 	if identity.LAN(ip) {
 		interfaces, _ = remote.LANAddresses(remote.LANOptions{IncludeIPv6: true})
 	}
-	if base, ok := surfaceLANAddress(ip, local, addresses, prefixes, interfaces); ok {
+	if base, ok := surfaceAddress(req, ip, local, addresses, prefixes, trusted, interfaces); ok {
 		return base, nil
 	}
 	portal, err := r.viewerPortalURL(ctx, req)
@@ -46,6 +67,20 @@ func (r *frontendRuntime) surfaceURL(ctx context.Context, id frontend.Protocol, 
 		return "", err
 	}
 	return surfaceSharedAddress(portal, shared)
+}
+
+func (r *frontendRuntime) mainPort() string {
+	r.mu.Lock()
+	addr := r.mainAddr
+	r.mu.Unlock()
+	if addr == nil {
+		return ""
+	}
+	_, port, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return ""
+	}
+	return port
 }
 
 func surfaceSharedAddress(portal string, shared []string) (string, error) {
@@ -60,6 +95,39 @@ func surfaceSharedAddress(portal string, shared []string) (string, error) {
 		}
 	}
 	return "", errors.New("no reachable frontend address")
+}
+
+func surfaceAddress(req *http.Request, peer netip.Addr, local net.Addr, addresses, prefixes []string, trusted []netip.Prefix, interfaces []remote.InterfaceAddr) (string, bool) {
+	localPort := ""
+	if local != nil {
+		var err error
+		_, localPort, err = net.SplitHostPort(local.String())
+		if err != nil {
+			return "", false
+		}
+	}
+	for index, address := range addresses {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			continue
+		}
+		if local != nil && port != localPort {
+			continue
+		}
+		if base, ok := requestOriginWithPort(req, host, port, trusted); ok {
+			u, err := url.Parse(base)
+			if err == nil && u != nil {
+				if index < len(prefixes) && prefixes[index] != "" {
+					u.Path = strings.TrimRight(u.Path, "/") + prefixes[index]
+				}
+				return strings.TrimRight(u.String(), "/"), true
+			}
+		}
+		if local == nil {
+			break
+		}
+	}
+	return surfaceLANAddress(peer, local, addresses, prefixes, interfaces)
 }
 
 func surfaceLANAddress(peer netip.Addr, local net.Addr, addresses, prefixes []string, interfaces []remote.InterfaceAddr) (string, bool) {
@@ -98,8 +166,10 @@ func surfaceLANAddress(peer netip.Addr, local net.Addr, addresses, prefixes []st
 	return "", false
 }
 
-// viewerPortalURL uses the verified client address and the main listener's
-// published network addresses; it never trusts request Host or forwarded host.
+// viewerPortalURL chooses a reachable portal URL in order:
+// 1. the owner's configured public or custom URL, if any;
+// 2. the request Host (with the app's port) or X-Forwarded-Host / X-Forwarded-Proto from a trusted proxy;
+// 3. the matching LAN interface or published remote connection.
 func (r *frontendRuntime) viewerPortalURL(ctx context.Context, req *http.Request) (string, error) {
 	ip, ok := r.app.frontendClientIP(req)
 	if !ok {
@@ -115,6 +185,33 @@ func (r *frontendRuntime) viewerPortalURL(ctx context.Context, req *http.Request
 	if err != nil {
 		return "", err
 	}
+	var cfg config.Config
+	var trusted []netip.Prefix
+	if r.app != nil && r.app.cfg != nil {
+		cfg = r.app.cfg.Get()
+		trusted = r.app.trustedProxyPrefixes()
+	}
+	var interfaces []remote.InterfaceAddr
+	if identity.LAN(ip) && !ip.IsLoopback() {
+		interfaces, _ = remote.LANAddresses(remote.LANOptions{IncludeIPv6: true})
+	}
+	var connections []remote.Connection
+	for _, raw := range cfg.Plex.CustomURLs {
+		connections = append(connections, remote.Connection{URI: raw, Custom: true})
+	}
+	if r.app != nil && r.app.registrar != nil {
+		connections = append(connections, r.app.registrar.Status().Connections...)
+	}
+	return portalAddress(ctx, req, ip, host, port, cfg, trusted, interfaces, connections)
+}
+
+func portalAddress(ctx context.Context, req *http.Request, ip netip.Addr, host, port string, cfg config.Config, trusted []netip.Prefix, interfaces []remote.InterfaceAddr, connections []remote.Connection) (string, error) {
+	if base, ok := configuredOrigin(cfg, port); ok {
+		return strings.TrimRight(base, "/") + "/ether/me", nil
+	}
+	if base, ok := requestOriginWithPort(req, host, port, trusted); ok {
+		return strings.TrimRight(base, "/") + "/ether/me", nil
+	}
 	// A loopback client talking to a loopback or wildcard listener already
 	// knows the answer. Enumerating interfaces is the slow first call.
 	if ip.IsLoopback() {
@@ -123,19 +220,9 @@ func (r *frontendRuntime) viewerPortalURL(ctx context.Context, req *http.Request
 		}
 	}
 	if identity.LAN(ip) {
-		interfaces, err := remote.LANAddresses(remote.LANOptions{IncludeIPv6: true})
-		if err != nil {
-			return "", err
+		if lan, err := portalLANAddress(ip, host, port, interfaces); err == nil {
+			return lan, nil
 		}
-		return portalLANAddress(ip, host, port, interfaces)
-
-	}
-	var connections []remote.Connection
-	for _, raw := range r.app.cfg.Get().Plex.CustomURLs {
-		connections = append(connections, remote.Connection{URI: raw, Custom: true})
-	}
-	if r.app.registrar != nil {
-		connections = append(connections, r.app.registrar.Status().Connections...)
 	}
 	return portalPublicAddress(ctx, connections)
 }
@@ -157,18 +244,222 @@ func (r *frontendRuntime) viewerPortalSecureURL(ctx context.Context, req *http.R
 	if err != nil {
 		return "", err
 	}
+	var cfg config.Config
+	var trusted []netip.Prefix
+	if r.app != nil && r.app.cfg != nil {
+		cfg = r.app.cfg.Get()
+		trusted = r.app.trustedProxyPrefixes()
+	}
+	if base, ok := configuredOrigin(cfg, port); ok && strings.HasPrefix(base, "https://") {
+		return strings.TrimRight(base, "/") + "/ether/me", nil
+	}
+	if base, ok := requestOriginWithPort(req, host, port, trusted); ok && strings.HasPrefix(base, "https://") {
+		return strings.TrimRight(base, "/") + "/ether/me", nil
+	}
 	var interfaces []remote.InterfaceAddr
 	if identity.LAN(ip) {
 		interfaces, _ = remote.LANAddresses(remote.LANOptions{IncludeIPv6: true})
 	}
 	var connections []remote.Connection
-	if r.app.registrar != nil {
+	if r.app != nil && r.app.registrar != nil {
 		connections = append(connections, r.app.registrar.Status().Connections...)
 	}
-	for _, raw := range r.app.cfg.Get().Plex.CustomURLs {
+	for _, raw := range cfg.Plex.CustomURLs {
 		connections = append(connections, remote.Connection{URI: raw, Custom: true})
 	}
 	return portalSecureAddress(ctx, ip, host, port, interfaces, connections)
+}
+
+func configuredOrigin(cfg config.Config, defaultPort string) (string, bool) {
+	for _, raw := range cfg.Plex.CustomURLs {
+		if base, ok := parseConfiguredURL(raw); ok {
+			return base, true
+		}
+	}
+	if host := strings.TrimSpace(cfg.Plex.PublicHost); host != "" {
+		if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+			if base, ok := parseConfiguredURL(host); ok {
+				return base, true
+			}
+		} else {
+			h, p := host, ""
+			if sh, sp, err := net.SplitHostPort(host); err == nil {
+				h, p = strings.Trim(sh, "[]"), sp
+			} else {
+				h = strings.Trim(host, "[]")
+				if cfg.Plex.PublicPort > 0 {
+					p = strconv.Itoa(cfg.Plex.PublicPort)
+				} else if cfg.Server.Port > 0 {
+					p = strconv.Itoa(cfg.Server.Port)
+				} else {
+					p = defaultPort
+				}
+			}
+			scheme := "http"
+			if p == "443" || cfg.Plex.SecureConnections == remote.SecureRequired {
+				scheme = "https"
+			}
+			addr := h
+			if p != "" && !((scheme == "http" && p == "80") || (scheme == "https" && p == "443")) {
+				addr = net.JoinHostPort(h, p)
+			}
+			if base, ok := parseConfiguredURL(scheme + "://" + addr); ok {
+				return base, true
+			}
+		}
+	}
+	return "", false
+}
+
+func parseConfiguredURL(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", false
+	}
+	u, err := url.Parse(s)
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", false
+	}
+	origin := (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
+	c, err := remote.ParseCustomURL(origin)
+	if err != nil || !usableRequestHost(c.Address, true) {
+		return "", false
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	u.RawPath = ""
+	return u.String(), true
+}
+
+func requestOriginWithPort(req *http.Request, boundHost, appPort string, trusted []netip.Prefix) (string, bool) {
+	if req == nil || appPort == "" {
+		return "", false
+	}
+	trustedProxy := portalProxyTrusted(req, trusted)
+	if trustedProxy {
+		if fHost := portalForwardedHost(req); fHost != "" {
+			scheme := "http"
+			if req.TLS != nil {
+				scheme = "https"
+			}
+			if fProto := portalForwardedProto(req); fProto == "http" || fProto == "https" {
+				scheme = fProto
+			}
+			h, p, err := net.SplitHostPort(fHost)
+			if err != nil {
+				h = strings.Trim(fHost, "[]")
+				p = ""
+			} else {
+				h = strings.Trim(h, "[]")
+			}
+			if usableRequestHost(h, true) {
+				hostPort := h
+				if p != "" {
+					hostPort = net.JoinHostPort(h, p)
+				}
+				candidate := (&url.URL{Scheme: scheme, Host: hostPort}).String()
+				if _, err := remote.ParseCustomURL(candidate); err == nil {
+					return candidate, true
+				}
+			}
+		}
+	}
+	if bound := net.ParseIP(boundHost); bound != nil && bound.IsLoopback() {
+		return "", false
+	}
+	rawHost := portalSanitizeHost(strings.TrimSpace(req.Host))
+	if rawHost == "" {
+		return "", false
+	}
+	h, reqPort, err := net.SplitHostPort(rawHost)
+	if err != nil {
+		h = strings.Trim(rawHost, "[]")
+		reqPort = ""
+	} else {
+		h = strings.Trim(h, "[]")
+	}
+	if !usableRequestHost(h, false) {
+		return "", false
+	}
+	scheme := "http"
+	if req.TLS != nil {
+		scheme = "https"
+	}
+	fProto := ""
+	if trustedProxy {
+		fProto = portalForwardedProto(req)
+		if fProto == "http" || fProto == "https" {
+			scheme = fProto
+		}
+	}
+	hostPort := net.JoinHostPort(h, appPort)
+	if trustedProxy && (fProto == "http" || fProto == "https") && reqPort == "" {
+		hostPort = h
+	}
+	candidate := (&url.URL{Scheme: scheme, Host: hostPort}).String()
+	if _, err := remote.ParseCustomURL(candidate); err != nil {
+		return "", false
+	}
+	return candidate, true
+}
+
+func usableRequestHost(host string, fromProxyOrConfig bool) bool {
+	h := strings.TrimSpace(strings.Trim(host, "[]"))
+	if h == "" || strings.EqualFold(h, "localhost") {
+		return false
+	}
+	if !fromProxyOrConfig && strings.EqualFold(h, "example.com") {
+		return false
+	}
+	if ip, err := netip.ParseAddr(h); err == nil {
+		ip = ip.Unmap()
+		if !ip.IsValid() || ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || portalDockerBridge.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+func portalProxyTrusted(r *http.Request, trusted []netip.Prefix) bool {
+	if r == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	if err != nil {
+		return false
+	}
+	peer = peer.Unmap()
+	if peer.IsLoopback() {
+		return true
+	}
+	for _, p := range trusted {
+		if p.Contains(peer) {
+			return true
+		}
+	}
+	return false
+}
+
+func portalForwardedHost(r *http.Request) string {
+	if h := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); h != "" {
+		return portalSanitizeHost(strings.TrimSpace(strings.Split(h, ",")[0]))
+	}
+	return ""
+}
+
+func portalForwardedProto(r *http.Request) string {
+	p := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	return strings.ToLower(strings.TrimSpace(strings.Split(p, ",")[0]))
+}
+
+func portalSanitizeHost(host string) string {
+	if host == "" || strings.ContainsAny(host, " \t\r\n/@") || len(host) > 255 {
+		return ""
+	}
+	return host
 }
 
 func portalSecureAddress(ctx context.Context, peer netip.Addr, host, port string, interfaces []remote.InterfaceAddr, connections []remote.Connection) (string, error) {

@@ -700,8 +700,12 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 	front.gate.Open(a.handler)
-	a.log.Info("Ether listening", "addr", addr.String(), "ui", fmt.Sprintf("http://localhost:%d/ether/", cfg.Server.Port),
+	uiURL := fmt.Sprintf("http://localhost:%d/ether/", cfg.Server.Port)
+	a.log.Info("Ether listening", "addr", addr.String(), "ui", uiURL,
 		"version", a.opts.Version, "spike", cfg.Spike.Enabled)
+	if next := startupNextStep(cfg, uiURL); next != "" {
+		a.log.Info(next)
+	}
 	background.start(func() { a.checkIntegrityLater(ctx) })
 	a.notifyLifecycle("server.started", "Ether is online", cfg.Server.FriendlyName+" is ready for connections.")
 	// Hang watchdog: restart via the supervisor if we stop answering.
@@ -837,6 +841,41 @@ func appendUnique(xs []string, more ...string) []string {
 		}
 	}
 	return xs
+}
+
+// startupNextStep returns a single actionable startup message for the next
+// missing configuration step, or "" when setup, TMDB, and a playback source
+// are all ready.
+func startupNextStep(cfg config.Config, uiURL string) string {
+	if !cfg.SetupComplete {
+		return fmt.Sprintf("Open %s to finish setup", uiURL)
+	}
+	if tmdb.ResolveKey(cfg.Catalog) == "" {
+		return "Add a TMDB API key in Integrations"
+	}
+	if !hasPlaybackSource(cfg) {
+		return "Add a debrid or Usenet account in Sources"
+	}
+	return ""
+}
+
+func hasPlaybackSource(cfg config.Config) bool {
+	for _, p := range cfg.Usenet.Providers {
+		if p.Enabled && strings.TrimSpace(p.Host) != "" {
+			return true
+		}
+	}
+	for _, p := range cfg.Debrid.Providers {
+		if p.Enabled && strings.TrimSpace(p.APIKey) != "" {
+			return true
+		}
+	}
+	for _, ix := range cfg.Indexers {
+		if ix.Enabled && ix.IsStremio() && strings.TrimSpace(ix.URL) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // addrInUse reports a bind failure because the port is taken: EADDRINUSE,

@@ -675,6 +675,12 @@ export const UPDATES: FieldGroup[] = localized(() => [
     title: t("Release channel"),
     fields: [
       {
+        key: "enabled",
+        label: t("Check for updates"),
+        kind: "bool",
+        help: t("Checks the signed release feed once a day."),
+      },
+      {
         key: "channel",
         label: t("Channel"),
         kind: "select",

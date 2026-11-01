@@ -441,6 +441,46 @@ describe("health", () => {
   it("flags real problems", () => {
     expect(usenetHealth([]).setupGap).toBe(true);
     expect(usenetHealth({ error: "boom" }).summary).toBe("boom");
+    const dnsFail = usenetHealth([
+      {
+        id: "p1",
+        name: "Primary",
+        backfill: false,
+        state: "backoff",
+        lastError: "dial tcp: lookup news.placeholder.invalid: no such host",
+        configuredConnections: 20,
+        activeConnections: 0,
+      },
+    ]);
+    expect(dnsFail.level).toBe("error");
+    expect(dnsFail.statusLabel).toBe("Needs attention");
+    expect(dnsFail.summary).toBe("Host not found (DNS lookup failed). Check the hostname.");
+    const connFail = usenetHealth([
+      {
+        id: "p1",
+        name: "Primary",
+        backfill: false,
+        state: "backoff",
+        lastError: "dial tcp 127.0.0.1:563: connect: connection refused",
+        configuredConnections: 20,
+        activeConnections: 0,
+      },
+    ]);
+    expect(connFail.statusLabel).toBe("Needs attention");
+    expect(connFail.summary).toBe("Connection refused. Check the host and port.");
+    const authFail = usenetHealth([
+      {
+        id: "p1",
+        name: "Primary",
+        backfill: false,
+        state: "auth_failed",
+        lastError: "nntp: authentication failed: 481 invalid login",
+        configuredConnections: 20,
+        activeConnections: 0,
+      },
+    ]);
+    expect(authFail.statusLabel).toBe("Needs attention");
+    expect(authFail.summary).toBe("Login rejected. Check the username and password.");
     expect(catalogHealth({ lastSync: "2026-10-01T00:00:00Z" }, now).level).toBe("warn");
     const correcting = catalogHealth(
       {

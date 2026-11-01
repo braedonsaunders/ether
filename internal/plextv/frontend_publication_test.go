@@ -13,7 +13,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 )
 
-func TestPlexAppsTogglePreservesMembershipAndResumesPublication(t *testing.T) {
+func TestPlexAppsToggleStopsPlexTVTrafficAndResumesOnEnable(t *testing.T) {
 	f := newFakePlexTV(t, testMachineID)
 	f.addUser("server-token-42", owner())
 	f.accessXML, f.usersXML = accessTokensXML, usersXML
@@ -31,14 +31,14 @@ func TestPlexAppsTogglePreservesMembershipAndResumesPublication(t *testing.T) {
 	if err := r.PublishNow(ctx); err == nil {
 		t.Fatal("direct publication succeeded while disabled")
 	}
-	if f.count("PUT /devices/") != 0 || f.count("DELETE /devices/") != 0 {
-		t.Fatal("disabled apps changed server device")
+	if err := r.SyncFriendsOnUnknownToken(ctx); err != nil {
+		t.Fatal(err)
 	}
-	users.mu.Lock()
-	n := len(users.friends)
-	users.mu.Unlock()
-	if n == 0 {
-		t.Fatal("membership did not sync while apps disabled")
+	f.mu.Lock()
+	reqsWhileDisabled := len(f.requests)
+	f.mu.Unlock()
+	if reqsWhileDisabled != 0 {
+		t.Fatalf("expected zero plex.tv requests while Plex apps are disabled, got %d", reqsWhileDisabled)
 	}
 	if !store.Get().Plex.Claimed || store.Get().Plex.Token == "" {
 		t.Fatal("account was unclaimed")
@@ -54,6 +54,12 @@ func TestPlexAppsTogglePreservesMembershipAndResumesPublication(t *testing.T) {
 	if f.count("PUT /devices/") == 0 {
 		t.Fatal("publication did not resume")
 	}
+	users.mu.Lock()
+	n := len(users.friends)
+	users.mu.Unlock()
+	if n == 0 {
+		t.Fatal("membership did not sync when Plex apps were re-enabled")
+	}
 	if err := store.Update(func(c *config.Config) error {
 		c.Frontends = map[string]config.Frontend{"plex": {Enabled: false}}
 		return nil
@@ -61,11 +67,17 @@ func TestPlexAppsTogglePreservesMembershipAndResumesPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.onConfig(store.Get())
-	before := f.count("PUT /devices/")
+	f.mu.Lock()
+	beforeTotal := len(f.requests)
+	f.mu.Unlock()
 	r.schedule(taskFriends, time.Time{})
+	r.schedule(taskOwner, time.Time{})
 	r.runDue(ctx)
-	if f.count("PUT /devices/") != before || f.count("DELETE /devices/") != 0 {
-		t.Fatal("disabled apps changed server device")
+	f.mu.Lock()
+	afterTotal := len(f.requests)
+	f.mu.Unlock()
+	if afterTotal != beforeTotal {
+		t.Fatalf("expected zero plex.tv requests after disabling Plex apps, got %d new requests", afterTotal-beforeTotal)
 	}
 }
 

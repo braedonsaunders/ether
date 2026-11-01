@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 (2026-11-01)
+
+- **Bundled TMDB key and fallback guidance (`internal/tmdb`, `Dockerfile`, `.github/workflows/release.yml`, `web/`):** Official release builds and Docker images now bake in `internal/tmdb.BundledKey` so fresh installs populate a catalogue immediately. For custom builds without a bundled key, the setup finish screen, **Overview › Next steps**, and **Catalog** surface an **Add a TMDB key** link to **Server › Integrations › TMDB**.
+- **Connect apps in Docker bridge mode and behind reverse proxies (`internal/app/frontend_portal.go`, `internal/admin/connect_apps.go`, `web/`):** Address resolution for `/ether/me › Connect apps` now checks configured custom/public URLs first, then the request `Host` header (or `X-Forwarded-Host` / `X-Forwarded-Proto` from trusted proxies) with the app port, before local interface subnet matching.
+- **Accurate Usenet provider health (`internal/usenet`, `web/`):** Warmup dial and auth failures are recorded on the provider circuit breaker, and `lastError` / `Needs attention` persist across cooldowns until a probe or connection succeeds, with plain-language reasons for DNS, connection, TLS, timeout, and login errors.
+- **12-character minimum for new local passwords (`internal/identity`, `internal/admin`, `web/`):** New local owner and viewer passwords require at least 12 characters across setup, **Sign-in methods**, **Viewers**, and the API, matching backup encryption requirements while leaving existing shorter passwords working.
+- **Automatic update check toggle and `plex.tv` gating (`internal/updater`, `internal/plextv`, `internal/app`, `web/`):** Added an owner toggle under **Server › General › Updates** (`updates.enabled`, default `true`) to disable background update checks, and gated `plex.tv` publishing, friend sync, and metadata refreshes on the Plex app being enabled.
+- **Startup next-step log and documentation (`internal/app/startup_guidance.go`, `README.md`, `docs/install.md`):** Logs one `INFO` line at startup pointing to the next setup step when incomplete, and updates `README.md` and `docs/install.md` with **Things to know first**, exact outbound network behaviour, consistent port `8096` and Docker Desktop guidance, Stremio HTTPS notes, and a troubleshooting table.
+
 ## 0.3.0 (2026-11-01)
 
 ### Summary

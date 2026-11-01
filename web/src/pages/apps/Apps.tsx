@@ -256,7 +256,7 @@ function ConnectDevice({
           ) : (
             <p>
               {t(
-                "Open the app, add the server address above, and sign in. Findroid, Swiftfin, and Jellyfin Media Player are the usual places to start.",
+                "Open the app, add the server address above, and sign in. Infuse, Swiftfin, Findroid, and Streamyfin are the usual places to start.",
               )}
             </p>
           )}

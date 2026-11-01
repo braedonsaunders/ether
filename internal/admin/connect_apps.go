@@ -99,7 +99,7 @@ func (h *Handler) connectApps(w http.ResponseWriter, r *http.Request, viewer *co
 		return
 	}
 	if h.deps.ViewerPortalURL == nil {
-		writeError(w, 503, "unavailable", "address unavailable")
+		writeError(w, 503, "address_unavailable", "Server address unavailable. Set Custom server URLs under Apps → Plex → Remote access.")
 		return
 	}
 	address := h.deps.ViewerPortalURL
@@ -117,7 +117,7 @@ func (h *Handler) connectApps(w http.ResponseWriter, r *http.Request, viewer *co
 	}
 	u, parseErr := url.Parse(portal)
 	if err != nil || parseErr != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || (surface == "stremio" && u.Scheme != "https") || u.Host == "" || !strings.HasSuffix(u.Path, "/ether/me") {
-		writeError(w, 503, "unavailable", "address unavailable")
+		writeError(w, 503, "address_unavailable", "Server address unavailable. Set Custom server URLs under Apps → Plex → Remote access.")
 		return
 	}
 	var id [16]byte

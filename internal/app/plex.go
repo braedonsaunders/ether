@@ -79,16 +79,23 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		cfg := a.cfg.Read()
 		return plexguid.ClientIdentifier(cfg.Plex.ClientIdentifier, cfg.Server.MachineIdentifier)
 	}
+	plexToken := func() string {
+		cfg := a.cfg.Read()
+		if !cfg.Plex.Claimed || (cfg.Frontends != nil && !cfg.Frontends["plex"].Enabled) {
+			return ""
+		}
+		return cfg.Plex.Token
+	}
 	deps.PlexGUID = plexguid.New(a.db, plexguid.Options{
 		HTTP:             a.opts.plextvHTTP,
-		Token:            func() string { return a.cfg.Read().Plex.Token },
+		Token:            plexToken,
 		ClientIdentifier: clientID,
 		Background:       true,
 	})
 	a.plexGUID = deps.PlexGUID
 	deps.PlexMeta = plexmeta.New(a.db, plexmeta.Options{
 		HTTP:             a.opts.plextvHTTP,
-		Token:            func() string { return a.cfg.Read().Plex.Token },
+		Token:            plexToken,
 		ClientIdentifier: clientID,
 		GUID: func(ctx context.Context, k core.RatingKey) string {
 			if deps.PlexGUID == nil {
@@ -98,7 +105,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		},
 		Enabled: func() bool {
 			cfg := a.cfg.Read()
-			return cfg.Plex.Claimed && cfg.Plex.UsePlexMetadata
+			return cfg.Plex.Claimed && cfg.Plex.UsePlexMetadata && (cfg.Frontends == nil || cfg.Frontends["plex"].Enabled)
 		},
 		Background: true,
 	})

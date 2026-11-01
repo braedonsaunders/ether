@@ -111,7 +111,7 @@ func rollingManager(t *testing.T, a *App, name, version string, feed updater.Che
 	return updater.NewManager(updater.ManagerOptions{
 		NewClient: func(config.Updates) (updater.Checker, error) { return feed, nil },
 		Config: func() config.Updates {
-			return config.Updates{AutoUpdate: true, MaintenanceStart: "00:00", MaintenanceEnd: "00:00"}
+			return config.Updates{Enabled: true, AutoUpdate: true, MaintenanceStart: "00:00", MaintenanceEnd: "00:00"}
 		},
 		CurrentVersion: version,
 		Dir:            dir,

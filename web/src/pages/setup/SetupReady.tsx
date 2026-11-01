@@ -215,9 +215,10 @@ function prefersReducedMotion(): boolean {
 
 export interface SetupReadyProps {
   initialConfig?: EtherConfig | null;
+  tmdbAvailable?: boolean;
 }
 
-function SetupReadyInner({ initialConfig = null }: SetupReadyProps) {
+function SetupReadyInner({ initialConfig = null, tmdbAvailable }: SetupReadyProps) {
   const nav = useNavigate();
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
   const [cfg, setCfg] = useState<EtherConfig | null>(initialConfig);
@@ -616,8 +617,12 @@ function SetupReadyInner({ initialConfig = null }: SetupReadyProps) {
     (p) => p.enabled && p.host.trim().length > 0,
   );
   const anyApp = enabledFrontends.length > 0;
+  const hasTmdb = Boolean(tmdbAvailable || cfg?.catalog?.tmdbKey?.trim());
 
   const pills: { label: string; to: string }[] = [];
+  if (!hasTmdb) {
+    pills.push({ label: t("Add a TMDB key"), to: "/services/tmdb" });
+  }
   if (!debridOn && !usenetOn) {
     pills.push({ label: t("Add a debrid account"), to: "/sources" });
   }

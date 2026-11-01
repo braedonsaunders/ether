@@ -11,7 +11,7 @@ open it, and follow the wizard in the browser. No terminal is needed.
 Linux packages and Docker are further down. Packaged installers bundle
 FFmpeg and FFprobe.
 
-Signed macOS releases open normally. An unsigned build needs one right-click → Open the first time.
+Signed macOS releases open normally. An unsigned build needs one right-click -> Open the first time.
 The Windows installer is unsigned and may trigger SmartScreen.
 The automatic-update manifest is signed separately with Ether's release key.
 
@@ -31,11 +31,11 @@ The ready-made Torrentio source looks titles up on torrentio.strem.fun. To keep 
 
 After any install, open the web UI and finish the setup wizard. Choose your
 app integrations, sign in with Plex if selected or create a local Ether owner
-account, add your sources and indexers, and pick a cache folder. Jellyfin,
-Emby and Silo do not require a Plex account or a separate Plex Media Server.
+account (password at least 12 characters), add your sources and indexers, and pick a cache folder. Jellyfin,
+Emby, and Silo do not require a Plex account or a separate Plex Media Server.
 Review the
 [client support notes](user-guide.md#jellyfin-and-emby-apps) for integration limits.
-Ether ships no content, providers or indexers; see
+Ether ships no content, providers, or indexers; see
 [LEGAL.md](../LEGAL.md).
 
 ## Windows
@@ -90,7 +90,7 @@ keeps data in `/var/lib/ether`. The segment cache defaults to
 (writable by the service), which you can pick as the cache directory in
 the setup wizard or on the Cache page.
 `systemctl status ether` shows state; `journalctl -u ether` shows logs.
-Upgrades are just installing the new package (or a new Docker image) —
+Upgrades are just installing the new package (or a new Docker image);
 Linux packages do not self-update.
 
 For hardware transcoding, the `ether` user is added to the `render` and
@@ -116,11 +116,14 @@ docker run -d --name ether --restart unless-stopped \
 **Host networking is recommended on Linux.** Plex apps discover servers on the
 LAN with GDM (UDP 32410–32414) and Ether's remote-access setup talks to
 your router over UPnP; both need the host network namespace. Docker Desktop
-on Mac and Windows does not provide that namespace. Bridge mode
-with `-p 32400:32400` works for Plex Web and for claimed/remote
-connections, but LAN auto-discovery will not find the server. Do not publish
-port 8096. Jellyfin, Emby, and the other apps are reached at
-`http://HOST:PORT/jellyfin` (and `/emby`, `/silo`) on the console port.
+on Mac and Windows runs containers inside a Linux VM and does not expose
+host-network listeners to your computer or LAN. On Docker Desktop (or Linux
+bridge mode), remove `--network host` / `network_mode: host` and publish ports
+instead: `-p 32400:32400` serves the owner console, Plex, and `/jellyfin`,
+`/emby`, and `/silo` on the main port. You do not need to publish port `8096`
+if you connect Jellyfin apps to `http://HOST:32400/jellyfin`, or you can
+optionally publish `-p 8096:8096` (and `8097:8097`, `8090:8090`) if you want
+dedicated per-app ports without a path prefix.
 
 Already running Plex on 32400? Use bridge mode and `ETHER_PORT` so Ether does
 not take that port:
@@ -140,7 +143,7 @@ services:
 
 Open `http://HOST:32800/ether/`. Jellyfin is `http://HOST:32800/jellyfin`.
 
-Volumes: `/config` (config, database, identity — back this up) and
+Volumes: `/config` (config, database, identity; back this up) and
 `/cache` for the segment cache. The cache defaults to `/config/cache`.
 On a fresh install, a mounted `/cache` volume is used automatically, so
 no restart is required for that path. The budget is set in the setup wizard
@@ -171,7 +174,7 @@ NVENC: use the NVIDIA container toolkit flags shown in
 ## From a tarball/zip (any OS)
 
 Release archives contain `ether`, the tray (Linux/Windows), `ffmpeg` and
-`ffprobe` (must stay next to the `ether` binary — that's where it looks
+`ffprobe` (must stay next to the `ether` binary; that is where it looks
 first). Unpack anywhere, then either run `./ether` directly or register
 the service:
 
@@ -190,16 +193,16 @@ and fatal crash traces to `<data dir>/logs/crash.log`.
 
 ## Remote access / port forwarding
 
-Ether’s main listener defaults to **TCP 32400**. Other frontends can have
+Ether's main listener defaults to **TCP 32400**. Other frontends can have
 their own listeners; use the addresses shown on the Apps page. The following
 discovery and address-publication instructions apply to the **Plex frontend**
 for remote access outside your LAN:
 
-- Easiest: enable *Remote access* in the web UI — Ether asks your router
+- Easiest: enable *Remote access* in the web UI; Ether asks your router
   for a UPnP mapping and publishes the address to plex.tv, for Plex clients.
 - Manual: forward one external TCP port (e.g. 32400) to the Ether host's
   32400, then set that public port in the web UI.
-- LAN discovery additionally uses UDP 32410–32414 (GDM) — only relevant
+- LAN discovery additionally uses UDP 32410–32414 (GDM); only relevant
   inside your network, never forward it.
 - Behind a reverse proxy/TLS terminator, keep the path and `X-Plex-*`
   headers intact and point *Custom connection URLs* (or *Public host* on
@@ -215,12 +218,28 @@ for remote access outside your LAN:
   Keep the owner UI path `/ether/` private at the proxy; complete initial
   setup before exposing the server.
 
+### HTTPS for Stremio addons
+
+Stremio apps require an **`https://`** addon URL unless you are connecting to
+`http://127.0.0.1` on the same machine. To install the Stremio addon from
+`/ether/me` on other devices:
+
+- **When Plex is claimed and enabled:** Ether automatically obtains a
+  `*.plex.direct` TLS certificate and `/ether/me` builds the Stremio install
+  link with that `https://` address.
+- **With Tailscale:** enable HTTPS in your tailnet and run
+  `tailscale serve --bg 32400`, then open `/ether/me` over your
+  `https://<machine>.<tailnet>.ts.net` address.
+- **With a reverse proxy:** terminate TLS in Caddy, Nginx, Traefik, or
+  Cloudflare Tunnel in front of port `32400` and open `/ether/me` over that
+  `https://` domain.
+
 ## How Ether reaches the internet
 
 Ether can send indexers, Stremio addons, debrid and Usenet through one proxy
 on this computer, and leave Plex, updates, UPnP and remote access on the
 normal connection. The setting is off until you turn it on, under
-**Server → General → How Ether reaches the internet**. A username and password
+**Server › General › How Ether reaches the internet**. A username and password
 are stored with Ether's other secrets and are not put in the address.
 
 Two layouts are common:
@@ -305,7 +324,7 @@ and one-time join tokens. No terminal commands are required for setup.
   from several addresses at once. Keep every node behind the same internet
   connection. The Cluster page warns when the address nodes use for indexers,
   debrid and Usenet differs. Set the same proxy on every node under
-  **Server → General → How Ether reaches the internet**. Usenet uses SOCKS5 or
+  **Server › General › How Ether reaches the internet**. Usenet uses SOCKS5 or
   an HTTP CONNECT tunnel, and the provider certificate is still checked.
   A proxy that is down fails the connection; Ether does not fall back to a
   direct address. Plex, updates and the router stay on the normal connection.
@@ -560,12 +579,15 @@ page, then move on to the next.
 
 ## Updates
 
-The tray checks a signed update feed (stable/beta channel, chosen in the
-web UI). Depending on your setting it prompts before updating or applies
-updates automatically: a verified binary self-replace (with automatic
-rollback copy) or the platform installer (DMG/setup.exe). Linux packages
-update through your package manager or a new Docker image. Nothing is
-ever installed without a valid ed25519 signature and SHA-256 match.
+By default, Ether checks the signed release feed once a day (stable or beta
+channel, chosen under **Maintenance › Updates**). You can turn update checks
+off completely with the **Check for updates** toggle on that page. Depending on
+your **Install updates automatically** setting, Ether either shows available
+updates in the console or applies them during the maintenance window: a
+verified binary self-replace (with an automatic rollback copy) or the platform
+installer (DMG/`EtherSetup.exe`). Linux packages and Docker containers update
+through your package manager or a new container image. Nothing is ever
+installed without a valid Ed25519 signature and SHA-256 match.
 
 ### Database snapshots before upgrades
 
@@ -594,11 +616,11 @@ because that would discard everything written since the upgrade.
 
 Update feeds carry signed issue and expiry times, valid for 30 days. Ether rejects
 expired or undated feeds instead of treating them as proof that no update exists.
-The repository’s weekly **Refresh signed update feeds** workflow renews the
+The repository's weekly **Refresh signed update feeds** workflow renews the
 current release without changing its binaries; it can also be run manually.
 Maintainers must keep that workflow enabled and the release signing secrets
 configured. A failed freshness check leaves the installed server running.
-Check the system clock and the feed publisher’s workflow if it occurs.
+Check the system clock and the feed publisher's workflow if it occurs.
 
 Feeds use detached `.json.sig` signatures so older Ether clients can verify the
 new freshness fields. Custom feed publishers must supply both files and renew
@@ -629,3 +651,19 @@ longer contain indexer API keys.
 Ether warns at startup when the data directory or the credential key can be
 read by other accounts on the machine; it does not change permissions you
 chose.
+
+## Troubleshooting
+
+| Message or log line | Cause and fix |
+| :--- | :--- |
+| `listen tcp :32400: bind: address already in use` | Another server (usually Plex Media Server) is already listening on port `32400`. Set `ETHER_PORT=32450` (or `server.port` in `config.json`) and open `http://localhost:32450/ether/`. |
+| `Another server on this computer is using port 8096; Ether still works at http://...:32400/jellyfin` | Existing Jellyfin server holds port `8096`. Connect Jellyfin clients to the `/jellyfin` path on Ether's main port, or pick a free port under **Server › Apps › Jellyfin**. |
+| `Host not found (DNS lookup failed). Check the hostname.` | The Usenet provider or indexer hostname could not be resolved by this machine's DNS resolver. Check the hostname for typos in **Sources › Usenet** or **Sources › Indexers**, or check container DNS settings. |
+| `Connection refused. Check the host and port.` / `TLS connection failed. Check the port and TLS setting.` | The provider host is reachable, but the port or TLS toggle does not match the provider's NNTP endpoint (typically `563` or `443` with TLS on, `119` with TLS off). |
+| `Login rejected. Check the username and password.` (NNTP `481` / `502`) | The Usenet provider rejected the credentials or account state. Verify the username and password in **Sources › Usenet** and confirm the subscription is active. |
+| `Password must be at least 12 characters.` | Local owner and viewer passwords set in setup, **Sign-in methods**, **Viewers**, or the API must be at least 12 characters long. Existing shorter passwords continue to work until changed. |
+| `this FFmpeg cannot tone-map` | The stream is HDR and the client requested SDR, but the installed `ffmpeg` lacks `zscale` (`libzimg`), `libplacebo`, and hardware/OpenCL tone-mapping filters. Use Ether's packaged installer/container image or install an `ffmpeg` build with `libzimg`. |
+| `credential key is missing or does not match` | `.credentials-key` in the data directory was deleted or belongs to a different server, while `config.json` or `ether.db` still contains sealed secrets. Restore the matching `.credentials-key` from backup, or join a cluster node with a fresh join token. |
+| `503 Service Unavailable` / `/ether/` shows the startup recovery page | Ether is still migrating/restoring, or database startup failed. Open `/ether/` directly on the host to view the exact startup error, unlock recovery with the owner password or `recovery-code.txt`, and restore a snapshot. |
+| Stremio says `Failed to fetch` or refuses the addon link on LAN | Stremio requires an **`https://`** addon URL on every device except `http://127.0.0.1`. Claim Plex so Ether gets a `*.plex.direct` certificate, enable Tailscale HTTPS, or place Ether behind a TLS reverse proxy, then copy the `https://` addon link from `/ether/me`. |
+| Container starts on Windows or macOS Docker Desktop, but `http://localhost:32400/ether/` does not load | `network_mode: host` does not publish ports on Docker Desktop. Remove `network_mode: host` from `docker-compose.yml` and uncomment `ports: ["32400:32400/tcp"]`. |

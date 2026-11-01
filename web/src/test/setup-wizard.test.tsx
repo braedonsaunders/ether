@@ -727,10 +727,16 @@ describe("setup wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Create your owner account" });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
-    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "secret" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "short" } });
+    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "short" } });
+    expect(screen.getByText("Password must be at least 12 characters.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-pass1" } });
+    fireEvent.change(screen.getByLabelText("Password again"), {
+      target: { value: "secret-pass1" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith("owner", "secret"));
+    await waitFor(() => expect(create).toHaveBeenCalledWith("owner", "secret-pass1"));
     expect(
       await screen.findByRole("heading", { name: "Where Ether streams from" }),
     ).toBeInTheDocument();
@@ -953,6 +959,7 @@ describe("setup wizard", () => {
         "Your settings are saved. Add a debrid or Usenet account so titles can play.",
       ),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add a TMDB key" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add a debrid account" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect Plex" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect a device" })).toBeInTheDocument();
@@ -1001,8 +1008,10 @@ describe("setup wizard", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Connect Plex later" }));
     await screen.findByRole("heading", { name: "Create your owner account" });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "morgan" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
-    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "secret" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-pass1" } });
+    fireEvent.change(screen.getByLabelText("Password again"), {
+      target: { value: "secret-pass1" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Where Ether streams from" });
     const account = screen.getByRole("button", { name: /Account/ });

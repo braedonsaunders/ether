@@ -76,7 +76,7 @@ func TestUpdatesHandlerAndRestart(t *testing.T) {
 		a.updates.mgr = updater.NewManager(updater.ManagerOptions{
 			NewClient: func(config.Updates) (updater.Checker, error) { return staticChecker{}, nil },
 			Config: func() config.Updates {
-				return config.Updates{Channel: "stable", MaintenanceStart: "02:00", MaintenanceEnd: "04:30"}
+				return config.Updates{Enabled: true, Channel: "stable", MaintenanceStart: "02:00", MaintenanceEnd: "04:30"}
 			},
 			CurrentVersion: "2.0.0",
 			Dir:            a.updatesDir(),

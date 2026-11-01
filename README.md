@@ -13,10 +13,11 @@
   <img alt="Platforms" src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Docker-555" />
   <img alt="Pure Go" src="https://img.shields.io/badge/Go-CGO__ENABLED%3D0-00ADD8" />
   <a href="LICENSE"><img alt="GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-555" /></a>
-  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-2ea043" />
+  <a href="#what-outbound-connections-does-ether-make"><img alt="Outbound connections documented" src="https://img.shields.io/badge/telemetry-none%20(see%20outbound%20connections)-2ea043" /></a>
 </p>
 
 <p align="center">
+  <a href="#things-to-know-first">Things to know first</a> ·
   <a href="#why-ether-exists">Why Ether exists</a> ·
   <a href="#every-app-one-server">Every app, one server</a> ·
   <a href="#alongside-your-local-library">Alongside your library</a> ·
@@ -29,6 +30,22 @@
 <p align="center">
   <img src=".github/assets/overview.png" alt="Ether Server Overview" width="100%" />
 </p>
+
+---
+
+## Things to know first
+
+- **What Ether is not:** Ether is not a local-file media server. It does not scan folders of video files on your disk, and it does not replace Plex Media Server, Jellyfin, or Emby for your personal media collection. Ether also ships no media content, no Usenet providers, no debrid accounts, no indexers, and no tracker definitions.
+- **What accounts you need:**
+  1. A free [**TMDB API key**](https://www.themoviedb.org/settings/api) for catalogue metadata and artwork.
+  2. At least one **streaming source**: a Usenet provider, a debrid service (Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, or Offcloud), or both.
+  3. At least one **indexer**: a Newznab or Torznab indexer, a Prowlarr instance, or a Stremio stream addon.
+  4. **Optional:** a Plex account if you want to use official Plex apps. Jellyfin, Emby, Silo, Stremio, WebDAV, M3U/XMLTV, and DLNA work with local Ether accounts alone.
+- **System requirements:**
+  - **CPU and RAM:** 2 CPU cores and 1 GiB of RAM are enough for direct play, container remuxing, and audio transcoding. Video transcoding requires a supported GPU (NVIDIA NVENC, Intel QuickSync, VAAPI, or Apple VideoToolbox) or 4+ CPU cores for software encoding.
+  - **Disk space:** Configurable from **0 GiB** (pass-through mode) to **32+ GiB** on an SSD for the default segment cache, or multiple terabytes if you enable household preloading.
+- **Outbound network activity:** Ether sends no analytics or usage telemetry. By default it checks GitHub's signed release feed once a day for updates and queries TheIntroDB (`api.theintrodb.org`) for intro and credits skip timestamps during playback; both can be turned off in the console. When Plex is claimed and enabled, it communicates with `plex.tv`; turning the Plex app off stops all `plex.tv` traffic. See [What outbound connections does Ether make?](#what-outbound-connections-does-ether-make) for the full list.
+- **Legal responsibility:** You supply your own accounts, providers, and indexers, and you are responsible for complying with applicable laws and service terms. Read [**LEGAL.md**](LEGAL.md).
 
 ---
 
@@ -57,10 +74,10 @@ Ether is a Plex server to one app and a Jellyfin server to another, at the same 
 | App / protocol | Default port | Supported clients and how they connect |
 | :--- | :--- | :--- |
 | **Plex** | `32400` TCP (`32410–32414` UDP GDM) | Official Plex apps on Apple TV, iOS, Android, Android TV / Shield, Fire TV, Roku, PlayStation, Xbox, Smart TVs (LG, Samsung, VIDAA), Desktop, and Web. Discovered automatically through `plex.tv` and LAN GDM. |
-| **Jellyfin** | `8096` TCP (`7359` UDP discovery, or `/jellyfin`) | Infuse, Swiftfin, Findroid, Streamyfin, Jellyfin for Android TV, JellyCon, and Jellyfin for Roku. Sign in with Quick Connect or an Ether viewer password. *(Web-wrapper apps such as Jellyfin for Android phones and Jellyfin Desktop are not supported.)* |
-| **Emby** | `8097` TCP (or `/emby`) | Native Emby apps (Android TV, iOS, Android, Roku, Smart TVs) and Infuse. Sign in with an Ether viewer password or Quick Connect. *(Apple TV Emby for TV 2.x web-shell is not supported.)* |
-| **Silo** | `8090` TCP (or `/silo`) | Native Silo apps for Apple TV, iOS, macOS, Android, and Android TV. Sign in with an Ether viewer password or approve a device code in `/ether/me`. |
-| **Stremio** | Main HTTPS port | Any Stremio app. Each viewer creates a private addon install link in the viewer portal (`/ether/me`). |
+| **Jellyfin** | `8096` TCP (`7359` UDP discovery, or `/jellyfin` on main port) | Infuse, Swiftfin, Findroid, Streamyfin, Jellyfin for Android TV, JellyCon, and Jellyfin for Roku. Sign in with Quick Connect or an Ether viewer password. *(Web-wrapper apps such as Jellyfin for Android phones and Jellyfin Desktop are not supported.)* |
+| **Emby** | `8097` TCP (or `/emby` on main port) | Native Emby apps (Android TV, iOS, Android, Roku, Smart TVs) and Infuse. Sign in with an Ether viewer password or Quick Connect. *(Apple TV Emby for TV 2.x web-shell is not supported.)* |
+| **Silo** | `8090` TCP (or `/silo` on main port) | Native Silo apps for Apple TV, iOS, macOS, Android, and Android TV. Sign in with an Ether viewer password or approve a device code in `/ether/me`. |
+| **Stremio** | Main HTTPS port | Any Stremio app. Each viewer creates a private addon install link in the viewer portal (`/ether/me`). **Requires an `https://` server address** (except `http://127.0.0.1` on the same machine): use your `https://*.plex.direct:32400` address when Plex is claimed, Tailscale HTTPS, or a reverse proxy with TLS. |
 | **Files (WebDAV)** | Main port | Infuse, VLC, Kodi, and rclone. Each viewer creates a read-only WebDAV app password in `/ether/me`. |
 | **M3U & XMLTV** | Main port | Channels DVR, TiviMate, and IPTV players. Each viewer creates private `playlist.m3u` and `guide.xml` links in `/ether/me`. |
 | **DLNA** | Local network | LAN TVs and media players with a ContentDirectory browser, governed by the owner-selected guest viewer's library and rating rules. |
@@ -239,7 +256,7 @@ services:
     image: ghcr.io/braedonsaunders/ether:latest
     container_name: ether
     restart: unless-stopped
-    network_mode: host            # enables LAN GDM auto-discovery and UPnP
+    network_mode: host            # Linux only: enables LAN GDM auto-discovery and UPnP
     environment:
       TZ: Etc/UTC
       # ETHER_PORT: "32450"       # already running Plex on 32400? pick another port
@@ -247,18 +264,21 @@ services:
       - ./config:/config
       - ./cache:/cache            # used automatically on a fresh install
     # devices: ["/dev/dri:/dev/dri"]   # optional: Intel QuickSync / VAAPI hardware transcoding
-    # Bridge mode (when not using network_mode: host):
+    # Docker Desktop (Windows and macOS) or Linux bridge mode:
+    # Remove network_mode: host above and uncomment ports:
     # ports:
     #   - "32400:32400/tcp"       # owner console, Plex, and /jellyfin, /emby, /silo paths
-    #   - "8096:8096/tcp"         # dedicated Jellyfin listener (optional)
-    #   - "8097:8097/tcp"         # dedicated Emby listener (optional)
-    #   - "8090:8090/tcp"         # dedicated Silo listener (optional)
+    #   - "8096:8096/tcp"         # optional: dedicated Jellyfin port (not needed if using :32400/jellyfin)
+    #   - "8097:8097/tcp"         # optional: dedicated Emby port (not needed if using :32400/emby)
+    #   - "8090:8090/tcp"         # optional: dedicated Silo port (not needed if using :32400/silo)
 ```
+
+> **Docker Desktop (Windows and macOS):** Docker Desktop runs containers inside a Linux VM where `network_mode: host` does not publish ports to your computer or LAN. Comment out `network_mode: host` and uncomment `ports: ["32400:32400/tcp"]` (plus `8096:8096/tcp` only if you want the dedicated Jellyfin port instead of `http://HOST:32400/jellyfin`).
 
 Open **`http://localhost:32400/ether/`** and complete the setup wizard:
 
 1. **Choose your language** for the console and default household audio and subtitle tracks.
-2. **Choose your apps** (Plex, Jellyfin, Emby, Stremio, Silo, DLNA, Files/WebDAV, M3U & XMLTV) and **create your owner account**: sign in with Plex and claim the server, or create a local Ether owner account.
+2. **Choose your apps** (Plex, Jellyfin, Emby, Stremio, Silo, DLNA, Files/WebDAV, M3U & XMLTV) and **create your owner account**: sign in with Plex and claim the server, or create a local Ether owner account (password at least 12 characters).
 3. **Add a streaming source and indexer:** a debrid account (**Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud**), a Usenet provider, or both, plus a Stremio addon link, Torznab/Newznab URL, Prowlarr import, or tracker sites from a definitions source you add.
 4. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start).
 5. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api)** and optional integrations (Trakt, Simkl, OpenSubtitles, local Ollama/LM Studio).
@@ -291,6 +311,16 @@ Ether never emulates, unlocks, or bypasses Plex Pass, Emby Premiere, or any paid
 - **Stremio, WebDAV, DLNA, and M3U/XMLTV:** Stremio apps, WebDAV players (Infuse, VLC, Kodi), LAN DLNA TVs, and IPTV clients (Channels DVR, TiviMate).
 
 **Unsupported web-wrapper apps:** Ether does not bundle third-party web clients (`jellyfin-web` or Emby Web). Client apps that are wrappers around a server-hosted web bundle, specifically **Jellyfin for Android phones**, **Jellyfin Desktop**, and **Emby for TV 2.x on Apple TV**, are unsupported. On Android phones use **Findroid** or **Streamyfin**; on Apple TV use **Infuse**, **Swiftfin**, **Silo**, or **Plex**.
+</details>
+
+<details>
+<summary><b>How do I connect Stremio, and why does it require HTTPS?</b></summary>
+
+Stremio apps refuse plain `http://` addon URLs unless the address is `http://127.0.0.1` on the same device. To install a viewer's Stremio addon from `/ether/me` on phones, TVs, or other computers, serve Ether over **`https://`** using one of these options:
+
+1. **Claimed Plex server (`plex.direct`):** When Plex is claimed and enabled, Ether automatically obtains a `*.plex.direct` TLS certificate and `/ether/me` uses that `https://` address for the Stremio install link.
+2. **Tailscale HTTPS:** Enable HTTPS certificates in your tailnet and run `tailscale serve --bg 32400`, then open Ether at your `https://<machine>.<tailnet>.ts.net` address.
+3. **Reverse proxy with TLS:** Put Caddy, Nginx, Traefik, or Cloudflare Tunnel in front of port `32400` with a valid certificate and open `/ether/me` through that `https://` domain.
 </details>
 
 <details>
@@ -341,10 +371,15 @@ Real-Debrid no longer reports which torrents it holds in bulk, so Ether adds onl
 Yes, and if you have local media files on disk, that is the recommended setup. On the same machine, Ether notices if port `32400` or `8096` is already in use and moves its listener to a free port (such as `32450` for the main console, while keeping `/jellyfin`, `/emby`, and `/silo` available on the main port), and the **Apps** page shows the active address for every protocol. You can also import your existing Plex watch history, ratings, collections, and playlists into Ether in read-only mode.
 </details>
 
-<details>
-<summary><b>What does Ether phone home to?</b></summary>
+<details id="what-outbound-connections-does-ether-make">
+<summary><b>What outbound connections does Ether make?</b></summary>
 
-Nothing. There is **zero telemetry or analytics**. Ether communicates only with `plex.tv` when Plex is enabled (authentication, claiming, sharing, certificates, and optional Plex metadata when turned on), TMDB, the providers/indexers/services *you* configure, and GitHub's release feed when checking for updates. If a viewer connects their own Plex account, Ether can optionally send that viewer's future watched and unwatched marks and whole-star ratings to `scrobbles.plex.tv` (with held reconciliation against `GET /state/{account}` when delivery is uncertain). That delivery is off until enabled and is not telemetry.
+Ether sends **no usage analytics, crash reports, or behavioural telemetry**. Every outbound connection has a specific purpose and can be configured or turned off:
+
+1. **Update check (on by default):** Ether checks the signed release feed on GitHub once a day (first check 5 minutes after startup). Turn this off under **Maintenance › Updates** (*Check for updates*).
+2. **TheIntroDB skip markers (on by default):** When a title plays, Ether queries `api.theintrodb.org` by TMDB ID, season/episode number, and duration for intro, recap, and credits timestamps. Turn this off under **Playback › Skip buttons & chapters** or **Integrations › TheIntroDB**.
+3. **TMDB and your configured sources:** Ether queries `api.themoviedb.org` using the API key you provide, plus the Usenet providers, debrid services, indexers, Stremio addons, and optional integrations (OpenSubtitles, Trakt, Simkl, ratings, artwork, notifications, language model) that you configure.
+4. **`plex.tv` (only when Plex is claimed and enabled):** When the Plex app is enabled and claimed, Ether contacts `plex.tv` for PIN sign-in, server and connection registration, friend/share sync, `plex.direct` TLS certificate renewal, and public IP detection when Remote Access is enabled. Optional Plex metadata (`metadata.provider.plex.tv`) and outbound watch-state scrobbling (`scrobbles.plex.tv`) are off until you enable them. Turning the **Plex** app off under **Server › Apps** stops all `plex.tv` traffic.
 </details>
 
 ---

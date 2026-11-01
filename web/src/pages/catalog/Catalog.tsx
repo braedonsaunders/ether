@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { Drawer } from "../../components/Drawer";
 import { TitleSearch } from "../../components/pickers";
@@ -21,7 +21,7 @@ import { ErrorPanel, PosterSkeletons } from "../../components/feedback";
 import { LevelBadge } from "../../components/status";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { Workspace } from "../../components/workspace";
-import { localized, t, tn } from "../../i18n";
+import { localized, t, tn, tx } from "../../i18n";
 import { api } from "../../lib/api";
 import { formatRating } from "../../lib/contentRatings";
 import { fixed, formatNumber } from "../../lib/format";
@@ -94,6 +94,7 @@ function CatalogBrowser({
   setParams: (p: URLSearchParams, options?: { replace?: boolean }) => void;
   refreshHealth: () => Promise<void>;
 }) {
+  const { dashboard } = useApp();
   const query = params.get("q") ?? "";
   const debouncedQuery = useDebouncedValue(query, 300);
   const type = ["movie", "show"].includes(params.get("type") ?? "") ? params.get("type")! : "";
@@ -155,6 +156,10 @@ function CatalogBrowser({
   const total = results.data?.total ?? 0;
   const items = results.data?.items ?? [];
   const hasFilters = Boolean(query || genre || decade || waiting);
+  const catalogStep = dashboard?.setupSteps?.find((s) => s.id === "catalog");
+  const tmdbMissing = catalogStep
+    ? !catalogStep.complete
+    : !busy && !results.error && !items.length && !hasFilters && page <= 1;
   const reset = () => {
     const next = new URLSearchParams(latestParams.current);
     ["q", "genre", "decade", "waiting", "page"].forEach((k) => next.delete(k));
@@ -333,6 +338,17 @@ function CatalogBrowser({
               />
             </div>
           </div>
+          {tmdbMissing ? (
+            <p className="mb-3 text-sm text-fg-muted">
+              {tx("No TMDB key is configured. {link} to populate the catalog.", {
+                link: (
+                  <Link to="/services/tmdb" className="font-medium text-primary underline">
+                    {t("Add a TMDB key")}
+                  </Link>
+                ),
+              })}
+            </p>
+          ) : null}
           {hasFilters ? (
             <div className="catalog-active-filters">
               {[

@@ -3,7 +3,26 @@ name: CI
 on:
   push:
     branches: [main]
+    # A tag needs CI on its exact commit, and every release commit carries
+    # release-notes/*.md, so release notes still run CI on main.
+    paths-ignore:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'UPGRADING.md'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'release-notes/**'
+      - 'LICENSE'
+
+# One run per pull request: a new push cancels the previous run. Pushes to
+# main are never cancelled, because a release waits for that exact commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

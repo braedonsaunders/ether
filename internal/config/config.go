@@ -437,6 +437,8 @@ type LLM struct {
 }
 
 type Updates struct {
+	// Enabled controls automatic release-feed checks (default true).
+	Enabled    bool   `json:"enabled"`
 	Channel    string `json:"channel"` // "stable", "beta"
 	AutoUpdate bool   `json:"autoUpdate"`
 	FeedURL    string `json:"feedUrl"`

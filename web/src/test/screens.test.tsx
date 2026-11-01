@@ -142,7 +142,8 @@ describe("Updates settings", () => {
 
   it("keeps the channel up front and tucks the window, feed and wait behind more options", async () => {
     renderApp("/maintenance/updates");
-    expect(await screen.findByLabelText("Channel", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByLabelText("Check for updates", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Channel")).toBeInTheDocument();
     expect(screen.getByLabelText("Install updates automatically")).toBeInTheDocument();
     expect(screen.queryByLabelText("Update feed")).toBeNull();
     expect(screen.queryByLabelText("Wait for playback to finish")).toBeNull();
@@ -175,6 +176,9 @@ describe("Getting started", () => {
         if (url.endsWith("/dashboard")) {
           const body = await response.json();
           body.sections.sessions = [];
+          body.setupSteps = [
+            { id: "catalog", title: "TMDB API key", complete: false, required: true },
+          ];
           return new Response(JSON.stringify(body), { status: 200 });
         }
         if (url.endsWith("/viewers")) {
@@ -188,6 +192,10 @@ describe("Getting started", () => {
       };
     });
     const steps = await screen.findByRole("region", { name: "Next steps" }, WAIT);
+    expect(within(steps).getByRole("link", { name: "Add a TMDB key" })).toHaveAttribute(
+      "href",
+      "/services/tmdb",
+    );
     expect(within(steps).getByRole("link", { name: "Add a source" })).toHaveAttribute(
       "href",
       "/sources",

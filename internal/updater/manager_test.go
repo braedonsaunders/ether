@@ -95,7 +95,7 @@ func newHarness(t *testing.T, mutate func(*ManagerOptions)) *harness {
 	h := &harness{
 		t:     t,
 		clock: &fakeClock{t: time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)},
-		cfg:   config.Updates{Channel: ChannelStable, AutoUpdate: true, MaintenanceStart: "03:00", MaintenanceEnd: "06:00"},
+		cfg:   config.Updates{Enabled: true, Channel: ChannelStable, AutoUpdate: true, MaintenanceStart: "03:00", MaintenanceEnd: "06:00"},
 		dir:   filepath.Join(root, "updates"),
 	}
 	h.target = filepath.Join(root, "bin", "ether")
@@ -319,6 +319,35 @@ func TestManagerDisabledWithoutKey(t *testing.T) {
 	}
 	if err := h.m.UpdateNow(false); !errors.Is(err, ErrUpdatesDisabled) {
 		t.Fatalf("UpdateNow err = %v", err)
+	}
+}
+
+func TestManagerDisabledBySettingsToggle(t *testing.T) {
+	h := newHarness(t, nil)
+	h.cfg.Enabled = false
+	h.run(48 * time.Hour)
+	st := h.m.Status()
+	if st.Enabled || st.Capability != CapabilityDisabled || h.checker.checks != 0 || h.checker.downloads != 0 {
+		t.Fatalf("disabled by settings ran checks: status=%+v checks=%d downloads=%d", st, h.checker.checks, h.checker.downloads)
+	}
+	if err := h.m.UpdateNow(false); !errors.Is(err, ErrUpdatesDisabled) {
+		t.Fatalf("UpdateNow while disabled = %v; want ErrUpdatesDisabled", err)
+	}
+
+	// Re-enabling checks in settings immediately checks on the next step.
+	h.cfg.Enabled = true
+	h.run(DefaultTick)
+	st = h.m.Status()
+	if !st.Enabled || st.Capability != CapabilitySelfApply || h.checker.checks != 1 {
+		t.Fatalf("re-enabled status=%+v checks=%d", st, h.checker.checks)
+	}
+
+	// Turning checks off again clears available state and stops further checks.
+	h.cfg.Enabled = false
+	h.run(48 * time.Hour)
+	st = h.m.Status()
+	if st.Enabled || st.Available != nil || h.checker.checks != 1 {
+		t.Fatalf("turned off again: status=%+v checks=%d", st, h.checker.checks)
 	}
 }
 
