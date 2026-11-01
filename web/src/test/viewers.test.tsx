@@ -52,6 +52,8 @@ const withPlexDefaults = (server: FakeServer) => {
     subtitleMode: "always",
     filterMovies: "contentRating<=PG-13",
     filterTelevision: "label!=Hidden",
+    filterMoviesParts: [{ kind: "rating-max", values: ["PG-13"] }],
+    filterTelevisionParts: [{ kind: "label-deny", values: ["Hidden"] }],
     allowSync: false,
   };
 };
@@ -169,8 +171,8 @@ describe("Viewers", () => {
   it("shows read-only plex.tv share defaults on Access", async () => {
     renderApp("/viewers/3/access", {}, withPlexDefaults);
     expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
-    expect(screen.getByText("contentRating<=PG-13")).toBeInTheDocument();
-    expect(screen.getByText("label!=Hidden")).toBeInTheDocument();
+    expect(screen.getByText("Up to PG-13")).toBeInTheDocument();
+    expect(screen.getByText("Hides collection Hidden")).toBeInTheDocument();
   });
 
   it("shows read-only plex.tv track defaults on Playback", async () => {

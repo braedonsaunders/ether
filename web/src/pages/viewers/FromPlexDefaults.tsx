@@ -4,6 +4,8 @@ import { t } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 
+export type ShareFilterPart = { kind: string; values: string[] };
+
 export type PlexViewerDefaults = {
   audioLanguage?: string;
   autoSelectAudio?: boolean;
@@ -12,9 +14,11 @@ export type PlexViewerDefaults = {
   hasProfile?: boolean;
   filterMovies?: string;
   filterTelevision?: string;
+  filterMoviesParts?: ShareFilterPart[];
+  filterTelevisionParts?: ShareFilterPart[];
   allowSync?: boolean | null;
   hasSettings?: boolean;
-  labelMap?: string;
+  labelNote?: string;
 };
 
 function modeLabel(mode: string | undefined): string {
@@ -35,6 +39,34 @@ function modeLabel(mode: string | undefined): string {
 function yesNo(v: boolean | null | undefined): string {
   if (v == null) return t("Not set");
   return v ? t("Yes") : t("No");
+}
+
+function formatPart(part: ShareFilterPart): string {
+  const list = part.values.join(", ");
+  const name = part.values[0] || "";
+  switch (part.kind) {
+    case "rating-allow":
+      return t("Ratings: {list}", { list });
+    case "rating-deny":
+      return t("Hides ratings: {list}", { list });
+    case "rating-max":
+      return t("Up to {rating}", { rating: name });
+    case "rating-min":
+      return t("From {rating}", { rating: name });
+    case "label-allow":
+      return t("Shows collection {name}", { name: list });
+    case "label-deny":
+      return t("Hides collection {name}", { name: list });
+    default:
+      return list;
+  }
+}
+
+function formatFilter(parts: ShareFilterPart[] | undefined, raw: string | undefined): string {
+  if (parts && parts.length > 0) {
+    return parts.map(formatPart).join(" · ");
+  }
+  return raw || t("None");
 }
 
 /**
@@ -76,11 +108,19 @@ export function FromPlexDefaults({
         </>
       ) : (
         <>
-          <SettingsRow title={t("Movie filter")} control={<span>{d.filterMovies || t("None")}</span>} />
-          <SettingsRow title={t("TV filter")} control={<span>{d.filterTelevision || t("None")}</span>} />
+          <SettingsRow
+            title={t("Movie filter")}
+            control={<span>{formatFilter(d.filterMoviesParts, d.filterMovies)}</span>}
+          />
+          <SettingsRow
+            title={t("TV filter")}
+            control={<span>{formatFilter(d.filterTelevisionParts, d.filterTelevision)}</span>}
+          />
           <SettingsRow title={t("Downloads")} control={<span>{yesNo(d.allowSync)}</span>} />
           <p className="px-5 py-2 text-xs text-fg-muted">
-            {t("Label filters match the TMDB collection name only.")}
+            {t(
+              "Label filters apply to the TMDB collection name only. Titles without a collection name are not hidden.",
+            )}
           </p>
         </>
       )}
