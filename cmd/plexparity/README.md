@@ -83,7 +83,8 @@ on an earlier baseline stayed approved: 417 release-date pairs (`77af603e`),
 (`2ef11dc0c`). The remaining 3081 in each world are the documented set, now
 exact pairs in `approved_v0258.json` and `approved_v0258_token.json`:
 
-- addedAt only: 1631 ordinary, 1256 active-ranker (`77af603e`).
+- addedAt only: 1631 ordinary, 1256 active-ranker, plus 15 subtitle-metadata
+  responses in each world on `5da09b358` (`77af603e`).
 - Subtitle stream identity, which also carries addedAt: 1250 and 1625
   (`14a6b0890+77af603e`).
 - Sidecar location on `tracks:probe` and `tracks:selected`: 50 and 50

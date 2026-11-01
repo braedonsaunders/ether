@@ -473,8 +473,8 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 	if err := json.Unmarshal(approvedV0258, &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 5325 {
-		t.Fatalf("got %d v0.2.58 pairs, want 5325", len(entries))
+	if len(entries) != 5355 {
+		t.Fatalf("got %d v0.2.58 pairs, want 5355", len(entries))
 	}
 	commits := map[string]int{}
 	seen := map[approvedDifference]bool{}
@@ -485,7 +485,7 @@ func TestApprovedV0258RegistriesAreExact(t *testing.T) {
 		seen[e] = true
 		commits[e.Commit]++
 	}
-	want := map[string]int{"77af603e": 2340, "14a6b0890+77af603e": 2765, "3654964cc+77af603e": 50, "feaa49f10": 10, "c82a7830+77af603e": 160}
+	want := map[string]int{"77af603e": 2370, "14a6b0890+77af603e": 2765, "3654964cc+77af603e": 50, "feaa49f10": 10, "c82a7830+77af603e": 160}
 	if !reflect.DeepEqual(commits, want) {
 		t.Fatalf("v0.2.58 commits %v", commits)
 	}

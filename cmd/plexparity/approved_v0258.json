@@ -90523,5 +90523,515 @@
       "sha256": "1a5d58ec179ed65ced891adf7e1dc202211450f45e52a6a3de9e9e97a3c6bbca"
     },
     "commit": "3654964cc+77af603e"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "6b3990e1ac9e36e697ae83637e967c9ec9bda18694fc519efa9ec2598e90123d"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "de4221c987fea58ca9b124656f37b44800f20ffaed808b7b86017df3d25744e5"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "6b3990e1ac9e36e697ae83637e967c9ec9bda18694fc519efa9ec2598e90123d"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "de4221c987fea58ca9b124656f37b44800f20ffaed808b7b86017df3d25744e5"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "6b3990e1ac9e36e697ae83637e967c9ec9bda18694fc519efa9ec2598e90123d"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "de4221c987fea58ca9b124656f37b44800f20ffaed808b7b86017df3d25744e5"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7fc5b072b0bf234d8054343eff0d65b46c7f8375fd0b1bb13ac372af2b306906"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e2d76d65e50bb7afc89f554ac31d5a0c95a25d8e88e955eccb73cc14fa55de14"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4fd3087500d881226adb620326d19553908c97d636d6b5d0b878b7eff2228c52"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "480b5788960549e4f667219a956d4f9f62f6e9bcad8667197505597cc6893984"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4fd3087500d881226adb620326d19553908c97d636d6b5d0b878b7eff2228c52"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "480b5788960549e4f667219a956d4f9f62f6e9bcad8667197505597cc6893984"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4fd3087500d881226adb620326d19553908c97d636d6b5d0b878b7eff2228c52"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "480b5788960549e4f667219a956d4f9f62f6e9bcad8667197505597cc6893984"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": true,
+    "path": "subtitle:metadata",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b1b6d1ee12a07295485d0cf86e61664b7d6cab319c68d19542650637502bee"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2250eb79f481c370c8bf3ce59286750f8d030d40c06ab39dcbb6f2c2d97e38ed"
+    },
+    "commit": "77af603e"
   }
 ]
