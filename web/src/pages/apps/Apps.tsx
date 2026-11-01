@@ -137,6 +137,28 @@ function connectionStep(code: string) {
   }
 }
 
+function viewerPortalAddress(chosen?: string): string {
+  if (chosen) {
+    try {
+      const u = new URL(chosen);
+      const prefix = u.pathname.replace(/\/(jellyfin|emby|silo)\/?$/, "");
+      if (prefix !== u.pathname) {
+        return `${u.origin}${prefix}/ether/me`;
+      }
+    } catch {
+      // ignore invalid URL
+    }
+  }
+  if (
+    typeof window !== "undefined" &&
+    window.location?.origin &&
+    window.location.origin !== "null"
+  ) {
+    return `${window.location.origin}/ether/me`;
+  }
+  return "/ether/me";
+}
+
 function ConnectDevice({
   info,
   startOpen = false,
@@ -574,27 +596,55 @@ function AppDetail({ info, startOpen = false }: { info: FrontendInfo; startOpen?
   const [selectedURL, setSelectedURL] = useState("");
   const chosen = addresses.includes(selectedURL) ? selectedURL : addresses[0];
   const away = awaySummary(info.status, { homeNetwork: true });
+  const portalURL = viewerPortalAddress(chosen);
   return (
-    <SettingsSection title={t("Status")}>
-      <HomeStatusRow status={info.status} address={chosen} />
-      <SettingsRow title={away.title} description={away.detail} />
-      {info.status.error ? (
-        <p className="px-5 py-3 text-sm text-danger">{info.status.error}</p>
+    <div className="space-y-6 pb-6">
+      <SettingsSection title={t("Status")}>
+        <HomeStatusRow status={info.status} address={chosen} />
+        <SettingsRow title={away.title} description={away.detail} />
+        {info.status.error ? (
+          <p className="px-5 py-3 text-sm text-danger">{info.status.error}</p>
+        ) : null}
+        {info.status.warnings?.map((warning) => (
+          <p key={warning} className="px-5 py-3 text-sm text-fg-muted">
+            {frontendWarning(warning)}
+          </p>
+        ))}
+        <div className="px-5 py-3">
+          <ConnectDevice
+            info={info}
+            startOpen={startOpen}
+            selectedURL={chosen}
+            onSelectedURL={setSelectedURL}
+          />
+        </div>
+      </SettingsSection>
+      {["jellyfin", "emby", "silo"].includes(info.descriptor.id) ? (
+        <SettingsSection
+          title={t("How people sign in")}
+          description={t("Infuse needs an app password. The Emby for TV app isn't supported.")}
+          footer={
+            <div className="flex flex-wrap items-center gap-3">
+              <Link className="text-sm font-medium text-primary underline" to="/profile">
+                {t("Open my account")}
+              </Link>
+              <Link className="text-sm text-fg-muted underline" to="/me">
+                {t("Viewer portal")}
+              </Link>
+            </div>
+          }
+        >
+          <SettingsRow
+            title={t("Quick Connect")}
+            description={t("Quick Connect: approve the code at {url}", { url: portalURL })}
+          />
+          <SettingsRow
+            title={t("App password")}
+            description={t("App password: from Connect apps at {url}", { url: portalURL })}
+          />
+        </SettingsSection>
       ) : null}
-      {info.status.warnings?.map((warning) => (
-        <p key={warning} className="px-5 py-3 text-sm text-fg-muted">
-          {frontendWarning(warning)}
-        </p>
-      ))}
-      <div className="px-5 py-3">
-        <ConnectDevice
-          info={info}
-          startOpen={startOpen}
-          selectedURL={chosen}
-          onSelectedURL={setSelectedURL}
-        />
-      </div>
-    </SettingsSection>
+    </div>
   );
 }
 

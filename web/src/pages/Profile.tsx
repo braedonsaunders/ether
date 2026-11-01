@@ -6,6 +6,7 @@ import { DomainPage } from "../components/layout";
 import { LevelBadge, StatusDot } from "../components/status";
 import { api, getToken } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { ConnectApps } from "./me/ConnectApps";
 import SignInMethods from "./me/SignInMethods";
 
 /** The signed-in administrator's own sign-in methods, password and devices. */
@@ -43,7 +44,10 @@ export default function Profile() {
           description={t("Finish setup to create the account that administers this server.")}
         />
       ) : (
-        <SignInMethods base={`/users/${owner.id}`} token={getToken()} owner showInvite={false} />
+        <div className="space-y-6">
+          <ConnectApps base={`/viewers/${owner.id}`} token={getToken()} />
+          <SignInMethods base={`/users/${owner.id}`} token={getToken()} owner showInvite={false} />
+        </div>
       )}
     </DomainPage>
   );

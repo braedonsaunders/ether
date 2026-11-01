@@ -118,6 +118,16 @@ describe("Apps", () => {
     expect(screen.getByText(/192\.168\.1\.2:8090/)).toBeInTheDocument();
     expect(screen.queryByText(/LAN:/)).not.toBeInTheDocument();
     expect(screen.getByText(/Outside access is not checked/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "How people sign in" })).toBeInTheDocument();
+    expect(screen.getByText(/Quick Connect: approve the code at .*\/ether\/me/)).toBeInTheDocument();
+    expect(screen.getByText(/App password: from Connect apps at .*\/ether\/me/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Infuse needs an app password. The Emby for TV app isn't supported."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open my account" })).toHaveAttribute(
+      "href",
+      "/profile",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Connect a device" }));
     expect(screen.getByText("Certified player")).toBeInTheDocument();
     expect(screen.getByText("Open the app on your device.")).toBeInTheDocument();

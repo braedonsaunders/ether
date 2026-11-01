@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -168,6 +169,78 @@ func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, s
 		}
 	}
 	return token, nil
+}
+
+// SignInWithGrant authenticates a client sign-in request that supplies an
+// app-password grant credential instead of a local password. It verifies the
+// grant is active for surface, checks that username matches the grant's viewer,
+// and binds the client device to the grant.
+func (g *Grants) SignInWithGrant(ctx context.Context, surface, username, credential string, device core.Device) (string, error) {
+	hash, ok := grantHash(credential)
+	if !ok || surface == "" {
+		return "", core.ErrUnauthorized
+	}
+	viewer, err := g.Resolve(ctx, surface, credential)
+	if err != nil || viewer == nil {
+		return "", core.ErrUnauthorized
+	}
+	if !g.viewerMatchesUsername(ctx, viewer, username) {
+		return "", core.ErrUnauthorized
+	}
+	var stored core.Device
+	err = g.db.QueryRowContext(ctx, `SELECT device_id,client,product,version FROM identity_grants WHERE hash=? AND surface=? AND revoked=0`, hash, surface).Scan(&stored.ID, &stored.Client, &stored.Product, &stored.Version)
+	if err != nil {
+		return "", core.ErrUnauthorized
+	}
+	client := device.Client
+	if client == "" {
+		client = stored.Client
+	}
+	product := device.Product
+	if product == "" {
+		product = stored.Product
+	}
+	version := device.Version
+	if version == "" {
+		version = stored.Version
+	}
+	if device.ID == "" || stored.ID == "" || stored.ID == device.ID || strings.HasPrefix(stored.ID, surface+"-") {
+		deviceID := device.ID
+		if deviceID == "" {
+			deviceID = stored.ID
+		}
+		now := g.now().UnixMilli()
+		res, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET device_id=?,client=?,product=?,version=?,last_used=?,expires=? WHERE hash=? AND surface=? AND revoked=0 AND expires>?`, deviceID, client, product, version, now, now+g.ttl.Milliseconds(), hash, surface, now)
+		if err != nil {
+			return "", err
+		}
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
+			return "", core.ErrUnauthorized
+		}
+		return credential, nil
+	}
+	return g.Issue(ctx, viewer.ID, nil, surface, core.Device{
+		ID:         device.ID,
+		DeviceName: device.DeviceName,
+		Client:     client,
+		Product:    product,
+		Version:    version,
+	})
+}
+
+func (g *Grants) viewerMatchesUsername(ctx context.Context, viewer *core.Viewer, username string) bool {
+	name := strings.TrimSpace(username)
+	if name == "" || viewer == nil {
+		return false
+	}
+	if strings.EqualFold(name, strings.TrimSpace(viewer.Username)) ||
+		strings.EqualFold(name, strings.TrimSpace(viewer.Title)) ||
+		name == strconv.FormatInt(viewer.ID, 10) {
+		return true
+	}
+	var linked bool
+	_ = g.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_links WHERE viewer_id=? AND (LOWER(subject)=LOWER(?) OR LOWER(display)=LOWER(?)))`, viewer.ID, name, name).Scan(&linked)
+	return linked
 }
 
 // Resolve rejects malformed, expired, revoked, inactive and cross-surface grants.

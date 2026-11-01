@@ -14,6 +14,21 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
+var connectableSurfaces = []string{"jellyfin", "emby", "silo", "stremio", "webdav", "m3u"}
+
+func connectAppUsername(viewer *core.Viewer) string {
+	if viewer == nil {
+		return ""
+	}
+	if u := strings.TrimSpace(viewer.Username); u != "" {
+		return u
+	}
+	if t := strings.TrimSpace(viewer.Title); t != "" {
+		return t
+	}
+	return strconv.FormatInt(viewer.ID, 10)
+}
+
 func (h *Handler) portalConnectApps(w http.ResponseWriter, r *http.Request) {
 	viewer, err := h.portalViewer(r)
 	if err != nil || viewer == nil {
@@ -53,16 +68,20 @@ func (h *Handler) connectApps(w http.ResponseWriter, r *http.Request, viewer *co
 		writeError(w, 503, "unavailable", "apps unavailable")
 		return
 	}
+	allowed := map[string]bool{}
+	for _, s := range connectableSurfaces {
+		allowed[s] = true
+	}
 	enabled := map[string]bool{}
 	for _, info := range infos {
 		id := string(info.Descriptor.ID)
-		if info.Enabled && (id == "stremio" || id == "webdav" || id == "m3u") {
+		if info.Enabled && allowed[id] {
 			enabled[id] = true
 		}
 	}
 	if r.Method == http.MethodGet {
 		out := make([]string, 0, len(enabled))
-		for _, id := range []string{"stremio", "webdav", "m3u"} {
+		for _, id := range connectableSurfaces {
 			if enabled[id] {
 				out = append(out, id)
 			}
@@ -116,6 +135,11 @@ func (h *Handler) connectApps(w http.ResponseWriter, r *http.Request, viewer *co
 	u.RawPath, u.RawQuery, u.Fragment = "", "", ""
 	result := map[string]string{"surface": surface}
 	switch surface {
+	case "jellyfin", "emby", "silo":
+		u.Path = prefix + "/" + surface
+		result["url"] = u.String()
+		result["username"] = connectAppUsername(viewer)
+		result["password"] = secret
 	case "stremio":
 		u.Path = prefix + "/stremio/" + secret + "/manifest.json"
 		result["url"] = u.String()

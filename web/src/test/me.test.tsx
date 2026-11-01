@@ -77,7 +77,54 @@ it("uses a separate portal credential to approve a device", async () => {
   expect(screen.queryByText("Favorites in Plex")).not.toBeInTheDocument();
   expect(screen.queryByText("Not interested")).not.toBeInTheDocument();
   expect(screen.queryByText("Browser push")).not.toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "Devices" })).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Sign-in methods" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Devices" })).toBeInTheDocument();
+});
+
+it("renders Connect apps and Sign-in methods for a Plex-signed-in viewer and creates an app password", async () => {
+  sessionStorage.setItem("ether.viewerPortal", "plex-portal-grant");
+  const fetchMock = portalFetch((url, init) => {
+    if (url.endsWith("/me/apps")) {
+      expect((init?.headers as Record<string, string>).Authorization).toBe(
+        "Bearer plex-portal-grant",
+      );
+      return new Response(JSON.stringify({ apps: ["jellyfin", "emby", "silo"] }));
+    }
+    if (url.endsWith("/me/apps/jellyfin") && init?.method === "POST") {
+      expect((init?.headers as Record<string, string>).Authorization).toBe(
+        "Bearer plex-portal-grant",
+      );
+      return new Response(
+        JSON.stringify({
+          surface: "jellyfin",
+          url: "https://ether.example/jellyfin",
+          username: "alice",
+          password: "ethg_app_password_secret",
+          qr: "data:image/png;base64,AA==",
+        }),
+      );
+    }
+    if (url.endsWith("/me/identities")) {
+      return new Response(
+        JSON.stringify({ identities: [{ id: 1, provider: "plex", display: "alice" }] }),
+      );
+    }
+    if (url.endsWith("/me/devices")) {
+      return new Response(JSON.stringify({ devices: [] }));
+    }
+    return undefined;
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Me />);
+  expect(await screen.findByRole("heading", { name: "Connect apps" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Sign-in methods" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Password" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Devices" })).toBeInTheDocument();
+  const buttons = await screen.findAllByRole("button", { name: "Create connection" });
+  fireEvent.click(buttons[0]!);
+  expect(await screen.findByText("https://ether.example/jellyfin")).toBeInTheDocument();
+  expect(screen.getByText("Username: alice")).toBeInTheDocument();
+  expect(screen.getByText("ethg_app_password_secret")).toBeInTheDocument();
 });
 
 it("explains a code that was already used", async () => {

@@ -94,6 +94,12 @@ func (s surfaceIdentity) SignIn(ctx context.Context, username, password string, 
 	if err := s.allow(ctx, s.login, username); err != nil {
 		return "", err
 	}
+	if core.IsGrantCredential(password) {
+		if s.grants == nil {
+			return "", core.ErrUnauthorized
+		}
+		return s.grants.SignInWithGrant(ctx, string(s.surface), username, password, device)
+	}
 	viewer, link, err := s.local.Authenticate(ctx, username, password)
 	if err != nil {
 		return "", err

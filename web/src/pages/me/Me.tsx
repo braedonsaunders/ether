@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsaunders/appkit-ui";
 import { PasswordInput, Segmented } from "../../components/fields";
 import { EtherLogo } from "../../components/brand";
+import { ConnectApps } from "./ConnectApps";
+import SignInMethods from "./SignInMethods";
 
 const SESSION_KEY = "ether.viewerPortal";
 const CODE_LENGTH = 6;
@@ -294,206 +296,216 @@ export default function Me() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-bg-subtle p-4">
-      <Card className="w-full max-w-md space-y-6 p-7 shadow-lg">
-        <EtherLogo className="mx-auto w-40" />
-        <div className="space-y-1 text-center">
-          <h1 className="text-xl font-semibold text-fg">{t("Approve a TV")}</h1>
-          {approved ? null : (
-            <p className="text-sm text-fg-muted">
-              {signedIn
-                ? t("Enter the code shown on your TV.")
-                : t("Sign in, then enter the code shown on your TV.")}
+      <div className="w-full max-w-2xl space-y-6">
+        <Card className="mx-auto w-full max-w-md space-y-6 p-7 shadow-lg">
+          <EtherLogo className="mx-auto w-40" />
+          <div className="space-y-1 text-center">
+            <h1 className="text-xl font-semibold text-fg">{t("Approve a TV")}</h1>
+            {approved ? null : (
+              <p className="text-sm text-fg-muted">
+                {signedIn
+                  ? t("Enter the code shown on your TV.")
+                  : t("Sign in, then enter the code shown on your TV.")}
+              </p>
+            )}
+          </div>
+          {error ? (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {message ? (
+            <p role="status" className="text-sm text-fg">
+              {message}
             </p>
-          )}
-        </div>
-        {error ? (
-          <Alert variant="destructive" role="alert">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-        {message ? (
-          <p role="status" className="text-sm text-fg">
-            {message}
-          </p>
-        ) : null}
-        {inviteSecret ? (
-          <Button
-            type="button"
-            className="w-full"
-            disabled={busy}
-            onClick={() => void redeemInvite()}
-          >
-            {t("Accept invite")}
-          </Button>
-        ) : null}
-        {!token ? (
-          methods == null ? (
-            <p role="status" className="text-center text-sm text-fg-muted">
-              {t("Loading…")}
-            </p>
-          ) : !localOn && !plexOn ? (
-            <p className="text-sm text-fg-muted">
-              {t("No sign-in method is available. Contact the server owner.")}
-            </p>
-          ) : (
-            <div className="space-y-5">
-              {localOn && plexOn ? (
-                <Segmented
-                  ariaLabel={t("Sign-in method")}
-                  className="flex w-full [&>button]:min-w-0 [&>button]:flex-1"
-                  value={method}
-                  onChange={setMethod}
-                  options={[
-                    { value: "plex", label: t("Sign in with Plex") },
-                    { value: "local", label: t("Username & password") },
-                  ]}
-                />
-              ) : null}
-              {method === "local" && localOn ? (
-                <form className="space-y-4" onSubmit={(e) => void login(e)}>
-                  <div className="space-y-2">
-                    <Label htmlFor="me-username">{t("Username")}</Label>
-                    <Input
-                      id="me-username"
-                      autoComplete="username"
-                      value={username}
-                      onChange={(e) => setUsername(e.currentTarget.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="me-password">{t("Password")}</Label>
-                    <PasswordInput
-                      id="me-password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.currentTarget.value)}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={busy}>
-                    {t("Sign in")}
-                  </Button>
-                </form>
-              ) : null}
-              {method === "plex" && plexOn ? (
-                <div className="space-y-3">
-                  <Button
-                    type="button"
-                    className="w-full"
-                    disabled={busy}
-                    onClick={() => void plexSignIn()}
-                  >
-                    {t("Sign in with Plex")}
-                  </Button>
-                  {pinURL ? (
-                    <p className="text-center text-sm">
-                      <a href={pinURL} target="_blank" rel="noreferrer">
-                        {t("Open Plex sign-in")}
-                      </a>
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          )
-        ) : viewer ? (
-          approved ? (
-            <div role="status" className="space-y-5 text-center">
-              <div className="ether-approve text-primary" aria-hidden="true">
-                <span className="ether-approve-ring" />
-                <span className="ether-approve-burst">
-                  {Array.from({ length: 8 }, (_, i) => (
-                    <span key={i} style={{ ["--ether-burst" as string]: `${i * 45}deg` }} />
-                  ))}
-                </span>
-                <svg viewBox="0 0 160 160" className="ether-approve-pop h-40 w-40">
-                  <circle cx="80" cy="80" r="68" className="ether-approve-glow fill-primary/15" />
-                  <path
-                    d="M46 84 L72 110 L116 54"
-                    className="ether-approve-check fill-none stroke-current"
-                    strokeWidth="10"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+          ) : null}
+          {inviteSecret ? (
+            <Button
+              type="button"
+              className="w-full"
+              disabled={busy}
+              onClick={() => void redeemInvite()}
+            >
+              {t("Accept invite")}
+            </Button>
+          ) : null}
+          {!token ? (
+            methods == null ? (
+              <p role="status" className="text-center text-sm text-fg-muted">
+                {t("Loading…")}
+              </p>
+            ) : !localOn && !plexOn ? (
+              <p className="text-sm text-fg-muted">
+                {t("No sign-in method is available. Contact the server owner.")}
+              </p>
+            ) : (
+              <div className="space-y-5">
+                {localOn && plexOn ? (
+                  <Segmented
+                    ariaLabel={t("Sign-in method")}
+                    className="flex w-full [&>button]:min-w-0 [&>button]:flex-1"
+                    value={method}
+                    onChange={setMethod}
+                    options={[
+                      { value: "plex", label: t("Sign in with Plex") },
+                      { value: "local", label: t("Username & password") },
+                    ]}
                   />
-                </svg>
+                ) : null}
+                {method === "local" && localOn ? (
+                  <form className="space-y-4" onSubmit={(e) => void login(e)}>
+                    <div className="space-y-2">
+                      <Label htmlFor="me-username">{t("Username")}</Label>
+                      <Input
+                        id="me-username"
+                        autoComplete="username"
+                        value={username}
+                        onChange={(e) => setUsername(e.currentTarget.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="me-password">{t("Password")}</Label>
+                      <PasswordInput
+                        id="me-password"
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.currentTarget.value)}
+                        required
+                      />
+                    </div>
+                    <Button type="submit" className="w-full" disabled={busy}>
+                      {t("Sign in")}
+                    </Button>
+                  </form>
+                ) : null}
+                {method === "plex" && plexOn ? (
+                  <div className="space-y-3">
+                    <Button
+                      type="button"
+                      className="w-full"
+                      disabled={busy}
+                      onClick={() => void plexSignIn()}
+                    >
+                      {t("Sign in with Plex")}
+                    </Button>
+                    {pinURL ? (
+                      <p className="text-center text-sm">
+                        <a href={pinURL} target="_blank" rel="noreferrer">
+                          {t("Open Plex sign-in")}
+                        </a>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
-              <div className="space-y-2">
-                <h2 className="text-4xl font-semibold tracking-tight text-fg">
-                  {t("Device approved")}
-                </h2>
-                {detail ? <p className="text-lg text-fg">{detail}</p> : null}
+            )
+          ) : viewer ? (
+            approved ? (
+              <div role="status" className="space-y-5 text-center">
+                <div className="ether-approve text-primary" aria-hidden="true">
+                  <span className="ether-approve-ring" />
+                  <span className="ether-approve-burst">
+                    {Array.from({ length: 8 }, (_, i) => (
+                      <span key={i} style={{ ["--ether-burst" as string]: `${i * 45}deg` }} />
+                    ))}
+                  </span>
+                  <svg viewBox="0 0 160 160" className="ether-approve-pop h-40 w-40">
+                    <circle cx="80" cy="80" r="68" className="ether-approve-glow fill-primary/15" />
+                    <path
+                      d="M46 84 L72 110 L116 54"
+                      className="ether-approve-check fill-none stroke-current"
+                      strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-4xl font-semibold tracking-tight text-fg">
+                    {t("Device approved")}
+                  </h2>
+                  {detail ? <p className="text-lg text-fg">{detail}</p> : null}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    submitted.current = "";
+                    setApproved(null);
+                    setCode("");
+                  }}
+                >
+                  {t("Approve another device")}
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  submitted.current = "";
-                  setApproved(null);
-                  setCode("");
+            ) : (
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void approve(code);
                 }}
               >
-                {t("Approve another device")}
-              </Button>
-            </div>
+                <p className="text-center text-sm text-fg-muted">
+                  {viewer.title || viewer.username}
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="me-code" className="sr-only">
+                    {t("Enter the code shown on your TV")}
+                  </Label>
+                  <Input
+                    ref={codeRef}
+                    id="me-code"
+                    value={code}
+                    onChange={(e) => onCode(e.currentTarget.value)}
+                    autoFocus
+                    autoComplete="one-time-code"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    inputMode="text"
+                    aria-label={t("Enter the code shown on your TV")}
+                    className="h-16 text-center font-mono text-3xl tracking-[0.3em] uppercase"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={busy || code.length !== CODE_LENGTH}
+                >
+                  {t("Approve device")}
+                </Button>
+              </form>
+            )
           ) : (
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void approve(code);
+            <p role="status">{t("Loading…")}</p>
+          )}
+          {token ? (
+            <Button
+              variant="ghost"
+              type="button"
+              className="w-full"
+              onClick={() => {
+                sessionStorage.removeItem(SESSION_KEY);
+                setToken("");
+                setViewer(null);
+                setApproved(null);
+                setMessage("");
+                setCode("");
               }}
             >
-              <p className="text-center text-sm text-fg-muted">{viewer.title || viewer.username}</p>
-              <div className="space-y-2">
-                <Label htmlFor="me-code" className="sr-only">
-                  {t("Enter the code shown on your TV")}
-                </Label>
-                <Input
-                  ref={codeRef}
-                  id="me-code"
-                  value={code}
-                  onChange={(e) => onCode(e.currentTarget.value)}
-                  autoFocus
-                  autoComplete="one-time-code"
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  inputMode="text"
-                  aria-label={t("Enter the code shown on your TV")}
-                  className="h-16 text-center font-mono text-3xl tracking-[0.3em] uppercase"
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={busy || code.length !== CODE_LENGTH}
-              >
-                {t("Approve device")}
-              </Button>
-            </form>
-          )
-        ) : (
-          <p role="status">{t("Loading…")}</p>
-        )}
-        {token ? (
-          <Button
-            variant="ghost"
-            type="button"
-            className="w-full"
-            onClick={() => {
-              sessionStorage.removeItem(SESSION_KEY);
-              setToken("");
-              setViewer(null);
-              setApproved(null);
-              setMessage("");
-              setCode("");
-            }}
-          >
-            {t("Sign out")}
-          </Button>
+              {t("Sign out")}
+            </Button>
+          ) : null}
+        </Card>
+        {signedIn ? (
+          <>
+            <ConnectApps base="/me" token={token} />
+            <SignInMethods base="/me" token={token} />
+          </>
         ) : null}
-      </Card>
+      </div>
     </main>
   );
 }

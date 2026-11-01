@@ -1972,7 +1972,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
 
     const appsOffset = seg[0] === "me" ? 1 : seg[0] === "viewers" && seg[1] ? 2 : -1;
     if (appsOffset >= 0 && seg[appsOffset] === "apps") {
-      const enabled = ["stremio", "webdav", "m3u"].filter(
+      const enabled = ["jellyfin", "emby", "silo", "stremio", "webdav", "m3u"].filter(
         (id) => state.config.frontends?.[id]?.enabled,
       );
       if (method === "GET" && seg.length === appsOffset + 1) return json({ apps: enabled });
@@ -1989,6 +1989,16 @@ export function createFakeServer(opts: FakeOptions = {}) {
             password: "mock-app-password",
             qr,
           });
+        if (surface === "jellyfin" || surface === "emby" || surface === "silo") {
+          const viewer = state.users.find((u) => String(u.id) === id) ?? state.users[0];
+          return json({
+            surface,
+            url: `http://ether.local/${surface}`,
+            username: viewer?.username || id,
+            password: "mock-app-password",
+            qr,
+          });
+        }
         const path =
           surface === "m3u" ? "m3u/mock-grant/playlist.m3u" : "stremio/mock-grant/manifest.json";
         return json({ surface, url: `http://ether.local/${path}`, qr });

@@ -383,3 +383,59 @@ func TestDeviceIdentityBindsSurfaceAndRejectsPlex(t *testing.T) {
 		t.Fatalf("Plex stored binding: %v", err)
 	}
 }
+
+func TestSurfaceIdentityAppPasswordSignInOnJellyfinEmbySilo(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := frontend.WithClientIP(context.Background(), netip.MustParseAddr("192.0.2.55"))
+	if _, err := a.db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,username,title,created_at,updated_at,active) VALUES(88,888,'plex-only','Plex Only',0,0,1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	local, err := identity.NewLocal(a.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(a.db, a.users, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := identity.NewResolver(a.users, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := identity.NewLoginLimiter(a.db, time.Minute, 100, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poll, err := identity.NewPollLimiter(a.db, time.Minute, 100, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, proto := range []frontend.Protocol{"jellyfin", "emby", "silo"} {
+		surface := string(proto)
+		s := surfaceIdentity{surface: proto, resolver: resolver, local: local, grants: grants, login: login, poll: poll}
+		appPassword, err := grants.Issue(ctx, 88, nil, surface, core.Device{ID: surface + "-minted", Client: surface, Product: surface})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.SignIn(ctx, "wrong-user", appPassword, core.Device{ID: "infuse-1"}); !errors.Is(err, core.ErrUnauthorized) {
+			t.Fatalf("%s accepted wrong username: %v", surface, err)
+		}
+		dev := core.Device{ID: "infuse-" + surface, Client: "Infuse", Product: "Apple TV", Version: "8.1"}
+		tok, err := s.SignIn(ctx, "plex-only", appPassword, dev)
+		if err != nil {
+			t.Fatalf("%s sign-in failed: %v", surface, err)
+		}
+		viewer, bound, _, err := s.ResolveGrantDevice(ctx, tok, dev.ID)
+		if err != nil || viewer.ID != 88 || bound.ID != dev.ID || bound.Client != "Infuse" {
+			t.Fatalf("%s resolve device: viewer=%+v bound=%+v err=%v", surface, viewer, bound, err)
+		}
+		if proto == "silo" {
+			if _, err := s.IssueRefresh(ctx, tok, dev); err != nil {
+				t.Fatalf("silo refresh issue: %v", err)
+			}
+		}
+	}
+}

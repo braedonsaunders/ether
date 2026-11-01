@@ -9,7 +9,14 @@ type Connection = {
   password?: string;
   qr: string;
 };
-const names: Record<string, string> = { stremio: "Stremio", webdav: "WebDAV", m3u: "M3U" };
+const names: Record<string, string> = {
+  jellyfin: "Jellyfin",
+  emby: "Emby",
+  silo: "Silo",
+  stremio: "Stremio",
+  webdav: "WebDAV",
+  m3u: "M3U",
+};
 
 export function ConnectApps(props: { base: string; token: string }) {
   // A secret belongs to one viewer, even if a mint finishes after navigation.
@@ -66,7 +73,12 @@ function ConnectAppsSession({ base, token }: { base: string; token: string }) {
   if (!apps.length && !error) return null;
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold">{t("Connect an app")}</h2>
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">{t("Connect apps")}</h2>
+        <p className="text-sm text-fg-muted">
+          {t("Server address and app password for Infuse, Swiftfin, and other apps.")}
+        </p>
+      </div>
       {apps
         .filter((id) => names[id])
         .map((id) => (

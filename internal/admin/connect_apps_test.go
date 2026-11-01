@@ -23,6 +23,27 @@ func (connectFrontends) List(context.Context) ([]admin.FrontendInfo, error) {
 	return []admin.FrontendInfo{{Descriptor: frontend.Descriptor{ID: "stremio"}, Enabled: true}, {Descriptor: frontend.Descriptor{ID: "webdav"}, Enabled: false}}, nil
 }
 
+type allConnectFrontends struct{}
+
+func (allConnectFrontends) List(context.Context) ([]admin.FrontendInfo, error) {
+	return []admin.FrontendInfo{
+		{Descriptor: frontend.Descriptor{ID: "plex"}, Enabled: true},
+		{Descriptor: frontend.Descriptor{ID: "jellyfin"}, Enabled: true},
+		{Descriptor: frontend.Descriptor{ID: "emby"}, Enabled: true},
+		{Descriptor: frontend.Descriptor{ID: "silo"}, Enabled: true},
+		{Descriptor: frontend.Descriptor{ID: "stremio"}, Enabled: true},
+		{Descriptor: frontend.Descriptor{ID: "webdav"}, Enabled: true},
+		{Descriptor: frontend.Descriptor{ID: "m3u"}, Enabled: true},
+	}, nil
+}
+func (allConnectFrontends) Settings(context.Context, frontend.Protocol) (frontend.Settings, error) {
+	return nil, nil
+}
+func (allConnectFrontends) PutSettings(context.Context, frontend.Protocol, frontend.Settings) error {
+	return nil
+}
+func (allConnectFrontends) Toggle(context.Context, frontend.Protocol, bool) error { return nil }
+
 func TestConnectAppsFailsBeforeMintingWhenHTTPSUnavailable(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
@@ -173,5 +194,81 @@ func TestConnectAppsGrantScopeAndAuthorization(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("inactive viewer: %d", res.StatusCode)
+	}
+}
+
+func TestConnectAppsPlexViewerWithoutLocalPasswordMintsJellyfinEmbySilo(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	users, err := auth.New(ctx, db, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,username,title,created_at,updated_at,active) VALUES(77,777,'plexviewer','Plex Viewer',0,0,1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(db, users, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portal, err := grants.Issue(ctx, 77, nil, "viewer-portal", core.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := admin.New(admin.Deps{
+		Config:         newStore(t, nil),
+		IdentityGrants: grants,
+		Frontends:      allConnectFrontends{},
+		ActiveViewer:   users.ActiveUser,
+		ViewerPortalURL: func(context.Context, *http.Request) (string, error) {
+			return "https://ether.example/ether/me", nil
+		},
+		StremioPortalURL: func(context.Context, *http.Request) (string, error) {
+			return "https://ether.example/ether/me", nil
+		},
+	})
+	do := func(method, path string) *http.Response {
+		r := req(method, path, "")
+		r.Header.Set("Authorization", "Bearer "+portal)
+		return serve(h, r).Result()
+	}
+	res := do("GET", "/ether/api/me/apps")
+	var listing struct {
+		Apps []string `json:"apps"`
+	}
+	_ = json.NewDecoder(res.Body).Decode(&listing)
+	res.Body.Close()
+	wantApps := []string{"jellyfin", "emby", "silo", "stremio", "webdav", "m3u"}
+	if res.StatusCode != 200 || strings.Join(listing.Apps, ",") != strings.Join(wantApps, ",") {
+		t.Fatalf("listing: %d %+v", res.StatusCode, listing.Apps)
+	}
+	for _, surface := range []string{"jellyfin", "emby", "silo"} {
+		res = do("POST", "/ether/api/me/apps/"+surface)
+		var created struct {
+			Surface  string `json:"surface"`
+			URL      string `json:"url"`
+			Username string `json:"username"`
+			Password string `json:"password"`
+			QR       string `json:"qr"`
+		}
+		_ = json.NewDecoder(res.Body).Decode(&created)
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("%s status: %d", surface, res.StatusCode)
+		}
+		if created.Surface != surface || created.URL != "https://ether.example/"+surface || created.Username != "plexviewer" || !core.IsGrantCredential(created.Password) || !strings.HasPrefix(created.QR, "data:image/png;base64,") {
+			t.Fatalf("%s created: %+v", surface, created)
+		}
+		tok, err := grants.SignInWithGrant(ctx, surface, created.Username, created.Password, core.Device{ID: "infuse-tv", Client: "Infuse", Product: "Apple TV", Version: "8.0"})
+		if err != nil || tok != created.Password {
+			t.Fatalf("%s sign-in with grant: tok=%q err=%v", surface, tok, err)
+		}
+		viewer, dev, _, err := grants.ResolveGrantDevice(ctx, surface, tok, "infuse-tv")
+		if err != nil || viewer.ID != 77 || dev.ID != "infuse-tv" || dev.Client != "Infuse" {
+			t.Fatalf("%s resolve device: viewer=%+v dev=%+v err=%v", surface, viewer, dev, err)
+		}
 	}
 }
