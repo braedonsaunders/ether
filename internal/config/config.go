@@ -626,13 +626,14 @@ func Open(dataDir string) (*Store, error) {
 		if s.cfg, dropped, err = decodeOverDefaults(s.cfg, plain); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", s.path, err)
 		}
+		upgraded := upgradeShippedQuality(&s.cfg)
 		// A configuration already upgraded to v2 credentials stays v2.
 		s.bound.Store(stats.strict)
 		s.localBound.Store(stats.strict)
 		// Seal secrets written in plaintext (by hand, or by a release that
 		// predates sealing). Also rewrite a file that still names a server
 		// per app.
-		if dropped || stats.plaintext > 0 || !ContainsSealed(b) {
+		if dropped || upgraded || stats.plaintext > 0 || !ContainsSealed(b) {
 			if err := s.save(); err != nil {
 				return nil, err
 			}

@@ -552,7 +552,7 @@ function ProfileList({
     const isExisting = index < profiles.length;
     setDefaultFor({
       home: isExisting ? quality.default === draft.name : profiles.length === 0,
-      away: isExisting ? quality.remote === draft.name : profiles.length === 0,
+      away: isExisting && quality.remote === draft.name,
     });
     setSourcePref(resolver?.sourcePreference || "auto");
     setScoring(scoringText(resolver, draft));
@@ -611,18 +611,20 @@ function ProfileList({
       nextDefault = fallbackOther;
     }
 
+    // Away is optional: with no Away profile, people away from home get
+    // the At home one.
     let nextRemote = quality.remote === renamed ? draft.name : quality.remote;
     if (defaultFor.away) {
       nextRemote = draft.name;
     } else if (old && quality.remote === old.name) {
-      nextRemote = fallbackOther;
+      nextRemote = "";
     }
 
     const next: Quality = {
       ...quality,
       profiles: list,
       default: nextDefault || draft.name,
-      remote: nextRemote || draft.name,
+      remote: nextRemote ?? "",
       rules: renamed
         ? rules.map((r) => (r.profile === renamed ? { ...r, profile: draft.name } : r))
         : rules,
@@ -666,7 +668,7 @@ function ProfileList({
     const rest = profiles.filter((_, j) => j !== index);
     const fallback = rest[0]?.name ?? "";
     const usedBy = rules.filter((r) => r.profile === name).length;
-    const moves = [quality.default, quality.remote].includes(name);
+    const moves = quality.default === name;
     const consequences = [
       name ? t("{name} will be removed.", { name }) : t("This profile will be removed."),
       usedBy
@@ -698,7 +700,7 @@ function ProfileList({
           profiles: rest,
           rules: rules.filter((r) => r.profile !== name),
           default: quality.default === name ? fallback : quality.default,
-          remote: quality.remote === name ? fallback : quality.remote,
+          remote: quality.remote === name ? "" : quality.remote,
         },
         t("Profile removed"),
       );
@@ -800,7 +802,9 @@ function ProfileList({
               />
               <SettingsRow
                 title={t("Default for")}
-                description={t("Used when no device rule matches.")}
+                description={t(
+                  "Used when no device rule matches. With no profile for Away, people away from home get the At home profile.",
+                )}
                 control={
                   <ChipGroup
                     ariaLabel={t("Default for")}
