@@ -223,6 +223,9 @@ type Deps struct {
 	// CatalogHelper backs /api/catalog/*.
 	CatalogHelper     CatalogHelper
 	CatalogVisibility func(context.Context, []core.LibraryExclusion, string) (any, error)
+	// WaitingReleaseKeys are in-window movies still hidden from viewers.
+	// Nil leaves the waiting catalog filter empty.
+	WaitingReleaseKeys func(context.Context) []core.RatingKey
 	// Images backs the TMDB image proxy at /api/image.
 	Images ImageProxy
 

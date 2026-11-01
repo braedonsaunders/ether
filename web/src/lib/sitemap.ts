@@ -119,7 +119,7 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "settings",
         title: t("Catalog settings"),
-        keywords: searchTerms(msg("tmdb language region popularity")),
+        keywords: searchTerms(msg("tmdb language region popularity new releases playable digital")),
       },
     ],
     keywords: searchTerms(msg("catalogue movies shows browse search library")),
@@ -179,13 +179,6 @@ export const PAGES = localized<PageDef[]>(() => [
           msg(
             "real-debrid realdebrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent cached",
           ),
-        ),
-      },
-      {
-        key: "availability",
-        title: t("New releases"),
-        keywords: searchTerms(
-          msg("new releases movies playable theatres quality indexer budget search memory"),
         ),
       },
       {

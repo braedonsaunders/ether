@@ -109,7 +109,8 @@ function err(status: number, code: string, message: string): Response {
 function defaultConfig(): EtherConfig {
   return {
     availability: {
-      monitor: false,
+      mode: "playable",
+      monitor: true,
       verify: false,
       preferVerified: true,
       newlyAvailable: true,
@@ -2135,6 +2136,12 @@ export function createFakeServer(opts: FakeOptions = {}) {
         ]);
       case "GET /availability/title/1":
         return json({ code: "playable" });
+      case "GET /availability/summary":
+        return json({
+          ready: 12,
+          waiting: 34,
+          lastChecked: Math.floor(Date.now() / 1000) - 300,
+        });
       case "GET /availability":
         return json({
           mode: state.config.availability?.verify
@@ -2722,11 +2729,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const type = q.get("type");
         const genre = q.get("genre");
         const decade = q.get("decade");
+        const waiting = q.get("waiting") === "1";
         const sort = q.get("sort");
         const items = catalog.filter(
           (t) =>
             t.title.toLowerCase().includes(needle) &&
             (!type || t.type === type) &&
+            (!waiting || t.type === "movie") &&
             (!genre || t.genres?.includes(genre)) &&
             (!decade || decadeOf(t.year) === decade),
         );

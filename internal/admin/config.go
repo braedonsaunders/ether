@@ -87,6 +87,7 @@ func (h *Handler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		writeValidationError(w, perrs)
 		return
 	}
+	next.Availability.ApplyMode()
 	next.SetCachePolicy(next.Cache)
 	errs, err := h.saveConfig(next)
 	switch {
@@ -178,6 +179,9 @@ func (h *Handler) handlePutSection(w http.ResponseWriter, r *http.Request) {
 	if len(perrs) > 0 {
 		writeValidationError(w, perrs)
 		return
+	}
+	if field == "availability" {
+		next.Availability.ApplyMode()
 	}
 	if field == "cache" {
 		next.SetCachePolicy(next.Cache)

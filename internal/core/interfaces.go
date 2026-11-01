@@ -25,6 +25,9 @@ type Filter struct {
 	KnownAddedDate bool `json:"-"` // only released/aired titles, before pagination
 	// ExcludeKeys applies local visibility policy before counting and pagination.
 	ExcludeKeys []RatingKey `json:"-"`
+	// IncludeKeys, when set, restricts the page to these keys before
+	// counting and pagination. An empty list matches nothing.
+	IncludeKeys []RatingKey `json:"-"`
 	// ExcludeGenres and ExcludeKeywords remove viewer-blocked facts before
 	// counting and pagination. Matching is case-insensitive.
 	ExcludeGenres    []string      `json:"-"`

@@ -99,6 +99,7 @@ function CatalogBrowser({
   const type = ["movie", "show"].includes(params.get("type") ?? "") ? params.get("type")! : "";
   const genre = params.get("genre") ?? "";
   const decade = params.get("decade") ?? "";
+  const waiting = params.get("waiting") === "1";
   const sort = SORTS.some((s) => s.value === params.get("sort"))
     ? params.get("sort")!
     : "popularity";
@@ -134,13 +135,14 @@ function CatalogBrowser({
           type,
           genre,
           decade,
+          waiting: waiting ? "1" : "",
           sort,
           offset: (page - 1) * PAGE_SIZE,
           limit: PAGE_SIZE,
         },
         signal,
       ),
-    [debouncedQuery, type, genre, decade, sort, page],
+    [debouncedQuery, type, genre, decade, waiting, sort, page],
   );
   const facets = useAsync(async () => {
     const [genres, decades] = await Promise.all([
@@ -152,10 +154,10 @@ function CatalogBrowser({
   const busy = results.loading || query !== debouncedQuery;
   const total = results.data?.total ?? 0;
   const items = results.data?.items ?? [];
-  const hasFilters = Boolean(query || genre || decade);
+  const hasFilters = Boolean(query || genre || decade || waiting);
   const reset = () => {
     const next = new URLSearchParams(latestParams.current);
-    ["q", "genre", "decade", "page"].forEach((k) => next.delete(k));
+    ["q", "genre", "decade", "waiting", "page"].forEach((k) => next.delete(k));
     latestParams.current = next;
     setParams(next);
   };
@@ -252,6 +254,16 @@ function CatalogBrowser({
             />
           </div>
           <div className="catalog-filter-field">
+            <button
+              type="button"
+              className={`catalog-waiting-chip${waiting ? " is-on" : ""}`}
+              aria-pressed={waiting}
+              onClick={() => update("waiting", waiting ? "" : "1")}
+            >
+              {t("Waiting for a release")}
+            </button>
+          </div>
+          <div className="catalog-filter-field">
             <span className="catalog-field-label">{t("Decade")}</span>
             <ToolbarPicker
               className="w-full justify-between"
@@ -282,13 +294,15 @@ function CatalogBrowser({
           <div className="catalog-results-head">
             <div>
               <h3>
-                {query
-                  ? t("Results for “{query}”", { query })
-                  : type === "movie"
-                    ? t("Movies")
-                    : type === "show"
-                      ? t("TV shows")
-                      : t("Movies & TV shows")}
+                {waiting
+                  ? t("Waiting for a release")
+                  : query
+                    ? t("Results for “{query}”", { query })
+                    : type === "movie"
+                      ? t("Movies")
+                      : type === "show"
+                        ? t("TV shows")
+                        : t("Movies & TV shows")}
               </h3>
               <p role="status">
                 {busy
@@ -325,6 +339,7 @@ function CatalogBrowser({
                 ["q", query],
                 ["genre", genre],
                 ["decade", decade ? t("{decade}s", { decade }) : ""],
+                ["waiting", waiting ? t("Waiting for a release") : ""],
               ]
                 .filter(([, v]) => v)
                 .map(([key, label]) => (

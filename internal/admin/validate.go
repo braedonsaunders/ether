@@ -99,6 +99,11 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	default:
 		v.add("availability.effort", "must be gentle, normal, unlimited, or custom")
 	}
+	switch a.Mode {
+	case "", config.ModePlayable, config.ModeDigital, config.ModeImmediate:
+	default:
+		v.add("availability.mode", "must be playable, digital, or immediate")
+	}
 
 	if cfg.SharedCache != nil {
 		shared := cfg

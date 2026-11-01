@@ -405,7 +405,7 @@ export const PLAY_VERSIONS: FieldGroup[] = localized(() => [
   },
 ]);
 
-/** Engine search memory. Edited under More options on Sources → New releases. */
+/** Engine search memory. Edited under More options on Releases → Quality. */
 export const RELEASE_SEARCH: FieldGroup[] = localized(() => [
   {
     title: t("How Ether searches"),

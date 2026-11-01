@@ -45,6 +45,17 @@ func (h *Handler) handleCatalogBrowse(w http.ResponseWriter, r *http.Request) {
 	if genre := p.Get("genre"); genre != "" {
 		q.Filter.Genres = []string{genre}
 	}
+	if waiting := p.Get("waiting"); waiting == "1" || waiting == "true" {
+		q.Filter.Type = core.TypeMovie
+		if h.deps.WaitingReleaseKeys != nil {
+			q.Filter.IncludeKeys = h.deps.WaitingReleaseKeys(r.Context())
+			if q.Filter.IncludeKeys == nil {
+				q.Filter.IncludeKeys = []core.RatingKey{}
+			}
+		} else {
+			q.Filter.IncludeKeys = []core.RatingKey{}
+		}
+	}
 	if decade := p.Get("decade"); decade != "" {
 		year, err := strconv.Atoi(decade)
 		if err != nil || year < 1800 || year > 2200 || year%10 != 0 {

@@ -35,7 +35,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	}
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
-	ckey := fmt.Sprintf("%+v", q.Filter)
+	ckey := browseFilterKey(q.Filter)
 	bkey := fmt.Sprintf("%s|%s|%v|%d|%d|%v", ckey, q.Sort, q.Desc, offset, limit, q.NoTotal)
 	c.cacheMu.RLock()
 	if ent, ok := c.browseCache[bkey]; ok && ent.gen == gen && ent.minute == minBucket {
@@ -288,6 +288,19 @@ func (c *Catalog) LibraryPosters(ctx context.Context, typ core.MediaType, limit 
 	return out, rows.Err()
 }
 
+// browseFilterKey distinguishes a nil IncludeKeys (no restriction) from an
+// empty list (match nothing). fmt %+v prints both as [].
+func browseFilterKey(f core.Filter) string {
+	key := fmt.Sprintf("%+v", f)
+	if f.IncludeKeys != nil {
+		key += "|include"
+		for _, k := range f.IncludeKeys {
+			key += fmt.Sprintf(",%d", k)
+		}
+	}
+	return key
+}
+
 // Browse filters share one SQL statement; their combined parameters remain subject
 // to the database's statement-wide variable limit.
 func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
@@ -308,9 +321,19 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		conds = append(conds, "NOT ("+q+")")
 		args = append(args, a...)
 	}
-	if c.config().GateMoviesByHomeRelease {
+	if c.config().GateMoviesByHomeRelease && f.IncludeKeys == nil {
 		conds = append(conds, homeReleaseSQL("t"))
 		args = append(args, c.now().Unix(), c.now().Unix()-int64(homeReleaseGrace.Seconds()))
+	}
+	if f.IncludeKeys != nil {
+		if len(f.IncludeKeys) == 0 {
+			conds = append(conds, "1=0")
+		} else {
+			conds = append(conds, "t.key IN ("+placeholders(len(f.IncludeKeys))+")")
+			for _, k := range f.IncludeKeys {
+				args = append(args, k)
+			}
+		}
 	}
 	if len(f.ExcludeKeys) > 0 {
 		conds = append(conds, "t.key NOT IN ("+placeholders(len(f.ExcludeKeys))+")")

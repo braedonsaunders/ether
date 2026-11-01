@@ -15,6 +15,9 @@ type availabilityCatalog struct {
 }
 
 func (c *availabilityCatalog) excludeHidden(ctx context.Context, f core.Filter) core.Filter {
+	if f.IncludeKeys != nil {
+		return f
+	}
 	f.ExcludeKeys = append(append([]core.RatingKey{}, f.ExcludeKeys...), c.availability.HiddenMovies(ctx)...)
 	f.ExcludeKeys = append(f.ExcludeKeys, c.availability.HiddenShows(ctx)...)
 	return f

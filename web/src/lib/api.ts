@@ -438,6 +438,7 @@ export const api = {
       type?: string;
       genre?: string;
       decade?: string;
+      waiting?: string;
       sort?: string;
       offset?: number;
       limit?: number;

@@ -173,6 +173,30 @@ func TestAvailabilityCatalogFirstCharacterMatchesBrowse(t *testing.T) {
 		t.Fatalf("sum of firstCharacter counts (%d) != Browse total (%d)", offset, page.Total)
 	}
 
+	hidden := a.HiddenMovies(ctx)
+	if len(hidden) == 0 {
+		t.Fatal("expected hidden recent movies")
+	}
+	waiting, err := wrapped.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, IncludeKeys: hidden}, Sort: core.SortTitle, Limit: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if waiting.Total != len(hidden) {
+		t.Fatalf("waiting page %d, hidden %d", waiting.Total, len(hidden))
+	}
+	for _, item := range waiting.Items {
+		found := false
+		for _, k := range hidden {
+			if item.Key == k {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("waiting page included visible %q", item.Title)
+		}
+	}
+
 	t.Run("LabCatalogReadOnly", func(t *testing.T) {
 		const labPath = "/Users/braedonsaunders/.bb/thread-storage/thr_sm7nri5zya/local-prism/data/ether.db"
 		if _, err := os.Stat(labPath); err != nil {

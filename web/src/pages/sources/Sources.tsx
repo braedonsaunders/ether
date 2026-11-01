@@ -10,7 +10,6 @@ import { DebridSources } from "./Debrid";
 import { HealthStrip } from "./form";
 import { IndexerList } from "./Indexers";
 import { UsenetProviders } from "./Usenet";
-import { Availability } from "./Availability";
 import { SourceUsage } from "./Usage";
 import { AddSourceGallery, type GalleryChoice } from "./cards";
 import type { DebridKind } from "../../lib/types";
@@ -19,7 +18,6 @@ const TABS = localized(
   () =>
     [
       { key: "yours", label: t("Your sources") },
-      { key: "availability", label: t("New releases") },
       { key: "stats", label: t("Stats") },
     ] as const,
 );
@@ -115,7 +113,6 @@ export default function Sources() {
           ) : null}
         </>
       ) : null}
-      {top === "availability" ? <Availability /> : null}
       {top === "stats" ? <SourceUsage /> : null}
       <AddSourceGallery open={gallery} onClose={() => setGallery(false)} onPick={pick} />
       <Drawer

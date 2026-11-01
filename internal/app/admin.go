@@ -178,7 +178,13 @@ func (a *App) buildAdmin() http.Handler {
 		ViewerDirectory: a.viewerDirectory,
 		Personalization: a.personalize,
 		Collections:     a.collections,
-		CatalogHelper:   a.collections,
+		CatalogHelper: a.collections,
+		WaitingReleaseKeys: func(ctx context.Context) []core.RatingKey {
+			if a.availability == nil {
+				return nil
+			}
+			return a.availability.HiddenMovies(ctx)
+		},
 		CatalogVisibility: func(ctx context.Context, specs []core.LibraryExclusion, fallback string) (any, error) {
 			return a.catalog.PreviewVisibilityPolicy(ctx, specs, fallback)
 		},

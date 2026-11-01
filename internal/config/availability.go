@@ -30,6 +30,9 @@ type Availability struct {
 	// show a movie before a playable file has been seen. Theatrical dates
 	// never count.
 	DigitalDateEvidence bool `json:"digitalDateEvidence,omitempty"`
+	// Mode is playable, digital, or immediate. Empty is derived from the
+	// gate and date flags so existing configs keep working.
+	Mode string `json:"mode,omitempty"`
 }
 
 // IndexerCap is one indexer's own limit. DailyLimit 0 means the indexer
@@ -42,7 +45,53 @@ type IndexerCap struct {
 }
 
 func DefaultAvailability() Availability {
-	return Availability{Monitor: true, PollMinutes: 15, MaxPages: 5, FeedRequests: 400, CheckRequests: 100, Grabs: 20, Checks: 20, CheckBytes: 512 << 20, ReservePercent: 80, Debrid: true, PreferVerified: true, NewlyAvailable: true}
+	return Availability{Monitor: true, PollMinutes: 15, MaxPages: 5, FeedRequests: 400, CheckRequests: 100, Grabs: 20, Checks: 20, CheckBytes: 512 << 20, ReservePercent: 80, Debrid: true, PreferVerified: true, NewlyAvailable: true, Mode: ModePlayable}
+}
+
+const (
+	ModePlayable  = "playable"
+	ModeDigital   = "digital"
+	ModeImmediate = "immediate"
+)
+
+// EffectiveMode maps stored flags onto the three owner modes. The shipped
+// default (gate on, no digital-date shortcut) is "When they can play".
+func (a Availability) EffectiveMode() string {
+	switch a.Mode {
+	case ModePlayable, ModeDigital, ModeImmediate:
+		return a.Mode
+	}
+	if a.DisableMovieEvidenceGate {
+		return ModeImmediate
+	}
+	if a.DigitalDateEvidence {
+		return ModeDigital
+	}
+	return ModePlayable
+}
+
+// ApplyMode writes the engine flags for EffectiveMode. Gentle/Unlimited
+// presets become the self-tuned normal budget unless the owner set a ceiling.
+func (a *Availability) ApplyMode() {
+	mode := a.EffectiveMode()
+	a.Mode = mode
+	switch mode {
+	case ModeDigital:
+		a.Monitor = false
+		a.DisableMovieEvidenceGate = false
+		a.DigitalDateEvidence = true
+	case ModeImmediate:
+		a.Monitor = false
+		a.DisableMovieEvidenceGate = true
+		a.DigitalDateEvidence = false
+	default:
+		a.Monitor = true
+		a.DisableMovieEvidenceGate = false
+		a.DigitalDateEvidence = false
+	}
+	if a.Effort == "gentle" || a.Effort == "unlimited" {
+		a.Effort = "normal"
+	}
 }
 
 // EffectiveMovieEvidenceDays preserves legacy configurations.

@@ -81,6 +81,22 @@ describe("Catalog workspace", () => {
       gateMoviesByHomeRelease: true,
       showUpcomingEpisodes: true,
     });
+    expect(screen.getByRole("radio", { name: /When they can play/ })).toBeVisible();
+  });
+
+  it("filters the catalog to titles waiting for a release", async () => {
+    const { fake } = renderAppWith("/catalog?waiting=1", (_method, path) => {
+      if (path === "/catalog/browse") return { items: [title], total: 1 };
+    });
+    expect(await screen.findByRole("heading", { name: "Waiting for a release" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Waiting for a release", pressed: true }),
+    ).toBeVisible();
+    expect(calls(fake, "GET", "/catalog/browse").at(-1)?.path).toContain("waiting=1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Waiting for a release filter" }));
+    await waitFor(() =>
+      expect(calls(fake, "GET", "/catalog/browse").at(-1)?.path).not.toContain("waiting=1"),
+    );
   });
 
   it("shows errors with retry and provides an empty-result reset", async () => {

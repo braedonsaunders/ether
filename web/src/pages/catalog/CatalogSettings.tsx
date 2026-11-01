@@ -12,11 +12,17 @@ import { isRuleComplete } from "../../lib/rules";
 import { asObj, SchemaField, type FieldGroup } from "../settings/SchemaForm";
 import { CatalogPickers, isCatalogPicker } from "./CatalogPickers";
 import { CATALOG } from "../settings/schema";
-import { HomeReleaseSettings, HomeReleaseStatus, UpcomingEpisodeSettings } from "./HomeReleaseSettings";
+import {
+  HomeReleaseSettings,
+  HomeReleaseStatus,
+  UpcomingEpisodeSettings,
+} from "./HomeReleaseSettings";
+import { NewReleasesSettings } from "./NewReleasesSettings";
 import { RulesPanel, type VisibilityRule } from "./LibraryVisibility";
 import { TrendingStatus } from "./TrendingStatus";
 import { LevelBadge } from "../../components/status";
 import { SettingsRow } from "../../components/SettingsRow";
+import "./catalog.css";
 
 type Obj = Record<string, unknown>;
 
@@ -48,7 +54,9 @@ function briefGroup(g: FieldGroup): FieldGroup {
     ...g,
     description: undefined,
     fields: g.fields.map((f) =>
-      "help" in f && typeof f.help === "string" && f.help.length > 90 ? { ...f, help: undefined } : f,
+      "help" in f && typeof f.help === "string" && f.help.length > 90
+        ? { ...f, help: undefined }
+        : f,
     ),
   };
 }
@@ -89,13 +97,17 @@ export function CatalogSettings() {
         <SubtabNav
           ariaLabel={t("Catalog settings")}
           active={section}
-          onSelect={(key) => navigate(key === "rules" ? "/catalog/visibility" : "/catalog/settings")}
+          onSelect={(key) =>
+            navigate(key === "rules" ? "/catalog/visibility" : "/catalog/settings")
+          }
           tabs={[
             { key: "library", label: t("General") },
             { key: "rules", label: t("Visibility") },
           ]}
         />
-        {config.error ? <ErrorPanel error={config.error} onRetry={() => void config.reload()} /> : null}
+        {config.error ? (
+          <ErrorPanel error={config.error} onRetry={() => void config.reload()} />
+        ) : null}
         {!draft ? (
           <div className="py-10 text-center">
             <Spinner size={20} label={t("Loading settings")} />
@@ -112,6 +124,7 @@ export function CatalogSettings() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="space-y-5">
               <TmdbAccount apiKey={draft.tmdbKey} />
+              <NewReleasesSettings />
               {groups.map((g, i) => (
                 <SettingsSection key={g.title ?? i} title={g.title}>
                   {g.fields.map((f, j) =>

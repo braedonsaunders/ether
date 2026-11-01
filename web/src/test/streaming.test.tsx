@@ -291,8 +291,8 @@ describe("Release selection", () => {
     });
   });
 
-  it("keeps search memory behind more options on Will it play", async () => {
-    renderApp("/sources/availability");
+  it("keeps search memory behind more options on Releases", async () => {
+    renderApp("/releases/quality");
     expect(
       await screen.findByRole("button", { name: "More options: How Ether searches" }, WAIT),
     ).toBeInTheDocument();

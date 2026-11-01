@@ -24,3 +24,28 @@ func TestMovieEvidenceDaysValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestAvailabilityModeValidation(t *testing.T) {
+	for _, tc := range []struct {
+		mode    string
+		invalid bool
+	}{
+		{"", false},
+		{config.ModePlayable, false},
+		{config.ModeDigital, false},
+		{config.ModeImmediate, false},
+		{"feeds", true},
+	} {
+		c := config.Defaults(t.TempDir())
+		c.Availability.Mode = tc.mode
+		found := false
+		for _, e := range admin.ValidateConfig(c) {
+			if e.Field == "availability.mode" {
+				found = true
+			}
+		}
+		if found != tc.invalid {
+			t.Fatalf("mode %q: invalid=%v", tc.mode, found)
+		}
+	}
+}

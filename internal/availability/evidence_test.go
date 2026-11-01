@@ -225,3 +225,62 @@ func TestDigitalDateIsWeakEvidenceOnlyWhenEnabled(t *testing.T) {
 		t.Fatalf("explain %+v %v", ex, err)
 	}
 }
+
+func TestSummaryCountsReadyAndWaiting(t *testing.T) {
+	x := setup(t)
+	x.c.Availability.Verify = false
+	ready := x.cat.titles[core.MovieKey(1)]
+	waiting := ready
+	waiting.Key = core.MovieKey(2)
+	waiting.Title = "Waiting"
+	x.cat.titles[waiting.Key] = waiting
+	x.s.d.Catalog = probeCatalog{fakeCatalog: x.cat}
+	x.s.d.Search = func(_ context.Context, req core.SearchRequest) ([]core.Release, error) {
+		if req.Title != "Film" {
+			return nil, nil
+		}
+		return []core.Release{{ID: "web", Name: "Film.2026.1080p.WEB-DL", Indexer: "Fake"}}, nil
+	}
+	if err := x.s.Cycle(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := x.s.Summary(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Ready != 1 || sum.Waiting != 1 || sum.LastChecked == 0 {
+		t.Fatalf("summary %+v", sum)
+	}
+}
+
+func TestProbeProcessesEveryInWindowTitle(t *testing.T) {
+	x := setup(t)
+	x.c.Availability.Verify = false
+	x.c.Availability.CatchUp = false
+	titles := map[core.RatingKey]core.Title{}
+	for i := 1; i <= 520; i++ {
+		k := core.MovieKey(int64(i))
+		titles[k] = core.Title{Key: k, Type: core.TypeMovie, Title: fmt.Sprintf("Film %d", i), Year: 2026, Released: x.now.Add(-time.Hour), Popularity: float64(i)}
+	}
+	x.cat.titles = titles
+	x.s.d.Catalog = probeCatalog{fakeCatalog: x.cat}
+	var searched []core.RatingKey
+	x.s.d.Search = func(_ context.Context, req core.SearchRequest) ([]core.Release, error) {
+		for _, t := range titles {
+			if t.Title == req.Title {
+				searched = append(searched, t.Key)
+				break
+			}
+		}
+		return nil, nil
+	}
+	if err := x.s.Cycle(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(searched) != 520 {
+		t.Fatalf("probed %d titles, want every in-window title", len(searched))
+	}
+	if searched[0] != core.MovieKey(520) {
+		t.Fatalf("first probe %v, want highest priority", searched[0])
+	}
+}

@@ -170,6 +170,15 @@ func (s *Service) Handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(v)
 	})
+	mux.HandleFunc("GET /summary", func(w http.ResponseWriter, r *http.Request) {
+		v, err := s.Summary(r.Context())
+		if err != nil {
+			http.Error(w, "Availability summary could not be loaded", 503)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v)
+	})
 	mux.HandleFunc("GET /titles", func(w http.ResponseWriter, r *http.Request) {
 		rows, err := s.NewReleases(r.Context())
 		if err != nil {

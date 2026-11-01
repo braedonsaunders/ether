@@ -90,9 +90,6 @@ func (s *Service) probeDue(ctx context.Context) error {
 		due = append(due, item{t, score, next})
 	}
 	sort.SliceStable(due, func(i, j int) bool { return due[i].score > due[j].score })
-	if len(due) > 8 {
-		due = due[:8]
-	}
 	for _, it := range due {
 		if ctx.Err() != nil {
 			return ctx.Err()

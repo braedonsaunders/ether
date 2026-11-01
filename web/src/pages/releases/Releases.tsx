@@ -1,7 +1,7 @@
 import { localized, t } from "../../i18n";
 import { ConfigSection } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
-import { PLAY_VERSIONS } from "../settings/schema";
+import { PLAY_VERSIONS, RELEASE_SEARCH } from "../settings/schema";
 import { BlocklistTab } from "./Blocklist";
 import { ClientRulesTab } from "./ClientRules";
 import { HistoryTab } from "./History";
@@ -34,6 +34,12 @@ export default function Releases() {
             endpoint="resolver"
             groups={PLAY_VERSIONS}
             label={t("Versions in the app")}
+          />
+          <ConfigSection
+            configKey="resolver"
+            endpoint="resolver"
+            groups={RELEASE_SEARCH}
+            label={t("How Ether searches")}
           />
         </>
       ) : null}

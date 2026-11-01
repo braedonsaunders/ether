@@ -196,6 +196,8 @@ func TestBrowseFiltersSortPaging(t *testing.T) {
 		{"collection", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, Collection: 10}}, []string{"Fjord Harbor"}},
 		{"query", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, Query: "fjord"}}, []string{"Fjord Harbor"}},
 		{"language", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, Languages: []string{"fr"}}}, []string{}},
+		{"includeKeys", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, IncludeKeys: []core.RatingKey{core.MovieKey(551)}}}, []string{"Family Fun"}},
+		{"includeKeys empty", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, IncludeKeys: []core.RatingKey{}}}, []string{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
