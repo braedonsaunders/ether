@@ -29,7 +29,9 @@ func TestStalledBodyBackfillsAndTripsBreaker(t *testing.T) {
 	})
 	p, b := primary.Provider("p", 1), backfill.Provider("b", 1)
 	b.Backfill = true
-	f := newFetcher(t, []config.UsenetProvider{p, b}, Options{IdleReadTimeout: 30 * time.Millisecond, CommandTimeout: time.Second, Retries: 4, FailThreshold: 2})
+	// DialTimeout is the greeting budget. The 1s command bound and the
+	// 30ms idle window apply only after the welcome.
+	f := newFetcher(t, []config.UsenetProvider{p, b}, Options{IdleReadTimeout: 30 * time.Millisecond, CommandTimeout: time.Second, DialTimeout: 15 * time.Second, Retries: 4, FailThreshold: 2})
 	for i := 0; i < 3; i++ {
 		data, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive)
 		if err != nil || string(data) != "movie" {

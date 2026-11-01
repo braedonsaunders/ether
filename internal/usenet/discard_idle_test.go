@@ -34,7 +34,9 @@ func warmReused(t *testing.T, s *nntptest.Server, o Options) *Fetcher {
 func TestTimeoutOnReusedConnectionKeepsIdleSiblings(t *testing.T) {
 	s := nntptest.Start(t, nntptest.Options{})
 	addSeg(t, s, "slow@x", []byte("movie"))
-	f := warmReused(t, s, Options{IdleReadTimeout: 30 * time.Millisecond, CommandTimeout: time.Second, Retries: 0})
+	// DialTimeout is the greeting budget. The 1s command bound and the
+	// 30ms idle window apply only after the welcome.
+	f := warmReused(t, s, Options{IdleReadTimeout: 30 * time.Millisecond, CommandTimeout: time.Second, DialTimeout: 15 * time.Second, Retries: 0})
 	before := statsFor(f, "p")
 	s.SetFault(func(cmd, arg string) nntptest.Fault {
 		if cmd == "BODY" {
