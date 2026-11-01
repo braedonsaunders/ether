@@ -108,3 +108,31 @@ func TestPayloadMatchesTitleAndZeroByteRangeFailureReturns503(t *testing.T) {
 		t.Fatalf("expected 503 without Content-Range on 0-byte failure, got status=%d headers=%v body=%q", resp.StatusCode, resp.Header, body)
 	}
 }
+
+func TestStaleWrongEpisodeResumeAndPreferredFallThrough(t *testing.T) {
+	epKey := core.EpisodeKey(33238, 1, 1)
+	epTitle := &core.Title{Key: epKey, Type: core.TypeEpisode, Season: 1, Episode: 1, ShowYear: 2010, Title: "Times Square"}
+	good := mkv("38feded1", 200000, 88*time.Minute)
+	h := newHarness(t, []*fakeRelease{good}, []string{"38feded1"})
+	h.catalog.titles[epKey] = epTitle
+	h.resolver.candidates[0].Name = "Running.Man.2010.S01E01.Times.Square.720p"
+
+	wrongPayload := []byte("ETHER-DEBRID/1\n{\"path\":\"Running Man/[iSUBS]Running.Man.E02.720P.avi\",\"size\":1491294208}")
+	wrongRel := core.Release{ID: "stale-ep2", Name: "Running.Man.2010.S01E02.Suwon.World.Cup.Stadium.720p"}
+	if err := h.m.Remember(t.Context(), owner, epKey, defaultCaps("c1"), &core.Resolution{
+		Title:   epKey,
+		Release: wrongRel,
+		NZB:     wrongPayload,
+	}); err != nil {
+		t.Fatalf("Remember: %v", err)
+	}
+
+	if rp, err := h.m.ResumePoint(t.Context(), owner.ID, epKey); err != nil || rp != nil {
+		t.Fatalf("expected stale wrong-episode ResumePoint to be dropped, got rp=%+v err=%v", rp, err)
+	}
+
+	ps, err := h.m.PrepareSurface(t.Context(), owner, epKey, defaultCaps("c1"), "stale-ep2", true)
+	if err != nil || ps == nil || ps.Resolution == nil || ps.Resolution.Release.ID != "38feded1" {
+		t.Fatalf("expected stale preferred wrong-episode release to fall through to fresh candidate, got ps=%+v err=%v", ps, err)
+	}
+}

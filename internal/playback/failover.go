@@ -59,6 +59,9 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 	if res != nil && (!releaseMatchesTitle(res.Release, s.title) || !payloadMatchesTitle(res.NZB, s.title)) {
 		// An older stored/warmed selection may predate the series identity
 		// gate. Do not reuse a same-named reboot for this show's episode.
+		if s.prefer == res.Release.ID {
+			s.prefer, s.exact = "", false
+		}
 		res, cached, fromResume = nil, nil, false
 	}
 	var (
@@ -1123,8 +1126,15 @@ func (m *Manager) ResumePoint(ctx context.Context, userID int64, key core.Rating
 	if m.resume == nil {
 		return nil, nil
 	}
+	var title *core.Title
+	if key.Kind() == core.KindEpisode {
+		title = &core.Title{Key: key, Type: core.TypeEpisode, Season: key.Season(), Episode: key.Episode()}
+	}
 	if live := m.resume.livePoint(userID, key); live != nil {
 		if m.releaseBlocked(ctx, live.Release.ID) {
+			return nil, nil
+		}
+		if title != nil && (!releaseMatchesTitle(live.Release, title) || !payloadMatchesTitle(live.NZB, title)) {
 			return nil, nil
 		}
 		if pts, err := m.resume.loadIndex(ctx, userID, key, live.Release.ID); err == nil {
@@ -1139,9 +1149,15 @@ func (m *Manager) ResumePoint(ctx context.Context, userID int64, key core.Rating
 	if m.releaseBlocked(ctx, rec.releaseID) {
 		return nil, nil
 	}
+	if title != nil && !releaseMatchesTitle(rec.release, title) {
+		return nil, nil
+	}
 	nzb, err := m.resume.readResumeNZB(ctx, rec)
 	if err != nil {
 		return nil, err
+	}
+	if title != nil && !payloadMatchesTitle(nzb, title) {
+		return nil, nil
 	}
 	point := rec.point(nzb)
 	point.Keyframes, err = m.resume.loadIndex(ctx, userID, key, rec.releaseID)

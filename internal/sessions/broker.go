@@ -481,6 +481,9 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 				break
 			}
 		}
+		if chosen == nil && versionHandle != "" && len(variants) > 0 {
+			chosen = &core.ReleaseVariant{ID: req.Version, Auto: true, Info: variants[0].Info}
+		}
 		if chosen == nil {
 			return frontend.PlayPlan{}, core.ErrNotFound
 		}
@@ -551,13 +554,16 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		// fall back cleanly to the next healthy candidate instead of failing
 		// replay with "not available yet: playback: source revision changed".
 		if err != nil && detail == nil && req.ExpectedSourceETag == "" && (rememberedFallback || (chosen != nil && chosen.Auto) || errors.Is(err, core.ErrSourceChanged)) {
-			if fallbackPS, fallbackErr := playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, false); fallbackErr == nil && fallbackPS != nil {
+			if fallbackPS, fallbackErr := playback.PrepareSurface(ctx, v, req.Item, req.Caps, "", false); fallbackErr == nil && fallbackPS != nil {
 				ps, err = fallbackPS, nil
 				prepareExact = false
 				req.Intent.ExactVersion = false
 				if ps.Resolution != nil && ps.Resolution.Release.ID != "" {
 					req.Version = ps.Resolution.Release.ID
 					release = ps.Resolution.Release.ID
+					if versionHandle != "" {
+						b.rebindVersionHandle(ctx, v.ID, string(req.Protocol), req.Device.ID, req.Item, versionHandle, release)
+					}
 				}
 			}
 		}
@@ -675,6 +681,8 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	exactRelease := ""
 	if req.Intent.ExactVersion {
 		exactRelease = req.Version
+	} else if versionHandle != "" && ps.Resolution != nil && ps.Resolution.Release.ID != "" {
+		exactRelease = ps.Resolution.Release.ID
 	}
 	if detail != nil {
 		exactRelease = detail.release

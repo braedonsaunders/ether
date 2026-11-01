@@ -282,16 +282,19 @@ func TestResolvedReleasePlanDoesNotListOffers(t *testing.T) {
 	}
 }
 
-
 type sourceChangedPlayback struct {
 	*fakePlayback
 	exactCalls    int
 	fallbackCalls int
+	onExactFail   func()
 }
 
 func (p *sourceChangedPlayback) PrepareSurface(ctx context.Context, v *core.User, key core.RatingKey, caps core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
 	if exact {
 		p.exactCalls++
+		if p.onExactFail != nil {
+			p.onExactFail()
+		}
 		return nil, core.ErrSourceChanged
 	}
 	p.fallbackCalls++
@@ -313,7 +316,11 @@ func TestReplayFallsBackWhenRememberedReleaseRevisionChanges(t *testing.T) {
 	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
 	bus := NewEventBus(nil, active)
 	defer bus.Close()
-	playback := &sourceChangedPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 4}}
+	staleFailed := false
+	playback := &sourceChangedPlayback{
+		fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 4},
+		onExactFail:  func() { staleFailed = true },
+	}
 	broker, err := NewBroker(BrokerDeps{
 		DB:           db,
 		Events:       bus,
@@ -328,6 +335,11 @@ func TestReplayFallsBackWhenRememberedReleaseRevisionChanges(t *testing.T) {
 			return &core.Title{Key: k}, nil
 		},
 		Variants: func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error) {
+			if staleFailed {
+				return []core.ReleaseVariant{
+					{ID: "fallback-release", Auto: true},
+				}, nil
+			}
 			return []core.ReleaseVariant{
 				{ID: "stale-release", Auto: true},
 				{ID: "fallback-release", Auto: false},
@@ -350,12 +362,13 @@ func TestReplayFallsBackWhenRememberedReleaseRevisionChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := frontend.PlanRequest{
-		Viewer:   viewer,
-		Device:   device,
-		Protocol: "jellyfin",
-		Item:     item,
-		Version:  handle,
-		Intent:   frontend.PlayIntent{ExactVersion: true, Options: core.DecideOptions{DirectPlay: true}},
+		Viewer:          viewer,
+		Device:          device,
+		Protocol:        "jellyfin",
+		Item:            item,
+		Version:         handle,
+		ResolvedRelease: "stale-release",
+		Intent:          frontend.PlayIntent{ExactVersion: true, Options: core.DecideOptions{DirectPlay: true}},
 	}
 	plan, err := broker.Plan(ctx, req)
 	if err != nil {
@@ -367,5 +380,16 @@ func TestReplayFallsBackWhenRememberedReleaseRevisionChanges(t *testing.T) {
 	wantDur := 2*time.Hour + 16*time.Minute + 20*time.Second
 	if plan.Media.Duration != wantDur || plan.Estimated {
 		t.Fatalf("expected probed duration %v (estimated=false), got %v (estimated=%v)", wantDur, plan.Media.Duration, plan.Estimated)
+	}
+	session, err := broker.Open(ctx, frontend.OpenRequest{Protocol: "jellyfin", PlanID: plan.ID, Viewer: viewer, Device: device})
+	if err != nil {
+		t.Fatalf("Open after fallback failed: %v", err)
+	}
+	target, err := service.Resolve(ctx, scope, handle)
+	if err != nil || target.Item != item || target.Release != "fallback-release" {
+		t.Fatalf("Resolve on rebound handle after fallback: target=%+v err=%v", target, err)
+	}
+	if err := service.MatchSession(ctx, scope, handle, session.ID); err != nil {
+		t.Fatalf("MatchSession on rebound handle after fallback failed (would 404 /Videos/:id/stream): %v", err)
 	}
 }

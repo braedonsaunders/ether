@@ -81,6 +81,27 @@ func (v *versionHandles) allowedOffers(ctx context.Context, scope frontend.Versi
 	for _, candidate := range offered {
 		allowed[candidate.ID] = true
 	}
+	if len(allowed) > 0 {
+		v.broker.mu.Lock()
+		for _, p := range v.broker.plans {
+			if p.request.Viewer != nil && p.request.Viewer.ID == viewer.ID && p.request.Protocol == v.protocol && p.request.Device.ID == scope.Device.ID && p.request.Item == item {
+				if p.exactRelease != "" {
+					allowed[p.exactRelease] = true
+				}
+				if p.source != nil && p.source.Resolution != nil && p.source.Resolution.Release.ID != "" {
+					allowed[p.source.Resolution.Release.ID] = true
+				}
+			}
+		}
+		for _, s := range v.broker.sessions {
+			if s != nil && s.public.ViewerID == viewer.ID && s.public.Protocol == v.protocol && s.public.Device.ID == scope.Device.ID && s.public.Item == item {
+				if s.exactRelease != "" {
+					allowed[s.exactRelease] = true
+				}
+			}
+		}
+		v.broker.mu.Unlock()
+	}
 	return viewer, allowed, nil
 }
 
@@ -165,10 +186,34 @@ func (v *versionHandles) resolveRecord(ctx context.Context, scope frontend.Versi
 	if err != nil {
 		return 0, "", err
 	}
-	if _, err = v.validate(ctx, scope, item, release); err != nil {
+	_, offered, err := v.allowedOffers(ctx, scope, item)
+	if err != nil {
 		return 0, "", err
 	}
+	if release == "" || len(release) > 512 || len(offered) == 0 {
+		return 0, "", core.ErrNotFound
+	}
 	return item, release, nil
+}
+
+func (b *Broker) rebindVersionHandle(ctx context.Context, viewerID int64, surface, deviceID string, item core.RatingKey, handle, release string) {
+	if b == nil || b.deps.DB == nil || viewerID <= 0 || surface == "" || deviceID == "" || item == 0 || handle == "" || release == "" || len(release) > 512 {
+		return
+	}
+	handle = normalizeVersionHandle(handle)
+	if handle == "" {
+		return
+	}
+	tx, err := b.deps.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	_, _ = tx.ExecContext(ctx, `DELETE FROM sessions_version_handles WHERE viewer_id=? AND surface=? AND device_id=? AND item_id=? AND release_id=? AND handle<>?`, viewerID, surface, deviceID, int64(item), release, handle)
+	if _, err := tx.ExecContext(ctx, `UPDATE sessions_version_handles SET release_id=? WHERE handle=? AND viewer_id=? AND surface=? AND device_id=? AND item_id=?`, release, handle, viewerID, surface, deviceID, int64(item)); err != nil {
+		return
+	}
+	_ = tx.Commit()
 }
 
 // lookupRow reads the handle's stored parent. It does not check that the
