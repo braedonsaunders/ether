@@ -309,6 +309,9 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	// the library.
 	restricted := restrictedListings(cs)
 	if len(viewers) > perfharness.RestrictedViewer && len(restricted) > 0 {
+		// A cold pass and a warm one, as the owner gets: the gate compares
+		// the large library's least work with the small one's most.
+		r.Sequential(ctx, "cold", viewers[perfharness.RestrictedViewer:perfharness.RestrictedViewer+1], restricted)
 		r.Sequential(ctx, "warm", viewers[perfharness.RestrictedViewer:perfharness.RestrictedViewer+1], restricted)
 		cs = append(cs, restricted...)
 		for _, res := range r.Results() {
