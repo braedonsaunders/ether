@@ -74,6 +74,14 @@ func Generate(ctx context.Context, db *sql.DB, s Scale, now time.Time) error {
 	if err := restore(); err != nil {
 		return err
 	}
+	// The per-series episode counts are kept by triggers set aside above.
+	if _, err := db.ExecContext(ctx, `DELETE FROM catalog_show_episodes`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO catalog_show_episodes(show_key, known)
+		SELECT show_key, COUNT(*) FROM catalog_titles WHERE type='episode' AND adult=0 AND release_known=1 AND show_key<>0 GROUP BY show_key`); err != nil {
+		return err
+	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO catalog_titles_fts(catalog_titles_fts) VALUES('rebuild')`); err != nil {
 		return err
 	}

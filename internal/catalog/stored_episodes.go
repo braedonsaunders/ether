@@ -263,10 +263,15 @@ func (c *Catalog) CountStoredEpisodes(ctx context.Context, show core.Filter) (in
 	ent, ok := c.countCache[ckey]
 	c.cacheMu.RUnlock()
 	count := func(ctx context.Context) (int, error) {
-		var total int
-		if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles e JOIN catalog_titles t ON t.key=e.show_key WHERE e.key>? AND e.key<? AND `+where,
-			append([]any{episodeKeyStart, episodeKeyEnd}, args...)...).Scan(&total); err != nil {
+		total, bySeries, err := c.countStoredEpisodesBySeries(ctx, show)
+		if err != nil {
 			return 0, err
+		}
+		if !bySeries {
+			if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles e JOIN catalog_titles t ON t.key=e.show_key WHERE e.key>? AND e.key<? AND `+where,
+				append([]any{episodeKeyStart, episodeKeyEnd}, args...)...).Scan(&total); err != nil {
+				return 0, err
+			}
 		}
 		c.cacheMu.Lock()
 		if len(c.countCache) >= 1024 {

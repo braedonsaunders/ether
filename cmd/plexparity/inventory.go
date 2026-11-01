@@ -67,12 +67,6 @@ func missingRoutes() []string {
 var unprobedRoutes = map[string]string{
 	"/statistics/resources":              "live host CPU and memory samples differ between any two processes",
 	"/video/:/transcode/universal/start": "Plex for Mac's protocol=http conversion streams from a live FFmpeg the offline world does not run",
-	// New with the Rex batch: the baseline answers 404 until it lands, and
-	// the harness requires every browse fixture to answer on both sides.
-	// Probe them in browsingPaths once prism carries them.
-	"/devices/{id}":         "new route; baseline answers 404 until it lands",
-	"/statistics/bandwidth": "new route; baseline answers 404 until it lands",
-	"/statistics/media":     "new route; baseline answers 404 until it lands",
 }
 
 func inventorySummary() string { m := missingRoutes(); return strings.Join(m, ", ") }
