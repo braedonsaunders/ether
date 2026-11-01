@@ -26,9 +26,11 @@ import (
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/hoststat"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/stats"
 	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
@@ -154,6 +156,11 @@ type Deps struct {
 	SessionHeartbeat time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
+	// Dashboard is the in-memory Plex Web Dashboard store. Nil is replaced
+	// with a process-local store at NewServer.
+	Dashboard *stats.Dashboard
+	// Resources is the in-memory host sample ring for /statistics/resources.
+	Resources *hoststat.Resources
 	// Support records neutral request and playback facts. Nil leaves playback unchanged.
 	Support *diagnostics.Recorder
 	// TracePlayback logs HLS/transcode requests when ETHER_TRACE_PLAYBACK=1.
@@ -226,6 +233,12 @@ func NewServer(d Deps) *Server {
 	}
 	if d.Now == nil {
 		d.Now = time.Now
+	}
+	if d.Dashboard == nil {
+		d.Dashboard = stats.NewDashboard(stats.DashboardOptions{Now: d.Now})
+	}
+	if d.Resources == nil {
+		d.Resources = hoststat.NewResources(hoststat.Options{Now: d.Now})
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	coord := d.SessionCoordination

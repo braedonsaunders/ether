@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/hoststat"
 	"github.com/braedonsaunders/ether/internal/notify"
 	"github.com/braedonsaunders/ether/internal/playback"
 	"github.com/braedonsaunders/ether/internal/stats"
@@ -11,7 +13,37 @@ import (
 
 func (a *App) buildInsights() {
 	a.notifications = notify.New(a.db, notify.Options{Sealer: a.cfg, Providers: a.fetcher.Stats, CacheUsage: a.cache.Usage, NodeID: a.clusterNodeID(), Logger: a.log.With("component", "notifications")})
-	a.stats = stats.New(a.db, stats.Options{NodeID: a.clusterNodeID(), Availability: a.dbAvail, Playback: a.playback, SessionExists: func(id string) bool { _, ok := (ownerPlayback{Playback: a.playback, app: a}).Session(id); return ok }, Providers: a.fetcher.Stats, Indexers: a.indexers.Remaining, Logger: a.log.With("component", "stats"), StopSession: a.stopOwnerSession, Newsletter: func(ctx context.Context, html string) error {
+	a.hostResources = hoststat.NewResources(hoststat.Options{})
+	a.stats = stats.New(a.db, stats.Options{NodeID: a.clusterNodeID(), Availability: a.dbAvail, Playback: a.playback, SessionExists: func(id string) bool { _, ok := (ownerPlayback{Playback: a.playback, app: a}).Session(id); return ok }, Providers: a.fetcher.Stats, Indexers: a.indexers.Remaining, Logger: a.log.With("component", "stats"), StopSession: a.stopOwnerSession, MetadataType: func(key core.RatingKey) int {
+		if a.catalog == nil {
+			return 0
+		}
+		t, err := a.catalog.Get(context.Background(), key)
+		if err != nil || t == nil {
+			return 0
+		}
+		switch t.Type {
+		case core.TypeMovie:
+			return 1
+		case core.TypeShow:
+			return 2
+		case core.TypeSeason:
+			return 3
+		case core.TypeEpisode:
+			return 4
+		default:
+			return 0
+		}
+	}, AccountName: func(id int64) string {
+		if a.users == nil {
+			return ""
+		}
+		u, err := a.users.User(context.Background(), id)
+		if err != nil || u == nil {
+			return ""
+		}
+		return u.Username
+	}, Newsletter: func(ctx context.Context, html string) error {
 		return a.notifications.Emit(ctx, notify.Event{Kind: "newsletter.weekly", Title: "Your week on Ether", Message: "Weekly viewing summary", HTML: html})
 	}})
 	a.closers = append(a.closers, func() {

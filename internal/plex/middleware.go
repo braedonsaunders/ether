@@ -259,6 +259,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			if s.d.Hooks.OnClientSeen != nil {
 				s.d.Hooks.OnClientSeen(pr.ClientID)
 			}
+			if s.d.Dashboard != nil {
+				s.d.Dashboard.SeeDevice(pr.ClientID, pr.DeviceName, pr.Platform)
+			}
 			next.ServeHTTP(w, r)
 		case err == nil, errors.Is(err, core.ErrUnauthorized), errors.Is(err, core.ErrNotFound):
 			writeHTTPError(w, http.StatusUnauthorized)
