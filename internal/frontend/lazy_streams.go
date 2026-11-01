@@ -22,7 +22,7 @@ type LazyHLSStreams interface {
 }
 
 // AuthenticatedLazyStreams is the optional WebDAV-style capability for a
-// surface that authenticates each GET instead of issuing a bearer URL.
+// surface that authenticates each GET and HEAD instead of issuing a bearer URL.
 type AuthenticatedLazyStreams interface {
 	ServeAuthenticated(http.ResponseWriter, *http.Request, string, PlanRequest)
 }

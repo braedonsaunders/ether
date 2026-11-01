@@ -120,7 +120,10 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 		}
 		title, err := s.broker.deps.MediaLookup(ctx, viewer, req.Device, req.Item)
 		if err != nil || title == nil || title.Key != req.Item || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
-			return "", core.ErrUnauthorized
+			if errors.Is(err, core.ErrUnauthorized) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return "", err
+			}
+			return "", core.ErrNotFound
 		}
 	} else {
 		estimate := req
@@ -295,16 +298,21 @@ func sameLazyDecision(a, b frontend.PlanRequest) bool {
 	return errX == nil && errY == nil && string(x) == string(y)
 }
 
-// ServeAuthenticated is for a surface such as WebDAV that authenticates every
-// GET and has a stable logical path rather than an issued capability URL.
+// ServeAuthenticated is for a surface such as WebDAV or Infuse Static=true
+// that authenticates every GET/HEAD and has a stable logical path rather
+// than an issued capability URL.
 func (s *lazyStreams) ServeAuthenticated(w http.ResponseWriter, r *http.Request, credential string, req frontend.PlanRequest) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.NotFound(w, r)
 		return
 	}
 	path, err := s.issueOutput(r.Context(), credential, req, true, nil, false, true)
 	if err != nil {
-		http.NotFound(w, r)
+		if errors.Is(err, core.ErrUnauthorized) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		s.writePlaybackError(w, r, err)
 		return
 	}
 	clone := r.Clone(r.Context())

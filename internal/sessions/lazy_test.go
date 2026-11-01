@@ -216,7 +216,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	}{{"invalid", authenticated}, {"account-credential-secret", foreign}} {
 		w := httptest.NewRecorder()
 		lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil), tc.credential, tc.request)
-		if w.Code != http.StatusNotFound {
+		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("foreign credential/viewer accepted: %d", w.Code)
 		}
 	}
@@ -240,8 +240,8 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	mediaHidden = false
 	headAuth := httptest.NewRecorder()
 	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(headAuth, httptest.NewRequest(http.MethodHead, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
-	if headAuth.Code == http.StatusOK || pb.prepares != 2 {
-		t.Fatal("authenticated HEAD opened playback")
+	if headAuth.Code != http.StatusOK || headAuth.Body.Len() != 0 || pb.prepares != 2 {
+		t.Fatalf("authenticated HEAD status=%d body=%d prepares=%d", headAuth.Code, headAuth.Body.Len(), pb.prepares)
 	}
 	other := req
 	other.Device.ID = "other-install"
@@ -338,7 +338,7 @@ func TestAuthenticatedLazyConcurrentFirstRangesReuseSession(t *testing.T) {
 	different.Device.ID = "new-device"
 	w = httptest.NewRecorder()
 	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/movie", nil), "account-credential-secret", different)
-	if w.Code != http.StatusNotFound {
+	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("new oversized range admitted: %d", w.Code)
 	}
 

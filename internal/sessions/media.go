@@ -87,7 +87,10 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		return path + "live/index.m3u8", nil
 	}
 	if req.Format == frontend.StreamDirect {
-		if s.decision.Kind != core.DecisionDirectPlay || !s.opts.DirectPlay {
+		// Infuse Static=true is Jellyfin DirectStream: serve the original
+		// file. A remux ("copy") decision is the same bytes; only a
+		// transcode needs HLS instead of this path.
+		if s.decision.Kind == core.DecisionTranscode || (!s.opts.DirectPlay && !s.opts.DirectStream) {
 			return "", core.ErrNotAvailable
 		}
 		if b.deps.Transcoder != nil {

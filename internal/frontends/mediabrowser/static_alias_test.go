@@ -49,7 +49,7 @@ func TestStaticAliasWithoutSessionUsesAuthenticatedLazyBroker(t *testing.T) {
 				t.Fatal(tc.name, w.Code, w.Body.String())
 			}
 			plan := lazy.plans[len(lazy.plans)-1]
-			if plan.Viewer != viewer || plan.Item != 5 || plan.Device.ID != "device" || plan.Protocol != frontend.Protocol(tc.name) || (source == handle && (!plan.Intent.ExactVersion || plan.Version != handle)) || (source != handle && (plan.Intent.ExactVersion || plan.Version != "")) {
+			if plan.Viewer != viewer || plan.Item != 5 || plan.Device.ID != "device" || plan.Protocol != frontend.Protocol(tc.name) || !plan.Intent.Options.DirectPlay || !plan.Intent.Options.DirectStream || (source == handle && (!plan.Intent.ExactVersion || plan.Version != handle)) || (source != handle && (plan.Intent.ExactVersion || plan.Version != "")) {
 				t.Fatal(plan)
 			}
 		}

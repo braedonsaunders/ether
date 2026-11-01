@@ -65,8 +65,7 @@ func TestInfuseStaticStreamProgressReachesWatchState(t *testing.T) {
 	call := func(method, path, body, rang string) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
-		r.Header.Set("Authorization", `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9"`)
-		r.Header.Set("X-Emby-Token", "grant")
+		r.Header.Set("Authorization", `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9", Token="grant"`)
 		if rang != "" {
 			r.Header.Set("Range", rang)
 		}
@@ -84,13 +83,22 @@ func TestInfuseStaticStreamProgressReachesWatchState(t *testing.T) {
 	if err := json.Unmarshal(opened.Body.Bytes(), &play); err != nil || play.PlaySessionId == "" {
 		t.Fatalf("play session %q %v", opened.Body.String(), err)
 	}
-	stream := call(http.MethodGet, "/jellyfin/Videos/"+guid+"/stream?Static=true", "", "bytes=0-3")
+	userID, err := ids.GUID(ids.User, viewer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamPath := "/jellyfin/Videos/" + guid + "/stream?MediaSourceId=" + guid + "&Static=true&UserId=" + userID
+	head := call(http.MethodHead, streamPath, "", "")
+	if head.Code != http.StatusOK && head.Code != http.StatusPartialContent {
+		t.Fatalf("static HEAD %d %s", head.Code, head.Body.String())
+	}
+	stream := call(http.MethodGet, streamPath, "", "bytes=0-3")
 	if stream.Code != http.StatusOK && stream.Code != http.StatusPartialContent {
 		t.Fatalf("static stream %d %s", stream.Code, stream.Body.String())
 	}
 	listed, err := broker.Sessions(ctx, frontend.SessionAccess{Viewer: viewer, Device: core.Device{ID: "appletv"}, Protocol: "jellyfin"})
-	if err != nil || len(listed) != 1 || listed[0].ID == play.PlaySessionId {
-		t.Fatalf("static stream did not replace PlaybackInfo session %+v play=%s err=%v", listed, play.PlaySessionId, err)
+	if err != nil || len(listed) != 1 || listed[0].ID != play.PlaySessionId {
+		t.Fatalf("static stream did not reuse PlaybackInfo session %+v play=%s err=%v", listed, play.PlaySessionId, err)
 	}
 	report := func(path string, ticks int64) {
 		t.Helper()
@@ -185,6 +193,196 @@ func TestJellyfinStaticMissingSourceMatchesMissingFile(t *testing.T) {
 				t.Fatalf("status=%d retry=%q type=%q body=%q", w.Code, w.Header().Get("Retry-After"), w.Header().Get("Content-Type"), w.Body.String())
 			}
 		})
+	}
+}
+
+func TestInfuseStaticStreamOpensWithoutPlaybackInfo(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key, Type: core.TypeMovie, Title: "Sintel"}, nil
+	}
+	broker, err := NewBroker(BrokerDeps{
+		Events: events, Playback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 1}, Transcoder: fakeBrokerTranscoder{},
+		Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true },
+		BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Lookup: lookup, MediaLookup: lookup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	lazy, err := NewLazyStreams(db, broker, "jellyfin", infuseGrant{}, time.Hour, func(*http.Request) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := &frontend.Viewer{ID: 1}
+	inst, err := (mediabrowser.Jellyfin{MachineID: "test"}).Mount(ctx, frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }},
+		Sessions: broker, LazyStreams: lazy,
+		Capabilities: frontendtest.Capabilities{BuildFunc: func(_ context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
+			return frontend.CapabilityResult{Client: core.ClientCaps{Protocol: "jellyfin", ClientID: req.Device.ClientID, Product: req.Device.Product}}, nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close(ctx)
+	guid := ids.RatingKeyGUID(core.MovieKey(9))
+	userID, err := ids.GUID(ids.User, viewer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/jellyfin/Videos/" + guid + "/stream?MediaSourceId=" + guid + "&Static=true&UserId=" + userID
+	for _, method := range []string{http.MethodHead, http.MethodGet} {
+		r := httptest.NewRequest(method, path, nil)
+		r.Header.Set("Authorization", `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9", Token="grant"`)
+		r.Header.Set("User-Agent", "Infuse-Direct/8.5.9")
+		if method == http.MethodGet {
+			r.Header.Set("Range", "bytes=0-3")
+		}
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != http.StatusOK && w.Code != http.StatusPartialContent {
+			t.Fatalf("%s static stream %d %s", method, w.Code, w.Body.String())
+		}
+		if method == http.MethodHead && w.Body.Len() != 0 {
+			t.Fatalf("HEAD body %q", w.Body.String())
+		}
+	}
+	listed, err := broker.Sessions(ctx, frontend.SessionAccess{Viewer: viewer, Device: core.Device{ID: "appletv"}, Protocol: "jellyfin"})
+	if err != nil || len(listed) != 1 || listed[0].Item != core.MovieKey(9) {
+		t.Fatalf("static stream did not open a broker session %+v err=%v", listed, err)
+	}
+}
+
+type remuxBrokerTranscoder struct{ fakeBrokerTranscoder }
+
+func (remuxBrokerTranscoder) Decide(core.MediaInfo, core.ClientCaps, core.DecideOptions) core.Decision {
+	return core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mp4"}
+}
+
+func TestInfuseRemuxPlaybackInfoStillServesStaticStream(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key, Type: core.TypeMovie, Title: "Sintel"}, nil
+	}
+	broker, err := NewBroker(BrokerDeps{
+		Events: events, Playback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 1}, Transcoder: remuxBrokerTranscoder{},
+		Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true },
+		BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Lookup: lookup, MediaLookup: lookup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	lazy, err := NewLazyStreams(db, broker, "jellyfin", infuseGrant{}, time.Hour, func(*http.Request) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := &frontend.Viewer{ID: 1}
+	inst, err := (mediabrowser.Jellyfin{MachineID: "test"}).Mount(ctx, frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }},
+		Sessions: broker, LazyStreams: lazy,
+		Capabilities: frontendtest.Capabilities{BuildFunc: func(_ context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
+			return frontend.CapabilityResult{Client: core.ClientCaps{Protocol: "jellyfin", ClientID: req.Device.ClientID, Product: req.Device.Product}}, nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close(ctx)
+	guid := ids.RatingKeyGUID(core.MovieKey(12))
+	auth := `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9", Token="grant"`
+	info := httptest.NewRequest(http.MethodPost, "/jellyfin/Items/"+guid+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true,"MediaSourceId":"`+guid+`"}`))
+	info.Header.Set("Authorization", auth)
+	opened := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(opened, info)
+	if opened.Code != http.StatusOK {
+		t.Fatalf("PlaybackInfo %d %s", opened.Code, opened.Body.String())
+	}
+	var play struct {
+		PlaySessionId string
+		MediaSources  []map[string]any
+	}
+	if err := json.Unmarshal(opened.Body.Bytes(), &play); err != nil || play.PlaySessionId == "" {
+		t.Fatalf("play session %q %v", opened.Body.String(), err)
+	}
+	if len(play.MediaSources) != 1 {
+		t.Fatalf("sources %+v", play.MediaSources)
+	}
+	path, _ := play.MediaSources[0]["Path"].(string)
+	if !strings.Contains(path, "/sessions/media/") || !strings.HasSuffix(path, "/file") {
+		t.Fatalf("remux PlaybackInfo Path %q", path)
+	}
+	userID, err := ids.GUID(ids.User, viewer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/jellyfin/Videos/"+guid+"/stream?MediaSourceId="+guid+"&Static=true&UserId="+userID, nil)
+	r.Header.Set("Authorization", auth)
+	r.Header.Set("Range", "bytes=0-3")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK && w.Code != http.StatusPartialContent {
+		t.Fatalf("static remux stream %d %s", w.Code, w.Body.String())
+	}
+	listed, err := broker.Sessions(ctx, frontend.SessionAccess{Viewer: viewer, Device: core.Device{ID: "appletv"}, Protocol: "jellyfin"})
+	if err != nil || len(listed) != 1 || listed[0].ID != play.PlaySessionId {
+		t.Fatalf("remux static did not reuse session %+v play=%s err=%v", listed, play.PlaySessionId, err)
+	}
+}
+
+func TestInfuseStaticStreamWithoutTokenIsUnauthorized(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key, Type: core.TypeMovie}, nil
+	}
+	broker, err := NewBroker(BrokerDeps{
+		Events: events, Playback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 1}, Transcoder: fakeBrokerTranscoder{},
+		Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true },
+		BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Lookup: lookup, MediaLookup: lookup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	lazy, err := NewLazyStreams(db, broker, "jellyfin", infuseGrant{}, time.Hour, func(*http.Request) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := (mediabrowser.Jellyfin{MachineID: "test"}).Mount(ctx, frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+			return &frontend.Viewer{ID: 1}, nil
+		}},
+		Sessions: broker, LazyStreams: lazy, Capabilities: frontendtest.Capabilities{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inst.Close(ctx)
+	guid := ids.RatingKeyGUID(core.MovieKey(11))
+	r := httptest.NewRequest(http.MethodGet, "/jellyfin/Videos/"+guid+"/stream?Static=true", nil)
+	r.Header.Set("Authorization", `MediaBrowser Client="Infuse-Direct", Device="AppleTV", DeviceId="appletv", Version="8.5.9"`)
+	r.Header.Set("User-Agent", "Infuse-Direct/8.5.9")
+	r.Header.Set("Range", "bytes=0-")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing Infuse token %d %s", w.Code, w.Body.String())
 	}
 }
 

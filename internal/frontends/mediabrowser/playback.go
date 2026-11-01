@@ -325,7 +325,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		format := frontend.StreamDirect
-		if channel != "" || plan.Decision.Kind != "directplay" {
+		if channel != "" || (plan.Decision.Kind != "directplay" && plan.Decision.Kind != "copy") {
 			format = frontend.StreamHLS
 		}
 		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
@@ -999,22 +999,6 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if (len(vals) == 0 || vals[0] == "") && channel == "" && format == frontend.StreamDirect && queryBool(r, "Static", false) {
-		lazy, ok := i.host.LazyStreams.(frontend.AuthenticatedLazyStreams)
-		if !ok || i.host.Capabilities == nil {
-			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		dev := device(r)
-		capability, e := i.host.Capabilities.Build(i.identityContext(r), frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: i.protocol, ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, UserAgent: r.UserAgent()})
-		if e != nil {
-			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		request := frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: i.protocol, Item: key, Version: version, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: frontend.PlayIntent{ExactVersion: version != "", Options: frontend.DecideOptions{DirectPlay: true}}}
-		lazy.ServeAuthenticated(w, r, credential, request)
-		return
-	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol}
 	if access.Device.ID == "" {
 		http.Error(w, "Unauthorized", 401)
@@ -1038,6 +1022,26 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sessionID = session.ID
+	}
+	// Infuse opens PlaybackInfo, then ignores PlaySessionId and reads
+	// /Videos/{id}/stream?Static=true. Reuse the session PlaybackInfo
+	// already started so Range hits the same file. Without a session,
+	// open the source through the authenticated lazy broker.
+	if sessionID == "" && channel == "" && format == frontend.StreamDirect && queryBool(r, "Static", false) && (len(vals) == 0 || vals[0] == "") {
+		lazy, ok := i.host.LazyStreams.(frontend.AuthenticatedLazyStreams)
+		if !ok || i.host.Capabilities == nil {
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		dev := access.Device
+		capability, e := i.host.Capabilities.Build(i.identityContext(r), frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: i.protocol, ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, UserAgent: r.UserAgent()})
+		if e != nil {
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		request := frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: i.protocol, Item: key, Version: version, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: frontend.PlayIntent{ExactVersion: version != "", Options: frontend.DecideOptions{DirectPlay: true, DirectStream: true}}}
+		lazy.ServeAuthenticated(w, r, credential, request)
+		return
 	}
 	if sessionID == "" {
 		http.NotFound(w, r)
