@@ -1,14 +1,17 @@
 import {
+  Alert,
+  AlertDescription,
   Avatar,
   Badge,
   Button,
   DetailPageLayout,
   EmptyState,
+  SettingsSection,
   Spinner,
   SubtabNav,
   toast,
 } from "@braedonsaunders/appkit-ui";
-import { ArrowLeft, CheckCircle2, History, LayoutTemplate, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, History } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
@@ -16,6 +19,7 @@ import { Meter } from "../../components/charts";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { titleSubtitle } from "../../components/Poster";
 import { viewerName } from "../../components/pickers";
+import { SettingsRow } from "../../components/SettingsRow";
 import { t, tn } from "../../i18n";
 import SignInMethods from "../me/SignInMethods";
 import { FavoritesMirror } from "../me/FavoritesMirror";
@@ -33,20 +37,11 @@ import { HomeCanvas } from "../designer/HomeCanvas";
 import { ViewerWatchlist } from "./sections/ViewerWatchlist";
 import { TasteView } from "./TasteView";
 import { ViewerAccess } from "./ViewerAccess";
+import { ViewerActions } from "./ViewerActions";
 import { ViewerPlayback } from "./ViewerPlayback";
-import { Membership } from "./ManageViewers";
-import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
+import { PlexAccessNote, ViewerStatus, viewerLifecycle, viewerStatus } from "./ViewerStatus";
 
-const TABS = [
-  "taste",
-  "activity",
-  "home",
-  "access",
-  "playback",
-  "watchlist",
-  "alerts",
-  "sign-in",
-] as const;
+const TABS = ["overview", "limits", "playback", "home-taste", "sign-in"] as const;
 type Tab = (typeof TABS)[number];
 function asTab(raw: string | undefined): Tab | undefined {
   return raw && (TABS as readonly string[]).includes(raw) ? (raw as Tab) : undefined;
@@ -55,7 +50,7 @@ function asTab(raw: string | undefined): Tab | undefined {
 export default function ViewerProfile() {
   const { id: raw, tab: routeTab } = useParams();
   const id = Number(raw);
-  const tab: Tab = asTab(routeTab) ?? "taste";
+  const tab: Tab = asTab(routeTab) ?? "overview";
   const navigate = useNavigate();
 
   const viewer = useAsync<ViewerDetail | null>(() => api.viewer(id), [id]);
@@ -127,10 +122,10 @@ export default function ViewerProfile() {
       </div>
     );
   const name = viewerName(v);
+  const life = viewerLifecycle(v);
   // Watchlist, alerts and connected apps need server access; a viewer kept
   // for imported history (or whose access ended) has none of them.
   const serverAccess = v.isOwner || viewerStatus(v) === "active";
-  const view: Tab = !serverAccess && (tab === "watchlist" || tab === "alerts") ? "taste" : tab;
 
   return (
     <DetailPageLayout
@@ -142,6 +137,8 @@ export default function ViewerProfile() {
             <div className="min-w-0 flex-1">
               <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold text-fg">
                 {name} <ViewerStatus viewer={v} />
+                {life.paused ? <Badge variant="warning">{t("Paused")}</Badge> : null}
+                {life.managedBy === "plex" ? <Badge>{t("Managed on plex.tv")}</Badge> : null}
               </h1>
               <p className="text-sm text-fg-muted">
                 {v.username} · {t("active {time}", { time: relativeTime(v.lastActive) })} ·{" "}
@@ -153,85 +150,73 @@ export default function ViewerProfile() {
                 )}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void refresh()}
-                disabled={refreshing}
-              >
-                <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />{" "}
-                {t("Rebuild rows")}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => navigate("/home")}>
-                <LayoutTemplate size={14} /> {t("Home")}
-              </Button>
-            </div>
+            <ViewerActions
+              viewer={v}
+              onChange={() => void viewer.reload()}
+              onRebuild={() => void refresh()}
+              rebuilding={refreshing}
+              onPreviewHome={() => setTab("home-taste")}
+            />
           </div>
           <div className="mt-3">
-            <PlexAccessNote viewer={v} />
+            {life.managedBy === "plex" ? (
+              <p className="text-sm text-fg-muted">
+                {t("Managed on plex.tv. Access changes happen there, not in Ether.")}
+              </p>
+            ) : (
+              <PlexAccessNote viewer={v} />
+            )}
           </div>
         </div>
       }
       subtabs={
         <SubtabNav
           ariaLabel={t("Viewer sections")}
-          active={view}
+          active={tab}
           onSelect={setTab}
           tabs={[
-            { key: "taste", label: t("Taste") },
-            { key: "activity", label: t("Activity"), count: v.recent?.length },
-            { key: "home", label: t("Their Home") },
-            { key: "access", label: t("Limits & preferences") },
+            { key: "overview", label: t("Overview") },
+            { key: "limits", label: t("Limits") },
             { key: "playback", label: t("Audio & subtitles") },
-            ...(serverAccess
-              ? [
-                  { key: "watchlist", label: t("Watchlist") },
-                  { key: "alerts", label: t("Alerts") },
-                ]
-              : []),
-            { key: "sign-in", label: t("Sign-in methods & devices") },
+            { key: "home-taste", label: t("Home & taste") },
+            { key: "sign-in", label: t("Sign-in & devices") },
           ]}
         />
       }
     >
-      {view === "taste" ? (
-        taste.error ? (
-          <ErrorPanel error={taste.error} onRetry={() => void taste.reload()} />
-        ) : !taste.data ? (
-          <LoadingRows rows={4} />
-        ) : (
-          <TasteView userId={id} taste={taste.data} onChange={(next) => taste.setData(next)} />
-        )
-      ) : view === "activity" ? (
-        <Activity viewer={v} />
-      ) : view === "home" ? (
-        <TheirHome viewer={v} />
-      ) : view === "access" ? (
+      {tab === "overview" ? (
+        <Overview viewer={v} onChange={() => void viewer.reload()} />
+      ) : tab === "limits" ? (
         <ViewerAccess key={id} viewer={v} />
-      ) : view === "playback" ? (
+      ) : tab === "playback" ? (
         <ViewerPlayback key={id} viewer={v} />
-      ) : view === "alerts" ? (
+      ) : tab === "sign-in" ? (
         <div className="space-y-6">
-          <FavoriteEpisodeAlerts load={loadAlerts} />
-          <NotInterested load={loadHidden} restore={restoreHidden} />
-        </div>
-      ) : view === "sign-in" ? (
-        <div className="space-y-6">
-          {!v.isOwner ? (
-            <Membership
-              id={id}
-              active={viewerStatus(v) === "active"}
-              onChange={() => void viewer.reload()}
-            />
-          ) : null}
-          <SignInMethods base={`/users/${id}`} token={getToken()} owner />
+          <SignInMethods base={`/users/${id}`} token={getToken()} owner showInvite={!v.isOwner} />
           {serverAccess ? <ConnectApps base={`/viewers/${id}`} token={getToken()} /> : null}
         </div>
       ) : (
-        <div className="space-y-6">
-          <FavoritesMirror load={loadFavorites} save={saveFavorites} />
-          <ViewerWatchlist viewerId={id} />
+        <div className="space-y-8">
+          <TheirHome viewer={v} />
+          {taste.error ? (
+            <ErrorPanel error={taste.error} onRetry={() => void taste.reload()} />
+          ) : !taste.data ? (
+            <LoadingRows rows={4} />
+          ) : (
+            <TasteView userId={id} taste={taste.data} onChange={(next) => taste.setData(next)} />
+          )}
+          {serverAccess ? (
+            <>
+              <div className="space-y-6">
+                <FavoritesMirror load={loadFavorites} save={saveFavorites} />
+                <ViewerWatchlist viewerId={id} />
+              </div>
+              <div className="space-y-6">
+                <FavoriteEpisodeAlerts load={loadAlerts} />
+                <NotInterested load={loadHidden} restore={restoreHidden} />
+              </div>
+            </>
+          ) : null}
         </div>
       )}
     </DetailPageLayout>
@@ -246,6 +231,173 @@ function BackLink() {
     >
       <ArrowLeft size={14} /> {t("Viewers")}
     </Link>
+  );
+}
+
+type SignInMethod = { id: number; provider: string; display: string };
+type DeviceGrant = {
+  hash: string;
+  surface: string;
+  client: string;
+  product: string;
+  version: string;
+  lastUsed: string | number;
+};
+
+function sourceLabel(source: ReturnType<typeof viewerLifecycle>["source"]): string {
+  switch (source) {
+    case "owner":
+      return t("Owner");
+    case "local":
+      return t("Username & password");
+    case "invite":
+      return t("Invite link");
+    case "plexHome":
+      return t("Plex Home");
+    case "dlnaGuest":
+      return t("DLNA guest");
+    default:
+      return "Plex";
+  }
+}
+
+function Overview({ viewer: v, onChange }: { viewer: ViewerDetail; onChange: () => void }) {
+  const life = viewerLifecycle(v);
+  const name = viewerName(v);
+  const [resuming, setResuming] = useState(false);
+  const signIn = useAsync(
+    async (signal) => {
+      const [methods, devices] = await Promise.all([
+        apiFetch<{ identities: SignInMethod[] | null }>(`/users/${v.id}/identities`, { signal }),
+        apiFetch<{ devices: DeviceGrant[] | null }>(`/users/${v.id}/devices`, { signal }),
+      ]);
+      return { methods: methods.identities ?? [], devices: devices.devices ?? [] };
+    },
+    [v.id],
+  );
+
+  async function resume() {
+    setResuming(true);
+    try {
+      await apiFetch(`/users/${v.id}/resume`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      toast.success(t("Access resumed"));
+      onChange();
+    } catch (e) {
+      toast.error(t("Couldn't resume access"), { description: errorMessage(e) });
+    } finally {
+      setResuming(false);
+    }
+  }
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      {life.paused ? (
+        <Alert role="status">
+          <AlertDescription>
+            <span className="flex flex-wrap items-center gap-3">
+              <span className="flex-1">
+                {t("Access is paused. {name} keeps everything, but can't sign in anywhere.", {
+                  name,
+                })}
+              </span>
+              {life.canPause ? (
+                <Button size="sm" disabled={resuming} onClick={() => void resume()}>
+                  {t("Resume access")}
+                </Button>
+              ) : null}
+            </span>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <SettingsSection title={t("Status")}>
+        <SettingsRow
+          title={t("Access")}
+          control={
+            life.paused ? (
+              <Badge variant="warning">{t("Paused")}</Badge>
+            ) : (
+              <Badge variant="success">{t("Active")}</Badge>
+            )
+          }
+        />
+        <SettingsRow
+          title={t("How they joined")}
+          control={<span className="text-sm text-fg-muted">{sourceLabel(life.source)}</span>}
+        />
+        {life.managedBy === "plex" || life.source === "plex" || life.source === "plexHome" ? (
+          <SettingsRow
+            title={t("Plex sharing")}
+            control={
+              <span className="text-sm text-fg-muted">
+                {life.plexShared ? t("Shared on plex.tv") : t("No longer shared")}
+              </span>
+            }
+          />
+        ) : null}
+        <SettingsRow
+          title={t("Last active")}
+          control={
+            <span className="text-sm text-fg-muted" title={formatDateTime(v.lastActive)}>
+              {relativeTime(v.lastActive)}
+            </span>
+          }
+        />
+      </SettingsSection>
+      <SettingsSection title={t("How they sign in")}>
+        {signIn.error ? (
+          <div className="px-5 py-4">
+            <ErrorPanel error={signIn.error} onRetry={() => void signIn.reload()} />
+          </div>
+        ) : !signIn.data ? (
+          <div className="px-5 py-4">
+            <LoadingRows rows={2} />
+          </div>
+        ) : signIn.data.methods.length ? (
+          signIn.data.methods.map((m) => (
+            <SettingsRow
+              key={m.id}
+              title={m.display || m.provider}
+              description={
+                m.provider === "plex"
+                  ? "Plex"
+                  : m.provider === "local"
+                    ? t("Username & password")
+                    : m.provider
+              }
+            />
+          ))
+        ) : (
+          <p className="px-5 py-4 text-sm text-fg-muted">{t("No sign-in method yet")}</p>
+        )}
+      </SettingsSection>
+      <SettingsSection title={t("Devices")}>
+        {!signIn.data ? (
+          <div className="px-5 py-4">
+            <LoadingRows rows={1} />
+          </div>
+        ) : signIn.data.devices.length ? (
+          signIn.data.devices.map((d) => (
+            <SettingsRow
+              key={d.hash}
+              title={d.client || d.product || d.surface || t("Device")}
+              description={d.product && d.product !== d.client ? d.product : undefined}
+              control={<span className="text-xs text-fg-subtle">{relativeTime(d.lastUsed)}</span>}
+            />
+          ))
+        ) : (
+          <p className="px-5 py-4 text-sm text-fg-muted">
+            {t("Nothing is signed in with this account yet.")}
+          </p>
+        )}
+      </SettingsSection>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-fg">{t("Recent activity")}</h2>
+        <Activity viewer={v} />
+      </section>
+    </div>
   );
 }
 

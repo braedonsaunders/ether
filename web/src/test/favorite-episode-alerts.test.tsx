@@ -27,13 +27,11 @@ it("keeps the saved setting and reports a failed change", async () => {
   expect(toggle).not.toBeChecked();
 });
 
-it("shows an owner the saved preference without allowing them to opt the viewer in", async () => {
+it("shows an owner the saved preference as status, not a dead switch", async () => {
   const load = vi.fn(async () => ({ enabled: false }));
   render(<FavoriteEpisodeAlerts load={load} />);
-  const toggle = await screen.findByRole("switch", { name: "New episodes from favourite shows" });
-  await waitFor(() => expect(load).toHaveBeenCalled());
-  expect(toggle).toBeDisabled();
-  expect(toggle).not.toBeChecked();
+  expect(await screen.findByText("Off")).toBeInTheDocument();
+  expect(screen.queryByRole("switch")).toBeNull();
   expect(
     screen.getByText("The viewer can change this setting in their profile."),
   ).toBeInTheDocument();

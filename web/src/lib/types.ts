@@ -500,6 +500,7 @@ export interface EtherUser {
   email?: string;
   thumb?: string;
   isOwner: boolean;
+  lifecycle?: import("./contract").ViewerLifecycle;
   streamLimit: number;
   maxContentRating: string;
   subtitleLanguages: string[] | null;

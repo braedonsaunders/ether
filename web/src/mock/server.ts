@@ -380,6 +380,15 @@ const VIEWERS: Viewer[] = [
     lastActive: "",
     plays30d: 42,
     hoursWatched30d: 61.5,
+    lifecycle: {
+      source: "owner",
+      paused: false,
+      plexShared: false,
+      canRemove: false,
+      canMerge: false,
+      canPause: false,
+      managedBy: "",
+    },
   },
   {
     id: 2,
@@ -390,6 +399,15 @@ const VIEWERS: Viewer[] = [
     lastActive: "",
     plays30d: 27,
     hoursWatched30d: 33.2,
+    lifecycle: {
+      source: "local",
+      paused: false,
+      plexShared: false,
+      canRemove: true,
+      canMerge: true,
+      canPause: true,
+      managedBy: "",
+    },
   },
   {
     id: 3,
@@ -400,6 +418,15 @@ const VIEWERS: Viewer[] = [
     lastActive: "",
     plays30d: 58,
     hoursWatched30d: 24.8,
+    lifecycle: {
+      source: "plexHome",
+      paused: false,
+      plexShared: true,
+      canRemove: false,
+      canMerge: false,
+      canPause: false,
+      managedBy: "plex",
+    },
   },
   {
     id: 4,
@@ -410,6 +437,15 @@ const VIEWERS: Viewer[] = [
     lastActive: "",
     plays30d: 6,
     hoursWatched30d: 9.1,
+    lifecycle: {
+      source: "plex",
+      paused: false,
+      plexShared: true,
+      canRemove: false,
+      canMerge: false,
+      canPause: false,
+      managedBy: "plex",
+    },
   },
 ];
 
@@ -476,6 +512,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
       nightMode: boolean;
       dialogueBoost: boolean;
     },
+    pausedViewers: new Set<number>(),
+    removedViewers: new Set<number>(),
     users: VIEWERS.map<EtherUser>((v) => ({
       id: v.id,
       plexId: v.plexId,
@@ -483,6 +521,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       title: v.title,
       thumb: avatarFor(v.title),
       isOwner: v.isOwner,
+      lifecycle: v.lifecycle,
       streamLimit: 0,
       maxContentRating: v.id === 3 ? "PG" : "",
       subtitleLanguages: [],
@@ -2545,7 +2584,16 @@ export function createFakeServer(opts: FakeOptions = {}) {
         updateForced = Boolean((body as { force?: boolean } | null)?.force);
         return json(updateStatus(), 202);
       case "GET /users":
-        return json({ users: state.users });
+        return json({
+          users: state.users
+            .filter((u) => !state.removedViewers.has(u.id))
+            .map((u) => ({
+              ...u,
+              lifecycle: u.lifecycle
+                ? { ...u.lifecycle, paused: state.pausedViewers.has(u.id) }
+                : u.lifecycle,
+            })),
+        });
       case "GET /cluster":
         return json(clusterStatus());
       case "GET /cluster/setup":
@@ -2881,11 +2929,16 @@ export function createFakeServer(opts: FakeOptions = {}) {
       }
       case "GET /viewers":
         return json({
-          viewers: [...VIEWERS, ...state.dlnaGuests].map((v, i) => ({
-            ...v,
-            thumb: avatarFor(v.title),
-            lastActive: new Date(Date.now() - (i * 7 + 1) * 3600_000).toISOString(),
-          })),
+          viewers: [...VIEWERS, ...state.dlnaGuests]
+            .filter((v) => !state.removedViewers.has(v.id))
+            .map((v, i) => ({
+              ...v,
+              thumb: avatarFor(v.title),
+              lastActive: new Date(Date.now() - (i * 7 + 1) * 3600_000).toISOString(),
+              lifecycle: v.lifecycle
+                ? { ...v.lifecycle, paused: state.pausedViewers.has(v.id) }
+                : v.lifecycle,
+            })),
         });
       case "GET /layout":
         return json(layoutDoc());
@@ -3064,7 +3117,14 @@ export function createFakeServer(opts: FakeOptions = {}) {
     if (seg[0] === "viewers" && seg[1]) {
       const id = Number(seg[1]);
       const v = VIEWERS.find((x) => x.id === id);
-      if (!v) return err(404, "not_found", "no such viewer");
+      if (!v || state.removedViewers.has(id)) return err(404, "not_found", "no such viewer");
+      if (seg[2] === "quickconnect" && method === "POST") {
+        const code = String((body as { code?: string } | null)?.code ?? "");
+        if (code === "EXPIRED") return err(400, "expired", "code expired");
+        if (code === "USEDUP") return err(400, "used", "code already used");
+        if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return err(400, "invalid", "invalid code");
+        return json({ ok: true, device: "Living Room Apple TV", app: "Jellyfin" });
+      }
       if (seg[2] === "favorites-mirror") {
         if (method === "POST")
           state.favoritesMirror.set(id, (body as { enabled: boolean }).enabled);
@@ -3081,6 +3141,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
           ...v,
           thumb: avatarFor(v.title),
           lastActive: new Date(Date.now() - 3600_000).toISOString(),
+          lifecycle: v.lifecycle
+            ? { ...v.lifecycle, paused: state.pausedViewers.has(id) }
+            : v.lifecycle,
           recent,
         });
       }
@@ -3156,6 +3219,69 @@ export function createFakeServer(opts: FakeOptions = {}) {
           plexWatch.set(id, next);
           return json(next);
         }
+      }
+    }
+    if (seg[0] === "users" && seg[1] && /^\d+$/.test(seg[1])) {
+      const id = Number(seg[1]);
+      const target = VIEWERS.find((x) => x.id === id);
+      const managed = target?.lifecycle?.managedBy === "plex";
+      const plexManaged = () => err(409, "managed_by_plex", "This viewer is managed on plex.tv.");
+      if (seg[2] === "pause" && method === "POST") {
+        if (!target || state.removedViewers.has(id)) return err(404, "not_found", "no such viewer");
+        if (target.isOwner) return err(403, "forbidden", "The owner cannot be paused.");
+        if (managed) return plexManaged();
+        state.pausedViewers.add(id);
+        return json({ paused: true });
+      }
+      if (seg[2] === "resume" && method === "POST") {
+        if (!target || state.removedViewers.has(id)) return err(404, "not_found", "no such viewer");
+        if (target.isOwner) return err(403, "forbidden", "The owner cannot be paused.");
+        if (managed) return plexManaged();
+        state.pausedViewers.delete(id);
+        return json({ paused: false });
+      }
+      if (seg[2] === "signout" && method === "POST") {
+        if (!target || state.removedViewers.has(id)) return err(404, "not_found", "no such viewer");
+        return json({ revoked: 2 });
+      }
+      if (seg[2] === "merge" && method === "POST") {
+        const into = Number((body as { into?: number } | null)?.into ?? 0);
+        const dest = VIEWERS.find((x) => x.id === into);
+        if (!target || !dest || state.removedViewers.has(id) || into === id)
+          return err(400, "invalid", "invalid merge");
+        if (target.isOwner || dest.isOwner)
+          return err(403, "forbidden", "The owner cannot be merged.");
+        if (managed && dest.lifecycle?.managedBy === "plex")
+          return err(409, "conflict", "Two Plex viewers cannot be merged.");
+        if (managed) return plexManaged();
+        state.pausedViewers.delete(id);
+        state.removedViewers.add(id);
+        return json({ merged: true, into });
+      }
+      if (seg[2] === "invite" && method === "POST") {
+        if (!target || state.removedViewers.has(id)) return err(404, "not_found", "no such viewer");
+        if (target.isOwner) return err(403, "forbidden", "The owner needs no invite.");
+        return json({ url: "/ether/me#invite=mock-secret" });
+      }
+      if (!seg[2] && method === "GET") {
+        const user = state.users.find((u) => u.id === id);
+        if (!user || state.removedViewers.has(id)) return err(404, "not_found", "no such user");
+        return json({
+          user: {
+            ...user,
+            lifecycle: user.lifecycle
+              ? { ...user.lifecycle, paused: state.pausedViewers.has(id) }
+              : user.lifecycle,
+          },
+        });
+      }
+      if (!seg[2] && method === "DELETE") {
+        if (!target || state.removedViewers.has(id)) return err(404, "not_found", "no such viewer");
+        if (target.isOwner) return err(403, "forbidden", "The owner cannot be removed.");
+        if (managed) return plexManaged();
+        state.pausedViewers.delete(id);
+        state.removedViewers.add(id);
+        return json({ removed: true });
       }
     }
     if (seg[0] === "users" && seg[1] && (method === "PATCH" || method === "PUT")) {
@@ -3238,8 +3364,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
       if (method === "POST" && sub === "password") return json({ ok: true });
       if (method === "POST" && sub === "devices/revoke") return json({ ok: true });
     }
-    if (seg[0] === "users" && seg[1] && seg[2] === "identities" && method === "GET")
-      return json({ identities: [{ id: 1, provider: "local", display: "owner" }] });
+    if (seg[0] === "users" && seg[1] && seg[2] === "identities" && method === "GET") {
+      const who = VIEWERS.find((x) => x.id === Number(seg[1]));
+      const provider = who?.lifecycle?.managedBy === "plex" ? "plex" : "local";
+      return json({
+        identities: [{ id: 1, provider, display: who?.username ?? "owner" }],
+      });
+    }
     if (
       seg[0] === "users" &&
       seg[1] &&

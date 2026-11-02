@@ -300,7 +300,7 @@ describe("Home", () => {
   });
 
   it("shows a viewer's saved Home read-only on their profile", async () => {
-    const { fake } = renderApp("/viewers/2/home");
+    const { fake } = renderApp("/viewers/2/home-taste");
     const cw = await screen.findByRole("region", { name: "Slot 1: Continue Watching" }, WAIT);
     expect(within(cw).getByText("Anchored for everyone")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Turn off/ })).toBeNull();

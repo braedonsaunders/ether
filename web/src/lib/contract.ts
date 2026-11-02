@@ -210,6 +210,22 @@ export interface LookupResult {
 
 export type ViewerAccessStatus = "owner" | "active" | "imported" | "inactive";
 
+export type ViewerSource = "owner" | "local" | "invite" | "plex" | "plexHome" | "dlnaGuest";
+
+/** What the owner may do with this viewer, and who manages the account. */
+export interface ViewerLifecycle {
+  source: ViewerSource;
+  /** Access is paused: everything is kept, but they cannot sign in anywhere. */
+  paused: boolean;
+  /** Plex rows only: plex.tv still shares the server with them. */
+  plexShared: boolean;
+  canRemove: boolean;
+  canMerge: boolean;
+  canPause: boolean;
+  /** "plex" when the account is managed on plex.tv, never in Ether. */
+  managedBy: "plex" | "";
+}
+
 export interface Viewer {
   id: number;
   plexId: number;
@@ -218,6 +234,7 @@ export interface Viewer {
   thumb?: string;
   isOwner: boolean;
   accessStatus?: ViewerAccessStatus;
+  lifecycle?: ViewerLifecycle;
   lastActive?: string;
   plays30d: number;
   hoursWatched30d: number;

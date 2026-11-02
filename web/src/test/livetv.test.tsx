@@ -477,7 +477,7 @@ describe("Live TV access on the viewer profile", () => {
       favorites: [],
       maxRating: "",
     };
-    const { fake } = renderAppWith("/viewers/2/access", (method, path, body) => {
+    const { fake } = renderAppWith("/viewers/2/limits", (method, path, body) => {
       if (path === "/livetv/channels")
         return [
           { id: "c1", number: "1", name: "Movie night", kind: "virtual", enabled: true },

@@ -17,7 +17,7 @@ it("saves the Plex playlist preference and explains that favourites are kept", a
 
 it("lets an owner update the selected viewer's Plex playlist setting", async () => {
   const { renderApp } = await import("./harness");
-  const { fake } = renderApp("/viewers/2/watchlist");
+  const { fake } = renderApp("/viewers/2/home-taste");
   const toggle = await screen.findByRole("switch", {
     name: "Show my favourites as a playlist in Plex.",
   });

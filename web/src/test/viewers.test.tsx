@@ -67,6 +67,9 @@ describe("Viewers", () => {
     expect(await screen.findByText("Up to PG/TV-PG/TV-Y7", {}, WAIT)).toBeInTheDocument();
     fireEvent.click(row);
     expect(await screen.findByRole("heading", { name: /Sam Rivera/ }, WAIT)).toBeInTheDocument();
+    // Overview is the landing tab now.
+    expect(await screen.findByText("Recent activity", {}, WAIT)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Home & taste" }));
     expect(await screen.findByText("What Ether has learned", {}, WAIT)).toBeInTheDocument();
     expect(await screen.findByText("Up next", {}, WAIT)).toBeInTheDocument();
     expect(await screen.findByText("Pick 1", {}, WAIT)).toBeInTheDocument();
@@ -74,7 +77,7 @@ describe("Viewers", () => {
   });
 
   it("corrects taste from the genre chart and saves overrides", async () => {
-    const { fake } = renderApp("/viewers/2");
+    const { fake } = renderApp("/viewers/2/home-taste");
     fireEvent.click(await screen.findByRole("tab", { name: "Genres" }));
     const genres = await screen.findByRole("list", { name: /Genre affinity/ }, WAIT);
     fireEvent.click(within(genres).getByRole("button", { name: /Horror/ }));
@@ -96,7 +99,7 @@ describe("Viewers", () => {
   });
 
   it("adds a person correction through search", async () => {
-    const { fake } = renderApp("/viewers/1");
+    const { fake } = renderApp("/viewers/1/home-taste");
     fireEvent.click(await screen.findByRole("tab", { name: "Corrections" }));
     await screen.findByText("Your corrections", {}, WAIT);
     fireEvent.click(screen.getByRole("radio", { name: "Person" }));
@@ -117,7 +120,7 @@ describe("Viewers", () => {
   });
 
   it("sets a viewer's stream limit and rating cap", async () => {
-    const { fake } = renderApp("/viewers/4/access");
+    const { fake } = renderApp("/viewers/4/limits");
     const limit = await screen.findByLabelText("Stream limit", {}, WAIT);
     fireEvent.change(limit, { target: { value: "1" } });
     fireEvent.click(await screen.findByRole("button", { name: /Save changes/ }));
@@ -129,7 +132,7 @@ describe("Viewers", () => {
 
   it("saves a viewer's parental controls from their Access tab", async () => {
     const { fake } = renderApp(
-      "/viewers/3/access",
+      "/viewers/3/limits",
       {},
       extraRoutes((method, path) => {
         if (method === "GET" && path === "/safety/policies/3") return POLICY;
@@ -169,7 +172,7 @@ describe("Viewers", () => {
   });
 
   it("shows read-only plex.tv share defaults on Access", async () => {
-    renderApp("/viewers/3/access", {}, withPlexDefaults);
+    renderApp("/viewers/3/limits", {}, withPlexDefaults);
     expect(await screen.findByText("From Plex", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("Up to PG-13")).toBeInTheDocument();
     expect(screen.getByText("Hides collection Hidden")).toBeInTheDocument();
@@ -230,8 +233,8 @@ it("filters imported history without changing Plex access", async () => {
   ).toHaveLength(0);
 });
 
-it("hides server-only tabs for a viewer kept for imported history", async () => {
-  renderApp("/viewers/2/watchlist", {}, (server) => {
+it("hides server-only sections for a viewer kept for imported history", async () => {
+  renderApp("/viewers/2/home-taste", {}, (server) => {
     const base = server.fetch;
     server.fetch = async (input, init) => {
       const res = await base(input, init);
@@ -249,5 +252,11 @@ it("hides server-only tabs for a viewer kept for imported history", async () => 
   const tabs = await screen.findByRole("tablist", { name: "Viewer sections" }, WAIT);
   expect(within(tabs).queryByRole("tab", { name: "Watchlist" })).toBeNull();
   expect(within(tabs).queryByRole("tab", { name: "Alerts" })).toBeNull();
-  expect(within(tabs).getByRole("tab", { name: "Taste" })).toHaveAttribute("aria-selected", "true");
+  expect(within(tabs).getByRole("tab", { name: "Home & taste" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // The watchlist and alerts sections inside Home & taste need server access.
+  await screen.findByText("What Ether has learned", {}, WAIT);
+  expect(screen.queryByText("New episodes from favourite shows")).toBeNull();
 });
