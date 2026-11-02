@@ -24,7 +24,7 @@ import { api } from "../../lib/api";
 import { qualityGateLabel } from "../../lib/releases";
 import type { QualityProfile, ReleaseRule } from "../../lib/types";
 import { QUALITY_AUDIO, QUALITY_CODECS, QUALITY_SOURCES } from "../settings/schema";
-import { TieBreakerSection } from "../sources/EqualQuality";
+import { sourceOrderFields, sourceOrderValue, TieBreakerSection } from "../sources/EqualQuality";
 import {
   BoolRow,
   OrderButtons,
@@ -554,7 +554,7 @@ function ProfileList({
       home: isExisting ? quality.default === draft.name : profiles.length === 0,
       away: isExisting && quality.remote === draft.name,
     });
-    setSourcePref(resolver?.sourcePreference || "auto");
+    setSourcePref(sourceOrderValue(resolver ?? undefined));
     setScoring(scoringText(resolver, draft));
   };
 
@@ -568,7 +568,7 @@ function ProfileList({
         ...resolver,
         customFormats: resolver.customFormats ?? [],
         customFormatScores: resolver.customFormatScores ?? {},
-        sourcePreference: nextPref,
+        ...sourceOrderFields(nextPref),
       });
       toast.success(t("Source order saved"));
       await refresh();
@@ -644,7 +644,7 @@ function ProfileList({
         if (previous !== JSON.stringify(parsed.customFormats)) {
           await api.putSection("resolver", {
             ...(resolver ?? {}),
-            sourcePreference: sourcePref,
+            ...sourceOrderFields(sourcePref),
             customFormats: parsed.customFormats,
             customFormatScores: resolver?.customFormatScores ?? {},
           });

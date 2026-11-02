@@ -327,6 +327,7 @@ export interface EtherConfig {
     optimisticStart?: boolean;
     healthRace?: number;
     sourcePreference?: string;
+    sourceAlwaysFirst?: boolean;
     customFormats?: unknown[];
     customFormatScores?: Record<string, number>;
   };

@@ -11,7 +11,30 @@ export const SOURCE_PREFERENCE = localized(() => [
   { value: "auto", label: t("Start fastest") },
   { value: "usenet", label: t("Usenet first") },
   { value: "debrid", label: t("Debrid first") },
+  { value: "usenet-always", label: t("Always Usenet") },
+  { value: "debrid-always", label: t("Always cached debrid") },
 ]);
+
+/** The select value for resolver.sourcePreference + sourceAlwaysFirst. */
+export function sourceOrderValue(r?: {
+  sourcePreference?: string;
+  sourceAlwaysFirst?: boolean;
+}): string {
+  const pref = r?.sourcePreference || "auto";
+  return r?.sourceAlwaysFirst && (pref === "usenet" || pref === "debrid") ? `${pref}-always` : pref;
+}
+
+/** The resolver fields a select value stands for. */
+export function sourceOrderFields(value: string): {
+  sourcePreference: string;
+  sourceAlwaysFirst: boolean;
+} {
+  const always = value.endsWith("-always");
+  return {
+    sourcePreference: always ? value.slice(0, -"-always".length) : value,
+    sourceAlwaysFirst: always,
+  };
+}
 
 /** Measured startup per source, as the resolver sees it. */
 export function SourceStartupNote() {
@@ -40,9 +63,11 @@ export function SourceStartupNote() {
 }
 
 /**
- * Last step of the profile drawer: which kind of source leads when two
- * releases are equal after the profile's ranking ladder. Applies to all
- * profiles (resolver.sourcePreference).
+ * Last step of the profile drawer: which kind of source leads. The first
+ * three choices only decide between releases that are equal after the
+ * profile's ranking ladder; the "Always" choices put that source first
+ * whatever the other has (resolver.sourcePreference + sourceAlwaysFirst).
+ * Applies to all profiles.
  */
 export function TieBreakerSection({
   value,
@@ -58,10 +83,13 @@ export function TieBreakerSection({
   return (
     <SettingsSection title={t("Tie-breaker")} description={t("Applies to all profiles.")}>
       <SettingsRow
-        title={t("When two releases are equal")}
+        title={t("Which source goes first")}
         description={
           <>
             {t("Start fastest picks whichever source has been quicker to start.")}{" "}
+            {t(
+              "Usenet first and Debrid first only decide between equal releases. The Always choices use that source even when the other has a better release, and fall back to the other when it has nothing that plays.",
+            )}{" "}
             <SourceStartupNote />
           </>
         }
@@ -72,7 +100,7 @@ export function TieBreakerSection({
               value={value || "auto"}
               onChange={onChange}
               options={SOURCE_PREFERENCE}
-              ariaLabel={t("When two releases are equal")}
+              ariaLabel={t("Which source goes first")}
               searchable={false}
               disabled={saving}
             />

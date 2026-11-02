@@ -334,11 +334,20 @@ describe("Source routing", () => {
     ).toBeInTheDocument();
     expect(within(drawer).getByText(/Usenet 2\.1 s \(37 plays\)/)).toBeInTheDocument();
     expect(within(drawer).getByText("Applies to all profiles.")).toBeInTheDocument();
-    fireEvent.click(within(drawer).getByRole("button", { name: "When two releases are equal" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Which source goes first" }));
     fireEvent.click(await screen.findByRole("option", { name: "Usenet first" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/resolver")[0]!.body).toMatchObject({
       sourcePreference: "usenet",
+      sourceAlwaysFirst: false,
+    });
+    // "Always cached debrid" saves debrid with the always flag.
+    fireEvent.click(within(drawer).getByRole("button", { name: "Which source goes first" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Always cached debrid" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(2));
+    expect(calls(fake, "PUT", "/config/resolver")[1]!.body).toMatchObject({
+      sourcePreference: "debrid",
+      sourceAlwaysFirst: true,
     });
   });
 });
