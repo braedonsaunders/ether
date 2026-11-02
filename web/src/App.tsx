@@ -70,6 +70,7 @@ import { ErrorPanel } from "./components/feedback";
 import { SaveBarHost } from "./components/SaveBar";
 import { UpdateReady } from "./components/UpdateReady";
 import { LEVEL_LABEL, LevelBadge, StatusDot } from "./components/status";
+import { useOwnerViewerPath } from "./components/pickers";
 import { api, getToken, setToken } from "./lib/api";
 import type { Bootstrap } from "./lib/types";
 import { theme } from "./theme";
@@ -100,7 +101,6 @@ const Sources = lazy(() => import("./pages/sources/Sources"));
 const Releases = lazy(() => import("./pages/releases/Releases"));
 const Cache = lazy(() => import("./pages/cache/Cache"));
 const Playback = lazy(() => import("./pages/playback/Playback"));
-const Profile = lazy(() => import("./pages/Profile"));
 
 /** react-router links for every AppKit navigation primitive. */
 const RouterAnchor = forwardRef<
@@ -319,6 +319,7 @@ function PageFallback() {
 
 function Shell() {
   const { boot } = useApp();
+  const ownerPath = useOwnerViewerPath();
   const location = useLocation();
   const remoteSession = boot.authRequired && Boolean(getToken());
   const version = versionLabel(boot.version);
@@ -368,7 +369,7 @@ function Shell() {
               }}
             />
             <Link
-              to="/profile"
+              to={ownerPath}
               aria-label={t("Your account")}
               className="inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
@@ -453,7 +454,6 @@ function Shell() {
               <Route path="/cache/:tab?" element={<Cache />} />
               <Route path="/playback/:tab?/:section?" element={<Playback />} />
               <Route path="/notifications/:tab?" element={<Notifications />} />
-              <Route path="/profile" element={<Profile />} />
               <Route path="/server/:tab?" element={<GeneralPage />} />
               <Route path="/apps/:tab?/:section?" element={<Apps />} />
               <Route path="/services/:tab?" element={<ServicesPage />} />

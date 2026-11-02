@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { TasteOverride } from "../lib/contract";
 import type { FakeServer } from "../mock/server";
 import { calls, renderApp } from "./harness";
@@ -204,6 +204,18 @@ it("filters imported history without changing Plex access", async () => {
       body.viewers = body.viewers.map((v: { id: number; isOwner: boolean }) => ({
         ...v,
         accessStatus: v.isOwner ? "owner" : v.id === 2 ? "imported" : "active",
+        ...(v.id === 2
+          ? {
+              lifecycle: {
+                source: "local",
+                paused: false,
+                managedBy: "",
+                canPause: true,
+                canRemove: true,
+                canMerge: true,
+              },
+            }
+          : {}),
       }));
       return new Response(JSON.stringify(body), {
         status: 200,
@@ -213,14 +225,12 @@ it("filters imported history without changing Plex access", async () => {
   });
   await screen.findByText("Sam Rivera", {}, WAIT);
   expect(screen.getByText("Imported history", { selector: "span" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Viewer status" }));
-  fireEvent.click(await screen.findByRole("option", { name: /^With access/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Active \(/ }));
   expect(screen.queryByText("Sam Rivera")).not.toBeInTheDocument();
   expect(screen.getByText("The Kids")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Viewer status" }));
-  fireEvent.click(await screen.findByRole("option", { name: /^Imported history/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^All \(/ }));
   expect(screen.getByText("Sam Rivera")).toBeInTheDocument();
-  expect(screen.queryByText("The Kids")).not.toBeInTheDocument();
+  expect(screen.getByText("The Kids")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Plex.tv" })).toHaveAttribute(
     "href",
     "https://app.plex.tv/desktop/#!/settings/manage-library-access",
@@ -228,6 +238,133 @@ it("filters imported history without changing Plex access", async () => {
   expect(
     fake.state.calls.filter((c) => ["POST", "PUT", "PATCH", "DELETE"].includes(c.method)),
   ).toHaveLength(0);
+});
+
+/** Override the lifecycle of the seed viewers by id. */
+function withLifecycles(
+  byId: Record<number, Record<string, unknown>>,
+): (server: FakeServer) => void {
+  return (server) => {
+    const base = server.fetch;
+    server.fetch = async (input, init) => {
+      const res = await base(input, init);
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname !== "/ether/api/viewers") return res;
+      const body = await res.json();
+      body.viewers = body.viewers.map((v: { id: number; lifecycle: unknown }) => ({
+        ...v,
+        ...(byId[v.id] ? { lifecycle: byId[v.id] } : {}),
+      }));
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+  };
+}
+
+it("puts the owner first as You and filters by lifecycle", async () => {
+  renderApp(
+    "/viewers",
+    {},
+    withLifecycles({
+      2: {
+        source: "local",
+        paused: true,
+        managedBy: "",
+        canPause: true,
+        canRemove: true,
+        canMerge: true,
+      },
+      4: {
+        source: "plex",
+        paused: false,
+        plexShared: false,
+        managedBy: "plex",
+        canPause: false,
+        canRemove: false,
+        canMerge: false,
+      },
+    }),
+  );
+  await screen.findByText("Sam Rivera", {}, WAIT);
+  // The first data row is the owner, shown as "You" with an Owner badge.
+  const rows = screen.getAllByRole("row");
+  expect(rows[1]).toHaveTextContent("You");
+  expect(rows[1]).toHaveTextContent("Owner");
+  expect(rows[1]).toHaveTextContent("Alex Rivera");
+  // Status and source badges from the lifecycle.
+  expect(screen.getByText("Paused", { selector: "span" })).toBeInTheDocument();
+  expect(screen.getByText("Local", { selector: "span" })).toBeInTheDocument();
+  expect(screen.getByText("No longer shared", { selector: "span" })).toBeInTheDocument();
+  expect(screen.getAllByText("Managed on plex.tv", { selector: "span" }).length).toBeGreaterThan(0);
+  // Paused chip keeps only the paused local viewer.
+  fireEvent.click(screen.getByRole("button", { name: /^Paused \(/ }));
+  expect(screen.getByText("Sam Rivera")).toBeInTheDocument();
+  expect(screen.queryByText("Jordan Lee")).not.toBeInTheDocument();
+  expect(screen.queryByText("You")).not.toBeInTheDocument();
+  // From Plex chip (Plex is connected in the fake) keeps only Plex rows.
+  fireEvent.click(screen.getByRole("button", { name: /^From Plex \(/ }));
+  expect(screen.getByText("Jordan Lee")).toBeInTheDocument();
+  expect(screen.getByText("The Kids")).toBeInTheDocument();
+  expect(screen.queryByText("Sam Rivera")).not.toBeInTheDocument();
+});
+
+it("shows nothing Plex-related when Plex is off", async () => {
+  renderApp("/viewers", { bootstrap: { plexEnabled: false } });
+  await screen.findByText("Sam Rivera", {}, WAIT);
+  expect(screen.queryByRole("button", { name: /^From Plex \(/ })).not.toBeInTheDocument();
+  expect(screen.queryByText("Managed on plex.tv")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Plex.tv" })).not.toBeInTheDocument();
+});
+
+it("adds a local viewer through the guided flow and shows how to connect", async () => {
+  const { fake } = renderApp("/viewers", {}, (server) => {
+    server.state.config.frontends = {
+      ...server.state.config.frontends,
+      plex: { enabled: true },
+      jellyfin: { enabled: true },
+      stremio: { enabled: true },
+    };
+  });
+  const writeText = vi.fn(async (_text: string) => {});
+  Object.assign(navigator, { clipboard: { writeText } });
+  await screen.findByText("Sam Rivera", {}, WAIT);
+  fireEvent.click(screen.getByRole("button", { name: /Add viewer/ }));
+  const drawer = await screen.findByRole("dialog", { name: "Add viewer" }, WAIT);
+  fireEvent.change(within(drawer).getByLabelText("Their name"), { target: { value: "Riley" } });
+  fireEvent.click(within(drawer).getByRole("button", { name: "Continue" }));
+  expect(await within(drawer).findByText("How will they sign in?", {}, WAIT)).toBeInTheDocument();
+  expect(within(drawer).getByLabelText("Username")).toHaveValue("riley");
+  fireEvent.change(within(drawer).getByLabelText("Password"), {
+    target: { value: "a-very-long-password" },
+  });
+  fireEvent.click(within(drawer).getByRole("button", { name: "Create viewer" }));
+  expect(await within(drawer).findByText("How to connect", {}, WAIT)).toBeInTheDocument();
+  await waitFor(() => expect(calls(fake, "POST", "/users/local")).toHaveLength(1), WAIT);
+  expect(calls(fake, "POST", "/users/local")[0]!.body).toEqual({
+    username: "riley",
+    password: "a-very-long-password",
+  });
+  // One card per enabled app, plus the plain Plex truth for local viewers.
+  expect(within(drawer).getByRole("heading", { name: "Jellyfin" })).toBeInTheDocument();
+  expect(within(drawer).getByText(/They sign in as riley\./)).toBeInTheDocument();
+  expect(within(drawer).getByText(/Quick Connect/)).toBeInTheDocument();
+  expect(within(drawer).getByText(/Infuse, Swiftfin, Findroid, Streamyfin/)).toBeInTheDocument();
+  expect(within(drawer).getByRole("heading", { name: "Stremio" })).toBeInTheDocument();
+  expect(within(drawer).getByText(/They get their link at .*\/ether\/me/)).toBeInTheDocument();
+  expect(
+    within(drawer).getByText("Local viewers can't use Plex apps unless they link a Plex account."),
+  ).toBeInTheDocument();
+  fireEvent.click(within(drawer).getByRole("button", { name: /Copy as message/ }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledOnce(), WAIT);
+  const message = String(writeText.mock.calls[0]![0]);
+  expect(message).toContain("Hi Riley, you can watch on my Ether server.");
+  expect(message).toContain("Your username is riley.");
+  expect(message).toContain("Jellyfin:");
+  fireEvent.click(within(drawer).getByRole("button", { name: "Done" }));
+  // The new viewer joins the list once the drawer closes.
+  await waitFor(() => expect(screen.getAllByText("riley").length).toBeGreaterThan(0), WAIT);
 });
 
 it("hides server-only tabs for a viewer kept for imported history", async () => {

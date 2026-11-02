@@ -1,14 +1,8 @@
-import {
-  Avatar,
-  Button,
-  EmptyState,
-  PagedTable,
-  Select,
-  Skeleton,
-} from "@braedonsaunders/appkit-ui";
+import { Avatar, Button, EmptyState, PagedTable, Skeleton } from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
 import { Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAppOptional } from "../../app-context";
 import { ErrorPanel } from "../../components/feedback";
 import { DomainPage } from "../../components/layout";
 import { loadViewers, viewerName } from "../../components/pickers";
@@ -20,8 +14,11 @@ import { formatDateTime, formatNumber, parseTime, relativeTime } from "../../lib
 import { useAsync } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
+import { isActiveViewer, isPlexSource, LifecycleBadges, lifecycleOf } from "./lifecycle";
 import { AddViewerDrawer } from "./ManageViewers";
-import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
+import { PlexAccessNote } from "./ViewerStatus";
+
+type PeopleFilter = "all" | "active" | "paused" | "plex";
 
 export default function ViewersList() {
   const [adding, setAdding] = useState(false);
@@ -62,22 +59,40 @@ function limitsSummary(u: EtherUser | undefined): string {
 
 function People() {
   const navigate = useNavigate();
-  const [status, setStatus] = useState("all");
+  const plexConnected = useAppOptional()?.boot.plexEnabled !== false;
+  const [status, setStatus] = useState<PeopleFilter>("all");
   const state = useAsync(() => loadViewers(true), []);
   // Limits come from the user records; the list still works without them.
   const users = useAsync(() => api.users().catch(() => [] as EtherUser[]), []);
   const byId = new Map((users.data ?? []).map((u) => [u.id, u]));
   const viewers = state.data ?? [];
-  const hasAccess = (v: Viewer) => ["owner", "active"].includes(viewerStatus(v));
-  const filtered = viewers.filter(
-    (v) =>
-      status === "all" ||
-      (status === "active"
-        ? hasAccess(v)
-        : status === "imported"
-          ? viewerStatus(v) === "imported"
-          : !hasAccess(v)),
+  const isPaused = (v: Viewer) => lifecycleOf(v).paused && !isPlexSource(lifecycleOf(v).source);
+  const fromPlex = (v: Viewer) => isPlexSource(lifecycleOf(v).source);
+  const filtered = viewers.filter((v) =>
+    status === "all"
+      ? true
+      : status === "active"
+        ? isActiveViewer(v)
+        : status === "paused"
+          ? isPaused(v)
+          : fromPlex(v),
   );
+  const filters: { value: PeopleFilter; label: string }[] = [
+    { value: "all", label: t("All ({count})", { count: viewers.length }) },
+    {
+      value: "active",
+      label: t("Active ({count})", { count: viewers.filter(isActiveViewer).length }),
+    },
+    { value: "paused", label: t("Paused ({count})", { count: viewers.filter(isPaused).length }) },
+    ...(plexConnected
+      ? [
+          {
+            value: "plex" as PeopleFilter,
+            label: t("From Plex ({count})", { count: viewers.filter(fromPlex).length }),
+          },
+        ]
+      : []),
+  ];
   if (state.error) return <ErrorPanel error={state.error} onRetry={() => void state.reload()} />;
   if (!state.data)
     return (
@@ -91,27 +106,23 @@ function People() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PlexAccessNote />
-        <Select
-          aria-label={t("Viewer status")}
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="w-60"
-        >
-          <option value="all">{t("All viewers ({count})", { count: viewers.length })}</option>
-          <option value="active">
-            {t("With access ({count})", { count: viewers.filter(hasAccess).length })}
-          </option>
-          <option value="imported">
-            {t("Imported history ({count})", {
-              count: viewers.filter((v) => viewerStatus(v) === "imported").length,
-            })}
-          </option>
-          <option value="inactive">
-            {t("No current access ({count})", {
-              count: viewers.filter((v) => !hasAccess(v)).length,
-            })}
-          </option>
-        </Select>
+        <div role="group" aria-label={t("Viewer status")} className="flex flex-wrap gap-1.5">
+          {filters.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={status === f.value}
+              onClick={() => setStatus(f.value)}
+              className={
+                status === f.value
+                  ? "rounded-full border border-primary/40 bg-primary-subtle px-3 py-1 text-sm font-medium text-primary"
+                  : "rounded-full border border-border bg-surface px-3 py-1 text-sm font-medium text-fg-muted hover:border-border-strong hover:text-fg"
+              }
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
       <PagedTable<Viewer>
         rows={filtered}
@@ -119,7 +130,7 @@ function People() {
         searchable
         pageSize={15}
         onRowClick={(v) => navigate(`/viewers/${v.id}`)}
-        defaultSort={{ key: "plays", dir: "desc" }}
+        defaultSort={{ key: "name", dir: "asc" }}
         empty={
           <EmptyState
             icon={<Users />}
@@ -127,7 +138,9 @@ function People() {
             description={
               viewers.length
                 ? t("Choose another status or search to see more people.")
-                : t("Share this server from Plex.tv, or import viewing history.")
+                : plexConnected
+                  ? t("Share this server from Plex.tv, or import viewing history.")
+                  : t("Add a viewer to get them watching.")
             }
           />
         }
@@ -137,15 +150,19 @@ function People() {
             key: "name",
             header: t("Viewer"),
             search: (v) => `${v.title} ${v.username}`,
-            sortValue: (v) => viewerName(v).toLowerCase(),
+            // The owner ("You") always leads the default name sort.
+            sortValue: (v) => `${v.isOwner ? "0" : "1"}${viewerName(v).toLowerCase()}`,
             cell: (v) => (
               <span className="flex items-center gap-3">
                 <Avatar src={v.thumb} name={viewerName(v)} size={34} />
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 font-medium text-fg">
-                    {viewerName(v)} <ViewerStatus viewer={v} />
+                  <span className="flex flex-wrap items-center gap-1.5 font-medium text-fg">
+                    {v.isOwner ? t("You") : viewerName(v)}{" "}
+                    <LifecycleBadges viewer={v} plexConnected={plexConnected} />
                   </span>
-                  <span className="block text-xs text-fg-muted">{v.username}</span>
+                  <span className="block text-xs text-fg-muted">
+                    {v.isOwner ? `${viewerName(v)} · ${v.username}` : v.username}
+                  </span>
                 </span>
               </span>
             ),

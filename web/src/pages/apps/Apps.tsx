@@ -23,7 +23,8 @@ import { MoreOptions } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
-import { t } from "../../i18n";
+import { t, tx } from "../../i18n";
+import { useOwnerViewerPath } from "../../components/pickers";
 import { API_BASE, api, apiBlob, apiFetch } from "../../lib/api";
 import { isPlainObject } from "../../lib/format";
 import { useAsync, useInterval } from "../../lib/hooks";
@@ -590,6 +591,7 @@ function AppStatus({ info }: { info: FrontendInfo }) {
 }
 
 function AppDetail({ info, startOpen = false }: { info: FrontendInfo; startOpen?: boolean }) {
+  const ownerPath = useOwnerViewerPath();
   const addresses = usableAddresses(info.status);
   const [selectedURL, setSelectedURL] = useState("");
   const chosen = addresses.includes(selectedURL) ? selectedURL : addresses[0];
@@ -623,7 +625,19 @@ function AppDetail({ info, startOpen = false }: { info: FrontendInfo; startOpen?
           description={t("Infuse needs an app password. The Emby for TV app isn't supported.")}
           footer={
             <div className="flex flex-wrap items-center gap-3">
-              <Link className="text-sm font-medium text-primary underline" to="/profile">
+              <p className="w-full text-sm text-fg-muted">
+                {tx(
+                  "People sign in with their Ether viewer account. Manage them under {viewers}.",
+                  {
+                    viewers: (
+                      <Link className="font-medium text-primary underline" to="/viewers">
+                        {t("Viewers")}
+                      </Link>
+                    ),
+                  },
+                )}
+              </p>
+              <Link className="text-sm font-medium text-primary underline" to={ownerPath}>
                 {t("Open my account")}
               </Link>
               <Link className="text-sm text-fg-muted underline" to="/me">

@@ -1030,7 +1030,7 @@ describe("setup wizard", () => {
     });
     expect(await screen.findByRole("heading", { name: "Owner account" })).toBeInTheDocument();
     expect(await screen.findByText("Owner: Alex Rivera")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Change" })).toHaveAttribute("href", "/profile");
+    expect(screen.getByRole("link", { name: "Change" })).toHaveAttribute("href", "/viewers/1");
     expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save and continue" })).toBeEnabled();
   });

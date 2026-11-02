@@ -448,7 +448,10 @@ export default function Setup() {
           .viewers()
           .then((list) => {
             const owner = list.find((viewer) => viewer.isOwner);
-            if (owner) setOwnerName(owner.title || owner.username);
+            if (owner) {
+              setOwnerName(owner.title || owner.username);
+              setOwnerId(owner.id);
+            }
           })
           .catch(() => {});
       })
@@ -469,6 +472,7 @@ export default function Setup() {
   const [pinDone, setPinDone] = useState(false);
   const [localDone, setLocalDone] = useState(false);
   const [ownerName, setOwnerName] = useState("");
+  const [ownerId, setOwnerId] = useState<number>();
   const [editingIndexers, setEditingIndexers] = useState<Record<string, boolean>>({});
   const [localUsername, setLocalUsername] = useState("");
   const [localPassword, setLocalPassword] = useState("");
@@ -1069,7 +1073,10 @@ export default function Setup() {
             <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
               <Check size={14} className="text-primary" />
               {ownerName ? t("Owner: {name}", { name: ownerName }) : t("Owner account")}
-              <Link className="font-medium underline" to="/profile">
+              <Link
+                className="font-medium underline"
+                to={ownerId ? `/viewers/${ownerId}` : "/viewers"}
+              >
                 {t("Change")}
               </Link>
             </p>
