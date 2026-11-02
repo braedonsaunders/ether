@@ -746,6 +746,9 @@ export interface NowPlaying {
   product: string;
   decision: string;
   decisionReason: string;
+  /** Whether the current decision copies each stream; a remux with audioCopy false is transcoding only the audio. */
+  videoCopy: boolean;
+  audioCopy: boolean;
   remote: boolean;
   bytesServed: number;
   size: number;
@@ -795,6 +798,8 @@ export function normalizeSessions(v: unknown): NowPlaying[] {
       product: str(pick(client, "product")),
       decision: str(pick(s, "Decision", "decision")),
       decisionReason: str(pick(s, "decisionReason", "DecisionReason")),
+      videoCopy: pick(s, "decisionVideoCopy", "DecisionVideoCopy") === true,
+      audioCopy: pick(s, "decisionAudioCopy", "DecisionAudioCopy") === true,
       remote: pick(client, "remote") === true,
       bytesServed: num(pick(s, "BytesServed", "bytesServed")),
       size: num(pick(info, "size", "Size")),
@@ -807,4 +812,25 @@ export function normalizeSessions(v: unknown): NowPlaying[] {
       failovers: num(pick(s, "Failovers", "failovers")),
     };
   });
+}
+
+/**
+ * Chip label for a now-playing decision. The server reports the delivery
+ * that is actually running: "directplay" (original file), "copy" (remux /
+ * direct stream) or "transcode". A remux that copies the video but
+ * re-encodes the audio is transcoding only the audio. Anything else,
+ * including no decision yet, is still starting.
+ */
+export function decisionLabel(s: Pick<NowPlaying, "decision" | "videoCopy" | "audioCopy">): string {
+  const audioOnly = s.videoCopy && !s.audioCopy;
+  switch (s.decision) {
+    case "directplay":
+      return t("Direct play");
+    case "copy":
+      return audioOnly ? t("Transcoding (audio)") : t("Direct stream");
+    case "transcode":
+      return audioOnly ? t("Transcoding (audio)") : t("Transcoding");
+    default:
+      return t("Starting");
+  }
 }

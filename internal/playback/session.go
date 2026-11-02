@@ -243,9 +243,13 @@ type session struct {
 	stopAt         time.Time // set by a "stopped" timeline; expiry after a grace
 	decision       core.DecisionKind
 	decisionReason string
-	explicit       bool // decision set by SetDecision
-	closed         bool
-	registered     bool
+	// Whether the current decision copies each stream; a remux with
+	// decisionAudioCopy false is transcoding only the audio.
+	decisionVideoCopy bool
+	decisionAudioCopy bool
+	explicit          bool // decision set by SetDecision
+	closed            bool
+	registered        bool
 
 	// Speed-coupled down-failover state (guarded by speedMu).
 	speedMu    sync.Mutex
@@ -356,6 +360,7 @@ func (s *session) markDirectPlay() {
 	s.mu.Lock()
 	if !s.explicit {
 		s.decision = core.DecisionDirectPlay
+		s.decisionVideoCopy, s.decisionAudioCopy = true, true
 	}
 	s.mu.Unlock()
 }
@@ -383,24 +388,26 @@ func (s *session) snapshot(now time.Time) *core.PlaySession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ps := &core.PlaySession{
-		PreparedOnly:   s.preparedOnly,
-		ID:             s.id,
-		UserID:         s.ident.userID,
-		ClientID:       s.ident.clientID,
-		PlaybackGroup:  s.playbackGroup,
-		Key:            s.ident.key,
-		StartedAt:      s.startedAt,
-		TitleName:      s.titleName,
-		Username:       s.user.Username,
-		Client:         s.caps,
-		Decision:       s.decision,
-		DecisionReason: s.decisionReason,
-		BytesServed:    s.bytes.Load(),
-		SpeedBps:       s.rate.rate(now),
-		LastActive:     s.lastActive,
-		Failovers:      s.failovers,
-		DownFailovers:  s.downFailovers,
-		RequiresRemux:  s.requiresRemux,
+		PreparedOnly:      s.preparedOnly,
+		ID:                s.id,
+		UserID:            s.ident.userID,
+		ClientID:          s.ident.clientID,
+		PlaybackGroup:     s.playbackGroup,
+		Key:               s.ident.key,
+		StartedAt:         s.startedAt,
+		TitleName:         s.titleName,
+		Username:          s.user.Username,
+		Client:            s.caps,
+		Decision:          s.decision,
+		DecisionReason:    s.decisionReason,
+		DecisionVideoCopy: s.decisionVideoCopy,
+		DecisionAudioCopy: s.decisionAudioCopy,
+		BytesServed:       s.bytes.Load(),
+		SpeedBps:          s.rate.rate(now),
+		LastActive:        s.lastActive,
+		Failovers:         s.failovers,
+		DownFailovers:     s.downFailovers,
+		RequiresRemux:     s.requiresRemux,
 	}
 	if !s.viewerAt.IsZero() {
 		offset := s.viewerPosition.Milliseconds()

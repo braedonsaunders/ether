@@ -82,6 +82,21 @@ func Decide(playback core.Playback, transcoder core.Transcoder, r DecisionReques
 	return dec, nil
 }
 
+// recordPlaybackDecision tells the playback manager which delivery was
+// actually started for a source, so its session snapshots (Activity ›
+// Now playing, /status/sessions) show the current decision instead of a
+// stale direct read or none at all. A remux or transcode also satisfies
+// a pending RequiresRemux on the playback session. Callers must not hold
+// the broker lock: the playback manager notifies its own subscribers.
+func (b *Broker) recordPlaybackDecision(playID string, dec core.Decision) {
+	if b == nil || playID == "" || dec.Kind == "" {
+		return
+	}
+	if rec, ok := b.deps.Playback.(core.PlaybackDecisionRecorder); ok {
+		rec.SetDecision(playID, dec)
+	}
+}
+
 // HLSDecision applies the v39 start-time decision rules. A client may reject
 // direct play after its initial decision; in that case reconsider is called
 // before selecting the segmented output. forcedStream, when supplied, applies

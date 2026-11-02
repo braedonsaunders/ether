@@ -1239,14 +1239,25 @@ func (m *Manager) urlFor(g *generation) string {
 	return m.baseURL + "/src/" + g.sess.id + "/" + g.token
 }
 
-// SetDecision records the transcode decision the front end made for a
-// session, shown in Sessions(). A remux/transcode decision satisfies a
-// pending RequiresRemux.
+// SetDecision records the delivery decision actually started for a
+// session, shown in Sessions(). The session broker calls it when it (or
+// the Plex adapter through it) starts a remux, transcode or direct
+// stream, so the reported decision follows the current delivery. A
+// remux/transcode decision satisfies a pending RequiresRemux.
 func (m *Manager) SetDecision(id string, d core.Decision) {
+	if d.Kind == "" {
+		return
+	}
 	if s := m.lookup(id); s != nil {
 		s.mu.Lock()
 		s.decision, s.explicit = d.Kind, true
 		s.decisionReason = d.Reason
+		s.decisionVideoCopy, s.decisionAudioCopy = d.VideoCopy, d.AudioCopy
+		if d.Kind == core.DecisionDirectPlay {
+			// Direct play copies both streams by definition; callers may
+			// pass a zero-value Decision beyond the kind.
+			s.decisionVideoCopy, s.decisionAudioCopy = true, true
+		}
 		if d.Kind == core.DecisionRemux || d.Kind == core.DecisionTranscode {
 			s.requiresRemux = false
 		}

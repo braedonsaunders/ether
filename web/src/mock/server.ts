@@ -1749,6 +1749,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
             Username: "Sam Rivera",
             Client: { product: "Plex for Apple TV", deviceName: "Living Room", remote: false },
             Decision: "directplay",
+            decisionVideoCopy: true,
+            decisionAudioCopy: true,
             BytesServed: 2.1 * 1024 ** 3,
             SpeedBps: 3.2e6,
             StartedAt: new Date(Date.now() - 40 * 60000).toISOString(),
