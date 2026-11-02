@@ -97,6 +97,9 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 			if next > lead && lead < limit && cands[lead].verified && done[lead] == nil {
 				return
 			}
+			if core.IsSpeculative(ctx) && next >= speculativeHealthAttempts {
+				return
+			}
 			// A candidate that cannot overtake the lead waits for a free
 			// slot, and nothing ranked below it starts first.
 			if inflight >= capacity(lead) {
@@ -180,6 +183,9 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 			break
 		}
 		fill(lead)
+		if inflight == 0 && lead >= next {
+			break // a speculative warm-up reached its cap: nothing left running
+		}
 		// A healthy later candidate may overtake a lead still checking.
 		age := time.Since(startedAt[lead])
 		var wait time.Duration = -1
@@ -231,7 +237,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 			}
 		}
 	}
-	if transient == nil && len(cands) > limit {
+	if transient == nil && (len(cands) > limit || (core.IsSpeculative(ctx) && len(cands) > speculativeHealthAttempts)) {
 		return -1, nil, errHealthBudget
 	}
 	return -1, nil, transient
