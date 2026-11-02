@@ -8,15 +8,9 @@ import { Section } from "../../components/layout";
 import { apiFetch, errorMessage } from "../../lib/api";
 import { t, tn } from "../../i18n";
 import { formatRate, relativeTime } from "../../lib/format";
-import type { NowPlaying as Stream } from "../../lib/health";
+import { decisionLabel, type NowPlaying as Stream } from "../../lib/health";
 import type { AsyncState } from "../../lib/hooks";
 import { useTitle } from "../../lib/titles";
-
-function decisionLabel(decision: string): string {
-  if (decision === "transcode") return t("Transcoding");
-  if (decision === "copy") return t("Direct stream");
-  return decision ? t("Direct play") : t("Starting");
-}
 
 function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onStop: () => void }) {
   const title = useTitle(s.key || undefined);
@@ -38,8 +32,14 @@ function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onSt
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Badge variant="secondary">{s.protocol}</Badge>
-          <Badge variant={s.decision === "transcode" ? "warning" : "success"}>
-            {decisionLabel(s.decision)}
+          <Badge
+            variant={
+              s.decision === "transcode" || (s.videoCopy && !s.audioCopy && s.decision === "copy")
+                ? "warning"
+                : "success"
+            }
+          >
+            {decisionLabel(s)}
           </Badge>
           {s.origin ? <Badge variant="secondary">{s.origin}</Badge> : null}
           {s.remote ? <Badge variant="info">{t("Remote")}</Badge> : null}

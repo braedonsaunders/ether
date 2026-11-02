@@ -8,3 +8,12 @@ package core
 type RemuxRequirer interface {
 	RequiresRemux(sessionID string) bool
 }
+
+// PlaybackDecisionRecorder is implemented by playback managers that accept
+// the delivery decision actually started for a session — a remux,
+// transcode or direct stream begun by a front end or the session broker —
+// so session snapshots report the current delivery. A remux or transcode
+// decision also satisfies a pending RequiresRemux for the session.
+type PlaybackDecisionRecorder interface {
+	SetDecision(sessionID string, d Decision)
+}

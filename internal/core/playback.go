@@ -150,9 +150,14 @@ type PlaySession struct {
 	Client         ClientCaps   // the client's product, device and limits
 	DecisionReason string       `json:"decisionReason,omitempty"`
 	Decision       DecisionKind // directplay once bytes go straight to the client; "" until known
-	BytesServed    int64        // source bytes delivered (direct play and ffmpeg input)
-	SpeedBps       int64        // recent delivery rate, bytes per second
-	LastActive     time.Time
+	// DecisionVideoCopy and DecisionAudioCopy say whether the current
+	// decision copies each stream (additive): a remux with
+	// DecisionAudioCopy false is transcoding only the audio.
+	DecisionVideoCopy bool  `json:"decisionVideoCopy,omitempty"`
+	DecisionAudioCopy bool  `json:"decisionAudioCopy,omitempty"`
+	BytesServed       int64 // source bytes delivered (direct play and ffmpeg input)
+	SpeedBps          int64 // recent delivery rate, bytes per second
+	LastActive        time.Time
 	// ViewOffset is the client's last reported playhead in milliseconds.
 	// Nil means no timeline has arrived; source bytes do not imply progress.
 	ViewOffset *int64 `json:"viewOffset,omitempty"`

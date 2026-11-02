@@ -275,14 +275,15 @@ func (b *Broker) NotePlexEncoder(id string, format frontend.StreamFormat, decisi
 		return
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	s := b.sessions[id]
 	if s == nil || s.public.Protocol != "plex" {
+		b.mu.Unlock()
 		return
 	}
 	s.format = format
 	s.streamPosition = offset
 	s.decision = decision
+	playID := s.playID
 	if entry, ok := b.bindings.Get(id); ok {
 		entry.Started = true
 		entry.Decision = decision
@@ -290,6 +291,8 @@ func (b *Broker) NotePlexEncoder(id string, format frontend.StreamFormat, decisi
 		entry.UpdatedAt = b.deps.Now()
 		b.bindings.Put(entry)
 	}
+	b.mu.Unlock()
+	b.recordPlaybackDecision(playID, decision)
 }
 
 // StopProtocol releases every local session for one mounted surface.

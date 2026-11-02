@@ -107,6 +107,9 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 			live.format = req.Format
 		}
 		b.mu.Unlock()
+		// The original file is what the client now plays, whatever the
+		// plan said; say so even if an encoder ran for this session before.
+		b.recordPlaybackDecision(s.playID, core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true})
 		b.ensureTrickplay(ctx, s, req.Position)
 		ps, _ := b.deps.Playback.Session(s.playID)
 		// The file URL is an in-memory grant. ServeMedia rechecks the viewer
@@ -127,6 +130,9 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	if s.format == req.Format && s.streamPosition == req.Position && s.segmentDuration == req.SegmentDuration {
 		if hs, ok := b.deps.Transcoder.Session(id); ok && hs != nil {
+			if entry, ok := b.bindings.Get(id); ok && entry.Started {
+				b.recordPlaybackDecision(s.playID, entry.Decision)
+			}
 			if req.Format == frontend.StreamDASH {
 				if _, ok := hs.(core.DASHSession); ok {
 					b.ensureTrickplay(ctx, s, req.Position)
@@ -215,6 +221,7 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		live.segmentDuration = req.SegmentDuration
 	}
 	b.mu.Unlock()
+	b.recordPlaybackDecision(s.playID, dec)
 	b.ensureTrickplay(ctx, s, req.Position)
 	if err := b.bindDeliveryAuthority(ctx, s, ps); err != nil {
 		b.deps.Transcoder.Stop(id)

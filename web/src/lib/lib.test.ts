@@ -7,6 +7,7 @@ import {
   computeHealth,
   transcodeHealth,
   countsOverall,
+  decisionLabel,
   indexersHealth,
   normalizeSessions,
   overallLevel,
@@ -731,6 +732,25 @@ describe("health", () => {
     });
     expect(s!.progress).toBeCloseTo(0.5);
     expect(normalizeSessions(null)).toEqual([]);
+  });
+  it("labels every now-playing decision kind", () => {
+    const label = (decision: string, videoCopy = false, audioCopy = false) =>
+      decisionLabel({ decision, videoCopy, audioCopy });
+    expect(label("directplay", true, true)).toBe("Direct play");
+    expect(label("copy", true, true)).toBe("Direct stream");
+    // An HLS remux copying the video but re-encoding the audio.
+    expect(label("copy", true, false)).toBe("Transcoding (audio)");
+    expect(label("transcode", true, false)).toBe("Transcoding (audio)");
+    expect(label("transcode", false, false)).toBe("Transcoding");
+    expect(label("transcode", false, true)).toBe("Transcoding");
+    expect(label("")).toBe("Starting");
+    expect(label("something-new")).toBe("Starting");
+    // The copy flags survive normalization from the Go snapshot fields.
+    const [s] = normalizeSessions([
+      { ID: "s2", Decision: "copy", decisionVideoCopy: true, decisionAudioCopy: false },
+    ]);
+    expect(s).toMatchObject({ decision: "copy", videoCopy: true, audioCopy: false });
+    expect(decisionLabel(s!)).toBe("Transcoding (audio)");
   });
 });
 
