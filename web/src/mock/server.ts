@@ -413,6 +413,52 @@ const VIEWERS: Viewer[] = [
   },
 ];
 
+/** Lifecycle as the real API reports it: Plex accounts are managed on plex.tv. */
+export function mockLifecycle(
+  v: Pick<Viewer, "isOwner" | "plexId" | "title" | "username" | "accessStatus" | "lifecycle">,
+) {
+  if (v.lifecycle) return v.lifecycle;
+  if (v.isOwner) {
+    return {
+      source: "owner" as const,
+      paused: false,
+      managedBy: "" as const,
+      canPause: false,
+      canRemove: false,
+      canMerge: false,
+    };
+  }
+  if (v.title === "Living-room guest" && v.plexId === 0 && !v.username) {
+    return {
+      source: "dlnaGuest" as const,
+      paused: false,
+      managedBy: "" as const,
+      canPause: true,
+      canRemove: true,
+      canMerge: true,
+    };
+  }
+  if (v.plexId > 0) {
+    return {
+      source: "plex" as const,
+      paused: false,
+      plexShared: v.accessStatus !== "inactive",
+      managedBy: "plex" as const,
+      canPause: false,
+      canRemove: false,
+      canMerge: false,
+    };
+  }
+  return {
+    source: "local" as const,
+    paused: v.accessStatus === "inactive",
+    managedBy: "" as const,
+    canPause: true,
+    canRemove: true,
+    canMerge: true,
+  };
+}
+
 const TASTE_SEEDS: Record<number, string[]> = {
   1: ["Science Fiction", "Thriller", "Mystery", "Crime"],
   2: ["Romance", "Comedy", "Drama", "Music"],
@@ -491,6 +537,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
     })),
     favoritesMirror: new Map<number, boolean>(),
     dlnaGuests: [] as Viewer[],
+    addedViewers: [] as Viewer[],
     collections: [] as CollectionSpec[],
     overrides: new Map<number, TasteOverride[]>(),
     layout: {
@@ -1951,6 +1998,90 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const seg = p.split("/").filter(Boolean);
     const route = `${method} /${seg.join("/")}`;
 
+    if (p === "/users/local" && method === "POST") {
+      const b = body as { username?: string; password?: string };
+      if (!b.username || (b.password ?? "").length < 12)
+        return err(
+          400,
+          "invalid",
+          "a username and a password of at least 12 characters are required",
+        );
+      const id = 200 + state.addedViewers.length;
+      const viewer: Viewer = {
+        id,
+        plexId: 0,
+        username: b.username,
+        title: b.username,
+        isOwner: false,
+        accessStatus: "active",
+        plays30d: 0,
+        hoursWatched30d: 0,
+        lifecycle: {
+          source: "local",
+          paused: false,
+          managedBy: "",
+          canPause: true,
+          canRemove: true,
+          canMerge: true,
+        },
+      };
+      state.addedViewers.push(viewer);
+      state.users.push({
+        id,
+        plexId: 0,
+        username: viewer.username,
+        title: viewer.title,
+        thumb: avatarFor(viewer.title),
+        isOwner: false,
+        lifecycle: viewer.lifecycle,
+        streamLimit: 0,
+        maxContentRating: "",
+        subtitleLanguages: [],
+        audioLanguages: [],
+        allowedSections: [],
+      });
+      return json({ id }, 201);
+    }
+
+    if (p === "/users/invite" && method === "POST") {
+      const b = body as { display?: string };
+      const id = 200 + state.addedViewers.length;
+      const viewer: Viewer = {
+        id,
+        plexId: 0,
+        username: "",
+        title: b.display ?? "",
+        isOwner: false,
+        accessStatus: "active",
+        plays30d: 0,
+        hoursWatched30d: 0,
+        lifecycle: {
+          source: "invite",
+          paused: false,
+          managedBy: "",
+          canPause: true,
+          canRemove: true,
+          canMerge: true,
+        },
+      };
+      state.addedViewers.push(viewer);
+      state.users.push({
+        id,
+        plexId: 0,
+        username: viewer.username,
+        title: viewer.title,
+        thumb: avatarFor(viewer.title),
+        isOwner: false,
+        lifecycle: viewer.lifecycle,
+        streamLimit: 0,
+        maxContentRating: "",
+        subtitleLanguages: [],
+        audioLanguages: [],
+        allowedSections: [],
+      });
+      return json({ id, url: "/ether/me#invite=mock-secret" }, 201);
+    }
+
     if (p === "/frontends/dlna/guest" && method === "POST") {
       const viewer: Viewer = {
         id: 100 + state.dlnaGuests.length,
@@ -1961,6 +2092,14 @@ export function createFakeServer(opts: FakeOptions = {}) {
         accessStatus: "active",
         plays30d: 0,
         hoursWatched30d: 0,
+        lifecycle: {
+          source: "dlnaGuest",
+          paused: false,
+          managedBy: "",
+          canPause: true,
+          canRemove: true,
+          canMerge: true,
+        },
       };
       state.dlnaGuests.push(viewer);
       return json(viewer, 201);
@@ -2545,7 +2684,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
         updateForced = Boolean((body as { force?: boolean } | null)?.force);
         return json(updateStatus(), 202);
       case "GET /users":
-        return json({ users: state.users });
+        return json({
+          users: state.users.map((u) => ({ ...u, lifecycle: u.lifecycle ?? mockLifecycle(u) })),
+        });
       case "GET /cluster":
         return json(clusterStatus());
       case "GET /cluster/setup":
@@ -2881,8 +3022,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
       }
       case "GET /viewers":
         return json({
-          viewers: [...VIEWERS, ...state.dlnaGuests].map((v, i) => ({
+          viewers: [...VIEWERS, ...state.dlnaGuests, ...state.addedViewers].map((v, i) => ({
             ...v,
+            lifecycle: mockLifecycle(v),
             thumb: avatarFor(v.title),
             lastActive: new Date(Date.now() - (i * 7 + 1) * 3600_000).toISOString(),
           })),
@@ -3063,7 +3205,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
     }
     if (seg[0] === "viewers" && seg[1]) {
       const id = Number(seg[1]);
-      const v = VIEWERS.find((x) => x.id === id);
+      const v = [...VIEWERS, ...state.dlnaGuests, ...state.addedViewers].find((x) => x.id === id);
       if (!v) return err(404, "not_found", "no such viewer");
       if (seg[2] === "favorites-mirror") {
         if (method === "POST")
@@ -3079,6 +3221,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
         }));
         return json({
           ...v,
+          lifecycle: mockLifecycle(v),
           thumb: avatarFor(v.title),
           lastActive: new Date(Date.now() - 3600_000).toISOString(),
           recent,

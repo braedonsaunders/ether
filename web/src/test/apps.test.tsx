@@ -130,8 +130,12 @@ describe("Apps", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open my account" })).toHaveAttribute(
       "href",
-      "/profile",
+      "/viewers",
     );
+    expect(
+      screen.getByText(/People sign in with their Ether viewer account\. Manage them under/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Viewers" })).toHaveAttribute("href", "/viewers");
     fireEvent.click(screen.getByRole("button", { name: "Connect a device" }));
     expect(screen.getByText("Certified player")).toBeInTheDocument();
     expect(screen.getByText("Open the app on your device.")).toBeInTheDocument();

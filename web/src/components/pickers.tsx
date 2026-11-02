@@ -563,6 +563,13 @@ export function useViewers() {
   return { viewers, error };
 }
 
+/** The owner's own viewer page. Falls back to the people list until known. */
+export function useOwnerViewerPath(): string {
+  const { viewers } = useViewers();
+  const owner = viewers?.find((v) => v.isOwner);
+  return owner ? `/viewers/${owner.id}` : "/viewers";
+}
+
 export function viewerName(v: Pick<Viewer, "title" | "username">): string {
   return v.title || v.username;
 }
