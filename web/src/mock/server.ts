@@ -316,8 +316,8 @@ function defaultConfig(): EtherConfig {
         },
       ],
       rules: [{ product: "Plex for Apple TV", profile: "4K" }],
-      default: "4K",
-      remote: "",
+      default: "1080p",
+      remote: "1080p",
     },
     transcode: {
       ffmpegPath: "",
@@ -326,7 +326,7 @@ function defaultConfig(): EtherConfig {
       vaapiDevice: "",
       tempDir: "/tmp/ether-transcode",
       maxTranscodes: 2,
-      remoteMaxBitrateKbps: 0,
+      remoteMaxBitrateKbps: 8000,
       rtxVideo: {
         mode: "off",
         executablePath: "",
