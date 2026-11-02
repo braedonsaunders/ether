@@ -122,7 +122,14 @@ debrid account (Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or
 Offcloud), a Usenet provider, or both, each tested before you continue. Next add at least one
 indexer: a Stremio stream addon's install link or a Torznab URL for debrid,
 and a Newznab URL for Usenet. Finally choose a cache folder and budget.
-Configure quality profiles for your network and remote connections afterwards.
+Out of the box there is no server quality cap, at home or away: each device
+plays the best release it can show (phones up to 1080p, TVs and streaming boxes
+up to 4K), and the app's own quality setting still applies. To limit quality,
+open **Releases › Profiles**: mark a profile **Away** to cap people watching away
+from home (for example the 1080p profile), or add a **Device rule** for one
+device, app or viewer (**Releases › Device rules**). A device rule wins over the
+Away profile. **Remote bitrate cap** under **Playback › Transcoding** limits
+away-from-home streams in Mbps (0 means no limit).
 Ether supplies no media, provider accounts or indexer access.
 
 ## Stream torrents through debrid

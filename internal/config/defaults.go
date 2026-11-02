@@ -73,7 +73,7 @@ func Defaults(dataDir string) Config {
 			HWAccel:              "auto",
 			TempDir:              filepath.Join(dataDir, "transcode"),
 			MaxTranscodes:        2,
-			RemoteMaxBitrateKbps: 8000,
+			RemoteMaxBitrateKbps: 0, // no cap away from home unless the owner sets one
 			FastStart:            true,
 			FastStartSegments:    2,
 			FastStartSegment:     Duration(2 * time.Second),
@@ -101,15 +101,19 @@ func Defaults(dataDir string) Config {
 // it is taken, the server moves to a fallback port and saves it.
 const DefaultPort = 32400
 
+// DefaultQuality applies no server cap at home or away: every client gets
+// the 4K profile, held to what the device itself can play (a phone stays
+// at 1080p, a TV goes to 4K). The owner caps quality with a device or
+// viewer rule, an "Away" profile, or a remote bitrate limit.
 func DefaultQuality() Quality {
 	return Quality{
-		Default: "1080p",
-		Remote:  "1080p",
+		Default: "4K",
+		Remote:  "",
 		Profiles: []core.QualityProfile{
 			{
 				Name:             "4K",
 				MaxHeight:        2160,
-				MinHeight:        1080,
+				MinHeight:        720,
 				AllowHDR:         true,
 				AllowDolbyVision: true,
 				PreferredSources: []core.Source{core.SourceRemux, core.SourceBluRay, core.SourceWEBDL, core.SourceWEBRip},
@@ -141,9 +145,6 @@ func DefaultQuality() Quality {
 				MaxSizeMBPerMin:  60,
 				Ranking:          core.DefaultRanking(nil),
 			},
-		},
-		Rules: []QualityRule{
-			{Product: "Apple TV", Profile: "4K"},
 		},
 	}
 }

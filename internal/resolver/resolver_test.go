@@ -89,10 +89,27 @@ func rel(id, name string, sizeMB int64) core.Release {
 
 func testCfg() config.Config {
 	cfg := config.Defaults("/tmp")
+	cfg.Quality = fixtureQuality()
+	cfg.Transcode.RemoteMaxBitrateKbps = 8000
 	cfg.Resolver.SearchCacheTTL = config.Duration(30 * time.Minute)
 	cfg.Resolver.UnavailableCooloff = config.Duration(time.Hour)
 	cfg.Resolver.MaxCandidates = 2
 	return cfg
+}
+
+// fixtureQuality is the profile set most ranking tests are written
+// against: 1080p at home and away, a 4K rule for Apple TV, a 4K floor of
+// 1080p. Ranking behaviour, not the shipped defaults, is what they test.
+func fixtureQuality() config.Quality {
+	q := config.DefaultQuality()
+	q.Default, q.Remote = "1080p", "1080p"
+	q.Rules = []config.QualityRule{{Product: "Apple TV", Profile: "4K"}}
+	for i := range q.Profiles {
+		if q.Profiles[i].Name == "4K" {
+			q.Profiles[i].MinHeight = 1080
+		}
+	}
+	return q
 }
 
 func matrixTitle() *core.Title {
@@ -113,7 +130,7 @@ func webCaps() core.ClientCaps {
 }
 
 func TestSelectProfile(t *testing.T) {
-	q := config.DefaultQuality()
+	q := fixtureQuality()
 	p := SelectProfile(q, appleTVCaps(), nil)
 	if p.Name != "4K" || !p.AllowHDR || !p.AllowDolbyVision || p.MaxHeight != 2160 {
 		t.Fatalf("apple tv profile %+v", p)
@@ -122,10 +139,22 @@ func TestSelectProfile(t *testing.T) {
 	if p.Name != "1080p" || p.MaxHeight != 1080 || p.AllowHDR || len(p.PreferredCodecs) != 1 || p.PreferredCodecs[0] != "h264" {
 		t.Fatalf("web profile %+v", p)
 	}
+	// Away from home a device rule still wins (Apple TV → 4K); the remote
+	// profile covers remote clients no rule names.
 	remote := appleTVCaps()
 	remote.Remote = true
-	if p = SelectProfile(q, remote, nil); p.Name != "1080p" {
-		t.Fatalf("remote profile %q want 1080p", p.Name)
+	if p = SelectProfile(q, remote, nil); p.Name != "4K" {
+		t.Fatalf("remote Apple TV profile %q want the rule's 4K", p.Name)
+	}
+	remoteWeb := webCaps()
+	remoteWeb.Remote = true
+	if p = SelectProfile(q, remoteWeb, nil); p.Name != "1080p" {
+		t.Fatalf("remote web profile %q want the remote profile", p.Name)
+	}
+	q720 := q
+	q720.Remote = "720p"
+	if p = SelectProfile(q720, remoteWeb, nil); p.Name != "720p" {
+		t.Fatalf("remote web profile %q want the remote 720p", p.Name)
 	}
 	// 4K profile clamped to a 1080p Apple TV (rule still matches).
 	small := appleTVCaps()
@@ -988,5 +1017,35 @@ func TestConvertSurroundAudioDeviceRulePrefersSameTierAAC(t *testing.T) {
 	resTier, err := svcTier.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: capsOn})
 	if err != nil || resTier.Release.ID != "uhd-ddp" {
 		t.Fatalf("with toggle (higher tier surround): winner=%+v err=%v, want uhd-ddp", resTier, err)
+	}
+}
+
+// The shipped defaults put no server cap on any client, at home or away:
+// each gets the 4K profile held to what the device can play.
+func TestShippedQualityHasNoServerCap(t *testing.T) {
+	q := config.DefaultQuality()
+	if len(q.Rules) != 0 || q.Remote != "" {
+		t.Fatalf("shipped rules %v remote %q", q.Rules, q.Remote)
+	}
+	tv := appleTVCaps()
+	phone := core.ClientCaps{Product: "Plex for Android (Mobile)", Platform: "Android", MaxHeight: 1080, VideoCodecs: []string{"h264", "hevc"}}
+	for name, caps := range map[string]core.ClientCaps{"tv": tv, "phone": phone} {
+		for _, remote := range []bool{false, true} {
+			caps.Remote = remote
+			p := SelectProfile(q, caps, nil)
+			want := 2160
+			if name == "phone" {
+				want = 1080
+			}
+			if p.Name != "4K" || p.MaxHeight != want || p.MinHeight > 720 {
+				t.Errorf("%s remote=%v: profile %q max %d min %d, want 4K max %d", name, remote, p.Name, p.MaxHeight, p.MinHeight, want)
+			}
+		}
+	}
+	// The owner caps away-from-home with an Away profile.
+	q.Remote = "1080p"
+	tv.Remote = true
+	if p := SelectProfile(q, tv, nil); p.Name != "1080p" {
+		t.Fatalf("away profile %q want 1080p", p.Name)
 	}
 }

@@ -70,13 +70,13 @@ func (s *Service) explainCeiling(tr *Trace, profile core.QualityProfile, req cor
 
 // profileReason says why SelectProfile chose the named profile.
 func profileReason(q config.Quality, caps core.ClientCaps, user *core.User, name string) string {
-	if caps.Remote && q.Remote == name {
-		return "it is the profile for remote viewers"
-	}
 	for _, rule := range q.Rules {
 		if ruleMatches(rule, caps, user) && rule.Profile == name {
 			return "a client rule chose it for this " + clientLabel(caps)
 		}
+	}
+	if caps.Remote && q.Remote == name {
+		return "it is the profile for remote viewers"
 	}
 	if q.Default == name {
 		return "it is the default, and no client rule matched this " + clientLabel(caps)

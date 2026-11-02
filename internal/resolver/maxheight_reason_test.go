@@ -124,9 +124,10 @@ func TestTraceAndHistoryRecordMaxHeightCeilings(t *testing.T) {
 // as the limiter when it is the distinct, lower ceiling (#86).
 func TestRemoteProfileCeilingRecordedInHistory(t *testing.T) {
 	cfg := testCfg()
-	q := config.DefaultQuality()
+	q := fixtureQuality()
 	q.Default = "4K"  // 2160 configured for local/default clients
 	q.Remote = "720p" // 720 configured for remote clients: distinct ceiling
+	q.Rules = nil     // a device rule would win over the remote profile
 	cfg.Quality = q
 
 	// Direct selection: Remote picks q.Remote and snapshots its ceiling.
@@ -188,7 +189,7 @@ func TestRemoteProfileCeilingRecordedInHistory(t *testing.T) {
 // trace must still record the owner's configured 2160 ceiling: the
 // snapshot is taken before downloadProfile runs (#86).
 func TestDownloadResolveRecordsConfiguredCeiling(t *testing.T) {
-	if p := SelectProfile(config.DefaultQuality(), func() core.ClientCaps {
+	if p := SelectProfile(fixtureQuality(), func() core.ClientCaps {
 		c := appleTVCaps()
 		c.Download = true
 		return c

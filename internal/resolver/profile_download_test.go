@@ -3,12 +3,11 @@ package resolver
 import (
 	"testing"
 
-	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
 func TestSelectProfileDownload(t *testing.T) {
-	q := config.DefaultQuality()
+	q := fixtureQuality()
 
 	// A 4K/HDR Apple TV asking for a download gets the compact mobile
 	// profile instead: SDR 1080p, WEB-DL first, MP4-friendly codecs.
