@@ -21,6 +21,7 @@ import {
   Globe,
   LifeBuoy,
   Plug,
+  Puzzle,
   Server,
   Bell,
   CalendarDays,
@@ -65,6 +66,7 @@ import { t, tn } from "./i18n";
 import { I18nProvider, LanguagePicker } from "./i18n/react";
 import { Brand, BrandSplash, EtherMark } from "./components/brand";
 import { CommandSearch } from "./components/CommandSearch";
+import { AskEther } from "./components/agent/AskEther";
 import { Drawer } from "./components/Drawer";
 import { ErrorPanel } from "./components/feedback";
 import { SaveBarHost } from "./components/SaveBar";
@@ -101,6 +103,7 @@ const Releases = lazy(() => import("./pages/releases/Releases"));
 const Cache = lazy(() => import("./pages/cache/Cache"));
 const Playback = lazy(() => import("./pages/playback/Playback"));
 const Profile = lazy(() => import("./pages/Profile"));
+const Plugins = lazy(() => import("./pages/plugins/Plugins"));
 
 /** react-router links for every AppKit navigation primitive. */
 const RouterAnchor = forwardRef<
@@ -168,6 +171,7 @@ function navigation(): SidebarNavGroup[] {
         { href: "/server", label: t("General"), icon: <Server size={icon} /> },
         { href: "/apps", label: t("Apps"), icon: <Globe size={icon} /> },
         { href: "/services", label: t("Integrations"), icon: <Plug size={icon} /> },
+        { href: "/plugins", label: t("Plugins"), icon: <Puzzle size={icon} /> },
         { href: "/notifications", label: t("Notifications"), icon: <Bell size={icon} /> },
         { href: "/cluster", label: t("Cluster"), icon: <Boxes size={icon} /> },
         { href: "/maintenance", label: t("Maintenance"), icon: <LifeBuoy size={icon} /> },
@@ -354,6 +358,7 @@ function Shell() {
               <span className="hidden truncate sm:inline">{serverName}</span>
             </span>
             <HealthIndicator />
+            <AskEther />
             <ThemeToggle
               collapsed
               labels={{
@@ -457,6 +462,7 @@ function Shell() {
               <Route path="/server/:tab?" element={<GeneralPage />} />
               <Route path="/apps/:tab?/:section?" element={<Apps />} />
               <Route path="/services/:tab?" element={<ServicesPage />} />
+              <Route path="/plugins/:tab?/*" element={<Plugins />} />
               <Route path="/cluster" element={<ClusterPage />} />
               <Route path="/maintenance/:tab?/:backupTab?" element={<MaintenancePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

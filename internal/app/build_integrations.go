@@ -56,6 +56,9 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	a.buildExtras()
+	if err := a.buildExtensibility(ctx, cfg); err != nil {
+		return err
+	}
 	if a.transcoder != nil {
 		if a.subtitles != nil {
 			a.subtitles.SetFFmpeg(a.transcoder.FFmpegPath())
@@ -87,6 +90,7 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	a.cfg.Subscribe(a.frontends.reconcile)
 	mux := http.NewServeMux()
 	mux.Handle("/ether/", a.perf.wrap("console", lanOnly(a.buildAdmin(), a.cfg.TrustedProxyCIDRs)))
+	a.mountExtensibility(mux)
 	mux.HandleFunc("/ether", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ether/", http.StatusFound)
 	})

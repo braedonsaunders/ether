@@ -258,6 +258,13 @@ type App struct {
 	integrity atomic.Pointer[store.Integrity]
 	// restart is an owner-requested restart (restart.go).
 	restart restartState
+	// Extensibility (docs/extend/SPEC.md). Each runtime type lives in its own
+	// file and is owned by one workstream: extend.go, console_stream.go,
+	// plugins.go and agent.go.
+	extendRT  *extendRuntime
+	streamRT  *consoleStreamRuntime
+	pluginsRT *pluginRuntime
+	agentRT   *agentRuntime
 }
 
 // New builds every component. Nothing listens until Run.

@@ -58,6 +58,7 @@ import { createTrashMock } from "./trash";
 import { createCacheMock } from "./cache";
 import { createCalendarMock } from "./calendar";
 import { createLiveTVMock } from "./livetv";
+import { createExtendMock } from "./extend";
 import { TEMPLATES } from "./templates";
 import { NOT_RATED, RATING_LEVELS, canonicalRating } from "../lib/contentRatings";
 
@@ -441,6 +442,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
   const cacheMock = createCacheMock(opts.cacheRestart);
   const liveTV = createLiveTVMock(catalog);
   const calendar = createCalendarMock();
+  const extendMock = createExtendMock();
   const state = {
     boot: {
       ok: true,
@@ -2012,6 +2014,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
 
     const site = sites.handle(method, seg, body, state.config);
     if (site) return json(site.body, site.status);
+
+    const ext = await extendMock(method, seg, q, body);
+    if (ext) return ext;
 
     const cal = calendar.handle(method, seg, q);
     if (cal) return json(cal.body, cal.status);
