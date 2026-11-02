@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 func TestPlayPromotesInFlightWarmPastSpeculativeBudget(t *testing.T) {
@@ -48,5 +50,29 @@ func TestUnclaimedWarmStillExpiresAndShutdownCancelsPromotedWarm(t *testing.T) {
 	case <-promoted.Done():
 	case <-time.After(time.Second):
 		t.Fatal("shutdown did not cancel promoted work")
+	}
+}
+
+// A warm-up runs as speculative work until a Play takes it over; from then
+// on the resolver treats it as a real play (#224).
+func TestWarmPreparationIsSpeculativeUntilPromoted(t *testing.T) {
+	foreground := make(chan context.Context, 1)
+	ctx, cancel := warmPreparationContext(context.Background(), time.Minute, foreground)
+	defer cancel()
+	if !core.IsSpeculative(ctx) {
+		t.Fatal("a warm-up is not marked speculative")
+	}
+	live, stop := context.WithCancel(context.Background())
+	defer stop()
+	foreground <- live
+	deadline := time.Now().Add(5 * time.Second)
+	for core.IsSpeculative(ctx) {
+		if time.Now().After(deadline) {
+			t.Fatal("a promoted warm-up is still speculative")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if core.IsSpeculative(context.Background()) {
+		t.Fatal("an ordinary context is speculative")
 	}
 }

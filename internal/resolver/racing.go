@@ -119,6 +119,9 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 	limit := min(len(cands), maxHealthAttempts)
 	var transient error
 	for base := 0; base < limit; {
+		if core.IsSpeculative(ctx) && base >= speculativeHealthAttempts {
+			break
+		}
 		count := min(width, limit-base)
 		if cands[base].verified {
 			// Reusing a known working release must not start speculative
@@ -188,7 +191,7 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 		}
 		base += count
 	}
-	if transient == nil && len(cands) > limit {
+	if transient == nil && (len(cands) > limit || (core.IsSpeculative(ctx) && len(cands) > speculativeHealthAttempts)) {
 		return -1, nil, errHealthBudget
 	}
 	return -1, nil, transient

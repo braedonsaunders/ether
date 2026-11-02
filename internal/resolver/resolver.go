@@ -24,11 +24,15 @@ import (
 )
 
 const (
-	defaultMaxTraces      = 50
-	maxHealthAttempts     = 32
-	defaultSearchCacheTTL = 6 * time.Hour
-	defaultUnavailableTTL = 24 * time.Hour
-	defaultMaxCandidates  = 3
+	defaultMaxTraces  = 50
+	maxHealthAttempts = 32
+	// speculativeHealthAttempts caps a warm-up nobody has pressed Play on:
+	// every health check downloads an NZB, and indexers count grabs. A Play
+	// that takes the warm-up over lifts the cap (#224).
+	speculativeHealthAttempts = 4
+	defaultSearchCacheTTL     = 6 * time.Hour
+	defaultUnavailableTTL     = 24 * time.Hour
+	defaultMaxCandidates      = 3
 	// Newly aired episodes and releases (<72h since release date) use a short
 	// unavailable cooloff and empty-search TTL so checking at 8 PM before an
 	// upload drops never blocks playback at 10 PM.
@@ -936,7 +940,8 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	if searchErr != nil {
 		return nil, failed(nil)
 	}
-	if !clientRejected && len(req.Exclude) == 0 && len(cands) <= maxHealthAttempts {
+	// A capped warm-up did not check every candidate, so it proves nothing.
+	if !clientRejected && len(req.Exclude) == 0 && len(cands) <= maxHealthAttempts && !(core.IsSpeculative(ctx) && len(cands) > speculativeHealthAttempts) {
 		s.setAvailability(ctx, int64(t.Key), false, min(s.cooloff(), failedHealthTTL))
 	}
 	trace.Err = "no healthy candidates"
