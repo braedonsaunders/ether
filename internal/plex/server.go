@@ -187,6 +187,7 @@ type Server struct {
 	boundStreams      sessions.PlexStreamAPI
 	variantIDs        *variantIDRegistry
 	renderedVariants  *renderedVariants
+	variantWatch      variantWatches
 	downloads         *downloadStore
 	queues            *playQueueStore
 	sessions          *sessionActivities

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 
 // fakeVariantResolver serves a fixed variant list per title.
 type fakeVariantResolver struct {
+	mu    sync.Mutex
 	byKey map[core.RatingKey][]core.ReleaseVariant
 	calls int
 	// lastMax is the cap the server asked for on the latest call.
@@ -29,6 +31,8 @@ type fakeVariantResolver struct {
 }
 
 func (r *fakeVariantResolver) Variants(_ context.Context, req core.ResolveRequest, max int) ([]core.ReleaseVariant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.calls++
 	r.lastMax = max
 	r.lastPlayed = req.PlayedRelease
@@ -764,5 +768,40 @@ func TestAutoScope1080pAndSecondRowReleaseConsistency(t *testing.T) {
 	}
 	if !strings.Contains(body, `videoResolution="480"`) {
 		t.Fatalf("scope SD 720x300 should classify as 480 by width:\n%s", body)
+	}
+}
+
+// A detail page opened before the title's search finished shows one
+// version. Once the search lands, a library timeline entry tells the open
+// page to reload, so Play Version appears without leaving it (#214).
+func TestDetailPageRefreshesWhenVersionsArrive(t *testing.T) {
+	saved := variantWatchSchedule
+	variantWatchSchedule = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond, 10 * time.Millisecond, 10 * time.Millisecond}
+	t.Cleanup(func() { variantWatchSchedule = saved })
+	f, _ := newVariantPlaybackFixture(t)
+	full := f.resolver.byKey[fightClub.Key]
+	f.resolver.mu.Lock()
+	f.resolver.byKey[fightClub.Key] = full[:1]
+	f.resolver.mu.Unlock()
+	sub, _ := f.srv.notifier.subscribe([]string{"timeline"}, &ownerUser)
+	defer f.srv.notifier.unsubscribe(sub)
+
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String())
+	if n := strings.Count(rec.Body.String(), "<Media "); n != 1 {
+		t.Fatalf("media count %d before the search, want 1", n)
+	}
+	f.resolver.mu.Lock()
+	f.resolver.byKey[fightClub.Key] = full
+	f.resolver.mu.Unlock()
+	select {
+	case msg := <-sub.ch:
+		if !strings.Contains(string(msg.data), `"itemID":"`+fightClub.Key.String()+`"`) {
+			t.Fatalf("refresh names another item: %s", msg.data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no refresh after the versions arrived")
+	}
+	if n := strings.Count(f.get(t, "/library/metadata/"+fightClub.Key.String()).Body.String(), "<Media "); n != 3 {
+		t.Fatalf("media count %d after the refresh, want 3", n)
 	}
 }
