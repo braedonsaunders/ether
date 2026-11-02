@@ -269,6 +269,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		return nil, ""
 	}
 	if len(vs) < 2 {
+		s.watchVariants(pr, t)
 		return nil, ""
 	}
 	ids := make([]string, len(vs))
@@ -709,4 +710,67 @@ func (s *Server) prepareForRelease(ctx context.Context, user *core.User, key cor
 			"key", key, "release", releaseID)
 	}
 	return s.d.Playback.Prepare(ctx, user, key, caps)
+}
+
+// variantWatchSchedule is when a detail page rendered with a single version
+// checks again for more: the release search the page view started usually
+// finishes within seconds, and Plex apps load a detail page only once.
+var variantWatchSchedule = []time.Duration{3 * time.Second, 3 * time.Second, 4 * time.Second, 5 * time.Second, 10 * time.Second, 15 * time.Second}
+
+// maxVariantWatches bounds the follow-ups running at once.
+const maxVariantWatches = 64
+
+// variantWatches tracks the follow-ups in flight, one per viewer, client
+// and title.
+type variantWatches struct {
+	mu      sync.Mutex
+	pending map[string]bool
+}
+
+// watchVariants follows a detail page that showed one version because the
+// title's search was not cached yet (#214). When a version list appears,
+// a library timeline entry tells the open page to reload, as PMS does on a
+// metadata change, so Play Version is there without leaving the page.
+func (s *Server) watchVariants(pr *Request, t *core.Title) {
+	if s.d.Variants == nil || pr == nil || pr.User == nil || t == nil {
+		return
+	}
+	key := fmt.Sprintf("%d|%s|%d", pr.User.ID, pr.ClientID, t.Key)
+	s.variantWatch.mu.Lock()
+	if s.variantWatch.pending == nil {
+		s.variantWatch.pending = map[string]bool{}
+	}
+	if s.variantWatch.pending[key] || len(s.variantWatch.pending) >= maxVariantWatches {
+		s.variantWatch.mu.Unlock()
+		return
+	}
+	s.variantWatch.pending[key] = true
+	s.variantWatch.mu.Unlock()
+	caps := s.clientCaps(pr)
+	user, title := *pr.User, *t
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer func() {
+			s.variantWatch.mu.Lock()
+			delete(s.variantWatch.pending, key)
+			s.variantWatch.mu.Unlock()
+		}()
+		for _, wait := range variantWatchSchedule {
+			timer := time.NewTimer(wait)
+			select {
+			case <-s.ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			vctx, cancel := context.WithTimeout(s.ctx, variantRenderBudget)
+			vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: &title, Client: caps, User: &user}, core.MaxVariants)
+			cancel()
+			if err == nil && len(vs) >= 2 {
+				s.notifyTimeline(title.Key, title.Type, "", user.ID)
+				return
+			}
+		}
+	}()
 }
