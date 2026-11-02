@@ -317,6 +317,11 @@ type Resolver struct {
 	// sources have measurements; "usenet" or "debrid" always prefer one.
 	// Quality is never traded for speed (see resolver/routing.go).
 	SourcePreference string `json:"sourcePreference,omitempty"`
+	// SourceAlwaysFirst puts the preferred source first even when the
+	// other source has a better or better-fitting release: every Usenet
+	// release, or every known-cached debrid release, before the rest. The
+	// other source is still the fallback. Needs "usenet" or "debrid".
+	SourceAlwaysFirst bool `json:"sourceAlwaysFirst,omitempty"`
 	// SourceScoreMargin is how far below the leader's score a release of
 	// the same quality tier may be and still be moved first for its
 	// source (0 = 25).

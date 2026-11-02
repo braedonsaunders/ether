@@ -235,3 +235,46 @@ func TestExplicitSourcePreferenceFindsNonAdjacentEqualQuality(t *testing.T) {
 		t.Fatal("source preference exceeded score margin")
 	}
 }
+
+// "Always" source order: the preferred source goes first even when the other
+// source has the better release. A known-cached debrid copy beats a higher
+// Usenet release, an uncached torrent does not, and the other source stays a
+// fallback. Usenet-always works the same way the other round.
+func TestSourceAlwaysFirstBeatsQuality(t *testing.T) {
+	releases := routingReleases("The.Signal.1999.720p.WEB-DL.DDP5.1.H.264-OTHER")
+	usenet, torrent := releases[0], releases[1]
+	usenet.Score, torrent.Score = 100, 40
+	torrent.Info.Height = 720
+	uncached := torrent
+	uncached.ID, uncached.InfoHash = "uncached", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	cands := func() []candidate {
+		return []candidate{{rel: usenet, langOK: true}, {rel: uncached, langOK: true}, {rel: torrent, langOK: true}}
+	}
+	cfg := testCfg()
+	cfg.Resolver.SourcePreference, cfg.Resolver.SourceAlwaysFirst = PreferDebrid, true
+	svc := New(nil, fakeHealth{}, nil, cfg, Options{})
+	svc.SetSourceSignals(cachedSet{hashA: true})
+	if got := svc.routeSources(cands(), routingTitle(false), nil); got[0].rel.ID != "torrent" || got[1].rel.ID != "usenet" || got[2].rel.ID != "uncached" {
+		t.Fatalf("debrid always: %v %v %v", got[0].rel.ID, got[1].rel.ID, got[2].rel.ID)
+	}
+	// A language nobody asked for still loses.
+	wrong := cands()
+	wrong[2].langOK = false
+	if got := svc.routeSources(wrong, routingTitle(false), nil); got[0].rel.ID != "usenet" {
+		t.Fatalf("debrid always picked a wrong-language release: %v", got[0].rel.ID)
+	}
+
+	cfg.Resolver.SourcePreference = PreferUsenet
+	svc = New(nil, fakeHealth{}, nil, cfg, Options{})
+	flipped := []candidate{{rel: torrent, langOK: true}, {rel: usenet, langOK: true}}
+	if got := svc.routeSources(flipped, routingTitle(false), nil); got[0].rel.ID != "usenet" {
+		t.Fatalf("usenet always: %v", got[0].rel.ID)
+	}
+	// Without "always", Debrid first stays a tie-breaker between equals.
+	cfg.Resolver.SourcePreference, cfg.Resolver.SourceAlwaysFirst = PreferDebrid, false
+	svc = New(nil, fakeHealth{}, nil, cfg, Options{})
+	svc.SetSourceSignals(cachedSet{hashA: true})
+	if got := svc.routeSources(cands(), routingTitle(false), nil); got[0].rel.ID != "usenet" {
+		t.Fatalf("tie-breaker only: %v", got[0].rel.ID)
+	}
+}

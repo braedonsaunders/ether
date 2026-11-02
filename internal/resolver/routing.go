@@ -2,6 +2,8 @@ package resolver
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -167,6 +169,9 @@ func (s *Service) routeSources(cands []candidate, t *core.Title, trace *Trace) [
 	preferredProtocol := core.ProtocolUsenet
 	if mode == PreferDebrid {
 		preferredProtocol = core.ProtocolTorrent
+	}
+	if explicit && rcfg.SourceAlwaysFirst {
+		return s.sourceAlwaysFirst(cands, preferredProtocol, trace)
 	}
 	// Automatic routing reuses a verified source. An explicit owner change
 	// still takes effect for equal-quality releases, even after prior plays.
@@ -341,4 +346,36 @@ func popular(group []candidate, t *core.Title) bool {
 
 func roundMs(d time.Duration) string {
 	return d.Round(10 * time.Millisecond).String()
+}
+
+// sourceAlwaysFirst is the owner's "always" source order: every release of
+// the preferred source (for debrid, every known-cached one) goes ahead of
+// the rest, whatever its quality or connection fit, and the rest stay as
+// fallbacks in rank order. Never-play fallback tiers and the audio-language
+// check still come first, so a preferred source is never picked in a
+// language nobody asked for.
+func (s *Service) sourceAlwaysFirst(cands []candidate, want string, trace *Trace) []candidate {
+	preferred := func(c candidate) bool {
+		if protocolOf(c.rel) != want {
+			return false
+		}
+		return want != core.ProtocolTorrent || s.knownCached(c.rel)
+	}
+	out := slices.Clone(cands)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.policy.Fallback != b.policy.Fallback {
+			return a.policy.Fallback < b.policy.Fallback
+		}
+		if a.langOK != b.langOK {
+			return a.langOK
+		}
+		return preferred(a) && !preferred(b)
+	})
+	if trace != nil && len(out) > 0 && preferred(out[0]) && out[0].rel.ID != cands[0].rel.ID {
+		if i := out[0].trace; i >= 0 && i < len(trace.Candidates) {
+			trace.Candidates[i].Route = "owner puts " + sourceName(want) + " first"
+		}
+	}
+	return out
 }

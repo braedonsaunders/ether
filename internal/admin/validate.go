@@ -330,6 +330,9 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	default:
 		v.add("resolver.sourcePreference", `must be "auto", "usenet" or "debrid"`)
 	}
+	if cfg.Resolver.SourceAlwaysFirst && cfg.Resolver.SourcePreference != "usenet" && cfg.Resolver.SourcePreference != "debrid" {
+		v.add("resolver.sourceAlwaysFirst", `needs sourcePreference "usenet" or "debrid"`)
+	}
 	if cfg.Resolver.SourceScoreMargin < 0 {
 		v.add("resolver.sourceScoreMargin", "must be >= 0")
 	}
