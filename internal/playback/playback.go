@@ -1726,6 +1726,7 @@ func (m *Manager) expire() {
 	for _, s := range list {
 		s.mu.Lock()
 		last, stopAt, viewerState := s.lastActive, s.stopAt, s.viewerState
+		backgroundHeld := s.preparedOnly && s.backgroundHold.active(now)
 		s.mu.Unlock()
 		if hls, ok := m.deps.HLSLookup(s.id); ok && hls != nil {
 			if la := hls.LastAccess(); la.After(last) {
@@ -1740,7 +1741,7 @@ func (m *Manager) expire() {
 		case !stopAt.IsZero() && !now.Before(stopAt) && !last.After(stopAt.Add(-m.opts.StoppedGrace)):
 			m.log.Debug("session stopped by client", "session", s.id)
 			m.Stop(s.id)
-		case now.Sub(last) > idleTimeout:
+		case !backgroundHeld && now.Sub(last) > idleTimeout:
 			m.log.Debug("session idle", "session", s.id, "idle", now.Sub(last))
 			m.Stop(s.id)
 		}

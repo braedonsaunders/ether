@@ -24,7 +24,12 @@ func (a *App) channelBreakInput(ctx context.Context, key core.RatingKey, admitte
 	if err != nil {
 		return markers.BreakInput{}, err
 	}
-	closeInput := func() { _ = a.playback.RetireSource(ps.ID, retire) }
+	releaseHold, err := a.playback.HoldBackgroundSource(ctx, ps.ID, retire)
+	if err != nil {
+		_ = a.playback.RetireSource(ps.ID, retire)
+		return markers.BreakInput{}, err
+	}
+	closeInput := func() { releaseHold(); _ = a.playback.RetireSource(ps.ID, retire) }
 	revision := core.SourceRevision(ps)
 	if err = a.playback.PinSourceRevision(ctx, ps.ID, revision); err != nil {
 		closeInput()

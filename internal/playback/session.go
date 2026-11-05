@@ -233,6 +233,7 @@ type session struct {
 
 	mu               sync.Mutex
 	preparedOnly     bool
+	backgroundHold   *backgroundSourceHold
 	stoppedBySurface bool
 	sourcePins       int
 	cur              *generation
