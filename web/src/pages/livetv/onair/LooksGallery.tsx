@@ -13,8 +13,8 @@ import { ReelDrawer } from "./ReelDrawer";
 import { AssetsPanel } from "./AssetsPanel";
 import { ScreensDefaults } from "./ScreensDefaults";
 export function useLooks() {
- const location=useLocation();
- const [params]=useSearchParams();
+  const location = useLocation();
+  const [params] = useSearchParams();
   const [looks, setLooks] = useState<Look[]>([]),
     [reels, setReels] = useState<Reel[]>([]);
   const reload = () => {
