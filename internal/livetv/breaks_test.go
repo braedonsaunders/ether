@@ -3,6 +3,7 @@ package livetv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,9 +11,40 @@ import (
 	"github.com/braedonsaunders/ether/internal/markers"
 )
 
+func TestBreakAnalysisCapturesOnlyAdmittedIdentity(t *testing.T) {
+	type requestKey struct{}
+	s := testService(t, Options{InputUser: func(ctx context.Context) (*core.User, error) {
+		if ctx.Value(requestKey{}) != true {
+			return nil, core.ErrNotFound
+		}
+		return &core.User{ID: core.SetupOwnerID, IsOwner: true}, nil
+	}})
+	c := testChannel()
+	p, _ := EraBreakPattern("1980s")
+	c.Look = &ChannelLook{BreakPattern: &p, BreakPlacement: "natural", ReelID: "ads"}
+	c.Items = []Item{{Key: core.EpisodeKey(1, 1, 1), ShowKey: core.ShowKey(1), DurationMS: 1320000, Title: "Episode"}}
+	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), requestKey{}, true))
+	if _, err := s.SaveChannel(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	calls := 0
+	s.o.BreakInput = func(ctx context.Context, _ core.RatingKey, id int64) (markers.BreakInput, error) {
+		calls++
+		if id != core.SetupOwnerID || ctx.Err() != nil || ctx.Value(requestKey{}) != nil {
+			t.Fatalf("retained request instead of identity: id=%d err=%v value=%v", id, ctx.Err(), ctx.Value(requestKey{}))
+		}
+		return markers.BreakInput{}, errors.New("fixture stops before source open")
+	}
+	s.analyzeUpcomingBreaks(map[core.RatingKey]time.Time{})
+	if calls != 1 {
+		t.Fatalf("background analysis calls: %d", calls)
+	}
+}
+
 func TestBreakAnalysisNeverOnRequestPath(t *testing.T) {
 	s := testService(t, Options{})
-	s.o.BreakInput = func(context.Context, core.RatingKey) (markers.BreakInput, error) {
+	s.o.BreakInput = func(context.Context, core.RatingKey, int64) (markers.BreakInput, error) {
 		t.Fatal("request opened analysis source")
 		return markers.BreakInput{}, nil
 	}

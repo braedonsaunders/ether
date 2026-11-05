@@ -60,6 +60,7 @@ type Service struct {
 	kinds              *KindRegistry
 	policyReads        atomic.Uint64
 	mu                 sync.Mutex
+	breakOwners        map[string]int64 // admitted save identities; never persisted
 	lineupUnix         int64
 	onChange           func()
 	sessions           map[string]*session
@@ -697,6 +698,7 @@ func (s *Service) SaveChannel(ctx context.Context, c Channel) (Channel, error) {
 	}
 	_, err = s.o.DB.ExecContext(ctx, `INSERT INTO livetv_channels(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, c.ID, b)
 	if err == nil {
+		s.captureBreakOwner(ctx, c.ID)
 		s.invalidate(c.ID, "")
 		s.bumpLineup()
 	}
@@ -705,6 +707,9 @@ func (s *Service) SaveChannel(ctx context.Context, c Channel) (Channel, error) {
 func (s *Service) DeleteChannel(ctx context.Context, id string) error {
 	_, err := s.o.DB.ExecContext(ctx, `DELETE FROM livetv_channels WHERE id=?`, id)
 	if err == nil {
+		s.mu.Lock()
+		delete(s.breakOwners, id)
+		s.mu.Unlock()
 		s.invalidate(id, "")
 		s.bumpLineup()
 	}

@@ -51,7 +51,10 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 			done[p.Item.Key] = true
 			retry[p.Item.Key] = now.Add(15 * time.Minute)
 			ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
-			in, e := s.o.BreakInput(ctx, p.Item.Key)
+			s.mu.Lock()
+			ownerID := s.breakOwners[c.ID]
+			s.mu.Unlock()
+			in, e := s.o.BreakInput(ctx, p.Item.Key, ownerID)
 			if e != nil {
 				cancel()
 				continue
@@ -69,6 +72,24 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 			s.publishBreaks(p.Item.Key, points, in.Info.Duration.Milliseconds(), in.ReleaseID, in.Revision)
 		}
 	}
+}
+
+// Only InputUser can resolve the setup principal: it requires the admin guard's
+// request admission. Retain just its identity, never the request or its values.
+func (s *Service) captureBreakOwner(ctx context.Context, channelID string) {
+	if s.o.InputUser == nil {
+		return
+	}
+	u, err := s.o.InputUser(ctx)
+	if err != nil || u == nil || !u.IsOwner || u.ID <= 0 {
+		return
+	}
+	s.mu.Lock()
+	if s.breakOwners == nil {
+		s.breakOwners = make(map[string]int64)
+	}
+	s.breakOwners[channelID] = u.ID
+	s.mu.Unlock()
 }
 
 func (s *Service) publishBreaks(key core.RatingKey, points []markers.BreakPoint, duration int64, releaseID, revision string) {

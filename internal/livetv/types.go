@@ -333,7 +333,9 @@ type Policy struct {
 }
 type Options struct {
 	// BreakInput opens an exclusive background playback source, never a viewer session.
-	BreakInput    func(context.Context, core.RatingKey) (markers.BreakInput, error)
+	// The final argument is an identity captured from an admitted save, never
+	// a request context. The callback must revalidate it on each background run.
+	BreakInput    func(context.Context, core.RatingKey, int64) (markers.BreakInput, error)
 	BreakAnalyzer *markers.BreakAnalyzer
 	GuideAI       GuideAIClient
 	Reels         func(context.Context, string) (ReelSnapshot, error)

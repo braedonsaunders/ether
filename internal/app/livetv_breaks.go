@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -12,9 +13,9 @@ import (
 
 // channelBreakInput uses playback's configured source engine and loopback range
 // transport. Its dedicated prepared source is retired immediately after analysis.
-func (a *App) channelBreakInput(ctx context.Context, key core.RatingKey) (markers.BreakInput, error) {
+func (a *App) channelBreakInput(ctx context.Context, key core.RatingKey, admittedOwner int64) (markers.BreakInput, error) {
 	ctx, _ = core.WithSpeculative(ctx)
-	u, err := a.users.Owner(ctx)
+	u, err := a.channelBreakUser(ctx, admittedOwner)
 	if err != nil {
 		return markers.BreakInput{}, err
 	}
@@ -39,4 +40,18 @@ func (a *App) channelBreakInput(ctx context.Context, key core.RatingKey) (marker
 		payload = fmt.Sprintf("%x", sha256.Sum256(ps.Resolution.NZB))
 	}
 	return markers.BreakInput{ReleaseID: releaseID, Revision: revision, ReleaseKey: fmt.Sprintf("%s:%s:%d", revision, payload, info.Duration.Milliseconds()), URL: a.playback.InputURL(ps.ID) + "?background=1", Info: info, Close: closePinned}, nil
+}
+
+// Background analysis may reuse only the identity of an admitted save. Always
+// resolve the current real owner first; closing setup revokes the stand-in.
+func (a *App) channelBreakUser(ctx context.Context, admittedOwner int64) (*core.User, error) {
+	u, err := a.users.Owner(ctx)
+	if err == nil {
+		return u, nil
+	}
+	c := a.cfg.Read()
+	if errors.Is(err, core.ErrNotFound) && admittedOwner == core.SetupOwnerID && !c.SetupComplete && !c.Plex.Claimed && c.Plex.OwnerPlexID == 0 {
+		return &core.User{ID: core.SetupOwnerID, Username: "setup-owner", IsOwner: true}, nil
+	}
+	return nil, err
 }
