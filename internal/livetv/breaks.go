@@ -19,7 +19,17 @@ func (s *Service) breakLoop() {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
 	retry := map[core.RatingKey]time.Time{}
+	var ownerRevision uint64
 	for {
+		s.mu.Lock()
+		revision := s.breakOwnerRevision
+		s.mu.Unlock()
+		if revision != ownerRevision {
+			// An admitted save can unblock setup-only source identity after
+			// startup. Do not retain the earlier unauthenticated-job backoff.
+			retry = map[core.RatingKey]time.Time{}
+			ownerRevision = revision
+		}
 		for key, at := range retry {
 			if !s.o.Now().Before(at) {
 				delete(retry, key)
@@ -114,7 +124,10 @@ func (s *Service) captureBreakOwner(ctx context.Context, channelID string) {
 	if s.breakOwners == nil {
 		s.breakOwners = make(map[string]int64)
 	}
-	s.breakOwners[channelID] = u.ID
+	if s.breakOwners[channelID] != u.ID {
+		s.breakOwners[channelID] = u.ID
+		s.breakOwnerRevision++
+	}
 	s.mu.Unlock()
 }
 

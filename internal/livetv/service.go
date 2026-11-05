@@ -61,6 +61,7 @@ type Service struct {
 	policyReads        atomic.Uint64
 	mu                 sync.Mutex
 	breakOwners        map[string]int64 // admitted save identities; never persisted
+	breakOwnerRevision uint64           // identity admission invalidates background retries
 	lineupUnix         int64
 	onChange           func()
 	sessions           map[string]*session
