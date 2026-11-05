@@ -41,8 +41,8 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 	}
 	now := s.o.Now()
 	type breakTask struct {
-		Programme
-		ownerID int64
+		programme Programme
+		ownerID   int64
 	}
 	var pending []breakTask
 	for _, c := range cs {
@@ -53,20 +53,21 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 		if len(eligible) == 0 {
 			continue
 		}
+		s.mu.Lock()
+		ownerID := s.breakOwners[c.ID]
+		s.mu.Unlock()
 		for _, p := range Schedule(c, now, now.Add(2*time.Hour)) {
 			if p.Item.Key == 0 || !eligible[p.Item.Key] || (p.Item.Key.Kind() != core.KindEpisode && p.Item.ShowKey == 0 && p.Item.MediaType != "episode") || !p.Start.After(now.Add(time.Minute)) || now.Before(retry[p.Item.Key]) {
 				continue
 			}
-			s.mu.Lock()
-			ownerID := s.breakOwners[c.ID]
-			s.mu.Unlock()
-			pending = append(pending, breakTask{Programme: p, ownerID: ownerID})
+			pending = append(pending, breakTask{programme: p, ownerID: ownerID})
 		}
 	}
-	sort.SliceStable(pending, func(i, j int) bool { return pending[i].Start.Before(pending[j].Start) })
+	sort.SliceStable(pending, func(i, j int) bool { return pending[i].programme.Start.Before(pending[j].programme.Start) })
 	done := map[core.RatingKey]bool{}
 	admitted := 0
-	for _, p := range pending {
+	for _, task := range pending {
+		p := task.programme
 		if s.ctx.Err() != nil {
 			return
 		}
@@ -80,7 +81,7 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 		admitted++
 		retry[p.Item.Key] = s.o.Now().Add(15 * time.Minute)
 		ctx, cancel := context.WithTimeout(s.ctx, min(10*time.Minute, p.Start.Sub(s.o.Now())-time.Minute))
-		in, e := s.o.BreakInput(ctx, p.Item.Key, p.ownerID)
+		in, e := s.o.BreakInput(ctx, p.Item.Key, task.ownerID)
 		if e != nil {
 			cancel()
 			continue

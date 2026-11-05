@@ -39,7 +39,7 @@ func (a *App) channelBreakInput(ctx context.Context, key core.RatingKey, admitte
 		releaseID = ps.Resolution.Release.ID
 		payload = fmt.Sprintf("%x", sha256.Sum256(ps.Resolution.NZB))
 	}
-	return markers.BreakInput{ReleaseID: releaseID, Revision: revision, ReleaseKey: fmt.Sprintf("%s:%s:%d", revision, payload, info.Duration.Milliseconds()), URL: a.playback.InputURL(ps.ID) + "?background=1", Info: info, Close: closePinned}, nil
+	return markers.BreakInput{Key: key, ReleaseID: releaseID, Revision: revision, ReleaseKey: fmt.Sprintf("%s:%s:%d", revision, payload, info.Duration.Milliseconds()), URL: a.playback.InputURL(ps.ID) + "?background=1", Info: info, Close: closePinned}, nil
 }
 
 // Background analysis may reuse only the identity of an admitted save. Always

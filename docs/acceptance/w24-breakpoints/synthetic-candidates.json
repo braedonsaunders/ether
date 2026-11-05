@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "key": 0,
+  "durationMs": 180000,
+  "cacheHit": false,
+  "decoded": true,
+  "complete": true,
+  "chapters": null,
+  "black": [
+    {
+      "startMs": 70000,
+      "endMs": 71000
+    },
+    {
+      "startMs": 130000,
+      "endMs": 131000
+    }
+  ],
+  "silence": [
+    {
+      "startMs": 70016,
+      "endMs": 71040
+    }
+  ],
+  "scenes": [
+    {
+      "startMs": 70000,
+      "endMs": 70000,
+      "score": 85.547
+    },
+    {
+      "startMs": 71000,
+      "endMs": 71000,
+      "score": 85.547
+    },
+    {
+      "startMs": 130000,
+      "endMs": 130000,
+      "score": 85.547
+    },
+    {
+      "startMs": 131000,
+      "endMs": 131000,
+      "score": 85.547
+    }
+  ],
+  "points": [
+    {
+      "atMs": 70500,
+      "source": "detected",
+      "confidence": 0.96
+    }
+  ],
+  "cpuMs": 297,
+  "wallMs": 148
+}

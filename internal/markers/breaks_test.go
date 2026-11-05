@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,24 +93,79 @@ func TestBreakSyntheticDecode(t *testing.T) {
 		t.Logf("decode CPU/video-hour=%s wall/video-hour=%s", cpu*(time.Hour/video), wall*(time.Hour/video))
 	}}
 	started := time.Now()
-	got, err := a.decode(t.Context(), BreakInput{URL: file, Info: core.MediaInfo{Duration: 3 * time.Minute}})
+	input := BreakInput{URL: file, Info: core.MediaInfo{Duration: 3 * time.Minute}}
+	evidence := newBreakEvidence(input)
+	got, err := a.decodeEvidence(t.Context(), input, &evidence)
+	evidence.Complete = err == nil
+	evidence.Points = got
 	if err != nil || len(got) != 1 || got[0].AtMS < 70000 || got[0].AtMS > 71000 {
 		t.Fatal(got, err)
+	}
+	if len(evidence.Scenes) == 0 || evidence.Scenes[0].Score == nil || *evidence.Scenes[0].Score < 8 {
+		t.Fatal("missing measured scdet score", evidence.Scenes)
 	}
 	b, _ := json.Marshal(got)
 	if artifacts := os.Getenv("ETHER_BREAK_TEST_ARTIFACTS"); artifacts != "" {
 		if err := os.MkdirAll(artifacts, 0755); err != nil {
 			t.Fatal(err)
 		}
+		e, _ := json.MarshalIndent(evidence, "", "  ")
+		if err := os.WriteFile(filepath.Join(artifacts, "synthetic-candidates.json"), e, 0644); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(artifacts, "synthetic-timeline.json"), b, 0644); err != nil {
 			t.Fatal(err)
 		}
 		for _, at := range []string{"69", "70.5", "72"} {
-			cmd := exec.Command(binary, "-v", "error", "-nostdin", "-threads", "1", "-ss", at, "-i", file, "-frames:v", "1", "-threads", "1", filepath.Join(artifacts, "synthetic-"+at+"s.png"))
+			cmd := exec.Command(binary, "-v", "error", "-nostdin", "-y", "-threads", "1", "-ss", at, "-i", file, "-frames:v", "1", "-threads", "1", filepath.Join(artifacts, "synthetic-"+at+"s.png"))
 			if output, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("still: %v %s", err, output)
 			}
 		}
 	}
 	t.Logf("timeline=%s wall=%s per-video-hour=%s", b, time.Since(started), time.Since(started)*20)
+}
+
+func TestBreakEvidencePrivacyLeaseAndCache(t *testing.T) {
+	db, err := store.OpenMemory(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	in := BreakInput{Key: core.EpisodeKey(1, 1, 1), ReleaseKey: "observer", URL: "http://127.0.0.1/private-grant", Info: core.MediaInfo{Duration: 3 * time.Minute, Chapters: []core.Chapter{{Title: "Act 2", Start: 70 * time.Second, End: 100 * time.Second}}}}
+	closed := false
+	in.Close = func() { closed = true }
+	var observed []BreakEvidence
+	a := BreakAnalyzer{DB: db, OnEvidence: func(_ context.Context, input BreakInput, e BreakEvidence) {
+		if closed || input.Key != in.Key || input.URL != in.URL {
+			t.Fatal("observer lost live lease identity")
+		}
+		observed = append(observed, e)
+	}}
+	if _, err := a.Analyze(t.Context(), in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Analyze(t.Context(), in); err != nil {
+		t.Fatal(err)
+	}
+	in.Close()
+	if len(observed) != 2 || !observed[0].Complete || observed[0].CacheHit || !observed[0].Chapters[0].ChapterMatch || observed[0].Chapters[0].Score != nil || !observed[1].CacheHit || observed[1].Decoded || len(observed[1].Points) != 1 {
+		t.Fatal(observed)
+	}
+	b, err := json.Marshal(struct {
+		Input    BreakInput
+		Evidence BreakEvidence
+	}{in, observed[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "private-grant") || strings.Contains(string(b), "127.0.0.1") {
+		t.Fatal("source URL escaped into evidence export")
+	}
+	var signals breakSignals
+	start := -1.0
+	signals.line("lavfi.scd.score: 41.25, lavfi.scd.time: 70", &start)
+	if len(signals.sceneEvidence) != 1 || signals.sceneEvidence[0].Score == nil || *signals.sceneEvidence[0].Score != 41.25 || signals.sceneEvidence[0].StartMS != 70000 {
+		t.Fatal(signals.sceneEvidence)
+	}
 }

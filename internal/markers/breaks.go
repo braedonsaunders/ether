@@ -37,28 +37,42 @@ type BreakPoint struct {
 // the source revision, payload, file and duration, never just a catalogue key.
 // Close releases the source even when a cached analysis is reused.
 type BreakInput struct {
+	Key        core.RatingKey `json:"key"`
 	ReleaseKey string
 	ReleaseID  string
 	Revision   string
-	URL        string
-	Info       core.MediaInfo
-	Close      func()
+	URL        string         `json:"-"`
+	Info       core.MediaInfo `json:"-"`
+	Close      func()         `json:"-"`
 }
 
 type BreakAnalyzer struct {
 	DB     *sql.DB
 	FFmpeg string
 	OnCost func(video, cpu, wall time.Duration)
+	// OnEvidence is a trusted local diagnostic observer. The source lease remains
+	// open during this synchronous call; observers must not close or retain it.
+	// Nil performs no export and installs no HTTP endpoint.
+	OnEvidence func(context.Context, BreakInput, BreakEvidence)
 }
 
-func (a *BreakAnalyzer) Analyze(ctx context.Context, in BreakInput) ([]BreakPoint, error) {
+func (a *BreakAnalyzer) Analyze(ctx context.Context, in BreakInput) (points []BreakPoint, err error) {
+	evidence := newBreakEvidence(in)
+	defer func() {
+		if a.OnEvidence != nil {
+			evidence.Complete = err == nil
+			evidence.Points = append([]BreakPoint(nil), points...)
+			a.OnEvidence(ctx, in, evidence)
+		}
+	}()
+
 	if in.ReleaseKey == "" || in.Info.Duration <= 0 || in.Info.Estimated {
 		return nil, fmt.Errorf("act breaks require an exact source")
 	}
 	var raw string
-	err := a.DB.QueryRowContext(ctx, `SELECT points FROM markers_breaks_cache WHERE release_key=? AND version=? AND duration_ms=?`, in.ReleaseKey, breakVersion, in.Info.Duration.Milliseconds()).Scan(&raw)
+	err = a.DB.QueryRowContext(ctx, `SELECT points FROM markers_breaks_cache WHERE release_key=? AND version=? AND duration_ms=?`, in.ReleaseKey, breakVersion, in.Info.Duration.Milliseconds()).Scan(&raw)
 	if err == nil {
-		var points []BreakPoint
+		evidence.CacheHit = true
 		if err = json.Unmarshal([]byte(raw), &points); err == nil {
 			return points, nil
 		}
@@ -67,12 +81,12 @@ func (a *BreakAnalyzer) Analyze(ctx context.Context, in BreakInput) ([]BreakPoin
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	points := ChapterBreaks(in.Info)
+	points = ChapterBreaks(in.Info)
 	if len(points) == 0 {
 		if a.FFmpeg == "" || !hasBreakAudio(in.Info) {
 			return nil, fmt.Errorf("act-break decoder unavailable")
 		}
-		points, err = a.decode(ctx, in)
+		points, err = a.decodeEvidence(ctx, in, &evidence)
 		if err != nil {
 			return nil, err
 		}
@@ -102,6 +116,8 @@ type breakRun struct{ start, end float64 }
 type breakSignals struct {
 	black, silent []breakRun
 	scenes        []float64
+	sceneEvidence []BreakSignal
+	sceneScore    *float64
 }
 
 func combineBreakSignals(s breakSignals, duration time.Duration) []BreakPoint {
@@ -185,7 +201,7 @@ func SelectBreaks(points []BreakPoint, duration int64, k int, spacing int64) []B
 	return best.path
 }
 
-var signalValue = regexp.MustCompile(`(black_start|black_end|silence_start|silence_end|lavfi.scd.time)[:=]\s*([0-9.]+)`)
+var signalValue = regexp.MustCompile(`(black_start|black_end|silence_start|silence_end|lavfi.scd.time|lavfi.scd.score)[:=]\s*([0-9.]+)`)
 
 func (s *breakSignals) line(line string, silenceStart *float64) {
 	var black breakRun
@@ -208,8 +224,14 @@ func (s *breakSignals) line(line string, silenceStart *float64) {
 				s.silent = append(s.silent, breakRun{*silenceStart, at})
 				*silenceStart = -1
 			}
+		case "lavfi.scd.score":
+			score := at
+			s.sceneScore = &score
 		case "lavfi.scd.time":
 			s.scenes = append(s.scenes, at)
+			ms := int64(math.Round(at * 1000))
+			s.sceneEvidence = append(s.sceneEvidence, BreakSignal{StartMS: ms, EndMS: ms, Score: s.sceneScore})
+			s.sceneScore = nil
 		}
 	}
 	if hasBlack && black.end > black.start {
@@ -217,6 +239,10 @@ func (s *breakSignals) line(line string, silenceStart *float64) {
 	}
 }
 func (a *BreakAnalyzer) decode(ctx context.Context, in BreakInput) ([]BreakPoint, error) {
+	evidence := newBreakEvidence(in)
+	return a.decodeEvidence(ctx, in, &evidence)
+}
+func (a *BreakAnalyzer) decodeEvidence(ctx context.Context, in BreakInput, evidence *BreakEvidence) ([]BreakPoint, error) {
 	// One decoder thread and filter thread, with Unix scheduling priority lowered.
 	// URLs are trusted loopback playback leases, never owner-entered provider URLs.
 	args := []string{"-n", "10", a.FFmpeg, "-hide_banner", "-nostdin", "-nostats", "-threads", "1", "-filter_threads", "1", "-i", in.URL, "-t", strconv.FormatFloat(in.Info.Duration.Seconds(), 'f', 3, 64), "-map", "0:v:0", "-map", "0:a:0", "-vf", "fps=10,scale=160:90,blackdetect=d=0.3:pix_th=0.08:pic_th=0.98,scdet=threshold=8", "-af", "silencedetect=noise=-45dB:d=0.2", "-threads", "1", "-f", "null", "-"}
@@ -234,7 +260,13 @@ func (a *BreakAnalyzer) decode(ctx context.Context, in BreakInput) ([]BreakPoint
 	if err = cmd.Start(); err != nil {
 		return nil, err
 	}
+	evidence.Decoded = true
 	var signals breakSignals
+	defer func() {
+		evidence.Black = breakRunEvidence(signals.black)
+		evidence.Silence = breakRunEvidence(signals.silent)
+		evidence.Scenes = signals.sceneEvidence
+	}()
 	silenceStart := -1.0
 	scan := bufio.NewScanner(stderr)
 	scan.Buffer(make([]byte, 4096), 64<<10)
@@ -251,8 +283,14 @@ func (a *BreakAnalyzer) decode(ctx context.Context, in BreakInput) ([]BreakPoint
 		_ = cmd.Process.Kill()
 	}
 	waitErr := cmd.Wait()
-	if a.OnCost != nil && cmd.ProcessState != nil {
-		a.OnCost(in.Info.Duration, cmd.ProcessState.UserTime()+cmd.ProcessState.SystemTime(), time.Since(started))
+	if cmd.ProcessState != nil {
+		cpu := cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()
+		wall := time.Since(started)
+		evidence.CPUMS = cpu.Milliseconds()
+		evidence.WallMS = wall.Milliseconds()
+		if a.OnCost != nil {
+			a.OnCost(in.Info.Duration, cpu, wall)
+		}
 	}
 	// Do not return ffmpeg stderr: it contains private loopback source grants.
 	if scanErr != nil || waitErr != nil {

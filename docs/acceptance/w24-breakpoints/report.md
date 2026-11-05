@@ -1,6 +1,6 @@
 # W24 natural act breaks
 
-Implementation branch: `feat/035-breakpoints`. No core/config changes. Original implementation commit: `3dec30bb18`; subsequent commit adds W22 policy inheritance and evidence.
+Implementation branch: `feat/035-breakpoints`. Core addition: the existing W17 `SetupOwnerID` reserved-principal constant is copied additively into `internal/core/types.go` as the prerequisite for W17 identity fix `150dbd1c0` (locally `44699249bf`). No config changes. Original implementation commit: `3dec30bb18`; subsequent commit adds W22 policy inheritance and evidence.
 
 ## Detection and selection
 
@@ -75,3 +75,7 @@ All Go commands are niced. `GOCACHE=/tmp/gocache` because sandbox denies the def
 - Generated-media integration: `ETHER_BREAK_TEST_FFMPEG=<verified-binary> ETHER_BREAK_TEST_ARTIFACTS=<artifact-dir> go test -count=1 -p 2 -v ./internal/markers -run TestBreakSyntheticDecode`: passed.
 
 App wiring additions: `internal/app/livetv.go` supplies analyzer DB, configured ffmpeg and source factory; new `livetv_breaks.go` prepares, revision-pins, probes tail chapters and retires the dedicated source. No web, translations, embedded distribution or provider configuration changed.
+
+Opt-in diagnostics: `app.Options.BreakEvidenceObserver` wires `markers.BreakAnalyzer.OnEvidence(ctx, BreakInput, BreakEvidence)`. The synchronous callback runs while the source lease is pinned/open, receives the catalogue Key, and can collect stills through the existing background loopback input in a local validation harness. It must neither close nor retain the lease. BreakEvidence exports raw chapter bounds/label-match flags, black/silence intervals, scene times with actual ffmpeg scdet percent scores, accepted points, cache/complete/decode flags and CPU/wall milliseconds. It contains no URL, source grant or media; BreakInput URL/Info/Close are excluded from JSON too. Default is nil, no public endpoint, no new auth/config. Cache hits explicitly indicate unavailable historical decode evidence. [Raw synthetic candidates](synthetic-candidates.json) demonstrate measured scene scores and the rejected black-with-audio interval.
+
+W17 owner-identity correction carries only the admitted numeric owner ID into each ordered background task and re-resolves the real owner at execution. Setup stand-in admission is accepted only while setup remains open and unclaimed; request contexts are not retained. Focused identity-transition and context-detachment tests pass.

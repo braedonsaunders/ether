@@ -91,7 +91,10 @@ import (
 
 // Options configure a run.
 type Options struct {
-	clusterSetup *clusterSetup
+	// BreakEvidenceObserver is an opt-in local owner diagnostic hook. It runs
+	// synchronously while the analyzed source lease is open; never retain its URL.
+	BreakEvidenceObserver func(context.Context, markers.BreakInput, markers.BreakEvidence)
+	clusterSetup          *clusterSetup
 	// NotificationExecutable enables the independent crash watcher for executable runs.
 	NotificationExecutable string
 	DataDir                string
