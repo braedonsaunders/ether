@@ -85,14 +85,7 @@ type decision struct {
 // screen prefix, so "because.*" covers "home.because.123" and
 // "movie.because.123".
 func rowMatches(pattern, hubID, kind string) bool {
-	stem := hubID
-	for _, p := range []string{"home.", "movie.", "tv."} {
-		if s, ok := strings.CutPrefix(hubID, p); ok {
-			stem = s
-			break
-		}
-	}
-	for _, cand := range []string{hubID, stem, kind} {
+	for _, cand := range []string{hubID, hubStem(hubID), kind} {
 		if pattern == cand {
 			return true
 		}
@@ -103,6 +96,17 @@ func rowMatches(pattern, hubID, kind string) bool {
 		}
 	}
 	return false
+}
+
+// hubStem is a hub id without its screen prefix ("home.because.123" →
+// "because.123").
+func hubStem(hubID string) string {
+	for _, p := range []string{"home.", "movie.", "tv."} {
+		if s, ok := strings.CutPrefix(hubID, p); ok {
+			return s
+		}
+	}
+	return hubID
 }
 
 // whenMatches evaluates a schedule against the request context.

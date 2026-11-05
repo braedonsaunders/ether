@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether yeniden çevrimiçi",
   "m_00622d72a2d977": "Diziler kitaplığı adı",
   "m_00641db82a3ca1": "{path} için odak etiketleri",
+  "m_0065e717956476": "{title} kuralını kaldır",
   "m_006cabcec32e76": "Satırları filtrele",
   "m_006cca4bfbbb7b": "Gelen kutunuzu veya cihazınızı kontrol edin. Sonuç Teslimat geçmişine kaydedilir.",
   "m_006cf6dde5083e": "Bir IPTV sağlayıcısının Xtream Codes paneline giriş yapın. Ether canlı kanalları ve panelin rehberini içe aktarır.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Zaman bloğu {number} bitiş saati",
   "m_0099964b92930d": "IMDb, Rotten Tomatoes ve diğer puan rozetleri.",
   "m_009ad02b956a70": "Final",
+  "m_009b07f9887d54": "Seçili satırlar",
   "m_009b1ff865a309": "Gizli kalp atışı URL'si",
   "m_009bde2dde6cc7": "Bu makinenin, videoyu doğrudan oynatamayan cihazlar için dönüştürmekte kullanabileceği donanım.",
   "m_009c31d1d7a458": "Düğümler",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "{name} kaldırıldı",
   "m_016092af66360a": "Tüm indeksleyiciler",
+  "m_01609b7d026e66": "Seçili satırları Herkes ayarına sıfırla",
   "m_01611b2cfb0ba0": "~{minutes} dk kaldı",
   "m_016432d700cb95": "Bu izleyicinin favori olarak işaretlediği içerikler.",
   "m_016798b7fc323d": "Yönetilen ön yükleme rafı için seçildi.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Önbellekteki torrentleri denetler ve oynatılabilir dosyaları yerleşik debrid hattı üzerinden sağlar.",
   "m_039705ceced91d": "Uygulamaların bu sunucuyu bulmasına izin ver",
   "m_0399c893afa95f": "Bu derlemede güncellemeler devre dışı",
+  "m_039a2921ce98a3": "Seçili satırları varsayılana sıfırla",
   "m_039a4f5abe9171": "{field}: {value} veya sonrasında",
   "m_039b02abb9a90f": "İzleme Listesi",
   "m_039c1a13fd34d7": "Tekrarları önle",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "İntro ve jenerik zamanları IntroDB'den.",
   "m_03abee25fafc93": "Bir diziyi DVD, mutlak veya hikâye sırasında gösterin. Oynatma özgün bölüm numaralarını korur.",
   "m_03acc54b13526c": "Kanal kaydedildi",
+  "m_03b06978a0c496": "Seçili satırları {status} yap",
   "m_03b1c6f5562cd2": "sabitle sürüm geçersiz kıl ara etkileşimli elle seç bul",
   "m_03b3e36000da74": "ses dilleri altyazılar zamanlama eşitleme opensubtitles hane",
   "m_03b3ff3d197bd5": "İçerik derecelendirme sınırıyla aynı",
@@ -2135,6 +2140,10 @@
   "m_09b9f354501f2f": "{source} bu kataloğu {seconds} saniye içinde göndermedi. Sunucusu meşgul olabilir; bir dakika sonra yeniden deneyin.",
   "m_09bcb524cf9150": "Derleme hataları var",
   "m_09bcf86e4a05a4": "Bağlantı başarılı",
+  "m_09bedf60e4e7b5": {
+    "one": "{count} satıra uygulanır",
+    "other": "{count} satıra uygulanır"
+  },
   "m_09bfaed1f837c2": "Tanım",
   "m_09bfd82959f8d2": "Yerleşik",
   "m_09c0cf8848587c": "Hafta sonu",
@@ -3459,6 +3468,10 @@
   "m_0fce6c6310cdfb": "Medya türü",
   "m_0fd021bc358775": "Post prodüksiyon",
   "m_0fd1b4af557c7f": "Altyazılar",
+  "m_0fd513828cede5": {
+    "one": "{count} satır",
+    "other": "{count} satır"
+  },
   "m_0fd5df5b289f99": "TLS trafiği şifreler ancak bu mod veritabanı sunucusunun kimliğini doğrulamaz.",
   "m_0fd696abd607e8": "{label} parametre değeri",
   "m_0fd885e550029c": "Teslimat geçmişi",
@@ -5273,6 +5286,7 @@
   "m_1810e776c939c6": "Bu site için bildirimler engellenmiş. Tarayıcınızın site ayarlarında izin verin, ardından yeniden bağlanın.",
   "m_181110e085ca9a": "Saatlik",
   "m_1813e98427e580": "Seçili adresi kopyalayın.",
+  "m_181492ead9b6c6": "{pattern} kuralıyla ayarlandı. Burada değiştirmek bu satıra kendi ayarını verir.",
   "m_1816c7cd41a8ca": "Sürüm dizinleyicisi",
   "m_181bb8bee85e6e": "Yedek {number}",
   "m_181d396b15fd58": "Kullanılabilir oturum açma yöntemi yok. Sunucu sahibiyle iletişime geçin.",
@@ -5313,6 +5327,7 @@
     "other": "{count} ekran görüntüsü"
   },
   "m_1846fbb6439b94": "{title} için gün bölümleri",
+  "m_1847745b140186": "Satırları duruma göre göster",
   "m_1848e73fb61f63": "Dizinleyici türü",
   "m_1849b633f8e775": "Öneriler arasından hiçbir şey gizlenmedi",
   "m_184a2322c90a0b": "Baştaki noktayı göster",
@@ -5428,6 +5443,10 @@
     "one": "{count} saat",
     "other": "{count} saat"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} kapalı",
+    "other": "{count} kapalı"
+  },
   "m_18c3486bf7b025": "Usenet sürümleri Usenet sağlayıcılarınızdan akışa alınır.",
   "m_18ca1c5dc775ca": "Bu izleyicinin artık sunucu erişimi yok. Geçmişi korunuyor.",
   "m_18cac20f7cbd3e": "İzleyici başına eşzamanlı indirmeler",
@@ -5464,6 +5483,7 @@
   "m_18e282914f19b5": "Binlerce film.",
   "m_18e5c502718bf2": "Her anahtar o düğmeyi açar veya kapatır. Uygulamanın yine de göstermesi gerekir.",
   "m_18e83dea4f84d6": "Soldaki aramayı veya filtreyi temizleyin, bir sanal kanal oluşturun veya bir IPTV kaynağı ekleyin.",
+  "m_18e96a529e967d": "{group} içindeki tüm satırları seç",
   "m_18eaf618f1057d": "İyileştirme kalitesi",
   "m_18eb1342500c7d": "şimdi",
   "m_18eb8fe478d7cd": "İzleyiciler bekleniyor",
@@ -5581,6 +5601,7 @@
   "m_1960d854a8b5bf": "Dilden",
   "m_1961b6342080bf": "{date} tarihli yedeği geri yükle",
   "m_196220fca4272f": "{group} grubunu taşı",
+  "m_1963891cbada94": "{pattern} üzerinden",
   "m_19642a2b0ca412": "Çevrimdışı",
   "m_196592c802fb8c": "Yeni çıkanlar, izlenmemiş yeni bölümler ve sezonlar.",
   "m_1965a785a0b09f": "Depolama",
@@ -5869,6 +5890,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Yinele (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Anında başlaması için son dakikalarda ilk öneriyi hazırlayın.",
+  "m_1ab663d0bd937a": "{title} öğesini seç",
   "m_1ab6ba88ce908e": "Hiçbir zaman",
   "m_1ab7c19b1d8931": "Hazır ayarlara dön",
   "m_1ab7c60676388e": "{name} için Canlı TV kanalları kapalı",
@@ -5919,6 +5941,7 @@
   "m_1af3226963573a": "Duyuruldu",
   "m_1af68c9c186f4c": "Sağlam olduğundan emin olmak için veritabanının her sayfası okunuyor…",
   "m_1af9465a8bd5d6": "Her izleyiciye günde bir kez",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field}: son {window}",
   "m_1afdb1a8eede4a": "{when} yeniden dene",
   "m_1aff3fb760896e": "Bir günü aç",
@@ -6824,6 +6847,7 @@
   "m_1f2c1ef7c466cc": "Üyeleri döndür",
   "m_1f2c7907712729": "Çalışıyor…",
   "m_1f2c8b3ac5b812": "Haftalık zamanlama kaydedildi",
+  "m_1f2d67f2aa05b6": "Geçersiz kılındı",
   "m_1f2dd11757fb45": {
     "one": "{count} hareketsiz gün",
     "other": "{count} hareketsiz gün"

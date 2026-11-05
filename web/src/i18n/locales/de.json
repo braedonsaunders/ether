@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether ist wieder online",
   "m_00622d72a2d977": "Name der Serien-Mediathek",
   "m_00641db82a3ca1": "Fokus-Tags für {path}",
+  "m_0065e717956476": "Regel {title} entfernen",
   "m_006cabcec32e76": "Reihen filtern",
   "m_006cca4bfbbb7b": "Prüfe deinen Posteingang oder dein Gerät. Das Ergebnis wird im Zustellverlauf gespeichert.",
   "m_006cf6dde5083e": "Melde dich beim Xtream-Codes-Panel eines IPTV-Anbieters an. Ether importiert die Live-Kanäle und das Programm des Panels.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Endzeit von Zeitblock {number}",
   "m_0099964b92930d": "Abzeichen für IMDb, Rotten Tomatoes und andere Bewertungen.",
   "m_009ad02b956a70": "Finale",
+  "m_009b07f9887d54": "Ausgewählte Reihen",
   "m_009b1ff865a309": "Geheime Heartbeat-URL",
   "m_009bde2dde6cc7": "Was dieser Rechner nutzen kann, um Video für Geräte umzuwandeln, die es nicht direkt abspielen können.",
   "m_009c31d1d7a458": "Knoten",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "{name} entfernt",
   "m_016092af66360a": "Jeder Indexer",
+  "m_01609b7d026e66": "Ausgewählte Reihen auf „Alle“ zurücksetzen",
   "m_01611b2cfb0ba0": "noch ~{minutes} min",
   "m_016432d700cb95": "Titel, die dieser Zuschauer als Favoriten markiert hat.",
   "m_016798b7fc323d": "Für das verwaltete Vorlade-Regal ausgewählt.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Prüft zwischengespeicherte Torrents und liefert abspielbare Dateien über die native Debrid-Pipeline.",
   "m_039705ceced91d": "Apps diesen Server finden lassen",
   "m_0399c893afa95f": "Updates sind in diesem Build deaktiviert",
+  "m_039a2921ce98a3": "Ausgewählte Reihen auf Standard zurücksetzen",
   "m_039a4f5abe9171": "{field} am oder nach {value}",
   "m_039b02abb9a90f": "Merkliste",
   "m_039c1a13fd34d7": "Wiederholungen vermeiden",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "Intro- und Abspannzeiten von IntroDB.",
   "m_03abee25fafc93": "Zeig eine Serie in DVD-, absoluter oder Handlungsreihenfolge. Die Wiedergabe behält die ursprünglichen Folgennummern.",
   "m_03acc54b13526c": "Kanal gespeichert",
+  "m_03b06978a0c496": "Ausgewählte Reihen auf {status} setzen",
   "m_03b1c6f5562cd2": "anheften Release überschreiben Suche interaktiv manuell auswählen finden",
   "m_03b3e36000da74": "Audiosprachen Untertitel Timing Synchronisierung opensubtitles Haushalt",
   "m_03b3ff3d197bd5": "Wie das Altersfreigabe-Limit",
@@ -2135,6 +2140,10 @@
   "m_09b9f354501f2f": "{source} hat diesen Katalog nicht innerhalb von {seconds} Sekunden geschickt. Der Server ist vielleicht ausgelastet; versuch es in einer Minute erneut.",
   "m_09bcb524cf9150": "Hat Kompilierfehler",
   "m_09bcf86e4a05a4": "Verbindung erfolgreich",
+  "m_09bedf60e4e7b5": {
+    "one": "Gilt für {count} Reihe",
+    "other": "Gilt für {count} Reihen"
+  },
   "m_09bfaed1f837c2": "Definition",
   "m_09bfd82959f8d2": "Integriert",
   "m_09c0cf8848587c": "Wochenenden",
@@ -3459,6 +3468,10 @@
   "m_0fce6c6310cdfb": "Medientyp",
   "m_0fd021bc358775": "Postproduktion",
   "m_0fd1b4af557c7f": "Untertitel",
+  "m_0fd513828cede5": {
+    "one": "{count} Reihe",
+    "other": "{count} Reihen"
+  },
   "m_0fd5df5b289f99": "TLS verschlüsselt den Datenverkehr, aber dieser Modus prüft nicht die Identität des Datenbankservers.",
   "m_0fd696abd607e8": "Parameterwert für {label}",
   "m_0fd885e550029c": "Zustellverlauf",
@@ -5273,6 +5286,7 @@
   "m_1810e776c939c6": "Benachrichtigungen sind für diese Website blockiert. Erlaube sie in den Website-Einstellungen deines Browsers und verbinde dich dann erneut.",
   "m_181110e085ca9a": "Stündlich",
   "m_1813e98427e580": "Kopieren Sie die markierte Adresse.",
+  "m_181492ead9b6c6": "Festgelegt durch die Regel {pattern}. Eine Änderung hier gibt dieser Reihe eine eigene Einstellung.",
   "m_1816c7cd41a8ca": "Release-Indexer",
   "m_181bb8bee85e6e": "Backup {number}",
   "m_181d396b15fd58": "Keine Anmeldemethode verfügbar. Wenden Sie sich an den Serverbesitzer.",
@@ -5313,6 +5327,7 @@
     "other": "{count} Screenshots"
   },
   "m_1846fbb6439b94": "Tageszeiten für {title}",
+  "m_1847745b140186": "Reihen nach Status anzeigen",
   "m_1848e73fb61f63": "Indexer-Typ",
   "m_1849b633f8e775": "Nichts aus den Empfehlungen ausgeblendet",
   "m_184a2322c90a0b": "Punkt am Anfang anzeigen",
@@ -5428,6 +5443,10 @@
     "one": "{count} Stunde",
     "other": "{count} Stunden"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} aus",
+    "other": "{count} aus"
+  },
   "m_18c3486bf7b025": "Usenet-Releases werden von deinen Usenet-Anbietern gestreamt.",
   "m_18ca1c5dc775ca": "Dieser Zuschauer hat keinen Serverzugriff mehr. Sein Verlauf bleibt erhalten.",
   "m_18cac20f7cbd3e": "Gleichzeitige Downloads pro Zuschauer",
@@ -5464,6 +5483,7 @@
   "m_18e282914f19b5": "Tausende Filme.",
   "m_18e5c502718bf2": "Jeder Schalter schaltet diese Taste ein oder aus. Die App muss sie trotzdem anzeigen.",
   "m_18e83dea4f84d6": "Lösche links die Suche oder den Filter, erstelle einen virtuellen Kanal oder füge eine IPTV-Quelle hinzu.",
+  "m_18e96a529e967d": "Alle Reihen in {group} auswählen",
   "m_18eaf618f1057d": "Verbesserungsqualität",
   "m_18eb1342500c7d": "jetzt",
   "m_18eb8fe478d7cd": "Wartet, bis niemand mehr zuschaut",
@@ -5581,6 +5601,7 @@
   "m_1960d854a8b5bf": "Aus der Sprache",
   "m_1961b6342080bf": "Backup vom {date} wiederherstellen",
   "m_196220fca4272f": "{group} verschieben",
+  "m_1963891cbada94": "über {pattern}",
   "m_19642a2b0ca412": "Offline",
   "m_196592c802fb8c": "Neuerscheinungen, ungesehene neue Episoden und Staffeln.",
   "m_1965a785a0b09f": "Speicher",
@@ -5869,6 +5890,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Wiederholen (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Wärmt den ersten Vorschlag in den letzten Minuten vor, damit er sofort startet.",
+  "m_1ab663d0bd937a": "{title} auswählen",
   "m_1ab6ba88ce908e": "Nie",
   "m_1ab7c19b1d8931": "Zurück zu den Voreinstellungen",
   "m_1ab7c60676388e": "Live-TV-Kanäle sind für {name} deaktiviert",
@@ -5919,6 +5941,7 @@
   "m_1af3226963573a": "Angekündigt",
   "m_1af68c9c186f4c": "Jede Seite der Datenbank wird gelesen, um sicherzugehen, dass sie intakt ist…",
   "m_1af9465a8bd5d6": "Einmal am Tag je Zuschauer",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field} in den letzten {window}",
   "m_1afdb1a8eede4a": "erneuter Versuch {when}",
   "m_1aff3fb760896e": "Tag öffnen",
@@ -6824,6 +6847,7 @@
   "m_1f2c1ef7c466cc": "Titel rotieren lassen",
   "m_1f2c7907712729": "Läuft…",
   "m_1f2c8b3ac5b812": "Wochenplan gespeichert",
+  "m_1f2d67f2aa05b6": "Überschrieben",
   "m_1f2dd11757fb45": {
     "one": "{count} inaktiver Tag",
     "other": "{count} inaktive Tage"

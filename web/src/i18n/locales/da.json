@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether er online igen",
   "m_00622d72a2d977": "Navn på tv-seriebibliotek",
   "m_00641db82a3ca1": "Fokusmærker for {path}",
+  "m_0065e717956476": "Fjern reglen {title}",
   "m_006cabcec32e76": "Filtrer rækker",
   "m_006cca4bfbbb7b": "Tjek din indbakke eller enhed. Resultatet gemmes i Leveringshistorik.",
   "m_006cf6dde5083e": "Log ind på en IPTV-udbyders Xtream Codes-panel. Ether importerer livekanalerne og panelets guide.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Sluttidspunkt for tidsblok {number}",
   "m_0099964b92930d": "Mærker for IMDb, Rotten Tomatoes og andre vurderinger.",
   "m_009ad02b956a70": "Finale",
+  "m_009b07f9887d54": "Valgte rækker",
   "m_009b1ff865a309": "Hemmelig heartbeat-URL",
   "m_009bde2dde6cc7": "Hvad denne maskine kan bruge til at konvertere video til enheder, der ikke kan afspille den direkte.",
   "m_009c31d1d7a458": "Noder",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "Fjernede {name}",
   "m_016092af66360a": "Alle indexere",
+  "m_01609b7d026e66": "Nulstil de valgte rækker til Alle",
   "m_01611b2cfb0ba0": "~{minutes} min tilbage",
   "m_016432d700cb95": "Titler, som denne seer har markeret som favoritter.",
   "m_016798b7fc323d": "Valgt til den administrerede forudindlæsningshylde.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Tjekker cachelagrede torrents og leverer afspillelige filer via den indbyggede debrid-pipeline.",
   "m_039705ceced91d": "Lad apps finde denne server",
   "m_0399c893afa95f": "Opdateringer er deaktiveret i denne build",
+  "m_039a2921ce98a3": "Nulstil de valgte rækker til standard",
   "m_039a4f5abe9171": "{field} på eller efter {value}",
   "m_039b02abb9a90f": "Overvågningsliste",
   "m_039c1a13fd34d7": "Undgå gentagelser",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "Intro- og rulleteksttider fra IntroDB.",
   "m_03abee25fafc93": "Vis en serie i dvd-, absolut eller historieorden. Afspilning beholder de oprindelige afsnitsnumre.",
   "m_03acc54b13526c": "Kanal gemt",
+  "m_03b06978a0c496": "Sæt de valgte rækker til {status}",
   "m_03b1c6f5562cd2": "fastgør udgivelse tilsidesæt søg interaktiv manuel vælg find",
   "m_03b3e36000da74": "lydsprog undertekster timing synkronisering opensubtitles husstand",
   "m_03b3ff3d197bd5": "Samme som aldersgrænsen",
@@ -2135,6 +2140,10 @@
   "m_09b9f354501f2f": "{source} sendte ikke dette katalog inden for {seconds} sekunder. Serveren kan være optaget; prøv igen om et minut.",
   "m_09bcb524cf9150": "Har kompileringsfejl",
   "m_09bcf86e4a05a4": "Forbindelsen lykkedes",
+  "m_09bedf60e4e7b5": {
+    "one": "Gælder {count} række",
+    "other": "Gælder {count} rækker"
+  },
   "m_09bfaed1f837c2": "Definition",
   "m_09bfd82959f8d2": "Indbygget",
   "m_09c0cf8848587c": "Weekender",
@@ -3459,6 +3468,10 @@
   "m_0fce6c6310cdfb": "Medietype",
   "m_0fd021bc358775": "Postproduktion",
   "m_0fd1b4af557c7f": "Undertekster",
+  "m_0fd513828cede5": {
+    "one": "{count} række",
+    "other": "{count} rækker"
+  },
   "m_0fd5df5b289f99": "TLS krypterer trafikken, men denne tilstand verificerer ikke databaseserverens identitet.",
   "m_0fd696abd607e8": "Parameterværdi: {label}",
   "m_0fd885e550029c": "Leveringshistorik",
@@ -5273,6 +5286,7 @@
   "m_1810e776c939c6": "Notifikationer er blokeret for dette websted. Tillad dem i browserens webstedsindstillinger, og forbind derefter igen.",
   "m_181110e085ca9a": "Hver time",
   "m_1813e98427e580": "Kopiér den markerede adresse.",
+  "m_181492ead9b6c6": "Angivet af reglen {pattern}. Ændrer du den her, får rækken sin egen indstilling.",
   "m_1816c7cd41a8ca": "Udgivelsesindekser",
   "m_181bb8bee85e6e": "Backup {number}",
   "m_181d396b15fd58": "Ingen loginmetode er tilgængelig. Kontakt serverens ejer.",
@@ -5313,6 +5327,7 @@
     "other": "{count} skærmbilleder"
   },
   "m_1846fbb6439b94": "Tidspunkter på dagen for {title}",
+  "m_1847745b140186": "Vis rækker efter status",
   "m_1848e73fb61f63": "Indexertype",
   "m_1849b633f8e775": "Intet skjult fra anbefalinger",
   "m_184a2322c90a0b": "Vis indledende prik",
@@ -5428,6 +5443,10 @@
     "one": "{count} time",
     "other": "{count} timer"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} fra",
+    "other": "{count} fra"
+  },
   "m_18c3486bf7b025": "Usenet-udgivelser streames fra dine Usenet-udbydere.",
   "m_18ca1c5dc775ca": "Denne seer har ikke længere adgang til serveren. Deres historik bevares.",
   "m_18cac20f7cbd3e": "Downloads på én gang pr. seer",
@@ -5464,6 +5483,7 @@
   "m_18e282914f19b5": "Tusindvis af film.",
   "m_18e5c502718bf2": "Hver kontakt tænder eller slukker den knap. Appen skal stadig vise den.",
   "m_18e83dea4f84d6": "Ryd søgningen eller filteret til venstre, opret en virtuel kanal, eller tilføj en IPTV-kilde.",
+  "m_18e96a529e967d": "Vælg alle rækker i {group}",
   "m_18eaf618f1057d": "Forbedringskvalitet",
   "m_18eb1342500c7d": "nu",
   "m_18eb8fe478d7cd": "Venter på seerne",
@@ -5581,6 +5601,7 @@
   "m_1960d854a8b5bf": "Fra sproget",
   "m_1961b6342080bf": "Gendan backuppen fra {date}",
   "m_196220fca4272f": "Flyt {group}",
+  "m_1963891cbada94": "via {pattern}",
   "m_19642a2b0ca412": "Offline",
   "m_196592c802fb8c": "Nye udgivelser samt nye episoder og sæsoner, du ikke har set.",
   "m_1965a785a0b09f": "Lager",
@@ -5869,6 +5890,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Gentag (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Forvarm det første forslag i de sidste minutter, så det starter med det samme.",
+  "m_1ab663d0bd937a": "Vælg {title}",
   "m_1ab6ba88ce908e": "Aldrig",
   "m_1ab7c19b1d8931": "Tilbage til forudindstillinger",
   "m_1ab7c60676388e": "Live-tv-kanaler er slået fra for {name}",
@@ -5919,6 +5941,7 @@
   "m_1af3226963573a": "Annonceret",
   "m_1af68c9c186f4c": "Læser hver side i databasen for at sikre, at den er intakt…",
   "m_1af9465a8bd5d6": "Én gang om dagen pr. seer",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field} inden for de seneste {window}",
   "m_1afdb1a8eede4a": "nyt forsøg {when}",
   "m_1aff3fb760896e": "Åbn en dag",
@@ -6824,6 +6847,7 @@
   "m_1f2c1ef7c466cc": "Roter medlemmer",
   "m_1f2c7907712729": "Kører…",
   "m_1f2c8b3ac5b812": "Ugentlig tidsplan gemt",
+  "m_1f2d67f2aa05b6": "Tilsidesat",
   "m_1f2dd11757fb45": {
     "one": "{count} inaktiv dag",
     "other": "{count} inaktive dage"

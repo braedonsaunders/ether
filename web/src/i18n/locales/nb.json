@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether er på nett igjen",
   "m_00622d72a2d977": "Navn på TV-seriebibliotek",
   "m_00641db82a3ca1": "Fokusmerker for {path}",
+  "m_0065e717956476": "Fjern regelen {title}",
   "m_006cabcec32e76": "Filtrer rader",
   "m_006cca4bfbbb7b": "Sjekk innboksen eller enheten din. Resultatet lagres i Leveringshistorikk.",
   "m_006cf6dde5083e": "Logg på Xtream Codes-panelet til en IPTV-leverandør. Ether importerer direktekanalene og panelets guide.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Sluttid for tidsblokk {number}",
   "m_0099964b92930d": "Merker for IMDb, Rotten Tomatoes og andre vurderinger.",
   "m_009ad02b956a70": "Finale",
+  "m_009b07f9887d54": "Valgte rader",
   "m_009b1ff865a309": "Hemmelig hjerteslag-URL",
   "m_009bde2dde6cc7": "Hva denne maskinen kan bruke til å konvertere video for enheter som ikke kan spille den av direkte.",
   "m_009c31d1d7a458": "Noder",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "Fjernet {name}",
   "m_016092af66360a": "Alle indekserere",
+  "m_01609b7d026e66": "Tilbakestill de valgte radene til Alle",
   "m_01611b2cfb0ba0": "~{minutes} min igjen",
   "m_016432d700cb95": "Titler denne seeren har markert som favoritter.",
   "m_016798b7fc323d": "Valgt for den administrerte forhåndslastingshyllen.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Sjekker hurtigbufrede torrenter og leverer avspillbare filer gjennom den innebygde debrid-flyten.",
   "m_039705ceced91d": "La apper finne denne serveren",
   "m_0399c893afa95f": "Oppdateringer er deaktivert i denne versjonen",
+  "m_039a2921ce98a3": "Tilbakestill de valgte radene til standard",
   "m_039a4f5abe9171": "{field} på eller etter {value}",
   "m_039b02abb9a90f": "Se-liste",
   "m_039c1a13fd34d7": "Unngå gjentakelser",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "Intro- og rulleteksttider fra IntroDB.",
   "m_03abee25fafc93": "Vis en serie i DVD-, absolutt eller historieorden. Avspilling beholder de opprinnelige episodenumrene.",
   "m_03acc54b13526c": "Kanalen er lagret",
+  "m_03b06978a0c496": "Sett de valgte radene til {status}",
   "m_03b1c6f5562cd2": "feste utgivelse overstyre søk interaktiv manuelt velge finne",
   "m_03b3e36000da74": "lydspråk undertekster timing synkronisering opensubtitles husholdning",
   "m_03b3ff3d197bd5": "Samme som aldersgrensen",
@@ -2135,6 +2140,10 @@
   "m_09b9f354501f2f": "{source} sendte ikke denne katalogen innen {seconds} sekunder. Serveren kan være opptatt; prøv igjen om et minutt.",
   "m_09bcb524cf9150": "Har kompileringsfeil",
   "m_09bcf86e4a05a4": "Tilkoblingen lyktes",
+  "m_09bedf60e4e7b5": {
+    "one": "Gjelder {count} rad",
+    "other": "Gjelder {count} rader"
+  },
   "m_09bfaed1f837c2": "Definisjon",
   "m_09bfd82959f8d2": "Innebygd",
   "m_09c0cf8848587c": "Helger",
@@ -3459,6 +3468,10 @@
   "m_0fce6c6310cdfb": "Medietype",
   "m_0fd021bc358775": "Postproduksjon",
   "m_0fd1b4af557c7f": "Undertekster",
+  "m_0fd513828cede5": {
+    "one": "{count} rad",
+    "other": "{count} rader"
+  },
   "m_0fd5df5b289f99": "TLS krypterer trafikken, men denne modusen verifiserer ikke databaseserverens identitet.",
   "m_0fd696abd607e8": "Parameterverdi for {label}",
   "m_0fd885e550029c": "Leveringshistorikk",
@@ -5273,6 +5286,7 @@
   "m_1810e776c939c6": "Varsler er blokkert for dette nettstedet. Tillat dem i nettleserens nettstedsinnstillinger, og koble til på nytt.",
   "m_181110e085ca9a": "Hver time",
   "m_1813e98427e580": "Kopier den merkede adressen.",
+  "m_181492ead9b6c6": "Satt av regelen {pattern}. Endrer du den her, får raden sin egen innstilling.",
   "m_1816c7cd41a8ca": "Utgivelsesindekserer",
   "m_181bb8bee85e6e": "Reserve {number}",
   "m_181d396b15fd58": "Ingen innloggingsmetode er tilgjengelig. Kontakt serverens eier.",
@@ -5313,6 +5327,7 @@
     "other": "{count} skjermbilder"
   },
   "m_1846fbb6439b94": "Tider på døgnet for {title}",
+  "m_1847745b140186": "Vis rader etter status",
   "m_1848e73fb61f63": "Indekserertype",
   "m_1849b633f8e775": "Ingenting skjult fra anbefalingene",
   "m_184a2322c90a0b": "Vis innledende punkt",
@@ -5428,6 +5443,10 @@
     "one": "{count} time",
     "other": "{count} timer"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} av",
+    "other": "{count} av"
+  },
   "m_18c3486bf7b025": "Usenet-utgivelser strømmes fra Usenet-leverandørene dine.",
   "m_18ca1c5dc775ca": "Denne seeren har ikke lenger serveradgang. Historikken deres beholdes.",
   "m_18cac20f7cbd3e": "Nedlastinger samtidig per seer",
@@ -5464,6 +5483,7 @@
   "m_18e282914f19b5": "Tusenvis av filmer.",
   "m_18e5c502718bf2": "Hver bryter slår den knappen av eller på. Appen må fortsatt vise den.",
   "m_18e83dea4f84d6": "Tøm søket eller filteret til venstre, opprett en virtuell kanal, eller legg til en IPTV-kilde.",
+  "m_18e96a529e967d": "Velg alle rader i {group}",
   "m_18eaf618f1057d": "Forbedringskvalitet",
   "m_18eb1342500c7d": "nå",
   "m_18eb8fe478d7cd": "Venter på seerne",
@@ -5581,6 +5601,7 @@
   "m_1960d854a8b5bf": "Fra språket",
   "m_1961b6342080bf": "Gjenopprett sikkerhetskopien fra {date}",
   "m_196220fca4272f": "Flytt {group}",
+  "m_1963891cbada94": "via {pattern}",
   "m_19642a2b0ca412": "Offline",
   "m_196592c802fb8c": "Nye utgivelser, usette nye episoder og sesonger.",
   "m_1965a785a0b09f": "Lagring",
@@ -5869,6 +5890,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Gjør om (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Forvarm det første forslaget de siste minuttene slik at det starter umiddelbart.",
+  "m_1ab663d0bd937a": "Velg {title}",
   "m_1ab6ba88ce908e": "Aldri",
   "m_1ab7c19b1d8931": "Tilbake til forhåndsvalg",
   "m_1ab7c60676388e": "Direkte-TV-kanaler er slått av for {name}",
@@ -5919,6 +5941,7 @@
   "m_1af3226963573a": "Annonsert",
   "m_1af68c9c186f4c": "Leser hver side i databasen for å sikre at den er intakt …",
   "m_1af9465a8bd5d6": "Én gang om dagen per seer",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field} de siste {window}",
   "m_1afdb1a8eede4a": "nytt forsøk {when}",
   "m_1aff3fb760896e": "Åpne en dag",
@@ -6824,6 +6847,7 @@
   "m_1f2c1ef7c466cc": "Roter medlemmer",
   "m_1f2c7907712729": "Kjører…",
   "m_1f2c8b3ac5b812": "Ukentlig tidsplan lagret",
+  "m_1f2d67f2aa05b6": "Overstyrt",
   "m_1f2dd11757fb45": {
     "one": "{count} inaktiv dag",
     "other": "{count} inaktive dager"

@@ -274,7 +274,9 @@ func matchingPolicy(p *core.LayoutPage, row core.HomeRow) *core.RowPolicy {
 			if r.Row == row.Kind {
 				n = 2
 			}
-			if r.Row == row.HubID {
+			// An exact hub id, with or without its screen prefix, is the
+			// most specific rule (the console ranks it the same way).
+			if r.Row == row.HubID || r.Row == hubStem(row.HubID) {
 				n = 3
 			}
 		}

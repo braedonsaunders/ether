@@ -438,3 +438,28 @@ func TestNeutralHomeLayoutMatchesLegacy(t *testing.T) {
 		t.Fatalf("legacy %v != neutral %v", hubIDsOf(old), ids)
 	}
 }
+
+func TestMatchingPolicyRanksLikeTheConsole(t *testing.T) {
+	page := &core.LayoutPage{Section: "home", Rows: []core.RowPolicy{
+		{Row: "because.*", Status: "off"},
+		{Row: "because-you-watched", Status: "eligible"},
+		{Row: "because.42", Status: "always"},
+		{Row: "collection:*", Status: "off"},
+		{Row: "collection:c1*", Status: "always"},
+	}}
+	cases := []struct{ hubID, kind, want string }{
+		// An exact hub id without its screen prefix beats the kind.
+		{"home.because.42", "because-you-watched", "because.42"},
+		{"home.because.7", "because-you-watched", "because-you-watched"},
+		{"home.because.7", "because-you-watched.x", "because.*"},
+		// Equally specific rules: the later one wins.
+		{"collection.c10", "collection:c10", "collection:c1*"},
+		{"collection.c2", "collection:c2", "collection:*"},
+	}
+	for _, c := range cases {
+		got := matchingPolicy(page, core.HomeRow{HubID: c.hubID, Kind: c.kind})
+		if got == nil || got.Row != c.want {
+			t.Errorf("matchingPolicy(%s, %s) = %v, want %s", c.hubID, c.kind, got, c.want)
+		}
+	}
+}

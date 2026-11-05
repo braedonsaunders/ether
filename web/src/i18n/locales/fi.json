@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether on taas verkossa",
   "m_00622d72a2d977": "TV-sarjakirjaston nimi",
   "m_00641db82a3ca1": "Painopistetunnisteet: {path}",
+  "m_0065e717956476": "Poista sääntö {title}",
   "m_006cabcec32e76": "Suodata rivejä",
   "m_006cca4bfbbb7b": "Tarkista saapuneet viestit tai laitteesi. Tulos tallennetaan Toimitushistoriaan.",
   "m_006cf6dde5083e": "Kirjaudu IPTV-palveluntarjoajan Xtream Codes -paneeliin. Ether tuo suorat kanavat ja paneelin oppaan.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Aikalohkon {number} päättymisaika",
   "m_0099964b92930d": "IMDb-, Rotten Tomatoes- ja muut arviomerkit.",
   "m_009ad02b956a70": "Päätösjakso",
+  "m_009b07f9887d54": "Valitut rivit",
   "m_009b1ff865a309": "Salainen sykesignaalin URL-osoite",
   "m_009bde2dde6cc7": "Mitä tämä kone voi käyttää videon muuntamiseen laitteille, jotka eivät voi toistaa sitä suoraan.",
   "m_009c31d1d7a458": "Solmut",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "Poistettu: {name}",
   "m_016092af66360a": "Kaikki indeksoijat",
+  "m_01609b7d026e66": "Palauta valitut rivit kaikkien asetukseen",
   "m_01611b2cfb0ba0": "~{minutes} min jäljellä",
   "m_016432d700cb95": "Nimikkeet, jotka tämä katsoja on merkinnyt suosikeiksi.",
   "m_016798b7fc323d": "Valittu hallitulle esilataushyllylle.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Tarkistaa välimuistissa olevat torrentit ja toimittaa toistettavat tiedostot Etherin oman debrid-ketjun kautta.",
   "m_039705ceced91d": "Anna sovellusten löytää tämä palvelin",
   "m_0399c893afa95f": "Päivitykset on poistettu käytöstä tässä koontiversiossa",
+  "m_039a2921ce98a3": "Palauta valitut rivit oletukseen",
   "m_039a4f5abe9171": "{field} samana päivänä tai sen jälkeen: {value}",
   "m_039b02abb9a90f": "Seurantalista",
   "m_039c1a13fd34d7": "Vältä toistoja",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "Intron ja lopputekstien ajat IntroDB:stä.",
   "m_03abee25fafc93": "Näytä sarja DVD-, absoluuttisessa tai tarinajärjestyksessä. Toisto säilyttää alkuperäiset jaksot.",
   "m_03acc54b13526c": "Kanava tallennettu",
+  "m_03b06978a0c496": "Aseta valituille riveille {status}",
   "m_03b1c6f5562cd2": "kiinnitä julkaisu ohita haku interaktiivinen manuaalinen valinta etsi",
   "m_03b3e36000da74": "äänikielet tekstitykset ajoitus synkronointi opensubtitles talous",
   "m_03b3ff3d197bd5": "Sama kuin ikärajan rajoitus",
@@ -2135,6 +2140,10 @@
   "m_09b9f354501f2f": "{source} ei lähettänyt tätä katalogia {seconds} sekunnissa. Sen palvelin voi olla kiireinen; yritä uudelleen minuutin kuluttua.",
   "m_09bcb524cf9150": "Sisältää käännösvirheitä",
   "m_09bcf86e4a05a4": "Yhteys onnistui",
+  "m_09bedf60e4e7b5": {
+    "one": "Koskee {count} riviä",
+    "other": "Koskee {count} riviä"
+  },
   "m_09bfaed1f837c2": "Määritys",
   "m_09bfd82959f8d2": "Sisäänrakennettu",
   "m_09c0cf8848587c": "Viikonloput",
@@ -3459,6 +3468,10 @@
   "m_0fce6c6310cdfb": "Mediatyyppi",
   "m_0fd021bc358775": "Jälkituotanto",
   "m_0fd1b4af557c7f": "Tekstitykset",
+  "m_0fd513828cede5": {
+    "one": "{count} rivi",
+    "other": "{count} riviä"
+  },
   "m_0fd5df5b289f99": "TLS salaa liikenteen, mutta tämä tila ei vahvista tietokantapalvelimen identiteettiä.",
   "m_0fd696abd607e8": "Parametrin arvo: {label}",
   "m_0fd885e550029c": "Toimitushistoria",
@@ -5273,6 +5286,7 @@
   "m_1810e776c939c6": "Ilmoitukset on estetty tälle sivustolle. Salli ne selaimesi sivustoasetuksissa ja yhdistä sitten uudelleen.",
   "m_181110e085ca9a": "Tunnin välein",
   "m_1813e98427e580": "Kopioi valittu osoite.",
+  "m_181492ead9b6c6": "Määritetty säännöllä {pattern}. Muutos tässä antaa riville oman asetuksen.",
   "m_1816c7cd41a8ca": "Julkaisuindeksoija",
   "m_181bb8bee85e6e": "Varalähde {number}",
   "m_181d396b15fd58": "Kirjautumistapaa ei ole saatavilla. Ota yhteyttä palvelimen omistajaan.",
@@ -5313,6 +5327,7 @@
     "other": "{count} kuvakaappausta"
   },
   "m_1846fbb6439b94": "Vuorokaudenajat: {title}",
+  "m_1847745b140186": "Näytä rivit tilan mukaan",
   "m_1848e73fb61f63": "Indeksoijan tyyppi",
   "m_1849b633f8e775": "Mitään ei ole piilotettu suosituksista",
   "m_184a2322c90a0b": "Näytä alun piste",
@@ -5428,6 +5443,10 @@
     "one": "{count} tunti",
     "other": "{count} tuntia"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} pois",
+    "other": "{count} pois"
+  },
   "m_18c3486bf7b025": "Usenet-julkaisut toistetaan Usenet-palveluntarjoajiltasi.",
   "m_18ca1c5dc775ca": "Tällä katselijalla ei ole enää palvelimen käyttöoikeutta. Hänen historiansa säilyy.",
   "m_18cac20f7cbd3e": "Latauksia kerrallaan katselijaa kohti",
@@ -5464,6 +5483,7 @@
   "m_18e282914f19b5": "Tuhansia elokuvia.",
   "m_18e5c502718bf2": "Jokainen kytkin laittaa sen painikkeen päälle tai pois. Sovelluksen on silti näytettävä se.",
   "m_18e83dea4f84d6": "Tyhjennä haku tai suodatin vasemmalta, luo virtuaalikanava tai lisää IPTV-lähde.",
+  "m_18e96a529e967d": "Valitse kaikki rivit ryhmästä {group}",
   "m_18eaf618f1057d": "Parannuksen laatu",
   "m_18eb1342500c7d": "nyt",
   "m_18eb8fe478d7cd": "Odotetaan katselijoita",
@@ -5581,6 +5601,7 @@
   "m_1960d854a8b5bf": "Kielen mukaan",
   "m_1961b6342080bf": "Palauta varmuuskopio ajalta {date}",
   "m_196220fca4272f": "Siirrä {group}",
+  "m_1963891cbada94": "säännön {pattern} kautta",
   "m_19642a2b0ca412": "Offline",
   "m_196592c802fb8c": "Tuoreet julkaisut, katsomattomat uudet jaksot ja tuotantokaudet.",
   "m_1965a785a0b09f": "Tallennustila",
@@ -5869,6 +5890,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Tee uudelleen (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Esilämmitä ensimmäinen ehdotus viimeisinä minuutteina, jotta se alkaa välittömästi.",
+  "m_1ab663d0bd937a": "Valitse {title}",
   "m_1ab6ba88ce908e": "Ei koskaan",
   "m_1ab7c19b1d8931": "Takaisin esiasetuksiin",
   "m_1ab7c60676388e": "Live-TV-kanavat ovat pois päältä lisäosalle {name}",
@@ -5919,6 +5941,7 @@
   "m_1af3226963573a": "Ilmoitettu",
   "m_1af68c9c186f4c": "Luetaan tietokannan jokainen sivu sen eheyden varmistamiseksi…",
   "m_1af9465a8bd5d6": "Kerran päivässä katselijaa kohden",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field} viimeisen ajanjakson aikana: {window}",
   "m_1afdb1a8eede4a": "uusi yritys {when}",
   "m_1aff3fb760896e": "Avaa päivä",
@@ -6824,6 +6847,7 @@
   "m_1f2c1ef7c466cc": "Kierrätä jäseniä",
   "m_1f2c7907712729": "Suoritetaan…",
   "m_1f2c8b3ac5b812": "Viikoittainen aikataulu tallennettu",
+  "m_1f2d67f2aa05b6": "Ohitettu",
   "m_1f2dd11757fb45": {
     "one": "{count} käyttämätön päivä",
     "other": "{count} käyttämätöntä päivää"

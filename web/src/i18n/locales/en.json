@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether is back online",
   "m_00622d72a2d977": "TV Shows library name",
   "m_00641db82a3ca1": "Focus tags for {path}",
+  "m_0065e717956476": "Remove the rule {title}",
   "m_006cabcec32e76": "Filter rows",
   "m_006cca4bfbbb7b": "Check your inbox or device. The result is saved in Delivery history.",
   "m_006cf6dde5083e": "Sign in to an IPTV provider's Xtream Codes panel. Ether imports the live channels and the panel's guide.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Time block {number} end time",
   "m_0099964b92930d": "IMDb, Rotten Tomatoes and other rating badges.",
   "m_009ad02b956a70": "Finale",
+  "m_009b07f9887d54": "Selected rows",
   "m_009b1ff865a309": "Secret heartbeat URL",
   "m_009bde2dde6cc7": "What this machine can use to convert video for devices that can't play it directly.",
   "m_009c31d1d7a458": "Nodes",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "Removed {name}",
   "m_016092af66360a": "Every indexer",
+  "m_01609b7d026e66": "Reset the selected rows to Everyone",
   "m_01611b2cfb0ba0": "~{minutes}m left",
   "m_016432d700cb95": "Titles this viewer marked as favorites.",
   "m_016798b7fc323d": "Chosen for the managed preload shelf.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Checks cached torrents and supplies playable files through the native debrid pipeline.",
   "m_039705ceced91d": "Let apps find this server",
   "m_0399c893afa95f": "Updates are disabled in this build",
+  "m_039a2921ce98a3": "Set the selected rows back to default",
   "m_039a4f5abe9171": "{field} on or after {value}",
   "m_039b02abb9a90f": "Watchlist",
   "m_039c1a13fd34d7": "Avoid repeats",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "Intro and credit times from IntroDB.",
   "m_03abee25fafc93": "Present a show in DVD, absolute or story order. Playback keeps the original episode numbers.",
   "m_03acc54b13526c": "Channel saved",
+  "m_03b06978a0c496": "Set the selected rows to {status}",
   "m_03b1c6f5562cd2": "pin release override search interactive manual pick find",
   "m_03b3e36000da74": "audio languages subtitles timing sync opensubtitles household",
   "m_03b3ff3d197bd5": "Same as the content rating limit",
@@ -2138,6 +2143,10 @@
   "m_09b9f354501f2f": "{source} didn't send this catalogue within {seconds} seconds. Its server may be busy; try again in a minute.",
   "m_09bcb524cf9150": "Has compile errors",
   "m_09bcf86e4a05a4": "Connection successful",
+  "m_09bedf60e4e7b5": {
+    "one": "Applies to {count} row",
+    "other": "Applies to {count} rows"
+  },
   "m_09bfaed1f837c2": "Definition",
   "m_09bfd82959f8d2": "Built-in",
   "m_09c0cf8848587c": "Weekends",
@@ -3468,6 +3477,10 @@
   "m_0fce6c6310cdfb": "Media type",
   "m_0fd021bc358775": "Post-production",
   "m_0fd1b4af557c7f": "Subtitles",
+  "m_0fd513828cede5": {
+    "one": "{count} row",
+    "other": "{count} rows"
+  },
   "m_0fd5df5b289f99": "TLS encrypts traffic, but this mode does not verify the database server’s identity.",
   "m_0fd696abd607e8": "{label} parameter value",
   "m_0fd885e550029c": "Delivery history",
@@ -5282,6 +5295,7 @@
   "m_1810e776c939c6": "Notifications are blocked for this site. Allow them in your browser’s site settings, then reconnect.",
   "m_181110e085ca9a": "Hourly",
   "m_1813e98427e580": "Copy the selected address.",
+  "m_181492ead9b6c6": "Set by the rule {pattern}. Changing it here gives this row its own setting.",
   "m_1816c7cd41a8ca": "Release indexer",
   "m_181bb8bee85e6e": "Backup {number}",
   "m_181d396b15fd58": "No sign-in method is available. Contact the server owner.",
@@ -5322,6 +5336,7 @@
     "other": "{count} screenshots"
   },
   "m_1846fbb6439b94": "Dayparts for {title}",
+  "m_1847745b140186": "Show rows by status",
   "m_1848e73fb61f63": "Indexer type",
   "m_1849b633f8e775": "Nothing hidden from recommendations",
   "m_184a2322c90a0b": "Show leading dot",
@@ -5437,6 +5452,10 @@
     "one": "{count} hour",
     "other": "{count} hours"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} off",
+    "other": "{count} off"
+  },
   "m_18c3486bf7b025": "Usenet releases stream from your Usenet providers.",
   "m_18ca1c5dc775ca": "This viewer no longer has server access. Their history is retained.",
   "m_18cac20f7cbd3e": "Downloads at once per viewer",
@@ -5473,6 +5492,7 @@
   "m_18e282914f19b5": "Thousands of films.",
   "m_18e5c502718bf2": "Each switch turns that button on or off. The app still has to show it.",
   "m_18e83dea4f84d6": "Clear the search or filter on the left, create a virtual channel, or add an IPTV source.",
+  "m_18e96a529e967d": "Select every row in {group}",
   "m_18eaf618f1057d": "Enhancement quality",
   "m_18eb1342500c7d": "now",
   "m_18eb8fe478d7cd": "Waiting for viewers",
@@ -5593,6 +5613,7 @@
   "m_1960d854a8b5bf": "From the language",
   "m_1961b6342080bf": "Restore the backup from {date}",
   "m_196220fca4272f": "Move {group}",
+  "m_1963891cbada94": "via {pattern}",
   "m_19642a2b0ca412": "Offline",
   "m_196592c802fb8c": "Recent releases, unwatched new episodes and seasons.",
   "m_1965a785a0b09f": "Storage",
@@ -5884,6 +5905,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Redo (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Warm the first suggestion in the last minutes so it starts instantly.",
+  "m_1ab663d0bd937a": "Select {title}",
   "m_1ab6ba88ce908e": "Never",
   "m_1ab7c19b1d8931": "Back to presets",
   "m_1ab7c60676388e": "Live TV channels are off for {name}",
@@ -5934,6 +5956,7 @@
   "m_1af3226963573a": "Announced",
   "m_1af68c9c186f4c": "Reading every page of the database to make sure it's intact…",
   "m_1af9465a8bd5d6": "Once a day per viewer",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field} in the last {window}",
   "m_1afdb1a8eede4a": "retry {when}",
   "m_1aff3fb760896e": "Open a day",
@@ -6842,6 +6865,7 @@
   "m_1f2c1ef7c466cc": "Rotate members",
   "m_1f2c7907712729": "Running…",
   "m_1f2c8b3ac5b812": "Weekly schedule saved",
+  "m_1f2d67f2aa05b6": "Overridden",
   "m_1f2dd11757fb45": {
     "one": "{count} inactive day",
     "other": "{count} inactive days"

@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether är online igen",
   "m_00622d72a2d977": "Namn på TV-seriebiblioteket",
   "m_00641db82a3ca1": "Fokustaggar för {path}",
+  "m_0065e717956476": "Ta bort regeln {title}",
   "m_006cabcec32e76": "Filtrera rader",
   "m_006cca4bfbbb7b": "Kontrollera din inkorg eller enhet. Resultatet sparas i Leveranshistorik.",
   "m_006cf6dde5083e": "Logga in på en IPTV-leverantörs Xtream Codes-panel. Ether importerar livekanalerna och panelens guide.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Sluttid för tidsblock {number}",
   "m_0099964b92930d": "Märken för IMDb, Rotten Tomatoes och andra betyg.",
   "m_009ad02b956a70": "Final",
+  "m_009b07f9887d54": "Valda rader",
   "m_009b1ff865a309": "Hemlig URL för hjärtslag",
   "m_009bde2dde6cc7": "Vad den här maskinen kan använda för att konvertera video för enheter som inte kan spela upp den direkt.",
   "m_009c31d1d7a458": "Noder",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "Tog bort {name}",
   "m_016092af66360a": "Alla indexerare",
+  "m_01609b7d026e66": "Återställ de valda raderna till Alla",
   "m_01611b2cfb0ba0": "~{minutes} min kvar",
   "m_016432d700cb95": "Titlar som den här tittaren har markerat som favoriter.",
   "m_016798b7fc323d": "Vald för den hanterade förinläsningshyllan.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Kontrollerar cachade torrenter och levererar spelbara filer via den inbyggda debrid-kedjan.",
   "m_039705ceced91d": "Låt appar hitta den här servern",
   "m_0399c893afa95f": "Uppdateringar är avstängda i den här bygget",
+  "m_039a2921ce98a3": "Återställ de valda raderna till standard",
   "m_039a4f5abe9171": "{field} den eller efter {value}",
   "m_039b02abb9a90f": "Bevakningslista",
   "m_039c1a13fd34d7": "Undvik repriser",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "Intro- och eftertexttider från IntroDB.",
   "m_03abee25fafc93": "Visa en serie i dvd-, absolut eller berättelseordning. Uppspelning behåller de ursprungliga avsnittsnumren.",
   "m_03acc54b13526c": "Kanalen sparades",
+  "m_03b06978a0c496": "Sätt de valda raderna till {status}",
   "m_03b1c6f5562cd2": "fäst release åsidosätt sök interaktiv manuell välj hitta",
   "m_03b3e36000da74": "ljudspråk undertexter timing synk opensubtitles hushåll",
   "m_03b3ff3d197bd5": "Samma som åldersgränsen",
@@ -2135,6 +2140,10 @@
   "m_09b9f354501f2f": "{source} skickade inte den här katalogen inom {seconds} sekunder. Servern kan vara upptagen; försök igen om en minut.",
   "m_09bcb524cf9150": "Har kompileringsfel",
   "m_09bcf86e4a05a4": "Anslutningen lyckades",
+  "m_09bedf60e4e7b5": {
+    "one": "Gäller {count} rad",
+    "other": "Gäller {count} rader"
+  },
   "m_09bfaed1f837c2": "Definition",
   "m_09bfd82959f8d2": "Inbyggd",
   "m_09c0cf8848587c": "Helger",
@@ -3459,6 +3468,10 @@
   "m_0fce6c6310cdfb": "Mediatyp",
   "m_0fd021bc358775": "Postproduktion",
   "m_0fd1b4af557c7f": "Undertexter",
+  "m_0fd513828cede5": {
+    "one": "{count} rad",
+    "other": "{count} rader"
+  },
   "m_0fd5df5b289f99": "TLS krypterar trafiken, men det här läget verifierar inte databasserverns identitet.",
   "m_0fd696abd607e8": "Parametervärde för {label}",
   "m_0fd885e550029c": "Leveranshistorik",
@@ -5273,6 +5286,7 @@
   "m_1810e776c939c6": "Notiser är blockerade för den här webbplatsen. Tillåt dem i webbläsarens webbplatsinställningar och anslut sedan igen.",
   "m_181110e085ca9a": "Varje timme",
   "m_1813e98427e580": "Kopiera den markerade adressen.",
+  "m_181492ead9b6c6": "Satt av regeln {pattern}. Ändrar du den här får raden en egen inställning.",
   "m_1816c7cd41a8ca": "Release-indexerare",
   "m_181bb8bee85e6e": "Reserv {number}",
   "m_181d396b15fd58": "Ingen inloggningsmetod är tillgänglig. Kontakta serverns ägare.",
@@ -5313,6 +5327,7 @@
     "other": "{count} skärmbilder"
   },
   "m_1846fbb6439b94": "Dagsperioder för {title}",
+  "m_1847745b140186": "Visa rader efter status",
   "m_1848e73fb61f63": "Indexerartyp",
   "m_1849b633f8e775": "Inget är dolt från rekommendationer",
   "m_184a2322c90a0b": "Visa inledande punkt",
@@ -5428,6 +5443,10 @@
     "one": "{count} timme",
     "other": "{count} timmar"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} av",
+    "other": "{count} av"
+  },
   "m_18c3486bf7b025": "Usenet-releaser streamas från dina Usenet-leverantörer.",
   "m_18ca1c5dc775ca": "Den här tittaren har inte längre serveråtkomst. Deras historik behålls.",
   "m_18cac20f7cbd3e": "Samtidiga nedladdningar per tittare",
@@ -5464,6 +5483,7 @@
   "m_18e282914f19b5": "Tusentals filmer.",
   "m_18e5c502718bf2": "Varje brytare slår på eller av den knappen. Appen måste fortfarande visa den.",
   "m_18e83dea4f84d6": "Rensa sökningen eller filtret till vänster, skapa en virtuell kanal eller lägg till en IPTV-källa.",
+  "m_18e96a529e967d": "Välj alla rader i {group}",
   "m_18eaf618f1057d": "Förbättringskvalitet",
   "m_18eb1342500c7d": "nu",
   "m_18eb8fe478d7cd": "Väntar på tittarna",
@@ -5581,6 +5601,7 @@
   "m_1960d854a8b5bf": "Från språket",
   "m_1961b6342080bf": "Återställ säkerhetskopian från {date}",
   "m_196220fca4272f": "Flytta {group}",
+  "m_1963891cbada94": "via {pattern}",
   "m_19642a2b0ca412": "Offline",
   "m_196592c802fb8c": "Nya utgåvor, osedda nya avsnitt och säsonger.",
   "m_1965a785a0b09f": "Lagring",
@@ -5869,6 +5890,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Gör om (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Förvärm det första förslaget under de sista minuterna så att det startar direkt.",
+  "m_1ab663d0bd937a": "Välj {title}",
   "m_1ab6ba88ce908e": "Aldrig",
   "m_1ab7c19b1d8931": "Tillbaka till förinställningar",
   "m_1ab7c60676388e": "Live-TV-kanaler är avstängda för {name}",
@@ -5919,6 +5941,7 @@
   "m_1af3226963573a": "Aviserat",
   "m_1af68c9c186f4c": "Läser varje sida i databasen för att säkerställa att den är intakt…",
   "m_1af9465a8bd5d6": "En gång om dagen per tittare",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field} de senaste {window}",
   "m_1afdb1a8eede4a": "nytt försök {when}",
   "m_1aff3fb760896e": "Öppna en dag",
@@ -6824,6 +6847,7 @@
   "m_1f2c1ef7c466cc": "Rotera medlemmar",
   "m_1f2c7907712729": "Körs…",
   "m_1f2c8b3ac5b812": "Veckoschemat sparades",
+  "m_1f2d67f2aa05b6": "Åsidosatt",
   "m_1f2dd11757fb45": {
     "one": "{count} inaktiv dag",
     "other": "{count} inaktiva dagar"

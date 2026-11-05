@@ -82,6 +82,7 @@
   "m_006122ae2331c4": "Ether is weer online",
   "m_00622d72a2d977": "Naam van de tv-seriebibliotheek",
   "m_00641db82a3ca1": "Focustags voor {path}",
+  "m_0065e717956476": "Regel {title} verwijderen",
   "m_006cabcec32e76": "Rijen filteren",
   "m_006cca4bfbbb7b": "Controleer je inbox of apparaat. Het resultaat wordt opgeslagen in de Bezorggeschiedenis.",
   "m_006cf6dde5083e": "Log in op het Xtream Codes-paneel van een IPTV-aanbieder. Ether importeert de livekanalen en de gids van het paneel.",
@@ -121,6 +122,7 @@
   "m_0095b61f076620": "Eindtijd van tijdblok {number}",
   "m_0099964b92930d": "Badges voor IMDb, Rotten Tomatoes en andere cijfers.",
   "m_009ad02b956a70": "Finale",
+  "m_009b07f9887d54": "Geselecteerde rijen",
   "m_009b1ff865a309": "Geheime heartbeat-URL",
   "m_009bde2dde6cc7": "Wat deze machine kan gebruiken om video om te zetten voor apparaten die deze niet rechtstreeks kunnen afspelen.",
   "m_009c31d1d7a458": "Nodes",
@@ -292,6 +294,7 @@
   },
   "m_015f6c1164ab16": "{name} verwijderd",
   "m_016092af66360a": "Elke indexer",
+  "m_01609b7d026e66": "Geselecteerde rijen terugzetten naar Iedereen",
   "m_01611b2cfb0ba0": "nog ~{minutes} min",
   "m_016432d700cb95": "Titels die deze kijker als favoriet heeft gemarkeerd.",
   "m_016798b7fc323d": "Gekozen voor de beheerde voorlaadplank.",
@@ -792,6 +795,7 @@
   "m_0393fbf1c42a91": "Controleert gecachte torrents en levert afspeelbare bestanden via de ingebouwde debrid-pijplijn.",
   "m_039705ceced91d": "Apps deze server laten vinden",
   "m_0399c893afa95f": "Updates zijn uitgeschakeld in deze build",
+  "m_039a2921ce98a3": "Geselecteerde rijen terugzetten naar standaard",
   "m_039a4f5abe9171": "{field} op of na {value}",
   "m_039b02abb9a90f": "Watchlist",
   "m_039c1a13fd34d7": "Herhalingen vermijden",
@@ -807,6 +811,7 @@
   "m_03a83b35a93323": "Intro- en aftitelingstijden van IntroDB.",
   "m_03abee25fafc93": "Toon een serie in dvd-, absolute of verhaalvolgorde. Afspelen houdt de oorspronkelijke afleveringsnummers.",
   "m_03acc54b13526c": "Kanaal opgeslagen",
+  "m_03b06978a0c496": "Geselecteerde rijen op {status} zetten",
   "m_03b1c6f5562cd2": "vastpinnen release overschrijven zoeken interactief handmatig kiezen vinden",
   "m_03b3e36000da74": "audiotalen ondertitels timing synchronisatie opensubtitles huishouden",
   "m_03b3ff3d197bd5": "Zelfde als de limiet voor leeftijdsclassificatie",
@@ -2135,6 +2140,10 @@
   "m_09b9f354501f2f": "{source} heeft deze catalogus niet binnen {seconds} seconden gestuurd. De server is misschien druk; probeer het over een minuut opnieuw.",
   "m_09bcb524cf9150": "Heeft compileerfouten",
   "m_09bcf86e4a05a4": "Verbinding geslaagd",
+  "m_09bedf60e4e7b5": {
+    "one": "Geldt voor {count} rij",
+    "other": "Geldt voor {count} rijen"
+  },
   "m_09bfaed1f837c2": "Definitie",
   "m_09bfd82959f8d2": "Ingebouwd",
   "m_09c0cf8848587c": "In het weekend",
@@ -3459,6 +3468,10 @@
   "m_0fce6c6310cdfb": "Mediatype",
   "m_0fd021bc358775": "Postproductie",
   "m_0fd1b4af557c7f": "Ondertitels",
+  "m_0fd513828cede5": {
+    "one": "{count} rij",
+    "other": "{count} rijen"
+  },
   "m_0fd5df5b289f99": "TLS versleutelt het verkeer, maar deze modus verifieert de identiteit van de databaseserver niet.",
   "m_0fd696abd607e8": "Parameterwaarde van {label}",
   "m_0fd885e550029c": "Bezorggeschiedenis",
@@ -5273,6 +5286,7 @@
   "m_1810e776c939c6": "Meldingen zijn geblokkeerd voor deze site. Sta ze toe in de siteinstellingen van je browser en verbind daarna opnieuw.",
   "m_181110e085ca9a": "Elk uur",
   "m_1813e98427e580": "Kopieer het geselecteerde adres.",
+  "m_181492ead9b6c6": "Ingesteld door de regel {pattern}. Als je het hier wijzigt, krijgt deze rij een eigen instelling.",
   "m_1816c7cd41a8ca": "Release-indexer",
   "m_181bb8bee85e6e": "Back-up {number}",
   "m_181d396b15fd58": "Er is geen aanmeldmethode beschikbaar. Neem contact op met de servereigenaar.",
@@ -5313,6 +5327,7 @@
     "other": "{count} schermafbeeldingen"
   },
   "m_1846fbb6439b94": "Dagdelen voor {title}",
+  "m_1847745b140186": "Rijen tonen op status",
   "m_1848e73fb61f63": "Indexertype",
   "m_1849b633f8e775": "Niets verborgen voor aanbevelingen",
   "m_184a2322c90a0b": "Voorafgaande punt tonen",
@@ -5428,6 +5443,10 @@
     "one": "{count} uur",
     "other": "{count} uur"
   },
+  "m_18c2043580fa97": {
+    "one": "{count} uit",
+    "other": "{count} uit"
+  },
   "m_18c3486bf7b025": "Usenet-releases streamen vanaf je Usenet-providers.",
   "m_18ca1c5dc775ca": "Deze kijker heeft geen servertoegang meer. Hun geschiedenis blijft behouden.",
   "m_18cac20f7cbd3e": "Gelijktijdige downloads per kijker",
@@ -5464,6 +5483,7 @@
   "m_18e282914f19b5": "Duizenden films.",
   "m_18e5c502718bf2": "Elke schakelaar zet die knop aan of uit. De app moet hem nog steeds tonen.",
   "m_18e83dea4f84d6": "Wis de zoekopdracht of het filter aan de linkerkant, maak een virtueel kanaal of voeg een IPTV-bron toe.",
+  "m_18e96a529e967d": "Alle rijen in {group} selecteren",
   "m_18eaf618f1057d": "Verbeteringskwaliteit",
   "m_18eb1342500c7d": "nu",
   "m_18eb8fe478d7cd": "Wachten tot niemand meer kijkt",
@@ -5581,6 +5601,7 @@
   "m_1960d854a8b5bf": "Volgens de taal",
   "m_1961b6342080bf": "De back-up van {date} herstellen",
   "m_196220fca4272f": "{group} verplaatsen",
+  "m_1963891cbada94": "via {pattern}",
   "m_19642a2b0ca412": "Offline",
   "m_196592c802fb8c": "Recente releases, onbekeken nieuwe afleveringen en seizoenen.",
   "m_1965a785a0b09f": "Opslag",
@@ -5869,6 +5890,7 @@
   "m_1ab4544cb496f4": "{plugin} · {catalog}",
   "m_1ab4a9a4e71620": "Opnieuw (⇧⌘Z)",
   "m_1ab548f5f3b14a": "Warm de eerste suggestie op in de laatste minuten, zodat deze direct start.",
+  "m_1ab663d0bd937a": "{title} selecteren",
   "m_1ab6ba88ce908e": "Nooit",
   "m_1ab7c19b1d8931": "Terug naar voorinstellingen",
   "m_1ab7c60676388e": "Live tv-zenders staan uit voor {name}",
@@ -5919,6 +5941,7 @@
   "m_1af3226963573a": "Aangekondigd",
   "m_1af68c9c186f4c": "Elke pagina van de database wordt gelezen om zeker te weten dat hij intact is…",
   "m_1af9465a8bd5d6": "Eén keer per dag per kijker",
+  "m_1afc90744313a9": "{rows} · {off}",
   "m_1afcfdadc9a107": "{field} in de afgelopen {window}",
   "m_1afdb1a8eede4a": "opnieuw proberen {when}",
   "m_1aff3fb760896e": "Een dag openen",
@@ -6824,6 +6847,7 @@
   "m_1f2c1ef7c466cc": "Leden roteren",
   "m_1f2c7907712729": "Bezig…",
   "m_1f2c8b3ac5b812": "Wekelijks schema opgeslagen",
+  "m_1f2d67f2aa05b6": "Overschreven",
   "m_1f2dd11757fb45": {
     "one": "{count} inactieve dag",
     "other": "{count} inactieve dagen"

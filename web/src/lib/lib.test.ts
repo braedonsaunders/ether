@@ -285,6 +285,25 @@ describe("layout", () => {
     expect(matchRank("collection:*", "collection.7", "collection:7")).toBe(1);
   });
 
+  it("lets the later of two equally specific rules win, as the server does", () => {
+    const doc: HomeLayout = {
+      global: [
+        {
+          section: "home",
+          rows: [
+            { row: "collection:*", status: "off" },
+            { row: "collection:c1*", status: "always" },
+          ],
+        },
+      ],
+      viewers: [],
+    };
+    const at = (id: string) =>
+      effectivePolicy(doc, null, "home", `collection:${id}`, `collection:${id}`)?.policy.row;
+    expect(at("c10")).toBe("collection:c1*");
+    expect(at("c2")).toBe("collection:*");
+  });
+
   it("resolves page lengths: viewer device, viewer page, Global device, Global page, default", () => {
     let doc = setPageLength(empty(), "global", "home", null, 12);
     doc = setPageLength(doc, "global", "home", "mobile", 8);
