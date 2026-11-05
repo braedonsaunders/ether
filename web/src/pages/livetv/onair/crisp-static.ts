@@ -47,6 +47,8 @@ function walk(seed: U64, tick: number) {
     end = noise(seed, epoch + 1);
   return start + ((end - start) * position) / 32 + (sum - (total * position) / 32) * 0.08;
 }
+// Owner-selected detail 1.75 matches signal.DefaultStaticParameters.
+const grain = Math.max(1, Math.trunc(6 / 1.75));
 const frames = new Map<
   string,
   { canvas: OffscreenCanvas | HTMLCanvasElement; pixels: ImageData }
@@ -81,11 +83,11 @@ export function crispStatic(seed: number, tick: number, width: number, height: n
   const barHeight = Math.max(12, Math.floor(h / 11));
   const clock = xor(s, mul(integer(Math.floor(tick / 2)), [0xde82ef95, 0xd1342543]));
   const data = f.pixels.data;
-  for (let y = 0, gy = 0; y < h; y += 6, gy++) {
+  for (let y = 0, gy = 0; y < h; y += grain, gy++) {
     const rowSeed = xor(clock, mul(integer(gy), golden));
-    for (let x = 0, gx = 0; x < w; x += 6, gx++) {
+    for (let x = 0, gx = 0; x < w; x += grain, gx++) {
       const v = 52 + (hash(xor(rowSeed, integer(gx)))[1] >>> 25);
-      for (let yy = y; yy < Math.min(h, y + 6); yy++) {
+      for (let yy = y; yy < Math.min(h, y + grain); yy++) {
         const distance = Math.abs(yy - bar);
         let offset =
           distance < barHeight ? -Math.trunc(((barHeight - distance) * 28) / barHeight) : 0;
@@ -94,7 +96,7 @@ export function crispStatic(seed: number, tick: number, width: number, height: n
           0,
           Math.min(255, (298 * (Math.max(16, Math.min(235, v + offset)) - 16) + 128) >> 8),
         );
-        for (let xx = x; xx < Math.min(w, x + 6); xx++) {
+        for (let xx = x; xx < Math.min(w, x + grain); xx++) {
           const i = (yy * w + xx) * 4;
           data[i] = data[i + 1] = data[i + 2] = q;
           data[i + 3] = 255;

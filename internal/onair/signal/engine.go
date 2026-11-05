@@ -11,16 +11,25 @@ import (
 // Render is allocation-free and its output belongs to the caller. Static uses
 // the owner-approved hard-edged grain directly in the negotiated output frame.
 type Engine struct {
-	width, height int
-	style         string
-	plate         []byte
-	vignette      []uint16
-	seed          int64
+	width, height    int
+	style            string
+	plate            []byte
+	vignette         []uint16
+	seed             int64
+	staticParameters StaticParameters
 }
 
 // NewStatic restores the continuity demo's live, neutral, crisp static.
 func NewStatic(width, height int, seed int64) *Engine {
-	return newEngine(width, height, "static", seed)
+	return NewStaticWithParameters(width, height, seed, DefaultStaticParameters())
+}
+
+// NewStaticWithParameters snapshots controls for one engine. Replace the engine
+// off the frame clock when controls change; Render stays allocation-free.
+func NewStaticWithParameters(width, height int, seed int64, p StaticParameters) *Engine {
+	e := newEngine(width, height, "static", seed)
+	e.staticParameters = p
+	return e
 }
 func newEngine(w, h int, style string, seed int64) *Engine {
 	if w < 2 || h < 2 || w%2 != 0 || h%2 != 0 {
@@ -82,8 +91,8 @@ func (e *Engine) Render(video []byte, pcm []int16, tick int64) {
 		panic("signal: undersized tick buffers")
 	}
 	if e.style == "static" {
-		StaticVideo(video, w, h, e.seed, tick)
-		StaticAudio(pcm, tick, 1600, e.seed)
+		StaticVideoWithParameters(video, w, h, e.seed, tick, e.staticParameters)
+		StaticAudioWithParameters(pcm, tick, 1600, e.seed, e.staticParameters)
 		return
 	}
 	copy(video, e.plate)

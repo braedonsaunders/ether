@@ -102,6 +102,9 @@ export function LivePreview({
           playlistLoadPolicy: loadPolicy,
           // Three target durations behind the edge (12s for shared output).
           liveSyncDurationCount: 3,
+          // Wait for the 1+1+2 s opening segments before starting, so a cold
+          // channel does not begin on a lone 1 s segment and stall.
+          initialLiveManifestSize: 3,
           maxBufferLength: 24,
           maxMaxBufferLength: 24,
           backBufferLength: 8,
