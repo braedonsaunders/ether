@@ -51,7 +51,7 @@ These are tiny synthetic fixtures, **not real-episode accuracy estimates**. Timi
 | Scene cuts alone (grouped by black interval) | 1 | 1 | 0 | 50% | 100% |
 | Black + silence, scene corroboration | 1 | 0 | 0 | 100% | 100% |
 
-Synthetic timeline: [synthetic-timeline.json](synthetic-timeline.json). Stills: [before](synthetic-69s.png), [at break](synthetic-70.5s.png), [after](synthetic-72s.png). Black-with-audio candidate is rejected. Persist/reuse, source revision isolation, empty-result reuse, K-best spacing, background-only request invariant and nested complete override inheritance have lasting tests.
+Synthetic timeline: [synthetic-timeline.json](synthetic-timeline.json). Synthetic stills are review artifacts in thread storage, not repository media. Recreate them with the opt-in integration test and its external artifact directory. Black-with-audio candidate is rejected. Persist/reuse, source revision isolation, empty-result reuse, K-best spacing, background-only request invariant and nested complete override inheritance have lasting tests.
 
 Measured FFV1 fixture decoder cost on this shared worker: **7.50 CPU seconds per video hour; 3.17 wall seconds per video hour**, excluding fixture generation and still extraction. This is low-resolution synthetic data, not an HD/HEVC benchmark. Full release decode and network cost remain dependent on configured source/codec.
 
