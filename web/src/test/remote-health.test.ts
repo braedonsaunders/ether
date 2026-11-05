@@ -59,8 +59,8 @@ describe("remoteHealth", () => {
       publishedUris: [uri],
       connections: [{ uri, custom: true, protocol: "https" }],
     });
-    expect(both.level).toBe("warn");
-    expect(both.summary).toBe("plex.tv's last connectivity check reported the server unreachable.");
+    expect(both.level).toBe("unknown");
+    expect(both.summary).toBe("Custom connection not confirmed by plex.tv");
     expect(both.details.join(" ")).toContain(uri);
     expect(both.summary).not.toBe("Custom connection published");
   });
@@ -77,15 +77,16 @@ describe("remoteHealth", () => {
       ...claimed,
       remoteAccess: false,
       publishedUris: [uri, "https://192-168-1-5.abc.plex.direct:32400"],
+      resourceConnections: [{ uri, local: false, relay: false }],
       connections: [
         { uri, custom: true, protocol: "https" },
         { uri: "https://192-168-1-5.abc.plex.direct:32400", custom: false, protocol: "https" },
       ],
     });
-    expect(h.level).toBe("off");
+    expect(h.level).toBe("ok");
     expect(h.summary).toBe("Custom connection published");
     expect(h.statusLabel).toBe("Published");
-    expect(h.note).toMatch(/not proof/);
+    expect(h.note).toMatch(/Test remote playback from another network/);
     expect(h.details.join(" ")).toContain(uri);
     expect(h.details.join(" ")).not.toContain("192-168-1-5");
     expect(h.summary).not.toBe("Reachable outside your network");
@@ -128,23 +129,24 @@ describe("remoteHealth", () => {
     );
   });
 
-  it("records a plex.tv connectivity verdict without relabeling the published route", () => {
+  it("keeps the WAN connectivity verdict separate from custom-route publication", () => {
     const uri = "https://plex.example.com";
     const published = {
       ...claimed,
       remoteAccess: false,
       publishedUris: [uri],
       connections: [{ uri, custom: true, protocol: "https" }],
+      resourceConnections: [{ uri, local: false, relay: false }],
     };
     const reachable = remoteHealth({ ...published, plexReachable: true });
     expect(reachable.summary).toBe("Custom connection published");
-    expect(reachable.level).toBe("off");
-    expect(reachable.details.join(" ")).toMatch(/reported the server reachable/);
+    expect(reachable.level).toBe("ok");
+    expect(reachable.details.join(" ")).toMatch(/plex.tv lists this custom connection/);
     expect(reachable.summary).not.toBe("Reachable outside your network");
     const unreachable = remoteHealth({ ...published, plexReachable: false });
     expect(unreachable.summary).toBe("Custom connection published");
-    expect(unreachable.level).toBe("off");
-    expect(unreachable.details.join(" ")).toMatch(/reported the server unreachable/);
+    expect(unreachable.level).toBe("ok");
+    expect(unreachable.note).toMatch(/port-mapping check does not verify custom connections/);
     const enabled = remoteHealth({ ...claimed, plexReachable: true });
     expect(enabled.summary).toBe("Direct remote access enabled");
     expect(enabled.statusLabel).toBe("Configured");
@@ -153,5 +155,33 @@ describe("remoteHealth", () => {
     expect(remoteHealth({ ...claimed, remoteAccess: false, plexReachable: false }).summary).toBe(
       "Local network only",
     );
+  });
+
+  it("confirms only the published custom identity offered by plex.tv, independently of local probes", () => {
+    const route = {
+      ...claimed,
+      plexReachable: false,
+      publishedUris: ["https://PLEX.example.com:443"],
+      connections: [{ uri: "https://plex.example.com/", custom: true }],
+      reachability: { reachable: true, uri: "https://plex.example.com/" },
+    };
+    for (const remoteAccess of [true, false]) {
+      for (const uri of ["https://plex.example.com", "https://plex.example.com:443/"]) {
+        const h = remoteHealth({ ...route, remoteAccess, resourceConnections: [{ uri }] });
+        expect(h.level).toBe("ok");
+        expect(h.summary).toBe("Custom connection published");
+        expect(h.note).toMatch(/Test remote playback from another network/);
+      }
+    }
+    for (const resourceConnections of [
+      [],
+      [{ uri: "https://other.example.com" }],
+      [{ uri: "http://plex.example.com" }],
+      [{ uri: "https://plex.example.com:8443" }],
+      [{ uri: "https://plex.example.com", relay: true }],
+      [{ uri: "https://plex.example.com", local: true }],
+    ]) {
+      expect(remoteHealth({ ...route, resourceConnections }).level).toBe("unknown");
+    }
   });
 });

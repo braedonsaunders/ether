@@ -453,10 +453,35 @@ export function remoteHealth(v: unknown): HealthItem {
   for (const address of customPublished) {
     details.push(t("Published custom connection {address}", { address }));
   }
-  const publicationNote = t(
-    "A published address is not proof that clients outside your network can connect.",
-  );
-  if (customPublished.length > 0) details.push(publicationNote);
+  if (customPublished.length > 0) {
+    // Resources are scoped to this machineIdentifier by Registrar.FindServer.
+    // A matching connection confirms discovery, not off-network reachability.
+    const offered = new Set(
+      (Array.isArray(v.resourceConnections) ? v.resourceConnections : [])
+        .filter((c) => isPlainObject(c) && c.local !== true && c.relay !== true)
+        .map((c) => connectionIdentity(c.uri))
+        .filter(Boolean),
+    );
+    const confirmed = customPublished.filter((uri) => offered.has(connectionIdentity(uri)));
+    for (const address of confirmed) {
+      details.push(
+        t("plex.tv lists this custom connection for this server: {address}", { address }),
+      );
+    }
+    return {
+      ...base,
+      level: confirmed.length > 0 ? "ok" : "unknown",
+      summary:
+        confirmed.length > 0
+          ? t("Custom connection published")
+          : t("Custom connection not confirmed by plex.tv"),
+      statusLabel: confirmed.length > 0 ? t("Published") : t("Not verified"),
+      details,
+      note: t(
+        "plex.tv's port-mapping check does not verify custom connections. Test remote playback from another network.",
+      ),
+    };
+  }
   const lastCheck =
     v.plexReachable === true
       ? t("plex.tv's last connectivity check reported the server reachable.")
@@ -472,7 +497,6 @@ export function remoteHealth(v: unknown): HealthItem {
         level: "warn",
         summary: lastCheck,
         details: [t("Direct remote access enabled"), ...details],
-        note: customPublished.length > 0 ? publicationNote : undefined,
       };
     }
     if (lastCheck) details.push(lastCheck);
@@ -482,34 +506,34 @@ export function remoteHealth(v: unknown): HealthItem {
       summary: t("Direct remote access enabled"),
       details,
       statusLabel: t("Configured"),
-      note: customPublished.length > 0 ? publicationNote : undefined,
     };
   }
   if (lastCheck) details.push(lastCheck);
-  if (customPublished.length > 0) {
-    return {
-      ...base,
-      level: "off",
-      summary: t("Custom connection published"),
-      details,
-      statusLabel: t("Published"),
-      note: publicationNote,
-    };
-  }
   return { ...base, level: "off", summary: t("Local network only"), details };
+}
+
+// URL parsing normalizes hostname case, default ports and an empty root path.
+function connectionIdentity(uri: unknown): string {
+  if (typeof uri !== "string") return "";
+  try {
+    const url = new URL(uri);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
 }
 
 /** Custom routes plex.tv was actually given: Connection.Custom whose URI was published. */
 function publishedCustomURIs(v: Record<string, unknown>): string[] {
   if (!Array.isArray(v.publishedUris) || !Array.isArray(v.connections)) return [];
-  const published = new Set(
-    v.publishedUris.filter((uri): uri is string => typeof uri === "string" && uri !== ""),
-  );
+  const published = new Set(v.publishedUris.map(connectionIdentity).filter(Boolean));
   const out: string[] = [];
   for (const connection of v.connections) {
     if (!isPlainObject(connection) || connection.custom !== true) continue;
     const uri = typeof connection.uri === "string" ? connection.uri : "";
-    if (uri && published.has(uri) && !out.includes(uri)) out.push(uri);
+    if (connectionIdentity(uri) && published.has(connectionIdentity(uri)) && !out.includes(uri))
+      out.push(uri);
   }
   return out;
 }

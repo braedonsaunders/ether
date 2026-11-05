@@ -96,6 +96,7 @@ describe("health reporting", () => {
         body.sections.remote.remoteAccess = false;
         body.sections.remote.publishedUris = [uri];
         body.sections.remote.connections = [{ uri, custom: true, protocol: "https" }];
+        body.sections.remote.resourceConnections = [{ uri, local: false, relay: false }];
         delete body.sections.remote.plexReachable;
         return new Response(JSON.stringify(body), { status: 200 });
       };
