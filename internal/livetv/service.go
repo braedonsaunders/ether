@@ -109,6 +109,10 @@ func New(o Options) (*Service, error) {
 		s.wg.Add(1)
 		go s.personalLoop()
 	}
+	if o.BreakInput != nil && o.BreakAnalyzer != nil {
+		s.wg.Add(1)
+		go s.breakLoop()
+	}
 	s.wg.Add(3)
 	go s.maintain()
 	go s.refreshLoop()

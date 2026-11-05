@@ -7,6 +7,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/livetv"
+	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/playback"
 	"time"
 )
@@ -23,7 +24,11 @@ func (a *App) buildLiveTV() error {
 	if a.resolver != nil {
 		avail = a.resolver
 	}
-	svc, err := livetv.New(livetv.Options{GuideAI: a.llm, Reels: a.onairReelSnapshot, Graphics: a.onair, InputUser: a.liveTVInputUser, DefaultStyle: func() string { return a.cfg.Read().LiveTV.DefaultStyleID }, StyleScreens: a.onair.StyleScreens, Screens: func() config.LiveTVScreens { return a.cfg.Read().LiveTV.Screens }, PersonalChanged: func(viewer int64) {
+	ffmpeg := ""
+	if a.transcoder != nil {
+		ffmpeg = a.transcoder.FFmpegPath()
+	}
+	svc, err := livetv.New(livetv.Options{BreakInput: a.channelBreakInput, BreakAnalyzer: &markers.BreakAnalyzer{DB: a.db, FFmpeg: ffmpeg}, GuideAI: a.llm, Reels: a.onairReelSnapshot, Graphics: a.onair, InputUser: a.liveTVInputUser, DefaultStyle: func() string { return a.cfg.Read().LiveTV.DefaultStyleID }, StyleScreens: a.onair.StyleScreens, Screens: func() config.LiveTVScreens { return a.cfg.Read().LiveTV.Screens }, PersonalChanged: func(viewer int64) {
 
 		if srv := a.currentPlexServer(); srv != nil {
 			srv.NotifyLiveLineupFor(viewer)

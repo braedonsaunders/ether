@@ -464,6 +464,10 @@ func emitSlate(out *[]Programme, c Channel, anchor, end, from, until time.Time) 
 }
 
 func appendProgramme(out *[]Programme, c Channel, item Item, cursor, finish, from, until time.Time) {
+	if !naturalBreakPolicy(c.Look) {
+		item.BreakReleaseID = ""
+		item.BreakRevision = ""
+	}
 	if finish.After(from) && cursor.Before(until) && finish.After(cursor) {
 		*out = append(*out, Programme{ID: fmt.Sprintf("%s-%d", c.ID, cursor.UnixMilli()), ChannelID: c.ID, Start: cursor, End: finish, Item: item})
 	}

@@ -13,6 +13,15 @@ import (
 // overlap at most three programme sources for continuity. The server and user
 // limits count the group once, and ordinary Prepare cannot create groups.
 func (m *Manager) PrepareChannel(ctx context.Context, u *core.User, key core.RatingKey, caps core.ClientCaps, group string) (*core.PlaySession, error) {
+	return m.prepareChannelRelease(ctx, u, key, caps, group, "")
+}
+
+// PrepareChannelRelease binds a planned act-break timeline to its analyzed
+// release while retaining the ordinary channel group admission accounting.
+func (m *Manager) PrepareChannelRelease(ctx context.Context, u *core.User, key core.RatingKey, caps core.ClientCaps, group, release string) (*core.PlaySession, error) {
+	return m.prepareChannelRelease(ctx, u, key, caps, group, release)
+}
+func (m *Manager) prepareChannelRelease(ctx context.Context, u *core.User, key core.RatingKey, caps core.ClientCaps, group, release string) (*core.PlaySession, error) {
 	if u == nil {
 		return nil, core.ErrUnauthorized
 	}
@@ -30,7 +39,13 @@ func (m *Manager) PrepareChannel(ctx context.Context, u *core.User, key core.Rat
 	}
 	m.channelGroups[id] = group
 	m.mu.Unlock()
-	ps, err := m.Prepare(ctx, u, key, caps)
+	var ps *core.PlaySession
+	var err error
+	if release != "" {
+		ps, err = m.PrepareSurface(ctx, u, key, caps, release, true)
+	} else {
+		ps, err = m.Prepare(ctx, u, key, caps)
+	}
 	if err != nil {
 		m.mu.Lock()
 		if m.byIdent[id] == nil && !m.hasFlightLocked(id) {

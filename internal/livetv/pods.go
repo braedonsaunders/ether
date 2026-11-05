@@ -69,7 +69,11 @@ func (c Channel) podItems(at time.Time, budget time.Duration) []Item {
 	h := c.momentHistory
 	// A frequency ceiling plus spacing prevents bunching around half-hour edges.
 	interval := 30 * time.Minute / time.Duration(p.PodsPerHalfHour)
-	if !h.lastBreak.IsZero() && at.Sub(h.lastBreak) < interval {
+	minimumSpacing := interval
+	if p.Inside {
+		minimumSpacing = 3 * time.Minute
+	}
+	if !h.lastBreak.IsZero() && at.Sub(h.lastBreak) < minimumSpacing {
 		return nil
 	}
 	limit := time.Duration(p.MaxSeconds) * time.Second
