@@ -43,7 +43,7 @@ func TestBreakAnalysisCapturesOnlyAdmittedIdentity(t *testing.T) {
 }
 
 func TestBreakAnalysisNeverOnRequestPath(t *testing.T) {
-	s := testService(t, Options{})
+	s := testService(t, Options{Now: func() time.Time { return time.Unix(0, 0) }})
 	s.o.BreakInput = func(context.Context, core.RatingKey, int64) (markers.BreakInput, error) {
 		t.Fatal("request opened analysis source")
 		return markers.BreakInput{}, nil
@@ -59,12 +59,20 @@ func TestBreakAnalysisNeverOnRequestPath(t *testing.T) {
 	if _, err := s.Channel(t.Context(), c.ID); err != nil {
 		t.Fatal(err)
 	}
+	// W22 publishes guide snapshots in the background; warm that snapshot
+	// before asserting that the request itself never opens an analysis source.
+	if err := s.refreshVirtualGuide(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Guide(t.Context(), nil, time.Unix(0, 0), time.Unix(1800, 0)); err != nil {
 		t.Fatal(err)
 	}
 	// Publishing occurs only from the background planner; request reads contain
 	// the points without any callback, probe or detector work.
 	s.publishBreaks(c.Items[0].Key, []markers.BreakPoint{{AtMS: 420000, Source: "detected", Confidence: .96}, {AtMS: 900000, Source: "chapters", Confidence: .99}}, 1320000, "release", "revision")
+	if err := s.refreshVirtualGuide(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	got, err := s.Channel(t.Context(), c.ID)
 	if err != nil {
 		t.Fatal(err)
