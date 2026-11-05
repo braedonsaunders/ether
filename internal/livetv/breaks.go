@@ -3,6 +3,7 @@ package livetv
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -39,38 +40,62 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 		return
 	}
 	now := s.o.Now()
-	done := map[core.RatingKey]bool{}
+	type breakTask struct {
+		Programme
+		ownerID int64
+	}
+	var pending []breakTask
 	for _, c := range cs {
-		if !c.Enabled || !s.channelHasNaturalBreaks(c) {
+		if !c.Enabled {
+			continue
+		}
+		eligible := s.channelNaturalBreakKeys(c)
+		if len(eligible) == 0 {
 			continue
 		}
 		for _, p := range Schedule(c, now, now.Add(2*time.Hour)) {
-			if p.Item.Key == 0 || (p.Item.ShowKey == 0 && p.Item.MediaType != "episode") || !p.Start.After(now.Add(time.Minute)) || done[p.Item.Key] || now.Before(retry[p.Item.Key]) {
+			if p.Item.Key == 0 || !eligible[p.Item.Key] || (p.Item.Key.Kind() != core.KindEpisode && p.Item.ShowKey == 0 && p.Item.MediaType != "episode") || !p.Start.After(now.Add(time.Minute)) || now.Before(retry[p.Item.Key]) {
 				continue
 			}
-			done[p.Item.Key] = true
-			retry[p.Item.Key] = now.Add(15 * time.Minute)
-			ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
 			s.mu.Lock()
 			ownerID := s.breakOwners[c.ID]
 			s.mu.Unlock()
-			in, e := s.o.BreakInput(ctx, p.Item.Key, ownerID)
-			if e != nil {
-				cancel()
-				continue
-			}
-			points, e := s.o.BreakAnalyzer.Analyze(ctx, in)
-			if in.Close != nil {
-				in.Close()
-			}
-			cancel()
-			if e != nil {
-				s.o.Logger.Debug("act-break analysis unavailable", "key", p.Item.Key)
-				continue
-			}
-			retry[p.Item.Key] = now.Add(6 * time.Hour)
-			s.publishBreaks(p.Item.Key, points, in.Info.Duration.Milliseconds(), in.ReleaseID, in.Revision)
+			pending = append(pending, breakTask{Programme: p, ownerID: ownerID})
 		}
+	}
+	sort.SliceStable(pending, func(i, j int) bool { return pending[i].Start.Before(pending[j].Start) })
+	done := map[core.RatingKey]bool{}
+	admitted := 0
+	for _, p := range pending {
+		if s.ctx.Err() != nil {
+			return
+		}
+		if done[p.Item.Key] || !p.Start.After(s.o.Now().Add(time.Minute)) {
+			continue
+		}
+		done[p.Item.Key] = true
+		if admitted >= 64 {
+			break
+		}
+		admitted++
+		retry[p.Item.Key] = s.o.Now().Add(15 * time.Minute)
+		ctx, cancel := context.WithTimeout(s.ctx, min(10*time.Minute, p.Start.Sub(s.o.Now())-time.Minute))
+		in, e := s.o.BreakInput(ctx, p.Item.Key, p.ownerID)
+		if e != nil {
+			cancel()
+			continue
+		}
+		points, e := s.o.BreakAnalyzer.Analyze(ctx, in)
+		if in.Close != nil {
+			in.Close()
+		}
+		cancel()
+		if e != nil {
+			s.o.Logger.Debug("act-break analysis unavailable", "key", p.Item.Key)
+			continue
+		}
+		retry[p.Item.Key] = s.o.Now().Add(6 * time.Hour)
+		s.publishBreaks(p.Item.Key, points, in.Info.Duration.Milliseconds(), in.ReleaseID, in.Revision)
 	}
 }
 
@@ -179,16 +204,20 @@ func walkNaturalBreakItems(node any, policy *ChannelLook, visit func(map[string]
 		}
 	}
 }
-func (s *Service) channelHasNaturalBreaks(c Channel) bool {
+func (s *Service) channelNaturalBreakKeys(c Channel) map[core.RatingKey]bool {
+	keys := map[core.RatingKey]bool{}
 	var raw string
 	if s.o.DB.QueryRowContext(s.ctx, `SELECT data FROM livetv_channels WHERE id=?`, c.ID).Scan(&raw) != nil {
-		return false
+		return keys
 	}
 	var doc any
 	if json.Unmarshal([]byte(raw), &doc) != nil {
-		return false
+		return keys
 	}
-	found := false
-	walkNaturalBreakItems(doc, c.Look, func(map[string]any, *ChannelLook) { found = true })
-	return found
+	walkNaturalBreakItems(doc, c.Look, func(item map[string]any, _ *ChannelLook) {
+		if key, ok := item["key"].(float64); ok {
+			keys[core.RatingKey(key)] = true
+		}
+	})
+	return keys
 }

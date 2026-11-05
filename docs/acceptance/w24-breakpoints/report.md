@@ -14,7 +14,7 @@ Station-logo recognition is deferred (optional signal). Existing blackdetect cap
 
 ## Background and persistence
 
-One sequential worker per Live TV service/node. Runs at startup and then each minute; schedules next two hours; does not analyze ongoing items or programmes starting within one minute. Each attempt has a ten-minute deadline. Successful title admission sleeps six hours, failed admission fifteen minutes. Retries are pruned. In-flight work cancels on service shutdown.
+One sequential worker per Live TV service/node. Runs at startup and then each minute; schedules next two hours; does not analyze ongoing items or programmes starting within one minute. Candidates are ordered by nearest air time across channels, deduplicated by episode, and capped at 64 admissions per pass. Each attempt has a deadline of ten minutes or one minute before air time, whichever is sooner. Successful title admission sleeps six hours, failed admission fifteen minutes. Retries are pruned. In-flight work cancels on service shutdown.
 
 Playback prepares a dedicated source through the existing engine (debrid ranges, Usenet or configured local source); marks resolution speculative and uses the existing authenticated loopback input with `?background=1`, which reads at prefetch priority and excludes bytes from viewer statistics. No source credentials are stored in worker code or artifacts. Source revision pins prevent failover while analyzing. Dedicated prepared sources are retired after each attempt, including cache hits and errors.
 
