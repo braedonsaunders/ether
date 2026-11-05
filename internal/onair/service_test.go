@@ -66,6 +66,18 @@ func TestAssetAddressAndUsage(t *testing.T) {
 	if e = s.DeleteLook(ctx, l.ID); e != nil {
 		t.Fatal(e)
 	}
+	if _, e = s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS livetv_channels(id TEXT PRIMARY KEY,data TEXT NOT NULL)`); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.db.ExecContext(ctx, `INSERT INTO livetv_channels(id,data) VALUES(?,?)`, "channel", `{"look":{"momentAssets":{"ident":"`+a.Digest+`"}}}`); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.DeleteAsset(ctx, a.Digest); e != ErrUsed {
+		t.Fatalf("deleted channel asset: %v", e)
+	}
+	if _, e = s.db.ExecContext(ctx, `DELETE FROM livetv_channels WHERE id=?`, "channel"); e != nil {
+		t.Fatal(e)
+	}
 	if e = s.DeleteAsset(ctx, a.Digest); e != nil {
 		t.Fatal(e)
 	}
@@ -165,5 +177,37 @@ func TestDraftValidationNeverSaves(t *testing.T) {
 	saved, e := s.Look(context.Background(), base.ID)
 	if e != nil || saved.Name != base.Name {
 		t.Fatal("draft mutated the saved look", e)
+	}
+}
+
+// Shared styles must remain reusable when a channel chooses its own moment
+// video. Both content and length participate in the content-addressed cache.
+func TestChannelMomentAssetIsolation(t *testing.T) {
+	look := familyLook("clean", "Clean")
+	look.ID = "shared"
+	look.Moments["ident"] = Moment{Duration: 8, AssetDigest: "style-video"}
+	s := &Service{looks: map[string]Look{"shared": look}}
+	req := core.ClipRequest{LookID: "shared", Moment: "ident"}
+	inherited, ok := s.plan(req)
+	if !ok {
+		t.Fatal("missing style plan")
+	}
+	req.AssetDigest = "channel-video"
+	req.AssetDuration = 12 * time.Second
+	custom, ok := s.plan(req)
+	if !ok || custom.AssetDigest != "channel-video" || custom.Doc.Duration != 12 || custom.Hash == inherited.Hash {
+		t.Fatal("channel asset missing from render plan")
+	}
+	if s.looks["shared"].Moments["ident"].AssetDigest != "style-video" {
+		t.Fatal("channel changed shared style")
+	}
+	req.AssetDuration = 8 * time.Second
+	short, _ := s.plan(req)
+	if short.Hash == custom.Hash {
+		t.Fatal("asset duration absent from cache identity")
+	}
+	req.LookID = ""
+	if _, ok := s.plan(req); !ok {
+		t.Fatal("asset-only channel needs no style")
 	}
 }

@@ -353,6 +353,17 @@ func (s *Service) ChannelPage(ctx context.Context, q ChannelPageQuery) (ChannelP
 // bind-variable limit allows.
 func (s *Service) channelsByIDs(ctx context.Context, ids []string) (map[string]Channel, error) {
 	out := make(map[string]Channel, len(ids))
+	pending := make([]string, 0, len(ids))
+	s.virtualGuide.mu.RLock()
+	for _, id := range ids {
+		if entry := s.virtualGuide.entries[id]; entry != nil {
+			out[id] = entry.channel
+		} else {
+			pending = append(pending, id)
+		}
+	}
+	s.virtualGuide.mu.RUnlock()
+	ids = pending
 	for start := 0; start < len(ids); start += channelPageChunk {
 		end := min(start+channelPageChunk, len(ids))
 		marks := make([]string, 0, end-start)

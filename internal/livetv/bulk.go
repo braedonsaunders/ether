@@ -94,6 +94,9 @@ func (s *Service) UpdateChannels(ctx context.Context, change ChannelBatch) (int,
 			s.invalidate(id, "")
 		}
 	}
+	if err = s.refreshVirtualGuide(ctx); err != nil {
+		return 0, err
+	}
 	s.bumpLineup()
 	return len(ids), nil
 }

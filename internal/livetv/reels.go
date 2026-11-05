@@ -35,22 +35,31 @@ func (s *Service) refreshReels() {
 	}
 	seen := map[string]bool{}
 	for _, c := range cs {
-		if c.Look == nil || c.Look.BreakContent != "reel" || c.Look.ReelID == "" || seen[c.Look.ReelID] {
-			continue
+		looks := []*ChannelLook{c.Look}
+		for _, b := range c.Blocks {
+			looks = append(looks, b.Breaks)
 		}
-		id := c.Look.ReelID
-		seen[id] = true
-		snapshot, err := s.o.Reels(s.ctx, id)
-		if err != nil {
-			continue
+		for _, p := range c.Pins {
+			looks = append(looks, p.Breaks)
 		}
-		snapshot.Clips = append([]ReelClip(nil), snapshot.Clips...)
-		s.mu.Lock()
-		if s.reelSnapshots == nil {
-			s.reelSnapshots = map[string]*ReelSnapshot{}
+		for _, look := range looks {
+			if look == nil || look.ReelID == "" || seen[look.ReelID] {
+				continue
+			}
+			id := look.ReelID
+			seen[id] = true
+			snapshot, err := s.o.Reels(s.ctx, id)
+			if err != nil {
+				continue
+			}
+			snapshot.Clips = append([]ReelClip(nil), snapshot.Clips...)
+			s.mu.Lock()
+			if s.reelSnapshots == nil {
+				s.reelSnapshots = map[string]*ReelSnapshot{}
+			}
+			s.reelSnapshots[id] = &snapshot
+			s.mu.Unlock()
 		}
-		s.reelSnapshots[id] = &snapshot
-		s.mu.Unlock()
 	}
 }
 func (c Channel) reelItems(at time.Time, budget time.Duration) []Item {

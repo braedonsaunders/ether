@@ -1,3 +1,4 @@
+import { useCanvasResolution } from "./useCanvasResolution";
 import { styleCopy } from "./naming";
 import { api } from "../../../lib/api";
 import { useAsync } from "../../../lib/hooks";
@@ -35,6 +36,7 @@ function ScreenCard({
   onSelect: () => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const resolution = useCanvasResolution(canvas);
   const [hover, setHover] = useState(false);
   const [sound, setSound] = useState(false);
   useEffect(() => {
@@ -67,13 +69,13 @@ function ScreenCard({
     let frame = 0;
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const draw = (time: number) => {
-      const w = 320,
-        h = 180;
+      const w = ctx.canvas.width,
+        h = ctx.canvas.height;
       ctx.fillStyle = "#101827";
       ctx.fillRect(0, 0, w, h);
       if ((style === "card" || !style || style === "brb") && look) {
         ctx.save();
-        ctx.scale(320 / 1920, 180 / 1080);
+        ctx.scale(w / 1920, h / 1080);
         renderLook(
           ctx,
           look,
@@ -107,7 +109,7 @@ function ScreenCard({
       cancelAnimationFrame(frame);
       releaseRenderer(ctx);
     };
-  }, [style, station, hover, look, fallback]);
+  }, [style, station, hover, look, fallback, resolution]);
   const audible = style === "static" || style === "bars" || style === "testcard";
   return (
     <div

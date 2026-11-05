@@ -10,13 +10,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// Schedule is deterministic across restarts and query windows. A shuffle is a
-// stable hash ordering, not process-global randomness.
-//
-// Channels saved before weekly blocks and playout modes take legacySchedule,
-// which is the original day-parting loop: blocks are UTC minutes every day,
-// a shuffle is one stable permutation, and the last item in a block is clipped.
-// That path is what keeps an existing channel's guide identical.
+// Schedule uses one calendar for epoch loops, dayparts and priority pins.
+// Saved zero-value playout rules retain their original anchors and ordering.
 func Schedule(c Channel, from, until time.Time) []Programme {
 	if !until.After(from) || c.Kind != "virtual" {
 		return nil
@@ -27,69 +22,25 @@ func Schedule(c Channel, from, until time.Time) []Programme {
 	if len(c.Clock) > 0 && c.clipDuration != nil {
 		return clockSchedule(c, from, until)
 	}
-	if c.Look != nil && c.clipDuration != nil {
+	if c.Look != nil || len(c.Blocks) > 0 || len(c.Pins) > 0 || len(c.Sources) > 0 {
 		c.momentHistory = &momentHistory{last: map[string]time.Time{}}
 	}
-
 	if c.Epoch.IsZero() {
 		c.Epoch = time.Unix(0, 0).UTC()
-	}
-	if legacyCalendar(c) {
-		return legacySchedule(c, from, until)
 	}
 	return weeklySchedule(c, from, until)
 }
 
-// legacyCalendar is true when every scheduling field is the zero value the
-// original engine understood. Weekdays, playout mode, alignment, filler and
-// repeat gaps opt into weeklySchedule. A timezone names the clock for painted
-// blocks; with no blocks a 24/7 channel stays on the original epoch loop.
-func legacyCalendar(c Channel) bool {
-	if c.Look != nil || c.Mode != "" || c.Align != "" || c.Fit != "" || c.RepeatDays > 0 || len(c.Filler) > 0 || c.MarathonKey != 0 {
+// epochCalendar describes an unaligned continuous loop. It is a scheduling
+// policy, independent of the age of the saved channel.
+func epochCalendar(c Channel) bool {
+	if c.Mode != "" || c.Align != "" || c.Fit != "" || c.RepeatDays > 0 || len(c.Filler) > 0 || c.MarathonKey != 0 || len(c.Pins) > 0 || len(c.Sources) > 0 {
 		return false
 	}
-	// Fallback and off-air only change a channel that has nothing else to play.
-	// A channel that already has items keeps the original loop.
 	if len(c.Items) == 0 && (c.OffAir || len(c.Fallback) > 0) {
 		return false
 	}
-	if c.Timezone != "" && len(c.Blocks) > 0 {
-		return false
-	}
-	for _, b := range c.Blocks {
-		if len(b.Days) > 0 || b.Mode != "" || b.Align != "" || b.Fit != "" || b.RepeatDays > 0 || len(b.Filler) > 0 || b.MarathonKey != 0 {
-			return false
-		}
-	}
 	return true
-}
-
-func legacySchedule(c Channel, from, until time.Time) []Programme {
-	var out []Programme
-	emit := func(items []Item, shuffle bool, anchor, end time.Time, salt int64) {
-		emitCycle(&out, c, items, nil, shuffle, anchor, end, from, until, salt, "")
-	}
-	if len(c.Blocks) == 0 {
-		emit(c.Items, c.Shuffle, c.Epoch, until.Add(24*time.Hour), 0)
-	} else {
-		day := time.Date(from.UTC().Year(), from.UTC().Month(), from.UTC().Day(), 0, 0, 0, 0, time.UTC)
-		for ; day.Before(until); day = day.AddDate(0, 0, 1) {
-			blocks := append([]Block(nil), c.Blocks...)
-			sort.Slice(blocks, func(i, j int) bool { return blocks[i].Start < blocks[j].Start })
-			prev := 0
-			for _, b := range blocks {
-				if b.Start > prev {
-					emit(c.Items, c.Shuffle, day.Add(time.Duration(prev)*time.Minute), day.Add(time.Duration(b.Start)*time.Minute), day.Unix())
-				}
-				emit(b.Items, b.Shuffle, day.Add(time.Duration(b.Start)*time.Minute), day.Add(time.Duration(b.End)*time.Minute), day.Unix()+int64(b.Start))
-				prev = b.End
-			}
-			if prev < 1440 {
-				emit(c.Items, c.Shuffle, day.Add(time.Duration(prev)*time.Minute), day.Add(24*time.Hour), day.Unix())
-			}
-		}
-	}
-	return out
 }
 
 // emitCycle plays items back to back from anchor, optionally in a stable
@@ -135,14 +86,10 @@ func emitCycle(out *[]Programme, c Channel, items, filler []Item, shuffle bool, 
 }
 
 func weeklySchedule(c Channel, from, until time.Time) []Programme {
-	// A look must not reset an epoch-based channel at midnight. Reuse the
-	// same calendar anchors; emitCycle adds inserted slots when requested.
-	if c.Look != nil {
-		plain := c
-		plain.Look = nil
-		if legacyCalendar(plain) && c.Look.Placement != "insert" {
-			return legacySchedule(c, from, until)
-		}
+	if len(c.Blocks) == 0 && epochCalendar(c) && (c.Look == nil || c.Look.Placement != "insert") {
+		var out []Programme
+		emitCycle(&out, c, c.Items, nil, c.Shuffle, c.Epoch, until.Add(24*time.Hour), from, until, 0, "")
+		return out
 	}
 	loc := zoneOf(c.Timezone)
 	var out []Programme
@@ -158,27 +105,84 @@ func weeklySchedule(c Channel, from, until time.Time) []Programme {
 	}
 	recent := map[core.RatingKey]time.Time{}
 	for ; day.Before(until); day = day.AddDate(0, 0, 1) {
-		weekday := int(day.Weekday())
-		if c.momentHistory != nil && (c.Look == nil || c.Look.BreakPattern == nil) {
+		if c.momentHistory != nil && c.Look != nil && c.Look.BreakPattern == nil {
 			c.momentHistory.lastBreak = day
 		}
-		blocks := make([]Block, 0, len(c.Blocks))
-		for _, b := range c.Blocks {
-			if blockOnDay(b, weekday) {
-				blocks = append(blocks, b)
+		var daily []Programme
+		dayEnd := day.AddDate(0, 0, 1)
+		emit := func(cc Channel, seg segment, start, end int, salt int64, pin bool) {
+			at := atMinute(day, start, loc)
+			if pin {
+				// A fixed appointment preempts a shifted programme.
+				for len(daily) > 0 && !daily[len(daily)-1].Start.Before(at) {
+					daily = daily[:len(daily)-1]
+				}
+				if len(daily) > 0 && daily[len(daily)-1].End.After(at) {
+					daily[len(daily)-1].End = at
+				}
+			} else if len(daily) > 0 {
+				cc.programmingNotBefore = daily[len(daily)-1].End
+			}
+			emitSegment(&daily, cc, seg, day, start, end, day, dayEnd, loc, salt, recent)
+			for len(daily) > 0 && !daily[len(daily)-1].Start.Before(dayEnd) {
+				daily = daily[:len(daily)-1]
+			}
+			if len(daily) > 0 && daily[len(daily)-1].End.After(dayEnd) {
+				daily[len(daily)-1].End = dayEnd
 			}
 		}
-		sort.Slice(blocks, func(i, j int) bool { return blocks[i].Start < blocks[j].Start })
+		blocks := calendarBlocks(c, day)
 		prev := 0
 		for _, b := range blocks {
 			if b.Start > prev {
-				emitSegment(&out, c, segment{items: c.Items, filler: c.Filler, shuffle: c.Shuffle, mode: c.Mode, align: c.Align, fit: c.Fit, repeat: c.RepeatDays, marathon: c.MarathonKey, fallback: c.Fallback, offAir: c.OffAir}, day, prev, b.Start, from, until, loc, day.Unix(), recent)
+				emit(c, baseSegment(c, day), prev, b.Start, day.Unix(), false)
 			}
-			emitSegment(&out, c, segment{items: b.Items, filler: orFiller(b.Filler, c.Filler), shuffle: b.Shuffle, mode: orMode(b.Mode, c.Mode), align: orText(b.Align, c.Align), fit: orText(b.Fit, c.Fit), repeat: orInt(b.RepeatDays, c.RepeatDays), marathon: orKey(b.MarathonKey, c.MarathonKey), fallback: c.Fallback, offAir: c.OffAir}, day, b.Start, b.End, from, until, loc, day.Unix()+int64(b.Start), recent)
+			bc := c
+			bc.programmingBlockID = b.ID
+			bc.programmingRule = orText(b.Name, "Programme block")
+			if b.Fit != "" {
+				bc.programmingRule += " · overrun: " + b.Fit
+			}
+			if b.RepeatDays > 0 {
+				bc.programmingRule += fmt.Sprintf(" · no repeats within %d days", b.RepeatDays)
+			}
+			bc.programmingPinned = b.pinned
+			if b.Breaks != nil {
+				bc.Look = effectiveBlockLook(c.Look, b.Breaks)
+				bc.reel = b.reel
+			}
+			items := programmingItems(b.Sources, b.Items, c, day, b.original)
+			seg := segment{items: items, filler: orFiller(b.Filler, c.Filler), shuffle: b.Shuffle, mode: orMode(b.Mode, c.Mode), align: orText(b.Align, c.Align), fit: orText(b.Fit, c.Fit), repeat: orInt(b.RepeatDays, c.RepeatDays), marathon: orKey(b.MarathonKey, c.MarathonKey), fallback: c.Fallback, offAir: c.OffAir}
+			// Explicit sources have their own order; channel-wide playout must
+			// never override an ordered show or a weighted mix.
+			if len(b.Sources) > 0 {
+				seg.mode = "sources"
+				seg.shuffle = false
+				seg.marathon = 0
+				seg.align = b.Align
+				seg.fit = b.Fit
+				seg.repeat = b.RepeatDays
+				if len(b.Sources) == 1 && b.Sources[0].Strip {
+					seg.align = "half"
+					seg.fit = "pad"
+				}
+			}
+			emit(bc, seg, b.Start, b.End, day.Unix()+int64(b.Start), b.pinned)
 			prev = b.End
 		}
 		if prev < 1440 {
-			emitSegment(&out, c, segment{items: c.Items, filler: c.Filler, shuffle: c.Shuffle, mode: c.Mode, align: c.Align, fit: c.Fit, repeat: c.RepeatDays, marathon: c.MarathonKey, fallback: c.Fallback, offAir: c.OffAir}, day, prev, 1440, from, until, loc, day.Unix(), recent)
+			emit(c, baseSegment(c, day), prev, 1440, day.Unix(), false)
+		}
+		for _, p := range daily {
+			if p.End.After(from) && p.Start.Before(until) {
+				if len(out) >= 20000 {
+					return out
+				}
+				out = append(out, p)
+			}
+		}
+		if len(out) >= 20000 {
+			return out
 		}
 	}
 	return out
@@ -189,6 +193,11 @@ func lookback(c Channel) time.Duration {
 	for _, b := range c.Blocks {
 		if b.RepeatDays > d {
 			d = b.RepeatDays
+		}
+	}
+	for _, p := range c.Pins {
+		if p.RepeatDays > d {
+			d = p.RepeatDays
 		}
 	}
 	if d < 0 {
@@ -210,7 +219,11 @@ type segment struct {
 }
 
 func emitSegment(out *[]Programme, c Channel, seg segment, day time.Time, startMin, endMin int, from, until time.Time, loc *time.Location, salt int64, recent map[core.RatingKey]time.Time) {
+	c.programmingFill = seg.mode == "sources"
 	anchor := atMinute(day, startMin, loc)
+	if c.programmingNotBefore.After(anchor) {
+		anchor = c.programmingNotBefore
+	}
 	end := atMinute(day, endMin, loc)
 	items := seg.items
 	if len(items) == 0 {
@@ -230,7 +243,7 @@ func emitSegment(out *[]Programme, c Channel, seg segment, day time.Time, startM
 }
 
 func needsWalk(seg segment) bool {
-	return seg.mode == "random" || seg.align != "" || seg.repeat > 0
+	return seg.mode == "random" || seg.align != "" || seg.repeat > 0 || seg.fit == "shift" || (seg.fit == "pad" && seg.mode == "sources")
 }
 
 const (
@@ -307,12 +320,22 @@ func emitWalk(out *[]Programme, c Channel, items []Item, seg segment, anchor, en
 			}
 		}
 		if finish.After(end) {
-			finish = end
+			if seg.fit == "pad" && seg.mode == "sources" {
+				fillGap(out, c, seg.filler, cursor, end, from, until)
+				return
+			}
+			if seg.fit != "shift" {
+				finish = end
+			}
 		}
 		if !finish.After(cursor) {
 			return
 		}
-		finish = emitProgrammeWithPods(out, c, item, cursor, finish, from, until, end)
+		podEnd := end
+		if seg.fit == "shift" && finish.After(podEnd) {
+			podEnd = finish
+		}
+		finish = emitProgrammeWithPods(out, c, item, cursor, finish, from, until, podEnd)
 		recent[item.Key] = cursor
 		last = item.Key
 		cursor = finish
@@ -327,7 +350,7 @@ func emitWalk(out *[]Programme, c Channel, items []Item, seg segment, anchor, en
 				cursor = finish
 			}
 		}
-		if alignStep == 0 && len(seg.filler) > 0 && cursor.Before(end) {
+		if alignStep == 0 && seg.mode != "sources" && len(seg.filler) > 0 && cursor.Before(end) {
 			bump := seg.filler[int(step)%len(seg.filler)]
 			bd := time.Duration(bump.DurationMS) * time.Millisecond
 			if bd > 0 {
@@ -424,7 +447,7 @@ func earliestReady(units [][]Item, recent map[core.RatingKey]time.Time, gap time
 
 func fillGap(out *[]Programme, c Channel, filler []Item, fromCursor, end, winFrom, winUntil time.Time) {
 	cursor := fromCursor
-	if c.Look != nil && c.Look.Placement != "insert" {
+	if c.Look != nil && (c.Look.Placement != "insert" || c.programmingFill) {
 		for _, item := range c.momentsWithin(fromCursor, end.Sub(fromCursor)) {
 			finish := cursor.Add(time.Duration(item.DurationMS) * time.Millisecond)
 			if finish.After(end) {
@@ -469,7 +492,7 @@ func appendProgramme(out *[]Programme, c Channel, item Item, cursor, finish, fro
 		item.BreakRevision = ""
 	}
 	if finish.After(from) && cursor.Before(until) && finish.After(cursor) {
-		*out = append(*out, Programme{ID: fmt.Sprintf("%s-%d", c.ID, cursor.UnixMilli()), ChannelID: c.ID, Start: cursor, End: finish, Item: item})
+		*out = append(*out, Programme{BlockID: c.programmingBlockID, SourceID: item.SourceID, Pinned: c.programmingPinned, Rule: programmeRule(c, item), ID: fmt.Sprintf("%s-%d", c.ID, cursor.UnixMilli()), ChannelID: c.ID, Start: cursor, End: finish, Item: item})
 	}
 }
 
@@ -641,7 +664,7 @@ func atMinute(day time.Time, minute int, loc *time.Location) time.Time {
 		}
 		return day.AddDate(0, 0, 1)
 	}
-	return day.Add(time.Duration(minute) * time.Minute)
+	return time.Date(day.Year(), day.Month(), day.Day(), minute/60, minute%60, 0, 0, loc)
 }
 
 func blockOnDay(b Block, weekday int) bool {

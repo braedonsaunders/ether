@@ -11,7 +11,10 @@ import (
 
 // ClipRequest binds a look moment to the channel and upcoming programme.
 type ClipRequest struct {
-	Bug *BugSettings
+	// AssetDigest overrides this channel's moment without changing its shared look.
+	AssetDigest   string        `json:"assetDigest,omitempty"`
+	AssetDuration time.Duration `json:"assetDuration,omitempty"`
+	Bug           *BugSettings
 
 	LookID    string
 	Moment    string

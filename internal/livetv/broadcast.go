@@ -25,6 +25,7 @@ const broadcastDVR = 30 * time.Minute
 // broadcastPlan is immutable. Open performs blocking resolution away from the
 // frame clock. Its release closes the playback/provider reservation exactly once.
 type broadcastPlan struct {
+	element    string
 	policy     *broadcastPolicyTag
 	fill       bool
 	programme  bool
@@ -48,6 +49,7 @@ type broadcastRendition struct {
 	viewers    int
 }
 type broadcastInput struct {
+	policy                  *broadcastPolicyTag
 	logger                  *slog.Logger
 	openedAt, outputOrigin  time.Time
 	wallStart               time.Time
@@ -128,42 +130,45 @@ type broadcastPrepared struct {
 	plan  broadcastPlan
 }
 type broadcast struct {
-	introShownAt   time.Time
-	introFade      *broadcastInput
-	introFadeFrame transcode.RawFrame
-	introFadeStart time.Time
-	logger         *slog.Logger
-	intro          broadcastPlan
-	introUntil     time.Time
-	dvr            time.Duration
-	black          []byte
-	viewers        int
-	startMu        sync.Mutex
-	ctx            context.Context
-	cancel         context.CancelFunc
-	format         transcode.RawFormat
-	planner        broadcastPlanner
-	runner         transcode.ContinuousRunner
-	origin         time.Time
-	mu             sync.Mutex
-	renditions     map[string]*broadcastRendition
-	lastViewer     time.Time
-	closed         bool
-	wg             sync.WaitGroup
-	prepared       chan broadcastPrepared
-	current, next  *broadcastInput
-	later          map[string]*broadcastInput
-	future         map[string]broadcastPlan
-	opening        map[string]bool
-	retry          map[string]time.Time
-	lastFrame      transcode.RawFrame
-	freshAt        time.Time
-	fade           pcmFade
-	fallback       *broadcastInput
-	screenPlan     broadcastPlan
-	retryRequests  chan struct{}
-	mode           string
-	tick           int64
+	startupUntil         time.Time
+	startupTarget, lead  time.Duration
+	bursting, burstReady bool
+	introShownAt         time.Time
+	introFade            *broadcastInput
+	introFadeFrame       transcode.RawFrame
+	introFadeStart       time.Time
+	logger               *slog.Logger
+	intro                broadcastPlan
+	introUntil           time.Time
+	dvr                  time.Duration
+	black                []byte
+	viewers              int
+	startMu              sync.Mutex
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	format               transcode.RawFormat
+	planner              broadcastPlanner
+	runner               transcode.ContinuousRunner
+	origin               time.Time
+	mu                   sync.Mutex
+	renditions           map[string]*broadcastRendition
+	lastViewer           time.Time
+	closed               bool
+	wg                   sync.WaitGroup
+	prepared             chan broadcastPrepared
+	current, next        *broadcastInput
+	later                map[string]*broadcastInput
+	future               map[string]broadcastPlan
+	opening              map[string]bool
+	retry                map[string]time.Time
+	lastFrame            transcode.RawFrame
+	freshAt              time.Time
+	fade                 pcmFade
+	fallback             *broadcastInput
+	screenPlan           broadcastPlan
+	retryRequests        chan struct{}
+	mode                 string
+	tick                 int64
 	// yieldIdle asks the registry to close outputs nobody is watching when
 	// this output hits the stream limit (see broadcastRegistry.yieldIdle).
 	yieldIdle func(except *broadcast) bool
@@ -181,6 +186,9 @@ func newBroadcast(ctx context.Context, runner transcode.ContinuousRunner, planne
 	b.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	b.later = map[string]*broadcastInput{}
 	b.future = map[string]broadcastPlan{}
+	if source, ok := planner.(interface{ startupLead() time.Duration }); ok {
+		b.startupTarget = source.startupLead()
+	}
 	if source, ok := planner.(interface{ broadcastLogger() *slog.Logger }); ok {
 		b.logger = source.broadcastLogger()
 	}
@@ -208,7 +216,13 @@ func (b *broadcast) closeInput(input *broadcastInput) {
 	go func() { defer b.wg.Done(); input.close() }()
 }
 
-func (b *broadcast) start() { b.wg.Add(1); go func() { defer b.wg.Done(); b.run() }() }
+func (b *broadcast) start() {
+	if b.startupTarget > 0 {
+		b.startupUntil = time.Now().Add(20 * time.Second)
+	}
+	b.wg.Add(1)
+	go func() { defer b.wg.Done(); b.run() }()
+}
 func (b *broadcast) close() {
 	b.startMu.Lock()
 	b.mu.Lock()
@@ -368,7 +382,7 @@ func (b *broadcast) open(plan broadcastPlan, now time.Time) {
 				err = fmt.Errorf("decoder opener returned no decoder")
 				result.err = err
 			} else {
-				result.input = newBroadcastInput(b.ctx, plan, d, release)
+				result.input = newBroadcastInput(b.ctx, plan, d, release, b.format)
 				result.input.logger = b.logger
 				result.input.openedAt = began
 				result.input.outputOrigin = b.origin
@@ -511,18 +525,40 @@ func (b *broadcast) run() {
 		if b.idle(now) {
 			return
 		}
-		// Plan against the output frame clock, including catch-up ticks.
-		b.step(b.origin.Add(time.Duration(b.tick) * time.Second * time.Duration(b.format.FPSDen) / time.Duration(b.format.FPSNum)))
+		scheduled := b.origin.Add(time.Duration(b.tick) * time.Second * time.Duration(b.format.FPSDen) / time.Duration(b.format.FPSNum))
+		b.bursting = !b.startupUntil.IsZero() && now.Before(b.startupUntil) && !b.startupOutputReady(now)
+		if !b.startupUntil.IsZero() && !b.bursting {
+			b.lead = max(0, min(b.startupTarget+4*time.Second, scheduled.Sub(now)))
+			b.startupUntil = time.Time{}
+			b.logger.Info("broadcast startup burst finished", "lead", b.lead, "elapsed", now.Sub(b.origin))
+		}
+		// Feed a bounded amount ahead of the encoder. Startup must not turn a
+		// healthy fast encoder into a video-degradation event through queue growth.
+		if b.bursting && (scheduled.After(now.Add(b.startupTarget+4*time.Second)) || b.startupQueueFull()) {
+			timer.Reset(2 * time.Millisecond)
+			continue
+		}
+		if !b.step(scheduled) {
+			timer.Reset(2 * time.Millisecond)
+			continue
+		}
 		b.tick++
-		next := b.origin.Add(time.Duration(b.tick) * time.Second * time.Duration(b.format.FPSDen) / time.Duration(b.format.FPSNum))
+		next := b.origin.Add(time.Duration(b.tick) * time.Second * time.Duration(b.format.FPSDen) / time.Duration(b.format.FPSNum)).Add(-b.lead)
 		delay := time.Until(next)
+		if b.bursting {
+			delay = 0
+			if !b.burstReady {
+				delay = time.Until(next.Add(-time.Second))
+			}
+		}
 		if delay < 0 {
 			delay = 0
 		}
 		timer.Reset(delay)
 	}
 }
-func (b *broadcast) step(now time.Time) {
+func (b *broadcast) step(now time.Time) bool {
+	b.burstReady = false
 	fresh := false
 	previousPCM := b.lastFrame.PCM
 	current, next := b.planner.plans(now)
@@ -617,7 +653,11 @@ func (b *broadcast) step(now time.Time) {
 		select {
 		case f, ok := <-b.current.frames:
 			if ok && validRawFrame(b.format, f) {
+				b.burstReady = true
 				frame = f
+				if b.current.policy != nil {
+					frame.PolicyTags = []any{b.current.policy}
+				}
 				if introActive && b.intro.fill {
 					if !b.introShownAt.IsZero() && now.Sub(b.introShownAt) >= time.Second {
 						b.finishIntro(now)
@@ -659,6 +699,11 @@ func (b *broadcast) step(now time.Time) {
 		b.closeInput(b.current)
 		b.current = nil
 	}
+	// Wait for an active decoder during a burst, but let an exhausted file's
+	// final picture bridge a rounded duration to the next scheduled cut.
+	if b.bursting && frame.Video == nil && !introActive && b.current != nil {
+		return false
+	}
 	if frame.Video == nil && !introActive && !b.freshAt.IsZero() && now.Sub(b.freshAt) < broadcastStall {
 		frame = transcode.RawFrame{Video: b.lastFrame.Video, PolicyTags: b.lastFrame.PolicyTags}
 		mode = "hold"
@@ -685,6 +730,9 @@ func (b *broadcast) step(now time.Time) {
 			default:
 			}
 		}
+		if b.bursting && frame.Video == nil {
+			return false
+		}
 		if frame.Video == nil {
 			frame = transcode.RawFrame{Video: b.lastFrame.Video, PolicyTags: b.lastFrame.PolicyTags}
 			if frame.Video == nil {
@@ -698,7 +746,22 @@ func (b *broadcast) step(now time.Time) {
 	copy(pcm, frame.PCM)
 	frame.PCM = pcm
 	if mode != b.mode {
-		b.logger.Debug("broadcast output switched", "from", b.mode, "input", mode, "tick", b.tick, "scheduledAt", now, "clockLag", time.Since(now))
+		element := current.element
+		if mode == "screen" {
+			element = b.screenPlan.element
+			if element == "" {
+				element = "screen"
+			}
+		} else if mode == "hold" {
+			element = "hold"
+		} else if element == "" && current.programme {
+			element = "programme"
+		}
+		transition := "cut"
+		if b.introFade != nil {
+			transition = "crossfade"
+		}
+		b.logger.Debug("broadcast output switched", "element", element, "transition", transition, "from", b.mode, "input", mode, "tick", b.tick, "scheduledAt", now, "clockLag", time.Since(now))
 		if b.introFade == nil {
 			b.fade.start(previousPCM, b.format)
 		}
@@ -713,6 +776,11 @@ func (b *broadcast) step(now time.Time) {
 	}
 	frame.PolicyTags = mergeBroadcastTags(frame.PolicyTags, []any{current.policy})
 	b.blendIntro(now, &frame, fresh)
+	// Start rendering the first screen immediately while resolution is pending,
+	// but do not spend the startup lead on an unscheduled placeholder. A planned
+	// screen or welcome is actual scheduled media and can fill the whole lead.
+	b.burstReady = b.burstReady || (introActive && !b.intro.fill)
+	frame.OutputTime = now
 	b.lastFrame = frame
 	b.mu.Lock()
 	for id, r := range b.renditions {
@@ -720,7 +788,7 @@ func (b *broadcast) step(now time.Time) {
 		if changed {
 			b.logger.Info("broadcast encoder video cadence changed", "rendition", id, "repeating", repeating, "pendingTicks", pending, "tick", b.tick)
 		}
-		if b.tick%300 == 0 {
+		if b.tick%300 == 0 || (b.bursting && b.tick%30 == 0) {
 			progress := ""
 			if source, ok := r.encoder.(interface{ Diagnostics() string }); ok {
 				progress = source.Diagnostics()
@@ -729,12 +797,18 @@ func (b *broadcast) step(now time.Time) {
 		}
 	}
 	b.mu.Unlock()
+	return true
 }
 
-func newBroadcastInput(parent context.Context, plan broadcastPlan, d transcode.Decoder, release func()) *broadcastInput {
+func newBroadcastInput(parent context.Context, plan broadcastPlan, d transcode.Decoder, release func(), format transcode.RawFormat) *broadcastInput {
 	ctx, cancel := context.WithCancel(parent)
-	input := &broadcastInput{ctx: ctx, cancel: cancel, decoder: d, release: release, plan: plan, frames: make(chan transcode.RawFrame, 8), errs: make(chan error, 1), activate: make(chan struct{})}
+	capacity := 8
+	if plan.programme {
+		capacity = max(capacity, 3*format.FPSNum/format.FPSDen)
+	}
+	input := &broadcastInput{ctx: ctx, cancel: cancel, decoder: d, release: release, plan: plan, frames: make(chan transcode.RawFrame, capacity), errs: make(chan error, 1), activate: make(chan struct{})}
 	if decoder, ok := d.(*overlayDecoder); ok {
+		input.policy = decoder.policy
 		input.overlays = decoder.overlays
 		input.wallStart = decoder.wallStart
 		input.fpsNum = decoder.format.FPSNum
@@ -748,4 +822,46 @@ func (b *broadcast) requestRetry() {
 	case b.retryRequests <- struct{}{}:
 	default:
 	}
+}
+
+func (b *broadcast) startupQueueFull() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, r := range b.renditions {
+		r.queue.mu.Lock()
+		pending := len(r.queue.frames) - r.queue.head
+		r.queue.mu.Unlock()
+		fps := max(1, b.format.FPSNum/b.format.FPSDen)
+		limit := max(1, fps/2)
+		// Burst pacing must not suppress the ordinary pressure response on a
+		// host with no encoding margin. Let that queue repeat pictures while
+		// retaining every audio tick, rather than abandoning the buffer fill.
+		if source, ok := r.encoder.(interface{ RealtimeSpeed() float64 }); ok && time.Since(b.origin) >= 2*time.Second {
+			speed := source.RealtimeSpeed()
+			if speed > 0 && speed < 1.5 {
+				limit = 3 * fps
+			}
+		}
+		if pending >= limit {
+			return true
+		}
+	}
+	return false
+}
+
+// The startup cushion is measured at the published edge, not at the producer
+// queue. Encoder priming and queued raw ticks are not playable client media.
+func (b *broadcast) startupOutputReady(now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.renditions) == 0 {
+		return false
+	}
+	for _, r := range b.renditions {
+		last, ok := r.encoder.Segments().Latest()
+		if !ok || last.Start.Add(last.Duration).Before(now.Add(b.startupTarget)) {
+			return false
+		}
+	}
+	return true
 }

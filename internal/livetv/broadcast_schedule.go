@@ -12,7 +12,7 @@ import (
 // node-local broadcast. Guide reads apply recorded decisions without cache I/O.
 func (s *Service) broadcastSchedule(ctx context.Context, c Channel, from, until time.Time, check bool) []Programme {
 	c = s.graphicsChannel(c)
-	if (c.Look == nil && len(c.Clock) == 0) || s.o.Graphics == nil {
+	if (c.Look == nil && len(c.Clock) == 0 && len(c.Blocks) == 0 && len(c.Pins) == 0) || s.o.Graphics == nil {
 		return Schedule(c, from, until)
 	}
 	start, end := from, until
@@ -42,8 +42,8 @@ func (s *Service) broadcastSchedule(ctx context.Context, c Channel, from, until 
 			}
 			if p.Item.ReelClipID != "" {
 				ready = false
-				if c.reel != nil {
-					for _, clip := range c.reel.Clips {
+				if reel := c.reelForItem(p.Item); reel != nil {
+					for _, clip := range reel.Clips {
 						if clip.ID == p.Item.ReelClipID && clip.Path != "" {
 							ready = true
 							break
@@ -70,6 +70,9 @@ func (s *Service) broadcastSchedule(ctx context.Context, c Channel, from, until 
 			plain := c
 			plain.Look = nil
 			plain.Clock = nil
+			plain.clipDuration = nil
+			plain.reel = nil
+			plain.programmingReels = nil
 			if strings.HasPrefix(p.Item.Slate, "plugin:") {
 				fillGap(&out, plain, c.Filler, p.Start, p.End, from, until)
 				continue
@@ -110,7 +113,7 @@ func (s *Service) broadcastGuide(c Channel, from, until time.Time) []Programme {
 			}
 			continue
 		}
-		if c.Look.BreakPattern != nil && len(out) > 0 && p.Item.Key != 0 && out[len(out)-1].Item.Key == p.Item.Key && p.sourceOffset > 0 {
+		if len(out) > 0 && p.Item.Key != 0 && out[len(out)-1].Item.Key == p.Item.Key && p.sourceOffset > 0 {
 			out[len(out)-1].End = p.End
 			continue
 		}

@@ -32,6 +32,7 @@ func (s *Service) programmePolicy(ctx context.Context, p Programme) *broadcastPo
 
 type broadcastViewerPolicy struct {
 	epoch     int64
+	revision  uint64
 	raw       string
 	user      core.User
 	channel   Channel
@@ -54,24 +55,36 @@ func (s *Service) broadcastPolicyContext(ctx context.Context, ss *session, u *co
 	if err != nil {
 		return ctx, err
 	}
+	s.virtualGuide.mu.RLock()
+	revision := s.virtualGuide.revision
+	s.virtualGuide.mu.RUnlock()
 	cache := &ss.broadcastPolicy
-	if cache.decisions == nil || cache.epoch != epoch || cache.raw != raw || !reflect.DeepEqual(cache.user, *u) {
+	if cache.decisions == nil || cache.epoch != epoch || cache.revision != revision || cache.raw != raw || !reflect.DeepEqual(cache.user, *u) {
 		c := ss.info.Channel
-		if cache.decisions != nil && cache.epoch != epoch {
-			var data []byte
-			if err = s.o.DB.QueryRowContext(ctx, `SELECT data FROM livetv_channels WHERE id=?`, c.ID).Scan(&data); err != nil {
-				return ctx, err
-			}
-			if err = json.Unmarshal(data, &c); err != nil {
-				return ctx, err
-			}
+
+		// Channel saves/background refresh publish decoded records. An external
+		// edit waits for that refresh instead of decoding a recipe on this request.
+		s.chanSnap.mu.Lock()
+		if s.chanSnap.generation != epoch {
+			s.chanSnap.mu.Unlock()
+			s.wakeVirtualGuide()
+			return ctx, core.ErrNotAvailable
 		}
+		at, exists := s.chanSnap.byID[c.ID]
+		if exists {
+			c = s.chanSnap.list[at]
+		}
+		s.chanSnap.mu.Unlock()
+		if !exists {
+			return ctx, core.ErrNotFound
+		}
+
 		var pol Policy
 		if err = json.Unmarshal([]byte(raw), &pol); err != nil {
 			return ctx, err
 		}
 		pol.indexChannels()
-		*cache = broadcastViewerPolicy{epoch: epoch, raw: raw, user: *u, channel: c, policy: pol, decisions: map[*broadcastPolicyTag]bool{}}
+		*cache = broadcastViewerPolicy{epoch: epoch, revision: revision, raw: raw, user: *u, channel: c, policy: pol, decisions: map[*broadcastPolicyTag]bool{}}
 	}
 	ss.user = *u
 	ctx = context.WithValue(ctx, loadedPolicyKey{}, loadedPolicy{id: u.ID, user: u, pol: cache.policy})
@@ -127,4 +140,20 @@ func (s *Service) broadcastSegmentAllowed(ctx context.Context, ss *session, seg 
 		return false
 	}
 	return s.broadcastTagsAllowed(ctx, ss, seg.PolicyTags)
+}
+
+// Audience admission is independent of the programme's rating. Checking a
+// channel's empty rating first would incorrectly hide a permitted programme.
+func (s *Service) audienceAllowed(ctx context.Context, u *core.User, c Channel) bool {
+	if u == nil || !c.Enabled || (!u.IsOwner && s.sweepState(c) == "unavailable") {
+		return false
+	}
+	_, pol, err := s.withPolicy(ctx, u)
+	if err != nil {
+		return false
+	}
+	if c.Personal != nil && (s.o.Picker == nil || (pol.Personal != nil && pol.Personal.Enabled != nil && !*pol.Personal.Enabled)) {
+		return false
+	}
+	return u.IsOwner || pol.Permits(c.ID, c.Private)
 }

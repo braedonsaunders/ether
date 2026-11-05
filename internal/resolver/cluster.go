@@ -52,6 +52,7 @@ func (s *Service) applyRemote(ctx context.Context, hints []string, all bool) {
 		s.bad = map[string]badMark{}
 		s.reps = map[string]reputation{}
 		s.avail = map[int64]availEntry{}
+		s.clearAvailabilityEpochLocked()
 		s.verified = map[string]time.Time{}
 		s.verifiedMiss = nil
 		s.mu.Unlock()
@@ -75,6 +76,7 @@ func (s *Service) applyRemote(ctx context.Context, hints []string, all bool) {
 			if k, err := strconv.ParseInt(arg, 10, 64); err == nil {
 				s.mu.Lock()
 				delete(s.avail, k)
+				s.forgetAvailabilityEpochLocked(k)
 				s.mu.Unlock()
 			}
 		case "reps":

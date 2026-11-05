@@ -641,6 +641,7 @@ func writeStreamError(w http.ResponseWriter, err error) {
 	case core.ErrStreamLimit:
 		code = 429
 	case core.ErrNotAvailable:
+		w.Header().Set("Retry-After", "1")
 		code = 503
 	}
 	http.Error(w, http.StatusText(code), code)

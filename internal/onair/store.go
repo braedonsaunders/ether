@@ -199,6 +199,13 @@ func (s *Service) Look(ctx context.Context, id string) (Look, error) {
 	return l, e
 }
 func (s *Service) SaveLook(ctx context.Context, l Look) (Look, error) {
+	saved, err := s.saveLook(ctx, l)
+	if err == nil && s.o.Changed != nil {
+		err = s.o.Changed(ctx)
+	}
+	return saved, err
+}
+func (s *Service) saveLook(ctx context.Context, l Look) (Look, error) {
 	if e := s.validateLook(ctx, l); e != nil {
 		return l, e
 	}
@@ -252,6 +259,9 @@ func (s *Service) DeleteLook(ctx context.Context, id string) error {
 		delete(s.progress, id)
 		delete(s.lookJobs, id)
 		s.mu.Unlock()
+	}
+	if e == nil && s.o.Changed != nil {
+		e = s.o.Changed(ctx)
 	}
 	return e
 }

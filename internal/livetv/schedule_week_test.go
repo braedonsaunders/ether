@@ -26,7 +26,7 @@ func TestLegacyJSONKeepsTheSameSchedule(t *testing.T) {
 		t.Fatalf("legacy window drifted")
 	}
 	// A zero-value weekly field must not leave the original engine.
-	if !legacyCalendar(c) {
+	if !epochCalendar(c) {
 		t.Fatal("old channel was treated as a weekly grid")
 	}
 }

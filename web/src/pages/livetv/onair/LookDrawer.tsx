@@ -175,7 +175,7 @@ export function LookDrawer({
       stacked={stacked}
       open
       onClose={() => void close()}
-      size="full"
+      size="2xl"
       panelClassName="max-sm:[&>header]:flex-wrap max-sm:[&>header]:gap-2 max-sm:[&>header>div:first-child]:w-full max-sm:[&>header>div:last-child]:w-full max-sm:[&>header>div:last-child]:justify-end"
       title={
         <Input

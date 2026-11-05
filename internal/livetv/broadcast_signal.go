@@ -135,7 +135,7 @@ func (s *Service) signalPlan(c Channel, reason, back string, f transcode.RawForm
 	request := s.screenRequest(c, reason)
 	request.Bind["screen.back"] = back
 	id := fmt.Sprintf("signal-%s-%d", c.ID, int64Hash(fmt.Sprint(request)))
-	return broadcastPlan{id: id, failed: func(error) time.Time { return s.o.Now().Add(time.Second) }, open: func(ctx context.Context) (transcode.Decoder, func(), error) {
+	return broadcastPlan{element: "screen", id: id, failed: func(error) time.Time { return s.o.Now().Add(time.Second) }, open: func(ctx context.Context) (transcode.Decoder, func(), error) {
 		return s.openSignalDecoder(ctx, request, f)
 	}}
 }

@@ -1,13 +1,11 @@
 import { styleCopy } from "./naming";
-import { BreakPatternEditor } from "./BreakPatternEditor";
 import { Button, Input, Select, Switch } from "@braedonsaunders/appkit-ui";
-import { textOf, useRegistry } from "../../../lib/extend";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { MoreOptions } from "../../../components/ConfigSection";
 import { SettingsRow } from "../../../components/SettingsRow";
 import { ToolbarPicker } from "../../../components/ToolbarPicker";
-import { Field, NumberInput, Segmented } from "../../../components/fields";
+import { Field } from "../../../components/fields";
 import { ErrorPanel } from "../../../components/feedback";
 import { useAsync } from "../../../lib/hooks";
 import { api } from "../../../lib/api";
@@ -16,7 +14,6 @@ import type { Channel } from "../model";
 import { onair, type ChannelLook, type Moment } from "./model";
 import { LookTile } from "./Stage";
 import { InfoTip } from "./RecipeTab";
-import { ReelDrawer } from "./ReelDrawer";
 import { ChannelScreens } from "./ScreenPicker";
 
 import { BugControls, resolveBug } from "./BugControls";
@@ -30,7 +27,6 @@ export function LookTab({
   viewerName?: string;
 }) {
   const config = useAsync(() => api.getConfig(), []);
-  const segments = useRegistry<{ duration: number }>("onairSegment");
   const looks = useAsync(() => onair.looks(), []);
   const bindings = useAsync(
     () =>
@@ -40,10 +36,8 @@ export function LookTab({
       }),
     [channel.id],
   );
-  const reels = useAsync(() => onair.reels(), []);
   const [, setParams] = useSearchParams();
   const [moment, setMoment] = useState<Moment>("ident");
-  const [reel, setReel] = useState<string | null>(null);
   const settings: ChannelLook = channel.look ?? {
     lookId: "",
     ident: true,
@@ -172,187 +166,6 @@ export function LookTab({
           {t("On this channel")}
         </h3>
         <SettingsRow
-          title={t("Ident when someone tunes in")}
-          control={
-            <Switch
-              checked={settings.ident}
-              aria-label={t("Ident when someone tunes in")}
-              onChange={(e) => set({ ident: e.currentTarget.checked })}
-            />
-          }
-        />
-        <SettingsRow
-          title={t("Up next before each programme")}
-          control={
-            <Switch
-              checked={settings.upNext}
-              aria-label={t("Up next before each programme")}
-              onChange={(e) => set({ upNext: e.currentTarget.checked })}
-            />
-          }
-        />
-        <SettingsRow
-          title={
-            <span className="flex items-center gap-2">
-              {t("Breaks")}
-              <InfoTip
-                text={t(
-                  "Inside programmes needs break-point analysis. Between programmes uses gaps in the schedule.",
-                )}
-              />
-            </span>
-          }
-          control={
-            <div className="min-w-0">
-              <Segmented
-                ariaLabel={t("Breaks")}
-                size="sm"
-                className="w-full flex-nowrap justify-between [&>button]:px-1"
-                value={settings.breaks || ""}
-                onChange={(breaks) =>
-                  set({ breaks, ...(!breaks ? { breakPattern: undefined } : {}) })
-                }
-                options={[
-                  { value: "", label: t("Off") },
-                  { value: "between", label: t("Between programmes") },
-                  { value: "inside", label: t("Inside programmes"), disabled: true },
-                ]}
-              />
-            </div>
-          }
-        />
-        {settings.breaks ? (
-          <>
-            <SettingsRow
-              title={t("During breaks")}
-              control={
-                <Select
-                  aria-label={t("During breaks")}
-                  value={settings.breakContent || "look"}
-                  onChange={(e) =>
-                    set({
-                      breakContent: e.currentTarget.value as ChannelLook["breakContent"],
-                      breakPattern: undefined,
-                    })
-                  }
-                >
-                  <option value="look">{styleCopy("Style's break screen")}</option>
-                  <option value="reel">{t("Clips from a reel")}</option>
-                  <option value="segments">{t("Plugin segments")}</option>
-                </Select>
-              }
-            />
-            {settings.breakContent === "reel" ? (
-              <SettingsRow
-                title={t("Reel")}
-                control={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ToolbarPicker
-                      className="max-w-full"
-                      menuClassName="max-w-[calc(100vw-2rem)]"
-                      value={settings.reelId || ""}
-                      ariaLabel={t("Reel")}
-                      onChange={(id) => (id === "new" ? setReel("new") : set({ reelId: id }))}
-                      options={[
-                        { value: "", label: t("Choose a reel…") },
-                        ...(reels.data ?? []).map((v) => ({ value: v.id, label: v.name })),
-                        { value: "new", label: t("New reel…") },
-                      ]}
-                    />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={!settings.reelId}
-                      onClick={() => setReel(settings.reelId!)}
-                    >
-                      {t("Edit reel")}
-                    </Button>
-                  </div>
-                }
-              />
-            ) : null}
-            {settings.breakContent === "segments" ? (
-              <>
-                <SettingsRow
-                  title={t("Plugin segments")}
-                  control={
-                    <div className="space-y-2">
-                      {segments.descriptors.map((segment) => (
-                        <label key={segment.id} className="flex items-center gap-2 text-sm">
-                          <Switch
-                            checked={settings.segmentIds?.includes(segment.id) || false}
-                            aria-label={textOf(segment.label)}
-                            onChange={(e) =>
-                              set({
-                                segmentIds: e.currentTarget.checked
-                                  ? [...(settings.segmentIds ?? []), segment.id]
-                                  : (settings.segmentIds ?? []).filter((id) => id !== segment.id),
-                              })
-                            }
-                          />
-                          {t("{name} · {minutes} min", {
-                            name: textOf(segment.label),
-                            minutes: (segment.meta?.duration ?? 0) / 60,
-                          })}
-                          <span className="text-xs text-fg-muted">{segment.group}</span>
-                        </label>
-                      ))}
-                    </div>
-                  }
-                />
-                {channel.rating || channel.filter?.maxContentRating ? (
-                  <SettingsRow
-                    title={
-                      <span className="flex items-center gap-2">
-                        {t("Allow unrated plugin segments")}
-                        <InfoTip
-                          text={t(
-                            "Plugin segments have no rating. Off keeps them off this channel because it has a rating limit.",
-                          )}
-                        />
-                      </span>
-                    }
-                    control={
-                      <Switch
-                        checked={settings.allowUnratedSegments ?? false}
-                        aria-label={t("Allow unrated plugin segments")}
-                        onChange={(e) => set({ allowUnratedSegments: e.currentTarget.checked })}
-                      />
-                    }
-                  />
-                ) : null}
-              </>
-            ) : null}
-            <BreakPatternEditor
-              value={settings.breakPattern}
-              onChange={(breakPattern) =>
-                set({
-                  breakPattern,
-                  ...(breakPattern ? { breakContent: "reel", placement: "insert" } : {}),
-                })
-              }
-            />
-            {!settings.breakPattern ? (
-              <SettingsRow
-                title={t("Break length")}
-                control={
-                  <Segmented
-                    ariaLabel={t("Break length")}
-                    value={String(settings.breakSeconds || 60)}
-                    onChange={(v) => set({ breakSeconds: Number(v) })}
-                    options={[
-                      { value: "30", label: t("30 s") },
-                      { value: "60", label: t("1 min") },
-                      { value: "120", label: t("2 min") },
-                      { value: "180", label: t("3 min") },
-                    ]}
-                  />
-                }
-              />
-            ) : null}
-          </>
-        ) : null}
-        <SettingsRow
           title={t("Off-air screen")}
           control={
             <Switch
@@ -411,14 +224,6 @@ export function LookTab({
       ) : null}
       <MoreOptions label={t("More options")}>
         <div className="grid gap-4 p-4 sm:grid-cols-3">
-          <Field label={t("Break frequency (minutes)")}>
-            <NumberInput
-              min={0}
-              max={240}
-              value={settings.breakEvery || 0}
-              onChange={(breakEvery) => set({ breakEvery })}
-            />
-          </Field>
           <Field label={t("Tagline")}>
             <Input
               value={settings.tagline || ""}
@@ -435,18 +240,6 @@ export function LookTab({
         </div>
       </MoreOptions>
       <ChannelScreens channel={channel} onChange={onChange} />
-      {reel ? (
-        <ReelDrawer
-          open
-          reelId={reel}
-          onClose={() => setReel(null)}
-          onSaved={(saved) => {
-            set({ reelId: saved.id });
-            void reels.reload();
-            setReel(null);
-          }}
-        />
-      ) : null}
     </div>
   );
 }

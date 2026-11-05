@@ -140,8 +140,13 @@ func (s *Service) setAvailability(ctx context.Context, key int64, available bool
 	now := s.now()
 	exp := now.Add(ttl)
 	s.mu.Lock()
+	previous, known := s.avail[key]
 	boundMap(s.avail, maxAvailEntries, func(e availEntry) bool { return now.After(e.expires) })
 	s.avail[key] = availEntry{available: available, expires: exp, checked: now}
+	if !known || now.After(previous.expires) || previous.available != available {
+		s.availabilityGeneration++
+	}
+	s.trackAvailabilityLocked(key, exp)
 	s.mu.Unlock()
 	if s.db != nil {
 		v := 0
@@ -219,6 +224,7 @@ func (s *Service) getAvailability(ctx context.Context, key int64) (availEntry, b
 			s.mu.Lock()
 			boundMap(s.avail, maxAvailEntries, func(e availEntry) bool { return now.After(e.expires) })
 			s.avail[key] = e
+			s.trackAvailabilityLocked(key, e.expires)
 			s.mu.Unlock()
 			return e, true
 		} else if err != sql.ErrNoRows {

@@ -545,6 +545,7 @@ schedule (wall clock) ─▶ input plan: programme · clip · screen · reel cli
   - **Timeshift:** segments are kept on node-local disk for a DVR window, 30 minutes by default and set per channel under More options. A paused or rewound Plex client resumes within the window.
 - **Lifecycle.**
   - The output starts on a channel's first viewer. The first frame is the channel's ident or screen, served from the ring immediately, while the programme decoder prepares. The first segment is ready within one segment duration (4 s); the target is first frame ≤ 1 s for a channel already running and ≤ 4 s cold.
+  - Cold startup publishes the first completed segment immediately. File-backed inputs make a bounded catch-up burst (at most 20 s) toward a 12 s cushion at the published edge, then retain the lead actually produced. Raw input ahead of the encoder does not count as buffered media. `PROGRAM-DATE-TIME` stays on the schedule clock; faster delivery does not change programme offsets. Live HLS inputs start from the provider's last four segments. A host without enough margin keeps the partial lead and uses the same repeat-picture pressure response while preserving PCM.
   - The output stops after a **60 s idle grace** once the last viewer leaves.
   - `maintain()` prewarms releases as today for channels watched in the last 2 h.
 - **Personal channels** are per viewer by nature. Each viewer's personal channel is its own output (its own switcher and encoder, one rendition), driven by that viewer's rundown (§4.7).
@@ -1152,3 +1153,60 @@ Console integration components: `BreakPatternEditor` in channel Look › Breaks,
 inspector's selected moment (props `look`, `moment`, `onChange`). All changes use
 the owning drawer/page save bar except import actions, which queue immediately
 like uploads.
+
+### Appendix A addendum: channel programming (W22)
+
+`Channel.blocks` is the weekly daypart calendar. Blocks add `id`, `preset`
+(`morning`, `daytime`, `prime`, `late`, `overnight`, `custom`) and optional
+`breaks` (a `ChannelLook` override). Saved start/end minutes are authoritative;
+presets supply editable defaults. All days use the channel timezone, Sunday=0.
+
+`ProgramSource` adds `id`, `kind` (`items`, `show`, `movies`, `collection`,
+`filter`, `personal`, `plugin`, `mix`), `showKey`, `startSeason`, `startEpisode`,
+`order` (`order`, `shuffle`), `strip`, `startDate`, `segmentId`, `personal` (PersonalRecipe),
+and recursive `sources`. `items` is the saved expanded snapshot. Sources retain
+their own episode ordering; channel-level marathon/shuffle cannot override it.
+Weights apply across every source kind, independent of pool size. A strip
+continues episodes on eligible days, skipping other days. Its saved `startDate`
+is initialized when authored, so an old channel epoch cannot skip the requested
+first episode; an absent start date uses the channel epoch. A single strip aligns
+to half-hour boundaries and pads the rest of its slot.
+
+`Channel.pins` contains `{id,name,start,end,days,date?,sources,items,mode,
+repeatDays,breaks?}`. A `date` in `YYYY-MM-DD` creates a special; absent dates
+create recurring appointments. Specials outrank recurring pins, which outrank
+blocks. A pin can preempt an overrunning programme. `fit` is `cut`, `pad` (fill
+the remainder instead of starting an item that cannot fit), or `shift` (finish
+the programme and move subsequent programming, until a pin or midnight).
+
+Channel breaks and creative scheduling remain in `Channel.look`, exposed in
+Programming. `breakPlacement` adds `natural`, `even`, `between`; `tonight` is an
+optional boolean (absent retains existing evening-promo behavior). Each block
+or pin can supply its own complete `breaks` override. `Item.breakPoints` adds
+`{atMs,source,confidence?}` alongside `breakPointsMs`. Natural placement consumes
+saved chapter/detection offsets; evenly spaced placement calculates media offsets.
+
+The `livetv/11` store migration preserves existing resolved `items`, seed,
+epoch, playout rules and times, assigns stable block IDs, and freezes old source
+queries into their already-saved item snapshot. New source declarations use
+individual materialized snapshots. There is one calendar scheduler.
+
+`GET /livetv/channels/{id}/timeline?from=<unixMs>&to=<unixMs>&viewer=<id?>`
+reads W19's background playback snapshot, never expands a schedule on request.
+Cold/stale snapshots return 503 and `Retry-After: 2`; ranges are at most 8 days.
+`elements` cover the range without overlap, including off-air gaps. Pod parents
+contain `children` with absolute times and the same element schema. Programme
+provenance is `blockId`, `sourceId`, `pinned`, `rule`; those fields are additive
+and do not change Plex programme identity. The client timeline uses the playback
+view so individual pod spots remain inspectable; the public guide folds pods
+into programme slots.
+
+`Channel.look.momentAssets` maps `ident`, `upnext`, `tonight`, `break`, and
+`back` to ready video asset digests. It overrides those moments on this channel
+without modifying the shared style. Without a style, an explicit asset uses an
+8-second slot. `core.ClipRequest` adds optional `AssetDigest` and `AssetDuration`
+for background conversion; their zero values preserve existing master hashes.
+Asset usage and deletion checks include channel references. Break overrides
+inherit the channel's creative identity and can change commercial policy/reel.
+`BreakPattern.bumperStyle` also accepts `none` to turn return/break bumpers off.
+No `internal/config` fields were added.

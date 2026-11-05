@@ -610,6 +610,7 @@ func (s *Service) Forget(ctx context.Context, t *core.Title) error {
 
 func (s *Service) forgetAvailability(ctx context.Context, key core.RatingKey) error {
 	s.mu.Lock()
+	s.forgetAvailabilityEpochLocked(int64(key))
 	delete(s.avail, int64(key))
 	s.mu.Unlock()
 	if s.db != nil {

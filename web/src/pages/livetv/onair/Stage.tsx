@@ -1,3 +1,4 @@
+import { useCanvasResolution } from "./useCanvasResolution";
 import { useAssetAudio } from "./useAssetAudio";
 import { useEffect, useRef, useState } from "react";
 import { Button, cn } from "@braedonsaunders/appkit-ui";
@@ -23,6 +24,7 @@ export function LookTile({
   playOnHover?: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const resolution = useCanvasResolution(ref);
   const [hover, setHover] = useState(false);
   useEffect(() => {
     const c = ref.current;
@@ -59,7 +61,7 @@ export function LookTile({
       mounted = false;
       cancelAnimationFrame(frame);
     };
-  }, [look, moment, hover, channel, bindings]);
+  }, [look, moment, hover, channel, bindings, resolution]);
   const begin = () => {
     if (playOnHover && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
       activeTile = ref.current;
@@ -106,6 +108,7 @@ export function LookStage({
   compact?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const resolution = useCanvasResolution(canvas);
   const [selected, setSelected] = useState(moment);
   const video = useRef<HTMLVideoElement>(null);
   const authoredVideoSource = useAssetAudio(look.moments[selected]?.assetDigest ?? "");
@@ -203,7 +206,20 @@ export function LookStage({
       const ctx = canvas.current?.getContext("2d");
       if (ctx) releaseRenderer(ctx);
     };
-  }, [look, selected, bindings, playing, slow, loop, safe, corner, duration, at, viewer]);
+  }, [
+    look,
+    selected,
+    bindings,
+    playing,
+    slow,
+    loop,
+    safe,
+    corner,
+    duration,
+    at,
+    viewer,
+    resolution,
+  ]);
   useEffect(() => {
     const v = video.current;
     if (!v) return;

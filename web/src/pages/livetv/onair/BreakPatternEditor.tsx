@@ -3,7 +3,7 @@ import { SettingsRow } from "../../../components/SettingsRow";
 import { t } from "../../../i18n";
 import type { BreakPattern } from "./model";
 
-const preset = (era: string): BreakPattern => ({
+export const breakPatternPreset = (era: string): BreakPattern => ({
   preset: era,
   seconds: era === "1980s" ? 120 : era === "1990s" ? 150 : era === "2000s" ? 180 : 210,
   minSeconds: 60,
@@ -38,9 +38,9 @@ export function BreakPatternEditor({
             onChange={(e) =>
               onChange(
                 e.currentTarget.value === "custom"
-                  ? { ...(value || preset("1990s")), preset: "custom" }
+                  ? { ...(value || breakPatternPreset("1990s")), preset: "custom" }
                   : e.currentTarget.value
-                    ? preset(e.currentTarget.value)
+                    ? breakPatternPreset(e.currentTarget.value)
                     : undefined,
               )
             }
@@ -82,16 +82,6 @@ export function BreakPatternEditor({
               </label>
             ))}
           </div>
-          <SettingsRow
-            title={t("Inside programmes")}
-            control={
-              <Switch
-                aria-label={t("Inside programmes")}
-                checked={value.inside}
-                onChange={(e) => update({ inside: e.currentTarget.checked })}
-              />
-            }
-          />
           <SettingsRow
             title={t("Station ID")}
             control={

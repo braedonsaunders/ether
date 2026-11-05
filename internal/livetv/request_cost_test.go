@@ -41,9 +41,11 @@ func TestBroadcastRequestCost(t *testing.T) {
 				seg := transcode.Segment{PolicyTags: []any{tag}, Seq: 0, Start: now.Add(-12 * time.Second), Duration: 12 * time.Second}
 				idx := costIndex{seg: seg}
 				enc := &costEncoder{index: idx}
-				b := &broadcast{renditions: map[string]*broadcastRendition{"cost": {encoder: enc}}}
+				originDone := make(chan struct{})
+				close(originDone)
+				b := &broadcast{renditions: map[string]*broadcastRendition{"cost": {encoder: enc, originDone: originDone, origin: seg.Start}}}
 				ss.broadcast = &broadcastLease{broadcast: b, rendition: "cost"}
-				for _, kind := range []string{"playlist", "segment", "dash segment"} {
+				for _, kind := range []string{"playlist", "segment", "dash playlist", "dash segment", "matroska boundary"} {
 					ctx, stats := store.WithQueryStats(context.Background())
 					start := time.Now()
 					got, err := s.getSession(ctx, "cost", &u)
@@ -54,6 +56,14 @@ func TestBroadcastRequestCost(t *testing.T) {
 					w := httptest.NewRecorder()
 					if kind == "playlist" {
 						s.serveBroadcastPlaylist(w, r, got)
+					} else if kind == "dash playlist" {
+						if err := s.serveBroadcastDASH(w, r, got); err != nil {
+							t.Fatal(err)
+						}
+					} else if kind == "matroska boundary" {
+						if !s.broadcastSegmentAllowed(ctx, got, seg) {
+							t.Fatal("Matroska segment denied")
+						}
 					} else if kind == "dash segment" {
 						s.serveBroadcastDASHPart(w, r, got, 0, 0, false)
 					} else {

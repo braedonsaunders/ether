@@ -28,8 +28,10 @@ import (
 )
 
 type Options struct {
-	StyleChannels  func(context.Context) (map[string][]string, error)
-	ReelChannels   func(context.Context) (map[string][]string, error)
+	StyleChannels func(context.Context) (map[string][]string, error)
+	ReelChannels  func(context.Context) (map[string][]string, error)
+	// Changed runs after an owner style save has committed and locks are released.
+	Changed        func(context.Context) error
 	PluginSegment  func(string) (PluginSegment, bool)
 	StaticRequests func(context.Context, string) []core.ClipRequest
 	DB             *sql.DB
@@ -189,7 +191,7 @@ func (s *Service) plan(r core.ClipRequest) (renderJob, bool) {
 	s.mu.Lock()
 	l, ok := s.looks[r.LookID]
 	s.mu.Unlock()
-	if isPlugin && r.LookID == "" {
+	if (isPlugin || r.AssetDigest != "") && r.LookID == "" {
 		l = familyLook("clean", "Clean")
 		ok = true
 	}
@@ -234,6 +236,13 @@ func (s *Service) plan(r core.ClipRequest) (renderJob, bool) {
 	}
 	if isPlugin {
 		d.Duration = plugin.Document.Duration
+	}
+	assetDigest := l.Moments[r.Moment].AssetDigest
+	if r.AssetDigest != "" {
+		assetDigest = r.AssetDigest
+		if r.AssetDuration > 0 {
+			d.Duration = r.AssetDuration.Seconds()
+		}
 	}
 	b := families.Defaults(f)
 	for k := range b.Slots {
@@ -315,11 +324,11 @@ func (s *Service) plan(r core.ClipRequest) (renderJob, bool) {
 		Brand       Brand
 		AssetDigest string
 		Layers      map[string]map[string]any
-	}{l.Brand, l.Moments[r.Moment].AssetDigest, l.Layers}, struct {
+	}{l.Brand, assetDigest, l.Layers}, struct {
 		Bindings scene.Bindings
 		Request  core.ClipRequest
 	}{b, r}, r.Art, encode.Profile)
-	return renderJob{AssetDigest: l.Moments[r.Moment].AssetDigest, Hash: h, Look: l.ID, Doc: d, Bind: raster.Bindings{Bindings: b, Assets: plugin.Images}, Request: r}, h != ""
+	return renderJob{AssetDigest: assetDigest, Hash: h, Look: l.ID, Doc: d, Bind: raster.Bindings{Bindings: b, Assets: plugin.Images}, Request: r}, h != ""
 }
 func (s *Service) Clip(_ context.Context, r core.ClipRequest) (core.ClipRef, bool) {
 	j, ok := s.plan(r)
@@ -527,6 +536,7 @@ func (s *Service) execute(j renderJob) (err error) {
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Minute)
 	defer cancel()
+	started := time.Now()
 	if s.o.Acquire != nil {
 		jobCtx, release, e := s.o.Acquire(ctx)
 		if e != nil {
@@ -543,7 +553,6 @@ func (s *Service) execute(j renderJob) (err error) {
 	if j.convert != nil {
 		return j.convert(ctx)
 	}
-	started := time.Now()
 	defer func() {
 		elapsed := time.Since(started)
 		s.mu.Lock()
@@ -554,7 +563,7 @@ func (s *Service) execute(j renderJob) (err error) {
 		previous := s.renderTimes[key]
 		s.renderTimes[key] = max(elapsed, (previous*3+elapsed)/4)
 		s.mu.Unlock()
-		s.o.Logger.Debug("onair master rendered", "look", j.Look, "moment", j.Doc.Moment, "duration", elapsed, "cached", err == nil)
+		s.o.Logger.Debug("onair master rendered", "look", j.Look, "moment", j.Doc.Moment, "duration", elapsed, "success", err == nil)
 	}()
 	if e := s.loadAssets(ctx, &j); e != nil {
 		return e

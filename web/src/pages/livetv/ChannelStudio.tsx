@@ -1,43 +1,29 @@
 import { programmeArtwork } from "./model";
+import { ProgrammingEditor } from "./ProgrammingEditor";
 import { styleCopy } from "./onair/naming";
 import { rundownPreview } from "./onair/rundown";
-import { ClockRows } from "./onair/ClockRows";
 import { LookTab } from "./onair/LookTab";
 import { RecipeTab } from "./onair/RecipeTab";
 import { apiFetch } from "../../lib/api";
 import { SubtabNav } from "../../components/layout";
+import { Avatar, Badge, Button, Input, Switch, cn } from "@braedonsaunders/appkit-ui";
 import {
-  Avatar,
-  Badge,
-  Button,
-  Input,
-  SearchSelect,
-  Select,
-  Switch,
-  cn,
-} from "@braedonsaunders/appkit-ui";
-import {
-  Clapperboard,
-  Film,
   KeyRound,
-  Layers,
   Play,
   Plus,
   Radio,
   Sparkles,
   Square,
   Star,
-  Tags,
   Trash2,
   Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Artwork } from "../../components/Artwork";
-import { MoreOptions } from "../../components/ConfigSection";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { DragHandle, SortableList } from "../../components/Sortable";
-import { Field, Segmented } from "../../components/fields";
+import { Field } from "../../components/fields";
 import { errorMessage, isAbort } from "../../lib/api";
 import type { CollectionSpec } from "../../lib/contract";
 import type { EtherUser } from "../../lib/types";
@@ -47,27 +33,18 @@ import { useDebouncedValue } from "../../lib/hooks";
 import { ChannelLogo } from "./ChannelLogo";
 import { MapGuideButton } from "./GuideData";
 import { LivePreview } from "./LivePreview";
-import { ProgrammePicker } from "./ProgrammePicker";
-import { Timeline } from "./Timeline";
-import { WeekGrid } from "./WeekGrid";
+import { ScheduleTimeline, type TimelineElement } from "./ScheduleTimeline";
+import { Drawer } from "../../components/Drawer";
 import {
   MINUTE,
-  blockLabel,
   clock,
   duration,
   hueOf,
-  localBlockTime,
-  minutesOfDay,
   onNow,
-  playoutPatch,
-  playoutValue,
   programmingMode,
   progress,
-  timeOfDay,
-  timeZones,
   tv,
   upNext,
-  type Block,
   policyPermits,
   type Channel,
   type ChannelSummary,
@@ -102,17 +79,17 @@ export function studioDraft(c: Channel): StudioDraft {
 export function compose(d: StudioDraft): Channel {
   const c = d.channel;
   if (c.kind === "virtual") {
-    if (d.mode === "collection" && !c.collection)
-      throw new Error(t("Choose a collection for this channel."));
     if (
-      d.mode === "genre" &&
-      !d.genre.trim() &&
-      !Object.keys(c.filter || {}).some((key) => key !== "genres" && key !== "type")
+      !c.personal &&
+      !c.blocks?.length &&
+      !c.pins?.length &&
+      !c.sources?.length &&
+      !c.items.length &&
+      !c.collection &&
+      !c.filter &&
+      !c.offAir &&
+      !c.fallback?.length
     )
-      throw new Error(t("Enter at least one genre for this channel."));
-    if (!c.personal && d.mode === "movies" && !c.items.length && !c.offAir && !c.fallback?.length)
-      throw new Error(t("Add at least one movie to this channel."));
-    if (d.mode === "mix" && !c.sources?.length)
       throw new Error(t("Add at least one programming source."));
     const blocks = [...(c.blocks ?? [])].sort((a, b) => a.start - b.start);
     for (let i = 0; i < blocks.length; i++) {
@@ -139,24 +116,7 @@ export function compose(d: StudioDraft): Channel {
       if (!c.personal && !block.items.length && !sourced && !c.offAir && !c.fallback?.length)
         throw new Error(t("Add at least one movie to each time block, or remove the empty block."));
     }
-    return {
-      ...c,
-      items: c.items,
-      blocks: c.blocks ?? [],
-      sources: d.mode === "mix" ? c.sources : undefined,
-      collection: d.mode === "collection" ? c.collection : undefined,
-      filter:
-        d.mode === "genre"
-          ? {
-              ...c.filter,
-              type: c.filter?.type === "show" ? "show" : "movie",
-              genres: d.genre
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            }
-          : undefined,
-    };
+    return { ...c, blocks: c.blocks ?? [] };
   }
   return c;
 }
@@ -201,6 +161,10 @@ export function ChannelStudio({
   const virtual = c.kind === "virtual";
   const [tab, setTab] = useState(virtual ? "programming" : "stream");
   const [watching, setWatching] = useState(false);
+  const [selectedElement, setSelectedElement] = useState<TimelineElement | null>(null);
+  const [editRequest, setEditRequest] = useState<
+    { start?: number; blockId?: string; pinId?: string } | undefined
+  >();
   const [horizon, setHorizon] = useState<1 | 7>(1);
   // Another channel (or a new one becoming saved) starts on its first tab with
   // the player stopped. Adjusted during render, not in an effect: an effect
@@ -490,16 +454,58 @@ export function ChannelStudio({
               ))}
             </div>
           ) : null}
-          <Timeline
-            programmes={schedule}
-            from={windowFrom}
-            until={windowUntil}
-            now={now}
-            label={c.name ? t("{name} schedule", { name: c.name }) : t("Channel schedule")}
+          <ScheduleTimeline
+            channelId={c.id || "draft"}
+            range={{ from: windowFrom, to: windowUntil }}
+            selectedId={selectedElement?.id}
+            onSelect={setSelectedElement}
+            onAdd={({ start, blockId }) => {
+              setEditRequest({ start, blockId });
+              setTab("programming");
+            }}
           />
         </div>
       </section>
 
+      {selectedElement && (
+        <Drawer
+          open
+          onClose={() => setSelectedElement(null)}
+          title={selectedElement.title || t("Programme")}
+          size="md"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-fg-muted">{selectedElement.subtitle}</p>
+            <Field label={t("Start time")}>
+              <p>{clock(new Date(selectedElement.start))}</p>
+            </Field>
+            <Field label={t("End time")}>
+              <p>{clock(new Date(selectedElement.end))}</p>
+            </Field>
+            <Field label={t("Rule")}>
+              <p className="text-sm">{selectedElement.rule}</p>
+            </Field>
+            {selectedElement.pinned && <Badge>{t("Pinned")}</Badge>}
+            {selectedElement.breakPoints?.length ? (
+              <Badge>
+                {tn(
+                  selectedElement.breakPoints.length,
+                  "{count} detected break point",
+                  "{count} detected break points",
+                )}
+              </Badge>
+            ) : null}
+            <Button
+              onClick={() => {
+                setSelectedElement(null);
+                setTab("programming");
+              }}
+            >
+              {t("Edit programming")}
+            </Button>
+          </div>
+        </Drawer>
+      )}
       <div className="sticky top-0 z-20 border-b border-border bg-bg/95 px-4 backdrop-blur sm:px-6">
         <SubtabNav ariaLabel={t("Channel settings")} active={tab} onSelect={setTab} tabs={tabs} />
       </div>
@@ -514,10 +520,18 @@ export function ChannelStudio({
               collections={collections}
             />
           ) : (
-            <Programming draft={draft} onChange={onChange} collections={collections} />
+            <ProgrammingEditor
+              channel={c}
+              onChange={set}
+              collections={collections}
+              editRequest={editRequest}
+              onEditHandled={() => setEditRequest(undefined)}
+            />
           )
         ) : null}
-        {tab === "schedule" && virtual ? <Schedule channel={c} onChange={set} /> : null}
+        {tab === "schedule" && virtual ? (
+          <ProgrammingEditor channel={c} onChange={set} collections={collections} schedule />
+        ) : null}
         {tab === "stream" && !virtual ? (
           <section className="max-w-2xl space-y-4">
             <StreamSources channel={c} sources={sources} onChange={set} />
@@ -911,697 +925,6 @@ function SourceHealth({ status }: { status?: SourceStatus }) {
     >
       {h.label}
     </span>
-  );
-}
-
-function Programming({
-  draft,
-  onChange,
-  collections,
-}: {
-  draft: StudioDraft;
-  onChange: (d: StudioDraft) => void;
-  collections: CollectionChoice[];
-}) {
-  const c = draft.channel;
-  const set = (patch: Partial<Channel>) => onChange({ ...draft, channel: { ...c, ...patch } });
-  const modes: { value: Mode; label: string; hint: string; icon: React.ReactNode }[] = [
-    {
-      value: "movies",
-      label: t("Hand-picked"),
-      hint: t("Choose the movies and their order"),
-      icon: <Film size={18} />,
-    },
-    {
-      value: "collection",
-      label: t("Collection"),
-      hint: t("Play a collection; shows expand into episodes"),
-      icon: <Layers size={18} />,
-    },
-    {
-      value: "genre",
-      label: t("Smart filter"),
-      hint: t("Genre, decade, rating, studio, keyword, runtime"),
-      icon: <Tags size={18} />,
-    },
-    {
-      value: "mix",
-      label: t("Mix"),
-      hint: t("Blend several sources by weight"),
-      icon: <Sparkles size={18} />,
-    },
-  ];
-  const known = collections.filter((x) => x.ratingKey);
-  const collectionValue = c.collection ? String(c.collection) : "";
-  return (
-    <div className="space-y-5">
-      <div
-        role="radiogroup"
-        aria-label={t("Programming source")}
-        className="grid gap-2 @md:grid-cols-2 @5xl:grid-cols-4"
-      >
-        {modes.map((m) => {
-          const on = draft.mode === m.value;
-          return (
-            <button
-              key={m.value}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => onChange({ ...draft, mode: m.value })}
-              className={cn(
-                "flex items-start gap-3 rounded-xl border p-3 text-left transition-all",
-                on
-                  ? "border-primary/50 bg-primary-subtle ring-1 ring-primary/30"
-                  : "border-border bg-surface hover:border-border-strong",
-              )}
-            >
-              <span className={cn("mt-0.5", on ? "text-primary" : "text-fg-muted")}>{m.icon}</span>
-              <span>
-                <span
-                  className={cn("block text-sm font-semibold", on ? "text-primary" : "text-fg")}
-                >
-                  {m.label}
-                </span>
-                <span className="block text-xs text-fg-muted">{m.hint}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {draft.mode === "movies" ? (
-        <ProgrammePicker
-          label={t("Base programming")}
-          items={c.items}
-          onChange={(items) => set({ items })}
-        />
-      ) : null}
-
-      {draft.mode === "collection" ? (
-        <Field
-          label={t("Collection")}
-          hint={t("Manage collections in Collection Studio. Shows expand into episodes.")}
-        >
-          <SearchSelect
-            ariaLabel={t("Collection")}
-            value={collectionValue}
-            onChange={(v) => set({ collection: v ? Number(v) : undefined })}
-            placeholder={t("Choose a collection")}
-            searchPlaceholder={t("Search…")}
-            noneLabel={t("None")}
-            noMatchesLabel={t("No matches")}
-            searchingLabel={t("Searching…")}
-            selectLabel={t("Select")}
-            closeLabel={t("Close")}
-            options={[
-              ...known.map((x) => ({
-                value: String(x.ratingKey),
-                label:
-                  x.itemCount !== undefined
-                    ? tn(x.itemCount, "{name} · {count} title", "{name} · {count} titles", {
-                        name: x.name,
-                      })
-                    : x.name,
-              })),
-              ...(collectionValue && !known.some((x) => x.ratingKey === collectionValue)
-                ? [{ value: collectionValue, label: t("Previously selected collection") }]
-                : []),
-            ]}
-          />
-        </Field>
-      ) : null}
-
-      {draft.mode === "genre" ? (
-        <div className="grid gap-4 sm:grid-cols-[auto_1fr]">
-          <Field label={t("Catalogue")}>
-            <Segmented
-              ariaLabel={t("Catalogue type")}
-              value={c.filter?.type === "show" ? "show" : "movie"}
-              onChange={(v) => set({ filter: { ...c.filter, type: v } })}
-              options={[
-                { value: "movie", label: t("Movies"), icon: <Clapperboard size={13} /> },
-                { value: "show", label: t("TV shows") },
-              ]}
-            />
-          </Field>
-          <Field
-            label={t("Genres")}
-            htmlFor="ch-genres"
-            hint={t("Separate with commas. Template year and rating limits are kept.")}
-          >
-            <Input
-              id="ch-genres"
-              value={draft.genre}
-              onChange={(e) => onChange({ ...draft, genre: e.currentTarget.value })}
-              placeholder={t("Action, Adventure")}
-            />
-          </Field>
-          <FilterChips filter={c.filter} />
-          <SmartFilter
-            filter={c.filter}
-            onChange={(filter) => set({ filter: { ...c.filter, ...filter } })}
-          />
-        </div>
-      ) : null}
-
-      {draft.mode === "mix" ? (
-        <MixEditor
-          sources={c.sources ?? []}
-          collections={known}
-          onChange={(sources) => set({ sources })}
-        />
-      ) : null}
-
-      {draft.mode !== "movies" ? (
-        <p className="rounded-lg bg-bg-subtle px-3 py-2 text-xs text-fg-muted">
-          {t(
-            "Saving takes a snapshot of the catalogue for a stable schedule. Save again later to pick up new titles.",
-          )}
-        </p>
-      ) : null}
-      <Field
-        label={t("Watched by the household")}
-        hint={t("Limit this channel to titles the household has or hasn't finished.")}
-      >
-        <Select
-          aria-label={t("Watched by the household")}
-          value={c.watched || ""}
-          onChange={(e) =>
-            set({ watched: (e.currentTarget.value || undefined) as Channel["watched"] })
-          }
-        >
-          <option value="">{t("Watched or not")}</option>
-          <option value="unwatched">{t("Unwatched")}</option>
-          <option value="watched">{t("Already watched")}</option>
-        </Select>
-      </Field>
-      <PlayoutFields
-        mode={c.mode}
-        shuffle={c.shuffle}
-        align={c.align}
-        fit={c.fit}
-        repeatDays={c.repeatDays}
-        onChange={set}
-      />
-      <section className="space-y-3 rounded-xl border border-border bg-surface p-4">
-        <div>
-          <h3 className="text-sm font-semibold text-fg">{t("When programming runs out")}</h3>
-          <p className="text-xs text-fg-muted">
-            {t("What viewers see if a block or the catalogue has nothing left to play.")}
-          </p>
-        </div>
-        <label className="flex items-center gap-3 text-sm">
-          <Switch
-            checked={!!c.offAir}
-            onChange={(e) => set({ offAir: e.currentTarget.checked })}
-            aria-label={t("Go off air")}
-          />
-          <span>
-            <span className="font-medium text-fg">{t("Go off air")}</span>
-            <span className="ml-2 text-xs text-fg-muted">
-              {t("The guide shows Off air until something is scheduled.")}
-            </span>
-          </span>
-        </label>
-        <ProgrammePicker
-          label={t("Fallback programming")}
-          searchLabel={t("Search fallback titles")}
-          items={c.fallback ?? []}
-          onChange={(fallback) => set({ fallback })}
-        />
-      </section>
-    </div>
-  );
-}
-
-function PlayoutFields({
-  mode,
-  shuffle,
-  align,
-  fit,
-  repeatDays,
-  onChange,
-}: {
-  mode?: string;
-  shuffle: boolean;
-  align?: string;
-  fit?: string;
-  repeatDays?: number;
-  onChange: (patch: Partial<Channel>) => void;
-}) {
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <Field
-        label={t("Playout")}
-        hint={t("Episodes of a show stay in order. The guide does not jump.")}
-      >
-        <Select
-          aria-label={t("Playout")}
-          value={playoutValue(mode, shuffle)}
-          onChange={(e) => onChange(playoutPatch(e.currentTarget.value))}
-        >
-          <option value="order">{t("In order")}</option>
-          <option value="shuffle">{t("Shuffle")}</option>
-          <option value="random">{t("Random")}</option>
-          <option value="marathon">{t("Marathon")}</option>
-          <option value="newest">{t("Newest first")}</option>
-        </Select>
-      </Field>
-      <Field
-        label={t("Start programmes")}
-        hint={t("Snap the next start to the clock, then cut or fill the gap.")}
-      >
-        <Select
-          aria-label={t("Start programmes")}
-          value={align || ""}
-          onChange={(e) =>
-            onChange({ align: (e.currentTarget.value || undefined) as Channel["align"] })
-          }
-        >
-          <option value="">{t("Back to back")}</option>
-          <option value="half">{t("On the half hour")}</option>
-          <option value="hour">{t("On the hour")}</option>
-        </Select>
-      </Field>
-      <Field
-        label={t("If a programme overruns")}
-        hint={t("Cut ends it at the next slot. Pad plays it out and fills to the next slot.")}
-      >
-        <Select
-          aria-label={t("If a programme overruns")}
-          value={fit || "cut"}
-          onChange={(e) => onChange({ fit: e.currentTarget.value === "pad" ? "pad" : undefined })}
-        >
-          <option value="cut">{t("Cut")}</option>
-          <option value="pad">{t("Pad")}</option>
-        </Select>
-      </Field>
-      <Field
-        label={t("Avoid repeats")}
-        htmlFor="repeat-days"
-        hint={t("Skip a title that aired inside this many days. 0 allows the loop to repeat.")}
-      >
-        <Input
-          id="repeat-days"
-          type="number"
-          min={0}
-          max={30}
-          value={repeatDays ?? 0}
-          onChange={(e) =>
-            onChange({
-              repeatDays:
-                Math.max(0, Math.min(30, Number(e.currentTarget.value) || 0)) || undefined,
-            })
-          }
-        />
-      </Field>
-    </div>
-  );
-}
-
-function SmartFilter({
-  filter,
-  onChange,
-}: {
-  filter?: Record<string, unknown>;
-  onChange: (patch: Record<string, unknown>) => void;
-}) {
-  const decade = typeof filter?.yearFrom === "number" ? String(filter.yearFrom) : "";
-  const keywords = Array.isArray(filter?.keywords) ? (filter.keywords as string[]).join(", ") : "";
-  const minutes = (value: unknown) => {
-    const n = Number(value);
-    if (!n) return "";
-    return String(n > 10_000 ? Math.round(n / 60_000_000_000) : n);
-  };
-  return (
-    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
-      <Field label={t("Decade")}>
-        <Select
-          aria-label={t("Decade")}
-          value={decade}
-          onChange={(e) => {
-            const year = Number(e.currentTarget.value);
-            onChange(
-              year
-                ? { yearFrom: year, yearTo: year + 9 }
-                : { yearFrom: undefined, yearTo: undefined },
-            );
-          }}
-        >
-          <option value="">{t("Any decade")}</option>
-          {[2020, 2010, 2000, 1990, 1980, 1970, 1960].map((year) => (
-            <option key={year} value={year}>
-              {t("{year}s", { year })}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label={t("Age level")} hint={t("Nothing more mature than this rating.")}>
-        <Select
-          aria-label={t("Age level")}
-          value={String(filter?.maxContentRating ?? "")}
-          onChange={(e) => onChange({ maxContentRating: e.currentTarget.value || undefined })}
-        >
-          <option value="">{t("Any age")}</option>
-          <option value="G">{t("All ages")}</option>
-          <option value="PG">{t("Parental guidance")}</option>
-          <option value="PG-13">{t("Teen")}</option>
-          <option value="R">{t("Mature")}</option>
-        </Select>
-      </Field>
-      <Field label={t("Studio or network")} htmlFor="smart-studio">
-        <Input
-          id="smart-studio"
-          value={String(filter?.studio ?? "")}
-          onChange={(e) => onChange({ studio: e.currentTarget.value || undefined })}
-          placeholder={t("Studio or network")}
-        />
-      </Field>
-      <Field
-        label={t("Keyword")}
-        htmlFor="smart-keyword"
-        hint={t("Separate with commas. A title must match every keyword.")}
-      >
-        <Input
-          id="smart-keyword"
-          value={keywords}
-          onChange={(e) =>
-            onChange({
-              keywords: e.currentTarget.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder={t("space, heist")}
-        />
-      </Field>
-      <Field label={t("Shortest")} htmlFor="smart-min" hint={t("Minutes")}>
-        <Input
-          id="smart-min"
-          type="number"
-          min={0}
-          value={minutes(filter?.minRuntime)}
-          onChange={(e) =>
-            onChange({
-              minRuntime: e.currentTarget.value
-                ? Number(e.currentTarget.value) * 60_000_000_000
-                : undefined,
-            })
-          }
-        />
-      </Field>
-      <Field label={t("Longest")} htmlFor="smart-max" hint={t("Minutes")}>
-        <Input
-          id="smart-max"
-          type="number"
-          min={0}
-          value={minutes(filter?.maxRuntime)}
-          onChange={(e) =>
-            onChange({
-              maxRuntime: e.currentTarget.value
-                ? Number(e.currentTarget.value) * 60_000_000_000
-                : undefined,
-            })
-          }
-        />
-      </Field>
-    </div>
-  );
-}
-
-function MixEditor({
-  sources,
-  collections,
-  onChange,
-}: {
-  sources: NonNullable<Channel["sources"]>;
-  collections: CollectionChoice[];
-  onChange: (sources: NonNullable<Channel["sources"]>) => void;
-}) {
-  return (
-    <div className="space-y-3">
-      {sources.map((source, index) => (
-        <div
-          key={index}
-          className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-[6rem_1fr_auto]"
-        >
-          <Field label={t("Weight")}>
-            <Input
-              aria-label={t("Weight for source {number}", { number: index + 1 })}
-              type="number"
-              min={1}
-              max={20}
-              value={source.weight ?? 1}
-              onChange={(e) => {
-                const next = [...sources];
-                next[index] = {
-                  ...source,
-                  weight: Math.max(1, Number(e.currentTarget.value) || 1),
-                };
-                onChange(next);
-              }}
-            />
-          </Field>
-          <Field label={t("Collection")}>
-            <SearchSelect
-              ariaLabel={t("Collection for source {number}", { number: index + 1 })}
-              value={source.collection ? String(source.collection) : ""}
-              onChange={(v) => {
-                const next = [...sources];
-                next[index] = { ...source, collection: v ? Number(v) : undefined };
-                onChange(next);
-              }}
-              placeholder={t("Choose a collection")}
-              searchPlaceholder={t("Search…")}
-              noneLabel={t("None")}
-              noMatchesLabel={t("No matches")}
-              searchingLabel={t("Searching…")}
-              selectLabel={t("Select")}
-              closeLabel={t("Close")}
-              options={collections.map((x) => ({ value: String(x.ratingKey), label: x.name }))}
-            />
-          </Field>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="self-end"
-            aria-label={t("Remove source {number}", { number: index + 1 })}
-            onClick={() => onChange(sources.filter((_, n) => n !== index))}
-          >
-            <X size={14} />
-          </Button>
-        </div>
-      ))}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() =>
-          onChange([
-            ...sources,
-            { weight: 1, name: t("Source {number}", { number: sources.length + 1 }) },
-          ])
-        }
-      >
-        <Plus size={13} /> {t("Add source")}
-      </Button>
-    </div>
-  );
-}
-
-function FilterChips({ filter }: { filter?: Record<string, unknown> }) {
-  if (!filter) return null;
-  const chips: string[] = [];
-  if (filter.yearFrom || filter.yearTo)
-    chips.push(`${filter.yearFrom ?? "…"}–${filter.yearTo ?? "…"}`);
-  if (filter.maxContentRating)
-    chips.push(t("Up to {rating}", { rating: String(filter.maxContentRating) }));
-  if (!chips.length) return null;
-  return (
-    <div className="flex flex-wrap gap-1.5 sm:col-span-2">
-      {chips.map((c) => (
-        <Badge key={c} variant="secondary">
-          {c}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function Schedule({
-  channel: c,
-  onChange,
-}: {
-  channel: Channel;
-  onChange: (p: Partial<Channel>) => void;
-}) {
-  const blocks = c.blocks ?? [];
-  const [selected, setSelected] = useState<number | null>(null);
-  const setBlocks = (b: Block[]) => {
-    onChange({ blocks: b });
-    setSelected((cur) => (cur != null && cur < b.length ? cur : null));
-  };
-  const zone = c.timezone || "";
-  const zones = useMemo(() => {
-    const list = timeZones();
-    const current = zone || "UTC";
-    return list.includes(current) ? list : [current, ...list];
-  }, [zone]);
-  return (
-    <div className="space-y-5">
-      <WeekGrid blocks={blocks} onChange={setBlocks} selected={selected} onSelect={setSelected} />
-      <ClockRows slots={c.clock ?? []} onChange={(clock) => onChange({ clock })} />
-      <MoreOptions label={t("More options")}>
-        <div className="px-4 pb-4">
-          <Field label={t("Timezone")}>
-            <Select
-              aria-label={t("Timezone")}
-              value={zone || "UTC"}
-              onChange={(e) => {
-                const next = e.currentTarget.value;
-                onChange({ timezone: next === "UTC" ? "" : next });
-              }}
-            >
-              {zones.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-      </MoreOptions>
-      {selected == null || !blocks[selected]
-        ? null
-        : (() => {
-            const index = selected;
-            const block = blocks[index]!;
-            const update = (patch: Partial<Block>) =>
-              setBlocks(blocks.map((b, n) => (n === index ? { ...b, ...patch } : b)));
-            return (
-              <section className="space-y-3 rounded-xl border border-border bg-surface p-4">
-                <h3 className="text-sm font-semibold text-fg">{blockLabel(block)}</h3>
-                <div className="flex flex-wrap items-end gap-3">
-                  <span
-                    className="mb-2 size-3 rounded-full"
-                    style={{ background: `hsl(${(index * 67 + 200) % 360} 65% 50%)` }}
-                    aria-hidden
-                  />
-                  <Field
-                    label={zone ? t("Start time") : t("Start (UTC)")}
-                    htmlFor={`blk-${index}-start`}
-                    hint={
-                      zone
-                        ? undefined
-                        : t("{time} your time", { time: localBlockTime(block.start) })
-                    }
-                  >
-                    <Input
-                      id={`blk-${index}-start`}
-                      type="time"
-                      value={timeOfDay(block.start)}
-                      onChange={(e) => update({ start: minutesOfDay(e.currentTarget.value) })}
-                    />
-                  </Field>
-                  <Field
-                    label={zone ? t("End") : t("End (UTC)")}
-                    htmlFor={`blk-${index}-end`}
-                    hint={
-                      zone
-                        ? undefined
-                        : block.end === 1440
-                          ? t("Midnight")
-                          : t("{time} your time", { time: localBlockTime(block.end) })
-                    }
-                  >
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id={`blk-${index}-end`}
-                        aria-label={t("Time block {number} end time", { number: index + 1 })}
-                        type="time"
-                        disabled={block.end === 1440}
-                        value={block.end === 1440 ? "00:00" : timeOfDay(block.end)}
-                        onChange={(e) => update({ end: minutesOfDay(e.currentTarget.value) })}
-                      />
-                      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
-                        <input
-                          type="checkbox"
-                          checked={block.end === 1440}
-                          aria-label={t("Time block {number} runs to midnight", {
-                            number: index + 1,
-                          })}
-                          onChange={(e) =>
-                            update({
-                              end: e.currentTarget.checked
-                                ? 1440
-                                : Math.min(1439, block.start + 60),
-                            })
-                          }
-                        />
-                        {t("To midnight")}
-                      </label>
-                    </div>
-                  </Field>
-                  <label className="mb-2 flex items-center gap-2 text-sm">
-                    <Switch
-                      checked={block.shuffle}
-                      onChange={(e) => update({ shuffle: e.currentTarget.checked })}
-                      aria-label={t("Shuffle block {number}", { number: index + 1 })}
-                    />
-                    {t("Shuffle")}
-                  </label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-1 ml-auto text-fg-subtle hover:text-danger"
-                    aria-label={t("Remove block {number}", { number: index + 1 })}
-                    onClick={() => {
-                      setBlocks(blocks.filter((_, n) => n !== index));
-                      setSelected(null);
-                    }}
-                  >
-                    <X size={14} /> {t("Remove")}
-                  </Button>
-                </div>
-                <Field label={c.personal ? t("Lens name") : t("Name")}>
-                  <Input
-                    aria-label={t("Block name")}
-                    value={block.name || ""}
-                    placeholder={c.personal ? t("Heist night") : t("Name")}
-                    onChange={(e) => update({ name: e.currentTarget.value })}
-                  />
-                </Field>
-                {c.personal ? (
-                  <Field label={t("Lens")}>
-                    <Select
-                      aria-label={t("Lens")}
-                      value={String(block.filter?.genres?.toString() || "")}
-                      onChange={(e) =>
-                        update({
-                          filter: {
-                            ...block.filter,
-                            genres: e.currentTarget.value ? [e.currentTarget.value] : [],
-                          },
-                        })
-                      }
-                    >
-                      <option value="">{t("All their picks")}</option>
-                      <option value="Crime">{t("Picked for them · Crime")}</option>
-                      <option value="Comedy">{t("Comfort rewatches · Comedy")}</option>
-                    </Select>
-                  </Field>
-                ) : (
-                  <ProgrammePicker
-                    label={t("Time block {number} programming", { number: index + 1 })}
-                    items={block.items}
-                    onChange={(items) => update({ items })}
-                  />
-                )}
-              </section>
-            );
-          })()}
-    </div>
   );
 }
 

@@ -48,6 +48,11 @@ func (a *App) buildLiveTV() error {
 		return err
 	}
 	a.livetv = svc
+	a.cfg.Subscribe(func(config.Config) {
+		if err := svc.RefreshGuide(context.Background()); err != nil {
+			a.log.Warn("live guide configuration refresh failed", "error", err)
+		}
+	})
 	a.onair.Start()
 	a.closers = append(a.closers, func() { svc.Close() })
 	return nil

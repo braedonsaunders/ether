@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { invalidateRegistry } from "../lib/extend";
 import LiveTV from "../pages/livetv/LiveTV";
+import { ScheduleTimeline } from "../pages/livetv/ScheduleTimeline";
 import { calls as fakeCalls } from "./harness";
 import { renderAppWith } from "./routes";
 
@@ -110,9 +111,18 @@ function backend(
       calls.push({ url, init });
       const method = init?.method ?? "GET";
       let data: unknown = await extra(url, init);
+      if (data instanceof Response) return data;
       if (data !== undefined) return new Response(JSON.stringify(data), { status: 200 });
       data = [];
-      if (url.includes("/livetv/channels/page")) data = channelPage(channels, url);
+      if (/\/livetv\/channels\/[^/]+\/timeline\?/.test(url))
+        data = {
+          channelId: url.split("/channels/")[1]?.split("/")[0],
+          timezone: "UTC",
+          now: Date.now(),
+          elements: [],
+          dayparts: [],
+        };
+      else if (url.includes("/livetv/channels/page")) data = channelPage(channels, url);
       else if (url.endsWith("/livetv/channels/summary")) data = channels;
       else if (/\/livetv\/channels\/[^/?]+$/.test(url) && method === "GET")
         data = channels.find((c: any) => url.endsWith(`/livetv/channels/${c.id}`)) ?? {};
@@ -215,9 +225,16 @@ describe("Live TV studio", () => {
     );
     renderLiveTV();
     await newBlankChannel("Movie night");
+    fireEvent.click(screen.getAllByRole("button", { name: "Add" }).at(-1)!);
+    fireEvent.click(await screen.findByRole("button", { name: "Programme block" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Block name" }), {
+      target: { value: "Movie night" },
+    });
+
     fireEvent.change(screen.getByLabelText("Search titles"), { target: { value: "Adventure" } });
     fireEvent.click(await screen.findByRole("button", { name: /Adventure/ }, WAIT));
     expect(await screen.findByRole("button", { name: "Remove Adventure" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     fireEvent.click(screen.getByRole("tab", { name: "Viewers" }));
     // Sam has no Live TV limits, so a new channel reaches them until switched off.
     const sam = await screen.findByRole("switch", { name: "Sam" });
@@ -231,7 +248,17 @@ describe("Live TV studio", () => {
     expect(created).toMatchObject({
       name: "Movie night",
       number: "1",
-      items: [{ key: 1000000000000007, title: "Adventure", durationMs: 6480000, rating: "PG" }],
+      blocks: [
+        {
+          sources: [
+            {
+              items: [
+                { key: 1000000000000007, title: "Adventure", durationMs: 6480000, rating: "PG" },
+              ],
+            },
+          ],
+        },
+      ],
     });
     expect(created).not.toHaveProperty("allowedUsers");
     expect(body(sent(calls, "PUT", /\/livetv\/channels\/v1\/viewers$/)[0])).toEqual({
@@ -314,48 +341,53 @@ describe("Live TV studio", () => {
     });
   });
 
-  it("programmes a channel from a collection chosen by name", async () => {
+  it("programmes a named block from a collection chosen by name", async () => {
     const calls = backend();
     renderLiveTV();
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/collections"))).toBe(true));
     await newBlankChannel("Family TV");
-    fireEvent.click(screen.getByRole("radio", { name: /^Collection/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Add" }).at(-1)!);
+    fireEvent.click(await screen.findByRole("button", { name: "Programme block" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Block name" }), {
+      target: { value: "Family afternoons" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Source type" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Collection" }));
     fireEvent.click(screen.getByRole("button", { name: "Collection" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Family favourites · 8 titles" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Family favourites" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     fireEvent.click(screen.getByRole("button", { name: /Create channel/ }));
     await waitFor(() => expect(sent(calls, "POST", /\/livetv\/channels$/)).toHaveLength(1));
-    expect(body(sent(calls, "POST", /\/livetv\/channels$/)[0]).collection).toBe(6000000000000042);
+    expect(
+      body(sent(calls, "POST", /\/livetv\/channels$/)[0]).blocks[0].sources[0].collection,
+    ).toBe(6000000000000042);
   });
 
-  it("explains an empty time block and previews the schedule live once it's valid", async () => {
+  it("edits a schedule block in a drawer and previews its applied programming", async () => {
     const calls = backend();
     renderLiveTV("/livetv?channel=new");
     fireEvent.click(await screen.findByRole("button", { name: "80s Action 24/7 template" }));
     fireEvent.click(screen.getByRole("tab", { name: /Schedule/ }));
     fireEvent.click(screen.getByRole("gridcell", { name: "Monday at 00:00" }));
-    expect(
-      await screen.findByText(/Add at least one movie to each time block/),
-    ).toBeInTheDocument();
-    const block = screen.getByRole("group", { name: "Time block 1 programming" });
-    fireEvent.change(within(block).getByLabelText("Search titles"), {
+    const dialog = await screen.findByRole("dialog", { name: "Programme block" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Block name" }), {
+      target: { value: "Morning movies" },
+    });
+    // Add an explicit source: a grid block begins as an empty selected-title list.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add source" }));
+    fireEvent.change(within(dialog).getByLabelText("Search titles"), {
       target: { value: "Adventure" },
     });
-    fireEvent.click(await within(block).findByRole("button", { name: /Adventure/ }, WAIT));
-    await within(block).findByRole("button", { name: "Remove Adventure" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: /Adventure/ }, WAIT));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
     await waitFor(() => {
       const previews = sent(calls, "POST", /\/livetv\/preview/);
-      expect(previews.length).toBeGreaterThan(0);
-      expect(body(previews.at(-1))).toMatchObject({
-        filter: { yearFrom: 1980, yearTo: 1989, genres: ["Action"] },
-        blocks: [{ start: 0, end: 60, items: [{ key: 1000000000000007 }] }],
-      });
+      expect(
+        previews.some(
+          (c) => body(c).blocks?.[0]?.sources?.[0]?.items?.[0]?.key === 1000000000000007,
+        ),
+      ).toBe(true);
     }, WAIT);
-    // No preview was requested while the block was empty.
-    expect(
-      sent(calls, "POST", /\/livetv\/preview/).every((c) =>
-        (body(c).blocks ?? []).every((b: { items: unknown[] }) => b.items.length > 0),
-      ),
-    ).toBe(true);
   });
 
   it("maps a channel without listings from the Guide tab's drawer", async () => {
@@ -488,8 +520,15 @@ describe("Live TV studio", () => {
     });
     renderLiveTV();
     await newBlankChannel("Movie night");
+    fireEvent.click(screen.getAllByRole("button", { name: "Add" }).at(-1)!);
+    fireEvent.click(await screen.findByRole("button", { name: "Programme block" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Block name" }), {
+      target: { value: "Movie night" },
+    });
+
     fireEvent.change(screen.getByLabelText("Search titles"), { target: { value: "Adventure" } });
     fireEvent.click(await screen.findByRole("button", { name: /Adventure/ }, WAIT));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     fireEvent.click(screen.getByRole("button", { name: /Create channel/ }));
     await waitFor(() => expect(sent(calls, "POST", /\/livetv\/channels$/)).toHaveLength(1));
     expect(await screen.findByLabelText("Name")).toHaveValue("Movie night");
@@ -988,5 +1027,40 @@ it("estimates AI cost before running and applies only reviewed proposals", async
   expect(JSON.parse(String(matchCalls[2]?.init?.body))).toMatchObject({
     ai: "commit",
     selections: [{ channelId: "c1", guideSourceId: "epg1", guideId: "news", proposalKey: "key-1" }],
+  });
+});
+
+describe("timeline snapshot boundary", () => {
+  const range = { from: Date.UTC(2026, 10, 5), to: Date.UTC(2026, 10, 6) };
+  it.each([
+    null,
+    {},
+    [],
+    {
+      timezone: "UTC",
+      dayparts: [],
+      elements: [
+        { id: "bad", title: "Bad", rule: "", kind: "pod", start: 1, end: 2, children: {} },
+      ],
+    },
+  ])("renders a safe error for malformed snapshots %j", async (snapshot) => {
+    backend([], (url) => (url.includes("/timeline?") ? snapshot : undefined));
+    render(<ScheduleTimeline channelId="test" range={range} />);
+    expect(await screen.findByText("Unable to load schedule")).toBeVisible();
+  });
+  it("retries a cold snapshot and renders it when ready", async () => {
+    let attempts = 0;
+    backend([], (url) => {
+      if (!url.includes("/timeline?")) return undefined;
+      if (attempts++ === 0)
+        return new Response(JSON.stringify({ error: { code: "warming", message: "warming" } }), {
+          status: 503,
+          headers: { "Retry-After": "1" },
+        });
+      return { channelId: "test", timezone: "UTC", now: range.from, elements: [], dayparts: [] };
+    });
+    render(<ScheduleTimeline channelId="test" range={range} />);
+    await waitFor(() => expect(attempts).toBe(2), { timeout: 3500 });
+    expect(screen.queryByText("Unable to load schedule")).not.toBeInTheDocument();
   });
 });

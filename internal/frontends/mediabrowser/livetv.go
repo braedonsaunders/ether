@@ -141,11 +141,13 @@ func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if i.host.LiveTV == nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}
 	channels, err := i.host.LiveTV.Channels(r.Context(), viewer)
 	if err != nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -263,6 +265,7 @@ func (i *instance) writeLiveChannelItems(w http.ResponseWriter, r *http.Request,
 	}
 	channels, err := i.host.LiveTV.Channels(r.Context(), viewer)
 	if err != nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -392,6 +395,7 @@ func (i *instance) channel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if i.host.LiveTV == nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -414,6 +418,7 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if i.host.LiveTV == nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -449,6 +454,7 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := i.host.LiveTV.Guide(r.Context(), viewer, q)
 	if err != nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -462,6 +468,7 @@ func (i *instance) recommendedProgrammes(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if i.host.LiveTV == nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -480,6 +487,7 @@ func (i *instance) recommendedProgrammes(w http.ResponseWriter, r *http.Request)
 	}
 	rows, err := i.host.LiveTV.Guide(r.Context(), viewer, q)
 	if err != nil {
+		w.Header().Set("Retry-After", "1")
 		http.Error(w, "Unavailable", 503)
 		return
 	}

@@ -78,6 +78,7 @@ func (s *Service) Prune(ctx context.Context) (int64, error) {
 	// entries; only lastUnavailableChecked peeks at them.
 	for k, e := range s.avail {
 		if now.After(e.expires) && (e.available || now.Sub(e.checked) > s.unavailableRetention()) {
+			s.forgetAvailabilityEpochLocked(k)
 			delete(s.avail, k)
 		}
 	}

@@ -70,33 +70,13 @@ func (s *Service) broadcastWindow(ctx context.Context, ss *session, r *http.Requ
 	return index, segments, nil
 }
 func (s *Service) serveBroadcastPlaylist(w http.ResponseWriter, r *http.Request, ss *session) {
-	index, segments, err := s.broadcastWindow(r.Context(), ss, r)
+	_, segments, err := s.broadcastWindow(r.Context(), ss, r)
 	if err != nil {
 		if errors.Is(err, core.ErrNotAvailable) {
 			w.Header().Set("Retry-After", "1")
 		}
 		writeStreamError(w, err)
 		return
-	}
-	// A cold encoder publishes short opening fragments. Do not start a player
-	// on its first one-second fragment: its buffer would run dry before the
-	// first full GOP is published. Two full GOPs leave a publication margin;
-	// warm joins already have the normal six-segment window.
-	if r.URL.Query().Get("offset") == "" {
-		ctx, cancel := context.WithTimeout(r.Context(), 16*time.Second)
-		defer cancel()
-		for segments[len(segments)-1].Start.Add(segments[len(segments)-1].Duration).Sub(segments[0].Start) < 8*time.Second {
-			if _, err = index.Wait(ctx, segments[len(segments)-1].Seq); err != nil {
-				w.Header().Set("Retry-After", "1")
-				writeStreamError(w, core.ErrNotAvailable)
-				return
-			}
-			_, segments, err = s.broadcastWindow(ctx, ss, r)
-			if err != nil {
-				writeStreamError(w, err)
-				return
-			}
-		}
 	}
 	// TARGETDURATION is a property of the rendition, including its short
 	// startup segments, and must not change as the window advances.

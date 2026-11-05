@@ -1,3 +1,4 @@
+import { scheduleFixture } from "./schedule-timeline";
 import type { ChannelLook } from "../pages/livetv/onair/model";
 /**
  * Live TV for the mock backend: a few virtual channels built from the fake
@@ -522,6 +523,11 @@ export function createLiveTVMock(titles: FakeTitle[], empty = false) {
     const now = Date.now();
     if (route === "GET /usage")
       return { body: { sessions: 0, viewers: 0, watching: [], sources: [] } };
+    if (method === "GET" && seg[1] === "channels" && seg[3] === "timeline") {
+      const from = Number(q.get("from")) || Date.now();
+      const to = Number(q.get("to")) || from + 86400000;
+      return { body: scheduleFixture(seg[2]!, from, to) };
+    }
     if (method === "GET" && seg[1] === "channels" && seg[3] === "rundown") {
       const viewer = Number(q.get("viewer") || 1);
       const picks = slice(viewer + 3, 14);

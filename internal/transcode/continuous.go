@@ -24,6 +24,7 @@ type RawFormat struct {
 // floor((n+1)*SR*FPSDen/FPSNum) - floor(n*SR*FPSDen/FPSNum) samples per channel,
 // so audio never drifts (1600 every tick at 48 kHz / 30 fps).
 type RawFrame struct {
+	OutputTime time.Time // scheduled output-clock time, independent of delivery/burst time
 	// PolicyTags are immutable comparable identities supplied by the planner.
 	// Every identity represented in a segment survives encoder publication.
 	PolicyTags []any

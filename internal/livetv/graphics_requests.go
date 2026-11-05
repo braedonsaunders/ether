@@ -26,7 +26,7 @@ func (s *Service) GraphicsRequests(ctx context.Context, lookID string) []core.Cl
 	}
 	var pending []scheduled
 	for _, c := range cs {
-		if (c.Look == nil && len(c.Clock) == 0) || !c.Enabled {
+		if (c.Look == nil && len(c.Clock) == 0 && len(c.Blocks) == 0 && len(c.Pins) == 0) || !c.Enabled {
 			continue
 		}
 		if lookID != "" {

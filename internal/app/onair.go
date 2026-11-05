@@ -30,6 +30,12 @@ func (a *App) buildOnAir() error {
 		}
 		return a.livetv.ReelChannelIDs(ctx)
 	}
+	o.Changed = func(ctx context.Context) error {
+		if a.livetv != nil {
+			return a.livetv.RefreshGuide(ctx)
+		}
+		return nil
+	}
 	a.pluginContent = onair.NewPluginContentCache()
 	o.PluginSegment = a.pluginContent.Lookup
 	chat := llm.NewClient(llm.ClientOptions{Config: a.cfg.Read().LLM, Logger: a.log.With("component", "onair-llm")})

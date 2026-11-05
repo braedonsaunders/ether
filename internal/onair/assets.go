@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/artwork"
+	"github.com/braedonsaunders/ether/internal/store"
 	"golang.org/x/image/font/opentype"
 	"image"
 	_ "image/gif"
@@ -167,7 +168,17 @@ func (s *Service) Assets(ctx context.Context) ([]Asset, error) {
 	return s.importAssets(ctx, out)
 }
 func (s *Service) assetUsage(ctx context.Context, d string) ([]string, error) {
-	rows, e := s.db.QueryContext(ctx, `SELECT id FROM onair_looks WHERE data LIKE ? UNION SELECT id FROM onair_families WHERE data LIKE ? UNION SELECT reel_id FROM onair_reel_clips WHERE source_digest=?`, "%"+d+"%", "%"+d+"%", d)
+	query := `SELECT id FROM onair_looks WHERE data LIKE ? UNION SELECT id FROM onair_families WHERE data LIKE ? UNION SELECT reel_id FROM onair_reel_clips WHERE source_digest=?`
+	args := []any{"%" + d + "%", "%" + d + "%", d}
+	channels, err := s.hasChannelAssets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if channels {
+		query += ` UNION SELECT id FROM livetv_channels WHERE data LIKE ?`
+		args = append(args, "%"+d+"%")
+	}
+	rows, e := s.db.QueryContext(ctx, query, args...)
 	if e != nil {
 		return nil, e
 	}
@@ -192,7 +203,17 @@ func (s *Service) DeleteAsset(ctx context.Context, d string) error {
 	}
 	s.assetMu.Lock()
 	defer s.assetMu.Unlock()
-	res, e := s.db.ExecContext(ctx, `DELETE FROM onair_assets WHERE digest=? AND NOT EXISTS(SELECT 1 FROM onair_looks WHERE data LIKE ?) AND NOT EXISTS(SELECT 1 FROM onair_families WHERE data LIKE ?) AND NOT EXISTS(SELECT 1 FROM onair_reel_clips WHERE source_digest=?)`, d, "%"+d+"%", "%"+d+"%", d)
+	query := `DELETE FROM onair_assets WHERE digest=? AND NOT EXISTS(SELECT 1 FROM onair_looks WHERE data LIKE ?) AND NOT EXISTS(SELECT 1 FROM onair_families WHERE data LIKE ?) AND NOT EXISTS(SELECT 1 FROM onair_reel_clips WHERE source_digest=?)`
+	args := []any{d, "%" + d + "%", "%" + d + "%", d}
+	channels, err := s.hasChannelAssets(ctx)
+	if err != nil {
+		return err
+	}
+	if channels {
+		query += ` AND NOT EXISTS(SELECT 1 FROM livetv_channels WHERE data LIKE ?)`
+		args = append(args, "%"+d+"%")
+	}
+	res, e := s.db.ExecContext(ctx, query, args...)
 	if e != nil {
 		return e
 	}
@@ -240,4 +261,15 @@ func (s *Service) putReelAsset(ctx context.Context, name string, b []byte) (Asse
 		return a, e
 	}
 	return a, tx.Commit()
+}
+
+// On Air can run independently of Live TV (including plugin test databases).
+func (s *Service) hasChannelAssets(ctx context.Context) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='livetv_channels')`
+	if store.DialectOf(s.db) == store.Postgres {
+		query = `SELECT to_regclass('livetv_channels') IS NOT NULL`
+	}
+	var exists bool
+	err := s.db.QueryRowContext(ctx, query).Scan(&exists)
+	return exists, err
 }

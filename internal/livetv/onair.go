@@ -67,9 +67,13 @@ func (c Channel) momentsWithin(at time.Time, budget time.Duration) []Item {
 	}
 	if c.Look.UpNext {
 		kinds = append(kinds, "upnext")
-		if at.In(zoneOf(c.Timezone)).Hour() >= 18 {
-			kinds = append(kinds, "tonight")
-		}
+	}
+	tonight := c.Look.UpNext
+	if c.Look.Tonight != nil {
+		tonight = *c.Look.Tonight
+	}
+	if tonight && at.In(zoneOf(c.Timezone)).Hour() >= 18 {
+		kinds = append(kinds, "tonight")
 	}
 	var base []Item
 	var reserved time.Duration
@@ -81,7 +85,7 @@ func (c Channel) momentsWithin(at time.Time, budget time.Duration) []Item {
 			}
 			continue
 		}
-		if d, ok := c.clipDuration(c.Look.LookID, kind); ok && d > 0 && d%segmentDuration == 0 {
+		if d, ok := c.momentDuration(kind); ok && d > 0 && d%segmentDuration == 0 {
 			base = append(base, Item{Slate: kind, Title: kind, DurationMS: d.Milliseconds()})
 			reserved += d
 		}
@@ -129,10 +133,18 @@ func (c Channel) momentsWithin(at time.Time, budget time.Duration) []Item {
 // guideSchedule preserves the original gap guide, including filler and off-air
 // rows. Insert placement folds clip spans into the preceding programme.
 func guideSchedule(c Channel, from, until time.Time) []Programme {
-	if c.Look == nil || c.clipDuration == nil {
+	inserted := func(l *ChannelLook) bool { return l != nil && (l.Placement == "insert" || l.BreakPattern != nil) }
+	hasInsert := inserted(c.Look)
+	for _, b := range c.Blocks {
+		hasInsert = hasInsert || inserted(b.Breaks)
+	}
+	for _, p := range c.Pins {
+		hasInsert = hasInsert || inserted(p.Breaks)
+	}
+	if c.clipDuration == nil || (c.Look == nil && !hasInsert) {
 		return Schedule(c, from, until)
 	}
-	if c.Look.Placement != "insert" && c.Look.BreakPattern == nil {
+	if !hasInsert {
 		if len(c.Clock) > 0 {
 			// Suppress look interstitials while retaining the clock's channel policy.
 			look := *c.Look
@@ -154,7 +166,7 @@ func guideSchedule(c Channel, from, until time.Time) []Programme {
 			}
 			continue
 		}
-		if c.Look.BreakPattern != nil && len(out) > 0 && p.Item.Key != 0 && out[len(out)-1].Item.Key == p.Item.Key && p.sourceOffset > 0 {
+		if len(out) > 0 && p.Item.Key != 0 && out[len(out)-1].Item.Key == p.Item.Key && p.sourceOffset > 0 {
 			out[len(out)-1].End = p.End
 			continue
 		}
@@ -170,6 +182,16 @@ func guideSchedule(c Channel, from, until time.Time) []Programme {
 }
 
 func (s *Service) clipRequest(c Channel, p Programme, snapshots ...[]Programme) core.ClipRequest {
+	for _, b := range c.Blocks {
+		if b.ID == p.BlockID && b.Breaks != nil {
+			c.Look = effectiveBlockLook(c.Look, b.Breaks)
+		}
+	}
+	for _, pin := range c.Pins {
+		if pin.ID == p.BlockID && pin.Breaks != nil {
+			c.Look = effectiveBlockLook(c.Look, pin.Breaks)
+		}
+	}
 	lookID := ""
 	if c.Look != nil {
 		lookID = c.Look.LookID
@@ -177,6 +199,8 @@ func (s *Service) clipRequest(c Channel, p Programme, snapshots ...[]Programme) 
 	r := core.ClipRequest{LookID: lookID, Moment: p.Item.Slate, ChannelID: c.ID, Bind: map[string]string{"channel.name": c.Name}, Art: map[string]string{}}
 	if c.Look != nil {
 		r.Bug = c.Look.Bug
+		r.AssetDigest = c.Look.MomentAssets[p.Item.Slate]
+		r.AssetDuration = time.Duration(p.Item.DurationMS) * time.Millisecond
 		r.Bind["channel.tagline"] = c.Look.Tagline
 		r.Bind["channel.accent"] = c.Look.Accent
 	}
@@ -232,6 +256,19 @@ func (s *Service) graphicsChannel(c Channel) Channel {
 		if meta, ok := s.o.Graphics.(core.ChannelSegmentMetadata); ok {
 			c.segmentInfo = meta.SegmentInfo
 		}
+		c.programmingReels = map[string]*ReelSnapshot{}
+		s.mu.Lock()
+		for _, b := range c.Blocks {
+			if b.Breaks != nil {
+				c.programmingReels[b.Breaks.ReelID] = s.reelSnapshots[b.Breaks.ReelID]
+			}
+		}
+		for _, p := range c.Pins {
+			if p.Breaks != nil {
+				c.programmingReels[p.Breaks.ReelID] = s.reelSnapshots[p.Breaks.ReelID]
+			}
+		}
+		s.mu.Unlock()
 		if c.Look != nil && c.Look.BreakContent == "reel" {
 			s.mu.Lock()
 			c.reel = s.reelSnapshots[c.Look.ReelID]
@@ -245,31 +282,10 @@ func (s *Service) ensureGraphics() {
 	if s.o.Graphics == nil {
 		return
 	}
-	cs, err := s.virtualChannels(s.ctx)
-	if err != nil {
-		return
-	}
-	now := s.o.Now()
-	recent := s.recentlyWatched()
-	for _, c := range cs {
-		if !c.Enabled || !recent[c.ID] {
-			continue
-		}
-		if c.Look == nil && len(c.Clock) == 0 {
-			continue
-		}
-		if c.Look != nil && c.Look.Ident {
-			s.o.Graphics.Ensure(s.ctx, s.clipRequest(c, Programme{Item: Item{Slate: "ident"}}))
-		}
-		c = s.graphicsChannel(c)
-		for _, p := range Schedule(c, now, now.Add(3*time.Hour)) {
-			if strings.HasPrefix(p.Item.Slate, "plugin:") && p.Start.After(now.Add(15*time.Minute)) {
-				continue
-			}
-			if (interstitial(p.Item) && p.Item.ReelClipID == "") || (p.Item.Slate == offAirSlate && c.Look != nil && c.Look.OffAir) {
-				s.o.Graphics.Ensure(s.ctx, s.clipRequest(c, p))
-			}
-		}
+	// Both maintenance paths share the measured lead and nearest-boundary order.
+	// A second, three-hour scan must not refill the queue with distant masters.
+	for _, request := range s.GraphicsRequests(s.ctx, "") {
+		s.o.Graphics.Ensure(s.ctx, request)
 	}
 }
 
@@ -304,4 +320,15 @@ func (c Channel) pluginItem(id string) (Item, bool) {
 		return Item{}, false
 	}
 	return Item{Slate: id, Title: name, Rating: rating, DurationMS: d.Milliseconds()}, true
+}
+
+func (c Channel) momentDuration(kind string) (time.Duration, bool) {
+	if c.Look == nil || c.clipDuration == nil {
+		return 0, false
+	}
+	duration, ok := c.clipDuration(c.Look.LookID, kind)
+	if c.Look.MomentAssets[kind] != "" && (!ok || duration <= 0) {
+		return 8 * time.Second, true
+	}
+	return duration, ok
 }

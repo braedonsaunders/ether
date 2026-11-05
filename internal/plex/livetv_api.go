@@ -479,6 +479,11 @@ func (s *Server) handleLiveGuide(w http.ResponseWriter, r *http.Request) {
 	} else {
 		s.log.Debug("live guide response", attrs...)
 	}
+	if errors.Is(err, core.ErrNotAvailable) {
+		w.Header().Set("Retry-After", "1")
+		writeHTTPError(w, 503)
+		return
+	}
 	if errors.Is(err, errLiveBadRequest) {
 		writeHTTPError(w, http.StatusBadRequest)
 		return

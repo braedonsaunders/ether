@@ -16,8 +16,21 @@ export type Item = {
   season?: number;
   episode?: number;
   releasedMs?: number;
+  breakPointsMs?: number[];
+  breakPoints?: { atMs: number; source: string; confidence?: number }[];
 };
 export type ProgramSource = {
+  id?: string;
+  kind?: "items" | "show" | "movies" | "collection" | "filter" | "personal" | "plugin" | "mix";
+  showKey?: number;
+  startSeason?: number;
+  startEpisode?: number;
+  startDate?: string;
+  order?: "order" | "shuffle";
+  strip?: boolean;
+  segmentId?: string;
+  personal?: PersonalRecipe;
+  sources?: ProgramSource[];
   name?: string;
   weight?: number;
   items?: Item[];
@@ -26,6 +39,9 @@ export type ProgramSource = {
   watched?: "" | "watched" | "unwatched";
 };
 export type Block = {
+  id?: string;
+  preset?: string;
+  breaks?: ChannelLook;
   start: number;
   end: number;
   /** Weekdays in the channel timezone, 0 Sunday … 6 Saturday. Empty means every day. */
@@ -36,7 +52,7 @@ export type Block = {
   shuffle: boolean;
   mode?: string;
   align?: "" | "hour" | "half";
-  fit?: "" | "cut" | "pad";
+  fit?: "" | "cut" | "pad" | "shift";
   repeatDays?: number;
   filler?: Item[];
   marathonKey?: number;
@@ -45,7 +61,21 @@ export type Block = {
   sources?: ProgramSource[];
   watched?: "" | "watched" | "unwatched";
 };
+export type Pin = {
+  id: string;
+  name: string;
+  start: number;
+  end: number;
+  days?: number[];
+  date?: string;
+  sources?: ProgramSource[];
+  items?: Item[];
+  mode?: string;
+  repeatDays?: number;
+  breaks?: ChannelLook;
+};
 export type Channel = {
+  pins?: Pin[];
   personal?: PersonalRecipe;
   look?: ChannelLook;
   screens?: { offAir?: ScreenStyle; noSignal?: ScreenStyle };
@@ -86,7 +116,7 @@ export type Channel = {
   watched?: "" | "watched" | "unwatched";
   mode?: string;
   align?: "" | "hour" | "half";
-  fit?: "" | "cut" | "pad";
+  fit?: "" | "cut" | "pad" | "shift";
   repeatDays?: number;
   filler?: Item[];
   fallback?: Item[];

@@ -85,6 +85,9 @@ func TestPersonalCursorOnlyAdvancesDuringSessions(t *testing.T) {
 	if _, err := s.o.DB.Exec(`INSERT INTO livetv_personal(viewer_id,channel_id,day,rundown,cursor_ms,built_at) VALUES(?,?,?,?,?,?)`, u.ID, c.ID, "current", b, now.UnixMilli(), now.UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.backfillPersonalIndex(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	c = s.personalChannel(context.Background(), c, u)
 	s.beginPersonal(c, u)
 	start := now

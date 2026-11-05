@@ -185,6 +185,10 @@ type inflight struct {
 
 // Service implements core.Resolver.
 type Service struct {
+	availabilityGeneration    uint64
+	availabilityDeadlines     availabilityDeadlines
+	availabilityDeadlineByKey map[int64]*availabilityDeadline
+
 	subtitleChecks map[string]bool
 	subMiss        map[string]time.Time
 	subVerdicts    map[string]bool
@@ -328,6 +332,7 @@ func (s *Service) forgetSourceResults(ctx context.Context) {
 	s.mu.Lock()
 	for k, e := range s.avail {
 		if !e.available {
+			s.forgetAvailabilityEpochLocked(k)
 			delete(s.avail, k)
 		}
 	}

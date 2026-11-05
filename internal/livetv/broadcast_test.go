@@ -19,6 +19,7 @@ type broadcastFakeEncoder struct {
 	frames []transcode.RawFrame
 	closed bool
 	output fakeHLS
+	index  transcode.SegmentIndex
 }
 
 func (e *broadcastFakeEncoder) Write(ctx context.Context, f transcode.RawFrame) error {
@@ -27,7 +28,7 @@ func (e *broadcastFakeEncoder) Write(ctx context.Context, f transcode.RawFrame) 
 		return ctx.Err()
 	default:
 	}
-	copyFrame := transcode.RawFrame{Video: append([]byte(nil), f.Video...), PCM: append([]byte(nil), f.PCM...), SourcePTS: f.SourcePTS, SourcePTSValid: f.SourcePTSValid}
+	copyFrame := transcode.RawFrame{Video: append([]byte(nil), f.Video...), PCM: append([]byte(nil), f.PCM...), OutputTime: f.OutputTime, SourcePTS: f.SourcePTS, SourcePTSValid: f.SourcePTSValid}
 	if len(f.Video) > 6 {
 		return nil
 	}
@@ -36,8 +37,13 @@ func (e *broadcastFakeEncoder) Write(ctx context.Context, f transcode.RawFrame) 
 	e.mu.Unlock()
 	return nil
 }
-func (e *broadcastFakeEncoder) Segments() transcode.SegmentIndex { return fakeBroadcastIndex{} }
-func (e *broadcastFakeEncoder) Close() error                     { e.mu.Lock(); e.closed = true; e.mu.Unlock(); return nil }
+func (e *broadcastFakeEncoder) Segments() transcode.SegmentIndex {
+	if e.index != nil {
+		return e.index
+	}
+	return fakeBroadcastIndex{}
+}
+func (e *broadcastFakeEncoder) Close() error { e.mu.Lock(); e.closed = true; e.mu.Unlock(); return nil }
 func (e *broadcastFakeEncoder) snapshot() []transcode.RawFrame {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -306,7 +312,7 @@ func TestBroadcastPrewarmsTwentySecondsBeforeCut(t *testing.T) {
 			t.Fatal(err)
 		}
 		b.start()
-		time.Sleep(6 * time.Second)
+		time.Sleep(22 * time.Second)
 		synctest.Wait()
 		if secondOpened.Sub(origin) != 5*time.Second {
 			t.Fatal("prewarm timing", secondOpened.Sub(origin))
@@ -455,4 +461,133 @@ func TestPCMFadeContinuesEmittedEndpoint(t *testing.T) {
 			t.Fatalf("splice channel %d: first sample %d, endpoint %d", ch, got, want)
 		}
 	}
+}
+
+// The edge may lead schedule time only by media actually produced. A fast
+// source fills that lead without a cold-playlist hold; a slow source has a
+// bounded burst attempt and returns to its ordinary continuous clock.
+type burstTestPlanner struct {
+	broadcastFakePlanner
+	cutAt   time.Time
+	cutPlan broadcastPlan
+}
+
+func (p burstTestPlanner) plans(now time.Time) (broadcastPlan, *broadcastPlan) {
+	if !p.cutAt.IsZero() && !now.Before(p.cutAt) {
+		return p.cutPlan, nil
+	}
+	return p.broadcastFakePlanner.plans(now)
+}
+
+func (burstTestPlanner) startupLead() time.Duration { return 12 * time.Second }
+
+func TestBroadcastBoundedStartupLead(t *testing.T) {
+	for _, source := range []string{"fast", "slow", "short-file"} {
+		t.Run(source, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				slow := source == "slow"
+				format := smallBroadcastFormat()
+				planner := burstTestPlanner{broadcastFakePlanner: broadcastFakePlanner{plan: broadcastPlan{id: "programme", open: func(context.Context) (transcode.Decoder, func(), error) {
+					d := &broadcastFakeDecoder{format: format, closed: make(chan struct{})}
+					if slow {
+						return &burstSlowDecoder{broadcastFakeDecoder: d}, nil, nil
+					}
+					if source == "short-file" {
+						return &burstFiniteDecoder{broadcastFakeDecoder: d, remaining: 239}, nil, nil
+					}
+					return d, nil, nil
+				}}}}
+				if source == "short-file" {
+					planner.cutAt = time.Now().Add(8 * time.Second)
+					planner.cutPlan = broadcastPlan{id: "next", start: planner.cutAt, open: func(context.Context) (transcode.Decoder, func(), error) {
+						return &broadcastFakeDecoder{format: format, closed: make(chan struct{}), value: 90}, nil, nil
+					}}
+					planner.next = &planner.cutPlan
+				}
+				runner := &broadcastFakeRunner{}
+				b, err := newBroadcast(context.Background(), runner, planner, format)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer b.close()
+				if _, err = b.addRendition(context.Background(), "main", core.Decision{MaxHeight: 720}); err != nil {
+					t.Fatal(err)
+				}
+				runner.encoders[0].index = burstSampleIndex{encoder: runner.encoders[0]}
+				start := time.Now()
+				b.start()
+				time.Sleep(22 * time.Second)
+				synctest.Wait()
+				b.close()
+				if !b.startupUntil.IsZero() {
+					t.Fatal("startup remained active beyond deadline")
+				}
+				if b.lead < 0 || b.lead > 16*time.Second {
+					t.Fatalf("unbounded lead: %s", b.lead)
+				}
+				if !slow && b.lead < 11*time.Second {
+					t.Fatalf("fast source did not fill lead: %s", b.lead)
+				}
+				if slow && b.lead != 0 {
+					t.Fatalf("slow source invented media lead: %s", b.lead)
+				}
+				frames := runner.encoders[0].snapshot()
+				if len(frames) == 0 {
+					t.Fatal("no continuous output")
+				}
+				for n, f := range frames {
+					want := start.Add(time.Duration(n) * time.Second / 30)
+					if f.OutputTime != want {
+						t.Fatalf("frame %d schedule time %s, want %s", n, f.OutputTime, want)
+					}
+					if len(f.PCM) != 6400 {
+						t.Fatalf("frame %d audio samples lost", n)
+					}
+					if source == "short-file" && n >= 240 && f.Video[0] != 90 {
+						t.Fatalf("frame %d missed the scheduled element cut", n)
+					}
+				}
+			})
+		})
+	}
+}
+
+type burstSlowDecoder struct{ *broadcastFakeDecoder }
+
+// Container duration rounding can leave a file one frame short of its slot.
+// Its final picture must bridge to the cut without stopping the burst clock.
+type burstFiniteDecoder struct {
+	*broadcastFakeDecoder
+	remaining int
+}
+
+func (d *burstFiniteDecoder) Next(ctx context.Context) (transcode.RawFrame, error) {
+	if d.remaining == 0 {
+		return transcode.RawFrame{}, io.EOF
+	}
+	d.remaining--
+	return d.broadcastFakeDecoder.Next(ctx)
+}
+
+func (d *burstSlowDecoder) Next(ctx context.Context) (transcode.RawFrame, error) {
+	select {
+	case <-ctx.Done():
+		return transcode.RawFrame{}, ctx.Err()
+	case <-time.After(50 * time.Millisecond):
+	}
+	return d.broadcastFakeDecoder.Next(ctx)
+}
+
+type burstSampleIndex struct {
+	fakeBroadcastIndex
+	encoder *broadcastFakeEncoder
+}
+
+func (s burstSampleIndex) Latest() (transcode.Segment, bool) {
+	frames := s.encoder.snapshot()
+	ticks := len(frames) / 120 * 120
+	if ticks == 0 {
+		return transcode.Segment{}, false
+	}
+	return transcode.Segment{Start: frames[0].OutputTime.Add(time.Duration(ticks-120) * time.Second / 30), Duration: 4 * time.Second}, true
 }

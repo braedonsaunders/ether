@@ -6,16 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 var _ ContinuousRunner = (*Manager)(nil)
 
 type continuousEncoder struct {
+	speed atomic.Uint64
 	*continuousProcess
 	req     EncoderRequest
 	dir     string
@@ -88,7 +91,13 @@ func (m *Manager) StartEncoder(ctx context.Context, r EncoderRequest) (Continuou
 	}
 	enc := &continuousEncoder{req: r, dir: dir, frames: make(chan RawFrame, 8), writeMu: make(chan struct{}, 1), stream: newContinuousFanout()}
 	args := m.continuousEncodeArgs(r, sockets, dir)
-	p, e := m.startContinuous(ctx, args, dir, false, sockets, enc.stream, func() { release(); enc.stream.close(); _ = removeAllRetry(dir) })
+	p, e := m.startContinuous(ctx, args, dir, false, sockets, enc.stream, func() { release(); enc.stream.close(); _ = removeAllRetry(dir) }, func(line string) {
+		if value, ok := strings.CutPrefix(line, "speed="); ok {
+			if speed, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(value), "x"), 64); err == nil && speed > 0 {
+				enc.speed.Store(math.Float64bits(speed))
+			}
+		}
+	})
 	if e != nil {
 		return nil, e
 	}
@@ -279,13 +288,18 @@ func (e *continuousEncoder) WriteShared(ctx context.Context, f RawFrame) error {
 		return e.writeError()
 	case e.frames <- f:
 		if e.tick == 0 {
-			e.index.setStart(time.Now())
+			at := f.OutputTime
+			if at.IsZero() {
+				at = time.Now()
+			}
+			e.index.setStart(at)
 		}
 		e.tick++
 		return nil
 	}
 }
 func (e *continuousEncoder) Segments() SegmentIndex { return e.index }
+func (e *continuousEncoder) RealtimeSpeed() float64 { return math.Float64frombits(e.speed.Load()) }
 func (e *continuousEncoder) Diagnostics() string {
 	progress := map[string]string{}
 	for line := range strings.SplitSeq(e.stderr.String(), "\n") {

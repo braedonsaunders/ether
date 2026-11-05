@@ -57,7 +57,7 @@ func (s *Service) personalChannel(ctx context.Context, c Channel, u *core.User) 
 // viewerSchedule reads materialized programming only; it never calls the picker.
 func (s *Service) viewerSchedule(ctx context.Context, c Channel, from, until time.Time) []Programme {
 	if c.Personal == nil {
-		return Schedule(c, from, until)
+		return s.virtualProgrammes(c, from, until, "raw")
 	}
 	ps, err := s.personalProgrammes(ctx, c, c.personalViewer, from, until)
 	if err != nil {
@@ -121,7 +121,7 @@ func (s *Service) LineupChangedFor(u *core.User) time.Time {
 
 func (s *Service) viewerGuide(ctx context.Context, c Channel, from, until time.Time) []Programme {
 	if c.Personal == nil {
-		return s.broadcastGuide(s.guideChannel(ctx, c), from, until)
+		return s.virtualProgrammes(c, from, until, "guide")
 	}
 	return s.viewerSchedule(ctx, c, from, until)
 }

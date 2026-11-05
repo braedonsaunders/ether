@@ -176,6 +176,11 @@ func (s *continuousSegmentIndex) refresh() {
 				first, e := strconv.ParseInt(strings.TrimPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"), 10, 64)
 				if e == nil && first > s.next {
 					s.next = first
+					for seq := range s.policyTags {
+						if seq < first {
+							delete(s.policyTags, seq)
+						}
+					}
 					s.segments = nil
 				}
 				break
