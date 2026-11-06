@@ -162,3 +162,28 @@ It checks lab labels, removes only those containers, then the captured owned
 bridge. Bound data and private credentials are retained for review; dispose of
 those exact private state directories only when no longer needed. Never prune
 Docker, restart WSL/Docker or remove another lab's resources.
+
+## Isolated long fixture
+
+For a continuous run longer than the original180s title, `long-fixture.py`
+renders a separate600s generated MPEG4/AAC source, title900002/rating key
+1000000000900002. It uses another Service/ConfigMap/indexer/provider/release,
+Newznab ID and NNTP article namespace. The original900001 media is untouched.
+
+```sh
+python3 packaging/kubernetes/multihost/long-fixture.py "$PWD" "$REVIEWED_IMAGE" > "$state/long-fixture.yaml"
+kubectl -n ether035-ha create configmap ether035-ha-long-source-code \
+  --from-file=packaging/kubernetes/source-fixture.py
+kubectl -n ether035-ha apply -f "$state/long-fixture.yaml"
+kubectl -n ether035-ha rollout status deployment/ether035-ha-long-source --timeout=300s
+python3 packaging/kubernetes/seed-lab.py --context ether035-multihost \
+  --base http://127.0.0.1:18040 --long-fixture --credentials-dir "$state/playback-private"
+```
+
+Run with this lab's KUBECONFIG/PATH and a temporary direct owner port-forward.
+Import the generator image on the control node immediately before applying the
+manifest; an unused imported image may be collected before use. Seeding adds
+the selected fixture while preserving the other known fixture. It refuses
+nonfixture providers/indexers. `--refresh-only` still refreshes delegation
+without source configuration changes. Use a separate reference for the long
+clip; its bytes and duration differ from the180s title.

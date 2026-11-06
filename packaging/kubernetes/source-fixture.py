@@ -8,6 +8,7 @@ from email.utils import format_datetime
 from html import escape
 import http.server
 import json
+import re
 from pathlib import Path
 import socketserver
 import threading
@@ -15,12 +16,15 @@ from urllib.parse import parse_qs, urlsplit
 
 
 class Fixture:
-    def __init__(self, media, origin, tmdb, release):
+    def __init__(self, media, origin, tmdb, release, fixture_id='ether035-fixture', article_prefix='ether035-ha-part'):
+        if not all(re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', v) for v in (fixture_id, article_prefix)):
+            raise ValueError('invalid fixture namespace')
+        self.fixture_id, self.article_prefix = fixture_id, article_prefix
         self.data = media.read_bytes()
         self.filename = media.name
         self.origin, self.tmdb, self.release = origin.rstrip('/'), tmdb, release
         self.chunks = [self.data[i:i+256*1024] for i in range(0,len(self.data),256*1024)]
-        self.articles = {f'ether035-ha-part-{i+1:05d}@fixture.invalid': self.encode(i) for i in range(len(self.chunks))}
+        self.articles = {f'{self.article_prefix}-{i+1:05d}@fixture.invalid': self.encode(i) for i in range(len(self.chunks))}
         self.stats = Counter()
         self.lock = threading.Lock()
 
@@ -52,18 +56,18 @@ class Fixture:
         return header+b'\r\n'.join(lines)+b'\r\n'+tail.encode()+b'\r\n'
 
     def nzb(self):
-        segments = ''.join(f'<segment bytes="{len(chunk)}" number="{i+1}">ether035-ha-part-{i+1:05d}@fixture.invalid</segment>'
+        segments = ''.join(f'<segment bytes="{len(chunk)}" number="{i+1}">{self.article_prefix}-{i+1:05d}@fixture.invalid</segment>'
                            for i,chunk in enumerate(self.chunks))
         return (f'<?xml version="1.0" encoding="UTF-8"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'
                 f'<file poster="lab@fixture.invalid" date="1577836800" subject="&quot;{escape(self.filename)}&quot; yEnc (1/{len(self.chunks)})">'
                 f'<groups><group>alt.binaries.ether.fixture</group></groups><segments>{segments}</segments></file></nzb>').encode()
 
     def rss(self):
-        item_url = escape(self.origin+'/api?t=get&amp;id=ether035-fixture').replace('&amp;amp;','&amp;')
+        item_url = escape(self.origin+'/api?t=get&amp;id='+self.fixture_id).replace('&amp;amp;','&amp;')
         now = format_datetime(datetime.now(timezone.utc))
         return (f'<?xml version="1.0"?><rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">'
                 f'<channel><title>Ether generated fixture</title><item><title>{escape(self.release)}</title>'
-                f'<guid isPermaLink="false">ether035-fixture</guid><link>{item_url}</link><pubDate>{now}</pubDate>'
+                f'<guid isPermaLink="false">{self.fixture_id}</guid><link>{item_url}</link><pubDate>{now}</pubDate>'
                 f'<enclosure url="{item_url}" length="{len(self.data)}" type="application/x-nzb"/>'
                 f'<newznab:attr name="category" value="2000"/><newznab:attr name="size" value="{len(self.data)}"/>'
                 f'<newznab:attr name="tmdbid" value="{self.tmdb}"/><newznab:attr name="files" value="1"/>'
@@ -89,7 +93,7 @@ class HTTP(http.server.BaseHTTPRequestHandler):
         elif kind == 'caps':
             f.count('caps')
             body = b'''<?xml version="1.0"?><caps><server version="1.0" title="Ether generated fixture"/><limits max="100" default="100"/><searching><search available="yes" supportedParams="q"/><movie-search available="yes" supportedParams="q,tmdbid,imdbid"/><tv-search available="no"/></searching><categories><category id="2000" name="Movies"><subcat id="2030" name="SD"/></category></categories></caps>'''
-        elif kind == 'get' and query.get('id') == ['ether035-fixture']:
+        elif kind == 'get' and query.get('id') == [f.fixture_id]:
             f.count('nzbDownloads'); body = f.nzb()
         elif kind in ('search','movie','tvsearch'):
             f.count('searches'); body = f.rss()
@@ -158,8 +162,10 @@ def main():
     p.add_argument('--nntp-port',type=int,default=1190)
     p.add_argument('--tmdb',type=int,default=900001)
     p.add_argument('--release',default='Ether.Cluster.Fixture.2020.360p.WEB-DL.MPEG4.AAC')
+    p.add_argument('--fixture-id',default='ether035-fixture')
+    p.add_argument('--article-prefix',default='ether035-ha-part')
     a = p.parse_args()
-    fixture = Fixture(a.media,a.origin,a.tmdb,a.release)
+    fixture = Fixture(a.media,a.origin,a.tmdb,a.release,a.fixture_id,a.article_prefix)
     web = http.server.ThreadingHTTPServer(('0.0.0.0',a.http_port),HTTP); web.fixture=fixture
     nntp = TCP(('0.0.0.0',a.nntp_port),NNTP); nntp.fixture=fixture
     thread = threading.Thread(target=nntp.serve_forever); thread.start()
