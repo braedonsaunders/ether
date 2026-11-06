@@ -128,7 +128,8 @@ The guard samples `/proc/pressure/memory` every60seconds, requires full avg10<5
 for30continuous minutes, and then starts one capped lab agent. It keeps checking
 and stops that exact container if full avg10>10 or the guard exits. Preserve
 `pressure.jsonl` as evidence. A failed clock gate remains a separate blocker.
-Do not use a native GPU process to bypass either gate.
+A native Windows transcode worker is independent of the WSL agent; its own
+measured clock/pressure gates and coordinated run window still apply.
 
 Import the exact integration image into that node before scheduling workloads;
 `docker save` plus `docker exec -i NODE_ID ctr -n k8s.io images import -` requires
