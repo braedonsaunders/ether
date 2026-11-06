@@ -37,6 +37,31 @@ func logoPNG(t *testing.T, ink color.NRGBA) []byte {
 	return buf.Bytes()
 }
 
+func mixedLogoPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, 512, 128))
+	for y := 10; y < 118; y++ {
+		for x := 140; x < 500; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{20, 25, 55, 255})
+		}
+	}
+	for y := 40; y < 88; y++ {
+		for x := 20; x < 100; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{255, 255, 255, 255})
+		}
+	}
+	for y := 45; y < 80; y++ {
+		for x := 190; x < 450; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{255, 255, 255, 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
 // The console picks the tile from this header, so it must be present on every
 // logo response: the decision when the image decodes, dark when it does not.
 func TestOwnerChannelLogoBackgroundHeader(t *testing.T) {
@@ -48,6 +73,7 @@ func TestOwnerChannelLogoBackgroundHeader(t *testing.T) {
 	}{
 		{"white ink needs the dark tile", logoPNG(t, color.NRGBA{255, 255, 255, 255}), "image/png", logotile.Dark},
 		{"black ink needs the light tile", logoPNG(t, color.NRGBA{0, 0, 0, 255}), "image/png", logotile.Light},
+		{"separate white ink beside dark plate", mixedLogoPNG(t), "image/png", logotile.Dark},
 
 		{"broken bytes keep the dark default", []byte("logo"), "image/png", logotile.Dark},
 	}

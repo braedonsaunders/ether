@@ -99,6 +99,33 @@ func TestDecide(t *testing.T) {
 	}
 }
 
+func TestDecideScoresExposedInkRatherThanPlateInterior(t *testing.T) {
+	img := logo(512, 128)
+	// A small white wordmark is exposed beside a much larger dark plate.
+	// The plate's white lettering already contrasts with the plate itself.
+	fill(img, 20, 40, 100, 88, white)
+	fill(img, 140, 10, 500, 118, color.NRGBA{20, 25, 55, 255})
+	fill(img, 190, 45, 450, 80, white)
+	if ev := Decide(img); ev.Background != Dark {
+		t.Fatalf("exposed white ink needs dark tile: %+v", ev)
+	}
+	// The inverse composition must keep a light tile for exposed black ink.
+	img = logo(512, 128)
+	fill(img, 20, 40, 100, 88, color.NRGBA{0, 0, 0, 255})
+	fill(img, 140, 10, 500, 118, white)
+	fill(img, 190, 45, 450, 80, color.NRGBA{0, 0, 0, 255})
+	if ev := Decide(img); ev.Background != Light {
+		t.Fatalf("exposed black ink needs light tile: %+v", ev)
+	}
+	// A solid dominant mark is not a plate, even with a separate accent.
+	img = logo(512, 128)
+	fill(img, 20, 40, 100, 88, white)
+	fill(img, 140, 10, 500, 118, color.NRGBA{0, 0, 0, 255})
+	if ev := Decide(img); ev.Background != Light {
+		t.Fatalf("solid black mark needs light tile: %+v", ev)
+	}
+}
+
 func TestDecideIgnoresTransparentPadding(t *testing.T) {
 	small := logo(64, 64)
 	fill(small, 16, 16, 48, 48, color.NRGBA{0, 0, 0, 255})

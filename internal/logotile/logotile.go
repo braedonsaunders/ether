@@ -8,9 +8,8 @@
 //
 //	cost(tile) = Σ alpha · max(0, MinContrast − contrast(ink, tile))
 //
-// The tile with the smaller cost wins. A white wordmark on a large red plate
-// still costs a white tile, because the white ink is exactly the ink a white
-// tile hides.
+// A large rectangular plate with contrasting internal lettering can dominate
+// that sum. When separate ink accompanies such a plate, score that ink instead.
 package logotile
 
 import (
@@ -62,7 +61,7 @@ type Evidence struct {
 	Background Background
 	// Ink is the alpha-weighted visible area in sampled pixels (0..4096).
 	Ink float64
-	// LightCost and DarkCost are the contrast deficit on each tile; lower wins.
+	// LightCost and DarkCost are the scored contrast deficits; lower wins.
 	LightCost float64
 	DarkCost  float64
 }
@@ -81,8 +80,9 @@ func Decide(img image.Image) Evidence {
 		ink += p.a
 	}
 	ev := Evidence{Ink: ink}
-	ev.LightCost = cost(px, 255, 255, 255)
-	ev.DarkCost = cost(px, 24, 24, 27)
+	plate := dominantPlate(px)
+	ev.LightCost = cost(px, plate, 255, 255, 255)
+	ev.DarkCost = cost(px, plate, 24, 24, 27)
 	switch {
 	case ink < emptyInk:
 		// Nothing to read: keep the dark default instead of a white card.
@@ -116,11 +116,11 @@ func DecideBytes(data []byte) (Evidence, error) {
 // cost sums the alpha-weighted contrast deficit of every sample against a tile
 // colour. Coverage weights matter: anti-aliased edges have low alpha and low
 // composited contrast, so they cannot dominate the score.
-func cost(px []samplePixel, tr, tg, tb float64) float64 {
+func cost(px []samplePixel, plate []bool, tr, tg, tb float64) float64 {
 	tileLum := luminance(tr, tg, tb)
 	total := 0.0
-	for _, p := range px {
-		if p.a == 0 {
+	for i, p := range px {
+		if p.a == 0 || (plate != nil && plate[i]) {
 			continue
 		}
 		r := p.a*p.r + (1-p.a)*tr
@@ -133,6 +133,71 @@ func cost(px []samplePixel, tr, tg, tb float64) float64 {
 		}
 	}
 	return total
+}
+
+// dominantPlate finds a nearly solid rectangle with contrasting internal ink,
+// much larger than the other disconnected ink. Its contents contrast already.
+// shortcut: touching or nonrectangular plates are scored normally; revisit if
+// representative artwork shows those shapes lose separate ink.
+func dominantPlate(px []samplePixel) []bool {
+	seen := make([]bool, len(px))
+	var largest []int
+	var largestRect int
+	total := 0
+	for i, p := range px {
+		if p.a < 0.5 || seen[i] {
+			continue
+		}
+		seen[i] = true
+		component := []int{i}
+		minX, maxX, minY, maxY := i%sampleSize, i%sampleSize, i/sampleSize, i/sampleSize
+		for n := 0; n < len(component); n++ {
+			pos := component[n]
+			x, y := pos%sampleSize, pos/sampleSize
+			minX, maxX = min(minX, x), max(maxX, x)
+			minY, maxY = min(minY, y), max(maxY, y)
+			for dy := -1; dy <= 1; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					nx, ny := x+dx, y+dy
+					if nx < 0 || nx >= sampleSize || ny < 0 || ny >= sampleSize {
+						continue
+					}
+					j := ny*sampleSize + nx
+					if !seen[j] && px[j].a >= 0.5 {
+						seen[j] = true
+						component = append(component, j)
+					}
+				}
+			}
+		}
+		total += len(component)
+		if len(component) > len(largest) {
+			largest = component
+			largestRect = (maxX - minX + 1) * (maxY - minY + 1)
+		}
+	}
+	other := total - len(largest)
+	if other < 4 || len(largest) < 4*other || len(largest)*10 < largestRect*9 {
+		return nil
+	}
+	var dark, light int
+	for _, i := range largest {
+		p := px[i]
+		l := luminance(p.r, p.g, p.b)
+		if l < 0.18 {
+			dark++
+		} else if l > 0.7 {
+			light++
+		}
+	}
+	if dark*50 < len(largest) || light*50 < len(largest) {
+		return nil
+	}
+	plate := make([]bool, len(px))
+	for _, i := range largest {
+		plate[i] = true
+	}
+	return plate
 }
 
 // sample resamples the source into a 64x64 grid in premultiplied space and
