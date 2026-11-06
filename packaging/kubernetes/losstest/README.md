@@ -80,8 +80,9 @@ A pause lasts through the observation window, so failover must recover while
 the original worker remains unavailable. The runner reaps its player on exit.
 
 For `--matrix`, add `targets` keyed by controller/source/transcode/delivery,
-with each target's `pod`, `lossArgv` and `restoreArgv`. The runner covers each
-role × force-delete/pause × early/steady (16 runs). Early injects 2s after the
+with each target's `pod` and fault adapter, plus the required `jellyfin` client
+configuration described below. The runner covers each Plex role ×
+force-delete/pause × early/steady (16 runs) and two Jellyfin loss runs. Early injects 2s after the
 first segment; steady injects 10s after startup buffering completes. Targets
 must have spare capacity and the same shared fixture. The runner captures the
 current UID independently for each run. Actions that do not occur before the
