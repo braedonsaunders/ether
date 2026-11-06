@@ -442,7 +442,13 @@ export function GuideGrid({
                       <span className="w-7 shrink-0 text-right font-mono text-[11px] tabular-nums text-fg-subtle">
                         {c.number}
                       </span>
-                      <ChannelLogo name={c.name} logo={c.logo} seed={c.id} size={32} />
+                      <ChannelLogo
+                        name={c.name}
+                        logo={c.logo}
+                        seed={c.id}
+                        channelId={c.id}
+                        size={32}
+                      />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1">
                           <span className="truncate text-[13px] font-medium text-fg">{c.name}</span>
@@ -664,7 +670,7 @@ function LineupCell({
         >
           {c.number}
         </span>
-        <ChannelLogo name={c.name} logo={c.logo} seed={c.id} size={34} />
+        <ChannelLogo name={c.name} logo={c.logo} seed={c.id} channelId={c.id} size={34} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1">
             <span className={cn("truncate text-sm font-medium", on ? "text-primary" : "text-fg")}>

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { channelLabel, normalizeSessions } from "../lib/health";
 import { routeApiImagesThroughFetch } from "../lib/api";
 import { LOGO_BACKGROUND_HEADER, SessionArtwork } from "../components/SessionArtwork";
+import { ChannelLogo } from "../pages/livetv/ChannelLogo";
 import { renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
@@ -24,6 +25,38 @@ class ImmediatelyVisible implements IntersectionObserver {
 }
 
 describe("live channel identity", () => {
+  it("uses the scored channel logo in the Live TV list and falls back when it fails", async () => {
+    vi.stubGlobal("IntersectionObserver", ImmediatelyVisible);
+    const { createObjectURL, revokeObjectURL } = URL;
+    URL.createObjectURL = () => "blob:channel-logo";
+    URL.revokeObjectURL = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("logo", { headers: { [LOGO_BACKGROUND_HEADER]: "light" } })),
+    );
+    try {
+      const view = render(
+        <ChannelLogo
+          name="Local News"
+          logo="https://example.com/logo.png"
+          channelId="a/b"
+          size={34}
+        />,
+      );
+      const logo = await view.findByAltText("");
+      expect(fetch).toHaveBeenCalledWith(
+        "/ether/api/livetv/channels/a%2Fb/logo",
+        expect.anything(),
+      );
+      expect(logo.className).toContain("bg-white");
+      fireEvent.error(logo);
+      expect(view.getByText("LN")).toBeInTheDocument();
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+      vi.unstubAllGlobals();
+    }
+  });
   it("draws the tile the logo response asks for and keeps dark without a usable header", async () => {
     routeApiImagesThroughFetch(false);
     vi.stubGlobal("IntersectionObserver", ImmediatelyVisible);
