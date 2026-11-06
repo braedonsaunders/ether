@@ -17,6 +17,7 @@ func main() {
 	container := flag.String("container", "mpegts", "mpegts or fmp4")
 	first := flag.Int("first", 0, "first segment")
 	copyVideo := flag.Bool("copy-video", false, "remux source keyframe grid")
+	hardware := flag.String("hardware", "", "JSON shipping HWAccel, HWAccels, Filters and negotiated H264Level/H264FrameRate inventory (no GPU probe)")
 	flag.Parse()
 	b, e := os.ReadFile(*probe)
 	if e != nil {
@@ -26,5 +27,15 @@ func main() {
 	if e != nil {
 		panic(e)
 	}
-	json.NewEncoder(os.Stdout).Encode(transcode.SpliceLabArgs(*input, *dir, *info, *container, *first, *copyVideo))
+	var hw transcode.SpliceLabHardware
+	if *hardware != "" {
+		b, e := os.ReadFile(*hardware)
+		if e != nil {
+			panic(e)
+		}
+		if e = json.Unmarshal(b, &hw); e != nil {
+			panic(e)
+		}
+	}
+	json.NewEncoder(os.Stdout).Encode(transcode.SpliceLabHardwareArgs(*input, *dir, *info, *container, *first, *copyVideo, hw))
 }
