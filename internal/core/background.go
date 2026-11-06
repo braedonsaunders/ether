@@ -103,3 +103,15 @@ func IsUnattendedSearch(ctx context.Context) bool {
 	}
 	return IsSpeculative(ctx)
 }
+
+// Background analysis is an internal producer role, never a request identity.
+// Copy only this boolean into detached source-index work; no caller values.
+type backgroundAnalysisKey struct{}
+
+func WithBackgroundAnalysis(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundAnalysisKey{}, true)
+}
+func IsBackgroundAnalysis(ctx context.Context) bool {
+	v, _ := ctx.Value(backgroundAnalysisKey{}).(bool)
+	return v
+}

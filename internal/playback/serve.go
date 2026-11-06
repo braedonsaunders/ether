@@ -351,7 +351,24 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	ch := make(chan chunk, m.opts.ReadAhead)
+	g.sess.mu.Lock()
+	analysis := background && g.sess.preparedOnly && g.sess.analysisSource
+	active := g.sess.backgroundHold.active(m.now())
+	g.sess.mu.Unlock()
+	if analysis && !active {
+		g.release()
+		if retired != nil {
+			retired()
+		}
+		return 0, core.ErrNotAvailable, nil
+	}
+	pool := &m.bufs
+	depth := m.opts.ReadAhead
+	if analysis {
+		pool = &m.analysisBufs
+		depth = min(max(depth, 1), 2)
+	}
+	ch := make(chan chunk, depth)
 	go func() {
 		defer func() {
 			g.release()
@@ -365,7 +382,7 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 			if ctx.Err() != nil {
 				return
 			}
-			bp := m.bufs.Get().(*[]byte)
+			bp := pool.Get().(*[]byte)
 			want := int64(len(*bp))
 			if rem < want {
 				want = rem
@@ -378,7 +395,9 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 				readFinished = g.reads.begin(m.now())
 			}
 			if background {
-				if cr, ok := g.src.(core.PrefetchReaderAt); ok {
+				if cr, ok := g.src.(core.AnalysisReaderAt); ok && analysis {
+					n, err = cr.ReadAtAnalysisContext(ctx, (*bp)[:want], pos)
+				} else if cr, ok := g.src.(core.PrefetchReaderAt); ok {
 					n, err = cr.ReadAtPrefetchContext(ctx, (*bp)[:want], pos)
 				} else if cr, ok := g.src.(core.ContextReaderAt); ok {
 					n, err = cr.ReadAtContext(ctx, (*bp)[:want], pos)
@@ -417,6 +436,9 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 			if int64(n) == want && errors.Is(err, io.EOF) {
 				err = nil
 			}
+			if background && err != nil && ctx.Err() == nil && !errors.Is(err, context.Canceled) {
+				g.backgroundReadErrors.Add(1)
+			}
 			if err == nil && n == 0 {
 				err = io.ErrNoProgress
 			}
@@ -430,7 +452,7 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 			select {
 			case ch <- chunk{bp, n, err}:
 			case <-ctx.Done():
-				m.bufs.Put(bp)
+				pool.Put(bp)
 				return
 			}
 			if err != nil {
@@ -449,15 +471,15 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 				err = io.ErrShortWrite
 			}
 			if err != nil {
-				m.bufs.Put(c.buf)
+				pool.Put(c.buf)
 				cancel()
 				for c := range ch {
-					m.bufs.Put(c.buf)
+					pool.Put(c.buf)
 				}
 				return written, nil, err
 			}
 		}
-		m.bufs.Put(c.buf)
+		pool.Put(c.buf)
 		if c.err != nil {
 			return written, c.err, nil
 		}
@@ -504,7 +526,14 @@ func (m *Manager) serveLoopback(w http.ResponseWriter, r *http.Request) {
 		contentType: contentTypeFor("", g.src.Name()),
 	}
 	background := r.URL.Query().Get("background") == "1"
+	if background {
+		g.backgroundRequests.Add(1)
+		defer g.backgroundRequests.Add(-1)
+	}
 	count := func(n int) {
+		if background {
+			g.backgroundReadBytes.Add(int64(n))
+		}
 		if registered && !background {
 			s.addBytes(n, m.now())
 		}

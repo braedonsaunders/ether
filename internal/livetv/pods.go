@@ -159,6 +159,7 @@ func (c Channel) podItems(at time.Time, budget time.Duration) []Item {
 // emitProgrammeWithPods consumes offline chapter/black/silence points only.
 // sourceOffset resumes the programme at its original media timestamp.
 func emitProgrammeWithPods(out *[]Programme, c Channel, item Item, start, finish, from, until, end time.Time) time.Time {
+	item = availableBreakItem(item, start)
 	cursor := start
 	offset := time.Duration(0)
 	if c.Look != nil && c.Look.BreakPattern != nil && c.Look.BreakPattern.Inside {
@@ -221,4 +222,16 @@ func emitProgrammeWithPods(out *[]Programme, c Channel, item Item, start, finish
 		(*out)[len(*out)-1].sourceOffset = offset
 	}
 	return next
+}
+
+// Evidence discovered during an airing applies only to a later programme start.
+// Existing airing IDs, slices and guide boundaries must remain deterministic.
+func availableBreakItem(item Item, start time.Time) Item {
+	if item.BreakAvailableAfterMS > 0 && start.UnixMilli() < item.BreakAvailableAfterMS {
+		item.BreakPoints = nil
+		item.BreakPointsMS = nil
+		item.BreakReleaseID = ""
+		item.BreakRevision = ""
+	}
+	return item
 }

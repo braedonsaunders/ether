@@ -16,7 +16,7 @@ import (
 
 func TestBreakSignalsAndChapters(t *testing.T) {
 	s := breakSignals{black: []breakRun{{70, 71}, {130, 131}, {150, 155}}, silent: []breakRun{{69.9, 71.1}, {149, 156}}, scenes: []float64{70}}
-	got := combineBreakSignals(s, 3*time.Minute)
+	got := combineBreakSignals(s, 5*time.Minute)
 	if len(got) != 1 || got[0].AtMS != 70500 || got[0].Confidence != .96 {
 		t.Fatalf("black+silence vs dialogue/long dark trap: %+v", got)
 	}
@@ -25,10 +25,10 @@ func TestBreakSignalsAndChapters(t *testing.T) {
 	for _, line := range []string{"silence_start: 69.9", "black_start:70 black_end:71 black_duration:1", "lavfi.scd.time: 70", "silence_end: 71.1 | silence_duration: 1.2"} {
 		parsed.line(line, &start)
 	}
-	if got = combineBreakSignals(parsed, 3*time.Minute); len(got) != 1 {
+	if got = combineBreakSignals(parsed, 5*time.Minute); len(got) != 1 {
 		t.Fatal(got)
 	}
-	info := core.MediaInfo{Duration: 3 * time.Minute, Chapters: []core.Chapter{{Title: "Act 1", Start: 0}, {Title: "Act 2", Start: 70 * time.Second}, {Title: "Chapter 3", Start: 90 * time.Second}, {Title: "Credits", Start: 110 * time.Second}}}
+	info := core.MediaInfo{Duration: 5 * time.Minute, Chapters: []core.Chapter{{Title: "Act 1", Start: 0}, {Title: "Act 2", Start: 70 * time.Second}, {Title: "Chapter 3", Start: 170 * time.Second}, {Title: "Credits", Start: 200 * time.Second}}}
 	if got = ChapterBreaks(info); len(got) != 1 || got[0].AtMS != 70000 || got[0].Source != "chapters" {
 		t.Fatal(got)
 	}
@@ -85,7 +85,7 @@ func TestBreakSyntheticDecode(t *testing.T) {
 	}
 	dir := t.TempDir()
 	file := filepath.Join(dir, "synthetic.mkv")
-	cmd := exec.Command(binary, "-v", "error", "-nostdin", "-threads", "1", "-filter_threads", "1", "-f", "lavfi", "-i", "color=white:s=160x90:r=10:d=180", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=8000:duration=180", "-vf", "drawbox=color=black:t=fill:enable='between(t,70,70.9)+between(t,130,130.9)'", "-af", "volume='if(between(t,70,71),0,1)':eval=frame", "-c:v", "ffv1", "-c:a", "pcm_s16le", "-threads", "1", file)
+	cmd := exec.Command(binary, "-v", "error", "-nostdin", "-threads", "1", "-filter_threads", "1", "-f", "lavfi", "-i", "color=white:s=160x90:r=10:d=200", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=8000:duration=200", "-vf", "drawbox=color=black:t=fill:enable='between(t,70,70.9)+between(t,130,130.9)'", "-af", "volume='if(between(t,70,71),0,1)':eval=frame", "-c:v", "ffv1", "-c:a", "pcm_s16le", "-threads", "1", file)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %s %v", out, err)
 	}
@@ -93,7 +93,7 @@ func TestBreakSyntheticDecode(t *testing.T) {
 		t.Logf("decode CPU/video-hour=%s wall/video-hour=%s", cpu*(time.Hour/video), wall*(time.Hour/video))
 	}}
 	started := time.Now()
-	input := BreakInput{URL: file, Info: core.MediaInfo{Duration: 3 * time.Minute}}
+	input := BreakInput{URL: file, Info: core.MediaInfo{Duration: 200 * time.Second, Container: "mkv", Streams: []core.StreamInfo{{Type: "video", Codec: "ffv1"}}}}
 	evidence := newBreakEvidence(input)
 	got, err := a.decodeEvidence(t.Context(), input, &evidence)
 	evidence.Complete = err == nil
@@ -123,7 +123,7 @@ func TestBreakSyntheticDecode(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("timeline=%s wall=%s per-video-hour=%s", b, time.Since(started), time.Since(started)*20)
+	t.Logf("timeline=%s wall=%s per-video-hour=%s", b, time.Since(started), time.Since(started)*(time.Hour/input.Info.Duration))
 }
 
 func TestBreakEvidencePrivacyLeaseAndCache(t *testing.T) {

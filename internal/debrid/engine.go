@@ -487,13 +487,14 @@ type blockFlight struct {
 }
 
 type remoteFile struct {
-	e       *Engine
-	id      string
-	tag     [8]byte
-	size    int64
-	nblocks int64
-	ctx     context.Context
-	cancel  context.CancelFunc
+	analysis analysisCounters
+	e        *Engine
+	id       string
+	tag      [8]byte
+	size     int64
+	nblocks  int64
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	// guarded by Engine.mu
 	refs     int
@@ -798,7 +799,11 @@ func (f *remoteFile) block(ctx context.Context, idx int64, mode fetchMode, runBl
 				return d, nil
 			}
 			if runCtx == nil {
-				runCtx = f.ctx
+				if isAnalysisRead(ctx) {
+					runCtx = ctx
+				} else {
+					runCtx = f.ctx
+				}
 			}
 			fl, _ = f.startRun(runCtx, idx, runBlocks, mode, false)
 		}
@@ -909,6 +914,9 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 	end := min((first+int64(len(fls)))*f.e.block, f.size) - 1
 	began := f.e.now()
 	body, tm, err := f.rangeGet(reqCtx, start, end, mode == fetchUrgent || mode == fetchDurable)
+	if err == nil && isAnalysisRead(reqCtx) {
+		body = &analysisBody{ReadCloser: body, counters: &f.analysis, totals: &f.e.svc.analysisTotals, ctx: reqCtx}
+	}
 	if err != nil {
 		if ctx.Err() == nil && reqCtx.Err() == nil {
 			f.e.log.Warn("debrid range failed", "release", f.id, "offset", start, "err", sanitize(err))
@@ -1066,14 +1074,48 @@ type timing struct{ connect, ttfb time.Duration }
 // 404, 410 or expiry. Errors wrap core.ErrSourceUnavailable (transient),
 // core.ErrArticleMissing (the link keeps failing) or core.ErrArticleCorrupt
 // (the file is not what the payload describes).
-func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool) (io.ReadCloser, timing, error) {
+func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool) (result io.ReadCloser, measured timing, resultErr error) {
+	if isAnalysisRead(ctx) && f.e.svc != nil {
+		totals := &f.e.svc.analysisTotals
+		totals.active.Add(1)
+		release := func() {}
+		defer func() {
+			done := func() { release(); totals.active.Add(-1) }
+			if resultErr == nil && result != nil {
+				result = &analysisActiveBody{ReadCloser: result, done: done}
+			} else {
+				done()
+			}
+		}()
+		payload, _ := f.payload()
+		readCtx, done, err := f.e.svc.beginAnalysisRange(ctx, payload.Provider)
+		if err != nil {
+			return nil, timing{}, err
+		}
+		ctx = readCtx
+		release = done
+	}
 	var lastErr error
 	for attempt := 0; attempt < maxRangeAttempts; attempt++ {
+		if isAnalysisRead(ctx) {
+			payload, _ := f.payload()
+			if f.e.svc == nil {
+				return nil, timing{}, analysisUnavailable()
+			}
+			if err := f.e.svc.paceAnalysis(ctx, payload.Provider); err != nil {
+				return nil, timing{}, err
+			}
+		}
 		u, gen, err := f.link(ctx, false)
 		if err != nil {
 			return nil, timing{}, err
 		}
 		payload, _ := f.payload()
+		if isAnalysisRead(ctx) {
+			if err := f.e.svc.checkAnalysisAccount(payload.Provider); err != nil {
+				return nil, timing{}, err
+			}
+		}
 		if err := f.checkMediaPause(payload.Provider, u); err != nil {
 			return nil, timing{}, err
 		}
@@ -1086,7 +1128,17 @@ func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool
 		if payload.IsDirect() || payload.IsPluginProvider() {
 			rctx = withDirect(ctx, payload)
 		}
+		if isAnalysisRead(ctx) {
+			f.analysis.requests.Add(1)
+			f.e.svc.analysisTotals.requests.Add(1)
+		}
 		resp, tm, err := f.e.get(rctx, u, start, end, urgent, f.conns)
+		if err != nil && isAnalysisRead(ctx) && ctx.Err() == nil && !errors.Is(err, context.Canceled) {
+			f.analysis.errors.Add(1)
+			if f.e.svc != nil {
+				f.e.svc.analysisTotals.errors.Add(1)
+			}
+		}
 		if err != nil {
 			if errors.Is(err, core.ErrBudgetExhausted) {
 				return nil, tm, err
@@ -1175,6 +1227,15 @@ func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool
 				// do not wait to drain an unneeded body on the Play path.
 				resp.Body.Close()
 				if resp.StatusCode == http.StatusTooManyRequests {
+					if f.e.svc != nil {
+						f.e.svc.pauseAnalysisAccount(payload.Provider, ra)
+					}
+					if isAnalysisRead(ctx) {
+						f.analysis.errors.Add(1)
+						if f.e.svc != nil {
+							f.e.svc.analysisTotals.errors.Add(1)
+						}
+					}
 					// The host counts our connections: open fewer for a while.
 					f.e.reduceHostCap(resp.Request.URL.String())
 					if attempt == 0 && urgent && ra > 0 && ra <= 3*time.Second {
@@ -1674,6 +1735,9 @@ func (s *httpSource) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (s *httpSource) ReadAtContext(ctx context.Context, p []byte, off int64) (int, error) {
+	if isAnalysisRead(ctx) {
+		return s.ReadAtAnalysisContext(ctx, p, off)
+	}
 	return s.read(ctx, p, off, fetchUrgent, true)
 }
 
@@ -1691,11 +1755,18 @@ func (s *httpSource) ReadAtPrefetchContext(ctx context.Context, p []byte, off in
 // ReadMetadataAtContext serves container-index reads: urgent, but they jump
 // around the file, so they neither count as seeks nor trigger read-ahead.
 func (s *httpSource) ReadMetadataAtContext(ctx context.Context, p []byte, off int64) (int, error) {
+	if isAnalysisRead(ctx) {
+		return s.ReadAtAnalysisContext(ctx, p, off)
+	}
 	return s.read(ctx, p, off, fetchMetadata, false)
 }
 
 func (s *httpSource) read(ctx context.Context, p []byte, off int64, mode fetchMode, live bool) (int, error) {
 	f := s.f
+	if live && !core.IsSpeculative(ctx) && !isAnalysisRead(ctx) && f.e.svc != nil {
+		payload, _ := f.payload()
+		f.e.svc.noteAnalysisLive(payload.Provider)
+	}
 	if off < 0 {
 		return 0, fmt.Errorf("debrid: negative offset")
 	}

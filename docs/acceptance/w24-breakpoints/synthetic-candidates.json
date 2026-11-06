@@ -1,7 +1,19 @@
 {
-  "version": 1,
+  "providerStatsKnown": false,
+  "providerRequests": 0,
+  "providerBytes": 0,
+  "providerErrors": 0,
+  "decodedThroughMs": 200000,
+  "coverageComplete": true,
+  "mode": "full-luma",
+  "backend": "software",
+  "readBytesKnown": false,
+  "partial": false,
+  "reservedBytes": 0,
+  "readBytes": 0,
+  "version": 2,
   "key": 0,
-  "durationMs": 180000,
+  "durationMs": 200000,
   "cacheHit": false,
   "decoded": true,
   "complete": true,
@@ -51,6 +63,6 @@
       "confidence": 0.96
     }
   ],
-  "cpuMs": 297,
-  "wallMs": 148
+  "cpuMs": 404,
+  "wallMs": 213
 }

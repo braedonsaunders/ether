@@ -191,3 +191,12 @@ type SourceDeliveryObserver interface {
 type ConcurrentRangeReaderAt interface {
 	ReadAtConcurrentContext(context.Context, []byte, int64) (int, error)
 }
+
+// AnalysisReaderAt is an explicitly admitted background analysis read. It keeps
+// prefetch priority while allowing provider-account pacing and viewer yielding.
+type AnalysisReaderAt interface {
+	ReadAtAnalysisContext(context.Context, []byte, int64) (int, error)
+}
+
+// AnalysisSourceStats reports only analysis provider requests, bytes and errors.
+type AnalysisSourceStats interface{ AnalysisStats() (int64, int64, int64) }

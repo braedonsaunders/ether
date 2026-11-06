@@ -22,19 +22,34 @@ type BreakSignal struct {
 // decode candidates are unavailable unless a local observer saved them earlier.
 // Complete=false candidates are partial and must not enter quality denominators.
 type BreakEvidence struct {
-	Version    int            `json:"version"`
-	Key        core.RatingKey `json:"key"`
-	DurationMS int64          `json:"durationMs"`
-	CacheHit   bool           `json:"cacheHit"`
-	Decoded    bool           `json:"decoded"`
-	Complete   bool           `json:"complete"`
-	Chapters   []BreakSignal  `json:"chapters"`
-	Black      []BreakSignal  `json:"black"`
-	Silence    []BreakSignal  `json:"silence"`
-	Scenes     []BreakSignal  `json:"scenes"`
-	Points     []BreakPoint   `json:"points"`
-	CPUMS      int64          `json:"cpuMs"`
-	WallMS     int64          `json:"wallMs"`
+	ProviderStatsKnown bool           `json:"providerStatsKnown"`
+	ProviderRequests   int64          `json:"providerRequests"`
+	ProviderBytes      int64          `json:"providerBytes"`
+	ProviderErrors     int64          `json:"providerErrors"`
+	DecodedThroughMS   int64          `json:"decodedThroughMs"`
+	CoverageComplete   bool           `json:"coverageComplete"`
+	Mode               string         `json:"mode,omitempty"`
+	Backend            string         `json:"backend,omitempty"`
+	AudioCandidates    []BreakSignal  `json:"audioCandidates,omitempty"`
+	KeyframeBlack      []BreakSignal  `json:"keyframeBlack,omitempty"`
+	CandidateWindows   []BreakSignal  `json:"candidateWindows,omitempty"`
+	ReadBytesKnown     bool           `json:"readBytesKnown"`
+	Partial            bool           `json:"partial"`
+	ReservedBytes      int64          `json:"reservedBytes"`
+	ReadBytes          int64          `json:"readBytes"`
+	Version            int            `json:"version"`
+	Key                core.RatingKey `json:"key"`
+	DurationMS         int64          `json:"durationMs"`
+	CacheHit           bool           `json:"cacheHit"`
+	Decoded            bool           `json:"decoded"`
+	Complete           bool           `json:"complete"`
+	Chapters           []BreakSignal  `json:"chapters"`
+	Black              []BreakSignal  `json:"black"`
+	Silence            []BreakSignal  `json:"silence"`
+	Scenes             []BreakSignal  `json:"scenes"`
+	Points             []BreakPoint   `json:"points"`
+	CPUMS              int64          `json:"cpuMs"`
+	WallMS             int64          `json:"wallMs"`
 }
 
 func newBreakEvidence(in BreakInput) BreakEvidence {

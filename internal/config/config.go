@@ -519,8 +519,15 @@ type LiveTVScreens struct {
 }
 
 type LiveTV struct {
-	DefaultStyleID string        `json:"defaultStyleId,omitempty"`
-	Screens        LiveTVScreens `json:"screens"`
+	// Extra act-break scan bandwidth. Zero selects defaults (1 GiB/day,
+	// 256 MiB/release including conservative read overhead, 1 GiB large-file
+	// threshold). Negative daily/release limits disable pre-air full scans.
+	BreakScanDailyBytes        int64         `json:"breakScanDailyBytes,omitempty"`
+	BreakScanReleaseBytes      int64         `json:"breakScanReleaseBytes,omitempty"`
+	BreakScanLargeReleaseBytes int64         `json:"breakScanLargeReleaseBytes,omitempty"`
+	BreakScanAllowLarge        bool          `json:"breakScanAllowLarge,omitempty"`
+	DefaultStyleID             string        `json:"defaultStyleId,omitempty"`
+	Screens                    LiveTVScreens `json:"screens"`
 	// LogoIndexURL is an owner-enabled channel logo index (an
 	// iptv-org-style JSON list). Ether ships no list; empty disables
 	// logo matching.

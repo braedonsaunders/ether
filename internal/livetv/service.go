@@ -33,6 +33,8 @@ CREATE TABLE livetv_policies(user_id INTEGER PRIMARY KEY, data TEXT NOT NULL);`)
 
 type Service struct {
 	virtualGuide       virtualGuideCache
+	breakObserved      chan breakObservation
+	observedBreaks     map[core.RatingKey]breakObservation
 	guideAIMu          sync.Mutex
 	graphicsWake       chan struct{}
 	reelSnapshots      map[string]*ReelSnapshot
@@ -107,7 +109,7 @@ func New(o Options) (*Service, error) {
 	if kinds == nil {
 		kinds = NewKindRegistry()
 	}
-	s := &Service{graphicsWake: make(chan struct{}, 1), o: o, kinds: kinds, sessions: map[string]*session{}, ctx: ctx, cancel: cancel, lineupUnix: o.Now().Unix()}
+	s := &Service{breakObserved: make(chan breakObservation, 64), observedBreaks: map[core.RatingKey]breakObservation{}, graphicsWake: make(chan struct{}, 1), o: o, kinds: kinds, sessions: map[string]*session{}, ctx: ctx, cancel: cancel, lineupUnix: o.Now().Unix()}
 	if o.Picker != nil && o.Users != nil {
 		s.wg.Add(1)
 		go s.personalLoop()

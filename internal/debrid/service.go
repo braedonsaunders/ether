@@ -69,10 +69,13 @@ type Options struct {
 // Service holds the configured debrid providers and applies priority,
 // backoff, bounded concurrency and caching to every provider call.
 type Service struct {
-	opts Options
-	log  *slog.Logger
-	db   *sql.DB
-	now  func() time.Time
+	analysisTotals analysisCounters
+	analysisMu     sync.Mutex
+	analysis       map[string]*analysisAccount
+	opts           Options
+	log            *slog.Logger
+	db             *sql.DB
+	now            func() time.Time
 
 	mu      sync.RWMutex
 	cfg     config.Debrid

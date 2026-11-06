@@ -115,3 +115,19 @@ func TestNaturalBreakOverrideInheritance(t *testing.T) {
 		t.Fatal(ids)
 	}
 }
+
+func TestBreakSnapshotsApplyOnlyToLaterAirings(t *testing.T) {
+	start := time.Date(2026, 11, 5, 18, 0, 0, 0, time.UTC)
+	item := Item{Key: core.EpisodeKey(1, 1, 1), DurationMS: 1320000, BreakPointsMS: []int64{420000}, BreakPoints: []BreakPoint{{AtMS: 420000, Source: "detected", Confidence: .91}}, BreakReleaseID: "release", BreakRevision: "revision", BreakAvailableAfterMS: start.Add(10 * time.Minute).UnixMilli()}
+	current := availableBreakItem(item, start)
+	if len(current.BreakPointsMS) != 0 || current.BreakReleaseID != "" {
+		t.Fatal("new evidence changed current airing", current)
+	}
+	later := availableBreakItem(item, start.Add(30*time.Minute))
+	if len(later.BreakPointsMS) != 1 || later.BreakRevision != "revision" {
+		t.Fatal("later airing lost cached evidence", later)
+	}
+	if len(item.BreakPointsMS) != 1 {
+		t.Fatal("schedule mutated stored item")
+	}
+}

@@ -23,29 +23,30 @@ type BreakPoint struct {
 }
 
 type Item struct {
-	AssetDigest    string         `json:"assetDigest,omitempty"`
-	SourceID       string         `json:"sourceId,omitempty"`
-	BreakReleaseID string         `json:"breakReleaseId,omitempty"`
-	BreakRevision  string         `json:"breakRevision,omitempty"`
-	BreakPoints    []BreakPoint   `json:"breakPoints,omitempty"`
-	BreakPointsMS  []int64        `json:"breakPointsMs,omitempty"`
-	ReelID         string         `json:"reelId,omitempty"`
-	ReelClipID     string         `json:"reelClipId,omitempty"`
-	EpisodeTitle   string         `json:"episodeTitle,omitempty"`
-	ShowTitle      string         `json:"showTitle,omitempty"`
-	Art            string         `json:"art,omitempty"`
-	Genres         []string       `json:"genres,omitempty"`
-	GUID           string         `json:"guid,omitempty"`
-	ShowGUID       string         `json:"showGuid,omitempty"`
-	MediaType      string         `json:"mediaType,omitempty"`
-	Premiere       bool           `json:"premiere,omitempty"`
-	Live           bool           `json:"live,omitempty"`
-	Key            core.RatingKey `json:"key"`
-	Title          string         `json:"title"`
-	DurationMS     int64          `json:"durationMs"`
-	Summary        string         `json:"summary,omitempty"`
-	Rating         string         `json:"rating,omitempty"`
-	Thumb          string         `json:"thumb,omitempty"`
+	BreakAvailableAfterMS int64          `json:"breakAvailableAfterMs,omitempty"`
+	AssetDigest           string         `json:"assetDigest,omitempty"`
+	SourceID              string         `json:"sourceId,omitempty"`
+	BreakReleaseID        string         `json:"breakReleaseId,omitempty"`
+	BreakRevision         string         `json:"breakRevision,omitempty"`
+	BreakPoints           []BreakPoint   `json:"breakPoints,omitempty"`
+	BreakPointsMS         []int64        `json:"breakPointsMs,omitempty"`
+	ReelID                string         `json:"reelId,omitempty"`
+	ReelClipID            string         `json:"reelClipId,omitempty"`
+	EpisodeTitle          string         `json:"episodeTitle,omitempty"`
+	ShowTitle             string         `json:"showTitle,omitempty"`
+	Art                   string         `json:"art,omitempty"`
+	Genres                []string       `json:"genres,omitempty"`
+	GUID                  string         `json:"guid,omitempty"`
+	ShowGUID              string         `json:"showGuid,omitempty"`
+	MediaType             string         `json:"mediaType,omitempty"`
+	Premiere              bool           `json:"premiere,omitempty"`
+	Live                  bool           `json:"live,omitempty"`
+	Key                   core.RatingKey `json:"key"`
+	Title                 string         `json:"title"`
+	DurationMS            int64          `json:"durationMs"`
+	Summary               string         `json:"summary,omitempty"`
+	Rating                string         `json:"rating,omitempty"`
+	Thumb                 string         `json:"thumb,omitempty"`
 	// Show metadata keeps episodes in season order inside a shuffle,
 	// marathon or newest-first playout. Zero values are movies and items
 	// saved before weekly scheduling, which stay in their stored order.
@@ -336,6 +337,7 @@ type Programme struct {
 	SourceID        string `json:"sourceId,omitempty"`
 	Pinned          bool   `json:"pinned,omitempty"`
 	Rule            string `json:"rule,omitempty"`
+	naturalBreaks   bool
 	policyTag       *broadcastPolicyTag
 	sourceOffset    time.Duration
 	graphicsRequest *core.ClipRequest

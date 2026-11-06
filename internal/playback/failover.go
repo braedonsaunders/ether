@@ -349,6 +349,9 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 	openedRevision := core.SourceRevision(&core.PlaySession{Key: s.ident.key, Source: src})
 	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: src, share: share, sharedClose: closeShared, finishSource: finish, res: res, indexReady: make(chan struct{})}
 	g.ctx, g.cancel = context.WithCancel(m.ctx)
+	if core.IsBackgroundAnalysis(ctx) {
+		g.ctx = core.WithBackgroundAnalysis(g.ctx)
+	}
 	m.mu.Lock()
 	m.tokens[s.id+"/"+g.token] = g
 	m.mu.Unlock()
@@ -493,6 +496,9 @@ func (m *Manager) probeMedia(ctx context.Context, g *generation, src core.MediaS
 // chapters, per-track statistics) off the Play path and merges only
 // facts that were unknown, so a running decision never changes.
 func (m *Manager) startTrailerFill(g *generation) {
+	if core.IsBackgroundAnalysis(g.ctx) {
+		return
+	}
 	if m.deps.NativeTrailer == nil || !g.acquire() {
 		return
 	}
@@ -627,6 +633,10 @@ func probeDifference(native, ref core.MediaInfo) string {
 // and installs it on the generation (and the session's virtual map when
 // this generation defines it) once read.
 func (m *Manager) startIndexFill(g *generation) {
+	if core.IsBackgroundAnalysis(g.ctx) {
+		g.markIndexReady()
+		return
+	}
 	if !g.acquire() {
 		g.markIndexReady()
 		return

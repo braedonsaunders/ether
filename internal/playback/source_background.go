@@ -50,6 +50,7 @@ func (m *Manager) HoldBackgroundSource(ctx context.Context, id string, expected 
 		return nil, core.ErrNotAvailable
 	}
 	s.backgroundHold = hold
+	s.analysisSource = true
 	s.mu.Unlock()
 	var once sync.Once
 	return func() {
