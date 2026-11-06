@@ -348,6 +348,10 @@ func ownerResult(w http.ResponseWriter, v any, err error) {
 		if errors.Is(err, core.ErrNotFound) {
 			status = 404
 		}
+		if errors.Is(err, core.ErrNotAvailable) {
+			status = http.StatusServiceUnavailable
+			w.Header().Set("Retry-After", "1")
+		}
 		w.WriteHeader(status)
 		json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "livetv", "message": err.Error()}})
 		return

@@ -39,6 +39,11 @@ func testService(t *testing.T, o Options) *Service {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { s.Close() })
+	// Most fixtures exercise an already-running service. Startup admission is
+	// tested separately with New and cold guide reads.
+	if err := s.refreshVirtualGuide(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	return s
 }
 func testChannel() Channel {

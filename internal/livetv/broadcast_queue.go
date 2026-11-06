@@ -8,14 +8,16 @@ import (
 )
 
 // Encoder scheduling must not stop the output clock or discard PCM. Reserve
-// six seconds of ticks, but retain at most one second of distinct pictures.
-// Beyond that watermark, repeat a picture while preserving every audio tick.
-// Additional backlog costs only PCM, rather than full uncompressed pictures.
+// six seconds of ticks. Beyond a second of backlog, retain ten pictures per
+// second while preserving every audio tick. Pictures keep advancing during a
+// dip, and an element cut always carries its new picture on the exact tick.
+// Beyond six seconds, extra backlog retains PCM and cut pictures only.
 type broadcastFrameQueue struct {
 	mu         sync.Mutex
 	frames     []transcode.RawFrame
 	head       int
 	fps        int
+	tick       int64
 	repeating  bool
 	held       []byte
 	heldPolicy []any
@@ -26,7 +28,7 @@ func newBroadcastFrameQueue(fps int) *broadcastFrameQueue {
 	return &broadcastFrameQueue{fps: fps, frames: make([]transcode.RawFrame, 0, fps*6), ready: make(chan struct{}, 1)}
 }
 
-func (q *broadcastFrameQueue) push(frame transcode.RawFrame) (changed, repeating bool, pending int) {
+func (q *broadcastFrameQueue) push(frame transcode.RawFrame, forcePicture bool) (changed, repeating bool, pending int) {
 	q.mu.Lock()
 	pending = len(q.frames) - q.head
 	was := q.repeating
@@ -35,7 +37,7 @@ func (q *broadcastFrameQueue) push(frame transcode.RawFrame) (changed, repeating
 	} else if pending <= q.fps/4 {
 		q.repeating = false
 	}
-	if q.repeating && q.held != nil {
+	if q.repeating && (q.tick%3 != 0 || pending >= q.fps*6) && !forcePicture && q.held != nil {
 		frame.Video = q.held
 		frame.RepeatVideo = true
 		frame.PolicyTags = mergeBroadcastTags(frame.PolicyTags, q.heldPolicy)
@@ -43,6 +45,7 @@ func (q *broadcastFrameQueue) push(frame transcode.RawFrame) (changed, repeating
 		q.held = frame.Video
 		q.heldPolicy = frame.PolicyTags
 	}
+	q.tick++
 	q.frames = append(q.frames, frame)
 	changed, repeating = was != q.repeating, q.repeating
 	q.mu.Unlock()

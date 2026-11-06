@@ -70,7 +70,12 @@ func (s surfaceLiveTV) Guide(ctx context.Context, v *core.Viewer, q frontend.Liv
 	if s.app.livetv == nil {
 		return nil, core.ErrNotAvailable
 	}
-	permitted, err := s.app.livetv.AllowedChannels(ctx, viewer)
+	var permitted []livetv.Channel
+	if len(q.Channels) > 0 {
+		permitted, err = s.app.livetv.AllowedChannelsForIDs(ctx, viewer, q.Channels)
+	} else {
+		permitted, err = s.app.livetv.AllowedChannels(ctx, viewer)
+	}
 	if err != nil {
 		return nil, err
 	}

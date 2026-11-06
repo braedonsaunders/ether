@@ -113,10 +113,6 @@ func New(o Options) (*Service, error) {
 		go s.personalLoop()
 	}
 	s.virtualGuide.wake = make(chan struct{}, 1)
-	if err := s.refreshVirtualGuide(ctx); err != nil {
-		cancel()
-		return nil, err
-	}
 	s.wg.Add(1)
 	go s.virtualGuideLoop()
 	if o.BreakInput != nil && o.BreakAnalyzer != nil {
@@ -341,7 +337,10 @@ func channels(ctx context.Context, db queryer) ([]Channel, error) {
 func (s *Service) Channel(ctx context.Context, id string) (Channel, error) {
 	s.virtualGuide.mu.RLock()
 	entry := s.virtualGuide.entries[id]
-	snapshotEpoch := s.virtualGuide.epoch
+	var snapshotEpoch int64
+	if entry != nil {
+		snapshotEpoch = entry.epoch
+	}
 	s.virtualGuide.mu.RUnlock()
 	if entry != nil {
 		var epoch int64
@@ -1010,6 +1009,16 @@ func (s *Service) AllowedChannelCached(ctx context.Context, u *core.User, id str
 	return nil
 }
 func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel, error) {
+	return s.allowedChannels(ctx, u, nil)
+}
+
+// AllowedChannelsForIDs checks a guide's selected channels without waiting for
+// unrelated channels to finish their background preparation.
+func (s *Service) AllowedChannelsForIDs(ctx context.Context, u *core.User, ids []string) ([]Channel, error) {
+	return s.allowedChannels(ctx, u, ids)
+}
+
+func (s *Service) allowedChannels(ctx context.Context, u *core.User, ids []string) ([]Channel, error) {
 	readyCtx, readinessErr := s.withVirtualGuide(ctx, nil)
 	if readinessErr != nil {
 		return nil, readinessErr
@@ -1019,7 +1028,18 @@ func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel,
 	if err != nil {
 		return nil, err
 	}
-	cs, err := s.Channels(ctx)
+	var cs []Channel
+	if ids == nil {
+		cs, err = s.Channels(ctx)
+	} else {
+		var selected map[string]Channel
+		selected, err = s.channelsByIDs(ctx, ids)
+		for _, id := range ids {
+			if c, ok := selected[id]; ok {
+				cs = append(cs, c)
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -745,7 +745,8 @@ func (b *broadcast) step(now time.Time) bool {
 	pcm := make([]byte, samples*b.format.Channels*2)
 	copy(pcm, frame.PCM)
 	frame.PCM = pcm
-	if mode != b.mode {
+	cut := mode != b.mode
+	if cut {
 		element := current.element
 		if mode == "screen" {
 			element = b.screenPlan.element
@@ -784,7 +785,7 @@ func (b *broadcast) step(now time.Time) bool {
 	b.lastFrame = frame
 	b.mu.Lock()
 	for id, r := range b.renditions {
-		changed, repeating, pending := r.queue.push(frame)
+		changed, repeating, pending := r.queue.push(frame, cut)
 		if changed {
 			b.logger.Info("broadcast encoder video cadence changed", "rendition", id, "repeating", repeating, "pendingTicks", pending, "tick", b.tick)
 		}
@@ -833,15 +834,10 @@ func (b *broadcast) startupQueueFull() bool {
 		r.queue.mu.Unlock()
 		fps := max(1, b.format.FPSNum/b.format.FPSDen)
 		limit := max(1, fps/2)
-		// Burst pacing must not suppress the ordinary pressure response on a
-		// host with no encoding margin. Let that queue repeat pictures while
-		// retaining every audio tick, rather than abandoning the buffer fill.
-		if source, ok := r.encoder.(interface{ RealtimeSpeed() float64 }); ok && time.Since(b.origin) >= 2*time.Second {
-			speed := source.RealtimeSpeed()
-			if speed > 0 && speed < 1.5 {
-				limit = 3 * fps
-			}
-		}
+		// A startup speed sample includes encoder priming and is not a
+		// sustainable throughput measurement. Pace the burst before queue
+		// pressure can reduce pictures; hosts without burst margin simply
+		// retain the smaller lead at the bounded startup deadline.
 		if pending >= limit {
 			return true
 		}

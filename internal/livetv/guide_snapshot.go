@@ -2,6 +2,7 @@ package livetv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -15,6 +16,7 @@ type virtualGuideSnapshot struct {
 	recipe               string
 	built                time.Time
 	revision             uint64
+	epoch                int64
 	channel              Channel
 	playbackChannel      Channel
 	from, until          time.Time
@@ -56,9 +58,7 @@ func (s *Service) virtualGuideLoop() {
 func (s *Service) refreshVirtualGuide(ctx context.Context) error {
 	s.virtualGuide.buildMu.Lock()
 	defer s.virtualGuide.buildMu.Unlock()
-	if err := s.backfillPersonalIndex(ctx); err != nil {
-		return err
-	}
+	started := time.Now()
 	var epoch int64
 	if err := s.o.DB.QueryRowContext(ctx, `SELECT generation FROM livetv_channel_epoch WHERE id=1`).Scan(&epoch); err != nil {
 		return err
@@ -75,25 +75,35 @@ func (s *Service) refreshVirtualGuide(ctx context.Context) error {
 		}
 	}
 	now := s.o.Now()
-	s.virtualGuide.mu.RLock()
+	s.virtualGuide.mu.Lock()
 	revision := s.virtualGuide.revision
-	s.virtualGuide.mu.RUnlock()
+	s.virtualGuide.epoch = epoch
+	if s.virtualGuide.entries == nil {
+		s.virtualGuide.entries = map[string]*virtualGuideSnapshot{}
+	}
+	s.virtualGuide.mu.Unlock()
 	seen := map[string]bool{}
+	expected := map[string]bool{}
 	compiled := &guideCompileCache{}
 	publish := func(id string, entry *virtualGuideSnapshot) {
+		// A compile result can be shared; publication owns its metadata copy.
+		published := *entry
+		published.epoch = epoch
 		s.virtualGuide.mu.Lock()
-		if s.virtualGuide.entries == nil {
-			s.virtualGuide.entries = map[string]*virtualGuideSnapshot{}
-		}
-		s.virtualGuide.entries[id] = entry
-		s.virtualGuide.mu.Unlock()
+		s.virtualGuide.entries[id] = &published
 		seen[id] = true
+		s.virtualGuide.mu.Unlock()
 	}
-	for _, c := range cs {
-		if c.Kind != "virtual" {
-			continue
-		}
+	var personalIndex sync.Once
+	var personalIndexErr error
+	warm := func(c Channel) error {
 		if c.Personal != nil {
+			// Indexing a large saved personal rundown occupies one warm worker, not
+			// server startup or the unrelated channel's preparation slot.
+			personalIndex.Do(func() { personalIndexErr = s.backfillPersonalIndex(ctx) })
+			if personalIndexErr != nil {
+				return personalIndexErr
+			}
 			for i := range users {
 				user := &users[i]
 				if s.allowed(ctx, user, c, nil) {
@@ -102,8 +112,8 @@ func (s *Service) refreshVirtualGuide(ctx context.Context) error {
 					}
 				}
 			}
-			publish(c.ID, &virtualGuideSnapshot{channel: c})
-			continue
+			publish(c.ID, &virtualGuideSnapshot{channel: c, revision: revision, built: now})
+			return nil
 		}
 		recipe, reuse := s.virtualGuideFingerprint(c, now, revision, compiled)
 		if reuse {
@@ -117,26 +127,55 @@ func (s *Service) refreshVirtualGuide(ctx context.Context) error {
 			if shareableGuide(c) {
 				compiled.remember(recipe, &updated)
 			}
-			continue
+			return nil
 		}
 		entry, err := s.buildVirtualGuideSnapshot(ctx, c, now, revision, compiled)
 		if err != nil {
 			return err
 		}
 		publish(c.ID, entry)
-		if ctx.Err() != nil {
-			return ctx.Err()
+		return nil
+	}
+	jobs := make(chan Channel, len(cs))
+	for _, c := range cs {
+		if c.Kind == "virtual" {
+			expected[c.ID] = true
+			jobs <- c
 		}
+	}
+	close(jobs)
+	var workers sync.WaitGroup
+	var failureMu sync.Mutex
+	var failures []error
+	// A slow channel cannot serialize every other channel's first guide, and
+	// large lineups cannot launch unbounded schedule/availability work.
+	for range min(2, len(expected)) {
+		workers.Go(func() {
+			for c := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				if err := warm(c); err != nil {
+					failureMu.Lock()
+					failures = append(failures, fmt.Errorf("channel %s: %w", c.ID, err))
+					failureMu.Unlock()
+				}
+			}
+		})
+	}
+	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	s.virtualGuide.mu.Lock()
 	for id := range s.virtualGuide.entries {
-		if !seen[id] {
+		if !expected[id] {
 			delete(s.virtualGuide.entries, id)
 		}
 	}
-	s.virtualGuide.epoch = epoch
 	s.virtualGuide.mu.Unlock()
-	return nil
+	s.o.Logger.Debug("virtual guide snapshots ready", "channels", len(seen), "total", len(expected), "duration", time.Since(started))
+	return errors.Join(failures...)
 }
 
 // A binary search selects just the requested time range. Request paths never
@@ -178,9 +217,6 @@ func (s *Service) allowedProgramme(ctx context.Context, u *core.User, c Channel,
 type virtualGuideContextKey struct{}
 
 func (s *Service) withVirtualGuide(ctx context.Context, cs []Channel) (context.Context, error) {
-	if _, ok := ctx.Value(virtualGuideContextKey{}).(bool); ok {
-		return ctx, nil
-	}
 	s.virtualGuide.mu.RLock()
 	hasVirtual := len(s.virtualGuide.entries) > 0
 	s.virtualGuide.mu.RUnlock()
@@ -194,15 +230,20 @@ func (s *Service) withVirtualGuide(ctx context.Context, cs []Channel) (context.C
 	if !needed {
 		return ctx, nil
 	}
-	var epoch int64
-	if err := s.o.DB.QueryRowContext(ctx, `SELECT generation FROM livetv_channel_epoch WHERE id=1`).Scan(&epoch); err != nil {
-		return ctx, err
+	epoch, checked := ctx.Value(virtualGuideContextKey{}).(int64)
+	if !checked {
+		if err := s.o.DB.QueryRowContext(ctx, `SELECT generation FROM livetv_channel_epoch WHERE id=1`).Scan(&epoch); err != nil {
+			return ctx, err
+		}
 	}
 	s.virtualGuide.mu.RLock()
 	ready := s.virtualGuide.epoch == epoch
 	for _, c := range cs {
-		if c.Kind == "virtual" && c.Enabled && s.virtualGuide.entries[c.ID] == nil {
-			ready = false
+		if c.Kind == "virtual" && c.Enabled {
+			entry := s.virtualGuide.entries[c.ID]
+			if entry == nil || entry.epoch != epoch || entry.revision != s.virtualGuide.revision {
+				ready = false
+			}
 		}
 	}
 	s.virtualGuide.mu.RUnlock()
@@ -210,7 +251,9 @@ func (s *Service) withVirtualGuide(ctx context.Context, cs []Channel) (context.C
 		s.wakeVirtualGuide()
 		return ctx, core.ErrNotAvailable
 	}
-	return context.WithValue(ctx, virtualGuideContextKey{}, true), nil
+	// Reuse the epoch query within this request, but always check each requested
+	// channel: one warm channel cannot grant readiness to a cold neighbour.
+	return context.WithValue(ctx, virtualGuideContextKey{}, epoch), nil
 }
 
 // RefreshGuide is the owner-save hook for look and schedule changes. Viewer

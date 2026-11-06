@@ -219,6 +219,16 @@ func TestBroadcastRegistrySharesViewersAndStopsAfterGrace(t *testing.T) {
 			t.Fatal("remaining viewer lost output")
 		}
 		b.close()
+		time.Sleep(time.Second)
+		synctest.Wait()
+		warm, err := registry.acquire(context.Background(), broadcastKey{channelID: "one"}, "main", core.Decision{MaxHeight: 720}, create)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if created != 1 || warm.broadcast != b.broadcast || len(runner.encoders) != 1 {
+			t.Fatal("warm reopen discarded the continuous output")
+		}
+		warm.close()
 		time.Sleep(59 * time.Second)
 		synctest.Wait()
 		b.broadcast.mu.Lock()

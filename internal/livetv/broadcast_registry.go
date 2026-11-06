@@ -33,9 +33,12 @@ type broadcastLease struct {
 }
 
 func (r *broadcastRegistry) acquire(ctx context.Context, key broadcastKey, id string, decision core.Decision, create func() (*broadcast, error)) (*broadcastLease, error) {
-	// Release grace-period encoders before another channel starts competing for
-	// real-time capacity. Waiting for a stream-limit error is too late for a cut.
-	r.yieldIdle(nil)
+	// Keep the requested channel warm while yielding other grace-period
+	// encoders. A same-channel reopen must retain its encoded live window.
+	r.mu.Lock()
+	existing := r.outputs[key]
+	r.mu.Unlock()
+	r.yieldIdle(existing)
 	r.mu.Lock()
 	if r.closed {
 		r.mu.Unlock()

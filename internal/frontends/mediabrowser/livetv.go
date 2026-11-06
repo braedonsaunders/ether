@@ -1,6 +1,8 @@
 package mediabrowser
 
 import (
+	"errors"
+
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
@@ -446,6 +448,11 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 		for _, id := range strings.Split(value, ",") {
 			ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), viewer, id)
 			if e != nil {
+				if errors.Is(e, frontend.ErrNotAvailable) {
+					w.Header().Set("Retry-After", "1")
+					http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+					return
+				}
 				http.NotFound(w, r)
 				return
 			}

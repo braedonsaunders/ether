@@ -434,7 +434,10 @@ func (p *providerBroadcastPlanner) open(ctx context.Context) (transcode.Decoder,
 		}
 		var decoder transcode.Decoder
 		if err == nil {
-			decoder, err = p.runner.StartDecoder(inputCtx, transcode.DecoderRequest{SessionID: ss.info.ID, InputURL: input, Format: p.format, Live: true})
+			p.mu.Lock()
+			_, aired := p.lastAired[src.ID]
+			p.mu.Unlock()
+			decoder, err = p.runner.StartDecoder(inputCtx, transcode.DecoderRequest{SessionID: ss.info.ID, InputURL: input, Format: p.format, Live: true, PrimeLive: !aired})
 		}
 		cleanup := func() { cancel(); p.s.revokeInput(ss); release() }
 		if err != nil {

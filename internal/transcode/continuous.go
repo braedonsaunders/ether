@@ -48,7 +48,10 @@ type DecoderRequest struct {
 	// Offset is then a small forward trim, without another demuxer seek.
 	Seeked bool
 	Live   bool // IPTV/live input: no seeking, no prewarm hold
-	Loop   bool // repeat a local cached master seamlessly; incompatible with Live and URLs
+	// PrimeLive reads four provider segments on the first open only. Callers
+	// with an aired source timestamp must leave it false on reconnect.
+	PrimeLive bool
+	Loop      bool // repeat a local cached master seamlessly; incompatible with Live and URLs
 }
 
 // Decoder yields frames already in Format, one per call, paced by the caller.

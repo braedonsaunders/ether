@@ -84,7 +84,11 @@ func (m *Manager) StartDecoder(ctx context.Context, r DecoderRequest) (Decoder, 
 	if r.Live {
 		args = append(args, "-copyts")
 		if strings.HasSuffix(strings.ToLower(u.Path), ".m3u8") {
-			args = append(args, "-live_start_index", "-4")
+			back := "-1"
+			if r.PrimeLive {
+				back = "-4"
+			}
+			args = append(args, "-live_start_index", back)
 		}
 	}
 	if !r.Live && !r.Seeked && r.Offset > 0 {
