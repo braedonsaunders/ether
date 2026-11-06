@@ -54,7 +54,7 @@ const DEVICES = [
 ];
 const CUSTOM = "__custom__";
 
-const HEIGHTS = localized(() => [
+const RESOLUTIONS = localized(() => [
   { value: "0", label: t("Any") },
   { value: "480", label: "480p" },
   { value: "720", label: "720p" },
@@ -74,7 +74,8 @@ const FILTER_OPTIONS = localized(() => [
   { value: MEDIA_TV as "tv", label: t("Shows") },
 ]);
 
-const heightLabel = (h: number) => HEIGHTS.find((x) => x.value === String(h))?.label ?? `${h}p`;
+const resolutionLabel = (h: number) =>
+  RESOLUTIONS.find((x) => x.value === String(h))?.label ?? `${h}p`;
 
 function ruleViewer(r: QualityRule, viewers: Viewer[] | null) {
   if (!r.userId) return "";
@@ -88,7 +89,7 @@ function ruleSummary(r: QualityRule, viewers: Viewer[] | null) {
     r.product || t("Any device"),
     r.platform,
     ruleViewer(r, viewers),
-    r.maxHeight ? heightLabel(r.maxHeight) : "",
+    r.maxHeight ? resolutionLabel(r.maxHeight) : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -437,7 +438,7 @@ export function ClientRulesTab() {
                     {...searchSelectLabels()}
                     value={String(draft.maxHeight ?? 0)}
                     onChange={(v) => set({ maxHeight: Number(v) || undefined })}
-                    options={HEIGHTS}
+                    options={RESOLUTIONS}
                     ariaLabel={t("Quality limit")}
                     searchable={false}
                   />

@@ -63,14 +63,14 @@ function profileGroup(name: string, mode: ImportMode): string {
   return tag ? (tag.split(/\s+/)[0] ?? tag) : t("Standard");
 }
 
-function heightLabel(h: number): string {
+function resolutionLabel(h: number): string {
   return h >= 2160 ? "4K" : `${h}p`;
 }
 
 function resolution(p: QualityProfile): string {
   return p.minHeight === p.maxHeight
-    ? heightLabel(p.maxHeight)
-    : t("{min} to {max}", { min: heightLabel(p.minHeight), max: heightLabel(p.maxHeight) });
+    ? resolutionLabel(p.maxHeight)
+    : t("{min} to {max}", { min: resolutionLabel(p.minHeight), max: resolutionLabel(p.maxHeight) });
 }
 
 function signed(n: number): string {

@@ -69,7 +69,7 @@ func TestProfileCeilingBlocksTallerVariants(t *testing.T) {
 	}
 	sawCeiling := false
 	for _, c := range dec.Candidates {
-		if c.Height > 1080 && c.Rejected && c.Reason == "above profile max height" {
+		if c.Height > 1080 && c.Rejected && c.Reason == "above profile max resolution" {
 			sawCeiling = true
 		}
 	}

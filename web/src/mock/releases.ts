@@ -309,7 +309,7 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
     if (info.source === "cam") return { reason: "cam not allowed", score };
     if (info.source === "screener") return { reason: "screener not allowed", score };
     const max = profile === "4K" || profile === "none" ? 2160 : profile === "720p" ? 720 : 1080;
-    if ((info.height ?? 0) > max) return { reason: "above profile max height", score };
+    if ((info.height ?? 0) > max) return { reason: "above profile max resolution", score };
     if (profile === "download" && info.audioCodec === "dtshd")
       return { reason: "size too large for runtime", score };
     return { score };

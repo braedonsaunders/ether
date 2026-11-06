@@ -504,7 +504,7 @@ describe("Release traces", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Profile: 720p–1080p.*Height: 2160p.*Bitrate: 5000 kbps/),
+      screen.getByText(/Profile: 720p–1080p.*Resolution: 2160p.*Bitrate: 5000 kbps/),
     ).toBeInTheDocument();
     for (const [min, max, label] of [
       [0, 0, "Any resolution"],
@@ -526,7 +526,7 @@ describe("Release traces", () => {
       );
       expect(
         screen.getByText(
-          `Effective playback limits: Profile: ${label} · Height: unlimited · Bitrate: unlimited`,
+          `Effective playback limits: Profile: ${label} · Resolution: unlimited · Bitrate: unlimited`,
         ),
       ).toBeInTheDocument();
     }

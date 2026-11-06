@@ -376,8 +376,8 @@ func TestQualityGateMatchesUnknownHeightBySource(t *testing.T) {
 		t.Fatalf("unknown-height WEB-DL rejected: %q", got)
 	}
 	profile.MinHeight = 1080
-	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceWEBDL}}, nil, profile, core.ClientCaps{}, false, false); got != "below profile min height" {
-		t.Fatalf("min height not applied: %q", got)
+	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceWEBDL}}, nil, profile, core.ClientCaps{}, false, false); got != "below profile min resolution" {
+		t.Fatalf("min resolution not applied: %q", got)
 	}
 	profile.MinHeight = 0
 	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceBluRay}}, nil, profile, core.ClientCaps{}, false, false); got != "quality excluded by imported profile" {
