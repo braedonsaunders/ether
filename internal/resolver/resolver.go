@@ -1367,7 +1367,7 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 			}
 			ct.Rejected = true
 			switch reason {
-			case "above profile max height", "above client max height", "below profile min height", "dolby vision not allowed for client", "video codec unsupported by client", "quality excluded by imported profile", "source recently failed health check; retrying later",
+			case ReasonAboveProfileMaxResolution, ReasonAboveClientMaxResolution, ReasonBelowProfileMinResolution, "dolby vision not allowed for client", "video codec unsupported by client", "quality excluded by imported profile", "source recently failed health check; retrying later",
 				// Size ranges are per profile: a remux too large for a
 				// download or mobile profile still plays for others.
 				"size too small for runtime", "size too large for runtime":
@@ -1445,7 +1445,7 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 		if !langOK && trace != nil {
 			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; ranked after releases in an accepted audio language", "; ")
 		}
-		cands = append(cands, candidate{fallback: fallback, policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, langWanted: langWanted, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth})
+		cands = append(cands, candidate{fallback: fallback, policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, langWanted: langWanted, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth, cf: sc.format, age: usenetAgeScore(rel.PubDate, now), hasAge: !rel.PubDate.IsZero()})
 	}
 	if hot != nil && len(cands) > 0 {
 		releases := make([]core.Release, len(cands))
@@ -1519,16 +1519,24 @@ func (s *Service) scoreRelease(rel core.Release, profile core.QualityProfile, ca
 	// ordinary English release. A torrent season pack's total size is not
 	// the episode's (sizedForEpisode), so size formats see it as unknown.
 	formatRel := sizedForEpisode(rel)
-	if len(formatRel.Info.Languages) == 0 {
-		formatRel.Info.Languages = []string{assumedLanguage(t)}
-	}
-	formatScore, matches, err := scorer.ScoreForTitle(formatRel, profile.CustomFormatScores, originalLanguage(t))
+	formatScore, matches, err := scorer.scoreFor(formatRel, t, profile.CustomFormatScores, profile.ServarrMode())
 	if err != nil {
 		return releaseScore{}, err
 	}
 	compatibility, note := compatibilityScore(sizedForEpisode(rel), caps, t)
+	base := s.score(sizedForEpisode(rel), profile, t, now)
+	if rel.Info.Proper || rel.Info.Repack {
+		// The profile already scores revisions through a Repack/Proper
+		// custom format; do not also add Ether's built-in bonus.
+		for _, m := range matches {
+			if m.revision && m.Score != 0 {
+				base -= revisionBonus
+				break
+			}
+		}
+	}
 	return releaseScore{
-		total:   s.score(sizedForEpisode(rel), profile, t, now) + float64(formatScore) + compatibility,
+		total:   base + float64(formatScore) + compatibility,
 		format:  formatScore,
 		matches: matches,
 		compat:  note,
@@ -1540,6 +1548,12 @@ func (s *Service) scoreRelease(rel core.Release, profile core.QualityProfile, ca
 func minFormatScore(rcfg config.Resolver, profile core.QualityProfile) *int {
 	if profile.MinCustomFormatScore != nil {
 		return profile.MinCustomFormatScore
+	}
+	if rcfg.MinCustomFormatScore == nil && profile.ServarrMode() {
+		// Radarr/Sonarr's MinFormatScore defaults to 0: a net-negative
+		// custom format total is rejected.
+		zero := 0
+		return &zero
 	}
 	return rcfg.MinCustomFormatScore
 }
@@ -1720,12 +1734,12 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 		if configured := configuredMaxHeight(profile); caps.MaxHeight > 0 &&
 			(configured == configuredUnlimited || caps.MaxHeight < configured) &&
 			rel.Info.Height > caps.MaxHeight {
-			return "above client max height"
+			return ReasonAboveClientMaxResolution
 		}
-		return "above profile max height"
+		return ReasonAboveProfileMaxResolution
 	}
 	if h := floorHeight(rel.Info); !preferred && profile.MinHeight > 0 && h > 0 && h < profile.MinHeight {
-		return "below profile min height"
+		return ReasonBelowProfileMinResolution
 	}
 	if !ceilingBypass && rel.Info.DolbyVision && !profile.AllowDolbyVision && !(rel.Info.HDR10 && profile.AllowHDR) {
 		return "dolby vision not allowed for client"
@@ -1969,6 +1983,10 @@ func indexScore[T comparable](list []T, v T, per float64) float64 {
 	return 0
 }
 
+// revisionBonus is the built-in ranking bonus for a Proper or Repack, dropped
+// when the profile scores revisions with a custom format.
+const revisionBonus = 6
+
 // score ranks an accepted release against a profile. Higher is better.
 func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.Title, now time.Time) float64 {
 	info := rel.Info
@@ -2058,7 +2076,7 @@ func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.T
 		sc += math.Min(math.Log10(float64(rel.Grabs)+1)*3, 9)
 	}
 	if info.Proper || info.Repack {
-		sc += 6
+		sc += revisionBonus
 	}
 	sc += languageScore(info, profile.PreferredLanguages)
 	// Indexer reputation.

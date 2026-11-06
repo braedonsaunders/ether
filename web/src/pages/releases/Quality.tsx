@@ -115,7 +115,7 @@ function blankProfile(n: number, media: ProfileMedia): QualityProfile {
   };
 }
 
-const HEIGHTS = localized(() => [
+const RESOLUTIONS = localized(() => [
   { value: "0", label: t("Any") },
   { value: "480", label: "480p" },
   { value: "720", label: "720p" },
@@ -123,13 +123,17 @@ const HEIGHTS = localized(() => [
   { value: "2160", label: t("4K (2160p)") },
 ]);
 
-const heightLabel = (h: number) => HEIGHTS.find((x) => x.value === String(h))?.label ?? `${h}p`;
+const resolutionLabel = (h: number) =>
+  RESOLUTIONS.find((x) => x.value === String(h))?.label ?? `${h}p`;
 
 function profileSummary(p: QualityProfile) {
   const range =
     p.minHeight === p.maxHeight
-      ? heightLabel(p.maxHeight)
-      : t("{min} to {max}", { min: heightLabel(p.minHeight), max: heightLabel(p.maxHeight) });
+      ? resolutionLabel(p.maxHeight)
+      : t("{min} to {max}", {
+          min: resolutionLabel(p.minHeight),
+          max: resolutionLabel(p.maxHeight),
+        });
   return [
     range,
     p.allowDolbyVision ? t("HDR and Dolby Vision") : p.allowHdr ? t("HDR allowed") : t("SDR only"),
@@ -139,6 +143,17 @@ function profileSummary(p: QualityProfile) {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+const EVALUATION_OPTIONS = localized(() => [
+  { value: "servarr" as const, label: t("Servarr") },
+  { value: "ether" as const, label: t("Ether") },
+]);
+
+/** The mode a profile runs in: its choice, else Servarr for imported profiles that carry a quality order. */
+function evaluationMode(p: QualityProfile): "servarr" | "ether" {
+  if (p.evaluationMode === "servarr" || p.evaluationMode === "ether") return p.evaluationMode;
+  return p.import && (p.qualityOrder?.length ?? 0) > 0 ? "servarr" : "ether";
 }
 
 const APPLIES_OPTIONS = localized(() => [
@@ -655,10 +670,10 @@ function WhatMattersMostSection({
         title: t("Resolution"),
         summary:
           draft.minHeight === draft.maxHeight
-            ? heightLabel(draft.maxHeight)
+            ? resolutionLabel(draft.maxHeight)
             : t("{min} to {max}, highest first", {
-                min: heightLabel(draft.minHeight),
-                max: heightLabel(draft.maxHeight),
+                min: resolutionLabel(draft.minHeight),
+                max: resolutionLabel(draft.maxHeight),
               }),
       },
       releaseType: {
@@ -1492,6 +1507,27 @@ function ProfileList({
                 }
               />
               <SettingsRow
+                title={t("Evaluation mode")}
+                description={
+                  evaluationMode(draft) === "servarr"
+                    ? t(
+                        "Scores and orders releases like Radarr and Sonarr: the profile's quality order first, then custom format score alone. Formats the profile doesn't list score 0, and a release below the minimum format score isn't played.",
+                      )
+                    : t(
+                        "Ether's own scoring: formats the profile doesn't list can keep their shared score, and quality points, size, age and your ranking steps all shape the order.",
+                      )
+                }
+                control={
+                  <Segmented
+                    ariaLabel={t("Evaluation mode")}
+                    size="sm"
+                    value={evaluationMode(draft)}
+                    options={EVALUATION_OPTIONS}
+                    onChange={(mode) => patch({ evaluationMode: mode })}
+                  />
+                }
+              />
+              <SettingsRow
                 title={t("Default for")}
                 description={
                   draftScope === ""
@@ -1556,7 +1592,7 @@ function ProfileList({
                         {...searchSelectLabels()}
                         value={String(draft.minHeight)}
                         onChange={(v) => patch({ minHeight: Number(v) })}
-                        options={HEIGHTS}
+                        options={RESOLUTIONS}
                         ariaLabel={t("Minimum resolution")}
                         searchable={false}
                       />
@@ -1567,7 +1603,7 @@ function ProfileList({
                         {...searchSelectLabels()}
                         value={String(draft.maxHeight)}
                         onChange={(v) => patch({ maxHeight: Number(v) })}
-                        options={HEIGHTS}
+                        options={RESOLUTIONS}
                         ariaLabel={t("Maximum resolution")}
                         searchable={false}
                       />

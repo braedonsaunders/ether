@@ -23,7 +23,7 @@ func TestPlaybackDecisionExportsReleaseNamesWithoutIdentity(t *testing.T) {
 			Chooser: "auto", ChosenRelease: hd, RequestedPartID: 9003938094011373,
 			Candidates: []PlaybackCandidate{
 				{Name: hd, Height: 1080, Score: 126, Healthy: true, HealthChecked: true},
-				{Name: fourK, Height: 2160, Score: 75, Rejected: true, Reason: "above profile max height"},
+				{Name: fourK, Height: 2160, Score: 75, Rejected: true, Reason: "above profile max resolution"},
 			},
 			Variants: []PlaybackVariant{
 				{PartID: 603, Auto: true, Height: 1080, Release: hd},
@@ -69,7 +69,7 @@ func TestPlaybackDecisionExportsReleaseNamesWithoutIdentity(t *testing.T) {
 		`"chooser":"auto"`,
 		fourK,
 		hd,
-		`"reason":"above profile max height"`,
+		`"reason":"above profile max resolution"`,
 		"9003938094011373",
 		`"score":126`,
 		`"score":75`,
@@ -100,7 +100,7 @@ func TestPlaybackDecisionRedactsReleaseNamesWhenTitlesAreOff(t *testing.T) {
 			Profile: "1080p", Chooser: "auto", ChosenRelease: hd,
 			Candidates: []PlaybackCandidate{
 				{Name: hd, Height: 1080, Size: hdSize, Score: 126, Healthy: true},
-				{Name: fourK, Height: 2160, Size: fourKSize, Score: 75, Rejected: true, Reason: "above profile max height"},
+				{Name: fourK, Height: 2160, Size: fourKSize, Score: 75, Rejected: true, Reason: "above profile max resolution"},
 			},
 			Variants: []PlaybackVariant{
 				{PartID: 603, Auto: true, Height: 1080, Release: hd},
@@ -128,7 +128,7 @@ func TestPlaybackDecisionRedactsReleaseNamesWhenTitlesAreOff(t *testing.T) {
 	if releaseToken(hd, hdSize, v.ID+"other") == hdToken {
 		t.Fatal("hash was not per capture")
 	}
-	for _, want := range []string{hdToken, fourKToken, `"score":126`, `"reason":"above profile max height"`, "9003938094011373"} {
+	for _, want := range []string{hdToken, fourKToken, `"score":126`, `"reason":"above profile max resolution"`, "9003938094011373"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("capture missing %q\n%s", want, text)
 		}

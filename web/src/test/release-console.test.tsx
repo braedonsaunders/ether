@@ -30,7 +30,7 @@ describe("Release search", () => {
         WAIT,
       ),
     ).toBeInTheDocument();
-    expect(await screen.findByText("above profile max height", {}, WAIT)).toBeInTheDocument();
+    expect(await screen.findByText("above profile max resolution", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("cam not allowed")).toBeInTheDocument();
     expect(screen.getByText("Plays first")).toBeInTheDocument();
     expect(calls(fake, "GET", `/releases/search?key=${movie.key}`)).toHaveLength(1);
@@ -91,7 +91,7 @@ describe("Release search", () => {
         calls(fake, "GET", "/releases/search").some((c) => c.path.includes("profile=none")),
       ).toBe(true),
     );
-    await waitFor(() => expect(screen.queryByText("above profile max height")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("above profile max resolution")).toBeNull());
     const menus = screen.getAllByRole("button", { name: /^Actions for .*YTS/ });
     fireEvent.click(menus[0]!);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Check health" }));
@@ -170,7 +170,7 @@ describe("Release history", () => {
     fireEvent.click(await screen.findByText(first, {}, WAIT));
     const drawer = await screen.findByRole("dialog", { name: first });
     expect(
-      await within(drawer).findByText("above profile max height", {}, WAIT),
+      await within(drawer).findByText("above profile max resolution", {}, WAIT),
     ).toBeInTheDocument();
     expect(within(drawer).getAllByText("Picked").length).toBeGreaterThan(0);
     expect(within(drawer).getAllByText("Auto").length).toBeGreaterThan(0);

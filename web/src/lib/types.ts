@@ -498,6 +498,10 @@ export interface QualityProfile {
   releaseRules?: ReleaseRule[] | null;
   ranking?: string[] | null;
   rankingConfig?: Record<string, Record<string, unknown>> | null;
+  /** Imported quality ranking, best first: one entry per profile item/group. */
+  qualityOrder?: string[][] | null;
+  /** "servarr" | "ether"; empty means servarr for imported profiles with a quality order. */
+  evaluationMode?: string | null;
   name: string;
   maxHeight: number;
   minHeight: number;

@@ -16,7 +16,7 @@ import type { QualityAnswer, QualityLayer } from "../../lib/types";
 
 type Where = "home" | "away";
 
-function heightName(h: number | undefined): string {
+function resolutionName(h: number | undefined): string {
   if (!h) return t("Any resolution");
   return h === 2160 ? t("4K") : `${h}p`;
 }
@@ -29,7 +29,7 @@ function rateName(kbps: number): string {
 export function answerHeadline(a: QualityAnswer): string {
   if (a.blocked) return t("Can't play away from home");
   const hdr = a.dolbyVision ? t("HDR and Dolby Vision") : a.hdr ? t("HDR on") : t("HDR off");
-  const parts = [heightName(a.maxHeight), hdr];
+  const parts = [resolutionName(a.maxHeight), hdr];
   if (a.bitrateKbps) parts.push(t("Up to {rate}", { rate: rateName(a.bitrateKbps) }));
   return parts.join(" · ");
 }
@@ -46,7 +46,7 @@ export function layerText(l: QualityLayer, _viewer: string): string {
       if (!l.decisive) return t("No limit");
       return (
         [
-          l.maxHeight ? t("Up to {height}", { height: heightName(l.maxHeight) }) : "",
+          l.maxHeight ? t("Up to {height}", { height: resolutionName(l.maxHeight) }) : "",
           l.hdr === false ? t("No HDR") : l.dolbyVision === false ? t("No Dolby Vision") : "",
         ]
           .filter(Boolean)
@@ -60,7 +60,7 @@ export function layerText(l: QualityLayer, _viewer: string): string {
     case "rule-height":
       return l.ignored
         ? t("Device resolution is fixed")
-        : t("Rule {n} · up to {height}", { n: l.rule ?? 0, height: heightName(l.maxHeight) });
+        : t("Rule {n} · up to {height}", { n: l.rule ?? 0, height: resolutionName(l.maxHeight) });
     case "android-lift":
       return t("Rule {n} lifts the device limit", { n: l.rule ?? 0 });
   }
@@ -89,7 +89,7 @@ function Answer({ answer, viewer }: { answer: QualityAnswer; viewer: string }) {
           </div>
           <div data-testid="quality-headline" className="flex flex-wrap items-center gap-2">
             <span className="text-3xl font-semibold tracking-tight">
-              {answer.blocked ? t("Can't play away from home") : heightName(answer.maxHeight)}
+              {answer.blocked ? t("Can't play away from home") : resolutionName(answer.maxHeight)}
             </span>
             {!answer.blocked ? (
               <>

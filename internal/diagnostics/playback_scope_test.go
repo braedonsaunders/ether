@@ -70,7 +70,7 @@ func TestPlaybackCapabilityReportDistinguishesAdmissionFromReceipt(t *testing.T)
 		t.Fatalf("findings: %+v", findings)
 	}
 	text := string(reportMarkdown(rows, findings, nil))
-	for _, want := range []string{"generic client profile height ceiling", "selected viewer; device unknown", "start does not prove response completion"} {
+	for _, want := range []string{"generic client profile resolution ceiling", "selected viewer; device unknown", "start does not prove response completion"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("report missing %q", want)
 		}

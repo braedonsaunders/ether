@@ -21,6 +21,9 @@ type FormatMatch struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Score int    `json:"score"`
+	// revision marks a format that recognises Repack/Proper release titles;
+	// the ranking then skips Ether's own built-in revision bonus.
+	revision bool
 }
 
 type compiledSpec struct {
@@ -30,8 +33,9 @@ type compiledSpec struct {
 	sonarr bool
 }
 type compiledFormat struct {
-	def   core.CustomFormat
-	specs []compiledSpec
+	def      core.CustomFormat
+	specs    []compiledSpec
+	revision bool
 }
 type FormatScorer struct {
 	formats []compiledFormat
@@ -114,6 +118,7 @@ func NewFormatScorer(defs []core.CustomFormat, scores map[string]int) (*FormatSc
 			}
 			f.specs = append(f.specs, c)
 		}
+		f.revision = recognisesRevision(f.specs)
 		s.formats = append(s.formats, f)
 	}
 	return s, nil
@@ -262,12 +267,51 @@ func (s *FormatScorer) ScoreWithScores(r core.Release, overrides map[string]int)
 // (a release-parser language name, "" when unknown), which "Original"
 // language specifications compare against.
 func (s *FormatScorer) ScoreForTitle(r core.Release, overrides map[string]int, original string) (int, []FormatMatch, error) {
+	return s.ScoreForProfile(r, overrides, original, false)
+}
+
+// ScoreForProfile is ScoreForTitle with Servarr's profile semantics when
+// strict: a format the profile does not list contributes 0 (Radarr/Sonarr's
+// QualityProfile.CalculateCustomFormatScore sums FormatItems only), instead of
+// inheriting the global or guide default score. Imported profiles are strict;
+// hand-made sparse maps keep inheriting.
+func (s *FormatScorer) ScoreForProfile(r core.Release, overrides map[string]int, original string, strict bool) (int, []FormatMatch, error) {
+	return s.scoreFormats(r, overrides, original, strict)
+}
+
+// scoreFor scores a release for a title in the profile's evaluation mode.
+// Ether mode keeps Ether's behaviour exactly (an untagged release is in the
+// title's original language, sparse profile maps inherit global scores, the
+// raw release name is matched). Servarr mode builds the language list like
+// AggregateLanguages, scores unlisted formats 0, and matches each app's own
+// release-title form.
+func (s *FormatScorer) scoreFor(rel core.Release, t *core.Title, overrides map[string]int, servarr bool) (int, []FormatMatch, error) {
+	if servarr {
+		rel.Info.Languages = formatLanguages(rel, t)
+	} else if len(rel.Info.Languages) == 0 {
+		rel.Info.Languages = []string{assumedLanguage(t)}
+	}
+	return s.scoreFormats(rel, overrides, originalLanguage(t), servarr)
+}
+
+// scoreFormats is the scoring loop; servarr selects Servarr's unlisted-format
+// and release-title rules.
+func (s *FormatScorer) scoreFormats(r core.Release, overrides map[string]int, original string, servarr bool) (int, []FormatMatch, error) {
 	if s == nil {
 		return 0, nil, nil
 	}
 	total := 0
 	var matches []FormatMatch
+	byApp := map[string]core.Release{}
 	for _, f := range s.formats {
+		in, cached := byApp[f.def.App]
+		if !cached {
+			in = r
+			if servarr {
+				in = titleInput(f.def.App, r)
+			}
+			byApp[f.def.App] = in
+		}
 		type group struct {
 			requiredOK bool
 			anyOK      bool
@@ -279,7 +323,7 @@ func (s *FormatScorer) ScoreForTitle(r core.Release, overrides map[string]int, o
 				g = &group{requiredOK: true}
 				groups[spec.def.Implementation] = g
 			}
-			match, err := specMatch(spec, r, original)
+			match, err := specMatch(spec, in, original)
 			if err != nil {
 				return 0, nil, fmt.Errorf("custom format %q: %w", f.def.Name, errFormatTimeout)
 			}
@@ -305,11 +349,32 @@ func (s *FormatScorer) ScoreForTitle(r core.Release, overrides map[string]int, o
 		if v, ok := s.scores[f.def.ID]; ok {
 			score = v
 		}
+		if servarr {
+			// Radarr/Sonarr sum the profile's own FormatItems only.
+			score = 0
+		}
 		if v, ok := overrides[f.def.ID]; ok {
 			score = v
 		}
 		total += score
-		matches = append(matches, FormatMatch{f.def.ID, f.def.Name, score})
+		matches = append(matches, FormatMatch{ID: f.def.ID, Name: f.def.Name, Score: score, revision: f.revision})
 	}
 	return total, matches, nil
+}
+
+// recognisesRevision reports whether a format has a non-negated release-title
+// rule that matches a Repack or Proper tag (TRaSH's "Repack/Proper",
+// "Repack2", "Repack3").
+func recognisesRevision(specs []compiledSpec) bool {
+	for _, c := range specs {
+		if c.def.Implementation != "ReleaseTitleSpecification" || c.def.Negate || c.re == nil {
+			continue
+		}
+		for _, probe := range []string{"Movie.2020.REPACK.1080p", "Movie.2020.PROPER.1080p", "Movie.2020.REPACK2.1080p", "Movie.2020.REPACK3.1080p"} {
+			if ok, _ := c.re.MatchString(probe); ok {
+				return true
+			}
+		}
+	}
+	return false
 }

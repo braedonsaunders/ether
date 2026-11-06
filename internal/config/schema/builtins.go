@@ -199,7 +199,7 @@ func Builtins() []Builtin {
 				{Key: "enabled", Label: extend.T("Allow downloads"), Kind: KindBool},
 				{Key: "allowFriends", Label: extend.T("Friends can download"), Kind: KindBool, Help: extend.T("Off lets only you download. A viewer's access policy can still allow or deny it.")},
 			}, More: []Field{
-				{Key: "maxHeight", Label: extend.T("Highest resolution"), Kind: KindNumber, Help: extend.T("Downloads are capped at this height. 0 uses 1080p."), Min: F(0), Step: F(1), Unit: extend.Text{Source: "p"}},
+				{Key: "maxHeight", Label: extend.T("Highest resolution"), Kind: KindNumber, Help: extend.T("Downloads are capped at this resolution. 0 uses 1080p."), Min: F(0), Step: F(1), Unit: extend.Text{Source: "p"}},
 				{Key: "maxConcurrent", Label: extend.T("Downloads at once"), Kind: KindNumber, Help: extend.T("Across the whole server. 0 uses 2."), Min: F(0), Step: F(1)},
 				{Key: "maxConcurrentPerUser", Label: extend.T("Downloads at once per viewer"), Kind: KindNumber, Help: extend.T("0 uses 1."), Min: F(0), Step: F(1)},
 				{Key: "diskBudgetBytes", Label: extend.T("Temporary disk space"), Kind: KindBytes, Help: extend.T("Maximum space for prepared downloads. Set to 0 to use the default limit of 20 GiB."), Unit: extend.Text{Source: "GiB"}},

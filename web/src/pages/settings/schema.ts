@@ -826,7 +826,7 @@ export const DOWNLOADS: FieldGroup[] = localized(() => [
         min: 0,
         step: 1,
         unit: "p",
-        help: t("Downloads are capped at this height. 0 uses 1080p."),
+        help: t("Downloads are capped at this resolution. 0 uses 1080p."),
       },
       {
         key: "maxConcurrent",

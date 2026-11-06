@@ -85,7 +85,7 @@ func TestConsoleSearchMatchesResolveRanking(t *testing.T) {
 		}
 	}
 	uhd := findRelease(t, search, "uhd")
-	if !uhd.Rejected || uhd.Reason != "above profile max height" || uhd.Score == 0 || uhd.Rank != 0 {
+	if !uhd.Rejected || uhd.Reason != "above profile max resolution" || uhd.Score == 0 || uhd.Rank != 0 {
 		t.Fatalf("uhd %+v", uhd)
 	}
 	if r := findRelease(t, search, "pwd"); r.Reason != "passworded" {

@@ -123,7 +123,7 @@ func analyzeJournal(body string) ([]reportRow, []Finding) {
 	add("slow_request", "A request exceeded a wall-time or database budget.", slow)
 	add("http_error", "A request returned an HTTP error.", errors)
 	add("unattributed_playback", "Authenticated playback requests omitted a device identity. They belong to the selected viewer, but cannot be attributed to a specific device.", unattributedPlayback)
-	add("generic_client_admission", "Playback admission used the generic client profile height ceiling. See the recorded identity and capability stages; this does not prove the device cannot play higher resolutions.", genericAdmissions)
+	add("generic_client_admission", "Playback admission used the generic client profile resolution ceiling. See the recorded identity and capability stages; this does not prove the device cannot play higher resolutions.", genericAdmissions)
 	if len(playbackFailures) >= 2 {
 		add("repeated_playback_failures", "Multiple playback decision requests failed.", playbackFailures)
 	}
@@ -187,7 +187,7 @@ func reportMarkdown(rows []reportRow, findings []Finding, extra []archived) []by
 		fmt.Fprintf(&b, "| #%d %s | %s | %s | %d | %s | %s |\n", row.line, e.At.UTC().Format("15:04:05.000"), reportCell(reportClient(e)), reportCell(request), e.Status, reportDuration(e.DurationMS), reportCell(reportResponse(e)))
 		count++
 	}
-	b.WriteString("\n## Playback request receipts and capabilities\n\nStarts are recorded before streaming. A start does not prove response completion. Admission rows show the capabilities actually passed to playback; request rows show declarations only.\n\n| Event | Stage | Attribution | Registry | Registry / owner override / declaration / effective height | Video codecs |\n| --- | --- | --- | --- | --- | --- |\n")
+	b.WriteString("\n## Playback request receipts and capabilities\n\nStarts are recorded before streaming. A start does not prove response completion. Admission rows show the capabilities actually passed to playback; request rows show declarations only.\n\n| Event | Stage | Attribution | Registry | Registry / owner override / declaration / effective max resolution | Video codecs |\n| --- | --- | --- | --- | --- | --- |\n")
 	capCount := 0
 	for _, row := range rows {
 		e := row.event
