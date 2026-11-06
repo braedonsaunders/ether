@@ -163,7 +163,6 @@ function evaluationMode(p: QualityProfile): "servarr" | "ether" {
   return p.import && (p.qualityOrder?.length ?? 0) > 0 ? "servarr" : "ether";
 }
 
-
 /** Movies / Shows badge for a profile (Movies & shows for a rule for every media). */
 export function MediaBadge({ media }: { media?: string }) {
   return <Badge variant={media ? "info" : "secondary"}>{mediaLabel(media)}</Badge>;
