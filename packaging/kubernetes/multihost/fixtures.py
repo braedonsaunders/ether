@@ -4,8 +4,11 @@ import sys
 from pathlib import Path
 import yaml
 root, tag = Path(sys.argv[1]), sys.argv[2]
+preserve_source = "--preserve-source" in sys.argv[3:]
 objects = []
 for filename in ('source-fixture.yaml', 'ingress-lab.yaml'):
+    if preserve_source and filename == 'source-fixture.yaml':
+        continue
     for obj in yaml.safe_load_all((root/'packaging/kubernetes'/filename).read_text()):
         if obj.get('kind') == 'Deployment':
             spec = obj['spec']['template']['spec']
@@ -44,7 +47,7 @@ spec:
       containers:
         - name: postgres
           image: postgres:16.9-alpine3.22
-          args: ['-c', 'max_connections=300', '-c', 'shared_buffers=64MB']
+          args: ['-c', 'max_connections=300', '-c', 'shared_buffers=64MB', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off']
           env:
             - {name: POSTGRES_USER, value: ether}
             - {name: POSTGRES_DB, value: ether}
@@ -55,11 +58,9 @@ spec:
             limits: {cpu: '1', memory: 512Mi}
           readinessProbe:
             exec: {command: [pg_isready, '-U', ether]}
-          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
-  volumeClaimTemplates:
-    - metadata: {name: data}
-      spec:
-        accessModes: [ReadWriteOnce]
-        resources: {requests: {storage: 1Gi}}
+          volumeMounts: [{name: pg-memory, mountPath: /var/lib/postgresql/data}]
+      volumes:
+        - name: pg-memory
+          emptyDir: {medium: Memory, sizeLimit: 512Mi}
 '''))
 yaml.safe_dump_all(objects, sys.stdout)

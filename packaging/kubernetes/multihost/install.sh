@@ -36,8 +36,13 @@ if ! kubectl -n ether035-ha get secret ether-authority >/dev/null 2>&1; then
  kubectl -n ether035-ha create secret generic ether-authority \
   --from-file="ca.key=$state/private/ca.key" --from-file="ca.crt=$state/private/ca.crt" --from-file="roots.pem=$state/private/roots.pem"
 fi
-python3 "$root/packaging/kubernetes/multihost/fixtures.py" "$root" "$tag" > "$state/fixtures.yaml"
-kubectl -n ether035-ha create configmap ether035-ha-source-code --from-file="$root/packaging/kubernetes/source-fixture.py" --dry-run=client -o yaml | kubectl -n ether035-ha apply -f -
+fixture_flags=()
+if kubectl -n ether035-ha get deployment ether035-ha-source >/dev/null 2>&1; then
+ fixture_flags=(--preserve-source)
+else
+ kubectl -n ether035-ha create configmap ether035-ha-source-code --from-file="$root/packaging/kubernetes/source-fixture.py" --dry-run=client -o yaml | kubectl -n ether035-ha apply -f -
+fi
+python3 "$root/packaging/kubernetes/multihost/fixtures.py" "$root" "$tag" "${fixture_flags[@]}" > "$state/fixtures.yaml"
 kubectl -n ether035-ha apply -f "$state/fixtures.yaml"
 kubectl -n ether035-ha rollout status statefulset/ether035-ha-pg --timeout=180s
 postrender=()

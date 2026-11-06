@@ -37,7 +37,8 @@ the pinned FFmpeg bundle, imports it into all three owned local nodes, and
 installs/updates the fixtures and chart:
 
 ```sh
-packaging/kubernetes/multihost/redeploy.sh "$state" "$INTEGRATION_SHA"
+packaging/kubernetes/multihost/heavy-io.sh \
+  packaging/kubernetes/multihost/redeploy.sh "$state" "$INTEGRATION_SHA"
 ```
 
 The chart uses OnDelete. That command updates templates without terminating
@@ -45,6 +46,28 @@ healthy processes. Drain and replace one pod at a time using
 `packaging/kubernetes/rollout.sh ether035-ha POD` with the lab kubeconfig.
 For initial staging of rejected/never-started pods only, the explicit
 `role-loss.sh` helper performs UID-preconditioned abrupt replacement.
+
+On the shared worker server, builds, large tests, FFmpeg analyses and lab
+rollouts all use `/data/bb/thread-storage/heavy-io.lock`. The wrapper waits
+while `/data/bb/thread-storage/batch-gate.active` exists, gives the batcher
+priority, and records queue, run and total wall seconds. A race with a newly
+started gate exits75; resubmit after the gate finishes.
+
+For an already-built gated image, archive `packaging/helm` from the same full
+revision and set `ETHER_LAB_CHART` to that archive's `packaging/helm/ether`.
+Then `heavy-io.sh roll-gated.sh "$state" "$IMAGE_TAG"` imports the image and
+drains/replaces each old ordinal, retaining identities and all database rows.
+A failed drain stops the rollout. Verify all eight replacement pod image IDs,
+authenticated boots and free placement capacity before handing off playback.
+
+Lab PostgreSQL uses a512MiB memory-backed volume with fsync,
+synchronous_commit and full_page_writes disabled. Its contents disappear if
+the PG pod is replaced; retain a private dump before doing so. Migrating an
+existing disk-backed fixture requires all Ether role pods to be drained and
+stopped first. `migrate-pg-tmpfs.sh` refuses live roles or a repeat migration,
+takes a complete private dump, retains the original PVC, restores every table
+and sequence, and restores service routing only after verification. Invoke it
+under `heavy-io.sh`; it never edits placement, ownership or fencing rows.
 
 Expose ingress through `http://$TAILSCALE_IP:18035`, Host
 `ether035-roles.test`. For seed setup, use a temporary loopback port-forward
