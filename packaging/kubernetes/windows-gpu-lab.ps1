@@ -109,6 +109,9 @@ $DeploymentPath = Join-Path $LabRoot 'deployment.json'
 $env:ETHER_DEPLOYMENT_FILE = $DeploymentPath
 $env:ETHER_DATA_DIR = $Data
 $env:XDG_CACHE_HOME = $Cache
+$env:TEMP = $Scratch
+$env:TMP = $Scratch
+$env:CUDA_CACHE_PATH = Join-Path $Cache 'cuda'
 $env:PATH = $FFmpegDirectory + [IO.Path]::PathSeparator + $env:PATH
 # No secrets on the command line. This is an owned foreground-service process,
 # not a Windows Service. Keep its exact PID and stop/drain only that process.
