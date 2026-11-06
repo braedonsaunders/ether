@@ -166,6 +166,7 @@ func WithOptions(ctx context.Context, ffmpegPath string, frames func(int) *image
 		cmd = mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, "nice", append([]string{"-n", "10", ffmpegPath}, args...)...)
 	} else {
 		cmd = mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, ffmpegPath, args...)
+		lowerRenderPriority(cmd.Cmd)
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

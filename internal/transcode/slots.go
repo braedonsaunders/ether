@@ -13,6 +13,9 @@ type SlotPriority uint8
 const (
 	SlotViewer SlotPriority = iota
 	SlotBackground
+	// SlotLivePrep is a single reserved lane for imminent channel masters.
+	// It cannot be preempted by a viewer or consume the viewer encoder budget.
+	SlotLivePrep
 )
 
 type transcodeSlot struct {
@@ -30,7 +33,7 @@ func (m *Manager) AcquireTranscodeSlot(ctx context.Context, p SlotPriority) (con
 }
 
 func (m *Manager) acquirePrioritySlot(ctx context.Context, p SlotPriority, wait bool) (jobCtx context.Context, release func(), err error) {
-	if p != SlotViewer && p != SlotBackground {
+	if p != SlotViewer && p != SlotBackground && p != SlotLivePrep {
 		return nil, nil, errors.New("transcode: invalid slot priority")
 	}
 	m.mu.Lock()
@@ -59,19 +62,26 @@ func (m *Manager) acquirePrioritySlot(ctx context.Context, p SlotPriority, wait 
 			return nil, nil, errors.New("transcode: manager closed")
 		}
 		full := m.cfg.MaxTranscodes > 0 && m.encodingLocked("") >= m.cfg.MaxTranscodes
+		if p == SlotLivePrep {
+			full = m.livePrepEncodes >= 1
+		}
 		if full && p == SlotViewer {
 			m.preemptBackgroundLocked()
 			full = m.cfg.MaxTranscodes > 0 && m.encodingLocked("") >= m.cfg.MaxTranscodes
 		}
-		if !full && (p == SlotViewer || m.slotViewers == 0) {
+		if !full && (p == SlotViewer || p == SlotLivePrep || m.slotViewers == 0) {
 			jobCtx = ctx
 			var cancel context.CancelFunc
-			if p == SlotBackground {
+			if p == SlotBackground || p == SlotLivePrep {
 				jobCtx, cancel = context.WithCancel(ctx)
 			}
 			holder := &transcodeSlot{priority: p, cancel: cancel}
 			m.slotHolders = append(m.slotHolders, holder)
-			m.downloadEncodes++
+			if p == SlotLivePrep {
+				m.livePrepEncodes++
+			} else {
+				m.downloadEncodes++
+			}
 			var once sync.Once
 			release = func() { once.Do(func() { m.mu.Lock(); m.releaseSlotLocked(holder); m.mu.Unlock() }) }
 			return jobCtx, release, nil
@@ -104,7 +114,11 @@ func (m *Manager) releaseSlotLocked(h *transcodeSlot) {
 	if h.cancel != nil {
 		h.cancel()
 	}
-	m.downloadEncodes--
+	if h.priority == SlotLivePrep {
+		m.livePrepEncodes--
+	} else {
+		m.downloadEncodes--
+	}
 	for i, v := range m.slotHolders {
 		if v == h {
 			m.slotHolders = append(m.slotHolders[:i], m.slotHolders[i+1:]...)

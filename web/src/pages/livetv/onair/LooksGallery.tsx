@@ -125,10 +125,13 @@ export function LooksAside({
 export function LooksGallery({
   looks,
   onSelect,
+  showOwned = true,
 }: {
   looks: Style[];
   onNew(): void;
   onSelect(id: string): void;
+  /** False when the Live TV lineup panel already lists the owner's styles. */
+  showOwned?: boolean;
 }) {
   const templates = useTemplates(),
     slots = useSlots(),
@@ -177,104 +180,107 @@ export function LooksGallery({
           {error}
         </p>
       ) : null}
-      <section className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">{t("Your styles")}</h2>
-          <p className="mt-2 text-sm text-fg-muted">
-            {t("Your channel identities, ready for their next moment on air.")}
-          </p>
-        </div>
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {looks
-            .filter((l) => !deleted.includes(l.id))
-            .map((l) => (
-              <article
-                key={l.id}
-                className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm"
-              >
-                <button className="block w-full text-left" onClick={() => onSelect(l.id)}>
-                  <StyleThumbnail style={l} slots={slots} />
-                </button>
-                <div className="space-y-3 p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <button
-                      className="min-w-0 text-left font-semibold hover:text-primary"
-                      onClick={() => onSelect(l.id)}
-                    >
-                      {l.name}
-                    </button>
-                    <Popover
-                      open={menu === l.id}
-                      onOpenChange={(open) => setMenu(open ? l.id : null)}
-                      align="end"
-                      trigger={
+      {showOwned ? (
+        <section className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">{t("Your styles")}</h2>
+            <p className="mt-2 text-sm text-fg-muted">
+              {t("Your channel identities, ready for their next moment on air.")}
+            </p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {looks
+              .filter((l) => !deleted.includes(l.id))
+              .map((l) => (
+                <article
+                  key={l.id}
+                  className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm"
+                >
+                  <button className="block w-full text-left" onClick={() => onSelect(l.id)}>
+                    <StyleThumbnail style={l} slots={slots} />
+                  </button>
+                  <div className="space-y-3 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <button
+                        className="min-w-0 text-left font-semibold hover:text-primary"
+                        onClick={() => onSelect(l.id)}
+                      >
+                        {l.name}
+                      </button>
+                      <Popover
+                        open={menu === l.id}
+                        onOpenChange={(open) => setMenu(open ? l.id : null)}
+                        align="end"
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={t("Actions for {name}", { name: l.name })}
+                            onClick={() => setMenu(menu === l.id ? null : l.id)}
+                          >
+                            <MoreHorizontal size={18} />
+                          </Button>
+                        }
+                        className="w-48 space-y-1 p-2"
+                      >
                         <Button
-                          size="sm"
                           variant="ghost"
-                          aria-label={t("Actions for {name}", { name: l.name })}
-                          onClick={() => setMenu(menu === l.id ? null : l.id)}
+                          className="w-full justify-start"
+                          disabled={working}
+                          onClick={() => {
+                            setMenu(null);
+                            void create({ ...l, name: t("{name} copy", { name: l.name }) });
+                          }}
                         >
-                          <MoreHorizontal size={18} />
+                          <Copy size={16} />
+                          {t("Duplicate")}
                         </Button>
-                      }
-                      className="w-48 space-y-1 p-2"
-                    >
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start"
-                        disabled={working}
-                        onClick={() => {
-                          setMenu(null);
-                          void create({ ...l, name: t("{name} copy", { name: l.name }) });
-                        }}
-                      >
-                        <Copy size={16} />
-                        {t("Duplicate")}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() => void exportPack(l)}
-                      >
-                        <Download size={16} />
-                        {t("Export pack")}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start text-danger"
-                        onClick={() => {
-                          setMenu(null);
-                          setDeleting(l);
-                        }}
-                      >
-                        <Trash2 size={16} />
-                        {t("Delete")}
-                      </Button>
-                    </Popover>
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start"
+                          onClick={() => void exportPack(l)}
+                        >
+                          <Download size={16} />
+                          {t("Export pack")}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start text-danger"
+                          onClick={() => {
+                            setMenu(null);
+                            setDeleting(l);
+                          }}
+                        >
+                          <Trash2 size={16} />
+                          {t("Delete")}
+                        </Button>
+                      </Popover>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-fg-muted">
+                        {tn(
+                          l.channelCount ?? l.channelIds.length,
+                          "Used by {count} channel",
+                          "Used by {count} channels",
+                        )}
+                      </span>
+                      {channels.some(
+                        (c) =>
+                          c.enabled && (c.look?.lookId === l.id || l.channelIds.includes(c.id)),
+                      ) ? (
+                        <Badge>
+                          <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-success" />
+                          {t("On air")}
+                        </Badge>
+                      ) : null}
+                      {l.pack ? <Badge>{t("From {pack}", { pack: l.pack.name })}</Badge> : null}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-fg-muted">
-                      {tn(
-                        l.channelCount ?? l.channelIds.length,
-                        "Used by {count} channel",
-                        "Used by {count} channels",
-                      )}
-                    </span>
-                    {channels.some(
-                      (c) => c.enabled && (c.look?.lookId === l.id || l.channelIds.includes(c.id)),
-                    ) ? (
-                      <Badge>
-                        <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-success" />
-                        {t("On air")}
-                      </Badge>
-                    ) : null}
-                    {l.pack ? <Badge>{t("From {pack}", { pack: l.pack.name })}</Badge> : null}
-                  </div>
-                </div>
-              </article>
-            ))}
-        </div>
-      </section>
+                </article>
+              ))}
+          </div>
+        </section>
+      ) : null}
       <section className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

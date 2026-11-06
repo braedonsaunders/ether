@@ -1,8 +1,8 @@
 import { useMediaURL } from "../onair/useMediaURL";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Button, Checkbox, Input, Select, confirmDialog } from "@braedonsaunders/appkit-ui";
-import { AudioLines, Film, Image, Type, Play, Pause, Volume2 } from "lucide-react";
+import { Button, Checkbox, Input, Select, cn, confirmDialog } from "@braedonsaunders/appkit-ui";
+import { AudioLines, Film, Image, LayoutGrid, Type, Play, Pause, Volume2 } from "lucide-react";
 import { SubtabNav } from "../../../components/layout";
 import { Drawer } from "../../../components/Drawer";
 import { t, tn } from "../../../i18n";
@@ -313,9 +313,12 @@ const kinds: AssetKind[] = ["video", "audio", "image", "font"];
 export function LibraryGrid({
   allowed = kinds,
   onPick,
+  filters = true,
 }: {
   allowed?: AssetKind[];
   onPick?: (a: LibraryAsset) => void;
+  /** The Live TV page shows kind, search and sort in its lineup panel instead. */
+  filters?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
@@ -350,7 +353,9 @@ export function LibraryGrid({
               createdAt: 0,
               usedBy: [{ kind: "reel", id: reel.id, name: reel.name }],
               url: clip.preview,
-              thumbnail: clip.thumbnail,
+              // Reel clips have no stored still; use a frame from their source upload.
+              thumbnail:
+                clip.thumbnail ?? (clip.sourceDigest ? studio.thumb(clip.sourceDigest) : undefined),
               readOnly: true,
             } as LibraryAsset);
           }
@@ -502,46 +507,48 @@ export function LibraryGrid({
         </label>
         <LinkImport onImported={reload} />
       </div>
-      <div className="flex flex-wrap gap-2">
-        {[
-          ["", t("All")],
-          ["video", t("Video")],
-          ["audio", t("Audio")],
-          ["image", t("Images")],
-          ["font", t("Fonts")],
-        ]
-          .filter(([k]) => !k || allowed.includes(k as AssetKind))
-          .map(([k, label]) => (
-            <Button
-              key={k}
-              size="sm"
-              variant={kind === k ? "default" : "outline"}
-              aria-pressed={kind === k}
-              onClick={() => change("kind", k!)}
+      {filters ? (
+        <div className="flex flex-wrap gap-2">
+          {[
+            ["", t("All")],
+            ["video", t("Video")],
+            ["audio", t("Audio")],
+            ["image", t("Images")],
+            ["font", t("Fonts")],
+          ]
+            .filter(([k]) => !k || allowed.includes(k as AssetKind))
+            .map(([k, label]) => (
+              <Button
+                key={k}
+                size="sm"
+                variant={kind === k ? "default" : "outline"}
+                aria-pressed={kind === k}
+                onClick={() => change("kind", k!)}
+              >
+                {label}
+              </Button>
+            ))}
+          <Input
+            aria-label={t("Search Library")}
+            placeholder={t("Search Library")}
+            value={query}
+            onChange={(e) => change("q", e.target.value)}
+            className="min-w-40 flex-1"
+          />
+          <div className="w-44 shrink-0">
+            <Select
+              aria-label={t("Sort assets")}
+              value={sort}
+              onChange={(e) => change("sort", e.target.value)}
             >
-              {label}
-            </Button>
-          ))}
-        <Input
-          aria-label={t("Search Library")}
-          placeholder={t("Search Library")}
-          value={query}
-          onChange={(e) => change("q", e.target.value)}
-          className="min-w-40 flex-1"
-        />
-        <div className="w-44 shrink-0">
-          <Select
-            aria-label={t("Sort assets")}
-            value={sort}
-            onChange={(e) => change("sort", e.target.value)}
-          >
-            <option value="newest">{t("Newest")}</option>
-            <option value="name">{t("Name")}</option>
-            <option value="size">{t("Size")}</option>
-            <option value="used">{t("Most used")}</option>
-          </Select>
+              <option value="newest">{t("Newest")}</option>
+              <option value="name">{t("Name")}</option>
+              <option value="size">{t("Size")}</option>
+              <option value="used">{t("Most used")}</option>
+            </Select>
+          </div>
         </div>
-      </div>
+      ) : null}
       {error && (
         <p role="alert" className="text-danger">
           {error}
@@ -906,5 +913,63 @@ function AssetDrawer({
   );
 }
 export default function Library() {
-  return <LibraryGrid />;
+  return <LibraryGrid filters={false} />;
+}
+
+/** Live TV lineup panel for the Library tab: kinds with counts, URL-backed like the grid. */
+export function LibraryAside() {
+  const [params, setParams] = useSearchParams();
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    void Promise.all([studio.library(), onair.reels()])
+      .then(([library, reels]) => {
+        const next: Record<string, number> = { "": 0, video: 0, audio: 0, image: 0, font: 0 };
+        for (const a of library) {
+          next[""]! += 1;
+          next[a.kind] = (next[a.kind] ?? 0) + 1;
+        }
+        for (const reel of reels) {
+          next[""]! += reel.clips.length;
+          next.video! += reel.clips.length;
+        }
+        setCounts(next);
+      })
+      .catch(() => setCounts(null));
+  }, []);
+  const kind = params.get("kind") ?? "";
+  const rows: [string, string, typeof Film][] = [
+    ["", t("Everything"), LayoutGrid],
+    ["video", t("Video"), Film],
+    ["audio", t("Audio"), AudioLines],
+    ["image", t("Images"), Image],
+    ["font", t("Fonts"), Type],
+  ];
+  return (
+    <nav aria-label={t("Library kinds")} className="space-y-1 p-3">
+      {rows.map(([key, label, Icon]) => (
+        <button
+          key={key || "all"}
+          type="button"
+          aria-current={kind === key ? "page" : undefined}
+          onClick={() =>
+            setParams((p) => {
+              if (key) p.set("kind", key);
+              else p.delete("kind");
+              return p;
+            })
+          }
+          className={cn(
+            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
+            kind === key
+              ? "bg-primary-subtle text-primary"
+              : "text-fg-muted hover:bg-surface-hover hover:text-fg",
+          )}
+        >
+          <Icon size={15} aria-hidden />
+          <span className="flex-1">{label}</span>
+          {counts ? <span className="text-xs tabular-nums">{counts[key] ?? 0}</span> : null}
+        </button>
+      ))}
+    </nav>
+  );
 }

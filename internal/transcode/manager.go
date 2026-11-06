@@ -169,6 +169,7 @@ type Manager struct {
 	sessions        map[string]*Session
 	httpSessions    map[string]*httpSession
 	downloadEncodes int
+	livePrepEncodes int
 	closed          bool
 
 	stop chan struct{}

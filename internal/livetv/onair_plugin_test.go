@@ -62,14 +62,19 @@ func TestPluginClockStalePreservesSchedule(t *testing.T) {
 		}
 	}
 	fallback := s.broadcastSchedule(context.Background(), c, from, until, false)
-	for _, p := range fallback {
-		if interstitial(p.Item) {
-			t.Fatal("stale segment aired")
+	if len(fallback) != len(good) {
+		t.Fatal("fallback changed schedule rows")
+	}
+	for i, p := range fallback {
+		want := good[i]
+		if p.ID != want.ID || p.Start != want.Start || p.End != want.End {
+			t.Fatal("fallback shifted a clock boundary")
+		}
+		if interstitial(p.Item) && !p.graphicsFallback {
+			t.Fatal("stale segment did not retain its fallback interval")
 		}
 	}
-	if len(fallback) == 0 || fallback[0].Start.After(from) || fallback[len(fallback)-1].End.Before(until) {
-		t.Fatal("fallback changed schedule span")
-	}
+
 }
 func TestPluginUnratedChannelRule(t *testing.T) {
 	c := Channel{Rating: "PG", Look: &ChannelLook{}, clipDuration: (&pluginGraphics{}).Duration}

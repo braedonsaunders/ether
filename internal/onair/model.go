@@ -154,3 +154,20 @@ func (s *StyleScene) UnmarshalJSON(b []byte) error {
 	*s = StyleScene(v)
 	return nil
 }
+
+// emptyCollections keeps a stored style's lists non-nil, so the API always
+// returns [] and {} instead of null.
+func (l *Look) emptyCollections() {
+	if l.Scenes == nil {
+		l.Scenes = []StyleScene{}
+	}
+	if l.Controls == nil {
+		l.Controls = []StyleControl{}
+	}
+	if l.Roles == nil {
+		l.Roles = map[string]RoleConfig{}
+	}
+	if l.ChannelIDs == nil {
+		l.ChannelIDs = []string{}
+	}
+}

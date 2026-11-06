@@ -333,22 +333,23 @@ type SourceGroup struct {
 	Excluded bool `json:"excluded,omitempty"`
 }
 type Programme struct {
-	BlockID         string `json:"blockId,omitempty"`
-	SourceID        string `json:"sourceId,omitempty"`
-	Pinned          bool   `json:"pinned,omitempty"`
-	Rule            string `json:"rule,omitempty"`
-	naturalBreaks   bool
-	policyTag       *broadcastPolicyTag
-	sourceOffset    time.Duration
-	graphicsRequest *core.ClipRequest
-	graphicsID      string
-	Reason          string    `json:"reason,omitempty"`
-	Lens            string    `json:"lens,omitempty"`
-	ID              string    `json:"id"`
-	ChannelID       string    `json:"channelId"`
-	Start           time.Time `json:"start"`
-	End             time.Time `json:"end"`
-	Item            Item      `json:"item"`
+	BlockID          string `json:"blockId,omitempty"`
+	SourceID         string `json:"sourceId,omitempty"`
+	Pinned           bool   `json:"pinned,omitempty"`
+	Rule             string `json:"rule,omitempty"`
+	naturalBreaks    bool
+	policyTag        *broadcastPolicyTag
+	sourceOffset     time.Duration
+	graphicsRequest  *core.ClipRequest
+	graphicsID       string
+	graphicsFallback bool
+	Reason           string    `json:"reason,omitempty"`
+	Lens             string    `json:"lens,omitempty"`
+	ID               string    `json:"id"`
+	ChannelID        string    `json:"channelId"`
+	Start            time.Time `json:"start"`
+	End              time.Time `json:"end"`
+	Item             Item      `json:"item"`
 }
 
 func (p Programme) Offset(at time.Time) time.Duration {

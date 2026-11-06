@@ -58,6 +58,7 @@ type entry struct {
 	Pin  time.Time
 }
 type renderJob struct {
+	Boundary    time.Time
 	Scene       StyleScene
 	download    bool
 	AssetDigest string
@@ -70,26 +71,30 @@ type renderJob struct {
 	convert     func(context.Context) error
 }
 type Service struct {
-	resources   string
-	reelReady   map[string]bool
-	o           Options
-	db          *sql.DB
-	mu          sync.Mutex
-	assetMu     sync.Mutex
-	looks       map[string]Look
-	cache       map[string]entry
-	pins        map[string]time.Time
-	pending     map[string]bool
-	renderTimes map[string]time.Duration
-	progress    map[string]*Progress
-	lookJobs    map[string][]string
-	jobs        chan renderJob
-	clipJobs    chan renderJob
-	importJobs  chan renderJob
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	startOnce   sync.Once
+	liveJobs       []renderJob
+	liveReady      chan struct{}
+	activeCancel   context.CancelFunc
+	activeBoundary time.Time
+	resources      string
+	reelReady      map[string]bool
+	o              Options
+	db             *sql.DB
+	mu             sync.Mutex
+	assetMu        sync.Mutex
+	looks          map[string]Look
+	cache          map[string]entry
+	pins           map[string]time.Time
+	pending        map[string]bool
+	renderTimes    map[string]time.Duration
+	progress       map[string]*Progress
+	lookJobs       map[string][]string
+	jobs           chan renderJob
+	clipJobs       chan renderJob
+	importJobs     chan renderJob
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	startOnce      sync.Once
 }
 
 var _ core.ChannelGraphics = (*Service)(nil)
@@ -108,7 +113,7 @@ func New(o Options) (*Service, error) {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{reelReady: map[string]bool{}, resources: fonts.Version(), o: o, db: o.DB, looks: map[string]Look{}, cache: map[string]entry{}, pending: map[string]bool{}, renderTimes: map[string]time.Duration{}, pins: map[string]time.Time{}, progress: map[string]*Progress{}, lookJobs: map[string][]string{}, jobs: make(chan renderJob, 128), clipJobs: make(chan renderJob, 64), importJobs: make(chan renderJob, 64), ctx: ctx, cancel: cancel}
+	s := &Service{reelReady: map[string]bool{}, resources: fonts.Version(), o: o, db: o.DB, looks: map[string]Look{}, cache: map[string]entry{}, pending: map[string]bool{}, renderTimes: map[string]time.Duration{}, pins: map[string]time.Time{}, progress: map[string]*Progress{}, lookJobs: map[string][]string{}, liveReady: make(chan struct{}, 1), jobs: make(chan renderJob, 128), clipJobs: make(chan renderJob, 64), importJobs: make(chan renderJob, 64), ctx: ctx, cancel: cancel}
 
 	if e := s.seed(ctx); e != nil {
 		cancel()
@@ -137,8 +142,9 @@ func New(o Options) (*Service, error) {
 func (s *Service) Start() {
 	s.startOnce.Do(func() {
 		if s.ctx.Err() == nil {
-			s.wg.Add(2)
+			s.wg.Add(3)
 			go s.run()
+			go s.watchUpcoming()
 			go s.backfillFacts()
 			for range 2 {
 				s.wg.Add(1)
@@ -235,8 +241,13 @@ func (s *Service) plan(r core.ClipRequest) (renderJob, bool) {
 	if !ok {
 		return renderJob{}, false
 	}
+	// Plans mutate their own document (durations, bug layout, bindings). Copy it
+	// into a FRESH value: decoding into d would reuse the stored style's slice
+	// backing arrays and write into shared scenes while other plans hash them.
+	var own scene.Document
 	raw, _ := json.Marshal(d)
-	_ = json.Unmarshal(raw, &d)
+	_ = json.Unmarshal(raw, &own)
+	d = own
 	assetDigest := ""
 	if selected.Video != nil && selected.Video.Mode == "replace" {
 		assetDigest = selected.Video.AssetDigest
@@ -320,7 +331,7 @@ func (s *Service) plan(r core.ClipRequest) (renderJob, bool) {
 		Bindings scene.Bindings
 		Request  core.ClipRequest
 	}{b, cacheRequest}, r.Art, encode.Profile)
-	return renderJob{Scene: selected, AssetDigest: assetDigest, Hash: h, Look: l.ID, Doc: d, Bind: raster.Bindings{Bindings: b, Assets: plugin.Images}, Request: r}, h != ""
+	return renderJob{Boundary: r.Boundary, Scene: selected, AssetDigest: assetDigest, Hash: h, Look: l.ID, Doc: d, Bind: raster.Bindings{Bindings: b, Assets: plugin.Images}, Request: r}, h != ""
 
 }
 func (s *Service) Clip(_ context.Context, r core.ClipRequest) (core.ClipRef, bool) {
@@ -387,9 +398,13 @@ func (s *Service) Ensure(_ context.Context, r core.ClipRequest) {
 	}
 }
 func (s *Service) enqueue(j renderJob) bool {
+	imminent := s.imminent(j)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pending[j.Hash] {
+		if imminent {
+			return s.queueLiveLocked(j)
+		}
 		return true
 	}
 	if v, ok := s.cache[j.Hash]; ok {
@@ -401,6 +416,13 @@ func (s *Service) enqueue(j renderJob) bool {
 	case <-s.ctx.Done():
 		return false
 	default:
+	}
+	if imminent {
+		if !s.queueLiveLocked(j) {
+			return false
+		}
+		s.pending[j.Hash] = true
+		return true
 	}
 	queue := s.jobs
 	if j.download {
@@ -500,12 +522,106 @@ func (s *Service) refreshProgress(id string) {
 	s.progress[id] = p
 }
 
-func (s *Service) run() {
+func (s *Service) imminent(j renderJob) bool {
+	now := time.Now()
+	lead := s.RenderLead(j.Look, j.Doc.Moment)
+	if strings.HasPrefix(j.Doc.Moment, "plugin:") {
+		lead = max(lead, 15*time.Minute)
+	}
+	return j.Boundary.After(now) && !j.Boundary.After(now.Add(lead))
+}
+
+// Called under mu. Imminent jobs are bounded and selected nearest-boundary
+// first. They also interrupt an ordinary job waiting for a viewer-held slot.
+func (s *Service) queueLiveLocked(j renderJob) bool {
+	for i, old := range s.liveJobs {
+		if old.Hash == j.Hash {
+			if j.Boundary.Before(old.Boundary) {
+				s.liveJobs[i] = j
+				sort.SliceStable(s.liveJobs, func(i, j int) bool { return s.liveJobs[i].Boundary.Before(s.liveJobs[j].Boundary) })
+			}
+			return true
+		}
+	}
+	if len(s.liveJobs) >= 128 {
+		if !j.Boundary.Before(s.liveJobs[len(s.liveJobs)-1].Boundary) {
+			return false
+		}
+		delete(s.pending, s.liveJobs[len(s.liveJobs)-1].Hash)
+		s.liveJobs = s.liveJobs[:len(s.liveJobs)-1]
+	}
+	s.liveJobs = append(s.liveJobs, j)
+	sort.SliceStable(s.liveJobs, func(i, j int) bool { return s.liveJobs[i].Boundary.Before(s.liveJobs[j].Boundary) })
+	if s.activeCancel != nil && (s.activeBoundary.IsZero() || !s.activeBoundary.After(time.Now())) {
+		s.activeCancel()
+	}
+	select {
+	case s.liveReady <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+func (s *Service) watchUpcoming() {
 	defer s.wg.Done()
 	tick := time.NewTicker(30 * time.Second)
 	defer tick.Stop()
+	for {
+		if ls, e := s.Looks(s.ctx); e == nil {
+			snapshot := map[string]Look{}
+			for _, l := range ls {
+				snapshot[l.ID] = l
+			}
+			s.mu.Lock()
+			s.looks = snapshot
+			s.evict()
+			s.mu.Unlock()
+		}
+		if s.o.Upcoming != nil {
+			for _, r := range s.o.Upcoming(s.ctx) {
+				j, ok := s.plan(r)
+				if !ok {
+					continue
+				}
+				s.mu.Lock()
+				v := s.cache[j.Hash]
+				s.pins[j.Hash] = time.Now().Add(3 * time.Hour)
+				v.Pin = s.pins[j.Hash]
+				if v.Ref.Hash != "" {
+					s.cache[j.Hash] = v
+				}
+				s.mu.Unlock()
+				s.enqueue(j)
+			}
+		}
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+func (s *Service) run() {
+	defer s.wg.Done()
 	clipsSinceRender := 0
 	for {
+		if s.ctx.Err() != nil {
+			return
+		}
+		s.mu.Lock()
+		var urgent *renderJob
+		if len(s.liveJobs) > 0 {
+			j := s.liveJobs[0]
+			s.liveJobs[0] = renderJob{}
+			s.liveJobs = s.liveJobs[1:]
+			urgent = &j
+		}
+		s.mu.Unlock()
+		if urgent != nil {
+			s.process(*urgent)
+			continue
+		}
 		if clipsSinceRender >= 3 {
 			select {
 			case j := <-s.jobs:
@@ -516,42 +632,9 @@ func (s *Service) run() {
 			}
 		}
 		select {
-		case j := <-s.clipJobs:
-			clipsSinceRender++
-			s.process(j)
-			continue
-		default:
-		}
-		select {
 		case <-s.ctx.Done():
 			return
-		case <-tick.C:
-			if ls, e := s.Looks(s.ctx); e == nil {
-				snapshot := map[string]Look{}
-				for _, l := range ls {
-					snapshot[l.ID] = l
-				}
-				s.mu.Lock()
-				s.looks = snapshot
-				s.evict()
-				s.mu.Unlock()
-			}
-			if s.o.Upcoming != nil {
-				for _, r := range s.o.Upcoming(s.ctx) {
-					j, ok := s.plan(r)
-					if ok {
-						s.mu.Lock()
-						v := s.cache[j.Hash]
-						s.pins[j.Hash] = time.Now().Add(3 * time.Hour)
-						v.Pin = s.pins[j.Hash]
-						if v.Ref.Hash != "" {
-							s.cache[j.Hash] = v
-						}
-						s.mu.Unlock()
-						s.enqueue(j)
-					}
-				}
-			}
+		case <-s.liveReady:
 		case j := <-s.clipJobs:
 			clipsSinceRender++
 			s.process(j)
@@ -561,9 +644,34 @@ func (s *Service) run() {
 		}
 	}
 }
+
 func (s *Service) process(j renderJob) {
-	e := s.execute(j)
+	imminent := s.imminent(j)
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
 	s.mu.Lock()
+	if _, cached := s.cache[j.Hash]; cached {
+		delete(s.pending, j.Hash)
+		s.mu.Unlock()
+		return
+	}
+	if !j.download {
+		s.activeCancel = cancel
+		s.activeBoundary = time.Time{}
+		if imminent {
+			s.activeBoundary = j.Boundary
+			ctx = WithBoundaryDeadline(ctx, j.Boundary)
+		} else if len(s.liveJobs) > 0 {
+			cancel()
+		}
+	}
+	s.mu.Unlock()
+	e := s.execute(ctx, j)
+	s.mu.Lock()
+	if !j.download {
+		s.activeCancel = nil
+		s.activeBoundary = time.Time{}
+	}
 	delete(s.pending, j.Hash)
 	s.refreshProgress(j.Look)
 	s.mu.Unlock()
@@ -575,11 +683,11 @@ func (s *Service) process(j renderJob) {
 	}
 }
 
-func (s *Service) execute(j renderJob) (err error) {
+func (s *Service) execute(parent context.Context, j renderJob) (err error) {
 	if j.prepare != nil {
-		return j.prepare(s.ctx)
+		return j.prepare(parent)
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, 15*time.Minute)
+	ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
 	defer cancel()
 	started := time.Now()
 	if s.o.Acquire != nil {

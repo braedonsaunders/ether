@@ -131,6 +131,7 @@ func (s *Service) Looks(ctx context.Context) ([]Look, error) {
 		if e = json.Unmarshal([]byte(b), &l); e != nil {
 			return nil, e
 		}
+		l.emptyCollections()
 		s.mu.Lock()
 		p := s.progress[l.ID]
 		if p != nil {
@@ -165,6 +166,7 @@ func (s *Service) Look(ctx context.Context, id string) (Look, error) {
 	}
 	if e == nil {
 		e = json.Unmarshal([]byte(b), &l)
+		l.emptyCollections()
 	}
 	if e == nil && s.o.StyleChannels != nil {
 		usage, err := s.o.StyleChannels(ctx)

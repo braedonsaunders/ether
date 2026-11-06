@@ -8,6 +8,7 @@ import {
   HOUR,
   flattenElements,
   daypartBands,
+  TIMELINE_KINDS,
   kindLabel,
   layoutElements,
   tooltipContent,
@@ -25,20 +26,7 @@ function validElement(e: TimelineElement, depth = 0): boolean {
     typeof e.id === "string" &&
     typeof e.title === "string" &&
     typeof e.rule === "string" &&
-    [
-      "programme",
-      "pod",
-      "spot",
-      "ident",
-      "upnext",
-      "break",
-      "back",
-      "stationId",
-      "plugin",
-      "special",
-      "gap",
-      "offair",
-    ].includes(e.kind) &&
+    TIMELINE_KINDS.includes(e.kind) &&
     Number.isFinite(e.start) &&
     Number.isFinite(e.end) &&
     e.end > e.start &&
@@ -128,7 +116,6 @@ export function ScheduleTimeline({
             !Array.isArray(d.dayparts) ||
             typeof d.timezone !== "string" ||
             !d.timezone ||
-            !d.elements.every((e) => validElement(e)) ||
             !d.dayparts.every(
               (b) =>
                 b && Number.isFinite(b.start) && Number.isFinite(b.end) && Array.isArray(b.days),
@@ -136,7 +123,12 @@ export function ScheduleTimeline({
           )
             throw new Error("Invalid timeline snapshot");
           new Intl.DateTimeFormat("en", { timeZone: d.timezone }).format(0);
-          if (live) setData(d);
+          // An element kind this console doesn't know yet is skipped, so it can't
+          // hide the whole schedule; a malformed element of a known kind is still
+          // an invalid snapshot.
+          const elements = d.elements.filter((e) => !!e && TIMELINE_KINDS.includes(e.kind));
+          if (!elements.every((e) => validElement(e))) throw new Error("Invalid timeline snapshot");
+          if (live) setData({ ...d, elements });
         })
         .catch((error) => {
           if (!live) return;
@@ -426,9 +418,9 @@ export function ScheduleTimeline({
               style={{
                 left: x,
                 width: w,
-                padding: w < 64 ? 0 : 6,
-                top: lane === 0 ? 86 : lane === 1 ? 166 : 208,
-                height: lane === 0 ? 72 : 34,
+                padding: w < 64 || lane > 0 ? 0 : "3px 6px",
+                top: lane === 0 ? 30 : lane === 1 ? 66 : 80,
+                height: lane === 0 ? 32 : 11,
               }}
               type="button"
               tabIndex={active === el.id || (!active && items[0]?.el.id === el.id) ? 0 : -1}
@@ -472,7 +464,7 @@ export function ScheduleTimeline({
           ))}
           <NowMarker from={range.from} to={range.to} scale={scale} />
           {!data && (
-            <p className="sticky left-0 w-fit px-4 pt-28 text-xs text-fg-muted" role="status">
+            <p className="sticky left-0 w-fit px-4 pt-9 text-xs text-fg-muted" role="status">
               {error || t("Loading…")}
             </p>
           )}
@@ -482,22 +474,7 @@ export function ScheduleTimeline({
         className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-muted"
         aria-label={t("Legend")}
       >
-        {(
-          [
-            "programme",
-            "pod",
-            "spot",
-            "ident",
-            "upnext",
-            "break",
-            "back",
-            "stationId",
-            "plugin",
-            "special",
-            "gap",
-            "offair",
-          ] as const
-        ).map((k) => (
+        {TIMELINE_KINDS.map((k) => (
           <span key={k} className="inline-flex items-center gap-1">
             <i className={`schedule-key schedule-${k}`} />
             {kindLabel(k)}

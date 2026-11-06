@@ -6,6 +6,7 @@ export type TimelineKind =
   | "spot"
   | "ident"
   | "upnext"
+  | "tonight"
   | "break"
   | "back"
   | "stationId"
@@ -37,6 +38,22 @@ export interface TimelineResponse {
   elements: TimelineElement[];
 }
 export type TimelineRange = { from: number; to: number };
+/** Every element kind the timeline draws; anything else from a newer server is skipped. */
+export const TIMELINE_KINDS: readonly TimelineKind[] = [
+  "programme",
+  "pod",
+  "spot",
+  "ident",
+  "upnext",
+  "tonight",
+  "break",
+  "back",
+  "stationId",
+  "plugin",
+  "special",
+  "gap",
+  "offair",
+];
 export function kindLabel(kind: TimelineKind): string {
   return {
     programme: t("Programme"),
@@ -44,6 +61,7 @@ export function kindLabel(kind: TimelineKind): string {
     spot: t("Spot"),
     ident: t("Ident"),
     upnext: t("Up next"),
+    tonight: t("Tonight"),
     break: t("Break"),
     back: t("Back"),
     stationId: t("Station ID"),

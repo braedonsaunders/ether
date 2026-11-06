@@ -11,6 +11,9 @@ import (
 
 // ClipRequest binds a look moment to the channel and upcoming programme.
 type ClipRequest struct {
+	// Boundary is transient render scheduling metadata, excluded from clip hashes
+	// and serialized requests so identical content keeps its cached master.
+	Boundary time.Time `json:"-"`
 	// AssetDigest overrides this channel's moment without changing its shared look.
 	AssetDigest   string        `json:"assetDigest,omitempty"`
 	AssetDuration time.Duration `json:"assetDuration,omitempty"`

@@ -98,3 +98,46 @@ func TestSlotPriority(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 }
+
+// Imminent masters retain one bounded lane even while every continuous output
+// slot is occupied. Ordinary work still waits and viewing never preempts prep.
+func TestLivePreparationLaneUnderContinuousLoad(t *testing.T) {
+	m := newTestManager(t, newFakeRunner(), config.Transcode{MaxTranscodes: 1})
+	ctx := t.Context()
+	_, viewerRelease, err := m.AcquireTranscodeSlot(ctx, SlotViewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewerRelease()
+	short, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
+	defer cancel()
+	if _, release, err := m.AcquireTranscodeSlot(short, SlotBackground); err == nil {
+		release()
+		t.Fatal("ordinary work bypassed continuous budget")
+	}
+	prep, release, err := m.AcquireTranscodeSlot(ctx, SlotLivePrep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	short2, cancel2 := context.WithTimeout(ctx, 20*time.Millisecond)
+	defer cancel2()
+	if _, r, err := m.AcquireTranscodeSlot(short2, SlotLivePrep); err == nil {
+		r()
+		t.Fatal("live prep exceeded one job")
+	}
+	m.mu.Lock()
+	viewerCount, prepCount := m.encodingLocked(""), m.livePrepEncodes
+	m.preemptBackgroundLocked()
+	m.mu.Unlock()
+	if prep.Err() != nil || viewerCount != 1 || prepCount != 1 {
+		t.Fatalf("prep was preempted or charged to viewers: %v %d %d", prep.Err(), viewerCount, prepCount)
+	}
+	release()
+	release()
+	_, again, err := m.AcquireTranscodeSlot(ctx, SlotLivePrep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again()
+}

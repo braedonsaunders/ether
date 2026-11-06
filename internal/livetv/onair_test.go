@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/core"
+	"io"
 	"reflect"
 	"testing"
 	"time"
@@ -94,7 +95,7 @@ func TestGapLookKeepsEpochCalendar(t *testing.T) {
 	}
 }
 
-func TestMissingBroadcastClipFallsBackAndCorrectsInsertGuide(t *testing.T) {
+func TestMissingBroadcastClipPreservesScheduleAndGuide(t *testing.T) {
 	for _, placement := range []string{"gap", "insert"} {
 		t.Run(placement, func(t *testing.T) {
 			now := time.Date(2026, 11, 2, 0, 0, 25, 0, time.UTC)
@@ -103,27 +104,42 @@ func TestMissingBroadcastClipFallsBackAndCorrectsInsertGuide(t *testing.T) {
 			if placement == "gap" {
 				c.Align = "half"
 			}
-			ps := s.broadcastSchedule(context.Background(), c, now, now.Add(24*time.Second), true)
-			if len(ps) == 0 {
-				t.Fatal("empty fallback")
+			c = s.graphicsChannel(c)
+			until := now.Add(24 * time.Second)
+			scheduled := Schedule(c, now, until)
+			guideBefore := s.broadcastGuide(c, now, until)
+			aired := s.broadcastSchedule(context.Background(), c, now, until, true)
+			if len(aired) != len(scheduled) {
+				t.Fatal("missing master changed the rundown")
 			}
-			for _, p := range ps {
+			fallbacks := 0
+			for i, p := range aired {
+				want := scheduled[i]
+				if p.ID != want.ID || p.Start != want.Start || p.End != want.End || !reflect.DeepEqual(p.Item, want.Item) {
+					t.Fatalf("airing %d shifted: %v, want %v", i, p, want)
+				}
 				if interstitial(p.Item) && !p.Start.After(now) {
-					t.Fatal("uncached clip aired")
+					// An already-airing clip ending early takes the identical
+					// failure path as the CHROMA pod EOF incident. A refresh
+					// must preserve every later prepared programme identity.
+					s.recordGraphicsSkip(c, p, io.EOF)
+					refreshed := s.broadcastSchedule(context.Background(), c, now, until, true)
+					for j, row := range refreshed {
+						if row.ID != scheduled[j].ID || row.Start != scheduled[j].Start || row.End != scheduled[j].End || broadcastProgrammeID(row) != broadcastProgrammeID(scheduled[j]) {
+							t.Fatal("EOF recompute invalidated prepared input")
+						}
+					}
+					if !p.graphicsFallback {
+						t.Fatal("missing master did not latch fallback")
+					}
+					fallbacks++
 				}
 			}
-			if placement == "gap" {
-				if ps[0].Item.Slate != offAirSlate {
-					t.Fatal("gap did not restore off-air")
-				}
-			} else {
-				if !ps[0].Start.Equal(now.Add(-5 * time.Second)) {
-					t.Fatal("programme did not advance", ps[0])
-				}
-				guide := s.broadcastGuide(s.graphicsChannel(c), now, now.Add(time.Second))
-				if len(guide) == 0 || guide[0].ID != ps[0].ID {
-					t.Fatal("guide did not follow inserted skip", guide)
-				}
+			if fallbacks == 0 {
+				t.Fatal("fixture did not cover a missing moment")
+			}
+			if !reflect.DeepEqual(guideBefore, s.broadcastGuide(c, now, until)) {
+				t.Fatal("fallback changed the guide")
 			}
 		})
 	}

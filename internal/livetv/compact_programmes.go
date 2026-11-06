@@ -20,6 +20,7 @@ type compactProgrammeMeta struct {
 	blockID, sourceID, rule, reason, lens           string
 	id, channelID, graphicsID                       string
 	pinned, deriveID, deriveChannel, deriveGraphics bool
+	graphicsFallback                                bool
 	hasStartException, hasEndException              bool
 	sourceOffset                                    time.Duration
 	policyTag                                       *broadcastPolicyTag
@@ -61,7 +62,7 @@ func compactProgrammeSlice(channelID string, ps []Programme, items *compactItemT
 	index := map[compactProgrammeMeta]uint32{}
 	for i, p := range ps {
 		expected := fmt.Sprintf("%s-%d", channelID, p.Start.UnixMilli())
-		m := compactProgrammeMeta{item: items.intern(p.Item), blockID: p.BlockID, sourceID: p.SourceID, rule: p.Rule, reason: p.Reason, lens: p.Lens, id: p.ID, channelID: p.ChannelID, graphicsID: p.graphicsID, pinned: p.Pinned, sourceOffset: p.sourceOffset, policyTag: p.policyTag, graphicsRequest: p.graphicsRequest, startLoc: p.Start.Location(), endLoc: p.End.Location()}
+		m := compactProgrammeMeta{item: items.intern(p.Item), blockID: p.BlockID, sourceID: p.SourceID, rule: p.Rule, reason: p.Reason, lens: p.Lens, id: p.ID, channelID: p.ChannelID, graphicsID: p.graphicsID, pinned: p.Pinned, sourceOffset: p.sourceOffset, policyTag: p.policyTag, graphicsRequest: p.graphicsRequest, graphicsFallback: p.graphicsFallback, startLoc: p.Start.Location(), endLoc: p.End.Location()}
 		if p.ID == expected {
 			m.id = ""
 			m.deriveID = true
@@ -105,7 +106,7 @@ func (s *compactProgrammes) slice(channelID string, from, until time.Time) []Pro
 	for i := range out {
 		row := s.rows[first+i]
 		m := s.meta[row.meta]
-		p := Programme{ID: m.id, ChannelID: m.channelID, Start: s.start(first + i), End: s.end(first + i), Item: s.items.items[m.item], BlockID: m.blockID, SourceID: m.sourceID, Rule: m.rule, Reason: m.reason, Lens: m.lens, Pinned: m.pinned, sourceOffset: m.sourceOffset, policyTag: m.policyTag, graphicsRequest: m.graphicsRequest, graphicsID: m.graphicsID}
+		p := Programme{ID: m.id, ChannelID: m.channelID, Start: s.start(first + i), End: s.end(first + i), Item: s.items.items[m.item], BlockID: m.blockID, SourceID: m.sourceID, Rule: m.rule, Reason: m.reason, Lens: m.lens, Pinned: m.pinned, sourceOffset: m.sourceOffset, policyTag: m.policyTag, graphicsRequest: m.graphicsRequest, graphicsID: m.graphicsID, graphicsFallback: m.graphicsFallback}
 		if m.deriveChannel {
 			p.ChannelID = channelID
 		}

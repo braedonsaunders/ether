@@ -56,3 +56,57 @@ func TestCachedMastersDoNotRenderAgain(t *testing.T) {
 		t.Fatal("render lead did not cover measured work")
 	}
 }
+
+// An imminent repeat promotes its already-queued ordinary job instead of
+// waiting behind a background acquire that cannot run during continuous TV.
+func TestImminentMasterEscapesStarvedBackground(t *testing.T) {
+	blocked := make(chan struct{}, 1)
+	acquired := make(chan time.Time, 1)
+	s := testService(t, Options{StaticRequests: func(context.Context, string) []core.ClipRequest { return []core.ClipRequest{{Moment: "disabled"}} }, Acquire: func(ctx context.Context) (context.Context, func(), error) {
+		if at, ok := BoundaryDeadline(ctx); ok {
+			acquired <- at
+			return ctx, func() {}, nil
+		}
+		select {
+		case blocked <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}, Render: func(_ context.Context, _ scene.Document, _ raster.Bindings, out string) error {
+		return os.WriteFile(out, []byte("master"), 0600)
+	}})
+	request := core.ClipRequest{LookID: "nocturne", Moment: "ident", ChannelID: "deadline"}
+	s.Ensure(t.Context(), request)
+	select {
+	case <-blocked:
+	case <-time.After(time.Second):
+		t.Fatal("ordinary job did not wait")
+	}
+	request.Boundary = time.Now().Add(time.Second)
+	s.Ensure(t.Context(), request)
+	select {
+	case at := <-acquired:
+		if at != request.Boundary {
+			t.Fatal("boundary lost")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("imminent master starved")
+	}
+	for deadline := request.Boundary; ; {
+		if _, ok := s.Clip(t.Context(), request); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("master missed its boundary despite reserved lane")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Deadline metadata cannot change the content-addressed master.
+	first, _ := s.Clip(t.Context(), request)
+	request.Boundary = request.Boundary.Add(time.Minute)
+	next, ok := s.Clip(t.Context(), request)
+	if !ok || next.Hash != first.Hash {
+		t.Fatal("boundary changed clip cache identity")
+	}
+}

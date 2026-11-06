@@ -113,3 +113,46 @@ func TestColdIdentFillMinimumCapAndCrossfade(t *testing.T) {
 		})
 	}
 }
+
+// A welcome can share the scheduled programme identity. A slow welcome must
+// neither steal that input nor prevent the prewarmed signal from airing.
+func TestColdWelcomeKeepsLiveSignalReady(t *testing.T) {
+	for _, fill := range []bool{false, true} {
+		t.Run(map[bool]string{false: "scheduled", true: "fill"}[fill], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := smallBroadcastFormat()
+				runner := &broadcastFakeRunner{}
+				open := func(value byte, delay time.Duration) func(context.Context) (transcode.Decoder, func(), error) {
+					return func(context.Context) (transcode.Decoder, func(), error) {
+						return &delayedIntroProgramme{Decoder: &broadcastFakeDecoder{format: f, closed: make(chan struct{}), value: value}, delay: delay}, nil, nil
+					}
+				}
+				planner := introFillPlanner{broadcastFakePlanner: broadcastFakePlanner{plan: broadcastPlan{id: "programme", open: open(80, 3*time.Second)}, screenPlan: broadcastPlan{id: "screen", open: open(40, 0)}}, intro: broadcastPlan{id: "programme", fill: fill, open: open(200, 2*time.Second)}}
+				b, err := newBroadcast(t.Context(), runner, planner, f)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer b.close()
+				if _, err = b.addRendition(t.Context(), "main", core.Decision{}); err != nil {
+					t.Fatal(err)
+				}
+				b.start()
+				time.Sleep(6 * time.Second)
+				synctest.Wait()
+				b.close()
+				frames := runner.encoders[0].snapshot()
+				if len(frames) < 175 {
+					t.Fatalf("output stopped: %d frames", len(frames))
+				}
+				for tick, frame := range frames {
+					if frame.Video[0] != 40 && frame.Video[0] != 80 {
+						t.Fatalf("tick %d: unexpected black or late welcome picture %d", tick, frame.Video[0])
+					}
+				}
+				if frames[0].Video[0] != 40 || frames[135].Video[0] != 80 {
+					t.Fatal("signal or programme was not ready on time")
+				}
+			})
+		})
+	}
+}

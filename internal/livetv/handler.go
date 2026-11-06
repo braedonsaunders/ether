@@ -20,6 +20,9 @@ import (
 // tokens on its own. Streaming uses the separately authenticated Plex adapter.
 func (s *Service) Handler() http.Handler {
 	r := chi.NewRouter()
+	r.Get("/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+		ownerResult(w, map[string]any{"maintenance": s.MaintenanceDiagnostics()}, nil)
+	})
 	r.Get("/channels/{id}/timeline", s.timelineRoute)
 	r.Get("/channels/{id}/rundown", func(w http.ResponseWriter, r *http.Request) {
 		viewer, err := strconv.ParseInt(r.URL.Query().Get("viewer"), 10, 64)

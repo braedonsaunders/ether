@@ -1,4 +1,4 @@
-import Library from "./library/Library";
+import Library, { LibraryAside } from "./library/Library";
 import { styleCopy } from "./onair/naming";
 import { stylesName } from "./onair/naming";
 import { useLooks, LooksAside, LooksGallery, LookSurfaces } from "./onair/LooksGallery";
@@ -743,7 +743,7 @@ export default function LiveTV() {
 
   const panelHead = (
     <PanelHead className="@container flex h-[104px]! flex-col items-stretch! justify-between space-y-0! pt-3! pb-0! border-b! [&>div:last-child]:mb-0">
-      {leftTab !== "library" && leftTab !== "looks" && (
+      {
         <div className="flex items-center gap-1.5">
           <div className="relative min-w-0 flex-1">
             <Search
@@ -753,36 +753,74 @@ export default function LiveTV() {
             />
             <Input
               type="search"
-              value={q}
-              onChange={(e) => setQ(e.currentTarget.value)}
+              value={leftTab === "library" ? (params.get("q") ?? "") : q}
+              onChange={(e) => {
+                const value = e.currentTarget.value;
+                if (leftTab !== "library") setQ(value);
+                else
+                  setParams((p) => {
+                    if (value) p.set("q", value);
+                    else p.delete("q");
+                    return p;
+                  });
+              }}
               placeholder={
-                leftTab === "looks"
-                  ? styleCopy("Search styles…")
-                  : leftTab === "sources"
-                    ? t("Find a channel, group or source…")
-                    : leftTab === "guide"
-                      ? t("Find a channel or guide…")
-                      : t("Find a channel or group…")
+                leftTab === "library"
+                  ? t("Search Library")
+                  : leftTab === "looks"
+                    ? styleCopy("Search styles…")
+                    : leftTab === "sources"
+                      ? t("Find a channel, group or source…")
+                      : leftTab === "guide"
+                        ? t("Find a channel or guide…")
+                        : t("Find a channel or group…")
               }
-              aria-label={leftTab === "looks" ? styleCopy("Search styles") : t("Search channels")}
+              aria-label={
+                leftTab === "library"
+                  ? t("Search Library")
+                  : leftTab === "looks"
+                    ? styleCopy("Search styles")
+                    : t("Search channels")
+              }
               className="h-8 pl-7 text-sm"
             />
           </div>
-          <ToolbarPicker
-            ariaLabel={t("Show")}
-            value={filter}
-            onChange={setFilter}
-            options={FILTERS.map((f) => ({
-              ...f,
-              hint:
-                f.value === "missing" && missingCount !== null
-                  ? tn(missingCount, "{count} channel", "{count} channels")
-                  : undefined,
-            }))}
-            menuClassName="w-48"
-          />
+          {leftTab === "library" ? (
+            <ToolbarPicker
+              ariaLabel={t("Sort assets")}
+              value={params.get("sort") ?? "newest"}
+              onChange={(value) =>
+                setParams((p) => {
+                  if (value === "newest") p.delete("sort");
+                  else p.set("sort", value);
+                  return p;
+                })
+              }
+              options={[
+                { value: "newest", label: t("Newest") },
+                { value: "name", label: t("Name") },
+                { value: "size", label: t("Size") },
+                { value: "used", label: t("Most used") },
+              ]}
+              menuClassName="w-48"
+            />
+          ) : leftTab === "looks" ? null : (
+            <ToolbarPicker
+              ariaLabel={t("Show")}
+              value={filter}
+              onChange={setFilter}
+              options={FILTERS.map((f) => ({
+                ...f,
+                hint:
+                  f.value === "missing" && missingCount !== null
+                    ? tn(missingCount, "{count} channel", "{count} channels")
+                    : undefined,
+              }))}
+              menuClassName="w-48"
+            />
+          )}
         </div>
-      )}
+      }
       <SubtabNav
         ariaLabel={t("Lineup")}
         className="justify-start"
@@ -823,7 +861,9 @@ export default function LiveTV() {
     <>
       {panelHead}
       <div className="app-scroll min-h-0 flex-1 lg:overflow-y-auto">
-        {leftTab === "library" ? null : leftTab === "looks" ? (
+        {leftTab === "library" ? (
+          <LibraryAside />
+        ) : leftTab === "looks" ? (
           <LooksAside
             looks={looks}
             reels={reels}
@@ -962,6 +1002,7 @@ export default function LiveTV() {
       <Library />
     ) : leftTab === "looks" ? (
       <LooksGallery
+        showOwned={false}
         looks={looks}
         onNew={() => setParams(new URLSearchParams({ look: "new" }))}
         onSelect={(id) => setParams(new URLSearchParams({ look: id }))}
@@ -1094,14 +1135,7 @@ export default function LiveTV() {
         aside={aside}
         main={main}
       >
-        {leftTab === "library" || leftTab === "looks" ? (
-          <div className="app-scroll min-h-0 flex-1 overflow-y-auto">
-            {panelHead}
-            <main className={leftTab === "looks" ? "" : "p-4 sm:p-6"}>{main}</main>
-          </div>
-        ) : (
-          (state ?? (leftTab === "channels" ? lineupGuide : undefined))
-        )}
+        {state ?? (leftTab === "channels" ? lineupGuide : undefined)}
       </Workspace>
       <Drawer
         open={guideOpen}

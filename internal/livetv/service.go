@@ -32,6 +32,7 @@ CREATE TABLE livetv_policies(user_id INTEGER PRIMARY KEY, data TEXT NOT NULL);`)
 }
 
 type Service struct {
+	maintenance        maintenanceHealth
 	virtualGuide       virtualGuideCache
 	breakObserved      chan breakObservation
 	observedBreaks     map[core.RatingKey]breakObservation
@@ -222,7 +223,8 @@ func liveSessionID() string {
 
 func (s *Service) maintain() {
 	defer s.wg.Done()
-	s.refreshReels()
+	steps := s.maintenanceSteps()
+	steps("refreshReels", s.refreshReels)
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
 	warmed := map[core.RatingKey]time.Time{}
@@ -231,57 +233,63 @@ func (s *Service) maintain() {
 		case <-s.ctx.Done():
 			return
 		case <-s.graphicsWake:
-			s.refreshReels()
+			steps("refreshReels", s.refreshReels)
 		case <-t.C:
-			s.expireSessions()
-			s.broadcasts.expire(s.o.Now())
-			s.refreshReels()
-			s.ensureGraphics()
+			steps("expireSessions", s.expireSessions)
+			steps("expireBroadcasts", func() { s.broadcasts.expire(s.o.Now()) })
+			steps("refreshReels", s.refreshReels)
+			steps("ensureGraphics", s.ensureGraphics)
 			if s.o.Warm != nil {
-				cs, err := s.virtualChannels(s.ctx)
-				if err != nil {
-					continue
-				}
-				recent := s.recentlyWatched()
-				s.mu.Lock()
-				watchedAt := make(map[string]time.Time, len(s.watched))
-				for id, at := range s.watched {
-					watchedAt[id] = at
-				}
-				s.mu.Unlock()
-				sort.SliceStable(cs, func(i, j int) bool { return watchedAt[cs[i].ID].After(watchedAt[cs[j].ID]) })
-				admitted := 0
-				for _, c := range cs {
-					// A channel nobody has watched lately is not pre-warmed:
-					// warming resolves every scheduled item, around the clock.
-					if !c.Enabled || c.Kind != "virtual" || !recent[c.ID] {
-						continue
-					}
-					if admitted >= 2 {
-						break
-					}
-					admitted++
-					ps := Schedule(s.graphicsChannel(c), s.o.Now(), s.o.Now().Add(3*time.Minute))
-					for _, p := range ps {
-						if p.Item.Key == 0 || s.o.Now().Sub(warmed[p.Item.Key]) < channelWarmRefresh(p, s.o.Now()) {
-							continue
-						}
-						ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
-						err := s.o.Warm(ctx, p.Item.Key, p.Offset(maxTime(s.o.Now(), p.Start)))
-						cancel()
-						if err == nil {
-							warmed[p.Item.Key] = s.o.Now()
-						}
-					}
-				}
-				for k, t := range warmed {
-					if s.o.Now().Sub(t) > time.Hour {
-						delete(warmed, k)
-					}
-				}
+				steps("warmProgrammes", func() { s.warmProgrammes(warmed) })
 			}
 		}
 	}
+}
+
+func (s *Service) warmProgrammes(warmed map[core.RatingKey]time.Time) {
+
+	cs, err := s.virtualChannels(s.ctx)
+	if err != nil {
+		return
+	}
+	recent := s.recentlyWatched()
+	s.mu.Lock()
+	watchedAt := make(map[string]time.Time, len(s.watched))
+	for id, at := range s.watched {
+		watchedAt[id] = at
+	}
+	s.mu.Unlock()
+	sort.SliceStable(cs, func(i, j int) bool { return watchedAt[cs[i].ID].After(watchedAt[cs[j].ID]) })
+	admitted := 0
+	for _, c := range cs {
+		// A channel nobody has watched lately is not pre-warmed:
+		// warming resolves every scheduled item, around the clock.
+		if !c.Enabled || c.Kind != "virtual" || !recent[c.ID] {
+			continue
+		}
+		if admitted >= 2 {
+			break
+		}
+		admitted++
+		ps := Schedule(s.graphicsChannel(c), s.o.Now(), s.o.Now().Add(3*time.Minute))
+		for _, p := range ps {
+			if p.Item.Key == 0 || s.o.Now().Sub(warmed[p.Item.Key]) < channelWarmRefresh(p, s.o.Now()) {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
+			err := s.o.Warm(ctx, p.Item.Key, p.Offset(maxTime(s.o.Now(), p.Start)))
+			cancel()
+			if err == nil {
+				warmed[p.Item.Key] = s.o.Now()
+			}
+		}
+	}
+	for k, t := range warmed {
+		if s.o.Now().Sub(t) > time.Hour {
+			delete(warmed, k)
+		}
+	}
+
 }
 
 func (s *Service) expireSessions() {

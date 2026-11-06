@@ -55,7 +55,11 @@ func (a *App) buildOnAir() error {
 	}
 	if a.transcoder != nil {
 		o.Acquire = func(ctx context.Context) (context.Context, func(), error) {
-			return a.transcoder.AcquireTranscodeSlot(ctx, transcode.SlotBackground)
+			priority := transcode.SlotBackground
+			if deadline, imminent := onair.BoundaryDeadline(ctx); imminent && deadline.After(time.Now()) {
+				priority = transcode.SlotLivePrep
+			}
+			return a.transcoder.AcquireTranscodeSlot(ctx, priority)
 		}
 		o.FFmpeg = a.transcoder.FFmpegPath
 		o.Probe = a.transcoder.Probe

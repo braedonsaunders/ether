@@ -77,7 +77,9 @@ func (s *Service) GraphicsRequests(ctx context.Context, lookID string) []core.Cl
 	sort.SliceStable(pending, func(i, j int) bool { return pending[i].at.Before(pending[j].at) })
 	out := make([]core.ClipRequest, 0, len(pending))
 	for _, p := range pending {
-		out = append(out, p.request)
+		request := p.request
+		request.Boundary = p.at
+		out = append(out, request)
 	}
 	return out
 }
