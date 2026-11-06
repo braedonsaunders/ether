@@ -1367,7 +1367,7 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 			}
 			ct.Rejected = true
 			switch reason {
-			case "above profile max height", "above client max height", "below profile min height", "dolby vision not allowed for client", "video codec unsupported by client", "quality excluded by imported profile", "source recently failed health check; retrying later",
+			case ReasonAboveProfileMaxResolution, ReasonAboveClientMaxResolution, ReasonBelowProfileMinResolution, "dolby vision not allowed for client", "video codec unsupported by client", "quality excluded by imported profile", "source recently failed health check; retrying later",
 				// Size ranges are per profile: a remux too large for a
 				// download or mobile profile still plays for others.
 				"size too small for runtime", "size too large for runtime":
@@ -1734,12 +1734,12 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 		if configured := configuredMaxHeight(profile); caps.MaxHeight > 0 &&
 			(configured == configuredUnlimited || caps.MaxHeight < configured) &&
 			rel.Info.Height > caps.MaxHeight {
-			return "above client max height"
+			return ReasonAboveClientMaxResolution
 		}
-		return "above profile max height"
+		return ReasonAboveProfileMaxResolution
 	}
 	if h := floorHeight(rel.Info); !preferred && profile.MinHeight > 0 && h > 0 && h < profile.MinHeight {
-		return "below profile min height"
+		return ReasonBelowProfileMinResolution
 	}
 	if !ceilingBypass && rel.Info.DolbyVision && !profile.AllowDolbyVision && !(rel.Info.HDR10 && profile.AllowHDR) {
 		return "dolby vision not allowed for client"

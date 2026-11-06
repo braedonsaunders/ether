@@ -41,13 +41,13 @@ func TestMaxHeightRejectionNamesLimiter(t *testing.T) {
 		preferred bool
 		want      string
 	}{
-		{"client caps below profile", 2160, 1080, false, "above client max height"},
-		{"profile below client caps", 1080, 2160, false, "above profile max height"},
-		{"any profile with 1080 client", 0, 1080, false, "above client max height"},
-		{"any profile with 720 client", 0, 720, false, "above client max height"},
-		{"tie keeps profile limiter", 1080, 1080, false, "above profile max height"},
-		{"preferred keeps the client limiter", 2160, 1080, true, "above client max height"},
-		{"preferred keeps the profile limiter", 1080, 2160, true, "above profile max height"},
+		{"client caps below profile", 2160, 1080, false, "above client max resolution"},
+		{"profile below client caps", 1080, 2160, false, "above profile max resolution"},
+		{"any profile with 1080 client", 0, 1080, false, "above client max resolution"},
+		{"any profile with 720 client", 0, 720, false, "above client max resolution"},
+		{"tie keeps profile limiter", 1080, 1080, false, "above profile max resolution"},
+		{"preferred keeps the client limiter", 2160, 1080, true, "above client max resolution"},
+		{"preferred keeps the profile limiter", 1080, 2160, true, "above profile max resolution"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			profile := profileFor(tc.raw, tc.client)
@@ -97,7 +97,7 @@ func TestTraceAndHistoryRecordMaxHeightCeilings(t *testing.T) {
 		t.Fatalf("trace limits=%+v, want configured/client/effective 2160/1080/1080", tr.Limits)
 	}
 	for _, c := range tr.Candidates {
-		if c.ReleaseID == "uhd" && c.Reason != "above client max height" {
+		if c.ReleaseID == "uhd" && c.Reason != "above client max resolution" {
 			t.Fatalf("uhd reason=%q want client limiter", c.Reason)
 		}
 	}
@@ -166,7 +166,7 @@ func TestRemoteProfileCeilingRecordedInHistory(t *testing.T) {
 		for _, c := range tr.Candidates {
 			if c.ReleaseID == id {
 				found = true
-				if c.Reason != "above profile max height" {
+				if c.Reason != "above profile max resolution" {
 					t.Fatalf("%s reason=%q want profile limiter (remote ceiling)", id, c.Reason)
 				}
 			}
@@ -211,7 +211,7 @@ func TestDownloadResolveRecordsConfiguredCeiling(t *testing.T) {
 		t.Fatalf("download trace limits=%+v, want configured/client/effective 2160/2160/1080", tr.Limits)
 	}
 	for _, c := range tr.Candidates {
-		if c.ReleaseID == "uhd" && c.Reason != "above profile max height" {
+		if c.ReleaseID == "uhd" && c.Reason != "above profile max resolution" {
 			t.Fatalf("uhd download reason=%q want profile limiter (download variant)", c.Reason)
 		}
 	}

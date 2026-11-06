@@ -566,9 +566,9 @@ func scorecardResolverTraces(traces []resolver.Trace) []map[string]any {
 		candidates := make([]map[string]any, 0, len(trace.Candidates))
 		for _, c := range trace.Candidates {
 			reason := "other"
-			switch c.Reason {
-			case "video codec unsupported by client", "above profile max height", "below profile min height", "dolby vision not allowed for client", "season/episode mismatch", "quality excluded by imported profile":
-				reason = c.Reason
+			switch resolver.NormalizeReason(c.Reason) {
+			case "video codec unsupported by client", resolver.ReasonAboveProfileMaxResolution, resolver.ReasonBelowProfileMinResolution, "dolby vision not allowed for client", "season/episode mismatch", "quality excluded by imported profile":
+				reason = resolver.NormalizeReason(c.Reason)
 			case "":
 				reason = "none"
 			}

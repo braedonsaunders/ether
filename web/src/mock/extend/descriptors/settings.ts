@@ -1559,7 +1559,7 @@ export const descriptors: Descriptor<SettingsSchemaMeta>[] = [
                   source: "Highest resolution",
                 },
                 help: {
-                  source: "Downloads are capped at this height. 0 uses 1080p.",
+                  source: "Downloads are capped at this resolution. 0 uses 1080p.",
                 },
                 kind: "number",
                 min: 0,

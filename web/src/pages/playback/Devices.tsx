@@ -654,7 +654,7 @@ export function DeviceCapabilities() {
   );
   const subtitlePlaceholder = builtIn(builtin?.subtitleCodecs ?? sourceApp?.subtitles ?? []);
   const heightBuiltin = builtin?.builtinMaxHeight || builtin?.maxHeight || 0;
-  const heightPlaceholder = builtIn(heightBuiltin ? [resolutionName(heightBuiltin)] : []);
+  const resolutionPlaceholder = builtIn(heightBuiltin ? [resolutionName(heightBuiltin)] : []);
   const heightOptions = withChoices(["720", "1080", "2160"], [draft.height]);
 
   return (
@@ -1017,10 +1017,10 @@ export function DeviceCapabilities() {
                 <Select
                   aria-label={t("Highest resolution it can show")}
                   value={draft.height}
-                  placeholder={heightPlaceholder}
+                  placeholder={resolutionPlaceholder}
                   onChange={(e) => setDraft({ ...draft, height: e.target.value })}
                 >
-                  <option value="">{heightPlaceholder}</option>
+                  <option value="">{resolutionPlaceholder}</option>
                   {heightOptions.map((value) => (
                     <option key={value} value={value}>
                       {resolutionName(Number(value))}

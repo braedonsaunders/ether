@@ -479,12 +479,12 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
         <p>
           {t("Effective playback limits:")}{" "}
           {trace.limits
-            ? t("Profile: {profile} · Height: {height} · Bitrate: {bitrate}", {
+            ? t("Profile: {profile} · Resolution: {resolution} · Bitrate: {bitrate}", {
                 profile: profileResolution(
                   trace.limits.profileMinHeight,
                   trace.limits.profileMaxHeight,
                 ),
-                height: trace.limits.clientMaxHeight
+                resolution: trace.limits.clientMaxHeight
                   ? `${trace.limits.clientMaxHeight}p`
                   : t("unlimited"),
                 bitrate: trace.limits.clientMaxBitrateKbps
