@@ -162,10 +162,6 @@ func weeklySchedule(c Channel, from, until time.Time) []Programme {
 				seg.align = b.Align
 				seg.fit = b.Fit
 				seg.repeat = b.RepeatDays
-				if len(b.Sources) == 1 && b.Sources[0].Strip {
-					seg.align = "half"
-					seg.fit = "pad"
-				}
 			}
 			emit(bc, seg, b.Start, b.End, day.Unix()+int64(b.Start), b.pinned)
 			prev = b.End
@@ -446,6 +442,10 @@ func earliestReady(units [][]Item, recent map[core.RatingKey]time.Time, gap time
 }
 
 func fillGap(out *[]Programme, c Channel, filler []Item, fromCursor, end, winFrom, winUntil time.Time) {
+	if c.programmingFill {
+		fillProgrammingGap(out, c, filler, fromCursor, end, winFrom, winUntil)
+		return
+	}
 	cursor := fromCursor
 	if c.Look != nil && (c.Look.Placement != "insert" || c.programmingFill) {
 		for _, item := range c.momentsWithin(fromCursor, end.Sub(fromCursor)) {

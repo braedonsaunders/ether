@@ -36,6 +36,9 @@ func (s *Service) refreshReels() {
 	seen := map[string]bool{}
 	for _, c := range cs {
 		looks := []*ChannelLook{c.Look}
+		for _, id := range c.fillerReelIDs() {
+			looks = append(looks, &ChannelLook{ReelID: id})
+		}
 		for _, b := range c.Blocks {
 			looks = append(looks, b.Breaks)
 		}

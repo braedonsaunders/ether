@@ -131,7 +131,7 @@ func (s *Service) expandProgramSource(ctx context.Context, src ProgramSource, de
 	return items, err
 }
 
-func validateProgramming(c *Channel, check func([]Item) error) error {
+func validateProgramming(c *Channel, check, checkFiller func([]Item) error) error {
 	var sources func([]ProgramSource, int) error
 	sources = func(list []ProgramSource, depth int) error {
 		if depth > 8 || len(list) > 100 {
@@ -170,6 +170,12 @@ func validateProgramming(c *Channel, check func([]Item) error) error {
 		}
 	}
 	for _, p := range c.Pins {
+		if err := checkFiller(p.Filler); err != nil {
+			return err
+		}
+		if err := checkPlay(p.Mode, p.Align, p.Fit, p.RepeatDays, ""); err != nil {
+			return err
+		}
 		if err := sources(p.Sources, 0); err != nil {
 			return err
 		}

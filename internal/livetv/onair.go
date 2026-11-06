@@ -16,7 +16,7 @@ func interstitial(it Item) bool {
 		return true
 	}
 	switch it.Slate {
-	case "ident", "upnext", "break", "back", "tonight", "welcome", "reel":
+	case "ident", "upnext", "break", "back", "tonight", "welcome", "reel", "asset":
 		return true
 	}
 	return false
@@ -204,6 +204,11 @@ func (s *Service) clipRequest(c Channel, p Programme, snapshots ...[]Programme) 
 		r.Bind["channel.tagline"] = c.Look.Tagline
 		r.Bind["channel.accent"] = c.Look.Accent
 	}
+	if p.Item.AssetDigest != "" {
+		r.Moment = "ident" // the asset override uses an existing render envelope
+		r.AssetDigest = p.Item.AssetDigest
+		r.AssetDuration = time.Duration(p.Item.DurationMS) * time.Millisecond
+	}
 	if p.Item.Slate == "bug" && c.Logo != "" {
 		r.Art["channel.logo"] = c.Logo
 	}
@@ -258,6 +263,9 @@ func (s *Service) graphicsChannel(c Channel) Channel {
 		}
 		c.programmingReels = map[string]*ReelSnapshot{}
 		s.mu.Lock()
+		for _, id := range c.fillerReelIDs() {
+			c.programmingReels[id] = s.reelSnapshots[id]
+		}
 		for _, b := range c.Blocks {
 			if b.Breaks != nil {
 				c.programmingReels[b.Breaks.ReelID] = s.reelSnapshots[b.Breaks.ReelID]

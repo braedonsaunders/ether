@@ -22,10 +22,6 @@ func baseSegment(c Channel, day time.Time) segment {
 		c.Mode = "sources"
 		c.Shuffle = false
 		c.MarathonKey = 0
-		if len(c.Sources) == 1 && c.Sources[0].Strip {
-			c.Align = "half"
-			c.Fit = "pad"
-		}
 	}
 	return segment{items: c.Items, filler: c.Filler, shuffle: c.Shuffle, mode: c.Mode, align: c.Align, fit: c.Fit, repeat: c.RepeatDays, marathon: c.MarathonKey, fallback: c.Fallback, offAir: c.OffAir}
 }
@@ -41,7 +37,7 @@ func calendarBlocks(c Channel, day time.Time) []calendarBlock {
 			if dated {
 				label = p.Name + " · dated special"
 			}
-			choices = append(choices, calendarBlock{Block: Block{ID: p.ID, Name: label, Start: p.Start, End: p.End, Days: p.Days, Items: p.Items, Sources: p.Sources, Mode: p.Mode, RepeatDays: p.RepeatDays, Breaks: p.Breaks}, pinned: true})
+			choices = append(choices, calendarBlock{Block: Block{ID: p.ID, Name: label, Start: p.Start, End: p.End, Days: p.Days, Items: p.Items, Sources: p.Sources, Mode: p.Mode, RepeatDays: p.RepeatDays, Align: p.Align, Fit: p.Fit, Filler: p.Filler, Breaks: p.Breaks}, pinned: true})
 		}
 	}
 	for _, b := range c.Blocks {
@@ -107,12 +103,7 @@ func programmingItems(sources []ProgramSource, fallback []Item, c Channel, day t
 				}
 			}
 			elapsed := broadcastDays(epoch, day, b.Days)
-			stripBlock := b
-			if len(sources) == 1 {
-				stripBlock.Align = "half"
-				stripBlock.Fit = "pad"
-			}
-			at := stripPosition(items, elapsed, stripBlock)
+			at := stripPosition(items, elapsed, b)
 
 			items = append(items[at:], items[:at]...)
 		}

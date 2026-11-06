@@ -23,6 +23,7 @@ type BreakPoint struct {
 }
 
 type Item struct {
+	AssetDigest    string         `json:"assetDigest,omitempty"`
 	SourceID       string         `json:"sourceId,omitempty"`
 	BreakReleaseID string         `json:"breakReleaseId,omitempty"`
 	BreakRevision  string         `json:"breakRevision,omitempty"`
@@ -143,6 +144,9 @@ type ClockSlot struct {
 	Days         []int  `json:"days"`
 }
 type PinnedSlot struct {
+	Align      string          `json:"align,omitempty"`
+	Fit        string          `json:"fit,omitempty"`
+	Filler     []Item          `json:"filler,omitempty"`
 	ID         string          `json:"id"`
 	Name       string          `json:"name"`
 	Start      int             `json:"start"`
@@ -373,7 +377,15 @@ type Policy struct {
 
 	channelSet map[string]struct{} // Channels as a set for long lists; see indexChannels
 }
+
+// FillerAsset is cached asset metadata; resolving it never downloads or probes.
+type FillerAsset struct {
+	Digest, Name string
+	Duration     time.Duration
+}
+
 type Options struct {
+	FillerAsset func(context.Context, string) (FillerAsset, error)
 	// BreakInput opens an exclusive background playback source, never a viewer session.
 	// The final argument is an identity captured from an admitted save, never
 	// a request context. The callback must revalidate it on each background run.

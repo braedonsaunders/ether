@@ -402,7 +402,7 @@ func (s *Service) expand(ctx context.Context, c *Channel) error {
 		prepare(p.Sources, p.ID)
 	}
 	if c.Personal != nil {
-		return nil
+		return s.expandFillers(ctx, c)
 	}
 	items, err := s.resolveProgramming(ctx, c.Items, c.Collection, c.Filter, c.Sources, c.Watched)
 	if err != nil {
@@ -432,7 +432,7 @@ func (s *Service) expand(ctx context.Context, c *Channel) error {
 			return err
 		}
 	}
-	return nil
+	return s.expandFillers(ctx, c)
 }
 
 // resolveProgramming turns a collection, smart filter or weighted mix into
@@ -677,7 +677,7 @@ func validateChannel(c *Channel) error {
 			return fmt.Errorf("unknown timezone")
 		}
 	}
-	check := func(items []Item) error {
+	check := func(items []Item, filler bool) error {
 		if len(items) > 10000 {
 			return fmt.Errorf("too many items")
 		}
@@ -707,13 +707,17 @@ func validateChannel(c *Channel) error {
 				}
 				last = point
 			}
-			if (it.Key <= 0 && !strings.HasPrefix(it.Slate, "plugin:")) || it.DurationMS < 1000 || it.DurationMS > 24*60*60*1000 {
+			valid := it.Key > 0 || strings.HasPrefix(it.Slate, "plugin:")
+			if filler {
+				valid = validFillerItem(it)
+			}
+			if !valid || it.DurationMS < 1000 || it.DurationMS > 24*60*60*1000 {
 				return fmt.Errorf("programme needs a catalogue key and duration of 1 second to 24 hours")
 			}
 		}
 		return nil
 	}
-	if err := check(c.Items); err != nil {
+	if err := check(c.Items, false); err != nil {
 		return err
 	}
 	for i, b := range c.Blocks {
@@ -723,10 +727,10 @@ func validateChannel(c *Channel) error {
 		if c.Personal == nil && len(b.Items) == 0 && len(c.Fallback) == 0 && !c.OffAir {
 			return fmt.Errorf("UTC time blocks must be nonoverlapping, within 00:00–24:00, and contain programming")
 		}
-		if err := check(b.Items); err != nil {
+		if err := check(b.Items, false); err != nil {
 			return err
 		}
-		if err := check(b.Filler); err != nil {
+		if err := check(b.Filler, true); err != nil {
 			return err
 		}
 		if err := checkPlay(b.Mode, b.Align, b.Fit, b.RepeatDays, b.Watched); err != nil {
@@ -743,13 +747,13 @@ func validateChannel(c *Channel) error {
 			}
 		}
 	}
-	if err := validateProgramming(c, check); err != nil {
+	if err := validateProgramming(c, func(items []Item) error { return check(items, false) }, func(items []Item) error { return check(items, true) }); err != nil {
 		return err
 	}
-	if err := check(c.Filler); err != nil {
+	if err := check(c.Filler, true); err != nil {
 		return err
 	}
-	if err := check(c.Fallback); err != nil {
+	if err := check(c.Fallback, false); err != nil {
 		return err
 	}
 	if c.Epoch.IsZero() {
