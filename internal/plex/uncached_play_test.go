@@ -377,6 +377,11 @@ func TestEveryCandidateUncachedMatrix(t *testing.T) {
 				}
 				for _, path := range []string{uncachedStart("dash", "mpd"), "/library/parts/1000000000000550/1759276800/file.mkv"} {
 					client := map[string]string{"X-Plex-Client-Identifier": "c-" + path[len(path)-3:], "X-Plex-Session-Identifier": "play-" + path[len(path)-3:]}
+					if strings.Contains(path, "/start.") {
+						if rec := e.f.request(t, http.MethodGet, decisionPath(path), client); rec.Code != http.StatusOK {
+							t.Fatalf("decision before %s: %d %s", path, rec.Code, rec.Body.String())
+						}
+					}
 					if rec := e.f.request(t, http.MethodGet, path, client); rec.Code != http.StatusNotFound {
 						t.Fatalf("%s: %d", path, rec.Code)
 					}

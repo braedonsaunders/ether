@@ -69,6 +69,14 @@ func hubItemsKey(h core.Hub, hc hubCtx) string {
 
 func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubCtx) model.Hub {
 	h := hs.Hub
+	if strings.HasPrefix(h.ID, "movie.recentlyviewed.") || strings.HasPrefix(h.ID, "tv.recentlyviewed.") {
+		if sec, ok := s.sectionFromHubID(h.ID); ok {
+			if measured, err := s.recentlyWatchedHub(ctx, pr, sec, max(len(h.Items), 1)); err == nil {
+				hs = measured
+				h = hs.Hub
+			}
+		}
+	}
 	build := func() []core.Title {
 		if loader, ok := s.d.Catalog.(interface {
 			LoadRowFacts(context.Context, []core.Title) []core.Title
@@ -161,6 +169,9 @@ func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubC
 		Style:         style,
 		Metadata:      md,
 	}
+	if h.ID == "tv.upnext" {
+		mh.UpNext = model.Ptr(true)
+	}
 	if !hs.noPromoted && !related {
 		mh.Promoted = model.Ptr(h.Promoted)
 	}
@@ -210,7 +221,44 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 	if sec.ID != 0 {
 		t = sec.Type
 	}
-	items, state, more := s.continueExperience(pr).Shelf(ctx, pr.User, t, s.saferFetchCount(pr.User, count))
+	selector := s.continueExperience(pr)
+	if v == cwSection && sec.Type == core.TypeShow {
+		selector.Filter = nil
+	}
+	items, state, more := selector.Shelf(ctx, pr.User, t, s.saferFetchCount(pr.User, count))
+	if v == cwSection && sec.Type == core.TypeShow && pr.User != nil {
+		if gate, ok := s.d.State.(interface {
+			PlaybackCompletedShows(context.Context, int64, []core.RatingKey) (map[core.RatingKey]bool, error)
+		}); ok {
+			shows := make([]core.RatingKey, 0, len(items))
+			for _, item := range items {
+				if state[item.Key].ViewOffset <= 0 {
+					shows = append(shows, core.ShowKey(item.Key.TMDB()))
+				}
+			}
+			completed, err := gate.PlaybackCompletedShows(ctx, pr.User.ID, shows)
+			if err != nil {
+				items = nil
+			} else {
+				out := items[:0]
+				for _, item := range items {
+					if state[item.Key].ViewOffset > 0 || completed[core.ShowKey(item.Key.TMDB())] {
+						out = append(out, item)
+					}
+				}
+				items = out
+			}
+		}
+	}
+	if v == cwHome {
+		resuming := items[:0]
+		for _, item := range items {
+			if state[item.Key].ViewOffset > 0 {
+				resuming = append(resuming, item)
+			}
+		}
+		items = resuming
+	}
 	items = s.takeVisible(pr.User, items, count)
 	hs := hubSpec{Hub: core.Hub{Title: "Continue Watching", Style: "hero", Promoted: true}, state: state}
 	switch v {
@@ -264,7 +312,7 @@ func (s *Server) recentlyAddedHubPage(ctx context.Context, pr *Request, sec Sect
 func parseSectionList(s string) []int {
 	var out []int
 	for _, p := range strings.Split(s, ",") {
-		if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil && n > 0 {
 			out = append(out, n)
 		}
 	}
@@ -378,7 +426,13 @@ func (s *Server) buildHomeHubs(r *http.Request, promotedOnly bool) homeBuild {
 			spec := s.continueHub(ctx, pr, cwHome, Section{}, count)
 			return spec.Hub, s.renderHub(ctx, pr, spec, hubCtx{})
 		},
-		Playlists: func() (model.Hub, bool) { hub, _, ok := s.playlistsHubProjection(ctx, pr, count); return hub, ok },
+		Playlists: func() (model.Hub, bool) {
+			if q.Get("contentDirectoryID") != "" && q.Get("contentDirectoryID") != "playlists" {
+				return model.Hub{}, false
+			}
+			hub, _, ok := s.playlistsHubProjection(ctx, pr, count)
+			return hub, ok
+		},
 		Discovery: func() []core.Hub {
 			hubs := append([]core.Hub(nil), sharedDiscovery...)
 			if !perDirectory {
@@ -415,7 +469,54 @@ func (s *Server) buildHomeHubs(r *http.Request, promotedOnly bool) homeBuild {
 			return s.arrangeHomeRows(ctx, pr, hc, "home", rows, hubs, neutral)
 		},
 	}
-	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0 || perDirectory, experience.HomePurpose)
+	rows, served := assembly.Rows(hubs, !metadataOptionOn(q.Get("excludeContinueWatching")), promotedOnly, len(sections) == 0 || perDirectory, experience.HomePurpose)
+	// PMS retains separate Home resume and next-up shelves, suppressing
+	// the latter only when both nonempty memberships are identical.
+	if !metadataOptionOn(q.Get("excludeContinueWatching")) && (selected == nil || selected["home.ondeck"]) {
+		spec := s.continueHub(ctx, pr, cwGlobal, Section{}, count)
+		episodes := spec.Items[:0]
+		for _, item := range spec.Items {
+			if item.Type == core.TypeEpisode {
+				episodes = append(episodes, item)
+			}
+		}
+		spec.Items = episodes
+		spec.ID, spec.Context, spec.Title, spec.key = "home.ondeck", "hub.home.ondeck", "On Deck", "/hubs/home/onDeck"
+		spec.included, spec.noPromoted, spec.plain = false, false, false
+		ondeck := s.renderHub(ctx, pr, spec, hubCtx{})
+		var resume model.Hub
+		for _, row := range rows {
+			if row.HubIdentifier == "home.continue" {
+				resume = row
+			}
+		}
+		same := len(ondeck.Metadata) > 0 && len(ondeck.Metadata) == len(resume.Metadata)
+		keys := map[string]bool{}
+		for _, item := range resume.Metadata {
+			keys[item.RatingKey] = true
+		}
+		for _, item := range ondeck.Metadata {
+			same = same && keys[item.RatingKey]
+		}
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.HubIdentifier != "home.ondeck" {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+		if !same {
+			rows = append(rows, ondeck)
+		}
+	} else {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.HubIdentifier != "home.ondeck" {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+	}
 	if perDirectory {
 		var filtered []model.Hub
 		for _, row := range rows {
@@ -558,10 +659,28 @@ func (s *Server) recordImpressions(pr *Request, hc core.HubContext, written []mo
 }
 
 func (s *Server) playlistsHubProjection(ctx context.Context, pr *Request, count int) (model.Hub, frontend.Row, bool) {
-	pls, more, err := experience.RecentPlaylists(ctx, pr.User, s.d.Playlists, count)
-	if err != nil {
-		s.log.Warn("playlists hub", "err", err)
+	if pr.User == nil || s.d.Playlists == nil {
 		return model.Hub{}, frontend.Row{}, false
+	}
+	pls, err := s.d.Playlists.List(ctx, pr.User.ID)
+	if err != nil {
+		return model.Hub{}, frontend.Row{}, false
+	}
+	owned := pls[:0:0]
+	viewed := map[core.RatingKey]int64{}
+	for _, pl := range pls {
+		if pl.UserID != pr.User.ID {
+			continue
+		}
+		m := s.playlistListingMetadata(ctx, &pl)
+		viewed[pl.Key] = m.LastViewedAt
+		owned = append(owned, pl)
+	}
+	pls = owned
+	sort.SliceStable(pls, func(i, j int) bool { return viewed[pls[i].Key] > viewed[pls[j].Key] })
+	more := len(pls) > count
+	if more {
+		pls = pls[:count]
 	}
 	if len(pls) == 0 {
 		return model.Hub{}, frontend.Row{}, false
@@ -579,7 +698,7 @@ func (s *Server) playlistsHubProjection(ctx context.Context, pr *Request, count 
 	row := frontend.Row{ID: "home.playlists", Title: "Recent Playlists", Purpose: core.RowPurpose("playlist"), Style: "shelf", Promoted: true, More: more}
 	keys := make([]string, 0, len(pls))
 	for i := range pls {
-		h.Metadata = append(h.Metadata, s.playlistMetadata(ctx, &pls[i]))
+		h.Metadata = append(h.Metadata, s.playlistListingMetadata(ctx, &pls[i]))
 		if pls[i].UserID == pr.User.ID {
 			p := pls[i]
 			p.Items = nil
@@ -610,7 +729,13 @@ func (s *Server) handleContinueWatching(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		if len(allowed) == 0 {
-			writeHTTPError(w, http.StatusNotFound)
+			if len(parseSectionList(raw)) > 0 {
+				mc.Hub = []model.Hub{s.renderHub(ctx, pr, hubSpec{Hub: core.Hub{ID: "continueWatching", Title: "Continue Watching"}}, hubCtx{})}
+				mc.Size = 1
+				s.write(w, r, mc)
+			} else {
+				writeHTTPError(w, http.StatusNotFound)
+			}
 			return
 		}
 		if len(allowed) == 1 {
@@ -665,7 +790,14 @@ func (s *Server) handleContinueWatching(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleContinueWatchingItems(w http.ResponseWriter, r *http.Request) {
 	ctx := withStoredPolicy(r.Context())
 	pr := FromContext(ctx)
+	if raw := r.URL.Query().Get("contentDirectoryID"); raw != "" && len(parseSectionList(raw)) == 0 {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
 	v, sec := cwGlobal, Section{}
+	if r.URL.Path == "/hubs/home/continueWatching" {
+		v = cwHome
+	}
 	if id, err := strconv.Atoi(chi.URLParam(r, "section")); err == nil {
 		var ok bool
 		if sec, ok = s.sectionByID(id); !ok || !s.canSeeSection(pr.User, id) {
@@ -678,10 +810,29 @@ func (s *Server) handleContinueWatchingItems(w http.ResponseWriter, r *http.Requ
 	// treats a missing totalSize as zero and removes the entire row.
 	// Keep the existing bounded 200-item resume window, then page it.
 	hs := s.continueHub(ctx, pr, v, sec, 200)
+	if raw := r.URL.Query().Get("contentDirectoryID"); raw != "" && v != cwSection {
+		allowed := map[int]bool{}
+		for _, id := range parseSectionList(raw) {
+			allowed[id] = true
+		}
+		filtered := hs.Items[:0]
+		for _, item := range hs.Items {
+			if section, ok := s.sectionFor(item.Type); ok && allowed[section.ID] {
+				filtered = append(filtered, item)
+			}
+		}
+		hs.Items = filtered
+	}
 	mc := hubContainer()
 	mc.Metadata = s.renderTitles(ctx, pr, hs.Items, renderOpts{media: true, state: hs.state, detailEpisodes: !hs.plain})
 	if hs.included {
 		stampIncluded(mc.Metadata)
+	}
+	if r.URL.Query().Get("includeMeta") == "1" {
+		mc.Meta = &model.Meta{}
+		for _, section := range s.userSections(pr.User) {
+			mc.Meta.Type = append(mc.Meta.Type, s.metaType(section, section.Type, ""))
+		}
 	}
 	total := len(mc.Metadata)
 	start := min(max(pr.Start, 0), total)
@@ -692,7 +843,9 @@ func (s *Server) handleContinueWatchingItems(w http.ResponseWriter, r *http.Requ
 	end := start + min(count, total-start)
 	mc.Metadata = mc.Metadata[start:end]
 	mc.Size = len(mc.Metadata)
-	mc.SetPage(start, total)
+	if v != cwSection || pr.HasPage {
+		mc.SetPage(start, total)
+	}
 	s.write(w, r, mc)
 }
 
@@ -734,6 +887,12 @@ func (s *Server) buildSectionHubs(r *http.Request, sec Section) homeBuild {
 	} else {
 		s.log.Warn("recently added hub", "section", sec.ID, "err", err)
 	}
+	var sectionPlaylist *model.Hub
+	if r.URL.Query().Get("includeLibraryPlaylists") == "1" {
+		if h, ok := s.sectionPlaylistsHub(ctx, pr, sec.ID, visibleCount); ok {
+			sectionPlaylist = &h
+		}
+	}
 	provisional := false
 	if s.d.Recommender != nil {
 		hubs, err := s.recommendSection(ctx, pr, sec.Type, pc, s.saferFetchCount(pr.User, count))
@@ -758,6 +917,19 @@ func (s *Server) buildSectionHubs(r *http.Request, sec Section) homeBuild {
 		sectionName = "shows"
 	}
 	mc.Hub = stableHomeHubs(s.arrangeHomeRows(ctx, pr, pc, sectionName, mc.Hub, layoutHubs, layoutNeutral))
+	if sectionPlaylist != nil {
+		at := 0
+		for i, h := range mc.Hub {
+			if strings.Contains(h.HubIdentifier, ".recentlyadded.") {
+				at = i + 1
+				break
+			}
+		}
+		mc.Hub = append(mc.Hub, model.Hub{})
+		copy(mc.Hub[at+1:], mc.Hub[at:])
+		mc.Hub[at] = *sectionPlaylist
+	}
+
 	s.log.Debug("section hubs rendered", "section", sec.ID, "user", pr.User.ID, "count", count, "rows", len(mc.Hub))
 	mc.Size = len(mc.Hub)
 	return homeBuild{mc: mc, served: served, section: sec.ID, provisional: provisional}
@@ -831,6 +1003,13 @@ func (s *Server) findHub(ctx context.Context, pr *Request, id string, sections [
 	case strings.HasPrefix(id, "movie.inprogress.") || strings.HasPrefix(id, "tv.inprogress."):
 		if sec, ok := s.sectionFromHubID(id); ok && s.canSeeSection(pr.User, sec.ID) {
 			return s.continueHub(ctx, pr, cwSection, sec, count), true
+		}
+		return hubSpec{}, false
+	case strings.HasPrefix(id, "movie.recentlyviewed.") || strings.HasPrefix(id, "tv.recentlyviewed."):
+		if sec, ok := s.sectionFromHubID(id); ok && s.canSeeSection(pr.User, sec.ID) {
+			if hs, err := s.recentlyWatchedHub(ctx, pr, sec, count); err == nil {
+				return hs, true
+			}
 		}
 		return hubSpec{}, false
 	case strings.HasPrefix(id, "movie.recentlyadded.") || strings.HasPrefix(id, "tv.recentlyadded."):
@@ -927,11 +1106,38 @@ func (s *Server) handleMetadataHubs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	k, err := keyParam(r)
+	if err == nil && k.Kind() == core.KindPlaylist {
+		if s.d.Playlists == nil {
+			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
+		if _, err := s.playlist(ctx, pr.User, k); err != nil {
+			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
+		s.write(w, r, &model.MediaContainer{})
+		return
+	}
+	if err == nil && !s.relatedSourceVisible(ctx, pr, k) && strings.HasPrefix(r.URL.Path, "/hubs/") {
+		// Only genuinely absent catalogue identities receive the legacy empty
+		// response; authorization failures retain a refusal.
+		if _, lookupErr := s.metadataTitle(ctx, pr, k); errors.Is(lookupErr, core.ErrNotFound) {
+			s.write(w, r, hubContainer())
+			return
+		}
+	}
 	if err != nil || !s.relatedSourceVisible(ctx, pr, k) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
 	mc := hubContainer()
+	if title, lookupErr := s.metadataTitle(ctx, pr, k); lookupErr == nil {
+		if sec, ok := s.sectionFor(title.Type); ok {
+			mc.LibrarySectionID = model.Ptr(sec.ID)
+			mc.LibrarySectionTitle = sec.Title
+			mc.LibrarySectionUUID = sec.UUID
+		}
+	}
 	if s.d.Recommender != nil {
 		hubs, err := s.detailRelated(ctx, pr).Rows(ctx, pr.User, k, countParam(r, 12))
 		if err != nil && !errors.Is(err, core.ErrNotFound) {
@@ -946,14 +1152,22 @@ func (s *Server) handleMetadataHubs(w http.ResponseWriter, r *http.Request) {
 // upNextHub is shared by post-play and the advertised shelf-items URL so
 // clients can reload the row or use it as a play-queue source.
 func (s *Server) upNextHub(ctx context.Context, pr *Request, k core.RatingKey) (hubSpec, bool) {
-	row := experience.NextUp(ctx, pr.User, k, func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
-		return s.d.Catalog.NextEpisode(ctx, key)
-	}, s.visibility())
-	if len(row.Items) == 0 {
+	if k.Kind() != core.KindEpisode {
 		return hubSpec{}, false
 	}
-	return hubSpec{Hub: core.Hub{ID: "tv.upnext", Title: "Up Next", Type: core.TypeEpisode,
-		Context: "hub.tv.upnext", Items: row.Items}}, true
+	ep, state := s.showOnDeck(ctx, pr, core.ShowKey(k.TMDB()), nil)
+	if ep == nil || ep.Key == k || !s.visibleTitle(ctx, pr.User, ep) {
+		return hubSpec{}, false
+	}
+	active := false
+	for _, st := range state {
+		active = active || st.ViewCount > 0 || st.ViewOffset > 0
+	}
+	if !active {
+		return hubSpec{}, false
+	}
+	return hubSpec{Hub: core.Hub{ID: "tv.upnext", Title: upNextTitle(pr.Language), Type: core.TypeEpisode,
+		Context: "hub.tv.upnext", Items: []core.Title{*ep}}, state: state}, true
 }
 
 // handlePostplay is /hubs/metadata/{key}/postplay. An episode with a
@@ -971,6 +1185,7 @@ func (s *Server) handlePostplay(w http.ResponseWriter, r *http.Request) {
 	}
 	count := countParam(r, 12)
 	mc := hubContainer()
+	mc.SetSyncProjection(false)
 	mc.Hub, err = experience.AssemblePostPlay(ctx, s.postPlaySelection(ctx, pr, k, !s.viewerRestricted(pr.User)), pr.User, k, count,
 		func() (core.RatingKey, model.Hub, bool) {
 			hub, ok := s.upNextHub(ctx, pr, k)
@@ -1412,7 +1627,7 @@ func (s *Server) runSearch(ctx context.Context, pr *Request, query string, secti
 }
 
 func (s *Server) collectionDirectory(ctx context.Context, c *core.Collection) model.Directory {
-	m := s.collectionMetadata(c)
+	m := s.collectionMetadata(c, ctx)
 	return model.Directory{
 		Key: "/library/collections/" + c.Key.String() + "/children", Type: "collection",
 		Title: c.Title, Thumb: m.Thumb, Art: m.Art,
@@ -1543,6 +1758,14 @@ func (s *Server) handleHubSearch(w http.ResponseWriter, r *http.Request) {
 				mh.Directory = []model.Directory{s.collectionDirectory(ctx, vibe)}
 				mh.Size = len(mh.Directory)
 				top = searchPersonExactScore
+			}
+			mc.Hub = append(mc.Hub, mh)
+		case "playlist":
+			mh := model.Hub{Title: hd.title, Type: hd.typ, HubIdentifier: hd.id, Style: "shelf"}
+			mh.Metadata = s.searchPlaylists(ctx, pr, query, q.Get("contentDirectoryID"), limit)
+			mh.Size = len(mh.Metadata)
+			if mh.Size > 0 {
+				top, _ = strconv.ParseFloat(mh.Metadata[0].Score, 64)
 			}
 			mc.Hub = append(mc.Hub, mh)
 		case "actor":
@@ -1736,6 +1959,25 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 		d := peopleDirs[i]
 		mc.SearchResult = append(mc.SearchResult, model.SearchResult{Score: math.Round(peopleScores[i]*10000) / 10000, Directory: &d})
 		raw = append(raw, peopleScores[i])
+	}
+	if q.Get("searchTypes") == "" || containsExactSearchToken(q.Get("searchTypes"), "movies") || containsExactSearchToken(q.Get("searchTypes"), "tv") {
+		directories := q.Get("contentDirectoryID")
+		if directories == "" && q.Get("searchTypes") != "" {
+			var ids []string
+			for _, sec := range s.userSections(pr.User) {
+				if sec.Type == core.TypeMovie && containsExactSearchToken(q.Get("searchTypes"), "movies") || sec.Type == core.TypeShow && containsExactSearchToken(q.Get("searchTypes"), "tv") {
+					ids = append(ids, strconv.Itoa(sec.ID))
+				}
+			}
+			directories = strings.Join(ids, ",")
+		}
+		for _, m := range s.searchPlaylists(ctx, pr, query, directories, limit) {
+			md := m
+			score, _ := strconv.ParseFloat(md.Score, 64)
+			md.Score = ""
+			mc.SearchResult = append(mc.SearchResult, model.SearchResult{Score: score, Metadata: &md})
+			raw = append(raw, score)
+		}
 	}
 	// PMS lists every result best match first.
 	order := make([]int, len(raw))

@@ -91,6 +91,7 @@ func TestPlexEncoderUniversalRoutesPreserveAuthorization(t *testing.T) {
 	defer f.srv.Close()
 	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
 	startPath := "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=remote-plex"
+	f.get(t, decisionPath(startPath))
 	master := f.get(t, startPath)
 	if master.Code != 200 || remote.starts != 1 || remote.viewer != ownerUser.ID || remote.playID == "" || remote.publicID != "remote-plex" || len(f.trans.sessions) != 0 {
 		t.Fatalf("universal start bypassed broker: %d %s", master.Code, master.Body.String())
@@ -140,6 +141,7 @@ func TestPlexEncoderFailureAndMountCleanupRetainOwnership(t *testing.T) {
 	remote := &recordedPlexEncoder{sessions: map[string]core.HLSSession{}, startErr: errors.New("uncertain owned remote start")}
 	f := newFixture(func(d *Deps) { d.PlexEncoder = remote })
 	defer f.srv.Close()
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=pending-remote"))
 	_ = f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=pending-remote")
 	if remote.starts != 1 || len(f.trans.sessions) != 0 {
 		t.Fatal("remote error fell back to local encoder")
@@ -168,6 +170,7 @@ func TestPlexEncoderDASHAndHTTPStartsUseSameSeam(t *testing.T) {
 			ps.Resolution = &core.Resolution{Release: core.Release{ID: "sourced-release-" + tc.protocol}}
 			remote.expectedRelease = ps.SourceReleaseID()
 			f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+			f.get(t, "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=remote-"+tc.protocol+"&protocol="+tc.protocol)
 			out := f.get(t, "/video/:/transcode/universal/"+tc.format+"?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=remote-"+tc.protocol+"&protocol="+tc.protocol)
 			if out.Code != 200 || remote.starts != 1 || remote.request.Protocol != tc.protocol || remote.request.ReleaseID == "" || remote.request.ReleaseID != ps.SourceReleaseID() || out.Header().Get("Content-Type") != tc.content || len(f.trans.sessions) != 0 {
 				t.Fatalf("%s start contract changed: %d %s", tc.protocol, out.Code, out.Body.String())
@@ -181,6 +184,7 @@ func TestPlexTokenMissingEntryTransfersOnlyToOwnerAuthorization(t *testing.T) {
 	owner := newFixture(func(d *Deps) { d.PlexEncoder = remote })
 	defer owner.srv.Close()
 	owner.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
+	owner.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=owner-transfer"))
 	start := owner.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=owner-transfer")
 	if start.Code != 200 {
 		t.Fatal(start.Code, start.Body.String())

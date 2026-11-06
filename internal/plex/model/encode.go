@@ -74,7 +74,18 @@ func Marshal(root any, f Format) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func encode(w io.Writer, root any, f Format) error {
+// MarshalWithExclusions preserves the normal wire ordering while dropping
+// requested attributes and child families recursively.
+func MarshalWithExclusions(root any, f Format, fields, elements map[string]bool) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := encodeFiltered(&buf, root, f, fields, elements); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func encode(w io.Writer, root any, f Format) error { return encodeFiltered(w, root, f, nil, nil) }
+func encodeFiltered(w io.Writer, root any, f Format, fields, elements map[string]bool) error {
 	v := reflect.ValueOf(root)
 	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -92,11 +103,11 @@ func encode(w io.Writer, root any, f Format) error {
 		bw.WriteString(`{`)
 		writeJSONString(bw, name)
 		bw.WriteString(`:`)
-		err = encodeJSONObject(bw, v)
+		err = encodeJSONObject(bw, v, fields, elements)
 		bw.WriteString("}\n")
 	} else {
 		bw.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
-		err = encodeXMLElement(bw, v, name, true)
+		err = encodeXMLElement(bw, v, name, true, fields, elements)
 	}
 	if err != nil {
 		return err
@@ -274,6 +285,7 @@ type xmlParts struct {
 type xmlChild struct {
 	v    reflect.Value
 	name string
+	tag  string
 }
 
 func collectXML(v reflect.Value, p *xmlParts) {
@@ -308,7 +320,7 @@ func collectXML(v reflect.Value, p *xmlParts) {
 				fv = fv.Elem()
 			}
 			if fv.Kind() == reflect.Struct {
-				p.children = append(p.children, xmlChild{fv, elementName(fv, fi.name)})
+				p.children = append(p.children, xmlChild{fv, elementName(fv, fi.name), fi.name})
 			}
 		case fkChildren:
 			for i := 0; i < fv.Len(); i++ {
@@ -322,15 +334,29 @@ func collectXML(v reflect.Value, p *xmlParts) {
 				if ev.Kind() != reflect.Struct {
 					continue
 				}
-				p.children = append(p.children, xmlChild{ev, elementName(ev, fi.name)})
+				p.children = append(p.children, xmlChild{ev, elementName(ev, fi.name), fi.name})
 			}
 		}
 	}
 }
 
-func encodeXMLElement(w *bufio.Writer, v reflect.Value, name string, root bool) error {
+func encodeXMLElement(w *bufio.Writer, v reflect.Value, name string, root bool, fields, elements map[string]bool) error {
 	var p xmlParts
 	collectXML(v, &p)
+	attrs := p.attrs[:0]
+	for _, a := range p.attrs {
+		if !fields[a.Name] {
+			attrs = append(attrs, a)
+		}
+	}
+	p.attrs = attrs
+	children := p.children[:0]
+	for _, c := range p.children {
+		if !elements[c.tag] && !elements[c.name] {
+			children = append(children, c)
+		}
+	}
+	p.children = children
 	p.attrs = sortAttrs(v, p.attrs, func(a Attr) string { return a.Name })
 	w.WriteByte('<')
 	w.WriteString(name)
@@ -356,7 +382,7 @@ func encodeXMLElement(w *bufio.Writer, v reflect.Value, name string, root bool) 
 	}
 	w.WriteString(">\n")
 	for _, c := range p.children {
-		if err := encodeXMLElement(w, c.v, c.name, false); err != nil {
+		if err := encodeXMLElement(w, c.v, c.name, false, fields, elements); err != nil {
 			return err
 		}
 	}
@@ -484,9 +510,23 @@ func collectJSON(v reflect.Value, p *jsonParts) {
 	}
 }
 
-func encodeJSONObject(w *bufio.Writer, v reflect.Value) error {
+func encodeJSONObject(w *bufio.Writer, v reflect.Value, fields, elements map[string]bool) error {
 	var p jsonParts
 	collectJSON(v, &p)
+	attrs := p.attrs[:0]
+	for _, a := range p.attrs {
+		if !fields[a.name] {
+			attrs = append(attrs, a)
+		}
+	}
+	p.attrs = attrs
+	groups := p.groups[:0]
+	for _, g := range p.groups {
+		if !elements[g.name] {
+			groups = append(groups, g)
+		}
+	}
+	p.groups = groups
 	p.attrs = sortAttrs(v, p.attrs, func(a jsonAttr) string { return a.name })
 	p.attrs = quoteAttrs(v, p.attrs)
 	w.WriteByte('{')
@@ -520,7 +560,7 @@ func encodeJSONObject(w *bufio.Writer, v reflect.Value) error {
 		writeJSONString(w, g.name)
 		w.WriteByte(':')
 		if g.object && len(g.items) == 1 {
-			if err := encodeJSONObject(w, g.items[0]); err != nil {
+			if err := encodeJSONObject(w, g.items[0], fields, elements); err != nil {
 				return err
 			}
 			continue
@@ -530,7 +570,7 @@ func encodeJSONObject(w *bufio.Writer, v reflect.Value) error {
 			if i > 0 {
 				w.WriteByte(',')
 			}
-			if err := encodeJSONObject(w, it); err != nil {
+			if err := encodeJSONObject(w, it, fields, elements); err != nil {
 				return err
 			}
 		}

@@ -48,6 +48,17 @@ func TestProbeSourceMatchesRecordedFFprobe(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ProbeSource: %v", err)
 			}
+			if got.Container == "mp4" || got.Container == "mov" {
+				// These small recorded files use 32-bit offsets; only the faststart
+				// fixture places the movie header before media payload.
+				optimized := filepath.Base(f) == "h264_aac_movtext_faststart.mp4"
+				if got.Has64bitOffsets == nil || *got.Has64bitOffsets || got.OptimizedForStreaming == nil || *got.OptimizedForStreaming != optimized {
+					t.Fatalf("native container flags: offsets=%v optimized=%v wantoptimized%v", got.Has64bitOffsets, got.OptimizedForStreaming, optimized)
+				}
+			}
+			// ffprobe's recorded JSON has no offset-table/atom-order fields. The
+			// native-only facts are checked above, outside the shared-field diff.
+			got.Has64bitOffsets, got.OptimizedForStreaming = nil, nil
 			normalizeForNative(want, got)
 			// libavformat derives MP4 durations and bitrates from edit
 			// lists and the longest stream; tolerate rounding there.
@@ -221,6 +232,9 @@ func normalizeForNative(want, got *core.MediaInfo) {
 		// comparing each one whenever native probing starts supplying it.
 		if i < len(got.Streams) {
 			g := &got.Streams[i]
+			if g.ChromaLocation == "" {
+				w.ChromaLocation = ""
+			}
 			if g.AverageFrameRate == nil {
 				w.AverageFrameRate = nil
 			}

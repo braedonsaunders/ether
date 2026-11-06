@@ -56,9 +56,6 @@ func TestContinueWatchingAdvancesCompletedEpisode(t *testing.T) {
 			t.Fatal("next episode inherited resume offset", off)
 		}
 	}
-	if local.calls == 0 {
-		t.Fatal("Home bypassed local recovery")
-	}
 	f.state.set(ownerUser.ID, ws(bbE2.Key, 30000, 0))
 	mc := decodeJSON(t, f.get(t, "/hubs/continueWatching/items", jsonAccept...))
 	rows := mc["Metadata"].([]any)

@@ -17,6 +17,10 @@ type RemotePlaybackOptions struct {
 	Estimate     func(context.Context, *core.Title, core.ClientCaps) core.MediaInfo
 	SelectSource func(context.Context) (nodewire.Identity, error)
 	Capacity     int
+	// IdleTimeout follows the source Manager idle policy (default two minutes).
+	IdleTimeout time.Duration
+	// Now is the lifecycle clock, primarily for deterministic tests.
+	Now func() time.Time
 }
 type RemotePlayback struct {
 	draining bool
@@ -38,6 +42,8 @@ type remotePreparation struct {
 	done                         chan struct{}
 	preparing, retiring, retired bool
 	pins                         int
+	uses                         int
+	activityVersion              uint64
 }
 type remoteSource struct {
 	revision, release string
@@ -68,6 +74,12 @@ func (l remoteLifetime) Err() error {
 func NewRemotePlayback(r *Runtime, o RemotePlaybackOptions) (*RemotePlayback, error) {
 	if r == nil || o.Estimate == nil || o.SelectSource == nil || o.Capacity < 1 || o.Capacity > 4096 {
 		return nil, ErrDenied
+	}
+	if o.IdleTimeout <= 0 {
+		o.IdleTimeout = 2 * time.Minute
+	}
+	if o.Now == nil {
+		o.Now = time.Now
 	}
 	p := &RemotePlayback{r: r, o: o, entries: map[string]*remotePreparation{}}
 	r.mu.Lock()
@@ -103,6 +115,7 @@ func (p *RemotePlayback) PrepareSurfaceSource(c context.Context, v *core.User, k
 		if _, err := p.CurrentSource(c, prior.ID); err != nil {
 			return nil, p.lifetime(prior.ID), err
 		}
+		p.Touch(prior.ID)
 		return prior, p.lifetime(prior.ID), nil
 	}
 	owner, err := p.o.SelectSource(c)
@@ -129,9 +142,14 @@ func (p *RemotePlayback) PrepareSurfaceSource(c context.Context, v *core.User, k
 	prepared, err := p.r.PrepareSource(c, owner, entry.request)
 	p.mu.Lock()
 	entry.preparing = false
-	if err == nil && prepared.Owner == owner && prepared.PlayID != "" && prepared.Revision != "" && (!exact || prepared.ReleaseID == release) {
+	if c.Err() != nil {
+		err = c.Err()
+	}
+	if err == nil && !entry.retiring && prepared.Owner == owner && prepared.PlayID != "" && prepared.Revision != "" && (!exact || prepared.ReleaseID == release) {
+		entry.activity = p.o.Now()
+		entry.mode++
 		entry.prepared = prepared
-		entry.snapshot = &core.PlaySession{ID: id, UserID: v.ID, ClientID: caps.ClientID, Key: k, Client: caps, Info: prepared.Info, StartedAt: time.Now(), PreparedOnly: true, Resolution: &core.Resolution{Title: k, Release: core.Release{ID: prepared.ReleaseID}}, Source: remoteSource{revision: prepared.Revision, release: prepared.ReleaseID, size: prepared.Info.Size}}
+		entry.snapshot = &core.PlaySession{ID: id, UserID: v.ID, ClientID: caps.ClientID, Key: k, Client: caps, Info: prepared.Info, StartedAt: entry.activity, PreparedOnly: true, Resolution: &core.Resolution{Title: k, Release: core.Release{ID: prepared.ReleaseID}}, Source: remoteSource{revision: prepared.Revision, release: prepared.ReleaseID, size: prepared.Info.Size}}
 	} else {
 		entry.retiring = true
 		if err == nil {
@@ -236,7 +254,7 @@ func (p *RemotePlayback) MarkSurfaceOpened(id string) bool {
 	}
 	e.snapshot.PreparedOnly = false
 	e.mode++
-	e.activity = time.Now()
+	e.activity = p.o.Now()
 	if e.state == "" {
 		e.state = "playing"
 	}
@@ -269,10 +287,17 @@ func (p *RemotePlayback) CurrentSource(c context.Context, id string) (core.Playb
 		p.mu.Unlock()
 		return core.PlaybackSourceObservation{}, core.ErrSourceChanged
 	}
+	e.uses++
 	owner, operation, expected := e.owner, e.operation, e.prepared
 	p.mu.Unlock()
+	defer p.endUse(e)
 	response, err := p.r.sourceCall(c, Route{Source: owner}, sourceRequest{Op: "prepare-status", Prepare: &PrepareRequest{Operation: operation}})
 	if err != nil || response.Prepared.Owner != expected.Owner || response.Prepared.PlayID != expected.PlayID || response.Prepared.Revision != expected.Revision {
+		return core.PlaybackSourceObservation{}, core.ErrSourceChanged
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if c.Err() != nil || e.retiring || e.retired {
 		return core.PlaybackSourceObservation{}, core.ErrSourceChanged
 	}
 	return core.PlaybackSourceObservation{Revision: expected.Revision, ReleaseID: expected.ReleaseID}, nil
@@ -288,7 +313,12 @@ func (p *RemotePlayback) PinSourceRevision(c context.Context, id, rev string) er
 	if e == nil || e.retiring || e.retired {
 		return core.ErrSourceChanged
 	}
+	if c.Err() != nil {
+		return c.Err()
+	}
 	e.pins++
+	e.mode++
+	e.activity = p.o.Now()
 	return nil
 }
 func (p *RemotePlayback) UnpinSourceRevision(id string) {
@@ -301,13 +331,32 @@ func (p *RemotePlayback) UnpinSourceRevision(id string) {
 func (p *RemotePlayback) tick(c context.Context) error {
 	p.mu.Lock()
 	list := make([]*remotePreparation, 0, len(p.entries))
+	var observe []*remotePreparation
+	now := p.o.Now()
 	for _, e := range p.entries {
-		if e.retiring && !e.retired && !e.preparing {
+		p.expireLocked(e, now)
+		if !e.retired && !e.retiring && !e.preparing {
+			observe = append(observe, e)
+		}
+		if e.retiring && !e.retired && !e.preparing && e.uses == 0 {
 			list = append(list, e)
 		}
 	}
 	p.mu.Unlock()
-	result := p.tickActivity(c)
+	var result error
+	for _, e := range observe {
+		retired, err := p.r.PreparedSourceRetired(c, e.owner, e.operation)
+		if err != nil {
+			result = ErrPending
+			continue
+		}
+		if retired {
+			p.finishRetirement(e)
+		}
+	}
+	if err := p.tickActivity(c); err != nil {
+		result = err
+	}
 	for _, e := range list {
 
 		retired, err := p.r.RetirePreparedSource(c, e.owner, e.operation)
@@ -315,17 +364,24 @@ func (p *RemotePlayback) tick(c context.Context) error {
 			result = ErrPending
 			continue
 		}
-		p.mu.Lock()
-		if !e.retired {
-			e.retired = true
-			close(e.done)
-		}
-		p.mu.Unlock()
+		p.finishRetirement(e)
 	}
 	return result
 }
 func (p *RemotePlayback) ServeRange(w http.ResponseWriter, q *http.Request, id string) {
-	p.serveRange(w, q, id)
+	p.mu.Lock()
+	e := p.entries[id]
+	if e == nil || e.retiring || e.retired || e.snapshot == nil {
+		p.mu.Unlock()
+		http.NotFound(w, q)
+		return
+	}
+	e.uses++
+	e.mode++
+	e.activity = p.o.Now()
+	p.mu.Unlock()
+	defer p.endUse(e)
+	p.serveRange(remoteActivityWriter{ResponseWriter: w, playback: p, id: id}, q, id)
 }
 
 var _ core.Playback = (*RemotePlayback)(nil)
@@ -374,4 +430,51 @@ func (p *RemotePlayback) SetDraining(draining bool) {
 	p.mu.Lock()
 	p.draining = draining
 	p.mu.Unlock()
+}
+
+// expireLocked only seals admission. Exact owner retirement must still prove
+// completion; elapsed time never releases responsibility or closes Done.
+func (p *RemotePlayback) expireLocked(e *remotePreparation, now time.Time) {
+	if e.retired || e.retiring || e.preparing || e.pins > 0 || e.uses > 0 || e.snapshot == nil {
+		return
+	}
+	timeout := p.o.IdleTimeout
+	if e.state == "paused" {
+		timeout = max(timeout, core.PausedSessionRetention)
+	}
+	if !e.activity.IsZero() && now.Sub(e.activity) > timeout {
+		e.retiring = true
+	}
+}
+
+func (p *RemotePlayback) endUse(e *remotePreparation) {
+	p.mu.Lock()
+	e.uses--
+	p.mu.Unlock()
+}
+
+func (p *RemotePlayback) finishRetirement(e *remotePreparation) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !e.retired {
+		e.retired = true
+		close(e.done)
+	}
+}
+
+// Successful media writes refresh activity throughout a long direct response,
+// so finishing a stream does not immediately expire an otherwise fresh source.
+type remoteActivityWriter struct {
+	http.ResponseWriter
+	playback *RemotePlayback
+	id       string
+}
+
+func (w remoteActivityWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w remoteActivityWriter) Write(b []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(b)
+	if n > 0 {
+		w.playback.Touch(w.id)
+	}
+	return n, err
 }

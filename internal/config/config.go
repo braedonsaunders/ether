@@ -47,6 +47,7 @@ type Config struct {
 	Transcode     Transcode     `json:"transcode"`
 	Trakt         Trakt         `json:"trakt"`
 	Simkl         Simkl         `json:"simkl"`
+	PlexServers   PlexServers   `json:"plexServers"`
 	OpenSubtitles OpenSubtitles `json:"openSubtitles"`
 	// Subtitles is the ordered subtitle provider list (OpenSubtitles and
 	// Stremio subtitle add-ons). Empty means OpenSubtitles alone, as before.
@@ -454,6 +455,12 @@ type Downloads struct {
 	Expiry Duration `json:"expiry"`
 	// MaxHeight caps the download profile's resolution (default 1080).
 	MaxHeight int `json:"maxHeight"`
+}
+
+// PlexServers controls watch sync with owner-run servers; server credentials and
+// viewer mappings remain stored while disabled.
+type PlexServers struct {
+	Enabled bool `json:"enabled"`
 }
 
 type Simkl struct {

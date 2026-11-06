@@ -96,10 +96,13 @@ func (s *Server) metadataKeys(ctx context.Context, raw string) ([]core.RatingKey
 func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	if plexAndroidClient(pr) {
+		pr.detailWaitUntil = time.Now().Add(detailWarmWaitBudget)
+	}
 	q := r.URL.Query()
 	// Validate before any catalogue lookup or playback warm-up: these flags
 	// have a boolean integer grammar even when their work is asynchronous.
-	for _, name := range []string{"checkFiles", "skipRefresh", "asyncCheckFiles", "asyncAugmentMetadata", "asyncRefreshLocalMediaAgent", "asyncRefreshAnalysis"} {
+	for _, name := range []string{"checkFiles", "skipRefresh", "asyncCheckFiles", "checkFileAvailability", "asyncAugmentMetadata", "asyncRefreshLocalMediaAgent", "asyncRefreshAnalysis"} {
 		if values, present := q[name]; present {
 			n, err := strconv.Atoi(values[0])
 			if err != nil || (n != 0 && n != 1) {
@@ -126,7 +129,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 				}
 				continue
 			}
-			md = s.collectionMetadata(c)
+			md = s.collectionMetadata(c, ctx)
 			if mc == nil {
 				mc = s.itemContainer(c.Type)
 			}
@@ -139,7 +142,10 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 				}
 				continue
 			}
-			md = s.playlistMetadata(ctx, pl)
+			md = s.playlistListingMetadata(ctx, pl)
+			if pl.SmartURI != "" {
+				md.Content = "library://x/directory/" + url.QueryEscape(pl.SmartURI)
+			}
 			if mc == nil {
 				mc = libraryContainer()
 			}
@@ -160,6 +166,11 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 			t, err := s.metadataTitle(ctx, pr, k)
 			if err == nil && !s.visibleTitle(ctx, pr.User, t) {
 				err = core.ErrNotFound
+			}
+			// Policy/storage reads can fail closed on cancellation. Do not turn
+			// that interrupted lookup into a claim that the title disappeared.
+			if ctx.Err() != nil {
+				return
 			}
 			if err != nil && len(keys) == 1 && q.Get("collection") == "" {
 				if future, e := s.scheduledEpisode(ctx, pr, k); e == nil {
@@ -188,7 +199,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 				// Version discovery belongs to the open detail page, not to
 				// admission of the independent playback warm-up. Start it first
 				// so a warm-up that needs a search can join the same work.
-				if pr.User != nil {
+				if pr.User != nil && s.detailSearchAllowed(pr) {
 					if refiller, ok := s.d.Variants.(core.SearchCacheRefiller); ok {
 						// Repeated metadata fetches while the same page is being
 						// watched must not retry a failed search on every fetch.
@@ -214,10 +225,13 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 			if len(keys) == 1 {
 				pr.versionItemKey = t.Key
 			}
-			if len(keys) == 1 && (metadataOptionOn(q.Get("checkFiles")) || metadataOptionOn(q.Get("asyncCheckFiles"))) {
+			if len(keys) == 1 && (metadataOptionOn(q.Get("checkFiles")) || metadataOptionOn(q.Get("asyncCheckFiles")) || metadataOptionOn(q.Get("checkFileAvailability"))) {
 				pr.versionFlowKey = t.Key
 			}
 			md = s.detail(ctx, pr, t, metadataOptionOn(q.Get("includeChildren")), metadataOptionOn(q.Get("includeOnDeck")), metadataOptionOn(q.Get("includeRelated")), metadataOptionOn(q.Get("includeExtras")), q.Get("extraTypes"))
+			if q.Get("includePreferences") == "1" {
+				md.Preferences = s.itemTrackPreferences(ctx, pr, t)
+			}
 			if raw, present := q["includeRelatedCount"]; present && md.Related != nil {
 				if count, err := strconv.Atoi(raw[0]); err == nil && count >= 0 {
 					for i := range md.Related.Hub {
@@ -241,18 +255,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	if mc == nil {
 		mc = libraryContainer()
 	}
-	// PMS answers checkFiles=1 with Part@exists/@accessible. Plex for Apple TV
-	// sends it before playback and shows "Unavailable Media" when they are absent.
-	if metadataOptionOn(q.Get("checkFiles")) {
-		for i := range mc.Metadata {
-			for j := range mc.Metadata[i].Media {
-				for k := range mc.Metadata[i].Media[j].Part {
-					p := &mc.Metadata[i].Media[j].Part[k]
-					p.Exists, p.Accessible = model.Ptr(true), model.Ptr(true)
-				}
-			}
-		}
-	}
+	s.projectFileAvailability(r, mc)
 	mc.Size = len(mc.Metadata)
 	s.write(w, r, mc)
 }
@@ -281,12 +284,25 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 			md.Children = &model.Children{Size: len(rendered), Metadata: rendered}
 		}
 	}
-	if onDeck && t.Type == core.TypeShow {
-		if ep, st := s.showOnDeck(ctx, pr, t.Key, memo); ep != nil {
+	if onDeck && (t.Type == core.TypeShow || t.Type == core.TypeSeason) {
+		show := t.Key
+		if t.Type == core.TypeSeason {
+			show = core.ShowKey(t.Key.TMDB())
+		}
+		if ep, st := s.showOnDeck(ctx, pr, show, memo); ep != nil && (t.Type != core.TypeSeason || ep.Season == t.Season) {
 			// The show page's Play button plays this episode: resolve,
 			// open and probe it so OnDeck and the following Play have its tracks.
-			s.warmDetail(ctx, pr, ep)
+			if noWarm, _ := ctx.Value(structuralProjectionKey{}).(bool); !noWarm {
+				s.warmDetail(ctx, pr, ep)
+			}
 			if items := s.renderTitles(ctx, pr, []core.Title{*ep}, renderOpts{media: true, state: st}); len(items) > 0 {
+				if extras {
+					items[0].Extras = &model.Extras{}
+					for _, e := range s.extrasFor(ctx, pr, ep, extraTypes) {
+						items[0].Extras.Metadata = append(items[0].Extras.Metadata, s.extraMetadata(e, ep, true))
+					}
+					items[0].Extras.Size = len(items[0].Extras.Metadata)
+				}
 				md.OnDeck = &model.OnDeck{Metadata: items[0]}
 			}
 		}
@@ -339,6 +355,15 @@ const detailWarmWaitBudget = 4 * time.Second
 func (s *Server) warmDetail(ctx context.Context, pr *Request, t *core.Title) {
 	if t == nil || !isPlayable(t.Type) || s.d.Playback == nil {
 		return
+	}
+	if plexAndroidClient(pr) {
+		if _, ok := s.d.Playback.(core.MetadataProber); ok {
+			// A single wait: do not add speculative warmDetail's four seconds
+			// after the metadata probe's own bounded wait. Errors/timeouts
+			// preserve the normal detail response and background preparation.
+			_ = s.probeDetailTracks(ctx, pr, t)
+			return
+		}
 	}
 	caps := s.clientCaps(pr)
 	if warm, ok := s.d.Playback.(core.Prewarmer); ok {
@@ -487,6 +512,41 @@ func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {
 		mc.ViewMode = viewModeList
 	}
 	kids = s.visibleTitles(pr.User, kids)
+	if parent.Type == core.TypeShow && r.URL.Query().Has("unwatched") {
+		if r.URL.Query().Get("unwatched") != "1" {
+			kids = nil
+		} else {
+			eps, _ := s.episodesOfShow(ctx, pr, nil, k)
+			states := s.stateFor(ctx, pr, eps)
+			hasUnplayed := map[int]bool{}
+			for _, ep := range eps {
+				if states[ep.Key].ViewCount == 0 {
+					hasUnplayed[ep.Season] = true
+				}
+			}
+			filtered := kids[:0]
+			for _, season := range kids {
+				if hasUnplayed[season.Season] {
+					filtered = append(filtered, season)
+				}
+			}
+			kids = filtered
+		}
+	}
+
+	childQ := r.URL.Query()
+	if parent.Type == core.TypeShow {
+		for name := range childQ {
+			if strings.TrimRight(name, "!<>=") == "unwatched" {
+				childQ.Del(name)
+			}
+		}
+	}
+	kids, err = s.childQuery(ctx, pr, kids, childQ)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
 	future := s.scheduledEpisodes(ctx, pr, k)
 	kids = appendScheduled(kids, future)
 	lo, hi := pr.window(len(kids))
@@ -590,6 +650,30 @@ func (s *Server) handleAllLeaves(w http.ResponseWriter, r *http.Request) {
 	// Filter before paging, as handleChildren does, so the window and
 	// totalSize count only episodes the viewer may see.
 	eps = s.visibleTitles(pr.User, eps)
+	if r.URL.Query().Has("unwatched") {
+		n, err := strconv.ParseInt(r.URL.Query().Get("unwatched"), 10, 32)
+		if err != nil || n < 0 || n > 1 || strings.HasPrefix(r.URL.Query().Get("unwatched"), "-") {
+			writeHTTPError(w, 400)
+			return
+		}
+		if n == 1 {
+			states := s.stateFor(ctx, pr, eps)
+			filtered := eps[:0]
+			for _, ep := range eps {
+				if states[ep.Key].ViewCount == 0 {
+					filtered = append(filtered, ep)
+				}
+			}
+			eps = filtered
+		}
+	}
+	leafQ := r.URL.Query()
+	leafQ.Del("unwatched")
+	eps, err = s.childQuery(ctx, pr, eps, leafQ)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
 	lo, hi := pr.window(len(eps))
 	mc.Metadata = s.renderTitles(ctx, pr, eps[lo:hi], renderOpts{media: true, inSection: true})
 	mc.Size = len(mc.Metadata)
@@ -728,7 +812,7 @@ func (s *Server) scopedCollectionCounts(ctx context.Context, u *core.User, cs []
 	return s.collectionSelection().Counts(ctx, u, cs, collectionDevice(ctx))
 }
 
-func (s *Server) collectionMetadata(c *core.Collection) model.Metadata {
+func (s *Server) collectionMetadata(c *core.Collection, contexts ...context.Context) model.Metadata {
 	rk := c.Key.String()
 	m := model.Metadata{
 		RatingKey: rk,
@@ -767,6 +851,9 @@ func (s *Server) collectionMetadata(c *core.Collection) model.Metadata {
 		m.Image = append(m.Image, model.Image{Alt: c.Title, Type: "background", URL: m.Art})
 	}
 	m.UltraBlurColors = s.ultraBlurFor(c.Key, c.BackdropPath)
+	if len(contexts) > 0 {
+		s.applyListWatch(contexts[0], &m, c.Key)
+	}
 	return m
 }
 
@@ -789,7 +876,7 @@ func (s *Server) sectionCollections(w http.ResponseWriter, r *http.Request, sec 
 	all = filterCollectionTitles(all, r.URL.Query())
 	lo, hi := pr.window(len(all))
 	for i := lo; i < hi; i++ {
-		mc.Metadata = append(mc.Metadata, s.collectionMetadata(&all[i]))
+		mc.Metadata = append(mc.Metadata, s.collectionMetadata(&all[i], ctx))
 	}
 	mc.Size = len(mc.Metadata)
 	mc.SetPage(lo, len(all))
@@ -810,7 +897,7 @@ func (s *Server) handleCollections(w http.ResponseWriter, r *http.Request) {
 			}
 			cs = s.scopedCollectionCounts(ctx, pr.User, cs)
 			for i := range cs {
-				mc.Metadata = append(mc.Metadata, s.collectionMetadata(&cs[i]))
+				mc.Metadata = append(mc.Metadata, s.collectionMetadata(&cs[i], ctx))
 			}
 		}
 	}
@@ -831,7 +918,7 @@ func (s *Server) handleCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mc := s.itemContainer(c.Type)
-	mc.Metadata = []model.Metadata{s.collectionMetadata(c)}
+	mc.Metadata = []model.Metadata{s.collectionMetadata(c, ctx)}
 	mc.Size = 1
 	s.write(w, r, mc)
 }
@@ -865,6 +952,9 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request, k core.
 		return
 	}
 	mc := s.collectionItemsContainer(c, k)
+	if strings.HasPrefix(r.URL.Path, "/library/metadata/") {
+		mc.SetSyncProjection(true)
+	}
 	if !c.Upcoming {
 		mc.Metadata = s.renderTitles(ctx, pr, s.filterAllowed(pr.User, page.Items), renderOpts{media: true})
 	} else {
@@ -924,4 +1014,35 @@ func (s *Server) placeholderMetadata(ctx context.Context, pr *Request, t *core.T
 	md.Image = nil
 	md.Summary = "Scheduled release: " + t.Released.Format("2006-01-02") + ". " + md.Summary
 	return md
+}
+
+// Prefer exact facts for the TV picker, without making a slow source fail
+// the detail page. Completed background probes are visible on later reads.
+func (s *Server) probeDetailTracks(ctx context.Context, pr *Request, t *core.Title) error {
+	if pr == nil || pr.User == nil || s.d.Playback == nil {
+		return nil
+	}
+	if _, _, exact := s.mediaInfoWithSource(ctx, pr, t); exact {
+		return nil
+	}
+	if prober, ok := s.d.Playback.(core.MetadataProber); ok {
+		if !pr.detailWaitUntil.IsZero() {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithDeadline(ctx, pr.detailWaitUntil)
+			defer cancel()
+		}
+		return prober.ProbeMetadata(ctx, pr.User, t.Key, s.clientCaps(pr))
+	}
+	return nil
+}
+
+// Disabled warming on Plex Android permits cached metadata reads only: neither
+// the required probe nor version discovery may start a fresh indexer search.
+// Other clients retain their existing discovery policy.
+func (s *Server) detailSearchAllowed(pr *Request) bool {
+	if !plexAndroidClient(pr) {
+		return true
+	}
+	c := s.cfg().Cache
+	return !c.DisableSpeculation && c.Mode != "off" && c.DetailWarmup != "off"
 }

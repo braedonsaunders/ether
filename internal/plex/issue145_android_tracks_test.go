@@ -22,7 +22,7 @@ func TestAndroidTrackChoiceSurvivesStop(t *testing.T) {
 	key := fightClub.Key.String()
 
 	before := f.get(t, "/library/metadata/"+key, android...).Body.String()
-	if block := mediaBlock(before, "4K Dolby Vision Remux"); block == "" || len(audioTags(block)) != 1 || strings.Contains(block, `languageCode="fre"`) || len(streamTagsOfType(block, "3")) != 0 {
+	if block := mediaBlock(before, "4K Dolby Vision Remux"); block == "" || len(audioTags(block)) != 1 || strings.Contains(block, `languageCode="fra"`) || len(streamTagsOfType(block, "3")) != 0 {
 		t.Fatalf("pre-probe 4K version should list only its estimate:\n%s", block)
 	}
 
@@ -30,7 +30,7 @@ func TestAndroidTrackChoiceSurvivesStop(t *testing.T) {
 	if decision.Code != http.StatusOK {
 		t.Fatalf("decision %d: %s", decision.Code, decision.Body.String())
 	}
-	assertRemuxAudio(t, decision.Body.String(), "eng", "fre")
+	assertRemuxAudio(t, decision.Body.String(), "eng", "fra")
 
 	pb.mu.Lock()
 	clear(pb.sessions)
@@ -45,17 +45,17 @@ func TestAndroidTrackChoiceSurvivesStop(t *testing.T) {
 	if len(audios) < 2 || !strings.Contains(block, `selected="1"`) {
 		t.Fatalf("4K version lost its probed tracks after stop: %q\n%s", audios, block)
 	}
-	if compat := mediaBlock(after.Body.String(), "720p Blu-ray (High Compatibility)"); strings.Contains(compat, `languageCode="fre"`) || len(audioTags(compat)) != 1 {
+	if compat := mediaBlock(after.Body.String(), "720p Blu-ray (High Compatibility)"); strings.Contains(compat, `languageCode="fra"`) || len(audioTags(compat)) != 1 {
 		t.Fatalf("another version inherited the resumed tracks:\n%s", compat)
 	}
 	friend := friendMetadata(t, f, "/library/metadata/"+key)
-	if strings.Contains(friend, `languageCode="fre"`) {
+	if strings.Contains(friend, `languageCode="fra"`) {
 		t.Fatal("another viewer received the owner's audio tracks")
 	}
 	if other := mediaBlock(friend, "4K Dolby Vision Remux"); len(audioTags(other)) != 1 || len(streamTagsOfType(other, "3")) != 0 {
 		t.Fatalf("another viewer received the owner's 4K probe:\n%s", other)
 	}
-	french := streamID(audioByLang(audios, "fre"))
+	french := streamID(audioByLang(audios, "fra"))
 	if french == "" {
 		t.Fatalf("french audio id missing: %q", audios)
 	}
@@ -77,7 +77,7 @@ func TestAndroidTrackChoiceSurvivesStop(t *testing.T) {
 	}
 
 	again := mediaBlock(f.get(t, "/library/metadata/"+key, android...).Body.String(), "4K Dolby Vision Remux")
-	chosen := audioByLang(audioTags(again), "fre")
+	chosen := audioByLang(audioTags(again), "fra")
 	if !strings.Contains(again, `title="4K Dolby Vision Remux"`) || !strings.Contains(chosen, `selected="1"`) || len(audioTags(again)) < 2 {
 		t.Fatalf("selection did not stick on the 4K version:\n%s", again)
 	}
@@ -86,7 +86,7 @@ func TestAndroidTrackChoiceSurvivesStop(t *testing.T) {
 	if replay.Code != http.StatusOK {
 		t.Fatalf("replay decision %d: %s", replay.Code, replay.Body.String())
 	}
-	assertRemuxAudio(t, replay.Body.String(), "fre", "eng")
+	assertRemuxAudio(t, replay.Body.String(), "fra", "eng")
 }
 
 // When Auto playback resolves a fallback candidate (because the top cached
@@ -148,14 +148,14 @@ func TestDecisionListsAlternateTracksForAndroidOnly(t *testing.T) {
 			}
 			f.trans.decision = core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: "mkv"}
 			slug := strings.ReplaceAll(client.name, " ", "-")
-			direct := f.get(t, "/video/:/transcode/universal/decision?path="+path+"&protocol=hls&directPlay=1&directStream=1&session=alt-direct-"+slug, hdr...)
+			direct := f.get(t, "/video/:/transcode/universal/decision?path="+path+"&hasMDE=1&protocol=hls&directPlay=1&directStream=1&session=alt-direct-"+slug, hdr...)
 			if direct.Code != http.StatusOK {
 				t.Fatalf("direct decision %d: %s", direct.Code, direct.Body.String())
 			}
 			assertAlternateTracks(t, direct.Body.String(), client.android, true)
 
 			f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mkv"}
-			remux := f.get(t, "/video/:/transcode/universal/decision?path="+path+"&protocol=hls&directPlay=0&directStream=1&session=alt-remux-"+slug, hdr...)
+			remux := f.get(t, "/video/:/transcode/universal/decision?path="+path+"&hasMDE=1&protocol=hls&directPlay=0&directStream=1&session=alt-remux-"+slug, hdr...)
 			if remux.Code != http.StatusOK {
 				t.Fatalf("remux decision %d: %s", remux.Code, remux.Body.String())
 			}
@@ -169,15 +169,15 @@ func assertAlternateTracks(t *testing.T, body string, android, direct bool) {
 	audios := audioTags(body)
 	subs := streamTagsOfType(body, "3")
 	if !android {
-		if len(audios) != 1 || len(subs) != 0 || strings.Contains(body, `languageCode="fre"`) {
+		if len(audios) != 1 || len(subs) != 0 || strings.Contains(body, `languageCode="fra"`) {
 			t.Fatalf("non-Android decision listed alternate tracks:\n%s", body)
 		}
 		return
 	}
-	if len(audios) < 2 || audioByLang(audios, "fre") == "" || len(subs) < 2 {
+	if len(audios) < 2 || audioByLang(audios, "fra") == "" || len(subs) < 2 {
 		t.Fatalf("Android decision hid alternate tracks: audio=%q subs=%d\n%s", audios, len(subs), body)
 	}
-	other := audioByLang(audios, "fre")
+	other := audioByLang(audios, "fra")
 	if direct {
 		if !strings.Contains(other, `location="direct"`) {
 			t.Fatalf("Android direct-play alternate: %s", other)

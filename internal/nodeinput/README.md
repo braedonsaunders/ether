@@ -66,6 +66,24 @@ can retry its exact payload using fresh authority. Commit rechecks the captured
 Reader, history and seal after external validation. No raw expiry setter/source swap/
 encoder start is available. Parent owns schedule, worker renewal and reconciliation.
 
+`Input` optionally implements `core.RecoverySourceReader` on the same claimed
+lease. `RecoverySourceIdentity` returns the authenticated Scope revision and
+immutable Reader size, crosschecked against admission. This cached identity is
+not a fresh authority check. `ReadRecoveryAt` requires that exact revision and a
+complete, positive range of at most 64 KiB within the source. Unknown/empty
+identity or size, unclaimed/sealed inputs, overflow, cancellation and mismatches
+fail closed. Each read shares the HTTP request limit and registers with the
+existing tracker under the sealing mutex before invoking the actual Reader.
+The request deadline is capped by RequestTimeout and composed with Input lifetime
+cancellation. Reads run synchronously and Reconcile joins their registered work
+before InputDone. Errors return zero bytes with ErrDenied or standard context
+cancellation/deadline errors; callers must discard the buffer on error.
+
+This capability supplies only same-source bytes for the separately bounded,
+strict nonfragmented AAC-LC MP4 index. It does not attest previously retained
+access units/output, authorize a second encoder, prove source-host equivalence,
+or enable application/transport recovery. Ordinary inputs remain unchanged.
+
 Limitations: host still supplies authority, stable-handle lookup, placement and
 source-owner proof, certificate lifecycle, clock policy and durable recovery. Bounds
 apply within one gateway boot; capacity exhaustion requires host lifecycle handling

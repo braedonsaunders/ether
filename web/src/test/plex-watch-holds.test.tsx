@@ -113,7 +113,13 @@ describe("Plex watch state actions", () => {
     });
     render(<PlexWatchSync viewerId={7} plexId={77} />);
     expect(await screen.findByText("Unavailable")).toBeInTheDocument();
-    expect(screen.getByText(/Plex doesn't let other servers sync watch state/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Sync watched marks with other Plex Media Servers you run alongside Ether/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Manage Plex watch sync" })).toHaveAttribute(
+      "href",
+      "/ether/services/plexservers",
+    );
     for (const name of [/Import now/, /Export current state/, /Retry/, /Resolve/, /Connect this/]) {
       expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     }

@@ -132,8 +132,8 @@ func TestListResponsesIncludeViewedLeafCount(t *testing.T) {
 		if !strings.Contains(body, `"viewedLeafCount":2`) {
 			t.Fatalf("%s omitted viewedLeafCount:2 in %s", path, body)
 		}
-		if !strings.Contains(body, `"viewCount":1`) {
-			t.Fatalf("%s omitted viewCount:1 in %s", path, body)
+		if strings.Contains(body, `"viewCount":1`) {
+			t.Fatalf("%s fabricated independent parent viewCount from leaves: %s", path, body)
 		}
 	}
 }

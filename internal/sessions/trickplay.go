@@ -69,12 +69,20 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 	if !b.trickplayBindingCurrent(s, ps) {
 		return
 	}
+	cacheKey := core.TrickplayCacheKey(ps)
+	currentSource := func() bool {
+		latest, exists := b.deps.Playback.Session(s.playID)
+		return exists && latest != nil && cacheKey != "" && core.TrickplayCacheKey(latest) == cacheKey
+	}
+	if cacheKey == "" {
+		return
+	}
 	input := b.deps.Playback.InputURL(s.playID)
 	if input == "" {
 		return
 	}
 	if _, leased := b.deps.Trickplay.(core.TrickplayLeaser); !leased {
-		b.deps.Trickplay.EnsureTrickplay(ctx, core.TrickplaySource{ReleaseID: ps.Resolution.Release.ID, InputURL: input, Info: ps.Info, AvailableUntil: until})
+		b.deps.Trickplay.EnsureTrickplay(ctx, core.TrickplaySource{Current: currentSource, ReleaseID: cacheKey, InputURL: input, Info: ps.Info, AvailableUntil: until})
 		return
 	}
 	b.mu.Lock()
@@ -89,7 +97,8 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 	hold := current.trickplay
 	b.mu.Unlock()
 	err := hold.UpdateIf(ctx, b.deps.Trickplay, core.TrickplaySource{
-		ReleaseID:      ps.Resolution.Release.ID,
+		Current:        currentSource,
+		ReleaseID:      cacheKey,
 		InputURL:       input,
 		Info:           ps.Info,
 		AvailableUntil: until,
@@ -101,7 +110,7 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 			return false
 		}
 		latest, ok := b.deps.Playback.Session(s.playID)
-		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == ps.Resolution.Release.ID && latest.Failovers == ps.Failovers && latest.DownFailovers == ps.DownFailovers && b.deps.Playback.InputURL(s.playID) == input
+		return ok && latest != nil && latest.Resolution != nil && core.TrickplayCacheKey(latest) == cacheKey && latest.Failovers == ps.Failovers && latest.DownFailovers == ps.DownFailovers && b.deps.Playback.InputURL(s.playID) == input
 	})
 	if err != nil && b.deps.OnEventError != nil {
 		b.deps.OnEventError(err)
@@ -161,7 +170,7 @@ func (b *Broker) trickplayReady(ctx context.Context, a frontend.SessionAccess, i
 		}
 		best = s
 		bestInfo = ps.Info
-		bestRelease = ps.Resolution.Release.ID
+		bestRelease = core.TrickplayCacheKey(ps)
 	}
 	if best == nil {
 		return "", core.MediaInfo{}, 0, 0, false

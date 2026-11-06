@@ -47,7 +47,7 @@ func TestDiscoveryHiddenTitleStaysPlayable(t *testing.T) {
 		t.Fatalf("decision: %v", mc)
 	}
 
-	uri := urlEsc("server://m/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String())
+	uri := urlEsc("server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String())
 	if rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+uri, map[string]string{"Accept": "application/json"}); rec.Code != http.StatusOK {
 		t.Fatalf("play queue for a discovery-hidden title: %d", rec.Code)
 	}
@@ -243,15 +243,22 @@ func TestPlaybackFailureClientContract(t *testing.T) {
 		{"samsung", "Plex for Samsung", "Tizen", "json"},
 		{"roku", "Plex for Roku", "Roku", "xml"},
 	}
-	failures := []error{core.ErrNotAvailable, core.ErrNotCached,
-		&core.UncachedError{Err: core.ErrNotCached, CachedOnly: true},
-		core.ErrDownloadRefused, core.ErrDownloadQueued, core.ErrDownloadLimit,
-		core.ErrDebridAuth, core.ErrSourceUnavailable, core.ErrReleaseRejected,
-		context.DeadlineExceeded, core.ErrPrepareSlow, core.ErrStreamLimit,
-		core.ErrNoSources, errors.New("encoder failed")}
+	failures := []struct {
+		cause       error
+		partGateway bool
+	}{
+		{core.ErrNotAvailable, false}, {core.ErrNotCached, false},
+		{&core.UncachedError{Err: core.ErrNotCached, CachedOnly: true}, false},
+		{core.ErrDownloadRefused, false}, {core.ErrDownloadQueued, false}, {core.ErrDownloadLimit, false},
+		{core.ErrDebridAuth, true}, {core.ErrSourceUnavailable, true}, {core.ErrReleaseRejected, true},
+		{context.DeadlineExceeded, true}, {core.ErrPrepareSlow, false}, {core.ErrStreamLimit, false},
+		{core.ErrNoSources, false}, {errors.New("encoder failed"), true},
+	}
+
 	for _, client := range clients {
 		t.Run(client.name, func(t *testing.T) {
-			for i, failure := range failures {
+			for i, tc := range failures {
+				failure := tc.cause
 				t.Run(fmt.Sprint(i), func(t *testing.T) {
 					f := newFixture()
 					defer f.srv.Close()
@@ -285,7 +292,11 @@ func TestPlaybackFailureClientContract(t *testing.T) {
 					for _, path := range []string{"/video/:/transcode/universal/start.m3u8" + base, "/video/:/transcode/universal/start.mpd" + base, "/library/parts/1000000000000550/1/file.mkv"} {
 						for range 2 { // media loader retry must not consume the remembered error
 							r := f.request(t, "GET", path, h)
-							if r.Code < 400 || r.Code >= 500 || r.Header().Get("Retry-After") != "" || r.Body.Len() != 0 {
+							badStatus := r.Code < 400 || r.Code >= 500
+							if tc.partGateway && strings.HasPrefix(path, "/library/parts/") {
+								badStatus = r.Code != http.StatusBadGateway
+							}
+							if badStatus || r.Header().Get("Retry-After") != "" || r.Body.Len() != 0 {
 								t.Fatalf("%s: %d %v %s", path, r.Code, r.Header(), r.Body.String())
 							}
 							checkTimeline()
@@ -300,7 +311,11 @@ func TestPlaybackFailureClientContract(t *testing.T) {
 					for _, path := range []string{"/video/:/transcode/universal/start.m3u8" + base, "/video/:/transcode/universal/start.mpd" + base, "/library/parts/1000000000000550/1/file.mkv"} {
 						before := p.calls
 						r := f.request(t, "GET", path, h)
-						if r.Code < 400 || r.Code >= 500 || p.calls != before+1 {
+						badStatus := r.Code < 400 || r.Code >= 500
+						if tc.partGateway && strings.HasPrefix(path, "/library/parts/") {
+							badStatus = r.Code != http.StatusBadGateway
+						}
+						if badStatus || p.calls != before+1 {
 							t.Fatalf("unbounded media route %s: %d, calls %d -> %d", path, r.Code, before, p.calls)
 						}
 						checkTimeline()

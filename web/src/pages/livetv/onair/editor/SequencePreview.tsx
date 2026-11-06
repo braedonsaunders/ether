@@ -12,14 +12,16 @@ export function SequencePreview({
   style,
   channelId,
   at,
+  onClose,
 }: {
   style: Style;
   channelId: string;
   at: string;
+  onClose(): void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [open, setOpen] = useState(false),
-    [playing, setPlaying] = useState(false),
+  const open = true;
+  const [playing, setPlaying] = useState(true),
     [muted, setMuted] = useState(false),
     [time, setTime] = useState(0),
     [bindings, setBindings] = useState<Bindings>({}),
@@ -129,22 +131,13 @@ export function SequencePreview({
   };
   return (
     <>
-      <Button
-        onClick={() => {
-          setTime(0);
-          setOpen(true);
-          setPlaying(true);
-        }}
-      >
-        {t("Play the sequence")}
-      </Button>
       {open ? (
         <dialog
           ref={dialog}
           onCancel={(e) => {
             e.preventDefault();
-            setOpen(false);
             setPlaying(false);
+            onClose();
           }}
           role="dialog"
           aria-modal="true"
@@ -152,8 +145,8 @@ export function SequencePreview({
           className="fixed inset-0 z-50 m-0 flex h-dvh max-h-none w-screen max-w-none flex-col border-0 bg-black p-0 text-white"
           onKeyDown={(e) => {
             if (e.key === "Escape") {
-              setOpen(false);
               setPlaying(false);
+              onClose();
             }
           }}
         >
@@ -169,8 +162,8 @@ export function SequencePreview({
             <Button
               variant="secondary"
               onClick={() => {
-                setOpen(false);
                 setPlaying(false);
+                onClose();
               }}
             >
               <X size={16} />

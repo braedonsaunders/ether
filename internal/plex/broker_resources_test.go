@@ -49,6 +49,7 @@ func TestUnmountReleasesPlaybackResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := strconv.FormatInt(int64(fightClub.Key), 10)
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F"+key+"&session=hls-unmount&protocol=hls&directPlay=0&directStream=1"))
 	rec := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F"+key+"&session=hls-unmount&protocol=hls&directPlay=0&directStream=1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start %d: %s", rec.Code, rec.Body.String())
@@ -74,6 +75,7 @@ func TestUnmountReleasesPlaybackResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer again.Close(context.Background())
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F"+key+"&session=hls-remount&protocol=hls&directPlay=0&directStream=1"))
 	rec = f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F"+key+"&session=hls-remount&protocol=hls&directPlay=0&directStream=1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("remount start %d: %s", rec.Code, rec.Body.String())

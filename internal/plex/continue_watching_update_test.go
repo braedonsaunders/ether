@@ -76,7 +76,7 @@ func TestContinueWatchingRefreshIncludesPagination(t *testing.T) {
 		f.catalog.titles[title.Key] = title
 		f.state.set(ownerUser.ID, ws(title.Key, 600000, 0))
 	}
-	if rec := f.get(t, "/:/scrobble?key="+keys[0].String()); rec.Code != http.StatusOK {
+	if rec := f.get(t, "/:/scrobble?key="+keys[0].String()+"&identifier=com.plexapp.plugins.library"); rec.Code != http.StatusOK {
 		t.Fatal(rec.Code)
 	}
 	for _, path := range []string{"/hubs/sections/1/continueWatching/items", "/hubs/home/continueWatching", "/hubs/continueWatching/items"} {

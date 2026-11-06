@@ -118,12 +118,26 @@ func (s *Server) rememberStreamRequest(r *http.Request, user *core.User, key cor
 		return
 	}
 	for _, kind := range []string{"audio", "subtitle"} {
-		v := r.URL.Query().Get(kind + "StreamID")
-		if v == "" {
+		q := r.URL.Query()
+		v := q.Get(kind + "StreamID")
+		if !q.Has(kind + "StreamID") {
 			continue
 		}
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
+			if kind == "audio" {
+				continue
+			}
+			id = 0 // A malformed subtitle selector means None.
+		}
+		if id == -1 {
+			if resetter, ok := s.d.TrackPreferences.(interface {
+				ForgetChoice(context.Context, int64, core.RatingKey, string) error
+			}); ok {
+				if err := resetter.ForgetChoice(r.Context(), user.ID, key, kind); err != nil {
+					s.log.Warn("reset stream preference", "error", err)
+				}
+			}
 			continue
 		}
 		var track *core.StreamInfo
@@ -158,11 +172,18 @@ func (s *Server) addProbedStreamFeatures(ctx context.Context, key core.RatingKey
 	if info.Duration > 0 {
 		m.Duration = info.Duration.Milliseconds()
 	}
+	partID := int64(key)
+	if len(m.Media) > 0 && len(m.Media[0].Part) > 0 {
+		partID = m.Media[0].Part[0].ID
+	}
 	for i, c := range info.Chapters {
 		if c.Start < 0 || c.End <= c.Start || c.End > info.Duration {
 			continue
 		}
-		m.Chapter = append(m.Chapter, model.Chapter{ID: c.ID, Index: i + 1, Title: c.Title, StartTimeOffset: c.Start.Milliseconds(), EndTimeOffset: c.End.Milliseconds()})
+		m.Chapter = append(m.Chapter, model.Chapter{ID: tagID("chapter", strconv.FormatInt(partID, 10)+"/"+strconv.Itoa(i)+"/"+strconv.FormatInt(c.Start.Milliseconds(), 10)+"/"+strconv.FormatInt(c.End.Milliseconds(), 10)), Index: i + 1, Title: c.Title, StartTimeOffset: c.Start.Milliseconds(), EndTimeOffset: c.End.Milliseconds()})
+	}
+	if len(m.Chapter) > 0 {
+		m.ChapterSource = "media"
 	}
 	ranges := markers.FromChapters(info)
 	if s.d.Markers != nil {

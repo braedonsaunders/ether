@@ -19,6 +19,10 @@ func (s *Server) observeRequest(r *http.Request, sr *statusRecorder, elapsed tim
 	status := sr.status
 	if status == 0 {
 		status = http.StatusOK
+		if r.Context().Err() != nil {
+			// Observation only: the disconnected client received no response.
+			status = 499
+		}
 	}
 	kind := diagnostics.ClassifyRequest(r.URL.Path, status, sr.Header().Get("Content-Type"), sr.written)
 	recording := s.d.Support.Recording()

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -36,6 +38,22 @@ func (s *Service) putAsset(ctx context.Context, name, kind, license, mime string
 		a = s.recordFacts(ctx, a, b)
 	}
 	return a, e
+}
+
+// AssetMetadata reads one asset's stored facts by digest: a single indexed row,
+// with no usage scan, no content read and no probing. Duration is 0 until the
+// asset has been probed.
+func (s *Service) AssetMetadata(ctx context.Context, digest string) (Asset, error) {
+	a := Asset{Digest: digest, UsedBy: []string{}}
+	e := s.db.QueryRowContext(ctx, "SELECT name,kind,size,license,mime,source,attribution,COALESCE(duration_ms,0),width,height FROM onair_assets WHERE digest=?", digest).Scan(&a.Name, &a.Kind, &a.Size, &a.License, &a.MIME, &a.Source, &a.Attribution, &a.DurationMS, &a.Width, &a.Height)
+	if errors.Is(e, sql.ErrNoRows) {
+		return Asset{}, ErrNotFound
+	}
+	if e != nil {
+		return Asset{}, e
+	}
+	a.URL = "/ether/api/onair/assets/" + a.Digest
+	return a, nil
 }
 func (s *Service) UploadAsset(ctx context.Context, name, kind, license string, r io.Reader) (Asset, error) {
 	b, e := io.ReadAll(io.LimitReader(r, assetLimit+1))

@@ -70,3 +70,10 @@ type WarmProber interface {
 type WarmProbeWaiter interface {
 	WaitWarmProbe(ctx context.Context, user *User, caps ClientCaps, key RatingKey, budget time.Duration) (MediaInfo, bool)
 }
+
+// MetadataProber obtains exact pre-play source facts without admitting a live
+// session, subject to owner warm-up settings and a bounded wait. An error
+// means facts are not ready; detail pages should render their normal fallback.
+type MetadataProber interface {
+	ProbeMetadata(context.Context, *User, RatingKey, ClientCaps) error
+}

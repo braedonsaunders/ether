@@ -75,6 +75,7 @@ const (
 	mkvSampling     = 0xb5
 	mkvOutSampling  = 0x78b5
 	mkvChannels     = 0x9f
+	mkvAudioDepth   = 0x6264
 	mkvAddMapping   = 0x41e4
 	mkvAddIDType    = 0x41e7
 	mkvAddIDExtra   = 0x41ed
@@ -291,6 +292,7 @@ type mkvTrack struct {
 	sampling    float64
 	outSampling float64
 	channels    uint64
+	audioDepth  uint64
 	dovi        []byte
 	privScoped  bool // ContentEncoding compresses or encrypts CodecPrivate
 	encrypted   bool
@@ -418,7 +420,7 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 		return nil, incomplete("invalid duration")
 	}
 	m.Duration = time.Duration(ns)
-	m.BitrateKbps = int(float64(s.size*8) / m.Duration.Seconds() / 1000)
+	m.BitrateKbps = int(math.Round(float64(s.size*8) / m.Duration.Seconds() / 1000))
 
 	parsed, err := mkvTracksOf(tracks)
 	if err != nil {
@@ -1004,6 +1006,8 @@ func mkvTracksOf(b []byte) ([]mkvTrack, error) {
 						t.outSampling = mkvFloat(a.body)
 					case mkvChannels:
 						t.channels = mkvUint(a.body)
+					case mkvAudioDepth:
+						t.audioDepth = mkvUint(a.body)
 					}
 				}
 			case mkvAddMapping:
@@ -1167,6 +1171,8 @@ func (t mkvTrack) video(si *core.StreamInfo) error {
 		return incomplete("video geometry or frame rate missing")
 	}
 	si.Width, si.Height = int(t.width), int(t.height)
+	si.CodedHeight = si.Height
+	si.CodedWidth = si.Width
 	// libavformat reduces 1e9/DefaultDuration with av_reduce's 30000 cap,
 	// so 41708333ns is published as 24000/1001 rather than the raw quotient.
 	exact := reducedFrameRate(t.defaultDur)
@@ -1546,6 +1552,25 @@ func (t mkvTrack) audio(si *core.StreamInfo) error {
 		si.Codec = "mp2"
 	case strings.HasPrefix(id, "A_PCM/"):
 		si.Codec = "pcm"
+		switch {
+		case strings.Contains(id, "FLOAT"):
+			if t.audioDepth == 32 {
+				si.SampleFormat = "flt"
+			} else if t.audioDepth == 64 {
+				si.SampleFormat = "dbl"
+			}
+		case t.audioDepth == 8:
+			si.SampleFormat = "u8"
+		case t.audioDepth > 0 && t.audioDepth <= 16:
+			si.SampleFormat = "s16"
+		case t.audioDepth > 0 && t.audioDepth <= 32:
+			si.SampleFormat = "s32"
+		case t.audioDepth == 64:
+			si.SampleFormat = "s64"
+		}
+		if si.SampleFormat == "" {
+			return incomplete("PCM sample format missing")
+		}
 	default:
 		return incomplete("audio channels or rate missing")
 	}

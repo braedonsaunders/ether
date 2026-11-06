@@ -68,6 +68,7 @@ var ErrPMSAddress = errors.New("plexwatch: enter the server address, like http:/
 var ErrPMSUnreachable = errors.New("plexwatch: the Plex Media Server could not be reached")
 
 type pmsClient struct {
+	enabled  func() bool
 	base     *url.URL
 	http     *http.Client
 	clientID string
@@ -176,6 +177,9 @@ type pmsContainer struct {
 // get calls one PMS route. The token travels only in X-Plex-Token, never in
 // the URL, so transport errors cannot leak it.
 func (c *pmsClient) get(ctx context.Context, path string, q url.Values, token string, dest any) error {
+	if c.enabled != nil && !c.enabled() {
+		return errors.New("plexwatch: server watch sync is disabled")
+	}
 	u := *c.base
 	u.Path = c.base.Path + path
 	if q != nil {

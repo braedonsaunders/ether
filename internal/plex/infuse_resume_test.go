@@ -9,11 +9,11 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
-func TestInfuseDirectPartStaysBelowFivePercent(t *testing.T) {
+func TestInfuseDirectPartUsesMinuteResumeThreshold(t *testing.T) {
 	for _, tc := range []struct {
 		offset int
 		resume bool
-	}{{30000, false}, {61000, false}, {120000, false}, {201274, false}} {
+	}{{30000, false}, {60000, false}, {61000, true}, {120000, true}, {201274, true}} {
 		t.Run(fmt.Sprint(tc.offset), func(t *testing.T) {
 			f := newFixture()
 			defer f.srv.Close()
@@ -28,6 +28,11 @@ func TestInfuseDirectPartStaysBelowFivePercent(t *testing.T) {
 			if rec := f.request(t, http.MethodGet, part, partHeaders); rec.Code != http.StatusPartialContent {
 				t.Fatalf("direct part: %d %s", rec.Code, rec.Body.String())
 			}
+			ps, ok := f.playback.SessionFor(ownerUser.ID, "infuse-direct", fightClub.Key)
+			if !ok {
+				t.Fatal("missing direct playback")
+			}
+			ps.BytesServed = 10 // the fake range server delivered the requested bytes
 			for _, playbackState := range []string{"playing", "stopped"} {
 				path := fmt.Sprintf("/:/timeline?ratingKey=%s&state=%s&time=%d&duration=5820000", fightClub.Key, playbackState, tc.offset)
 				if rec := f.request(t, http.MethodPost, path, headers); rec.Code != http.StatusOK {
@@ -47,6 +52,11 @@ func TestInfuseDirectPartStaysBelowFivePercent(t *testing.T) {
 			continueBody := decodeJSON(t, f.request(t, http.MethodGet, "/hubs/continueWatching", headers))
 			hubs, _ := continueBody["Hub"].([]any)
 			found := false
+			for _, rawItem := range anySlice(continueBody["Metadata"]) {
+				if item, ok := rawItem.(map[string]any); ok && item["ratingKey"] == fightClub.Key.String() {
+					found = true
+				}
+			}
 			for _, raw := range hubs {
 				hub := raw.(map[string]any)
 				for _, rawItem := range anySlice(hub["Metadata"]) {

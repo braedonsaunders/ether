@@ -21,6 +21,7 @@ func TestForwardedOwnerRechecksCurrentPolicyAndOriginalNetwork(t *testing.T) {
 	owner := newFixture(func(d *Deps) { d.PlexEncoder = remote })
 	defer owner.srv.Close()
 	owner.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
+	owner.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=policy-owner"))
 	start := owner.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=policy-owner")
 	if start.Code != 200 {
 		t.Fatal(start.Code, start.Body.String())
@@ -74,6 +75,7 @@ func TestForwardedMarkerOnlyAddsRestrictions(t *testing.T) {
 	f := newFixture(func(d *Deps) { d.PlexEncoder = remote })
 	defer f.srv.Close()
 	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=spoof-policy"))
 	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=spoof-policy")
 	if start.Code != 200 {
 		t.Fatal(start.Code, start.Body.String())
@@ -93,6 +95,7 @@ func TestForwardedMarkerOnlyAddsRestrictions(t *testing.T) {
 	local := newFixture()
 	defer local.srv.Close()
 	local.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
+	local.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=spoof-policy"))
 	if got := local.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=spoof-policy"); got.Code != 200 {
 		t.Fatal("local start", got.Code)
 	}

@@ -2,6 +2,7 @@ package playback
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -276,5 +277,74 @@ func TestBrowsePrewarmOpensWithoutPrefetch(t *testing.T) {
 	}
 	if info, ok := h.m.WarmProbeInfo(owner, caps, movieKey); !ok || info.Estimated {
 		t.Fatalf("browse warm did not publish a probe: ok=%v info=%+v", ok, info)
+	}
+}
+
+func TestMetadataProbeWithoutPrefetchOrPlaybackSession(t *testing.T) {
+	for _, active := range []bool{false, true} {
+		t.Run(fmt.Sprint(active), func(t *testing.T) {
+			h := newHarness(t, []*fakeRelease{mkv("r1", 2<<30, 90*time.Minute)}, []string{"r1"}, withNativeProbe(func(ctx context.Context, src core.MediaSource) (*core.MediaInfo, error) {
+				if _, err := src.ReadAt(make([]byte, 64), 0); err != nil {
+					return nil, err
+				}
+				info := nativeInfo(src)
+				info.Streams = append(info.Streams, core.StreamInfo{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en"}, core.StreamInfo{Index: 3, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "en"})
+				return info, nil
+			}, nil))
+			caps := defaultCaps("shield")
+			if active {
+				if _, err := h.m.Prepare(context.Background(), owner, movie2, defaultCaps("other")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := len(h.m.Sessions())
+			if err := h.m.ProbeMetadata(context.Background(), owner, movieKey, caps); err != nil {
+				t.Fatal(err)
+			}
+			if info, ok := h.m.WarmProbeInfo(owner, caps, movieKey); !ok || info.Estimated || len(info.Streams) != 4 {
+				t.Fatalf("missing exact pre-play facts: %v %+v", ok, info)
+			}
+			if len(h.m.Sessions()) != before {
+				t.Fatal("metadata created session")
+			}
+			h.engine.mu.Lock()
+			n := len(h.engine.prefetch)
+			h.engine.mu.Unlock()
+			if n != 0 {
+				t.Fatalf("metadata prefetched video: %d", n)
+			}
+			resolves, probes := counts(h)
+			if err := h.m.ProbeMetadata(context.Background(), owner, movieKey, caps); err != nil {
+				t.Fatal(err)
+			}
+			r, p := counts(h)
+			if r != resolves || p != probes {
+				t.Fatal("repeated metadata repeated probe")
+			}
+		})
+	}
+}
+
+func TestMetadataProbeRespectsDisabledSettings(t *testing.T) {
+	for _, mode := range []string{"detail-off", "speculation-off", "cache-off"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newHarness(t, []*fakeRelease{mkv("r1", 2<<20, time.Minute)}, []string{"r1"})
+			cfg := h.m.config()
+			switch mode {
+			case "detail-off":
+				cfg.Cache.DetailWarmup = "off"
+			case "speculation-off":
+				cfg.Cache.DisableSpeculation = true
+			case "cache-off":
+				cfg.Cache.Mode = "off"
+			}
+			h.m.SetConfig(cfg)
+			if err := h.m.ProbeMetadata(t.Context(), owner, movieKey, defaultCaps("shield")); err == nil {
+				t.Fatal("uncached disabled probe reported success")
+			}
+			if r, p := counts(h); r != 0 || p != 0 {
+				t.Fatalf("disabled probe resolved/probed: %d/%d", r, p)
+			}
+		})
 	}
 }

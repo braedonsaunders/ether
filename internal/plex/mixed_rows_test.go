@@ -59,7 +59,7 @@ func TestMixedHomeRowKeepsItemIdentityAndViewerRestrictions(t *testing.T) {
 		key, first core.RatingKey
 		typ        string
 	}{{fightClub.Key, fightClub.Key, "movie"}, {breakingBad.Key, bbE1.Key, "episode"}} {
-		uri := "server://m/com.plexapp.plugins.library/library/metadata/" + tc.key.String()
+		uri := "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + tc.key.String()
 		rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+url.QueryEscape(uri), map[string]string{"Accept": "application/json"})
 		body := decodeJSON(t, rec)
 		items, _ := body["Metadata"].([]any)

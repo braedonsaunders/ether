@@ -19,6 +19,9 @@ import (
 // in-memory count and page caching so repeated library/recommendation reads
 // return without hitting disk.
 func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
+	if q.PlaylistSource != nil {
+		return c.browsePlaylist(ctx, q)
+	}
 	q.Filter = c.viewerPaging(ctx, q.Filter)
 	switch q.Filter.Type {
 	case core.TypeEpisode:
@@ -341,7 +344,7 @@ func browseFilterKey(f core.Filter) string {
 			return ""
 		}
 		if groupHasOwnState(g) {
-			return fmt.Sprintf("state:%d:%v:%v:%d:%d:%v", g.UserID, boolValue(g.Unwatched), boolValue(g.InProgress), g.LastViewedAfter, g.LastViewedBefore, g.ParentOnly)
+			return fmt.Sprintf("state:%d:%v:%v:%d:%d:%v:%s:%s:%d", g.UserID, boolValue(g.Unwatched), boolValue(g.InProgress), g.LastViewedAfter, g.LastViewedBefore, g.ParentOnly, g.StateField, g.StateOperator, g.StateValue)
 		}
 		if g.Filter != nil {
 			return fmt.Sprintf("leaf:%v(", g.ParentOnly) + browseFilterKey(*g.Filter) + ")"
@@ -370,7 +373,7 @@ func boolValue(v *bool) string {
 }
 
 func groupHasOwnState(g *core.FilterGroup) bool {
-	return g.Unwatched != nil || g.InProgress != nil || g.LastViewedAfter != 0 || g.LastViewedBefore != 0
+	return g.StateField != "" || g.Unwatched != nil || g.InProgress != nil || g.LastViewedAfter != 0 || g.LastViewedBefore != 0
 }
 
 func groupHasState(g *core.FilterGroup) bool {

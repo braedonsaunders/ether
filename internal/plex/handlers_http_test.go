@@ -13,6 +13,7 @@ func TestStartHTTP(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mkv"}
+	f.get(t, decisionPath("/video/:/transcode/universal/start?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=mac-http&offset=12"))
 	rec := f.get(t, "/video/:/transcode/universal/start?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=mac-http&offset=12")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())

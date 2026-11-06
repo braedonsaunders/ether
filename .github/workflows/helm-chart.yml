@@ -23,6 +23,8 @@ jobs:
       - run: python packaging/kubernetes/check-chart.py
       - run: python packaging/kubernetes/check-rollout.py
       - run: python packaging/kubernetes/check-placement.py
+      - run: python packaging/kubernetes/check-fresh-baseline.py
+      - run: python packaging/kubernetes/check-plex-baseline.py
       - run: helm package packaging/helm/ether --destination dist/charts
       - uses: actions/upload-artifact@v4
         with:

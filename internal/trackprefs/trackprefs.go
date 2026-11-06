@@ -291,6 +291,21 @@ func (s *Service) Remember(ctx context.Context, user int64, key core.RatingKey, 
 	_, err := s.db.ExecContext(ctx, `INSERT INTO trackprefs_memory VALUES(?,?,?,?,?) ON CONFLICT(user_id,show_id,kind) DO UPDATE SET choice=excluded.choice,updated_at=excluded.updated_at`, user, target, kind, string(b), time.Now().Unix())
 	return err
 }
+
+// ForgetChoice restores automatic selection for one track kind without
+// removing the viewer's choice for the other kind.
+func (s *Service) ForgetChoice(ctx context.Context, user int64, key core.RatingKey, kind string) error {
+	target, ok := memoryTarget(key)
+	if !ok {
+		return nil
+	}
+	if user <= 0 || (kind != "audio" && kind != "subtitle") {
+		return errors.New("invalid stream memory")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_memory WHERE user_id=? AND show_id=? AND kind=?`, user, target, kind)
+	return err
+}
+
 func (s *Service) Forget(ctx context.Context, user, show int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_memory WHERE user_id=? AND show_id=?`, user, show)
 	return err

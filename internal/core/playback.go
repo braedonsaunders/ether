@@ -11,6 +11,9 @@ import (
 // Transcoder (internal/transcode)
 
 type HLSRequest struct {
+	// RecoveryStart is trusted composition only; nil preserves legacy behavior.
+	RecoveryStart *RecoveryStart `json:",omitempty"`
+
 	// ManifestSessionID is a trusted host-assigned public session identifier used
 	// only for DASH representation URL rendering. Empty retains SessionID. It
 	// never changes encoder registry identity, source scope or retirement ownership.

@@ -162,6 +162,9 @@ func assertUpgradeKeepsOldWrite(t *testing.T, ctx context.Context, db *sql.DB) {
 		// A recorded state/1 already has playlists. state/3's foreign key
 		// needs that table, and PostgreSQL rejects the reference when this
 		// fixture omits it.
+		`CREATE TABLE state_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,rating_key INTEGER NOT NULL,viewed_at INTEGER NOT NULL,completed INTEGER NOT NULL DEFAULT 0,imported INTEGER NOT NULL DEFAULT 0
+)`,
 		`CREATE TABLE state_playlists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -297,6 +300,9 @@ func assertUnreleasedIdentityConverts(t *testing.T, ctx context.Context, db *sql
   updated_at INTEGER NOT NULL DEFAULT 0,
   version INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, rating_key)
+)`,
+		`CREATE TABLE state_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,rating_key INTEGER NOT NULL,viewed_at INTEGER NOT NULL,completed INTEGER NOT NULL DEFAULT 0,imported INTEGER NOT NULL DEFAULT 0
 )`,
 		`CREATE TABLE state_playlists (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

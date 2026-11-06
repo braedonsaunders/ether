@@ -61,6 +61,10 @@ func (m *Manager) ServeRange(w http.ResponseWriter, r *http.Request, sessionID s
 		contentType:           s.contentType,
 		deferStatusOnZeroRead: true,
 	}
+	plexPart, _ := r.Context().Value(plexPartKey{}).(bool)
+	if plexPart {
+		rep.contentType = plexPartMIME(s.name)
+	}
 	s.mu.Unlock()
 	rep.body = func(w io.Writer, start, length int64) error {
 		began := time.Now()
@@ -71,7 +75,11 @@ func (m *Manager) ServeRange(w http.ResponseWriter, r *http.Request, sessionID s
 		}
 		return err
 	}
-	if err := serveRepresentation(w, r, rep); err != nil && r.Context().Err() == nil {
+	serve := serveRepresentation
+	if plexPart {
+		serve = servePlexPart
+	}
+	if err := serve(w, r, rep); err != nil && r.Context().Err() == nil {
 		m.log.Debug("direct play response ended early", "session", s.id, "err", err)
 	}
 }

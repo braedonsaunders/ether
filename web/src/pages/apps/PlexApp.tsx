@@ -384,7 +384,10 @@ export function PlexApp({
 
   return (
     <>
-      <SettingsSection title={t("Status")}>
+      <SettingsSection
+        title={t("Status")}
+        description={t("Sign in to plex.tv so Plex apps can find Ether.")}
+      >
         <HomeStatusRow status={status} />
         <ConnectionStatusRow state={status?.wan} title={away.title} detail={away.detail} />
         <PlexAccount

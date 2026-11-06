@@ -14,7 +14,7 @@ func TestPlaylistNotificationLifecycle(t *testing.T) {
 	defer f.srv.Close()
 	sub, _ := f.srv.notifier.subscribe([]string{"timeline"}, &ownerUser)
 	defer f.srv.notifier.unsubscribe(sub)
-	created := f.request(t, "POST", "/playlists?title=Live+list&type=video", map[string]string{"Accept": "application/json"})
+	created := f.request(t, "POST", "/playlists?title=Live+list&type=video&uri=unresolved", map[string]string{"Accept": "application/json"})
 	if created.Code != 200 {
 		t.Fatalf("create: %d %s", created.Code, created.Body.String())
 	}

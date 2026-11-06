@@ -2,8 +2,10 @@ package plex
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,4 +77,73 @@ func TestSmartPlaylistTVSeriesAndEpisodePredicates(t *testing.T) {
 	if len(items) != 2 || items[0].(map[string]any)["ratingKey"] != core.EpisodeKey(77, 1, 1).String() || items[1].(map[string]any)["ratingKey"] != core.EpisodeKey(78, 1, 1).String() {
 		t.Fatalf("episode filter: %v", items)
 	}
+}
+
+// Membership is selected in SQL before parent deduplication, client filtering
+// and pagination. A saved limit still applies to the ordered member set.
+func TestSmartPlaylistProjectionBeyondExpansionPage(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	cat, err := catalog.New(db, nil, config.Catalog{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat.SetNow(func() time.Time { return fixedNow })
+	show := core.Title{Key: core.ShowKey(177), Type: core.TypeShow, IDs: core.IDs{TMDB: 177}, Title: "Series", Year: 2020, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
+	if err := cat.UpsertTitle(ctx, show, true); err != nil {
+		t.Fatal(err)
+	}
+	for season := 1; season <= 2; season++ {
+		key := core.SeasonKey(177, season)
+		if err := cat.UpsertTitle(ctx, core.Title{Key: key, ShowKey: show.Key, Type: core.TypeSeason, Season: season, Title: fmt.Sprintf("Season%d", season), Released: show.Released, ChildCount: 550}, false); err != nil {
+			t.Fatal(err)
+		}
+		count := 550
+		if season == 2 {
+			count = 2
+		}
+		for n := 1; n <= count; n++ {
+			title := fmt.Sprintf("Episode%04d", n)
+			if season == 2 {
+				title = "Tail"
+			}
+			if err := cat.UpsertTitle(ctx, core.Title{Key: core.EpisodeKey(177, season, n), ShowKey: show.Key, Type: core.TypeEpisode, Season: season, Episode: n, Title: title, Year: 2020, Released: show.Released}, false); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	ps := state.New(db, state.Options{}).Playlists()
+	f := newFixture(func(d *Deps) { d.Catalog = cat; d.Playlists = ps })
+	defer f.srv.Close()
+	create := func(uri string) string {
+		t.Helper()
+		rec := f.request(t, http.MethodPost, "/playlists?type=video&title=Large&smart=1&uri="+url.QueryEscape(uri), map[string]string{"Accept": "application/json"})
+		if rec.Code != 200 {
+			t.Fatalf("create%d %s", rec.Code, rec.Body.String())
+		}
+		return decodeJSON(t, rec)["Metadata"].([]any)[0].(map[string]any)["ratingKey"].(string)
+	}
+	key := create("/library/sections/2/all?type=4&sort=titleSort")
+	probe := func(key, query string, total int) {
+		t.Helper()
+		if !strings.Contains(query, "X-Plex-Container-Start=") {
+			query += "&X-Plex-Container-Start=0"
+		}
+		rec := f.get(t, "/playlists/"+key+"/items?"+query, jsonAccept...)
+		if rec.Code != 200 {
+			t.Fatalf("items%d %s", rec.Code, rec.Body.String())
+		}
+		mc := decodeJSON(t, rec)
+		if mc["totalSize"] != float64(total) {
+			t.Fatalf("query%s total: %v", query, mc)
+		}
+		if mc["size"] != float64(1) {
+			t.Fatalf("query%s page: %v", query, mc)
+		}
+	}
+	probe(key, "type=3&X-Plex-Container-Start=1&X-Plex-Container-Size=1", 2)
+	probe(key, "type=4&title=Tail&X-Plex-Container-Size=1", 2)
+	probe(key, "X-Plex-Container-Start=551&X-Plex-Container-Size=1", 552)
+	limited := create("/library/sections/2/all?type=4&sort=titleSort&limit=550")
+	probe(limited, "type=3&X-Plex-Container-Size=1", 1)
 }

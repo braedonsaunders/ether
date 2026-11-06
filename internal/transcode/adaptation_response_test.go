@@ -181,6 +181,10 @@ func TestDeliveryEvidenceRejectsProbesFailuresAndLocalSocketTiming(t *testing.T)
 				w.kbps = 1_000_000
 			}
 			s.serveCounted(w, req, "segment.ts", time.Unix(10, 0), bytes.NewReader(make([]byte, 128<<10)), 0, n)
+			wantDelivery := kind == "range" || kind == "loopback" || kind == "fast"
+			if s.PlaybackDelivered() != wantDelivery {
+				t.Fatalf("%s playback delivery = %v, want %v", kind, s.PlaybackDelivered(), wantDelivery)
+			}
 			if s.GoodputKbps() != 0 || s.goodput.Samples() != 0 {
 				t.Fatalf("%s fed estimator", kind)
 			}

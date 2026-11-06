@@ -532,7 +532,7 @@ func (t *Thumbnails) generate(ctx context.Context, src core.TrickplaySource) {
 			return
 		}
 		for _, slot := range batch {
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || src.Current != nil && !src.Current() {
 				return
 			}
 			jpeg, err := t.extractFrame(ctx, backgroundReadURL(src.InputURL), slot)
@@ -556,6 +556,9 @@ func (t *Thumbnails) generate(ctx context.Context, src core.TrickplaySource) {
 				complete := ok && missingFrames(e, plan, slot) == 0
 				t.mu.Unlock()
 				t.finish(src.ReleaseID, complete, "")
+				return
+			}
+			if src.Current != nil && !src.Current() {
 				return
 			}
 			failures = 0

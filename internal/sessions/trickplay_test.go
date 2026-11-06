@@ -55,7 +55,7 @@ func tinyJPEG(t *testing.T) []byte {
 
 func TestBorrowedTrickplayRevalidatesBeforeTiles(t *testing.T) {
 	frame := tinyJPEG(t)
-	provider := &memTrickplay{frames: map[string][]byte{"rel-1": frame}, interval: 10 * time.Second, width: 8}
+	provider := &memTrickplay{frames: map[string][]byte{logicalPreviewKey("rel-1"): frame}, interval: 10 * time.Second, width: 8}
 	item := core.RatingKey(5)
 	viewer := &core.Viewer{ID: 7}
 	now := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
@@ -116,7 +116,7 @@ func TestBorrowedTrickplayRevalidatesBeforeTiles(t *testing.T) {
 	}
 	b.sessions["s"].sourcePinned = false
 	b.ensureTrickplay(context.Background(), b.sessions["s"], 5*time.Second)
-	if len(provider.ensured) != 1 || provider.ensured[0].ReleaseID != "rel-1" || provider.ensured[0].InputURL == "" {
+	if len(provider.ensured) != 1 || provider.ensured[0].ReleaseID != logicalPreviewKey("rel-1") || provider.ensured[0].InputURL == "" {
 		t.Fatal(provider.ensured)
 	}
 	if provider.closed {
@@ -125,7 +125,7 @@ func TestBorrowedTrickplayRevalidatesBeforeTiles(t *testing.T) {
 }
 
 func TestBrokerDoesNotCancelSharedTrickplay(t *testing.T) {
-	provider := &memTrickplay{frames: map[string][]byte{"rel-1": tinyJPEG(t)}}
+	provider := &memTrickplay{frames: map[string][]byte{logicalPreviewKey("rel-1"): tinyJPEG(t)}}
 	item := core.RatingKey(5)
 	viewer := &core.Viewer{ID: 7}
 	now := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
@@ -176,7 +176,7 @@ func TestBrokerTrickplayLeasesReleaseAndFenceLateEnsure(t *testing.T) {
 	defer b.Close(ctx)
 	s := &brokerSession{public: frontend.Session{ID: "s", ViewerID: 7}, playID: "play"}
 	b.sessions["s"] = s
-	plex, err := provider.(core.TrickplayLeaser).AcquireTrickplay(ctx, core.TrickplaySource{ReleaseID: "rel-1", InputURL: "plex"})
+	plex, err := provider.(core.TrickplayLeaser).AcquireTrickplay(ctx, core.TrickplaySource{ReleaseID: logicalPreviewKey("rel-1"), InputURL: "plex"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestBrokerTrickplayLeasesReleaseAndFenceLateEnsure(t *testing.T) {
 	if err := b.stopLocked(ctx, s); err != nil {
 		t.Fatal(err)
 	}
-	if len(raw.canceled) != 1 || raw.canceled[0] != "rel-2" {
+	if len(raw.canceled) != 1 || raw.canceled[0] != logicalPreviewKey("rel-2") {
 		t.Fatal("stop failed to release current lease", raw.canceled)
 	}
 	n := len(raw.ensured)
@@ -201,7 +201,7 @@ func TestBrokerTrickplayLeasesReleaseAndFenceLateEnsure(t *testing.T) {
 		t.Fatal("late Ensure resurrected stopped session")
 	}
 	plex.Release(true)
-	if len(raw.canceled) != 2 || raw.canceled[1] != "rel-1" {
+	if len(raw.canceled) != 2 || raw.canceled[1] != logicalPreviewKey("rel-1") {
 		t.Fatal("old release leaked", raw.canceled)
 	}
 	if raw.closed {
@@ -248,4 +248,8 @@ func TestTrickplayBlockedRevisionDoesNotBlockStop(t *testing.T) {
 	if len(raw.ensured) != 0 {
 		t.Fatal("blocked revision published after stop")
 	}
+}
+
+func logicalPreviewKey(id string) string {
+	return core.TrickplayCacheKey(&core.PlaySession{Resolution: &core.Resolution{Release: core.Release{ID: id}}})
 }

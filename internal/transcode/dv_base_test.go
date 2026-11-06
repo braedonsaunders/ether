@@ -172,3 +172,52 @@ func TestUnsupportedDVProfileDeliversHDR10Base(t *testing.T) {
 		t.Fatalf("DV5 cannot strip to HDR10: %+v", d)
 	}
 }
+
+// The profile, compatibility id, mux plan, and HLS advertisement must agree.
+func TestAndroidDVVariantDelivery(t *testing.T) {
+	for _, source := range []string{"mkv", "mp4"} {
+		for _, output := range []string{ContainerMatroska, ContainerFMP4} {
+			for _, tc := range []struct {
+				name            string
+				profile, compat int
+				transfer        string
+				dv, copy, strip bool
+			}{
+				{"P7 FEL or MEL", 7, 6, "smpte2084", true, true, true},
+				{"P8.1", 8, 1, "smpte2084", true, true, false},
+				{"P8.4", 8, 4, "arib-std-b67", true, false, false},
+				{"P8 unknown base", 8, 0, "smpte2084", true, false, false},
+				{"unknown profile", 0, 0, "unknown", true, false, false},
+				{"P5 supported", 5, 0, "unknown", true, true, false},
+				{"P5 denied", 5, 0, "unknown", false, false, false},
+			} {
+				t.Run(source+"/"+output+"/"+tc.name, func(t *testing.T) {
+					info := mustParse(t, "mkv_dv_p8.json")
+					info.Container = source
+					v := info.Video()
+					v.DolbyVisionProfile = tc.profile
+					v.DolbyVisionCompatibilityID = tc.compat
+					v.ColorTransfer = tc.transfer
+					caps := hdr10TV
+					caps.Platform = "Android"
+					caps.Device = "SHIELD Android TV"
+					caps.DolbyVision = tc.dv
+					caps.HLSContainers = []string{output}
+					d := Decide(info, caps, allow(), Policy{})
+					if d.VideoCopy != tc.copy || d.StripDolbyVision != tc.strip {
+						t.Fatalf("%+v", d)
+					}
+					if tc.strip || !tc.copy {
+						if tc.strip {
+							v.CodecString = "dvh1.07.06"
+						}
+						attrs := HLSVariantAttributes(info, d)
+						if strings.Contains(attrs, "dvh1") || strings.Contains(attrs, "SUPPLEMENTAL-CODECS") {
+							t.Fatal(attrs)
+						}
+					}
+				})
+			}
+		}
+	}
+}

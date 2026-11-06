@@ -120,6 +120,22 @@ func TestPhotoTranscodePosterProvider(t *testing.T) {
 	if err != nil || decoded.Width != 200 {
 		t.Fatal(decoded, err)
 	}
+	for _, product := range []string{"Plex for Android (Mobile)", "Plex for Android (TV)"} {
+		target := "/photo/:/transcode?width=200&format=png&url=" + url.QueryEscape("https://previous-connection.invalid"+md.Thumb)
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			r := f.request(t, method, target, map[string]string{"X-Plex-Product": product})
+			if r.Code != 200 || r.Header().Get("Content-Type") != "image/png" || r.Header().Get("Location") != "" {
+				t.Fatalf("%s provider artwork: %d %s", product, r.Code, r.Header())
+			}
+			if method == http.MethodGet {
+				if _, kind, err := image.DecodeConfig(bytes.NewReader(r.Body.Bytes())); err != nil || kind != "png" {
+					t.Fatalf("provider output: %s %v", kind, err)
+				}
+			} else if r.Body.Len() != 0 {
+				t.Fatal("HEAD body")
+			}
+		}
+	}
 	old := md.Thumb
 	cfg.APIKey = "changed"
 	md = f.srv.metadata(context.Background(), pr, &fightClub, renderOpts{})

@@ -110,10 +110,13 @@ func rangeOK(v *core.StreamInfo, caps core.ClientCaps) string {
 		}
 		return fmt.Sprintf("client lacks HDR (%s source)", hdrLabel(v))
 	case rangeDV:
-		if SupportsDVProfile(caps, v.DolbyVisionProfile) {
+		if supportsDVStream(caps, v) {
 			return ""
 		}
 		base, ok := dvBaseLayer(v)
+		if androidClient(caps) && !hasHDR10Base(v, caps) {
+			return fmt.Sprintf("client lacks compatible Dolby Vision variant (profile %d): video conversion required", v.DolbyVisionProfile)
+		}
 		if !ok {
 			return fmt.Sprintf("client lacks Dolby Vision (profile %d has no compatible base layer)", v.DolbyVisionProfile)
 		}
@@ -595,7 +598,7 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 			d.AudioCodec = a.Codec
 		}
 		d.Reason = fmt.Sprintf("direct play: %s supports %s", name, describeSource(info, v, a))
-		if v != nil && v.DolbyVision && !SupportsDVProfile(caps, v.DolbyVisionProfile) {
+		if v != nil && v.DolbyVision && !supportsDVStream(caps, v) {
 			if base, ok := dvBaseLayer(v); ok {
 				d.Reason += "; using compatible " + base + " base layer"
 			}
@@ -656,7 +659,7 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 		// layer (above). Once Ether copies the stream anyway, deliver a real
 		// base-only stream: keeping the configuration and RPUs makes some
 		// players pick a Dolby Vision decoder for an HDR10 fallback (#328).
-		d.StripDolbyVision = hdr10Base || (hasHDR10Base(v, caps) && !SupportsDVProfile(caps, v.DolbyVisionProfile))
+		d.StripDolbyVision = hdr10Base || (hasHDR10Base(v, caps) && !supportsDVStream(caps, v))
 		if d.StripDolbyVision && !hdr10Base {
 			why = append([]string{fmt.Sprintf("client lacks Dolby Vision profile %d: delivering its HDR10 base layer", v.DolbyVisionProfile)}, why...)
 		}
@@ -673,7 +676,7 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 			d.BitrateKbps = info.BitrateKbps - copiedAudioKbps(a) + remuxKbps
 		}
 		parts := []string{fmt.Sprintf("remux to HLS (%s)", d.Container)}
-		if v != nil && v.DolbyVision && !SupportsDVProfile(caps, v.DolbyVisionProfile) {
+		if v != nil && v.DolbyVision && !supportsDVStream(caps, v) {
 			if base, ok := dvBaseLayer(v); ok {
 				parts = append(parts, "using compatible "+base+" base layer")
 			}
@@ -735,6 +738,14 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 		codec = "hevc"
 	case supportsHEVC && pol.HEVCHardware && minPositive(heightCap, srcH) > 1080:
 		codec = "hevc"
+	}
+
+	// Explicit protocol targets retain their declared preference order.
+	for _, preferred := range caps.TranscodeVideoCodecs {
+		if preferred == "h264" && supportsH264 && !keepHDR || preferred == "hevc" && supportsHEVC && pol.HEVCEncoder {
+			codec = preferred
+			break
+		}
 	}
 
 	audioCopy, audioCodec, audioKbps, audioNote = pceAudioPlan(a, caps, opts, info.Container, codec, audioCopy, audioCodec, audioKbps, audioNote)
@@ -864,7 +875,7 @@ func hdr10BaseReason(v *core.StreamInfo, caps core.ClientCaps, opts core.DecideO
 	}
 	id := clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: caps.Device, Version: caps.Version}
 	switch {
-	case !SupportsDVProfile(caps, v.DolbyVisionProfile) && androidClient(caps):
+	case !supportsDVStream(caps, v) && androidClient(caps):
 		// Android players can pick a Dolby Vision decoder for a file whose
 		// profile the device lacks (#328); desktop players show the HDR10
 		// base of the same file directly, so only Android loses direct play.
@@ -901,5 +912,27 @@ func HasHDR10Base(v *core.StreamInfo, caps core.ClientCaps) bool { return hasHDR
 // androidClient reports an Android player (Plex sends Platform "Android";
 // some callers only know the product name).
 func androidClient(caps core.ClientCaps) bool {
-	return strings.EqualFold(caps.Platform, "Android") || strings.Contains(strings.ToLower(caps.Product), "android")
+	identity := strings.ToLower(caps.Platform + " " + caps.Product + " " + caps.Device)
+	return strings.Contains(identity, "android") || strings.Contains(identity, "shield") || strings.Contains(identity, "google tv")
+}
+
+// A profile number alone does not describe an Android decoder's input. In
+// particular profile 8.4 is HLG, unlike the HDR10-compatible 8.1 supported by
+// Shield. Unknown variants must be converted rather than copied with DV tags.
+func supportsDVStream(caps core.ClientCaps, v *core.StreamInfo) bool {
+	if !SupportsDVProfile(caps, v.DolbyVisionProfile) {
+		return false
+	}
+	if !androidClient(caps) {
+		return true
+	}
+	switch v.DolbyVisionProfile {
+	case 5:
+		return v.DolbyVisionELPresent == nil || !*v.DolbyVisionELPresent
+	case 8:
+		return v.DolbyVisionCompatibilityID == 1 &&
+			(v.DolbyVisionBLPresent == nil || *v.DolbyVisionBLPresent) &&
+			(v.DolbyVisionELPresent == nil || !*v.DolbyVisionELPresent)
+	}
+	return false
 }

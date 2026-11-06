@@ -325,6 +325,9 @@ func (s *Session) finish(r *run) {
 	}
 	log := s.log.With("run", r.seq)
 	if s.liveInput && s.cur == r {
+		if err != nil && s.retryMissingLiveAudioLocked(r) {
+			return
+		}
 		if err != nil && r.hw && !s.forceCPU && looksLikeEncoderFailure(r.stderr.String(), r.spec) {
 			s.forceCPU = true
 			log.Warn("live hardware encoder failed; falling back to CPU", "hwaccel", r.spec.Accel.Name, "segment", r.next())

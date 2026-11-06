@@ -45,3 +45,32 @@ func TestPartSelectionValueGrammars(t *testing.T) {
 		}
 	}
 }
+
+// Part identity has priority over malformed track values, and a refusal
+// must leave the previously selected title untouched.
+func TestPartSelectionResolvesPartBeforeValues(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	for _, part := range []string{"abc", "999", "1000000000999999", "8000000000000001"} {
+		for _, query := range []string{"", "?audioStreamID=0", "?subtitleStreamID=-2", "?audioStreamID=-1", "?subtitleStreamID=invalid"} {
+			for _, method := range []string{http.MethodPut, http.MethodPost} {
+				rec := f.request(t, method, "/library/parts/"+part+query, nil)
+				if rec.Code != http.StatusNotFound {
+					t.Errorf("%s %s%s: %d", method, part, query, rec.Code)
+				}
+			}
+		}
+	}
+}
+
+func TestPartSelectionRefusesFullPartKeys(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	for _, path := range []string{"/library/parts/1000000000000550/123/file.mkv", "/library/parts/1000000000000550/123"} {
+		for _, method := range []string{http.MethodPut, http.MethodPost} {
+			if rec := f.request(t, method, path+"?subtitleStreamID=0", nil); rec.Code != 404 {
+				t.Errorf("%s %s: %d", method, path, rec.Code)
+			}
+		}
+	}
+}

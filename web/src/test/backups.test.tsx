@@ -12,6 +12,8 @@ function backend() {
       const url = String(input);
       calls.push({ url, init });
       let data: unknown = {};
+      if (url.endsWith("/plex-servers"))
+        data = [{ id: 1, name: "Source Plex", url: "http://source.example:32400" }];
       if (url.endsWith("/users"))
         data = {
           users: [
@@ -64,9 +66,13 @@ describe("Backups & import", () => {
     render(<BackupsAndImport tab="import" />);
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/users"))).toBe(true));
     await choose("Ether viewer", "Alex");
-    fireEvent.change(screen.getByLabelText("Plex server URL"), {
-      target: { value: "http://source.example:32400" },
-    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Server" })).toBeEnabled());
+    await choose("Server", "Source Plex");
+    expect(screen.queryByLabelText("Plex server URL")).toBeNull();
+    expect(screen.getByRole("link", { name: "Manage Plex watch sync" })).toHaveAttribute(
+      "href",
+      "/ether/services/plexservers",
+    );
     fireEvent.change(screen.getByLabelText("Source viewer’s Plex token"), {
       target: { value: "fixture-token" },
     });
@@ -113,17 +119,16 @@ describe("Backups & import", () => {
 
   it("keeps snapshots and imports on separate tabs", async () => {
     backend();
-    const { rerender } = render(<BackupsAndImport />);
+    const { rerender } = render(<BackupsAndImport tab="import" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Server" })).toBeEnabled());
+    await choose("Server", "Source Plex");
+    rerender(<BackupsAndImport />);
     expect(await screen.findByLabelText("Back up every")).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Import from Plex" })).toBeNull();
-    fireEvent.change(screen.getByLabelText("Plex server URL"), {
-      target: { value: "http://half-typed:32400" },
-    });
+    expect(screen.queryByRole("heading", { name: "One-time Plex import" })).toBeNull();
     rerender(<BackupsAndImport tab="import" />);
-    expect(screen.getByRole("heading", { name: "Import from Plex" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "One-time Plex import" })).toBeVisible();
     expect(screen.getByLabelText("Back up every")).not.toBeVisible();
-    // Switching tabs keeps what was typed.
-    expect(screen.getByLabelText("Plex server URL")).toHaveValue("http://half-typed:32400");
+    expect(screen.getByRole("button", { name: "Server" })).toHaveTextContent("Source Plex");
   });
 
   it("downloads snapshots only encrypted with a password it never stores", async () => {

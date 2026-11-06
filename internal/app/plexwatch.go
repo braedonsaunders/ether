@@ -138,6 +138,7 @@ func (a *App) buildPlexServers() error {
 		return nil
 	}
 	opts := plexwatch.ServersOptions{
+		Enabled:  func() bool { return a.cfg.Get().PlexServers.Enabled },
 		DB:       a.db,
 		State:    a.state,
 		Sealer:   a.cfg,

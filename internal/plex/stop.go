@@ -19,7 +19,7 @@ func (s *Server) NoteOwnerStop(id, reason string) {
 			defer unlock()
 			for _, e := range s.sessions.list() {
 				if found, ok := s.d.Playback.SessionFor(e.user.ID, e.client.ClientID, e.key); ok && found.ID == id {
-					s.setTermination(e.id, reason)
+					s.setOwnerTermination(e.id, reason)
 				}
 			}
 			return

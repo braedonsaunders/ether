@@ -70,19 +70,63 @@ func issuePrivateSnapshot(d clusterconfig.Deployment, self nodewire.Identity) (*
 // privateMember always queries current DB authority; no cached success survives
 // a lost heartbeat, changed boot, removal, unknown role, or database outage.
 func (a *App) privateMember(ctx context.Context, id nodewire.Identity) (cluster.Node, error) {
+	return a.privateMemberObserved(ctx, id, nil)
+}
+
+// The optional snapshot is local to readiness reconciliation; peer authorization
+// keeps the same query, checks and denied result without emitting diagnostics.
+func (a *App) privateMemberObserved(ctx context.Context, id nodewire.Identity, observation *privateReadinessSnapshot) (cluster.Node, error) {
+	if observation != nil {
+		observation.reason = readinessCluster
+		observation.at = time.Now()
+	}
 	if id.Cluster != a.cfg.Get().Server.MachineIdentifier {
 		return cluster.Node{}, nodewire.ErrDenied
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
+	if observation != nil {
+		observation.deadline, _ = ctx.Deadline()
+	}
 	nodes, err := a.cluster.AllNodes(ctx)
 	if err != nil {
+		if observation != nil {
+			observation.reason = readinessRead
+			observation.at = time.Now()
+			observation.errorClass = privateReadinessError(err)
+			observation.deadline, _ = ctx.Deadline()
+		}
 		return cluster.Node{}, nodewire.ErrDenied
 	}
+	if observation != nil {
+		observation.reason = readinessMissing
+		observation.at = time.Now()
+	}
 	for _, n := range nodes {
-		age := time.Since(n.LastSeen)
+		now := time.Now()
+		age := now.Sub(n.LastSeen)
 		if n.ID == id.NodeID && n.Incarnation == id.Boot && age >= -time.Second && age < clusterLiveAfter && n.Live && n.Caps.Roles.Validate() == nil {
+			if observation != nil {
+				observation.at, observation.memberAt, observation.lastSeen, observation.age, observation.hasMember = now, now, n.LastSeen, age, true
+			}
 			return n, nil
+		}
+		// Classify only after the unchanged authority decision. Reaching the
+		// default means role validation failed; do not call it a second time.
+		if observation != nil && n.ID == id.NodeID {
+			switch {
+			case n.Incarnation != id.Boot:
+				observation.reason = readinessBoot
+			case age < -time.Second:
+				observation.reason = readinessFuture
+			case age >= clusterLiveAfter:
+				observation.reason = readinessStale
+			case !n.Live:
+				observation.reason = readinessNotLive
+			default:
+				observation.reason = readinessRoles
+			}
+			observation.at, observation.memberAt, observation.lastSeen, observation.age, observation.hasMember = now, now, n.LastSeen, age, true
 		}
 	}
 	return cluster.Node{}, nodewire.ErrDenied

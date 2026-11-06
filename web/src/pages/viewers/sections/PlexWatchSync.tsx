@@ -102,19 +102,19 @@ export function PlexWatchSync({ viewerId, plexId }: { viewerId: number; plexId: 
   if (st.problem === "unsupported") {
     const account = st.connected || (st.accountMatch && !!st.username);
     return (
-      <SettingsSection>
-        <h2 className="flex items-center gap-2 px-5 py-4 text-sm font-semibold">
-          {t("Plex account watch state")}
-          <Badge variant="secondary">{t("Unavailable")}</Badge>
-        </h2>
-        <p className="px-5 pb-4 text-sm text-fg-muted">
-          {t(
-            "Plex doesn't let other servers sync watch state. Plex accepts this only from its own servers, so Ether can't send or import watched state through a Plex account. Watch state still syncs between this viewer's Ether apps.",
-          )}
+      <SettingsSection
+        title={t("Plex watch sync")}
+        description={t("Sync watched marks with other Plex Media Servers you run alongside Ether.")}
+      >
+        <p className="px-5 py-4 text-sm">
+          <a href="/ether/services/plexservers" className="text-primary hover:underline">
+            {t("Manage Plex watch sync")}
+          </a>
         </p>
         {account ? (
           <SettingsRow
-            title={t("Connection")}
+            title={t("Plex account watch state")}
+            description={<Badge variant="secondary">{t("Unavailable")}</Badge>}
             control={
               <div className="flex items-center gap-2">
                 {st.username ? <span>{st.username}</span> : null}

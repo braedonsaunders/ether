@@ -8,23 +8,48 @@ import (
 	"github.com/braedonsaunders/ether/internal/nodewire/outbound"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
 const PreparedBytesPath = "/cluster/playback/prepared-bytes"
 const preparedOperationHeader = "X-Ether-Prepared-Operation"
 
-func (r *Runtime) preparationCurrent(c context.Context, peer nodewire.Identity, operation string) (PreparedSource, error) {
+type preparationUse struct {
+	Prepared        PreparedSource
+	Viewer          int64
+	ActivityMu      *sync.Mutex
+	ActivityVersion *uint64
+}
+
+// beginPreparationUse seals admission against exact terminal receipt publication.
+// The caller holds the returned use across all outside-lock policy/acquisition
+// or activity work and calls end only after it can no longer mutate/use source.
+func (r *Runtime) beginPreparationUse(peer nodewire.Identity, operation string) (preparationUse, func(), error) {
 	key := peer.NodeID + "/" + peer.Boot + "/" + operation
 	r.mu.Lock()
 	entry := r.preparations[key]
 	if entry == nil || entry.peer != peer || !entry.finished || entry.retiring {
 		r.mu.Unlock()
-		return PreparedSource{}, ErrDenied
+		return preparationUse{}, nil, ErrDenied
 	}
-	result := entry.result
-	viewerID := entry.viewer
+	entry.operations++
+	prepared := entry.result
+	prepared.Info = core.CloneMediaInfo(prepared.Info)
+	use := preparationUse{Prepared: prepared, Viewer: entry.viewer, ActivityMu: entry.activityMu, ActivityVersion: entry.activityVersion}
 	r.mu.Unlock()
+	var once sync.Once
+	end := func() { once.Do(func() { r.mu.Lock(); entry.operations--; r.mu.Unlock() }) }
+	return use, end, nil
+}
+
+func (r *Runtime) preparationCurrent(c context.Context, peer nodewire.Identity, operation string) (PreparedSource, error) {
+	use, end, err := r.beginPreparationUse(peer, operation)
+	if err != nil {
+		return PreparedSource{}, err
+	}
+	defer end()
+	result, viewerID := use.Prepared, use.Viewer
 	if r.o.MemberRole(c, peer, config.RoleServer) != nil || r.o.MemberRole(c, r.o.Self, config.RoleSource) != nil {
 		return PreparedSource{}, ErrDenied
 	}
@@ -49,6 +74,12 @@ func (r *Runtime) preparedBytes(w http.ResponseWriter, q *http.Request) {
 		http.Error(w, "denied", 401)
 		return
 	}
+	_, end, e := r.beginPreparationUse(peer, q.Header.Get(preparedOperationHeader))
+	if e != nil {
+		http.Error(w, "denied", 403)
+		return
+	}
+	defer end()
 	result, e := r.preparationCurrent(q.Context(), peer, q.Header.Get(preparedOperationHeader))
 	if e != nil {
 		http.Error(w, "denied", 403)

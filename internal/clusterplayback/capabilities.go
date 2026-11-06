@@ -110,5 +110,5 @@ func (r *Runtime) workerCapabilities(ctx context.Context, id nodewire.Identity, 
 	return intersectCapabilities(caps, r.o.RemoteCapabilities), nil
 }
 func intersectCapabilities(a, b remotetranscode.Capabilities) remotetranscode.Capabilities {
-	return remotetranscode.Capabilities{HLS: a.HLS && b.HLS, SegmentSeek: a.SegmentSeek && b.SegmentSeek, DASH: a.DASH && b.DASH, HTTP: a.HTTP && b.HTTP, ABR: a.ABR && b.ABR, SoftSubtitles: a.SoftSubtitles && b.SoftSubtitles, Controls: a.Controls && b.Controls, Keyframes: a.Keyframes && b.Keyframes, Observations: a.Observations && b.Observations}
+	return remotetranscode.Capabilities{HLS: a.HLS && b.HLS, SegmentSeek: a.SegmentSeek && b.SegmentSeek, DASH: a.DASH && b.DASH, HTTP: a.HTTP && b.HTTP, ABR: a.ABR && b.ABR, SoftSubtitles: a.SoftSubtitles && b.SoftSubtitles, Controls: a.Controls && b.Controls, Keyframes: a.Keyframes && b.Keyframes, Observations: a.Observations && b.Observations, RecoveryStart: a.RecoveryStart && b.RecoveryStart}
 }

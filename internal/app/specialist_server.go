@@ -44,7 +44,7 @@ func (a *App) buildServerRole(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	runtime := a.deployment.playback.(*clusterplayback.Runtime)
-	a.brokerPlayback, err = clusterplayback.NewRemotePlayback(runtime, clusterplayback.RemotePlaybackOptions{Capacity: 4096, SelectSource: a.selectPrivateSource, Estimate: func(_ context.Context, t *core.Title, caps core.ClientCaps) core.MediaInfo {
+	a.brokerPlayback, err = clusterplayback.NewRemotePlayback(runtime, clusterplayback.RemotePlaybackOptions{IdleTimeout: specialistPlaybackIdleTimeout, Capacity: 4096, SelectSource: a.selectPrivateSource, Estimate: func(_ context.Context, t *core.Title, caps core.ClientCaps) core.MediaInfo {
 		return playback.EstimateInfo(t, caps, resolver.SelectProfile(a.cfg.Read().Quality, caps, nil))
 	}})
 	if err != nil {

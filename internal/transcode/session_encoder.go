@@ -233,6 +233,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	}
 	s.seekRampSeg = -1
 	spec := runSpec{
+		SilenceAudio:         s.silenceAudio,
 		NormalizeNegativeDTS: s.normalizeNegativeDTS,
 		RTXTimeline:          s.rtxTimeline,
 		AudioGainDB:          s.audioMatch.gain,
@@ -257,6 +258,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		Rate:                 rp.rate,
 	}
 	s.normalizeNegativeDTS = false
+	s.silenceAudio = false
 	if s.softSubtitleStream != nil && s.softSubtitleInputIndex >= 0 {
 		spec.SoftSubtitleIndex = s.softSubtitleInputIndex
 		var pathErr error

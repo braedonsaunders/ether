@@ -13,7 +13,7 @@ import (
 // The same fixed dedicated Manager must be used for preflight and actual start;
 // this is not a promise of future capacity or successful device/process execution.
 func (m *Manager) SupportsDistributedRequest(req core.HLSRequest) bool {
-	if m == nil || req.Info.Estimated || len(req.Info.Streams) > 64 || len(req.Info.Chapters) > 128 || req.StartOffset < 0 || req.SegmentDuration < 0 || req.SegmentDuration > time.Minute || req.LiveInput || req.CopyTimestamps || len(req.SlateText) > 0 || len(req.InputHeaders) > 0 || req.InputLease != nil || !ValidateDistributedKeyframes(req.Info) || !distributedRequestSize(req) {
+	if m == nil || req.RecoveryStart != nil || req.Info.Estimated || len(req.Info.Streams) > 64 || len(req.Info.Chapters) > 128 || req.StartOffset < 0 || req.SegmentDuration < 0 || req.SegmentDuration > time.Minute || req.LiveInput || req.CopyTimestamps || len(req.SlateText) > 0 || len(req.InputHeaders) > 0 || req.InputLease != nil || !ValidateDistributedKeyframes(req.Info) || !distributedRequestSize(req) {
 		return false
 	}
 	for _, stream := range req.Info.Streams {

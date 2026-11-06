@@ -39,6 +39,10 @@ func (s *Server) handleStartHTTP(w http.ResponseWriter, r *http.Request) {
 		writePlaybackStatus(w, http.StatusBadRequest)
 		return
 	}
+	if !s.decisionArmed(pr, p.key) {
+		writePlaybackStatus(w, http.StatusBadRequest)
+		return
+	}
 	p.protocol = core.ProtocolHTTP
 	p.opts.Protocol = core.ProtocolHTTP
 	unlockEncoder, lockErr := s.lockEncoder(ctx, p.sessionID)

@@ -24,6 +24,7 @@ type WorkerOptions struct {
 	Encoder         core.OwnedTranscoder
 }
 type execution struct {
+	acceptedStart             *AcceptedStartHandle
 	origin                    EvidenceOrigin
 	negativeBarrierGeneration uint64
 	backendInvoked            bool
@@ -155,7 +156,7 @@ func (w *Worker) ServeHTTP(out http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if m.Op == "start" {
-		if m.Start == nil || len(m.Start.ReleaseID) > 512 || m.Start.Identity != m.Identity || len(m.Start.Grant) == 0 || len(m.Start.Grant) > 4096 || !SupportsRequest(core.HLSRequest{SoftSubtitleStream: m.Start.SoftSubtitleStream, Protocol: m.Start.Protocol, ReleaseID: m.Start.ReleaseID, Info: startInfo(*m.Start), Decision: m.Start.Decision, StartOffset: m.Start.Offset, SegmentDuration: m.Start.SegmentDuration}, w.opts.Capabilities) {
+		if m.Start == nil || len(m.Start.ReleaseID) > 512 || m.Start.Identity != m.Identity || len(m.Start.Grant) == 0 || len(m.Start.Grant) > 4096 || !SupportsRequest(core.HLSRequest{RecoveryStart: core.CloneRecoveryStart(m.Start.RecoveryStart), SoftSubtitleStream: m.Start.SoftSubtitleStream, Protocol: m.Start.Protocol, ReleaseID: m.Start.ReleaseID, Info: startInfo(*m.Start), Decision: m.Start.Decision, StartOffset: m.Start.Offset, SegmentDuration: m.Start.SegmentDuration}, w.opts.Capabilities) {
 			http.Error(out, "unsupported start", 422)
 			return
 		}
@@ -176,7 +177,13 @@ func (w *Worker) ServeHTTP(out http.ResponseWriter, r *http.Request) {
 		http.Error(out, "invalid segment", 400)
 		return
 	}
-	if w.opts.Security.Authorize(r.Context(), peer, m.Op, m.Identity, m.Start) != nil {
+	authorizationStart := m.Start
+	if m.Start != nil && m.Start.RecoveryStart != nil {
+		copyStart := *m.Start
+		copyStart.RecoveryStart = core.CloneRecoveryStart(m.Start.RecoveryStart)
+		authorizationStart = &copyStart
+	}
+	if w.opts.Security.Authorize(r.Context(), peer, m.Op, m.Identity, authorizationStart) != nil {
 		http.Error(out, "operation denied", 403)
 		return
 	}
@@ -270,6 +277,7 @@ func reply(out http.ResponseWriter, state string, id Identity) {
 	_ = json.NewEncoder(out).Encode(status{State: state, Identity: id})
 }
 func (w *Worker) start(out http.ResponseWriter, r *http.Request, peer string, s Start) {
+	s.RecoveryStart = core.CloneRecoveryStart(s.RecoveryStart)
 	encoded, _ := json.Marshal(s)
 	hash := sha256.Sum256(encoded)
 	w.mu.Lock()
@@ -291,7 +299,7 @@ func (w *Worker) start(out http.ResponseWriter, r *http.Request, peer string, s 
 	if backend, ok := w.opts.Encoder.(interface{ SupportsDistributedRequest(core.HLSRequest) bool }); ok {
 		var planStart Start
 		_ = json.Unmarshal(encoded, &planStart)
-		plan := core.HLSRequest{ReleaseID: planStart.ReleaseID, Info: startInfo(planStart), Decision: planStart.Decision, StartOffset: planStart.Offset, SegmentDuration: planStart.SegmentDuration, Protocol: planStart.Protocol, SoftSubtitleStream: planStart.SoftSubtitleStream, RequireIndependentProof: planStart.IndependentProof}
+		plan := core.HLSRequest{RecoveryStart: core.CloneRecoveryStart(planStart.RecoveryStart), ReleaseID: planStart.ReleaseID, Info: startInfo(planStart), Decision: planStart.Decision, StartOffset: planStart.Offset, SegmentDuration: planStart.SegmentDuration, Protocol: planStart.Protocol, SoftSubtitleStream: planStart.SoftSubtitleStream, RequireIndependentProof: planStart.IndependentProof}
 		if !backend.SupportsDistributedRequest(plan) {
 			http.Error(out, "backend plan unsupported", 422)
 			return
@@ -319,6 +327,7 @@ func (w *Worker) start(out http.ResponseWriter, r *http.Request, peer string, s 
 	}
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	e := &execution{origin: EvidenceAcceptedStart, start: s, lease: LeaseState{Deadline: s.Expires.UTC(), Renewable: w.opts.ValidateRenewal != nil}, id: s.Identity, hash: hash, starting: true, cancel: cancel}
+	e.acceptedStart = w.newAcceptedStart(e)
 	w.records[s.Identity] = e
 	w.highest[key] = s.Identity.Generation
 	w.setMonotonicDeadline(e)
@@ -371,7 +380,7 @@ func (w *Worker) start(out http.ResponseWriter, r *http.Request, peer string, s 
 		// Backend receives separate nested slices/pointers; source renewal and duplicate
 		// starts continue comparing the original immutable payload.
 		backendInfo, backendDecision, backendSoft := startInfo(backendStart), backendStart.Decision, backendStart.SoftSubtitleStream
-		session, retirement, err = w.opts.Encoder.StartHLSOwned(ctx, core.HLSRequest{ReleaseID: s.ReleaseID, SessionID: executionID(s.Identity), ManifestSessionID: s.Identity.Session, InputURL: source.URL, InputLease: input, Info: backendInfo, Decision: backendDecision, StartOffset: s.Offset, SegmentDuration: s.SegmentDuration, RequireIndependentProof: s.IndependentProof, SoftSubtitleStream: backendSoft, Protocol: s.Protocol})
+		session, retirement, err = w.opts.Encoder.StartHLSOwned(ctx, core.HLSRequest{RecoveryStart: core.CloneRecoveryStart(backendStart.RecoveryStart), ReleaseID: s.ReleaseID, SessionID: executionID(s.Identity), ManifestSessionID: s.Identity.Session, InputURL: source.URL, InputLease: input, Info: backendInfo, Decision: backendDecision, StartOffset: s.Offset, SegmentDuration: s.SegmentDuration, RequireIndependentProof: s.IndependentProof, SoftSubtitleStream: backendSoft, Protocol: s.Protocol})
 	}
 	if err == nil && session != nil {
 		if w.opts.Capabilities.Controls {

@@ -208,7 +208,7 @@ export function Prerolls() {
         actions={
           <>
             <Button type="button" variant="outline" size="sm" onClick={() => setImporting(true)}>
-              <Download size={14} aria-hidden /> {t("Import from Plex Media Server")}
+              <Download size={14} aria-hidden /> {t("Import pre-roll paths")}
             </Button>
             <Button type="button" size="sm" onClick={() => open()}>
               <Plus size={14} aria-hidden /> {t("Add pre-roll")}
@@ -377,8 +377,10 @@ function ImportDrawer({
       open={open}
       onClose={onClose}
       size="md"
-      title={t("Import from Plex Media Server")}
-      description={t("Bring over the pre-roll videos you already use in Plex Media Server.")}
+      title={t("Import pre-roll paths")}
+      description={t(
+        "Copy pre-roll file paths from another Plex server. No server connection is added.",
+      )}
       footer={
         <div className="flex w-full justify-end gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

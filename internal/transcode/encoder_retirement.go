@@ -259,6 +259,7 @@ func (s *Session) RetireEncoder() error {
 	return nil
 }
 func (m *Manager) StartHLSOwned(ctx context.Context, req core.HLSRequest) (core.HLSSession, core.EncoderRetirement, error) {
+	req.RecoveryStart = core.CloneRecoveryStart(req.RecoveryStart)
 	l, err := m.reserveEncoder()
 	if err != nil {
 		return nil, nil, err

@@ -184,22 +184,25 @@ func (c *clusterState) liveNodes(ctx context.Context) map[string]bool {
 
 // sharedEntry is a playEntry as other nodes see it.
 type sharedEntry struct {
-	ID          string               `json:"id"`
-	SessionKey  int                  `json:"sessionKey"`
-	User        core.User            `json:"user"`
-	Client      sharedClient         `json:"client"`
-	Key         core.RatingKey       `json:"key"`
-	State       string               `json:"state"`
-	OffsetMS    int64                `json:"offset"`
-	DurationMS  int64                `json:"duration"`
-	PQItemID    int64                `json:"playQueueItemID,omitempty"`
-	TranscodeID string               `json:"transcodeID,omitempty"`
-	Transcode   *model.TranscodeSess `json:"transcode,omitempty"`
-	StartedAt   time.Time            `json:"startedAt"`
-	UpdatedAt   time.Time            `json:"updatedAt"`
+	PlayingSeen  bool                 `json:"playingSeen,omitempty"`
+	DecisionSeen bool                 `json:"decisionSeen,omitempty"`
+	ID           string               `json:"id"`
+	SessionKey   int                  `json:"sessionKey"`
+	User         core.User            `json:"user"`
+	Client       sharedClient         `json:"client"`
+	Key          core.RatingKey       `json:"key"`
+	State        string               `json:"state"`
+	OffsetMS     int64                `json:"offset"`
+	DurationMS   int64                `json:"duration"`
+	PQItemID     int64                `json:"playQueueItemID,omitempty"`
+	TranscodeID  string               `json:"transcodeID,omitempty"`
+	Transcode    *model.TranscodeSess `json:"transcode,omitempty"`
+	StartedAt    time.Time            `json:"startedAt"`
+	UpdatedAt    time.Time            `json:"updatedAt"`
 }
 
 type sharedClient struct {
+	ProfileName     string `json:"profileName,omitempty"`
 	ClientID        string `json:"clientID"`
 	Product         string `json:"product,omitempty"`
 	Version         string `json:"version,omitempty"`
@@ -215,12 +218,12 @@ type sharedClient struct {
 }
 
 func (s *Server) toShared(e playEntry) sharedEntry {
-	se := sharedEntry{ID: e.id, SessionKey: e.sessionKey, User: e.user, Key: e.key, State: e.state,
+	se := sharedEntry{ID: e.id, SessionKey: e.sessionKey, DecisionSeen: e.decisionSeen, PlayingSeen: e.playingSeen, User: e.user, Key: e.key, State: e.state,
 		OffsetMS: e.offset.Milliseconds(), DurationMS: e.duration.Milliseconds(), PQItemID: e.playQueueItemID,
 		TranscodeID: e.transcodeID, StartedAt: e.startedAt, UpdatedAt: e.updatedAt,
 		Client: sharedClient{ClientID: e.client.ClientID, Product: e.client.Product, Version: e.client.Version,
 			Platform: e.client.Platform, PlatformVersion: e.client.PlatformVersion, Device: e.client.Device,
-			DeviceName: e.client.DeviceName, Model: e.client.Model, Vendor: e.client.Vendor,
+			DeviceName: e.client.DeviceName, Model: e.client.Model, Vendor: e.client.Vendor, ProfileName: e.client.ProfileName,
 			SessionID: e.client.SessionID, Remote: e.client.Remote}}
 	if e.client.RemoteIP.IsValid() {
 		se.Client.RemoteIP = e.client.RemoteIP.String()
@@ -235,13 +238,13 @@ func (s *Server) toShared(e playEntry) sharedEntry {
 }
 
 func (se sharedEntry) entry(node string) playEntry {
-	e := playEntry{id: se.ID, sessionKey: se.SessionKey, user: se.User, key: se.Key, state: se.State,
+	e := playEntry{id: se.ID, sessionKey: se.SessionKey, decisionSeen: se.DecisionSeen, playingSeen: se.PlayingSeen, user: se.User, key: se.Key, state: se.State,
 		offset: time.Duration(se.OffsetMS) * time.Millisecond, duration: time.Duration(se.DurationMS) * time.Millisecond,
 		playQueueItemID: se.PQItemID, transcodeID: se.TranscodeID, startedAt: se.StartedAt, updatedAt: se.UpdatedAt,
 		node: node, remoteTS: se.Transcode,
 		client: Request{ClientID: se.Client.ClientID, Product: se.Client.Product, Version: se.Client.Version,
 			Platform: se.Client.Platform, PlatformVersion: se.Client.PlatformVersion, Device: se.Client.Device,
-			DeviceName: se.Client.DeviceName, Model: se.Client.Model, Vendor: se.Client.Vendor,
+			DeviceName: se.Client.DeviceName, Model: se.Client.Model, Vendor: se.Client.Vendor, ProfileName: se.Client.ProfileName,
 			SessionID: se.Client.SessionID, Remote: se.Client.Remote}}
 	e.client.RemoteIP = parseAddr(se.Client.RemoteIP)
 	return e

@@ -15,6 +15,7 @@ import (
 
 // runSpec is everything needed to build one ffmpeg HLS run.
 type runSpec struct {
+	SilenceAudio bool
 	// Only a retry of an initial run whose muxer wrote a wrapped tfdt.
 	NormalizeNegativeDTS bool
 	SoftSubtitlePath     string
@@ -239,12 +240,22 @@ func buildCodecArgs(s runSpec) []string {
 	d := s.Decision
 	v := s.Info.Video()
 	a := findStream(s.Info, d.AudioStream, "audio")
+	if s.SilenceAudio && a != nil {
+		if d.AudioCopy {
+			d.AudioCodec, d.AudioChannels, d.AudioSampleRate = a.Codec, a.Channels, a.SampleRate
+		}
+		d.AudioCopy = false
+	}
+
 	// An ADTS PCE may appear only in the source's first audio packet. Seeking
 	// the input past it leaves the AAC decoder without its channel layout.
 	// Prime the decoder with a short prefix, then seek the same source. When
 	// that is unavailable, only local/short seeks may decode from the start.
-	pceOutputSeek := s.Protocol == core.ProtocolHLS && d.Container != ContainerMatroska && s.Start > 0 && s.Info.Container == "mpegts" && a != nil && a.AACProgramConfig && !d.AudioCopy
-	pceInput, pcePrelude, pceBounded := pceSeekInput(s)
+	pceOutputSeek := !s.SilenceAudio && s.Protocol == core.ProtocolHLS && d.Container != ContainerMatroska && s.Start > 0 && s.Info.Container == "mpegts" && a != nil && a.AACProgramConfig && !d.AudioCopy
+	pceInput, pcePrelude, pceBounded := "", time.Duration(0), false
+	if !s.SilenceAudio {
+		pceInput, pcePrelude, pceBounded = pceSeekInput(s)
+	}
 	segDur := s.SegDur
 	if segDur <= 0 {
 		segDur = DefaultSegmentDuration
@@ -333,6 +344,21 @@ func buildCodecArgs(s runSpec) []string {
 		}
 		args = append(args, "-i", textSub.ExternalURL)
 	}
+	silenceInput := 1
+	if textSub != nil && textSub.External && textSub.ExternalURL != "" {
+		silenceInput++
+	}
+	if s.SilenceAudio && a != nil {
+		layout := fmt.Sprintf("%dc", decisionAudioChannels(d, a))
+		if s.Decision.AudioCopy {
+			switch a.ChannelLayout {
+			case "mono", "stereo", "2.1", "3.0", "4.0", "quad", "5.0", "5.0(side)", "5.1", "5.1(side)", "6.1", "7.1", "7.1(wide)":
+				layout = a.ChannelLayout
+			}
+		}
+
+		args = append(args, "-re", "-f", "lavfi", "-i", fmt.Sprintf("anullsrc=r=%d:cl=%s", decisionAudioRate(d), layout))
+	}
 	if pceOutputSeek {
 		// Output seeking rebases packet timestamps even with -copyts. Put
 		// the result back on the title clock used by the segment slotter.
@@ -352,7 +378,11 @@ func buildCodecArgs(s runSpec) []string {
 		}
 	}
 	if a != nil {
-		args = append(args, "-map", fmt.Sprintf("0:%d", a.Index))
+		if s.SilenceAudio {
+			args = append(args, "-map", fmt.Sprintf("%d:a:0", silenceInput))
+		} else {
+			args = append(args, "-map", fmt.Sprintf("0:%d", a.Index))
+		}
 	}
 	args = append(args, "-map_metadata", "-1", "-map_chapters", "-1", "-dn")
 	switch {

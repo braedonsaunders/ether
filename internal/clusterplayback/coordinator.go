@@ -15,6 +15,8 @@ import (
 )
 
 type execution struct {
+	initial                       *initialAdmission
+	output                        *bufferedSession
 	foreign                       bool
 	done                          chan struct{}
 	busy, reservePending, retired bool
@@ -62,11 +64,17 @@ func (r *Runtime) StartDistributedHLS(ctx context.Context, viewer int64, playID,
 // StartPreparedHLS composes a concrete remote source-owner preparation with the
 // same durable encoder placement. The broker's remote planning seam can use it.
 func (r *Runtime) StartPreparedHLS(ctx context.Context, viewer int64, prepared PreparedSource, q core.HLSRequest) (core.HLSSession, error) {
+	q = cloneAdmissionRequest(q)
 	playID, revision := prepared.PlayID, prepared.Revision
 	if r.o.Eligible(ctx, r.o.Self, config.RoleServer) != nil || r.o.Eligible(ctx, prepared.Owner, config.RoleSource) != nil {
 		return nil, ErrDenied
 	}
 	if !r.Supports(q) {
+		return nil, remotetranscode.ErrUnsupported
+	}
+	if q.RecoveryStart != nil && (q.RecoveryStart.Audio == nil || q.RecoveryStart.Audio.SourceRevision != revision) {
+		// A transported expectation cannot substitute another immutable source.
+		// Actual same-lease AU validation and held output proof remain mandatory.
 		return nil, remotetranscode.ErrUnsupported
 	}
 	if r.o.Decide == nil || viewer <= 0 || revision == "" {
@@ -152,7 +160,9 @@ func (r *Runtime) StartPreparedHLS(ctx context.Context, viewer int64, prepared P
 	if e != nil {
 		return nil, e
 	}
-	adapter, e := remotetranscode.NewAdapter(remotetranscode.AdapterOptions{Capabilities: capabilities, Endpoint: endpoint, Client: &http.Client{Transport: &http.Transport{TLSClientConfig: tc}, Timeout: 0}, RecheckServer: check, Assign: func(context.Context, core.HLSRequest) (remotetranscode.Assignment, error) {
+	adapter, e := remotetranscode.NewAdapter(remotetranscode.AdapterOptions{CommitStart: func(c context.Context, id remotetranscode.Identity, hash [32]byte) error {
+		return r.persistAdmission(c, x, id, hash)
+	}, Capabilities: capabilities, Endpoint: endpoint, Client: &http.Client{Transport: &http.Transport{TLSClientConfig: tc}, Timeout: 0}, RecheckServer: check, Assign: func(context.Context, core.HLSRequest) (remotetranscode.Assignment, error) {
 		return remotetranscode.Assignment{Identity: remoteIdentity(rt), Grant: bound.Stable, Expires: deadline}, nil
 	}, Decide: r.o.Decide, Hardware: r.o.Hardware, Capacity: 1})
 	if e != nil {
@@ -161,21 +171,21 @@ func (r *Runtime) StartPreparedHLS(ctx context.Context, viewer int64, prepared P
 	r.mu.Lock()
 	x.adapter = adapter
 	blocked := r.closed || x.stopping
+	if !blocked {
+		x.initial = newInitialAdmission(rt, q)
+		// The transport receives a separate mutable copy; callbacks cannot alter
+		// the retained original admission even on an uncertain start result.
+		q = cloneAdmissionRequest(x.initial.request)
+	}
 	r.mu.Unlock()
 	if blocked {
 		return nil, ErrPending
 	}
-	q.InputURL = "" // No local URL crosses the execution protocol.
 	startCtx, cancelStart := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelStart()
 	hs, token, e := adapter.StartHLSOwned(startCtx, q)
-	r.mu.Lock()
-	x.retirement = token
-	if s, ok := token.(*remotetranscode.Session); ok {
-		x.session = s
-	}
-	r.mu.Unlock()
-	if e != nil || hs == nil {
+	committed := r.retainStartCommitment(x, token)
+	if e != nil || hs == nil || !committed {
 		return nil, ErrPending
 	}
 	running = true
@@ -185,6 +195,12 @@ func (r *Runtime) StartPreparedHLS(ctx context.Context, viewer int64, prepared P
 	if stopped {
 		r.Stop(q.SessionID)
 		return nil, ErrPending
+	}
+	if output := r.newBufferedSession(rt, q, x.session); output != nil {
+		r.mu.Lock()
+		x.output = output
+		r.mu.Unlock()
+		return output, nil
 	}
 	return hs, nil
 }
@@ -270,14 +286,32 @@ func (r *Runtime) Session(id string) (core.HLSSession, bool) {
 	r.mu.Lock()
 	x := r.executions[id]
 	var a *remotetranscode.Adapter
+	var output *bufferedSession
+	active := x != nil && !x.stopping && !x.retired && !r.closed
 	if x != nil {
 		a = x.adapter
+		output = x.output
 	}
 	r.mu.Unlock()
 	if a == nil {
 		return nil, false
 	}
-	return a.Session(id)
+	// Published local bytes remain available after an encoder failure, while
+	// exact current authority is rechecked at every cache request. This is not
+	// evidence of worker retirement or permission to replace it.
+	if output != nil {
+		if !active {
+			return nil, false
+		}
+		if output.published.Load() {
+			return output, true
+		}
+	}
+	session, ok := a.Session(id)
+	if ok && output != nil {
+		return output, true
+	}
+	return session, ok
 }
 func (r *Runtime) EncoderRetirement(id string) (core.EncoderRetirement, bool) {
 	r.mu.Lock()
@@ -338,6 +372,9 @@ func (r *Runtime) Tick(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 	result := r.tickReopenLives(ctx)
+	if err := r.persistPreparationReceipts(ctx); err != nil {
+		result = err
+	}
 	r.mu.Lock()
 	remote := r.remotePlayback
 	r.mu.Unlock()

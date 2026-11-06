@@ -47,6 +47,7 @@ type Servers struct {
 	client  string
 	log     *slog.Logger
 	now     func() time.Time
+	enabled func() bool
 	runMu   sync.Mutex
 	// viewerExists confirms a mapping target is a real Ether viewer.
 	viewerExists func(context.Context, int64) (bool, error)
@@ -62,6 +63,8 @@ type PMSCatalog interface {
 
 // ServersOptions configure Servers. HTTP defaults to the direct egress route.
 type ServersOptions struct {
+	// Enabled reads the live global switch. Nil preserves the legacy enabled behavior.
+	Enabled  func() bool
 	DB       *sql.DB
 	State    *state.State
 	Sealer   config.FieldSealer
@@ -109,7 +112,7 @@ func NewServers(o ServersOptions) (*Servers, error) {
 	}
 	return &Servers{db: o.DB, state: o.State, sealer: o.Sealer, guid: o.GUID, catalog: o.Catalog,
 		http: &clone, client: o.ClientID, log: o.Logger, now: o.Now, viewerExists: o.ViewerExists,
-		closed: make(chan struct{})}, nil
+		enabled: o.Enabled, closed: make(chan struct{})}, nil
 }
 
 // Close stops Run.

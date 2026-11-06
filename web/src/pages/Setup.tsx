@@ -1139,7 +1139,7 @@ export default function Setup() {
       {stepId === "account" && plexSelected && !plexLater ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
-            {t("Signs this server in to your Plex account so Plex apps can find it.")}
+            {t("Sign in to plex.tv so Plex apps can find Ether.")}
           </p>
           <p className="text-sm text-fg-muted">
             {t(

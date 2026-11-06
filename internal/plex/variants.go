@@ -31,6 +31,7 @@ package plex
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -259,7 +260,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 			rel = probedRelease
 		}
 		if rel != "" && pin.autoAligned != rel && vs[0].Auto && vs[0].Release.ID != rel {
-			vctx, cancel := context.WithTimeout(ctx, variantRenderBudget)
+			vctx, cancel := detailVariantContext(ctx, pr)
 			resolved, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: s.clientCaps(pr), User: pr.User, PlayedRelease: rel}, core.MaxVariants)
 			cancel()
 			var auto *core.ReleaseVariant
@@ -271,7 +272,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		}
 	} else {
 		caps := s.clientCaps(pr)
-		vctx, cancel := context.WithTimeout(ctx, variantRenderBudget)
+		vctx, cancel := detailVariantContext(ctx, pr)
 		resolved, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: caps, User: pr.User, PlayedRelease: probedRelease}, core.MaxVariants)
 		cancel()
 		if err != nil {
@@ -370,7 +371,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		}
 		m := buildMediaVariant(t, variant, stamp, s.variantIDs)
 		m.Part[0].Key = s.playIDs.partKey(ik, m.ID, m.Part[0].Key, now)
-		if s.d.Trickplay != nil && s.d.Trickplay.TrickplayAvailable(v.Release.ID) {
+		if s.previewAvailable(pr, t.Key, v.Release.ID) {
 			m.Part[0].Indexes = "sd"
 		}
 		// Every version carries a stream list, as on PMS; versions not yet
@@ -386,7 +387,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 			}
 			sel := resolveSelection(stored, info)
 			sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
-			m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User)
+			m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User, pr)
 		}
 		// The admitted version stays selected while its probe is pending,
 		// so the selection does not move from Auto to it once probed.
@@ -737,6 +738,16 @@ func (s *Server) preparePlayback(ctx context.Context, pr *Request, p *playReques
 		}
 		s.playIDs.installVersionFlow(ik, snap.variants, snap.until, s.now())
 	}
+	if p.decisionRequest && p.requestedPart == 0 {
+		if releases, issued := s.playIDs.releases(s.playIdentityFor(pr, p.key), s.now()); issued && len(releases) > 1 && (p.selectorCount != 1 || !p.selectorValid) {
+			return nil, errDecisionMediaIndex
+		}
+	}
+	if p.mediaIndex > 0 {
+		if releases, issued := s.playIDs.releases(s.playIdentityFor(pr, p.key), s.now()); !issued || p.mediaIndex >= len(releases) {
+			return nil, errDecisionMediaIndex
+		}
+	}
 	releaseID := s.resolveVariantSelection(ctx, pr, p)
 	p.variantRelease = releaseID
 	ps, err := s.prepareForRelease(ctx, pr.User, p.key, p.caps, releaseID)
@@ -840,7 +851,7 @@ func (s *Server) watchVariants(pr *Request, t *core.Title) {
 				return
 			case <-timer.C:
 			}
-			if retryAdmission {
+			if retryAdmission && s.detailSearchAllowed(pr) {
 				if refiller, ok := s.d.Variants.(core.SearchCacheRefiller); ok {
 					retryAdmission = refiller.RefillSearchCache(&title) == nil
 				}
@@ -854,4 +865,16 @@ func (s *Server) watchVariants(pr *Request, t *core.Title) {
 			}
 		}
 	}()
+}
+
+var errDecisionMediaIndex = errors.New("mediaIndex outside issued media list")
+
+// Foreground version discovery shares the TV detail probe's wait allowance.
+// A slow probe must not be followed by another three-second discovery wait.
+func detailVariantContext(ctx context.Context, pr *Request) (context.Context, context.CancelFunc) {
+	budget := variantRenderBudget
+	if pr != nil && !pr.detailWaitUntil.IsZero() {
+		budget = min(budget, time.Until(pr.detailWaitUntil))
+	}
+	return context.WithTimeout(ctx, budget)
 }

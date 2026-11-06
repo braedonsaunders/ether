@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -128,6 +129,20 @@ func New(db *sql.DB, opts Options) *Service {
 		opts.Now = time.Now
 	}
 	svc := &Service{db: db, opts: opts, previous: map[string]usenet.ProviderStats{}, viewings: newViewings(), dash: NewDashboard(DashboardOptions{Now: opts.Now})}
+	svc.dash.registry = newDeviceRegistry(db, opts.Logger)
+	if devices, err := svc.dash.registry.load(); err != nil {
+		opts.Logger.Warn("load device registry", "err", err)
+	} else {
+		for i := range devices {
+			device := devices[i]
+			if device.CreatedAt == 0 {
+				device.CreatedAt = opts.Now().Unix()
+				svc.dash.registry.update(device)
+			}
+			svc.dash.byClient[device.ClientIdentifier] = &device
+			svc.dash.byID[device.ID] = &device
+		}
+	}
 	if opts.Availability != nil {
 		svc.plays = store.NewOutbox(store.OutboxOptions[string, playRecord]{
 			Name: "playback stats", Availability: opts.Availability, Logger: opts.Logger, Merge: mergePlay,
@@ -183,13 +198,17 @@ func (s *Service) Record(ctx context.Context, p *core.PlaySession, ended bool, p
 	return s.record(ctx, r)
 }
 
-// Close writes play records still held from a database outage (bounded by
-// ctx); a no-op on a standalone server.
+// Close flushes device metadata and play records held through a database outage.
+// The caller controls the shutdown budget with ctx.
 func (s *Service) Close(ctx context.Context) error {
-	if s.plays == nil {
-		return nil
+	var err error
+	if s.dash.registry != nil {
+		err = s.dash.registry.close(ctx)
 	}
-	return s.plays.Close(ctx)
+	if s.plays != nil {
+		err = errors.Join(err, s.plays.Close(ctx))
+	}
+	return err
 }
 
 // OutboxStatus reports play records held through a database outage; ok is

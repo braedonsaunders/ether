@@ -18,6 +18,13 @@ func init() {
 	store.Register("clusterplayback", 1, `
 CREATE TABLE clusterplayback_routes (session TEXT PRIMARY KEY, generation BIGINT NOT NULL, route TEXT NOT NULL);
 `)
+	store.Register("clusterplayback", 2, `
+CREATE TABLE clusterplayback_preparation_receipts (
+ cluster TEXT NOT NULL, source TEXT NOT NULL, source_boot TEXT NOT NULL,
+ controller TEXT NOT NULL, controller_boot TEXT NOT NULL, operation_hash TEXT NOT NULL,
+ receipt TEXT NOT NULL,
+ PRIMARY KEY(cluster,source,source_boot,controller,controller_boot,operation_hash));
+`)
 }
 
 type Route struct {

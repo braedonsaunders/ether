@@ -14,6 +14,7 @@ import (
 // configSections maps URL section names to JSON field names on Config.
 var configSections = map[string]string{
 	"posters":      "posters",
+	"plexservers":  "plexServers",
 	"availability": "availability",
 	"markers":      "markers", "server": "server", "plex": "plex", "usenet": "usenet", "indexers": "indexers",
 	"cache": "cache", "catalog": "catalog", "resolver": "resolver", "quality": "quality",
@@ -123,6 +124,9 @@ func (h *Handler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			_ = json.Unmarshal(envelope, &fields)
 			break
 		}
+	}
+	if _, present := fields["plexServers"]; !present {
+		next.PlexServers = prev.PlexServers
 	}
 	var plexRaw json.RawMessage
 	hasPlex := false

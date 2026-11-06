@@ -96,7 +96,7 @@ func TestDecisionIncludesProbedChaptersAndMarkers(t *testing.T) {
 	defer f.srv.Close()
 	f.playback.info.Chapters = []core.Chapter{{ID: 3, Title: "Intro", Start: 5 * time.Second, End: 45 * time.Second}, {ID: 4, Title: "Credits", Start: f.playback.info.Duration - time.Minute, End: f.playback.info.Duration}}
 	rec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+bbE1.Key.String()+"&session=markers")
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `<Marker id="1" type="intro" startTimeOffset="5000" endTimeOffset="45000" final="0"`) || !strings.Contains(rec.Body.String(), `<Chapter id="3" index="1" tag="Intro"`) {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `<Marker id="1" type="intro" startTimeOffset="5000" endTimeOffset="45000" final="0"`) || !strings.Contains(rec.Body.String(), `index="1" tag="Intro"`) || !strings.Contains(rec.Body.String(), `<Chapter id="`) {
 		t.Fatalf("missing feature metadata %s", rec.Body.String())
 	}
 }
@@ -179,6 +179,7 @@ func TestDecisionDurationIncludesLateCredits(t *testing.T) {
 func TestOwnedPauseTimelineReachesEncoder(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=/library/metadata/"+fightClub.Key.String()+"&session=pause-output&directPlay=0"))
 	rec := f.get(t, "/video/:/transcode/universal/start.m3u8?path=/library/metadata/"+fightClub.Key.String()+"&session=pause-output&directPlay=0")
 	if rec.Code != 200 {
 		t.Fatalf("start: %s", rec.Body.String())

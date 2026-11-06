@@ -98,7 +98,7 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 		if o.CacheDir != "" {
 			c.Cache.Dir = o.CacheDir
 		}
-		c.Database = database
+		c.Database = provisionDatabaseSelection(c.Database, database)
 		c.Server.NodeRoles = append(config.NodeRoles(nil), o.Roles...)
 		c.Server.InternalAddress = o.InternalAddress
 		return nil
@@ -109,4 +109,11 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 		return err
 	}
 	return nil
+}
+
+// Deployment chooses the database endpoint, not the node's local migration
+// deferral policy. Retain that policy across successful restart/provisioning.
+func provisionDatabaseSelection(current, supplied config.Database) config.Database {
+	supplied.DeferMigrations = current.DeferMigrations
+	return supplied
 }

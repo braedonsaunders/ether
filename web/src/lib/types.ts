@@ -386,6 +386,7 @@ export interface EtherConfig {
   };
   trakt: { enabled: boolean; clientId: string; clientSecret: string };
   simkl?: { enabled: boolean; clientId: string; clientSecret: string };
+  plexServers?: { enabled: boolean };
   markers?: {
     theIntroDb: boolean;
     apiKey: string;

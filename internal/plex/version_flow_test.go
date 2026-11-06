@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -109,9 +110,12 @@ func TestVersionIdentityAcrossPlayFlow(t *testing.T) {
 				if got := ids(media("queue", qr)); !reflect.DeepEqual(got, before) {
 					t.Fatalf("queue ids %v, client holds %v", got, before)
 				}
-				// A stale stored choice must stay Auto for a singleton; it must never
-				// pick a candidate that arrived after that singleton was rendered.
+				// Use the only valid selector for a singleton; new candidates must
+				// not change its issued identity.
 				query := "path=" + urlEsc(path) + "&mediaIndex=1&partIndex=9&session=flow339&hasMDE=1&directPlay=1&directStream=1&protocol=hls"
+				if count < 2 {
+					query = strings.Replace(query, "mediaIndex=1", "mediaIndex=0", 1)
+				}
 				dec := ids(media("decision", f.get(t, "/video/:/transcode/universal/decision?"+query, headers...)))
 				selected := before[0]
 				if count > 1 {
@@ -208,6 +212,9 @@ func TestVersionFlowSharedAcrossNodes(t *testing.T) {
 				t.Fatalf("queue %v, held %v", got, before)
 			}
 			query := "path=" + urlEsc(path) + "&mediaIndex=1&session=ha339&directPlay=1&directStream=1&protocol=hls"
+			if count < 2 {
+				query = strings.Replace(query, "mediaIndex=1", "mediaIndex=0", 1)
+			}
 			dec := ids(fetch(b, "decision on B", "/video/:/transcode/universal/decision?"+query))
 			selected := before[0]
 			if count > 1 {

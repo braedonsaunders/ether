@@ -149,6 +149,10 @@ type ffprobeOutput struct {
 }
 
 type ffprobeStream struct {
+	ID             string            `json:"id"`
+	ChromaLocation string            `json:"chroma_location"`
+	CodedWidth     int               `json:"coded_width"`
+	CodedHeight    int               `json:"coded_height"`
 	FieldOrder     string            `json:"field_order"`
 	Extradata      string            `json:"extradata"`
 	Index          int               `json:"index"`
@@ -172,6 +176,7 @@ type ffprobeStream struct {
 	Refs           *int              `json:"refs"`
 	RFrameRate     string            `json:"r_frame_rate"`
 	AvgFrameRate   string            `json:"avg_frame_rate"`
+	SampleFmt      string            `json:"sample_fmt"`
 	BitsPerRaw     string            `json:"bits_per_raw_sample"`
 	SampleRate     string            `json:"sample_rate"`
 	Channels       int               `json:"channels"`
@@ -204,7 +209,7 @@ func ParseProbe(b []byte) (*core.MediaInfo, error) {
 		Container:   NormalizeContainer(out.Format.FormatName),
 		Duration:    parseSeconds(out.Format.Duration),
 		Size:        atoi64(out.Format.Size),
-		BitrateKbps: int(atoi64(out.Format.BitRate) / 1000),
+		BitrateKbps: probeKbps(atoi64(out.Format.BitRate)),
 	}
 	for _, c := range out.Chapters {
 		start, e1 := strconv.ParseFloat(c.Start, 64)
@@ -222,7 +227,7 @@ func ParseProbe(b []byte) (*core.MediaInfo, error) {
 		m.Streams = append(m.Streams, si)
 	}
 	if m.BitrateKbps == 0 && m.Size > 0 && m.Duration > 0 {
-		m.BitrateKbps = int(float64(m.Size*8) / m.Duration.Seconds() / 1000)
+		m.BitrateKbps = int(math.Round(float64(m.Size) * 8 / m.Duration.Seconds() / 1000))
 	}
 	// Only a complete successful MP4/Matroska probe can establish that its
 	// container has no DV configuration record. Partial best-effort probes
@@ -258,6 +263,9 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	}
 	si.Codec = NormalizeCodec(s.CodecName)
 	si.Profile = s.Profile
+	if strings.HasPrefix(s.CodecName, "pcm_") {
+		si.SampleFormat = s.SampleFmt
+	}
 	if s.Level != nil {
 		si.Level = *s.Level
 		if *s.Level >= 0 {
@@ -296,16 +304,24 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	if tag := s.CodecTagString; tag != "" && tag != "[0][0][0][0]" && tag != "0x0000" {
 		si.CodecTag = tag
 	}
+	si.CodedHeight = s.CodedHeight
+	si.CodedWidth = s.CodedWidth
+	if s.ChromaLocation != "unspecified" && s.ChromaLocation != "unknown" {
+		si.ChromaLocation = s.ChromaLocation
+	}
+	if id, err := strconv.ParseInt(s.ID, 0, 64); err == nil {
+		si.StreamIdentifier = strconv.FormatInt(id, 10)
+	}
 	si.TimeBase = probedTimeBase(s.TimeBase)
 	if n, err := strconv.Atoi(strings.TrimSpace(s.BitsPerRaw)); err == nil && n > 0 {
 		si.BitsPerRawSample = &n
 	}
-	si.BitrateKbps = int(atoi64(s.BitRate) / 1000)
+	si.BitrateKbps = probeKbps(atoi64(s.BitRate))
 	if si.BitrateKbps == 0 {
 		// mkvmerge statistics tags
 		for _, k := range []string{"BPS", "BPS-eng"} {
 			if v := tag(s.Tags, k); v != "" {
-				si.BitrateKbps = int(atoi64(v) / 1000)
+				si.BitrateKbps = probeKbps(atoi64(v))
 				break
 			}
 		}
@@ -313,6 +329,8 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	switch s.CodecType {
 	case "video":
 		si.Width, si.Height = s.Width, s.Height
+		si.ChromaLocation = probedColour(s.ChromaLocation)
+		si.CodedWidth, si.CodedHeight = s.CodedWidth, s.CodedHeight
 		si.Interlaced = s.FieldOrder != "" && s.FieldOrder != "unknown" && s.FieldOrder != "progressive"
 		switch s.FieldOrder {
 		case "progressive", "tt", "bb", "tb", "bt":
@@ -642,6 +660,8 @@ func NormalizeCodec(c string) string {
 		return "mpeg2video"
 	case "dca":
 		return "dts"
+	case "pcm_bluray":
+		return "pcm_bluray"
 	case "mlp":
 		return "truehd"
 	case "hdmv_pgs_subtitle":
@@ -751,4 +771,16 @@ func probeExtradata(raw string) []byte {
 		out = append(out, b...)
 	}
 	return out
+}
+
+// probeKbps uses the nearest decimal kilobit, without overflowing the input.
+func probeKbps(bits int64) int {
+	if bits <= 0 {
+		return 0
+	}
+	kb := bits / 1000
+	if bits%1000 >= 500 {
+		kb++
+	}
+	return int(kb)
 }

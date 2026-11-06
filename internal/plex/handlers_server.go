@@ -39,10 +39,6 @@ func (s *Server) serverInfoAttrs(providers bool) []model.Attr {
 		}
 	}
 	canTranscode := s.d.Transcoder != nil
-	offlineTranscode := 0
-	if s.downloadsEnabled() {
-		offlineTranscode = 1
-	}
 	attrs := []model.Attr{
 		model.A("allowCameraUpload", false),
 		model.A("allowChannelAccess", false),
@@ -62,6 +58,9 @@ func (s *Server) serverInfoAttrs(providers bool) []model.Attr {
 	if !providers {
 		attrs = append(attrs, model.A("hubSearch", true), model.A("itemClusters", false))
 	}
+	if c.Plex.Claimed || c.Plex.Token != "" {
+		attrs = append(attrs, model.A("offlineTranscode", 1))
+	}
 	attrs = append(attrs,
 		model.A("livetv", s.liveTVAPIVersion()),
 		model.A("machineIdentifier", id.MachineIdentifier),
@@ -76,7 +75,6 @@ func (s *Server) serverInfoAttrs(providers bool) []model.Attr {
 		model.A("myPlexSigninState", signIn),
 		model.A("myPlexSubscription", id.MyPlexSubscription),
 		model.A("myPlexUsername", c.Plex.OwnerUsername),
-		model.A("offlineTranscode", offlineTranscode),
 		model.A("ownerFeatures", strings.Join(id.OwnerFeatures, ",")),
 		model.A("platform", id.Platform),
 		model.A("platformVersion", id.PlatformVersion),

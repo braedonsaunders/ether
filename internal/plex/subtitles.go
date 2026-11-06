@@ -16,11 +16,12 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
-	"errors"
+	"golang.org/x/text/language"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -290,11 +291,38 @@ func (s *Server) subtitleTitle(r *http.Request) (*core.Title, bool) {
 	return t, true
 }
 
-// offerKeyPrefix is the key of a title's subtitle search results:
-// /library/metadata/{ratingKey}/subtitles/{offer id}. Clients pass it back
-// verbatim in PUT .../subtitles?key=.
-func offerKeyPrefix(t *core.Title) string {
-	return "/library/metadata/" + strconv.FormatInt(int64(t.Key), 10) + "/subtitles/"
+// subtitleOffers keeps bounded, viewer-scoped provider references behind local IDs.
+// No library lookup or persistent write is needed to resolve a search leaf.
+type subtitleOffers struct {
+	mu   sync.Mutex
+	next int64
+	rows map[int64]subtitleOfferRef
+}
+type subtitleOfferRef struct {
+	key      core.RatingKey
+	user     int64
+	provider int64
+}
+
+const maxSubtitleOffers = 4096
+
+func (o *subtitleOffers) add(key core.RatingKey, user, provider int64) int64 {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.rows == nil {
+		o.rows = make(map[int64]subtitleOfferRef)
+		o.next = 1 << 40
+	}
+	o.next++
+	o.rows[o.next] = subtitleOfferRef{key, user, provider}
+	delete(o.rows, o.next-maxSubtitleOffers)
+	return o.next
+}
+func (o *subtitleOffers) get(id int64, key core.RatingKey, user int64) (int64, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	row, ok := o.rows[id]
+	return row.provider, ok && row.key == key && row.user == user
 }
 
 // searchLevel parses Plex's hearingImpaired/forced search options:
@@ -337,16 +365,25 @@ func (s *Server) handleSubtitleSearch(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
+	q := r.URL.Query()
+	if !q.Has("language") {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	lang := q.Get("language")
+	primary := strings.Split(lang, "-")[0]
+	tag, err := language.Parse(lang)
+	base, confidence := tag.Base()
+	if len(primary) != 2 || err != nil || confidence == language.No || base.String() == "und" {
+		writeHTTPError(w, http.StatusInternalServerError)
+		return
+	}
+	lang = langtag.Normalize(lang)
 	mc := libraryContainer()
 	searcher, ok := s.d.Subtitles.(SubtitleSearch)
 	if !ok {
 		s.write(w, r, mc)
 		return
-	}
-	q := r.URL.Query()
-	lang := strings.TrimSpace(q.Get("language"))
-	if lang == "" {
-		lang = s.subtitleLanguage(ctx, pr.User)
 	}
 	release := ""
 	if pr.User != nil && s.d.Playback != nil {
@@ -364,32 +401,41 @@ func (s *Server) handleSubtitleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	hi, forced := searchLevel(q.Get("hearingImpaired")), searchLevel(q.Get("forced"))
 	var preferred, rest []model.Stream
-	prefix := offerKeyPrefix(t)
+	userID := int64(0)
+	if pr.User != nil {
+		userID = pr.User.ID
+	}
 	for _, o := range offers {
 		if !keepOffer(hi, o.HearingImpaired) || !keepOffer(forced, o.Forced) {
 			continue
 		}
-		display := subtitleDisplayTitle(core.StreamInfo{Codec: "srt", Language: o.Language, Forced: o.Forced})
+		display := subtitleDisplayTitle(core.StreamInfo{Type: "subtitle", Codec: "srt", Language: o.Language, Forced: o.Forced})
+		id := s.subtitleOffers.add(t.Key, userID, o.ID)
+		transient := 1
 		st := model.Stream{
-			ID:                   slotHash(t.Key, "offer/"+strconv.FormatInt(o.ID, 10)),
+			ID:                   id,
+			Transient:            &transient,
 			StreamType:           3,
 			Codec:                "srt",
-			Key:                  prefix + strconv.FormatInt(o.ID, 10),
+			Key:                  "/library/streams/" + strconv.FormatInt(id, 10),
 			Forced:               boolPtrIf(o.Forced),
 			Language:             languageName(o.Language),
-			LanguageTag:          languageTag(o.Language),
+			LanguageTag:          languageCode3(o.Language),
 			LanguageCode:         languageCode3(o.Language),
 			Format:               "srt",
 			Title:                o.Title,
 			DisplayTitle:         display,
-			ExtendedDisplayTitle: extendedTitle(core.StreamInfo{Title: o.Title, Language: o.Language}, display, "SRT"),
+			ExtendedDisplayTitle: extendedTitle(core.StreamInfo{Type: "subtitle", Codec: "srt", Title: o.Title, Language: o.Language}, display, "SRT"),
 			Extra: []model.Attr{
 				model.A("hearingImpaired", o.HearingImpaired),
 				model.A("perfectMatch", o.PerfectMatch),
 				model.A("providerTitle", o.Provider),
-				model.A("score", o.Score),
+				model.A("score", strconv.Itoa(o.Score)),
+				model.A("sourceKey", strconv.FormatInt(o.ID, 10)),
+				model.A("userID", userID),
 			},
 		}
+		st.SetSubtitleSearchOrder()
 		if preferOffer(hi, o.HearingImpaired) && preferOffer(forced, o.Forced) {
 			preferred = append(preferred, st)
 		} else {
@@ -417,36 +463,49 @@ func (s *Server) handleSubtitlePick(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	raw, found := strings.CutPrefix(r.URL.Query().Get("key"), offerKeyPrefix(t))
+	if !r.URL.Query().Has("key") {
+		s.handleSubtitleSearch(w, r)
+		return
+	}
+	raw, found := strings.CutPrefix(r.URL.Query().Get("key"), "/library/streams/")
 	id, err := strconv.ParseInt(raw, 10, 64)
 	if !found || err != nil || id <= 0 {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
-	st, err := searcher.DownloadSubtitle(ctx, t, pr.User, id)
-	if err != nil {
-		if errors.Is(err, core.ErrNotFound) {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-		if ctx.Err() == nil {
-			s.log.Warn("subtitle download failed", "key", t.Key, "offer", id, "err", err)
-		}
-		writeHTTPError(w, http.StatusServiceUnavailable)
+	providerID, ok := s.subtitleOffers.get(id, t.Key, pr.User.ID)
+	if !ok {
+		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	s.selections.update(pr.User.ID, int64(t.Key), func(sel *selection) {
-		sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, &st
-	})
-	if s.d.TrackPreferences != nil {
-		if err := s.d.TrackPreferences.Remember(ctx, pr.User.ID, t.Key, "subtitle", &st); err != nil {
-			s.log.Warn("save stream preference", "error", err)
-		}
+	if s.Closed() {
+		writeHTTPError(w, http.StatusServiceUnavailable)
+		return
 	}
 	activity := rand.Text()
 	w.Header().Set("X-Plex-Activity", activity)
 	w.WriteHeader(http.StatusOK)
-	s.finishSubtitleActivity(activity, pr.User.ID)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+		defer cancel()
+		s.publishNotification(model.NotificationContainer{Type: "activity", Size: 1, ActivityNotification: []model.ActivityNotification{{Event: "started", UUID: activity, Activity: &model.Activity{UUID: activity, Type: "subtitle.download", Title: "Downloading subtitles", UserID: pr.User.ID}}}}, pr.User.ID)
+		st, err := searcher.DownloadSubtitle(ctx, t, pr.User, providerID)
+		if err != nil {
+			s.log.Warn("subtitle download failed", "key", t.Key, "offer", providerID, "err", err)
+			s.finishSubtitleActivity(activity, pr.User.ID)
+			return
+		}
+		s.selections.update(pr.User.ID, int64(t.Key), func(sel *selection) { sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, &st })
+		if s.d.TrackPreferences != nil {
+			if err := s.d.TrackPreferences.Remember(ctx, pr.User.ID, t.Key, "subtitle", &st); err != nil {
+				s.log.Warn("save stream preference", "error", err)
+			}
+		}
+		s.finishSubtitleActivity(activity, pr.User.ID)
+	}()
+
 }
 
 // subtitleActivityDelay holds the "ended" event until the client has read
@@ -485,6 +544,7 @@ func (s *Server) finishSubtitleActivity(uuid string, userID int64) {
 					Type:     "subtitle.download",
 					Title:    "Downloading subtitles",
 					Progress: 100,
+					UserID:   userID,
 				},
 			}},
 		}, userID)
@@ -545,7 +605,7 @@ func (s *Server) handleSubtitleUpload(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusInternalServerError)
 		return
 	}
-	if !subtitles.AcceptsUploadFormat(format) {
+	if format == "vtt" || !subtitles.AcceptsUploadFormat(format) {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}

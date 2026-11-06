@@ -30,6 +30,7 @@ func isISOBMFF(head []byte) bool {
 
 func (s *nativeSource) mp4() (*core.MediaInfo, error) {
 	var moov []byte
+	mediaBeforeMoov := false
 	for off, n := int64(0), 0; off < s.size && n < 64; n++ {
 		h, err := s.read(off, int(min(16, s.size-off)))
 		if err != nil {
@@ -51,6 +52,9 @@ func (s *nativeSource) mp4() (*core.MediaInfo, error) {
 		if size < hdr || size > s.size-off {
 			return nil, incomplete("bad top-level box size")
 		}
+		if string(h[4:8]) == "mdat" {
+			mediaBeforeMoov = true
+		}
 		if string(h[4:8]) == "moov" {
 			if size > nativeMoovLimit {
 				return nil, incomplete("moov too large")
@@ -67,7 +71,12 @@ func (s *nativeSource) mp4() (*core.MediaInfo, error) {
 	if moov == nil {
 		return nil, incomplete("no moov")
 	}
-	return mp4Info(moov, s.size)
+	info, err := mp4Info(moov, s.size)
+	if err == nil {
+		optimized := !mediaBeforeMoov
+		info.OptimizedForStreaming = &optimized
+	}
+	return info, err
 }
 
 // mp4Info maps a whole moov box (header included) to MediaInfo the way
@@ -89,11 +98,12 @@ func mp4Info(b []byte, size int64) (*core.MediaInfo, error) {
 	if scale == 0 || dur == 0 {
 		return nil, incomplete("no movie duration")
 	}
-	m := &core.MediaInfo{Container: "mp4", Size: size, Duration: ticksToDuration(int64(dur), scale)}
+	offsets64 := false
+	m := &core.MediaInfo{Container: "mp4", Size: size, Duration: ticksToDuration(int64(dur), scale), Has64bitOffsets: &offsets64}
 	if m.Duration <= 0 {
 		return nil, incomplete("bad movie duration")
 	}
-	m.BitrateKbps = int(float64(size*8) / m.Duration.Seconds() / 1000)
+	m.BitrateKbps = int(math.Round(float64(size*8) / m.Duration.Seconds() / 1000))
 	kids, err := readBoxes(b, moov.start+moov.hdr, moov.end)
 	if err != nil {
 		return nil, incomplete("bad moov children")
@@ -106,6 +116,9 @@ func mp4Info(b []byte, size int64) (*core.MediaInfo, error) {
 		}
 		if _, ok := path(b, k, "tref", "chap"); ok {
 			return nil, incomplete("quicktime chapter track")
+		}
+		if _, ok := path(b, k, "mdia", "minf", "stbl", "co64"); ok {
+			*m.Has64bitOffsets = true
 		}
 		si, ok, err := mp4Track(b, k, scale)
 		if err != nil {
@@ -188,6 +201,16 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 	}
 	if tkhd, ok := child(b, trak, "tkhd"); ok && len(tkhd.payload(b)) >= 4 {
 		si.Default = tkhd.payload(b)[3]&1 != 0
+		data := tkhd.payload(b)
+		offset := 12
+		if data[0] == 1 {
+			offset = 20
+		}
+		if len(data) >= offset+4 {
+			if id := binary.BigEndian.Uint32(data[offset:]); id > 0 {
+				si.StreamIdentifier = strconv.FormatUint(uint64(id), 10)
+			}
+		}
 	}
 	if udta, ok := child(b, trak, "udta"); ok {
 		if name, ok := child(b, udta, "name"); ok {
@@ -233,7 +256,7 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 		}
 	}
 	if played > 0 && bytes > 0 {
-		si.BitrateKbps = int(float64(bytes) * 8 / played / 1000)
+		si.BitrateKbps = int(math.Round(float64(bytes) * 8 / played / 1000))
 	}
 	switch handler {
 	case "vide":
@@ -292,6 +315,8 @@ func mp4Video(b []byte, e mp4Box, si *core.StreamInfo) error {
 	}
 	si.Width = int(binary.BigEndian.Uint16(p[24:]))
 	si.Height = int(binary.BigEndian.Uint16(p[26:]))
+	si.CodedHeight = si.Height
+	si.CodedWidth = si.Width
 	if si.Width == 0 || si.Height == 0 {
 		return incomplete("video geometry missing")
 	}

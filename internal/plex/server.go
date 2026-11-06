@@ -225,6 +225,7 @@ type Server struct {
 	progressiveStops  progressiveStopGuard
 	readCaps          *readCapabilityStore
 	extraPlay         *extraPlayStore
+	subtitleOffers    subtitleOffers
 	selections        *selectionStore
 	notifier          *notifier
 	facets            *facetCache
@@ -238,8 +239,11 @@ type Server struct {
 
 	// Owner stream kills, delivered on the client's next timeline; the
 	// janitor drops those whose client never reports again.
-	termMu sync.Mutex
-	terms  map[string]termination
+	termMu             sync.Mutex
+	terms              map[string]termination
+	decisionArms       map[string]decisionArm
+	decisionWriterOnce sync.Once
+	decisionWriter     chan decisionArmWrite
 
 	// Stalled-start watches and Dolby Vision base-layer fallbacks.
 	starts startGuard
@@ -312,6 +316,10 @@ func NewServer(d Deps) *Server {
 	go s.writeShelves()
 	s.sections = s.buildSections()
 	s.queues.now = d.Now
+	if d.DB != nil && d.Cluster == nil {
+		// Standalone queues share the durable store without starting cluster sessions.
+		s.queues.cl = newClusterState(s, d.DB, clusterbus.NewHub().Node("standalone-queues"))
+	}
 	if d.Cluster != nil && d.DB != nil {
 		s.cl = newClusterState(s, d.DB, d.Cluster)
 		s.versionFlows = newVersionFlowStore(s, d.DB)
@@ -332,6 +340,11 @@ func NewServer(d Deps) *Server {
 	if d.ArtworkPalettes != nil {
 		s.ultra = d.ArtworkPalettes
 	}
+	s.clearOwnDecisionArms()
+	s.loadDownloads()
+	s.wg.Add(1)
+	go s.writeDownloads()
+	s.scheduleDownloads()
 	s.router = s.routes()
 	s.wg.Add(1)
 	go s.janitor()
@@ -360,11 +373,19 @@ func (s *Server) Done() <-chan struct{} { return s.ctx.Done() }
 // Close stops background goroutines and disconnects notification clients.
 func (s *Server) Close() error {
 	s.once.Do(func() {
-		s.releaseAllDownloads()
+		if s.d.DB != nil {
+			s.stopDownloadsForRestart()
+		} else {
+			s.releaseAllDownloads()
+		}
 		s.cancel()
 
 		s.notifier.close()
 		s.wg.Wait()
+		s.clearOwnDecisionArms()
+		if err := s.saveDownloads(); err != nil {
+			s.log.Warn("persist downloads on close", "err", err)
+		}
 		if s.cl != nil {
 			s.cl.close()
 		}
@@ -566,6 +587,7 @@ func (s *Server) janitor() {
 			s.playbackOwners.Expire(now, 2*time.Hour)
 			s.extraPlay.expire(now, 2*time.Hour)
 			s.expireTerminations(now, terminationTTL)
+			s.refreshDecisionArms(now)
 			s.starts.expire(now)
 			expired := s.sessions.expire(now, 3*time.Minute)
 			for _, e := range expired {
@@ -611,5 +633,10 @@ func (s *Server) releaseMountedPlayback() {
 		s.dropTranscode(id)
 	}
 
-	s.releaseAllDownloads()
+	if s.d.DB != nil {
+		s.stopDownloadsForRestart()
+		s.stageDownloads()
+	} else {
+		s.releaseAllDownloads()
+	}
 }

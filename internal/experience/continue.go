@@ -10,6 +10,9 @@ import (
 
 // Continue coordinates resume and next-episode selection using viewer-scoped dependencies.
 type Continue struct {
+	// ShowOnDeck provides the surface-specific selector for history-eligible shows.
+	ShowOnDeck func(context.Context, core.RatingKey) (*core.Title, map[core.RatingKey]core.WatchStatus)
+
 	Filter       func(context.Context, *core.User, []core.Title) []core.Title
 	State        core.State
 	EpisodeOrder interface {
@@ -57,6 +60,26 @@ func (c Continue) appendNext(ctx context.Context, viewer *core.User, titles []co
 		if len(recent) >= min(max(limit, 1), 50) {
 			break
 		}
+	}
+	if c.ShowOnDeck != nil {
+		for _, h := range recent {
+			ep, states := c.ShowOnDeck(ctx, core.ShowKey(h.Key.TMDB()))
+			if ep == nil || !c.Visible(ctx, viewer, ep) || c.SameDayUnavailable(ctx, ep) {
+				continue
+			}
+			st := states[ep.Key]
+			for _, parentState := range states {
+				if parentState.UpdatedAt.After(st.UpdatedAt) {
+					st.UpdatedAt = parentState.UpdatedAt
+				}
+			}
+			if st.LastViewedAt.Before(h.ViewedAt) {
+				st.LastViewedAt = h.ViewedAt
+			}
+			state[ep.Key] = st
+			titles = append(titles, *ep)
+		}
+		return titles
 	}
 	statuses, err := c.State.GetMany(ctx, viewer.ID, keys)
 	if err != nil {

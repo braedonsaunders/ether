@@ -29,6 +29,7 @@ func (a *App) runPublicRole(ctx context.Context) error {
 	var background backgroundGroup
 	defer background.Wait()
 	defer cancel()
+	background.start(func() { a.runNodeControl(ctx) })
 	if a.certs != nil {
 		background.start(func() { a.certs.RunSharedSync(ctx, plextv.DefaultCertSyncInterval) })
 	}
@@ -81,6 +82,7 @@ func (a *App) runPublicRole(ctx context.Context) error {
 	front.gate.Close(shutdown)
 	a.deployment.publicReady.Store(false)
 	a.deployment.ready.Store(false)
+	a.recordPrivateReadiness(privateReadinessSnapshot{reason: readinessPublic, errorClass: privateReadinessError(result)})
 	if a.registrar != nil {
 		a.registrar.Stop()
 	}

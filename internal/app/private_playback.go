@@ -108,11 +108,11 @@ func (a *App) privateEligible(ctx context.Context, id nodewire.Identity, role co
 
 // reconcilePrivatePlacement changes only this process's authenticated target.
 // Scope survives boots, so unresolved old encoders continue consuming capacity.
-func (a *App) reconcilePrivatePlacement(ctx context.Context) error {
+func (a *App) reconcilePrivatePlacement(ctx context.Context, observation *privateReadinessSnapshot) error {
 	p := a.deployment
 	self := a.cluster.Self()
 	id := nodewire.Identity{Cluster: a.cfg.Get().Server.MachineIdentifier, NodeID: self.ID, Boot: self.Incarnation}
-	if _, err := a.privateMember(ctx, id); err != nil {
+	if _, err := a.privateMemberObserved(ctx, id, observation); err != nil {
 		return err
 	}
 	var roles config.NodeRoles
@@ -123,12 +123,19 @@ func (a *App) reconcilePrivatePlacement(ctx context.Context) error {
 			scope = "node:" + self.ID
 		}
 		if err := p.placement.SetPool(ctx, scope, config.RoleTranscode, int64(p.settings.Capacity)); err != nil {
+			observation.reason, observation.at = readinessPool, time.Now()
+			observation.errorClass = privateReadinessError(err)
+			observation.deadline, _ = ctx.Deadline()
 			return err
 		}
 		roles = config.NodeRoles{config.RoleTranscode}
 		scopes[config.RoleTranscode] = []string{scope}
 	}
-	return p.placement.SetTarget(ctx, placement.Target{NodeID: self.ID, Boot: self.Incarnation}, roles, scopes)
+	err := p.placement.SetTarget(ctx, placement.Target{NodeID: self.ID, Boot: self.Incarnation}, roles, scopes)
+	observation.reason, observation.at = readinessTarget, time.Now()
+	observation.errorClass = privateReadinessError(err)
+	observation.deadline, _ = ctx.Deadline()
+	return err
 }
 
 // privateSourcePolicy uses current durable viewer policy and cached item/parent

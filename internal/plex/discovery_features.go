@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // DiscoveryFeatures is the shared discovery service adapted by Plex.
@@ -211,6 +212,9 @@ func (s *Server) serveDiscoveryPoster(w http.ResponseWriter, r *http.Request, k 
 	if highBackdrop {
 		etag = fmt.Sprintf("\"%s-w%d\"", version, backdropWidth)
 	}
+	if format := androidPhotoOutputFormat(r); format != "" {
+		etag = strings.TrimSuffix(etag, `"`) + "-" + format + `"`
+	}
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("Vary", "X-Plex-Token, X-Plex-Language")
 	w.Header().Set("ETag", etag)
@@ -241,6 +245,16 @@ func (s *Server) serveDiscoveryPoster(w http.ResponseWriter, r *http.Request, k 
 				ct = "image/jpeg"
 			}
 		}
+	}
+	data, ct, e = s.androidPhotoFormat(r, data, ct)
+	if e != nil {
+		writeHTTPError(w, http.StatusBadGateway)
+		return
+	}
+	if plexAndroidClient(pr) {
+		w.Header().Add("Vary", "X-Plex-Product")
+	}
+	if d.Overlays.CustomPostersEnabled() {
 		etag = fmt.Sprintf("\"%x\"", sha256.Sum256(data))
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")

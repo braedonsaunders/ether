@@ -121,8 +121,10 @@ type Event struct {
 
 // Origin identifies the surface and client that made a watch-state change.
 type Origin struct {
+	HistoryTitle        *core.Title
 	Surface             core.Protocol
 	SessionID, ClientID string
+	DeviceID            int64
 }
 type originKey struct{}
 
@@ -152,9 +154,10 @@ type Options struct {
 
 // State implements core.State and core.Playlists.
 type State struct {
-	db  *sql.DB
-	log *slog.Logger
-	now func() time.Time
+	plexTimeline plexTimelineStore
+	db           *sql.DB
+	log          *slog.Logger
+	now          func() time.Time
 
 	// wmu serialises this process's read-modify-write updates of watch rows
 	// so they do not retry against each other. Correctness across processes
@@ -211,12 +214,7 @@ func New(db *sql.DB, opts Options) *State {
 			Name: "watch progress", Availability: opts.Availability, Logger: opts.Logger,
 			Merge: mergeProgress,
 			Apply: func(ctx context.Context, k progressKey, w progressWrite) error {
-				if w.before != nil {
-					if err := s.progressAt(ctx, k.user, k.key, *w.before); err != nil {
-						return err
-					}
-				}
-				return s.progressAt(ctx, k.user, k.key, w)
+				return s.applyProgressChain(ctx, k, w)
 			},
 		})
 	}
@@ -258,16 +256,29 @@ type progressKey struct {
 type progressWrite struct {
 	offset, duration time.Duration
 	state            string
+	timelineState    string
 	at               time.Time
 	before           *progressWrite
 	origin           Origin
 }
 
 func (w progressWrite) completes() bool {
+	if len(w.state) > 5 && w.state[:5] == "plex-" {
+		return w.state == "plex-complete"
+	}
 	return w.state != "progress" && w.duration > 0 && float64(w.offset) >= WatchedThreshold*float64(w.duration)
 }
 
 func mergeProgress(old, w progressWrite) progressWrite {
+	if len(w.state) > 5 && w.state[:5] == "plex-" && len(old.state) > 5 && old.state[:5] == "plex-" {
+		carry := old.before
+		if old.completes() {
+			copy := old
+			carry = &copy
+		}
+		w.before = carry
+		return w
+	}
 	carry := old.before
 	if old.completes() {
 		c := old
@@ -381,9 +392,12 @@ func addHistoryTx(ctx context.Context, tx *sql.Tx, userID int64, key core.Rating
 	if completed {
 		c = 1
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO state_history(user_id, rating_key, viewed_at, completed) VALUES(?,?,?,?)`,
-		userID, int64(key), at.UnixNano(), c)
-	return err
+	_, err := tx.ExecContext(ctx, `INSERT INTO state_history(user_id, rating_key, viewed_at, completed, view_type, device_id, snapshot) VALUES(?,?,?,?,?,?,?)`,
+		userID, int64(key), at.UnixNano(), c, historyViewType(ctx), originFrom(ctx).DeviceID, historySnapshot(ctx))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Get returns the status for one key. A never-touched key returns a zero
@@ -415,7 +429,7 @@ func (s *State) GetMany(ctx context.Context, userID int64, keys []core.RatingKey
 	for start := 0; start < len(keys); start += 400 {
 		end := min(start+400, len(keys))
 		chunk := keys[start:end]
-		q := `SELECT rating_key, view_offset_ns, duration_ns, view_count, last_viewed_at, user_rating, updated_at, counted, watch_at
+		q := `SELECT rating_key, view_offset_ns, duration_ns, view_count, last_viewed_at, user_rating, updated_at, counted, watch_at, rating_at
 			FROM state_watch WHERE user_id=? AND rating_key IN (`
 		args := []any{userID}
 		for i, k := range chunk {
@@ -432,15 +446,16 @@ func (s *State) GetMany(ctx context.Context, userID int64, keys []core.RatingKey
 		}
 		for rows.Next() {
 			var ws core.WatchStatus
-			var key, off, dur, last, upd, watch int64
+			var key, off, dur, last, upd, watch, rated int64
 			var wasCounted int
-			if err := rows.Scan(&key, &off, &dur, &ws.ViewCount, &last, &ws.UserRating, &upd, &wasCounted, &watch); err != nil {
+			if err := rows.Scan(&key, &off, &dur, &ws.ViewCount, &last, &ws.UserRating, &upd, &wasCounted, &watch, &rated); err != nil {
 				rows.Close()
 				return nil, err
 			}
 			ws.Key = core.RatingKey(key)
 			counted[ws.Key] = wasCounted != 0
 			watchAt[ws.Key] = unixTime(watch)
+			ws.LastRatedAt = unixTime(rated)
 			ws.ViewOffset = time.Duration(off)
 			ws.Duration = time.Duration(dur)
 			if last > 0 {
@@ -459,6 +474,9 @@ func (s *State) GetMany(ctx context.Context, userID int64, keys []core.RatingKey
 	}
 	for k, w := range pending {
 		out[k] = overlayPending(out[k], w, counted[k], watchAt[k])
+	}
+	if err := s.fillParentViewed(ctx, userID, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -500,24 +518,24 @@ func (s *State) PageUserData(ctx context.Context, userID int64, keys []core.Rati
 			}
 			b.WriteByte(')')
 		}
-		writeIn(`SELECT 'w', rating_key, view_offset_ns, duration_ns, view_count, last_viewed_at, user_rating, updated_at, counted, watch_at FROM state_watch WHERE user_id=? AND rating_key IN (`, false, userID)
+		writeIn(`SELECT 'w', rating_key, view_offset_ns, duration_ns, view_count, last_viewed_at, user_rating, updated_at, counted, watch_at, rating_at FROM state_watch WHERE user_id=? AND rating_key IN (`, false, userID)
 		// Rating keys are kind*10^15 plus a payload, so they do not fit in
 		// PostgreSQL INTEGER (int4). SQLite INTEGER is already 64-bit;
 		// BIGINT keeps both engines on that width.
-		writeIn(` UNION ALL SELECT 'f', CAST(subject_id AS BIGINT), 0, 0, 0, 0, 0, 0, 0, 0 FROM favorites_items WHERE viewer_id=? AND kind=? AND subject_id IN (`, true, userID, "title")
-		writeIn(` UNION ALL SELECT 'n', CAST(title_key AS BIGINT), 0, 0, 0, 0, 0, 0, 0, 0 FROM notinterested_titles WHERE viewer_id=? AND title_key IN (`, true, userID)
-		writeIn(` UNION ALL SELECT 'l', item_key, 0, 0, 0, 0, 0, 0, 0, 0 FROM watchlist_items WHERE user_id=? AND item_key IN (`, false, userID)
+		writeIn(` UNION ALL SELECT 'f', CAST(subject_id AS BIGINT), 0, 0, 0, 0, 0, 0, 0, 0, 0 FROM favorites_items WHERE viewer_id=? AND kind=? AND subject_id IN (`, true, userID, "title")
+		writeIn(` UNION ALL SELECT 'n', CAST(title_key AS BIGINT), 0, 0, 0, 0, 0, 0, 0, 0, 0 FROM notinterested_titles WHERE viewer_id=? AND title_key IN (`, true, userID)
+		writeIn(` UNION ALL SELECT 'l', item_key, 0, 0, 0, 0, 0, 0, 0, 0, 0 FROM watchlist_items WHERE user_id=? AND item_key IN (`, false, userID)
 		rows, err := s.db.QueryContext(ctx, b.String(), args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var kind string
-			var key, off, dur, last, upd, watch int64
+			var key, off, dur, last, upd, watch, rated int64
 			var views int
 			var wasCounted int
 			var rating float64
-			if err := rows.Scan(&kind, &key, &off, &dur, &views, &last, &rating, &upd, &wasCounted, &watch); err != nil {
+			if err := rows.Scan(&kind, &key, &off, &dur, &views, &last, &rating, &upd, &wasCounted, &watch, &rated); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -527,6 +545,7 @@ func (s *State) PageUserData(ctx context.Context, userID int64, keys []core.Rati
 			case "w":
 				counted[status.Key] = wasCounted != 0
 				watchAt[status.Key] = unixTime(watch)
+				status.LastRatedAt = unixTime(rated)
 				status.ViewOffset = time.Duration(off)
 				status.Duration = time.Duration(dur)
 				status.ViewCount = views
@@ -669,6 +688,7 @@ func loadTx(ctx context.Context, tx *sql.Tx, userID int64, key core.RatingKey) (
 	}
 	r.watchAt = unixTime(watchAt)
 	r.ratingAt = unixTime(ratingAt)
+	r.ws.LastRatedAt = r.ratingAt
 	return r, nil
 }
 
@@ -696,10 +716,14 @@ func unixTime(ns int64) time.Time {
 // timeout is held and written later (see Options.Availability); it then
 // returns nil.
 func (s *State) Progress(ctx context.Context, userID int64, key core.RatingKey, offset, duration time.Duration, state string) error {
+	if skip, _ := ctx.Value(plexSkipKey{}).(bool); skip {
+		return nil
+	}
 	if offset < 0 {
 		offset = 0
 	}
 	w := progressWrite{offset: offset, duration: duration, state: state, origin: originFrom(ctx)}
+	w.timelineState, _ = ctx.Value(plexStatusKey{}).(string)
 	if s.pending != nil {
 		w.at = s.now().UTC()
 		return s.pending.put(progressKey{userID, key}, pendingWrite{kind: "progress", progress: w})
@@ -722,6 +746,9 @@ func (s *State) LegacyProgress(ctx context.Context, userID int64, key core.Ratin
 // progressAt applies one timeline update (at zero: now).
 func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey, w progressWrite) error {
 	ctx = WithOrigin(ctx, w.origin)
+	if len(w.state) > 5 && w.state[:5] == "plex-" {
+		return s.plexProgressAt(ctx, userID, key, w)
+	}
 	reported, duration, state := w.offset, w.duration, w.state
 	return s.updateAt(ctx, userID, []core.RatingKey{key}, w.at, func(cur *row, now time.Time) (bool, bool, []Event) {
 		offset := reported // fn may be re-run after a conflict
@@ -805,6 +832,7 @@ func (s *State) ScrobbleMany(ctx context.Context, userID int64, keys []core.Rati
 	return s.scrobbleManyAt(ctx, userID, keys, time.Time{})
 }
 func (s *State) scrobbleManyAt(ctx context.Context, userID int64, keys []core.RatingKey, at time.Time) error {
+	ctx = context.WithValue(ctx, historyScrobbleKey{}, true)
 	return s.updateAt(ctx, userID, keys, at, func(cur *row, now time.Time) (bool, bool, []Event) {
 		cur.ws.ViewCount++
 		cur.ws.ViewOffset = 0
@@ -961,36 +989,14 @@ func (s *State) InProgress(ctx context.Context, userID int64, limit int) ([]core
 	return out, nil
 }
 
-// History returns the viewing log, newest first. A zero since means all.
+// History returns all kinds of viewing events, newest first.
 func (s *State) History(ctx context.Context, userID int64, since time.Time, limit int) ([]core.HistoryEntry, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	var sinceNs int64
+	q := core.HistoryQuery{UserID: userID, ViewType: -1, Limit: limit}
 	if !since.IsZero() {
-		sinceNs = since.UnixNano()
+		at := since.Unix()
+		q.Since = &at
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT rating_key, viewed_at, completed FROM state_history
-		WHERE user_id=? AND viewed_at>=? ORDER BY viewed_at DESC, id DESC LIMIT ?`, userID, sinceNs, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []core.HistoryEntry
-	for rows.Next() {
-		var e core.HistoryEntry
-		var key, at int64
-		var completed int
-		if err := rows.Scan(&key, &at, &completed); err != nil {
-			return nil, err
-		}
-		e.UserID = userID
-		e.Key = core.RatingKey(key)
-		e.ViewedAt = time.Unix(0, at).UTC()
-		e.Completed = completed != 0
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return s.QueryHistory(ctx, q)
 }
 
 // InProgressAny lists distinct keys in progress for any user.

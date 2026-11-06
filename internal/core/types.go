@@ -230,9 +230,10 @@ type ClientCaps struct {
 	// AudioLimits are request-declared limits on source audio and encoded output.
 	AudioLimits []AudioLimit `json:"audioLimits,omitempty"`
 
-	// TranscodeAudioCodecs is the explicit audio target for the current
-	// streaming protocol. It constrains remux/transcode output only; source
-	// selection and direct play continue to use AudioCodecs.
+	// TranscodeVideoCodecs and TranscodeAudioCodecs describe ordered output
+	// preferences for the current streaming protocol. Source selection and
+	// direct play continue to use VideoCodecs and AudioCodecs.
+	TranscodeVideoCodecs []string `json:"transcodeVideoCodecs,omitempty"`
 	TranscodeAudioCodecs []string `json:"transcodeAudioCodecs,omitempty"`
 
 	// Download marks a request for an offline download (Plex Downloads /

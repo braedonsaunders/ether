@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,7 +75,7 @@ func TestQueueCapacityKeepsNewestWhenTimestampsTie(t *testing.T) {
 	qs := newPlayQueueStore()
 	qs.now = func() time.Time { return fixedNow }
 	for i := 0; i < maxQueues+100; i++ {
-		q, err := qs.createWith(ownerUser.ID, "burst", []core.RatingKey{alien.Key}, fixedNow, nil)
+		q, err := qs.createWith(ownerUser.ID, "burst-"+strconv.Itoa(i), []core.RatingKey{alien.Key}, fixedNow, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

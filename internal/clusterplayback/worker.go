@@ -36,8 +36,15 @@ func (r *Runtime) authorizeWorker(ctx context.Context, peer, op string, id remot
 	if op == "stop" || op == "status" {
 		return nil
 	}
-	if op == "start" && start != nil && !r.supportsBackend(core.HLSRequest{SessionID: id.Session, Info: start.Info, Decision: start.Decision, Protocol: start.Protocol, StartOffset: start.Offset, SegmentDuration: start.SegmentDuration, SoftSubtitleStream: start.SoftSubtitleStream}) {
-		return ErrDenied
+	if op == "start" && start != nil {
+		info := core.CloneMediaInfo(start.Info)
+		info.Keyframes = append([]core.KeyframePoint(nil), start.Keyframes...)
+		// ManifestSessionID is set only by the primitive after request admission;
+		// the external SupportsRequest gate intentionally rejects caller markers.
+		request := core.HLSRequest{SessionID: id.Session, ReleaseID: start.ReleaseID, Info: info, Decision: start.Decision, Protocol: start.Protocol, StartOffset: start.Offset, SegmentDuration: start.SegmentDuration, SoftSubtitleStream: start.SoftSubtitleStream, RequireIndependentProof: start.IndependentProof, RecoveryStart: core.CloneRecoveryStart(start.RecoveryStart)}
+		if !r.supportsBackend(request) {
+			return ErrDenied
+		}
 	}
 	if op == "start" && r.o.Eligible(ctx, r.o.Self, config.RoleTranscode) != nil {
 		return ErrDenied

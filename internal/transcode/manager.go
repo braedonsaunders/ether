@@ -343,10 +343,11 @@ func cleanStaleDownloads(dir string) {
 			continue
 		}
 		info, err := e.Info()
-		if err != nil || !info.ModTime().Before(cutoff) {
+		if err != nil || !info.ModTime().Before(cutoff) || retainedDownload(filepath.Join(dir, e.Name()), time.Now()) {
 			continue
 		}
 		_ = os.Remove(filepath.Join(dir, e.Name()))
+		_ = os.Remove(filepath.Join(dir, e.Name()) + ".retain")
 	}
 }
 
@@ -551,6 +552,7 @@ func (m *Manager) encodingLocked(except string) int {
 // StartHLS implements core.Transcoder. A replacement cannot begin until the
 // prior exact session has completed its process and directory cleanup.
 func (m *Manager) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSession, error) {
+	req.RecoveryStart = core.CloneRecoveryStart(req.RecoveryStart)
 	life, err := m.reserveEncoder()
 	if err != nil {
 		return nil, err
@@ -567,6 +569,11 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	// No trusted immutable AAC index/provider is wired yet. Reject before any
+	// source preflight or encoder invocation; never infer an AU cursor.
+	if req.RecoveryStart != nil {
+		return nil, ErrRecoveryUnsupported
 	}
 	var slateData []byte
 	if len(req.SlateText) > 0 {
@@ -614,6 +621,11 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		d = dashDecision(req.Info, d)
 	}
 	v := req.Info.Video()
+	// Profile 5 has no HDR10 fallback. Refuse when this ffmpeg cannot reshape
+	// IPTPQc2 through the RPU, rather than delivering a green/purple encode.
+	if v != nil && v.DolbyVision && v.DolbyVisionProfile == 5 && !d.VideoCopy && !m.feat.hasFilter("tonemapx") {
+		return nil, errors.New("transcode: DoVi (Profile 5) color space is not supported")
+	}
 	if v == nil {
 		d.VideoCopy = true // audio-only: nothing to encode
 	}

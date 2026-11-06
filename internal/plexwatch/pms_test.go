@@ -634,3 +634,42 @@ func TestPMSServerValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestPMSGlobalSwitchPausesSchedulerAndManualSync(t *testing.T) {
+	h := newPMSHarness(t)
+	f, srv := h.server("global-switch", 100, 3)
+	enabled := false
+	h.svc.enabled = func() bool { return enabled }
+	before, err := h.svc.Server(h.ctx, srv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.requests = nil
+	f.mu.Unlock()
+	h.pass()
+	if _, err := h.svc.SyncNow(h.ctx, srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	requests := len(f.requests)
+	f.mu.Unlock()
+	if requests != 0 {
+		t.Fatalf("disabled sync made %d requests", requests)
+	}
+	after, err := h.svc.Server(h.ctx, srv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Viewers) != len(before.Viewers) || after.Viewers[0] != before.Viewers[0] {
+		t.Fatal("pausing sync changed mappings or cursors")
+	}
+	enabled = true
+	h.pass()
+	f.mu.Lock()
+	requests = len(f.requests)
+	f.mu.Unlock()
+	if requests == 0 {
+		t.Fatal("re-enabling did not resume sync")
+	}
+}

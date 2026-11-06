@@ -33,6 +33,7 @@ func TestStartRenegotiatesQualityAndTracks(t *testing.T) {
 				headers = append(headers, "X-Plex-Client-Profile-Extra", "add-transcode-target(type=videoProfile&context=all&protocol=hls&container=mkv&videoCodec=h264&audioCodec=aac,eac3)")
 			} else if transport == "dash" {
 				protocol, ext = "dash", "mpd"
+				headers = append(headers, "X-Plex-Client-Profile-Extra", "add-transcode-target(type=videoProfile&context=streaming&protocol=dash&container=mp4&videoCodec=h264&audioCodec=aac)")
 			}
 			query := "path=%2Flibrary%2Fmetadata%2F1000000000000550&directPlay=0&directStream=1&session=quality&location=wan&protocol=" + protocol
 			start := "/video/:/transcode/universal/start." + ext + "?"
@@ -53,6 +54,7 @@ func TestStartRenegotiatesQualityAndTracks(t *testing.T) {
 				}
 				return hs.(*fakeHLS).req
 			}
+			get("/video/:/transcode/universal/decision?" + query + "&maxVideoBitrate=12000&offset=12.5")
 			get(start + query + "&maxVideoBitrate=12000&offset=12.5")
 			first := request()
 			if first.Decision.Kind != core.DecisionRemux || f.trans.lastOpts.MaxBitrateKbps != 8000 {

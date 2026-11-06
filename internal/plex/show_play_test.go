@@ -29,7 +29,7 @@ func TestShowPlayUsesOnDeckEpisodeObject(t *testing.T) {
 	if key != "/library/metadata/"+bbE1.Key.String() || ep["type"] != "episode" {
 		t.Fatalf("wrong next episode: key=%q type=%v", key, ep["type"])
 	}
-	uri := "server://m/com.plexapp.plugins.library" + key
+	uri := "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library" + key
 	rec = f.request(t, http.MethodPost, "/playQueues?type=video&continuous=1&uri="+urlEsc(uri), map[string]string{"Accept": "application/json"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("show Play queue: %d %s", rec.Code, rec.Body.String())

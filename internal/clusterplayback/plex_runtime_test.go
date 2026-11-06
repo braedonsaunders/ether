@@ -215,10 +215,24 @@ func TestRealPlexRuntimeOwnerAuthorizationAndProvenance(t *testing.T) {
 	start.RemoteAddr = "192.168.1.9:1234"
 	start.Header.Set("X-Plex-Token", "offline-account")
 	start.Header.Set("X-Plex-Client-Identifier", "composed-client")
+	unarmed := httptest.NewRecorder()
+	publicOwner.ServeHTTP(unarmed, start.Clone(ctx))
+	if unarmed.Code != http.StatusBadRequest || len(remote.Sessions()) != 0 {
+		t.Fatalf("unarmed Plex start status %d, admitted sessions %d", unarmed.Code, len(remote.Sessions()))
+	}
+	// PMS requires a decision for this player and item before HLS start.
+	decisionRequest := httptest.NewRequest("GET", "https://public"+strings.Replace(startURI, "start.m3u8", "decision", 1), nil)
+	decisionRequest.RemoteAddr = start.RemoteAddr
+	decisionRequest.Header = start.Header.Clone()
+	decisionResponse := httptest.NewRecorder()
+	publicOwner.ServeHTTP(decisionResponse, decisionRequest)
+	if decisionResponse.Code != http.StatusOK {
+		t.Fatalf("real Plex decision status %d: %s", decisionResponse.Code, decisionResponse.Body.String())
+	}
 	master := httptest.NewRecorder()
 	publicOwner.ServeHTTP(master, start)
 	if master.Code != 200 {
-		t.Fatalf("real Plex start status %d", master.Code)
+		t.Fatalf("real Plex start status %d: %s", master.Code, master.Body.String())
 	}
 	var media string
 	for _, line := range strings.Split(master.Body.String(), "\n") {

@@ -12,6 +12,89 @@ func (c *Catalog) compileBrowseGroup(g *core.FilterGroup, alias string, kind cor
 		copy.ParentOnly = false
 		return c.compileBrowseGroup(&copy, "t", 0)
 	}
+	if g.StateField != "" {
+		if g.StateField == "viewedLeafCount" || g.StateField == "viewedOrInProgressLeafCount" || g.StateField == "unviewedLeafCount" || g.StateField == "unwatchedLeaves" {
+			op := ""
+			switch g.StateOperator {
+			case "=", "==":
+				op = "="
+			case "!=", "!==":
+				op = "<>"
+			case "<<", "<":
+				op = "<"
+			case "<<=", "<=":
+				op = "<="
+			case ">>", ">":
+				op = ">"
+			case ">>=", ">=":
+				op = ">="
+			default:
+				return "", nil, fmt.Errorf("invalid leaf operator")
+			}
+			predicate := "COALESCE(w.view_count,0)>0"
+			if g.StateField == "viewedOrInProgressLeafCount" {
+				predicate = "(COALESCE(w.view_count,0)>0 OR COALESCE(w.view_offset_ns,0)>0)"
+			}
+			if g.StateField == "unviewedLeafCount" || g.StateField == "unwatchedLeaves" {
+				predicate = "COALESCE(w.view_count,0)=0"
+			}
+			seasonClause := " AND (" + alias + ".type IN ('show','episode') OR e.season=" + alias + ".season)"
+			if g.StateField == "unwatchedLeaves" {
+				seasonClause = ""
+			}
+			col := "(SELECT COUNT(*) FROM catalog_titles e LEFT JOIN state_watch w ON w.rating_key=e.key AND w.user_id=? WHERE e.show_key=CASE WHEN " + alias + ".type='show' THEN " + alias + ".key ELSE " + alias + ".show_key END AND e.type='episode' AND e.season>0" + seasonClause + " AND e.adult=0 AND e.release_known=1 AND e.released_ts<=? AND " + predicate + ")"
+			value := g.StateValue
+			if g.StateField == "unwatchedLeaves" {
+				if value == 1 {
+					op = ">"
+				} else {
+					op = "="
+				}
+				value = 0
+			}
+			return col + op + "?", []any{g.UserID, c.now().Unix(), value}, nil
+		}
+		column := ""
+		scale := int64(1)
+		switch g.StateField {
+		case "viewCount":
+			column = "w.view_count"
+		case "skipCount":
+			column = "0"
+		case "viewOffset":
+			column = "w.view_offset_ns"
+			scale = 1000000
+		case "lastViewedAt":
+			column = "w.last_viewed_at/1000000000"
+		case "lastRatedAt":
+			column = "w.rating_at/1000000000"
+		case "lastSkippedAt":
+			column = "0"
+		default:
+			return "", nil, fmt.Errorf("invalid state field")
+		}
+		op := ""
+		switch g.StateOperator {
+		case "=", "==":
+			op = "="
+		case "!=", "!==":
+			op = "<>"
+		case "<<", "<":
+			op = "<"
+		case "<<=", "<=":
+			op = "<="
+		case ">>", ">":
+			op = ">"
+		case ">>=", ">=":
+			op = ">="
+		default:
+			return "", nil, fmt.Errorf("invalid state operator")
+		}
+		if g.StateField == "viewOffset" || g.StateField == "lastViewedAt" || g.StateField == "lastRatedAt" || g.StateField == "lastSkippedAt" {
+			return "COALESCE((SELECT " + column + " FROM state_watch w WHERE w.user_id=? AND w.rating_key=" + alias + ".key),0)" + op + "?", []any{g.UserID, g.StateValue * scale}, nil
+		}
+		return "EXISTS (SELECT 1 FROM state_watch w WHERE w.user_id=? AND w.rating_key=" + alias + ".key AND " + column + op + "?)", []any{g.UserID, g.StateValue}, nil
+	}
 	if g.Unwatched != nil || g.InProgress != nil || g.LastViewedAfter > 0 || g.LastViewedBefore > 0 {
 		var parts []string
 		var args []any

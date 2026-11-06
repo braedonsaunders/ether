@@ -73,13 +73,13 @@ func (s *Server) cancelTrickplayIfIdle(ps *core.PlaySession) {
 	if ps == nil || ps.Resolution == nil || s.d.Playback == nil {
 		return
 	}
-	releaseID := ps.Resolution.Release.ID
+	releaseID := core.TrickplayCacheKey(ps)
 	if releaseID == "" {
 		return
 	}
 	idle := true
 	for _, active := range s.d.Playback.Sessions() {
-		if active != nil && active.Resolution != nil && active.Resolution.Release.ID == releaseID {
+		if active != nil && active.Resolution != nil && core.TrickplayCacheKey(active) == releaseID {
 			idle = false
 			break
 		}
@@ -143,5 +143,18 @@ func (s *Server) indexPart(r *http.Request) (core.RatingKey, string, bool) {
 	if wantedReleaseID != "" && ps.Resolution.Release.ID != wantedReleaseID {
 		return 0, "", false
 	}
-	return key, ps.Resolution.Release.ID, true
+	cacheKey := core.TrickplayCacheKey(ps)
+	return key, cacheKey, cacheKey != ""
+}
+
+func (s *Server) previewAvailable(pr *Request, key core.RatingKey, release string) bool {
+	if s.d.Trickplay == nil || s.d.Playback == nil || pr.User == nil {
+		return false
+	}
+	ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, key)
+	if !ok || ps == nil || ps.Resolution == nil || ps.Resolution.Release.ID != release {
+		return false
+	}
+	id := core.TrickplayCacheKey(ps)
+	return id != "" && s.d.Trickplay.TrickplayAvailable(id)
 }

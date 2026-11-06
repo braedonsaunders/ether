@@ -11,6 +11,8 @@ import (
 // duration and, when known, the container keyframe index used to align
 // extractions to keyframes.
 type TrickplaySource struct {
+	// Current fences publication after the owning source changes or disappears.
+	Current   func() bool `json:"-"`
 	ReleaseID string
 	InputURL  string
 	Info      MediaInfo

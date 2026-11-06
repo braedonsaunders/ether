@@ -68,7 +68,7 @@ func (a *App) buildSourceRole(ctx context.Context, cfg config.Config) error {
 		SelectProfile: func(caps core.ClientCaps, u *core.User) core.QualityProfile {
 			return resolver.SelectProfile(a.cfg.Read().Quality, caps, u)
 		},
-	}, cfg, playback.Options{DataDir: a.opts.DataDir, PayloadReplayGrace: 5 * time.Second})
+	}, cfg, playback.Options{IdleTimeout: specialistPlaybackIdleTimeout, DataDir: a.opts.DataDir, PayloadReplayGrace: 5 * time.Second})
 	if err != nil {
 		return err
 	}

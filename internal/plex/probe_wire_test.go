@@ -22,9 +22,10 @@ func TestNativeProbeFactsStayOffPlexWire(t *testing.T) {
 	for _, tc := range []struct {
 		file, codec, rateName string
 		frame                 float64
+		optimized             int
 	}{
-		{"h264_aac_movtext_faststart.mp4", "h264", "24p", 23.976},
-		{"hevc_hdr10_eac3_ac3_moovtail.mp4", "hevc", "24p", 24},
+		{"h264_aac_movtext_faststart.mp4", "h264", "24p", 23.976, 1},
+		{"hevc_hdr10_eac3_ac3_moovtail.mp4", "hevc", "24p", 24, 0},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join("..", "transcode", "testdata", "nativeprobe", tc.file))
@@ -44,7 +45,7 @@ func TestNativeProbeFactsStayOffPlexWire(t *testing.T) {
 			if media.VideoCodec != tc.codec || media.VideoFrameRate != tc.rateName || media.Container != "mp4" {
 				t.Fatalf("media codec=%s rate=%s container=%s", media.VideoCodec, media.VideoFrameRate, media.Container)
 			}
-			if media.OptimizedForStreaming == nil || *media.OptimizedForStreaming != 1 {
+			if media.OptimizedForStreaming == nil || *media.OptimizedForStreaming != tc.optimized {
 				t.Fatalf("mp4 streaming flag %+v", media.OptimizedForStreaming)
 			}
 			streams := f.srv.buildStreams(title.Key, *info, selection{}, nil)

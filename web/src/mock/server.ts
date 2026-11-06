@@ -400,6 +400,7 @@ function defaultConfig(): EtherConfig {
       },
     },
     trakt: { enabled: false, clientId: "", clientSecret: "" },
+    plexServers: { enabled: true },
     openSubtitles: { enabled: false, apiKey: "", username: "", password: "" },
     llm: { enabled: true, provider: "ollama", baseUrl: "", apiKey: "", model: "llama3" },
     updates: {
@@ -3843,7 +3844,16 @@ export function createFakeServer(opts: FakeOptions = {}) {
           accountMatch: true,
         };
         const action = seg[3];
-        if (!action && method === "GET") return json(cur);
+        if (!action && method === "GET")
+          return json({
+            ...cur,
+            eligibility: "unsupported",
+            problem: "unsupported",
+            direction: 0,
+            importInterval: 10,
+            skipped: 0,
+            held: 0,
+          });
         if (action === "pin" && !seg[4] && method === "POST") {
           const next = {
             ...cur,
@@ -4015,7 +4025,12 @@ export function createFakeServer(opts: FakeOptions = {}) {
       return json({ user: state.users[i] });
     }
     if (seg[0] === "config" && seg[1] && method === "GET") {
-      const key = seg[1] === "opensubtitles" ? "openSubtitles" : seg[1];
+      const key =
+        seg[1] === "opensubtitles"
+          ? "openSubtitles"
+          : seg[1] === "plexservers"
+            ? "plexServers"
+            : seg[1];
       return json({
         section: key,
         value: (state.config as unknown as Record<string, unknown>)[key],
@@ -4023,7 +4038,12 @@ export function createFakeServer(opts: FakeOptions = {}) {
       });
     }
     if (seg[0] === "config" && seg[1] && method === "PUT") {
-      const key = seg[1] === "opensubtitles" ? "openSubtitles" : seg[1];
+      const key =
+        seg[1] === "opensubtitles"
+          ? "openSubtitles"
+          : seg[1] === "plexservers"
+            ? "plexServers"
+            : seg[1];
       // Like the server: the body is merged onto the stored section.
       const prev = (state.config as unknown as Record<string, unknown>)[key];
       let value =

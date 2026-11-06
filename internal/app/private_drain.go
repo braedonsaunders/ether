@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/clusterconfig"
+	"github.com/braedonsaunders/ether/internal/clusterplayback"
 	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
@@ -16,20 +17,58 @@ func (a *App) distributedHLS() sessions.DistributedHLS {
 	runtime, _ := a.deployment.playback.(sessions.DistributedHLS)
 	return runtime
 }
+
+type drainBarrierSnapshot struct {
+	total, runtime, sessions int
+	categories               *clusterconfig.DrainPendingCategories
+}
+
 func (a *App) privatePending(ctx context.Context) (int, error) {
-	rt, ok := a.deployment.playback.(interface {
-		Pending(context.Context) (int, error)
-	})
-	if !ok {
-		return -1, errors.New("retirement accounting unavailable")
-	}
-	pending, err := rt.Pending(ctx)
+	st, err := a.privatePendingSnapshot(ctx)
+	return st.total, err
+}
+
+func (a *App) privatePendingSnapshot(ctx context.Context) (drainBarrierSnapshot, error) {
+	st := drainBarrierSnapshot{total: -1, runtime: -1}
 	if a.brokerPlayback != nil {
-		pending += len(a.brokerPlayback.Sessions())
+		st.sessions = len(a.brokerPlayback.Sessions())
 	} else if a.playback != nil {
-		pending += len(a.playback.Sessions())
+		st.sessions = len(a.playback.Sessions())
 	}
-	return pending, err
+	if a.deployment == nil {
+		return st, errors.New("retirement accounting unavailable")
+	}
+	if rt, ok := a.deployment.playback.(interface {
+		PendingDetails(context.Context) (clusterplayback.ResponsibilityCounts, error)
+	}); ok {
+		counts, err := rt.PendingDetails(ctx)
+		if err != nil {
+			return st, err
+		}
+		st.runtime = counts.Total()
+		st.categories = &clusterconfig.DrainPendingCategories{
+			SourcePreparations: counts.SourcePreparations, PreparationLifetimes: counts.PreparationLifetimes, PreparationReceipts: counts.PreparationReceipts,
+			SourceLifetimes: counts.SourceLifetimes, SourceCallbacks: counts.SourceCallbacks,
+			EncoderStarts: counts.EncoderStarts, EncoderTokens: counts.EncoderTokens, Inputs: counts.Inputs,
+			RemotePreparing: counts.RemotePreparing, RemoteLive: counts.RemoteLive, RemoteRetiring: counts.RemoteRetiring,
+			Executions: counts.Executions, Reopens: counts.Reopens, Placements: counts.Placements,
+		}
+	} else if rt, ok := a.deployment.playback.(interface {
+		Pending(context.Context) (int, error)
+	}); ok {
+		n, err := rt.Pending(ctx)
+		if err != nil {
+			return st, err
+		}
+		st.runtime = n
+	} else {
+		return st, errors.New("retirement accounting unavailable")
+	}
+	if st.runtime < 0 {
+		return drainBarrierSnapshot{total: -1, runtime: -1, sessions: st.sessions}, errors.New("retirement accounting unconfirmed")
+	}
+	st.total = st.runtime + st.sessions
+	return st, nil
 }
 func (a *App) pollDrain(ctx context.Context) {
 	req, err := clusterconfig.ReadDrainControl(a.opts.DataDir, clusterconfig.DrainRequestFile)
@@ -43,10 +82,15 @@ func (a *App) pollDrain(ctx context.Context) {
 	if a.playback != nil {
 		a.playback.SetDraining(true)
 	}
-	pending, err := a.privatePending(ctx)
-	req.Pending = pending
+	st, err := a.privatePendingSnapshot(ctx)
+	req.Pending = st.total
+	req.PendingRuntime, req.PendingCategories = nil, nil
+	req.PendingSessions = &st.sessions
+	if err == nil {
+		req.PendingRuntime, req.PendingCategories = &st.runtime, st.categories
+	}
 	req.State = "draining"
-	if err == nil && pending == 0 {
+	if err == nil && st.total == 0 {
 		req.State = "drained"
 	}
 	_ = clusterconfig.WriteDrainControl(a.opts.DataDir, clusterconfig.DrainStatusFile, req)

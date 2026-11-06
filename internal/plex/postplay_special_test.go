@@ -27,7 +27,7 @@ func TestShowQueueAndUnverifiedNextTimeline(t *testing.T) {
 		}
 	}
 	special := core.EpisodeKey(81723, 0, 1)
-	uri := "server://m/com.plexapp.plugins.library/library/metadata/" + show.String()
+	uri := "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + show.String()
 	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+urlEsc(uri)+"&key="+episode.String(), map[string]string{"Accept": "application/json"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("queue: %d %s", rec.Code, rec.Body.String())
@@ -36,7 +36,7 @@ func TestShowQueueAndUnverifiedNextTimeline(t *testing.T) {
 	if queue["playQueueTotalCount"] != float64(4) {
 		t.Fatalf("show queue includes specials: %v", queue)
 	}
-	uri = "server://m/com.plexapp.plugins.library/library/metadata/" + core.SeasonKey(81723, 0).String()
+	uri = "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + core.SeasonKey(81723, 0).String()
 	rec = f.request(t, http.MethodPost, "/playQueues?type=video&uri="+urlEsc(uri), map[string]string{"Accept": "application/json"})
 	if rec.Code != http.StatusOK || decodeJSON(t, rec)["playQueueTotalCount"] != float64(1) {
 		t.Fatalf("special queue: %d %s", rec.Code, rec.Body.String())
@@ -47,7 +47,7 @@ func TestShowQueueAndUnverifiedNextTimeline(t *testing.T) {
 	}
 	f.get(t, fmt.Sprintf("/:/timeline?ratingKey=%s&state=stopped&time=3300000&duration=3361000", episode))
 	rec = f.get(t, fmt.Sprintf("/:/timeline?ratingKey=%s&state=playing&time=3300000&duration=540000", special))
-	if rec.Code != http.StatusOK || recordedAt(f.state.progress, special, 3300*time.Second) {
+	if rec.Code != http.StatusBadRequest || recordedAt(f.state.progress, special, 3300*time.Second) {
 		t.Fatalf("stale playhead recorded: %+v", f.state.progress)
 	}
 	// A real position for the same item still counts, with or without a

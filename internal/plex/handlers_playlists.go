@@ -147,10 +147,10 @@ func (s *Server) smartSectionURI(u *core.User, uri string) (string, error) {
 	return path + "?" + strings.Join(safe, "&"), nil
 }
 
-func (s *Server) smartPlaylistBrowse(ctx context.Context, pr *Request, uri string) ([]core.Title, int, int, error) {
+func (s *Server) smartPlaylistRequest(ctx context.Context, pr *Request, uri string) (browseRequest, error) {
 	p, err := s.smartSectionURI(pr.User, uri)
 	if err != nil {
-		return nil, 0, 0, err
+		return browseRequest{}, err
 	}
 	path, raw, _ := strings.Cut(p, "?")
 	m := reSectionPath.FindStringSubmatch(path)
@@ -182,6 +182,14 @@ func (s *Server) smartPlaylistBrowse(ctx context.Context, pr *Request, uri strin
 			br.lastViewedAfter, br.lastViewedBefore = 0, 0
 		}
 		br.q.Filter = core.Filter{Type: core.TypeEpisode, Group: &core.FilterGroup{ParentOnly: true, Filter: &show}}
+	}
+	return br, nil
+}
+
+func (s *Server) smartPlaylistBrowse(ctx context.Context, pr *Request, uri string) ([]core.Title, int, int, error) {
+	br, err := s.smartPlaylistRequest(ctx, pr, uri)
+	if err != nil {
+		return nil, 0, 0, err
 	}
 	return s.browse(ctx, pr, br)
 }
@@ -321,7 +329,7 @@ func (s *Server) playlist(ctx context.Context, u *core.User, k core.RatingKey) (
 	return (experience.PlaylistSelection{Playlists: s.d.Playlists}).Get(ctx, u, k)
 }
 
-func (s *Server) playlistMetadata(ctx context.Context, pl *core.Playlist) model.Metadata {
+func (s *Server) playlistMetadata(ctx context.Context, pl *core.Playlist, omitState ...bool) model.Metadata {
 	rk := pl.Key.String()
 	count := len(pl.Items)
 	if pl.SmartURI != "" {
@@ -341,18 +349,30 @@ func (s *Server) playlistMetadata(ctx context.Context, pl *core.Playlist) model.
 		GUID:         "com.plexapp.agents.none://playlist-" + rk,
 		Type:         "playlist",
 		Title:        pl.Title,
-		Summary:      "",
+		Summary:      pl.Summary,
 		Smart:        model.Ptr(pl.Smart),
 		PlaylistType: "video",
 		Composite:    "/playlists/" + rk + "/composite/" + strconv.FormatInt(stamp, 10),
 		LeafCount:    model.Ptr(count),
-		AddedAt:      unixOrZero(pl.UpdatedAt),
+		AddedAt:      unixOrZero(pl.AddedAt),
 		UpdatedAt:    unixOrZero(pl.UpdatedAt),
+	}
+	if pl.GUID != "" {
+		m.GUID = pl.GUID
+	}
+	if m.AddedAt == 0 {
+		m.AddedAt = unixOrZero(pl.UpdatedAt)
+	}
+	if count == 0 {
+		m.Composite = ""
 	}
 	if pl.Smart {
 		m.Icon = "playlist://image.smart"
 	}
 	m.Duration = s.playlistDuration(pl.Items)
+	if len(omitState) > 0 && !omitState[0] {
+		s.applyListWatch(ctx, &m, pl.Key)
+	}
 	return m
 }
 
@@ -360,7 +380,7 @@ func (s *Server) playlistMetadata(ctx context.Context, pl *core.Playlist) model.
 // the title-detail cache without blocking: it is omitted (0) until every
 // item's runtime is known, and unknown items are fetched in the background.
 func (s *Server) playlistDuration(items []core.RatingKey) int64 {
-	if s.titles == nil || len(items) > 200 {
+	if s.titles == nil {
 		return 0
 	}
 	var seconds int64
@@ -382,34 +402,7 @@ func (s *Server) playlistDuration(items []core.RatingKey) int64 {
 }
 
 func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	pr := FromContext(ctx)
-	q := r.URL.Query()
-	mc := &model.MediaContainer{}
-	if pt := q.Get("playlistType"); pt != "" && !strings.Contains(pt, "video") {
-		s.write(w, r, mc)
-		return
-	}
-	if s.d.Playlists != nil && pr.User != nil {
-		pls, err := s.d.Playlists.List(ctx, pr.User.ID)
-		if err != nil {
-			s.writeErr(w, r, err)
-			return
-		}
-		smart := q.Get("smart")
-		lo, hi := pr.window(len(pls))
-		for i := lo; i < hi; i++ {
-			if smart == "1" && !pls[i].Smart || smart == "0" && pls[i].Smart {
-				continue
-			}
-			mc.Metadata = append(mc.Metadata, s.playlistMetadata(ctx, &pls[i]))
-		}
-		if pr.HasPage {
-			mc.SetPage(lo, len(pls))
-		}
-	}
-	mc.Size = len(mc.Metadata)
-	s.write(w, r, mc)
+	s.writePlaylistListing(w, r)
 }
 
 func (s *Server) requirePlaylists(w http.ResponseWriter, r *http.Request) bool {
@@ -427,13 +420,21 @@ func (s *Server) handlePlaylistCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	q := r.URL.Query()
-	if t := q.Get("type"); t != "" && t != "video" {
+	if !q.Has("title") || !q.Has("type") || (!q.Has("uri") && !q.Has("playQueueID")) {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
+	mediaType := q.Get("type")
+	if mediaType != "video" && mediaType != "audio" && mediaType != "photo" {
+		writeHTTPError(w, http.StatusInternalServerError)
+		return
+	}
 	title := q.Get("title")
-	if title == "" {
-		title = "Playlist"
+	// Ether has video catalogue sections only. Refuse unsupported smart media
+	// domains before attempting to interpret a section query.
+	if mediaType != "video" && q.Get("smart") == "1" {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
 	}
 	if q.Get("smart") == "1" {
 		uri, err := s.smartSectionURI(pr.User, q.Get("uri"))
@@ -448,18 +449,16 @@ func (s *Server) handlePlaylistCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.notifyPlaylistLifecycle(pl, true)
-		s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(ctx, pl)}})
+		s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(ctx, pl, true)}})
 		return
 	}
 	var keys []core.RatingKey
 	if uri := q.Get("uri"); uri != "" {
-		ks, err := s.resolveURI(ctx, pr, uri)
-		if err != nil {
-			s.log.Debug("playlist uri", "uri", uri, "err", err)
-			writeHTTPError(w, http.StatusBadRequest)
-			return
+		// Unresolvable sources are valid empty playlist creations.
+		if strings.HasPrefix(uri, "server://"+s.identity().MachineIdentifier+"/") || strings.HasPrefix(uri, "library://") {
+			keys, _ = s.resolveURI(ctx, pr, uri)
 		}
-		keys = ks
+
 	} else if pqID, err := strconv.ParseInt(q.Get("playQueueID"), 10, 64); err == nil {
 		if pq, ok := s.queues.get(pqID, pr.User.ID); ok {
 			for _, it := range pq.items {
@@ -467,13 +466,27 @@ func (s *Server) handlePlaylistCreate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Unresolvable non-video sources cannot name an Ether section. Give the
+	// client a graceful refusal rather than create a mislabeled video list.
+	if mediaType != "video" && len(keys) == 0 {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	mismatch := mediaType != "video" && len(keys) > 0
+	if mismatch {
+		keys = nil
+	}
 	pl, err := s.d.Playlists.Create(ctx, pr.User.ID, title, keys)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
 	s.notifyPlaylistLifecycle(pl, true)
-	mc := &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(ctx, pl)}}
+	if mismatch {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	mc := &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(ctx, pl, true)}}
 	s.write(w, r, mc)
 }
 
@@ -499,18 +512,49 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(r.Context(), pl)}})
+	md := s.playlistMetadata(r.Context(), pl, true)
+	if pl.SmartURI != "" {
+		md.Content = "library://x/directory/" + url.QueryEscape(pl.SmartURI)
+	}
+	s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{md}})
 }
 
-// handlePlaylistEdit accepts PUT /playlists/{key}; renames are not part of
-// core.Playlists, so only the current state is returned.
+// handlePlaylistEdit persists the user-facing playlist name and summary.
 func (s *Server) handlePlaylistEdit(w http.ResponseWriter, r *http.Request) {
 	pl, ok := s.playlistFromParam(w, r)
 	if !ok {
 		return
 	}
-	if t := r.URL.Query().Get("title"); t != "" && t != pl.Title {
-		s.log.Info("playlist rename not supported", "playlist", pl.Key)
+	q := r.URL.Query()
+	edit := core.PlaylistEdit{}
+	for _, field := range []struct {
+		name   string
+		target **string
+	}{{"title", &edit.Title}, {"summary", &edit.Summary}} {
+		if q.Has(field.name + ".value") {
+			value := q.Get(field.name + ".value")
+			*field.target = &value
+		} else if q.Has(field.name) {
+			value := q.Get(field.name)
+			*field.target = &value
+		}
+	}
+	if edit.Title == nil && edit.Summary == nil {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	if edit.Title != nil || edit.Summary != nil {
+		store, ok := s.d.Playlists.(core.PlaylistEditor)
+		if !ok {
+			writeHTTPError(w, http.StatusBadRequest)
+			return
+		}
+		var err error
+		pl, err = store.EditPlaylist(r.Context(), FromContext(r.Context()).User.ID, pl.Key, edit)
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
 	}
 	s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(r.Context(), pl)}})
 }
@@ -533,20 +577,45 @@ func (s *Server) handlePlaylistItems(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	q := r.URL.Query()
+	if status := playlistQueryStatus(q, true); status != 0 {
+		writeHTTPError(w, status)
+		return
+	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
-	if pl.SmartURI != "" {
+	// Ordinary smart reads keep counting and pagination inside the catalogue.
+	// Parent projections need a bounded membership expansion below.
+	if pl.SmartURI != "" && s.smartPlaylistSQLAvailable() && (q.Get("type") != "" && q.Get("type") != "-1" || playlistHasItemFilters(q)) {
+		s.writeSmartPlaylistItems(w, r, pl)
+		return
+	}
+	if pl.SmartURI != "" && (q.Get("type") == "" || q.Get("type") == "-1") && !playlistHasItemFilters(q) {
 		titles, total, offset, err := s.smartPlaylistBrowse(ctx, pr, pl.SmartURI)
 		if err != nil {
 			s.writeErr(w, r, err)
 			return
 		}
-		mc := &model.MediaContainer{RatingKey: pl.Key.String(), Key: "/playlists/" + pl.Key.String() + "/items", Title1: pl.Title, PlaylistType: "video", Smart: model.Ptr(true), LeafCount: model.Ptr(total), Composite: "/playlists/" + pl.Key.String() + "/composite/1"}
+		mc := &model.MediaContainer{RatingKey: pl.Key.String(), Title1: pl.Title, PlaylistType: "video", Smart: model.Ptr(true), LeafCount: model.Ptr(total)}
 		storedOnly := len(titles) > 0 && titles[0].Type == core.TypeEpisode
 		sqlAvailability, _ := s.d.Catalog.(interface{ BrowseAvailabilityInSQL() bool })
 		mc.Metadata = s.renderTitles(ctx, pr, titles, renderOpts{media: true, storedOnly: storedOnly, availabilityInSQL: sqlAvailability != nil && sqlAvailability.BrowseAvailabilityInSQL()})
-		for i := range mc.Metadata {
-			mc.Metadata[i].PlaylistItemID = int64(offset + i + 1)
+		if total > 0 {
+			mc.Composite = "/playlists/" + pl.Key.String() + "/composite/" + strconv.FormatInt(unixOrZero(pl.UpdatedAt), 10)
+		}
+		for _, md := range mc.Metadata {
+			mc.Duration += md.Duration / 1000
+		}
+		if q.Get("includeMeta") == "1" {
+			types := map[core.MediaType]bool{}
+			for _, t := range titles {
+				types[t.Type] = true
+				if t.Type == core.TypeEpisode {
+					types[core.TypeShow] = true
+					types[core.TypeSeason] = true
+				}
+			}
+			mc.Meta = playlistItemsMeta(r, types)
 		}
 		mc.Size = len(mc.Metadata)
 		if pr.HasPage {
@@ -555,38 +624,26 @@ func (s *Server) handlePlaylistItems(w http.ResponseWriter, r *http.Request) {
 		s.write(w, r, mc)
 		return
 	}
-	lo, hi := pr.window(len(pl.Items))
-	window := pl.Items[lo:hi]
-	titles := s.visibleTitles(pr.User, s.getTitles(ctx, window))
-	byKey := make(map[core.RatingKey]*core.Title, len(titles))
-	for i := range titles {
-		byKey[titles[i].Key] = &titles[i]
+	rows, types, err := s.playlistItemRows(ctx, pr, pl, q)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
 	}
-	state := s.stateFor(ctx, pr, titles)
-	mc := &model.MediaContainer{
-		RatingKey:    pl.Key.String(),
-		Key:          "/playlists/" + pl.Key.String() + "/items",
-		Title1:       pl.Title,
-		PlaylistType: "video",
-		Smart:        model.Ptr(pl.Smart),
-		LeafCount:    model.Ptr(len(pl.Items)),
-		Composite:    "/playlists/" + pl.Key.String() + "/composite/1",
+	total := len(rows)
+	lo, hi := pr.window(total)
+	mc := &model.MediaContainer{RatingKey: pl.Key.String(), Key: "/playlists/" + pl.Key.String() + "/items", Title1: pl.Title, PlaylistType: "video", Smart: model.Ptr(pl.Smart), LeafCount: model.Ptr(total), Metadata: rows[lo:hi]}
+	if total > 0 {
+		mc.Composite = "/playlists/" + pl.Key.String() + "/composite/" + strconv.FormatInt(unixOrZero(pl.UpdatedAt), 10)
 	}
-	var dur int64
-	for i, k := range window {
-		t, ok := byKey[k]
-		if !ok {
-			continue
-		}
-		md := s.metadata(ctx, pr, t, renderOpts{media: true, state: state})
-		md.PlaylistItemID = int64(lo + i + 1)
-		dur += md.Duration
-		mc.Metadata = append(mc.Metadata, md)
+	for _, md := range rows {
+		mc.Duration += md.Duration / 1000
 	}
-	mc.Duration = dur
+	if q.Get("includeMeta") == "1" {
+		mc.Meta = playlistItemsMeta(r, types)
+	}
 	mc.Size = len(mc.Metadata)
 	if pr.HasPage {
-		mc.SetPage(lo, len(pl.Items))
+		mc.SetPage(lo, total)
 	}
 	s.write(w, r, mc)
 }
@@ -597,17 +654,49 @@ func (s *Server) handlePlaylistAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pl.SmartURI != "" {
-		writeHTTPError(w, http.StatusBadRequest)
+		uri, err := s.smartSectionURI(FromContext(r.Context()).User, r.URL.Query().Get("uri"))
+		store, ok := s.d.Playlists.(core.PlaylistEditor)
+		if err != nil || !ok {
+			writeHTTPError(w, http.StatusBadRequest)
+			return
+		}
+		updated, err := store.EditPlaylist(r.Context(), FromContext(r.Context()).User.ID, pl.Key, core.PlaylistEdit{SmartURI: &uri})
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(r.Context(), updated)}})
 		return
 	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	uri := r.URL.Query().Get("uri")
-	keys, err := s.resolveURI(ctx, pr, uri)
-	if err != nil {
-		writeHTTPError(w, http.StatusBadRequest)
+	var keys []core.RatingKey
+	if strings.HasPrefix(uri, "server://"+s.identity().MachineIdentifier+"/") || strings.HasPrefix(uri, "library://") {
+		keys, _ = s.resolveURI(ctx, pr, uri)
+	}
+	if store, ok := s.d.Playlists.(core.PlaylistMutator); ok {
+		updated, added, err := store.MutatePlaylist(ctx, pr.User.ID, pl.Key, core.PlaylistMutation{Operation: "add", Items: keys})
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		s.write(w, r, &model.MediaContainer{Size: 1, Extra: []model.Attr{model.A("leafCountAdded", added), model.A("leafCountRequested", len(keys))}, Metadata: []model.Metadata{s.playlistMetadata(ctx, updated)}})
 		return
 	}
+	requested := len(keys)
+	seen := make(map[core.RatingKey]bool, len(pl.Items)+len(keys))
+	for _, key := range pl.Items {
+		seen[key] = true
+	}
+	additions := keys[:0]
+	for _, key := range keys {
+		if !seen[key] {
+			additions = append(additions, key)
+			seen[key] = true
+		}
+	}
+	keys = additions
 	if err := s.d.Playlists.Add(ctx, pr.User.ID, pl.Key, keys); err != nil {
 		s.writeErr(w, r, err)
 		return
@@ -616,12 +705,23 @@ func (s *Server) handlePlaylistAdd(w http.ResponseWriter, r *http.Request) {
 		pl = updated
 	}
 	md := s.playlistMetadata(ctx, pl)
-	s.write(w, r, &model.MediaContainer{Size: 1, Extra: []model.Attr{model.A("leafCountAdded", len(keys)), model.A("leafCountRequested", len(keys))}, Metadata: []model.Metadata{md}})
+	s.write(w, r, &model.MediaContainer{Size: 1, Extra: []model.Attr{model.A("leafCountAdded", len(keys)), model.A("leafCountRequested", requested)}, Metadata: []model.Metadata{md}})
 }
 
-func itemIndexParam(r *http.Request, n int) (int, bool) {
+func itemIndexParam(r *http.Request, pl *core.Playlist) (int, bool) {
 	id, err := strconv.Atoi(chi.URLParam(r, "item"))
-	if err != nil || id < 1 || id > n {
+	if len(pl.ItemIDs) == len(pl.Items) && len(pl.ItemIDs) > 0 {
+		if err != nil {
+			return 0, false
+		}
+		for i, itemID := range pl.ItemIDs {
+			if int64(id) == itemID {
+				return i, true
+			}
+		}
+		return 0, false
+	}
+	if err != nil || id < 1 || id > len(pl.Items) {
 		return 0, false
 	}
 	return id - 1, true
@@ -636,9 +736,20 @@ func (s *Server) handlePlaylistRemove(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
+	if store, ok := s.d.Playlists.(core.PlaylistMutator); ok {
+		item, _ := strconv.ParseInt(chi.URLParam(r, "item"), 10, 64)
+		after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+		updated, _, err := store.MutatePlaylist(r.Context(), FromContext(r.Context()).User.ID, pl.Key, core.PlaylistMutation{Operation: "remove", ItemID: item, AfterID: after})
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(r.Context(), updated)}})
+		return
+	}
 	ctx := r.Context()
 	uid := FromContext(ctx).User.ID
-	idx, ok := itemIndexParam(r, len(pl.Items))
+	idx, ok := itemIndexParam(r, pl)
 	if !ok {
 		writeHTTPError(w, http.StatusNotFound)
 		return
@@ -657,6 +768,17 @@ func (s *Server) handlePlaylistClear(w http.ResponseWriter, r *http.Request) {
 	}
 	if pl.SmartURI != "" {
 		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	if store, ok := s.d.Playlists.(core.PlaylistMutator); ok {
+		item, _ := strconv.ParseInt(chi.URLParam(r, "item"), 10, 64)
+		after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+		updated, _, err := store.MutatePlaylist(r.Context(), FromContext(r.Context()).User.ID, pl.Key, core.PlaylistMutation{Operation: "clear", ItemID: item, AfterID: after})
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(r.Context(), updated)}})
 		return
 	}
 	ctx := r.Context()
@@ -679,23 +801,45 @@ func (s *Server) handlePlaylistMove(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
+	if store, ok := s.d.Playlists.(core.PlaylistMutator); ok {
+		item, _ := strconv.ParseInt(chi.URLParam(r, "item"), 10, 64)
+		after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+		updated, _, err := store.MutatePlaylist(r.Context(), FromContext(r.Context()).User.ID, pl.Key, core.PlaylistMutation{Operation: "move", ItemID: item, AfterID: after})
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(r.Context(), updated)}})
+		return
+	}
 	ctx := r.Context()
 	uid := FromContext(ctx).User.ID
-	from, ok := itemIndexParam(r, len(pl.Items))
+	from, ok := itemIndexParam(r, pl)
 	if !ok {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
 	to := 0
-	if after, err := strconv.Atoi(r.URL.Query().Get("after")); err == nil && after >= 1 && after <= len(pl.Items) {
-		a := after - 1
-		// Moving an item after itself leaves it where it is.
-		if from <= a {
-			to = a
-		} else {
-			to = a + 1
+	if after, err := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64); err == nil {
+		anchor := -1
+		if len(pl.ItemIDs) == len(pl.Items) && len(pl.ItemIDs) > 0 {
+			for i, id := range pl.ItemIDs {
+				if id == after {
+					anchor = i
+					break
+				}
+			}
+		} else if after >= 1 && after <= int64(len(pl.Items)) {
+			anchor = int(after) - 1
+		}
+		if anchor >= 0 {
+			to = anchor
+			if from > anchor {
+				to++
+			}
 		}
 	}
+
 	if from != to {
 		if err := s.d.Playlists.Move(ctx, uid, pl.Key, from, to); err != nil {
 			s.writeErr(w, r, err)
@@ -708,6 +852,10 @@ func (s *Server) handlePlaylistMove(w http.ResponseWriter, r *http.Request) {
 // handlePlaylistItemsAfterChange answers a mutation with the updated items,
 // as PMS does.
 func (s *Server) handlePlaylistItemsAfterChange(w http.ResponseWriter, r *http.Request, k core.RatingKey) {
-	_ = k // the route's {key} is the same playlist
-	s.handlePlaylistItems(w, r)
+	pl, err := s.playlist(r.Context(), FromContext(r.Context()).User, k)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	s.write(w, r, &model.MediaContainer{Size: 1, Metadata: []model.Metadata{s.playlistMetadata(r.Context(), pl)}})
 }

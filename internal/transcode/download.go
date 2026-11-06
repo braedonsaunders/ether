@@ -165,7 +165,7 @@ func (d *DownloadRemuxer) expireStaleAdopted(now time.Time) {
 	d.mu.Lock()
 	var candidates []string
 	for path, mtime := range d.adopted {
-		if mtime.Before(cutoff) {
+		if mtime.Before(cutoff) && !retainedDownload(path, now) {
 			candidates = append(candidates, path)
 		}
 	}
@@ -194,6 +194,7 @@ func (d *DownloadRemuxer) expireStaleAdopted(now time.Time) {
 				delete(d.files, path)
 				delete(d.adopted, path)
 				d.used -= size
+				_ = os.Remove(path + ".retain")
 			}
 		}
 		d.mu.Unlock()
@@ -518,7 +519,36 @@ func (d *DownloadRemuxer) ReleaseDownload(path string) {
 	d.mu.Unlock()
 	if ok {
 		_ = os.Remove(path)
+		_ = os.Remove(path + ".retain")
 	}
+}
+
+// RetainDownload binds a completed file to its queue retention. The small
+// marker also protects it from boot orphan cleanup before the queue is loaded.
+func (d *DownloadRemuxer) RetainDownload(path string, expires time.Time) error {
+	if filepath.Dir(path) != d.dir || !isRemuxDownloadFile(filepath.Base(path)) || strings.HasSuffix(path, ".part") {
+		return errors.New("transcode: invalid retained download")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, ok := d.files[path]; !ok {
+		return os.ErrNotExist
+	}
+	if err := os.WriteFile(path+".retain", []byte(expires.UTC().Format(time.RFC3339Nano)), 0o600); err != nil {
+		return err
+	}
+	delete(d.adopted, path)
+	return nil
+}
+
+// retainedDownload is shared by boot and runtime orphan cleanup.
+func retainedDownload(path string, now time.Time) bool {
+	data, err := os.ReadFile(path + ".retain")
+	if err != nil {
+		return false
+	}
+	expires, err := time.Parse(time.RFC3339Nano, string(data))
+	return err == nil && now.Before(expires)
 }
 
 // UsedBytes is the budget currently held by finished and in-flight

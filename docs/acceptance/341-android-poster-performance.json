@@ -1,0 +1,55 @@
+{
+  "baseline": "f81515db6",
+  "candidate": "cache follow-up in this commit",
+  "platform": "darwin/arm64",
+  "go": "go1.27.3",
+  "gomaxprocs": 2,
+  "method": "20 cold and 20 warm pages; 50 distinct authored PNG posters (300x450, average 291016 bytes); six parallel httptest handler workers; loopback httptest upstream; explicit Android format=jpeg; cold clears raw and converted caches each page; warm prefetches once; CPU is RUSAGE_SELF user+system divided by 1000 images; p95 is 19th of 20 sorted complete-page wall times. Setup/image generation/compilation excluded.",
+  "limitations": "Shared Mac with unrelated workloads and measured paging; sequential before/after samples, not randomized. No physical Android or public-network timing. No cold speedup claimed.",
+  "results": {
+    "before": {
+      "cold": {
+        "posters": 50,
+        "samples": 20,
+        "workers": 6,
+        "source_bytes": 291016,
+        "cpu_ms_per_image": 9.1209,
+        "page_p50_ms": 437.841,
+        "page_p95_ms": 696.395,
+        "upstream_fetches": 1000
+      },
+      "warm": {
+        "posters": 50,
+        "samples": 20,
+        "workers": 6,
+        "source_bytes": 291016,
+        "cpu_ms_per_image": 8.4706,
+        "page_p50_ms": 362.163,
+        "page_p95_ms": 562.247,
+        "upstream_fetches": 0
+      }
+    },
+    "after": {
+      "cold": {
+        "posters": 50,
+        "samples": 20,
+        "workers": 6,
+        "source_bytes": 291016,
+        "cpu_ms_per_image": 9.3499,
+        "page_p50_ms": 500.089,
+        "page_p95_ms": 856.515,
+        "upstream_fetches": 1000
+      },
+      "warm": {
+        "posters": 50,
+        "samples": 20,
+        "workers": 6,
+        "source_bytes": 291016,
+        "cpu_ms_per_image": 0.2071,
+        "page_p50_ms": 9.012,
+        "page_p95_ms": 29.197,
+        "upstream_fetches": 0
+      }
+    }
+  }
+}

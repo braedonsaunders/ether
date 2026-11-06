@@ -623,8 +623,53 @@ func (s *Service) requestLink(ctx context.Context, c Candidate) (string, error) 
 }
 
 // download fetches the raw subtitle file bytes for a candidate.
+// downloadSlot serializes provider downloads until their bodies have been read.
+// Entries are released when the final waiter leaves, keeping host state bounded.
+type downloadHostGate struct {
+	slot chan struct{}
+	refs int
+}
+
+var providerDownloadGates = struct {
+	sync.Mutex
+	hosts map[string]*downloadHostGate
+}{hosts: make(map[string]*downloadHostGate)}
+
+func acquireDownloadHost(ctx context.Context, host string) (func(), error) {
+	providerDownloadGates.Lock()
+	gate := providerDownloadGates.hosts[host]
+	if gate == nil {
+		gate = &downloadHostGate{slot: make(chan struct{}, 1)}
+		providerDownloadGates.hosts[host] = gate
+	}
+	gate.refs++
+	providerDownloadGates.Unlock()
+	releaseRef := func() {
+		providerDownloadGates.Lock()
+		defer providerDownloadGates.Unlock()
+		gate.refs--
+		if gate.refs == 0 {
+			delete(providerDownloadGates.hosts, host)
+		}
+	}
+	select {
+	case gate.slot <- struct{}{}:
+		return func() { <-gate.slot; releaseRef() }, nil
+	case <-ctx.Done():
+		releaseRef()
+		return nil, ctx.Err()
+	}
+}
+
 func (s *Service) download(ctx context.Context, c Candidate) ([]byte, error) {
 	if c.PluginID != "" {
+		if parsed, err := url.Parse(c.DownloadURL); err == nil && parsed.Host != "" {
+			release, err := acquireDownloadHost(ctx, strings.ToLower(parsed.Host))
+			if err != nil {
+				return nil, err
+			}
+			defer release()
+		}
 		s.mu.Lock()
 		p := s.pluginProviders[c.PluginID]
 		s.mu.Unlock()
@@ -641,6 +686,15 @@ func (s *Service) download(ctx context.Context, c Candidate) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	downloadURL, err := url.Parse(link)
+	if err != nil {
+		return nil, err
+	}
+	releaseHost, err := acquireDownloadHost(ctx, strings.ToLower(downloadURL.Host))
+	if err != nil {
+		return nil, err
+	}
+	defer releaseHost()
 	resp, err := s.send(ctx, func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
 		if err != nil {
@@ -1034,11 +1088,12 @@ func (s *Service) Sidecars(ctx context.Context, title *core.Title, user *core.Us
 // selection is the persisted choice for one title+language+release+preference, so
 // later playbacks skip the search and download entirely.
 type selection struct {
-	ID       string    `json:"id"`
-	FileID   int64     `json:"fileId"`
-	Language string    `json:"language"`
-	Release  string    `json:"release"`
-	At       time.Time `json:"at"`
+	ProviderTitle string    `json:"providerTitle,omitempty"`
+	ID            string    `json:"id"`
+	FileID        int64     `json:"fileId"`
+	Language      string    `json:"language"`
+	Release       string    `json:"release"`
+	At            time.Time `json:"at"`
 	// Forced is set for a real forced track (foreign-parts-only, not HI).
 	Forced bool `json:"forced,omitempty"`
 	// SDH marks a hearing-impaired track; it is surfaced in the sidecar

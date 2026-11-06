@@ -107,7 +107,7 @@ func TestBlockedShowChildrenStayHidden(t *testing.T) {
 			t.Errorf("%s: status %d body %s", path, rec.Code, rec.Body.String())
 		}
 	}
-	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+url.QueryEscape("server://x/com.plexapp.plugins.library/library/metadata/"+ep), map[string]string{"X-Plex-Token": friendToken})
+	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+url.QueryEscape("server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/"+ep), map[string]string{"X-Plex-Token": friendToken})
 	if rec.Code != 404 || strings.Contains(rec.Body.String(), "Pilot") {
 		t.Errorf("play queue of a blocked episode: %d %s", rec.Code, rec.Body.String())
 	}
@@ -125,7 +125,7 @@ func TestRestrictedViewerQueuesAndPlaylistsHideTitles(t *testing.T) {
 	pg := alien
 	pg.ContentRating = "PG"
 	f.catalog.titles[pg.Key] = pg
-	uri := url.QueryEscape("server://x/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String())
+	uri := url.QueryEscape("server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String())
 	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+uri, map[string]string{"X-Plex-Token": "kid"})
 	if strings.Contains(rec.Body.String(), "Fjord Harbor") {
 		t.Errorf("play queue leaked a hidden title: %d %s", rec.Code, rec.Body.String())
@@ -157,11 +157,13 @@ func TestBlockedShowEpisodesStayOutOfUpNextAndOnDeck(t *testing.T) {
 	if rec.Code != 404 || strings.Contains(rec.Body.String(), "Pilot") {
 		t.Errorf("show onDeck: %d %s", rec.Code, rec.Body.String())
 	}
+	// A completed episode makes the owner eligible for postplay next-up.
+	f.state.set(ownerUser.ID, ws(bbE1.Key, 0, 1))
 	// The owner still gets both.
 	if rec := f.get(t, "/hubs/metadata/"+bbE1.Key.String()+"/postplay"); !strings.Contains(rec.Body.String(), "Second Watch") {
 		t.Errorf("owner postplay lost Up Next: %s", rec.Body.String())
 	}
-	if rec := f.get(t, "/library/metadata/"+show.Key.String()+"/onDeck"); rec.Code != 200 || !strings.Contains(rec.Body.String(), "Pilot") {
+	if rec := f.get(t, "/library/metadata/"+show.Key.String()+"/onDeck"); rec.Code != 200 || !strings.Contains(rec.Body.String(), "Second Watch") {
 		t.Errorf("owner onDeck: %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -184,7 +186,7 @@ func TestHistoryHidesRestrictedTitles(t *testing.T) {
 	pg.ContentRating = "PG"
 	f.catalog.titles[pg.Key] = pg
 	f.srv.d.State = historyState{fakeState: f.state, hist: []core.HistoryEntry{
-		{UserID: 30, Key: fightClub.Key, ViewedAt: fixedNow}, {UserID: 30, Key: pg.Key, ViewedAt: fixedNow},
+		{UserID: 30, Key: fightClub.Key, ViewedAt: fixedNow, ViewType: 1}, {UserID: 30, Key: pg.Key, ViewedAt: fixedNow, ViewType: 1},
 	}}
 	rec := f.get(t, "/status/sessions/history/all?type=1", "X-Plex-Token", "kid")
 	if rec.Code != 200 || strings.Contains(rec.Body.String(), "Fjord Harbor") || !strings.Contains(rec.Body.String(), "Alien") {
@@ -303,7 +305,7 @@ func TestHistoryAndPosterHideBlockedShowEpisodes(t *testing.T) {
 	show := breakingBad
 	show.Keywords = []string{"blocked"}
 	f.catalog.titles[show.Key] = show
-	f.srv.d.State = historyState{fakeState: f.state, hist: []core.HistoryEntry{{UserID: friendUser.ID, Key: bbE1.Key, ViewedAt: fixedNow}}}
+	f.srv.d.State = historyState{fakeState: f.state, hist: []core.HistoryEntry{{UserID: friendUser.ID, Key: bbE1.Key, ViewedAt: fixedNow, ViewType: 1}}}
 	if rec := f.get(t, "/status/sessions/history/all?type=1", "X-Plex-Token", friendToken); rec.Code != 200 || strings.Contains(rec.Body.String(), bbE1.Title) {
 		t.Errorf("history: %d %s", rec.Code, rec.Body.String())
 	}

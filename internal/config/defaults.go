@@ -19,10 +19,12 @@ func randomID(n int) string {
 func Defaults(dataDir string) Config {
 	return Config{
 		Availability: DefaultAvailability(),
-		Usenet:       Usenet{MinIdle: 2, Repair: Repair{AdaptiveSummaries: true, SummaryRows: 4, MaxDownloadBytes: 512 << 20, LiveWait: Duration(2 * time.Second), AheadWait: Duration(90 * time.Second)}},
-		Debrid:       Debrid{CachedOnly: true, RemoveUncached: true},
-		Markers:      Markers{TheIntroDB: true},
-		Database:     Database{Driver: DatabaseSQLite},
+		// Preserve watch sync for installations predating the global switch.
+		PlexServers: PlexServers{Enabled: true},
+		Usenet:      Usenet{MinIdle: 2, Repair: Repair{AdaptiveSummaries: true, SummaryRows: 4, MaxDownloadBytes: 512 << 20, LiveWait: Duration(2 * time.Second), AheadWait: Duration(90 * time.Second)}},
+		Debrid:      Debrid{CachedOnly: true, RemoveUncached: true},
+		Markers:     Markers{TheIntroDB: true},
+		Database:    Database{Driver: DatabaseSQLite},
 		Personalize: Personalize{
 			PostPlay: true, PostPlayPrebuffer: true, MicroReasons: true, SessionIntent: true,
 		},

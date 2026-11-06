@@ -56,6 +56,9 @@ type CreditFilter struct {
 
 // FilterGroup represents a nested boolean expression of browse filters.
 type FilterGroup struct {
+	StateField    string `json:"stateField,omitempty"`
+	StateOperator string `json:"stateOperator,omitempty"`
+	StateValue    int64  `json:"stateValue,omitempty"`
 	// ParentOnly applies this subtree to the series when browsing episodes.
 	ParentOnly       bool          `json:"-"`
 	LastViewedAfter  int64         `json:"lastViewedAfter,omitempty"`
@@ -148,6 +151,11 @@ type Filter struct {
 }
 
 type BrowseQuery struct {
+	// PlaylistSource evaluates a saved smart membership before applying this
+	// query's filters and optional episode-to-parent projection.
+	PlaylistSource      *BrowseQuery
+	PlaylistSourceLimit int
+
 	SortLastViewed bool
 	SortViewerID   int64
 	Filter         Filter
@@ -288,6 +296,7 @@ type WatchStatus struct {
 	ViewOffset      time.Duration `json:"viewOffset"`
 	ViewCount       int           `json:"viewCount"`
 	LastViewedAt    time.Time     `json:"lastViewedAt,omitempty"`
+	LastRatedAt     time.Time     `json:"lastRatedAt,omitempty"`
 	UserRating      float64       `json:"userRating,omitempty"` // 0-10
 	InWatchlist     bool          `json:"inWatchlist,omitempty"`
 	IsFavorite      bool          `json:"isFavorite,omitempty"`      // Derived from the viewer’s favorites set.
@@ -297,10 +306,41 @@ type WatchStatus struct {
 }
 
 type HistoryEntry struct {
+	Snapshot  *Title    `json:"snapshot,omitempty"`
+	ID        int64     `json:"id"`
+	DeviceID  int64     `json:"deviceId"`
+	ViewType  int       `json:"viewType"`
 	UserID    int64     `json:"userId"`
 	Key       RatingKey `json:"key"`
 	ViewedAt  time.Time `json:"viewedAt"`
 	Completed bool      `json:"completed"`
+}
+
+// HistoryQuery selects persisted viewing events before applying a bounded page.
+type HistoryQuery struct {
+	Kind             KeyKind
+	UserID           int64 // zero selects all accounts (owner only at the protocol boundary)
+	Key              RatingKey
+	DeviceID         *int64
+	ViewType         int
+	Since, Until, At *int64 // Unix seconds, inclusive
+	Asc              bool
+	Offset, Limit    int
+}
+type HistoryCount struct {
+	Key    RatingKey
+	Count  int
+	LastAt int64
+	Users  []int64
+}
+type HistoryTopStore interface {
+	HistoryTop(context.Context, HistoryQuery, KeyKind) ([]HistoryCount, error)
+	LifetimeUsers(context.Context, RatingKey, HistoryQuery) ([]HistoryCount, error)
+}
+type HistoryStore interface {
+	QueryHistory(context.Context, HistoryQuery) ([]HistoryEntry, error)
+	HistoryByID(context.Context, int64, int64) (HistoryEntry, error)
+	DeleteHistory(context.Context, int64, int64) error
 }
 
 type State interface {
@@ -325,8 +365,33 @@ type Playlist struct {
 	Title     string      `json:"title"`
 	Smart     bool        `json:"smart"`
 	SmartURI  string      `json:"-"`
+	GUID      string      `json:"-"`
+	Summary   string      `json:"summary,omitempty"`
+	AddedAt   time.Time   `json:"addedAt"`
+	ItemIDs   []int64     `json:"-"`
 	Items     []RatingKey `json:"items"`
 	UpdatedAt time.Time   `json:"updatedAt"`
+}
+
+// PlaylistEdit updates only explicitly supplied fields.
+type PlaylistEdit struct {
+	Title    *string
+	Summary  *string
+	SmartURI *string
+}
+type PlaylistEditor interface {
+	EditPlaylist(context.Context, int64, RatingKey, PlaylistEdit) (*Playlist, error)
+}
+
+// PlaylistMutation addresses members by stable item identity.
+type PlaylistMutation struct {
+	Operation string
+	Items     []RatingKey
+	ItemID    int64
+	AfterID   int64
+}
+type PlaylistMutator interface {
+	MutatePlaylist(context.Context, int64, RatingKey, PlaylistMutation) (*Playlist, int, error)
 }
 
 // SmartPlaylists persists a section query for evaluation at read time.
@@ -561,6 +626,11 @@ type StreamInfo struct {
 	ReferenceFrameRate *float64 `json:"referenceFrameRate,omitempty"`
 	DisplayAspectRatio string   `json:"displayAspectRatio,omitempty"`
 	PixelFormat        string   `json:"pixelFormat,omitempty"`
+	SampleFormat       string   `json:"sampleFormat,omitempty"`
+	StreamIdentifier   string   `json:"streamIdentifier,omitempty"`
+	CodedWidth         int      `json:"codedWidth,omitempty"`
+	ChromaLocation     string   `json:"chromaLocation,omitempty"`
+	CodedHeight        int      `json:"codedHeight,omitempty"`
 	CodecTag           string   `json:"codecTag,omitempty"`
 	TimeBase           string   `json:"timeBase,omitempty"`
 	NALLengthSize      *int     `json:"nalLengthSize,omitempty"`
@@ -593,6 +663,7 @@ type StreamInfo struct {
 	AACSourceStart *int64 `json:"aacSourceStart,omitempty"`
 	SampleRate     int    `json:"sampleRate,omitempty"`
 	BitrateKbps    int    `json:"bitrateKbps,omitempty"`
+	ProviderTitle  string `json:"providerTitle,omitempty"`
 	External       bool   `json:"external,omitempty"` // sidecar subtitle (OpenSubtitles)
 	ExternalURL    string `json:"externalUrl,omitempty"`
 
@@ -626,16 +697,18 @@ type Chapter struct {
 // ProbeFactsVersion is the generation of facts a probe is expected to carry,
 // including H.264/HEVC reference frames and descriptive audio handler titles.
 // Persisted probes from an older generation are cache misses.
-const ProbeFactsVersion = 5
+const ProbeFactsVersion = 6
 
 type MediaInfo struct {
-	Chapters    []Chapter     `json:"chapters,omitempty"`
-	Container   string        `json:"container"` // mkv, mp4, avi, mpegts
-	Duration    time.Duration `json:"duration"`
-	Size        int64         `json:"size"`
-	BitrateKbps int           `json:"bitrateKbps"`
-	Streams     []StreamInfo  `json:"streams"`
-	Estimated   bool          `json:"estimated"` // derived from release name, not probed
+	Has64bitOffsets       *bool         `json:"has64bitOffsets,omitempty"`
+	OptimizedForStreaming *bool         `json:"optimizedForStreaming,omitempty"`
+	Chapters              []Chapter     `json:"chapters,omitempty"`
+	Container             string        `json:"container"` // mkv, mp4, avi, mpegts
+	Duration              time.Duration `json:"duration"`
+	Size                  int64         `json:"size"`
+	BitrateKbps           int           `json:"bitrateKbps"`
+	Streams               []StreamInfo  `json:"streams"`
+	Estimated             bool          `json:"estimated"` // derived from release name, not probed
 
 	// Keyframes is the container's keyframe/cue index, sorted, when it was
 	// read on open or probe; empty when unknown. Not serialized: it can hold

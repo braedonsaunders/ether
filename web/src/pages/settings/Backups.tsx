@@ -5,6 +5,7 @@ import {
   Input,
   PagedTable,
   SearchSelect,
+  Select,
   SettingsSection,
   toast,
 } from "@braedonsaunders/appkit-ui";
@@ -29,6 +30,8 @@ import {
   getToken,
   SESSION_HEADER,
 } from "../../lib/api";
+import { listPlexServers } from "../../lib/plex-servers";
+import { useAsync } from "../../lib/hooks";
 import { formatBytes } from "../../lib/format";
 import type { EtherUser } from "../../lib/types";
 import { pagedTableLabels, searchSelectLabels } from "../../i18n/appkit-labels";
@@ -650,7 +653,9 @@ function useViewerChoice(users: EtherUser[] | null) {
 
 function PlexImport({ users }: { users: EtherUser[] | null }) {
   const [viewer, setViewer] = useViewerChoice(users);
-  const [url, setURL] = useState("");
+  const servers = useAsync(listPlexServers, []);
+  const [serverID, setServerID] = useState("");
+  const url = (servers.data ?? []).find((s) => String(s.id) === serverID)?.url ?? "";
   const [token, setToken] = useState("");
   const [scanned, setScanned] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState("");
@@ -677,7 +682,7 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
   return (
     <>
       <SettingsSection
-        title={t("Import from Plex")}
+        title={t("One-time Plex import")}
         description={t(
           "Bring one viewer's watch history, ratings and playlists across from another Plex server. That server is only read, and you review everything before it's imported.",
         )}
@@ -773,15 +778,32 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
         />
         <SettingsRow
           stacked
-          title={<label htmlFor="plex-import-url">{t("Plex server URL")}</label>}
+          title={<label htmlFor="plex-import-server">{t("Server")}</label>}
+          description={
+            <>
+              {t("Choose a server from Plex watch sync.")}{" "}
+              <a className="text-primary hover:underline" href="/ether/services/plexservers">
+                {t("Manage Plex watch sync")}
+              </a>
+            </>
+          }
         >
-          <Input
-            id="plex-import-url"
-            type="url"
-            placeholder="http://plex-server:32400"
-            value={url}
-            onChange={(e) => edit(setURL)(e.currentTarget.value)}
-          />
+          {servers.error ? (
+            <ErrorPanel error={servers.error} onRetry={() => void servers.reload()} />
+          ) : null}
+          <Select
+            id="plex-import-server"
+            value={serverID}
+            disabled={servers.loading || !!servers.error}
+            onChange={(e) => edit(setServerID)(e.currentTarget.value)}
+          >
+            <option value="">{t("Choose a server from Plex watch sync.")}</option>
+            {(servers.data ?? []).map((server) => (
+              <option key={server.id} value={server.id}>
+                {server.name}
+              </option>
+            ))}
+          </Select>
         </SettingsRow>
         <SettingsRow
           stacked

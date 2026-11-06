@@ -38,11 +38,12 @@ func TestTimelineStartsTrickplayForConsumedPlayback(t *testing.T) {
 	provider := &fakeTrickplay{}
 	f.srv.d.Trickplay = provider
 	addIndexSession(f, fightClub.Key)
+	f.playback.sessions["index-session"].BytesServed = 1000 // consumed source, not just prepared
 	rec := f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&time=30000&duration=8340000&state=playing")
 	if rec.Code != http.StatusOK || provider.ensured != 1 {
 		t.Fatalf("timeline: status=%d Ensure calls=%d", rec.Code, provider.ensured)
 	}
-	if provider.source.ReleaseID != "release-1" || provider.source.AvailableUntil != 30*time.Second || provider.source.InputURL == "" {
+	if provider.source.ReleaseID != core.TrickplayCacheKey(f.playback.sessions["index-session"]) || provider.source.AvailableUntil != 30*time.Second || provider.source.InputURL == "" {
 		t.Fatalf("trickplay source=%+v", provider.source)
 	}
 }
@@ -147,14 +148,14 @@ func TestPlexOnlyTrickplayIdleCancelParity(t *testing.T) {
 			// A second active source preserves the historical idle decision, even if it
 			// has not sent a timeline and therefore has no thumbnail lease yet.
 			f.playback.mu.Lock()
-			f.playback.sessions["other"] = &core.PlaySession{ID: "other", Resolution: &core.Resolution{Release: core.Release{ID: "release-1"}}}
+			f.playback.sessions["other"] = &core.PlaySession{ID: "other", Key: fightClub.Key, Resolution: &core.Resolution{Release: core.Release{ID: "release-1"}}}
 			f.playback.mu.Unlock()
 			stopped := f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&time=30000&duration=8340000&state=stopped")
 			if raw.cancels != 0 {
 				t.Fatal("canceled before idle")
 			}
 			f.playback.Stop("other")
-			f.srv.cancelTrickplayIfIdle(&core.PlaySession{ID: "other", Resolution: &core.Resolution{Release: core.Release{ID: "release-1"}}})
+			f.srv.cancelTrickplayIfIdle(&core.PlaySession{ID: "other", Key: fightClub.Key, Resolution: &core.Resolution{Release: core.Release{ID: "release-1"}}})
 			if raw.cancels != 1 {
 				t.Fatalf("idle cancels=%d", raw.cancels)
 			}
@@ -176,7 +177,7 @@ func TestPlexStopCannotCancelJellyfinOrPrewarmLease(t *testing.T) {
 			f.srv.d.Trickplay = p
 			addIndexSession(f, fightClub.Key)
 			f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&time=30000&state=playing")
-			other, err := p.(core.TrickplayLeaser).AcquireTrickplay(context.Background(), core.TrickplaySource{ReleaseID: "release-1", InputURL: "prewarm"})
+			other, err := p.(core.TrickplayLeaser).AcquireTrickplay(context.Background(), core.TrickplaySource{ReleaseID: core.TrickplayCacheKey(f.playback.sessions["index-session"]), InputURL: "prewarm"})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -35,6 +35,7 @@ type ownedSource struct {
 	binding, issuing, issued bool
 }
 type sourceRequest struct {
+	ActivityVersion       uint64 `json:",omitempty"`
 	Reopen                *ReopenRequest
 	OldSource, NextSource *playbackcontinuity.SourceBinding
 	Proof                 string
@@ -49,13 +50,14 @@ type sourceRequest struct {
 	Old                   nodesource.Grant
 }
 type sourceResponse struct {
-	Proof    string
-	Phase    string
-	Prepared PreparedSource
-	Stable   string
-	Grant    nodesource.Grant
-	Size     int64
-	Retired  bool
+	FileAvailable *bool `json:",omitempty"`
+	Proof         string
+	Phase         string
+	Prepared      PreparedSource
+	Stable        string
+	Grant         nodesource.Grant
+	Size          int64
+	Retired       bool
 }
 
 func (r *Runtime) sourceHTTP(w http.ResponseWriter, q *http.Request) {
@@ -90,6 +92,9 @@ func (r *Runtime) sourceHTTP(w http.ResponseWriter, q *http.Request) {
 }
 func (r *Runtime) sourceOperation(ctx context.Context, peer nodewire.Identity, m sourceRequest) (sourceResponse, error) {
 	deny := func() (sourceResponse, error) { return sourceResponse{}, ErrDenied }
+	if m.Op == "file-check" {
+		return r.checkSourceFile(ctx, peer, m.Prepare)
+	}
 	if m.Op == "reopen" {
 		return r.reopenSource(ctx, peer, m.Reopen)
 	}
@@ -103,7 +108,7 @@ func (r *Runtime) sourceOperation(ctx context.Context, peer nodewire.Identity, m
 		if m.Prepare == nil {
 			return deny()
 		}
-		return r.preparationStatus(peer, m.Prepare.Operation)
+		return r.preparationStatus(ctx, peer, m.Prepare.Operation)
 	}
 	if m.Op == "prepare-status" {
 		if m.Prepare == nil {
@@ -121,6 +126,9 @@ func (r *Runtime) sourceOperation(ctx context.Context, peer nodewire.Identity, m
 	rt, e := r.route(ctx, m.Route.Fence.Session)
 	if e != nil || rt != m.Route || rt.Source != r.o.Self {
 		return deny()
+	}
+	if m.Op == "recovery-admission-policy" {
+		return r.recoveryAdmissionPolicy(ctx, peer, rt)
 	}
 	f := rt.Fence
 	controller := peer.Cluster == r.o.Self.Cluster && peer.NodeID == f.Controller.ID && peer.Boot == f.Controller.Boot
@@ -147,6 +155,12 @@ func (r *Runtime) sourceOperation(ctx context.Context, peer nodewire.Identity, m
 		}
 
 		r.mu.Lock()
+		for _, preparation := range r.preparations {
+			if preparation.result.PlayID == rt.PlayID && preparation.peer == peer && preparation.retiring {
+				r.mu.Unlock()
+				return deny()
+			}
+		}
 		if s = r.sources[sourceKey(f)]; s != nil {
 			if s.route != rt || s.retiring || s.binding || s.handle.Value() == "" {
 				r.mu.Unlock()

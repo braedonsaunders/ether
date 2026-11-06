@@ -11,10 +11,13 @@ import (
 // protocol plex.
 type PlexActivity struct {
 	ID                                                     string
+	DecisionSeen                                           bool
+	PlayingSeen                                            bool
 	SessionKey                                             int
 	User                                                   core.User
 	ClientID, Product, Version, Platform, PlatformVersion  string
 	Device, DeviceName, Model, Vendor, SessionID, RemoteIP string
+	ProfileName                                            string
 	Remote                                                 bool
 	Key                                                    core.RatingKey
 	State                                                  string

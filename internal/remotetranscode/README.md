@@ -363,3 +363,43 @@ are commitments to independently authenticated observations, not standalone
 cryptographic authenticity or permission to publish/compact. Source-owner proof,
 full cluster/stable-node fence binding and atomic durable History publication are
 separate trusted Runtime/provider responsibilities.
+
+## Local accepted-Start observation prerequisite
+
+`Worker.AcceptedStart(ctx, exactIdentity)` returns a Worker-owned
+`*AcceptedStartHandle` only for an actual retained `EvidenceAcceptedStart` record.
+The pointer is installed with that record before Resolve or backend invocation,
+including while Start is pending or its response is uncertain/blocked. Exact
+Start retries attach to the same record and handle. This differs from
+`Session.StartCommitment`, which retains the controller's marshaled request before
+sending and cannot establish worker acceptance.
+
+`Worker.InspectAcceptedStart(ctx, handle)` revalidates the exact Worker pointer,
+original handle pointer, retained record identity, worker boot, accepted hash,
+lease consistency and local live state on every call. Nil/zero, caller-created,
+copied handle objects and freshly deserialized objects are invalid. Keep the
+returned pointer locally: no snapshot, digest, nonce or wire DTO recreates it.
+Missing records, negative stop-before-start tombstones, cancellation, closed or
+stopped workers, expiry and inconsistent records fail closed. Inspection does not
+run expiry or stop work when it notices an elapsed deadline.
+
+The detached snapshot contains only the complete existing transport Identity,
+actual worker-retained accepted StartHash, per-record AttemptNonce, original
+accepted deadline, current accepted LeaseState and Starting flag. AcceptedRenewal
+is copied. The hash is checked against the retained immutable Start, independently
+of any controller token. No raw Start, grant, source URL or credential is exposed.
+The nonce uses the required globally unique worker boot plus the next retained
+record ordinal, including tombstones; retention and bounded int capacity prevent
+reuse or uint64 overflow. It needs no random source or fallible counter operation
+once ownership is installed. It is an identifier, never an authentication secret.
+
+Neither accessor calls Security, preflight, Resolve, backend getters, renewal,
+stop or retirement; neither creates tombstones, claims, observer arms or evidence.
+The snapshot is a local acceptance observation only. It carries the existing
+boot/session/generation Identity, not the full durable cluster/stable-node/source
+fence. There is no integration caller, public RPC, admission veto, durable seal,
+authenticated observer, host/runtime/kernel binding or production recovery
+change in this slice. Those separately owned contracts must be implemented and
+reviewed before an observer can authenticate this local capability or use it as
+one prerequisite for live arming. It supplies no execution permission, source
+proof, retirement proof, signer input or capacity-release authority.

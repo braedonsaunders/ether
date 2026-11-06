@@ -130,7 +130,32 @@ type probeCache struct {
 // (DuringPlayback), prefetch 48 MiB by default (hard cap 64 MiB) and get 45s.
 // Prefetch goes through Engine.Prefetch, which runs at core.PriorityPrefetch
 // and yields to live streams.
-func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, opts core.PrewarmOptions) bool {
+func (m *Manager) Prewarm(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, opts core.PrewarmOptions) bool {
+	return m.prewarm(ctx, user, key, caps, opts, false)
+}
+
+// ProbeMetadata resolves and probes the detail page's source without creating a
+// playback session or prefetching video. Owner cache/warm-up settings and
+// admission limits apply. Slow probes finish in the background; the caller
+// can render estimated metadata until exact facts become available.
+func (m *Manager) ProbeMetadata(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := m.WarmProbeInfo(user, caps, key); ok {
+		return nil
+	}
+	m.prewarm(ctx, user, key, caps, core.PrewarmOptions{Reason: core.PrewarmDetail}, true)
+	if _, ok := m.WaitWarmProbe(ctx, user, caps, key, 4*time.Second); ok {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return core.ErrPrepareSlow
+}
+
+func (m *Manager) prewarm(_ context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, opts core.PrewarmOptions, metadata bool) bool {
 	if user == nil || caps.ClientID == "" || caps.Product == "" {
 		return false
 	}
@@ -158,6 +183,9 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		default:
 			prefetchBytes = bigWarmPrefetchBytes
 		}
+	}
+	if metadata {
+		prefetchBytes = 0
 	}
 	if prefetchBytes > maxWarmPrefetchBytes {
 		prefetchBytes = maxWarmPrefetchBytes
@@ -233,7 +261,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 	// Active playback takes priority over speculation, unless the caller
 	// is warming the next thing while the viewer watches (a trailer or
 	// the end of a film).
-	if !opts.DuringPlayback && m.hasActivePlaybackLocked() {
+	if !metadata && !opts.DuringPlayback && m.hasActivePlaybackLocked() {
 		m.mu.Unlock()
 		return false
 	}
@@ -314,7 +342,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 			info := EstimateInfo(title, caps, m.deps.SelectProfile(caps, &u))
 			info.Size = size
 			return info
-		})
+		}, m.persistedProbe(ctx, u.ID, key, res.Release.ID, res.NZB))
 		if err != nil {
 			return
 		}
@@ -323,7 +351,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		if facts.info.Estimated {
 			facts = nil
 		}
-		if automaticReserve {
+		if automaticReserve && !metadata {
 			info := generation.infoSnapshot()
 			if info.Duration > 0 {
 				prefetchBytes = min(int64(256<<20), max(int64(8<<20), int64(float64(src.Size())*(40*time.Second).Seconds()/info.Duration.Seconds())))

@@ -15,10 +15,11 @@ func Ptr[T any](v T) *T { return &v }
 
 // MediaContainer is the root of almost every PMS response.
 type MediaContainer struct {
-	decision  bool
-	Size      int  `plex:"size"`
-	TotalSize *int `plex:"totalSize"`
-	Offset    *int `plex:"offset"`
+	syncProjection bool
+	decision       bool
+	Size           int  `plex:"size"`
+	TotalSize      *int `plex:"totalSize"`
+	Offset         *int `plex:"offset"`
 
 	AllowSync           *bool  `plex:"allowSync"`
 	Art                 string `plex:"art,omitempty"`
@@ -62,8 +63,11 @@ type MediaContainer struct {
 	// play queues) in order, after the common ones above.
 	Extra []Attr `plex:",attrs"`
 
+	Bandwidths          []TimelineBandwidths  `plex:"Bandwidths"`
+	Profile             []ClientProfile       `plex:"Profile"`
 	Meta                *Meta                 `plex:"Meta,object"`
 	Directory           []Directory           `plex:"Directory"`
+	History             []HistoryMetadata     `plex:"Metadata"`
 	Metadata            []Metadata            `plex:"Metadata"`
 	Stream              []Stream              `plex:"Stream"` // subtitle search results
 	Hub                 []Hub                 `plex:"Hub"`
@@ -179,8 +183,10 @@ type Pivot struct {
 // items, <Directory> for containers and <Playlist> for playlists; in JSON
 // all are under "Metadata".
 type Metadata struct {
-	element string
-	alpha   bool
+	Preferences *TrackPreferences `plex:"Preferences"`
+	element     string
+	alpha       bool
+	onDeck      bool
 
 	// On Deck items lead with their sync flag and section (PMS).
 	AllowSync             *bool   `plex:"allowSync"`
@@ -213,6 +219,7 @@ type Metadata struct {
 	Summary               string  `plex:"summary"`
 	Smart                 *bool   `plex:"smart"`
 	PlaylistType          string  `plex:"playlistType,omitempty"`
+	Content               string  `plex:"content,omitempty"`
 	Index                 *int    `plex:"index"`
 	ParentIndex           *int    `plex:"parentIndex"`
 	Rating                float64 `plex:"rating,omitempty"`
@@ -247,6 +254,8 @@ type Metadata struct {
 	CollectionSort        string  `plex:"collectionSort,omitempty"`
 	AddedAt               int64   `plex:"addedAt,omitempty"`
 	UpdatedAt             int64   `plex:"updatedAt,omitempty"`
+	GlobalViewCount       *int    `plex:"globalViewCount"`
+	UserCount             *int    `plex:"userCount"`
 	AudienceRatingImage   string  `plex:"audienceRatingImage,omitempty"`
 	ChapterSource         string  `plex:"chapterSource,omitempty"`
 	PrimaryExtraKey       string  `plex:"primaryExtraKey,omitempty"`
@@ -293,6 +302,7 @@ type Metadata struct {
 	Similar    []Tag       `plex:"Similar"`
 	Studio_    []Tag       `plex:"Studio"`
 
+	TopUsers         []HistoryUser  `plex:"User"`
 	User             *SessionUser   `plex:"User,object"`
 	Player           *Player        `plex:"Player,object"`
 	Session          *Session       `plex:"Session,object"`
@@ -422,6 +432,8 @@ type Media struct {
 type Part struct {
 	alpha                 bool
 	lead                  []string // decision: attributes before the alphabetical rest
+	Accessible            *bool    `plex:"accessible"`
+	Exists                *bool    `plex:"exists"`
 	ID                    int64    `plex:"id"`
 	Key                   string   `plex:"key,omitempty"`
 	Duration              int64    `plex:"duration,omitempty"`
@@ -429,6 +441,7 @@ type Part struct {
 	Size                  int64    `plex:"size,omitempty"`
 	AudioProfile          string   `plex:"audioProfile,omitempty"`
 	Container             string   `plex:"container,omitempty"`
+	PacketLength          int      `plex:"packetLength,omitempty"`
 	Has64bitOffsets       *bool    `plex:"has64bitOffsets"`
 	OptimizedForStreaming *bool    `plex:"optimizedForStreaming"`
 	VideoProfile          string   `plex:"videoProfile,omitempty"`
@@ -439,14 +452,13 @@ type Part struct {
 	Decision              string   `plex:"decision,omitempty"`
 	Protocol              string   `plex:"protocol,omitempty"`
 	Selected              *bool    `plex:"selected"`
-	Exists                *bool    `plex:"exists"`
-	Accessible            *bool    `plex:"accessible"`
 
 	Stream []Stream `plex:"Stream"`
 }
 
 // Stream is a video (1), audio (2) or subtitle (3) track.
 type Stream struct {
+	lead                 []string
 	alpha                bool
 	ID                   int64  `plex:"id"`
 	StreamType           int    `plex:"streamType"`
@@ -455,6 +467,12 @@ type Stream struct {
 	Selected             *bool  `plex:"selected"`
 	Default              *bool  `plex:"default"`
 	Forced               *bool  `plex:"forced"`
+	HearingImpaired      *bool  `plex:"hearingImpaired"`
+	VisualImpaired       *bool  `plex:"visualImpaired"`
+	Original             *bool  `plex:"original"`
+	Dub                  *bool  `plex:"dub"`
+	Comment              *bool  `plex:"comment"`
+	StreamIdentifier     string `plex:"streamIdentifier,omitempty"`
 	Codec                string `plex:"codec,omitempty"`
 	Index                *int   `plex:"index"`
 	Key                  string `plex:"key,omitempty"`
@@ -464,9 +482,14 @@ type Stream struct {
 	LanguageTag          string `plex:"languageTag,omitempty"`
 	LanguageCode         string `plex:"languageCode,omitempty"`
 	// From here PMS lists the technical attributes alphabetically.
+	Anamorphic           *bool   `plex:"anamorphic"`
 	AudioChannelLayout   string  `plex:"audioChannelLayout,omitempty"`
 	BitDepth             int     `plex:"bitDepth,omitempty"`
+	ChromaLocation       string  `plex:"chromaLocation,omitempty"`
 	ChromaSubsampling    string  `plex:"chromaSubsampling,omitempty"`
+	CodecID              string  `plex:"codecID,omitempty"`
+	CodedHeight          int     `plex:"codedHeight,omitempty"`
+	CodedWidth           int     `plex:"codedWidth,omitempty"`
 	ColorPrimaries       string  `plex:"colorPrimaries,omitempty"`
 	ColorRange           string  `plex:"colorRange,omitempty"`
 	ColorSpace           string  `plex:"colorSpace,omitempty"`
@@ -481,8 +504,10 @@ type Stream struct {
 	DOVIVersion          string  `plex:"DOVIVersion,omitempty"`
 	Format               string  `plex:"format,omitempty"`
 	FrameRate            float64 `plex:"frameRate,omitempty"`
+	HasScalingMatrix     *bool   `plex:"hasScalingMatrix"`
 	Height               int     `plex:"height,omitempty"`
 	Level                int     `plex:"level,omitempty"`
+	PixelAspectRatio     string  `plex:"pixelAspectRatio,omitempty"`
 	Profile              string  `plex:"profile,omitempty"`
 	RefFrames            int     `plex:"refFrames,omitempty"`
 	SamplingRate         int     `plex:"samplingRate,omitempty"`
@@ -494,6 +519,7 @@ type Stream struct {
 	Decision             string  `plex:"decision,omitempty"`
 	Location             string  `plex:"location,omitempty"`
 	External             *bool   `plex:"external"`
+	Transient            *int    `plex:"transient"`
 	// Extra carries endpoint-specific attributes (subtitle search results).
 	Extra []Attr `plex:",attrs"`
 }
@@ -501,6 +527,7 @@ type Stream struct {
 // Hub is a row of items.
 type Hub struct {
 	HubKey        string `plex:"hubKey,omitempty"`
+	UpNext        *bool  `plex:"upNext"`
 	Key           string `plex:"key,omitempty"`
 	Title         string `plex:"title"`
 	Type          string `plex:"type"`
@@ -697,7 +724,12 @@ type ButlerTask struct {
 	Description       string `plex:"description"`
 }
 
+type HistoryUser struct {
+	ID int64 `plex:"id"`
+}
+
 type Account struct {
+	GlobalViewCount      *int   `plex:"globalViewCount,omitempty"`
 	ID                   int64  `plex:"id"`
 	Key                  string `plex:"key"`
 	Name                 string `plex:"name"`
@@ -856,8 +888,25 @@ type StatusNotification struct {
 // A builds an Attr.
 func A(name string, value any) Attr { return Attr{Name: name, Value: value} }
 
+// ClientProfile identifies a server playback profile.
+type ClientProfile struct {
+	Key      string `plex:"key"`
+	Title    string `plex:"title"`
+	Selected *bool  `plex:"selected"`
+}
+
 // AutoUpdateNotification reports the result of the native updater check.
 type AutoUpdateNotification struct {
 	State      string `plex:"state"`
 	CanInstall bool   `plex:"canInstall"`
+}
+
+// TimelineBandwidths describes the rate and display resolution of one plan.
+type TimelineBandwidths struct {
+	Bandwidth []TimelineBandwidth `plex:"Bandwidth"`
+}
+type TimelineBandwidth struct {
+	Time       int    `plex:"time"`
+	Bandwidth  int    `plex:"bandwidth"`
+	Resolution string `plex:"resolution"`
 }

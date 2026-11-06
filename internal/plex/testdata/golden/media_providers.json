@@ -23,7 +23,7 @@
     "myPlexSigninState": "ok",
     "myPlexSubscription": false,
     "myPlexUsername": "owner",
-    "offlineTranscode": 0,
+    "offlineTranscode": 1,
     "ownerFeatures": "",
     "platform": "Linux",
     "platformVersion": "6.1",

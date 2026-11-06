@@ -80,6 +80,13 @@ func TestPremiereVisibilityBeforePaginationAndSearch(t *testing.T) {
 			t.Fatalf("page %d: %+v %v", offset, p, e)
 		}
 	}
+	// Saved smart-list limits apply to available source rows, before any
+	// requested projection or outer page can hide unavailable candidates.
+	source := core.BrowseQuery{Filter: core.Filter{Type: core.TypeShow}, Sort: core.SortTitle}
+	smart, e := wrapped.Browse(t.Context(), core.BrowseQuery{PlaylistSource: &source, PlaylistSourceLimit: 1, Filter: core.Filter{Type: core.TypeShow}, Limit: 1})
+	if e != nil || smart.Total != 1 || len(smart.Items) != 1 || smart.Items[0].Key != core.ShowKey(4) {
+		t.Fatalf("smart source availability: %+v %v", smart, e)
+	}
 	got, err := wrapped.Search(t.Context(), "Empty", []core.MediaType{core.TypeShow}, 20)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("empty premiere in search: %+v %v", got, err)

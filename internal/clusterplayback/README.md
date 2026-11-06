@@ -200,3 +200,144 @@ proof rejection, atomic receipt insert failure with capacity retained, and a
 committed write whose local acknowledgement is lost while both remote endpoints
 are unavailable. Historical receipts remain exact and readable after replacement;
 they never restore current execution authority.
+
+## Preparation retirement across source boots
+
+The source publishes exact immutable preparation receipts before PendingDetails
+can acknowledge quiescence. The key is configured cluster, original source node
+and boot, original controller node and boot, and a domain-separated operation
+hash. Receipts bind the original request hash and an opaque identity assigned to
+the actual retained source lifetime. Media revision/size are captured from the
+actual source when available. A preparation that fails before returning media
+can still prove its exact owned lifetime Done+nil; missing media facts are not
+invented, and this receipt cannot serve as a placement/source-media/reopen proof.
+An authentic no-source barrier is explicit and sealed, never inferred from a
+missing operation or expired lease.
+
+Publication seals preparation replay/use admission, joins preparation and policy,
+activity, Range, binding, issuance, Verify and Acquire callbacks, and requires the
+actual lifetime Done+nil plus associated source producers drained. The source
+marks bound handles retiring before revocation; late binds must finish and revoke
+before publication. Policy/backend callbacks and SQL run outside the runtime
+mutex. Failed/unknown writes retain the same payload and pending barrier until a
+fresh exact immutable read confirms publication. Source Tick and PendingDetails
+perform this publication; source rollout must use this implementation before it
+can preserve proof for controllers that outlive the source boot.
+
+RetirePreparedSource and the read-only PreparedSourceRetired first read the exact
+receipt for Self as controller. Unknown is not proof. Exact historical source
+membership need not remain live after a confirmed receipt, so a source-first
+replacement can complete the controller's retained lifetime without pretending to
+be the old boot. No wildcard boot seal, retroactive receipt, TTL or map compaction
+exists. The old 982 lab process predates these records and cannot be cleared by
+this implementation without independent, valid original-boot fencing evidence.
+
+The receipt admission barrier follows Manager's native source identity: blank and
+Plex surfaces coincide; different real surfaces stay independent. A nonexact
+stale preferred release can normalize to the automatic variant or join its
+original picked flight, so differing nonexact preferences can share one lifetime
+and are excluded while a predecessor operation remains unreceipted. Exact-release
+variants remain distinct. Registration/exclusion is atomic before Manager source
+acquisition; retries of the same immutable operation retain their own identity.
+Retained receipts are bounded per source boot by HistoryCapacity independently
+of concurrent encoder capacity. There is no rolling history release policy yet.
+
+PendingDetails reports numeric barrier categories, including PreparationReceipts
+and SourceCallbacks. The total is not a count of distinct sessions; a source,
+its placement and its encoder can independently require proof. No raw operation,
+viewer identity, grant, provider URL or private address is exposed by that DTO.
+
+## Private initial admission and retained Start commitment
+
+Each attempted remote start captures a detached initial request after the actual
+placement reservation and authenticated source bind, before invoking the remote
+adapter. Its private execution state binds the full placement fence, owning
+controller node/boot, target node/boot, authenticated source node/boot, PlayID,
+viewer and exact prepared revision. Route has no separate delivery-node identity;
+none is invented. No input URL, headers, grant or input-lifetime actor is retained
+in this snapshot. Every mutable request fact is detached, and the adapter receives
+another independent copy. The initial request/decision never comes from live
+Observe telemetry. Unset protocol/duration remain default instructions rather
+than fabricated backend facts.
+
+Session.StartCommitment returns only the exact retained Start identity and SHA256
+of the actual immutable marshaled bytes installed before its RPC attempt. It
+works on uncertain/stopped tokens independently of Session availability and does
+not infer sending, acceptance, source verification or retirement. Runtime captures
+it immediately when the owned token returns, outside its mutex, and binds it only
+to the matching initial route-derived identity. Mismatch/error retains the exact
+token and reservation for conservative retirement; it never authorizes fallback.
+
+Migration v3 persists one immutable sanitized admission and actual Start hash per
+cluster/session/generation before any Start RPC bytes. AdapterOptions.CommitStart
+runs synchronously outside adapter locks with a context bounded to five seconds.
+The outbound Start comes only from installed Session.start bytes. Nil preserves
+default adapter behavior. SQL errors are unknown outcomes; only an independent
+identical read permits sending. Conflicts, timeout without exact reconciliation,
+and full history retain source, placement and owned-token responsibilities.
+Records are bounded to 256 KiB and a durable cluster-wide HistoryCapacity,
+including every controller boot and retired generation. All coordinators must
+configure the same quota. Restart never replenishes it; exhaustion fails closed
+for new records while exact retries remain possible. No expiry deletion,
+eviction or compaction is provided. Historical
+route JSON stays unchanged. The transaction's PostgreSQL route read is not
+row-locked with route replacement: a racing replacement may leave an inert old
+historical row. Immutable generation keys prevent overwrite, and fresh placement
+and route checks after exact write readback gate sending. Worker authorization
+still independently fences every execution; a historical row is never authority.
+The synthetic write lock is SQLite-only and constant-false, with no history scan.
+Explicit fields retain complete keyframes and slate
+text omitted by ordinary request JSON. Raw grants, URLs, headers and InputLease
+actors never persist. The reservation operation is retained only as a hash.
+
+The package-private Runtime.loadRecoveryAdmission is a concrete historical reader
+for a current authenticated viewer and current server boot. It validates exact
+current placement/operation/route, original source owner boot/PlayID/revision and
+fresh source-owner viewer policy through a read-only authenticated control call.
+The source must retain the original bound lifetime. Route/fence are checked again
+after policy callbacks, which run outside locks. Missing binding or unavailable
+policy fails closed. The reader returns a detached original snapshot and hash;
+it installs no execution, starts no encoder, issues no grants, renews no old boot
+and supplies no retirement evidence. Historical admission alone cannot resume a
+rebooted source or controller. Pre-install failures have no attempted Start and
+are not claimed as recovered plans.
+
+The focused offline DB/mTLS invariant reconstructs a new-boot Runtime while the
+worker holds received Start before returning a response, loads the original
+snapshot/hash, and checks immutable conflicts, unknown writes, bounded history,
+stale generation exclusion, current policy and callback mutation. It uses no real
+encoder. This adds no public observation API, output observation, successful
+splice, client-buffer evidence or recovery enablement. Later receipt consumers
+still need reviewed actual source-index, complete packaged-picture/sample ends,
+final transformed bytes, current authority and fencing contracts.
+
+## Private exact-operation gate storage prerequisite
+
+Migration v4 reserves one private operation gate atomically with each NEW
+immutable admission, under the same cluster-wide durable HistoryCapacity.
+Every original boot and retired/replaced generation remains charged. There is
+one accepted-attempt nonce/worker-boot slot, one arm association (at most 16 KiB),
+and one irreversible seal with closed reasons and bounded actor identity.
+Admission digest v1 covers the exact sanitized original record, including the
+explicit keyframes/slate, entire Route, operation hash and exact Start identity
+and hash. No independent attempt history, expiry, eviction or compaction exists.
+Exact historical retries, reads and sealing remain usable at capacity.
+
+Package-private storage methods serialize reservation, claim, seal and arm on the
+same component-owned transaction lock on SQLite and PostgreSQL. Ambiguous writes
+require independent exact readback. Typed historical results distinguish unknown,
+absent/unsupported, unclaimed, claimed and both sealed states. A missing gate on a
+legacy admission is unsupported/unknown; retries never backfill one or declare
+that operation never started. A matching sealed retry returns history only.
+Conflicts deny replacement of immutable bindings, slots or seal metadata.
+
+These helpers provide bookkeeping only. They neither authenticate Worker-owned
+accepted handles nor authorize an actor to seal, acknowledge live arming, issue
+execution permits, or prove retirement. No mutation method is wired into actual
+Start, replay, renewal or ongoing authorization. Those behaviors remain unchanged.
+A separate reviewed slice must join actual Worker-owned handle authentication,
+provisional acceptance, trusted seal authorization and observer-owned live arming
+before any gate can become an execution veto or participate in host evidence.
+An arm payload/digest cannot authenticate itself, restore lost kernel handles or
+release placement/source obligations. There is no exported gate API, generic
+proof callback, host-proof consumer or production recovery enablement here.

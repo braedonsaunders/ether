@@ -64,6 +64,12 @@ func (s *Server) commonHeaders(next http.Handler) http.Handler {
 			h.Set("Access-Control-Expose-Headers", corsExposeHeaders)
 		}
 		if r.Method == http.MethodOptions {
+			// PMS leaves subtitle-search/upload OPTIONS unimplemented, even
+			// though the rest of the API accepts generic CORS preflights.
+			if strings.HasPrefix(r.URL.Path, "/library/metadata/") && (strings.HasSuffix(r.URL.Path, "/subtitles") || strings.HasSuffix(r.URL.Path, "/tree")) {
+				writeHTTPError(w, http.StatusNotFound)
+				return
+			}
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS")
 			if req := r.Header.Get("Access-Control-Request-Headers"); req != "" {
 				h.Set("Access-Control-Allow-Headers", req)
@@ -246,6 +252,11 @@ var publicPaths = map[string]bool{
 // PMS's 401 body.
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The bare read has no representation, even before authentication.
+		if r.URL.Path == "/downloadQueue" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
 		if publicPaths[trimSlash(r.URL.Path)] {
 			next.ServeHTTP(w, r)
 			return
@@ -454,9 +465,36 @@ func (s *Server) encodeResponse(r *http.Request, v any) ([]byte, error) {
 	// permission; containers that don't carry the attribute keep not
 	// carrying it.
 	if mc, ok := v.(*model.MediaContainer); ok {
-		if mc.AllowSync != nil {
-			*mc.AllowSync = s.downloadsAllowed(pr.User)
+		if !strings.HasSuffix(r.URL.Path, "/decision") && !metadataOptionOn(r.URL.Query().Get("includeChapters")) {
+			for i := range mc.Metadata {
+				omitChapterRows(&mc.Metadata[i])
+			}
 		}
+		if r.URL.Path == "/hubs" || strings.HasPrefix(r.URL.Path, "/hubs/") {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/postplay"):
+				mc.SetSyncProjection(false)
+			case strings.HasPrefix(r.URL.Path, "/hubs/search"), strings.HasPrefix(r.URL.Path, "/hubs/items"):
+				mc.AllowSync = nil
+			default:
+				mc.SetSyncProjection(true)
+			}
+		}
+		if mc.AllowSync != nil {
+			if mc.HasSyncProjection() {
+				if policy, ok := s.d.AccessPolicy.(core.DownloadAccessPolicy); ok && !policy.AllowDownloads(pr.User) {
+					*mc.AllowSync = false
+				}
+				// A context capability is distinct from permission to fetch a file.
+				// Restricted viewers must still retain their own download grant.
+				if pr.User == nil || !pr.User.IsOwner || !s.cfg().Plex.Claimed {
+					*mc.AllowSync = *mc.AllowSync && s.downloadsAllowed(pr.User)
+				}
+			} else {
+				*mc.AllowSync = s.downloadsAllowed(pr.User)
+			}
+		}
+
 		// PMS exposes playlist syncing to clients that declare the sync
 		// protocol. Keep Ether's download permission as the authority.
 		if r.Header.Get("X-Plex-Sync-Version") != "" && strings.HasPrefix(r.URL.Path, "/playlists") {
@@ -471,7 +509,35 @@ func (s *Server) encodeResponse(r *http.Request, v any) ([]byte, error) {
 			}
 		}
 	}
+	if mc, ok := v.(*model.MediaContainer); ok {
+		if r.URL.Path == "/hubs" {
+			s.applyHubDetailOptions(r.Context(), mc, r.URL.Query())
+		}
+		applyInlineOnDeckExclusions(mc, excludedElements(r.URL.Query()))
+	}
+	v = localizeDecisionResponse(r, v)
+
+	if strings.HasPrefix(r.URL.Path, "/playlists") || strings.HasPrefix(r.URL.Path, "/playQueues") {
+		if mc, ok := v.(*model.MediaContainer); ok && strings.HasPrefix(r.URL.Path, "/playlists") && r.Method != http.MethodGet && r.Method != http.MethodHead && pr.HasPage {
+			total := len(mc.Metadata)
+			lo, hi := pr.window(total)
+			mc.Metadata = mc.Metadata[lo:hi]
+			mc.Size = len(mc.Metadata)
+			mc.SetPage(lo, total)
+		}
+		names := func(key string) map[string]bool {
+			out := map[string]bool{}
+			for _, raw := range r.URL.Query()[key] {
+				for _, name := range strings.Split(raw, ",") {
+					out[name] = true
+				}
+			}
+			return out
+		}
+		return model.MarshalWithExclusions(v, pr.Format, names("excludeFields"), names("excludeElements"))
+	}
 	return model.Marshal(v, pr.Format)
+
 }
 
 // writeBody writes an encoded body, gzip-compressed when the client accepts
@@ -553,7 +619,9 @@ func libraryContainer() *model.MediaContainer {
 
 // hubContainer is the container PMS uses for hub lists.
 func hubContainer() *model.MediaContainer {
-	return &model.MediaContainer{AllowSync: model.Ptr(false), Identifier: model.LibraryIdentifier}
+	mc := &model.MediaContainer{Identifier: model.LibraryIdentifier}
+	mc.SetSyncProjection(true)
+	return mc
 }
 
 // writeEmpty writes an empty MediaContainer.

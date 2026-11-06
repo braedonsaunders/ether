@@ -135,6 +135,7 @@ func TestPostplayHookQueue(t *testing.T) {
 // Episode post-play: Up Next stays first, then the queue.
 func TestPostplayEpisodeUpNextFirst(t *testing.T) {
 	f, _ := hookFixture(t, true)
+	f.state.set(ownerUser.ID, ws(bbE1.Key, 0, 1))
 	rec := f.get(t, "/hubs/metadata/"+bbE1.Key.String()+"/postplay", jsonHdr...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("postplay: %d %s", rec.Code, rec.Body)

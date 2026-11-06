@@ -40,6 +40,7 @@ func TestTranscodeStopReleasesSourceUnlessReplacementIsActive(t *testing.T) {
 			f := newFixture()
 			defer f.srv.Close()
 			f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
+			f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=old"))
 			start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=old")
 			if start.Code != 200 {
 				t.Fatal(start.Code, start.Body.String())

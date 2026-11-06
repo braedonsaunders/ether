@@ -33,6 +33,7 @@ func TestPostplayUpNextReloadAndPlayQueue(t *testing.T) {
 				defer f.srv.Close()
 				// The next episode must work without the optional recommender.
 				f.srv.d.Recommender = nil
+				f.state.set(ownerUser.ID, ws(bbE1.Key, 0, 1))
 				headers := map[string]string{"Accept": "application/" + format}
 				for k, v := range client.Headers {
 					headers[k] = v[0]
@@ -67,7 +68,7 @@ func TestPostplayUpNextReloadAndPlayQueue(t *testing.T) {
 				if len(fetched.Metadata) != 1 || fetched.Metadata[0].RatingKey != bbE2.Key.String() || len(fetched.Metadata[0].Media) == 0 {
 					t.Fatalf("unplayable next episode: %+v", fetched.Metadata)
 				}
-				for _, uri := range []string{hub.Key, "server://fixture/com.plexapp.plugins.library" + hub.Key, "library://section/directory/" + url.PathEscape(hub.Key), hub.HubKey, "/hubs/items?identifier=tv.upnext&metadataID=" + bbE1.Key.String()} {
+				for _, uri := range []string{hub.Key, "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library" + hub.Key, "library://section/directory/" + url.PathEscape(hub.Key), hub.HubKey, "/hubs/items?identifier=tv.upnext&metadataID=" + bbE1.Key.String()} {
 					q := url.Values{"type": {"video"}, "continuous": {"1"}, "uri": {uri}, "key": {fetched.Metadata[0].Key}}
 					r := f.request(t, "POST", "/playQueues?"+q.Encode(), headers)
 					attrs := containerAttrs(t, r.Body.Bytes())
@@ -81,6 +82,11 @@ func TestPostplayUpNextReloadAndPlayQueue(t *testing.T) {
 						continue
 					}
 					path := strings.NewReplacer("{{movieKey}}", bbE2.Key.String(), "{{session}}", "up-next").Replace(probe.Path)
+					if probe.Name == "transcode-start" {
+						if decision := f.request(t, "GET", decisionPath(path), headers); decision.Code != 200 {
+							t.Fatalf("next episode decision: %d %s", decision.Code, decision.Body)
+						}
+					}
 					r := f.request(t, probe.Method, path, headers)
 					if r.Code != 200 {
 						t.Fatalf("next episode %s: %d %s", probe.Name, r.Code, r.Body)

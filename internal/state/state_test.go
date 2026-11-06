@@ -429,8 +429,10 @@ func TestScrobbleManyRollup(t *testing.T) {
 func TestPlaylistEdgeCases(t *testing.T) {
 	s, _ := newTestState(t)
 	pl := s.Playlists()
-	if _, err := pl.Create(ctx, 1, "", nil); err == nil {
-		t.Fatal("empty title should error")
+	if empty, err := pl.Create(ctx, 1, "", nil); err != nil || empty.Title != "" {
+		t.Fatalf("explicit empty title: %+v %v", empty, err)
+	} else {
+		_ = pl.Delete(ctx, 1, empty.Key)
 	}
 	p, err := pl.Create(ctx, 1, "Empty", nil)
 	if err != nil || len(p.Items) != 0 {

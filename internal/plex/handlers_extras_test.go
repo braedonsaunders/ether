@@ -249,7 +249,7 @@ func TestExtraPartProxyRange(t *testing.T) {
 
 func TestCinemaTrailersPlayQueue(t *testing.T) {
 	f, _, wp := extrasFixture(t)
-	uri := "server://m/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String()
+	uri := "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String()
 	rec := f.request(t, http.MethodPost,
 		"/playQueues?type=video&extrasPrefixCount=1&uri="+urlEsc(uri)+"&key="+urlEsc("/library/metadata/"+fightClub.Key.String()),
 		map[string]string{"Accept": "application/json"})

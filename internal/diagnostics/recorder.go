@@ -44,6 +44,7 @@ type coalSlot struct {
 
 type device struct {
 	info     DeviceInfo
+	viewerID int64
 	lastFail Kind
 }
 
@@ -68,6 +69,7 @@ type capture struct {
 	gen            uint64
 	building       bool
 	deviceSnap     DeviceInfo
+	viewerID       int64
 	ev             []Event
 	evHead         int
 	evN            int
@@ -182,6 +184,9 @@ func (r *Recorder) touchDeviceLocked(e Event) {
 		d = &device{info: DeviceInfo{ID: devicePublicID(e.DeviceKey)}}
 		r.devices[e.DeviceKey] = d
 		r.devOrder = append(r.devOrder, e.DeviceKey)
+	}
+	if e.ViewerID != 0 {
+		d.viewerID = e.ViewerID
 	}
 	if e.DeviceName != "" {
 		d.info.Name = e.DeviceName
@@ -543,6 +548,7 @@ func (r *Recorder) rememberDeviceSnap(c *capture) {
 	}
 	if d := r.devices[c.deviceKey]; d != nil {
 		c.deviceSnap = d.info
+		c.viewerID = d.viewerID
 	}
 }
 
@@ -596,6 +602,7 @@ func (r *Recorder) coverageLocked(c *capture) []Gap {
 		{Collector: "dns", Status: "unavailable", Detail: "Remote DNS vantage is not observed."},
 		{Collector: "cluster", Status: "unavailable", Detail: "Other cluster nodes' events are not included."},
 		{Collector: "protocols", Status: "partial", Detail: "Non-Plex requests require an authenticated, device-bound identity; unrecognized response shapes are not summarized."},
+		{Collector: "artwork", Status: "partial", Detail: "Image requests without device headers are included as unattributed traffic only for the selected viewer. Unauthenticated requests without a device identity cannot be associated. Absence of image requests does not prove the client made none."},
 		{Collector: "query", Status: "omitted", Detail: "Unknown query parameter names and values are masked because they may contain credentials or addresses."},
 	}
 	if !c.confirmed {
@@ -635,6 +642,9 @@ func (r *Recorder) acceptLocked(c *capture, e Event) {
 			}
 			return
 		}
+		if e.DeviceKey == "" && e.Kind == KindRequest && ArtworkRequestPath(e.Route) {
+			e.Uncorrelated = true
+		}
 		if c.coalesceEv(e) {
 			return
 		}
@@ -651,6 +661,13 @@ func (r *Recorder) subjectLocked(c *capture, e Event) bool {
 		return false
 	}
 	if e.DeviceKey == c.deviceKey {
+		return true
+	}
+	// Image loaders may send only the viewer token, without the app's device
+	// headers. Keep those requests as explicitly unattributed viewer traffic.
+	// Never attach another identified device, viewer, or unauthenticated request.
+	if e.Kind == KindRequest && e.DeviceKey == "" && !e.Uncorrelated &&
+		c.viewerID != 0 && e.ViewerID == c.viewerID && ArtworkRequestPath(e.Route) {
 		return true
 	}
 	if e.Kind != KindEncoderStarted && e.Kind != KindEncoderFailed {

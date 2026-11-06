@@ -63,7 +63,7 @@ func sidecarStream(index int, lang string, sel selection) core.StreamInfo {
 	}
 	return core.StreamInfo{
 		Index: index, Type: "subtitle", Codec: "srt", Language: lang, Forced: sel.Forced,
-		Title: title, External: true, ExternalURL: URLPrefix + sel.ID,
+		Title: title, External: true, ExternalURL: URLPrefix + sel.ID, ProviderTitle: sel.ProviderTitle,
 	}
 }
 
@@ -278,7 +278,7 @@ func (s *Service) DownloadOnDemand(ctx context.Context, title *core.Title, fileI
 	if release == "" {
 		release = o.cand.FileName
 	}
-	sel := selection{ID: id, FileID: fileID, Language: o.lang, Release: release, At: s.now().UTC(), Forced: o.cand.Forced, SDH: o.cand.HearingImp}
+	sel := selection{ProviderTitle: o.cand.Provider, ID: id, FileID: fileID, Language: o.lang, Release: release, At: s.now().UTC(), Forced: o.cand.Forced, SDH: o.cand.HearingImp}
 	p := s.manualPath(title.Key, o.lang)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return core.StreamInfo{}, err

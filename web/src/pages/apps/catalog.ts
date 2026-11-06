@@ -26,7 +26,7 @@ export function appLabel(id: string, fallbackName: string): string {
 export function appPurpose(id: string): string {
   switch (id) {
     case "plex":
-      return t("At home and away, through plex.tv.");
+      return t("Watch Ether in Plex apps.");
     case "jellyfin":
       return t(
         "At home. Away from home, use a private network tool (Tailscale) or an address you publish.",

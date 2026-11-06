@@ -5,7 +5,7 @@
     "title1": "Plex Library",
     "Directory": [
       {
-        "allowSync": false,
+        "allowSync": true,
         "filters": true,
         "refreshing": false,
         "key": "1",
@@ -30,7 +30,7 @@
         ]
       },
       {
-        "allowSync": false,
+        "allowSync": true,
         "filters": true,
         "refreshing": false,
         "key": "2",

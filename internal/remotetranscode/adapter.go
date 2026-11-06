@@ -23,6 +23,12 @@ type Assignment struct {
 	Expires  time.Time
 }
 type AdapterOptions struct {
+	// CommitStart durably binds the installed immutable Start before any Start
+	// bytes leave this adapter. It runs synchronously outside locks, with a
+	// context bounded to five seconds; implementations must honor cancellation.
+	// Failure retains the owned token and never establishes retirement. Nil
+	// preserves existing behavior. Only identity and hash cross this boundary.
+	CommitStart  func(context.Context, Identity, [32]byte) error
 	Capabilities Capabilities // Trusted negotiated worker/backend contracts; zero is fixed HLS.
 	Endpoint     string
 	// RecheckServer composes current Guard policy for the expected worker identity.
@@ -85,20 +91,23 @@ func (a *Adapter) StartHLS(ctx context.Context, r core.HLSRequest) (core.HLSSess
 	return s, e
 }
 func (a *Adapter) StartHLSOwned(ctx context.Context, r core.HLSRequest) (core.HLSSession, core.EncoderRetirement, error) {
+	r.RecoveryStart = core.CloneRecoveryStart(r.RecoveryStart)
 	if !a.SupportsRequest(r) || !token(r.SessionID) {
 		return nil, nil, ErrUnsupported
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	assignment, err := a.opts.Assign(ctx, r)
+	assignmentRequest := r
+	assignmentRequest.RecoveryStart = core.CloneRecoveryStart(r.RecoveryStart)
+	assignment, err := a.opts.Assign(ctx, assignmentRequest)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !validIdentity(assignment.Identity) || assignment.Identity.Session != r.SessionID || len(assignment.Grant) == 0 || len(assignment.Grant) > 4096 || !assignment.Expires.After(time.Now()) {
 		return nil, nil, errors.New("remotetranscode: invalid assignment")
 	}
-	start := Start{Keyframes: append([]core.KeyframePoint(nil), r.Info.Keyframes...), SoftSubtitleStream: r.SoftSubtitleStream, Protocol: r.Protocol, ReleaseID: r.ReleaseID, Identity: assignment.Identity, Grant: assignment.Grant, Expires: assignment.Expires, Info: r.Info, Decision: r.Decision, Offset: r.StartOffset, SegmentDuration: r.SegmentDuration, IndependentProof: r.RequireIndependentProof}
+	start := Start{RecoveryStart: core.CloneRecoveryStart(r.RecoveryStart), Keyframes: append([]core.KeyframePoint(nil), r.Info.Keyframes...), SoftSubtitleStream: r.SoftSubtitleStream, Protocol: r.Protocol, ReleaseID: r.ReleaseID, Identity: assignment.Identity, Grant: assignment.Grant, Expires: assignment.Expires, Info: r.Info, Decision: r.Decision, Offset: r.StartOffset, SegmentDuration: r.SegmentDuration, IndependentProof: r.RequireIndependentProof}
 	b, err := json.Marshal(start)
 	if err != nil || len(b) > MaxMessage-1024 {
 		return nil, nil, ErrUnsupported
@@ -118,7 +127,32 @@ func (a *Adapter) StartHLSOwned(ctx context.Context, r core.HLSRequest) (core.HL
 		a.sessions[s.id] = s
 	}
 	a.mu.Unlock()
-	response, err := a.call(ctx, message{Op: "start", Identity: s.id, Start: &start}, nil)
+	if a.opts.CommitStart != nil {
+		commitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		identity, hash, commitmentErr := s.StartCommitment()
+		if commitmentErr == nil {
+			commitmentErr = a.opts.CommitStart(commitCtx, identity, hash)
+		}
+		if commitmentErr == nil {
+			commitmentErr = commitCtx.Err()
+		}
+		cancel()
+		if commitmentErr != nil || ctx.Err() != nil {
+			return nil, s, ErrUncertain
+		}
+	}
+	// The payload comes only from the immutable bytes installed in Session,
+	// never from request pointers still reachable by a caller or callback.
+	payload, err := json.Marshal(struct {
+		Version  int
+		Op       string
+		Identity Identity
+		Start    json.RawMessage
+	}{Version: Version, Op: "start", Identity: s.id, Start: json.RawMessage(s.start)})
+	if err != nil {
+		return nil, s, ErrUncertain
+	}
+	response, err := a.callPayload(ctx, payload, nil, "start")
 	if err != nil {
 		return nil, s, ErrUncertain
 	}
@@ -174,6 +208,12 @@ func (a *Adapter) call(ctx context.Context, m message, headers http.Header) (*ht
 	if err != nil || len(b) > MaxMessage {
 		return nil, ErrUnsupported
 	}
+	return a.callPayload(ctx, b, headers, m.Op)
+}
+func (a *Adapter) callPayload(ctx context.Context, b []byte, headers http.Header, op string) (*http.Response, error) {
+	if len(b) > MaxMessage {
+		return nil, ErrUnsupported
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", a.opts.Endpoint, bytes.NewReader(b))
 	if err != nil {
 		return nil, err
@@ -188,9 +228,9 @@ func (a *Adapter) call(ctx context.Context, m message, headers http.Header) (*ht
 	if err != nil {
 		return nil, ErrUncertain
 	}
-	if !mediaOperation(m.Op) && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+	if !mediaOperation(op) && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
 		resp.Body.Close()
-		if (m.Op == "renew" || m.Op == "inspect") && resp.StatusCode == http.StatusUnprocessableEntity {
+		if (op == "renew" || op == "inspect") && resp.StatusCode == http.StatusUnprocessableEntity {
 			return nil, ErrUnsupported
 		}
 		return nil, ErrUncertain
@@ -209,6 +249,7 @@ type Session struct {
 	terminal    error
 	stopped     bool
 	access      atomic.Int64
+	delivered   atomic.Bool
 	rungs       []core.HLSRung
 	independent bool
 }
@@ -321,7 +362,7 @@ func (s *Session) ServeSegment(w http.ResponseWriter, r *http.Request, n int) {
 func (s *Session) serve(w http.ResponseWriter, r *http.Request, op string, n int) {
 	s.serveRepresentation(w, r, message{Op: op, Segment: n})
 }
-func (s *Session) serveRepresentation(w http.ResponseWriter, r *http.Request, m message) {
+func (s *Session) serveRepresentation(w http.ResponseWriter, r *http.Request, m message) (facts RepresentationCompletion) {
 	n := m.Segment
 	if n < -1 || n > 10000000 {
 		http.Error(w, "invalid segment", 400)
@@ -340,7 +381,16 @@ func (s *Session) serveRepresentation(w http.ResponseWriter, r *http.Request, m 
 		http.Error(w, "remote execution unavailable", 502)
 		return
 	}
-	defer response.Body.Close()
+	facts.StatusCode, facts.ContentLength = response.StatusCode, response.ContentLength
+	facts.BodyPresent = response.Body != nil
+	facts.EncodedOrChunked = len(response.TransferEncoding) != 0 || response.Uncompressed || response.Header.Get("Content-Encoding") != ""
+	defer func() {
+		if response.Body != nil {
+			facts.CloseError = response.Body.Close() != nil
+			facts.Closed = true
+		}
+		facts.Trailers = len(response.Trailer) != 0
+	}()
 	s.touch()
 	// Preserve representation/range/cache headers, never cookies or peer secrets.
 	for _, h := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control", "ETag", "Last-Modified", "Content-Disposition"} {
@@ -349,14 +399,26 @@ func (s *Session) serveRepresentation(w http.ResponseWriter, r *http.Request, m 
 		}
 	}
 	w.WriteHeader(response.StatusCode)
+	// Track client output at this controller too; worker input reads and
+	// playlists/init records are not proof that remote media was delivered.
+	media := m.Op == "http" || m.Op == "media" || ((m.Op == "segment" || m.Op == "rung-segment") && m.Segment >= 0)
+	if media && response.StatusCode >= 200 && response.StatusCode < 300 && r.Method == http.MethodGet {
+		w = deliveryWriter{ResponseWriter: w, session: s}
+	}
 	// io.Copy applies downstream backpressure; request context cancels upstream.
 	if r.Method != http.MethodHead {
+		var target io.Writer = w
 		if m.Op == "http" || m.Op == "soft-subtitle" {
-			_, _ = io.Copy(flushingWriter{w}, response.Body)
-		} else {
-			_, _ = io.Copy(w, response.Body)
+			target = flushingWriter{w}
+		}
+		if response.Body != nil {
+			_, err := io.Copy(completionWriter{target: target, facts: &facts}, completionReader{source: response.Body, facts: &facts})
+			if err != nil && !facts.WriteError {
+				facts.ReadError = true
+			}
 		}
 	}
+	return
 }
 
 var _ core.Transcoder = (*Adapter)(nil)
@@ -406,4 +468,25 @@ func (s *Session) Renew(ctx context.Context, n Renewal) (LeaseState, error) {
 		return lease, ErrUncertain
 	}
 	return lease, nil
+}
+
+// PlaybackDelivered reports real media writes through this remote execution.
+func (s *Session) PlaybackDelivered() bool { return s.delivered.Load() }
+
+type deliveryWriter struct {
+	http.ResponseWriter
+	session *Session
+}
+
+func (w deliveryWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	if n > 0 {
+		w.session.delivered.Store(true)
+	}
+	return n, err
+}
+func (w deliveryWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }

@@ -18,6 +18,7 @@ func TestStartHLSLadderMasterAndRungs(t *testing.T) {
 		{ID: "720p4m", Bandwidth: 4800000, AverageBandwidth: 4000000, Width: 1280, Height: 720, Codecs: "avc1.64001f,mp4a.40.2", FrameRate: 23.976},
 		{ID: "480p1500k", Bandwidth: 1800000, AverageBandwidth: 1500000, Width: 854, Height: 480, Codecs: "avc1.64001e,mp4a.40.2"},
 	}
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=lad-1&protocol=hls&directStream=1"))
 	rec := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=lad-1&protocol=hls&directStream=1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
@@ -74,6 +75,7 @@ func testLadderPlaylistTraversalWithoutPlexHeaders(t *testing.T, container strin
 		{ID: "720p4m", Bandwidth: 4_000_000},
 	}
 	startPath := "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=ladder-private"
+	f.get(t, decisionPath(startPath))
 	start := f.get(t, startPath)
 	if start.Code != http.StatusOK {
 		t.Fatalf("start: %d", start.Code)

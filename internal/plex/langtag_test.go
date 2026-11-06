@@ -11,8 +11,8 @@ func TestSameLanguageZhScriptRegion(t *testing.T) {
 	if sameLanguage("zh-TW", "zh-Hans") {
 		t.Error("sameLanguage(zh-TW, zh-Hans) = true, want false")
 	}
-	if got := languageName("pt-br"); got != "Portuguese" {
-		t.Errorf("languageName(pt-br) = %q, want Portuguese", got)
+	if got := languageName("pt-br"); got != "Português" {
+		t.Errorf("languageName(pt-br) = %q, want Português", got)
 	}
 	if got := languageCode3("pt-br"); got != "por" {
 		t.Errorf("languageCode3(pt-br) = %q, want por", got)

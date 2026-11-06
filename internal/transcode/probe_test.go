@@ -45,7 +45,7 @@ func TestParseProbeGolden(t *testing.T) {
 			want: core.MediaInfo{
 				Container: "mkv", Duration: sec(7950.125), Size: 59836712345, BitrateKbps: 60211,
 				Streams: []core.StreamInfo{
-					{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Level: 153, Default: true, Original: boolean(false), Commentary: boolean(false), Dub: boolean(false), Width: 3840, Height: 2160,
+					{ChromaLocation: "left", CodedWidth: 3840, CodedHeight: 2160, Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Level: 153, Default: true, Original: boolean(false), Commentary: boolean(false), Dub: boolean(false), Width: 3840, Height: 2160,
 						FrameRate: 23.976, BitDepth: 10, ColorTransfer: "smpte2084", BitrateKbps: 58312,
 						SampleAspectRatio: "1:1", ColorRange: "tv", ColorPrimaries: "bt2020", ColorSpace: "bt2020nc"},
 					{Index: 1, Type: "audio", Codec: "eac3", Language: "eng", Title: "English DD+ 5.1", Default: true,
@@ -60,13 +60,13 @@ func TestParseProbeGolden(t *testing.T) {
 		{
 			file: "mkv_dv_p8.json",
 			want: core.MediaInfo{
-				Container: "mkv", Duration: sec(7081), Size: 14812345678, BitrateKbps: 16734,
+				Container: "mkv", Duration: sec(7081), Size: 14812345678, BitrateKbps: 16735,
 				Streams: []core.StreamInfo{
 					{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Default: true, Width: 3840, Height: 1608,
 						FrameRate: 23.976, BitDepth: 10, ColorTransfer: "smpte2084", DolbyVision: true, DolbyVisionProfile: 8, DolbyVisionLevel: 6, DolbyVisionCompatibilityID: 1,
 						ColorRange: "tv", ColorPrimaries: "bt2020", ColorSpace: "bt2020nc",
 						DolbyVisionVersion: "1.0", DolbyVisionBLPresent: boolean(true), DolbyVisionELPresent: boolean(false), DolbyVisionRPUPresent: boolean(true),
-						BitrateKbps: 15876},
+						BitrateKbps: 15877},
 					{Index: 1, Type: "audio", Codec: "eac3", Profile: "Dolby Digital Plus + Dolby Atmos", Language: "eng",
 						Default: true, Channels: 6, ChannelLayout: "5.1(side)", SampleRate: 48000, BitrateKbps: 768},
 					{Index: 2, Type: "subtitle", Codec: "subrip", Language: "spa"},
@@ -141,6 +141,9 @@ func TestParseProbeGolden(t *testing.T) {
 			}
 			switch tt.file {
 			case "mkv_hevc_hdr10.json":
+				v.CodedHeight = 2160
+				v.CodedWidth = 3840
+				v.ChromaLocation = "left"
 				v.ProbedLevel = integer(153)
 				v.PixelFormat = "yuv420p10le"
 				v.TimeBase = "1/1000"

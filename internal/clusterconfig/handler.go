@@ -55,7 +55,7 @@ func Handler(o HandlerOptions) http.Handler {
 		out := map[string]any{"clustered": o.Clustered && o.Config.Clustered(), "keyFingerprint": o.Config.KeyFingerprint()[:16]}
 		if o.Clustered {
 			out["sharedVersion"] = o.Config.SharedVersion()
-			tokens, err := ListJoinTokens(r.Context(), o.DB)
+			tokens, err := ActiveJoinTokens(r.Context(), o.DB, time.Now())
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "database", err.Error())
 				return

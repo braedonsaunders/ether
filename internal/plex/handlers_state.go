@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -46,7 +45,11 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
-	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
+	origin := watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID}
+	if s.d.Dashboard != nil {
+		origin.DeviceID = s.d.Dashboard.SeeDevice(pr.ClientID, pr.DeviceName, pr.Platform).ID
+	}
+	ctx = watchstate.WithOrigin(ctx, origin)
 	unlockOwner, locked := s.lockPlaybackRequest(w, r)
 	if !locked {
 		return
@@ -55,8 +58,12 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	key := stateKey(r)
-	if key == 0 || pr.User == nil {
+	if pr.User == nil {
 		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	if key == 0 {
+		s.write(w, r, &model.MediaContainer{Extra: []model.Attr{model.A("playbackState", "ignore"), model.A("viewOffset", -1)}})
 		return
 	}
 	state := q.Get("state")
@@ -75,6 +82,29 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 				writeHTTPError(w, http.StatusBadRequest)
 				return
 			}
+		}
+	}
+	key = s.queues.timelineQueue(pr.User.ID, pr.ClientID, key, q.Get("playQueueItemID"), q.Has("playQueueItemID"))
+	offsetCheck, durationCheck := msParam(q.Get("time")), msParam(q.Get("duration"))
+	if durationCheck > 0 && offsetCheck > durationCheck {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	if key.Kind() == core.KindPlaylist {
+		if _, err := s.playlist(ctx, pr.User, key); err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+	} else {
+		title, err := s.d.Catalog.Get(ctx, key)
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		ctx = watchstate.WithHistoryTitle(ctx, title)
+		if title == nil || !s.titleVisible(pr.User, title) {
+			writeHTTPError(w, http.StatusNotFound)
+			return
 		}
 	}
 	s.rememberStreamRequest(r, pr.User, key)
@@ -137,10 +167,36 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 		s.log.Debug("ignoring impossible playhead", "key", key, "position", offset, "duration", duration)
 		offset = s.lastKnownOffset(ctx, user.ID, tid, key)
 	}
+	// A failed start cannot write a resume point or consume the completion latch.
+	// Source bytes include ffmpeg read-ahead; conversions require output evidence.
+	stalled := s.checkStartStall(pr, key, state, offset, tids)
+	if failedProgressive || stalled != "" || s.playbackNeverDelivered(ps, tids) {
+		ctx = context.WithValue(ctx, noPlaybackDelivery{}, true)
+		offset = s.lastKnownOffset(ctx, user.ID, tid, key)
+	}
+	if ps != nil {
+		// Client duration can be a stale queue estimate. Only a probed duration is
+		// authoritative for an active source; estimates cannot establish completion.
+		if !ps.Info.Estimated && ps.Info.Duration > 0 {
+			duration = ps.Info.Duration
+		} else {
+			duration = 0
+		}
+		if state == "stopped" {
+			// EOF after a decoder crash is not a played position. The last nonterminal
+			// report is the evidence of where this viewer actually got to.
+			offset = min(offset, s.lastKnownOffset(ctx, user.ID, tid, key))
+		}
+	}
+	ctx, watchResult, watchErr := s.timelineWatch(ctx, pr, key, offset, duration, state, r)
+	if watchErr != nil {
+		s.writeErr(w, r, watchErr)
+		return
+	}
 	if !s.reportBrokerTimeline(ctx, pr, key, offset, duration, state, sanitizeSessionID(q.Get("session"))) {
 		s.log.Warn("timeline report", "key", key, "state", state)
 	}
-	if reason := s.checkStartStall(pr, key, state, offset, tids); reason != "" {
+	if reason := stalled; reason != "" {
 		// The player took the media and never started. End this attempt
 		// with the reason; the stop below closes its encoder and source.
 		s.setTermination(tid, reason)
@@ -158,16 +214,19 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 		sessions.NotifyTranscodeActivity(s.d.Transcoder, id, state)
 	}
 	pqItem, _ := strconv.ParseInt(q.Get("playQueueItemID"), 10, 64)
-	if pqItem > 0 {
-		s.queues.selectItem(user.ID, pqItem)
-	}
 
 	mc := &model.MediaContainer{}
+	mc.Bandwidths = s.timelineBandwidths(pr, key, tids, ps)
+	mc.TranscodeSess = s.timelineTranscodeSessions(pr, key, tids)
+	mc.Size = len(mc.Bandwidths) + len(mc.TranscodeSess)
 	if reason, killed := s.takeTermination(tid); killed {
 		mc.Extra = []model.Attr{model.A("terminationCode", 2006), model.A("terminationText", reason)}
 		state = "stopped"
 	}
 	if state == "stopped" {
+		if q.Get("state") == "stopped" {
+			s.disarmDecision(pr, key)
+		}
 		s.endVersionFlow(ctx, s.playIdentityFor(pr, key))
 		if e, ok := s.sessions.remove(tid); ok {
 			e.offset = offset
@@ -205,6 +264,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 		if fresh && s.cl != nil {
 			s.sessions.ensure(tid, s.cl.allocSessionKey())
 		}
+		armed := s.decisionArmed(pr, 0)
 		var changed bool
 		e := s.sessions.update(tid, func(e *playEntry) {
 			changed = fresh || e.key != key || e.state != state
@@ -213,6 +273,8 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			}
 			e.user = *user
 			e.client = client
+			e.decisionSeen = e.decisionSeen || armed
+			e.playingSeen = e.playingSeen || state == "playing"
 			e.key = key
 			e.state = state
 			e.offset = offset
@@ -229,6 +291,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			s.cl.poke() // share starts and state changes now; positions ride the heartbeat
 		}
 	}
+	timelineWatchAttrs(mc, watchResult)
 	s.observePlaybackReported(pr)
 	s.write(w, r, mc)
 }
@@ -260,15 +323,55 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
-	key := stateKey(r)
-	if key == 0 || pr.User == nil || s.d.State == nil {
-		writeHTTPError(w, http.StatusBadRequest)
+	q := r.URL.Query()
+	if q.Get("key") == "" || q.Get("identifier") == "" || pr.User == nil || s.d.State == nil {
+		writeHTTPError(w, 400)
 		return
 	}
-	q := r.URL.Query()
+	raw, err := strconv.ParseInt(q.Get("key"), 10, 64)
+	if err != nil {
+		writeHTTPError(w, 500)
+		return
+	}
+	if q.Get("identifier") != "com.plexapp.plugins.library" {
+		writeHTTPError(w, 404)
+		return
+	}
+	key := core.RatingKey(raw)
 	n, err := strconv.ParseInt(q.Get("time"), 10, 64)
-	if err != nil || n < 0 || n > math.MaxInt64/int64(time.Millisecond) {
-		writeHTTPError(w, http.StatusInternalServerError)
+	if err != nil || n > math.MaxInt64/int64(time.Millisecond) {
+		writeHTTPError(w, 500)
+		return
+	}
+	if n < 0 {
+		writeStateMutationOK(w)
+		return
+	}
+	// Unknown integer keys are accepted by this legacy writer but create no row.
+	known := false
+	switch key.Kind() {
+	case core.KindPlaylist:
+		if s.d.Playlists != nil {
+			_, err = s.d.Playlists.Get(ctx, pr.User.ID, key)
+			known = err == nil
+		}
+	case core.KindCollection, core.KindSmart:
+		_, err = s.collectionRaw(ctx, pr.User, key)
+		known = err == nil
+	default:
+		if s.d.Catalog != nil {
+			var title *core.Title
+			var e error
+			if stored, ok := s.d.Catalog.(core.StoredTitleLookup); ok {
+				title, e = stored.StoredTitle(ctx, key)
+			} else {
+				title, e = s.d.Catalog.Get(ctx, key)
+			}
+			known = e == nil && title != nil && s.titleVisible(pr.User, title)
+		}
+	}
+	if !known {
+		writeStateMutationOK(w)
 		return
 	}
 	offset := time.Duration(n) * time.Millisecond
@@ -284,7 +387,7 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.observePlaybackReported(pr)
-	w.WriteHeader(http.StatusOK)
+	writeStateMutationOK(w)
 }
 
 func (s *Server) handleScrobble(w http.ResponseWriter, r *http.Request)   { s.scrobble(w, r, true) }
@@ -294,10 +397,12 @@ func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) 
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
-	key := stateKey(r)
-	if key == 0 || pr.User == nil || s.d.State == nil {
-		writeHTTPError(w, http.StatusBadRequest)
+	key, ok := s.mutationKey(w, r, false)
+	if !ok {
 		return
+	}
+	if title, err := s.d.Catalog.Get(ctx, key); err == nil && title != nil {
+		ctx = watchstate.WithHistoryTitle(ctx, title)
 	}
 	// Containers mark every episode.
 	keys := []core.RatingKey{key}
@@ -306,28 +411,27 @@ func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) 
 			keys = ks
 		}
 	}
-	for _, k := range keys {
-		var err error
-		if watched {
-			err = s.d.State.Scrobble(ctx, pr.User.ID, k)
-		} else {
-			err = s.d.State.Unscrobble(ctx, pr.User.ID, k)
-		}
-		if err != nil {
+	if native, ok := s.d.State.(interface {
+		PlexScrobble(context.Context, int64, core.RatingKey, []core.RatingKey, bool) error
+	}); ok {
+		if err := native.PlexScrobble(ctx, pr.User.ID, key, keys, watched); err != nil {
 			s.writeErr(w, r, err)
 			return
 		}
+	} else {
+		for _, k := range keys {
+			var err error
+			if watched {
+				err = s.d.State.Scrobble(ctx, pr.User.ID, k)
+			} else {
+				err = s.d.State.Unscrobble(ctx, pr.User.ID, k)
+			}
+			if err != nil {
+				s.writeErr(w, r, err)
+				return
+			}
+		}
 	}
-	t := core.TypeMovie
-	switch key.Kind() {
-	case core.KindShow:
-		t = core.TypeShow
-	case core.KindSeason:
-		t = core.TypeSeason
-	case core.KindEpisode:
-		t = core.TypeEpisode
-	}
-	s.notifyTimeline(key, t, "", pr.User.ID)
 	s.log.Info("watch state changed", "user", pr.User.ID, "client", pr.ClientID,
 		"key", key, "watched", watched, "items", len(keys))
 	if watched {
@@ -338,7 +442,7 @@ func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) 
 	}
 	// An empty body has no Content-Type. tvOS treats that PUT as a failure
 	// and leaves the button on the label it had when the detail opened.
-	s.writeEmpty(w, r)
+	writeStateMutationOK(w)
 }
 
 // handleRate is /:/rate?key=&rating= (0-10, -1 clears).
@@ -346,21 +450,14 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
-	key := stateKey(r)
-	if key == 0 || pr.User == nil || s.d.State == nil {
-		writeHTTPError(w, http.StatusBadRequest)
-		return
-	}
 	rating, err := strconv.ParseFloat(r.URL.Query().Get("rating"), 64)
-	if err != nil || math.IsNaN(rating) {
+	if err != nil || math.IsNaN(rating) || math.IsInf(rating, 0) {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
-	if rating < 0 {
-		rating = 0
-	}
-	if rating > 10 {
-		rating = 10
+	key, ok := s.mutationKey(w, r, true)
+	if !ok {
+		return
 	}
 	if rating > 0 {
 		promoter := s.d.VibeSearch
@@ -377,28 +474,47 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if err := s.d.State.Rate(ctx, pr.User.ID, key, rating); err != nil {
+	if native, ok := s.d.State.(interface {
+		PlexRate(context.Context, int64, core.RatingKey, float64) error
+	}); ok {
+		err = native.PlexRate(ctx, pr.User.ID, key, rating)
+	} else {
+		err = s.d.State.Rate(ctx, pr.User.ID, key, math.Max(0, math.Min(10, rating)))
+	}
+	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	writeStateMutationOK(w)
 }
 
-// handleRemoveFromContinueWatching clears an item's resume point.
+// handleRemoveFromContinueWatching hides the home row while preserving resume state.
 func (s *Server) handleRemoveFromContinueWatching(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
-	key := stateKey(r)
+	key, _ := core.ParseRatingKey(r.URL.Query().Get("ratingKey"))
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
-	if err := s.discoveryRemoveContinue(ctx, pr, key); err != nil {
-		s.writeErr(w, r, err)
+	if title, err := s.metadataTitle(ctx, pr, key); err != nil || !s.visibleTitle(ctx, pr.User, title) {
+		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	if err := s.d.State.Progress(ctx, pr.User.ID, key, 0, 0, "stopped"); err != nil {
+	if hidden, ok := s.d.State.(interface {
+		HideContinue(context.Context, int64, core.RatingKey) error
+	}); ok {
+		if err := hidden.HideContinue(ctx, pr.User.ID, key); err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+	}
+	if err := s.discoveryRemoveContinue(ctx, pr, key); err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
@@ -416,15 +532,29 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(entries, func(i, j int) bool { return entries[i].sessionKey < entries[j].sessionKey })
 	mc := &model.MediaContainer{}
 	for _, e := range entries {
+		if !e.playingSeen {
+			continue
+		}
 		if !pr.User.IsOwner && e.user.ID != pr.User.ID {
 			continue
 		}
-		t, err := s.d.Catalog.Get(ctx, e.key)
-		if err != nil {
-			continue
-		}
 		viewer := &Request{User: &e.user, ClientID: e.client.ClientID, Product: e.client.Product, Platform: e.client.Platform}
-		md := s.metadata(ctx, viewer, t, renderOpts{media: true, session: true})
+		var md model.Metadata
+		if e.key.Kind() == core.KindPlaylist {
+			pl, err := s.playlist(ctx, &e.user, e.key)
+			if err != nil {
+				continue
+			}
+			md = s.playlistMetadata(withRequest(ctx, viewer), pl, false)
+		} else {
+			t, err := s.d.Catalog.Get(ctx, e.key)
+			if err != nil {
+				continue
+			}
+			md = s.metadata(ctx, viewer, t, renderOpts{media: true, session: true})
+		}
+		sessionItem(&md)
+
 		md.SessionKey = strconv.Itoa(e.sessionKey)
 		md.ViewOffset = ms(e.offset)
 		md.User = &model.SessionUser{ID: strconv.FormatInt(e.user.PlexID, 10), Thumb: e.user.Thumb, Title: e.user.Title}
@@ -447,9 +577,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			Platform:          e.client.Platform,
 			PlatformVersion:   e.client.PlatformVersion,
 			Product:           e.client.Product,
+			Profile:           resolvedPlayerProfile(&e.client),
 			State:             state,
 			Title:             title,
-			Vendor:            e.client.Vendor,
 			Version:           e.client.Version,
 			Local:             !e.client.Remote,
 			UserID:            e.user.PlexID,
@@ -460,7 +590,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		md.Session = &model.Session{ID: e.client.SessionID, Location: loc}
 		if md.Session.ID == "" {
-			md.Session.ID = e.id
+			md.Session.ID = e.client.ClientID
 		}
 		if e.node != "" {
 			md.TranscodeSession = e.remoteTS
@@ -470,159 +600,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 				md.TranscodeSession = &ts
 			}
 		}
+		md.Session.Bandwidth = s.sessionBandwidth(e, md)
+		sessionClient := e.client
+		sessionClient.User = &e.user
+		if !e.decisionSeen && !s.decisionArmed(&sessionClient, 0) {
+			md.Session = nil
+		}
 		mc.Metadata = append(mc.Metadata, md)
 	}
 	mc.Size = len(mc.Metadata)
-	s.write(w, r, mc)
-}
-
-// handleHistory is /status/sessions/history/all (the caller's history).
-func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	pr := FromContext(ctx)
-	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
-	mc := &model.MediaContainer{TotalSize: model.Ptr(0)}
-	q := r.URL.Query()
-	// History's type is viewType, not the movie/episode metadata type.
-	// Validate identifiers before deciding whether a view type selects rows.
-	ids := make(map[string]int64)
-	for _, name := range []string{"accountID", "librarySectionID", "metadataItemID", "viewedAt>", "limit", "parent"} {
-		if q.Has(name) {
-			n, err := strconv.ParseInt(q.Get(name), 10, 64)
-			if err != nil {
-				writeHTTPError(w, http.StatusBadRequest)
-				return
-			}
-			ids[name] = n
-		}
-	}
-	listHistory := false
-	if q.Has("metadataItemID") {
-		key := core.RatingKey(ids["metadataItemID"])
-		if key <= 0 || s.d.Catalog == nil {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-		valid := false
-		switch key.Kind() {
-		case core.KindCollection, core.KindSmart:
-			c, err := s.collection(ctx, pr.User, key)
-			valid = err == nil && c != nil
-			listHistory = true
-		case core.KindPlaylist:
-			pl, err := s.playlist(ctx, pr.User, key)
-			valid = err == nil && pl != nil
-			listHistory = true
-		default:
-			t, err := s.d.Catalog.Get(ctx, key)
-			valid = err == nil && t != nil && s.visibleTitle(ctx, pr.User, t)
-		}
-		if !valid {
-			writeHTTPError(w, http.StatusNotFound)
-			return
-		}
-	}
-	if q.Has("group") {
-		writeHTTPError(w, http.StatusBadRequest)
-		return
-	}
-	wantHistory := false
-	if q.Has("type") {
-		for _, raw := range strings.Split(q.Get("type"), ",") {
-			n, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil {
-				writeHTTPError(w, http.StatusBadRequest)
-				return
-			}
-			wantHistory = wantHistory || n == 1
-		}
-	}
-	_, size := pr.pageOf(0)
-	maxRows := min(size, 500)
-	if n, ok := ids["limit"]; ok && n < int64(maxRows) {
-		maxRows = int(max(n, 0))
-	}
-	if listHistory || !wantHistory || maxRows == 0 || s.d.State == nil || pr.User == nil || (q.Has("accountID") && ids["accountID"] != pr.User.PlexID) {
-		s.write(w, r, mc)
-		return
-	}
-	var since time.Time
-	if v, ok := ids["viewedAt>"]; ok {
-		since = time.Unix(v, 0)
-	}
-	// The existing 500-record ceiling bounds all joins and policy checks,
-	// including requests whose section or item filter has few matches.
-	hist, err := s.d.State.History(ctx, pr.User.ID, since, 500)
-	if err != nil {
-		s.writeErr(w, r, err)
-		return
-	}
-	if len(hist) > 500 {
-		hist = hist[:500]
-	}
-	keys := make([]core.RatingKey, 0, len(hist))
-	for _, h := range hist {
-		keys = append(keys, h.Key)
-	}
-	titles := s.getTitles(ctx, dedupeKeys(keys))
-	byKey := map[core.RatingKey]*core.Title{}
-	for i := range titles {
-		byKey[titles[i].Key] = &titles[i]
-	}
-	visible := map[core.RatingKey]bool{}
-	for i, h := range hist {
-		t, ok := byKey[h.Key]
-		// History is rendered by hand, not through renderTitles: apply the
-		// same visibility guard (the show's policy included) so titles
-		// restricted after they were watched stay hidden.
-		if !ok {
-			continue
-		}
-		v, seen := visible[t.Key]
-		if !seen {
-			v = s.visibleTitle(ctx, pr.User, t)
-			visible[t.Key] = v
-		}
-		if !v {
-			continue
-		}
-		if q.Has("metadataItemID") && int64(t.Key) != ids["metadataItemID"] {
-			continue
-		}
-		if q.Has("librarySectionID") {
-			sec, ok := s.sectionFor(t.Type)
-			if !ok || int64(sec.ID) != ids["librarySectionID"] {
-				continue
-			}
-		}
-		md := model.Metadata{
-			RatingKey: t.Key.String(),
-			Key:       "/library/metadata/" + t.Key.String(),
-			Type:      string(t.Type),
-			Title:     t.Title,
-			Thumb:     thumbURL(t),
-			Extra: []model.Attr{
-				model.A("historyKey", "/status/sessions/history/"+strconv.Itoa(i+1)),
-				model.A("viewedAt", h.ViewedAt.Unix()),
-				model.A("viewType", 1),
-				model.A("accountID", pr.User.PlexID),
-			},
-		}
-		if !t.Released.IsZero() {
-			md.OriginallyAvailableAt = t.Released.Format("2006-01-02")
-		}
-		if t.Type == core.TypeEpisode {
-			md.GrandparentTitle = t.ShowTitle
-			md.Index = model.Ptr(t.Episode)
-			md.ParentIndex = model.Ptr(t.Season)
-		}
-		mc.Metadata = append(mc.Metadata, md)
-		if len(mc.Metadata) == maxRows {
-			break
-		}
-	}
-	mc.Size = len(mc.Metadata)
-	mc.TotalSize = model.Ptr(mc.Size)
 	s.write(w, r, mc)
 }
 
@@ -659,7 +645,11 @@ func (s *Server) handleTerminate(w http.ResponseWriter, r *http.Request) {
 }
 
 func matchesSession(e playEntry, sid string) bool {
-	return e.client.SessionID == sid || e.id == sid || strconv.Itoa(e.sessionKey) == sid
+	id := e.client.SessionID
+	if id == "" {
+		id = e.client.ClientID
+	}
+	return sid != "" && id == sid
 }
 
 // terminateLocal ends a session this node tracks: the stop is delivered as
@@ -677,7 +667,7 @@ func (s *Server) terminateLocal(sid, reason string) bool {
 				return true
 			}
 
-			s.setTermination(e.id, reason)
+			s.setOwnerTermination(e.id, reason)
 			if s.d.Playback != nil {
 				if ps, ok := s.d.Playback.SessionFor(e.user.ID, e.client.ClientID, e.key); ok && ps != nil {
 					if stop, ok := s.playbackBroker.(interface {
@@ -698,8 +688,10 @@ func (s *Server) terminateLocal(sid, reason string) bool {
 
 // termination is an owner stream kill awaiting the client's next timeline.
 type termination struct {
-	reason string
-	at     time.Time
+	reason    string
+	at        time.Time
+	delivered bool
+	ownerKill bool
 }
 
 // terminationTTL bounds how long a kill waits for its client: one that
@@ -713,6 +705,9 @@ func (s *Server) setTermination(tid, reason string) {
 	if s.terms == nil {
 		s.terms = map[string]termination{}
 	}
+	if current, ok := s.terms[tid]; ok && current.ownerKill && s.now().Sub(current.at) <= terminationTTL {
+		return
+	}
 	s.terms[tid] = termination{reason: reason, at: s.now()}
 }
 
@@ -720,18 +715,50 @@ func (s *Server) takeTermination(tid string) (string, bool) {
 	s.termMu.Lock()
 	defer s.termMu.Unlock()
 	t, ok := s.terms[tid]
-	if ok {
+	if !ok || t.delivered {
+		return "", false
+	}
+	if t.ownerKill {
+		t.delivered = true
+		s.terms[tid] = t
+	} else {
 		delete(s.terms, tid)
 	}
-	return t.reason, ok
+	return t.reason, true
 }
 
 func (s *Server) expireTerminations(now time.Time, ttl time.Duration) {
 	s.termMu.Lock()
 	defer s.termMu.Unlock()
+	for id, arm := range s.decisionArms {
+		if now.Sub(arm.at) > 3*time.Minute {
+			delete(s.decisionArms, id)
+		}
+	}
 	for tid, t := range s.terms {
 		if now.Sub(t.at) > ttl {
 			delete(s.terms, tid)
 		}
 	}
+}
+
+// playbackTerminated remains true after the one-shot timeline notice, preventing
+// a stopped player's byte requests from reopening the same playback session.
+func (s *Server) playbackTerminated(pr *Request) bool {
+	if pr == nil || pr.User == nil {
+		return false
+	}
+	s.termMu.Lock()
+	defer s.termMu.Unlock()
+	t, ok := s.terms[trackID(pr.User.ID, pr.ClientID, pr.SessionID)]
+	return ok && t.ownerKill && s.now().Sub(t.at) <= terminationTTL
+}
+
+func (s *Server) setOwnerTermination(tid, reason string) {
+	s.termMu.Lock()
+	defer s.termMu.Unlock()
+	if s.terms == nil {
+		s.terms = map[string]termination{}
+	}
+	s.terms[tid] = termination{reason: reason, at: s.now(), ownerKill: true}
 }

@@ -52,3 +52,26 @@ func TestProbeCodecConfigurationHex(t *testing.T) {
 		t.Fatalf("codec config: %+v %v", info, err)
 	}
 }
+
+func TestHLSAttributesDoNotAdvertiseSourceDVOnConvertedOutput(t *testing.T) {
+	info := mustParse(t, "mkv_dv_p8.json")
+	info.Video().CodecString = "dvh1.08.06"
+	for _, tc := range []struct {
+		name     string
+		decision core.Decision
+	}{
+		{"stripped HDR10", core.Decision{VideoCopy: true, StripDolbyVision: true}},
+		{"encoded HEVC", core.Decision{VideoCodec: "hevc"}},
+		{"encoded H264", core.Decision{VideoCodec: "h264", ToneMap: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			attrs := HLSVariantAttributes(info, tc.decision)
+			if strings.Contains(attrs, "dvh1") || strings.Contains(attrs, "SUPPLEMENTAL-CODECS") {
+				t.Fatal(attrs)
+			}
+			if tc.decision.VideoCopy && (!strings.Contains(attrs, `CODECS="hvc1.`) || !strings.Contains(attrs, "VIDEO-RANGE=PQ")) {
+				t.Fatal("stripped output must advertise plain HEVC/PQ:", attrs)
+			}
+		})
+	}
+}

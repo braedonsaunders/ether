@@ -345,9 +345,10 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 			m.ViewOffset = ms(st.ViewOffset)
 		}
 		m.LastViewedAt = unixOrZero(st.LastViewedAt)
+		m.LastRatedAt = unixOrZero(st.LastRatedAt)
 		if st.UserRating > 0 {
 			m.UserRating = st.UserRating
-			m.LastRatedAt = unixOrZero(st.UpdatedAt)
+			m.LastRatedAt = unixOrZero(st.LastRatedAt)
 		}
 	}
 
@@ -645,7 +646,7 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *core.Title, withS
 		}
 		m.Part[0].Key = s.playIDs.partKey(ik, m.ID, m.Part[0].Key, s.now())
 	}
-	if ps != nil && ps.Resolution != nil && s.d.Trickplay != nil && s.d.Trickplay.TrickplayAvailable(ps.Resolution.Release.ID) {
+	if ps != nil && ps.Resolution != nil && s.d.Trickplay != nil && s.d.Trickplay.TrickplayAvailable(core.TrickplayCacheKey(ps)) {
 		m.Part[0].Indexes = "sd"
 	}
 	if withStreams || probedSource {
@@ -663,7 +664,7 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *core.Title, withS
 		}
 		sel := resolveSelection(stored, info)
 		sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
-		m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User)
+		m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User, pr)
 	}
 	return []model.Media{m}, ""
 }
@@ -691,6 +692,9 @@ func partFileName(t *core.Title, ext string) string {
 func buildMedia(t *core.Title, info core.MediaInfo, stamp int64) model.Media {
 	container := plexContainer(info.Container)
 	ext := containerExt(container)
+	if strings.EqualFold(info.Container, "webm") {
+		ext = "webm"
+	}
 	dur := ms(info.Duration)
 	if dur <= 0 {
 		dur = ms(t.Runtime)
@@ -708,11 +712,21 @@ func buildMedia(t *core.Title, info core.MediaInfo, stamp int64) model.Media {
 	if isMP4 {
 		m.OptimizedForStreaming = model.Ptr(1)
 		m.Has64bitOffsets = model.Ptr(false)
+		if info.Has64bitOffsets != nil {
+			m.Has64bitOffsets = info.Has64bitOffsets
+		}
+		if info.OptimizedForStreaming != nil {
+			value := 0
+			if *info.OptimizedForStreaming {
+				value = 1
+			}
+			m.OptimizedForStreaming = &value
+		}
 	}
 	var firstAudio *core.StreamInfo
 	for i := range info.Streams {
 		if info.Streams[i].Type == "audio" {
-			if firstAudio == nil || info.Streams[i].Default && !firstAudio.Default {
+			if firstAudio == nil || info.Streams[i].Channels > firstAudio.Channels {
 				firstAudio = &info.Streams[i]
 			}
 		}
@@ -720,12 +734,12 @@ func buildMedia(t *core.Title, info core.MediaInfo, stamp int64) model.Media {
 	if v := info.Video(); v != nil {
 		m.Width, m.Height = v.Width, v.Height
 		if v.Height > 0 {
-			m.AspectRatio = math.Round(float64(v.Width)/float64(v.Height)*100) / 100
+			m.AspectRatio = plexAspectRatio(*v)
 		}
 		m.VideoCodec = plexCodec(v.Codec)
 		m.VideoResolution = videoResolution(v.Width, v.Height)
 		m.VideoFrameRate = frameRateName(v.FrameRate)
-		m.VideoProfile = strings.ToLower(v.Profile)
+		m.VideoProfile = plexVideoProfile(v.Profile)
 	}
 	if firstAudio != nil {
 		m.AudioChannels = firstAudio.Channels
@@ -746,9 +760,18 @@ func buildMedia(t *core.Title, info core.MediaInfo, stamp int64) model.Media {
 		Container:    container,
 		VideoProfile: m.VideoProfile,
 	}
+	if container == "mpegts" {
+		p.PacketLength = 188
+	}
 	if isMP4 {
 		p.Has64bitOffsets = model.Ptr(false)
 		p.OptimizedForStreaming = model.Ptr(true)
+		if info.Has64bitOffsets != nil {
+			p.Has64bitOffsets = info.Has64bitOffsets
+		}
+		if info.OptimizedForStreaming != nil {
+			p.OptimizedForStreaming = info.OptimizedForStreaming
+		}
 	}
 	m.Part = []model.Part{p}
 	return m
@@ -756,13 +779,25 @@ func buildMedia(t *core.Title, info core.MediaInfo, stamp int64) model.Media {
 
 // audioProfile is PMS's audioProfile ("lc" for AAC, "dts"/"ma" for DTS...).
 func audioProfile(st *core.StreamInfo) string {
+	if strings.HasPrefix(strings.ToLower(st.Codec), "pcm_") && st.Codec != "pcm_bluray" || st.Codec == "pcm" {
+		return st.SampleFormat
+	}
 	if st.Profile != "" {
 		p := strings.ToLower(st.Profile)
+		if strings.Contains(p, "atmos") {
+			return ""
+		}
 		switch p {
 		case "dts-hd ma":
 			return "ma"
 		case "dts-hd hra":
 			return "hra"
+		case "dts", "dts core":
+			return "dts"
+		case "dts-es", "dts es":
+			return "es"
+		case "dts express", "dts-hd lbr":
+			return "express"
 		}
 		return p
 	}
@@ -771,8 +806,14 @@ func audioProfile(st *core.StreamInfo) string {
 		return "lc"
 	case "dts":
 		return "dts"
-	case "dtshd":
+	case "dtshd", "dts-hd", "dts-hd ma":
 		return "ma"
+	case "dts-es":
+		return "es"
+	case "dts express", "dts-hd lbr":
+		return "express"
+	case "dts-hd hra":
+		return "hra"
 	}
 	return ""
 }
@@ -785,10 +826,13 @@ func (s *Server) buildStreams(key core.RatingKey, info core.MediaInfo, sel selec
 
 // issuedStreams renders a Media's streams with the ids this client was
 // already issued for that Media (see play_identity.go).
-func (s *Server) issuedStreams(key core.RatingKey, ik playIdentityKey, mediaID int64, info core.MediaInfo, sel selection, u *core.User) []model.Stream {
+func (s *Server) issuedStreams(key core.RatingKey, ik playIdentityKey, mediaID int64, info core.MediaInfo, sel selection, u *core.User, requests ...*Request) []model.Stream {
 	out, src := s.renderStreams(key, info, sel, u)
 	if ik.valid() && ik.key == key && s.playIDs != nil {
 		s.playIDs.issueStreams(ik, mediaID, out, src, info, s.now())
+	}
+	if len(requests) > 0 && requests[0] != nil {
+		projectStreamTitles(out, src, info, requests[0])
 	}
 	return out
 }
@@ -813,13 +857,16 @@ func (s *Server) renderStreams(key core.RatingKey, info core.MediaInfo, sel sele
 	for i, st := range info.Streams {
 		id := s.assignStream(context.Background(), u, key, i, st, "")
 		ps := model.Stream{
-			ID:       id,
-			Codec:    plexCodec(st.Codec),
-			Bitrate:  st.BitrateKbps,
-			Title:    st.Title,
-			Default:  boolPtrIf(st.Default),
-			Forced:   boolPtrIf(st.Forced),
-			Language: languageName(st.Language),
+			ID:               id,
+			Codec:            plexCodec(st.Codec),
+			Bitrate:          st.BitrateKbps,
+			Title:            st.Title,
+			StreamIdentifier: st.StreamIdentifier,
+			Default:          boolPtrIf(st.Default),
+			Forced:           boolPtrIf(st.Forced),
+			Original:         trueDisposition(st.Original),
+			Dub:              trueDisposition(st.Dub),
+			Language:         languageName(st.Language),
 		}
 		if st.Language != "" {
 			ps.LanguageCode = languageCode3(st.Language)
@@ -831,13 +878,40 @@ func (s *Server) renderStreams(key core.RatingKey, info core.MediaInfo, sel sele
 		switch st.Type {
 		case "video":
 			ps.StreamType = 1
-			if info.Video() == &info.Streams[i] {
-				ps.Default = model.Ptr(true) // PMS flags the primary video stream default
-			}
 			ps.Width, ps.Height = st.Width, st.Height
 			ps.FrameRate = math.Round(st.FrameRate*1000) / 1000
 			ps.BitDepth, ps.Level = st.BitDepth, st.Level
-			ps.Profile = strings.ToLower(st.Profile)
+			if ps.Level < 0 {
+				ps.Level = 0
+			}
+			ps.ColorRange = st.ColorRange
+			ps.ChromaLocation, ps.CodedWidth, ps.CodedHeight = st.ChromaLocation, st.CodedWidth, st.CodedHeight
+			if ps.Codec == "h264" && ps.CodedHeight <= 0 {
+				ps.CodedHeight = st.Height
+			}
+			if ps.Codec == "h264" && ps.CodedHeight > 0 {
+				ps.CodedHeight = ((ps.CodedHeight + 15) / 16) * 16
+			}
+			switch st.CodecTag {
+			case "hev1", "hvc1", "dvhe", "XVID", "DX50", "HDMV":
+				ps.CodecID = st.CodecTag
+			}
+			if n, d, ok := plexSAR(st.SampleAspectRatio); ok && n != d {
+				ps.PixelAspectRatio = st.SampleAspectRatio
+				delta := n - d
+				if delta < 0 {
+					delta = -delta
+				}
+				ps.Anamorphic = model.Ptr(delta*20 > d)
+			}
+
+			if st.FieldOrder != "" && st.FieldOrder != "unknown" {
+				ps.ScanType = "progressive"
+				if st.Interlaced {
+					ps.ScanType = "interlaced"
+				}
+			}
+			ps.Profile = plexVideoProfile(st.Profile)
 			ps.ChromaSubsampling = "4:2:0"
 			switch st.ColorTransfer {
 			case "smpte2084", "arib-std-b67":
@@ -860,11 +934,17 @@ func (s *Server) renderStreams(key core.RatingKey, info core.MediaInfo, sel sele
 			ps.DisplayTitle = videoDisplayTitle(st)
 			ps.ExtendedDisplayTitle = ps.DisplayTitle
 		case "audio":
+			if st.BitsPerRawSample != nil {
+				ps.BitDepth = *st.BitsPerRawSample
+			} else if plexCodec(st.Codec) == "dca" && !strings.Contains(strings.ToLower(st.Profile), "express") {
+				ps.BitDepth = 24
+			}
+			ps.HearingImpaired, ps.VisualImpaired, ps.Comment = trueDisposition(st.HearingImpaired), trueDisposition(st.VisualImpaired), trueDisposition(st.Commentary)
 			ps.StreamType = 2
 			ps.Channels = st.Channels
 			ps.AudioChannelLayout = st.ChannelLayout
 			ps.SamplingRate = st.SampleRate
-			if st.Profile != "" {
+			if st.Profile != "" || st.SampleFormat != "" {
 				ps.Profile = audioProfile(&st)
 			}
 			if i == audioSelected {
@@ -874,12 +954,14 @@ func (s *Server) renderStreams(key core.RatingKey, info core.MediaInfo, sel sele
 			ps.DisplayTitle = audioDisplayTitle(st)
 			ps.ExtendedDisplayTitle = extendedTitle(st, ps.DisplayTitle, audioStreamCodecLabel(st))
 		case "subtitle":
+			ps.HearingImpaired, ps.VisualImpaired, ps.Comment = trueDisposition(st.HearingImpaired), trueDisposition(st.VisualImpaired), trueDisposition(st.Commentary)
 			ps.StreamType = 3
 			ps.CanAutoSync = model.Ptr(false) // no voice-activity data
 			if st.External {
 				ps.Key = "/library/streams/" + strconv.FormatInt(id, 10)
 				ps.Format = ps.Codec
 				ps.External = model.Ptr(true)
+				ps.Transient = model.Ptr(0)
 			}
 			if i == subSelected {
 				ps.Selected = model.Ptr(true)
@@ -899,14 +981,7 @@ func (s *Server) renderStreams(key core.RatingKey, info core.MediaInfo, sel sele
 // streams: the display title, or for a titled track "<title> (<language>
 // <codec>)" ("Stereo (English DTS)", "SDH (English SRT)").
 func extendedTitle(st core.StreamInfo, display, codec string) string {
-	if st.Title == "" {
-		return display
-	}
-	lang := languageName(st.Language)
-	if lang == "" {
-		lang = "Unknown"
-	}
-	return st.Title + " (" + lang + " " + codec + ")"
+	return composeTrackTitle(st, "", true)
 }
 
 // pickAudio chooses the audio stream for languages in preference order
@@ -925,11 +1000,14 @@ func boolPtrIf(b bool) *bool {
 
 // plexCodec maps ffprobe/core codec names to the names PMS uses.
 func plexCodec(c string) string {
+	if strings.HasPrefix(strings.ToLower(c), "pcm_") && !strings.EqualFold(c, "pcm_bluray") {
+		return "pcm"
+	}
 	switch strings.ToLower(c) {
 	case "dts":
 		return "dca"
-	case "dtshd", "dts-hd", "dts-hd ma":
-		return "dca-ma"
+	case "dtshd", "dts-hd", "dts-hd ma", "dts-es", "dts express", "dts-hd lbr", "dts-hd hra":
+		return "dca"
 	case "subrip":
 		return "srt"
 	case "hdmv_pgs_subtitle", "pgssub":
@@ -978,8 +1056,57 @@ func containerExt(c string) string {
 	return c
 }
 
+func plexVideoProfile(profile string) string {
+	switch v := strings.ToLower(strings.TrimSpace(profile)); v {
+	case "0", "unknown", "n/a":
+		return ""
+	case "simple profile":
+		return "simple"
+	default:
+		return v
+	}
+}
+
+func plexSAR(raw string) (int64, int64, bool) {
+	a, b, ok := strings.Cut(raw, ":")
+	if !ok {
+		return 0, 0, false
+	}
+	n, e1 := strconv.ParseInt(a, 10, 32)
+	d, e2 := strconv.ParseInt(b, 10, 32)
+	return n, d, e1 == nil && e2 == nil && n > 0 && d > 0
+}
+
+func plexAspectRatio(v core.StreamInfo) float64 {
+	if v.Width <= 0 || v.Height <= 0 {
+		return 0
+	}
+	ratio := float64(v.Width) / float64(v.Height)
+	if n, d, ok := plexSAR(v.SampleAspectRatio); ok {
+		ratio *= float64(n) / float64(d)
+	}
+	best := 1.33
+	for _, candidate := range []float64{1.66, 1.78, 1.85, 2.2, 2.35} {
+		if math.Abs(candidate-ratio) < math.Abs(best-ratio) {
+			best = candidate
+		}
+	}
+	return best
+}
+
 // videoResolution is PMS's videoResolution value.
 func videoResolution(w, h int) string {
+	// These uncommon shapes have independently recorded nominal classes.
+	// Keep unmeasured dimensions on the established general tier mapping.
+	switch {
+	case w == 1920 && (h == 1600 || h == 2160):
+		return "2.7k"
+	case w == 2048 && h == 858, w == 2560 && h == 1376:
+		return "2k"
+	case w == 1440 && h == 1048, w == 1852 && h == 800:
+		return "720"
+	}
+
 	if w > 0 && w < 800 && h > 0 && h < 480 {
 		return "sd"
 	}
@@ -996,10 +1123,18 @@ func videoResolution(w, h int) string {
 }
 
 func resolutionLabel(w, h int) string {
-	if videoResolution(w, h) == "sd" {
+	switch tier := videoResolution(w, h); tier {
+	case "", "sd":
 		return "SD"
+	case "4k":
+		return "4K"
+	case "2k":
+		return "2K"
+	case "2.7k":
+		return "2.7K"
+	default:
+		return tier + "p"
 	}
-	return core.ResolutionLabel(w, h)
 }
 
 // frameRateName is PMS's videoFrameRate value.
@@ -1022,9 +1157,16 @@ func frameRateName(f float64) string {
 
 func videoDisplayTitle(st core.StreamInfo) string {
 	res := resolutionLabel(st.Width, st.Height)
+	if st.Interlaced {
+		res = strings.TrimSuffix(res, "p") + "i"
+	}
 	parts := []string{}
 	if st.DolbyVision {
-		parts = append(parts, "DoVi")
+		dv := "DoVi"
+		if st.DolbyVisionELPresent != nil && *st.DolbyVisionELPresent && st.DolbyVisionBLPresent != nil && !*st.DolbyVisionBLPresent {
+			dv = "DoVi Enhancement Layer"
+		}
+		parts = append(parts, dv)
 	}
 	switch st.ColorTransfer {
 	case "smpte2084":
@@ -1044,7 +1186,7 @@ func videoDisplayTitle(st core.StreamInfo) string {
 	}
 	// PMS names the profile only where it matters ("HEVC Main 10"), not
 	// for H.264 ("1080p (H.264)") or plain HEVC Main.
-	if p := strings.ToLower(st.Profile); p != "" && p != "main" && strings.ToLower(st.Codec) != "h264" {
+	if p := strings.ToLower(st.Profile); p != "" && p != "0" && p != "unknown" && (strings.ToLower(st.Codec) != "h264" || p != "main" && p != "high") {
 		codec += " " + titleCase(st.Profile)
 	}
 	return res + " (" + codec + ")"
@@ -1059,12 +1201,15 @@ func audioCodecLabel(c string) string {
 	case "DCA-MA":
 		return "DTS-HD MA"
 	case "TRUEHD":
-		return "TrueHD"
+		return "TRUEHD"
 	}
 	return codec
 }
 
 func audioStreamCodecLabel(st core.StreamInfo) string {
+	if plexCodec(st.Codec) == "dca" && strings.Contains(strings.ToLower(st.Profile), "es") && !strings.Contains(strings.ToLower(st.Profile), "express") {
+		return "DTS-ES"
+	}
 	if plexCodec(st.Codec) == "dca" && audioProfile(&st) == "ma" {
 		return "DTS-HD MA"
 	}
@@ -1099,7 +1244,8 @@ func channelsLabel(n int, layout string) string {
 		return ""
 	}
 	if layout != "" {
-		return layout
+		label, _, _ := strings.Cut(layout, " (")
+		return strings.TrimSpace(label)
 	}
 	return strconv.Itoa(n) + "ch"
 }
@@ -1117,23 +1263,27 @@ func audioDisplayTitle(st core.StreamInfo) string {
 }
 
 func subtitleDisplayTitle(st core.StreamInfo) string {
-	lang := languageName(st.Language)
-	if lang == "" {
-		lang = "Unknown"
-	}
-	inner := strings.ToUpper(plexCodec(st.Codec))
-	if st.External {
-		inner += " External"
-	}
-	if st.Forced {
-		lang += " Forced"
-	}
-	return lang + " (" + inner + ")"
+	return composeTrackTitle(st, "", false)
 }
 
 // Languages: ISO 639-1 / 639-2 codes to names. Covers what releases and
 // OpenSubtitles commonly carry; unknown codes pass through.
 var languages = map[string][3]string{
+	"ch":  {"Chamorro", "cha", "ch"},
+	"gu":  {"Gujarati", "guj", "gu"},
+	"hy":  {"Armenian", "hye", "hy"},
+	"ka":  {"Georgian", "kat", "ka"},
+	"mr":  {"Marathi", "mar", "mr"},
+	"mdr": {"Mandar", "mdr", "mdr"},
+	"mn":  {"Mongolian", "mon", "mn"},
+	"my":  {"Burmese", "mya", "my"},
+	"nn":  {"Norwegian Nynorsk", "nno", "nn"},
+	"pa":  {"Punjabi", "pan", "pa"},
+	"si":  {"Sinhala", "sin", "si"},
+	"yo":  {"Yoruba", "yor", "yo"},
+	"zu":  {"Zulu", "zul", "zu"},
+	"fil": {"Filipino", "fil", "fil"},
+
 	// code1: {name, code3(639-2/B), tag}
 	"en": {"English", "eng", "en"}, "fr": {"French", "fre", "fr"}, "de": {"German", "ger", "de"},
 	"es": {"Spanish", "spa", "es"}, "it": {"Italian", "ita", "it"}, "pt": {"Portuguese", "por", "pt"},
@@ -1156,7 +1306,7 @@ var languages = map[string][3]string{
 // canonical primary subtag from langtag (region and script dropped).
 func primaryLang(code string) string {
 	if t, ok := langtag.ParseBCP47(code); ok {
-		return t.Primary
+		return canonicalLanguagePrimary(t.Primary)
 	}
 	return strings.ToLower(strings.TrimSpace(code))
 }
@@ -1169,27 +1319,36 @@ func sameLanguage(a, b string) bool {
 }
 
 func languageName(code string) string {
-	if code == "" {
+	if code == "" || code == "und" {
 		return ""
 	}
 	if l, ok := languages[primaryLang(code)]; ok {
-		return l[0]
+		return nativeLanguage(l[2], l[0])
+	}
+	if canonicalLanguagePrimary(code) != code || unknownLanguageCode(code) != "" {
+		return nativeLanguage(canonicalLanguagePrimary(code), code)
 	}
 	return code
 }
 
 func languageCode3(code string) string {
-	if l, ok := languages[primaryLang(code)]; ok {
-		return l[1]
+	if code == "und" || code == "" {
+		return ""
 	}
-	return strings.ToLower(code)
+	if l, ok := languages[primaryLang(code)]; ok {
+		return terminologyCode(l[2], l[1])
+	}
+	return unknownLanguageCode(code)
 }
 
 func languageTag(code string) string {
+	if code == "und" || code == "" {
+		return ""
+	}
 	if l, ok := languages[primaryLang(code)]; ok {
 		return l[2]
 	}
-	return strings.ToLower(code)
+	return canonicalLanguagePrimary(strings.ToLower(code))
 }
 
 // renderTitles renders a list, loading the user's watch state in one call.
@@ -1370,9 +1529,6 @@ func (s *Server) applyListLeafCountsOpts(ctx context.Context, pr *Request, items
 		}
 		if viewed > 0 {
 			items[i].ViewedLeafCount = model.Ptr(viewed)
-			if items[i].LeafCount != nil && *items[i].LeafCount > 0 && viewed >= *items[i].LeafCount {
-				items[i].ViewCount = max(items[i].ViewCount, 1)
-			}
 		}
 	}
 }
@@ -1550,9 +1706,7 @@ func (s *Server) applyLeafCountsWith(ctx context.Context, pr *Request, items []m
 		// or season reads as watched.
 		items[i].ViewedLeafCount = model.Ptr(viewed)
 		items[i].LeafCount = model.Ptr(len(eps))
-		if viewed > 0 && viewed == len(eps) {
-			items[i].ViewCount = max(items[i].ViewCount, 1)
-		}
+
 	}
 }
 

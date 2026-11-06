@@ -8,7 +8,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/hoststat"
 )
 
-// Dashboard is this node's in-memory Plex Dashboard store: devices,
+// Dashboard keeps this node's Plex Dashboard series in memory. Production
+// device identities are backed by the durable registry; embedded instances
+// without a registry retain process-local identities. Series include
 // per-second bandwidth, and completed-play counts. Clustered nodes each
 // keep their own rings; there is no request pin, so a client reads the
 // node it connected to. Request paths only walk the requested buckets.
@@ -17,6 +19,7 @@ type Dashboard struct {
 	loc *time.Location
 
 	devMu    sync.Mutex
+	registry *deviceRegistry
 	nextDev  int64
 	byClient map[string]*Device
 	byID     map[int64]*Device
@@ -180,13 +183,26 @@ func (d *Dashboard) SeeDevice(clientID, name, platform string) Device {
 
 func (d *Dashboard) seeLocked(clientID, name, platform string) Device {
 	if dev, ok := d.byClient[clientID]; ok {
+		changed := name != "" && name != dev.Name || platform != "" && platform != dev.Platform
 		if name != "" {
 			dev.Name = name
 		}
 		if platform != "" {
 			dev.Platform = platform
 		}
+		if changed && d.registry != nil {
+			d.registry.update(*dev)
+		}
 		return *dev
+	}
+	if d.registry != nil {
+		dev, err := d.registry.allocate(Device{ClientIdentifier: clientID, Name: name, Platform: platform, CreatedAt: d.now().Unix()})
+		if err != nil {
+			return Device{ClientIdentifier: clientID, Name: name, Platform: platform}
+		}
+		d.byClient[clientID] = &dev
+		d.byID[dev.ID] = &dev
+		return dev
 	}
 	if len(d.byID) >= 512 {
 		return *d.byID[1]

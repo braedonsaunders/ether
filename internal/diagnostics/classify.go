@@ -52,3 +52,28 @@ func mediaDelivered(status int, contentType string, bytesWritten int64) bool {
 			ct == "application/dash+xml"
 	}
 }
+
+// ArtworkRequestPath recognizes Plex image endpoints without inspecting nested
+// URLs or retaining their hosts, credentials, or response bytes.
+func ArtworkRequestPath(route string) bool {
+	p := strings.ToLower(stripQuery(route))
+	if p == "/photo/:/transcode" {
+		return true
+	}
+	var rest string
+	for _, prefix := range []string{"/library/metadata/", "/library/collections/", "/playlists/"} {
+		if strings.HasPrefix(p, prefix) {
+			rest = strings.TrimPrefix(p, prefix)
+			break
+		}
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 {
+		return false
+	}
+	switch parts[1] {
+	case "thumb", "art", "poster", "banner", "clearlogo", "logo", "background", "composite", "squareart", "discoveryposter", "person":
+		return true
+	}
+	return false
+}

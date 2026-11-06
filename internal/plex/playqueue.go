@@ -2,10 +2,12 @@ package plex
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,20 +36,24 @@ type pqItem struct {
 }
 
 type playQueue struct {
-	id            int64
-	userID        int64
-	clientID      string
-	items         []pqItem
-	original      []pqItem // order before shuffle
-	selected      int      // index into items
-	shuffled      bool
-	sourceURI     string
-	playlistID    core.RatingKey
-	playlistTitle string
-	version       int
-	lastAdded     int64
-	updatedAt     time.Time
-	liveSession   string // live queues resolve through LiveTV, never the catalogue
+	id               int64
+	userID           int64
+	clientID         string
+	items            []pqItem
+	original         []pqItem // order before shuffle
+	selected         int      // index into items
+	shuffled         bool
+	sourceURI        string
+	playlistID       core.RatingKey
+	playlistTitle    string
+	version          int
+	lastAdded        int64
+	updatedAt        time.Time
+	suppressItem     int64
+	suppressRows     bool // mutation response only
+	suppressMetadata bool
+	forceOffsetZero  bool
+	liveSession      string // live queues resolve through LiveTV, never the catalogue
 
 	rev      int64     // clustered: stored row revision
 	loadedAt time.Time // clustered: when the cached copy was read or written
@@ -112,6 +118,7 @@ func (s *playQueueStore) createWith(userID int64, clientID string, keys []core.R
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.retireClientLocked(userID, clientID, 0)
 	if len(s.queues) >= maxQueues {
 		s.evictOldestLocked()
 	}
@@ -122,6 +129,33 @@ func (s *playQueueStore) createWith(userID int64, clientID string, keys []core.R
 		fn(q)
 	}
 	return q.snapshot(), nil
+}
+
+// A client owns one active queue; an absent identifier is still an identity.
+func (s *playQueueStore) retireClientLocked(userID int64, clientID string, keep int64) {
+	for id, q := range s.queues {
+		if id != keep && q.userID == userID && q.clientID == clientID {
+			delete(s.queues, id)
+		}
+	}
+}
+
+func queueFlag(q url.Values, name string) (bool, bool) {
+	if !q.Has(name) {
+		return false, true
+	}
+	raw := q.Get(name)
+	digits := strings.TrimPrefix(raw, "+")
+	if digits == "" {
+		return false, false
+	}
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return false, false
+		}
+	}
+	n, err := strconv.ParseUint(digits, 10, 64)
+	return n == 1, err == nil && n <= 1
 }
 
 func (s *playQueueStore) evictOldestLocked() {
@@ -366,9 +400,29 @@ func (s *playQueueStore) createShared(userID int64, clientID string, keys []core
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
-	if err := s.cl.db.QueryRowContext(ctx, `INSERT INTO plex_playqueues(user_id, rev, data, updated_at) VALUES (?, ?, ?, ?) RETURNING id`,
-		userID, q.rev, data, now.UnixMilli()).Scan(&q.id); err != nil {
+	tx, err := s.cl.db.BeginTx(ctx, nil)
+	if err != nil {
 		return playQueue{}, err
+	}
+	defer tx.Rollback()
+	// Lock a common queue row before deciding which client queue survives.
+	// This works with SQLite and PostgreSQL and closes concurrent-create races.
+	if _, err = tx.ExecContext(ctx, `UPDATE plex_counters SET value=value WHERE name='playqueue_item'`); err != nil {
+		return playQueue{}, err
+	}
+	if err = tx.QueryRowContext(ctx, `INSERT INTO plex_playqueues(user_id, rev, data, updated_at) VALUES (?, ?, ?, ?) RETURNING id`, userID, q.rev, data, now.UnixMilli()).Scan(&q.id); err != nil {
+		return playQueue{}, err
+	}
+	retired, err := retireQueueClient(ctx, tx, userID, clientID, q.id)
+	if err != nil {
+		return playQueue{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return playQueue{}, err
+	}
+	for _, id := range retired {
+		s.forget(id)
+		s.cl.publish("invalidate:playqueue", queueEvent{ID: id})
 	}
 	s.cache(q)
 	return q.snapshot(), nil
@@ -498,7 +552,13 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	if t := q.Get("type"); t != "" && t != "video" {
+	shuffle, valid := queueFlag(q, "shuffle")
+	_, repeatValid := queueFlag(q, "repeat")
+	if !valid || !repeatValid || !validQueueWindow(q) {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	if t := q.Get("type"); t != "video" {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
@@ -518,13 +578,27 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 			s.writeErr(w, r, err)
 			return
 		}
-		keys, plKey, plTitle = append([]core.RatingKey(nil), pl.Items...), pl.Key, pl.Title
+		keys, err = s.expandKey(ctx, pr, pl.Key)
+		if err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
+		plKey, plTitle = pl.Key, pl.Title
 		if uri == "" {
 			uri = "library://playlist/item/%2Fplaylists%2F" + pl.Key.String()
 		}
 	case uri != "":
 		var err error
 		keys, err = s.continuousKeys(ctx, pr, uri, q.Get("continuous") == "1")
+		if path, e := uriPath(uri); e == nil {
+			if m := rePlaylistPath.FindStringSubmatch(path); len(m) > 0 {
+				if k, e := core.ParseRatingKey(m[1]); e == nil {
+					if pl, e := s.playlist(ctx, pr.User, k); e == nil {
+						plKey, plTitle = pl.Key, pl.Title
+					}
+				}
+			}
+		}
 		if err != nil {
 			s.log.Debug("play queue uri", "uri", uri, "err", err)
 			if errors.Is(err, core.ErrNotFound) {
@@ -538,10 +612,7 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusBadRequest)
 		return
 	}
-	if len(keys) == 0 {
-		writeHTTPError(w, http.StatusBadRequest)
-		return
-	}
+
 	// A show queue follows regular episodes, including specials explicitly
 	// placed inside a regular presented season, but not the Specials season.
 	if plKey == 0 {
@@ -560,15 +631,12 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if len(keys) == 0 {
-		writeHTTPError(w, http.StatusBadRequest)
-		return
-	}
+
 	// Cinema Trailers and the owner's pre-roll: prepend them before the
 	// feature and warm the feature while they play. A pre-roll needs no
 	// extrasPrefixCount; it never precedes a resume.
 	prefixAt := -1
-	if q.Get("shuffle") != "1" {
+	if !shuffle && len(keys) > 0 {
 		n, err := strconv.Atoi(q.Get("extrasPrefixCount"))
 		cinema := err == nil && n > 0
 		featureIdx := 0
@@ -602,6 +670,20 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	snap, err := s.queues.createWith(pr.User.ID, pr.ClientID, keys, s.now(), func(p *playQueue) {
 		p.sourceURI = uri
+		if len(keys) > 0 && !strings.HasPrefix(uri, "library://") {
+			if path, e := uriPath(uri); e == nil {
+				authority := s.identity().MachineIdentifier
+				if strings.HasPrefix(uri, "server://") {
+					authority, _, _ = strings.Cut(strings.TrimPrefix(uri, "server://"), "/")
+				}
+				kind := "item"
+				sourceKey := keyFromPath(path)
+				if strings.Contains(path, ",") || strings.Contains(path, "/sections/") || strings.HasSuffix(path, "/children") || strings.HasSuffix(path, "/allLeaves") || strings.HasSuffix(path, "/grandchildren") || sourceKey.Kind() == core.KindShow || sourceKey.Kind() == core.KindSeason || sourceKey.Kind() == core.KindCollection {
+					kind = "directory"
+				}
+				p.sourceURI = "library://" + authority + "/" + kind + "/" + url.QueryEscape(path)
+			}
+		}
 		p.playlistID, p.playlistTitle = plKey, plTitle
 		if start := keyFromPath(q.Get("key")); start != 0 {
 			for i, it := range p.items {
@@ -614,7 +696,7 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 		if prefixAt >= 0 {
 			p.selected = prefixAt // playback starts with the first trailer
 		}
-		if q.Get("shuffle") == "1" {
+		if shuffle {
 			shuffleQueue(p)
 		}
 	})
@@ -628,6 +710,12 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 // continuousKeys resolves a play queue URI; with continuous=1 a single
 // episode expands to the remaining episodes in its presented season.
 func (s *Server) continuousKeys(ctx context.Context, pr *Request, uri string, continuous bool) ([]core.RatingKey, error) {
+	if strings.HasPrefix(uri, "server://") {
+		authority, _, _ := strings.Cut(strings.TrimPrefix(uri, "server://"), "/")
+		if authority != s.identity().MachineIdentifier {
+			return nil, nil
+		}
+	}
 	keys, err := s.resolveURI(ctx, pr, uri)
 	if err != nil {
 		return nil, err
@@ -695,7 +783,7 @@ func keyFromPath(p string) core.RatingKey {
 }
 
 func shuffleQueue(p *playQueue) {
-	if p.shuffled || len(p.items) < 2 {
+	if p.shuffled || len(p.items) < 2 || p.selected < 0 || p.selected >= len(p.items) {
 		return
 	}
 	p.original = append([]pqItem(nil), p.items...)
@@ -713,7 +801,7 @@ func unshuffleQueue(p *playQueue) {
 		return
 	}
 	var sel int64
-	if p.selected < len(p.items) {
+	if p.selected >= 0 && p.selected < len(p.items) {
 		// Removing every item leaves no selection to restore.
 		sel = p.items[p.selected].id
 	}
@@ -738,8 +826,12 @@ func unshuffleQueue(p *playQueue) {
 
 func (s *Server) pqParam(w http.ResponseWriter, r *http.Request) (int64, *core.User, bool) {
 	u := FromContext(r.Context()).User
-	id, err := strconv.ParseInt(chi.URLParam(r, "pq"), 10, 64)
-	if err != nil || u == nil {
+	id, err := strconv.ParseInt(chi.URLParam(r, "pq"), 10, 32)
+	if err != nil {
+		writeHTTPError(w, http.StatusBadRequest)
+		return 0, nil, false
+	}
+	if u == nil {
 		writeHTTPError(w, http.StatusNotFound)
 		return 0, nil, false
 	}
@@ -751,7 +843,12 @@ func (s *Server) handlePlayQueue(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	snap, ok := s.queues.get(id, u.ID)
+	var snap playQueue
+	if r.URL.Query().Get("own") == "1" {
+		snap, ok = s.queues.take(id, u.ID, FromContext(r.Context()).ClientID, s.now())
+	} else {
+		snap, ok = s.queues.get(id, u.ID)
+	}
 	if !ok {
 		writeHTTPError(w, http.StatusNotFound)
 		return
@@ -770,6 +867,14 @@ func (s *Server) handlePlayQueueMutate(op string) http.HandlerFunc {
 		ctx := r.Context()
 		pr := FromContext(ctx)
 		q := r.URL.Query()
+		if !validQueueWindow(q) {
+			writeHTTPError(w, http.StatusBadRequest)
+			return
+		}
+		if op == "move" && q.Has("after") && q.Get("after") == "" {
+			writeHTTPError(w, http.StatusBadRequest)
+			return
+		}
 		if existing, found := s.queues.get(id, u.ID); found {
 			if existing.liveSession != "" {
 				writeHTTPError(w, http.StatusBadRequest)
@@ -806,22 +911,28 @@ func (s *Server) handlePlayQueueMutate(op string) http.HandlerFunc {
 		}
 		itemID, _ := strconv.ParseInt(chi.URLParam(r, "item"), 10, 64)
 		var bad bool
+		var before playQueue
+		var removedSelected bool
 		snap, ok := s.queues.with(id, u.ID, s.now(), func(p *playQueue) {
+			before = p.snapshot()
+			removedSelected = false
 			bad = false // a clustered edit may run again after a conflict
 			switch op {
 			case "add":
 				s.queues.addItems(p, addKeys, pre, q.Get("next") == "1")
 			case "shuffle":
-				shuffleQueue(p)
+				s.queues.reshuffle(p, true)
 			case "unshuffle":
-				unshuffleQueue(p)
+				s.queues.reshuffle(p, false)
 			case "reset":
 				p.selected = 0
 				p.version++
 			case "clear":
 				// Keep the playing item, drop the rest.
-				if len(p.items) > 0 {
+				if p.selected >= 0 && p.selected < len(p.items) {
 					p.items = []pqItem{p.items[p.selected]}
+				} else {
+					p.items = nil
 				}
 				p.selected = 0
 				p.original = nil
@@ -832,10 +943,15 @@ func (s *Server) handlePlayQueueMutate(op string) http.HandlerFunc {
 					bad = true
 					return
 				}
+				removedSelected = idx == p.selected
 				p.items = append(p.items[:idx], p.items[idx+1:]...)
-				if idx < p.selected || p.selected >= len(p.items) {
-					p.selected = max(0, p.selected-1)
+				if idx < p.selected {
+					p.selected--
 				}
+				if removedSelected && p.selected >= len(p.items) {
+					p.selected = -1
+				}
+				p.reanchorAdded()
 				p.version++
 			case "move":
 				idx := indexOfItem(p.items, itemID)
@@ -844,9 +960,13 @@ func (s *Server) handlePlayQueueMutate(op string) http.HandlerFunc {
 					return
 				}
 				if q.Get("after") == strconv.FormatInt(itemID, 10) {
-					return // moving an item after itself leaves its order intact
+					bad = true
+					return
 				}
-				selID := p.items[p.selected].id
+				var selID int64
+				if p.selected >= 0 && p.selected < len(p.items) {
+					selID = p.items[p.selected].id
+				}
 				it := p.items[idx]
 				rest := append(append([]pqItem(nil), p.items[:idx]...), p.items[idx+1:]...)
 				to := 0
@@ -856,12 +976,23 @@ func (s *Server) handlePlayQueueMutate(op string) http.HandlerFunc {
 					}
 				}
 				p.items = append(rest[:to], append([]pqItem{it}, rest[to:]...)...)
-				p.selected = max(0, indexOfItem(p.items, selID))
+				p.selected = indexOfItem(p.items, selID)
+				p.reanchorAdded()
 				p.version++
 			}
 		})
 		if !ok || bad {
 			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
+		if op == "remove" {
+			before.suppressItem = itemID
+			if removedSelected {
+				before.suppressRows = true
+				before.suppressMetadata = true
+				before.forceOffsetZero = true
+			}
+			s.writePlayQueue(w, r, before)
 			return
 		}
 		s.writePlayQueue(w, r, snap)
@@ -886,27 +1017,49 @@ func (s *Server) writePlayQueue(w http.ResponseWriter, r *http.Request, pq playQ
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	q := r.URL.Query()
-	window := 50
-	if n, err := strconv.Atoi(q.Get("window")); err == nil && n > 0 {
-		window = min(n, 200)
+	if !validQueueWindow(q) {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
 	}
-	lo := 0
-	if q.Get("includeBefore") != "0" {
-		lo = max(0, pq.selected-window/2)
-	} else {
-		lo = pq.selected
+	center := pq.selected
+	if q.Has("center") {
+		id, err := strconv.ParseInt(q.Get("center"), 10, 64)
+		center = -1
+		if err == nil {
+			center = indexOfItem(pq.items, id)
+		}
 	}
-	hi := min(len(pq.items), lo+window)
-	if q.Get("includeAfter") == "0" {
-		hi = min(len(pq.items), pq.selected+1)
+	lo, hi := 0, 0
+	if center >= 0 && center < len(pq.items) {
+		lo, hi = 0, len(pq.items)
+		if q.Has("window") {
+			n, _ := strconv.Atoi(q.Get("window"))
+			if n == 0 {
+				lo, hi = center, center
+			} else {
+				lo, hi = max(0, center-n), min(len(pq.items), center+n+1)
+			}
+		}
+		before, _ := queueFlag(q, "includeBefore")
+		after, _ := queueFlag(q, "includeAfter")
+		if q.Has("includeBefore") && !before {
+			lo = min(hi, center+1)
+		}
+		if q.Has("includeAfter") && !after {
+			hi = max(lo, center)
+		}
 	}
-	if lo > len(pq.items) {
-		lo = len(pq.items)
+	if pq.suppressRows {
+		lo, hi = 0, 0
 	}
 	slice := pq.items[lo:hi]
 	keys := make([]core.RatingKey, len(slice))
 	for i, it := range slice {
 		keys[i] = it.key
+	}
+	// Selection identity is independent of the requested centre/window.
+	if pq.selected >= 0 && pq.selected < len(pq.items) && !pq.suppressMetadata {
+		keys = append(keys, pq.items[pq.selected].key)
 	}
 	titles := s.visibleTitles(pr.User, s.getTitles(ctx, dedupeKeys(keys)))
 	byKey := make(map[core.RatingKey]*core.Title, len(titles))
@@ -916,22 +1069,34 @@ func (s *Server) writePlayQueue(w http.ResponseWriter, r *http.Request, pq playQ
 	state := s.stateFor(ctx, pr, titles)
 
 	var selItem pqItem
-	if pq.selected < len(pq.items) {
+	if pq.selected >= 0 && pq.selected < len(pq.items) {
 		selItem = pq.items[pq.selected]
 	}
 	if selTitle, ok := byKey[selItem.key]; ok {
 		s.warmDetail(ctx, pr, selTitle)
 	}
 	mc := libraryContainer()
-	mc.Extra = []model.Attr{
-		model.A("playQueueID", pq.id),
-		model.A("playQueueSelectedItemID", selItem.id),
-		model.A("playQueueSelectedItemOffset", pq.selected),
-		model.A("playQueueSelectedMetadataItemID", selItem.key.String()),
-		model.A("playQueueShuffled", pq.shuffled),
-		model.A("playQueueSourceURI", pq.sourceURI),
-		model.A("playQueueTotalCount", len(pq.items)),
-		model.A("playQueueVersion", pq.version),
+	mc.AllowSync = nil
+	mc.Extra = []model.Attr{model.A("playQueueID", pq.id), model.A("playQueueShuffled", pq.shuffled), model.A("playQueueVersion", pq.version)}
+	if len(pq.items) > 0 || pq.selected < 0 {
+		offset := max(0, pq.selected)
+		if pq.forceOffsetZero {
+			offset = 0
+		}
+		mc.Extra = append(mc.Extra, model.A("playQueueSelectedItemOffset", offset), model.A("playQueueTotalCount", len(pq.items)))
+	}
+	if selItem.id != 0 {
+		mc.Extra = append(mc.Extra, model.A("playQueueSelectedItemID", selItem.id))
+		selectedVisible := byKey[selItem.key] != nil
+		if selItem.key.Kind() == core.KindExtra {
+			_, selectedVisible = s.extraMetadataByKey(ctx, pr, selItem.key)
+		}
+		if selectedVisible && !pq.suppressMetadata {
+			mc.Extra = append(mc.Extra, model.A("playQueueSelectedMetadataItemID", selItem.key.String()))
+		}
+	}
+	if pq.playlistID == 0 {
+		mc.Extra = append(mc.Extra, model.A("playQueueSourceURI", pq.sourceURI))
 	}
 	if pq.lastAdded != 0 {
 		mc.Extra = append(mc.Extra, model.A("playQueueLastAddedItemID", pq.lastAdded))
@@ -942,6 +1107,9 @@ func (s *Server) writePlayQueue(w http.ResponseWriter, r *http.Request, pq playQ
 	pr.versionFlowKey = selItem.key
 	pr.versionItemKey = selItem.key
 	for _, it := range slice {
+		if it.id == pq.suppressItem {
+			continue
+		}
 		if it.key.Kind() == core.KindExtra {
 			if md, ok := s.extraMetadataByKey(ctx, pr, it.key); ok {
 				md.PlayQueueItemID = it.id
@@ -957,6 +1125,11 @@ func (s *Server) writePlayQueue(w http.ResponseWriter, r *http.Request, pq playQ
 		md.PlayQueueItemID = it.id
 		mc.Metadata = append(mc.Metadata, md)
 	}
+	applyExcludedElements(mc.Metadata, excludedElements(q))
+	if pr.HasPage {
+		lo, hi := pr.window(len(mc.Metadata))
+		mc.Metadata = mc.Metadata[lo:hi]
+	}
 	mc.Size = len(mc.Metadata)
 	s.write(w, r, mc)
 }
@@ -971,4 +1144,187 @@ func dedupeKeys(ks []core.RatingKey) []core.RatingKey {
 		}
 	}
 	return out
+}
+
+func validQueueWindow(q url.Values) bool {
+	if q.Has("includeBefore") && q.Has("includeAfter") {
+		before, _ := queueFlag(q, "includeBefore")
+		after, _ := queueFlag(q, "includeAfter")
+		if !before && !after {
+			return false
+		}
+	}
+	for _, name := range []string{"includeBefore", "includeAfter"} {
+		if _, ok := queueFlag(q, name); !ok {
+			return false
+		}
+	}
+	if q.Has("window") {
+		n, err := strconv.Atoi(q.Get("window"))
+		if err != nil || n < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (q *playQueue) reanchorAdded() {
+	if q.lastAdded == 0 {
+		return
+	}
+	for i := max(0, q.selected+1); i < len(q.items) && q.items[i].added; i++ {
+		q.lastAdded = q.items[i].id
+	}
+}
+
+// Controls preserve the playing identity while every other slot receives a
+// newly allocated identity. This also applies when the requested state repeats.
+func (s *playQueueStore) reshuffle(q *playQueue, shuffled bool) {
+	oldVersion := q.version
+	if shuffled {
+		original := append([]pqItem(nil), q.original...)
+		if q.shuffled {
+			q.shuffled = false
+		}
+		shuffleQueue(q)
+		if len(original) > 0 {
+			q.original = original
+		}
+	} else {
+		unshuffleQueue(q)
+	}
+	q.version = oldVersion + 1
+	keys := make([]core.RatingKey, len(q.items))
+	for i, it := range q.items {
+		keys[i] = it.key
+	}
+	var minted []pqItem
+	if s.cl == nil {
+		minted = s.newItemsLocked(keys)
+	} else {
+		var err error
+		minted, err = s.preallocate(keys)
+		if err != nil {
+			return
+		}
+	}
+	ids := map[int64]int64{}
+	for i := range q.items {
+		if i != q.selected {
+			ids[q.items[i].id] = minted[i].id
+			q.items[i].id = minted[i].id
+		}
+	}
+	for i := range q.original {
+		if id, ok := ids[q.original[i].id]; ok {
+			q.original[i].id = id
+		}
+	}
+}
+
+func (s *playQueueStore) take(id, userID int64, clientID string, now time.Time) (playQueue, bool) {
+	if s.cl == nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		q, ok := s.queues[id]
+		if !ok || q.userID != userID {
+			return playQueue{}, false
+		}
+		if q.clientID != clientID {
+			s.retireClientLocked(userID, clientID, id)
+			q.clientID = clientID
+			q.version++
+			q.updatedAt = now
+		}
+		return q.snapshot(), true
+	}
+	current, found := s.get(id, userID)
+	if !found {
+		return playQueue{}, false
+	}
+	if current.clientID == clientID {
+		return current, true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+	tx, err := s.cl.db.BeginTx(ctx, nil)
+	if err != nil {
+		return playQueue{}, false
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE plex_counters SET value=value WHERE name='playqueue_item'`); err != nil {
+		return playQueue{}, false
+	}
+	var owner, rev, updated int64
+	var data string
+	if err = tx.QueryRowContext(ctx, `SELECT user_id,rev,data,updated_at FROM plex_playqueues WHERE id=?`, id).Scan(&owner, &rev, &data, &updated); err != nil || owner != userID {
+		return playQueue{}, false
+	}
+	q, err := decodeQueue(id, owner, rev, updated, data)
+	if err != nil {
+		return playQueue{}, false
+	}
+	if q.clientID != clientID {
+		q.clientID = clientID
+		q.version++
+		q.rev++
+		q.updatedAt = now
+	}
+	data, err = encodeQueue(q)
+	if err != nil {
+		return playQueue{}, false
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE plex_playqueues SET data=?,rev=?,updated_at=? WHERE id=?`, data, q.rev, now.UnixMilli(), id); err != nil {
+		return playQueue{}, false
+	}
+	retired, err := retireQueueClient(ctx, tx, userID, clientID, id)
+	if err != nil {
+		return playQueue{}, false
+	}
+	if err = tx.Commit(); err != nil {
+		return playQueue{}, false
+	}
+	for _, old := range retired {
+		s.forget(old)
+		s.cl.publish("invalidate:playqueue", queueEvent{ID: old})
+	}
+	s.cache(q)
+	s.cl.publish("invalidate:playqueue", queueEvent{ID: id})
+	return q.snapshot(), true
+}
+
+// Bound work by active queues, independently of catalogue size.
+func retireQueueClient(ctx context.Context, tx *sql.Tx, userID int64, clientID string, keep int64) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id,data FROM plex_playqueues WHERE user_id=? AND id<>? LIMIT 2000`, userID, keep)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var data string
+		if err = rows.Scan(&id, &data); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		var sq storedQueue
+		if err = json.Unmarshal([]byte(data), &sq); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if sq.ClientID == clientID {
+			ids = append(ids, id)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM plex_playqueues WHERE id=? AND user_id=?`, id, userID); err != nil {
+			return nil, err
+		}
+	}
+	return ids, nil
 }

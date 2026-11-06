@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <MediaContainer size="1">
-<Video ratingKey="1000000000000550" key="/library/metadata/1000000000000550" guid="com.plexapp.agents.themoviedb://550?lang=en" slug="fjord-harbor" studio="Northlight Pictures" type="movie" title="Fjord Harbor" librarySectionTitle="Movies" librarySectionID="1" librarySectionKey="/library/sections/1" contentRating="R" summary="An insomniac office worker..." audienceRating="8.4" viewOffset="60000" year="1999" tagline="Quiet waters run deep." thumb="/library/metadata/1000000000000550/thumb/1790812800" art="/library/metadata/1000000000000550/art/1790812800" duration="8340000" originallyAvailableAt="1999-10-15" addedAt="939945600" updatedAt="1790812800" audienceRatingImage="themoviedb://image.rating" sessionKey="1">
-<Media id="1000000000000550" duration="8340000" bitrate="7600" width="1920" height="1080" aspectRatio="1.78" audioChannels="6" audioCodec="eac3" videoCodec="h264" videoResolution="1080" container="mkv" videoFrameRate="24p" videoProfile="high" hasVoiceActivity="0">
-<Part id="1000000000000550" key="/library/parts/1000000000000550/1790812800/file.mkv" duration="8340000" file="/ether/Fjord Harbor (1999).mkv" size="8000000000" container="mkv" videoProfile="high" />
+<Video addedAt="939945600" art="/library/metadata/1000000000000550/art/1790812800" audienceRating="8.4" audienceRatingImage="themoviedb://image.rating" contentRating="R" duration="8340000" guid="com.plexapp.agents.themoviedb://550?lang=en" key="/library/metadata/1000000000000550" librarySectionID="1" librarySectionKey="/library/sections/1" librarySectionTitle="Movies" originallyAvailableAt="1999-10-15" ratingKey="1000000000000550" sessionKey="1" slug="fjord-harbor" studio="Northlight Pictures" summary="An insomniac office worker..." tagline="Quiet waters run deep." thumb="/library/metadata/1000000000000550/thumb/1790812800" title="Fjord Harbor" type="movie" updatedAt="1790812800" viewOffset="60000" year="1999">
+<Media aspectRatio="1.78" audioChannels="6" audioCodec="eac3" bitrate="7600" container="mkv" duration="8340000" hasVoiceActivity="0" height="1080" id="1000000000000550" videoCodec="h264" videoFrameRate="24p" videoProfile="high" videoResolution="1080" width="1920">
+<Part container="mkv" duration="8340000" file="/ether/Fjord Harbor (1999).mkv" id="1000000000000550" key="/library/parts/1000000000000550/1792324800/file.mkv" size="8000000000" videoProfile="high">
+<Stream bitDepth="8" bitrate="7000" chromaSubsampling="4:2:0" codec="h264" codedHeight="1088" displayTitle="1080p (H.264)" extendedDisplayTitle="1080p (H.264)" frameRate="23.976" height="1080" id="1387133930" index="0" profile="high" streamType="1" width="1920" />
+<Stream audioChannelLayout="5.1(side)" bitrate="640" canNormalizeLoudness="0" channels="6" codec="eac3" default="1" displayTitle="English (EAC3 5.1)" extendedDisplayTitle="English (EAC3 5.1)" id="1262677085" index="1" language="English" languageCode="eng" languageTag="en" samplingRate="48000" selected="1" streamType="2" />
+<Stream bitrate="128" canNormalizeLoudness="0" channels="2" codec="aac" displayTitle="Français (AAC Stereo)" extendedDisplayTitle="Français (AAC Stereo)" id="1670249740" index="2" language="Français" languageCode="fra" languageTag="fr" samplingRate="48000" streamType="2" />
+<Stream canAutoSync="0" codec="srt" displayTitle="English (SRT)" extendedDisplayTitle="English (SRT)" id="606066572" index="3" language="English" languageCode="eng" languageTag="en" streamType="3" />
+<Stream canAutoSync="0" codec="srt" displayTitle="Español (SRT External)" extendedDisplayTitle="Español (SRT External)" external="1" format="srt" id="1513126264" key="/library/streams/1513126264" language="Español" languageCode="spa" languageTag="es" streamType="3" transient="0" />
+</Part>
 </Media>
-<Image alt="Fjord Harbor" type="coverPoster" url="/library/metadata/1000000000000550/thumb/1790812800" />
-<Image alt="Fjord Harbor" type="background" url="/library/metadata/1000000000000550/art/1790812800" />
-<UltraBlurColors topLeft="8c000c" topRight="542400" bottomRight="600007" bottomLeft="538700" />
+<UltraBlurColors bottomLeft="538700" bottomRight="600007" topLeft="8c000c" topRight="542400" />
 <Genre tag="Drama" />
 <Genre tag="Thriller" />
 <Country tag="United States of America" />
@@ -15,7 +19,8 @@
 <Role tag="Theo Varga" />
 <Role tag="Lucas Brandt" />
 <User id="1001" title="Owner" />
-<Player address="192.168.1.50" device="OSX" machineIdentifier="client-1" platform="Chrome" product="Plex Web" state="playing" title="Chrome" local="1" relayed="0" secure="0" userID="1001" />
-<Session id="sess-1" bandwidth="0" location="lan" />
+<Player address="192.168.1.50" device="OSX" machineIdentifier="client-1" platform="Chrome" product="Plex Web" profile="Web" state="playing" title="Chrome" local="1" relayed="0" secure="0" userID="1001" />
+<Session id="sess-1" bandwidth="15960" location="lan" />
+<TranscodeSession key="/transcode/sessions/sess-1" throttled="0" complete="0" progress="-1" duration="8340000" context="streaming" sourceVideoCodec="h264" sourceAudioCodec="eac3" videoDecision="copy" audioDecision="copy" protocol="hls" container="mpegts" videoCodec="h264" audioCodec="eac3" transcodeHwRequested="0" timeStamp="1792324800" />
 </Video>
 </MediaContainer>

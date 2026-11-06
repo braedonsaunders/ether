@@ -199,14 +199,14 @@ func TestCachedSidecarListedBeforePlayback(t *testing.T) {
 
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String())
 	subs := subtitleTags(rec.Body.String())
-	want := fmt.Sprintf(`<Stream id="%d" streamType="3" canAutoSync="0" codec="srt" key="/library/streams/%d" language="English" languageTag="en" languageCode="eng" format="srt" displayTitle="English (SRT External)" extendedDisplayTitle="English (SRT External)" external="1" />`, id, id)
+	want := fmt.Sprintf(`<Stream id="%d" streamType="3" canAutoSync="0" codec="srt" key="/library/streams/%d" language="English" languageTag="en" languageCode="eng" format="srt" displayTitle="English" extendedDisplayTitle="English (SRT External)" external="1" transient="0" />`, id, id)
 	if len(subs) != 1 || subs[0] != want {
 		t.Fatalf("detail subtitle streams:\n got %q\nwant %q", subs, want)
 	}
 
 	// The play queue item (what the player builds its menus from) lists
 	// the same stream under the same id.
-	uri := url.QueryEscape("server://m/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String())
+	uri := url.QueryEscape("server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String())
 	rec = f.request(t, http.MethodPost, "/playQueues?type=video&uri="+uri, nil)
 	if got := subtitleTags(rec.Body.String()); len(got) != 1 || !strings.Contains(got[0], fmt.Sprintf(`id="%d"`, id)) || !strings.Contains(got[0], `external="1"`) {
 		t.Fatalf("play queue subtitle streams: %q\n%s", got, rec.Body.String())
@@ -333,19 +333,22 @@ func TestSubtitleSearchAndPick(t *testing.T) {
 		{ID: 101, Language: "en", Title: "Fight.Club.1999.1080p.BluRay", Provider: "OpenSubtitles", Score: 80, PerfectMatch: true},
 	}
 	key := fightClub.Key.String()
-	mc := decodeJSON(t, f.get(t, "/library/metadata/"+key+"/subtitles?language=eng&hearingImpaired=0&forced=0", jsonAccept...))
+	mc := decodeJSON(t, f.get(t, "/library/metadata/"+key+"/subtitles?language=en&hearingImpaired=0&forced=0", jsonAccept...))
 	results, _ := mc["Stream"].([]any)
-	if mc["size"].(float64) != 2 || len(results) != 2 || subs.searchLang != "eng" {
+	if mc["size"].(float64) != 2 || len(results) != 2 || subs.searchLang != "en" {
 		t.Fatalf("search: %v (lang %q)", mc, subs.searchLang)
 	}
 	first := results[0].(map[string]any)
-	wantKey := "/library/metadata/" + key + "/subtitles/101"
+	wantKey := first["key"].(string)
+	if !strings.HasPrefix(wantKey, "/library/streams/") || first["sourceKey"] != "101" || first["score"] != "80" || first["transient"] != float64(1) {
+		t.Fatalf("provider projection: %v", first)
+	}
 	if first["key"] != wantKey || first["streamType"].(float64) != 3 || first["codec"] != "srt" || first["languageCode"] != "eng" ||
 		first["providerTitle"] != "OpenSubtitles" || first["perfectMatch"] != true || first["hearingImpaired"] != false ||
 		first["title"] != "Fight.Club.1999.1080p.BluRay" || first["displayTitle"] != "English (SRT)" {
 		t.Fatalf("first result (non-SDH preferred): %v", first)
 	}
-	mc = decodeJSON(t, f.get(t, "/library/metadata/"+key+"/subtitles?language=eng&hearingImpaired=2", jsonAccept...))
+	mc = decodeJSON(t, f.get(t, "/library/metadata/"+key+"/subtitles?language=en&hearingImpaired=2", jsonAccept...))
 	if mc["size"].(float64) != 1 {
 		t.Fatalf("SDH-only filter: %v", mc)
 	}
@@ -354,12 +357,13 @@ func TestSubtitleSearchAndPick(t *testing.T) {
 	if rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape("/library/metadata/"+alien.Key.String()+"/subtitles/101"), nil); rec.Code != http.StatusBadRequest {
 		t.Fatalf("foreign key: %d", rec.Code)
 	}
-	if rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape("/library/metadata/"+key+"/subtitles/999"), nil); rec.Code != http.StatusNotFound {
+	if rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape("/library/streams/999"), nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown offer: %d", rec.Code)
 	}
 	if rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape(wantKey), nil); rec.Code != http.StatusOK {
 		t.Fatalf("pick: %d %s", rec.Code, rec.Body.String())
 	}
+	waitSubtitlePick(t, f, fightClub.Key)
 	pickID := externalID(fightClub.Key, "ether-subtitle:pick-101")
 	found := false
 	for _, tag := range subtitleTags(f.get(t, "/library/metadata/"+key).Body.String()) {
@@ -382,11 +386,11 @@ func TestSubtitleSearchAndPick(t *testing.T) {
 	// A failing provider answers an empty container, never an error the
 	// client would keep retrying.
 	subs.searchErr = fmt.Errorf("provider down")
-	rec := f.get(t, "/library/metadata/"+key+"/subtitles?language=eng")
+	rec := f.get(t, "/library/metadata/"+key+"/subtitles?language=en")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<MediaContainer size="0"`) {
 		t.Fatalf("provider error: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := f.get(t, "/library/metadata/1000000000999999/subtitles?language=eng"); rec.Code != http.StatusNotFound {
+	if rec := f.get(t, "/library/metadata/1000000000999999/subtitles?language=en"); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown title: %d", rec.Code)
 	}
 }
@@ -408,16 +412,23 @@ func TestSubtitlePickEndsPlexActivity(t *testing.T) {
 	defer f.srv.notifier.unsubscribe(sub)
 	key := fightClub.Key.String()
 
-	rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape("/library/metadata/"+key+"/subtitles/101"), nil)
+	mc := decodeJSON(t, f.get(t, "/library/metadata/"+key+"/subtitles?language=en", jsonAccept...))
+	offerKey := mc["Stream"].([]any)[0].(map[string]any)["key"].(string)
+	rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape(offerKey), nil)
 	activity := rec.Header().Get("X-Plex-Activity")
 	if rec.Code != http.StatusOK || activity == "" {
 		t.Fatalf("pick: %d activity=%q", rec.Code, activity)
 	}
-	if len(sub.ch) != 0 {
-		t.Fatal("activity ended before the client could read X-Plex-Activity")
-	}
+
 	select {
 	case msg := <-sub.ch:
+		if strings.Contains(string(msg.data), `"event":"started"`) {
+			select {
+			case msg = <-sub.ch:
+			case <-time.After(5 * time.Second):
+				t.Fatal("no ended after started")
+			}
+		}
 		var nc struct {
 			NotificationContainer struct {
 				Type                 string `json:"type"`
@@ -448,7 +459,7 @@ func TestSubtitlePickEndsPlexActivity(t *testing.T) {
 	}
 
 	// A failed pick answers an error status and ends nothing.
-	if rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape("/library/metadata/"+key+"/subtitles/999"), nil); rec.Code != http.StatusNotFound || rec.Header().Get("X-Plex-Activity") != "" {
+	if rec := f.request(t, http.MethodPut, "/library/metadata/"+key+"/subtitles?key="+url.QueryEscape("/library/streams/999"), nil); rec.Code != http.StatusNotFound || rec.Header().Get("X-Plex-Activity") != "" {
 		t.Fatalf("unknown offer: %d activity=%q", rec.Code, rec.Header().Get("X-Plex-Activity"))
 	}
 	select {
@@ -522,7 +533,7 @@ func TestSubtitleUpload(t *testing.T) {
 	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.psb&format=psb", body, nil); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
 		t.Fatalf("psb: %d %q", rec.Code, rec.Body.String())
 	}
-	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.vtt&format=vtt", body, nil); rec.Code != http.StatusOK {
+	if rec := f.requestBody(t, http.MethodPost, "/library/metadata/"+key+"/subtitles?title=movie.en.vtt&format=vtt", body, nil); rec.Code != http.StatusBadRequest {
 		t.Fatalf("vtt: %d", rec.Code)
 	}
 }
@@ -530,7 +541,7 @@ func TestSubtitleUpload(t *testing.T) {
 func TestSubtitleSearchWithoutServiceIsEmpty(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	rec := f.get(t, "/library/metadata/"+fightClub.Key.String()+"/subtitles?language=eng")
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String()+"/subtitles?language=en")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<MediaContainer size="0"`) {
 		t.Fatalf("search without service: %d %s", rec.Code, rec.Body.String())
 	}
@@ -544,6 +555,7 @@ func TestTranscodeSidecarSubtitlesFollowSessionOffset(t *testing.T) {
 	f.get(t, "/library/metadata/"+key)
 	releaseID := externalID(fightClub.Key, "ether-subtitle:release-en")
 	path := url.QueryEscape("/library/metadata/" + key)
+	f.get(t, decisionPath(fmt.Sprintf("/video/:/transcode/universal/start.m3u8?path=%s&session=hls1&protocol=hls&offset=30&directPlay=0&directStream=1&subtitleStreamID=%d", path, releaseID)))
 	rec := f.get(t, fmt.Sprintf("/video/:/transcode/universal/start.m3u8?path=%s&session=hls1&protocol=hls&offset=30&directPlay=0&directStream=1&subtitleStreamID=%d", path, releaseID))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
@@ -563,6 +575,7 @@ func TestTranscodeSidecarSubtitlesFollowSessionOffset(t *testing.T) {
 		t.Fatalf("foreign client: %d %s", rec.Code, rec.Body.String())
 	}
 	// Subtitles off: nothing to serve.
+	f.get(t, decisionPath(fmt.Sprintf("/video/:/transcode/universal/start.m3u8?path=%s&session=hls2&protocol=hls&directPlay=0&directStream=1&subtitleStreamID=0", path)))
 	f.get(t, fmt.Sprintf("/video/:/transcode/universal/start.m3u8?path=%s&session=hls2&protocol=hls&directPlay=0&directStream=1&subtitleStreamID=0", path))
 	rec = f.get(t, "/video/:/transcode/universal/subtitles?session=hls2")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<MediaContainer size="0"`) {
@@ -901,10 +914,8 @@ func TestWaysToWatchSubtitleReread(t *testing.T) {
 		t.Fatalf("cross-title part stored a selection: %s", chosen)
 	}
 
-	// Unregistered id in the 8×10^15 block: the stream id names the title.
-	put("8000000000000001", http.StatusOK)
-	assertSpanish("/library/metadata/" + key)
-	assertSpanish(guidPath)
+	// A valid stream cannot authorize an unregistered part.
+	put("8000000000000001", http.StatusNotFound)
 
 	// Registered variant part, then the Auto part. Re-read the part id itself
 	// and the plex:// guid the discover row keeps.
@@ -1012,7 +1023,7 @@ func TestSubtitleChoiceSurvivesVariantReorder(t *testing.T) {
 	assertSpanishSRT("/library/metadata/" + key)
 	assertSpanishSRT("/library/metadata/" + partID)
 
-	dec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+key+"&directPlay=1&directStream=1&protocol=hls&session=reorder-sub", appleTV...)
+	dec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+key+"&mediaIndex=0&directPlay=1&directStream=1&protocol=hls&session=reorder-sub", appleTV...)
 	if dec.Code != http.StatusOK {
 		t.Fatalf("decision: %d %s", dec.Code, dec.Body.String())
 	}
@@ -1035,5 +1046,103 @@ func TestDetailDoesNotDownloadSidecars(t *testing.T) {
 	rec = f.get(t, "/library/metadata/"+breakingBad.Key.String())
 	if rec.Code != http.StatusOK {
 		t.Fatalf("show: %d", rec.Code)
+	}
+}
+
+func waitSubtitlePick(t *testing.T, f *fixture, key core.RatingKey) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if sel := f.srv.selections.get(ownerUser.ID, int64(key)); sel.subtitleStream != nil {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("subtitle pick did not finish")
+}
+
+func TestSubtitleSearchGrammarAndLocalIdentities(t *testing.T) {
+	f, subs := newSubtitleFixture(t)
+	subs.offers = []SubtitleOffer{{ID: 101, Language: "en"}}
+	root := "/library/metadata/" + fightClub.Key.String() + "/subtitles"
+	for _, tc := range []struct {
+		query string
+		code  int
+	}{{"", 400}, {"?language=", 500}, {"?language=eng", 500}, {"?language=xx", 500}, {"?language=EN", 200}, {"?language=en-US", 200}, {"?language=de", 200}} {
+		if rec := f.get(t, root+tc.query); rec.Code != tc.code {
+			t.Fatalf("%s: %d want %d", tc.query, rec.Code, tc.code)
+		}
+	}
+	a := decodeJSON(t, f.get(t, root+"?language=en", jsonAccept...))["Stream"].([]any)[0].(map[string]any)
+	b := decodeJSON(t, f.get(t, root+"?language=en", jsonAccept...))["Stream"].([]any)[0].(map[string]any)
+	if a["id"] == b["id"] || a["key"] == b["key"] {
+		t.Fatalf("search reused local identity: %v / %v", a, b)
+	}
+	if rec := f.request(t, http.MethodPut, root+"?language=en", nil); rec.Code != 200 {
+		t.Fatalf("PUT search: %d", rec.Code)
+	}
+}
+
+type blockingSubtitleDownload struct {
+	*fakeSubtitles
+	entered  chan struct{}
+	complete chan struct{}
+}
+
+func (b *blockingSubtitleDownload) DownloadSubtitle(ctx context.Context, t *core.Title, u *core.User, id int64) (core.StreamInfo, error) {
+	close(b.entered)
+	select {
+	case <-b.complete:
+		return b.fakeSubtitles.DownloadSubtitle(ctx, t, u, id)
+	case <-ctx.Done():
+		return core.StreamInfo{}, ctx.Err()
+	}
+}
+func TestSubtitleApplyReturnsBeforeDownload(t *testing.T) {
+	f, subs := newSubtitleFixture(t)
+	subs.offers = []SubtitleOffer{{ID: 101, Language: "en"}}
+	blocking := &blockingSubtitleDownload{subs, make(chan struct{}), make(chan struct{})}
+	f.srv.d.Subtitles = blocking
+	defer close(blocking.complete)
+	root := "/library/metadata/" + fightClub.Key.String() + "/subtitles"
+	mc := decodeJSON(t, f.get(t, root+"?language=en", jsonAccept...))
+	key := mc["Stream"].([]any)[0].(map[string]any)["key"].(string)
+	response := make(chan *httptest.ResponseRecorder, 1)
+	go func() { response <- f.request(t, http.MethodPut, root+"?key="+url.QueryEscape(key), nil) }()
+	select {
+	case rec := <-response:
+		if rec.Code != 200 || rec.Header().Get("X-Plex-Activity") == "" || rec.Body.Len() != 0 {
+			t.Fatalf("async response: %d %s", rec.Code, rec.Body.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("apply waited for download")
+	}
+	select {
+	case <-blocking.entered:
+	case <-time.After(time.Second):
+		t.Fatal("download did not start")
+	}
+	if sel := f.srv.selections.get(ownerUser.ID, int64(fightClub.Key)); sel.subtitleStream != nil {
+		t.Fatal("track published before download")
+	}
+}
+
+func TestSubtitleOfferBoundAndViewerScope(t *testing.T) {
+	var offers subtitleOffers
+	first := offers.add(fightClub.Key, ownerUser.ID, 101)
+	if _, ok := offers.get(first, alien.Key, ownerUser.ID); ok {
+		t.Fatal("foreign title offer accepted")
+	}
+	if _, ok := offers.get(first, fightClub.Key, ownerUser.ID+1); ok {
+		t.Fatal("foreign viewer offer accepted")
+	}
+	for range maxSubtitleOffers {
+		offers.add(fightClub.Key, ownerUser.ID, 101)
+	}
+	if _, ok := offers.get(first, fightClub.Key, ownerUser.ID); ok {
+		t.Fatal("old offer not evicted")
+	}
+	if len(offers.rows) != maxSubtitleOffers {
+		t.Fatalf("offer bound: %d", len(offers.rows))
 	}
 }

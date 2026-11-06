@@ -28,6 +28,7 @@ func TestSubtitleTimelineAcrossResume(t *testing.T) {
 			f.srv.d.Transcoder = &extractTranscoder{fakeTranscoder: f.trans, out: srtToVTT(srt)}
 			f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: container}
 			session := "timeline-" + container
+			f.get(t, decisionPath(fmt.Sprintf("/video/:/transcode/universal/start.m3u8?path=/library/metadata/%s&session=%s&protocol=hls&offset=12&directPlay=0&directStream=1&subtitleStreamID=%d", key, session, id)))
 			rec := f.get(t, fmt.Sprintf("/video/:/transcode/universal/start.m3u8?path=/library/metadata/%s&session=%s&protocol=hls&offset=12&directPlay=0&directStream=1&subtitleStreamID=%d", key, session, id))
 			if rec.Code != 200 {
 				t.Fatalf("start: %d %s", rec.Code, rec.Body.String())

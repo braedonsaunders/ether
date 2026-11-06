@@ -9,8 +9,8 @@ import (
 
 // State emits only after committing, including deferred cluster writes. Do not
 // refresh the library on every playing heartbeat: it churns recommendation rows
-// and duplicates the separate session-status notifications. Explicit scrobbles
-// already publish their own library notification in the Plex handler.
+// and duplicates the separate session-status notifications. Explicit Plex scrobbles
+// update client state without manufacturing a library metadata frame.
 func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKey), explicitOnly bool) func() {
 	var mu sync.Mutex
 	active := true
@@ -31,7 +31,7 @@ func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKe
 		}
 
 		// Cross-surface explicit state changes previously came through the shared
-		// event publisher; Plex's own handlers already send these notifications.
+		// event publisher; Plex-origin explicit writes do not emit metadata frames.
 		if ev.Origin.Surface != "plex" && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble) {
 			refresh(ev.UserID, ev.Key)
 			return

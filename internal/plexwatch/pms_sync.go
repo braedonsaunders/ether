@@ -53,7 +53,12 @@ func (s *Servers) Run(ctx context.Context) {
 }
 
 // RunOnce syncs up to pmsDuePerTick due mappings.
+func (s *Servers) syncEnabled() bool { return s.enabled == nil || s.enabled() }
+
 func (s *Servers) RunOnce(ctx context.Context) {
+	if !s.syncEnabled() {
+		return
+	}
 	now := s.now().UnixNano()
 	rows, err := s.db.QueryContext(ctx, `SELECT server_id,account_id FROM plexwatch_pms_viewer
 		WHERE direction<>0 AND next_run<=? AND next_allowed<=? AND lease<=? ORDER BY next_run LIMIT ?`, now, now, now, pmsDuePerTick)
@@ -123,6 +128,9 @@ type pmsPair struct {
 }
 
 func (s *Servers) syncPair(ctx context.Context, serverID, accountID int64) error {
+	if !s.syncEnabled() {
+		return nil
+	}
 	now := s.now()
 	lease := now.Add(10 * time.Minute).UnixNano()
 	res, err := s.db.ExecContext(ctx, `UPDATE plexwatch_pms_viewer SET lease=? WHERE server_id=? AND account_id=? AND direction<>0 AND lease<=? AND next_allowed<=?`,
@@ -139,8 +147,8 @@ func (s *Servers) syncPair(ctx context.Context, serverID, accountID int64) error
 		err = s.runPair(pctx, p)
 		cancel()
 	}
-	if ctx.Err() != nil {
-		// Leadership ended: release the lease with a short independent context.
+	if ctx.Err() != nil || !s.syncEnabled() {
+		// Leadership ended or the owner paused sync: release the lease with a short independent context.
 		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_, _ = s.db.ExecContext(cleanup, `UPDATE plexwatch_pms_viewer SET lease=0 WHERE server_id=? AND account_id=? AND lease=?`, serverID, accountID, lease)
@@ -173,6 +181,8 @@ func (s *Servers) loadPair(ctx context.Context, serverID, accountID, lease int64
 	if p.client, err = s.clientFor(srv.baseURL); err != nil {
 		return p, err
 	}
+	// Recheck before each outbound sync request, including during a running pass.
+	p.client.enabled = s.syncEnabled
 	if p.serverToken, err = s.open(srv.token, srv.machineID); err != nil {
 		return p, err
 	}

@@ -764,16 +764,12 @@ export function LookDrawer({
         )}
       </div>
       {sequence && (
-        <Drawer
-          open
-          stacked
-          size="2xl"
-          initialFullscreen
-          title={t("Play the sequence")}
+        <SequencePreview
+          style={draft}
+          channelId={channel}
+          at={new Date(at).toISOString()}
           onClose={() => setSequence(false)}
-        >
-          <SequencePreview style={draft} channelId={channel} at={new Date(at).toISOString()} />
-        </Drawer>
+        />
       )}
       {useOpen ? (
         <Drawer

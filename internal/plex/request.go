@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/identity"
@@ -28,6 +29,7 @@ type Request struct {
 	Language        string // X-Plex-Language
 
 	Features     string // X-Plex-Features
+	ProfileName  string // X-Plex-Client-Profile-Name
 	ProfileExtra string // X-Plex-Client-Profile-Extra
 
 	ClientCapabilities string // X-Plex-Client-Capabilities (legacy)
@@ -50,6 +52,7 @@ type Request struct {
 	// the refill was not admitted (or the search cache was already warm).
 	detailRefillRequested bool
 	detailRefill          <-chan struct{}
+	detailWaitUntil       time.Time // shared Android TV detail probe/version wait budget
 
 	// Capability is set when authentication used a stream grant or other
 	// session-scoped credential, not a user token. Only transcode
@@ -126,10 +129,11 @@ func ParseRequest(r *http.Request, trusted ...netip.Prefix) *Request {
 		DeviceName:      plexParam(r, "X-Plex-Device-Name"),
 		Model:           plexParam(r, "X-Plex-Model"),
 		Vendor:          plexParam(r, "X-Plex-Device-Vendor"),
-		Language:        plexParam(r, "X-Plex-Language"),
+		Language:        requestLanguage(r),
 
 		Features:     plexParam(r, "X-Plex-Features"),
 		ProfileExtra: plexParam(r, "X-Plex-Client-Profile-Extra"),
+		ProfileName:  profileParam(r, "X-Plex-Client-Profile-Name"),
 
 		ClientCapabilities: plexParam(r, "X-Plex-Client-Capabilities"),
 		SessionID:          plexParam(r, "X-Plex-Session-Identifier"),
@@ -155,6 +159,8 @@ func ParseRequest(r *http.Request, trusted ...netip.Prefix) *Request {
 			}
 		}
 	}
+	pr.Platform = profileParam(r, "X-Plex-Platform")
+	pr.Device = profileParam(r, "X-Plex-Device")
 	pr.Format = model.XML
 	if wantsJSON(r) {
 		pr.Format = model.JSON

@@ -66,6 +66,7 @@ func TestAuthoredPlexRepresentationOwnerContract(t *testing.T) {
 	defer owner.srv.Close()
 	owner.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
 	startPath := "/video/:/transcode/universal/start.m3u8?path=/library/metadata/1000000000000550&session=" + publicID
+	owner.get(t, decisionPath(startPath))
 	master := owner.get(t, startPath)
 	if master.Code != 200 {
 		t.Fatal(master.Code)

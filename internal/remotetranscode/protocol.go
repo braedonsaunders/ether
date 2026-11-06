@@ -25,7 +25,11 @@ var ErrUncertain = errors.New("remotetranscode: execution responsibility require
 // Capabilities must be consulted by placement before choosing this adapter.
 // Segment seeks use the backend's ordinary ServeSegment behavior. Source swaps,
 // probe, subtitles, DASH, HTTP Matroska, ABR and optional session controls are not supported.
-type Capabilities struct{ HLS, SegmentSeek, DASH, HTTP, Probe, SourceSwap, Subtitles, ABR, SoftSubtitles, Controls, Observations, Keyframes bool }
+type Capabilities struct {
+	HLS, SegmentSeek, DASH, HTTP, Probe, SourceSwap, Subtitles, ABR, SoftSubtitles, Controls, Observations, Keyframes bool
+	// RecoveryStart negotiates instruction transport only, never successful recovery.
+	RecoveryStart bool `json:",omitempty"`
+}
 
 // NormalizeCapabilities preserves fixed HLS for zero options and rejects promises
 // for operations that have no concrete private implementation.
@@ -50,6 +54,7 @@ type Identity struct {
 	Generation uint64
 }
 type Start struct {
+	RecoveryStart      *core.RecoveryStart  `json:",omitempty"`
 	Keyframes          []core.KeyframePoint `json:",omitempty"`
 	SoftSubtitleStream *int                 `json:",omitempty"`
 	Protocol           string               `json:",omitempty"`
@@ -191,6 +196,9 @@ func SupportsRequest(r core.HLSRequest, c Capabilities) bool {
 	if err != nil {
 		return false
 	}
+	if r.RecoveryStart != nil && (!c.RecoveryStart || !transcode.ValidRecoveryStartShape(r)) {
+		return false
+	}
 	if (r.Protocol == core.ProtocolDASH && !c.DASH) || (r.Protocol == core.ProtocolHTTP && !c.HTTP) || (r.Protocol != "" && r.Protocol != core.ProtocolHLS && r.Protocol != core.ProtocolDASH && r.Protocol != core.ProtocolHTTP) {
 		return false
 	}
@@ -208,7 +216,7 @@ func SupportsRequest(r core.HLSRequest, c Capabilities) bool {
 			return false
 		}
 	}
-	b, err := json.Marshal(Start{Keyframes: r.Info.Keyframes, ReleaseID: r.ReleaseID, Info: r.Info, Decision: r.Decision, Offset: r.StartOffset, SegmentDuration: r.SegmentDuration, IndependentProof: r.RequireIndependentProof})
+	b, err := json.Marshal(Start{RecoveryStart: core.CloneRecoveryStart(r.RecoveryStart), Keyframes: r.Info.Keyframes, ReleaseID: r.ReleaseID, Info: r.Info, Decision: r.Decision, Offset: r.StartOffset, SegmentDuration: r.SegmentDuration, IndependentProof: r.RequireIndependentProof})
 	if err != nil || len(b) > MaxMessage-8192 {
 		return false
 	}

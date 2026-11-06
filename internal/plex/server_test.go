@@ -213,6 +213,11 @@ func TestTimelineUpdatesState(t *testing.T) {
 	defer f.srv.Close()
 	// Start a session through the decision.
 	f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/1000000000000550&session=t1")
+	ps, ok := f.playback.SessionFor(ownerUser.ID, "client-1", fightClub.Key)
+	if !ok {
+		t.Fatal("missing prepared playback")
+	}
+	ps.BytesServed = 1000 // the viewer received media before reporting progress
 	rec := f.get(t, "/:/timeline?ratingKey=1000000000000550&key=/library/metadata/1000000000000550&state=playing&time=120000&duration=8340000&playQueueItemID=0")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("timeline: %d", rec.Code)
@@ -260,7 +265,7 @@ func TestScrobbleRate(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("scrobble %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "MediaContainer") {
+	if rec.Body.Len() != 0 || rec.Header().Get("Content-Type") != "text/html" {
 		t.Fatalf("scrobble body %q", rec.Body.String())
 	}
 	if st, _ := f.state.Get(context.Background(), ownerUser.ID, fightClub.Key); st.ViewCount != 1 {
@@ -346,6 +351,7 @@ func TestStartHLS(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=abc-123&protocol=hls&offset=30.5&directStream=1"))
 	rec := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=abc-123&protocol=hls&offset=30.5&directStream=1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
@@ -456,7 +462,7 @@ func urlEsc(s string) string {
 func TestPlayQueueOps(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+urlEsc("server://m/com.plexapp.plugins.library/library/metadata/"+breakingBad.Key.String())+"&key="+urlEsc("/library/metadata/"+bbE2.Key.String()), map[string]string{"Accept": "application/json"})
+	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+urlEsc("server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/"+breakingBad.Key.String())+"&key="+urlEsc("/library/metadata/"+bbE2.Key.String()), map[string]string{"Accept": "application/json"})
 	mc := decodeJSON(t, rec)
 	if mc["playQueueTotalCount"].(float64) != 2 || mc["playQueueSelectedMetadataItemID"] != bbE2.Key.String() {
 		t.Fatalf("pq: %v", mc)
@@ -472,7 +478,7 @@ func TestPlayQueueOps(t *testing.T) {
 	}
 	rec = f.request(t, http.MethodDelete, fmt.Sprintf("/playQueues/%s/items/%d", id, first), map[string]string{"Accept": "application/json"})
 	mc = decodeJSON(t, rec)
-	if mc["playQueueTotalCount"].(float64) != 2 || mc["playQueueSelectedMetadataItemID"] != bbE2.Key.String() {
+	if mc["playQueueTotalCount"].(float64) != 3 || mc["playQueueSelectedMetadataItemID"] != bbE2.Key.String() {
 		t.Fatalf("remove: %v", mc)
 	}
 	// Other users can't read it.
@@ -664,13 +670,7 @@ func TestEventSource(t *testing.T) {
 	if line, _ := br.ReadString('\n'); !strings.HasPrefix(line, ":") {
 		t.Fatalf("first line %q", line)
 	}
-	go func() {
-		r, _ := http.NewRequest(http.MethodPut, ts.URL+"/:/scrobble?key="+bbE1.Key.String()+"&identifier=com.plexapp.plugins.library", nil)
-		r.Header.Set("X-Plex-Token", ownerToken)
-		if resp, err := http.DefaultClient.Do(r); err == nil {
-			resp.Body.Close()
-		}
-	}()
+	go f.srv.WatchStateChanged(ownerUser.ID, bbE1.Key)
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
@@ -697,12 +697,12 @@ func TestEventSource(t *testing.T) {
 	}
 }
 
-func TestMovieScrobbleTimelineNamesItself(t *testing.T) {
+func TestMovieWatchRefreshTimelineNamesItself(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	sub, _ := f.srv.notifier.subscribe([]string{"timeline"}, &ownerUser)
 	defer f.srv.notifier.unsubscribe(sub)
-	f.get(t, "/:/scrobble?key="+fightClub.Key.String()+"&identifier=com.plexapp.plugins.library")
+	f.srv.WatchStateChanged(ownerUser.ID, fightClub.Key)
 	select {
 	case msg := <-sub.ch:
 		var body struct {
@@ -723,7 +723,7 @@ func TestMovieScrobbleTimelineNamesItself(t *testing.T) {
 			t.Fatalf("movie timeline %+v", e)
 		}
 	default:
-		t.Fatal("movie scrobble published no timeline entry")
+		t.Fatal("movie watch refresh published no timeline entry")
 	}
 }
 
@@ -765,6 +765,7 @@ func TestHLSInitializationSegmentServedForNativePlayer(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "fmp4"}
+	f.get(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=native-fmp4&directPlay=0&directStream=1"))
 	start := f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=native-fmp4&directPlay=0&directStream=1")
 	if start.Code != 200 {
 		t.Fatal(start.Code, start.Body.String())
@@ -860,12 +861,14 @@ func TestPlayQueueUnshuffleAfterRemovingEverything(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	js := map[string]string{"Accept": "application/json"}
-	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+urlEsc("server://m/com.plexapp.plugins.library/library/metadata/"+bbS1.Key.String()), js)
+	rec := f.request(t, http.MethodPost, "/playQueues?type=video&uri="+urlEsc("server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/"+bbS1.Key.String()), js)
 	mc := decodeJSON(t, rec)
 	id := fmt.Sprint(int64(mc["playQueueID"].(float64)))
-	if rec := f.request(t, http.MethodPut, "/playQueues/"+id+"/shuffle", nil); rec.Code != http.StatusOK {
+	rec = f.request(t, http.MethodPut, "/playQueues/"+id+"/shuffle", js)
+	if rec.Code != http.StatusOK {
 		t.Fatalf("shuffle %d", rec.Code)
 	}
+	mc = decodeJSON(t, rec)
 	for _, it := range mc["Metadata"].([]any) {
 		itemID := int64(it.(map[string]any)["playQueueItemID"].(float64))
 		if rec := f.request(t, http.MethodDelete, fmt.Sprintf("/playQueues/%s/items/%d", id, itemID), nil); rec.Code != http.StatusOK {

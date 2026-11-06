@@ -309,7 +309,7 @@ func queryFieldKnown(field, op string, titles map[string]string) bool {
 		return true
 	}
 	switch field {
-	case "id", "index", "parentIndex", "titleSort", "summary", "tagline", "editionTitle", "guid", "videoCodec", "audioCodec", "subtitleCodec", "audioLayout", "audioLanguage", "subtitleLanguage", "location", "hdr", "dovi", "hdr10plus", "atmos", "unmatched", "unwatchedLeaves", "mediaSize", "mediaBitrate", "mediaHeight", "viewOffset", "contentRatingAge":
+	case "id", "index", "parentIndex", "titleSort", "summary", "tagline", "editionTitle", "guid", "videoCodec", "audioCodec", "subtitleCodec", "audioLayout", "audioLanguage", "subtitleLanguage", "location", "hdr", "dovi", "hdr10plus", "atmos", "unmatched", "unwatchedLeaves", "mediaSize", "mediaBitrate", "mediaHeight", "viewOffset", "skipCount", "lastRatedAt", "lastSkippedAt", "viewedLeafCount", "viewedOrInProgressLeafCount", "unviewedLeafCount", "contentRatingAge":
 		return true
 	}
 	return false

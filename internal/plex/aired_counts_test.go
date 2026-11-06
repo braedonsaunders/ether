@@ -63,8 +63,14 @@ func TestLeafCountsMatchListedEpisodes(t *testing.T) {
 		t.Fatalf("show detail: %+v", out.MediaContainer)
 	}
 	check("show detail", out.MediaContainer.Metadata[0])
-	if out.MediaContainer.Metadata[0].ViewCount == 0 {
-		t.Fatal("fully watched show not marked watched")
+	if out.MediaContainer.Metadata[0].ViewCount != 0 {
+		t.Fatal("leaf totals fabricated an independent parent view count")
+	}
+
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: show.Key, ViewCount: 7})
+	get("/library/metadata/" + show.Key.String())
+	if out.MediaContainer.Metadata[0].ViewCount != 7 {
+		t.Fatal("parent count must be persisted independently of two watched leaves")
 	}
 
 	get("/library/metadata/" + show.Key.String() + "/children")
@@ -110,7 +116,7 @@ func TestShowLeafCountsLeaveOutSpecials(t *testing.T) {
 		t.Fatalf("show detail: %v %s", err, rec.Body.String())
 	}
 	m := out.MediaContainer.Metadata[0]
-	if m.LeafCount == nil || *m.LeafCount != 2 || m.ViewedLeafCount == nil || *m.ViewedLeafCount != 2 || m.ViewCount == 0 {
+	if m.LeafCount == nil || *m.LeafCount != 2 || m.ViewedLeafCount == nil || *m.ViewedLeafCount != 2 || m.ViewCount != 0 {
 		t.Fatalf("show detail counts: %+v %s", m, rec.Body.String())
 	}
 }

@@ -16,6 +16,14 @@ type availabilityCatalog struct {
 
 func (c *availabilityCatalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
 	var err error
+	if q.PlaylistSource != nil {
+		source := *q.PlaylistSource
+		source.Filter, err = c.availability.PagingFilter(ctx, source.Filter)
+		if err != nil {
+			return core.Page{}, err
+		}
+		q.PlaylistSource = &source
+	}
 	q.Filter, err = c.availability.PagingFilter(ctx, q.Filter)
 	if err != nil {
 		return core.Page{}, err

@@ -74,7 +74,7 @@
                     "bitrate": 7000,
                     "chromaSubsampling": "4:2:0",
                     "codec": "h264",
-                    "default": true,
+                    "codedHeight": 1088,
                     "displayTitle": "1080p",
                     "extendedDisplayTitle": "1080p (H.264)",
                     "frameRate": 23.976,

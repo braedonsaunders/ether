@@ -293,6 +293,9 @@ func TestSearchJoinsBrowsable(t *testing.T) {
 	if err != nil || len(res) != 1 || res[0].Title != "Hidden Gem" {
 		t.Fatalf("search: %v %v", res, err)
 	}
+	// Search publishes summaries immediately and persists them in the background.
+	// Wait for that publication before asserting the stored browse projection.
+	c.WaitRefreshes()
 	// Hidden Gem is below thresholds but must now be browsable (added_at set -> SortAdded works).
 	page, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Query: "Hidden"}})
 	if err != nil || page.Total != 1 {

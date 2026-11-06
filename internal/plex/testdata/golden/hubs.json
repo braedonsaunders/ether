@@ -1,7 +1,7 @@
 {
   "MediaContainer": {
     "size": 2,
-    "allowSync": false,
+    "allowSync": true,
     "identifier": "com.plexapp.plugins.library",
     "Hub": [
       {

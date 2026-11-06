@@ -21,6 +21,29 @@ type DrainControl struct {
 	Operation string `json:"operation"`
 	State     string `json:"state"`
 	Pending   int    `json:"pending"`
+	// Optional numeric barriers, not distinct playback counts. Missing is unknown.
+	PendingRuntime    *int                    `json:"pendingRuntime,omitempty"`
+	PendingSessions   *int                    `json:"pendingSessions,omitempty"`
+	PendingCategories *DrainPendingCategories `json:"pendingCategories,omitempty"`
+}
+
+// DrainPendingCategories is a closed, identifier-free inventory of obligations.
+// Each category may count a barrier for the same playback independently.
+type DrainPendingCategories struct {
+	SourcePreparations   int `json:"sourcePreparations"`
+	PreparationLifetimes int `json:"preparationLifetimes"`
+	PreparationReceipts  int `json:"preparationReceipts"`
+	SourceLifetimes      int `json:"sourceLifetimes"`
+	SourceCallbacks      int `json:"sourceCallbacks"`
+	EncoderStarts        int `json:"encoderStarts"`
+	EncoderTokens        int `json:"encoderTokens"`
+	Inputs               int `json:"inputs"`
+	RemotePreparing      int `json:"remotePreparing"`
+	RemoteLive           int `json:"remoteLive"`
+	RemoteRetiring       int `json:"remoteRetiring"`
+	Executions           int `json:"executions"`
+	Reopens              int `json:"reopens"`
+	Placements           int `json:"placements"`
 }
 
 func ReadDrainControl(dir, name string) (DrainControl, error) {
@@ -60,6 +83,9 @@ func WriteDrainControl(dir, name string, d DrainControl) error {
 	b, err := json.Marshal(d)
 	if err != nil {
 		return err
+	}
+	if len(b) > 4096 {
+		return errors.New("drain: control document exceeds limit")
 	}
 	f, err := os.CreateTemp(dir, ".drain-*")
 	if err != nil {

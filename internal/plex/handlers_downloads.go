@@ -22,10 +22,8 @@ import (
 // (user, client); items move deciding -> waiting -> processing ->
 // available as the title is resolved with caps.Download set and its
 // streams are copied to a temporary faststart MP4 by Deps.Downloads.
-// The queue lives in memory only: a restart drops it together with the
-// temp files (the remuxer cleans its directory on startup), matching
-// Ether's zero-permanent-storage design. PMS persists queues, so a
-// client that re-asks after an Ether restart simply creates a new one.
+// Queue state is persisted asynchronously when a database is wired. Completed
+// files remain subject to the configured retention and disk budget.
 
 const (
 	downloadDeciding   = "deciding"
@@ -112,10 +110,11 @@ type downloadStore struct {
 	nextQueue int64
 	nextItem  int64
 	nextRun   int64
+	wake      chan struct{}
 }
 
 func newDownloadStore() *downloadStore {
-	return &downloadStore{queues: map[int64]*downloadQueue{}, byClient: map[string]int64{}}
+	return &downloadStore{wake: make(chan struct{}, 1), queues: map[int64]*downloadQueue{}, byClient: map[string]int64{}}
 }
 
 func (st *downloadStore) queueFor(userID int64, clientID string, create bool) *downloadQueue {
@@ -294,6 +293,7 @@ func (s *Server) handleDownloadQueueCreate(w http.ResponseWriter, r *http.Reques
 	}
 	pr := FromContext(r.Context())
 	q := s.downloads.queueFor(pr.User.ID, pr.ClientID, true)
+	s.stageDownloads()
 	s.writeQueue(w, r, q)
 }
 
@@ -737,14 +737,14 @@ func downloadFilename(title string) string {
 
 func contentDisposition(name string) string {
 	return fmt.Sprintf("attachment; filename*=UTF-8''%s; filename=\"%s\"",
-		pathEscape(name), strings.ReplaceAll(name, "\"", "_"))
+		pathEscape(strings.NewReplacer("\r", "", "\n", "").Replace(name)), strings.NewReplacer("+", "_", "\"", "_", "\r", "", "\n", "", "\\", "_").Replace(name))
 }
 
 func pathEscape(s string) string {
 	var b strings.Builder
 	for _, c := range []byte(s) {
 		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' ||
-			c == '-' || c == '_' || c == '.' {
+			c == '-' || c == '_' || c == '~' {
 			b.WriteByte(c)
 		} else {
 			fmt.Fprintf(&b, "%%%02X", c)
@@ -759,6 +759,10 @@ func pathEscape(s string) string {
 // scheduleDownloads starts queued items up to the per-user cap. The
 // remuxer enforces the server-wide cap.
 func (s *Server) scheduleDownloads() {
+	defer s.stageDownloads()
+	if s.ctx.Err() != nil {
+		return
+	}
 	perUser := s.cfg().Downloads.MaxConcurrentPerUser
 	if perUser <= 0 {
 		perUser = 1
@@ -780,7 +784,7 @@ func (s *Server) scheduleDownloads() {
 	}
 	for _, q := range s.downloads.queues {
 		for _, it := range q.items {
-			if it.started || (it.status != downloadDeciding && it.status != downloadWaiting) {
+			if !s.downloadsAllowed(it.user) || it.started || (it.status != downloadDeciding && it.status != downloadWaiting) {
 				continue
 			}
 			if active[it.user.ID] >= perUser {
@@ -942,6 +946,7 @@ func (s *Server) processDownloadItem(ctx context.Context, it *downloadItem, run 
 	it.progress = 1
 	it.status = downloadAvailable
 	s.downloads.mu.Unlock()
+	s.retainDownload(p, it.readyAt)
 }
 
 // expireDownloads frees finished downloads older than the configured
@@ -966,6 +971,9 @@ func (s *Server) expireDownloads(now time.Time) {
 		}
 	}
 	s.downloads.mu.Unlock()
+	if len(paths) > 0 {
+		s.stageDownloads()
+	}
 	if s.d.Downloads != nil {
 		for _, p := range paths {
 			s.d.Downloads.ReleaseDownload(p)

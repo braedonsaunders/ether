@@ -59,11 +59,11 @@ func (f *fakePrerolls) Started(_ context.Context, play core.PrerollPlay) {
 // With no pre-roll configured, play queues must be byte-identical to a
 // server without the feature (owner bar).
 func TestPrerollAbsentLeavesPlayQueuesByteIdentical(t *testing.T) {
-	uri := "server://m/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String()
+	uri := "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String()
 	targets := []string{
 		"/playQueues?type=video&extrasPrefixCount=1&uri=" + urlEsc(uri) + "&key=" + urlEsc("/library/metadata/"+fightClub.Key.String()),
 		"/playQueues?type=video&uri=" + urlEsc(uri),
-		"/playQueues?type=video&continuous=1&uri=" + urlEsc("server://m/com.plexapp.plugins.library/library/metadata/"+bbE1.Key.String()),
+		"/playQueues?type=video&continuous=1&uri=" + urlEsc("server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/"+bbE1.Key.String()),
 	}
 	run := func(p core.Prerolls) [][]byte {
 		f, _, _ := extrasFixture(t)
@@ -109,7 +109,7 @@ func TestPrerollPlayQueueAndDirectPlay(t *testing.T) {
 	f, _, wp := extrasFixture(t)
 	pre := &fakePrerolls{clip: &clip}
 	f.srv.d.Prerolls = pre
-	uri := "server://m/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String()
+	uri := "server://0123456789abcdef0123456789abcdef01234567/com.plexapp.plugins.library/library/metadata/" + fightClub.Key.String()
 	queue := func(target string) []string {
 		t.Helper()
 		mc := decodeJSON(t, f.request(t, http.MethodPost, target, map[string]string{"Accept": "application/json"}))

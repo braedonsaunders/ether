@@ -24,7 +24,16 @@ var decisionTrailing = []string{"decision", "selected", "location"}
 func (m *Metadata) SetAlphabetical() { m.alpha = true }
 
 // AttrOrder implements AttrSorter.
-func (m Metadata) AttrOrder() (bool, []string, []string) { return m.alpha, nil, decisionTrailing }
+func (m *Metadata) SetOnDeckOrder() { m.onDeck = true }
+func (m Metadata) AttrOrder() (bool, []string, []string) {
+	if m.onDeck {
+		return false, []string{"allowSync", "librarySectionID", "librarySectionTitle", "librarySectionUUID"}, nil
+	}
+	if m.Type == "playlist" && !m.alpha {
+		return true, []string{"allowSync", "ratingKey", "key", "guid", "type", "title", "titleSort", "summary", "smart", "playlistType", "composite", "viewCount", "lastViewedAt", "viewOffset", "userRating", "duration", "leafCount", "addedAt", "updatedAt", "content", "icon"}, nil
+	}
+	return m.alpha, nil, decisionTrailing
+}
 
 // SetAlphabetical switches the element to PMS's decision-response ordering.
 func (m *Media) SetAlphabetical() { m.alpha = true }
@@ -73,7 +82,7 @@ func (t Tag) AttrOrder() (bool, []string, []string) { return t.alpha, nil, nil }
 func (s *Stream) SetAlphabetical() { s.alpha = true }
 
 // AttrOrder implements AttrSorter.
-func (s Stream) AttrOrder() (bool, []string, []string) { return s.alpha, nil, streamTrailing }
+func (s Stream) AttrOrder() (bool, []string, []string) { return s.alpha, s.lead, streamTrailing }
 
 // Decision streams sort "selected" with the rest; only decision and
 // location trail.
@@ -91,7 +100,7 @@ func sortAttrs[T any](v reflect.Value, attrs []T, name func(T) string) []T {
 		return attrs
 	}
 	sorted, leading, trailing := s.AttrOrder()
-	if !sorted {
+	if !sorted && len(leading) == 0 && len(trailing) == 0 {
 		return attrs
 	}
 	rank := func(n string) int {
@@ -116,7 +125,13 @@ func sortAttrs[T any](v reflect.Value, attrs []T, name func(T) string) []T {
 		if ri != 0 {
 			return false
 		}
-		return name(out[i]) < name(out[j])
+		return sorted && name(out[i]) < name(out[j])
 	})
 	return out
+}
+
+// SetSubtitleSearchOrder applies the search-offer attribute order.
+func (s *Stream) SetSubtitleSearchOrder() {
+	s.alpha = true
+	s.lead = []string{"id", "key", "streamType", "codec", "language", "languageCode", "languageTag", "format", "providerTitle", "score", "sourceKey", "title", "transient", "userID"}
 }

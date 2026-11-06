@@ -31,6 +31,7 @@ type httpSession struct {
 	requestSeq uint64
 	closed     bool
 	forceCPU   bool
+	delivered  atomic.Bool
 	lastAccess time.Time
 }
 
@@ -215,6 +216,7 @@ func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.proc = nil
 	}
 	s.mu.Unlock()
+	silenceAudio := false
 	for attempt := 0; attempt < 2; attempt++ {
 		s.mu.Lock()
 		if s.closed || s.life.isSealed() || s.requestSeq != seq || r.Context().Err() != nil {
@@ -225,7 +227,7 @@ func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.forceCPU || time.Now().UnixNano() < s.m.httpHWFailedUntil.Load() {
 			accel = core.HWAccel{Name: AccelNone}
 		}
-		spec := runSpec{LiveInput: s.req.LiveInput, CopyTimestamps: s.req.CopyTimestamps, InputHeaders: s.req.InputHeaders, Input: s.req.InputURL, Info: s.req.Info, Decision: s.req.Decision, Start: s.req.StartOffset, Accel: accel, Features: s.m.feat, Protocol: core.ProtocolHTTP, InputTimeout: s.m.opts.stallTimeout}
+		spec := runSpec{SilenceAudio: silenceAudio, LiveInput: s.req.LiveInput, CopyTimestamps: s.req.CopyTimestamps, InputHeaders: s.req.InputHeaders, Input: s.req.InputURL, Info: s.req.Info, Decision: s.req.Decision, Start: s.req.StartOffset, Accel: accel, Features: s.m.feat, Protocol: core.ProtocolHTTP, InputTimeout: s.m.opts.stallTimeout}
 		scopeHeaders, err := encoderScopeHeaders(s.req.InputLease, s.req.InputURL)
 		if err != nil {
 			s.mu.Unlock()
@@ -340,6 +342,9 @@ func (s *httpSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if attempt == 0 {
+			if spec.LiveInput && procErr != nil && missingLiveAudio(spec, stderr.String()) {
+				silenceAudio = true
+			}
 			s.log.Warn("http transcode produced no output; retrying")
 			continue
 		}
@@ -409,6 +414,9 @@ func (w flushWriter) Write(p []byte) (int, error) {
 		w.s.Touch()
 	}
 	n, err := w.ResponseWriter.Write(p)
+	if n > 0 && w.s != nil {
+		w.s.delivered.Store(true)
+	}
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -447,3 +455,6 @@ func (s *httpSession) detachOwnedHTTP() {
 	}
 	s.m.mu.Unlock()
 }
+
+// PlaybackDelivered reports output bytes, not source reads by ffmpeg.
+func (s *httpSession) PlaybackDelivered() bool { return s.delivered.Load() }

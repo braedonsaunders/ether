@@ -43,7 +43,7 @@ func HLSVariantAttributes(info core.MediaInfo, d core.Decision) string {
 		if !d.VideoCopy && codec == "h264" && d.H264Level > 0 {
 			c = fmt.Sprintf("avc1.6400%02x", d.H264Level)
 		}
-		if d.VideoCopy && v.CodecString != "" {
+		if d.VideoCopy && !d.StripDolbyVision && v.CodecString != "" {
 			c = v.CodecString
 		}
 		if d.VideoCopy && v.DolbyVision && !d.StripDolbyVision {

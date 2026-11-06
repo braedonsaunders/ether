@@ -606,8 +606,19 @@ func (s *Session) serveFiles(w http.ResponseWriter, r *http.Request, paths []str
 // serveCounted is http.ServeContent with delivery goodput measured over
 // the write phase only (the wait for ffmpeg already happened).
 func (s *Session) serveCounted(w http.ResponseWriter, r *http.Request, name string, mod time.Time, content io.ReadSeeker, t, n int) {
-	if r.Method != http.MethodGet || n == InitSegment || r.Header.Get("Range") != "" {
+	if r.Method != http.MethodGet || n == InitSegment {
 		http.ServeContent(w, r, name, mod, content)
+		return
+	}
+	// Ranged media bytes are also delivery; HEAD and init metadata are not.
+	if r.Header.Get("Range") != "" {
+		cw := &countingWriter{ResponseWriter: w}
+		http.ServeContent(cw, r, name, mod, content)
+		if cw.status == http.StatusPartialContent && cw.err == nil && cw.bytes > 0 && r.Context().Err() == nil {
+			s.mu.Lock()
+			s.playbackDelivered = true
+			s.mu.Unlock()
+		}
 		return
 	}
 	size, err := content.Seek(0, io.SeekEnd)
@@ -630,6 +641,7 @@ func (s *Session) serveCounted(w http.ResponseWriter, r *http.Request, name stri
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.playbackDelivered = true
 	// Audio, retries, stale representations and overlapping requests cannot
 	// manufacture sequential video progress or drain another rung's buffer.
 	if n >= s.lastReq-3 && n <= s.lastReq+512 {

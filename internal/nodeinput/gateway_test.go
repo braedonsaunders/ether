@@ -98,7 +98,7 @@ type fixture struct {
 	src   *source
 }
 
-func setup(t *testing.T) *fixture {
+func setup(t *testing.T, recheck ...func(context.Context) error) *fixture {
 	t.Helper()
 	f := &fixture{src: &source{}}
 	f.grant = nodesource.Grant{Scope: nodesource.Scope{Fence: placement.Fence{Controller: placement.Controller{ID: "controller", Boot: "cb"}, Target: placement.Target{NodeID: "worker", Boot: "wb"}, Session: "session", Generation: 1}, Viewer: "viewer", Revision: "revision"}, Credential: "initial-bearer", Expires: time.Now().Add(30 * time.Second)}
@@ -122,9 +122,14 @@ func setup(t *testing.T) *fixture {
 			return errors.New("peer")
 		}
 		return nil
-	}, RecheckServer: func(_ context.Context, s tls.ConnectionState) error {
+	}, RecheckServer: func(ctx context.Context, s tls.ConnectionState) error {
 		if s.PeerCertificates[0].Subject.CommonName != "source" {
 			return errors.New("peer")
+		}
+		for _, check := range recheck {
+			if err := check(ctx); err != nil {
+				return err
+			}
 		}
 		return nil
 	}, Peer: nodesource.Peer{NodeID: "worker", Boot: "wb"}, MaxLifetime: time.Minute, Timeout: time.Second, Now: time.Now})

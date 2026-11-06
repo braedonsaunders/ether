@@ -209,3 +209,15 @@ child and output readers join. Close requests cancellation and joins, never
 substitutes elapsed time for completion. Errors omit capability URLs and raw
 ffprobe stderr. Genuine failed probes remain estimated and are still rejected by
 remote encoder preflight; no estimate or capability gate is relaxed.
+
+New runtimes may include optional numeric `pendingRuntime`, `pendingSessions` and
+fixed `pendingCategories` in protected `drain.status`. These count outstanding
+barriers, not distinct playbacks: one preparation can contribute to a runtime
+barrier and the app session list independently. Categories cover source
+preparations/lifetimes/callbacks, encoder starts/tokens, inputs, remote preparation
+states, executions, reopens and placements. A runtime accounting error leaves
+`pending:-1` and omits its unknown runtime/category fields; known app-session
+counts may remain. Missing fields on older binaries are unknown. The existing
+exact boot/operation, permissions and 4 KiB bound remain mandatory, and errors
+never acknowledge quiescence. This cannot retrofit diagnostics or terminal proof
+into an older running process.

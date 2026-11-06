@@ -63,7 +63,6 @@ const TAB_ORDER: ServiceTab[] = [
   "tmdb",
   "trakt",
   "simkl",
-  "plexservers",
   "llm",
   "opensubtitles",
   "ratings",
@@ -84,19 +83,14 @@ export function integrationTabs(
     tmdb: "TMDB",
     trakt: "Trakt",
     simkl: "Simkl",
-    plexservers: t("Plex Media Servers"),
+    plexservers: t("Plex watch sync"),
     llm: t("Language model"),
     opensubtitles: "OpenSubtitles",
     ratings: t("Ratings"),
     introdb: "TheIntroDB",
   };
   return TAB_ORDER.filter(
-    (key) =>
-      key === "overview" ||
-      key === "tmdb" ||
-      key === "introdb" ||
-      key === "plexservers" ||
-      enabled[key],
+    (key) => key === "overview" || key === "tmdb" || key === "introdb" || enabled[key],
   ).map((key) => ({
     key,
     label: labels[key],
@@ -105,7 +99,7 @@ export function integrationTabs(
 
 interface Service {
   tab: Exclude<ServiceTab, "overview" | "ratings">;
-  configKey: "trakt" | "simkl" | "llm" | "openSubtitles" | "markers";
+  configKey: "plexServers" | "trakt" | "simkl" | "llm" | "openSubtitles" | "markers";
   endpoint: string;
   /** Boolean this card's switch writes. Omitted fields stay stored. */
   flag: "enabled" | "theIntroDb";
@@ -127,6 +121,14 @@ interface Service {
 }
 
 const SERVICES: Service[] = localized(() => [
+  {
+    tab: "plexservers",
+    configKey: "plexServers",
+    endpoint: "plexservers",
+    flag: "enabled",
+    label: t("Plex watch sync"),
+    groups: [],
+  },
   {
     tab: "trakt",
     configKey: "trakt",
@@ -299,6 +301,11 @@ function mergeSection(
   section: Obj,
 ): EtherConfig {
   switch (key) {
+    case "plexServers":
+      return {
+        ...base,
+        plexServers: { enabled: boolField(section, "enabled", base.plexServers?.enabled ?? true) },
+      };
     case "trakt":
       return {
         ...base,
@@ -468,6 +475,8 @@ export function ConnectedServices({
       skipSetupOffer.current = false;
       return;
     }
+    // The server registry is a drawer route, not a service tab.
+    if (requested === "plexservers") return;
     const key = TAB_ORDER.find((item) => item === requested);
     if (key && enabled[key]) return;
     navigate("/services/overview", { replace: true });
@@ -586,7 +595,7 @@ export function ConnectedServices({
       const current = draftNow[service.configKey] ?? {};
       if (!next) skipSetupOffer.current = true;
 
-      if (next) {
+      if (next && service.tab !== "plexservers") {
         openSectionSetup(service, current);
         return;
       }
@@ -895,7 +904,7 @@ export function ConnectedServices({
         )}
       </PosterAccounts>
       {SERVICES.map((s) => {
-        if (tab !== s.tab && !visited.has(s.tab)) return null;
+        if (s.tab === "plexservers" || (tab !== s.tab && !visited.has(s.tab))) return null;
         const value = draft[s.configKey] ?? {};
         const set = (next: Obj) => setDraft({ ...draft, [s.configKey]: next });
         const testButton =
@@ -954,11 +963,21 @@ export function ConnectedServices({
           </div>
         );
       })}
-      {tab === "plexservers" || visited.has("plexservers") ? (
-        <div hidden={tab !== "plexservers"}>
-          <PlexServers />
-        </div>
-      ) : null}
+      <Drawer
+        open={requested === "plexservers"}
+        onClose={() => navigate("/services/overview")}
+        title={
+          <span className="block whitespace-normal">
+            {t("Sync watch state with your Plex servers")}
+          </span>
+        }
+        description={t("Sync watched marks with other Plex Media Servers you run alongside Ether.")}
+        size="xl"
+      >
+        {requested === "plexservers" ? (
+          <PlexServers enabled={cfg?.plexServers?.enabled ?? true} />
+        ) : null}
+      </Drawer>
       {tab === "ratings" || visited.has("ratings") ? (
         <div hidden={tab !== "ratings"}>
           <IntegrationTab
@@ -1137,7 +1156,12 @@ function ServiceOverview({
           configureHref="/services/simkl"
           configureLabel={on("simkl") ? t("Manage Simkl") : t("Set up Simkl")}
         />
-        <PlexServersCard />
+        <PlexServersCard
+          enabled={on("plexservers")}
+          busy={locked || busyId === "plexservers"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("plexservers"), next)}
+        />
       </IntegrationGroup>
       <>
         <IntegrationGroup title={t("Artwork and ratings")}>
@@ -1229,28 +1253,26 @@ function flattenCards(children: ReactNode): ReactNode[] {
 }
 
 function IntegrationGroup({ title, children }: { title: string; children: ReactNode }) {
-  const cards = flattenCards(children).filter(
-    (child) => isValidElement<{ identity?: { name?: string } }>(child) && child.props.identity,
-  );
-  const rest = flattenCards(children).filter(
-    (child) => !(isValidElement<{ identity?: { name?: string } }>(child) && child.props.identity),
-  );
+  const cards = flattenCards(children).filter(isValidElement);
   return (
     <section aria-label={title} className="space-y-3 pt-6 first:pt-0">
       <h2 className="text-sm font-semibold text-fg">{title}</h2>
       <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {cards.map((child) => {
+        {cards.map((child, index) => {
           const name = isValidElement<{ identity?: { name?: string } }>(child)
             ? child.props.identity?.name
             : undefined;
           return (
-            <li key={name} aria-label={name} className="h-full">
+            <li
+              key={isValidElement(child) ? (child.key ?? name ?? index) : index}
+              aria-label={name}
+              className="h-full"
+            >
               {child}
             </li>
           );
         })}
       </ul>
-      {rest}
     </section>
   );
 }

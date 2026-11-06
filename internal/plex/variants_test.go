@@ -307,21 +307,21 @@ func TestMediaIndexSelectsVariant(t *testing.T) {
 	if rec.Code != http.StatusOK || pb.prepared != 1 || len(pb.variantCalls) != 1 {
 		t.Fatalf("auto decision code=%d prepared=%d variantCalls=%v", rec.Code, pb.prepared, pb.variantCalls)
 	}
-	// Out-of-range index falls back to Auto instead of failing.
+	// An out-of-range index refuses rather than silently playing another version.
 	rec = f.get(t, base+"&mediaIndex=9&session=v3")
-	if rec.Code != http.StatusOK || len(pb.variantCalls) != 1 {
+	if rec.Code != http.StatusBadRequest || len(pb.variantCalls) != 1 {
 		t.Fatalf("oob decision code=%d variantCalls=%v", rec.Code, pb.variantCalls)
 	}
 }
 
-func TestMediaIndexWithoutIssuedListUsesAuto(t *testing.T) {
+func TestMediaIndexWithoutIssuedListRefusesUnknownVersion(t *testing.T) {
 	f, pb := newVariantPlaybackFixture(t)
 	// No issued list: a stored position must not select a new candidate.
 	rec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+fightClub.Key.String()+"&mediaIndex=2&session=v9")
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(pb.variantCalls) != 0 || pb.prepared != 1 {
+	if len(pb.variantCalls) != 0 || pb.prepared != 0 {
 		t.Fatalf("variant calls %v", pb.variantCalls)
 	}
 }
@@ -605,11 +605,15 @@ func TestSameQualityAlternativesAreSeparateVersions(t *testing.T) {
 			t.Fatalf("mediaIndex %d prepared %v, want %s", i+1, pb.variantCalls, want)
 		}
 	}
-	// Plain Play (no mediaIndex, or index 0) prepares Auto only.
-	n := len(pb.variantCalls)
-	f.get(t, base+"&session=plain")
-	f.get(t, base+"&mediaIndex=0&session=plain0")
-	if pb.prepared != 2 || len(pb.variantCalls) != n {
+	// A multi-version decision requires an explicit selector; index 0 is Auto.
+	n, prepared := len(pb.variantCalls), pb.prepared
+	if rec := f.get(t, base+"&session=plain"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing selector: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.get(t, base+"&mediaIndex=0&session=plain0"); rec.Code != http.StatusOK {
+		t.Fatalf("Auto selector: %d %s", rec.Code, rec.Body.String())
+	}
+	if pb.prepared != prepared+1 || len(pb.variantCalls) != n {
 		t.Errorf("plain play prepared=%d variantCalls=%v", pb.prepared, pb.variantCalls)
 	}
 }

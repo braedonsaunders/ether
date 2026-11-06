@@ -22,7 +22,7 @@ func TestMalformedTimelineDoesNotWriteState(t *testing.T) {
 		t.Fatal("malformed timeline changed watch state or sessions")
 	}
 	for _, value := range []string{"", "abc", "NaN"} {
-		rec := f.get(t, "/:/progress?key="+fightClub.Key.String()+"&time="+value)
+		rec := f.get(t, "/:/progress?key="+fightClub.Key.String()+"&identifier=com.plexapp.plugins.library&time="+value)
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("progress time=%q: %d", value, rec.Code)
 		}

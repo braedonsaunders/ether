@@ -110,8 +110,8 @@ func CreateJoinToken(ctx context.Context, db *sql.DB, databaseURL string, key []
 		return JoinToken{}, TokenInfo{}, err
 	}
 	info := TokenInfo{ID: id, CreatedAt: now.UTC().Truncate(time.Second), ExpiresAt: now.Add(ttl).UTC().Truncate(time.Second)}
-	// Forget tokens that expired more than a week ago.
-	if _, err := db.ExecContext(ctx, `DELETE FROM clusterconfig_join_tokens WHERE expires_at < ?`, now.Add(-7*24*time.Hour).Unix()); err != nil {
+	// Maintenance is lifecycle-triggered, never a scheduled wall-clock sweep.
+	if err := PruneExpiredJoinTokens(ctx, db, now); err != nil {
 		return JoinToken{}, TokenInfo{}, err
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO clusterconfig_join_tokens(id, secret_hash, created_at, expires_at) VALUES(?, ?, ?, ?)`,
@@ -152,9 +152,32 @@ func ConsumeJoinToken(ctx context.Context, db *sql.DB, t JoinToken, usedBy strin
 	return fmt.Errorf("%w (at %s); create a new token on a cluster node", ErrTokenExpired, time.Unix(expires, 0).UTC().Format(time.RFC3339))
 }
 
+// PruneExpiredJoinTokens removes at most 256 expired records per owner read or
+// creation. Backlogs drain across calls; expiry validation never depends on cleanup.
+// A pruned credential remains invalid, though its historical expiry/used reason
+// is no longer retained. No goroutine or periodic sweep is started.
+func PruneExpiredJoinTokens(ctx context.Context, db *sql.DB, now time.Time) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM clusterconfig_join_tokens WHERE id IN (SELECT id FROM clusterconfig_join_tokens WHERE expires_at<=? ORDER BY expires_at, id LIMIT 256)`, now.Unix())
+	return err
+}
+
+// ActiveJoinTokens performs bounded maintenance and returns only unused tokens
+// valid at now, without credential material. UI clients must also filter expiry
+// as time passes after the response.
+func ActiveJoinTokens(ctx context.Context, db *sql.DB, now time.Time) ([]TokenInfo, error) {
+	if err := PruneExpiredJoinTokens(ctx, db, now); err != nil {
+		return nil, err
+	}
+	return listJoinTokens(ctx, db, ` WHERE used_at=0 AND expires_at>?`, now.Unix())
+}
+
 // ListJoinTokens returns stored tokens, newest first.
 func ListJoinTokens(ctx context.Context, db *sql.DB) ([]TokenInfo, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, created_at, expires_at, used_at, used_by FROM clusterconfig_join_tokens ORDER BY created_at DESC, id`)
+	return listJoinTokens(ctx, db, "")
+}
+
+func listJoinTokens(ctx context.Context, db *sql.DB, filter string, args ...any) ([]TokenInfo, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, created_at, expires_at, used_at, used_by FROM clusterconfig_join_tokens`+filter+` ORDER BY created_at DESC, id`, args...)
 	if err != nil {
 		return nil, err
 	}

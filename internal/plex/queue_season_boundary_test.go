@@ -30,7 +30,7 @@ func TestContinuousQueueStopsAtPresentedSeason(t *testing.T) {
 			t.Fatalf("start %s: %v %v", tc.start, keys, err)
 		}
 	}
-	create := f.request(t, "POST", "/playQueues?uri="+url.QueryEscape("/library/metadata/"+fightClub.Key.String()), map[string]string{"Accept": "application/json"})
+	create := f.request(t, "POST", "/playQueues?type=video&uri="+url.QueryEscape("/library/metadata/"+fightClub.Key.String()), map[string]string{"Accept": "application/json"})
 	id := decodeJSON(t, create)["playQueueID"]
 	add := f.request(t, "PUT", fmt.Sprintf("/playQueues/%.0f?continuous=1&uri=", id)+url.QueryEscape("/library/metadata/"+bbE1.Key.String()), map[string]string{"Accept": "application/json"})
 	if add.Code != 200 || decodeJSON(t, add)["playQueueTotalCount"] != float64(3) {

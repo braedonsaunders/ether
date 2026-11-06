@@ -54,6 +54,10 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		writePlaybackStatus(w, http.StatusBadRequest)
 		return
 	}
+	if !s.decisionArmed(pr, p.key) {
+		writePlaybackStatus(w, http.StatusBadRequest)
+		return
+	}
 	unlockEncoder, lockErr := s.lockEncoder(ctx, p.sessionID)
 	if lockErr != nil {
 		return
