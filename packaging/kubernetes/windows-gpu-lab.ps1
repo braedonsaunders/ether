@@ -54,8 +54,31 @@ if (-not (Test-Path $FFmpeg)) { throw 'Stage the checksum-verified pinned Window
 & $FFmpeg -hide_banner -version | Select-Object -First 1
 # This executes an actual native NVENC encode; encoder listings alone are not proof.
 Assert-WSLMemoryHeadroom
-& $FFmpeg -hide_banner -nostdin -f lavfi -i 'testsrc2=size=640x360:rate=24' -frames:v 48 -c:v h264_nvenc -f null - 2> (Join-Path $Logs 'nvenc-smoke.log')
-if ($LASTEXITCODE -ne 0) { throw 'Native NVENC encode failed; inspect the owned lab log' }
+$Smoke = New-Object Diagnostics.Process
+$Smoke.StartInfo = New-Object Diagnostics.ProcessStartInfo
+$Smoke.StartInfo.FileName = $FFmpeg
+$Smoke.StartInfo.Arguments = '-hide_banner -nostdin -v error -f lavfi -i testsrc2=size=640x360:rate=24 -frames:v 48 -c:v h264_nvenc -progress pipe:1 -f null -'
+$Smoke.StartInfo.UseShellExecute = $false
+$Smoke.StartInfo.CreateNoWindow = $true
+$Smoke.StartInfo.RedirectStandardOutput = $true
+$Smoke.StartInfo.RedirectStandardError = $true
+$SmokeStarted = $false
+try {
+    $SmokeStarted = $Smoke.Start()
+    if (-not $SmokeStarted) { throw 'Native NVENC encode did not start' }
+    $SmokeHandle = $Smoke.Handle
+    $Smoke.PriorityClass = 'BelowNormal'
+    $SmokeOutput = $Smoke.StandardOutput.ReadToEndAsync()
+    $SmokeErrors = $Smoke.StandardError.ReadToEndAsync()
+    if (-not $Smoke.WaitForExit(20000)) { throw 'Native NVENC encode timed out' }
+    if (-not $SmokeOutput.Wait(3000) -or -not $SmokeErrors.Wait(3000)) { throw 'Native NVENC log pipes did not close' }
+    [IO.File]::WriteAllText((Join-Path $Logs 'nvenc-smoke.log'),$SmokeErrors.Result)
+    if ($Smoke.ExitCode -ne 0 -or $SmokeOutput.Result -notmatch '(?m)^frame=48\r?$') { throw 'Native NVENC encode failed; inspect the owned lab log' }
+}
+finally {
+    if ($SmokeStarted -and -not $Smoke.HasExited) { $Smoke.Kill(); [void]$Smoke.WaitForExit(10000) }
+    $Smoke.Dispose()
+}
 if ($Action -eq 'Encode') { Write-Output 'Native generated NVENC encode passed; distributed playback not tested'; return }
 if (-not $KnownClockBound) { throw 'A verified clock bound is required before specialist startup' }
 if (-not (Test-Path $Ether)) { throw 'Stage exact reviewed Windows Ether candidate first' }
