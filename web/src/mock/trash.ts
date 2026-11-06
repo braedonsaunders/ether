@@ -302,6 +302,7 @@ function plan(
   meta: { id?: string; source?: "trash" | "dictionarry" | "" } = {},
 ): QualityImportPlan | Reply {
   const allowed: string[] = [];
+  const qualityOrder: string[][] = [];
   const sources: string[] = [];
   const skipped: string[] = [];
   let min = 0;
@@ -309,6 +310,7 @@ function plan(
   for (const item of native.items ?? []) {
     if (!item.allowed) continue;
     const group: string[] = [];
+    const order: string[] = [];
     for (const q of item.items?.length ? item.items : [item.name]) {
       const parsed = parseQuality(q);
       if (!parsed) {
@@ -317,11 +319,13 @@ function plan(
       }
       const [source, height] = parsed;
       allowed.push(`${source}-${height}`);
+      if (!order.includes(`${source}-${height}`)) order.push(`${source}-${height}`);
       if (!sources.includes(source) && !group.includes(source)) group.push(source);
       min = min ? Math.min(min, height) : height;
       max = Math.max(max, height);
     }
     sources.push(...group.sort((a, b) => SOURCE_ORDER.indexOf(a) - SOURCE_ORDER.indexOf(b)));
+    if (order.length) qualityOrder.push(order);
   }
   if (!allowed.length)
     return fail(400, "invalid", "None of its enabled qualities can be streamed.");
@@ -355,6 +359,7 @@ function plan(
     preferredLanguages: null,
     allowCam: false,
     allowedQualities: allowed,
+    qualityOrder,
     minCustomFormatScore: native.minFormatScore ?? 0,
     customFormatScores: Object.fromEntries(
       formats

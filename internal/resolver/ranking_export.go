@@ -15,6 +15,7 @@ type RankingCandidate struct {
 	Policy                                        releasepolicy.Result
 	Verified, LanguageOK, LanguageWanted, Starved bool
 	Bandwidth                                     int
+	CustomFormatScore                             int // pure custom format score, used by Servarr evaluation mode
 	PluginKeys                                    map[string]int64
 }
 
@@ -23,7 +24,7 @@ type RankingCandidate struct {
 func SortRankingCandidates(candidates []RankingCandidate, profile core.QualityProfile) {
 	sort.SliceStable(candidates, func(i, j int) bool {
 		convert := func(c RankingCandidate) candidate {
-			return candidate{rel: c.Release, policy: c.Policy, verified: c.Verified, langOK: c.LanguageOK, langWanted: c.LanguageWanted, starved: c.Starved, bandwidth: c.Bandwidth, quality: rankQuality(c.Release, profile, c.Starved), pluginKeys: c.PluginKeys}
+			return candidate{rel: c.Release, policy: c.Policy, verified: c.Verified, langOK: c.LanguageOK, langWanted: c.LanguageWanted, starved: c.Starved, bandwidth: c.Bandwidth, quality: rankQuality(c.Release, profile, c.Starved), pluginKeys: c.PluginKeys, cf: c.CustomFormatScore}
 		}
 		return compareCandidates(convert(candidates[i]), convert(candidates[j]), profile)
 	})

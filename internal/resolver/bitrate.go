@@ -234,6 +234,9 @@ func rankQuality(rel core.Release, profile core.QualityProfile, starved bool) qu
 // client compatibility). Fallback tiers on require rules always hold first so
 // a fallback candidate never outranks a primary candidate.
 func compareCandidates(a, b candidate, profile core.QualityProfile) bool {
+	if profile.ServarrMode() {
+		return compareServarr(a, b, profile)
+	}
 	if a.policy.Fallback != b.policy.Fallback {
 		return a.policy.Fallback < b.policy.Fallback
 	}

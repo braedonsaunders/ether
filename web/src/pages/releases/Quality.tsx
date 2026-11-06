@@ -141,6 +141,17 @@ function profileSummary(p: QualityProfile) {
     .join(" · ");
 }
 
+const EVALUATION_OPTIONS = localized(() => [
+  { value: "servarr" as const, label: t("Servarr") },
+  { value: "ether" as const, label: t("Ether") },
+]);
+
+/** The mode a profile runs in: its choice, else Servarr for imported profiles that carry a quality order. */
+function evaluationMode(p: QualityProfile): "servarr" | "ether" {
+  if (p.evaluationMode === "servarr" || p.evaluationMode === "ether") return p.evaluationMode;
+  return p.import && (p.qualityOrder?.length ?? 0) > 0 ? "servarr" : "ether";
+}
+
 const APPLIES_OPTIONS = localized(() => [
   { value: "" as const, label: t("Both") },
   { value: "movie" as const, label: t("Movies") },
@@ -1489,6 +1500,27 @@ function ProfileList({
                       onChange={changeApplies}
                     />
                   )
+                }
+              />
+              <SettingsRow
+                title={t("Evaluation mode")}
+                description={
+                  evaluationMode(draft) === "servarr"
+                    ? t(
+                        "Scores and orders releases like Radarr and Sonarr: the profile's quality order first, then custom format score alone. Formats the profile doesn't list score 0, and a release below the minimum format score isn't played.",
+                      )
+                    : t(
+                        "Ether's own scoring: formats the profile doesn't list can keep their shared score, and quality points, size, age and your ranking steps all shape the order.",
+                      )
+                }
+                control={
+                  <Segmented
+                    ariaLabel={t("Evaluation mode")}
+                    size="sm"
+                    value={evaluationMode(draft)}
+                    options={EVALUATION_OPTIONS}
+                    onChange={(mode) => patch({ evaluationMode: mode })}
+                  />
                 }
               />
               <SettingsRow
