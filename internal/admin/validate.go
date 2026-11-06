@@ -401,6 +401,19 @@ func ValidateConfig(cfg config.Config) []FieldError {
 		if err := core.ValidateRanking(p.Ranking, p.ReleaseRules); err != nil {
 			v.add(f+".ranking", "%s", err)
 		}
+		switch p.EvaluationMode {
+		case "", core.EvaluationModeServarr, core.EvaluationModeEther:
+		default:
+			v.add(f+".evaluationMode", "must be %q or %q", core.EvaluationModeServarr, core.EvaluationModeEther)
+		}
+		if len(p.QualityOrder) > 64 {
+			v.add(f+".qualityOrder", "at most 64 quality entries")
+		}
+		for gi, group := range p.QualityOrder {
+			if len(group) == 0 || len(group) > 64 {
+				v.add(f+".qualityOrder", "entry %d must list 1 to 64 qualities", gi+1)
+			}
+		}
 		if p.MinHeight < 0 || p.MaxHeight < 0 || (p.MaxHeight > 0 && p.MinHeight > p.MaxHeight) {
 			v.add(f+".minHeight", "must be <= maxHeight")
 		}

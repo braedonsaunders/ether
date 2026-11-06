@@ -365,6 +365,7 @@ func decideProfile(q config.Quality, caps core.ClientCaps, user *core.User, medi
 	prof.PreferredAudio = append([]string(nil), prof.PreferredAudio...)
 	prof.PreferredLanguages = append([]string(nil), prof.PreferredLanguages...)
 	prof.AllowedQualities = append([]string(nil), prof.AllowedQualities...)
+	prof.QualityOrder = cloneQualityOrder(prof.QualityOrder)
 	prof.Ranking = append([]string(nil), prof.Ranking...)
 	if prof.RankingConfig != nil {
 		cloned := make(map[string]json.RawMessage, len(prof.RankingConfig))

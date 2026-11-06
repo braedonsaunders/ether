@@ -295,6 +295,7 @@ func (s *QualitySyncer) apply(c *config.Config, name, media string, saved core.P
 	next.ReleaseRules = cur.ReleaseRules
 	next.Ranking = cur.Ranking
 	next.RankingConfig = cur.RankingConfig
+	next.EvaluationMode = cur.EvaluationMode
 	next.PreferLargest = cur.PreferLargest
 	next.FallbackBelowMin = cur.FallbackBelowMin
 	next.MinSizeMBPerMin = cur.MinSizeMBPerMin

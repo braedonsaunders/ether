@@ -176,10 +176,18 @@ func ImportQualityProfile(data []byte) (QualityImport, error) {
 			}
 		}
 		var group []core.Source
+		var order []string
 		for _, name := range names {
 			if source, ok := add(name); ok && !seenSource[source] && !slices.Contains(group, source) {
 				group = append(group, source)
 			}
+			if q, _, _, ok := parseImportedQuality(name); ok && !slices.Contains(order, q) {
+				order = append(order, q)
+			}
+		}
+		if len(order) > 0 {
+			// Starr ranks the top item highest; a group's members rank equally.
+			p.QualityOrder = append(p.QualityOrder, order)
 		}
 		slices.SortStableFunc(group, func(a, b core.Source) int { return sourceRank(a) - sourceRank(b) })
 		for _, s := range group {
@@ -588,6 +596,7 @@ func (p QualityImportPlan) Apply(c *config.Config, name string) error {
 		prof.Import = nil
 	}
 	prof.AllowedQualities = slices.Clone(prof.AllowedQualities)
+	prof.QualityOrder = cloneQualityOrder(prof.QualityOrder)
 	prof.PreferredSources = slices.Clone(prof.PreferredSources)
 	prof.PreferredCodecs = slices.Clone(prof.PreferredCodecs)
 	prof.PreferredAudio = slices.Clone(prof.PreferredAudio)
