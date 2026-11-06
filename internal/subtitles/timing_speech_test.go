@@ -1,11 +1,14 @@
 package subtitles
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func toneWindow(start, span time.Duration, speech [][2]time.Duration) SpeechWindow {
@@ -53,7 +56,7 @@ func TestFitSpeechEnergyFFmpeg(t *testing.T) {
 	dir := t.TempDir()
 	wav := filepath.Join(dir, "speech.wav")
 	// 8 s of silence with three 1 s tone bursts at 1s, 4s, 7s.
-	cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+	cmd := mediaproc.CommandContext(context.Background(), 2*time.Minute, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "sine=frequency=800:sample_rate=16000:duration=8",
 		"-af", "volume=enable='between(t,1,2)+between(t,4,5)+between(t,7,8)':volume=1,volume=enable='not(between(t,1,2)+between(t,4,5)+between(t,7,8))':volume=0.02",
 		wav)

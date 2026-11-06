@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // mpdDoc is the part of an MPD the tests check.
@@ -84,7 +84,7 @@ func (e *realEnv) probeDASH(t *testing.T, name string, parts ...[]byte) (probedS
 	if len(ps) != 1 {
 		t.Fatalf("%s: %d streams", name, len(ps))
 	}
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-show_entries", "packet=pts_time", "-of", "csv=p=0",
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-show_entries", "packet=pts_time", "-of", "csv=p=0",
 		"-read_intervals", "%+#1", path).Output()
 	if err != nil {
 		t.Fatalf("ffprobe packets %s: %v", name, err)
@@ -360,11 +360,11 @@ func (e *realEnv) playMPD(t *testing.T, mpdURL string, wantSeconds float64) {
 	for i := range inputs {
 		args = append(args, "-map", strconv.Itoa(i))
 	}
-	if b, err := exec.Command(e.ffmpeg, append(args, "-f", "null", "-")...).CombinedOutput(); err != nil {
+	if b, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, append(args, "-f", "null", "-")...).CombinedOutput(); err != nil {
 		t.Fatalf("decode fetched presentation: %v\n%s", err, b)
 	}
 	for _, in := range inputs {
-		out, err := exec.Command(e.ffprobe, "-v", "error", "-show_entries", "packet=pts_time,duration_time",
+		out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-show_entries", "packet=pts_time,duration_time",
 			"-of", "csv=p=0", in).Output()
 		if err != nil {
 			t.Fatalf("ffprobe %s: %v", in, err)
@@ -402,8 +402,8 @@ func (e *realEnv) playMPD(t *testing.T, mpdURL string, wantSeconds float64) {
 			t.Errorf("%s covers %.3f-%.3f, want 0-%.0f", in, lo, hi, wantSeconds)
 		}
 	}
-	if b, _ := exec.Command(e.ffmpeg, "-hide_banner", "-demuxers").Output(); strings.Contains(string(b), " dash ") {
-		if b, err := exec.Command(e.ffmpeg, "-hide_banner", "-v", "error", "-i", mpdURL, "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil {
+	if b, _ := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-demuxers").Output(); strings.Contains(string(b), " dash ") {
+		if b, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-v", "error", "-i", mpdURL, "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil {
 			t.Errorf("ffmpeg DASH demuxer: %v\n%s", err, b)
 		}
 	}

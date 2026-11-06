@@ -28,7 +28,8 @@
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Background"
     },
     {
       "id": "beam",
@@ -51,14 +52,16 @@
             "{accent}@0"
           ]
         ]
-      }
+      },
+      "name": "Beam"
     },
     {
       "id": "dust",
       "type": "particles",
       "count": 70,
       "fill": "{accent}@0.4",
-      "seed": 11
+      "seed": 11,
+      "name": "Dust"
     },
     {
       "id": "Title",
@@ -88,7 +91,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Channel title"
     },
     {
       "id": "timeline",
@@ -97,7 +101,8 @@
       "y": 370,
       "w": 1280,
       "h": 2,
-      "fill": "{accent}"
+      "fill": "{accent}",
+      "name": "Timeline"
     },
     {
       "id": "time0",
@@ -127,7 +132,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 1"
     },
     {
       "id": "poster0",
@@ -153,7 +159,8 @@
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Poster 1"
     },
     {
       "id": "art0-illustration",
@@ -179,14 +186,15 @@
             "stops": [
               [
                 0,
-                "#152443"
+                "{control.detail4}"
               ],
               [
                 1,
                 "#bd794f"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art0-house",
@@ -195,13 +203,15 @@
           "y": 131.2,
           "w": 179.20000000000002,
           "h": 278.8,
-          "fill": "#22313a"
+          "fill": "#22313a",
+          "name": "House"
         },
         {
           "id": "art0-roof",
           "type": "path",
           "path": "M 22.400000000000002 139.4 L 140.0 41.0 L 257.6 139.4 Z",
-          "fill": "#121b2b"
+          "fill": "{control.detail3}",
+          "name": "Roof"
         },
         {
           "id": "art0-window00",
@@ -210,7 +220,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 1"
         },
         {
           "id": "art0-window01",
@@ -219,7 +230,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 2"
         },
         {
           "id": "art0-window02",
@@ -228,7 +240,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 3"
         },
         {
           "id": "art0-window03",
@@ -237,7 +250,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 4"
         },
         {
           "id": "art0-window10",
@@ -246,7 +260,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 11"
         },
         {
           "id": "art0-window11",
@@ -255,7 +270,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 12"
         },
         {
           "id": "art0-window12",
@@ -264,7 +280,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 13"
         },
         {
           "id": "art0-window13",
@@ -273,7 +290,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 14"
         },
         {
           "id": "art0-window20",
@@ -282,7 +300,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 21"
         },
         {
           "id": "art0-window21",
@@ -291,7 +310,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 22"
         },
         {
           "id": "art0-window22",
@@ -300,7 +320,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 23"
         },
         {
           "id": "art0-window23",
@@ -309,9 +330,11 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 24"
         }
-      ]
+      ],
+      "name": "Illustration"
     },
     {
       "id": "art0",
@@ -321,7 +344,8 @@
       "y": 420,
       "w": 280,
       "h": 410,
-      "fit": "cover"
+      "fit": "cover",
+      "name": "Art 1"
     },
     {
       "id": "item0",
@@ -352,7 +376,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 1"
     },
     {
       "id": "time1",
@@ -382,7 +407,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 2"
     },
     {
       "id": "poster1",
@@ -408,7 +434,8 @@
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Poster 2"
     },
     {
       "id": "art1-illustration",
@@ -441,7 +468,8 @@
                 "#b66363"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art1-house",
@@ -450,13 +478,15 @@
           "y": 131.2,
           "w": 179.20000000000002,
           "h": 278.8,
-          "fill": "#462435"
+          "fill": "#462435",
+          "name": "House"
         },
         {
           "id": "art1-roof",
           "type": "path",
           "path": "M 22.400000000000002 139.4 L 140.0 41.0 L 257.6 139.4 Z",
-          "fill": "#121b2b"
+          "fill": "{control.detail3}",
+          "name": "Roof"
         },
         {
           "id": "art1-window00",
@@ -465,7 +495,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 1"
         },
         {
           "id": "art1-window01",
@@ -474,7 +505,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 2"
         },
         {
           "id": "art1-window02",
@@ -483,7 +515,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 3"
         },
         {
           "id": "art1-window03",
@@ -492,7 +525,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 4"
         },
         {
           "id": "art1-window10",
@@ -501,7 +535,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 11"
         },
         {
           "id": "art1-window11",
@@ -510,7 +545,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 12"
         },
         {
           "id": "art1-window12",
@@ -519,7 +555,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 13"
         },
         {
           "id": "art1-window13",
@@ -528,7 +565,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 14"
         },
         {
           "id": "art1-window20",
@@ -537,7 +575,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 21"
         },
         {
           "id": "art1-window21",
@@ -546,7 +585,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 22"
         },
         {
           "id": "art1-window22",
@@ -555,7 +595,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 23"
         },
         {
           "id": "art1-window23",
@@ -564,9 +605,11 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 24"
         }
-      ]
+      ],
+      "name": "Illustration"
     },
     {
       "id": "art1",
@@ -576,7 +619,8 @@
       "y": 420,
       "w": 280,
       "h": 410,
-      "fit": "cover"
+      "fit": "cover",
+      "name": "Art 2"
     },
     {
       "id": "item1",
@@ -607,7 +651,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 2"
     },
     {
       "id": "time2",
@@ -637,7 +682,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 3"
     },
     {
       "id": "poster2",
@@ -663,7 +709,8 @@
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Poster 3"
     },
     {
       "id": "art2-illustration",
@@ -696,7 +743,8 @@
                 "#bd9b56"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art2-house",
@@ -705,13 +753,15 @@
           "y": 131.2,
           "w": 179.20000000000002,
           "h": 278.8,
-          "fill": "#30493e"
+          "fill": "#30493e",
+          "name": "House"
         },
         {
           "id": "art2-roof",
           "type": "path",
           "path": "M 22.400000000000002 139.4 L 140.0 41.0 L 257.6 139.4 Z",
-          "fill": "#121b2b"
+          "fill": "{control.detail3}",
+          "name": "Roof"
         },
         {
           "id": "art2-window00",
@@ -720,7 +770,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 1"
         },
         {
           "id": "art2-window01",
@@ -729,7 +780,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 2"
         },
         {
           "id": "art2-window02",
@@ -738,7 +790,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 3"
         },
         {
           "id": "art2-window03",
@@ -747,7 +800,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 4"
         },
         {
           "id": "art2-window10",
@@ -756,7 +810,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 11"
         },
         {
           "id": "art2-window11",
@@ -765,7 +820,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 12"
         },
         {
           "id": "art2-window12",
@@ -774,7 +830,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 13"
         },
         {
           "id": "art2-window13",
@@ -783,7 +840,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 14"
         },
         {
           "id": "art2-window20",
@@ -792,7 +850,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 21"
         },
         {
           "id": "art2-window21",
@@ -801,7 +860,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 22"
         },
         {
           "id": "art2-window22",
@@ -810,7 +870,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 23"
         },
         {
           "id": "art2-window23",
@@ -819,9 +880,11 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 24"
         }
-      ]
+      ],
+      "name": "Illustration"
     },
     {
       "id": "art2",
@@ -831,7 +894,8 @@
       "y": 420,
       "w": 280,
       "h": 410,
-      "fit": "cover"
+      "fit": "cover",
+      "name": "Art 3"
     },
     {
       "id": "item2",
@@ -862,7 +926,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 3"
     },
     {
       "id": "time3",
@@ -892,7 +957,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 4"
     },
     {
       "id": "poster3",
@@ -918,7 +984,8 @@
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Poster 4"
     },
     {
       "id": "art3-illustration",
@@ -951,7 +1018,8 @@
                 "#7d99ac"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art3-house",
@@ -960,13 +1028,15 @@
           "y": 131.2,
           "w": 179.20000000000002,
           "h": 278.8,
-          "fill": "#1c354a"
+          "fill": "#1c354a",
+          "name": "House"
         },
         {
           "id": "art3-roof",
           "type": "path",
           "path": "M 22.400000000000002 139.4 L 140.0 41.0 L 257.6 139.4 Z",
-          "fill": "#121b2b"
+          "fill": "{control.detail3}",
+          "name": "Roof"
         },
         {
           "id": "art3-window00",
@@ -975,7 +1045,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 1"
         },
         {
           "id": "art3-window01",
@@ -984,7 +1055,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 2"
         },
         {
           "id": "art3-window02",
@@ -993,7 +1065,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 3"
         },
         {
           "id": "art3-window03",
@@ -1002,7 +1075,8 @@
           "y": 164.0,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 4"
         },
         {
           "id": "art3-window10",
@@ -1011,7 +1085,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 11"
         },
         {
           "id": "art3-window11",
@@ -1020,7 +1095,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 12"
         },
         {
           "id": "art3-window12",
@@ -1029,7 +1105,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 13"
         },
         {
           "id": "art3-window13",
@@ -1038,7 +1115,8 @@
           "y": 233.70000000000002,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 14"
         },
         {
           "id": "art3-window20",
@@ -1047,7 +1125,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 21"
         },
         {
           "id": "art3-window21",
@@ -1056,7 +1135,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 22"
         },
         {
           "id": "art3-window22",
@@ -1065,7 +1145,8 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 23"
         },
         {
           "id": "art3-window23",
@@ -1074,9 +1155,11 @@
           "y": 303.4,
           "w": 18.2,
           "h": 45.1,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 24"
         }
-      ]
+      ],
+      "name": "Illustration"
     },
     {
       "id": "art3",
@@ -1086,7 +1169,8 @@
       "y": 420,
       "w": 280,
       "h": 410,
-      "fit": "cover"
+      "fit": "cover",
+      "name": "Art 4"
     },
     {
       "id": "item3",
@@ -1117,7 +1201,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 4"
     }
   ],
   "post": [
@@ -1127,7 +1212,7 @@
     },
     {
       "type": "vignette",
-      "amount": 0.45
+      "amount": "{control.effect-vignette}"
     }
   ],
   "slots": [

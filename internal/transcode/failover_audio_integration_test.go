@@ -2,11 +2,11 @@ package transcode
 
 import (
 	"context"
-	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Keep the original decoder initialization, just like a player already
@@ -40,7 +40,7 @@ func TestIntegrationDASHFailoverKeepsAudioConfiguration(t *testing.T) {
 		data = append(data, b...)
 	}
 	file := e.writeTemp(t, "continuous-audio.mp4", data)
-	if b, err := exec.Command(e.ffmpeg, "-hide_banner", "-v", "error", "-xerror", "-i", file, "-map", "0:a:0", "-f", "null", "-").CombinedOutput(); err != nil {
+	if b, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-v", "error", "-xerror", "-i", file, "-map", "0:a:0", "-f", "null", "-").CombinedOutput(); err != nil {
 		t.Fatalf("existing AAC decoder rejected the replacement: %v\n%s", err, b)
 	}
 }

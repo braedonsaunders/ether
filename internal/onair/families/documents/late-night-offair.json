@@ -12,7 +12,8 @@
       "id": "static",
       "type": "noise",
       "w": 1920,
-      "h": 1080
+      "h": 1080,
+      "name": "Static"
     },
     {
       "id": "panel",
@@ -22,7 +23,8 @@
       "fill": "#000000@0.9",
       "stroke": "{text}@0.5",
       "strokeWidth": 2,
-      "path": "M 30 0 H 850 Q 880 0 880 30 V 350 Q 880 380 850 380 H 30 Q 0 380 0 350 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 850 Q 880 0 880 30 V 350 Q 880 380 850 380 H 30 Q 0 380 0 350 V 30 Q 0 0 30 0 Z",
+      "name": "Panel"
     },
     {
       "id": "brand",
@@ -36,7 +38,8 @@
       "align": "center",
       "track": 10,
       "maxWidth": 820,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Brand"
     },
     {
       "id": "sleep",
@@ -48,7 +51,8 @@
       "font": "specialelite",
       "fill": "{text}",
       "align": "center",
-      "track": 6
+      "track": 6,
+      "name": "Sleep"
     },
     {
       "id": "return",
@@ -61,7 +65,8 @@
       "fill": "{accent}",
       "align": "center",
       "maxWidth": 800,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Return"
     }
   ]
 }

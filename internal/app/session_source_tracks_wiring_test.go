@@ -20,6 +20,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
@@ -81,7 +82,7 @@ func TestSourceTracksThroughAppBrokerWiring(t *testing.T) {
 	}
 	path := filepath.Join(dir, "fixture.mkv")
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=size=160x90:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-i", sub, "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-map", "0:v:0", "-map", "1:a:0", "-map", "2:s:0", "-map", "3:a:0", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-c:s", "srt", "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=fra", "-metadata:s:s:0", "language=fra", path}
-	if output, err := exec.CommandContext(ctx, ff, args...).CombinedOutput(); err != nil {
+	if output, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, args...).CombinedOutput(); err != nil {
 		t.Fatalf("generate fixture: %v: %s", err, output)
 	}
 	// Resolver rejects releases below its absolute 5 MiB sanity floor. Pad

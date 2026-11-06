@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/transcode"
@@ -67,7 +67,7 @@ func StartScorecard(ctx context.Context, dir, username, password string, items [
 		if probeBin == "" {
 			probeBin = "ffprobe"
 		}
-		out, err := exec.CommandContext(ctx, probeBin, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "-show_data", "-i", local.File.Name()).Output()
+		out, err := mediaproc.CommandContext(ctx, mediaproc.ProbeTimeout, probeBin, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "-show_data", "-i", local.File.Name()).Output()
 		if err != nil {
 			return nil, fmt.Errorf("scorecard ffprobe: %w", err)
 		}

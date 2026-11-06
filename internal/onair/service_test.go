@@ -105,9 +105,12 @@ func TestHashEveryInput(t *testing.T) {
 }
 func TestEnsureQueuesOnly(t *testing.T) {
 	gate := make(chan struct{})
-	entered := make(chan struct{}, 20)
+	entered := make(chan struct{}, 1)
 	s := testService(t, Options{Render: func(ctx context.Context, d scene.Document, b raster.Bindings, out string) error {
-		entered <- struct{}{}
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -185,7 +188,11 @@ func TestDraftValidationNeverSaves(t *testing.T) {
 func TestChannelMomentAssetIsolation(t *testing.T) {
 	look := familyLook("clean", "Clean")
 	look.ID = "shared"
-	look.Moments["ident"] = Moment{Duration: 8, AssetDigest: "style-video"}
+	for i := range look.Scenes {
+		if look.Scenes[i].Role == "ident" {
+			look.Scenes[i].Video = &SceneVideo{AssetDigest: "style-video", Mode: "replace", Fit: "cover"}
+		}
+	}
 	s := &Service{looks: map[string]Look{"shared": look}}
 	req := core.ClipRequest{LookID: "shared", Moment: "ident"}
 	inherited, ok := s.plan(req)
@@ -198,7 +205,8 @@ func TestChannelMomentAssetIsolation(t *testing.T) {
 	if !ok || custom.AssetDigest != "channel-video" || custom.Doc.Duration != 12 || custom.Hash == inherited.Hash {
 		t.Fatal("channel asset missing from render plan")
 	}
-	if s.looks["shared"].Moments["ident"].AssetDigest != "style-video" {
+	selected, _ := pickScene(s.looks["shared"], req)
+	if selected.Video.AssetDigest != "style-video" {
 		t.Fatal("channel changed shared style")
 	}
 	req.AssetDuration = 8 * time.Second

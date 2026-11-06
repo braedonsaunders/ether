@@ -28,7 +28,8 @@
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Background"
     },
     {
       "id": "beam",
@@ -51,14 +52,16 @@
             "{accent}@0"
           ]
         ]
-      }
+      },
+      "name": "Beam"
     },
     {
       "id": "dust",
       "type": "particles",
       "count": 70,
       "fill": "{accent}@0.4",
-      "seed": 11
+      "seed": 11,
+      "name": "Dust"
     },
     {
       "id": "art-illustration",
@@ -84,14 +87,15 @@
             "stops": [
               [
                 0,
-                "#152443"
+                "{control.detail4}"
               ],
               [
                 1,
                 "#bd794f"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art-house",
@@ -100,13 +104,15 @@
           "y": 345.6,
           "w": 1228.8,
           "h": 734.4000000000001,
-          "fill": "#22313a"
+          "fill": "#22313a",
+          "name": "House"
         },
         {
           "id": "art-roof",
           "type": "path",
           "path": "M 153.6 367.20000000000005 L 960.0 108.0 L 1766.4 367.20000000000005 Z",
-          "fill": "#121b2b"
+          "fill": "{control.detail3}",
+          "name": "Roof"
         },
         {
           "id": "art-window00",
@@ -115,7 +121,8 @@
           "y": 432.0,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 1"
         },
         {
           "id": "art-window01",
@@ -124,7 +131,8 @@
           "y": 432.0,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 2"
         },
         {
           "id": "art-window02",
@@ -133,7 +141,8 @@
           "y": 432.0,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 3"
         },
         {
           "id": "art-window03",
@@ -142,7 +151,8 @@
           "y": 432.0,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 4"
         },
         {
           "id": "art-window10",
@@ -151,7 +161,8 @@
           "y": 615.6,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 11"
         },
         {
           "id": "art-window11",
@@ -160,7 +171,8 @@
           "y": 615.6,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 12"
         },
         {
           "id": "art-window12",
@@ -169,7 +181,8 @@
           "y": 615.6,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 13"
         },
         {
           "id": "art-window13",
@@ -178,7 +191,8 @@
           "y": 615.6,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 14"
         },
         {
           "id": "art-window20",
@@ -187,7 +201,8 @@
           "y": 799.2,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 21"
         },
         {
           "id": "art-window21",
@@ -196,7 +211,8 @@
           "y": 799.2,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#50656b"
+          "fill": "{control.detail2}",
+          "name": "Window 22"
         },
         {
           "id": "art-window22",
@@ -205,7 +221,8 @@
           "y": 799.2,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 23"
         },
         {
           "id": "art-window23",
@@ -214,9 +231,11 @@
           "y": 799.2,
           "w": 124.80000000000001,
           "h": 118.8,
-          "fill": "#edbf78"
+          "fill": "{control.detail1}",
+          "name": "Window 24"
         }
-      ]
+      ],
+      "name": "Illustration"
     },
     {
       "id": "art",
@@ -226,7 +245,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fit": "cover"
+      "fit": "cover",
+      "name": "Art"
     },
     {
       "id": "scrim",
@@ -252,7 +272,8 @@
             "{bg}@0.1"
           ]
         ]
-      }
+      },
+      "name": "Scrim"
     },
     {
       "id": "kicker",
@@ -282,7 +303,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Kicker"
     },
     {
       "id": "Title",
@@ -312,7 +334,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Channel title"
     },
     {
       "id": "meta",
@@ -341,7 +364,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta"
     },
     {
       "id": "logline",
@@ -371,7 +395,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Logline"
     },
     {
       "id": "time",
@@ -400,7 +425,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time"
     }
   ],
   "post": [
@@ -410,7 +436,7 @@
     },
     {
       "type": "vignette",
-      "amount": 0.45
+      "amount": "{control.effect-vignette}"
     }
   ],
   "slots": [

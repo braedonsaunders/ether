@@ -492,7 +492,7 @@ func (p burstTestPlanner) plans(now time.Time) (broadcastPlan, *broadcastPlan) {
 func (burstTestPlanner) startupLead() time.Duration { return 12 * time.Second }
 
 func TestBroadcastBoundedStartupLead(t *testing.T) {
-	for _, source := range []string{"fast", "slow", "short-file"} {
+	for _, source := range []string{"fast", "slow", "short-file", "blocked"} {
 		t.Run(source, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				slow := source == "slow"
@@ -501,6 +501,9 @@ func TestBroadcastBoundedStartupLead(t *testing.T) {
 					d := &broadcastFakeDecoder{format: format, closed: make(chan struct{})}
 					if slow {
 						return &burstSlowDecoder{broadcastFakeDecoder: d}, nil, nil
+					}
+					if source == "blocked" {
+						return &burstBlockedDecoder{broadcastFakeDecoder: d}, nil, nil
 					}
 					if source == "short-file" {
 						return &burstFiniteDecoder{broadcastFakeDecoder: d, remaining: 239}, nil, nil
@@ -526,7 +529,12 @@ func TestBroadcastBoundedStartupLead(t *testing.T) {
 				runner.encoders[0].index = burstSampleIndex{encoder: runner.encoders[0]}
 				start := time.Now()
 				b.start()
-				time.Sleep(22 * time.Second)
+				time.Sleep(5 * time.Second)
+				synctest.Wait()
+				if frames := runner.encoders[0].snapshot(); len(frames) < 150 {
+					t.Fatalf("cold source stopped the continuous clock: %d ticks in five seconds", len(frames))
+				}
+				time.Sleep(17 * time.Second)
 				synctest.Wait()
 				b.close()
 				if !b.startupUntil.IsZero() {
@@ -535,7 +543,7 @@ func TestBroadcastBoundedStartupLead(t *testing.T) {
 				if b.lead < 0 || b.lead > 16*time.Second {
 					t.Fatalf("unbounded lead: %s", b.lead)
 				}
-				if !slow && b.lead < 11*time.Second {
+				if !slow && source != "blocked" && b.lead < 11*time.Second {
 					t.Fatalf("fast source did not fill lead: %s", b.lead)
 				}
 				if slow && b.lead != 0 {
@@ -563,6 +571,13 @@ func TestBroadcastBoundedStartupLead(t *testing.T) {
 }
 
 type burstSlowDecoder struct{ *broadcastFakeDecoder }
+
+type burstBlockedDecoder struct{ *broadcastFakeDecoder }
+
+func (d *burstBlockedDecoder) Next(ctx context.Context) (transcode.RawFrame, error) {
+	<-ctx.Done()
+	return transcode.RawFrame{}, ctx.Err()
+}
 
 // Container duration rounding can leave a file one frame short of its slot.
 // Its final picture must bridge to the cut without stopping the burst clock.

@@ -4,19 +4,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func TestShortVideoTailDiagnostic(t *testing.T) {
 	e := newRealEnv(t, WithoutHWDetection(), WithSegmentTimeout(8*time.Second))
 	path := filepath.Join(e.dir, "short.mkv")
-	cmd := exec.CommandContext(t.Context(), e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "9", "-i", "testsrc2=size=320x180:rate=25", "-f", "lavfi", "-t", "11", "-i", "sine=frequency=440:sample_rate=48000", "-c:v", "libx264", "-preset", "ultrafast", "-g", "50", "-c:a", "aac", path)
+	cmd := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-t", "9", "-i", "testsrc2=size=320x180:rate=25", "-f", "lavfi", "-t", "11", "-i", "sine=frequency=440:sample_rate=48000", "-c:v", "libx264", "-preset", "ultrafast", "-g", "50", "-c:a", "aac", path)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v %s", err, out)
 	}
@@ -51,14 +51,14 @@ func TestShortVideoTailDiagnostic(t *testing.T) {
 	if err := os.WriteFile(p, tail, 0600); err != nil {
 		t.Fatal(err)
 	}
-	pcm, err := exec.CommandContext(t.Context(), e.ffmpeg, "-v", "error", "-i", p, "-map", "0:a:0", "-f", "s16le", "-ac", "1", "-ar", "48000", "pipe:1").Output()
+	pcm, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-i", p, "-map", "0:a:0", "-f", "s16le", "-ac", "1", "-ar", "48000", "pipe:1").Output()
 	if err != nil {
 		t.Fatalf("decode retained init + tail audio: %v", err)
 	}
 	if len(pcm) < 70000 || bytes.Count(pcm, []byte{0}) == len(pcm) {
 		t.Fatalf("tail audio not playable: %d PCM bytes", len(pcm))
 	}
-	probe, err := exec.CommandContext(t.Context(), e.ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-of", "json", p).Output()
+	probe, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-of", "json", p).Output()
 	if err != nil {
 		t.Fatalf("probe tail timestamps: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestShortVideoTailDiagnostic(t *testing.T) {
 	if err := os.WriteFile(full, whole.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.CommandContext(t.Context(), e.ffmpeg, "-v", "error", "-xerror", "-i", full, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-").CombinedOutput()
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-xerror", "-i", full, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-").CombinedOutput()
 	if err != nil {
 		t.Fatalf("decode complete retained-init output: %v: %s", err, out)
 	}

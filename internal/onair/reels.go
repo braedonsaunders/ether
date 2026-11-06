@@ -7,15 +7,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/core"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func (s *Service) Reel(ctx context.Context, id string) (Reel, error) {
@@ -317,7 +318,7 @@ func (s *Service) convertClip(ctx context.Context, reel string, c ReelClip) (err
 	}
 	args = append(args, "-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1", "-movflags", "+faststart", tmp)
 	args = append(args[:len(args)-1], "-progress", "pipe:1", tmp)
-	cmd := exec.CommandContext(ctx, s.o.FFmpeg(), args...)
+	cmd := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, s.o.FFmpeg(), args...)
 	pipe, e := cmd.StdoutPipe()
 	if e != nil {
 		return e
@@ -339,6 +340,14 @@ func (s *Service) convertClip(ctx context.Context, reel string, c ReelClip) (err
 			s.clipProgress(ctx, reel, c)
 			last = time.Now()
 		}
+	}
+	if scan.Err() != nil {
+		_ = pipe.Close()
+		if cmd.Cancel != nil {
+			_ = cmd.Cancel()
+		}
+		_ = cmd.Wait()
+		return scan.Err()
 	}
 	if err = cmd.Wait(); err != nil {
 		return err
@@ -381,7 +390,7 @@ func (s *Service) clipProgress(ctx context.Context, reel string, c ReelClip) err
 // silenceEdges trims only edge silence, preserving video/audio alignment and
 // leaving pauses inside a clip intact.
 func (s *Service) silenceEdges(ctx context.Context, path string, duration time.Duration) (time.Duration, time.Duration, error) {
-	cmd := exec.CommandContext(ctx, s.o.FFmpeg(), "-nostdin", "-hide_banner", "-i", path, "-vn", "-af", "silencedetect=noise=-45dB:d=0.15", "-f", "null", "-")
+	cmd := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, s.o.FFmpeg(), "-nostdin", "-hide_banner", "-i", path, "-vn", "-af", "silencedetect=noise=-45dB:d=0.15", "-f", "null", "-")
 	var log bytes.Buffer
 	cmd.Stderr = &log
 	if e := cmd.Run(); e != nil {

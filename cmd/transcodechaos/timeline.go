@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 type packetTiming struct {
@@ -59,7 +60,7 @@ func discontinuities(playlist string) map[int]bool {
 }
 
 func (c *timelineCheck) check(ctx context.Context, fp, path string, n int) error {
-	out, err := exec.CommandContext(ctx, fp, "-v", "error", "-show_entries", "stream=index,codec_type:packet=stream_index,pts_time,dts_time", "-show_streams", "-show_packets", "-of", "json", path).Output()
+	out, err := mediaproc.CommandContext(ctx, mediaproc.ProbeTimeout, fp, "-v", "error", "-show_entries", "stream=index,codec_type:packet=stream_index,pts_time,dts_time", "-show_streams", "-show_packets", "-of", "json", path).Output()
 	if err != nil {
 		return fmt.Errorf("packet probe: %w", err)
 	}

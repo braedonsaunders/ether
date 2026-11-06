@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 type wavChunk struct {
@@ -29,7 +30,7 @@ func ExtractWAV(ctx context.Context, ffmpegPath, input string) (path string, cle
 	name := f.Name()
 	f.Close()
 	cleanup = func() { _ = os.Remove(name) }
-	cmd := exec.CommandContext(ctx, ffmpegPath,
+	cmd := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, ffmpegPath,
 		"-hide_banner", "-loglevel", "error",
 		"-i", input,
 		"-vn", "-ac", "1", "-ar", "16000",

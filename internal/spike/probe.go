@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // ffprobeJSON is the subset of `ffprobe -print_format json -show_format
@@ -236,7 +237,7 @@ func (p prober) probe(ctx context.Context, file string) (core.MediaInfo, error) 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, p.path, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", file).Output()
+	out, err := mediaproc.CommandContext(ctx, mediaproc.ProbeTimeout, p.path, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", file).Output()
 	if err != nil {
 		return core.MediaInfo{}, fmt.Errorf("ffprobe %s: %w", filepath.Base(file), err)
 	}

@@ -37,115 +37,134 @@
           "y": 0,
           "w": 1920,
           "h": 1080,
-          "fill": "{bg}"
+          "fill": "{bg}",
+          "name": "Background"
         },
         {
           "id": "ray0",
           "type": "path",
           "path": "M 960 540 L 3360.00 540.00 L 3351.34 743.75 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 1"
         },
         {
           "id": "ray1",
           "type": "path",
           "path": "M 960 540 L 3215.26 1360.85 L 3137.43 1549.35 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 2"
         },
         {
           "id": "ray2",
           "type": "path",
           "path": "M 960 540 L 2798.51 2082.69 L 2660.90 2233.21 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 3"
         },
         {
           "id": "ray3",
           "type": "path",
           "path": "M 960 540 L 2160.00 2618.46 L 1979.21 2712.83 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 4"
         },
         {
           "id": "ray4",
           "type": "path",
           "path": "M 960 540 L 1376.76 2903.54 L 1174.59 2930.39 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 5"
         },
         {
           "id": "ray5",
           "type": "path",
           "path": "M 960 540 L 543.24 2903.54 L 344.09 2859.62 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 6"
         },
         {
           "id": "ray6",
           "type": "path",
           "path": "M 960 540 L -240.00 2618.46 L -412.12 2509.08 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 7"
         },
         {
           "id": "ray7",
           "type": "path",
           "path": "M 960 540 L -878.51 2082.69 L -1002.84 1921.04 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 8"
         },
         {
           "id": "ray8",
           "type": "path",
           "path": "M 960 540 L -1295.26 1360.85 L -1356.81 1166.42 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 9"
         },
         {
           "id": "ray9",
           "type": "path",
           "path": "M 960 540 L -1440.00 540.00 L -1431.34 336.25 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 10"
         },
         {
           "id": "ray10",
           "type": "path",
           "path": "M 960 540 L -1295.26 -280.85 L -1217.43 -469.35 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 11"
         },
         {
           "id": "ray11",
           "type": "path",
           "path": "M 960 540 L -878.51 -1002.69 L -740.90 -1153.21 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 12"
         },
         {
           "id": "ray12",
           "type": "path",
           "path": "M 960 540 L -240.00 -1538.46 L -59.21 -1632.83 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 13"
         },
         {
           "id": "ray13",
           "type": "path",
           "path": "M 960 540 L 543.24 -1823.54 L 745.41 -1850.39 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 14"
         },
         {
           "id": "ray14",
           "type": "path",
           "path": "M 960 540 L 1376.76 -1823.54 L 1575.91 -1779.62 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 15"
         },
         {
           "id": "ray15",
           "type": "path",
           "path": "M 960 540 L 2160.00 -1538.46 L 2332.12 -1429.08 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 16"
         },
         {
           "id": "ray16",
           "type": "path",
           "path": "M 960 540 L 2798.51 -1002.69 L 2922.84 -841.04 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 17"
         },
         {
           "id": "ray17",
           "type": "path",
           "path": "M 960 540 L 3215.26 -280.85 L 3276.81 -86.42 Z",
-          "fill": "#ffffff@0.06"
+          "fill": "#ffffff@0.06",
+          "name": "Ray 18"
         },
         {
           "id": "confetti",
@@ -154,7 +173,8 @@
           "h": 1080,
           "count": 55,
           "fill": "{glow}",
-          "seed": 17
+          "seed": 17,
+          "name": "Confetti"
         },
         {
           "id": "mascot",
@@ -179,8 +199,9 @@
               "w": 600,
               "h": 350,
               "fill": "{accent}",
-              "stroke": "#1b0b3a",
-              "strokeWidth": 12
+              "stroke": "{control.detail1}",
+              "strokeWidth": 12,
+              "name": "Goo"
             },
             {
               "id": "eye0",
@@ -227,9 +248,10 @@
                   "y": -60,
                   "w": 100,
                   "h": 120,
-                  "fill": "#ffffff",
-                  "stroke": "#1b0b3a",
-                  "strokeWidth": 8
+                  "fill": "{control.detail2}",
+                  "stroke": "{control.detail1}",
+                  "strokeWidth": 8,
+                  "name": "White 1"
                 },
                 {
                   "id": "pupil0",
@@ -238,9 +260,11 @@
                   "y": -22,
                   "w": 40,
                   "h": 60,
-                  "fill": "#1b0b3a"
+                  "fill": "{control.detail1}",
+                  "name": "Pupil 1"
                 }
-              ]
+              ],
+              "name": "Eye 1"
             },
             {
               "id": "eye1",
@@ -287,9 +311,10 @@
                   "y": -60,
                   "w": 100,
                   "h": 120,
-                  "fill": "#ffffff",
-                  "stroke": "#1b0b3a",
-                  "strokeWidth": 8
+                  "fill": "{control.detail2}",
+                  "stroke": "{control.detail1}",
+                  "strokeWidth": 8,
+                  "name": "White 2"
                 },
                 {
                   "id": "pupil1",
@@ -298,19 +323,23 @@
                   "y": -22,
                   "w": 40,
                   "h": 60,
-                  "fill": "#1b0b3a"
+                  "fill": "{control.detail1}",
+                  "name": "Pupil 2"
                 }
-              ]
+              ],
+              "name": "Eye 2"
             },
             {
               "id": "smile",
               "type": "path",
               "path": "M -65 30 Q 0 105 65 30",
-              "stroke": "#1b0b3a",
+              "stroke": "{control.detail1}",
               "strokeWidth": 12,
-              "cap": "round"
+              "cap": "round",
+              "name": "Smile"
             }
-          ]
+          ],
+          "name": "Mascot"
         },
         {
           "id": "Title-shadow",
@@ -320,7 +349,7 @@
           "y": 649,
           "size": 170,
           "font": "{type.display}",
-          "fill": "#1b0b3a",
+          "fill": "{control.detail1}",
           "fit": "shrink",
           "maxWidth": 1600,
           "align": "center",
@@ -340,309 +369,335 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Title shadow"
         },
         {
-          "id": "Title-outline3",
-          "type": "text",
-          "text": "{channel.name}",
-          "x": 960,
-          "y": 645,
-          "size": 170,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
+          "id": "Title-treatment",
+          "name": "Title lettering",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-outline3",
+              "type": "text",
+              "text": "{channel.name}",
+              "x": 960,
+              "y": 645,
+              "size": 170,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 4"
+            },
+            {
+              "id": "Title-outline2",
+              "type": "text",
+              "text": "{channel.name}",
+              "x": 960,
+              "y": 635,
+              "size": 170,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 3"
+            },
+            {
+              "id": "Title-outline1",
+              "type": "text",
+              "text": "{channel.name}",
+              "x": 965,
+              "y": 640,
+              "size": 170,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 2"
+            },
+            {
+              "id": "Title-outline0",
+              "type": "text",
+              "text": "{channel.name}",
+              "x": 955,
+              "y": 640,
+              "size": 170,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 1"
+            },
+            {
+              "id": "Title",
+              "type": "text",
+              "text": "{channel.name}",
+              "x": 960,
+              "y": 640,
+              "size": 170,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Channel title"
+            }
+          ]
         },
         {
-          "id": "Title-outline2",
-          "type": "text",
-          "text": "{channel.name}",
-          "x": 960,
-          "y": 635,
-          "size": 170,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-outline1",
-          "type": "text",
-          "text": "{channel.name}",
-          "x": 965,
-          "y": 640,
-          "size": 170,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-outline0",
-          "type": "text",
-          "text": "{channel.name}",
-          "x": 955,
-          "y": 640,
-          "size": 170,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title",
-          "type": "text",
-          "text": "{channel.name}",
-          "x": 960,
-          "y": 640,
-          "size": 170,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Tagline-outline3",
-          "type": "text",
-          "text": "{words.tagline}",
-          "x": 960,
-          "y": 955,
-          "size": 52,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Tagline-outline2",
-          "type": "text",
-          "text": "{words.tagline}",
-          "x": 960,
-          "y": 945,
-          "size": 52,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Tagline-outline1",
-          "type": "text",
-          "text": "{words.tagline}",
-          "x": 965,
-          "y": 950,
-          "size": 52,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Tagline-outline0",
-          "type": "text",
-          "text": "{words.tagline}",
-          "x": 955,
-          "y": 950,
-          "size": 52,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Tagline",
-          "type": "text",
-          "text": "{words.tagline}",
-          "x": 960,
-          "y": 950,
-          "size": 52,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
+          "id": "Tagline-treatment",
+          "name": "Tagline lettering",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Tagline-outline3",
+              "type": "text",
+              "text": "{words.tagline}",
+              "x": 960,
+              "y": 955,
+              "size": 52,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Tagline outline 4"
+            },
+            {
+              "id": "Tagline-outline2",
+              "type": "text",
+              "text": "{words.tagline}",
+              "x": 960,
+              "y": 945,
+              "size": 52,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Tagline outline 3"
+            },
+            {
+              "id": "Tagline-outline1",
+              "type": "text",
+              "text": "{words.tagline}",
+              "x": 965,
+              "y": 950,
+              "size": 52,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Tagline outline 2"
+            },
+            {
+              "id": "Tagline-outline0",
+              "type": "text",
+              "text": "{words.tagline}",
+              "x": 955,
+              "y": 950,
+              "size": 52,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Tagline outline 1"
+            },
+            {
+              "id": "Tagline",
+              "type": "text",
+              "text": "{words.tagline}",
+              "x": 960,
+              "y": 950,
+              "size": 52,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Tagline"
+            }
+          ]
         }
-      ]
+      ],
+      "name": "Scene entrance and exit"
     }
   ],
   "post": [

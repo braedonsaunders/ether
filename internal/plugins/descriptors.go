@@ -269,6 +269,9 @@ func (m *Manager) pluginTool(r Record, tl ToolMeta) tools.Tool {
 // install (SPEC §5.4). needsViewers and needsFolders say the sheet needs
 // viewer or folder picks.
 func PermissionSheet(man Manifest) (lines []string, needsViewers, needsFolders bool) {
+	if man.Ether != nil && man.Ether.Runtime.Kind == "data" {
+		return []string{"Adds channel styles and licensed artwork. Runs no code."}, false, false
+	}
 	if man.Ether == nil {
 		return []string{"Connects to the add-on address you gave"}, false, false
 	}

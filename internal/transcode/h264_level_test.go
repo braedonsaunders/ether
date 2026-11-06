@@ -2,12 +2,13 @@ package transcode
 
 import (
 	"encoding/json"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func TestH264HighLevelUsesFrameRateGeometryAndBuffer(t *testing.T) {
@@ -44,10 +45,10 @@ func TestH264FastStart4KOutputProfile(t *testing.T) {
 	args = append(args, planEncodeArgs(s, picturePlan{w: 3840, h: 2160}, "libx264", "h264", false)...)
 	file := filepath.Join(e.dir, "faststart.mp4")
 	args = append(args, file)
-	if out, err := exec.Command(e.ffmpeg, args...).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, args...).CombinedOutput(); err != nil {
 		t.Fatalf("encode: %v: %s", err, out)
 	}
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile,level,width,height", "-of", "json", file).Output()
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile,level,width,height", "-of", "json", file).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func TestH264FastStart4KOutputProfile(t *testing.T) {
 	if !strings.Contains(HLSVariantAttributes(info, s.Decision), "avc1.640033") {
 		t.Fatal("playlist CODECS does not describe the selected SPS")
 	}
-	trace, err := exec.Command(e.ffmpeg, "-hide_banner", "-loglevel", "info", "-i", file, "-c", "copy", "-bsf:v", "trace_headers", "-f", "null", "-").CombinedOutput()
+	trace, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-loglevel", "info", "-i", file, "-c", "copy", "-bsf:v", "trace_headers", "-f", "null", "-").CombinedOutput()
 	if err != nil {
 		t.Fatalf("SPS trace: %v: %s", err, trace)
 	}

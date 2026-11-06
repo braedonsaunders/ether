@@ -4,9 +4,9 @@ import { api } from "../../../lib/api";
 import { useAsync } from "../../../lib/hooks";
 import { onair, type Look } from "./model";
 import {
-  renderLook,
   renderDocument,
-  documentFor,
+  type Scene,
+  styleBindings,
   loadOnAirFonts,
   releaseRenderer,
 } from "./scene-renderer";
@@ -18,6 +18,21 @@ import type { Channel } from "../model";
 import { InfoTip } from "./RecipeTab";
 export type ScreenStyle = "" | "card" | "static" | "bars" | "brb" | "testcard" | "error";
 
+let systemScreens: Record<string, Scene> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob<Scene>("../../../../../internal/onair/families/documents/signal-*.json", {
+      eager: true,
+      import: "default",
+    }),
+  ).map(([path, doc]) => [path.split("/").at(-1)!.slice(7, -5), doc]),
+);
+let screenLoad: Promise<void> | undefined;
+function loadSystemScreens() {
+  if (import.meta.env.MODE === "mock" || import.meta.env.MODE === "test") return Promise.resolve();
+  return (screenLoad ??= import("../../../lib/api").then(async ({ apiFetch }) => {
+    systemScreens = await apiFetch<Record<string, Scene>>("/onair/system-screens");
+  }));
+}
 function ScreenCard({
   style,
   name,
@@ -74,19 +89,19 @@ function ScreenCard({
       ctx.fillStyle = "#101827";
       ctx.fillRect(0, 0, w, h);
       if ((style === "card" || !style || style === "brb") && look) {
-        ctx.save();
-        ctx.scale(w / 1920, h / 1080);
-        renderLook(
-          ctx,
-          look,
-          style === "brb" ? "break" : "offair",
-          { channel: { name: station } },
-          hover ? time / 1000 : 3,
+        const scene = look.scenes.find(
+          (s) => s.enabled && s.role === (style === "brb" ? "break" : "offair"),
         );
-        ctx.restore();
+        if (scene)
+          renderDocument(
+            ctx,
+            scene.document,
+            styleBindings(look, { channel: { name: station } }),
+            hover ? (time / 1000) % scene.document.duration : scene.document.poster,
+          );
       } else {
         const selected = style || fallback || "card";
-        const doc = documentFor("signal", `screen.${selected === "error" ? "card" : selected}`);
+        const doc = systemScreens[`screen.${selected === "error" ? "card" : selected}`];
         if (doc)
           renderDocument(
             ctx,
@@ -104,7 +119,7 @@ function ScreenCard({
       }
       if (hover && !reduced) frame = requestAnimationFrame(draw);
     };
-    void loadOnAirFonts().then(() => draw(0));
+    void Promise.all([loadOnAirFonts(), loadSystemScreens()]).then(() => draw(0));
     return () => {
       cancelAnimationFrame(frame);
       releaseRenderer(ctx);

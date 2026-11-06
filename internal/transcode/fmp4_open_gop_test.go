@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Open-GOP HEVC in HLS fMP4. A CRA keyframe decodes before the leading
@@ -226,7 +226,7 @@ type srcPacket struct {
 
 func (e *realEnv) packets(t *testing.T, file, sel string) []srcPacket {
 	t.Helper()
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", sel, "-show_entries",
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", sel, "-show_entries",
 		"packet=pts_time,size,flags", "-of", "csv=p=0", file).Output()
 	if err != nil {
 		t.Fatalf("ffprobe %s: %v", file, err)
@@ -303,7 +303,7 @@ func TestIntegrationFMP4OpenGOPMatchesSource(t *testing.T) {
 	e.gen(t, "opengop.mkv", 24, "-c:v", "libx265", "-preset", "ultrafast",
 		"-x265-params", "log-level=error:keyint=24:min-keyint=24:scenecut=0:open-gop=1", "-c:a", "aac", "-ac", "2")
 	mp4 := filepath.Join(e.dir, "opengop.mp4")
-	if out, err := exec.Command(e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", filepath.Join(e.dir, "opengop.mkv"),
+	if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", filepath.Join(e.dir, "opengop.mkv"),
 		"-map", "0", "-c", "copy", "-tag:v", "hvc1", mp4).CombinedOutput(); err != nil {
 		t.Fatalf("remux to mp4: %v %s", err, out)
 	}
@@ -413,7 +413,7 @@ func TestIntegrationFMP4FailoverChangedDelay(t *testing.T) {
 	} {
 		e.gen(t, fx.name+".mkv", 24, "-c:v", "libx265", "-preset", "ultrafast",
 			"-x265-params", "log-level=error:keyint=24:min-keyint=24:scenecut=0:open-gop=1:repeat-headers=1:"+fx.params, "-c:a", "aac", "-ac", "2")
-		if out, err := exec.Command(e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", filepath.Join(e.dir, fx.name+".mkv"),
+		if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", filepath.Join(e.dir, fx.name+".mkv"),
 			"-map", "0", "-c", "copy", "-tag:v", "hvc1", filepath.Join(e.dir, fx.name+".mp4")).CombinedOutput(); err != nil {
 			t.Fatalf("remux to mp4: %v %s", err, out)
 		}
@@ -483,7 +483,7 @@ func TestIntegrationFMP4FailoverChangedTimescaleRefused(t *testing.T) {
 	e.gen(t, "ts16k.mkv", 24, "-c:v", "libx265", "-preset", "ultrafast",
 		"-x265-params", "log-level=error:keyint=24:min-keyint=24:scenecut=0:open-gop=1:repeat-headers=1", "-c:a", "aac", "-ac", "2")
 	for _, fx := range []struct{ name, scale string }{{"ts16k.mp4", "16000"}, {"ts90k.mp4", "90000"}} {
-		if out, err := exec.Command(e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", filepath.Join(e.dir, "ts16k.mkv"),
+		if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", filepath.Join(e.dir, "ts16k.mkv"),
 			"-map", "0", "-c", "copy", "-tag:v", "hvc1", "-video_track_timescale", fx.scale, filepath.Join(e.dir, fx.name)).CombinedOutput(); err != nil {
 			t.Fatalf("remux: %v %s", err, out)
 		}

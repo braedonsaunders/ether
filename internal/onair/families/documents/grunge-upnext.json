@@ -11,7 +11,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "Paint-0",
@@ -23,7 +24,8 @@
       "fill": "{glow}",
       "seed": 8,
       "rotate": 0,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 0"
     },
     {
       "id": "Paint-1",
@@ -35,7 +37,8 @@
       "fill": "{accent}",
       "seed": 9,
       "rotate": 17,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 1"
     },
     {
       "id": "Paint-2",
@@ -47,7 +50,8 @@
       "fill": "{glow}",
       "seed": 10,
       "rotate": 34,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 2"
     },
     {
       "id": "Paint-3",
@@ -59,7 +63,8 @@
       "fill": "{accent}",
       "seed": 11,
       "rotate": 51,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 3"
     },
     {
       "id": "Paint-4",
@@ -71,7 +76,8 @@
       "fill": "{glow}",
       "seed": 12,
       "rotate": 68,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 4"
     },
     {
       "id": "Paint-5",
@@ -83,7 +89,8 @@
       "fill": "{accent}",
       "seed": 13,
       "rotate": 85,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 5"
     },
     {
       "id": "Paint-6",
@@ -95,7 +102,8 @@
       "fill": "{glow}",
       "seed": 14,
       "rotate": 102,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 6"
     },
     {
       "id": "Paint-7",
@@ -107,7 +115,8 @@
       "fill": "{accent}",
       "seed": 15,
       "rotate": 119,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 7"
     },
     {
       "id": "Paint-8",
@@ -119,7 +128,8 @@
       "fill": "{glow}",
       "seed": 16,
       "rotate": 136,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 8"
     },
     {
       "id": "Paint-9",
@@ -131,7 +141,8 @@
       "fill": "{accent}",
       "seed": 17,
       "rotate": 153,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 9"
     },
     {
       "id": "Paint-10",
@@ -143,7 +154,8 @@
       "fill": "{glow}",
       "seed": 18,
       "rotate": 170,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 10"
     },
     {
       "id": "Paint-11",
@@ -155,7 +167,8 @@
       "fill": "{accent}",
       "seed": 19,
       "rotate": 187,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 11"
     },
     {
       "id": "Paint-12",
@@ -167,7 +180,8 @@
       "fill": "{glow}",
       "seed": 20,
       "rotate": 204,
-      "opacity": 0.65
+      "opacity": 0.65,
+      "name": "Paint 12"
     },
     {
       "id": "Slash",
@@ -177,7 +191,8 @@
       "w": 2200,
       "h": 130,
       "fill": "{accent}",
-      "rotate": -6
+      "rotate": -6,
+      "name": "Slash"
     },
     {
       "id": "Frequency",
@@ -190,7 +205,8 @@
       "fill": "{text}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "track": 9
+      "track": 9,
+      "name": "Frequency"
     },
     {
       "id": "Bevel-8",
@@ -200,10 +216,11 @@
       "y": 559,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 8"
     },
     {
       "id": "Bevel-7",
@@ -213,10 +230,11 @@
       "y": 556,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 7"
     },
     {
       "id": "Bevel-6",
@@ -226,10 +244,11 @@
       "y": 553,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 6"
     },
     {
       "id": "Bevel-5",
@@ -239,10 +258,11 @@
       "y": 550,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 5"
     },
     {
       "id": "Bevel-4",
@@ -252,10 +272,11 @@
       "y": 547,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 4"
     },
     {
       "id": "Bevel-3",
@@ -265,10 +286,11 @@
       "y": 544,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 3"
     },
     {
       "id": "Bevel-2",
@@ -278,10 +300,11 @@
       "y": 541,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 2"
     },
     {
       "id": "Bevel-1",
@@ -291,10 +314,11 @@
       "y": 538,
       "size": 140,
       "font": "{type.display}",
-      "fill": "#24112f",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "align": "center"
+      "align": "center",
+      "name": "Bevel 1"
     },
     {
       "id": "Title",
@@ -326,11 +350,11 @@
         "stops": [
           [
             0,
-            "#ffffff"
+            "{control.detail2}"
           ],
           [
             0.49,
-            "#ffffff"
+            "{control.detail2}"
           ],
           [
             0.52,
@@ -365,7 +389,8 @@
             0
           ]
         ]
-      }
+      },
+      "name": "Channel title"
     },
     {
       "id": "Detail",
@@ -378,7 +403,8 @@
       "fill": "{text}",
       "align": "center",
       "maxWidth": 1500,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Detail"
     },
     {
       "id": "Station",
@@ -392,13 +418,14 @@
       "fit": "shrink",
       "maxWidth": 1500,
       "align": "center",
-      "track": 6
+      "track": 6,
+      "name": "Station"
     }
   ],
   "post": [
     {
       "type": "grain",
-      "amount": 0.18
+      "amount": "{control.effect-grain}"
     }
   ]
 }

@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os/exec"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // hdr10x265 encodes a 10-bit HDR10-signalled HEVC fixture. Differing x265
@@ -103,7 +103,7 @@ func TestIntegrationMatroskaFailoverKeepsOpenDecoder(t *testing.T) {
 				joined = append(joined, fetch(t, hs, n)...)
 			}
 			path := e.writeTemp(t, "open-decoder.mkv", joined)
-			if out, err := exec.Command(e.ffmpeg, "-v", "error", "-xerror", "-err_detect", "explode", "-i", path, "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) > 0 {
+			if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-xerror", "-err_detect", "explode", "-i", path, "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) > 0 {
 				t.Fatalf("original header + replacement clusters: %v\n%s", err, out)
 			}
 			frames := e.frameTimes(t, path, "v:0")
@@ -138,7 +138,7 @@ func (e *realEnv) inBandSPS(t *testing.T, header, cluster []byte) int {
 	t.Helper()
 	path := e.writeTemp(t, "sps-probe.mkv", append(append([]byte(nil), header...), cluster...))
 	// trace_headers logs extradata first; the remaining SPS are in-band.
-	out, err := exec.Command(e.ffmpeg, "-hide_banner", "-v", "error", "-i", path, "-map", "0:v:0", "-c", "copy",
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-v", "error", "-i", path, "-map", "0:v:0", "-c", "copy",
 		"-bsf:v", "trace_headers", "-loglevel", "trace", "-f", "null", "-").CombinedOutput()
 	if err != nil {
 		t.Fatalf("trace_headers: %v %s", err, out)
@@ -149,7 +149,7 @@ func (e *realEnv) inBandSPS(t *testing.T, header, cluster []byte) int {
 // frameTimes decodes one stream of file and returns its frame timestamps.
 func (e *realEnv) frameTimes(t *testing.T, file, stream string) []float64 {
 	t.Helper()
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", stream, "-show_entries", "frame=best_effort_timestamp_time", "-of", "json", file).Output()
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", stream, "-show_entries", "frame=best_effort_timestamp_time", "-of", "json", file).Output()
 	if err != nil {
 		t.Fatalf("ffprobe frames %s: %v", stream, err)
 	}

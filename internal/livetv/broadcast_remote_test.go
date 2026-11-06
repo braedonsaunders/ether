@@ -16,6 +16,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -64,7 +65,7 @@ func TestBroadcastSlowStartLargeOffsetRemote(t *testing.T) {
 	defer cancel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "long.mkv")
-	if out, e := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=64x36:rate=1", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "6104", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-tune", "zerolatency", "-g", "10", "-c:a", "aac", "-b:a", "16k", path).CombinedOutput(); e != nil {
+	if out, e := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=64x36:rate=1", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "6104", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-tune", "zerolatency", "-g", "10", "-c:a", "aac", "-b:a", "16k", path).CombinedOutput(); e != nil {
 		t.Fatalf("fixture:%v %s", e, out)
 	}
 	var ranges atomic.Int64

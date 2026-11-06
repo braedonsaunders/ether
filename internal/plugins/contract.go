@@ -55,6 +55,7 @@ const (
 	CapTools           Capability = "tools"
 	CapUI              Capability = "ui"
 	CapOnAirContent    Capability = "onair_content"
+	CapLiveTVPack      Capability = "livetv_pack"
 )
 
 // Reserved capabilities are known names a manifest may not claim in v1.
@@ -193,7 +194,13 @@ type ViewerPerms struct {
 }
 
 // Contributes carries per-capability metadata and UI contributions.
+type PackStyle struct {
+	ID   string `json:"id"`
+	File string `json:"file"`
+}
+
 type Contributes struct {
+	Looks          []PackStyle         `json:"looks,omitempty"`
 	OnAirFeeds     []OnAirFeed         `json:"onairFeeds,omitempty"`
 	OnAirSegments  []OnAirSegment      `json:"onairSegments,omitempty"`
 	Directories    []DirectoryMeta     `json:"directories,omitempty"`

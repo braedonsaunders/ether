@@ -11,7 +11,8 @@
       "y": 820,
       "w": 1680,
       "h": 150,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Strap"
     },
     {
       "id": "Edge",
@@ -20,7 +21,8 @@
       "y": 820,
       "w": 12,
       "h": 150,
-      "fill": "{accent}"
+      "fill": "{accent}",
+      "name": "Edge"
     },
     {
       "id": "Now",
@@ -32,7 +34,8 @@
       "font": "{type.display}",
       "fill": "{text}",
       "fit": "shrink",
-      "maxWidth": 1500
+      "maxWidth": 1500,
+      "name": "Now"
     },
     {
       "id": "Programme",
@@ -44,7 +47,8 @@
       "font": "{type.display}",
       "fill": "{text}",
       "fit": "shrink",
-      "maxWidth": 1500
+      "maxWidth": 1500,
+      "name": "Programme"
     }
   ]
 }

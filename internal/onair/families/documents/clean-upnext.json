@@ -11,7 +11,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "rail",
@@ -20,7 +21,8 @@
       "y": 140,
       "w": 6,
       "h": 800,
-      "fill": "{accent}"
+      "fill": "{accent}",
+      "name": "Rail"
     },
     {
       "id": "toprule",
@@ -29,7 +31,8 @@
       "y": 140,
       "w": 1640,
       "h": 2,
-      "fill": "{text}@0.18"
+      "fill": "{text}@0.18",
+      "name": "Top rule"
     },
     {
       "id": "art-illustration",
@@ -55,14 +58,15 @@
             "stops": [
               [
                 0,
-                "#152443"
+                "{control.detail3}"
               ],
               [
                 1,
-                "#bd794f"
+                "{control.detail4}"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art-moon",
@@ -71,27 +75,32 @@
           "y": 129.6,
           "w": 307.2,
           "h": 307.2,
-          "fill": "#efdbaa"
+          "fill": "#efdbaa",
+          "name": "Moon"
         },
         {
           "id": "art-ridge0",
           "type": "path",
           "path": "M 0 561.6 L 384.0 324.0 L 672.0 540.0 L 1248.0 291.6 L 1920 518.4 L 1920 1080 L 0 1080 Z",
-          "fill": "#384762"
+          "fill": "#384762",
+          "name": "Ridge 1"
         },
         {
           "id": "art-ridge1",
           "type": "path",
           "path": "M 0 691.2 L 384.0 496.79999999999995 L 672.0 648.0 L 1248.0 475.20000000000005 L 1920 626.4 L 1920 1080 L 0 1080 Z",
-          "fill": "#293248"
+          "fill": "#293248",
+          "name": "Ridge 2"
         },
         {
           "id": "art-ridge2",
           "type": "path",
           "path": "M 0 820.8 L 384.0 669.6 L 672.0 756.0 L 1248.0 658.8000000000001 L 1920 734.4 L 1920 1080 L 0 1080 Z",
-          "fill": "#172139"
+          "fill": "#172139",
+          "name": "Ridge 3"
         }
-      ]
+      ],
+      "name": "Illustration"
     },
     {
       "id": "art",
@@ -101,7 +110,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fit": "cover"
+      "fit": "cover",
+      "name": "Art"
     },
     {
       "id": "scrim",
@@ -127,7 +137,8 @@
             "{bg}@0.1"
           ]
         ]
-      }
+      },
+      "name": "Scrim"
     },
     {
       "id": "kicker",
@@ -157,7 +168,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Kicker"
     },
     {
       "id": "Title",
@@ -187,7 +199,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Channel title"
     },
     {
       "id": "meta",
@@ -216,7 +229,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta"
     },
     {
       "id": "logline",
@@ -246,7 +260,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Logline"
     },
     {
       "id": "time",
@@ -275,7 +290,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time"
     }
   ],
   "post": [

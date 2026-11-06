@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func TestMixedWorkloadVerifiesBytesDurationAndCleanup(t *testing.T) {
@@ -115,7 +117,7 @@ func TestDecodeDurationUsesActualDecodedOutput(t *testing.T) {
 		t.Skip("ffmpeg unavailable")
 	}
 	path := filepath.Join(t.TempDir(), "fixture.mp4")
-	cmd := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=size=32x32:rate=10", "-t", "1", "-c:v", "mpeg4", "-threads", "1", "-an", path)
+	cmd := mediaproc.CommandContext(context.Background(), 2*time.Minute, ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=size=32x32:rate=10", "-t", "1", "-c:v", "mpeg4", "-threads", "1", "-an", path)
 	if out, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("generate media: %v %s", e, out)
 	}

@@ -1,6 +1,7 @@
 package livetv
 
 import (
+	"fmt"
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"strings"
 	"time"
@@ -196,7 +197,7 @@ func (s *Service) clipRequest(c Channel, p Programme, snapshots ...[]Programme) 
 	if c.Look != nil {
 		lookID = c.Look.LookID
 	}
-	r := core.ClipRequest{LookID: lookID, Moment: p.Item.Slate, ChannelID: c.ID, Bind: map[string]string{"channel.name": c.Name}, Art: map[string]string{}}
+	r := core.ClipRequest{LookID: lookID, Moment: p.Item.Slate, ChannelID: c.ID, Bind: map[string]string{"channel.name": c.Name, "slate.start": fmt.Sprint(p.Start.Unix())}, Art: map[string]string{}}
 	if c.Look != nil {
 		r.Bug = c.Look.Bug
 		r.AssetDigest = c.Look.MomentAssets[p.Item.Slate]

@@ -10,7 +10,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // openGOPx265 encodes an HDR10 HEVC fixture with x265's open GOPs: every
@@ -42,7 +42,7 @@ type videoPacket struct {
 
 func (e *realEnv) videoPackets(t *testing.T, file string) []videoPacket {
 	t.Helper()
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,dts_time,flags", "-of", "csv=p=0", file).Output()
+	out, err := mediaproc.CommandContext(t.Context(), 30*time.Second, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time,dts_time,flags", "-of", "csv=p=0", file).Output()
 	if err != nil {
 		t.Fatalf("ffprobe packets %s: %v", file, err)
 	}
@@ -152,7 +152,7 @@ func (e *realEnv) checkJoined(t *testing.T, joined []byte, label string, want []
 	t.Helper()
 	checkClusterCRCs(t, joined, label)
 	path := e.writeTemp(t, label+"-joined.mkv", joined)
-	if out, err := exec.Command(e.ffmpeg, "-v", "error", "-xerror", "-err_detect", "explode", "-i", path, "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) > 0 {
+	if out, err := mediaproc.CommandContext(t.Context(), 30*time.Second, e.ffmpeg, "-v", "error", "-xerror", "-err_detect", "explode", "-i", path, "-map", "0", "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) > 0 {
 		t.Fatalf("%s: joined stream does not decode: %v\n%s", label, err, out)
 	}
 	video := e.frameTimes(t, path, "v:0")
@@ -454,7 +454,7 @@ func allTypes(types []int, want int) bool {
 // extradata is the video CodecPrivate (parameter sets) of a fixture.
 func (e *realEnv) extradata(t *testing.T, source string) []byte {
 	t.Helper()
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_data_hash", "SHA256", "-show_entries", "stream=extradata_hash", "-of", "csv=p=0", filepath.Join(e.dir, source)).Output()
+	out, err := mediaproc.CommandContext(t.Context(), 30*time.Second, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_data_hash", "SHA256", "-show_entries", "stream=extradata_hash", "-of", "csv=p=0", filepath.Join(e.dir, source)).Output()
 	if err != nil || len(bytes.TrimSpace(out)) == 0 {
 		t.Fatalf("extradata of %s: %v", source, err)
 	}

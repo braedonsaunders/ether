@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Explicit lab opt-in. Ordinary go test remains offline and never provisions
@@ -48,7 +48,7 @@ func TestRTXNativeLifecycle(t *testing.T) {
 		span = "40"
 	}
 	args := []string{"-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=" + rate, "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-t", span, "-c:v", "h264_nvenc", "-g", "72", "-bf", "0", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", input}
-	if out, err := exec.CommandContext(ctx, ff, args...).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, args...).CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v %s", err, out)
 	}
 	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
@@ -69,7 +69,7 @@ func TestRTXNativeLifecycle(t *testing.T) {
 	// Fixture has exact three-second source GOPs; scan actual packets rather
 	// than assuming the encoder honored that request.
 	packetArgs := []string{"-v", "error", "-select_streams", "v:0", "-show_packets", "-show_entries", "packet=pts_time,flags", "-of", "json", input}
-	out, err := exec.CommandContext(ctx, fp, packetArgs...).Output()
+	out, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, packetArgs...).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func TestRTXNativeLifecycle(t *testing.T) {
 
 func checkNativeAudioStart(t *testing.T, ctx context.Context, probe, path string, start float64) {
 	t.Helper()
-	out, err := exec.CommandContext(ctx, probe, "-v", "error", "-select_streams", "a:0", "-show_packets", "-show_entries", "packet=pts_time", "-of", "json", path).Output()
+	out, err := mediaproc.CommandContext(ctx, 2*time.Minute, probe, "-v", "error", "-select_streams", "a:0", "-show_packets", "-show_entries", "packet=pts_time", "-of", "json", path).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func checkNativeSegmentSize(t *testing.T, ctx context.Context, probe, dir, sessi
 		}
 	}
 	args := []string{"-v", "error", "-select_streams", "v:0", "-show_streams", "-show_packets", "-show_entries", "stream=width,height:packet=pts_time,flags", "-of", "json", path}
-	out, err := exec.CommandContext(ctx, probe, args...).Output()
+	out, err := mediaproc.CommandContext(ctx, 2*time.Minute, probe, args...).Output()
 	if err != nil {
 		t.Fatalf("probe %s: %v", path, err)
 	}
@@ -392,7 +392,7 @@ func checkNativeSegmentSize(t *testing.T, ctx context.Context, probe, dir, sessi
 // Two known fixture tones establish selected-track preservation through a seek.
 func checkNativeAudio(t *testing.T, ctx context.Context, ff, path string) {
 	t.Helper()
-	out, err := exec.CommandContext(ctx, ff, "-v", "error", "-i", path, "-map", "0:a:0", "-t", "0.5", "-ac", "1", "-ar", "8000", "-f", "s16le", "-").Output()
+	out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-i", path, "-map", "0:a:0", "-t", "0.5", "-ac", "1", "-ar", "8000", "-f", "s16le", "-").Output()
 	if err != nil {
 		t.Fatal(err)
 	}

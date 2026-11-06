@@ -3,6 +3,7 @@ package onair
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/onair/scene"
@@ -20,36 +21,66 @@ type Brand struct {
 		Display string `json:"display"`
 		Body    string `json:"body"`
 	} `json:"type"`
-	Energy   float64           `json:"energy"`
-	Textures []string          `json:"textures"`
-	Sting    string            `json:"sting"`
-	Volume   float64           `json:"volume"`
-	Seed     uint32            `json:"seed"`
-	Tagline  string            `json:"tagline"`
-	Words    map[string]string `json:"words"`
-	Language string            `json:"language"`
-	Logo     string            `json:"logo,omitempty"`
+	Energy   float64  `json:"energy"`
+	Textures []string `json:"textures"`
+	Tagline  string   `json:"tagline"`
+	Language string   `json:"language"`
+	Logo     string   `json:"logo,omitempty"`
 }
-type Moment struct {
+type RoleConfig struct {
+	Duration float64 `json:"duration"`
+}
+type SceneSound struct {
+	ID          string   `json:"id"`
+	AssetDigest string   `json:"assetDigest"`
+	At          float64  `json:"at"`
+	Start       float64  `json:"start"`
+	End         *float64 `json:"end,omitempty"`
+	Volume      float64  `json:"volume"`
+	FadeIn      float64  `json:"fadeIn"`
+	FadeOut     float64  `json:"fadeOut"`
+}
+type SceneVideo struct {
+	AssetDigest string  `json:"assetDigest"`
+	Mode        string  `json:"mode"`
+	Fit         string  `json:"fit"`
+	Start       float64 `json:"start"`
 	Crossfade   bool    `json:"crossfade,omitempty"`
-	AssetDigest string  `json:"assetDigest,omitempty"`
-	Duration    float64 `json:"duration"`
-	Poster      float64 `json:"poster"`
+}
+type StyleScene struct {
+	ID       string         `json:"id"`
+	Role     string         `json:"role"`
+	Name     string         `json:"name"`
+	Enabled  bool           `json:"enabled"`
+	Weight   int            `json:"weight"`
+	Document scene.Document `json:"document"`
+	Sounds   []SceneSound   `json:"sounds"`
+	Video    *SceneVideo    `json:"video,omitempty"`
+}
+type StyleControl struct {
+	ID    string   `json:"id"`
+	Label string   `json:"label"`
+	Kind  string   `json:"kind"`
+	Value any      `json:"value"`
+	Min   *float64 `json:"min,omitempty"`
+	Max   *float64 `json:"max,omitempty"`
+	Step  *float64 `json:"step,omitempty"`
+	Group string   `json:"group,omitempty"`
 }
 type Look struct {
-	ChannelCount int                       `json:"channelCount"`
-	Screens      *config.LiveTVScreens     `json:"screens,omitempty"`
-	Bug          *core.BugSettings         `json:"bug,omitempty"`
-	ID           string                    `json:"id"`
-	Name         string                    `json:"name"`
-	Family       string                    `json:"family"`
-	Brand        Brand                     `json:"brand"`
-	Moments      map[string]Moment         `json:"moments"`
-	Layers       map[string]map[string]any `json:"layers,omitempty"`
-	Documents    map[string]scene.Document `json:"documents,omitempty"`
-	ChannelIDs   []string                  `json:"channelIds"`
-	Pack         *Pack                     `json:"pack,omitempty"`
-	Render       *Progress                 `json:"render,omitempty"`
+	ID           string                `json:"id"`
+	Name         string                `json:"name"`
+	Template     string                `json:"template"`
+	Brand        Brand                 `json:"brand"`
+	Roles        map[string]RoleConfig `json:"roles"`
+	Scenes       []StyleScene          `json:"scenes"`
+	Controls     []StyleControl        `json:"controls"`
+	ChannelIDs   []string              `json:"channelIds"`
+	ChannelCount int                   `json:"channelCount"`
+	Bug          *core.BugSettings     `json:"bug,omitempty"`
+	Screens      *config.LiveTVScreens `json:"screens,omitempty"`
+	Pack         *Pack                 `json:"pack,omitempty"`
+	Render       *Progress             `json:"render,omitempty"`
 }
 type Pack struct {
 	ID   string `json:"id"`
@@ -73,6 +104,9 @@ type Asset struct {
 	UsedBy      []string `json:"usedBy"`
 	URL         string   `json:"url,omitempty"`
 	MIME        string   `json:"-"`
+	DurationMS  int64    `json:"durationMs,omitempty"`
+	Width       int      `json:"width,omitempty"`
+	Height      int      `json:"height,omitempty"`
 }
 type Reel struct {
 	Anchor        time.Time  `json:"-"`
@@ -99,27 +133,24 @@ type ReelClip struct {
 	Error        string  `json:"error,omitempty"`
 }
 
-// Decode each scene through its strict, cost-limited decoder even when nested in
-// an owner look document.
-func (l *Look) UnmarshalJSON(b []byte) error {
-	type plain Look
+// Every owned document goes through the strict, cost-limited scene decoder.
+func (s *StyleScene) UnmarshalJSON(b []byte) error {
+	type plain StyleScene
 	var v plain
-	if e := json.Unmarshal(b, &v); e != nil {
-		return e
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
 	}
 	var raw struct {
-		Documents map[string]json.RawMessage `json:"documents"`
+		Document json.RawMessage `json:"document"`
 	}
-	if e := json.Unmarshal(b, &raw); e != nil {
-		return e
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
 	}
-	for k, b := range raw.Documents {
-		d, e := scene.Decode(b)
-		if e != nil {
-			return e
-		}
-		v.Documents[k] = d
+	d, err := scene.Decode(raw.Document)
+	if err != nil {
+		return fmt.Errorf("scene %q: %w", v.Name, err)
 	}
-	*l = Look(v)
+	v.Document = d
+	*s = StyleScene(v)
 	return nil
 }

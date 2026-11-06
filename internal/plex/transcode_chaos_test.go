@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -131,7 +131,7 @@ func chaosCmd(t *testing.T, exe string, args ...string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	b, err := exec.CommandContext(ctx, exe, args...).CombinedOutput()
+	b, err := mediaproc.CommandContext(ctx, 2*time.Minute, exe, args...).CombinedOutput()
 	if err != nil {
 		t.Fatal(fmt.Errorf("%s: %w: %s", filepath.Base(exe), err, b))
 	}
@@ -148,7 +148,7 @@ func chaosDecodeMedia(t *testing.T, ff, fp, path string, damaged bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, fp, "-v", "quiet", "-select_streams", "v:0", "-read_intervals", "%+#16", "-show_frames", "-show_entries", "frame=key_frame", "-of", "csv=p=0", path).Output()
+	out, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "quiet", "-select_streams", "v:0", "-read_intervals", "%+#16", "-show_frames", "-show_entries", "frame=key_frame", "-of", "csv=p=0", path).Output()
 	if err != nil || !strings.Contains(string(out), "1") {
 		t.Fatal("no decodable opening keyframe")
 	}

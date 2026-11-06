@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/transcode"
@@ -120,7 +120,7 @@ func TestTranscodeChaosHTTPHardware(t *testing.T) {
 		t.Fatal(e)
 	}
 	chaosCmd(t, ff, "-v", "error", "-xerror", "-i", output, "-f", "null", "-")
-	out, e := exec.CommandContext(ctx, fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", output).Output()
+	out, e := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", output).Output()
 	if e != nil {
 		t.Fatal(e)
 	}

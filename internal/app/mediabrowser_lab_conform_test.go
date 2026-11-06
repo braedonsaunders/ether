@@ -13,19 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/config"
-	"github.com/braedonsaunders/ether/internal/conform"
-	mbconform "github.com/braedonsaunders/ether/internal/conform/mediabrowser"
-	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/frontend"
-	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
-	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
-	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
-	"github.com/braedonsaunders/ether/internal/identity"
-	"github.com/braedonsaunders/ether/internal/plextv"
-	"github.com/braedonsaunders/ether/internal/sessions"
-	tmdbpkg "github.com/braedonsaunders/ether/internal/tmdb"
-	"github.com/braedonsaunders/ether/internal/transcode"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -47,6 +34,21 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/conform"
+	mbconform "github.com/braedonsaunders/ether/internal/conform/mediabrowser"
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
+	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/sessions"
+	tmdbpkg "github.com/braedonsaunders/ether/internal/tmdb"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // Run: LAB_ENV=/path/to/lab.env LAB_JELLYFIN_URL=http://host:8096 LAB_EMBY_URL=http://host:8097/emby go test -tags plexparity,conformlab ./internal/app -run TestMediaBrowserLabConformance -count=1 -v
@@ -568,7 +570,7 @@ func labMediaFromItem(kind, itemPath string, tmdb int64, season, episode int) (l
 func probeLabFile(path string) (*core.MediaInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "-i", path).Output()
+	out, err := mediaproc.CommandContext(ctx, 2*time.Minute, "ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "-i", path).Output()
 	if err != nil {
 		return nil, err
 	}
@@ -735,7 +737,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		mediaArgs = append(mediaArgs, "-metadata:s:a:0", "title="+options[0].AudioTitle)
 	}
 	mediaArgs = append(mediaArgs, "-movflags", "+faststart", filepath.Join(dir, "parity.mp4"))
-	makeMedia := exec.Command(ffmpeg, mediaArgs...)
+	makeMedia := mediaproc.CommandContext(context.Background(), 2*time.Minute, ffmpeg, mediaArgs...)
 	if output, e := makeMedia.CombinedOutput(); e != nil {
 		t.Fatalf("generate fixture media: %v: %s", e, output)
 	}

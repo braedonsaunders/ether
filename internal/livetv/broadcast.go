@@ -699,9 +699,11 @@ func (b *broadcast) step(now time.Time) bool {
 		b.closeInput(b.current)
 		b.current = nil
 	}
-	// Wait for an active decoder during a burst, but let an exhausted file's
-	// final picture bridge a rounded duration to the next scheduled cut.
-	if b.bursting && frame.Video == nil && !introActive && b.current != nil {
+	// Ahead-of-clock production may wait for its input. A due tick must keep
+	// the live fallback flowing even when resolution has not produced a frame;
+	// otherwise a missing source can prevent an opening segment from finishing.
+	// An exhausted file's final picture still bridges its rounded slot duration.
+	if b.bursting && now.After(time.Now()) && frame.Video == nil && !introActive && b.current != nil {
 		return false
 	}
 	if frame.Video == nil && !introActive && !b.freshAt.IsZero() && now.Sub(b.freshAt) < broadcastStall {
@@ -730,7 +732,7 @@ func (b *broadcast) step(now time.Time) bool {
 			default:
 			}
 		}
-		if b.bursting && frame.Video == nil {
+		if b.bursting && now.After(time.Now()) && frame.Video == nil {
 			return false
 		}
 		if frame.Video == nil {

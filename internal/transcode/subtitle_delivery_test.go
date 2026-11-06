@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // The two ways a converted stream shows an embedded text subtitle (#191):
@@ -72,7 +72,7 @@ func TestIntegrationMatroskaSegmentsCarryThePickedTextTrack(t *testing.T) {
 		}
 		_ = hs.Close()
 		path := e.writeTemp(t, "picked-"+c.codec+".mkv", data)
-		out, err := exec.Command(e.ffprobe, "-v", "error", "-print_format", "json", "-select_streams", "s",
+		out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-print_format", "json", "-select_streams", "s",
 			"-show_entries", "stream=codec_name,extradata_size:stream_disposition=default:stream_tags=language:packet=pts_time", path).Output()
 		if err != nil {
 			t.Fatalf("ffprobe: %v", err)
@@ -117,7 +117,7 @@ func TestIntegrationBurnedTextSubtitleRenders(t *testing.T) {
 	src := filepath.Join(e.dir, "subtitled.mkv")
 	// libass draws nothing without a font (a host with no fontconfig
 	// configuration or fonts): that is the host, not this path.
-	probe, _ := exec.Command(e.ffmpeg, "-hide_banner", "-v", "verbose", "-i", src, "-filter_complex",
+	probe, _ := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-v", "verbose", "-i", src, "-filter_complex",
 		"[0:0]subtitles=filename="+escapeFilterValue(src)+":si=1[v]", "-map", "[v]", "-ss", "2", "-frames:v", "1", "-f", "null", "-").CombinedOutput()
 	if bytes.Contains(probe, []byte("failed to find any fallback")) {
 		t.Skip("libass finds no font on this host")
@@ -126,7 +126,7 @@ func TestIntegrationBurnedTextSubtitleRenders(t *testing.T) {
 		t.Helper()
 		// Decoded from the start (output -ss): seeking an MPEG-TS input
 		// can land on a later keyframe.
-		out, err := exec.Command(e.ffmpeg, "-v", "error", "-i", path, "-ss", strconv.FormatFloat(at, 'f', 3, 64),
+		out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-i", path, "-ss", strconv.FormatFloat(at, 'f', 3, 64),
 			"-frames:v", "1", "-vf", "crop=640:100:0:260,format=gray", "-f", "rawvideo", "-").Output()
 		if err != nil || len(out) != 640*100 {
 			t.Fatalf("frame of %s at %.1f: %v (%d bytes)", filepath.Base(path), at, err, len(out))

@@ -78,7 +78,7 @@ func TestGoldenAndDeterminism(t *testing.T) {
 					}
 					name := filepath.Join("testdata", fmt.Sprintf("%s-%s-%.1f.json", family, moment, at))
 					got := compact(im)
-					if os.Getenv("UPDATE_GOLDEN") == "1" {
+					if os.Getenv("UPDATE_GOLDEN") == "1" || (os.Getenv("UPDATE_MISSING_GOLDEN") == "1" && func() bool { _, err := os.Stat(name); return os.IsNotExist(err) }()) {
 						data, err := json.Marshal(got)
 						if err != nil {
 							t.Fatal(err)

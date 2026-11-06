@@ -55,7 +55,8 @@
           },
           "stroke": "{accent}",
           "strokeWidth": 1,
-          "path": "M 30 0 H 1220 Q 1250 0 1250 30 V 120 Q 1250 150 1220 150 H 30 Q 0 150 0 120 V 30 Q 0 0 30 0 Z"
+          "path": "M 30 0 H 1220 Q 1250 0 1250 30 V 120 Q 1250 150 1220 150 H 30 Q 0 150 0 120 V 30 Q 0 0 30 0 Z",
+          "name": "Panel"
         },
         {
           "id": "kicker",
@@ -84,152 +85,172 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Kicker"
         },
         {
-          "id": "Title-weight0",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 158.2,
-          "y": 880,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
+          "id": "Title-group",
+          "name": "Channel title",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-treatment",
+              "name": "Chrome title",
+              "type": "group",
+              "layers": [
+                {
+                  "id": "Title-weight0",
+                  "type": "text",
+                  "text": "{now.title}",
+                  "x": 158.2,
+                  "y": 880,
+                  "size": 60,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1140,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Chrome layer 1"
+                },
+                {
+                  "id": "Title-weight1",
+                  "type": "text",
+                  "text": "{now.title}",
+                  "x": 161.8,
+                  "y": 880,
+                  "size": 60,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1140,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Chrome layer 2"
+                },
+                {
+                  "id": "Title-weight2",
+                  "type": "text",
+                  "text": "{now.title}",
+                  "x": 160,
+                  "y": 878.2,
+                  "size": 60,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1140,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Chrome layer 3"
+                },
+                {
+                  "id": "Title-weight3",
+                  "type": "text",
+                  "text": "{now.title}",
+                  "x": 160,
+                  "y": 881.8,
+                  "size": 60,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1140,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Chrome layer 4"
+                },
+                {
+                  "id": "Title",
+                  "type": "text",
+                  "text": "{now.title}",
+                  "x": 160,
+                  "y": 880,
+                  "size": 60,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1140,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Chrome layer 5"
+                }
               ]
-            ]
-          }
-        },
-        {
-          "id": "Title-weight1",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 161.8,
-          "y": 880,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-weight2",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 160,
-          "y": 878.2,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-weight3",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 160,
-          "y": 881.8,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 160,
-          "y": 880,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
+            }
+          ]
         },
         {
           "id": "next",
@@ -258,9 +279,11 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Next"
         }
-      ]
+      ],
+      "name": "Lowerthird envelope"
     }
   ],
   "post": [],

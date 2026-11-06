@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -11,10 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -30,7 +33,7 @@ func TestH264ProfileDecisionMatchesFirstSegmentSPS(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source.mp4")
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=size=3840x2160:rate=30", "-f", "lavfi", "-i", "anullsrc=channel_layout=5.1:sample_rate=48000", "-t", "0.5", "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "pools=1:frame-threads=1:log-level=error", "-c:a", "ac3", "-b:a", "384k", source}
-	if out, err := exec.Command(ff, args...).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(context.Background(), 2*time.Minute, ff, args...).CombinedOutput(); err != nil {
 		t.Fatalf("source: %v: %s", err, out)
 	}
 	server := httptest.NewServer(http.FileServer(http.Dir(dir)))
@@ -64,7 +67,7 @@ func TestH264ProfileDecisionMatchesFirstSegmentSPS(t *testing.T) {
 	if err := os.WriteFile(segment, w.Body.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile,level,width,height", "-of", "json", segment).Output()
+	out, err := mediaproc.CommandContext(context.Background(), 2*time.Minute, fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile,level,width,height", "-of", "json", segment).Output()
 	if err != nil {
 		t.Fatal(err)
 	}

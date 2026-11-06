@@ -1,0 +1,40 @@
+[
+  {
+    "id": "detail1",
+    "label": "Highlight colour",
+    "kind": "color",
+    "value": "#edbf78",
+    "group": "Artwork"
+  },
+  {
+    "id": "detail2",
+    "label": "Shadow colour",
+    "kind": "color",
+    "value": "#50656b",
+    "group": "Artwork"
+  },
+  {
+    "id": "detail3",
+    "label": "Detail colour",
+    "kind": "color",
+    "value": "#121b2b",
+    "group": "Artwork"
+  },
+  {
+    "id": "detail4",
+    "label": "Secondary colour",
+    "kind": "color",
+    "value": "#152443",
+    "group": "Artwork"
+  },
+  {
+    "id": "effect-vignette",
+    "label": "Vignette",
+    "kind": "number",
+    "value": 0.45,
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "group": "Texture"
+  }
+]

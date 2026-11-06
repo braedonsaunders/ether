@@ -11,7 +11,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "aurora0",
@@ -49,7 +50,8 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 1"
     },
     {
       "id": "aurora1",
@@ -87,7 +89,8 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 2"
     },
     {
       "id": "aurora2",
@@ -125,67 +128,87 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 3"
     },
     {
-      "id": "Title-weight0",
-      "type": "text",
-      "text": "Back in a moment",
-      "x": 138.2,
-      "y": 200,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "Title-weight1",
-      "type": "text",
-      "text": "Back in a moment",
-      "x": 141.8,
-      "y": 200,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "Title-weight2",
-      "type": "text",
-      "text": "Back in a moment",
-      "x": 140,
-      "y": 198.2,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "Title-weight3",
-      "type": "text",
-      "text": "Back in a moment",
-      "x": 140,
-      "y": 201.8,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "Title",
-      "type": "text",
-      "text": "Back in a moment",
-      "x": 140,
-      "y": 200,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
+      "id": "Title-group",
+      "name": "Channel title",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title-treatment",
+          "name": "Channel title effect",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-weight0",
+              "type": "text",
+              "text": "Back in a moment",
+              "x": 138.2,
+              "y": 200,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Lettering layer 1"
+            },
+            {
+              "id": "Title-weight1",
+              "type": "text",
+              "text": "Back in a moment",
+              "x": 141.8,
+              "y": 200,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Lettering layer 2"
+            },
+            {
+              "id": "Title-weight2",
+              "type": "text",
+              "text": "Back in a moment",
+              "x": 140,
+              "y": 198.2,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Lettering layer 3"
+            },
+            {
+              "id": "Title-weight3",
+              "type": "text",
+              "text": "Back in a moment",
+              "x": 140,
+              "y": 201.8,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Lettering layer 4"
+            },
+            {
+              "id": "Title",
+              "type": "text",
+              "text": "Back in a moment",
+              "x": 140,
+              "y": 200,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Lettering layer 5"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "subtitle",
@@ -197,7 +220,8 @@
       "font": "{type.mono}",
       "fill": "{text}",
       "maxWidth": 1600,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Subtitle"
     },
     {
       "id": "art-illustration",
@@ -223,14 +247,15 @@
             "stops": [
               [
                 0,
-                "#152443"
+                "{control.detail1}"
               ],
               [
                 1,
-                "#bd794f"
+                "{control.detail2}"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art-moon",
@@ -239,29 +264,34 @@
           "y": 78.0,
           "w": 86.4,
           "h": 86.4,
-          "fill": "#efdbaa"
+          "fill": "{control.detail3}",
+          "name": "Moon"
         },
         {
           "id": "art-ridge0",
           "type": "path",
           "path": "M 0 338.0 L 108.0 195.0 L 189.0 325.0 L 351.0 175.5 L 540 312.0 L 540 650 L 0 650 Z",
-          "fill": "#384762"
+          "fill": "{control.detail4}",
+          "name": "Ridge 1"
         },
         {
           "id": "art-ridge1",
           "type": "path",
           "path": "M 0 416.0 L 108.0 299.0 L 189.0 390.0 L 351.0 286.00000000000006 L 540 377.0 L 540 650 L 0 650 Z",
-          "fill": "#293248"
+          "fill": "#293248",
+          "name": "Ridge 2"
         },
         {
           "id": "art-ridge2",
           "type": "path",
           "path": "M 0 494.0 L 108.0 403.0 L 189.0 454.99999999999994 L 351.0 396.50000000000006 L 540 441.99999999999994 L 540 650 L 0 650 Z",
-          "fill": "#172139"
+          "fill": "#172139",
+          "name": "Ridge 3"
         }
       ],
       "scaleX": 1.962962962962963,
-      "scaleY": 0.9230769230769231
+      "scaleY": 0.9230769230769231,
+      "name": "Illustration"
     },
     {
       "id": "trailer-frame",
@@ -272,7 +302,8 @@
       "h": 600,
       "fill": "{text}@0.06",
       "stroke": "{text}@0.16",
-      "strokeWidth": 2
+      "strokeWidth": 2,
+      "name": "Trailer frame"
     },
     {
       "id": "tag",
@@ -284,72 +315,92 @@
       "font": "{type.mono}",
       "fill": "{accent}",
       "maxWidth": 520,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Tag"
     },
     {
-      "id": "promo-weight0",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 1268.2,
-      "y": 570,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 520,
-      "fit": "wrap",
-      "maxLines": 3
-    },
-    {
-      "id": "promo-weight1",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 1271.8,
-      "y": 570,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 520,
-      "fit": "wrap",
-      "maxLines": 3
-    },
-    {
-      "id": "promo-weight2",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 1270,
-      "y": 568.2,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 520,
-      "fit": "wrap",
-      "maxLines": 3
-    },
-    {
-      "id": "promo-weight3",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 1270,
-      "y": 571.8,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 520,
-      "fit": "wrap",
-      "maxLines": 3
-    },
-    {
-      "id": "promo",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 1270,
-      "y": 570,
-      "size": 84,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "maxWidth": 520,
-      "fit": "wrap",
-      "maxLines": 3
+      "id": "promo-group",
+      "name": "Promo",
+      "type": "group",
+      "layers": [
+        {
+          "id": "promo-treatment",
+          "name": "Promo effect",
+          "type": "group",
+          "layers": [
+            {
+              "id": "promo-weight0",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 1268.2,
+              "y": 570,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 520,
+              "fit": "wrap",
+              "maxLines": 3,
+              "name": "Lettering layer 1"
+            },
+            {
+              "id": "promo-weight1",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 1271.8,
+              "y": 570,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 520,
+              "fit": "wrap",
+              "maxLines": 3,
+              "name": "Lettering layer 2"
+            },
+            {
+              "id": "promo-weight2",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 1270,
+              "y": 568.2,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 520,
+              "fit": "wrap",
+              "maxLines": 3,
+              "name": "Lettering layer 3"
+            },
+            {
+              "id": "promo-weight3",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 1270,
+              "y": 571.8,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 520,
+              "fit": "wrap",
+              "maxLines": 3,
+              "name": "Lettering layer 4"
+            },
+            {
+              "id": "promo",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 1270,
+              "y": 570,
+              "size": 84,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "maxWidth": 520,
+              "fit": "wrap",
+              "maxLines": 3,
+              "name": "Lettering layer 5"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "reason",
@@ -362,7 +413,8 @@
       "fill": "{text}",
       "maxWidth": 520,
       "fit": "wrap",
-      "maxLines": 2
+      "maxLines": 2,
+      "name": "Reason"
     },
     {
       "id": "progress",
@@ -371,7 +423,8 @@
       "y": 900,
       "w": 980,
       "h": 5,
-      "fill": "#ffffff@0.2"
+      "fill": "#ffffff@0.2",
+      "name": "Progress"
     },
     {
       "id": "elapsed",
@@ -391,7 +444,8 @@
         ]
       },
       "h": 5,
-      "fill": "#ffffff"
+      "fill": "#ffffff",
+      "name": "Elapsed"
     }
   ],
   "post": [

@@ -21,11 +21,12 @@
           "size": 48,
           "weight": 600,
           "track": 2,
-          "fill": "#000000",
+          "fill": "{control.detail1}",
           "maxWidth": 288,
           "fit": "shrink",
           "glow": 0,
-          "blur": 2
+          "blur": 2,
+          "name": "Bug shadow"
         },
         {
           "id": "Title",
@@ -37,12 +38,14 @@
           "size": 48,
           "weight": 600,
           "track": 2,
-          "fill": "#eeeeee",
+          "fill": "{control.detail2}",
           "maxWidth": 288,
           "fit": "shrink",
-          "glow": 2
+          "glow": 2,
+          "name": "Channel title"
         }
-      ]
+      ],
+      "name": "Station bug"
     }
   ],
   "post": [],

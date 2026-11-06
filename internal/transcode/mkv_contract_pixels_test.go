@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // sdrBars is an 8-bit BT.709 SDR fixture with exact limited-range luma:
@@ -35,7 +35,7 @@ type frameFormat struct {
 
 func (e *realEnv) frameFormats(t *testing.T, file string) []frameFormat {
 	t.Helper()
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
 		"frame=width,height,pix_fmt,sample_aspect_ratio,color_range,color_transfer,color_primaries,best_effort_timestamp_time",
 		"-of", "json", file).Output()
 	if err != nil {
@@ -54,7 +54,7 @@ func (e *realEnv) frameFormats(t *testing.T, file string) []frameFormat {
 // Cr at (x, y).
 func (e *realEnv) pixel(t *testing.T, file string, at float64, x, y int) (int, int, int) {
 	t.Helper()
-	out, err := exec.Command(e.ffmpeg, "-v", "error", "-i", file, "-map", "0:v:0",
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-i", file, "-map", "0:v:0",
 		"-vf", "select='gte(t\\,"+strconv.FormatFloat(at, 'f', 3, 64)+")'", "-frames:v", "1",
 		"-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-").Output()
 	if err != nil {
@@ -144,7 +144,7 @@ func (e *realEnv) playStatic(t *testing.T, name, original string, swaps []contra
 	}
 	hw = append(hw, hs.(*Session).HWAccelerated())
 	path := e.writeTemp(t, name+"-static.mkv", joined)
-	if out, err := exec.Command(e.ffmpeg, "-v", "error", "-xerror", "-i", path, "-map", "0:v", "-f", "null", "-").CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-xerror", "-i", path, "-map", "0:v", "-f", "null", "-").CombinedOutput(); err != nil {
 		t.Fatalf("original header + replacement clusters: %v\n%s", err, out)
 	}
 	return path, copied, hw
@@ -233,7 +233,7 @@ func testContractSDRIntoHDR10(t *testing.T, hw bool) {
 		opts = append(opts, WithoutHWDetection())
 	}
 	e := newRealEnv(t, opts...)
-	if out, err := exec.Command(e.ffmpeg, "-hide_banner", "-filters").Output(); err != nil || !strings.Contains(string(out), " zscale ") {
+	if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-hide_banner", "-filters").Output(); err != nil || !strings.Contains(string(out), " zscale ") {
 		t.Skip("ffmpeg without zscale cannot convert SDR to PQ (the bundled jellyfin-ffmpeg has it)")
 	}
 	// FFmpeg 8 takes encoder colour from the frames: tag them, and the

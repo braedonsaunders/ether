@@ -11,7 +11,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "Accent-plane",
@@ -21,7 +22,8 @@
       "w": 1150,
       "h": 1400,
       "fill": "{accent}",
-      "rotate": 32
+      "rotate": "{control.rotate}",
+      "name": "Accent plane"
     },
     {
       "id": "Rule",
@@ -30,7 +32,8 @@
       "y": 210,
       "w": 110,
       "h": 14,
-      "fill": "{glow}"
+      "fill": "{glow}",
+      "name": "Rule"
     },
     {
       "id": "Edition",
@@ -38,18 +41,20 @@
       "text": "THE 2010s / DAILY EDITION",
       "x": 120,
       "y": 160,
-      "size": 30,
+      "size": "{control.size}",
       "font": "{type.display}",
       "fill": "{text}",
       "fit": "shrink",
       "maxWidth": 1500,
-      "track": 6
+      "track": "{control.track}",
+      "name": "Edition"
     },
     {
       "id": "Long-shadow",
       "type": "path",
       "path": "M 180 400 L 1650 400 L 1920 670 L 1920 1080 L 850 1080 Z",
-      "fill": "#000000@0.16"
+      "fill": "#000000@0.16",
+      "name": "Long shadow"
     },
     {
       "id": "Title",
@@ -95,7 +100,8 @@
             0
           ]
         ]
-      }
+      },
+      "name": "Channel title"
     },
     {
       "id": "Detail",
@@ -108,7 +114,8 @@
       "fill": "{text}",
       "align": "center",
       "maxWidth": 1500,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Detail"
     },
     {
       "id": "Station",
@@ -122,7 +129,8 @@
       "fit": "shrink",
       "maxWidth": 1500,
       "align": "center",
-      "track": 6
+      "track": "{control.track}",
+      "name": "Station"
     }
   ]
 }

@@ -53,9 +53,10 @@
               ]
             ]
           },
-          "stroke": "#1b0b3a",
+          "stroke": "{control.detail1}",
           "strokeWidth": 3,
-          "path": "M 60 0 H 1190 Q 1250 0 1250 60 V 90 Q 1250 150 1190 150 H 60 Q 0 150 0 90 V 60 Q 0 0 60 0 Z"
+          "path": "M 60 0 H 1190 Q 1250 0 1250 60 V 90 Q 1250 150 1190 150 H 60 Q 0 150 0 90 V 60 Q 0 0 60 0 Z",
+          "name": "Panel"
         },
         {
           "id": "kicker",
@@ -84,7 +85,8 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Kicker"
         },
         {
           "id": "Title-shadow",
@@ -94,7 +96,7 @@
           "y": 889,
           "size": 60,
           "font": "{type.display}",
-          "fill": "#1b0b3a",
+          "fill": "{control.detail1}",
           "fit": "shrink",
           "maxWidth": 1140,
           "opacity": {
@@ -113,152 +115,165 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Title shadow"
         },
         {
-          "id": "Title-outline3",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 160,
-          "y": 885,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-outline2",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 160,
-          "y": 875,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-outline1",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 165,
-          "y": 880,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-outline0",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 155,
-          "y": 880,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "#1b0b3a",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title",
-          "type": "text",
-          "text": "{now.title}",
-          "x": 160,
-          "y": 880,
-          "size": 60,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1140,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
+          "id": "Title-treatment",
+          "name": "Title lettering",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-outline3",
+              "type": "text",
+              "text": "{now.title}",
+              "x": 160,
+              "y": 885,
+              "size": 60,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1140,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 4"
+            },
+            {
+              "id": "Title-outline2",
+              "type": "text",
+              "text": "{now.title}",
+              "x": 160,
+              "y": 875,
+              "size": 60,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1140,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 3"
+            },
+            {
+              "id": "Title-outline1",
+              "type": "text",
+              "text": "{now.title}",
+              "x": 165,
+              "y": 880,
+              "size": 60,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1140,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 2"
+            },
+            {
+              "id": "Title-outline0",
+              "type": "text",
+              "text": "{now.title}",
+              "x": 155,
+              "y": 880,
+              "size": 60,
+              "font": "{type.display}",
+              "fill": "{control.detail1}",
+              "fit": "shrink",
+              "maxWidth": 1140,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Title outline 1"
+            },
+            {
+              "id": "Title",
+              "type": "text",
+              "text": "{now.title}",
+              "x": 160,
+              "y": 880,
+              "size": 60,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1140,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Channel title"
+            }
+          ]
         },
         {
           "id": "next",
@@ -287,9 +302,11 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Next"
         }
-      ]
+      ],
+      "name": "Lowerthird envelope"
     }
   ],
   "post": [],

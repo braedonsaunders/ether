@@ -6,6 +6,8 @@ import (
 	"io"
 	"os/exec"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // SpeechWindow is one decoded audio slice used as a timing reference.
@@ -349,7 +351,7 @@ func decodeWindow(ctx context.Context, ffmpeg, input string, r io.ReaderAt, size
 		"-fs", fmt.Sprintf("%d", maxPCM),
 		"-f", "s16le", "pipe:1",
 	)
-	cmd := exec.CommandContext(ctx, ffmpeg, args...)
+	cmd := mediaproc.CommandContext(ctx, mediaproc.ProbeTimeout, ffmpeg, args...)
 	// A blocked source read must not keep Wait (and the speech slot and
 	// source hold) past cancellation: give up on the stdin copy shortly after.
 	cmd.WaitDelay = 2 * time.Second

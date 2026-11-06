@@ -21,14 +21,15 @@
         "stops": [
           [
             0,
-            "#1b0b3a"
+            "{control.detail1}"
           ],
           [
             1,
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Background"
     },
     {
       "id": "stars",
@@ -37,7 +38,8 @@
       "w": 1920,
       "h": 650,
       "fill": "#ffffff@0.8",
-      "seed": 73
+      "seed": 73,
+      "name": "Stars"
     },
     {
       "id": "crescent",
@@ -45,7 +47,8 @@
       "x": 1450,
       "y": 120,
       "path": "M 180 0 A 120 120 0 1 0 180 240 A 105 120 0 0 1 180 0 Z",
-      "fill": "#ffd23f"
+      "fill": "{control.detail3}",
+      "name": "Crescent"
     },
     {
       "id": "confetti",
@@ -54,7 +57,8 @@
       "h": 1080,
       "count": 55,
       "fill": "{glow}",
-      "seed": 17
+      "seed": 17,
+      "name": "Confetti"
     },
     {
       "id": "mascot",
@@ -79,8 +83,9 @@
           "w": 600,
           "h": 350,
           "fill": "{accent}",
-          "stroke": "#1b0b3a",
-          "strokeWidth": 12
+          "stroke": "{control.detail1}",
+          "strokeWidth": 12,
+          "name": "Goo"
         },
         {
           "id": "eye0",
@@ -96,9 +101,10 @@
               "y": -60,
               "w": 100,
               "h": 120,
-              "fill": "#ffffff",
-              "stroke": "#1b0b3a",
-              "strokeWidth": 8
+              "fill": "{control.detail2}",
+              "stroke": "{control.detail1}",
+              "strokeWidth": 8,
+              "name": "White 1"
             },
             {
               "id": "pupil0",
@@ -107,9 +113,11 @@
               "y": -22,
               "w": 40,
               "h": 60,
-              "fill": "#1b0b3a"
+              "fill": "{control.detail1}",
+              "name": "Pupil 1"
             }
-          ]
+          ],
+          "name": "Eye 1"
         },
         {
           "id": "eye1",
@@ -125,9 +133,10 @@
               "y": -60,
               "w": 100,
               "h": 120,
-              "fill": "#ffffff",
-              "stroke": "#1b0b3a",
-              "strokeWidth": 8
+              "fill": "{control.detail2}",
+              "stroke": "{control.detail1}",
+              "strokeWidth": 8,
+              "name": "White 2"
             },
             {
               "id": "pupil1",
@@ -136,19 +145,23 @@
               "y": -22,
               "w": 40,
               "h": 60,
-              "fill": "#1b0b3a"
+              "fill": "{control.detail1}",
+              "name": "Pupil 2"
             }
-          ]
+          ],
+          "name": "Eye 2"
         },
         {
           "id": "smile",
           "type": "path",
           "path": "M -65 30 Q 0 105 65 30",
-          "stroke": "#1b0b3a",
+          "stroke": "{control.detail1}",
           "strokeWidth": 12,
-          "cap": "round"
+          "cap": "round",
+          "name": "Smile"
         }
-      ]
+      ],
+      "name": "Mascot"
     },
     {
       "id": "Title-shadow",
@@ -158,7 +171,7 @@
       "y": 479,
       "size": 100,
       "font": "{type.display}",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1600,
       "align": "center",
@@ -178,307 +191,332 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Title shadow"
     },
     {
-      "id": "Title-outline3",
-      "type": "text",
-      "text": "BLORP! is napping",
-      "x": 1240,
-      "y": 475,
-      "size": 100,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+      "id": "Title-treatment",
+      "name": "Title lettering",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title-outline3",
+          "type": "text",
+          "text": "BLORP! is napping",
+          "x": 1240,
+          "y": 475,
+          "size": 100,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 4"
+        },
+        {
+          "id": "Title-outline2",
+          "type": "text",
+          "text": "BLORP! is napping",
+          "x": 1240,
+          "y": 465,
+          "size": 100,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 3"
+        },
+        {
+          "id": "Title-outline1",
+          "type": "text",
+          "text": "BLORP! is napping",
+          "x": 1245,
+          "y": 470,
+          "size": 100,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 2"
+        },
+        {
+          "id": "Title-outline0",
+          "type": "text",
+          "text": "BLORP! is napping",
+          "x": 1235,
+          "y": 470,
+          "size": 100,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 1"
+        },
+        {
+          "id": "Title",
+          "type": "text",
+          "text": "BLORP! is napping",
+          "x": 1240,
+          "y": 470,
+          "size": 100,
+          "font": "{type.display}",
+          "fill": "{text}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Channel title"
+        }
+      ]
     },
     {
-      "id": "Title-outline2",
-      "type": "text",
-      "text": "BLORP! is napping",
-      "x": 1240,
-      "y": 465,
-      "size": 100,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-outline1",
-      "type": "text",
-      "text": "BLORP! is napping",
-      "x": 1245,
-      "y": 470,
-      "size": 100,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-outline0",
-      "type": "text",
-      "text": "BLORP! is napping",
-      "x": 1235,
-      "y": 470,
-      "size": 100,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title",
-      "type": "text",
-      "text": "BLORP! is napping",
-      "x": 1240,
-      "y": 470,
-      "size": 100,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "subtitle-outline3",
-      "type": "text",
-      "text": "{offair.message}",
-      "x": 1240,
-      "y": 655,
-      "size": 54,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "subtitle-outline2",
-      "type": "text",
-      "text": "{offair.message}",
-      "x": 1240,
-      "y": 645,
-      "size": 54,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "subtitle-outline1",
-      "type": "text",
-      "text": "{offair.message}",
-      "x": 1245,
-      "y": 650,
-      "size": 54,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "subtitle-outline0",
-      "type": "text",
-      "text": "{offair.message}",
-      "x": 1235,
-      "y": 650,
-      "size": 54,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "subtitle",
-      "type": "text",
-      "text": "{offair.message}",
-      "x": 1240,
-      "y": 650,
-      "size": 54,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+      "id": "subtitle-treatment",
+      "name": "Subtitle lettering",
+      "type": "group",
+      "layers": [
+        {
+          "id": "subtitle-outline3",
+          "type": "text",
+          "text": "{offair.message}",
+          "x": 1240,
+          "y": 655,
+          "size": 54,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Subtitle outline 4"
+        },
+        {
+          "id": "subtitle-outline2",
+          "type": "text",
+          "text": "{offair.message}",
+          "x": 1240,
+          "y": 645,
+          "size": 54,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Subtitle outline 3"
+        },
+        {
+          "id": "subtitle-outline1",
+          "type": "text",
+          "text": "{offair.message}",
+          "x": 1245,
+          "y": 650,
+          "size": 54,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Subtitle outline 2"
+        },
+        {
+          "id": "subtitle-outline0",
+          "type": "text",
+          "text": "{offair.message}",
+          "x": 1235,
+          "y": 650,
+          "size": 54,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Subtitle outline 1"
+        },
+        {
+          "id": "subtitle",
+          "type": "text",
+          "text": "{offair.message}",
+          "x": 1240,
+          "y": 650,
+          "size": 54,
+          "font": "{type.display}",
+          "fill": "{text}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Subtitle"
+        }
+      ]
     }
   ],
   "post": [

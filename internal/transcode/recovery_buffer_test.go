@@ -3,12 +3,12 @@ package transcode
 import (
 	"bytes"
 	"context"
-	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func TestRecoveryBufferStopsAtHolesAndRequiresAudio(t *testing.T) {
@@ -181,7 +181,7 @@ func TestIntegrationBufferedRepairHandoff(t *testing.T) {
 	// The Windows null muxer can guess a coarse frame-rate timebase and round
 	// distinct input timestamps to the same output tick. Preserve TS precision
 	// and every decoded frame instead of testing that unrelated conversion.
-	out, err := exec.CommandContext(t.Context(), e.ffmpeg, "-v", "error", "-xerror", "-i", path, "-fps_mode", "passthrough", "-enc_time_base:v", "1:90000", "-f", "null", "-").CombinedOutput()
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-xerror", "-i", path, "-fps_mode", "passthrough", "-enc_time_base:v", "1:90000", "-f", "null", "-").CombinedOutput()
 	if err != nil {
 		t.Fatalf("handoff decode: %v: %s", err, out)
 	}

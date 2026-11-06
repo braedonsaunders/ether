@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // A browser retains the first init while a later encoder replaces the next
@@ -51,7 +51,7 @@ func TestIntegrationFMP4EncodedRestartAudioBoundary(t *testing.T) {
 		if err := os.WriteFile(p, append(append([]byte(nil), init...), seg...), 0600); err != nil {
 			t.Fatal(err)
 		}
-		out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time,duration_time", "-of", "json", p).Output()
+		out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time,duration_time", "-of", "json", p).Output()
 		if err != nil {
 			t.Fatal(err)
 		}

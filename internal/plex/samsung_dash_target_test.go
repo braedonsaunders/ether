@@ -3,9 +3,6 @@ package plex
 import (
 	"context"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/config"
-	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/transcode"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +13,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // Sanitized client profile supplied by the Samsung DU7100 reporter.
@@ -111,7 +113,7 @@ func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
 	dir := t.TempDir()
-	cmd := exec.CommandContext(ctx, ff, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "color=c=blue:s=1920x1080:r=24", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=5.1", "-t", "8", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-g", "24", "-c:a", "eac3", "-b:a", "640k", filepath.Join(dir, "source.mkv"))
+	cmd := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "color=c=blue:s=1920x1080:r=24", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=5.1", "-t", "8", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-g", "24", "-c:a", "eac3", "-b:a", "640k", filepath.Join(dir, "source.mkv"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v %s", err, out)
 	}
@@ -156,11 +158,11 @@ func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string) {
 		if err := os.WriteFile(name, append(init.Body.Bytes(), seg.Body.Bytes()...), 0600); err != nil {
 			t.Fatal(err)
 		}
-		out, err := exec.CommandContext(ctx, fp, "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", name).CombinedOutput()
+		out, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", name).CombinedOutput()
 		if err != nil || strings.TrimSpace(string(out)) != want {
 			t.Fatalf("rep%d codec want%s got%s err%v", rep, want, out, err)
 		}
-		out, err = exec.CommandContext(ctx, ff, "-v", "error", "-nostdin", "-threads", "1", "-i", name, "-f", "null", "-").CombinedOutput()
+		out, err = mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-nostdin", "-threads", "1", "-i", name, "-f", "null", "-").CombinedOutput()
 		if err != nil {
 			t.Fatalf("rep%d decode: %v %s", rep, err, out)
 		}

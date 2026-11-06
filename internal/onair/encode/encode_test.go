@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // A real subprocess that never reads input exercises cancellation of a blocked
@@ -62,7 +64,7 @@ func TestLongPluginMasterKeepsDeclaredDuration(t *testing.T) {
 	if err := WithOptions(ctx, ff, func(int) *image.RGBA { return still }, 120*30, 30, "", out, Options{Workers: 1, Width: 64, Height: 36, MaxSeconds: 600}); err != nil {
 		t.Fatal(err)
 	}
-	b, err := exec.CommandContext(ctx, fp, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", out).Output()
+	b, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", out).Output()
 	if err != nil {
 		t.Fatal(err)
 	}

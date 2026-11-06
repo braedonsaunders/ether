@@ -1,0 +1,26 @@
+[
+  {
+    "id": "detail1",
+    "label": "Highlight colour",
+    "kind": "color",
+    "value": "#24112f",
+    "group": "Artwork"
+  },
+  {
+    "id": "detail2",
+    "label": "Shadow colour",
+    "kind": "color",
+    "value": "#ffffff",
+    "group": "Artwork"
+  },
+  {
+    "id": "effect-grain",
+    "label": "Grain",
+    "kind": "number",
+    "value": 0.18,
+    "min": 0,
+    "max": 1,
+    "step": 0.01,
+    "group": "Texture"
+  }
+]

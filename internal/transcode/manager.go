@@ -1130,6 +1130,8 @@ func (m *Manager) subtitleSlots() chan struct{} {
 }
 
 func (m *Manager) streamSubtitle(ctx context.Context, args []string, w io.Writer) error {
+	ctx, cancel := context.WithTimeout(ctx, maxProcessLifetime)
+	defer cancel()
 	var stderr tailWriter
 	if err := m.runner.Run(ctx, Command{Path: m.ffmpeg, Args: args, Stdout: w, Stderr: &stderr}); err != nil {
 		if ctx.Err() != nil {
@@ -1153,6 +1155,8 @@ func (c *byteCounter) Write(b []byte) (int, error) {
 }
 
 func (m *Manager) extractSubtitle(ctx context.Context, inputURL string, streamIndex int, w io.Writer) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
 	var stderr tailWriter
 	err := m.runner.Run(ctx, Command{Path: m.ffmpeg, Args: subtitleArgs(inputURL, streamIndex), Stdout: w, Stderr: &stderr})
 	if err != nil {

@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Converter probes a source clip and converts it for direct play.
@@ -340,7 +340,7 @@ func (f FFmpeg) Thumbnail(ctx context.Context, in, out string, at time.Duration)
 }
 
 func run(ctx context.Context, bin string, args []string) error {
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 4096}
 	if err := cmd.Run(); err != nil {

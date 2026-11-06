@@ -47,7 +47,7 @@ func staticPluginScene(doc scene.Document) bool {
 			default:
 				return false
 			}
-			if len(layer.Behave) > 0 || layer.Reveal != nil {
+			if len(layer.Behave) > 0 || layer.Reveal != nil || layer.Start > 0 || layer.End > 0 {
 				return false
 			}
 			value := reflect.ValueOf(layer)

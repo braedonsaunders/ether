@@ -20,6 +20,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
@@ -102,7 +103,7 @@ func TestLazyHLSUsesResolvedSourceAndRealSegments(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "source.mp4")
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=size=320x180:rate=24", "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", path}
-	if output, err := exec.CommandContext(ctx, ff, args...).CombinedOutput(); err != nil {
+	if output, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, args...).CombinedOutput(); err != nil {
 		t.Fatalf("generate fixture: %v: %s", err, output)
 	}
 	bytes, err := os.ReadFile(path)
@@ -189,7 +190,7 @@ func TestLazyHLSUsesResolvedSourceAndRealSegments(t *testing.T) {
 	if err := os.WriteFile(segmentPath, segment.Body.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.CommandContext(ctx, ff, "-hide_banner", "-loglevel", "error", "-xerror", "-i", segmentPath, "-f", "null", "-").CombinedOutput(); err != nil {
+	if output, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-hide_banner", "-loglevel", "error", "-xerror", "-i", segmentPath, "-f", "null", "-").CombinedOutput(); err != nil {
 		t.Fatalf("decode segment: %v: %s", err, output)
 	}
 	sources := h.m.Sessions()

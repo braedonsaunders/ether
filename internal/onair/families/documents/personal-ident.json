@@ -37,7 +37,8 @@
           "y": 0,
           "w": 1920,
           "h": 1080,
-          "fill": "{bg}"
+          "fill": "{bg}",
+          "name": "Background"
         },
         {
           "id": "aurora0",
@@ -75,7 +76,8 @@
               ]
             ]
           },
-          "blend": "screen"
+          "blend": "screen",
+          "name": "Aurora 1"
         },
         {
           "id": "aurora1",
@@ -113,7 +115,8 @@
               ]
             ]
           },
-          "blend": "screen"
+          "blend": "screen",
+          "name": "Aurora 2"
         },
         {
           "id": "aurora2",
@@ -151,7 +154,8 @@
               ]
             ]
           },
-          "blend": "screen"
+          "blend": "screen",
+          "name": "Aurora 3"
         },
         {
           "id": "monogram",
@@ -176,452 +180,510 @@
               ]
             ]
           },
-          "path": "M 30 0 H 160 Q 190 0 190 30 V 160 Q 190 190 160 190 H 30 Q 0 190 0 160 V 30 Q 0 0 30 0 Z"
+          "path": "M 30 0 H 160 Q 190 0 190 30 V 160 Q 190 190 160 190 H 30 Q 0 190 0 160 V 30 Q 0 0 30 0 Z",
+          "name": "Monogram"
         },
         {
-          "id": "tv-weight0",
-          "type": "text",
-          "text": "TV",
-          "x": 273.2,
-          "y": 462,
-          "size": 74,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
+          "id": "tv-group",
+          "name": "Tv",
+          "type": "group",
+          "layers": [
+            {
+              "id": "tv-treatment",
+              "name": "Tv effect",
+              "type": "group",
+              "layers": [
+                {
+                  "id": "tv-weight0",
+                  "type": "text",
+                  "text": "TV",
+                  "x": 273.2,
+                  "y": 462,
+                  "size": 74,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "align": "center",
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 1"
+                },
+                {
+                  "id": "tv-weight1",
+                  "type": "text",
+                  "text": "TV",
+                  "x": 276.8,
+                  "y": 462,
+                  "size": 74,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "align": "center",
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 2"
+                },
+                {
+                  "id": "tv-weight2",
+                  "type": "text",
+                  "text": "TV",
+                  "x": 275,
+                  "y": 460.2,
+                  "size": 74,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "align": "center",
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 3"
+                },
+                {
+                  "id": "tv-weight3",
+                  "type": "text",
+                  "text": "TV",
+                  "x": 275,
+                  "y": 463.8,
+                  "size": 74,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "align": "center",
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 4"
+                },
+                {
+                  "id": "tv",
+                  "type": "text",
+                  "text": "TV",
+                  "x": 275,
+                  "y": 462,
+                  "size": 74,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "align": "center",
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 5"
+                }
               ]
-            ]
-          }
+            }
+          ]
         },
         {
-          "id": "tv-weight1",
-          "type": "text",
-          "text": "TV",
-          "x": 276.8,
-          "y": 462,
-          "size": 74,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
+          "id": "Title-group",
+          "name": "Channel title",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-treatment",
+              "name": "Channel title effect",
+              "type": "group",
+              "layers": [
+                {
+                  "id": "Title-weight0",
+                  "type": "text",
+                  "text": "{viewer.name} TV",
+                  "x": 428.2,
+                  "y": 480,
+                  "size": 150,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "maxLines": 1,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 1"
+                },
+                {
+                  "id": "Title-weight1",
+                  "type": "text",
+                  "text": "{viewer.name} TV",
+                  "x": 431.8,
+                  "y": 480,
+                  "size": 150,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "maxLines": 1,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 2"
+                },
+                {
+                  "id": "Title-weight2",
+                  "type": "text",
+                  "text": "{viewer.name} TV",
+                  "x": 430,
+                  "y": 478.2,
+                  "size": 150,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "maxLines": 1,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 3"
+                },
+                {
+                  "id": "Title-weight3",
+                  "type": "text",
+                  "text": "{viewer.name} TV",
+                  "x": 430,
+                  "y": 481.8,
+                  "size": 150,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "maxLines": 1,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 4"
+                },
+                {
+                  "id": "Title",
+                  "type": "text",
+                  "text": "{viewer.name} TV",
+                  "x": 430,
+                  "y": 480,
+                  "size": 150,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "maxLines": 1,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 5"
+                }
               ]
-            ]
-          }
+            }
+          ]
         },
         {
-          "id": "tv-weight2",
-          "type": "text",
-          "text": "TV",
-          "x": 275,
-          "y": 460.2,
-          "size": 74,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
+          "id": "Greeting-group",
+          "name": "Greeting",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Greeting-treatment",
+              "name": "Greeting effect",
+              "type": "group",
+              "layers": [
+                {
+                  "id": "Greeting-weight0",
+                  "type": "text",
+                  "text": "{viewer.greeting}, {viewer.name}.",
+                  "x": 178.2,
+                  "y": 700,
+                  "size": 64,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 1"
+                },
+                {
+                  "id": "Greeting-weight1",
+                  "type": "text",
+                  "text": "{viewer.greeting}, {viewer.name}.",
+                  "x": 181.8,
+                  "y": 700,
+                  "size": 64,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 2"
+                },
+                {
+                  "id": "Greeting-weight2",
+                  "type": "text",
+                  "text": "{viewer.greeting}, {viewer.name}.",
+                  "x": 180,
+                  "y": 698.2,
+                  "size": 64,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 3"
+                },
+                {
+                  "id": "Greeting-weight3",
+                  "type": "text",
+                  "text": "{viewer.greeting}, {viewer.name}.",
+                  "x": 180,
+                  "y": 701.8,
+                  "size": 64,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 4"
+                },
+                {
+                  "id": "Greeting",
+                  "type": "text",
+                  "text": "{viewer.greeting}, {viewer.name}.",
+                  "x": 180,
+                  "y": 700,
+                  "size": 64,
+                  "font": "{type.display}",
+                  "fill": "{text}",
+                  "fit": "shrink",
+                  "maxWidth": 1600,
+                  "opacity": {
+                    "keys": [
+                      [
+                        0,
+                        0
+                      ],
+                      [
+                        0.4,
+                        0
+                      ],
+                      [
+                        1.8,
+                        1,
+                        "out"
+                      ]
+                    ]
+                  },
+                  "name": "Lettering layer 5"
+                }
               ]
-            ]
-          }
-        },
-        {
-          "id": "tv-weight3",
-          "type": "text",
-          "text": "TV",
-          "x": 275,
-          "y": 463.8,
-          "size": 74,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "tv",
-          "type": "text",
-          "text": "TV",
-          "x": 275,
-          "y": 462,
-          "size": 74,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "align": "center",
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-weight0",
-          "type": "text",
-          "text": "{viewer.name} TV",
-          "x": 428.2,
-          "y": 480,
-          "size": 150,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "maxLines": 1,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-weight1",
-          "type": "text",
-          "text": "{viewer.name} TV",
-          "x": 431.8,
-          "y": 480,
-          "size": 150,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "maxLines": 1,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-weight2",
-          "type": "text",
-          "text": "{viewer.name} TV",
-          "x": 430,
-          "y": 478.2,
-          "size": 150,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "maxLines": 1,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title-weight3",
-          "type": "text",
-          "text": "{viewer.name} TV",
-          "x": 430,
-          "y": 481.8,
-          "size": 150,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "maxLines": 1,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Title",
-          "type": "text",
-          "text": "{viewer.name} TV",
-          "x": 430,
-          "y": 480,
-          "size": 150,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "maxLines": 1,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Greeting-weight0",
-          "type": "text",
-          "text": "{viewer.greeting}, {viewer.name}.",
-          "x": 178.2,
-          "y": 700,
-          "size": 64,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Greeting-weight1",
-          "type": "text",
-          "text": "{viewer.greeting}, {viewer.name}.",
-          "x": 181.8,
-          "y": 700,
-          "size": 64,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Greeting-weight2",
-          "type": "text",
-          "text": "{viewer.greeting}, {viewer.name}.",
-          "x": 180,
-          "y": 698.2,
-          "size": 64,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Greeting-weight3",
-          "type": "text",
-          "text": "{viewer.greeting}, {viewer.name}.",
-          "x": 180,
-          "y": 701.8,
-          "size": 64,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
-        },
-        {
-          "id": "Greeting",
-          "type": "text",
-          "text": "{viewer.greeting}, {viewer.name}.",
-          "x": 180,
-          "y": 700,
-          "size": 64,
-          "font": "{type.display}",
-          "fill": "{text}",
-          "fit": "shrink",
-          "maxWidth": 1600,
-          "opacity": {
-            "keys": [
-              [
-                0,
-                0
-              ],
-              [
-                0.4,
-                0
-              ],
-              [
-                1.8,
-                1,
-                "out"
-              ]
-            ]
-          }
+            }
+          ]
         },
         {
           "id": "Tagline",
@@ -650,9 +712,11 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Tagline"
         }
-      ]
+      ],
+      "name": "Scene entrance and exit"
     }
   ],
   "post": [

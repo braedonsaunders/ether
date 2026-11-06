@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // The held middle phase represents a ten-second source outage. The switcher's
@@ -69,7 +69,7 @@ func TestContinuousPlayout(t *testing.T) {
 		if err := os.WriteFile(path, b, 0600); err != nil {
 			t.Fatal(err)
 		}
-		cmd := exec.CommandContext(ctx, e.ffmpeg, "-hide_banner", "-loglevel", "error", "-xerror", "-i", path, "-t", "12", "-f", "null", "-")
+		cmd := mediaproc.CommandContext(ctx, 2*time.Minute, e.ffmpeg, "-hide_banner", "-loglevel", "error", "-xerror", "-i", path, "-t", "12", "-f", "null", "-")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("decode %s: %v %s manifest=%s", name, err, out, b)
 		}
@@ -89,7 +89,7 @@ func TestContinuousPlayout(t *testing.T) {
 	if err := os.WriteFile(path, capture, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.CommandContext(ctx, e.ffmpeg, "-v", "error", "-xerror", "-i", path, "-f", "null", "-").CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, e.ffmpeg, "-v", "error", "-xerror", "-i", path, "-f", "null", "-").CombinedOutput(); err != nil {
 		t.Fatalf("fMP4 decode: %v %s", err, out)
 	}
 	segments := runner.Segments().Since(-1, 100)
@@ -112,7 +112,7 @@ func TestContinuousPlayout(t *testing.T) {
 	last[1] = math.Inf(-1)
 	for n := 0; n < 5; n++ {
 		path := filepath.Join(enc.dir, fmt.Sprintf("seg-%09d.ts", n))
-		out, err := exec.CommandContext(ctx, e.ffprobe, "-v", "error", "-show_streams", "-show_packets", "-of", "json", path).Output()
+		out, err := mediaproc.CommandContext(ctx, 2*time.Minute, e.ffprobe, "-v", "error", "-show_streams", "-show_packets", "-of", "json", path).Output()
 		if err != nil {
 			t.Fatal(err)
 		}

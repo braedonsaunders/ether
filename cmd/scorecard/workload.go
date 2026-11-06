@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -22,6 +21,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 type workloadTarget struct {
@@ -299,7 +300,7 @@ func decodeDuration(ctx context.Context, ffmpeg, path string) (int64, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror", "-i", path, "-map", "0:v:0?", "-map", "0:a:0?", "-progress", "pipe:1", "-nostats", "-f", "null", "-")
+	cmd := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-xerror", "-i", path, "-map", "0:v:0?", "-map", "0:a:0?", "-progress", "pipe:1", "-nostats", "-f", "null", "-")
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, errors.New("media decode failed")

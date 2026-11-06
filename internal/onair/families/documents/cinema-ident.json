@@ -54,7 +54,8 @@
                 "{bg}"
               ]
             ]
-          }
+          },
+          "name": "Background"
         },
         {
           "id": "beam",
@@ -77,14 +78,16 @@
                 "{accent}@0"
               ]
             ]
-          }
+          },
+          "name": "Beam"
         },
         {
           "id": "dust",
           "type": "particles",
           "count": 70,
           "fill": "{accent}@0.4",
-          "seed": 11
+          "seed": 11,
+          "name": "Dust"
         },
         {
           "id": "medallion",
@@ -100,7 +103,8 @@
             "wipe": "ltr",
             "from": 0.2,
             "to": 2
-          }
+          },
+          "name": "Medallion"
         },
         {
           "id": "star",
@@ -120,7 +124,8 @@
                 1.2
               ]
             ]
-          }
+          },
+          "name": "Star"
         },
         {
           "id": "left-rule",
@@ -129,7 +134,8 @@
           "y": 430,
           "w": 420,
           "h": 2,
-          "fill": "{accent}"
+          "fill": "{accent}",
+          "name": "Left rule"
         },
         {
           "id": "right-rule",
@@ -138,7 +144,8 @@
           "y": 430,
           "w": 420,
           "h": 2,
-          "fill": "{accent}"
+          "fill": "{accent}",
+          "name": "Right rule"
         },
         {
           "id": "Title",
@@ -169,7 +176,8 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Channel title"
         },
         {
           "id": "Tagline",
@@ -200,9 +208,11 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Tagline"
         }
-      ]
+      ],
+      "name": "Scene entrance and exit"
     }
   ],
   "post": [
@@ -212,7 +222,7 @@
     },
     {
       "type": "vignette",
-      "amount": 0.45
+      "amount": "{control.effect-vignette}"
     }
   ],
   "slots": [

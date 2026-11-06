@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Run explicitly with ETHER_HARDSUB_FIXTURES=1. Fixtures are generated offline;
@@ -53,7 +55,7 @@ func TestHardsubFixtures(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "fixture.mkv")
-			cmd := exec.Command(ff, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=4:duration=12", "-vf", c.filter, "-threads", "1", "-c:v", "libx264", "-preset", "ultrafast", "-y", path)
+			cmd := mediaproc.CommandContext(t.Context(), 2*time.Minute, ff, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=4:duration=12", "-vf", c.filter, "-threads", "1", "-c:v", "libx264", "-preset", "ultrafast", "-y", path)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("generate: %v %s", err, out)
 			}

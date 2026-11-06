@@ -93,6 +93,7 @@ func LintCopy(s string, max int) string {
 var capabilityKinds = map[Capability]map[Kind]bool{
 	CapStreamSource:    {KindSource: true},
 	CapOnAirContent:    {KindExtension: true},
+	CapLiveTVPack:      {KindExtension: true},
 	CapDebridProvider:  {KindSource: true},
 	CapListSource:      {KindIntegration: true, KindExtension: true},
 	CapPluginDirectory: {KindIntegration: true, KindExtension: true, KindSource: true},
@@ -200,7 +201,37 @@ func (m Manifest) Validate() error {
 	if e.Icon != "" && !strings.HasSuffix(strings.ToLower(e.Icon), ".svg") && !strings.HasPrefix(e.Icon, "http") {
 		add("ether.icon", "must be an SVG file")
 	}
+	if len(e.Contributes.Looks) > 0 && !m.HasCapability(CapLiveTVPack) {
+		add("ether.capabilities", "livetv_pack is required for style contributions")
+	}
+	if m.HasCapability(CapLiveTVPack) && e.Runtime.Kind != "data" {
+		add("ether.runtime.kind", "style packs require the data runtime")
+	}
 	switch e.Runtime.Kind {
+	case "data":
+		if e.Kind != KindExtension || len(e.Capabilities) != 1 || !m.HasCapability(CapLiveTVPack) || len(e.Contributes.Looks) != 1 {
+			add("ether.contributes.looks", "a data package must contribute exactly one style")
+		}
+		if e.Runtime.Entry != "" || e.Runtime.Module != "" {
+			add("ether.runtime", "data packages run no code")
+		}
+		c := e.Contributes
+		c.Looks = nil
+		raw, _ := json.Marshal(c)
+		if string(raw) != "{}" {
+			add("ether.contributes", "data packages may contribute only styles")
+		}
+		permissions, _ := json.Marshal(e.Permissions)
+		empty, _ := json.Marshal(Permissions{})
+		if string(permissions) != string(empty) || len(e.Schedule) > 0 {
+			add("ether.permissions", "data packages require no permissions or schedules")
+		}
+		for _, look := range e.Contributes.Looks {
+			if look.ID == "" || look.File == "" || unsafePath(look.File) {
+				add("ether.contributes.looks", "style files must stay inside the package")
+			}
+		}
+
 	case "hosted":
 		if e.Runtime.Entry == "" && e.Runtime.Module == "" {
 			add("ether.runtime", "a hosted plugin needs an entry or module file")
@@ -218,7 +249,7 @@ func (m Manifest) Validate() error {
 			add("ether.runtime", "a remote plugin has no entry or module file")
 		}
 	default:
-		add("ether.runtime.kind", "must be hosted or remote")
+		add("ether.runtime.kind", "must be hosted, remote or data")
 	}
 	if e.Cluster != "" && e.Cluster != "leader" && e.Cluster != "every_node" {
 		add("ether.cluster", "must be leader or every_node")

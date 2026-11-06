@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/braedonsaunders/ether/internal/plugins/pkgdigest"
 	"github.com/braedonsaunders/ether/internal/stremio"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/safefetch"
@@ -348,20 +348,7 @@ func readPkg(pkg []byte) (json.RawMessage, map[string][]byte, error) {
 // digest entry itself). pack (WS11) writes it; install verifies it.
 func PkgDigest(files map[string][]byte) string { return pkgDigest(files) }
 
-func pkgDigest(files map[string][]byte) string {
-	names := make([]string, 0, len(files))
-	for n := range files {
-		if n != "digest" {
-			names = append(names, n)
-		}
-	}
-	sort.Strings(names)
-	var lines []string
-	for _, n := range names {
-		lines = append(lines, n+"="+digestOf(files[n]))
-	}
-	return digestOf([]byte(strings.Join(lines, "\n")))
-}
+func pkgDigest(files map[string][]byte) string { return pkgdigest.Sum(files) }
 
 func settingsRef(raw json.RawMessage) string {
 	var doc map[string]any
@@ -535,6 +522,14 @@ func (m *Manager) Install(ctx context.Context, p *Preview, opts InstallOptions) 
 		added := PermissionDiff(cur.Manifest, man)
 		if len(added) > 0 && !opts.AcceptAddedPermissions {
 			return Record{}, &PermissionIncreaseError{Added: added}
+		}
+	}
+	if man.Ether != nil && man.Ether.Runtime.Kind == "data" {
+		if m.deps.ImportStylePack == nil {
+			return Record{}, fmt.Errorf("plugins: style import is unavailable")
+		}
+		if err := m.deps.ImportStylePack(ctx, man.ID, p.files); err != nil {
+			return Record{}, err
 		}
 	}
 	if err := m.store.putFiles(ctx, man.ID, man.Version, p.files); err != nil {

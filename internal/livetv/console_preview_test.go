@@ -21,6 +21,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -56,11 +57,11 @@ func TestConsolePreviewBroadcast(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()
 	clip := filepath.Join(dir, "programme.mp4")
-	if out, err := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "60", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-g", "120", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "2", clip).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "60", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-g", "120", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "2", clip).CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v %s", err, out)
 	}
 	segment := filepath.Join(dir, "source.ts")
-	if out, err := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-i", clip, "-t", "4", "-c", "copy", "-f", "mpegts", segment).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-i", clip, "-t", "4", "-c", "copy", "-f", "mpegts", segment).CombinedOutput(); err != nil {
 		t.Fatalf("TS fixture: %v %s", err, out)
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +216,7 @@ func TestConsolePreviewBroadcast(t *testing.T) {
 					if err := os.WriteFile(capture, data, 0600); err != nil {
 						t.Fatal(err)
 					}
-					out, err := exec.CommandContext(ctx, fp, "-v", "error", "-select_streams", "v:0", "-show_packets", "-show_entries", "packet=flags", "-of", "csv=p=0", capture).Output()
+					out, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-select_streams", "v:0", "-show_packets", "-show_entries", "packet=flags", "-of", "csv=p=0", capture).Output()
 					if err != nil || !strings.HasPrefix(string(out), "K") {
 						t.Fatalf("segment lacks keyframe start: %v %s", err, out)
 					}
@@ -231,7 +232,7 @@ func TestConsolePreviewBroadcast(t *testing.T) {
 					t.Fatal(err)
 				}
 				parseContext, parseCancel := context.WithTimeout(ctx, 20*time.Second)
-				parsed, err := exec.CommandContext(parseContext, fp, "-v", "error", "-analyzeduration", "500000", "-probesize", "1000000", "-read_intervals", "%+0.1", "-show_entries", "stream=codec_name", "-of", "csv=p=0", manifest).CombinedOutput()
+				parsed, err := mediaproc.CommandContext(parseContext, 2*time.Minute, fp, "-v", "error", "-analyzeduration", "500000", "-probesize", "1000000", "-read_intervals", "%+0.1", "-show_entries", "stream=codec_name", "-of", "csv=p=0", manifest).CombinedOutput()
 				parseCancel()
 				if err != nil || !strings.Contains(string(parsed), "h264") || !strings.Contains(string(parsed), "aac") {
 					t.Fatalf("HLS parser: %v %s", err, parsed)

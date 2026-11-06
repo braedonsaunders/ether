@@ -17,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -77,11 +78,11 @@ func TestOfflineBufferedSwapKeepsDecodableContiguousOutput(t *testing.T) {
 	dir := t.TempDir()
 	fixture := filepath.Join(dir, "source.mkv")
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "24", "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", "-g", "48", "-c:a", "aac", fixture}
-	if out, err := exec.CommandContext(ctx, ff, args...).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, args...).CombinedOutput(); err != nil {
 		t.Fatalf("fixture: %v: %s", err, out)
 	}
 	alternate := filepath.Join(dir, "alternate.mkv")
-	if out, err := exec.CommandContext(ctx, ff, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "24", "-vf", "hue=s=0", "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", "-g", "48", "-c:a", "aac", alternate).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "24", "-vf", "hue=s=0", "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", "-g", "48", "-c:a", "aac", alternate).CombinedOutput(); err != nil {
 		t.Fatalf("alternate fixture: %v: %s", err, out)
 	}
 	tc, err := transcode.New(config.Transcode{FFmpegPath: ff, FFprobePath: fp, HWAccel: "none", TempDir: filepath.Join(dir, "hls")}, slog.New(slog.NewTextHandler(io.Discard, nil)), transcode.WithoutHWDetection(), transcode.WithRunner(continuityPacedRunner{}), transcode.WithBuffering(8*time.Second, 8*time.Second, 20*time.Second))
@@ -142,7 +143,7 @@ func TestOfflineBufferedSwapKeepsDecodableContiguousOutput(t *testing.T) {
 	if err := os.WriteFile(path, media, 0600); err != nil {
 		t.Fatal(err)
 	}
-	probe := exec.CommandContext(ctx, fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "json", path)
+	probe := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "json", path)
 	out, err := probe.Output()
 	if err != nil {
 		t.Fatal(err)
@@ -169,10 +170,10 @@ func TestOfflineBufferedSwapKeepsDecodableContiguousOutput(t *testing.T) {
 		}
 		previous = pts
 	}
-	if out, err := exec.CommandContext(ctx, ff, "-v", "error", "-xerror", "-i", path, "-fps_mode", "passthrough", "-enc_time_base:v", "1:90000", "-f", "null", "-").CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-xerror", "-i", path, "-fps_mode", "passthrough", "-enc_time_base:v", "1:90000", "-f", "null", "-").CombinedOutput(); err != nil {
 		t.Fatalf("decode: %v: %s", err, out)
 	}
-	frame, err := exec.CommandContext(ctx, ff, "-v", "error", "-i", path, "-vf", "select=gte(n\\,360),scale=32:32", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-").Output()
+	frame, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-i", path, "-vf", "select=gte(n\\,360),scale=32:32", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-").Output()
 	if err != nil || len(frame) != 32*32*3 {
 		t.Fatalf("replacement frame: %d bytes, %v", len(frame), err)
 	}

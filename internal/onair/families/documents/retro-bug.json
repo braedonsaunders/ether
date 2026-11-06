@@ -25,7 +25,8 @@
           "maxWidth": 288,
           "fit": "shrink",
           "glow": 0,
-          "blur": 2
+          "blur": 2,
+          "name": "Bug shadow"
         },
         {
           "id": "Title",
@@ -40,9 +41,11 @@
           "fill": "#eeeeee",
           "maxWidth": 288,
           "fit": "shrink",
-          "glow": 2
+          "glow": 2,
+          "name": "Channel title"
         }
-      ]
+      ],
+      "name": "Station bug"
     }
   ],
   "post": [],

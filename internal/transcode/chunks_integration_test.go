@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Keyframe-planned copy sessions: every segment the playlist advertises
@@ -28,7 +28,7 @@ import (
 // would list them.
 func (e *realEnv) keyframeIndex(t *testing.T, name string) []core.KeyframePoint {
 	t.Helper()
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
 		"packet=pts_time,pos,flags", "-of", "csv=p=0", filepath.Join(e.dir, name)).Output()
 	if err != nil {
 		t.Fatalf("ffprobe keyframes: %v", err)
@@ -86,7 +86,7 @@ func (e *realEnv) videoSpan(t *testing.T, container string, init, seg []byte, na
 func (e *realEnv) videoSpanKey(t *testing.T, container string, init, seg []byte, name string) (float64, float64, bool) {
 	t.Helper()
 	file := e.writeTemp(t, name+"."+segmentExt(container), append(append([]byte(nil), init...), seg...))
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
 		"packet=pts_time,duration_time,flags", "-of", "csv=p=0", file).Output()
 	if err != nil {
 		t.Fatalf("ffprobe %s: %v", name, err)
@@ -128,7 +128,7 @@ func (e *realEnv) videoSpanKey(t *testing.T, container string, init, seg []byte,
 // frames to never go backwards.
 func (e *realEnv) joinedMonotonic(t *testing.T, file string) {
 	t.Helper()
-	cmd := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time", "-of", "csv=p=0", file)
+	cmd := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time", "-of", "csv=p=0", file)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -159,7 +159,7 @@ func (e *realEnv) decodesAlone(t *testing.T, container string, init, seg []byte,
 	// ffprobe decodes every frame for -show_frames and reports decode
 	// errors (e.g. "non-existing PPS referenced" mid-GOP) on stderr.
 	file := e.writeTemp(t, name+"-decode."+segmentExt(container), append(append([]byte(nil), init...), seg...))
-	cmd := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=key_frame", "-of", "csv=p=0", file)
+	cmd := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=key_frame", "-of", "csv=p=0", file)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

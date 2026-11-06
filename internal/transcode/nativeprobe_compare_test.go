@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // TestNativeProbeMatchesFFprobe compares native probing with ffprobe on
@@ -20,7 +22,7 @@ func TestNativeProbeMatchesFFprobe(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join(dir, "*.mkv"))
 	for _, f := range files {
 		t.Run(filepath.Base(f), func(t *testing.T) {
-			out, err := exec.Command(ffprobe, probeArgs(f, probeAttempts[0])...).Output()
+			out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, ffprobe, probeArgs(f, probeAttempts[0])...).Output()
 			if err != nil {
 				t.Fatal(err)
 			}

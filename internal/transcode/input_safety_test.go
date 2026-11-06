@@ -13,6 +13,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func assertInputSafety(t *testing.T, args []string, live, network bool) {
@@ -109,7 +110,7 @@ func TestVODProbeRejectsHarmlessPlaylist(t *testing.T) {
 	input := srv.URL + "/video.mkv"
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, ffprobe, probeArgs(input, probeAttempts[0])...).CombinedOutput()
+	out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ffprobe, probeArgs(input, probeAttempts[0])...).CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "not on whitelist") {
 		t.Fatalf("expected explicit demuxer rejection, got %v: %s", err, out)
 	}

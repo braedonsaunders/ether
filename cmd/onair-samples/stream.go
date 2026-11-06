@@ -14,6 +14,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -131,7 +132,7 @@ func streamSample(ctx context.Context, input, output string, width, seconds, bud
 	_ = decoder.Close()
 	_ = encoder.Close()
 	<-writing
-	bytes, err := exec.CommandContext(ctx, ff, "-nostdin", "-v", "error", "-y", "-i", capture, "-map", "0:v:0", "-map", "0:a:0", "-t", fmt.Sprint(seconds), "-c", "copy", "-movflags", "+faststart", output).CombinedOutput()
+	bytes, err := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, ff, "-nostdin", "-v", "error", "-y", "-i", capture, "-map", "0:v:0", "-map", "0:a:0", "-t", fmt.Sprint(seconds), "-c", "copy", "-movflags", "+faststart", output).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("remux: %w %s", err, bytes)
 	}

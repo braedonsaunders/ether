@@ -8,7 +8,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/onair/fonts"
 	"github.com/braedonsaunders/ether/internal/onair/scene"
 	"net/http"
-	"sort"
 )
 
 // MCP exclusion: these owner-authenticated routes supply immutable rendering
@@ -26,31 +25,15 @@ func ServeFont(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = w.Write(data)
 }
-func ServeFamilies(w http.ResponseWriter, r *http.Request) {
-	type family struct {
-		ID        string                    `json:"id"`
-		Name      string                    `json:"name"`
-		Documents map[string]scene.Document `json:"documents"`
-		Bindings  scene.Bindings            `json:"bindings"`
-	}
-	names := families.Names()
-	ids := make([]string, 0, len(names))
-	for id := range names {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	out := make([]family, 0, len(ids))
-	for _, id := range ids {
-		f := family{ID: id, Name: id, Documents: map[string]scene.Document{}, Bindings: families.Defaults(id)}
-		for _, moment := range names[id] {
-			d, err := families.Get(id, moment)
-			if err != nil {
-				http.Error(w, "invalid built-in scene", 500)
-				return
-			}
-			f.Documents[moment] = d
+func ServeSystemScreens(w http.ResponseWriter, r *http.Request) {
+	out := map[string]scene.Document{}
+	for _, moment := range families.Names()["signal"] {
+		d, err := families.Get("signal", moment)
+		if err != nil {
+			http.Error(w, "invalid system screen", 500)
+			return
 		}
-		out = append(out, f)
+		out[moment] = d
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

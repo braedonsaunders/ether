@@ -1,5 +1,5 @@
-import { programmeArtwork } from "./model";
 import { ProgrammingEditor } from "./ProgrammingEditor";
+import { programmeArtwork } from "./model";
 import { styleCopy } from "./onair/naming";
 import { rundownPreview } from "./onair/rundown";
 import { LookTab } from "./onair/LookTab";

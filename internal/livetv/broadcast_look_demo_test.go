@@ -21,6 +21,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/onair"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/transcode"
@@ -90,7 +91,7 @@ func TestBroadcastLookDemo(t *testing.T) {
 	source := filepath.Join(dir, "programme.mp4")
 	reelSource := filepath.Join(dir, "station-reel.mp4")
 	for _, input := range []struct{ path, filter, duration, freq string }{{source, "testsrc2=size=1920x1080:rate=30", "20", "440"}, {reelSource, "smptebars=size=1920x1080:rate=30", "8", "660"}} {
-		if out, e := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-f", "lavfi", "-i", input.filter, "-f", "lavfi", "-i", "sine=frequency="+input.freq+":sample_rate=48000", "-t", input.duration, "-c:v", "libx264", "-threads", "2", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "120", "-c:a", "aac", "-ac", "2", input.path).CombinedOutput(); e != nil {
+		if out, e := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-f", "lavfi", "-i", input.filter, "-f", "lavfi", "-i", "sine=frequency="+input.freq+":sample_rate=48000", "-t", input.duration, "-c:v", "libx264", "-threads", "2", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "120", "-c:a", "aac", "-ac", "2", input.path).CombinedOutput(); e != nil {
 			t.Fatalf("source:%v %s", e, out)
 		}
 	}
@@ -108,10 +109,27 @@ func TestBroadcastLookDemo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	look.Family = "clean"
+	templates, err := graphics.Templates(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, template := range templates {
+		if template.ID == "clean" {
+			id := look.ID
+			look = template.Style
+			look.ID = id
+			break
+		}
+	}
 	look.Brand.Textures = nil
 	for _, moment := range []string{"ident", "break", "back"} {
-		look.Moments[moment] = onair.Moment{Duration: 4, Poster: 2}
+		look.Roles[moment] = onair.RoleConfig{Duration: 4}
+		for i := range look.Scenes {
+			if look.Scenes[i].Role == moment {
+				look.Scenes[i].Document.Duration = 4
+				look.Scenes[i].Document.Poster = 2
+			}
+		}
 	}
 	if _, err = graphics.SaveLook(ctx, look); err != nil {
 		t.Fatal(err)
@@ -304,13 +322,13 @@ func TestBroadcastLookDemo(t *testing.T) {
 	captured.Close()
 	b.close()
 	output := filepath.Join(*lookDemoDir, "look-demo.mp4")
-	if out, e := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-i", capture, "-c", "copy", "-movflags", "+faststart", output).CombinedOutput(); e != nil {
+	if out, e := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-i", capture, "-c", "copy", "-movflags", "+faststart", output).CombinedOutput(); e != nil {
 		t.Fatalf("remux:%v %s", e, out)
 	}
-	if out, e := exec.CommandContext(ctx, ff, "-v", "error", "-xerror", "-i", output, "-f", "null", "-").CombinedOutput(); e != nil {
+	if out, e := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-xerror", "-i", output, "-f", "null", "-").CombinedOutput(); e != nil {
 		t.Fatalf("decode:%v %s", e, out)
 	}
-	raw, err := exec.CommandContext(ctx, fp, "-v", "error", "-show_packets", "-show_format", "-show_entries", "packet=stream_index,pts_time,dts_time:format=duration,bit_rate", "-of", "json", output).Output()
+	raw, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-show_packets", "-show_format", "-show_entries", "packet=stream_index,pts_time,dts_time:format=duration,bit_rate", "-of", "json", output).Output()
 	if err != nil {
 		t.Fatal(err)
 	}

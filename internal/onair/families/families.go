@@ -3,6 +3,7 @@ package families
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/onair/scene"
 	"strings"
@@ -22,6 +23,9 @@ func Names() map[string][]string {
 	out := map[string][]string{}
 	entries, _ := documents.ReadDir("documents")
 	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".controls.json") {
+			continue
+		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
 		for _, family := range []string{"grunge", "aqua", "flat", "late-night", "personal", "cinema", "retro", "kids", "clean", "signal"} {
 			if strings.HasPrefix(name, family+"-") {
@@ -127,5 +131,39 @@ func Defaults(family string) scene.Bindings {
 		b.Tokens["words.break"] = "Back in a moment"
 	}
 
+	if raw, err := Controls(family); err == nil {
+		var controls []struct {
+			ID    string `json:"id"`
+			Value any    `json:"value"`
+		}
+		if json.Unmarshal(raw, &controls) == nil {
+			for _, c := range controls {
+				b.Tokens["control."+c.ID] = c.Value
+			}
+		}
+	}
 	return b
+}
+
+func Controls(id string) ([]byte, error) {
+	return documents.ReadFile("documents/" + id + ".controls.json")
+}
+func Description(id string) (string, string, []string) {
+	data := map[string][3]string{
+		"clean":      {"Clean", "Crisp type, quiet motion and room for the programmes to shine.", "Clean"},
+		"kids":       {"Kids", "Bouncy lettering, gooey shapes and big colours for little adventures.", "Kids"},
+		"late-night": {"Late night", "Moonlit hills, drifting fog and a station that stays up with you.", "Late night"},
+		"cinema":     {"Cinema", "Golden light, velvet shadows and a premiere every evening.", "Cinema"},
+		"retro":      {"Retro 80", "Chrome type, a synthwave sun and a neon grid: Saturday-night 1984.", "80s"},
+		"grunge":     {"Grunge 90", "Torn edges, acid colours and restless type straight from the 90s.", "90s"},
+		"aqua":       {"Aqua 00", "Glassy panels, cool blue light and the bright promise of the 2000s.", "00s"},
+		"flat":       {"Flat 10", "Bold colour blocks, sharp geometry and the confident rhythm of the 2010s.", "10s"},
+		"personal":   {"Personal", "Aurora skies, a familiar greeting and a channel that feels like home.", "Personal"},
+	}
+	v, ok := data[id]
+	if !ok {
+		return id, "Make these airwaves your own.", []string{"Retro"}
+	}
+	moods := map[string]string{"clean": "Minimal", "kids": "Playful", "late-night": "After dark", "cinema": "Cinematic", "retro": "Synthwave", "grunge": "Rebellious", "aqua": "Optimistic", "flat": "Graphic", "personal": "Made for you"}
+	return v[0], v[1], []string{v[2], moods[id]}
 }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -210,10 +211,10 @@ func TestBroadcastRealContinuity(t *testing.T) {
 		if err := os.WriteFile(path, data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		if out, err := exec.CommandContext(ctx, ff, "-v", "warning", "-xerror", "-i", path, "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) != 0 {
+		if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "warning", "-xerror", "-i", path, "-f", "null", "-").CombinedOutput(); err != nil || len(bytes.TrimSpace(out)) != 0 {
 			t.Fatalf("%s straight decode: %v %s", name, err, out)
 		}
-		out, err := exec.CommandContext(ctx, fp, "-v", "error", "-show_packets", "-show_streams", "-of", "json", path).Output()
+		out, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-show_packets", "-show_streams", "-of", "json", path).Output()
 		if err != nil {
 			t.Fatal(err)
 		}

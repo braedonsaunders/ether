@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 var continuousMeasure = flag.Bool("continuous-measure", false, "run serial runner resource measurements")
@@ -130,7 +130,7 @@ func TestContinuousMeasurements(t *testing.T) {
 					args = append(args, "-x265-params", "pools=2:frame-threads=2:log-level=error")
 				}
 				args = append(args, input)
-				if out, err := exec.CommandContext(t.Context(), e.ffmpeg, args...).CombinedOutput(); err != nil {
+				if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, args...).CombinedOutput(); err != nil {
 					t.Fatalf("fixture: %v %s", err, out)
 				}
 			}

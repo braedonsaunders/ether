@@ -18,6 +18,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Integration tests run the system ffmpeg against a lavfi-generated clip
@@ -71,7 +72,7 @@ func (e *realEnv) gen(t *testing.T, name string, seconds int, args ...string) {
 	full = append(full, "-max_interleave_delta", "0", "-t", strconv.Itoa(seconds), filepath.Join(e.dir, name))
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute) // bounded under load
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, e.ffmpeg, full...).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, e.ffmpeg, full...).CombinedOutput(); err != nil {
 		t.Skipf("cannot generate %s (encoder missing?): %v: %s", name, err, out)
 	}
 }
@@ -89,7 +90,7 @@ type probedStream struct {
 
 func (e *realEnv) probeFile(t *testing.T, path string) []probedStream {
 	t.Helper()
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-print_format", "json", "-show_streams", path).Output()
+	out, err := mediaproc.CommandContext(t.Context(), 30*time.Second, e.ffprobe, "-v", "error", "-print_format", "json", "-show_streams", path).Output()
 	if err != nil {
 		t.Fatalf("ffprobe %s: %v", path, err)
 	}

@@ -11,132 +11,171 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "#102d88"
+      "fill": "#102d88",
+      "name": "Blue"
     },
     {
-      "id": "osd-weight0",
-      "type": "text",
-      "text": "STOP  \u25a0",
-      "x": 138.2,
-      "y": 150,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
+      "id": "osd-group",
+      "name": "Osd",
+      "type": "group",
+      "layers": [
+        {
+          "id": "osd-treatment",
+          "name": "Chrome osd",
+          "type": "group",
+          "layers": [
+            {
+              "id": "osd-weight0",
+              "type": "text",
+              "text": "STOP  \u25a0",
+              "x": 138.2,
+              "y": 150,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 1"
+            },
+            {
+              "id": "osd-weight1",
+              "type": "text",
+              "text": "STOP  \u25a0",
+              "x": 141.8,
+              "y": 150,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 2"
+            },
+            {
+              "id": "osd-weight2",
+              "type": "text",
+              "text": "STOP  \u25a0",
+              "x": 140,
+              "y": 148.2,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 3"
+            },
+            {
+              "id": "osd-weight3",
+              "type": "text",
+              "text": "STOP  \u25a0",
+              "x": 140,
+              "y": 151.8,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 4"
+            },
+            {
+              "id": "osd",
+              "type": "text",
+              "text": "STOP  \u25a0",
+              "x": 140,
+              "y": 150,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 5"
+            }
+          ]
+        }
+      ]
     },
     {
-      "id": "osd-weight1",
-      "type": "text",
-      "text": "STOP  \u25a0",
-      "x": 141.8,
-      "y": 150,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "osd-weight2",
-      "type": "text",
-      "text": "STOP  \u25a0",
-      "x": 140,
-      "y": 148.2,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "osd-weight3",
-      "type": "text",
-      "text": "STOP  \u25a0",
-      "x": 140,
-      "y": 151.8,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "osd",
-      "type": "text",
-      "text": "STOP  \u25a0",
-      "x": 140,
-      "y": 150,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "Title-weight0",
-      "type": "text",
-      "text": "END OF TRANSMISSION",
-      "x": 958.2,
-      "y": 510,
-      "size": 100,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title-weight1",
-      "type": "text",
-      "text": "END OF TRANSMISSION",
-      "x": 961.8,
-      "y": 510,
-      "size": 100,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title-weight2",
-      "type": "text",
-      "text": "END OF TRANSMISSION",
-      "x": 960,
-      "y": 508.2,
-      "size": 100,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title-weight3",
-      "type": "text",
-      "text": "END OF TRANSMISSION",
-      "x": 960,
-      "y": 511.8,
-      "size": 100,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title",
-      "type": "text",
-      "text": "END OF TRANSMISSION",
-      "x": 960,
-      "y": 510,
-      "size": 100,
-      "font": "vt323",
-      "fill": "{text}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
+      "id": "Title-group",
+      "name": "Channel title",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title-treatment",
+          "name": "Chrome title",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-weight0",
+              "type": "text",
+              "text": "END OF TRANSMISSION",
+              "x": 958.2,
+              "y": 510,
+              "size": 100,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 1"
+            },
+            {
+              "id": "Title-weight1",
+              "type": "text",
+              "text": "END OF TRANSMISSION",
+              "x": 961.8,
+              "y": 510,
+              "size": 100,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 2"
+            },
+            {
+              "id": "Title-weight2",
+              "type": "text",
+              "text": "END OF TRANSMISSION",
+              "x": 960,
+              "y": 508.2,
+              "size": 100,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 3"
+            },
+            {
+              "id": "Title-weight3",
+              "type": "text",
+              "text": "END OF TRANSMISSION",
+              "x": 960,
+              "y": 511.8,
+              "size": 100,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 4"
+            },
+            {
+              "id": "Title",
+              "type": "text",
+              "text": "END OF TRANSMISSION",
+              "x": 960,
+              "y": 510,
+              "size": 100,
+              "font": "vt323",
+              "fill": "{text}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 5"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "subtitle",
@@ -149,7 +188,8 @@
       "fill": "{text}",
       "maxWidth": 1600,
       "fit": "shrink",
-      "align": "center"
+      "align": "center",
+      "name": "Subtitle"
     },
     {
       "id": "station",
@@ -161,7 +201,8 @@
       "font": "vt323",
       "fill": "{text}",
       "maxWidth": 1600,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Station"
     }
   ],
   "post": [
@@ -171,7 +212,7 @@
     },
     {
       "type": "scanlines",
-      "amount": 0.16
+      "amount": "{control.effect-scanlines}"
     }
   ],
   "slots": [

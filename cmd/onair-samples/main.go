@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/onair/encode"
 	"github.com/braedonsaunders/ether/internal/onair/families"
 	"github.com/braedonsaunders/ether/internal/onair/raster"
@@ -117,14 +118,14 @@ func render(ctx context.Context, ffmpeg string, s sample, out string, seconds, w
 	target = filepath.Join(out, s.name+suffix+".mp4")
 	fmt.Printf("START %s %dx%d/30 %ds workers=%d\n", s.name, width, height, seconds, workers)
 	started := time.Now()
-	var decoder *exec.Cmd
+	var decoder *mediaproc.Cmd
 	var reader io.ReadCloser
 	var decoderWait func() error
 	var lock sync.Mutex
 	next := 0
 	pending := map[int]*image.RGBA{}
 	if programme != "" && s.name == "late-night-overlay" {
-		decoder = exec.CommandContext(ctx, ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-stream_loop", "-1", "-i", programme, "-an", "-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,fps=30", width, height, width, height), "-t", strconv.Itoa(seconds), "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1")
+		decoder = mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-stream_loop", "-1", "-i", programme, "-an", "-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,fps=30", width, height, width, height), "-t", strconv.Itoa(seconds), "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1")
 		reader, err = decoder.StdoutPipe()
 		if err != nil {
 			return err
@@ -137,7 +138,7 @@ func render(ctx context.Context, ffmpeg string, s sample, out string, seconds, w
 		defer func() {
 			reader.Close()
 			if decoder.ProcessState == nil {
-				_ = decoder.Process.Kill()
+				_ = decoder.Cancel()
 				_ = decoder.Wait()
 			}
 		}()
@@ -190,7 +191,7 @@ func render(ctx context.Context, ffmpeg string, s sample, out string, seconds, w
 		audioPath = f.Name()
 		f.Close()
 		defer os.Remove(audioPath)
-		output, e := exec.CommandContext(ctx, ffmpeg, "-nostdin", "-v", "error", "-y", "-stream_loop", "-1", "-i", programme, "-vn", "-t", strconv.Itoa(seconds), "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", audioPath).CombinedOutput()
+		output, e := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, ffmpeg, "-nostdin", "-v", "error", "-y", "-stream_loop", "-1", "-i", programme, "-vn", "-t", strconv.Itoa(seconds), "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", audioPath).CombinedOutput()
 		if e != nil {
 			return fmt.Errorf("programme audio: %w %s", e, output)
 		}
@@ -213,7 +214,7 @@ func render(ctx context.Context, ffmpeg string, s sample, out string, seconds, w
 }
 
 func metadata(ctx context.Context, path, caption string) error {
-	raw, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration,bit_rate:stream=codec_type,width,height:packet=pts_time,dts_time,size", "-show_packets", "-of", "json", path).Output()
+	raw, err := mediaproc.CommandContext(ctx, mediaproc.ProbeTimeout, "ffprobe", "-v", "error", "-show_entries", "format=duration,bit_rate:stream=codec_type,width,height:packet=pts_time,dts_time,size", "-show_packets", "-of", "json", path).Output()
 	if err != nil {
 		return err
 	}

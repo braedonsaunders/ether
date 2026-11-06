@@ -11,7 +11,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "moon",
@@ -67,7 +68,8 @@
                 "{moon}@0"
               ]
             ]
-          }
+          },
+          "name": "Halo"
         },
         {
           "id": "disc",
@@ -76,7 +78,8 @@
           "y": -150,
           "w": 300,
           "h": 300,
-          "fill": "{moon}"
+          "fill": "{moon}",
+          "name": "Disc"
         },
         {
           "id": "crater0",
@@ -85,7 +88,8 @@
           "y": -63,
           "w": 66,
           "h": 66,
-          "fill": "#3c3c46@0.1"
+          "fill": "#3c3c46@0.1",
+          "name": "Crater 1"
         },
         {
           "id": "crater1",
@@ -94,7 +98,8 @@
           "y": -9,
           "w": 48,
           "h": 48,
-          "fill": "#3c3c46@0.1"
+          "fill": "#3c3c46@0.1",
+          "name": "Crater 2"
         },
         {
           "id": "crater2",
@@ -103,7 +108,8 @@
           "y": 42,
           "w": 36,
           "h": 36,
-          "fill": "#3c3c46@0.1"
+          "fill": "#3c3c46@0.1",
+          "name": "Crater 3"
         },
         {
           "id": "crater3",
@@ -112,9 +118,11 @@
           "y": -67,
           "w": 30,
           "h": 30,
-          "fill": "#3c3c46@0.1"
+          "fill": "#3c3c46@0.1",
+          "name": "Crater 4"
         }
-      ]
+      ],
+      "name": "Moon"
     },
     {
       "id": "fog0",
@@ -151,7 +159,8 @@
             "{fog}@0"
           ]
         ]
-      }
+      },
+      "name": "Fog 1"
     },
     {
       "id": "fog1",
@@ -188,7 +197,8 @@
             "{fog}@0"
           ]
         ]
-      }
+      },
+      "name": "Fog 2"
     },
     {
       "id": "fog2",
@@ -225,7 +235,8 @@
             "{fog}@0"
           ]
         ]
-      }
+      },
+      "name": "Fog 3"
     },
     {
       "id": "fog3",
@@ -262,7 +273,8 @@
             "{fog}@0"
           ]
         ]
-      }
+      },
+      "name": "Fog 4"
     },
     {
       "id": "fog4",
@@ -299,7 +311,8 @@
             "{fog}@0"
           ]
         ]
-      }
+      },
+      "name": "Fog 5"
     },
     {
       "id": "fog5",
@@ -336,7 +349,8 @@
             "{fog}@0"
           ]
         ]
-      }
+      },
+      "name": "Fog 6"
     },
     {
       "id": "doorlight",
@@ -354,7 +368,8 @@
             0.8
           ]
         ]
-      }
+      },
+      "name": "Doorlight"
     },
     {
       "id": "door",
@@ -365,7 +380,8 @@
       "h": 720,
       "fill": "#08080a",
       "stroke": "{fog}@0.4",
-      "strokeWidth": 3
+      "strokeWidth": 3,
+      "name": "Door"
     },
     {
       "id": "Title",
@@ -378,7 +394,8 @@
       "fill": "{text}",
       "fit": "shrink",
       "maxWidth": 780,
-      "align": "center"
+      "align": "center",
+      "name": "Channel title"
     },
     {
       "id": "subtitle",
@@ -391,7 +408,8 @@
       "fill": "{text}",
       "fit": "shrink",
       "maxWidth": 780,
-      "align": "center"
+      "align": "center",
+      "name": "Subtitle"
     }
   ],
   "post": [
@@ -401,7 +419,7 @@
     },
     {
       "type": "vignette",
-      "amount": 0.45
+      "amount": "{control.effect-vignette}"
     }
   ],
   "slots": [

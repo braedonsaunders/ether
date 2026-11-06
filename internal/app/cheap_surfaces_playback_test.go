@@ -17,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -36,7 +37,7 @@ func TestCheapSurfacesMountedPlayback(t *testing.T) {
 	path := filepath.Join(dir, "cert.mp4")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, ff, "-v", "error", "-f", "lavfi", "-i", "color=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "120", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", path).CombinedOutput()
+	output, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-f", "lavfi", "-i", "color=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "120", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("generate media: %v %s", err, output)
 	}
@@ -47,7 +48,7 @@ func TestCheapSurfacesMountedPlayback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path).Output()
+	probe, err := mediaproc.CommandContext(ctx, 2*time.Minute, "ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path).Output()
 	if err != nil {
 		t.Fatal(err)
 	}

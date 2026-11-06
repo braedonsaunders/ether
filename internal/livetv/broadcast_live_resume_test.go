@@ -16,6 +16,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -46,7 +47,7 @@ func TestBroadcastStaleLivePlaylistDoesNotReplay(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 	dir := t.TempDir()
-	if out, e := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=64x36:rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "40", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-g", "120", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "2", "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_segment_filename", filepath.Join(dir, "seg-%03d.ts"), filepath.Join(dir, "full.m3u8")).CombinedOutput(); e != nil {
+	if out, e := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=64x36:rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "40", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-g", "120", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "2", "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_segment_filename", filepath.Join(dir, "seg-%03d.ts"), filepath.Join(dir, "full.m3u8")).CombinedOutput(); e != nil {
 		t.Fatalf("fixture:%v %s", e, out)
 	}
 	var advancing atomic.Bool

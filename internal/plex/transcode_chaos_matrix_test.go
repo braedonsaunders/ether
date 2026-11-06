@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -75,7 +75,7 @@ func TestTranscodeChaosMatrix(t *testing.T) {
 		if err := os.WriteFile(p, b, 0600); err != nil {
 			t.Fatal(err)
 		}
-		packets, err := exec.Command(fp, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", p).Output()
+		packets, err := mediaproc.CommandContext(context.Background(), 2*time.Minute, fp, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", p).Output()
 		if err != nil || len(strings.TrimSpace(string(packets))) == 0 {
 			t.Fatal("seeked output has no audio packets")
 		}

@@ -15,7 +15,8 @@
       "fill": "{text}",
       "fit": "shrink",
       "maxWidth": 400,
-      "align": "right"
+      "align": "right",
+      "name": "Wordmark"
     }
   ]
 }

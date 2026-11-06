@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 func TestHLSTargetIsSeparateFromDirectPlayContainers(t *testing.T) {
@@ -55,7 +55,7 @@ func TestIntegrationMatroskaCopyRampNeverReplaysEarlierKeyframes(t *testing.T) {
 		joined = append(joined, fetch(t, hs, n)...)
 	}
 	file := e.writeTemp(t, "long-gop-joined.mkv", joined)
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time", "-of", "json", file).Output()
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time", "-of", "json", file).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,10 +147,10 @@ func TestIntegrationMatroskaHLSDecodeSeekAndSwap(t *testing.T) {
 		if got := startTime(t, streams, "audio"); math.Abs(got-wantStart) > 1.1 {
 			t.Fatalf("segment %d audio starts %.3f, want %.3f", n, got, wantStart)
 		}
-		if out, err := exec.Command(e.ffmpeg, "-v", "error", "-i", path, "-map", "0:v:0", "-frames:v", "3", "-f", "null", "-").CombinedOutput(); err != nil {
+		if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-i", path, "-map", "0:v:0", "-frames:v", "3", "-f", "null", "-").CombinedOutput(); err != nil {
 			t.Fatalf("decode segment %d: %v %s", n, err, out)
 		}
-		if out, err := exec.Command(e.ffmpeg, "-v", "error", "-i", path, "-map", "0:a:0", "-frames:a", "3", "-f", "null", "-").CombinedOutput(); err != nil {
+		if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "error", "-i", path, "-map", "0:a:0", "-frames:a", "3", "-f", "null", "-").CombinedOutput(); err != nil {
 			t.Fatalf("decode audio segment %d: %v %s", n, err, out)
 		}
 	}
@@ -162,7 +162,7 @@ func TestIntegrationMatroskaHLSDecodeSeekAndSwap(t *testing.T) {
 		joined = append(joined, fetch(t, hs, n)...)
 	}
 	path := e.writeTemp(t, "continuous.mkv", joined)
-	if out, err := exec.Command(e.ffmpeg, "-v", "warning", "-xerror", "-i", path, "-map", "0:v:0", "-f", "null", "-").CombinedOutput(); err != nil || bytes.Contains(out, []byte("File extends beyond end of segment")) || bytes.Contains(out, []byte("EBML number")) {
+	if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, "-v", "warning", "-xerror", "-i", path, "-map", "0:v:0", "-f", "null", "-").CombinedOutput(); err != nil || bytes.Contains(out, []byte("File extends beyond end of segment")) || bytes.Contains(out, []byte("EBML number")) {
 		t.Fatalf("continuous Matroska decode: %v %s", err, out)
 	}
 	decode(4, "seek.mkv", 26)
@@ -179,7 +179,7 @@ func TestIntegrationMatroskaHLSDecodeSeekAndSwap(t *testing.T) {
 func TestIntegrationMatroskaTailResumeAudioOutlastsVideo(t *testing.T) {
 	e := newRealEnv(t, WithoutHWDetection())
 	outPath := filepath.Join(e.dir, "tail-audio.mkv")
-	cmd := exec.CommandContext(t.Context(), e.ffmpeg,
+	cmd := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg,
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-t", "16", "-i", "testsrc2=size=640x360:rate=24",
 		"-f", "lavfi", "-t", "24", "-i", "sine=frequency=440:sample_rate=48000",

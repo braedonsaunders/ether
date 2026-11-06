@@ -46,13 +46,14 @@ type Backends struct {
 
 // Deps are the plugin host's explicit dependencies.
 type Deps struct {
-	OnAirContent  *onair.PluginContentCache
-	DB            *sql.DB
-	Sealer        config.FieldSealer
-	Registry      *extend.Registry
-	Tools         *tools.Catalogue
-	Notifications *notify.Service
-	Logger        *slog.Logger
+	ImportStylePack func(context.Context, string, map[string][]byte) error
+	OnAirContent    *onair.PluginContentCache
+	DB              *sql.DB
+	Sealer          config.FieldSealer
+	Registry        *extend.Registry
+	Tools           *tools.Catalogue
+	Notifications   *notify.Service
+	Logger          *slog.Logger
 	// IsLeader reports cluster leadership; nil means always leader.
 	IsLeader func() bool
 	// Bus broadcasts invalidate:plugins; nil disables it.

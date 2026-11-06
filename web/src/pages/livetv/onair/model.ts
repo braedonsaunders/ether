@@ -12,19 +12,6 @@ export const MOMENTS: Moment[] = [
   "bug",
   "lowerthird",
 ];
-export type BrandTokens = {
-  palette: { background: string; accent: string; text: string; glow: string };
-  type: { display: string; body: string };
-  energy: number;
-  textures: string[];
-  sting: string;
-  volume: number;
-  seed: number;
-  tagline: string;
-  words: Partial<Record<Moment | "now", string>>;
-  language: string;
-  logo?: string;
-};
 export type StyleScreens = {
   offAir: import("./ScreenPicker").ScreenStyle;
   noSignal: import("./ScreenPicker").ScreenStyle;
@@ -40,36 +27,8 @@ export type BugSettings = {
   fadeBreaks?: boolean;
   fadeCredits?: boolean;
 };
-export type Look = {
-  channelCount?: number;
-  bug?: BugSettings;
-  screens?: StyleScreens;
-  id: string;
-  name: string;
-  family: string;
-  brand: BrandTokens;
-  moments: Partial<
-    Record<Moment, { duration: number; poster: number; assetDigest?: string; crossfade?: boolean }>
-  >;
-  layers?: Record<
-    string,
-    {
-      text?: string;
-      size?: number;
-      opacity?: number;
-      x?: number;
-      y?: number;
-      fit?: string;
-      behaviour?: string;
-      hidden?: boolean;
-      locked?: boolean;
-    }
-  >;
-  channelIds: string[];
-  pack?: { id: string; name: string };
-  render?: { done: number; total: number };
-};
-export type Family = { id: string; name: string; look: Look };
+import type { Style as Look } from "./studio-model";
+export type { Style as Look } from "./studio-model";
 export type ReelClip = {
   id: string;
   name: string;
@@ -183,8 +142,6 @@ const enc = encodeURIComponent;
 const write = <T>(path: string, method: string, body?: unknown) =>
   apiFetch<T>(path, { method, body: body instanceof FormData ? body : JSON.stringify(body) });
 export const onair = {
-  template: (prompt: string, base: Look) =>
-    write<Look>("/onair/template", "POST", { prompt, base }),
   looks: () => apiFetch<Look[]>("/onair/looks"),
   look: (id: string) => apiFetch<Look>(`/onair/looks/${enc(id)}`),
   saveLook: (look: Look) =>
@@ -192,7 +149,7 @@ export const onair = {
   deleteLook: (id: string) => write<void>(`/onair/looks/${enc(id)}`, "DELETE"),
   duplicateLook: (id: string) => write<Look>(`/onair/looks/${enc(id)}/duplicate`, "POST"),
   detachLook: (id: string) => write<Look>(`/onair/looks/${enc(id)}/detach`, "POST"),
-  families: () => apiFetch<Family[]>("/onair/families"),
+
   bindings: (q: { channel?: string; at?: string; viewer?: string; moment?: string }) =>
     apiFetch<Bindings>(
       `/onair/bindings?${new URLSearchParams(Object.entries(q).filter((x): x is [string, string] => !!x[1]))}`,

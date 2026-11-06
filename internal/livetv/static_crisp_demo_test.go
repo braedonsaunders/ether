@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/config"
-	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/onair/signal"
-	"github.com/braedonsaunders/ether/internal/transcode"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -17,6 +13,12 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
+	"github.com/braedonsaunders/ether/internal/onair/signal"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 var crispDemo = flag.String("static-crisp-demo", "", "offline native-clock switcher/continuous encoder evidence directory")
@@ -119,7 +121,7 @@ func TestStaticCrispDemo(t *testing.T) {
 			manager.Close()
 			t.Logf("offline switcher+encoder %s: 22s frames in %.3fs (%.3fx realtime), ceiling %dk", name, time.Since(start).Seconds(), 22/time.Since(start).Seconds(), ceiling)
 			out := filepath.Join(*crispDemo, name+".mp4")
-			if bytes, e := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-i", filepath.Join(*crispDemo, name+".ts"), "-t", "20", "-c", "copy", "-movflags", "+faststart", out).CombinedOutput(); e != nil {
+			if bytes, e := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-i", filepath.Join(*crispDemo, name+".ts"), "-t", "20", "-c", "copy", "-movflags", "+faststart", out).CombinedOutput(); e != nil {
 				t.Fatalf("%v %s", e, bytes)
 			}
 			os.Remove(filepath.Join(*crispDemo, name+".ts"))

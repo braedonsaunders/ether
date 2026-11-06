@@ -29,6 +29,11 @@ type Audio struct {
 }
 
 type Layer struct {
+	Name        string     `json:"name,omitempty"`
+	Hidden      bool       `json:"hidden,omitempty"`
+	Locked      bool       `json:"locked,omitempty"`
+	Start       float64    `json:"start,omitempty"`
+	End         float64    `json:"end,omitempty"`
 	ID          string     `json:"id"`
 	Type        string     `json:"type"`
 	X           Value      `json:"x,omitempty"`
@@ -71,6 +76,7 @@ type Layer struct {
 	Layers      []Layer    `json:"layers,omitempty"`
 }
 type Reveal struct {
+	Out  bool    `json:"out,omitempty"`
 	Wipe string  `json:"wipe"`
 	From float64 `json:"from"`
 	To   float64 `json:"to"`
@@ -164,28 +170,31 @@ func (d Document) Validate() error {
 				return fmt.Errorf("missing/duplicate layer id %q", l.ID)
 			}
 			ids[l.ID] = true
+			if math.IsNaN(l.Start) || math.IsNaN(l.End) || l.Start < 0 || l.End < 0 || l.Start > d.Duration || l.End > d.Duration || (l.End > 0 && l.End <= l.Start) {
+				return fmt.Errorf("layer %q: start and end must be within the scene, with end after start", l.ID)
+			}
 			if !one(l.Type, "rect ellipse path text image art logo blob particles gradient noise grid group") {
-				return fmt.Errorf("unknown layer %q", l.Type)
+				return fmt.Errorf("layer %q: unknown type %q", l.ID, l.Type)
 			}
 			if l.Repeat < 0 || l.Repeat > 200 || l.Count < 0 || l.Count > 2000 {
-				return fmt.Errorf("invalid repeat/particles")
+				return fmt.Errorf("layer %q: repeat must be within 0..200 and particles within 0..2000", l.ID)
 			}
 			n := max(1, l.Repeat) * m
 			total += n
 			particles += l.Count * n
 			if total > 200 || particles > 2000 || l.Blur < 0 || l.Blur > 64 || l.Glow < 0 || l.Glow > 64 {
-				return fmt.Errorf("scene exceeds render cost limit")
+				return fmt.Errorf("layer %q: scene exceeds render cost limit", l.ID)
 			}
 			if !one(l.Blend, " normal multiply screen overlay") || !one(l.TintBlend, " normal multiply screen overlay silhouette") || !one(l.Fit, " shrink wrap clip cover contain") || !one(l.FillRule, " nonzero evenodd") || !one(l.Join, " miter round bevel") || !one(l.Cap, " butt round square") || l.MaxLines < 0 || l.MaxLines > 100 {
-				return fmt.Errorf("invalid layer option")
+				return fmt.Errorf("layer %q: invalid blend, fit, fill, stroke or line limit", l.ID)
 			}
 			for _, v := range []Value{l.X, l.Y, l.W, l.H, l.Scale, l.ScaleX, l.ScaleY, l.Rotate, l.Opacity, l.Fill, l.Stroke, l.StrokeWidth, l.Text, l.Font, l.Size, l.Track, l.Src, l.Tint} {
 				if err := validateValue(v); err != nil {
-					return err
+					return fmt.Errorf("layer %q: %w", l.ID, err)
 				}
 			}
 			if l.Reveal != nil && (!one(l.Reveal.Wipe, "ltr rtl") || l.Reveal.To <= l.Reveal.From || !one(l.Reveal.Ease, " linear in out inOut back elastic spring")) {
-				return fmt.Errorf("invalid reveal")
+				return fmt.Errorf("layer %q: invalid reveal direction or timing", l.ID)
 			}
 			for _, b := range l.Behave {
 				raw, _ := json.Marshal(b)
@@ -196,7 +205,7 @@ func (d Document) Validate() error {
 				}
 				for _, p := range []*Params{b.Typewriter, b.Flicker, b.Wiggle, b.Bounce, b.Glint, b.Chroma, b.Drift, b.Pop, b.Squash} {
 					if p != nil && (p.Step < 0 || p.Speed < 0) {
-						return fmt.Errorf("negative behaviour timing")
+						return fmt.Errorf("layer %q: behaviour timing must be nonnegative", l.ID)
 					}
 				}
 			}

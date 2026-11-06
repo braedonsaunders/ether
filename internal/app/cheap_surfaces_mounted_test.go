@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/livetv"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // All requests traverse a TCP listener, the App handler, the mounted registry,
@@ -248,7 +248,7 @@ func testCheapSurfacesMounted(t *testing.T, dir string, configure func(*config.C
 		}
 		probeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
-		output, e := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-analyzeduration", "2000000", "-probesize", "32768", "-read_intervals", "%+1", "-show_entries", "stream=codec_name", "-of", "json", liveURL).CombinedOutput()
+		output, e := mediaproc.CommandContext(probeCtx, 2*time.Minute, "ffprobe", "-v", "error", "-analyzeduration", "2000000", "-probesize", "32768", "-read_intervals", "%+1", "-show_entries", "stream=codec_name", "-of", "json", liveURL).CombinedOutput()
 		if e != nil || !bytes.Contains(output, []byte("h264")) {
 			t.Fatalf("ffprobe mounted lineup: %v %s", e, output)
 		}

@@ -11,7 +11,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "aurora0",
@@ -49,7 +50,8 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 1"
     },
     {
       "id": "aurora1",
@@ -87,7 +89,8 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 2"
     },
     {
       "id": "aurora2",
@@ -125,7 +128,8 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 3"
     },
     {
       "id": "panel",
@@ -135,7 +139,8 @@
       "fill": "{bg}@0.75",
       "stroke": "{text}@0.2",
       "strokeWidth": 2,
-      "path": "M 30 0 H 1650 Q 1680 0 1680 30 V 770 Q 1680 800 1650 800 H 30 Q 0 800 0 770 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1650 Q 1680 0 1680 30 V 770 Q 1680 800 1650 800 H 30 Q 0 800 0 770 V 30 Q 0 0 30 0 Z",
+      "name": "Panel"
     },
     {
       "id": "poster-bg",
@@ -161,7 +166,8 @@
             "{glow}"
           ]
         ]
-      }
+      },
+      "name": "Poster background"
     },
     {
       "id": "art-illustration",
@@ -187,14 +193,15 @@
             "stops": [
               [
                 0,
-                "#152443"
+                "{control.detail1}"
               ],
               [
                 1,
-                "#bd794f"
+                "{control.detail2}"
               ]
             ]
-          }
+          },
+          "name": "Sky"
         },
         {
           "id": "art-moon",
@@ -203,27 +210,32 @@
           "y": 78.0,
           "w": 86.4,
           "h": 86.4,
-          "fill": "#efdbaa"
+          "fill": "{control.detail3}",
+          "name": "Moon"
         },
         {
           "id": "art-ridge0",
           "type": "path",
           "path": "M 0 338.0 L 108.0 195.0 L 189.0 325.0 L 351.0 175.5 L 540 312.0 L 540 650 L 0 650 Z",
-          "fill": "#384762"
+          "fill": "{control.detail4}",
+          "name": "Ridge 1"
         },
         {
           "id": "art-ridge1",
           "type": "path",
           "path": "M 0 416.0 L 108.0 299.0 L 189.0 390.0 L 351.0 286.00000000000006 L 540 377.0 L 540 650 L 0 650 Z",
-          "fill": "#293248"
+          "fill": "#293248",
+          "name": "Ridge 2"
         },
         {
           "id": "art-ridge2",
           "type": "path",
           "path": "M 0 494.0 L 108.0 403.0 L 189.0 454.99999999999994 L 351.0 396.50000000000006 L 540 441.99999999999994 L 540 650 L 0 650 Z",
-          "fill": "#172139"
+          "fill": "#172139",
+          "name": "Ridge 3"
         }
-      ]
+      ],
+      "name": "Illustration"
     },
     {
       "id": "art",
@@ -233,7 +245,8 @@
       "y": 200,
       "w": 540,
       "h": 650,
-      "fit": "cover"
+      "fit": "cover",
+      "name": "Art"
     },
     {
       "id": "kicker",
@@ -263,157 +276,177 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Kicker"
     },
     {
-      "id": "Title-weight0",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 178.2,
-      "y": 460,
-      "size": 112,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "wrap",
-      "maxWidth": 920,
-      "maxLines": 2,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
+      "id": "Title-group",
+      "name": "Channel title",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title-treatment",
+          "name": "Channel title effect",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-weight0",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 178.2,
+              "y": 460,
+              "size": 112,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "wrap",
+              "maxWidth": 920,
+              "maxLines": 2,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 1"
+            },
+            {
+              "id": "Title-weight1",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 181.8,
+              "y": 460,
+              "size": 112,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "wrap",
+              "maxWidth": 920,
+              "maxLines": 2,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 2"
+            },
+            {
+              "id": "Title-weight2",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 180,
+              "y": 458.2,
+              "size": 112,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "wrap",
+              "maxWidth": 920,
+              "maxLines": 2,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 3"
+            },
+            {
+              "id": "Title-weight3",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 180,
+              "y": 461.8,
+              "size": 112,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "wrap",
+              "maxWidth": 920,
+              "maxLines": 2,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 4"
+            },
+            {
+              "id": "Title",
+              "type": "text",
+              "text": "{next.title}",
+              "x": 180,
+              "y": 460,
+              "size": 112,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "wrap",
+              "maxWidth": 920,
+              "maxLines": 2,
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 5"
+            }
           ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight1",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 181.8,
-      "y": 460,
-      "size": 112,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "wrap",
-      "maxWidth": 920,
-      "maxLines": 2,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight2",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 180,
-      "y": 458.2,
-      "size": 112,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "wrap",
-      "maxWidth": 920,
-      "maxLines": 2,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight3",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 180,
-      "y": 461.8,
-      "size": 112,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "wrap",
-      "maxWidth": 920,
-      "maxLines": 2,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title",
-      "type": "text",
-      "text": "{next.title}",
-      "x": 180,
-      "y": 460,
-      "size": 112,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "wrap",
-      "maxWidth": 920,
-      "maxLines": 2,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+        }
+      ]
     },
     {
       "id": "meta",
@@ -442,7 +475,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta"
     },
     {
       "id": "logline",
@@ -472,7 +506,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Logline"
     },
     {
       "id": "time",
@@ -501,7 +536,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time"
     }
   ],
   "post": [

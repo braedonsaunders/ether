@@ -32,6 +32,9 @@ func (s *Service) putAsset(ctx context.Context, name, kind, license, mime string
 		return a, e
 	}
 	e = s.db.QueryRowContext(ctx, "SELECT name,kind,size,license,mime FROM onair_assets WHERE digest=?", a.Digest).Scan(&a.Name, &a.Kind, &a.Size, &a.License, &a.MIME)
+	if e == nil {
+		a = s.recordFacts(ctx, a, b)
+	}
 	return a, e
 }
 func (s *Service) UploadAsset(ctx context.Context, name, kind, license string, r io.Reader) (Asset, error) {
@@ -140,14 +143,14 @@ func (s *Service) UploadAsset(ctx context.Context, name, kind, license string, r
 	return s.putAsset(ctx, name, kind, license, mime, b)
 }
 func (s *Service) Assets(ctx context.Context) ([]Asset, error) {
-	rows, e := s.db.QueryContext(ctx, "SELECT digest,name,kind,size,license,mime,source,attribution FROM onair_assets ORDER BY created_at")
+	rows, e := s.db.QueryContext(ctx, "SELECT digest,name,kind,size,license,mime,source,attribution,COALESCE(duration_ms,0),width,height FROM onair_assets ORDER BY created_at")
 	if e != nil {
 		return nil, e
 	}
 	out := []Asset{}
 	for rows.Next() {
 		var a Asset
-		if e = rows.Scan(&a.Digest, &a.Name, &a.Kind, &a.Size, &a.License, &a.MIME, &a.Source, &a.Attribution); e != nil {
+		if e = rows.Scan(&a.Digest, &a.Name, &a.Kind, &a.Size, &a.License, &a.MIME, &a.Source, &a.Attribution, &a.DurationMS, &a.Width, &a.Height); e != nil {
 			rows.Close()
 			return nil, e
 		}
@@ -260,7 +263,11 @@ func (s *Service) putReelAsset(ctx context.Context, name string, b []byte) (Asse
 	if _, e = tx.ExecContext(ctx, "INSERT INTO onair_assets(digest,kind,name,mime,size,license,content,created_at) VALUES(?,'reel',?,'video/mp4',?,'',?,?) ON CONFLICT(digest) DO UPDATE SET kind='reel'", a.Digest, name, a.Size, b, time.Now().Unix()); e != nil {
 		return a, e
 	}
-	return a, tx.Commit()
+	if e = tx.Commit(); e != nil {
+		return a, e
+	}
+	a.Kind = "reel"
+	return s.recordFacts(ctx, a, b), nil
 }
 
 // On Air can run independently of Live TV (including plugin test databases).

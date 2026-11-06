@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 type ffprobeDoc struct {
@@ -71,7 +71,7 @@ func verifyOutput(ctx context.Context, ffprobe, path string, dec core.Decision, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, ffprobe, "-hide_banner", "-loglevel", "error",
+	cmd := mediaproc.CommandContext(ctx, mediaproc.ProbeTimeout, ffprobe, "-hide_banner", "-loglevel", "error",
 		"-show_streams", "-show_format", "-of", "json", path)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
@@ -155,7 +155,7 @@ func ffprobeVersion(ctx context.Context, ffprobe string) string {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, ffprobe, "-hide_banner", "-version").Output()
+	out, err := mediaproc.CommandContext(ctx, mediaproc.ProbeTimeout, ffprobe, "-hide_banner", "-version").Output()
 	if err != nil {
 		return ""
 	}

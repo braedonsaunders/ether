@@ -11,115 +11,134 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "ray0",
       "type": "path",
       "path": "M 960 540 L 3360.00 540.00 L 3351.34 743.75 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 1"
     },
     {
       "id": "ray1",
       "type": "path",
       "path": "M 960 540 L 3215.26 1360.85 L 3137.43 1549.35 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 2"
     },
     {
       "id": "ray2",
       "type": "path",
       "path": "M 960 540 L 2798.51 2082.69 L 2660.90 2233.21 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 3"
     },
     {
       "id": "ray3",
       "type": "path",
       "path": "M 960 540 L 2160.00 2618.46 L 1979.21 2712.83 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 4"
     },
     {
       "id": "ray4",
       "type": "path",
       "path": "M 960 540 L 1376.76 2903.54 L 1174.59 2930.39 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 5"
     },
     {
       "id": "ray5",
       "type": "path",
       "path": "M 960 540 L 543.24 2903.54 L 344.09 2859.62 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 6"
     },
     {
       "id": "ray6",
       "type": "path",
       "path": "M 960 540 L -240.00 2618.46 L -412.12 2509.08 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 7"
     },
     {
       "id": "ray7",
       "type": "path",
       "path": "M 960 540 L -878.51 2082.69 L -1002.84 1921.04 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 8"
     },
     {
       "id": "ray8",
       "type": "path",
       "path": "M 960 540 L -1295.26 1360.85 L -1356.81 1166.42 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 9"
     },
     {
       "id": "ray9",
       "type": "path",
       "path": "M 960 540 L -1440.00 540.00 L -1431.34 336.25 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 10"
     },
     {
       "id": "ray10",
       "type": "path",
       "path": "M 960 540 L -1295.26 -280.85 L -1217.43 -469.35 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 11"
     },
     {
       "id": "ray11",
       "type": "path",
       "path": "M 960 540 L -878.51 -1002.69 L -740.90 -1153.21 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 12"
     },
     {
       "id": "ray12",
       "type": "path",
       "path": "M 960 540 L -240.00 -1538.46 L -59.21 -1632.83 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 13"
     },
     {
       "id": "ray13",
       "type": "path",
       "path": "M 960 540 L 543.24 -1823.54 L 745.41 -1850.39 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 14"
     },
     {
       "id": "ray14",
       "type": "path",
       "path": "M 960 540 L 1376.76 -1823.54 L 1575.91 -1779.62 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 15"
     },
     {
       "id": "ray15",
       "type": "path",
       "path": "M 960 540 L 2160.00 -1538.46 L 2332.12 -1429.08 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 16"
     },
     {
       "id": "ray16",
       "type": "path",
       "path": "M 960 540 L 2798.51 -1002.69 L 2922.84 -841.04 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 17"
     },
     {
       "id": "ray17",
       "type": "path",
       "path": "M 960 540 L 3215.26 -280.85 L 3276.81 -86.42 Z",
-      "fill": "#ffffff@0.06"
+      "fill": "#ffffff@0.06",
+      "name": "Ray 18"
     },
     {
       "id": "confetti",
@@ -128,7 +147,8 @@
       "h": 1080,
       "count": 55,
       "fill": "{glow}",
-      "seed": 17
+      "seed": 17,
+      "name": "Confetti"
     },
     {
       "id": "Title-shadow",
@@ -138,7 +158,7 @@
       "y": 199,
       "size": 86,
       "font": "{type.display}",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1600,
       "align": "center",
@@ -158,157 +178,170 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Title shadow"
     },
     {
-      "id": "Title-outline3",
-      "type": "text",
-      "text": "COMING UP!",
-      "x": 960,
-      "y": 195,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-outline2",
-      "type": "text",
-      "text": "COMING UP!",
-      "x": 960,
-      "y": 185,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-outline1",
-      "type": "text",
-      "text": "COMING UP!",
-      "x": 965,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-outline0",
-      "type": "text",
-      "text": "COMING UP!",
-      "x": 955,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title",
-      "type": "text",
-      "text": "COMING UP!",
-      "x": 960,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "#ffd23f",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+      "id": "Title-treatment",
+      "name": "Title lettering",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title-outline3",
+          "type": "text",
+          "text": "COMING UP!",
+          "x": 960,
+          "y": 195,
+          "size": 86,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 4"
+        },
+        {
+          "id": "Title-outline2",
+          "type": "text",
+          "text": "COMING UP!",
+          "x": 960,
+          "y": 185,
+          "size": 86,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 3"
+        },
+        {
+          "id": "Title-outline1",
+          "type": "text",
+          "text": "COMING UP!",
+          "x": 965,
+          "y": 190,
+          "size": 86,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 2"
+        },
+        {
+          "id": "Title-outline0",
+          "type": "text",
+          "text": "COMING UP!",
+          "x": 955,
+          "y": 190,
+          "size": 86,
+          "font": "{type.display}",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Title outline 1"
+        },
+        {
+          "id": "Title",
+          "type": "text",
+          "text": "COMING UP!",
+          "x": 960,
+          "y": 190,
+          "size": 86,
+          "font": "{type.display}",
+          "fill": "{control.detail3}",
+          "fit": "shrink",
+          "maxWidth": 1600,
+          "align": "center",
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Channel title"
+        }
+      ]
     },
     {
       "id": "card0",
@@ -317,8 +350,9 @@
       "y": 268,
       "fill": "{accent}",
       "path": "M 60 0 H 1340 Q 1400 0 1400 60 V 72 Q 1400 132 1340 132 H 60 Q 0 132 0 72 V 60 Q 0 0 60 0 Z",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Card 1"
     },
     {
       "id": "clock0",
@@ -327,9 +361,10 @@
       "y": 250,
       "w": 180,
       "h": 180,
-      "fill": "#ffd23f",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "fill": "{control.detail3}",
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Clock 1"
     },
     {
       "id": "time0",
@@ -339,7 +374,7 @@
       "y": 350,
       "size": 38,
       "font": "{type.display}",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 165,
       "maxLines": 1,
@@ -360,7 +395,8 @@
           ]
         ]
       },
-      "align": "center"
+      "align": "center",
+      "name": "Time 1"
     },
     {
       "id": "item0-shadow",
@@ -370,7 +406,7 @@
       "y": 349,
       "size": 58,
       "font": "bungee",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1060,
       "opacity": {
@@ -389,152 +425,165 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 1 shadow"
     },
     {
-      "id": "item0-outline3",
-      "type": "text",
-      "text": "{list[0].title}",
-      "x": 620,
-      "y": 345,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item0-outline2",
-      "type": "text",
-      "text": "{list[0].title}",
-      "x": 620,
-      "y": 335,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item0-outline1",
-      "type": "text",
-      "text": "{list[0].title}",
-      "x": 625,
-      "y": 340,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item0-outline0",
-      "type": "text",
-      "text": "{list[0].title}",
-      "x": 615,
-      "y": 340,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item0",
-      "type": "text",
-      "text": "{list[0].title}",
-      "x": 620,
-      "y": 340,
-      "size": 58,
-      "font": "bungee",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+      "id": "item0-treatment",
+      "name": "Item0 lettering",
+      "type": "group",
+      "layers": [
+        {
+          "id": "item0-outline3",
+          "type": "text",
+          "text": "{list[0].title}",
+          "x": 620,
+          "y": 345,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 1 outline 4"
+        },
+        {
+          "id": "item0-outline2",
+          "type": "text",
+          "text": "{list[0].title}",
+          "x": 620,
+          "y": 335,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 1 outline 3"
+        },
+        {
+          "id": "item0-outline1",
+          "type": "text",
+          "text": "{list[0].title}",
+          "x": 625,
+          "y": 340,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 1 outline 2"
+        },
+        {
+          "id": "item0-outline0",
+          "type": "text",
+          "text": "{list[0].title}",
+          "x": 615,
+          "y": 340,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 1 outline 1"
+        },
+        {
+          "id": "item0",
+          "type": "text",
+          "text": "{list[0].title}",
+          "x": 620,
+          "y": 340,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{text}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 1"
+        }
+      ]
     },
     {
       "id": "meta0",
@@ -563,7 +612,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 1"
     },
     {
       "id": "card1",
@@ -572,8 +622,9 @@
       "y": 438,
       "fill": "{glow}",
       "path": "M 60 0 H 1340 Q 1400 0 1400 60 V 72 Q 1400 132 1340 132 H 60 Q 0 132 0 72 V 60 Q 0 0 60 0 Z",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Card 2"
     },
     {
       "id": "clock1",
@@ -582,9 +633,10 @@
       "y": 420,
       "w": 180,
       "h": 180,
-      "fill": "#ffd23f",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "fill": "{control.detail3}",
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Clock 2"
     },
     {
       "id": "time1",
@@ -594,7 +646,7 @@
       "y": 520,
       "size": 38,
       "font": "{type.display}",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 165,
       "maxLines": 1,
@@ -615,7 +667,8 @@
           ]
         ]
       },
-      "align": "center"
+      "align": "center",
+      "name": "Time 2"
     },
     {
       "id": "item1-shadow",
@@ -625,7 +678,7 @@
       "y": 519,
       "size": 58,
       "font": "bungee",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1060,
       "opacity": {
@@ -644,152 +697,165 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 2 shadow"
     },
     {
-      "id": "item1-outline3",
-      "type": "text",
-      "text": "{list[1].title}",
-      "x": 620,
-      "y": 515,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item1-outline2",
-      "type": "text",
-      "text": "{list[1].title}",
-      "x": 620,
-      "y": 505,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item1-outline1",
-      "type": "text",
-      "text": "{list[1].title}",
-      "x": 625,
-      "y": 510,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item1-outline0",
-      "type": "text",
-      "text": "{list[1].title}",
-      "x": 615,
-      "y": 510,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item1",
-      "type": "text",
-      "text": "{list[1].title}",
-      "x": 620,
-      "y": 510,
-      "size": 58,
-      "font": "bungee",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+      "id": "item1-treatment",
+      "name": "Item1 lettering",
+      "type": "group",
+      "layers": [
+        {
+          "id": "item1-outline3",
+          "type": "text",
+          "text": "{list[1].title}",
+          "x": 620,
+          "y": 515,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 2 outline 4"
+        },
+        {
+          "id": "item1-outline2",
+          "type": "text",
+          "text": "{list[1].title}",
+          "x": 620,
+          "y": 505,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 2 outline 3"
+        },
+        {
+          "id": "item1-outline1",
+          "type": "text",
+          "text": "{list[1].title}",
+          "x": 625,
+          "y": 510,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 2 outline 2"
+        },
+        {
+          "id": "item1-outline0",
+          "type": "text",
+          "text": "{list[1].title}",
+          "x": 615,
+          "y": 510,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 2 outline 1"
+        },
+        {
+          "id": "item1",
+          "type": "text",
+          "text": "{list[1].title}",
+          "x": 620,
+          "y": 510,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{text}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 2"
+        }
+      ]
     },
     {
       "id": "meta1",
@@ -818,7 +884,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 2"
     },
     {
       "id": "card2",
@@ -827,8 +894,9 @@
       "y": 608,
       "fill": "#ff3e8a",
       "path": "M 60 0 H 1340 Q 1400 0 1400 60 V 72 Q 1400 132 1340 132 H 60 Q 0 132 0 72 V 60 Q 0 0 60 0 Z",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Card 3"
     },
     {
       "id": "clock2",
@@ -837,9 +905,10 @@
       "y": 590,
       "w": 180,
       "h": 180,
-      "fill": "#ffd23f",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "fill": "{control.detail3}",
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Clock 3"
     },
     {
       "id": "time2",
@@ -849,7 +918,7 @@
       "y": 690,
       "size": 38,
       "font": "{type.display}",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 165,
       "maxLines": 1,
@@ -870,7 +939,8 @@
           ]
         ]
       },
-      "align": "center"
+      "align": "center",
+      "name": "Time 3"
     },
     {
       "id": "item2-shadow",
@@ -880,7 +950,7 @@
       "y": 689,
       "size": 58,
       "font": "bungee",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1060,
       "opacity": {
@@ -899,152 +969,165 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 3 shadow"
     },
     {
-      "id": "item2-outline3",
-      "type": "text",
-      "text": "{list[2].title}",
-      "x": 620,
-      "y": 685,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item2-outline2",
-      "type": "text",
-      "text": "{list[2].title}",
-      "x": 620,
-      "y": 675,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item2-outline1",
-      "type": "text",
-      "text": "{list[2].title}",
-      "x": 625,
-      "y": 680,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item2-outline0",
-      "type": "text",
-      "text": "{list[2].title}",
-      "x": 615,
-      "y": 680,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item2",
-      "type": "text",
-      "text": "{list[2].title}",
-      "x": 620,
-      "y": 680,
-      "size": 58,
-      "font": "bungee",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+      "id": "item2-treatment",
+      "name": "Item2 lettering",
+      "type": "group",
+      "layers": [
+        {
+          "id": "item2-outline3",
+          "type": "text",
+          "text": "{list[2].title}",
+          "x": 620,
+          "y": 685,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 3 outline 4"
+        },
+        {
+          "id": "item2-outline2",
+          "type": "text",
+          "text": "{list[2].title}",
+          "x": 620,
+          "y": 675,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 3 outline 3"
+        },
+        {
+          "id": "item2-outline1",
+          "type": "text",
+          "text": "{list[2].title}",
+          "x": 625,
+          "y": 680,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 3 outline 2"
+        },
+        {
+          "id": "item2-outline0",
+          "type": "text",
+          "text": "{list[2].title}",
+          "x": 615,
+          "y": 680,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 3 outline 1"
+        },
+        {
+          "id": "item2",
+          "type": "text",
+          "text": "{list[2].title}",
+          "x": 620,
+          "y": 680,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{text}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 3"
+        }
+      ]
     },
     {
       "id": "meta2",
@@ -1073,7 +1156,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 3"
     },
     {
       "id": "card3",
@@ -1082,8 +1166,9 @@
       "y": 778,
       "fill": "{accent}",
       "path": "M 60 0 H 1340 Q 1400 0 1400 60 V 72 Q 1400 132 1340 132 H 60 Q 0 132 0 72 V 60 Q 0 0 60 0 Z",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Card 4"
     },
     {
       "id": "clock3",
@@ -1092,9 +1177,10 @@
       "y": 760,
       "w": 180,
       "h": 180,
-      "fill": "#ffd23f",
-      "stroke": "#1b0b3a",
-      "strokeWidth": 10
+      "fill": "{control.detail3}",
+      "stroke": "{control.detail1}",
+      "strokeWidth": 10,
+      "name": "Clock 4"
     },
     {
       "id": "time3",
@@ -1104,7 +1190,7 @@
       "y": 860,
       "size": 38,
       "font": "{type.display}",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 165,
       "maxLines": 1,
@@ -1125,7 +1211,8 @@
           ]
         ]
       },
-      "align": "center"
+      "align": "center",
+      "name": "Time 4"
     },
     {
       "id": "item3-shadow",
@@ -1135,7 +1222,7 @@
       "y": 859,
       "size": 58,
       "font": "bungee",
-      "fill": "#1b0b3a",
+      "fill": "{control.detail1}",
       "fit": "shrink",
       "maxWidth": 1060,
       "opacity": {
@@ -1154,152 +1241,165 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 4 shadow"
     },
     {
-      "id": "item3-outline3",
-      "type": "text",
-      "text": "{list[3].title}",
-      "x": 620,
-      "y": 855,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item3-outline2",
-      "type": "text",
-      "text": "{list[3].title}",
-      "x": 620,
-      "y": 845,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item3-outline1",
-      "type": "text",
-      "text": "{list[3].title}",
-      "x": 625,
-      "y": 850,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item3-outline0",
-      "type": "text",
-      "text": "{list[3].title}",
-      "x": 615,
-      "y": 850,
-      "size": 58,
-      "font": "bungee",
-      "fill": "#1b0b3a",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "item3",
-      "type": "text",
-      "text": "{list[3].title}",
-      "x": 620,
-      "y": 850,
-      "size": 58,
-      "font": "bungee",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1060,
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+      "id": "item3-treatment",
+      "name": "Item3 lettering",
+      "type": "group",
+      "layers": [
+        {
+          "id": "item3-outline3",
+          "type": "text",
+          "text": "{list[3].title}",
+          "x": 620,
+          "y": 855,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 4 outline 4"
+        },
+        {
+          "id": "item3-outline2",
+          "type": "text",
+          "text": "{list[3].title}",
+          "x": 620,
+          "y": 845,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 4 outline 3"
+        },
+        {
+          "id": "item3-outline1",
+          "type": "text",
+          "text": "{list[3].title}",
+          "x": 625,
+          "y": 850,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 4 outline 2"
+        },
+        {
+          "id": "item3-outline0",
+          "type": "text",
+          "text": "{list[3].title}",
+          "x": 615,
+          "y": 850,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{control.detail1}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 4 outline 1"
+        },
+        {
+          "id": "item3",
+          "type": "text",
+          "text": "{list[3].title}",
+          "x": 620,
+          "y": 850,
+          "size": 58,
+          "font": "bungee",
+          "fill": "{text}",
+          "fit": "shrink",
+          "maxWidth": 1060,
+          "opacity": {
+            "keys": [
+              [
+                0,
+                0
+              ],
+              [
+                0.4,
+                0
+              ],
+              [
+                1.8,
+                1,
+                "out"
+              ]
+            ]
+          },
+          "name": "Item 4"
+        }
+      ]
     },
     {
       "id": "meta3",
@@ -1328,7 +1428,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 4"
     },
     {
       "id": "small-mascot",
@@ -1353,8 +1454,9 @@
           "w": 400,
           "h": 400,
           "fill": "{glow}",
-          "stroke": "#1b0b3a",
-          "strokeWidth": 12
+          "stroke": "{control.detail1}",
+          "strokeWidth": 12,
+          "name": "Mini body"
         },
         {
           "id": "mini-eye0",
@@ -1363,7 +1465,8 @@
           "y": -80,
           "w": 80,
           "h": 100,
-          "fill": "#ffffff"
+          "fill": "{control.detail2}",
+          "name": "Mini eye 1"
         },
         {
           "id": "mini-eye1",
@@ -1372,7 +1475,8 @@
           "y": -80,
           "w": 80,
           "h": 100,
-          "fill": "#ffffff"
+          "fill": "{control.detail2}",
+          "name": "Mini eye 2"
         },
         {
           "id": "mini-p0",
@@ -1381,7 +1485,8 @@
           "y": -40,
           "w": 25,
           "h": 40,
-          "fill": "#1b0b3a"
+          "fill": "{control.detail1}",
+          "name": "Mini pupil 1"
         },
         {
           "id": "mini-p1",
@@ -1390,16 +1495,19 @@
           "y": -40,
           "w": 25,
           "h": 40,
-          "fill": "#1b0b3a"
+          "fill": "{control.detail1}",
+          "name": "Mini pupil 2"
         },
         {
           "id": "mini-smile",
           "type": "path",
           "path": "M -55 60 Q 0 120 55 60",
-          "stroke": "#1b0b3a",
-          "strokeWidth": 12
+          "stroke": "{control.detail1}",
+          "strokeWidth": 12,
+          "name": "Mini smile"
         }
-      ]
+      ],
+      "name": "Small mascot"
     }
   ],
   "post": [

@@ -11,7 +11,8 @@
       "y": 0,
       "w": 1920,
       "h": 1080,
-      "fill": "{bg}"
+      "fill": "{bg}",
+      "name": "Background"
     },
     {
       "id": "aurora0",
@@ -49,7 +50,8 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 1"
     },
     {
       "id": "aurora1",
@@ -87,7 +89,8 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 2"
     },
     {
       "id": "aurora2",
@@ -125,157 +128,177 @@
           ]
         ]
       },
-      "blend": "screen"
+      "blend": "screen",
+      "name": "Aurora 3"
     },
     {
-      "id": "Title-weight0",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 178.2,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "left",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
+      "id": "Title-group",
+      "name": "Channel title",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title-treatment",
+          "name": "Channel title effect",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-weight0",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 178.2,
+              "y": 190,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "left",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 1"
+            },
+            {
+              "id": "Title-weight1",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 181.8,
+              "y": 190,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "left",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 2"
+            },
+            {
+              "id": "Title-weight2",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 180,
+              "y": 188.2,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "left",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 3"
+            },
+            {
+              "id": "Title-weight3",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 180,
+              "y": 191.8,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "left",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 4"
+            },
+            {
+              "id": "Title",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 180,
+              "y": 190,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "left",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Lettering layer 5"
+            }
           ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight1",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 181.8,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "left",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight2",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 180,
-      "y": 188.2,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "left",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight3",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 180,
-      "y": 191.8,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "left",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 180,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "left",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+        }
+      ]
     },
     {
       "id": "card0",
@@ -283,7 +306,8 @@
       "x": 360,
       "y": 268,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 1"
     },
     {
       "id": "time0",
@@ -313,7 +337,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 1"
     },
     {
       "id": "item0",
@@ -342,7 +367,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 1"
     },
     {
       "id": "meta0",
@@ -371,7 +397,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 1"
     },
     {
       "id": "card1",
@@ -379,7 +406,8 @@
       "x": 360,
       "y": 438,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 2"
     },
     {
       "id": "time1",
@@ -409,7 +437,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 2"
     },
     {
       "id": "item1",
@@ -438,7 +467,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 2"
     },
     {
       "id": "meta1",
@@ -467,7 +497,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 2"
     },
     {
       "id": "card2",
@@ -475,7 +506,8 @@
       "x": 360,
       "y": 608,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 3"
     },
     {
       "id": "time2",
@@ -505,7 +537,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 3"
     },
     {
       "id": "item2",
@@ -534,7 +567,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 3"
     },
     {
       "id": "meta2",
@@ -563,7 +597,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 3"
     },
     {
       "id": "card3",
@@ -571,7 +606,8 @@
       "x": 360,
       "y": 778,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 4"
     },
     {
       "id": "time3",
@@ -601,7 +637,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 4"
     },
     {
       "id": "item3",
@@ -630,7 +667,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 4"
     },
     {
       "id": "meta3",
@@ -659,7 +697,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 4"
     }
   ],
   "post": [

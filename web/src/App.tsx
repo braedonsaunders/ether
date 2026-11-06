@@ -471,7 +471,14 @@ function Shell() {
                 system: t("System"),
                 current: (mode) =>
                   t("Theme: {mode}", {
-                    mode: mode === "light" ? t("Light") : mode === "dark" ? t("Dark") : t("System"),
+                    // AppKit passes the already-translated option label.
+                    mode:
+                      (
+                        { light: t("Light"), dark: t("Dark"), system: t("System") } as Record<
+                          string,
+                          string
+                        >
+                      )[mode] ?? mode,
                   }),
               }}
             />

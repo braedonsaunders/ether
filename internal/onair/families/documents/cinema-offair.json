@@ -28,7 +28,8 @@
             "{bg}"
           ]
         ]
-      }
+      },
+      "name": "Background"
     },
     {
       "id": "beam",
@@ -51,14 +52,16 @@
             "{accent}@0"
           ]
         ]
-      }
+      },
+      "name": "Beam"
     },
     {
       "id": "dust",
       "type": "particles",
       "count": 70,
       "fill": "{accent}@0.4",
-      "seed": 11
+      "seed": 11,
+      "name": "Dust"
     },
     {
       "id": "ring",
@@ -69,7 +72,8 @@
       "h": 220,
       "fill": "#000000@0",
       "stroke": "{accent}",
-      "strokeWidth": 3
+      "strokeWidth": 3,
+      "name": "Ring"
     },
     {
       "id": "star",
@@ -89,7 +93,8 @@
             1.2
           ]
         ]
-      }
+      },
+      "name": "Star"
     },
     {
       "id": "Title",
@@ -119,7 +124,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Channel title"
     },
     {
       "id": "subtitle",
@@ -149,7 +155,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Subtitle"
     }
   ],
   "post": [
@@ -159,7 +166,7 @@
     },
     {
       "type": "vignette",
-      "amount": 0.45
+      "amount": "{control.effect-vignette}"
     }
   ],
   "slots": [

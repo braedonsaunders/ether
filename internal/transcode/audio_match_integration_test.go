@@ -5,12 +5,12 @@ import (
 	"encoding/binary"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Decode the same static-header Matroska the Apple TV keeps open. Both video
@@ -42,7 +42,7 @@ func testSourceAudioMatch(t *testing.T, replacementGain, wantGain float64) {
 			t.Fatal(err)
 		}
 		args := []string{"-v", "error", "-nostdin", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=24", "-f", "f32le", "-ar", "8000", "-ac", "1", "-i", raw, "-t", "24", "-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", "-g", "24", "-keyint_min", "24", "-sc_threshold", "0", "-c:a", "aac", "-ar", "48000", "-b:a", "128k", filepath.Join(e.dir, tc.name+".mkv")}
-		if out, err := exec.CommandContext(ctx, e.ffmpeg, args...).CombinedOutput(); err != nil {
+		if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, e.ffmpeg, args...).CombinedOutput(); err != nil {
 			t.Fatalf("fixture: %v %s", err, out)
 		}
 	}
@@ -111,7 +111,7 @@ func testSourceAudioMatch(t *testing.T, replacementGain, wantGain float64) {
 		t.Fatal(err)
 	}
 	// The original retained header must decode all packets, not just the new init.
-	if out, err := exec.CommandContext(ctx, e.ffmpeg, "-v", "error", "-xerror", "-i", filepath.Join(e.dir, "joined.mkv"), "-f", "null", "-").CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, e.ffmpeg, "-v", "error", "-xerror", "-i", filepath.Join(e.dir, "joined.mkv"), "-f", "null", "-").CombinedOutput(); err != nil {
 		t.Fatalf("retained header: %v %s", err, out)
 	}
 	ref := s.sampleAudio(ctx, e.url("original.mkv"), 1, 9*time.Second)

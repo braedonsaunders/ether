@@ -6,13 +6,14 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Opt-in media contract check; CHAOS_DV8 names a local DV8.1 + HDR10+ MKV.
@@ -37,7 +38,7 @@ func TestTranscodeChaosDVBaseContract(t *testing.T) {
 				src := e.writeTemp(t, "source.mkv", data)
 				command := func(bin string, args ...string) []byte {
 					t.Helper()
-					b, err := exec.CommandContext(t.Context(), bin, args...).CombinedOutput()
+					b, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, bin, args...).CombinedOutput()
 					if err != nil {
 						t.Fatalf("%s: %v: %s", bin, err, b)
 					}

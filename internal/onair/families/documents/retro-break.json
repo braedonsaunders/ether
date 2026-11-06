@@ -25,55 +25,66 @@
           ],
           [
             1,
-            "#502050"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "sun",
-      "type": "path",
-      "x": 660,
-      "y": 180,
-      "fill": {
-        "linear": [
-          0,
-          0,
-          0,
-          1080
-        ],
-        "stops": [
-          [
-            0,
-            "#ffce52"
-          ],
-          [
-            1,
-            "{accent}"
+            "{control.detail2}"
           ]
         ]
       },
-      "path": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z M -10 290 H 610 Q 610 290 610 290 V 295 Q 610 295 610 295 H -10 Q -10 295 -10 295 V 290 Q -10 290 -10 290 Z M -10 318 H 610 Q 610 318 610 318 V 325 Q 610 325 610 325 H -10 Q -10 325 -10 325 V 318 Q -10 318 -10 318 Z M -10 346 H 610 Q 610 346 610 346 V 355 Q 610 355 610 355 H -10 Q -10 355 -10 355 V 346 Q -10 346 -10 346 Z M -10 374 H 610 Q 610 374 610 374 V 385 Q 610 385 610 385 H -10 Q -10 385 -10 385 V 374 Q -10 374 -10 374 Z M -10 402 H 610 Q 610 402 610 402 V 415 Q 610 415 610 415 H -10 Q -10 415 -10 415 V 402 Q -10 402 -10 402 Z M -10 430 H 610 Q 610 430 610 430 V 445 Q 610 445 610 445 H -10 Q -10 445 -10 445 V 430 Q -10 430 -10 430 Z M -10 458 H 610 Q 610 458 610 458 V 475 Q 610 475 610 475 H -10 Q -10 475 -10 475 V 458 Q -10 458 -10 458 Z M -10 486 H 610 Q 610 486 610 486 V 505 Q 610 505 610 505 H -10 Q -10 505 -10 505 V 486 Q -10 486 -10 486 Z M -10 514 H 610 Q 610 514 610 514 V 535 Q 610 535 610 535 H -10 Q -10 535 -10 535 V 514 Q -10 514 -10 514 Z M -10 542 H 610 Q 610 542 610 542 V 565 Q 610 565 610 565 H -10 Q -10 565 -10 565 V 542 Q -10 542 -10 542 Z",
-      "fillRule": "evenodd",
-      "clip": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z"
+      "name": "Background"
     },
     {
-      "id": "ground",
-      "type": "rect",
-      "x": 0,
-      "y": 640,
-      "w": 1920,
-      "h": 440,
-      "fill": "{bg}"
-    },
-    {
-      "id": "grid",
-      "type": "grid",
-      "y": 640,
-      "w": 1920,
-      "h": 440,
-      "stroke": "{glow}@0.6",
-      "strokeWidth": 2
+      "id": "horizon-group",
+      "name": "Horizon",
+      "type": "group",
+      "layers": [
+        {
+          "id": "sun",
+          "type": "path",
+          "x": 660,
+          "y": 180,
+          "fill": {
+            "linear": [
+              0,
+              0,
+              0,
+              1080
+            ],
+            "stops": [
+              [
+                0,
+                "{control.detail3}"
+              ],
+              [
+                1,
+                "{accent}"
+              ]
+            ]
+          },
+          "path": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z M -10 290 H 610 Q 610 290 610 290 V 295 Q 610 295 610 295 H -10 Q -10 295 -10 295 V 290 Q -10 290 -10 290 Z M -10 318 H 610 Q 610 318 610 318 V 325 Q 610 325 610 325 H -10 Q -10 325 -10 325 V 318 Q -10 318 -10 318 Z M -10 346 H 610 Q 610 346 610 346 V 355 Q 610 355 610 355 H -10 Q -10 355 -10 355 V 346 Q -10 346 -10 346 Z M -10 374 H 610 Q 610 374 610 374 V 385 Q 610 385 610 385 H -10 Q -10 385 -10 385 V 374 Q -10 374 -10 374 Z M -10 402 H 610 Q 610 402 610 402 V 415 Q 610 415 610 415 H -10 Q -10 415 -10 415 V 402 Q -10 402 -10 402 Z M -10 430 H 610 Q 610 430 610 430 V 445 Q 610 445 610 445 H -10 Q -10 445 -10 445 V 430 Q -10 430 -10 430 Z M -10 458 H 610 Q 610 458 610 458 V 475 Q 610 475 610 475 H -10 Q -10 475 -10 475 V 458 Q -10 458 -10 458 Z M -10 486 H 610 Q 610 486 610 486 V 505 Q 610 505 610 505 H -10 Q -10 505 -10 505 V 486 Q -10 486 -10 486 Z M -10 514 H 610 Q 610 514 610 514 V 535 Q 610 535 610 535 H -10 Q -10 535 -10 535 V 514 Q -10 514 -10 514 Z M -10 542 H 610 Q 610 542 610 542 V 565 Q 610 565 610 565 H -10 Q -10 565 -10 565 V 542 Q -10 542 -10 542 Z",
+          "fillRule": "evenodd",
+          "clip": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z",
+          "name": "Sun"
+        },
+        {
+          "id": "ground",
+          "type": "rect",
+          "x": 0,
+          "y": 640,
+          "w": 1920,
+          "h": 440,
+          "fill": "{bg}",
+          "name": "Ground"
+        },
+        {
+          "id": "grid",
+          "type": "grid",
+          "y": 640,
+          "w": 1920,
+          "h": 440,
+          "stroke": "{glow}@0.6",
+          "strokeWidth": 2,
+          "name": "Perspective grid"
+        }
+      ]
     },
     {
       "id": "osd-panel",
@@ -84,132 +95,171 @@
       "h": 470,
       "fill": "{bg}@0.8",
       "stroke": "{glow}",
-      "strokeWidth": 4
+      "strokeWidth": 4,
+      "name": "On-screen display panel"
     },
     {
-      "id": "vhs-weight0",
-      "type": "text",
-      "text": "PLAY  \u25b6",
-      "x": 138.2,
-      "y": 160,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{glow}",
-      "maxWidth": 1600,
-      "fit": "shrink"
+      "id": "vhs-group",
+      "name": "Vhs",
+      "type": "group",
+      "layers": [
+        {
+          "id": "vhs-treatment",
+          "name": "Chrome vhs",
+          "type": "group",
+          "layers": [
+            {
+              "id": "vhs-weight0",
+              "type": "text",
+              "text": "PLAY  \u25b6",
+              "x": 138.2,
+              "y": 160,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{glow}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 1"
+            },
+            {
+              "id": "vhs-weight1",
+              "type": "text",
+              "text": "PLAY  \u25b6",
+              "x": 141.8,
+              "y": 160,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{glow}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 2"
+            },
+            {
+              "id": "vhs-weight2",
+              "type": "text",
+              "text": "PLAY  \u25b6",
+              "x": 140,
+              "y": 158.2,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{glow}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 3"
+            },
+            {
+              "id": "vhs-weight3",
+              "type": "text",
+              "text": "PLAY  \u25b6",
+              "x": 140,
+              "y": 161.8,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{glow}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 4"
+            },
+            {
+              "id": "vhs",
+              "type": "text",
+              "text": "PLAY  \u25b6",
+              "x": 140,
+              "y": 160,
+              "size": 64,
+              "font": "vt323",
+              "fill": "{glow}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "name": "Chrome layer 5"
+            }
+          ]
+        }
+      ]
     },
     {
-      "id": "vhs-weight1",
-      "type": "text",
-      "text": "PLAY  \u25b6",
-      "x": 141.8,
-      "y": 160,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{glow}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "vhs-weight2",
-      "type": "text",
-      "text": "PLAY  \u25b6",
-      "x": 140,
-      "y": 158.2,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{glow}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "vhs-weight3",
-      "type": "text",
-      "text": "PLAY  \u25b6",
-      "x": 140,
-      "y": 161.8,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{glow}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "vhs",
-      "type": "text",
-      "text": "PLAY  \u25b6",
-      "x": 140,
-      "y": 160,
-      "size": 64,
-      "font": "vt323",
-      "fill": "{glow}",
-      "maxWidth": 1600,
-      "fit": "shrink"
-    },
-    {
-      "id": "Title2-weight0",
-      "type": "text",
-      "text": "BE RIGHT BACK",
-      "x": 958.2,
-      "y": 480,
-      "size": 110,
-      "font": "{type.display}",
-      "fill": "{accent}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title2-weight1",
-      "type": "text",
-      "text": "BE RIGHT BACK",
-      "x": 961.8,
-      "y": 480,
-      "size": 110,
-      "font": "{type.display}",
-      "fill": "{accent}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title2-weight2",
-      "type": "text",
-      "text": "BE RIGHT BACK",
-      "x": 960,
-      "y": 478.2,
-      "size": 110,
-      "font": "{type.display}",
-      "fill": "{accent}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title2-weight3",
-      "type": "text",
-      "text": "BE RIGHT BACK",
-      "x": 960,
-      "y": 481.8,
-      "size": 110,
-      "font": "{type.display}",
-      "fill": "{accent}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
-    },
-    {
-      "id": "Title2",
-      "type": "text",
-      "text": "BE RIGHT BACK",
-      "x": 960,
-      "y": 480,
-      "size": 110,
-      "font": "{type.display}",
-      "fill": "{accent}",
-      "maxWidth": 1600,
-      "fit": "shrink",
-      "align": "center"
+      "id": "Title2-group",
+      "name": "Title2",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title2-treatment",
+          "name": "Chrome title2",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title2-weight0",
+              "type": "text",
+              "text": "BE RIGHT BACK",
+              "x": 958.2,
+              "y": 480,
+              "size": 110,
+              "font": "{type.display}",
+              "fill": "{accent}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 1"
+            },
+            {
+              "id": "Title2-weight1",
+              "type": "text",
+              "text": "BE RIGHT BACK",
+              "x": 961.8,
+              "y": 480,
+              "size": 110,
+              "font": "{type.display}",
+              "fill": "{accent}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 2"
+            },
+            {
+              "id": "Title2-weight2",
+              "type": "text",
+              "text": "BE RIGHT BACK",
+              "x": 960,
+              "y": 478.2,
+              "size": 110,
+              "font": "{type.display}",
+              "fill": "{accent}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 3"
+            },
+            {
+              "id": "Title2-weight3",
+              "type": "text",
+              "text": "BE RIGHT BACK",
+              "x": 960,
+              "y": 481.8,
+              "size": 110,
+              "font": "{type.display}",
+              "fill": "{accent}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 4"
+            },
+            {
+              "id": "Title2",
+              "type": "text",
+              "text": "BE RIGHT BACK",
+              "x": 960,
+              "y": 480,
+              "size": 110,
+              "font": "{type.display}",
+              "fill": "{accent}",
+              "maxWidth": 1600,
+              "fit": "shrink",
+              "align": "center",
+              "name": "Chrome layer 5"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "next",
@@ -222,7 +272,8 @@
       "fill": "{text}",
       "maxWidth": 1600,
       "fit": "shrink",
-      "align": "center"
+      "align": "center",
+      "name": "Next"
     }
   ],
   "post": [
@@ -232,7 +283,7 @@
     },
     {
       "type": "scanlines",
-      "amount": 0.16
+      "amount": "{control.effect-scanlines}"
     }
   ],
   "slots": [

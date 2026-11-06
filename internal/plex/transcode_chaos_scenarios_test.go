@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -99,7 +99,7 @@ func TestTranscodeChaosCorpusScenarios(t *testing.T) {
 								chaosDecodeMedia(t, ff, fp, p, stockSeekWarning)
 								if stockSeekWarning {
 									ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-									out, err := exec.CommandContext(ctx, fp, "-v", "quiet", "-select_streams", "a:0", "-show_frames", "-show_entries", "frame=nb_samples", "-of", "csv=p=0", p).Output()
+									out, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "quiet", "-select_streams", "a:0", "-show_frames", "-show_entries", "frame=nb_samples", "-of", "csv=p=0", p).Output()
 									cancel()
 									if err != nil || len(strings.TrimSpace(string(out))) == 0 {
 										t.Fatal("stock seek warning concealed all audio")

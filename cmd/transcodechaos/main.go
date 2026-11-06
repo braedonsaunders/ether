@@ -12,13 +12,13 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -50,7 +50,7 @@ func main() {
 	}
 }
 func command(ctx context.Context, exe string, args ...string) error {
-	out, err := exec.CommandContext(ctx, exe, args...).CombinedOutput()
+	out, err := mediaproc.CommandContext(ctx, mediaproc.EncodeTimeout, exe, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w: %s", filepath.Base(exe), err, strings.TrimSpace(string(out)))
 	}

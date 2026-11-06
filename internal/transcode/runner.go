@@ -56,6 +56,9 @@ const waitDelay = 4 * time.Second
 // ExecRunner runs real executables with os/exec.
 type ExecRunner struct{}
 
+// A media process has a hard lifetime ceiling even if a caller loses its session.
+const maxProcessLifetime = 24 * time.Hour
+
 // Start implements Runner.
 func (ExecRunner) Start(c Command) (Process, error) {
 	path, err := exec.LookPath(c.Path)
@@ -97,6 +100,15 @@ func (ExecRunner) Start(c Command) (Process, error) {
 	}
 	control.Close()
 	p := &execProcess{cmd: cmd, lifetime: lifetime, done: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), maxProcessLifetime)
+	go func() {
+		defer cancel()
+		select {
+		case <-ctx.Done():
+			p.Stop()
+		case <-p.done:
+		}
+	}()
 	go func() {
 		p.err = cmd.Wait()
 		lifetime.Close()
@@ -117,6 +129,8 @@ func (ExecRunner) Start(c Command) (Process, error) {
 
 // Run implements Runner.
 func (ExecRunner) Run(ctx context.Context, c Command) error {
+	ctx, cancel := context.WithTimeout(ctx, maxProcessLifetime)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

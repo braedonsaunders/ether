@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -36,7 +37,7 @@ func TestIndexedMatroskaInputDecodesAtTarget(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "source.mkv")
 	args := []string{"-v", "error", "-y", "-f", "lavfi", "-i", "color=blue:size=64x36:rate=30:duration=6", "-f", "lavfi", "-i", "color=red:size=64x36:rate=30:duration=4", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]", "-map", "2:a", "-t", "10", "-c:v", "libx264", "-threads", "1", "-preset", "ultrafast", "-g", "120", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "2", path}
-	if out, e := exec.CommandContext(ctx, ff, args...).CombinedOutput(); e != nil {
+	if out, e := mediaproc.CommandContext(ctx, 2*time.Minute, ff, args...).CombinedOutput(); e != nil {
 		t.Fatalf("fixture:%v %s", e, out)
 	}
 	tc, e := transcode.New(config.Transcode{FFmpegPath: ff, FFprobePath: fp, TempDir: filepath.Join(dir, "out")}, slog.New(slog.NewTextHandler(io.Discard, nil)), transcode.WithoutHWDetection())

@@ -55,7 +55,8 @@
           },
           "stroke": "{accent}",
           "strokeWidth": 1,
-          "path": "M 30 0 H 1220 Q 1250 0 1250 30 V 120 Q 1250 150 1220 150 H 30 Q 0 150 0 120 V 30 Q 0 0 30 0 Z"
+          "path": "M 30 0 H 1220 Q 1250 0 1250 30 V 120 Q 1250 150 1220 150 H 30 Q 0 150 0 120 V 30 Q 0 0 30 0 Z",
+          "name": "Panel"
         },
         {
           "id": "kicker",
@@ -84,7 +85,8 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Kicker"
         },
         {
           "id": "Title",
@@ -113,7 +115,8 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Channel title"
         },
         {
           "id": "next",
@@ -142,9 +145,11 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Next"
         }
-      ]
+      ],
+      "name": "Lowerthird envelope"
     }
   ],
   "post": [],

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/onair/scene"
 	"github.com/braedonsaunders/ether/internal/store"
 	"math"
 	"regexp"
@@ -18,6 +17,11 @@ import (
 )
 
 func init() {
+	// Media facts live with the asset so every node sees them. duration_ms is
+	// NULL until probed; 0 means the asset has no duration (or could not be read).
+	store.Register("onair", 4, `ALTER TABLE onair_assets ADD COLUMN duration_ms INTEGER;
+ ALTER TABLE onair_assets ADD COLUMN width INTEGER NOT NULL DEFAULT 0;
+ ALTER TABLE onair_assets ADD COLUMN height INTEGER NOT NULL DEFAULT 0;`)
 	store.Register("onair", 3, `CREATE TABLE onair_imports(id TEXT PRIMARY KEY,reel_id TEXT NOT NULL,data TEXT NOT NULL);
  ALTER TABLE onair_assets ADD COLUMN source TEXT NOT NULL DEFAULT '';
  ALTER TABLE onair_assets ADD COLUMN attribution TEXT NOT NULL DEFAULT '';`)
@@ -61,12 +65,6 @@ func (s *Service) validateLook(ctx context.Context, l Look) error {
 	}
 	if strings.TrimSpace(l.Name) == "" || utf8.RuneCountInString(l.Name) > 120 || utf8.RuneCountInString(l.Brand.Tagline) > 40 {
 		return fmt.Errorf("name required (120 characters maximum); tagline maximum 40 characters")
-	}
-	if !strings.Contains(" clean kids lateNight late-night cinema retro personal grunge aqua flat ", " "+l.Family+" ") {
-		var n int
-		if e := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM onair_families WHERE id=?", l.Family).Scan(&n); e != nil || n == 0 {
-			return fmt.Errorf("unknown family %q", l.Family)
-		}
 	}
 	known := " inter playfairdisplay specialelite fraunces bungee fredoka orbitron vt323 spacegrotesk ibmplexmono archivoblack notosans "
 	for _, f := range []string{l.Brand.Type.Display, l.Brand.Type.Body} {
@@ -112,30 +110,10 @@ func (s *Service) validateLook(ctx context.Context, l Look) error {
 	if (math.Max(bg, fg)+.05)/(math.Min(bg, fg)+.05) < 4.5 {
 		return fmt.Errorf("text contrast must be at least 4.5:1")
 	}
-	if l.Brand.Energy < 0 || l.Brand.Energy > 1 || l.Brand.Volume < 0 || l.Brand.Volume > 1 {
-		return fmt.Errorf("energy and volume must be between 0 and 1")
+	if l.Brand.Energy < 0 || l.Brand.Energy > 1 {
+		return fmt.Errorf("energy must be between 0 and 1")
 	}
-	for m, v := range l.Moments {
-		if v.AssetDigest != "" {
-			var n int
-			if e := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM onair_assets WHERE digest=? AND kind='video'", v.AssetDigest).Scan(&n); e != nil || n == 0 {
-				return fmt.Errorf("moment video asset missing")
-			}
-		}
-		d := scene.Document{V: 1, Moment: m, Duration: v.Duration, Poster: v.Poster}
-		if e := d.Validate(); e != nil {
-			return e
-		}
-	}
-	for m, d := range l.Documents {
-		if d.Moment != m {
-			return fmt.Errorf("document moment mismatch")
-		}
-		if e := d.Validate(); e != nil {
-			return e
-		}
-	}
-	return nil
+	return s.validateScenes(ctx, l)
 }
 func (s *Service) Looks(ctx context.Context) ([]Look, error) {
 	rows, e := s.db.QueryContext(ctx, "SELECT data FROM onair_looks ORDER BY id")
@@ -283,7 +261,8 @@ func (s *Service) seed(ctx context.Context) error {
 		return tx.Commit()
 	}
 	for _, v := range [][10]string{{"nocturne", "Nocturne", "lateNight", "#060508", "#C8102E", "#EDE6D6", "#8FA3B8", "Playfair Display", "Special Elite", "Late night · lights off"}, {"meridian", "Meridian", "cinema", "#070d1d", "#D8B26E", "#F4EEDF", "#17254a", "Fraunces", "Inter", "A world of cinema"}, {"blorp", "BLORP!", "kids", "#6B2BD9", "#FF7A00", "#ffffff", "#7CE03A", "Bungee", "Fredoka", "Totally gooey TV"}, {"neon", "NEON 84", "retro", "#12002b", "#ff4fd8", "#ffffff", "#22e6ff", "Orbitron", "VT323", "Stay tuned"}, {"personal", "Your TV", "personal", "#100b23", "#9b85ff", "#ffffff", "#ff5ca8", "Space Grotesk", "Inter", "Made for you"}} {
-		l := Look{ID: v[0], Name: v[1], Family: v[2], ChannelIDs: []string{}, Moments: map[string]Moment{}}
+		l := familyLook(v[2], v[1])
+		l.ID = v[0]
 		l.Brand.Palette.Background = v[3]
 		l.Brand.Palette.Accent = v[4]
 		l.Brand.Palette.Text = v[5]
@@ -292,13 +271,8 @@ func (s *Service) seed(ctx context.Context) error {
 		l.Brand.Type.Body = v[8]
 		l.Brand.Tagline = v[9]
 		l.Brand.Energy = .5
-		l.Brand.Volume = .6
 		l.Brand.Language = "en"
 		l.Brand.Textures = []string{"Grain"}
-		l.Brand.Words = map[string]string{}
-		for _, m := range strings.Fields("ident tonight upnext break back offair welcome bug lowerthird") {
-			l.Moments[m] = Moment{Duration: 8, Poster: 4}
-		}
 		b, _ := json.Marshal(l)
 		if _, e = tx.ExecContext(ctx, "INSERT INTO onair_looks(id,data,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING", l.ID, string(b), time.Now().Unix()); e != nil {
 			return e

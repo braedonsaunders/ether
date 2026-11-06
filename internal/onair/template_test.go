@@ -6,20 +6,22 @@ import (
 	"testing"
 )
 
-func TestDescriptionTemplates(t *testing.T) {
+func TestOwnedTemplates(t *testing.T) {
 	s := testService(t, Options{})
-	for _, v := range []struct{ prompt, family string }{{"a cosy late-night movie channel", "lateNight"}, {"NEON 84 retro", "retro"}, {"a playful kids channel", "kids"}, {"gold cinema", "cinema"}} {
-		base := Look{ID: "draft", ChannelIDs: []string{"one"}}
-		a, e := s.Template(context.Background(), v.prompt, base)
-		if e != nil {
-			t.Fatal(e)
+	a, e := s.Templates(context.Background())
+	if e != nil {
+		t.Fatal(e)
+	}
+	b, e := s.Templates(context.Background())
+	if e != nil || !reflect.DeepEqual(a, b) {
+		t.Fatal("templates must be deterministic", e)
+	}
+	for _, v := range a {
+		if len(v.Style.Scenes) < 7 || v.Style.Template != v.ID {
+			t.Fatalf("incomplete template %s", v.ID)
 		}
-		b, e := s.Template(context.Background(), v.prompt, base)
-		if e != nil || !reflect.DeepEqual(a, b) {
-			t.Fatal("template must be deterministic", e)
-		}
-		if a.Family != v.family || a.ID != base.ID || len(a.Moments) < 7 {
-			t.Fatalf("incomplete template: %+v", a)
+		if e = s.validateLook(context.Background(), v.Style); e != nil {
+			t.Fatal(v.ID, e)
 		}
 	}
 }

@@ -25,10 +25,11 @@
           ],
           [
             1,
-            "#004d77"
+            "{control.detail2}"
           ]
         ]
-      }
+      },
+      "name": "Background"
     },
     {
       "id": "Orb",
@@ -47,11 +48,11 @@
         "stops": [
           [
             0,
-            "#ffffff"
+            "{control.detail1}"
           ],
           [
             0.18,
-            "#b9fcff"
+            "{control.detail3}"
           ],
           [
             0.48,
@@ -63,7 +64,7 @@
           ],
           [
             1,
-            "#002c61"
+            "{control.detail4}"
           ]
         ]
       },
@@ -76,7 +77,8 @@
             "amplitude": 24
           }
         }
-      ]
+      ],
+      "name": "Orb"
     },
     {
       "id": "Gloss",
@@ -103,14 +105,16 @@
           ]
         ]
       },
-      "rotate": -12
+      "rotate": -12,
+      "name": "Gloss"
     },
     {
       "id": "Swoosh",
       "type": "path",
       "path": "M -100 900 Q 700 180 2020 650 L 2020 700 Q 700 240 -100 980 Z",
       "fill": "{glow}",
-      "opacity": 0.4
+      "opacity": 0.4,
+      "name": "Swoosh"
     },
     {
       "id": "Glass",
@@ -142,13 +146,14 @@
         ]
       },
       "stroke": "#ffffff@0.4",
-      "strokeWidth": 2
+      "strokeWidth": 2,
+      "name": "Glass"
     },
     {
       "id": "Lens",
       "type": "path",
       "path": "M 1320 130 L 1336 320 L 1540 340 L 1336 356 L 1320 550 L 1303 356 L 1110 340 L 1303 320 Z",
-      "fill": "#ffffff",
+      "fill": "{control.detail1}",
       "opacity": {
         "keys": [
           [
@@ -168,7 +173,8 @@
             0.1
           ]
         ]
-      }
+      },
+      "name": "Lens"
     },
     {
       "id": "Title",
@@ -202,7 +208,8 @@
             0
           ]
         ]
-      }
+      },
+      "name": "Channel title"
     },
     {
       "id": "Detail",
@@ -215,7 +222,8 @@
       "fill": "{text}",
       "align": "center",
       "maxWidth": 1500,
-      "fit": "shrink"
+      "fit": "shrink",
+      "name": "Detail"
     },
     {
       "id": "Station",
@@ -229,7 +237,8 @@
       "fit": "shrink",
       "maxWidth": 1500,
       "align": "center",
-      "track": 6
+      "track": 6,
+      "name": "Station"
     }
   ]
 }

@@ -37,7 +37,8 @@
           "y": 0,
           "w": 1920,
           "h": 1080,
-          "fill": "{bg}"
+          "fill": "{bg}",
+          "name": "Background"
         },
         {
           "id": "rail",
@@ -46,7 +47,8 @@
           "y": 140,
           "w": 6,
           "h": 800,
-          "fill": "{accent}"
+          "fill": "{accent}",
+          "name": "Rail"
         },
         {
           "id": "toprule",
@@ -55,7 +57,8 @@
           "y": 140,
           "w": 1640,
           "h": 2,
-          "fill": "{text}@0.18"
+          "fill": "{text}@0.18",
+          "name": "Top rule"
         },
         {
           "id": "Title",
@@ -86,7 +89,8 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Channel title"
         },
         {
           "id": "Tagline",
@@ -117,9 +121,11 @@
                 "out"
               ]
             ]
-          }
+          },
+          "name": "Tagline"
         }
-      ]
+      ],
+      "name": "Scene entrance and exit"
     }
   ],
   "post": [

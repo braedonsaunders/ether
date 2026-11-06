@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Exercise the actual session and fast-start segment path, not merely planned
@@ -20,7 +21,7 @@ func TestH264FastStartSegmentMatchesAdvertisedCodecs(t *testing.T) {
 	e := newRealEnv(t)
 	source := filepath.Join(e.dir, "source.mp4")
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=size=3840x2160:rate=30", "-t", "0.5", "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "pools=1:frame-threads=1:log-level=error", source}
-	if out, err := exec.Command(e.ffmpeg, args...).CombinedOutput(); err != nil {
+	if out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffmpeg, args...).CombinedOutput(); err != nil {
 		t.Fatalf("source encode: %v: %s", err, out)
 	}
 	info, err := e.m.Probe(t.Context(), e.url("source.mp4"))
@@ -42,7 +43,7 @@ func TestH264FastStartSegmentMatchesAdvertisedCodecs(t *testing.T) {
 	if err := os.WriteFile(segment, w.Body.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile,level,width,height", "-of", "json", segment).Output()
+	out, err := mediaproc.CommandContext(t.Context(), 2*time.Minute, e.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile,level,width,height", "-of", "json", segment).Output()
 	if err != nil {
 		t.Fatal(err)
 	}

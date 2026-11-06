@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -102,11 +102,11 @@ func TestTranscodeChaosPCELongSeek(t *testing.T) {
 		t.Fatal(err)
 	}
 	chaosCmd(t, ff, "-v", "error", "-xerror", "-i", out, "-f", "null", "-")
-	packets, err := exec.Command(fp, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", out).Output()
+	packets, err := mediaproc.CommandContext(context.Background(), 2*time.Minute, fp, "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", out).Output()
 	if err != nil || strings.TrimSpace(string(packets)) == "" {
 		t.Fatal("late seek segment has no audio")
 	}
-	video, err := exec.Command(fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", out).Output()
+	video, err := mediaproc.CommandContext(context.Background(), 2*time.Minute, fp, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", out).Output()
 	if err != nil || strings.TrimSpace(string(video)) == "" {
 		t.Fatal("late seek segment has no video")
 	}

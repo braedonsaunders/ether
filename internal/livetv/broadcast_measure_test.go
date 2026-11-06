@@ -17,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -79,7 +80,7 @@ func TestBroadcastResourceMeasurements(t *testing.T) {
 				dir := t.TempDir()
 				sample := filepath.Join(dir, "source.mp4")
 				size := fmt.Sprintf("%dx%d", mode.height*16/9, mode.height)
-				if out, err := exec.CommandContext(ctx, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size="+size+":rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "4", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "120", "-c:a", "aac", "-ac", "2", sample).CombinedOutput(); err != nil {
+				if out, err := mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size="+size+":rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "4", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "120", "-c:a", "aac", "-ac", "2", sample).CombinedOutput(); err != nil {
 					t.Fatalf("source: %v %s", err, out)
 				}
 				manager, err := transcode.New(config.Transcode{FFmpegPath: ff, FFprobePath: fp, TempDir: filepath.Join(dir, "out"), HWAccel: mode.hw}, slog.New(slog.NewTextHandler(io.Discard, nil)))

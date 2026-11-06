@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/mediaproc"
 )
 
 // Force the real Windows muxer's destination-replacement failure, not
@@ -32,7 +34,7 @@ func TestIntegrationWindowsPlaylistReplacementRecovery(t *testing.T) {
 	defer held.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+	cmd := mediaproc.CommandContext(ctx, 2*time.Minute, ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc2=size=160x90:rate=24", "-t", "4",
 		"-c:v", "libx264", "-preset", "ultrafast", "-threads", "1", "-g", "24", "-flags", "+global_header",
 		"-f", "ssegment", "-segment_format", "matroska", "-segment_time", "1",

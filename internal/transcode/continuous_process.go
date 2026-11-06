@@ -65,7 +65,7 @@ type continuousProcess struct {
 }
 
 func (m *Manager) startContinuous(ctx context.Context, args []string, dir string, drain bool, sockets []*rawSocket, stdout io.Writer, release func(), observers ...func(string)) (*continuousProcess, error) {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, maxProcessLifetime)
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()

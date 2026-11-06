@@ -25,205 +25,235 @@
           ],
           [
             1,
-            "#502050"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "sun",
-      "type": "path",
-      "x": 660,
-      "y": 180,
-      "fill": {
-        "linear": [
-          0,
-          0,
-          0,
-          1080
-        ],
-        "stops": [
-          [
-            0,
-            "#ffce52"
-          ],
-          [
-            1,
-            "{accent}"
+            "{control.detail2}"
           ]
         ]
       },
-      "path": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z M -10 290 H 610 Q 610 290 610 290 V 295 Q 610 295 610 295 H -10 Q -10 295 -10 295 V 290 Q -10 290 -10 290 Z M -10 318 H 610 Q 610 318 610 318 V 325 Q 610 325 610 325 H -10 Q -10 325 -10 325 V 318 Q -10 318 -10 318 Z M -10 346 H 610 Q 610 346 610 346 V 355 Q 610 355 610 355 H -10 Q -10 355 -10 355 V 346 Q -10 346 -10 346 Z M -10 374 H 610 Q 610 374 610 374 V 385 Q 610 385 610 385 H -10 Q -10 385 -10 385 V 374 Q -10 374 -10 374 Z M -10 402 H 610 Q 610 402 610 402 V 415 Q 610 415 610 415 H -10 Q -10 415 -10 415 V 402 Q -10 402 -10 402 Z M -10 430 H 610 Q 610 430 610 430 V 445 Q 610 445 610 445 H -10 Q -10 445 -10 445 V 430 Q -10 430 -10 430 Z M -10 458 H 610 Q 610 458 610 458 V 475 Q 610 475 610 475 H -10 Q -10 475 -10 475 V 458 Q -10 458 -10 458 Z M -10 486 H 610 Q 610 486 610 486 V 505 Q 610 505 610 505 H -10 Q -10 505 -10 505 V 486 Q -10 486 -10 486 Z M -10 514 H 610 Q 610 514 610 514 V 535 Q 610 535 610 535 H -10 Q -10 535 -10 535 V 514 Q -10 514 -10 514 Z M -10 542 H 610 Q 610 542 610 542 V 565 Q 610 565 610 565 H -10 Q -10 565 -10 565 V 542 Q -10 542 -10 542 Z",
-      "fillRule": "evenodd",
-      "clip": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z"
+      "name": "Background"
     },
     {
-      "id": "ground",
-      "type": "rect",
-      "x": 0,
-      "y": 640,
-      "w": 1920,
-      "h": 440,
-      "fill": "{bg}"
+      "id": "horizon-group",
+      "name": "Horizon",
+      "type": "group",
+      "layers": [
+        {
+          "id": "sun",
+          "type": "path",
+          "x": 660,
+          "y": 180,
+          "fill": {
+            "linear": [
+              0,
+              0,
+              0,
+              1080
+            ],
+            "stops": [
+              [
+                0,
+                "{control.detail3}"
+              ],
+              [
+                1,
+                "{accent}"
+              ]
+            ]
+          },
+          "path": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z M -10 290 H 610 Q 610 290 610 290 V 295 Q 610 295 610 295 H -10 Q -10 295 -10 295 V 290 Q -10 290 -10 290 Z M -10 318 H 610 Q 610 318 610 318 V 325 Q 610 325 610 325 H -10 Q -10 325 -10 325 V 318 Q -10 318 -10 318 Z M -10 346 H 610 Q 610 346 610 346 V 355 Q 610 355 610 355 H -10 Q -10 355 -10 355 V 346 Q -10 346 -10 346 Z M -10 374 H 610 Q 610 374 610 374 V 385 Q 610 385 610 385 H -10 Q -10 385 -10 385 V 374 Q -10 374 -10 374 Z M -10 402 H 610 Q 610 402 610 402 V 415 Q 610 415 610 415 H -10 Q -10 415 -10 415 V 402 Q -10 402 -10 402 Z M -10 430 H 610 Q 610 430 610 430 V 445 Q 610 445 610 445 H -10 Q -10 445 -10 445 V 430 Q -10 430 -10 430 Z M -10 458 H 610 Q 610 458 610 458 V 475 Q 610 475 610 475 H -10 Q -10 475 -10 475 V 458 Q -10 458 -10 458 Z M -10 486 H 610 Q 610 486 610 486 V 505 Q 610 505 610 505 H -10 Q -10 505 -10 505 V 486 Q -10 486 -10 486 Z M -10 514 H 610 Q 610 514 610 514 V 535 Q 610 535 610 535 H -10 Q -10 535 -10 535 V 514 Q -10 514 -10 514 Z M -10 542 H 610 Q 610 542 610 542 V 565 Q 610 565 610 565 H -10 Q -10 565 -10 565 V 542 Q -10 542 -10 542 Z",
+          "fillRule": "evenodd",
+          "clip": "M 0 300 A 300 300 0 1 0 600 300 A 300 300 0 1 0 0 300 Z",
+          "name": "Sun"
+        },
+        {
+          "id": "ground",
+          "type": "rect",
+          "x": 0,
+          "y": 640,
+          "w": 1920,
+          "h": 440,
+          "fill": "{bg}",
+          "name": "Ground"
+        },
+        {
+          "id": "grid",
+          "type": "grid",
+          "y": 640,
+          "w": 1920,
+          "h": 440,
+          "stroke": "{glow}@0.6",
+          "strokeWidth": 2,
+          "name": "Perspective grid"
+        }
+      ]
     },
     {
-      "id": "grid",
-      "type": "grid",
-      "y": 640,
-      "w": 1920,
-      "h": 440,
-      "stroke": "{glow}@0.6",
-      "strokeWidth": 2
-    },
-    {
-      "id": "Title-weight0",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 958.2,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
+      "id": "Title-group",
+      "name": "Channel title",
+      "type": "group",
+      "layers": [
+        {
+          "id": "Title-treatment",
+          "name": "Chrome title",
+          "type": "group",
+          "layers": [
+            {
+              "id": "Title-weight0",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 958.2,
+              "y": 190,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Chrome layer 1"
+            },
+            {
+              "id": "Title-weight1",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 961.8,
+              "y": 190,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Chrome layer 2"
+            },
+            {
+              "id": "Title-weight2",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 960,
+              "y": 188.2,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Chrome layer 3"
+            },
+            {
+              "id": "Title-weight3",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 960,
+              "y": 191.8,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Chrome layer 4"
+            },
+            {
+              "id": "Title",
+              "type": "text",
+              "text": "{words.tonight}",
+              "x": 960,
+              "y": 190,
+              "size": 86,
+              "font": "{type.display}",
+              "fill": "{text}",
+              "fit": "shrink",
+              "maxWidth": 1600,
+              "align": "center",
+              "opacity": {
+                "keys": [
+                  [
+                    0,
+                    0
+                  ],
+                  [
+                    0.4,
+                    0
+                  ],
+                  [
+                    1.8,
+                    1,
+                    "out"
+                  ]
+                ]
+              },
+              "name": "Chrome layer 5"
+            }
           ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight1",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 961.8,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight2",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 960,
-      "y": 188.2,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title-weight3",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 960,
-      "y": 191.8,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
-    },
-    {
-      "id": "Title",
-      "type": "text",
-      "text": "{words.tonight}",
-      "x": 960,
-      "y": 190,
-      "size": 86,
-      "font": "{type.display}",
-      "fill": "{text}",
-      "fit": "shrink",
-      "maxWidth": 1600,
-      "align": "center",
-      "opacity": {
-        "keys": [
-          [
-            0,
-            0
-          ],
-          [
-            0.4,
-            0
-          ],
-          [
-            1.8,
-            1,
-            "out"
-          ]
-        ]
-      }
+        }
+      ]
     },
     {
       "id": "card0",
@@ -231,7 +261,8 @@
       "x": 360,
       "y": 268,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 1"
     },
     {
       "id": "time0",
@@ -261,7 +292,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 1"
     },
     {
       "id": "item0",
@@ -290,7 +322,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 1"
     },
     {
       "id": "meta0",
@@ -319,7 +352,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 1"
     },
     {
       "id": "card1",
@@ -327,7 +361,8 @@
       "x": 360,
       "y": 438,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 2"
     },
     {
       "id": "time1",
@@ -357,7 +392,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 2"
     },
     {
       "id": "item1",
@@ -386,7 +422,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 2"
     },
     {
       "id": "meta1",
@@ -415,7 +452,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 2"
     },
     {
       "id": "card2",
@@ -423,7 +461,8 @@
       "x": 360,
       "y": 608,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 3"
     },
     {
       "id": "time2",
@@ -453,7 +492,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 3"
     },
     {
       "id": "item2",
@@ -482,7 +522,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 3"
     },
     {
       "id": "meta2",
@@ -511,7 +552,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 3"
     },
     {
       "id": "card3",
@@ -519,7 +561,8 @@
       "x": 360,
       "y": 778,
       "fill": "{accent}@0.14",
-      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z"
+      "path": "M 30 0 H 1370 Q 1400 0 1400 30 V 102 Q 1400 132 1370 132 H 30 Q 0 132 0 102 V 30 Q 0 0 30 0 Z",
+      "name": "Card 4"
     },
     {
       "id": "time3",
@@ -549,7 +592,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Time 4"
     },
     {
       "id": "item3",
@@ -578,7 +622,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Item 4"
     },
     {
       "id": "meta3",
@@ -607,7 +652,8 @@
             "out"
           ]
         ]
-      }
+      },
+      "name": "Meta 4"
     }
   ],
   "post": [
@@ -617,7 +663,7 @@
     },
     {
       "type": "scanlines",
-      "amount": 0.16
+      "amount": "{control.effect-scanlines}"
     }
   ],
   "slots": [

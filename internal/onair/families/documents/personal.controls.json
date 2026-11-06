@@ -1,0 +1,30 @@
+[
+  {
+    "id": "detail1",
+    "label": "Highlight colour",
+    "kind": "color",
+    "value": "#152443",
+    "group": "Artwork"
+  },
+  {
+    "id": "detail2",
+    "label": "Shadow colour",
+    "kind": "color",
+    "value": "#bd794f",
+    "group": "Artwork"
+  },
+  {
+    "id": "detail3",
+    "label": "Detail colour",
+    "kind": "color",
+    "value": "#efdbaa",
+    "group": "Artwork"
+  },
+  {
+    "id": "detail4",
+    "label": "Secondary colour",
+    "kind": "color",
+    "value": "#384762",
+    "group": "Artwork"
+  }
+]
