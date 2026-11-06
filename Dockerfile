@@ -12,6 +12,15 @@
 #   scripts/fetch-ffmpeg.sh linux-$(go env GOARCH) && docker build .
 # docker buildx per-arch builds pass TARGETARCH automatically.
 
+# Build the embedded UI from this checkout, not a previously generated dist.
+FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS web-build
+WORKDIR /src/web
+RUN corepack enable && corepack prepare pnpm@10.34.9 --activate
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm build
+
 # ---- build the server (pure Go) -------------------------------------------
 FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
 WORKDIR /src
@@ -20,6 +29,8 @@ COPY go.mod go.sum ./
 COPY third_party/ third_party/
 RUN go mod download
 COPY . .
+RUN rm -rf internal/admin/dist
+COPY --from=web-build /src/internal/admin/dist/ internal/admin/dist/
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=

@@ -4,6 +4,8 @@ import { channelLabel, normalizeSessions } from "../lib/health";
 import { routeApiImagesThroughFetch } from "../lib/api";
 import { LOGO_BACKGROUND_HEADER, SessionArtwork } from "../components/SessionArtwork";
 import { ChannelLogo } from "../pages/livetv/ChannelLogo";
+import { GuideGrid } from "../pages/livetv/GuideGrid";
+import type { Channel } from "../pages/livetv/model";
 import { renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
@@ -25,6 +27,60 @@ class ImmediatelyVisible implements IntersectionObserver {
 }
 
 describe("live channel identity", () => {
+  it("routes the Channels lineup row through the scored logo endpoint", async () => {
+    vi.stubGlobal("IntersectionObserver", ImmediatelyVisible);
+    const { createObjectURL, revokeObjectURL } = URL;
+    URL.createObjectURL = () => "blob:lineup-logo";
+    URL.revokeObjectURL = () => {};
+    const fetchLogo = vi.fn(
+      async () => new Response("logo", { headers: { [LOGO_BACKGROUND_HEADER]: "dark" } }),
+    );
+    vi.stubGlobal("fetch", fetchLogo);
+    const channel: Channel = {
+      id: "white-ink",
+      name: "White ink",
+      number: "1",
+      kind: "iptv",
+      enabled: true,
+      favorite: false,
+      logo: "https://example.invalid/logo.png",
+      epoch: "",
+      seed: 0,
+      shuffle: false,
+      items: [],
+    };
+    try {
+      const now = Date.now();
+      const view = render(
+        <GuideGrid
+          channels={[channel]}
+          guide={new Map()}
+          from={new Date(now - 3600000)}
+          until={new Date(now + 3600000)}
+          now={now}
+          selected={null}
+          onSelect={() => {}}
+          onShift={() => {}}
+          onNow={() => {}}
+          loading={false}
+          head={<span>Channels</span>}
+        />,
+      );
+      const row = await view.findByRole("button", { name: "1 White ink" });
+      const logo = await view.findByAltText("");
+      expect(row).toContainElement(logo);
+      expect(fetchLogo).toHaveBeenCalledWith(
+        "/ether/api/livetv/channels/white-ink/logo",
+        expect.anything(),
+      );
+      expect(logo).toHaveClass("bg-zinc-900");
+      view.unmount();
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+      vi.unstubAllGlobals();
+    }
+  });
   it("uses the scored channel logo in the Live TV list and falls back when it fails", async () => {
     vi.stubGlobal("IntersectionObserver", ImmediatelyVisible);
     const { createObjectURL, revokeObjectURL } = URL;
