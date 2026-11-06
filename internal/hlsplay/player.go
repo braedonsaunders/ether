@@ -110,10 +110,14 @@ func (p *player) request(ctx context.Context, raw, kind string, index int, retry
 		if e != nil {
 			return nil, fmt.Errorf("request construction failed")
 		}
-		if p.c.Protocol == "jellyfin" {
+		if p.isMediaBrowser() {
 			req.Header.Set("X-Emby-Token", p.c.Token)
 			req.Header.Set("X-Emby-Device-Id", p.c.DeviceID)
-			req.Header.Set("Authorization", `MediaBrowser Client="Jellyfin Web", Device="Ether lab", DeviceId="`+p.c.DeviceID+`", Version="10.10.0"`)
+			scheme := "MediaBrowser"
+			if p.c.Protocol == "emby" {
+				scheme = "Emby"
+			}
+			req.Header.Set("Authorization", scheme+` Client="`+p.mediaBrowserProduct()+`", Device="Ether lab", DeviceId="`+p.c.DeviceID+`", Version="10.10.0"`)
 		} else {
 			req.Header.Set("X-Plex-Token", p.c.Token)
 			req.Header.Set("X-Plex-Client-Identifier", p.c.Session)
@@ -199,11 +203,11 @@ func Run(ctx context.Context, c Config) (r Report, err error) {
 	if c.Protocol == "" {
 		c.Protocol = "plex"
 	}
-	if c.Protocol != "plex" && c.Protocol != "jellyfin" {
-		return r, fmt.Errorf("protocol must be plex or jellyfin")
+	if c.Protocol != "plex" && c.Protocol != "jellyfin" && c.Protocol != "emby" {
+		return r, fmt.Errorf("protocol must be plex, jellyfin or emby")
 	}
 	if c.Prefix == "" {
-		c.Prefix = "/jellyfin"
+		c.Prefix = "/" + c.Protocol
 	}
 	if c.Session == "" {
 		var nonce [12]byte
@@ -409,7 +413,7 @@ func Run(ctx context.Context, c Config) (r Report, err error) {
 			progressed = true
 			if !b.Started && b.Level >= c.ForwardBuffer.Seconds() {
 				b.Started = true
-				if c.Protocol == "jellyfin" {
+				if c.Protocol != "plex" {
 					_ = p.progress(runCtx, "playing", b.Played, true)
 				}
 				r.StartupSeconds = p.elapsed()
@@ -430,7 +434,7 @@ func Run(ctx context.Context, c Config) (r Report, err error) {
 			ended = true
 			if !b.Started {
 				b.Started = true
-				if c.Protocol == "jellyfin" {
+				if c.Protocol != "plex" {
 					_ = p.progress(runCtx, "playing", b.Played, true)
 				}
 				r.StartupSeconds = p.elapsed()

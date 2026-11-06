@@ -14,8 +14,8 @@ import (
 )
 
 func (p *player) open(ctx context.Context) (string, []byte, error) {
-	if p.c.Protocol == "jellyfin" {
-		return p.openJellyfin(ctx)
+	if p.isMediaBrowser() {
+		return p.openMediaBrowser(ctx)
 	}
 	c := p.c
 	p.playSession = c.Session
@@ -43,7 +43,7 @@ func (p *player) open(ctx context.Context) (string, []byte, error) {
 	u, _ := resolve(c.BaseURL, path)
 	return u, data, e
 }
-func (p *player) openJellyfin(ctx context.Context) (string, []byte, error) {
+func (p *player) openMediaBrowser(ctx context.Context) (string, []byte, error) {
 	prefix := strings.TrimSuffix(p.c.Prefix, "/")
 	if p.c.CredentialsFile != "" {
 		data, e := os.ReadFile(p.c.CredentialsFile)
@@ -75,7 +75,7 @@ func (p *player) openJellyfin(ctx context.Context) (string, []byte, error) {
 	p.itemID = ids.RatingKeyGUID(core.RatingKey(key))
 	// A normal Jellyfin HLS profile: closed MPEG-TS H264/AAC output, source
 	// direct play disabled so PlaybackInfo admits an actual transcoding session.
-	profile := map[string]any{"Name": "Jellyfin Web", "MaxStreamingBitrate": 1000000, "TranscodingProfiles": []any{map[string]any{"Type": "Video", "Context": "Streaming", "Protocol": "hls", "Container": "ts", "VideoCodec": "h264", "AudioCodec": "aac", "MaxAudioChannels": "2", "MinSegments": 1, "BreakOnNonKeyFrames": false}}}
+	profile := map[string]any{"Name": p.mediaBrowserProduct(), "MaxStreamingBitrate": 1000000, "TranscodingProfiles": []any{map[string]any{"Type": "Video", "Context": "Streaming", "Protocol": "hls", "Container": "ts", "VideoCodec": "h264", "AudioCodec": "aac", "MaxAudioChannels": "2", "MinSegments": 1, "BreakOnNonKeyFrames": false}}}
 	body, _ := json.Marshal(map[string]any{"IsPlayback": true, "EnableDirectPlay": false, "EnableDirectStream": false, "EnableTranscoding": true, "StartTimeTicks": 0, "DeviceProfile": profile, "MaxStreamingBitrate": 1000000})
 	data, e := p.request(ctx, prefix+"/Items/"+p.itemID+"/PlaybackInfo", "playback-info", -1, false, "POST", body)
 	if e != nil {
@@ -90,7 +90,7 @@ func (p *player) openJellyfin(ctx context.Context) (string, []byte, error) {
 	}
 	p.playSession = info.PlaySessionId
 	p.mediaSource = info.MediaSources[0].Id
-	p.event(map[string]any{"kind": "session", "session": p.playSession, "protocol": "jellyfin"})
+	p.event(map[string]any{"kind": "session", "session": p.playSession, "protocol": p.c.Protocol})
 	source := info.MediaSources[0]
 	if source.TranscodingUrl == "" || source.TranscodingSubProtocol != "hls" {
 		return "", nil, fmt.Errorf("PlaybackInfo did not author HLS")
@@ -103,7 +103,7 @@ func (p *player) openJellyfin(ctx context.Context) (string, []byte, error) {
 	return authored, data, e
 }
 func (p *player) progress(ctx context.Context, state string, played float64, started bool) error {
-	if p.c.Protocol == "jellyfin" {
+	if p.isMediaBrowser() {
 		if p.playSession == "" {
 			return nil
 		}
@@ -123,9 +123,17 @@ func (p *player) progress(ctx context.Context, state string, played float64, sta
 	return e
 }
 func (p *player) finish(ctx context.Context, played float64) {
-	if p.c.Protocol == "jellyfin" {
+	if p.isMediaBrowser() {
 		_ = p.progress(ctx, "stopped", played, false)
 		return
 	}
 	_, _ = p.fetch(ctx, "/video/:/transcode/universal/stop?session="+url.QueryEscape(p.c.Session), "stop", -1, false)
+}
+
+func (p *player) isMediaBrowser() bool { return p.c.Protocol == "jellyfin" || p.c.Protocol == "emby" }
+func (p *player) mediaBrowserProduct() string {
+	if p.c.Protocol == "emby" {
+		return "Emby Web"
+	}
+	return "Jellyfin Web"
 }

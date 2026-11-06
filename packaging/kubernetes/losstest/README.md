@@ -182,3 +182,8 @@ maximum180) so an exact-container adapter can verify an absent old task and a
 ready replacement after kubelet recovery. This does not authorize targeting the
 replacement or infer ownership retirement. Simple command adapters retain the
 20-second command bound.
+
+The same client also accepts `-protocol emby -prefix /emby`, declares an Emby
+client identity and authenticates against that independent MediaBrowser surface.
+Jellyfin and Emby use separate credentials/grants, references and output
+artifacts; neither result is inferred from the other surface's success.
