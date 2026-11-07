@@ -1,0 +1,79 @@
+name: Publish PR image
+
+on:
+  workflow_run:
+    workflows: [PR image build]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  packages: write
+  pull-requests: read
+
+# A single publisher prevents two runs from racing on a tag.
+concurrency:
+  group: pr-image-publish
+  queue: max
+
+jobs:
+  publish:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install OCI transport
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq skopeo
+      - name: Validate PR and publish image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          owner=${HEAD_REPO%%/*}
+          # Fork workflow runs can have an empty pull_requests array. Match all
+          # three head fields against the live PR, not the artifact's contents.
+          prs=$(gh api --method GET --paginate "repos/$REPO/pulls" \
+            -f state=open -f "head=$owner:$HEAD_BRANCH" -f per_page=100 \
+            | jq -s 'add')
+          pr=$(jq -c --arg repo "$HEAD_REPO" --arg branch "$HEAD_BRANCH" --arg sha "$HEAD_SHA" \
+            '[.[] | select(.head.repo.full_name == $repo and .head.ref == $branch and .head.sha == $sha)] | if length == 1 then .[0] else empty end' <<<"$prs")
+          if [ -z "$pr" ]; then echo 'No unique open PR with this current head'; exit 0; fi
+          number=$(jq -r '.number' <<<"$pr")
+          association=$(jq -r '.author_association' <<<"$pr")
+          case "$association" in OWNER|MEMBER|COLLABORATOR|CONTRIBUTOR) ;; *) echo 'PR author is not eligible'; exit 0 ;; esac
+          current() {
+            gh api "repos/$REPO/pulls/$number" | jq -e \
+              --arg repo "$HEAD_REPO" --arg branch "$HEAD_BRANCH" --arg sha "$HEAD_SHA" \
+              '. as $pr | .state == "open" and .head.repo.full_name == $repo and .head.ref == $branch and .head.sha == $sha and (["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"] | index($pr.author_association)) != null' >/dev/null
+          }
+          gh run download "$RUN_ID" --repo "$REPO" --name pr-image --dir image
+          test -f image/pr-image.tar
+          slug=$(printf '%s' "$HEAD_BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-30 | sed 's/-*$//')
+          [ -n "$slug" ] || slug=branch
+          image="ghcr.io/${REPO,,}"
+          immutable="pr-${number}-${slug}-${HEAD_SHA:0:12}"
+          stable="pr-${number}"
+          printf '%s' "$GH_TOKEN" | skopeo login --username "$ACTOR" --password-stdin ghcr.io
+          source="oci-archive:image/pr-image.tar"
+          source_digest=$(skopeo inspect --raw "$source" | sha256sum | cut -d' ' -f1)
+          if skopeo inspect --raw "docker://$image:$immutable" > existing-manifest 2> inspect-error; then
+            existing_digest=$(sha256sum existing-manifest | cut -d' ' -f1)
+            if [ "$source_digest" != "$existing_digest" ]; then
+              echo 'Immutable tag already points to different image bytes'; exit 1
+            fi
+          elif ! grep -Eqi 'manifest unknown|manifest_unknown|name unknown|name_unknown' inspect-error; then
+            cat inspect-error >&2; exit 1
+          else
+            current || { echo 'PR changed or author is no longer eligible'; exit 0; }
+            skopeo copy --all --preserve-digests "$source" "docker://$image:$immutable"
+          fi
+          current || { echo 'PR changed or author is no longer eligible'; exit 0; }
+          skopeo copy --all --preserve-digests "docker://$image:$immutable" "docker://$image:$stable"
+          echo "Published $image:$stable and $image:$immutable"
