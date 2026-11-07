@@ -277,11 +277,13 @@ describe("Catalog workspace", () => {
     expect(
       screen.getByRole("button", { name: "Remove Waiting for a release filter" }),
     ).toBeVisible();
-    expect(
-      calls(fake, "GET", "/catalog/browse")
-        .filter((c) => !c.path.includes("countOnly"))
-        .at(-1)?.path,
-    ).toContain("waiting=1");
+    await waitFor(() =>
+      expect(
+        calls(fake, "GET", "/catalog/browse")
+          .filter((c) => !c.path.includes("countOnly"))
+          .at(-1)?.path,
+      ).toContain("waiting=1"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Remove Waiting for a release filter" }));
     await waitFor(() =>
       expect(
