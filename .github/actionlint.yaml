@@ -1,0 +1,5 @@
+paths:
+  # GitHub supports concurrency.queue, but actionlint v1.7.12 does not yet.
+  .github/workflows/pr-image-publish.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'

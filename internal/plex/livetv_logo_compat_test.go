@@ -45,6 +45,17 @@ func TestPlexWebGuideLogoUsesServerOriginAndViewer(t *testing.T) {
 	}
 }
 
+func TestPlexWebGuideLogoEscapesChannelID(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	r := httptest.NewRequest("GET", "http://example.com/livetv/dvr/channels", nil)
+	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, &Request{Token: ownerToken, Product: "Plex Web"}))
+	got := f.srv.liveGuideLogo(r, livetv.Channel{ID: "a b%c"})
+	if !strings.HasPrefix(got, "http://example.com/livetv/channels/a%20b%25c/logo.png?") {
+		t.Fatalf("channel ID is not escaped exactly once: %s", got)
+	}
+}
+
 func TestLiveChannelLogoPlezyCompatibility(t *testing.T) {
 	f, service, generated := liveFixture(t)
 	src := livetv.Source{Name: "Logo source", Playlist: "#EXTM3U\n#EXTINF:-1 tvg-id=\"external\" tvg-logo=\"https://logos.example.test/logo.svg\",External\nhttps://stream.example.test/live\n"}

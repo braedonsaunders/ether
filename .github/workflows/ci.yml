@@ -93,8 +93,7 @@ jobs:
           only-new-issues: true
       - name: actionlint
         # Uses the runner's shellcheck for run: scripts.
-        # GitHub supports concurrency.queue, but actionlint v1.7.12 does not yet.
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color -ignore 'unexpected key "queue" for "concurrency" section'
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
       - name: zizmor (workflow security)
         uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:

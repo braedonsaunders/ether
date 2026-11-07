@@ -13,6 +13,8 @@ concurrency:
 
 jobs:
   build:
+    # The publisher only accepts these authors, so skip the build for everyone else.
+    if: contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -20,18 +22,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Stage ffmpeg
         run: |
           scripts/fetch-ffmpeg.sh linux-amd64
-          scripts/fetch-ffmpeg.sh linux-arm64
       - name: Build image without registry credentials
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          docker buildx build --platform linux/amd64,linux/arm64 \
+          docker buildx build --platform linux/amd64 \
             --build-arg "VERSION=pr-${PR_NUMBER}" --build-arg "COMMIT=${HEAD_SHA}" \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --output type=oci,dest=pr-image.tar .

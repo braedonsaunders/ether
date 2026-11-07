@@ -50,11 +50,11 @@ jobs:
           if [ -z "$pr" ]; then echo 'No unique open PR with this current head'; exit 0; fi
           number=$(jq -r '.number' <<<"$pr")
           association=$(jq -r '.author_association' <<<"$pr")
-          case "$association" in OWNER|MEMBER|COLLABORATOR|CONTRIBUTOR) ;; *) echo 'PR author is not eligible'; exit 0 ;; esac
+          case "$association" in OWNER|MEMBER|COLLABORATOR) ;; *) echo 'PR author is not eligible'; exit 0 ;; esac
           current() {
             gh api "repos/$REPO/pulls/$number" | jq -e \
               --arg repo "$HEAD_REPO" --arg branch "$HEAD_BRANCH" --arg sha "$HEAD_SHA" \
-              '. as $pr | .state == "open" and .head.repo.full_name == $repo and .head.ref == $branch and .head.sha == $sha and (["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"] | index($pr.author_association)) != null' >/dev/null
+              '. as $pr | .state == "open" and .head.repo.full_name == $repo and .head.ref == $branch and .head.sha == $sha and (["OWNER", "MEMBER", "COLLABORATOR"] | index($pr.author_association)) != null' >/dev/null
           }
           gh run download "$RUN_ID" --repo "$REPO" --name pr-image --dir image
           test -f image/pr-image.tar
@@ -65,12 +65,10 @@ jobs:
           stable="pr-${number}"
           printf '%s' "$GH_TOKEN" | skopeo login --username "$ACTOR" --password-stdin ghcr.io
           source="oci-archive:image/pr-image.tar"
-          source_digest=$(skopeo inspect --raw "$source" | sha256sum | cut -d' ' -f1)
-          if skopeo inspect --raw "docker://$image:$immutable" > existing-manifest 2> inspect-error; then
-            existing_digest=$(sha256sum existing-manifest | cut -d' ' -f1)
-            if [ "$source_digest" != "$existing_digest" ]; then
-              echo 'Immutable tag already points to different image bytes'; exit 1
-            fi
+          # A rebuild of the same commit is not byte-identical, so an existing
+          # immutable tag is kept as is and only the moving tag is updated.
+          if skopeo inspect --raw "docker://$image:$immutable" > /dev/null 2> inspect-error; then
+            echo "Keeping existing $image:$immutable"
           elif ! grep -Eqi 'manifest unknown|manifest_unknown|name unknown|name_unknown' inspect-error; then
             cat inspect-error >&2; exit 1
           else

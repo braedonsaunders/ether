@@ -235,7 +235,7 @@ Dial your storage footprint from **Pass-through (0 GiB)** to **Everyday (32 GiB)
 | **Linux** | [`.deb` / `.rpm`](https://github.com/braedonsaunders/ether/releases/latest) (`amd64`, `arm64`) | Dedicated `ether` systemd service, hardware transcoding group setup (`render`/`video`), bundled FFmpeg. |
 | **Docker** | `ghcr.io/braedonsaunders/ether:latest` | Multi-arch (`amd64`, `arm64`). Ready-made templates for **Unraid, TrueNAS SCALE, and Proxmox**, plus Synology instructions, in [`packaging/community`](packaging/community/README.md). |
 
-PR previews for eligible contributors use `ghcr.io/braedonsaunders/ether:pr-<number>`. The tag moves when a new head is published. A second tag includes a normalized branch name and the first 12 characters of the head SHA; the publisher refuses to replace it with different image bytes. For a strictly immutable reference, pull by image digest. Previews remain after a PR closes or eligibility changes, and eligibility is checked again before each publication. Fork builds may require Actions approval.
+PR previews (`linux/amd64` only) for PRs by repository owners, members and collaborators use `ghcr.io/braedonsaunders/ether:pr-<number>`. The tag moves when a new head is published. A second tag includes a normalized branch name and the first 12 characters of the head SHA; the publisher never replaces it. For a strictly immutable reference, pull by image digest. Previews remain after a PR closes or eligibility changes, and eligibility is checked again before each publication. Previews are unreviewed PR code, so only run them if you trust the author. Fork builds may require Actions approval.
 
 ```yaml
 services:
