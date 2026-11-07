@@ -1,6 +1,9 @@
 name: Publish PR image
 
 on:
+  # PR code runs in a separate read-only workflow; this job checks the live PR
+  # and transports its image as data without running it.
+  # zizmor: ignore[dangerous-triggers]
   workflow_run:
     workflows: [PR image build]
     types: [completed]
