@@ -60,3 +60,10 @@ class InlineCleanup:
   evaluation=policy.evaluate(session,player,context,self.target,self.frozen,self.samples,self.started)
   if evaluation['passed']is not None or(policy.timestamp_ns(sample['queryStartedAt'])>=deadline) or evaluation['status'].startswith('INVALID_LATE'):
    (self.out/'cleanup-contract-observed.json').write_text(json.dumps({'session':session,'context':context,'playerStop':player['Attempts'][-1],'target':self.target,'targetCapturedAt':self.frozen,'collectorStartedAt':self.started,'samples':self.samples,'evaluation':evaluation},indent=2)+'\n');self.done=True
+   # Publish the immutable verdict first; capture causal rows within a separate
+   # short read-only budget before the later case publisher can lose them.
+   if evaluation.get('passed')is False:
+    try:helper.retain_nonzero_rows(self.config['_lab'],session,self.out,time.time()+1.5)
+    except Exception as error:
+     (self.out/'cleanup-deadline-row-snapshot-error.json').write_text(json.dumps({'session':session,'at':helper.now(),'errorType':type(error).__name__,'verdictUnchanged':True},indent=2)+'\n')
+

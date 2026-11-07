@@ -39,6 +39,20 @@ def processes(lab,target,end):
   inventory.append(row)
  return count,inventory
 
+def retain_nonzero_rows(lab,session,out,end):
+ """Reuse the bounded read-only full-row snapshot after a recorded failure."""
+ if not re.fullmatch(r'[A-Za-z0-9._-]{1,128}',session):raise ValueError('invalid session')
+ l=ops.LABS[lab]
+ sql=f"BEGIN READ ONLY;SELECT json_build_object('observedAt',clock_timestamp(),'session','{session}','currentClaims',(SELECT json_agg(x)FROM(SELECT * FROM placement_claims WHERE session='{session}')x),'displacedClaims',(SELECT json_agg(x)FROM(SELECT * FROM placement_displaced_claims WHERE session='{session}')x),'displaced',(SELECT json_agg(x)FROM(SELECT * FROM placement_displaced WHERE session='{session}')x));COMMIT;"
+ k=[l['state']+'/bin/kubectl','--kubeconfig',l['state']+'/kubeconfig','--request-timeout=1s','-n',l['ns'],'exec','-i',l['pg'],'-c','postgres','--','psql','-U','ether','-d','ether','-Atq','-v','ON_ERROR_STOP=1']
+ result=call(k,end,input=sql);result.check_returncode();rows=json.loads(result.stdout)
+ if rows.get('session')!=session:raise ValueError('row snapshot session differs')
+ path=out/'cleanup-deadline-rows.private.json'
+ # Set private permissions at creation, before writing any row content.
+ import os
+ fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+ with os.fdopen(fd,'w')as stream:json.dump(rows,stream,indent=2);stream.write('\n')
+
 def main():
  p=argparse.ArgumentParser();p.add_argument('--lab',required=True);p.add_argument('--session',required=True);p.add_argument('--player',type=pathlib.Path,required=True);p.add_argument('--run-dir',type=pathlib.Path,required=True);p.add_argument('--backend',type=pathlib.Path,required=True);p.add_argument('--role-proof',type=pathlib.Path,required=True);a=p.parse_args();configure(a.backend,a.role_proof);started=now();wall_end=time.time()+18.5
  if not re.fullmatch(r'[A-Za-z0-9._-]{1,128}',a.session):raise ValueError('invalid session')
