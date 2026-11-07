@@ -383,11 +383,14 @@ def run(c, out):
                     fault_process.wait()
             report['restored'] = fault_process.returncode == 0
             report['faultRestoredAt'] = stamp()
+            (out/'fault-restoration.json').write_text(json.dumps({key: report.get(key) for key in ('session', 'role', 'action', 'restored', 'faultRestoredAt')}, indent=2)+'\n')
             for handle in fault_handles:
                 handle.close()
         if restoration_needed:
             result = command(c['restoreArgv'])
             report['restored'] = result.returncode == 0
+            report['faultRestoredAt'] = stamp()
+            (out/'fault-restoration.json').write_text(json.dumps({key: report.get(key) for key in ('session', 'role', 'action', 'restored', 'faultRestoredAt')}, indent=2)+'\n')
             (out/'restore.stderr').write_bytes(result.stderr)
         player = out/'player'/'report.json'
         if player.exists():
@@ -439,7 +442,13 @@ def run(c, out):
                                 and report.get('postLossObservationSeconds', 0) >= c.get('minimumPostLossSeconds', 0))
         else:
             report['passed'] = False
-        if c.get('postCheckArgv') and player.exists() and report['killAt']:
+        if c.get('postCheckArgv') and player.exists() and (report['killAt'] or action == 'none'):
+            # These are the original event timestamps, not a fresh cleanup clock.
+            # The observer must retain pre-fault identities independently.
+            context = {key: report.get(key) for key in ('session', 'role', 'action', 'phase',
+                       'killAt', 'faultRestoredAt', 'restored', 'target', 'targetSelection')}
+            context['postCheckStartedAt'] = stamp()
+            (out/'post-check-context.json').write_text(json.dumps(context, indent=2)+'\n')
             replacements = {'{session}':session, '{playerReport}':str(player), '{faultReadyFile}':str(out/'fault-ready'), '{runDir}':str(out)}
             argv = []
             for value in c['postCheckArgv']:

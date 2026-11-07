@@ -338,3 +338,28 @@ frame/AU comparisons are expected for the first no-fault reference and do not
 replace those intrinsic checks. A failed reference produces a failed run report
 without starting the player or injecting a fault; shell command sequencing cannot
 bypass this guard.
+
+Cleanup policy `root-20261107-v1` is prospective. Its 15-second deadline is
+anchored at the later of the successful terminal Stop response and successful
+fault restoration; delete and no-fault runs use the Stop response. `run.py`
+retains restoration in `fault-restoration.json` and the same event values in
+`post-check-context.json`. The postcheck command budget remains 20 seconds.
+
+An existing observer may call `cleanup_observer.InlineCleanup.step()` while the
+player is running, including its deferred media analysis. The injected backend
+provides the policy, bounded read-only lab callbacks, clock, and process inventory
+(`cleanup_probe.py` supplies these adapters for the existing lab metadata shape).
+Retain the exact target UID, Kubernetes node, Ether container ID and owned node
+container before dispatch, including source node/boot for source faults. The
+collector compares these identities with the dispatch record and keeps them when
+retired placement metadata no longer names a target.
+
+Acceptance requires one completed observation within the deadline showing the
+exact session retired with zero current/displaced claims and zero owned FFmpeg
+processes. A missing target, incomplete process inventory, late collector, or
+only a late zero is invalid measurement, never a cleanup pass. A database query
+started before the deadline cannot prove a nonzero state at the deadline merely
+because it completes later. Historical reports retain their original policy and
+verdicts. `cleanup_probe.py --backend PATH --role-proof PATH` combines this proof
+with an existing role postcheck without discarding its session/interruption
+fields; it does not perform faults or mutate cluster state.
