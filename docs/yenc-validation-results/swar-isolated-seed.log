@@ -1,0 +1,11 @@
+=== RUN   TestSeed
+--- PASS: TestSeed (1.13s)
+=== RUN   TestSeed
+    seed_test.go:53: live TV fixture guide empty: [] not available yet
+--- FAIL: TestSeed (1.13s)
+=== RUN   TestSeed
+    seed_test.go:53: live TV fixture guide empty: [] not available yet
+--- FAIL: TestSeed (1.13s)
+FAIL
+FAIL	github.com/braedonsaunders/ether/cmd/plexparity	4.003s
+FAIL

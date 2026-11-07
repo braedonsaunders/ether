@@ -28,7 +28,7 @@ ARG ETHER_UPDATE_PUBLIC_KEY=
 # BuildKit keeps the input out of image metadata; the resulting binary embeds it.
 RUN --mount=type=secret,id=ETHER_TMDB_BUNDLED_KEY \
     ETHER_TMDB_BUNDLED_KEY="$(cat /run/secrets/ETHER_TMDB_BUNDLED_KEY 2>/dev/null || true)" && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    CGO_ENABLED=0 GOEXPERIMENT=simd GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
       -trimpath \
       -ldflags "-s -w \
         -X github.com/braedonsaunders/ether/internal/updater.Version=${VERSION} \

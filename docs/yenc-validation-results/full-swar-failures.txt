@@ -1,0 +1,48 @@
+Failure excerpts; see ../yenc-simd-validation.md for reproduction commands.
+full-swar
+
+github.com/braedonsaunders/ether/cmd/plexparity / TestInventoryReportsUncoveredRoutes
+=== RUN   TestInventoryReportsUncoveredRoutes
+    inventory_test.go:11: uncovered Plex GET routes: [/clients/profiles /clients/profiles/ /history /hubs/sections/{section}/popular /library/all/top /library/metadata/{key}/arts /library/metadata/{key}/clearLogos /library/metadata/{key}/extras/all /library/metadata/{key}/match /library/metadata/{key}/posters /library/metadata/{key}/themes /library/metadata/{key}/tree /library/metadata/{key}/users/top /library/parts/{part} /livetv/channels/{channel}/logo.png /playQueues /player/* /playlists/sorts /sync /{ttype:video|music|audio|subtitles}/:/transcode/universal/start /{ttype:video|music|audio|subtitles}/:/transcode/universal/start.mkv]
+--- FAIL: TestInventoryReportsUncoveredRoutes (0.01s)
+
+github.com/braedonsaunders/ether/cmd/plexparity / TestSeed
+=== RUN   TestSeed
+    seed_test.go:53: live TV fixture guide empty: [] not available yet
+--- FAIL: TestSeed (4.24s)
+
+github.com/braedonsaunders/ether/internal/frontend / TestFrontendImports
+=== RUN   TestFrontendImports
+    depguard_test.go:123: ../frontends/mediabrowser/client_compatibility.go imports forbidden internal package github.com/braedonsaunders/ether/internal/core
+--- FAIL: TestFrontendImports (0.00s)
+
+github.com/braedonsaunders/ether/internal/spike / TestPlexIntegration
+=== RUN   TestPlexIntegration
+    spike_test.go:347: timeline state: {Key:9000159174296899 ViewOffset:0s ViewCount:0 LastViewedAt:2026-11-07 10:42:52.941439 +0100 CET m=+0.022787376 LastRatedAt:0001-01-01 00:00:00 +0000 UTC UserRating:0 InWatchlist:false IsFavorite:false IsNotInterested:false Duration:0s UpdatedAt:2026-11-07 10:42:52.941439 +0100 CET m=+0.022787376}
+--- FAIL: TestPlexIntegration (0.01s)
+
+github.com/braedonsaunders/ether/internal/state/prismcompat / TestPrismStateAndPlexwatchSchema/sqlite_from_state2
+=== RUN   TestPrismStateAndPlexwatchSchema/sqlite_from_state2
+    schema_test.go:41: migration state/8: SQL logic error: no such table: state_history (1)
+--- FAIL: TestPrismStateAndPlexwatchSchema/sqlite_from_state2 (0.00s)
+
+github.com/braedonsaunders/ether/internal/store / TestWriteGateHandsOverPromptly
+=== RUN   TestWriteGateHandsOverPromptly
+    write_gate_test.go:63: a short write waited 99.679542ms behind 30ms transactions (waits [30.916µs 22.957958ms 24.651916ms 24.766042ms 24.851375ms 25.03125ms 25.207167ms 25.520125ms 25.531167ms 25.537125ms 25.605458ms 25.627667ms 25.887667ms 25.900166ms 25.982416ms 26.364042ms 26.909833ms 28.790083ms 82.604625ms 99.679542ms])
+--- FAIL: TestWriteGateHandsOverPromptly (0.88s)
+
+github.com/braedonsaunders/ether/internal/transcode / TestIntegrationMatroskaContractPillarboxesTenBitSDR
+    mkv_contract_pixels_test.go:195: swap to web.mkv at 8s: copy=false remux to HLS (mkv); direct play not allowed by client, audio codec flac not supported; video hevc copied; audio flac mono -> aac 1ch; failover: video h264 360p re-encoded to match the stream
+    mkv_contract_pixels_test.go:209: bar at x=10: YCbCr 64,514,514
+    mkv_contract_pixels_test.go:209: bar at x=630: YCbCr 64,513,513
+    mkv_contract_pixels_test.go:209: white at x=150: YCbCr 936,509,509
+    mkv_contract_pixels_test.go:211: white at x=150: YCbCr 936,509,509, want 940,512,512
+    mkv_contract_pixels_test.go:209: grey at x=480: YCbCr 500,509,509
+    mkv_contract_pixels_test.go:211: grey at x=480: YCbCr 500,509,509, want 504,512,512
+--- FAIL: TestIntegrationMatroskaContractPillarboxesTenBitSDR (5.92s)
+
+github.com/braedonsaunders/ether/internal/transcode / TestIntegrationBurnedTextSubtitleRenders
+=== RUN   TestIntegrationBurnedTextSubtitleRenders
+    subtitle_delivery_test.go:174: run at 0s: no cue burned at 2 s (band differs by 1.2)
+--- FAIL: TestIntegrationBurnedTextSubtitleRenders (0.91s)
+

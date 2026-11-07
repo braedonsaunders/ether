@@ -95,7 +95,7 @@ func (c *Conn) bodyPipelineStarted(ctx context.Context, ids []string, opt *yenc.
 		c.bodyStarted = true
 		c.inBody = true
 		br := &BodyReader{c: c, end: end}
-		part, derr := yenc.DecodeLines(br, opt)
+		part, derr := decodeBody(br, opt)
 		cerr := br.Close()
 		if br.ioErr != nil {
 			fail(i, br.ioErr)

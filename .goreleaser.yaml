@@ -29,6 +29,7 @@ builds:
     binary: ether
     env:
       - CGO_ENABLED=0
+      - GOEXPERIMENT=simd
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
@@ -50,6 +51,7 @@ builds:
     binary: ether-tray
     env:
       - CGO_ENABLED=0
+      - GOEXPERIMENT=simd
     goos: [linux, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]

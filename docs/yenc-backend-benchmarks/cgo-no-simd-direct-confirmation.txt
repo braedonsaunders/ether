@@ -1,0 +1,16 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/braedonsaunders/ether/internal/usenet
+cpu: Apple M4
+BenchmarkRapidDirect/line128/768KiB/reusefalse         	    7069	    168806 ns/op	4658.79 MB/s	        98.15 cpu-%	       226.2 cpu-ms/GiB	    165681 cpu-ns/op	  795043 B/op	      14 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusefalse         	    7057	    176481 ns/op	4456.20 MB/s	        98.06 cpu-%	       236.3 cpu-ms/GiB	    173050 cpu-ns/op	  795043 B/op	      14 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusefalse         	    7077	    171162 ns/op	4594.67 MB/s	        98.53 cpu-%	       230.2 cpu-ms/GiB	    168639 cpu-ns/op	  795043 B/op	      14 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusefalse         	    7084	    169575 ns/op	4637.66 MB/s	        98.13 cpu-%	       227.2 cpu-ms/GiB	    166409 cpu-ns/op	  795043 B/op	      14 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusefalse         	    7023	    169160 ns/op	4649.03 MB/s	        98.19 cpu-%	       226.8 cpu-ms/GiB	    166093 cpu-ns/op	  795043 B/op	      14 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusetrue          	    8254	    144972 ns/op	5424.71 MB/s	       100.2 cpu-%	       198.2 cpu-ms/GiB	    145201 cpu-ns/op	     392 B/op	      13 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusetrue          	    8194	    144890 ns/op	5427.79 MB/s	       100.2 cpu-%	       198.1 cpu-ms/GiB	    145126 cpu-ns/op	     392 B/op	      13 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusetrue          	    8250	    144328 ns/op	5448.91 MB/s	       100.2 cpu-%	       197.4 cpu-ms/GiB	    144607 cpu-ns/op	     392 B/op	      13 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusetrue          	    8245	    144353 ns/op	5447.97 MB/s	       100.2 cpu-%	       197.5 cpu-ms/GiB	    144640 cpu-ns/op	     392 B/op	      13 allocs/op
+BenchmarkRapidDirect/line128/768KiB/reusetrue          	    8336	    146350 ns/op	5373.66 MB/s	       100.1 cpu-%	       200.1 cpu-ms/GiB	    146568 cpu-ns/op	     392 B/op	      13 allocs/op
+PASS
+ok  	github.com/braedonsaunders/ether/internal/usenet	13.233s

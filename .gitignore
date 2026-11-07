@@ -23,6 +23,8 @@ node_modules/
 !/THIRD_PARTY_NOTICES.md
 !/docs/install.md
 !/docs/performance.md
+!/docs/yenc-simd-validation.md
+!/docs/yenc-backend-benchmarks.md
 !/docs/prism-scorecard.md
 !/docs/user-guide.md
 !/packaging/community/README.md

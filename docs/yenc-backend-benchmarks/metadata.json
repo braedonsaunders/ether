@@ -1,0 +1,52 @@
+{
+  "started_utc": "2026-11-07T09:52:45.825602+00:00",
+  "implementation_commit": "eb272ee65ba3c2d0c5c4b5bf21467650061abca6",
+  "go_version": "go version go1.27.3 darwin/arm64",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "cpu_model": "Apple M4",
+  "logical_cpus": 10,
+  "duration": "300ms",
+  "samples": 3,
+  "serial_gomaxprocs": 1,
+  "concurrent_gomaxprocs": 8,
+  "workers": [
+    1,
+    4,
+    8,
+    16
+  ],
+  "sizes_kib": [
+    384,
+    768
+  ],
+  "line_lengths": [
+    128,
+    256
+  ],
+  "fixture_seed": 95,
+  "crc": true,
+  "units": "decoded decimal MB/s",
+  "confirmation": {
+    "duration": "1s",
+    "samples": 5
+  },
+  "scenarios": {
+    "go-simd": {
+      "CGO_ENABLED": "0",
+      "GOEXPERIMENT": "simd"
+    },
+    "cgo-no-simd": {
+      "CGO_ENABLED": "1",
+      "GOEXPERIMENT": ""
+    },
+    "swar": {
+      "CGO_ENABLED": "0",
+      "GOEXPERIMENT": ""
+    },
+    "cgo-with-simd": {
+      "CGO_ENABLED": "1",
+      "GOEXPERIMENT": "simd"
+    }
+  },
+  "finished_utc": "2026-11-07T09:58:28.285789+00:00"
+}

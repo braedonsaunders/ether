@@ -1,0 +1,4 @@
+{"command": ["go", "test", "-count=1", "-timeout", "5m", "./internal/usenet", "./internal/yenc", "./internal/stream"], "CGO_ENABLED": "0", "GOEXPERIMENT": "", "extra": null}
+ok  	github.com/braedonsaunders/ether/internal/usenet	31.519s
+ok  	github.com/braedonsaunders/ether/internal/yenc	0.276s
+ok  	github.com/braedonsaunders/ether/internal/stream	8.100s

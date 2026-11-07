@@ -1,0 +1,1 @@
+{"command": ["go", "build", "-trimpath", "-o", "/tmp/ether-yenc-validation/ether-darwin-amd64", "./cmd/ether"], "CGO_ENABLED": "0", "GOEXPERIMENT": "simd", "extra": {"GOOS": "darwin", "GOARCH": "amd64"}}

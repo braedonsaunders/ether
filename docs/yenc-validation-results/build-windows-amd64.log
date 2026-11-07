@@ -1,0 +1,1 @@
+{"command": ["go", "build", "-trimpath", "-o", "/tmp/ether-yenc-validation/ether-windows-amd64", "./cmd/ether"], "CGO_ENABLED": "0", "GOEXPERIMENT": "simd", "extra": {"GOOS": "windows", "GOARCH": "amd64"}}

@@ -1,0 +1,54 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/braedonsaunders/ether/internal/usenet
+cpu: Apple M4
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers1/SWARfalse-8         	    1933	    183713 ns/op	4280.77 MB/s	       120.4 cpu-%	       302.1 cpu-ms/GiB	    221262 cpu-ns/op	  796616 B/op	      36 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers1/SWARfalse-8         	    1934	    183795 ns/op	4278.86 MB/s	       120.3 cpu-%	       301.9 cpu-ms/GiB	    221103 cpu-ns/op	  796616 B/op	      36 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers1/SWARfalse-8         	    1903	    192909 ns/op	4076.69 MB/s	       119.8 cpu-%	       315.5 cpu-ms/GiB	    231076 cpu-ns/op	  796618 B/op	      36 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers1/SWARtrue-8          	     888	    412716 ns/op	1905.51 MB/s	       112.0 cpu-%	       631.2 cpu-ms/GiB	    462303 cpu-ns/op	  787526 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers1/SWARtrue-8          	     938	    353613 ns/op	2223.99 MB/s	       111.1 cpu-%	       536.2 cpu-ms/GiB	    392727 cpu-ns/op	  787527 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers1/SWARtrue-8          	     870	    359430 ns/op	2188.00 MB/s	       112.4 cpu-%	       551.8 cpu-ms/GiB	    404138 cpu-ns/op	  787526 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers4/SWARfalse-8         	    4906	     67992 ns/op	11566.57 MB/s	       391.0 cpu-%	       363.0 cpu-ms/GiB	    265880 cpu-ns/op	  796630 B/op	      36 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers4/SWARfalse-8         	    5287	     68788 ns/op	11432.71 MB/s	       386.9 cpu-%	       363.4 cpu-ms/GiB	    266149 cpu-ns/op	  796602 B/op	      36 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers4/SWARfalse-8         	    4575	     82364 ns/op	9548.29 MB/s	       370.0 cpu-%	       416.1 cpu-ms/GiB	    304766 cpu-ns/op	  796585 B/op	      36 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers4/SWARtrue-8          	    2493	    167004 ns/op	4709.06 MB/s	       363.5 cpu-%	       828.7 cpu-ms/GiB	    606988 cpu-ns/op	  787531 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers4/SWARtrue-8          	    2954	    120272 ns/op	6538.78 MB/s	       365.9 cpu-%	       600.8 cpu-ms/GiB	    440046 cpu-ns/op	  787530 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers4/SWARtrue-8          	    2936	    142534 ns/op	5517.52 MB/s	       356.8 cpu-%	       694.3 cpu-ms/GiB	    508533 cpu-ns/op	  787530 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers8/SWARfalse-8         	    5421	     63314 ns/op	12421.05 MB/s	       534.8 cpu-%	       462.3 cpu-ms/GiB	    338611 cpu-ns/op	  796398 B/op	      35 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers8/SWARfalse-8         	    5898	     56700 ns/op	13870.03 MB/s	       565.8 cpu-%	       438.0 cpu-ms/GiB	    320814 cpu-ns/op	  796376 B/op	      35 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers8/SWARfalse-8         	    5758	     62719 ns/op	12538.93 MB/s	       540.2 cpu-%	       462.6 cpu-ms/GiB	    338800 cpu-ns/op	  796385 B/op	      35 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers8/SWARtrue-8          	    2752	    116997 ns/op	6721.79 MB/s	       553.6 cpu-%	       884.3 cpu-ms/GiB	    647647 cpu-ns/op	  787528 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers8/SWARtrue-8          	    3735	     96612 ns/op	8140.08 MB/s	       588.2 cpu-%	       775.9 cpu-ms/GiB	    568302 cpu-ns/op	  787529 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers8/SWARtrue-8          	    3576	     94824 ns/op	8293.63 MB/s	       600.5 cpu-%	       777.5 cpu-ms/GiB	    569438 cpu-ns/op	  787530 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers16/SWARfalse-8        	    6117	     49323 ns/op	15944.59 MB/s	       612.0 cpu-%	       412.2 cpu-ms/GiB	    301873 cpu-ns/op	  796383 B/op	      35 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers16/SWARfalse-8        	    6264	     49291 ns/op	15954.77 MB/s	       613.4 cpu-%	       412.8 cpu-ms/GiB	    302350 cpu-ns/op	  796350 B/op	      35 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers16/SWARfalse-8        	    7552	     49203 ns/op	15983.33 MB/s	       615.1 cpu-%	       413.2 cpu-ms/GiB	    302664 cpu-ns/op	  796364 B/op	      35 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers16/SWARtrue-8         	    3764	     85611 ns/op	9186.06 MB/s	       682.0 cpu-%	       797.2 cpu-ms/GiB	    583876 cpu-ns/op	  787527 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers16/SWARtrue-8         	    3712	     83829 ns/op	9381.38 MB/s	       687.1 cpu-%	       786.4 cpu-ms/GiB	    576004 cpu-ns/op	  787529 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferfresh/workers16/SWARtrue-8         	    3754	     83287 ns/op	9442.49 MB/s	       685.6 cpu-%	       779.7 cpu-ms/GiB	    571050 cpu-ns/op	  787528 B/op	      22 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers1/SWARfalse-8         	    1108	    322988 ns/op	2434.86 MB/s	       100.0 cpu-%	       441.2 cpu-ms/GiB	    323115 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers1/SWARfalse-8         	    1113	    334689 ns/op	2349.74 MB/s	       100.0 cpu-%	       457.2 cpu-ms/GiB	    334845 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers1/SWARfalse-8         	    1010	    350024 ns/op	2246.80 MB/s	       100.0 cpu-%	       478.0 cpu-ms/GiB	    350127 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers1/SWARtrue-8          	    1056	    340718 ns/op	2308.16 MB/s	       100.0 cpu-%	       465.3 cpu-ms/GiB	    340830 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers1/SWARtrue-8          	    1064	    336046 ns/op	2340.25 MB/s	       100.0 cpu-%	       459.0 cpu-ms/GiB	    336169 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers1/SWARtrue-8          	    1047	    376282 ns/op	2090.01 MB/s	       100.0 cpu-%	       513.8 cpu-ms/GiB	    376284 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers4/SWARfalse-8         	    3644	    113156 ns/op	6949.98 MB/s	       370.9 cpu-%	       573.1 cpu-ms/GiB	    419751 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers4/SWARfalse-8         	    3800	     93729 ns/op	8390.50 MB/s	       370.8 cpu-%	       474.5 cpu-ms/GiB	    347520 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers4/SWARfalse-8         	    3256	    120435 ns/op	6529.94 MB/s	       334.6 cpu-%	       550.1 cpu-ms/GiB	    402920 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers4/SWARtrue-8          	    3180	    109199 ns/op	7201.84 MB/s	       345.4 cpu-%	       514.9 cpu-ms/GiB	    377138 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers4/SWARtrue-8          	    3450	    116008 ns/op	6779.09 MB/s	       336.6 cpu-%	       533.2 cpu-ms/GiB	    390492 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers4/SWARtrue-8          	    3248	    122393 ns/op	6425.47 MB/s	       332.0 cpu-%	       554.8 cpu-ms/GiB	    406381 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers8/SWARfalse-8         	    4443	     83924 ns/op	9370.72 MB/s	       633.9 cpu-%	       726.3 cpu-ms/GiB	    531962 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers8/SWARfalse-8         	    4140	     73837 ns/op	10650.94 MB/s	       706.4 cpu-%	       712.1 cpu-ms/GiB	    521586 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers8/SWARfalse-8         	    4399	     73289 ns/op	10730.60 MB/s	       701.5 cpu-%	       702.0 cpu-ms/GiB	    514134 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers8/SWARtrue-8          	    4320	     73976 ns/op	10630.91 MB/s	       696.2 cpu-%	       703.1 cpu-ms/GiB	    515000 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers8/SWARtrue-8          	    4204	     77055 ns/op	10206.06 MB/s	       677.5 cpu-%	       712.8 cpu-ms/GiB	    522044 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers8/SWARtrue-8          	    4132	     73127 ns/op	10754.40 MB/s	       688.2 cpu-%	       687.1 cpu-ms/GiB	    503245 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers16/SWARfalse-8        	    5090	     68295 ns/op	11515.22 MB/s	       731.8 cpu-%	       682.4 cpu-ms/GiB	    499783 cpu-ns/op	    1089 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers16/SWARfalse-8        	    4863	     64849 ns/op	12127.19 MB/s	       765.1 cpu-%	       677.5 cpu-ms/GiB	    496189 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers16/SWARfalse-8        	    4928	     64928 ns/op	12112.33 MB/s	       748.7 cpu-%	       663.7 cpu-ms/GiB	    486117 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers16/SWARtrue-8         	    5246	     64811 ns/op	12134.15 MB/s	       754.2 cpu-%	       667.4 cpu-ms/GiB	    488786 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers16/SWARtrue-8         	    4989	     65194 ns/op	12062.98 MB/s	       744.0 cpu-%	       662.3 cpu-ms/GiB	    485069 cpu-ns/op	    1088 B/op	      21 allocs/op
+BenchmarkBodyDecodeConcurrent/bufferexact/workers16/SWARtrue-8         	    5163	     65758 ns/op	11959.57 MB/s	       745.5 cpu-%	       669.3 cpu-ms/GiB	    490238 cpu-ns/op	    1088 B/op	      21 allocs/op
+PASS
+ok  	github.com/braedonsaunders/ether/internal/usenet	19.196s

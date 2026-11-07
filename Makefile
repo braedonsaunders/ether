@@ -1,5 +1,7 @@
 # Ether — developer makefile.
 GO ?= go
+# Pure-Go SIMD yEnc; set GOEXPERIMENT= to build the portable SWAR path.
+export GOEXPERIMENT ?= simd
 VERSION ?= dev
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)

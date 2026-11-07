@@ -1,0 +1,87 @@
+GODEBUG: unknown cpu feature "avx2"
+GODEBUG: unknown cpu feature "avx2"
+# github.com/braedonsaunders/ether/internal/usenet.test
+GODEBUG: unknown cpu feature "avx2"
+=== RUN   TestRapidDifferentialMutations
+=== RUN   TestRapidDifferentialMutations/seed7
+    rapid_diff_test.go:71: accepted=3429 acceptedOnlyByRapid=0 rapidRejectedPortableAccepted=0
+=== RUN   TestRapidDifferentialMutations/seed107
+    rapid_diff_test.go:71: accepted=3395 acceptedOnlyByRapid=0 rapidRejectedPortableAccepted=0
+=== RUN   TestRapidDifferentialMutations/seed207
+    rapid_diff_test.go:71: accepted=3360 acceptedOnlyByRapid=0 rapidRejectedPortableAccepted=0
+=== RUN   TestRapidDifferentialMutations/seed307
+    rapid_diff_test.go:71: accepted=3410 acceptedOnlyByRapid=0 rapidRejectedPortableAccepted=0
+=== RUN   TestRapidDifferentialMutations/seed407
+    rapid_diff_test.go:71: accepted=3487 acceptedOnlyByRapid=0 rapidRejectedPortableAccepted=0
+=== RUN   TestRapidDifferentialMutations/seed507
+    rapid_diff_test.go:71: accepted=3515 acceptedOnlyByRapid=0 rapidRejectedPortableAccepted=0
+--- PASS: TestRapidDifferentialMutations (10.52s)
+    --- PASS: TestRapidDifferentialMutations/seed7 (1.78s)
+    --- PASS: TestRapidDifferentialMutations/seed107 (1.74s)
+    --- PASS: TestRapidDifferentialMutations/seed207 (1.70s)
+    --- PASS: TestRapidDifferentialMutations/seed307 (1.71s)
+    --- PASS: TestRapidDifferentialMutations/seed407 (1.76s)
+    --- PASS: TestRapidDifferentialMutations/seed507 (1.84s)
+=== RUN   TestRapidBackendBuildMatrix
+=== RUN   TestRapidBackendBuildMatrix/Go_SIMD
+=== RUN   TestRapidBackendBuildMatrix/Go_SIMD_ARM64
+=== RUN   TestRapidBackendBuildMatrix/Go_SIMD_other_OS
+=== RUN   TestRapidBackendBuildMatrix/no_SIMD_experiment
+=== RUN   TestRapidBackendBuildMatrix/unsupported_Go_architecture
+=== RUN   TestRapidBackendBuildMatrix/C_macOS_ARM64
+=== RUN   TestRapidBackendBuildMatrix/C_macOS_AMD64
+=== RUN   TestRapidBackendBuildMatrix/C_Linux_AMD64
+=== RUN   TestRapidBackendBuildMatrix/C_Linux_ARM64
+=== RUN   TestRapidBackendBuildMatrix/C_Windows_AMD64
+=== RUN   TestRapidBackendBuildMatrix/unsupported_C_Windows_ARM64
+=== RUN   TestRapidBackendBuildMatrix/unsupported_C_architecture
+=== RUN   TestRapidBackendBuildMatrix/unsupported_C_OS
+=== RUN   TestRapidBackendBuildMatrix/Android_is_not_desktop_Linux
+=== RUN   TestRapidBackendBuildMatrix/iOS_is_not_macOS
+--- PASS: TestRapidBackendBuildMatrix (0.01s)
+    --- PASS: TestRapidBackendBuildMatrix/Go_SIMD (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/Go_SIMD_ARM64 (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/Go_SIMD_other_OS (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/no_SIMD_experiment (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/unsupported_Go_architecture (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/C_macOS_ARM64 (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/C_macOS_AMD64 (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/C_Linux_AMD64 (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/C_Linux_ARM64 (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/C_Windows_AMD64 (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/unsupported_C_Windows_ARM64 (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/unsupported_C_architecture (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/unsupported_C_OS (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/Android_is_not_desktop_Linux (0.00s)
+    --- PASS: TestRapidBackendBuildMatrix/iOS_is_not_macOS (0.00s)
+=== RUN   TestRapidWireBoundary
+    rapid_test.go:17: RapidYenc kernel: generic
+--- PASS: TestRapidWireBoundary (0.00s)
+=== RUN   TestRapidWireLimitsAndCRC
+=== RUN   TestRapidWireLimitsAndCRC/header_without_data
+    rapid_test.go:63: early hint validation belongs to the RapidYenc guard
+=== RUN   TestRapidWireLimitsAndCRC/limit
+=== RUN   TestRapidWireLimitsAndCRC/dishonest_size
+=== RUN   TestRapidWireLimitsAndCRC/missing_trailer
+--- PASS: TestRapidWireLimitsAndCRC (0.00s)
+    --- SKIP: TestRapidWireLimitsAndCRC/header_without_data (0.00s)
+    --- PASS: TestRapidWireLimitsAndCRC/limit (0.00s)
+    --- PASS: TestRapidWireLimitsAndCRC/dishonest_size (0.00s)
+    --- PASS: TestRapidWireLimitsAndCRC/missing_trailer (0.00s)
+=== RUN   TestRapidWireReuseAndMetadata
+--- PASS: TestRapidWireReuseAndMetadata (0.00s)
+=== RUN   TestRapidWireSkipCRC
+--- PASS: TestRapidWireSkipCRC (0.00s)
+=== RUN   TestRapidWireLFAndDotStuffing
+--- PASS: TestRapidWireLFAndDotStuffing (0.00s)
+=== RUN   TestRapidWireRejectsSplitEscapeBeforeDecode
+    rapid_test.go:158: portable decoder retains split-escape compatibility
+--- SKIP: TestRapidWireRejectsSplitEscapeBeforeDecode (0.00s)
+=== RUN   TestRapidWireRejectsAmbiguousAllocationHint
+    rapid_test.go:177: portable metadata parser
+--- SKIP: TestRapidWireRejectsAmbiguousAllocationHint (0.00s)
+=== RUN   TestRapidWireRejectsUnexpectedControlHeader
+    rapid_test.go:193: portable decoder
+--- SKIP: TestRapidWireRejectsUnexpectedControlHeader (0.00s)
+PASS
+ok  	github.com/braedonsaunders/ether/internal/usenet	11.059s

@@ -1,0 +1,1 @@
+{"command": ["go", "vet", "./internal/usenet", "./internal/yenc", "./internal/stream"], "CGO_ENABLED": "1", "GOEXPERIMENT": "", "extra": null}

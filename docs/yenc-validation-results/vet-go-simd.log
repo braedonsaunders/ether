@@ -1,0 +1,1 @@
+{"command": ["go", "vet", "./..."], "CGO_ENABLED": "0", "GOEXPERIMENT": "simd", "extra": null}

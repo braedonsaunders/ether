@@ -561,7 +561,7 @@ func (c *Conn) BodyDecode(ctx context.Context, messageID string, opt *yenc.Decod
 	if err != nil {
 		return nil, err
 	}
-	part, derr := yenc.DecodeLines(br, opt)
+	part, derr := decodeBody(br, opt)
 	cerr := br.Close()
 	if br.ioErr != nil {
 		// The transport failed; that is what the caller needs to see.
@@ -590,6 +590,12 @@ type BodyReader struct {
 
 // readRaw returns the next line including its terminator, unstuffed.
 func (b *BodyReader) readRaw() ([]byte, error) {
+	return b.readBodyLine(false)
+}
+
+// readBodyLine optionally preserves original NNTP dot-stuffing and terminator.
+// It never reads a line belonging to the following response.
+func (b *BodyReader) readBodyLine(wire bool) ([]byte, error) {
 	if b.done {
 		if b.ioErr != nil {
 			return nil, b.ioErr
@@ -624,9 +630,14 @@ func (b *BodyReader) readRaw() ([]byte, error) {
 	if line[0] == '.' {
 		if len(line) == 3 && line[1] == '\r' || len(line) == 2 {
 			b.finish(nil)
+			if wire {
+				return line, nil
+			}
 			return nil, io.EOF
 		}
-		line = line[1:]
+		if !wire {
+			line = line[1:]
+		}
 	}
 	return line, nil
 }

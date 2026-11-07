@@ -1,0 +1,239 @@
+{
+  "checks": [
+    {
+      "name": "go-simd-affected",
+      "exit": 0,
+      "seconds": 40.3
+    },
+    {
+      "name": "cgo-no-simd-affected",
+      "exit": 0,
+      "seconds": 41.6
+    },
+    {
+      "name": "swar-affected",
+      "exit": 0,
+      "seconds": 32.2
+    },
+    {
+      "name": "cgo-with-simd-affected",
+      "exit": 0,
+      "seconds": 41.6
+    },
+    {
+      "name": "cgo-no-simd-race",
+      "exit": 0,
+      "seconds": 105.0
+    },
+    {
+      "name": "cgo-with-simd-race",
+      "exit": 0,
+      "seconds": 105.6
+    },
+    {
+      "name": "full-go-simd",
+      "exit": 1,
+      "seconds": 350.9
+    },
+    {
+      "name": "full-swar",
+      "exit": 1,
+      "seconds": 344.1
+    },
+    {
+      "name": "vet-go-simd",
+      "exit": 0,
+      "seconds": 2.7
+    },
+    {
+      "name": "vet-cgo",
+      "exit": 0,
+      "seconds": 1.6
+    },
+    {
+      "name": "build-linux-amd64",
+      "exit": 0,
+      "seconds": 22.2
+    },
+    {
+      "name": "build-linux-arm64",
+      "exit": 0,
+      "seconds": 22.4
+    },
+    {
+      "name": "build-darwin-amd64",
+      "exit": 0,
+      "seconds": 20.0
+    },
+    {
+      "name": "build-darwin-arm64",
+      "exit": 0,
+      "seconds": 16.9
+    },
+    {
+      "name": "build-windows-amd64",
+      "exit": 0,
+      "seconds": 17.7
+    },
+    {
+      "name": "build-windows-arm64",
+      "exit": 0,
+      "seconds": 17.3
+    },
+    {
+      "name": "release-config",
+      "exit": 0,
+      "seconds": 0.2
+    },
+    {
+      "name": "go-simd-race",
+      "exit": 0,
+      "CGO_ENABLED": "0",
+      "GOEXPERIMENT": "simd",
+      "platform": "darwin/arm64"
+    }
+  ],
+  "full_suites": {
+    "full-go-simd": {
+      "packages": {
+        "pass": 187,
+        "skip": 32,
+        "fail": 5
+      },
+      "failed_tests": [
+        {
+          "package": "github.com/braedonsaunders/ether/cmd/plexparity",
+          "test": "TestInventoryReportsUncoveredRoutes"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/frontend",
+          "test": "TestFrontendImports"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/spike",
+          "test": "TestPlexIntegration"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/state/prismcompat",
+          "test": "TestPrismStateAndPlexwatchSchema/sqlite_from_state2"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/transcode",
+          "test": "TestIntegrationMatroskaContractPillarboxesTenBitSDR"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/transcode",
+          "test": "TestIntegrationBurnedTextSubtitleRenders"
+        }
+      ]
+    },
+    "full-swar": {
+      "packages": {
+        "pass": 186,
+        "skip": 32,
+        "fail": 6
+      },
+      "failed_tests": [
+        {
+          "package": "github.com/braedonsaunders/ether/cmd/plexparity",
+          "test": "TestInventoryReportsUncoveredRoutes"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/cmd/plexparity",
+          "test": "TestSeed"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/frontend",
+          "test": "TestFrontendImports"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/spike",
+          "test": "TestPlexIntegration"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/state/prismcompat",
+          "test": "TestPrismStateAndPlexwatchSchema/sqlite_from_state2"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/store",
+          "test": "TestWriteGateHandsOverPromptly"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/transcode",
+          "test": "TestIntegrationMatroskaContractPillarboxesTenBitSDR"
+        },
+        {
+          "package": "github.com/braedonsaunders/ether/internal/transcode",
+          "test": "TestIntegrationBurnedTextSubtitleRenders"
+        }
+      ]
+    }
+  },
+  "fuzz": {
+    "fuzz-count-go-simd": {
+      "executions": 100000,
+      "pass": true
+    },
+    "fuzz-count-cgo": {
+      "executions": 100000,
+      "pass": true
+    }
+  },
+  "rosetta": [
+    {
+      "name": "rosetta-go-simd",
+      "exit": 0,
+      "seconds": 15.3
+    },
+    {
+      "name": "rosetta-cgo",
+      "exit": 0,
+      "seconds": 15.1
+    },
+    {
+      "name": "rosetta-no-avx2",
+      "exit": 0,
+      "seconds": 11.4
+    }
+  ],
+  "isolated_rechecks": [
+    {
+      "name": "go-simd-isolated-write-gate",
+      "exit": 0,
+      "count": 10,
+      "seconds": 8.0,
+      "passed_attempts": 10,
+      "failed_attempts": 0
+    },
+    {
+      "name": "go-simd-isolated-seed",
+      "exit": 1,
+      "count": 3,
+      "seconds": 5.7,
+      "passed_attempts": 1,
+      "failed_attempts": 2
+    },
+    {
+      "name": "swar-isolated-write-gate",
+      "exit": 0,
+      "count": 10,
+      "seconds": 7.5,
+      "passed_attempts": 10,
+      "failed_attempts": 0
+    },
+    {
+      "name": "swar-isolated-seed",
+      "exit": 1,
+      "count": 3,
+      "seconds": 5.8,
+      "passed_attempts": 1,
+      "failed_attempts": 2
+    }
+  ],
+  "unsupported_checks": {
+    "linux-pure-go-simd-race": {
+      "exit": 2,
+      "reason": "go: -race requires cgo; CGO-free races are supported on macOS in this toolchain"
+    }
+  }
+}

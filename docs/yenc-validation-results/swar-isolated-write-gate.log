@@ -1,0 +1,22 @@
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.63s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.63s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+=== RUN   TestWriteGateHandsOverPromptly
+--- PASS: TestWriteGateHandsOverPromptly (0.64s)
+PASS
+ok  	github.com/braedonsaunders/ether/internal/store	6.717s
