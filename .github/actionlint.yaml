@@ -1,5 +1,10 @@
 paths:
-  # GitHub supports concurrency.queue, but actionlint v1.7.12 does not yet.
+  # actionlint v1.7.12 does not know concurrency.queue yet, which GitHub added
+  # on 2026-05-07 (values: single, max; max allows up to 100 pending runs and
+  # cannot be combined with cancel-in-progress: true). Remove this ignore once
+  # actionlint supports the key.
+  # https://github.blog/changelog/2026-05-07-github-actions-concurrency-groups-now-allow-larger-queues
+  # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
   .github/workflows/pr-image-publish.yml:
     ignore:
       - 'unexpected key "queue" for "concurrency" section'
