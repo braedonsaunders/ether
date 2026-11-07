@@ -745,6 +745,10 @@ type failoverOpts struct {
 	down           bool
 	stopOnFailure  bool
 	strictDirect   bool // a different release needs a new direct-play decision
+	// stallRecovery: the trigger is a stalled media host, not bad data.
+	// When every alternate fails fast, the session may continue its
+	// original release once instead of handing off over the same edge.
+	stallRecovery bool
 	// followPlayer: at was mapped from a failed source read, which may be
 	// a container tail/index read or predate a seek; resume at the
 	// player's latest segment request when the HLS session reports it.
@@ -753,6 +757,30 @@ type failoverOpts struct {
 
 func (m *Manager) failover(ctx context.Context, s *session, observed *generation, at time.Duration, reason string) (*generation, error) {
 	return m.failoverWith(ctx, s, observed, at, failoverOpts{reason: reason})
+}
+
+// maxStallContinues bounds how often a session may continue its release past
+// a failover where every alternate failed fast. Bounded, so a genuinely dead
+// release still ends or restarts within a few grace windows (issue #169).
+const maxStallContinues = 1
+
+// takeStallContinue consumes the session's grace to keep the current release
+// through a media-host stall. Bad data and provider pauses (sources that
+// refuse a range retry) cannot improve by waiting the same host out.
+func (s *session) takeStallContinue(cur *generation) bool {
+	if permanentSourceFailure(cur.sourceFailure()) {
+		return false
+	}
+	if retry, ok := cur.src.(core.DirectPlayRetrier); ok && !retry.RetryDirectPlay() {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stallContinues >= maxStallContinues {
+		return false
+	}
+	s.stallContinues++
+	return true
 }
 
 // failoverWith replaces generation observed. Concurrent callers that
@@ -997,6 +1025,31 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 			alternates = orderExactSizeFirst(alternates, cur.res.Release)
 		} else if fo.down {
 			alternates = orderLowerBitrateFirst(alternates, cur.res.Release)
+		}
+	}
+	if g == nil && fo.stallRecovery && direct && !fo.encoder && !fo.down {
+		if fo.stillNeeded != nil && !fo.stillNeeded() {
+			// Progress during the candidate search already cleared the
+			// stall: leave recovery as it is without spending the grace,
+			// and close the opened fallback this call owns — like the
+			// cancellation paths, nothing downstream sees it.
+			if fallbackGen != nil {
+				m.dropGeneration(fallbackGen)
+			}
+			return cur, nil
+		}
+		if s.takeStallContinue(cur) {
+			// A CDN edge that stalls mid-file usually recovers in tens of
+			// seconds, and the alternates that just failed dial the same
+			// provider network. One continuation keeps a cached, previously
+			// healthy release under repair instead of handing the client a
+			// remux restart across the same failing hosts. The grace is one
+			// per playback session, not per outage.
+			if fallbackGen != nil {
+				m.dropGeneration(fallbackGen)
+			}
+			log.Warn("media host stalled; continuing the original release", "release", cur.res.Release.Name, "lastErr", lastErr)
+			return cur, nil
 		}
 	}
 	if g == nil && fallbackGen != nil && fo.down {

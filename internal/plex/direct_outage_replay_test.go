@@ -109,7 +109,11 @@ func TestPartRangeOutageEndsInRestart(t *testing.T) {
 	if r := f.get(t, path, headers...); r.Code != 503 {
 		t.Fatalf("outage status %d", r.Code)
 	}
-	deadline := time.Now().Add(30 * time.Second)
+	// Bounded recovery gets one grace window on the original release before
+	// it restarts (25s production timer per window; see
+	// internal/playback/stall_edge_recovery_test.go), so the remux restart
+	// lands after the second window.
+	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		state, ok := mgr.Session(ps.ID)
 		if ok && state.RequiresRemux {

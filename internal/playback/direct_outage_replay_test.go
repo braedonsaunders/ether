@@ -94,6 +94,14 @@ func TestDirectStallReadBudgetEndsSession(t *testing.T) {
 	if !errors.Is(err, errEndResponse) {
 		t.Fatalf("stalled read: %v", err)
 	}
+	// One budget expiry reads like a temporarily stalled CDN edge, not a
+	// dead release: the bounded stall grace keeps the original release once.
+	if _, ok := h.m.Session(ps.ID); !ok {
+		t.Fatal("first stalled read ended the session")
+	}
+	if err := h.m.streamClient(ctx, io.Discard, s, 120000, 4096); !errors.Is(err, errEndResponse) {
+		t.Fatalf("second stalled read: %v", err)
+	}
 	if _, ok := h.m.Session(ps.ID); ok {
 		t.Fatal("stalled session remains active")
 	}

@@ -161,7 +161,15 @@ func (m *Manager) streamClient(ctx context.Context, w io.Writer, s *session, vst
 			// do not wait for its internal retries before replacing it.
 			g.noteReadFailure(core.ErrSourceUnavailable)
 			at = g.timeMapSnapshot().TimeAt(srcpos)
-			_, err := m.failoverWith(ctx, s, g, at, failoverOpts{reason: "media source stalled", strictDirect: true})
+			res, err := m.failoverWith(ctx, s, g, at, failoverOpts{reason: "media source stalled", strictDirect: true, stallRecovery: true})
+			if err == nil && res == g {
+				// The stall grace continued this release on a read the
+				// client may never repeat. This path does not return a
+				// retryable error, so arm the same bounded recovery the
+				// recoverable path uses: a client that stops requesting
+				// still ends or restarts within two windows (issue #169).
+				m.limitDirectRetry(s, g, at)
+			}
 			if err != nil && !errors.Is(err, errRequireRemux) && ctx.Err() == nil {
 				m.emitEvent("error", s, err)
 				m.Stop(s.id)
@@ -235,29 +243,40 @@ func (m *Manager) limitDirectRetryAfter(s *session, g *generation, at, delay tim
 	g.retryPending = true
 	epoch := g.retryEpoch
 	g.mu.Unlock()
+	pending := func() bool {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		return g.retryPending && g.retryEpoch == epoch && !g.retired
+	}
 	go func() {
-		timer := time.NewTimer(delay)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-		case <-g.ctx.Done():
-			return
-		}
-		pending := func() bool {
-			g.mu.Lock()
-			defer g.mu.Unlock()
-			return g.retryPending && g.retryEpoch == epoch && !g.retired
-		}
-		if !pending() {
-			return
-		}
-		g.noteReadFailure(core.ErrSourceUnavailable)
-		ctx, cancel := context.WithTimeout(g.ctx, 25*time.Second)
-		defer cancel()
-		_, err := m.failoverWith(ctx, s, g, at, failoverOpts{reason: "media source unavailable", stillNeeded: pending, strictDirect: true})
-		if err != nil && !errors.Is(err, errRequireRemux) && pending() {
-			m.emitEvent("error", s, err)
-			m.Stop(s.id)
+		// One spent stall grace re-waits in this goroutine rather than
+		// re-arming through limitDirectRetryAfter: capturing one epoch at
+		// arm time keeps the epoch guarantee, so a read that progresses
+		// between windows disarms the watchdog instead of letting a stale
+		// timer re-arm over recovered progress and escalate later.
+		for {
+			timer := time.NewTimer(delay)
+			select {
+			case <-timer.C:
+			case <-g.ctx.Done():
+				timer.Stop()
+				return
+			}
+			if !pending() {
+				return
+			}
+			g.noteReadFailure(core.ErrSourceUnavailable)
+			ctx, cancel := context.WithTimeout(g.ctx, 25*time.Second)
+			res, err := m.failoverWith(ctx, s, g, at, failoverOpts{reason: "media source unavailable", stillNeeded: pending, strictDirect: true, stallRecovery: true})
+			continued := err == nil && res == g && pending()
+			if err != nil && !errors.Is(err, errRequireRemux) && pending() {
+				m.emitEvent("error", s, err)
+				m.Stop(s.id)
+			}
+			cancel()
+			if !continued {
+				return
+			}
 		}
 	}()
 }
