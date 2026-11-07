@@ -39,6 +39,18 @@ def processes(lab,target,end):
   inventory.append(row)
  return count,inventory
 
+def retain_coordinator_sample(lab,session,out,end):
+ """Capture a bounded pre-Stop authority sample for a selected investigation."""
+ if not re.fullmatch(r'[A-Za-z0-9._-]{1,128}',session):raise ValueError('invalid session')
+ l=ops.LABS[lab]
+ sql=f"BEGIN READ ONLY;SELECT json_build_object('session','{session}','observedAt',clock_timestamp(),'placement',(SELECT row_to_json(p)FROM(SELECT generation,retired FROM placement_sessions WHERE session='{session}')p),'current',(SELECT count(*)FROM placement_claims WHERE session='{session}'),'displaced',(SELECT count(*)FROM placement_displaced_claims WHERE session='{session}'),'coordinator',(SELECT row_to_json(c)FROM(SELECT generation,node,boot,epoch,deadline FROM clusterplayback_coordinators WHERE session='{session}')c));COMMIT;"
+ k=[l['state']+'/bin/kubectl','--kubeconfig',l['state']+'/kubeconfig','--request-timeout=1s','-n',l['ns'],'exec','-i',l['pg'],'-c','postgres','--','psql','-U','ether','-d','ether','-Atq','-v','ON_ERROR_STOP=1']
+ result=call(k,end,input=sql);result.check_returncode();sample=json.loads(result.stdout)
+ if sample.get('session')!=session:raise ValueError('authority sample session differs')
+ import os
+ fd=os.open(out/'coordinator-before-stop.private.jsonl',os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600)
+ with os.fdopen(fd,'a')as stream:stream.write(json.dumps(sample)+'\n')
+
 def retain_nonzero_rows(lab,session,out,end):
  """Reuse the bounded read-only full-row snapshot after a recorded failure."""
  if not re.fullmatch(r'[A-Za-z0-9._-]{1,128}',session):raise ValueError('invalid session')

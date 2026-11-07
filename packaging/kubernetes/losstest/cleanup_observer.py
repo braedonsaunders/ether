@@ -19,7 +19,15 @@ class InlineCleanup:
    try:events.append(json.loads(line))
    except ValueError:continue
   controls=[x for x in events if x.get('Kind')in('timeline','stop')]
-  if not controls or controls[-1].get('Kind')!='stop':return
+  if not controls or controls[-1].get('Kind')!='stop':
+   if self.config.get('captureCoordinatorRetirement')and(self.out/'fault-dispatch.json').exists()and time.monotonic()>=getattr(self,'next_authority',0):
+    self.next_authority=time.monotonic()+3
+    try:
+     sid=json.loads((self.out/'player/initial-timeline.json').read_text())['session']
+     helper.retain_coordinator_sample(self.config['_lab'],sid,self.out,time.time()+1)
+    except Exception as error:
+     with(self.out/'coordinator-sampling-errors.jsonl').open('a')as stream:stream.write(json.dumps({'at':helper.now(),'errorType':type(error).__name__,'verdictUnchanged':True})+'\n')
+   return
   timeline=self.out/'player/initial-timeline.json'
   if not timeline.exists():return
   session=json.loads(timeline.read_text())['session'];
@@ -47,7 +55,7 @@ class InlineCleanup:
  def observe(self,session,player,context,pause):
   helper=self.helper;policy=self.policy
   l=helper.ops.LABS[self.config['_lab']];k=[l['state']+'/bin/kubectl','--kubeconfig',l['state']+'/kubeconfig','--request-timeout=2s','-n',l['ns'],'exec','-i',l['pg'],'-c','postgres','--','psql','-U','ether','-d','ether','-Atq','-v','ON_ERROR_STOP=1']
-  budget=time.time()+2;sql=f"BEGIN READ ONLY;SELECT json_build_object('session',session,'observedAt',clock_timestamp(),'generation',generation,'retired',retired,'current',(SELECT count(*)FROM placement_claims WHERE session='{session}'),'displaced',(SELECT count(*)FROM placement_displaced_claims WHERE session='{session}'))FROM placement_sessions WHERE session='{session}';COMMIT;"
+  budget=time.time()+2;sql=f"BEGIN READ ONLY;SELECT json_build_object('session',session,'observedAt',clock_timestamp(),'generation',generation,'retired',retired,'current',(SELECT count(*)FROM placement_claims WHERE session='{session}'),'displaced',(SELECT count(*)FROM placement_displaced_claims WHERE session='{session}'),'coordinator',(SELECT row_to_json(c)FROM(SELECT generation,node,boot,epoch,deadline FROM clusterplayback_coordinators WHERE session='{session}')c))FROM placement_sessions WHERE session='{session}';COMMIT;"
   query_started=helper.now();result=helper.call(k,budget,input=sql);result.check_returncode();sample=json.loads(result.stdout);sample.update(ffmpegCount=None,processInventoryVerified=False,queryStartedAt=query_started);deadline=None
   if not pause or context.get('restored')is True:deadline=policy.anchor(player,context)+policy.BOUND_NS
   if sample['retired']==1 and sample['current']==sample['displaced']==0 and (deadline is None or policy.timestamp_ns(sample['observedAt'])<=deadline):
