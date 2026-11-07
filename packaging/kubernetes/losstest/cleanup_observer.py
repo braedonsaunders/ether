@@ -66,4 +66,3 @@ class InlineCleanup:
     try:helper.retain_nonzero_rows(self.config['_lab'],session,self.out,time.time()+1.5)
     except Exception as error:
      (self.out/'cleanup-deadline-row-snapshot-error.json').write_text(json.dumps({'session':session,'at':helper.now(),'errorType':type(error).__name__,'verdictUnchanged':True},indent=2)+'\n')
-
