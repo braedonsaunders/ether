@@ -158,7 +158,7 @@ func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateF
 		bySmall[r.Client+" "+r.Step] = r
 	}
 	var failures []gateFailure
-	fmt.Fprintln(w, "| client | step | queries S max→L min | rows S max→L min | db S p50→L min | warm p50 S→L | verdict |")
+	fmt.Fprintln(w, "| client | step | queries S max→L min | rows S max→L min | db S→L | warm p50 S→L | verdict |")
 	fmt.Fprintln(w, "|---|---|---:|---:|---:|---:|---|")
 	for _, l := range large {
 		s := bySmall[l.Client+" "+l.Step]
@@ -198,12 +198,8 @@ func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateF
 			if float64(l.QueriesMin) > gateQueriesFactor*float64(s.QueriesMax)+gateQueriesSlack {
 				why = append(why, fmt.Sprintf("statements grow with the library (%d → %d)", s.QueriesMax, l.QueriesMin))
 			}
-			// Database time follows the same rule as rows and statements: a
-			// background write can expire a cached answer for one pass, so the
-			// large library's fastest pass is compared, not its median. A
-			// path that walks the catalogue is slow on every pass.
-			if l.DBTimeMin > time.Duration(gateDBFactor*float64(s.DBTime))+gateDBSlack {
-				why = append(why, fmt.Sprintf("database time grows with the library (%s → %s)", s.DBTime, l.DBTimeMin))
+			if l.DBTime > time.Duration(gateDBFactor*float64(s.DBTime))+gateDBSlack {
+				why = append(why, fmt.Sprintf("database time grows with the library (%s → %s)", s.DBTime, l.DBTime))
 			}
 			if l.WarmP50 > gateWallCeiling {
 				why = append(why, fmt.Sprintf("warm p50 %s over %s", l.WarmP50, gateWallCeiling))
@@ -214,7 +210,7 @@ func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateF
 			failures = append(failures, gateFailure{key: l.Client + " | " + l.Step, why: strings.Join(why, "; ")})
 		}
 		fmt.Fprintf(w, "| %s | %s | %d → %d | %d → %d | %s → %s | %s → %s | %s |\n", l.Client, l.Step, s.QueriesMax, l.QueriesMin, s.RowsMax, l.RowsMin,
-			s.DBTime.Round(time.Microsecond*100), l.DBTimeMin.Round(time.Microsecond*100), s.WarmP50.Round(time.Microsecond*100), l.WarmP50.Round(time.Microsecond*100), verdict)
+			s.DBTime.Round(time.Microsecond*100), l.DBTime.Round(time.Microsecond*100), s.WarmP50.Round(time.Microsecond*100), l.WarmP50.Round(time.Microsecond*100), verdict)
 	}
 	return failures
 }
@@ -273,14 +269,7 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	trace := filepath.Join(dir, "trace.jsonl")
 	t.Setenv(PerfTraceEnv, trace)
 	var appLog bytes.Buffer
-	// The catalog caches browse pages and counts for one wall-clock minute.
-	// The replay takes about a minute, so a minute boundary inside it expires
-	// those entries between a step's passes and turns cheap cache hits into
-	// full counts, failing whichever steps straddle the boundary. Pin the
-	// clock so a pass is warm because it follows another, not because of
-	// when the job started.
-	frozen := time.Now()
-	a, err := New(ctx, Options{DataDir: dir, CatalogNow: func() time.Time { return frozen }, Logger: slog.New(slog.NewTextHandler(&appLog, &slog.HandlerOptions{Level: slog.LevelWarn}))})
+	a, err := New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(&appLog, &slog.HandlerOptions{Level: slog.LevelWarn}))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,28 +423,4 @@ func ownerHomeRows(t *testing.T, port int, token string) int {
 		}
 	}
 	return n
-}
-
-// TestComparePerfScalesDatabaseTime pins the database-time rule: a path that
-// is slow on every pass over the large library fails, while one pass whose
-// cached answer expired does not.
-func TestComparePerfScalesDatabaseTime(t *testing.T) {
-	row := func(median, fastest time.Duration) *perfharness.Row {
-		return &perfharness.Row{Client: "c", Step: "s", Class: "browse", Status: "ok", DBTime: median, DBTimeMin: fastest}
-	}
-	small := []*perfharness.Row{row(200*time.Microsecond, 100*time.Microsecond)}
-	for _, c := range []struct {
-		name          string
-		median, least time.Duration
-		fails         bool
-	}{
-		{"one expired pass", 300 * time.Millisecond, 300 * time.Microsecond, false},
-		{"slow on every pass", 300 * time.Millisecond, 250 * time.Millisecond, true},
-	} {
-		var out bytes.Buffer
-		failures := comparePerfScales(&out, small, []*perfharness.Row{row(c.median, c.least)})
-		if (len(failures) > 0) != c.fails {
-			t.Errorf("%s: failures %v, want failing=%v", c.name, failures, c.fails)
-		}
-	}
 }

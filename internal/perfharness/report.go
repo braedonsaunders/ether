@@ -93,17 +93,15 @@ type Row struct {
 	// passes. A pass may or may not be answered by a cache, so the gate
 	// compares the large library's least work with the small one's most.
 	QueriesMin, QueriesMax, RowsMin, RowsMax int64
-	// DBTime is the median database time over those passes; DBTimeMin the
-	// least, which the gate takes for the large library like QueriesMin.
-	DBTime, DBTimeMin, LockWait time.Duration
-	Status                      string
-	Fails                       []string
-	Skipped                     string
-	Errors                      []string
-	samples                     map[string][]time.Duration
-	queries, writes, rowsRead   []int64
-	allocBytes, allocs          []int64
-	dbTimes, lockWaits          []time.Duration
+	DBTime, LockWait                         time.Duration
+	Status                                   string
+	Fails                                    []string
+	Skipped                                  string
+	Errors                                   []string
+	samples                                  map[string][]time.Duration
+	queries, writes, rowsRead                []int64
+	allocBytes, allocs                       []int64
+	dbTimes, lockWaits                       []time.Duration
 }
 
 func percentile(ds []time.Duration, p float64) time.Duration {
@@ -186,7 +184,6 @@ func Summarize(results []Result, trace map[string]TraceRecord, order []Client) [
 		_, r.WritesMax = minMax(r.writes)
 		r.RowsMin, r.RowsMax = minMax(r.rowsRead)
 		r.DBTime = percentile(r.dbTimes, 0.5)
-		r.DBTimeMin = percentile(r.dbTimes, 0)
 		r.LockWait = percentile(r.lockWaits, 1)
 		check := func(name string, got, limit time.Duration, n int) {
 			if n > 0 && got > limit {
