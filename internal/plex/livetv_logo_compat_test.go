@@ -3,6 +3,7 @@ package plex
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +43,25 @@ func TestPlexWebGuideLogoUsesServerOriginAndViewer(t *testing.T) {
 	logo.RawQuery = url.Values{"X-Plex-Token": {friendToken}}.Encode()
 	if rec := f.get(t, logo.RequestURI()); rec.Code != http.StatusNotFound {
 		t.Fatalf("restricted logo status: %d", rec.Code)
+	}
+}
+
+func TestAndroidGuideLogoUsesServerOriginAndViewer(t *testing.T) {
+	f, _, channel := liveFixture(t)
+	for _, client := range [][]string{
+		{"X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android"},
+		{"X-Plex-Product", "Plex for Android (Mobile)", "X-Plex-Platform", "Android"},
+	} {
+		args := append([]string{liveProviderPath + "/lineups/dvr/channels", "Accept", "application/json"}, client...)
+		response := f.get(t, args[0], args[1:]...)
+		channels := decodeJSON(t, response)["Channel"].([]any)
+		logo, err := url.Parse(channels[0].(map[string]any)["thumb"].(string))
+		if err != nil || logo.Scheme != "http" || logo.Host != "example.com" || logo.Path != liveLogo(channel) || logo.Query().Get("X-Plex-Token") != ownerToken {
+			t.Fatalf("client %v logo does not point to authenticated server: %v", client, channels[0].(map[string]any)["thumb"])
+		}
+		if rec := f.get(t, logo.RequestURI()); rec.Code != http.StatusOK {
+			t.Fatalf("client %v logo request failed: %d", client, rec.Code)
+		}
 	}
 }
 
@@ -155,4 +175,62 @@ func TestLiveChannelLogoBlocksPrivateSource(t *testing.T) {
 		}
 	}
 	t.Fatal("channel missing")
+}
+
+func TestLiveChannelLogoFallsBackToGuideLogo(t *testing.T) {
+	f, service, _ := liveFixture(t)
+	src := livetv.Source{
+		Name:     "Guide fallback logo",
+		Playlist: "#EXTM3U\n#EXTINF:-1 tvg-id=\"fallback-guide\" tvg-logo=\"https://logos.example.test/failing.png\",Fallback channel\nhttps://stream.example.test/live\n",
+		Guide:    `<tv><channel id="fallback-guide"><display-name>Fallback channel</display-name><icon src="https://logos.example.test/guide.png"/></channel></tv>`,
+	}
+	if _, err := service.ImportSource(context.Background(), src); err != nil {
+		t.Fatal(err)
+	}
+	channels, err := service.Channels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target livetv.Channel
+	for _, c := range channels {
+		if c.Name == "Fallback channel" {
+			target = c
+		}
+	}
+	if target.ID == "" {
+		t.Fatal("channel missing")
+	}
+
+	fetch := &mappedLogoFetcher{
+		urls: map[string]mappedLogoResult{
+			"https://logos.example.test/failing.png": {err: errors.New("upstream failed")},
+			"https://logos.example.test/guide.png":   {data: []byte("guide-png-content"), ct: "image/png"},
+		},
+	}
+	f.srv.channelLogos = fetch
+
+	rec := f.get(t, liveLogo(target), "X-Plex-Token", ownerToken)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("expected 200 image/png, got %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if rec.Body.String() != "guide-png-content" {
+		t.Fatalf("unexpected body %q", rec.Body.String())
+	}
+}
+
+type mappedLogoResult struct {
+	data []byte
+	ct   string
+	err  error
+}
+
+type mappedLogoFetcher struct {
+	urls map[string]mappedLogoResult
+}
+
+func (f *mappedLogoFetcher) GetUntrustedURL(_ context.Context, u string) ([]byte, string, error) {
+	if res, ok := f.urls[u]; ok {
+		return res.data, res.ct, res.err
+	}
+	return nil, "", errors.New("unknown url")
 }

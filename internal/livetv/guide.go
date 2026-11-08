@@ -151,6 +151,19 @@ func guideSource(c Channel) string {
 	return c.SourceID
 }
 
+// GuideChannelLogo returns the logo URL for the channel's matched guide channel,
+// or empty string if unmapped or not found.
+func (s *Service) GuideChannelLogo(ctx context.Context, c Channel) string {
+	if s.o.DB == nil || c.GuideID == "" {
+		return ""
+	}
+	var logo string
+	_ = s.o.DB.QueryRowContext(ctx,
+		`SELECT logo FROM livetv_guide_channels WHERE source_id=? AND guide_id=?`,
+		guideSource(c), c.GuideID).Scan(&logo)
+	return logo
+}
+
 func msTime(ms int64) *time.Time {
 	t := time.UnixMilli(ms).UTC()
 	return &t

@@ -287,10 +287,21 @@ func liveLogo(c livetv.Channel) string {
 	return "/livetv/channels/" + url.PathEscape(c.ID) + "/logo.png"
 }
 
+func isStandaloneGuideLogoClient(pr *Request) bool {
+	if pr == nil {
+		return false
+	}
+	return strings.EqualFold(pr.Platform, "tvOS") ||
+		strings.EqualFold(pr.Product, "Plex for Apple TV") ||
+		strings.EqualFold(pr.Product, "Plex Web") ||
+		strings.EqualFold(pr.Platform, "Android") ||
+		plexAndroidClient(pr)
+}
+
 func (s *Server) liveGuideLogo(r *http.Request, c livetv.Channel) string {
 	path := liveLogo(c)
 	pr := FromContext(r.Context())
-	if pr == nil || !(strings.EqualFold(pr.Platform, "tvOS") || strings.EqualFold(pr.Product, "Plex for Apple TV") || strings.EqualFold(pr.Product, "Plex Web")) || r.Host == "" {
+	if !isStandaloneGuideLogoClient(pr) || r.Host == "" {
 		return path
 	}
 	// These clients load guide thumbnails as standalone URLs without auth headers.
@@ -573,7 +584,7 @@ func (s *Server) liveTVHubProjection(r *http.Request) (*model.Hub, frontend.Row)
 	}
 	for _, c := range cs {
 		if !found[c.ID] {
-			md = append(md, s.liveChannelMetadata(c))
+			md = append(md, s.liveChannelMetadata(r, c))
 		}
 	}
 	if len(md) == 0 {
@@ -620,8 +631,8 @@ func (s *Server) liveTVHubProjection(r *http.Request) (*model.Hub, frontend.Row)
 	}
 	return h, row
 }
-func (s *Server) liveChannelMetadata(c livetv.Channel) model.Metadata {
-	return model.Metadata{RatingKey: "channel-" + c.ID, Key: liveProviderPath + "/channels/" + url.PathEscape(c.ID), Type: "clip", Title: c.Name, Summary: "Live channel. No programme guide supplied.", Thumb: liveLogo(c), ContentRating: c.Rating, Extra: []model.Attr{model.A("live", true), model.A("dvrChannel", true)}, Media: []model.Media{{Protocol: "livetv", Extra: []model.Attr{model.A("origin", "livetv"), model.A("channelIdentifier", c.ID), model.A("channelTitle", c.Name), model.A("channelVcn", c.Number), model.A("onAir", true)}}}}
+func (s *Server) liveChannelMetadata(r *http.Request, c livetv.Channel) model.Metadata {
+	return model.Metadata{RatingKey: "channel-" + c.ID, Key: liveProviderPath + "/channels/" + url.PathEscape(c.ID), Type: "clip", Title: c.Name, Summary: "Live channel. No programme guide supplied.", Thumb: s.liveGuideLogo(r, c), ContentRating: c.Rating, Extra: []model.Attr{model.A("live", true), model.A("dvrChannel", true)}, Media: []model.Media{{Protocol: "livetv", Extra: []model.Attr{model.A("origin", "livetv"), model.A("channelIdentifier", c.ID), model.A("channelTitle", c.Name), model.A("channelVcn", c.Number), model.A("onAir", true)}}}}
 }
 func (s *Server) handleLiveChannel(w http.ResponseWriter, r *http.Request) {
 	c, err := s.d.LiveTV.AllowedChannel(r.Context(), FromContext(r.Context()).User, chi.URLParam(r, "channel"))
@@ -633,7 +644,7 @@ func (s *Server) handleLiveChannel(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	s.write(w, r, &model.MediaContainer{Size: 1, Identifier: livetv.Provider, Metadata: []model.Metadata{s.liveChannelMetadata(c)}})
+	s.write(w, r, &model.MediaContainer{Size: 1, Identifier: livetv.Provider, Metadata: []model.Metadata{s.liveChannelMetadata(r, c)}})
 }
 
 func (s *Server) handleLiveHubs(w http.ResponseWriter, r *http.Request) {
@@ -831,10 +842,23 @@ func (s *Server) serveLiveLogo(w http.ResponseWriter, r *http.Request, id string
 			_, _ = w.Write(data)
 		}
 	}
-	if c.Logo != "" && s.channelLogos != nil {
-		data, ct, err := s.channelLogos.GetUntrustedURL(r.Context(), c.Logo)
-		if err == nil && raster && strings.HasPrefix(ct, "image/svg+xml") {
-			data, ct, err = s.channelRaster.Rasterize(r.Context(), c.Logo, data, artwork.RasterOptions{Format: rasterFormat})
+	src := c.Logo
+	var (
+		data []byte
+		ct   string
+	)
+	if src != "" && s.channelLogos != nil {
+		data, ct, err = s.channelLogos.GetUntrustedURL(r.Context(), src)
+	}
+	if (src == "" || err != nil || len(data) == 0) && s.d.LiveTV != nil && s.channelLogos != nil && c.GuideID != "" {
+		if guideLogo := s.d.LiveTV.GuideChannelLogo(r.Context(), c); guideLogo != "" && guideLogo != c.Logo {
+			src = guideLogo
+			data, ct, err = s.channelLogos.GetUntrustedURL(r.Context(), src)
+		}
+	}
+	if err == nil && len(data) > 0 {
+		if raster && strings.HasPrefix(ct, "image/svg+xml") {
+			data, ct, err = s.channelRaster.Rasterize(r.Context(), src, data, artwork.RasterOptions{Format: rasterFormat})
 		}
 		if err == nil && raster && format != "" {
 			data, ct, err = s.images.RasterFormat(r.Context(), data, ct, format, s.now())

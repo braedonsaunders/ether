@@ -38,17 +38,30 @@ func (s *Service) ownerHandler(logos channelLogoFetcher) http.Handler {
 	r.Get("/channels/{id}/timeline", s.timelineRoute)
 	r.Get("/channels/{id}/logo", func(w http.ResponseWriter, r *http.Request) {
 		c, err := s.Channel(r.Context(), chi.URLParam(r, "id"))
-		if err != nil || c.Logo == "" {
+		if err != nil || (c.Logo == "" && c.GuideID == "") {
 			http.NotFound(w, r)
 			return
 		}
-		data, ct, err := logos.GetUntrustedURL(r.Context(), c.Logo)
+		src := c.Logo
+		var (
+			data []byte
+			ct   string
+		)
+		if src != "" {
+			data, ct, err = logos.GetUntrustedURL(r.Context(), src)
+		}
+		if (src == "" || err != nil || len(data) == 0) && c.GuideID != "" {
+			if guideLogo := s.GuideChannelLogo(r.Context(), c); guideLogo != "" && guideLogo != c.Logo {
+				src = guideLogo
+				data, ct, err = logos.GetUntrustedURL(r.Context(), src)
+			}
+		}
 		if err != nil || len(data) == 0 {
 			http.NotFound(w, r)
 			return
 		}
 		if strings.HasPrefix(ct, "image/svg+xml") {
-			data, ct, err = raster.Rasterize(r.Context(), c.Logo, data, artwork.RasterOptions{Format: "png"})
+			data, ct, err = raster.Rasterize(r.Context(), src, data, artwork.RasterOptions{Format: "png"})
 			if err != nil {
 				http.NotFound(w, r)
 				return
