@@ -798,3 +798,75 @@ func liveRefreshedAt(t *testing.T, f *fixture) float64 {
 	dvrs := decodeJSON(t, rec)["Dvr"].([]any)
 	return dvrs[0].(map[string]any)["refreshedAt"].(float64)
 }
+
+func TestLiveTVRichXMLTVGuideMetadata(t *testing.T) {
+	f, service, _ := liveFixture(t)
+	src := livetv.Source{
+		Name:     "Rich Guide IPTV",
+		Playlist: "#EXTM3U\n#EXTINF:-1 tvg-id=\"rich-ch\",Rich Channel\nhttps://example.test/live.m3u8\n",
+		Guide: `<tv>
+<channel id="rich-ch"><display-name>Rich Channel</display-name></channel>
+<programme channel="rich-ch" start="20261018110000 +0000" stop="20261018120000 +0000">
+  <title>Sci-Fi Series</title>
+  <sub-title>The Pilot</sub-title>
+  <desc>Exciting sci-fi episode</desc>
+  <category>Sci-Fi</category>
+  <date>20240115</date>
+  <episode-num system="xmltv_ns">0 . 1 .</episode-num>
+  <new/>
+  <icon src="https://images.directv.com/pilot.jpg"/>
+</programme>
+</tv>`,
+	}
+	if _, err := service.ImportSource(context.Background(), src); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := service.Channels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var richChannel livetv.Channel
+	for _, c := range cs {
+		if c.Name == "Rich Channel" {
+			richChannel = c
+		}
+	}
+	if richChannel.ID == "" {
+		t.Fatal("rich channel not found")
+	}
+
+	grid := f.request(t, "GET", liveProviderPath+"/grid?date=2026-10-18&channelGridKey="+richChannel.ID, map[string]string{"Accept": "application/json"})
+	if grid.Code != 200 {
+		t.Fatalf("grid status: %d %s", grid.Code, grid.Body.String())
+	}
+	gm := decodeJSON(t, grid)
+	programmes, ok := gm["Metadata"].([]any)
+	if !ok || len(programmes) == 0 {
+		t.Fatalf("no programmes returned: %s", grid.Body.String())
+	}
+	p := programmes[0].(map[string]any)
+	if p["type"] != "episode" {
+		t.Errorf("type = %v, want episode", p["type"])
+	}
+	if p["title"] != "The Pilot" {
+		t.Errorf("title = %v, want 'The Pilot'", p["title"])
+	}
+	if p["grandparentTitle"] != "Sci-Fi Series" {
+		t.Errorf("grandparentTitle = %v, want 'Sci-Fi Series'", p["grandparentTitle"])
+	}
+	if p["parentIndex"] != float64(1) {
+		t.Errorf("parentIndex = %v, want 1", p["parentIndex"])
+	}
+	if p["index"] != float64(2) {
+		t.Errorf("index = %v, want 2", p["index"])
+	}
+	if p["originallyAvailableAt"] != "2024-01-15" {
+		t.Errorf("originallyAvailableAt = %v, want '2024-01-15'", p["originallyAvailableAt"])
+	}
+	if p["year"] != float64(2024) {
+		t.Errorf("year = %v, want 2024", p["year"])
+	}
+	if p["thumb"] != "https://images.directv.com/pilot.jpg" || p["art"] != "https://images.directv.com/pilot.jpg" {
+		t.Errorf("thumb/art = %v / %v", p["thumb"], p["art"])
+	}
+}

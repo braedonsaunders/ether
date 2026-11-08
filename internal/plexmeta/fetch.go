@@ -217,7 +217,7 @@ func retryAfter(raw string) time.Duration {
 	return d
 }
 
-// ImageHost reports whether host is a Plex artwork CDN Ether may proxy.
+// ImageHost reports whether host is an artwork CDN Ether may proxy.
 func ImageHost(host string) bool {
 	h := strings.ToLower(strings.TrimSpace(host))
 	if i := strings.LastIndexByte(h, ':'); i > 0 && !strings.HasSuffix(h, "]") {
@@ -226,6 +226,21 @@ func ImageHost(host string) bool {
 	switch h {
 	case "metadata-static.plex.tv", "image.plex.tv", "images.plex.tv", "metadata.provider.plex.tv":
 		return true
+	}
+	for _, domain := range []string{
+		"tmsimg.com",
+		"schedulesdirect.org",
+		"directv.com",
+		"zap2it.com",
+		"tvmaze.com",
+		"thetvdb.com",
+		"themoviedb.org",
+		"tmdb.org",
+		"fanart.tv",
+	} {
+		if h == domain || strings.HasSuffix(h, "."+domain) {
+			return true
+		}
 	}
 	return false
 }

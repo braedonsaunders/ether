@@ -174,12 +174,29 @@ func TestPeopleThumbsMustBeAllowlisted(t *testing.T) {
 }
 
 func TestImageHostAllowlist(t *testing.T) {
-	for _, host := range []string{"metadata-static.plex.tv", "image.plex.tv", "images.plex.tv", "metadata.provider.plex.tv"} {
+	for _, host := range []string{
+		"metadata-static.plex.tv",
+		"image.plex.tv",
+		"images.plex.tv",
+		"metadata.provider.plex.tv",
+		"zap2it.tmsimg.com",
+		"tmsimg.com",
+		"schedulesdirect.org",
+		"images.directv.com",
+		"static.tvmaze.com",
+	} {
 		if !ImageHost(host) {
 			t.Fatalf("rejected %s", host)
 		}
 	}
-	for _, host := range []string{"evil.plex.tv", "cdn.image.plex.tv", "example.com", "metadata.provider.plex.tv.evil.com"} {
+	for _, host := range []string{
+		"evil.plex.tv",
+		"cdn.image.plex.tv",
+		"example.com",
+		"metadata.provider.plex.tv.evil.com",
+		"tmsimg.com.evil.com",
+		"eviltmsimg.com",
+	} {
 		if ImageHost(host) {
 			t.Fatalf("allowed %s", host)
 		}

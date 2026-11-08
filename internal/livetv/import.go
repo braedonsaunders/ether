@@ -192,6 +192,9 @@ type xmlChannel struct {
 		Src string `xml:"src,attr"`
 	} `xml:"icon"`
 }
+type xmlIcon struct {
+	Src string `xml:"src,attr"`
+}
 type xmlEpisodeNum struct {
 	System string `xml:"system,attr"`
 	Value  string `xml:",chardata"`
@@ -207,12 +210,12 @@ type xmlProgramme struct {
 	Date       string          `xml:"date,omitempty"`
 	EpisodeNum []xmlEpisodeNum `xml:"episode-num,omitempty"`
 	New        *struct{}       `xml:"new,omitempty"`
+	Premiere   *struct{}       `xml:"premiere,omitempty"`
+	Live       *struct{}       `xml:"live,omitempty"`
 	Rating     []struct {
 		Value string `xml:"value"`
-	} `xml:"rating"`
-	Icon struct {
-		Src string `xml:"src,attr"`
-	} `xml:"icon"`
+	} `xml:"rating,omitempty"`
+	Icon []xmlIcon `xml:"icon,omitempty"`
 }
 type XMLGuide struct {
 	Channels   map[string]Channel
@@ -233,6 +236,100 @@ func xmlTime(s string) (time.Time, error) {
 	}
 	return time.Time{}, fmt.Errorf("invalid XMLTV timestamp %q", s)
 }
+
+func xmlDate(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	for _, layout := range []string{
+		"20060102150405 -0700",
+		"20060102150405",
+		"2006-01-02 15:04:05",
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"20060102",
+		"2006-01-02",
+		"2006/01/02",
+		"2006",
+	} {
+		if t, e := time.Parse(layout, s); e == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid XMLTV date %q", s)
+}
+
+var reEpisodeSxEx = regexp.MustCompile(`(?i)\bs(?:eason)?\s*(\d{1,4})[\s.]*(?:e|ep|episode)\.?\s*(\d{1,4})\b|\b(\d{1,4})x(\d{1,4})\b|\b(?:e|ep|episode)\.?\s*(\d{1,4})\b|\bs(?:eason)?\s*(\d{1,4})\b`)
+
+func parseXMLEpisode(nums []xmlEpisodeNum) (int, int, bool) {
+	// First pass: xmltv_ns is the canonical standard for XMLTV episode numbers.
+	for _, num := range nums {
+		if strings.EqualFold(strings.TrimSpace(num.System), "xmltv_ns") {
+			val := strings.TrimSpace(num.Value)
+			parts := strings.Split(val, ".")
+			if len(parts) >= 2 {
+				s, e := 0, 0
+				hasSeason, hasEpisode := false, false
+				sPart := strings.TrimSpace(parts[0])
+				if idx := strings.IndexByte(sPart, '/'); idx >= 0 {
+					sPart = sPart[:idx]
+				}
+				if n, err := strconv.Atoi(strings.TrimSpace(sPart)); err == nil && n >= 0 {
+					s = n + 1
+					hasSeason = true
+				}
+				ePart := strings.TrimSpace(parts[1])
+				if idx := strings.IndexByte(ePart, '/'); idx >= 0 {
+					ePart = ePart[:idx]
+				}
+				if n, err := strconv.Atoi(strings.TrimSpace(ePart)); err == nil && n >= 0 {
+					e = n + 1
+					hasEpisode = true
+				}
+				if hasSeason || hasEpisode {
+					return s, e, true
+				}
+			}
+		}
+	}
+
+	// Second pass: parse text/onscreen patterns, skipping known identifier systems.
+	for _, num := range nums {
+		sys := strings.ToLower(strings.TrimSpace(num.System))
+		if sys == "dd_progid" || sys == "tms" || sys == "zap2it" || sys == "original-air-date" || sys == "thetvdb.com" || sys == "imdb.com" {
+			continue
+		}
+		val := strings.TrimSpace(num.Value)
+		if val == "" {
+			continue
+		}
+		if m := reEpisodeSxEx.FindStringSubmatch(val); len(m) > 0 {
+			if m[1] != "" && m[2] != "" {
+				s, _ := strconv.Atoi(m[1])
+				e, _ := strconv.Atoi(m[2])
+				if s > 0 || e > 0 {
+					return s, e, true
+				}
+			} else if m[3] != "" && m[4] != "" {
+				s, _ := strconv.Atoi(m[3])
+				e, _ := strconv.Atoi(m[4])
+				if s > 0 || e > 0 {
+					return s, e, true
+				}
+			} else if m[5] != "" {
+				e, _ := strconv.Atoi(m[5])
+				if e > 0 {
+					return 0, e, true
+				}
+			} else if len(m) > 6 && m[6] != "" {
+				s, _ := strconv.Atoi(m[6])
+				if s > 0 {
+					return s, 0, true
+				}
+			}
+		}
+	}
+	return 0, 0, false
+}
+
 func ParseXMLTV(r io.Reader) (XMLGuide, error) {
 	g, _, err := parseXMLTV(r, guideFilter{})
 	return g, err
@@ -425,7 +522,14 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 					continue
 				}
 			}
-			item := Item{Thumb: p.Icon.Src}
+			item := Item{}
+			if len(p.Icon) > 0 && p.Icon[0].Src != "" {
+				item.Thumb = p.Icon[0].Src
+				item.Art = p.Icon[0].Src
+				if len(p.Icon) > 1 && p.Icon[1].Src != "" {
+					item.Art = p.Icon[1].Src
+				}
+			}
 			if !end.IsZero() {
 				item.DurationMS = end.Sub(start).Milliseconds()
 			}
@@ -437,6 +541,35 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 			}
 			if len(p.Rating) > 0 {
 				item.Rating = p.Rating[0].Value
+			}
+			if len(p.SubTitle) > 0 && p.SubTitle[0].Value != "" {
+				item.EpisodeTitle = p.SubTitle[0].Value
+				item.ShowTitle = item.Title
+				item.MediaType = "episode"
+			}
+			for _, cat := range p.Category {
+				if v := strings.TrimSpace(cat.Value); v != "" {
+					item.Genres = append(item.Genres, v)
+				}
+			}
+			if p.Date != "" {
+				if t, err := xmlDate(p.Date); err == nil {
+					item.ReleasedMS = t.UnixMilli()
+				}
+			}
+			if s, ep, ok := parseXMLEpisode(p.EpisodeNum); ok {
+				item.Season = s
+				item.Episode = ep
+				item.MediaType = "episode"
+				if item.ShowTitle == "" {
+					item.ShowTitle = item.Title
+				}
+			}
+			if p.New != nil || p.Premiere != nil {
+				item.Premiere = true
+			}
+			if p.Live != nil {
+				item.Live = true
 			}
 			g.Programmes = append(g.Programmes, Programme{ID: stableID(p.Channel, p.Start), ChannelID: p.Channel, Start: start, End: end, Item: item})
 		}

@@ -333,7 +333,7 @@ func (s *Server) handleLiveChannels(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, r, &liveContainer{Size: len(out), Identifier: livetv.Provider, Channel: out, ChannelMapping: maps})
 }
-func liveProgrammeMetadata(c livetv.Channel, p livetv.Programme) model.Metadata {
+func (s *Server) liveProgrammeMetadata(r *http.Request, c livetv.Channel, p livetv.Programme) model.Metadata {
 	dur := p.End.Sub(p.Start).Milliseconds()
 	rating := p.Item.Rating
 	if rating == "" {
@@ -343,36 +343,60 @@ func liveProgrammeMetadata(c livetv.Channel, p livetv.Programme) model.Metadata 
 	// shape. Use a standalone programme when the guide supplies no series type.
 	mediaType := p.Item.MediaType
 	if mediaType != "episode" && mediaType != "movie" {
-		mediaType = "movie"
+		if p.Item.EpisodeTitle != "" || p.Item.Season > 0 || p.Item.Episode > 0 {
+			mediaType = "episode"
+		} else {
+			mediaType = "movie"
+		}
 	}
-	md := model.Metadata{RatingKey: p.ID, Key: liveProviderPath + "/metadata/" + url.PathEscape(p.ID), GUID: "ether://livetv/" + p.ID, Type: mediaType, Title: p.Item.Title, Summary: p.Item.Summary, ContentRating: rating, Thumb: p.Item.Thumb, Duration: dur, Media: []model.Media{{ID: p.Start.Unix(), Duration: dur, Protocol: "livetv", Extra: []model.Attr{model.A("beginsAt", p.Start.Unix()), model.A("endsAt", p.End.Unix()), model.A("channelIdentifier", c.ID), model.A("channelID", c.ID), model.A("channelTitle", c.Name), model.A("channelCallSign", c.Name), model.A("channelVcn", c.Number), model.A("channelThumb", liveLogo(c)), model.A("gridKey", c.ID)}}}}
+	channelThumb := liveLogo(c)
+	if r != nil {
+		channelThumb = s.liveGuideLogo(r, c)
+	}
+	md := model.Metadata{RatingKey: p.ID, Key: liveProviderPath + "/metadata/" + url.PathEscape(p.ID), GUID: "ether://livetv/" + p.ID, Type: mediaType, Title: p.Item.Title, Summary: p.Item.Summary, ContentRating: rating, Thumb: p.Item.Thumb, Duration: dur, Media: []model.Media{{ID: p.Start.Unix(), Duration: dur, Protocol: "livetv", Extra: []model.Attr{model.A("beginsAt", p.Start.Unix()), model.A("endsAt", p.End.Unix()), model.A("channelIdentifier", c.ID), model.A("channelID", c.ID), model.A("channelTitle", c.Name), model.A("channelCallSign", c.Name), model.A("channelVcn", c.Number), model.A("channelThumb", channelThumb), model.A("gridKey", c.ID)}}}}
 	if p.Lens != "" {
 		md.Summary = p.Lens + "\n\n" + md.Summary
 	}
 	if strings.HasPrefix(p.Item.GUID, "plex://") {
 		md.GUID = p.Item.GUID
-		if p.Item.EpisodeTitle != "" {
-			md.Title = p.Item.EpisodeTitle
-		}
-		md.GrandparentTitle = p.Item.ShowTitle
 		md.GrandparentGUID = p.Item.ShowGUID
+	}
+	if p.Item.EpisodeTitle != "" {
+		md.Title = p.Item.EpisodeTitle
+		if p.Item.ShowTitle != "" {
+			md.GrandparentTitle = p.Item.ShowTitle
+		} else if md.GrandparentTitle == "" {
+			md.GrandparentTitle = p.Item.Title
+		}
+	} else if p.Item.ShowTitle != "" && md.GrandparentTitle == "" {
+		md.GrandparentTitle = p.Item.ShowTitle
+	} else if mediaType == "episode" && md.GrandparentTitle == "" {
+		md.GrandparentTitle = p.Item.Title
+	}
+	if p.Item.Art != "" {
 		md.Art = p.Item.Art
-		md.GrandparentThumb = p.Item.Thumb
 		md.GrandparentArt = p.Item.Art
-		if p.Item.Season > 0 {
-			season := p.Item.Season
-			md.ParentIndex = &season
-		}
-		if p.Item.Episode > 0 {
-			episode := p.Item.Episode
-			md.Index = &episode
-		}
-		if p.Item.ReleasedMS > 0 {
-			md.OriginallyAvailableAt = time.UnixMilli(p.Item.ReleasedMS).UTC().Format("2006-01-02")
-		}
-		for _, g := range p.Item.Genres {
-			md.Genre = append(md.Genre, model.Tag{Tag: g})
-		}
+	}
+	if p.Item.Thumb != "" {
+		md.GrandparentThumb = p.Item.Thumb
+	}
+	if p.Item.Season > 0 {
+		season := p.Item.Season
+		md.ParentIndex = &season
+	}
+	if p.Item.Episode > 0 {
+		episode := p.Item.Episode
+		md.Index = &episode
+	}
+	if p.Item.ReleasedMS > 0 {
+		t := time.UnixMilli(p.Item.ReleasedMS).UTC()
+		md.OriginallyAvailableAt = t.Format("2006-01-02")
+		md.Year = t.Year()
+	}
+	for _, g := range p.Item.Genres {
+		md.Genre = append(md.Genre, model.Tag{Tag: g})
+	}
+	if p.Item.Premiere || p.Item.Live {
 		md.Media[0].Extra = append(md.Media[0].Extra, model.A("premiere", p.Item.Premiere), model.A("live", p.Item.Live))
 	}
 	return md
@@ -473,7 +497,7 @@ func (s *Server) liveGuideMetadataCapture(r *http.Request, captured *[]livetv.Pr
 		if id := chi.URLParam(r, "programme"); id != "" && p.ID != id {
 			continue
 		}
-		out = append(out, liveProgrammeMetadata(byID[p.ChannelID], p))
+		out = append(out, s.liveProgrammeMetadata(r, byID[p.ChannelID], p))
 		if captured != nil {
 			*captured = append(*captured, p)
 		}
@@ -896,7 +920,7 @@ func (s *Server) liveSubscriptionFor(info livetv.SessionInfo) liveSubscription {
 	md := s.liveSessionMetadata(info)
 	timeline := md
 	if info.Programme != nil {
-		timeline = liveProgrammeMetadata(info.Channel, *info.Programme)
+		timeline = s.liveProgrammeMetadata(nil, info.Channel, *info.Programme)
 		timeline.Media[0].Extra = append(timeline.Media[0].Extra, model.A("onAir", true))
 	}
 	op := liveOperation{Key: "/media/grabbers/operations/" + info.ID, ID: info.ID, Subscription: info.ID, Provider: livetv.Provider, Status: "inprogress", Rolling: true, Metadata: md}

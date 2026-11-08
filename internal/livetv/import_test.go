@@ -165,3 +165,121 @@ func TestVODExclusionRequiresXtreamShape(t *testing.T) {
 		}
 	}
 }
+
+func TestParseXMLTVRichProgrammeMetadata(t *testing.T) {
+	guide := `<?xml version="1.0"?><tv>
+<channel id="ch1"><display-name>Channel 1</display-name></channel>
+<programme channel="ch1" start="20261019120000 +0000" stop="20261019130000 +0000">
+  <title>The Great Show</title>
+  <sub-title>Episode of Wonder</sub-title>
+  <desc>A wonderful episode of the show.</desc>
+  <category>Drama</category>
+  <category>Sci-Fi</category>
+  <date>20240510</date>
+  <episode-num system="xmltv_ns">2 . 4 .</episode-num>
+  <new/>
+  <icon src="https://images.example.com/poster.jpg"/>
+  <icon src="https://images.example.com/backdrop.jpg"/>
+</programme>
+<programme channel="ch1" start="20261019130000 +0000" stop="20261019140000 +0000">
+  <title>Live Sports</title>
+  <desc>Championship game.</desc>
+  <live/>
+  <premiere/>
+  <episode-num system="onscreen">2x05</episode-num>
+</programme>
+</tv>`
+	g, err := ParseXMLTV(strings.NewReader(guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Programmes) != 2 {
+		t.Fatalf("expected 2 programmes, got %d", len(g.Programmes))
+	}
+	p := g.Programmes[0]
+	if p.Item.Title != "The Great Show" {
+		t.Errorf("title = %q, want %q", p.Item.Title, "The Great Show")
+	}
+	if p.Item.EpisodeTitle != "Episode of Wonder" {
+		t.Errorf("episodeTitle = %q, want %q", p.Item.EpisodeTitle, "Episode of Wonder")
+	}
+	if p.Item.ShowTitle != "The Great Show" {
+		t.Errorf("showTitle = %q, want %q", p.Item.ShowTitle, "The Great Show")
+	}
+	if p.Item.MediaType != "episode" {
+		t.Errorf("mediaType = %q, want %q", p.Item.MediaType, "episode")
+	}
+	if p.Item.Season != 3 || p.Item.Episode != 5 {
+		t.Errorf("season/episode = %d/%d, want 3/5", p.Item.Season, p.Item.Episode)
+	}
+	if len(p.Item.Genres) != 2 || p.Item.Genres[0] != "Drama" || p.Item.Genres[1] != "Sci-Fi" {
+		t.Errorf("genres = %v, want [Drama, Sci-Fi]", p.Item.Genres)
+	}
+	expectedDate, _ := time.Parse("20060102", "20240510")
+	if p.Item.ReleasedMS != expectedDate.UnixMilli() {
+		t.Errorf("releasedMS = %d, want %d", p.Item.ReleasedMS, expectedDate.UnixMilli())
+	}
+	if p.Item.Thumb != "https://images.example.com/poster.jpg" {
+		t.Errorf("thumb = %q, want poster.jpg", p.Item.Thumb)
+	}
+	if p.Item.Art != "https://images.example.com/backdrop.jpg" {
+		t.Errorf("art = %q, want backdrop.jpg", p.Item.Art)
+	}
+	if !p.Item.Premiere {
+		t.Errorf("premiere = false, want true")
+	}
+
+	p2 := g.Programmes[1]
+	if !p2.Item.Live {
+		t.Errorf("p2 live = false, want true")
+	}
+	if !p2.Item.Premiere {
+		t.Errorf("p2 premiere = false, want true")
+	}
+	if p2.Item.Season != 2 || p2.Item.Episode != 5 {
+		t.Errorf("p2 season/episode = %d/%d, want 2/5", p2.Item.Season, p2.Item.Episode)
+	}
+}
+
+func TestParseXMLEpisodePrecedenceAndPatterns(t *testing.T) {
+	// xmltv_ns takes precedence even when preceded by dd_progid TMS identifiers
+	guide := `<?xml version="1.0"?><tv>
+<channel id="ch1"><display-name>Channel 1</display-name></channel>
+<programme channel="ch1" start="20261019120000 +0000" stop="20261019130000 +0000">
+  <title>Simpsons</title>
+  <episode-num system="dd_progid">EP01085588.0019</episode-num>
+  <episode-num system="xmltv_ns">1 . 18 .</episode-num>
+  <episode-num system="onscreen">S02E19</episode-num>
+</programme>
+<programme channel="ch1" start="20261019130000 +0000" stop="20261019140000 +0000">
+  <title>Sports Event</title>
+  <episode-num system="onscreen">Game 7</episode-num>
+</programme>
+<programme channel="ch1" start="20261019140000 +0000" stop="20261019150000 +0000">
+  <title>Drama Series</title>
+  <episode-num system="onscreen">Season 3 Episode 4</episode-num>
+</programme>
+</tv>`
+	g, err := ParseXMLTV(strings.NewReader(guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Programmes) != 3 {
+		t.Fatalf("expected 3 programmes, got %d", len(g.Programmes))
+	}
+	p1 := g.Programmes[0]
+	if p1.Item.Season != 2 || p1.Item.Episode != 19 {
+		t.Errorf("p1 season/episode = %d/%d, want 2/19", p1.Item.Season, p1.Item.Episode)
+	}
+	if p1.Item.ShowTitle != "Simpsons" {
+		t.Errorf("p1 showTitle = %q, want Simpsons", p1.Item.ShowTitle)
+	}
+	p2 := g.Programmes[1]
+	if p2.Item.Season != 0 || p2.Item.Episode != 0 {
+		t.Errorf("p2 'Game 7' falsely parsed as season/episode: %d/%d", p2.Item.Season, p2.Item.Episode)
+	}
+	p3 := g.Programmes[2]
+	if p3.Item.Season != 3 || p3.Item.Episode != 4 {
+		t.Errorf("p3 season/episode = %d/%d, want 3/4", p3.Item.Season, p3.Item.Episode)
+	}
+}
