@@ -168,7 +168,7 @@ compares every endpoint across the two libraries.
 |---|---|
 | rows read grow | more than 2× + 200 |
 | statements grow | more than 1.5× + 20 |
-| database time grows | more than 5× + 100 ms |
+| database time grows | more than 5× + 100 ms (the large library's fastest pass against the small one's median) |
 | warm p50 | over 2 s |
 
 An indexed path does about the same work on both libraries. A path that
