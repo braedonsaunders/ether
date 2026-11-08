@@ -248,6 +248,8 @@ func xmlDate(s string) (time.Time, error) {
 		"20060102",
 		"2006-01-02",
 		"2006/01/02",
+		"200601",
+		"2006-01",
 		"2006",
 	} {
 		if t, e := time.Parse(layout, s); e == nil {
@@ -553,6 +555,7 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 				}
 			}
 			if p.Date != "" {
+				item.Date = strings.TrimSpace(p.Date)
 				if t, err := xmlDate(p.Date); err == nil {
 					item.ReleasedMS = t.UnixMilli()
 				}

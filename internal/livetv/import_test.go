@@ -1,6 +1,7 @@
 package livetv
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -281,5 +282,86 @@ func TestParseXMLEpisodePrecedenceAndPatterns(t *testing.T) {
 	p3 := g.Programmes[2]
 	if p3.Item.Season != 3 || p3.Item.Episode != 4 {
 		t.Errorf("p3 season/episode = %d/%d, want 3/4", p3.Item.Season, p3.Item.Episode)
+	}
+}
+
+func TestXMLTVRoundTripAndHistoricalDates(t *testing.T) {
+	guide := `<?xml version="1.0"?><tv>
+<channel id="ch1"><display-name>Channel 1</display-name></channel>
+<programme channel="ch1" start="20261019120000 +0000" stop="20261019130000 +0000">
+  <title>Classic Movie</title>
+  <date>19640510</date>
+  <category>Cinema</category>
+</programme>
+<programme channel="ch1" start="20261019130000 +0000" stop="20261019140000 +0000">
+  <title>Partial Date Show</title>
+  <date>202405</date>
+  <episode-num system="xmltv_ns">1 . .</episode-num>
+</programme>
+<programme channel="ch1" start="20261019140000 +0000" stop="20261019150000 +0000">
+  <title>Unknown Season Episode</title>
+  <date>1964</date>
+  <episode-num system="xmltv_ns">. 4 .</episode-num>
+</programme>
+</tv>`
+	g, err := ParseXMLTV(strings.NewReader(guide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Programmes) != 3 {
+		t.Fatalf("expected 3 programmes, got %d", len(g.Programmes))
+	}
+
+	// 1. Historical date check (negative Unix milliseconds)
+	p1 := g.Programmes[0]
+	if p1.Item.Date != "19640510" {
+		t.Errorf("p1 Date = %q, want 19640510", p1.Item.Date)
+	}
+	if p1.Item.ReleasedMS >= 0 {
+		t.Errorf("p1 ReleasedMS = %d, expected negative ms for 1964", p1.Item.ReleasedMS)
+	}
+
+	// 2. Partial date YYYYMM and partial episode "1 . ." (Season 2, unknown episode)
+	p2 := g.Programmes[1]
+	if p2.Item.Date != "202405" {
+		t.Errorf("p2 Date = %q, want 202405", p2.Item.Date)
+	}
+	if p2.Item.Season != 2 || p2.Item.Episode != 0 {
+		t.Errorf("p2 Season/Episode = %d/%d, want 2/0", p2.Item.Season, p2.Item.Episode)
+	}
+
+	// 3. Partial date YYYY and partial episode ". 4 ." (unknown season, Episode 5)
+	p3 := g.Programmes[2]
+	if p3.Item.Date != "1964" {
+		t.Errorf("p3 Date = %q, want 1964", p3.Item.Date)
+	}
+	if p3.Item.Season != 0 || p3.Item.Episode != 5 {
+		t.Errorf("p3 Season/Episode = %d/%d, want 0/5", p3.Item.Season, p3.Item.Episode)
+	}
+
+	// 4. Test Export -> Re-import Round Trip via writeXMLTV encoding logic
+	buf := &bytes.Buffer{}
+	writeXMLTV(buf, []Channel{{ID: "ch1", Name: "Channel 1"}}, g.Programmes)
+	reimported, err := ParseXMLTV(buf)
+	if err != nil {
+		t.Fatalf("reimport failed: %v", err)
+	}
+	if len(reimported.Programmes) != 3 {
+		t.Fatalf("reimported len = %d, want 3", len(reimported.Programmes))
+	}
+
+	rp1 := reimported.Programmes[0]
+	if rp1.Item.Date != "19640510" || rp1.Item.ReleasedMS != p1.Item.ReleasedMS {
+		t.Errorf("rp1 roundtrip failed: Date=%q ReleasedMS=%d", rp1.Item.Date, rp1.Item.ReleasedMS)
+	}
+
+	rp2 := reimported.Programmes[1]
+	if rp2.Item.Date != "202405" || rp2.Item.Season != 2 || rp2.Item.Episode != 0 {
+		t.Errorf("rp2 roundtrip failed: Date=%q Season=%d Episode=%d", rp2.Item.Date, rp2.Item.Season, rp2.Item.Episode)
+	}
+
+	rp3 := reimported.Programmes[2]
+	if rp3.Item.Date != "1964" || rp3.Item.Season != 0 || rp3.Item.Episode != 5 {
+		t.Errorf("rp3 roundtrip failed: Date=%q Season=%d Episode=%d", rp3.Item.Date, rp3.Item.Season, rp3.Item.Episode)
 	}
 }

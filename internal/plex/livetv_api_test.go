@@ -816,6 +816,18 @@ func TestLiveTVRichXMLTVGuideMetadata(t *testing.T) {
   <new/>
   <icon src="https://images.directv.com/pilot.jpg"/>
 </programme>
+<programme channel="rich-ch" start="20261018120000 +0000" stop="20261018130000 +0000">
+  <title>Historical Classic</title>
+  <desc>A 1964 classic film</desc>
+  <category>Drama</category>
+  <date>19640510</date>
+  <icon src="https://images.directv.com/classic.jpg"/>
+</programme>
+<programme channel="rich-ch" start="20261018130000 +0000" stop="20261018140000 +0000">
+  <title>Partial Date Film</title>
+  <desc>Film with only year/month known</desc>
+  <date>202405</date>
+</programme>
 </tv>`,
 	}
 	if _, err := service.ImportSource(context.Background(), src); err != nil {
@@ -868,5 +880,33 @@ func TestLiveTVRichXMLTVGuideMetadata(t *testing.T) {
 	}
 	if p["thumb"] != "https://images.directv.com/pilot.jpg" || p["art"] != "https://images.directv.com/pilot.jpg" {
 		t.Errorf("thumb/art = %v / %v", p["thumb"], p["art"])
+	}
+
+	if len(programmes) < 3 {
+		t.Fatalf("expected 3 programmes, got %d", len(programmes))
+	}
+	p2 := programmes[1].(map[string]any)
+	if p2["type"] != "movie" {
+		t.Errorf("p2 type = %v, want movie", p2["type"])
+	}
+	if p2["title"] != "Historical Classic" {
+		t.Errorf("p2 title = %v, want Historical Classic", p2["title"])
+	}
+	if p2["year"] != float64(1964) {
+		t.Errorf("p2 year = %v, want 1964", p2["year"])
+	}
+	if p2["originallyAvailableAt"] != "1964-05-10" {
+		t.Errorf("p2 originallyAvailableAt = %v, want 1964-05-10", p2["originallyAvailableAt"])
+	}
+	if p2["thumb"] != "https://images.directv.com/classic.jpg" {
+		t.Errorf("p2 thumb = %v, want classic.jpg", p2["thumb"])
+	}
+
+	p3 := programmes[2].(map[string]any)
+	if p3["year"] != float64(2024) {
+		t.Errorf("p3 year = %v, want 2024", p3["year"])
+	}
+	if p3["originallyAvailableAt"] != nil && p3["originallyAvailableAt"] != "" {
+		t.Errorf("p3 originallyAvailableAt = %v, want empty/nil (no invented day precision)", p3["originallyAvailableAt"])
 	}
 }

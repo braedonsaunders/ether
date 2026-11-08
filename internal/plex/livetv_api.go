@@ -333,6 +333,34 @@ func (s *Server) handleLiveChannels(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write(w, r, &liveContainer{Size: len(out), Identifier: livetv.Provider, Channel: out, ChannelMapping: maps})
 }
+func parseLiveTVDate(s string) (year int, fullDate string, ok bool) {
+	s = strings.TrimSpace(s)
+	for _, layout := range []string{
+		"20060102150405 -0700",
+		"20060102150405",
+		"2006-01-02 15:04:05",
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"20060102",
+		"2006-01-02",
+		"2006/01/02",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Year(), t.Format("2006-01-02"), true
+		}
+	}
+	for _, layout := range []string{
+		"200601",
+		"2006-01",
+		"2006",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Year(), "", true
+		}
+	}
+	return 0, "", false
+}
+
 func (s *Server) liveProgrammeMetadata(r *http.Request, c livetv.Channel, p livetv.Programme) model.Metadata {
 	dur := p.End.Sub(p.Start).Milliseconds()
 	rating := p.Item.Rating
@@ -388,7 +416,14 @@ func (s *Server) liveProgrammeMetadata(r *http.Request, c livetv.Channel, p live
 		episode := p.Item.Episode
 		md.Index = &episode
 	}
-	if p.Item.ReleasedMS > 0 {
+	if p.Item.Date != "" {
+		if year, fullDate, ok := parseLiveTVDate(p.Item.Date); ok {
+			md.Year = year
+			if fullDate != "" {
+				md.OriginallyAvailableAt = fullDate
+			}
+		}
+	} else if p.Item.ReleasedMS != 0 {
 		t := time.UnixMilli(p.Item.ReleasedMS).UTC()
 		md.OriginallyAvailableAt = t.Format("2006-01-02")
 		md.Year = t.Year()

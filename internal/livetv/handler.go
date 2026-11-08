@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -445,6 +446,10 @@ func (s *Service) ServeXMLTV(w http.ResponseWriter, r *http.Request, u *core.Use
 	if r.Method == "HEAD" {
 		return
 	}
+	writeXMLTV(w, cs, ps)
+}
+
+func writeXMLTV(w io.Writer, cs []Channel, ps []Programme) {
 	fmt.Fprint(w, xml.Header)
 	enc := xml.NewEncoder(w)
 	root := xml.StartElement{Name: xml.Name{Local: "tv"}, Attr: []xml.Attr{{Name: xml.Name{Local: "generator-info-name"}, Value: "Ether"}}}
@@ -468,11 +473,20 @@ func (s *Service) ServeXMLTV(w http.ResponseWriter, r *http.Request, u *core.Use
 		for _, g := range p.Item.Genres {
 			v.Category = append(v.Category, xmlText{Value: g})
 		}
-		if p.Item.ReleasedMS > 0 {
+		if p.Item.Date != "" {
+			v.Date = p.Item.Date
+		} else if p.Item.ReleasedMS != 0 {
 			v.Date = time.UnixMilli(p.Item.ReleasedMS).UTC().Format("20060102")
 		}
-		if p.Item.Season > 0 && p.Item.Episode > 0 {
-			v.EpisodeNum = append(v.EpisodeNum, xmlEpisodeNum{System: "xmltv_ns", Value: fmt.Sprintf("%d.%d.", p.Item.Season-1, p.Item.Episode-1)})
+		if p.Item.Season > 0 || p.Item.Episode > 0 {
+			sStr, eStr := "", ""
+			if p.Item.Season > 0 {
+				sStr = strconv.Itoa(p.Item.Season - 1)
+			}
+			if p.Item.Episode > 0 {
+				eStr = strconv.Itoa(p.Item.Episode - 1)
+			}
+			v.EpisodeNum = append(v.EpisodeNum, xmlEpisodeNum{System: "xmltv_ns", Value: fmt.Sprintf("%s.%s.", sStr, eStr)})
 		}
 		if strings.HasPrefix(p.Item.GUID, "plex://") {
 			v.EpisodeNum = append(v.EpisodeNum, xmlEpisodeNum{System: "plex", Value: p.Item.GUID})

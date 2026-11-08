@@ -53,6 +53,7 @@ type Item struct {
 	Season     int            `json:"season,omitempty"`
 	Episode    int            `json:"episode,omitempty"`
 	ReleasedMS int64          `json:"releasedMs,omitempty"`
+	Date       string         `json:"date,omitempty"`
 	// Slate is "offair" for a guide entry that fills a gap. It is not a
 	// catalogue title and is never stored on a channel.
 	Slate string `json:"slate,omitempty"`
