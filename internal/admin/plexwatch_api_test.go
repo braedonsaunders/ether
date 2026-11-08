@@ -15,7 +15,7 @@ type fakePlexWatch struct {
 	userID   int64
 	plexID   int64
 	on       bool
-	resolved bool
+	imported bool
 	finish   error
 }
 
@@ -24,7 +24,7 @@ func (f *fakePlexWatch) remember(userID, plexID int64) {
 }
 
 func (f *fakePlexWatch) status() admin.PlexWatchStatus {
-	return admin.PlexWatchStatus{Eligibility: "unchecked", AccountMatch: true, Direction: boolDirection(f.on)}
+	return admin.PlexWatchStatus{AccountMatch: true, Direction: boolDirection(f.on)}
 }
 
 func (f *fakePlexWatch) Status(_ context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
@@ -64,17 +64,13 @@ func (f *fakePlexWatch) Retry(_ context.Context, userID, plexID int64) (admin.Pl
 	f.remember(userID, plexID)
 	return f.status(), nil
 }
-func (f *fakePlexWatch) Resolve(_ context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
-	f.remember(userID, plexID)
-	f.resolved = true
-	return f.status(), nil
-}
 func (f *fakePlexWatch) ExportCurrent(_ context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
 	f.remember(userID, plexID)
 	return f.status(), nil
 }
 func (f *fakePlexWatch) ImportCurrent(_ context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
 	f.remember(userID, plexID)
+	f.imported = true
 	return f.status(), nil
 }
 
@@ -117,14 +113,10 @@ func TestPlexWatchUsesViewerPlexID(t *testing.T) {
 		t.Fatalf("finish used plex id %d", watch.plexID)
 	}
 
-	r = req(http.MethodPost, "/ether/api/viewers/7/plex-watch/resolve", "")
+	r = req(http.MethodPost, "/ether/api/viewers/7/plex-watch/import", "")
 	r.Header.Set("X-Plex-Token", ownerToken)
 	rec = serve(h, r)
-	if rec.Code != http.StatusOK || !watch.resolved || watch.userID != 7 || watch.plexID != 99 {
-		t.Fatalf("resolve: %d resolved=%v user=%d plex=%d", rec.Code, watch.resolved, watch.userID, watch.plexID)
+	if rec.Code != http.StatusOK || !watch.imported || watch.userID != 7 || watch.plexID != 99 {
+		t.Fatalf("import: %d imported=%v user=%d plex=%d", rec.Code, watch.imported, watch.userID, watch.plexID)
 	}
-}
-
-func (f *fakePlexWatch) Unmatched(_ context.Context, _, _ int64, _ string) ([]string, error) {
-	return []string{}, nil
 }

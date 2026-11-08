@@ -36,7 +36,7 @@ import (
 // A is never sent back to A, while server B (which has no such row) gets it
 // once. History rows that are the echo of Ether's own scrobble are ignored.
 //
-// This path does not use, and is not gated by, AccountSyncSupported.
+// This path is independent of the per-viewer Plex account sync (Service).
 type Servers struct {
 	db      *sql.DB
 	state   *state.State

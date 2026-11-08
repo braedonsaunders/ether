@@ -25,11 +25,13 @@ type raceResult struct {
 // raceAlternates opens untried alternates concurrently, keeping width in
 // flight, and returns the first that opens. Releases that failed are
 // returned so the caller does not try them again. Late successes are
-// dropped in the background.
+// dropped in the background. Add-on stream links that open on demand
+// (core.Release.OpensOnDemand) never race: each open makes the add-on fetch
+// a release, so the sequential failover tries them one after another.
 func (m *Manager) raceAlternates(ctx context.Context, s *session, tried []string, alternates []core.Release, fallback func(int64) core.MediaInfo, width int, accept func(*generation) error, prefer func(*generation) bool) (*generation, []string, error) {
 	var cands []core.Release
 	for _, alt := range alternates {
-		if alt.ID != "" && !slices.Contains(tried, alt.ID) && releaseMatchesTitle(alt, s.title) {
+		if alt.ID != "" && !alt.OpensOnDemand() && !slices.Contains(tried, alt.ID) && releaseMatchesTitle(alt, s.title) {
 			cands = append(cands, alt)
 		}
 	}

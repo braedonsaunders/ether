@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,13 +23,15 @@ func TestVirtualChannelDASHPlaysThroughPlexWeb(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	now := time.Unix(7, 0).UTC()
+	// The broadcast goroutine reads the clock while the test advances it.
+	var clock atomic.Int64
+	clock.Store(time.Unix(7, 0).UnixNano())
 	pb := newFakePlayback(core.MediaInfo{Duration: time.Hour, Streams: []core.StreamInfo{
 		{Index: 0, Type: "video", Codec: "h264", Width: 1280, Height: 720, BitrateKbps: 4000},
 		{Index: 1, Type: "audio", Codec: "aac", BitrateKbps: 128},
 	}})
 	tc := &trackedTranscoder{fakeTranscoder: newFakeTranscoder(core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"})}
-	service, err := livetv.New(livetv.Options{Transcoder: tc, Playback: pb, DB: db, Now: func() time.Time { return now }})
+	service, err := livetv.New(livetv.Options{Transcoder: tc, Playback: pb, DB: db, Now: func() time.Time { return time.Unix(0, clock.Load()).UTC() }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +84,7 @@ func TestVirtualChannelDASHPlaysThroughPlexWeb(t *testing.T) {
 		t.Fatalf("rollover segment %d %q (join %q)", nextSeg.Code, nextSeg.Body.String(), seg.Body.String())
 	}
 
-	now = time.Unix(40, 0).UTC()
+	clock.Store(time.Unix(40, 0).UnixNano())
 	later := f.request(t, "GET", "/video/:/transcode/universal/start.mpd?path="+url.QueryEscape(sessionPath)+"&protocol=dash", nil)
 	if later.Code != 200 || !strings.Contains(later.Body.String(), `type="dynamic"`) {
 		t.Fatalf("manifest after the programme boundary: %d %s", later.Code, later.Body.String())

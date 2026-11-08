@@ -162,6 +162,17 @@ func hlsAudioOK(codec string) bool {
 	return false
 }
 
+// matroskaAudioOK reports audio Matroska carries beyond hlsAudioOK: DTS
+// (including DTS-HD MA), TrueHD, Vorbis and PCM, as PMS copies them into
+// the Matroska streams Plex for Android TV requests.
+func matroskaAudioOK(codec string) bool {
+	switch codec {
+	case "dts", "truehd", "vorbis":
+		return true
+	}
+	return hlsAudioOK(codec) || strings.HasPrefix(codec, "pcm")
+}
+
 // segmentContainer picks TS or fMP4 segments. Apple requires fMP4 for HEVC
 // in HLS; AV1/VP9 and FLAC/Opus only exist in fMP4.
 func segmentContainer(videoCodec, audioCodec string) string {
@@ -461,8 +472,8 @@ func collectIssues(info core.MediaInfo, v, a, sub *core.StreamInfo, ctx issueCon
 // codec is supported and carried in HLS, else transcode to the client's
 // target; on a narrow connection, high-bitrate audio is converted to
 // stereo AAC to preserve room for video.
-func planAudio(a *core.StreamInfo, caps core.ClientCaps, audioIssues []string, bitrateCap int) (audioCopy bool, audioCodec string, audioKbps int, audioNote string) {
-	audioCopy = a == nil || (len(audioIssues) == 0 && hlsAudioOK(a.Codec))
+func planAudio(a *core.StreamInfo, caps core.ClientCaps, audioIssues []string, bitrateCap int, matroskaOut bool) (audioCopy bool, audioCodec string, audioKbps int, audioNote string) {
+	audioCopy = a == nil || (len(audioIssues) == 0 && (hlsAudioOK(a.Codec) || matroskaOut && matroskaAudioOK(a.Codec)))
 	if a != nil {
 		if audioCopy {
 			audioCodec = a.Codec
@@ -473,7 +484,7 @@ func planAudio(a *core.StreamInfo, caps core.ClientCaps, audioIssues []string, b
 			audioKbps = audioBitrateKbps(audioCodec, ch)
 			audioNote = fmt.Sprintf("audio %s %s -> %s %dch", a.Codec, channelLabel(a), audioCodec, ch)
 			if len(audioIssues) == 0 {
-				audioNote += " (not carried in HLS)"
+				audioNote += " (not carried in this stream's container)"
 			}
 		}
 	}
@@ -641,7 +652,11 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 	why = append(why, otherIssues...)
 
 	// Audio plan, shared by remux and transcode.
-	audioCopy, audioCodec, audioKbps, audioNote := planAudio(a, caps, audioIssues, bitrateCap)
+	// Matroska output (Plex for Android's HLS target, or HTTP) carries DTS,
+	// TrueHD and PCM, which TS/fMP4 HLS cannot; the client's declared
+	// target codecs still decide (audioIssues).
+	matroskaOut := a != nil && outputContainer(caps, opts, "h264", a.Codec) == ContainerMatroska
+	audioCopy, audioCodec, audioKbps, audioNote := planAudio(a, caps, audioIssues, bitrateCap, matroskaOut)
 
 	// 2. Remux: copy video into HLS.
 	videoCopyable := v == nil || (len(videoIssues) == 0 && hlsVideoOK(v.Codec))

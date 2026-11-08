@@ -33,7 +33,7 @@ func TestOpenUpgradesShippedQualityDefaults(t *testing.T) {
 	}
 
 	for name, owned := range map[string]string{
-		"remote profile": `{"quality":{"default":"1080p","remote":"720p","rules":[{"product":"Apple TV","profile":"4K"}],"profiles":[{"name":"4K","maxHeight":2160,"minHeight":1080},{"name":"720p","maxHeight":720}]}}`,
+		"remote profile": `{"quality":{"default":"1080p","remote":"720p","rules":[{"product":"Apple TV","profile":"4K"}],"profiles":[{"name":"4K","maxHeight":2160,"minHeight":1080},{"name":"1080p","maxHeight":1080},{"name":"720p","maxHeight":720}]}}`,
 		"extra rule":     `{"quality":{"default":"1080p","remote":"1080p","rules":[{"product":"Apple TV","profile":"4K"},{"platform":"Roku","profile":"4K"}],"profiles":[{"name":"4K","maxHeight":2160,"minHeight":1080},{"name":"1080p","maxHeight":1080}]}}`,
 	} {
 		dir := t.TempDir()

@@ -35,6 +35,19 @@ const (
 	downloadDone       = "done" // queue-level only
 )
 
+// downloadSubscribeFeature is the library provider's download capability
+// for Plex's desktop apps (Plex for Mac/Windows, Plex HTPC). Their web
+// client (Plex Web 4.163 showSyncDownload) shows Download only when the
+// item's provider has features.subscribe.flavor == "download" and, for a
+// library provider, the server's allowSync is true; it reads nothing else
+// from this feature. The download itself is a media subscription created
+// on the app's embedded server (state.embeddedServer, not this one), which
+// then pulls the title from this server like any remote PMS client:
+// metadata, universal decision, then the part or a start stream. No key
+// is advertised because no client calls one for this flavor; the Live TV
+// DVR keeps /media/subscriptions.
+var downloadSubscribeFeature = model.Feature{Flavor: "download", Type: "subscribe"}
+
 // downloadsEnabled reports whether the server can serve downloads at
 // all: owner setting on, remuxer and playback wired.
 func (s *Server) downloadsEnabled() bool {

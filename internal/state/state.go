@@ -97,6 +97,10 @@ const (
 	EventScrobble   EventKind = "scrobble"   // explicitly marked watched
 	EventUnscrobble EventKind = "unscrobble" // explicitly marked unwatched
 	EventRated      EventKind = "rated"
+	// EventContinueRemoved is journaled (not emitted) for each in-progress
+	// title a Continue Watching removal covers; Resume and Duration are its
+	// stored position.
+	EventContinueRemoved EventKind = "continue_removed"
 )
 
 // Event is a watch-state change. Fraction is offset/duration (0 when the
@@ -117,6 +121,11 @@ type Event struct {
 	// Account is a manual Plex-account import. Local clients refresh from it.
 	// It is not journaled and is not a Trakt or Simkl export.
 	Account bool
+	// ResumeSet is true on an EventProgress that changed the stored resume
+	// point; Resume is the point now stored (0 when it was cleared). A
+	// completion is reported by its own event, not as a cleared resume.
+	ResumeSet bool
+	Resume    time.Duration
 }
 
 // Origin identifies the surface and client that made a watch-state change.
@@ -752,6 +761,7 @@ func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey
 	reported, duration, state := w.offset, w.duration, w.state
 	return s.updateAt(ctx, userID, []core.RatingKey{key}, w.at, func(cur *row, now time.Time) (bool, bool, []Event) {
 		offset := reported // fn may be re-run after a conflict
+		before := cur.ws.ViewOffset
 		if state == "progress" {
 			if offset <= time.Minute {
 				return false, false, nil
@@ -761,7 +771,8 @@ func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey
 			cur.ws.UpdatedAt = now
 			cur.watchAt = now
 			return false, false, []Event{{Kind: EventProgress, UserID: userID, Key: cur.ws.Key,
-				Offset: offset, Duration: cur.ws.Duration, State: state, At: now}}
+				Offset: offset, Duration: cur.ws.Duration, State: state, At: now,
+				ResumeSet: offset != before, Resume: offset}}
 		}
 		if duration > 0 {
 			cur.ws.Duration = duration
@@ -802,6 +813,7 @@ func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey
 		}
 		ev := Event{Kind: EventProgress, UserID: userID, Key: cur.ws.Key, Offset: offset, Duration: cur.ws.Duration,
 			Fraction: evFrac, State: state, Completed: completed, At: now}
+		ev.ResumeSet, ev.Resume = !completed && cur.ws.ViewOffset != before, cur.ws.ViewOffset
 		evs := []Event{ev}
 		if completed {
 			ev.Kind = EventCompleted

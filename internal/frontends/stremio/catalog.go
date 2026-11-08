@@ -162,16 +162,22 @@ func (i *instance) libraryPage(r *http.Request, viewer *frontend.Viewer, device 
 	if err != nil {
 		return nil, err
 	}
+	want := map[string]string{"movie": "movie", "series": "show"}[typ]
+	var wanted []frontend.View
+	for _, view := range views {
+		if string(view.Type) == want {
+			wanted = append(wanted, view)
+		}
+	}
 	var titles []frontend.Title
 	offset := q.Offset
-	want := map[string]string{"movie": "movie", "series": "show"}[typ]
-	for _, view := range views {
-		if string(view.Type) != want {
-			continue
-		}
+	for n, view := range wanted {
 		query := q
 		query.Offset = offset
 		query.Limit = q.Limit - len(titles)
+		// Stremio pages by skip alone. Counting a filter's matches reads
+		// every title it admits, so the page is asked for without a total.
+		query.NoTotal = true
 		page, err := i.host.Experience.LibraryItems(r.Context(), viewer, device, view.ID, query)
 		if err != nil {
 			return nil, err
@@ -179,6 +185,14 @@ func (i *instance) libraryPage(r *http.Request, viewer *frontend.Viewer, device 
 		titles = append(titles, page.Items...)
 		if len(titles) >= q.Limit {
 			break
+		}
+		if len(page.Items) == 0 && offset > 0 && n < len(wanted)-1 {
+			// The skip lies past this view. Only its total says how much
+			// of the skip the next view still owes.
+			query.NoTotal = false
+			if page, err = i.host.Experience.LibraryItems(r.Context(), viewer, device, view.ID, query); err != nil {
+				return nil, err
+			}
 		}
 		offset = max(0, offset-page.Total)
 	}

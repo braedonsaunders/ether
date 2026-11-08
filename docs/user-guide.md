@@ -203,6 +203,13 @@ A result needs a release name and one of these, tried in order:
   range requests is skipped for now and tried again later. With **Cached torrents
   only** on, links the addon labels only as uncached are left out.
 
+  Opening an addon's link usually makes the addon fetch that release (resolve
+  it on its debrid account, or download and import an NZB), so Ether opens one
+  link per Play: the next one only after the first fails, and none while it is
+  still being prepared. **Concurrent checks** does not apply to these links.
+  Detail pages, warm-ups, next-episode prefetch and availability checks never
+  open them, so an addon-only title starts without a prepared opening.
+
 External-player links and YouTube IDs have nothing Ether can stream.
 
 HTTP and NZB links may point at the addon's own address, even on your network.
@@ -895,19 +902,45 @@ Plex viewers access shared libraries through their own Plex accounts. Refreshing
 Plex sharing removes revoked viewers' access. Stream links stop working when
 the viewer is inactive or the session ends.
 
-## Plex account watch state
+## Plex account watch sync
 
-Syncing watched state with a viewer's Plex account is **unavailable**. Plex
-accepts watch-state sync only from its own servers: the per-user credential
-Plex issues for it works only inside Plex Media Server, and Plex's watch-state
-service refuses it from any other server. Ether therefore cannot send watched
-state or ratings to a Plex account, or import them from one.
+Ether can keep a viewer's watched marks and ratings in step with that
+viewer's own Plex account, the same state Plex Web shows on Discover. It uses
+the same requests Plex Web makes for **Mark as watched** and ratings, with the
+viewer's own Plex sign-in. The owner's account is never used for a viewer.
 
-In **Viewers › viewer › Limits**, the **Plex account watch state** section
-says so plainly. A Plex account connected in an earlier version stays listed and
-can still be removed with **Disconnect**; its sync settings are kept. Changes
-that were waiting to be sent are kept as they are and are not retried, so
-nothing is lost if Plex ever offers a path for other servers.
+1. Open **Viewers › viewer › Limits** and find **Plex account watch sync**.
+   The viewer needs a Plex account (Plex viewers have one).
+2. Choose **Connect**, then **Open Plex approval**. Sign in to Plex **as the
+   viewer** and approve, then choose **Check connection**. Ether refuses an
+   approval from any other Plex account.
+3. Pick **Sync**: **Ether → Plex**, **Plex → Ether** or **Both**, and for
+   reading from Plex how often to check (5, 10, 30 or 60 minutes).
+
+What syncs:
+
+- Movies and episodes, watched and unwatched, and ratings. Ether's ratings map
+  to Plex's stars (half stars included); clearing a rating clears it in Plex.
+  Resume positions are not synced.
+- **Ether → Plex:** each change is sent within seconds. Turning sending on
+  starts from that moment; **Send watched titles to Plex** queues the viewer's
+  existing watched and rated titles once.
+- **Plex → Ether:** each check reads part of the library in the background
+  and carries on from where the last check stopped, so a very large library is
+  read over several checks. Shows are read episode by episode only when Plex's
+  watched count for the show changed. **Check Plex now** runs a check
+  immediately.
+- The newest change wins. A change that came from Plex is never sent back, and
+  Ether's own changes are not read back as Plex changes.
+- Only titles Ether has matched to a verified Plex identity sync; nothing is
+  matched by name.
+
+If Plex no longer accepts the connection (for example the viewer signed out of
+all devices or changed their password), the section shows **Reconnect
+required** and sync stops until the viewer approves again with **Reconnect**;
+the chosen direction is kept. If Plex asks Ether to slow down or cannot be
+reached, sync pauses and resumes on its own. **Disconnect** removes the stored
+sign-in and stops everything at once.
 
 Watch state is unaffected inside Ether: watched marks, ratings and resume
 positions still sync between every app a viewer uses with Ether.

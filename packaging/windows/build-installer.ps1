@@ -18,7 +18,7 @@ $ldflags = "-s -w" +
   " -X github.com/braedonsaunders/ether/internal/tmdb.BundledKey=$env:ETHER_TMDB_BUNDLED_KEY"
 
 Write-Host "==> building ether.exe + ether-tray.exe (windows/$Arch, CGO_ENABLED=0)"
-$env:CGO_ENABLED = "0"; $env:GOOS = "windows"; $env:GOARCH = $Arch
+$env:CGO_ENABLED = "0"; $env:GOEXPERIMENT = "simd"; $env:GOOS = "windows"; $env:GOARCH = $Arch
 Push-Location $Root
 go build -trimpath -ldflags $ldflags -o "$Staging\ether.exe" ./cmd/ether
 if ($LASTEXITCODE -ne 0) { throw "Server build failed" }

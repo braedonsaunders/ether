@@ -200,31 +200,58 @@ func (s *Store) attachShared(ctx context.Context, b SharedBackend, o SharedOptio
 			}
 		}
 	}
-	if err == nil && found && doc.KeyFingerprint == s.KeyFingerprint() {
+	var next Config
+	var settled []string
+	for attempt := 1; err == nil && found; attempt++ {
+		// Validate the document before rewriting it, including its key.
+		next, _, err = s.mergeDoc(before, doc)
+		if err != nil {
+			break
+		}
 		var plain []byte
 		plain, _, err = openDocument([]byte(doc.Doc), s.credentialKey)
-		if err == nil {
-			var stored map[string]any
-			err = json.Unmarshal(plain, &stored)
-			if err == nil && stripRetiredLiveTV(stored) {
-				plain, err = json.Marshal(stored)
-				if err == nil {
-					doc.Doc, err = s.sealShared(plain)
-				}
-				if err == nil {
-					doc.Version, err = b.SaveShared(lctx, doc, doc.Version)
-				}
-			}
+		if err != nil {
+			break
 		}
+		var stored map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(plain))
+		decoder.UseNumber()
+		if err = decoder.Decode(&stored); err != nil {
+			break
+		}
+		dropped := stripRetiredLiveTV(stored)
+		// Settle the stored document itself (keeping fields this version
+		// does not know), so every node reads the same profiles.
+		settled = normalizeSharedDocument(stored)
+		if !dropped && len(settled) == 0 {
+			break
+		}
+		plain, err = json.Marshal(stored)
+		if err == nil {
+			doc.Doc, err = s.sealShared(plain)
+		}
+		if err == nil {
+			doc.Version, err = b.SaveShared(lctx, doc, doc.Version)
+		}
+		if errors.Is(err, ErrSharedConflict) && attempt < maxSharedAttempts {
+			doc, found, err = b.LoadShared(lctx)
+			if err == nil && !found {
+				err = ErrSharedMissing
+			}
+			continue
+		}
+		if err == nil {
+			next, _, err = s.mergeDoc(before, doc)
+		}
+		break
 	}
 	cancel()
-	var next Config
-	if err == nil {
-		next, err = s.mergeDoc(before, doc)
-	}
 	if err != nil {
 		s.writeMu.Unlock()
 		return err
+	}
+	if len(settled) > 0 {
+		o.Logger.Info("config: settled the cluster's quality profiles", "changes", settled)
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, doc.Version
@@ -342,7 +369,7 @@ func (s *Store) RefreshShared(ctx context.Context) error {
 func (s *Store) refreshShared(ctx context.Context) error {
 	s.writeMu.Lock()
 	s.mu.RLock()
-	b, have := s.shared, s.sharedVer
+	b, have, o := s.shared, s.sharedVer, s.sharedOpts
 	s.mu.RUnlock()
 	if b == nil {
 		s.writeMu.Unlock()
@@ -362,10 +389,15 @@ func (s *Store) refreshShared(ctx context.Context) error {
 		return err
 	}
 	before := s.Get()
-	next, err := s.mergeDoc(before, doc)
+	next, settled, err := s.mergeDoc(before, doc)
 	if err != nil {
 		s.writeMu.Unlock()
 		return err
+	}
+	if len(settled) > 0 && o.Logger != nil {
+		// Written by a node that predates per-media profiles; this node
+		// runs on the settled profiles and the next save stores them.
+		o.Logger.Warn("config: shared settings held unsettled quality profiles", "changes", settled)
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, doc.Version
@@ -431,7 +463,7 @@ func (s *Store) updateClustered(fn func(*Config) error) error {
 			lerr = ErrSharedMissing
 		}
 		if lerr == nil {
-			base, lerr = s.mergeDoc(base, doc)
+			base, _, lerr = s.mergeDoc(base, doc)
 		}
 		if lerr != nil {
 			s.writeMu.Unlock()
@@ -467,16 +499,17 @@ func (s *Store) sealShared(plain []byte) (string, error) {
 	return string(b), err
 }
 
-// mergeDoc overlays a stored shared document on base's node-local part.
-func (s *Store) mergeDoc(base Config, doc SharedDoc) (Config, error) {
+// mergeDoc overlays a stored shared document on base's node-local part,
+// reporting what settling its quality profiles changed.
+func (s *Store) mergeDoc(base Config, doc SharedDoc) (Config, []string, error) {
 	if fp := s.KeyFingerprint(); doc.KeyFingerprint != fp {
-		return Config{}, fmt.Errorf("%w (cluster %.12s, this node %.12s); add this node with `ether cluster join <token>`", ErrKeyMismatch, doc.KeyFingerprint, fp)
+		return Config{}, nil, fmt.Errorf("%w (cluster %.12s, this node %.12s); add this node with `ether cluster join <token>`", ErrKeyMismatch, doc.KeyFingerprint, fp)
 	}
 	plain, _, err := openDocument([]byte(doc.Doc), s.credentialKey)
 	if err != nil {
-		return Config{}, fmt.Errorf("config: open shared settings: %w", err)
+		return Config{}, nil, fmt.Errorf("config: open shared settings: %w", err)
 	}
-	return MergeShared(base, plain)
+	return mergeShared(base, plain)
 }
 
 func sameConfig(a, b Config) bool {

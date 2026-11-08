@@ -201,7 +201,12 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 // sealDocument always writes path- and destination-bound v2 credentials.
 func sealDocument(data, key []byte) ([]byte, error) {
 	var root any
-	if err := json.Unmarshal(data, &root); err != nil {
+	if !json.Valid(data) {
+		return nil, errors.New("config: invalid JSON document")
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
 		return nil, err
 	}
 	aead, err := newAEAD(key)
@@ -223,7 +228,12 @@ func sealDocument(data, key []byte) ([]byte, error) {
 // strips the format marker.
 func openDocument(data, key []byte) ([]byte, docStats, error) {
 	var root any
-	if err := json.Unmarshal(data, &root); err != nil {
+	if !json.Valid(data) {
+		return nil, docStats{}, errors.New("config: invalid JSON document")
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&root); err != nil {
 		return nil, docStats{}, err
 	}
 	aead, err := newAEAD(key)
@@ -233,8 +243,9 @@ func openDocument(data, key []byte) ([]byte, docStats, error) {
 	w := &credentialWalker{aead: aead}
 	if m, ok := root.(map[string]any); ok {
 		if v, present := m[credentialFormatKey]; present {
-			n, _ := v.(float64)
-			if n != credentialFormatV2 {
+			n, ok := v.(json.Number)
+			version, err := n.Float64()
+			if !ok || err != nil || version != credentialFormatV2 {
 				return nil, docStats{}, fmt.Errorf("config: unsupported credential format %v; this release is older than the one that wrote the configuration", v)
 			}
 			w.bound = true
@@ -362,6 +373,12 @@ func destination(m map[string]any, parent string) string {
 		}
 		if _, list := v.([]any); list {
 			continue
+		}
+		// Existing credentials bind to the old float64 JSON representation.
+		if number, ok := v.(json.Number); ok {
+			if n, err := number.Float64(); err == nil {
+				v = n
+			}
 		}
 		enc, err := json.Marshal(v)
 		if err != nil {

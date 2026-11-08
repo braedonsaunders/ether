@@ -124,6 +124,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		},
 		Background: true,
 	})
+	a.plexMeta = deps.PlexMeta
 	if err := a.buildPlexWatch(); err != nil {
 		return nil, fmt.Errorf("plex watch state: %w", err)
 	}

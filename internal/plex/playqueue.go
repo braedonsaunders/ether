@@ -17,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 )
 
 // Play queues are what every Plex app plays from: the app POSTs
@@ -1013,6 +1014,13 @@ func (s *Server) writePlayQueue(w http.ResponseWriter, r *http.Request, pq playQ
 	if pq.liveSession != "" {
 		s.writeLivePlayQueue(w, r, pq)
 		return
+	}
+	// The queue's write is done; the rest only reads. Queue requests are
+	// POST/PUT, so they arrive without the read memo GETs get, and every
+	// item would otherwise re-read the same viewer rows (track rules and
+	// memories, resume records, server settings) once per item and version.
+	if !reqmemo.Active(r.Context()) {
+		r = r.WithContext(reqmemo.With(r.Context()))
 	}
 	ctx := r.Context()
 	pr := FromContext(ctx)

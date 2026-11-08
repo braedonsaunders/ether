@@ -123,17 +123,32 @@ func (f *fixtureEncoder) StartHLSOwned(ctx context.Context, q core.HLSRequest) (
 	f.received = append([]core.KeyframePoint(nil), q.Info.Keyframes...)
 	f.mu.Unlock()
 	s := &fixtureSession{id: q.SessionID, input: q.InputLease, done: make(chan struct{})}
+	f.mu.Lock()
 	f.session = s
+	f.mu.Unlock()
 	return s, s, nil
 }
 func (f *fixtureEncoder) StartHLS(c context.Context, q core.HLSRequest) (core.HLSSession, error) {
 	s, _, e := f.StartHLSOwned(c, q)
 	return s, e
 }
-func (f *fixtureEncoder) Session(string) (core.HLSSession, bool) { return f.session, f.session != nil }
+
+// Session and Stop read the session under mu: playback's speed checker
+// polls Session concurrently with a worker start.
+func (f *fixtureEncoder) Session(string) (core.HLSSession, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.session == nil {
+		return nil, false
+	}
+	return f.session, true
+}
 func (f *fixtureEncoder) Stop(string) {
-	if f.session != nil {
-		_ = f.session.Close()
+	f.mu.Lock()
+	s := f.session
+	f.mu.Unlock()
+	if s != nil {
+		_ = s.Close()
 	}
 }
 

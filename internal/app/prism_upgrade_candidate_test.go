@@ -22,9 +22,9 @@ var prismCandidateMigrations = map[string]int{
 	"frontend_tickets":      3,
 	"experience_receipts":   5,
 	"handle_reservations":   2,
-	"plexwatch":             5,
-	"state_plexwatch":       5,
-	"watchsend":             1,
+	"plexwatch":             7,
+	"state_plexwatch":       6,
+	"watchsend":             2,
 	"plexmeta":              2,
 }
 

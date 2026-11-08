@@ -96,8 +96,14 @@ func (s *recoverySession) fetch(w http.ResponseWriter, q *http.Request, rung str
 		cancelAttempt()
 		// Validate AFTER receiving the complete representation, before any client
 		// bytes. A partitioned former encoder cannot win a late response race.
+		// 502 is the adapter's own answer when no worker response arrived (dial,
+		// TLS or transport failure). Like 503 and 404 it is retried until the
+		// wait expires: the worker may be the encoder being replaced, and a dial
+		// cut off by the attempt deadline can fail before attempt.Err() reports
+		// it, so finished alone cannot tell it apart from a real response.
+		retry := response.status == 0 || response.status == http.StatusServiceUnavailable || response.status == http.StatusNotFound || response.status == http.StatusBadGateway
 		rec, lookupErr := s.r.o.Placement.Lookup(ctx, s.route.Fence.Session)
-		if lookupErr == nil && rec.Authority && !rec.Retired && out.allowedFence(rec.Fence, n) && finished && !response.overflow && response.status != 0 && response.status != 503 && response.status != 404 {
+		if lookupErr == nil && rec.Authority && !rec.Retired && out.allowedFence(rec.Fence, n) && finished && !response.overflow && !retry {
 			guarded := s.r.fencedDeliveryResolved(w, q, out.route, func() (Route, error) { return out.retainedDeliveryRoute(ctx, n) })
 			defer guarded.Close()
 			w = guarded

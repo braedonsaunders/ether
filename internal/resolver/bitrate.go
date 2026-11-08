@@ -276,6 +276,11 @@ func compareCandidates(a, b candidate, profile core.QualityProfile) bool {
 			if a.langWanted != b.langWanted {
 				return a.langWanted
 			}
+			// Within a resolution, a correctly-labelled series year beats one
+			// accepted because the differing year names no other show.
+			if a.yearGuessed != b.yearGuessed {
+				return !a.yearGuessed
+			}
 		case step == core.RankReleaseType:
 			if a.quality.source != b.quality.source {
 				return a.quality.source > b.quality.source

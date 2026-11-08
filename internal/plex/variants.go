@@ -738,11 +738,6 @@ func (s *Server) preparePlayback(ctx context.Context, pr *Request, p *playReques
 		}
 		s.playIDs.installVersionFlow(ik, snap.variants, snap.until, s.now())
 	}
-	if p.decisionRequest && p.requestedPart == 0 {
-		if releases, issued := s.playIDs.releases(s.playIdentityFor(pr, p.key), s.now()); issued && len(releases) > 1 && (p.selectorCount != 1 || !p.selectorValid) {
-			return nil, errDecisionMediaIndex
-		}
-	}
 	if p.mediaIndex > 0 {
 		if releases, issued := s.playIDs.releases(s.playIdentityFor(pr, p.key), s.now()); !issued || p.mediaIndex >= len(releases) {
 			return nil, errDecisionMediaIndex

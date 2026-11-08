@@ -36,7 +36,7 @@ func (s *Service) indexedLibraryPage(ctx context.Context, v *core.User, library 
 	if none {
 		return core.Page{Items: []core.Title{}}, true, nil
 	}
-	page, err := s.d.Browse(ctx, core.BrowseQuery{Filter: filter, Sort: q.Sort, Desc: q.Desc, Offset: max(q.Offset, 0), Limit: q.Limit})
+	page, err := s.d.Browse(ctx, core.BrowseQuery{Filter: filter, Sort: q.Sort, Desc: q.Desc, Offset: max(q.Offset, 0), Limit: q.Limit, NoTotal: q.NoTotal})
 	if err != nil {
 		return core.Page{}, false, err
 	}

@@ -266,20 +266,13 @@ func matchingPolicy(p *core.LayoutPage, row core.HomeRow) *core.RowPolicy {
 	}
 	rank := 0
 	var best *core.RowPolicy
+	stem := hubStem(row.HubID)
 	for i := range p.Rows {
 		r := &p.Rows[i]
-		n := 0
-		if rowMatches(r.Row, row.HubID, row.Kind) {
-			n = 1
-			if r.Row == row.Kind {
-				n = 2
-			}
-			// Preserve the existing server ranking: only the full hub id
-			// outranks a kind; a screen-less stem has rank 1.
-			if r.Row == row.HubID {
-				n = 3
-			}
-		}
+		// Bulk edits give hundreds of rows their own exact rule and this
+		// runs rows × rules per Home request, so a miss must stay cheap:
+		// three string compares and a byte scan, no allocation.
+		n := matchRank(r.Row, row.HubID, stem, row.Kind)
 		if n >= rank && n > 0 {
 			best = r
 			rank = n

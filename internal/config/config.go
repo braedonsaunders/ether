@@ -753,8 +753,9 @@ func Open(dataDir string) (*Store, error) {
 			return nil, fmt.Errorf("parse %s: %w", s.path, err)
 		}
 		upgraded := upgradeShippedQuality(&s.cfg)
-		if splitSharedProfiles(&s.cfg.Quality) {
+		if notes := normalizeQuality(&s.cfg.Quality); len(notes) > 0 {
 			upgraded = true
+			slog.Info("config: settled quality profiles", "changes", notes)
 		}
 		// Seal secrets written in plaintext (by hand, or by a release that
 		// predates sealing). Also rewrite a file that still names a server

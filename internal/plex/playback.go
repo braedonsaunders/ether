@@ -214,16 +214,13 @@ type playRequest struct {
 	subNamed bool
 	// subStream is the subtitle picked by id (request or stored), to be
 	// found again in the session's MediaInfo (resolvePlaySelection).
-	subStream *core.StreamInfo
+	subStream     *core.StreamInfo
+	profileResult *deviceProfileResult
 	// mediaIndex is the "Play Version" position the viewer picked
 	// (0 = Auto / not sent); partReleaseID names the release directly
 	// when the request addressed a variant's Part key.
-	selectorCount   int
-	selectorValid   bool
-	decisionRequest bool
-	profileResult   *deviceProfileResult
-	mediaIndex      int
-	partReleaseID   string
+	mediaIndex    int
+	partReleaseID string
 	// requestedPart is the Part id in the request path, when the client
 	// addressed a Play Version part directly.
 	requestedPart int64
@@ -327,9 +324,6 @@ func browserClient(pr *Request) bool {
 // original options since prepare adds owner limits and track preferences.
 func (p playRequest) sameSettings(other playRequest) bool {
 	p.profileResult, other.profileResult = nil, nil
-	p.selectorCount, other.selectorCount = 0, 0
-	p.selectorValid, other.selectorValid = false, false
-	p.decisionRequest, other.decisionRequest = false, false
 	p.offset, other.offset = 0, 0
 	p.caps, other.caps = core.ClientCaps{}, core.ClientCaps{}
 	p.listAllTracks, other.listAllTracks = false, false
@@ -386,8 +380,7 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 	if limit := s.cfg().Transcode.RemoteMaxBitrateKbps; caps.Remote && limit > 0 && (caps.MaxBitrateKbps == 0 || limit < caps.MaxBitrateKbps) {
 		caps.MaxBitrateKbps = limit
 	}
-	selector, selectorErr := strconv.Atoi(q.Get("mediaIndex"))
-	p := playRequest{selectorCount: len(q["mediaIndex"]), selectorValid: selectorErr == nil && selector >= 0, decisionRequest: strings.HasSuffix(r.URL.Path, "/decision"), copyTimestamps: q.Get("copyts") == "1", key: key, caps: caps, audioSel: -1, subSel: -1, protocol: q.Get("protocol"), mde: q.Get("hasMDE") == "1", partReleaseID: partReleaseID}
+	p := playRequest{copyTimestamps: q.Get("copyts") == "1", key: key, caps: caps, audioSel: -1, subSel: -1, protocol: q.Get("protocol"), mde: q.Get("hasMDE") == "1", partReleaseID: partReleaseID}
 	for _, raw := range []string{q.Get("path"), q.Get("key")} {
 		if partID, ok := partIDFromPath(raw); ok {
 			p.requestedPart = partID
@@ -1693,6 +1686,20 @@ func (s *Server) handleTranscodeSessions(w http.ResponseWriter, r *http.Request)
 	}
 	mc.Size = len(mc.TranscodeSess)
 	s.write(w, r, mc)
+}
+
+// handleTranscodeSessionStatus is /transcode/sessions/{session}, the key every
+// TranscodeSession carries. PMS clients poll it for one session's state;
+// a desktop app's embedded server does so while it pulls a download
+// stream from this server. Viewers see only their own sessions.
+func (s *Server) handleTranscodeSessionStatus(w http.ResponseWriter, r *http.Request) {
+	u := FromContext(r.Context()).User
+	te, ok := s.transcodes.get(chi.URLParam(r, "session"))
+	if !ok || u == nil || (!u.IsOwner && te.userID != u.ID) {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	s.write(w, r, &model.MediaContainer{Size: 1, TranscodeSess: []model.TranscodeSess{transcodeSessionModel(te)}})
 }
 
 func transcodeSessionModel(te *transcodeEntry) model.TranscodeSess {

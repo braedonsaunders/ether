@@ -10,23 +10,17 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plexwatch"
+	"github.com/braedonsaunders/ether/internal/watchlist"
 )
 
-// buildPlexWatch attaches the optional per-viewer account sync. GUID lookup
-// uses a viewer PIN token for identity/consent and server-issued service JWTs
-// for the watch-state transport.
+// buildPlexWatch attaches the optional per-viewer account sync. Each viewer
+// syncs with their own Plex account token; titles are identified by the
+// verified plex:// GUIDs of the Plex front end's resolver.
 func (a *App) buildPlexWatch() error {
 	if a.plexWatch != nil || a.db == nil || a.state == nil || a.plexGUID == nil || a.cfg == nil {
 		return nil
 	}
 	svc, err := plexwatch.New(plexwatch.Options{
-		ServerIdentity: func() (string, string) {
-			c := a.cfg.Get()
-			if !c.Plex.Claimed || (c.Frontends != nil && !c.Frontends["plex"].Enabled) {
-				return "", ""
-			}
-			return c.Plex.Token, plexguid.ClientIdentifier(c.Plex.ClientIdentifier, c.Server.MachineIdentifier)
-		},
 		DB:       a.db,
 		State:    a.state,
 		Sealer:   a.cfg,
@@ -34,6 +28,28 @@ func (a *App) buildPlexWatch() error {
 		NodeID:   a.clusterNodeID(),
 		ClientID: plexguid.ClientIdentifier(a.cfg.Get().Plex.ClientIdentifier, a.cfg.Get().Server.MachineIdentifier),
 		Logger:   a.log.With("component", "plexwatch"),
+		Watchlist: func(ctx context.Context, userID int64) ([]core.RatingKey, error) {
+			return watchlist.ExportKeys(ctx, a.db, userID)
+		},
+		// Continue Watching removals read from a viewer's Plex account also
+		// apply to the Discover rows' own removal list, as the Plex front
+		// end's removeFromContinueWatching does.
+		Continue: func(ctx context.Context, userID int64, key core.RatingKey, removed bool) error {
+			personal := a.discoveryPersonal
+			if personal == nil {
+				return nil
+			}
+			var err error
+			if removed {
+				err = personal.RemoveContinue(ctx, userID, key)
+			} else {
+				err = personal.RestoreContinue(ctx, userID, key)
+			}
+			if errors.Is(err, core.ErrNotFound) {
+				return nil
+			}
+			return err
+		},
 	})
 	if err != nil {
 		return err
@@ -63,9 +79,10 @@ type plexWatchAdmin struct{ svc *plexwatch.Service }
 func (p plexWatchAdmin) status(st plexwatch.Status) admin.PlexWatchStatus {
 	return admin.PlexWatchStatus{
 		Connected: st.Connected, PlexID: st.PlexID, Username: st.Username,
-		Direction: st.Direction, ImportInterval: st.ImportInterval, LastImport: st.LastImport, LastSend: st.LastSend, NextImport: st.NextImport, Problem: st.Problem, ProblemCode: st.ProblemCode, Eligibility: st.Eligibility, Revoked: st.Revoked,
-		Pending: st.Pending, Held: st.Held, HeldLegacy: st.HeldLegacy,
-		Dead: st.Dead, InFlight: st.InFlight, Skipped: st.Skipped, Restricted: st.Restricted,
+		Direction: st.Direction, ImportInterval: st.ImportInterval,
+		LastImport: st.LastImport, LastFullImport: st.LastFullImport, LastSend: st.LastSend, NextImport: st.NextImport,
+		Problem: st.Problem, NeedsReconnect: st.NeedsReconnect,
+		Pending: st.Pending, Failed: st.Failed, Restricted: st.Restricted,
 		PINCode: st.PINCode, PINURL: st.PINURL, PINExpires: st.PINExpires,
 		AccountMatch: st.AccountMatch,
 	}
@@ -77,12 +94,12 @@ func mapPlexWatchErr(err error) error {
 		return nil
 	case errors.Is(err, plexwatch.ErrAccountMismatch):
 		return admin.ErrPlexAccountMismatch
-	case errors.Is(err, plexwatch.ErrNotEligible):
-		return admin.ErrPlexNotEligible
 	case errors.Is(err, plexwatch.ErrRevoked):
 		return admin.ErrPlexWatchRevoked
-	case errors.Is(err, plexwatch.ErrUnsupported):
-		return admin.ErrPlexWatchUnsupported
+	case errors.Is(err, plexwatch.ErrNotConnected):
+		return admin.ErrPlexWatchNotConnected
+	case errors.Is(err, plexwatch.ErrSendingOff), errors.Is(err, plexwatch.ErrReceivingOff):
+		return admin.ErrPlexWatchDirectionOff
 	default:
 		return err
 	}
@@ -112,10 +129,6 @@ func (p plexWatchAdmin) Retry(ctx context.Context, userID, plexID int64) (admin.
 	st, err := p.svc.Retry(ctx, userID, plexID)
 	return p.status(st), mapPlexWatchErr(err)
 }
-func (p plexWatchAdmin) Resolve(ctx context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
-	st, err := p.svc.Resolve(ctx, userID, plexID)
-	return p.status(st), mapPlexWatchErr(err)
-}
 func (p plexWatchAdmin) ExportCurrent(ctx context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
 	st, err := p.svc.ExportCurrent(ctx, userID, plexID)
 	return p.status(st), mapPlexWatchErr(err)
@@ -123,10 +136,6 @@ func (p plexWatchAdmin) ExportCurrent(ctx context.Context, userID, plexID int64)
 func (p plexWatchAdmin) ImportCurrent(ctx context.Context, userID, plexID int64) (admin.PlexWatchStatus, error) {
 	st, err := p.svc.ImportCurrent(ctx, userID, plexID)
 	return p.status(st), mapPlexWatchErr(err)
-}
-
-func (p plexWatchAdmin) Unmatched(ctx context.Context, userID, plexID int64, after string) ([]string, error) {
-	return p.svc.Unmatched(ctx, userID, plexID, after)
 }
 
 // buildPlexServers attaches watch sync with owner-run Plex Media Servers.

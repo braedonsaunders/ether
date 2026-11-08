@@ -17,7 +17,23 @@ func (c *Client) bindReleases(results []core.Release) []core.Release {
 	for i := range out {
 		out[i].IndexerID = id
 	}
+	c.markOnDemand(out)
 	return out
+}
+
+// markOnDemand marks a Stremio add-on's stream links on demand
+// (core.Release.StreamOnDemand). Such a link asks the add-on to resolve,
+// download or import that release; it is not a plain file, so every open
+// costs the add-on (and often its Usenet or debrid account) real work.
+func (c *Client) markOnDemand(results []core.Release) {
+	if cfg := c.Config(); !cfg.IsStremio() && !cfg.IsAddon() {
+		return
+	}
+	for i := range results {
+		if results[i].StreamURL != "" {
+			results[i].StreamOnDemand = true
+		}
+	}
 }
 
 // feedReleases also namespaces feed GUIDs: different indexers may use the same

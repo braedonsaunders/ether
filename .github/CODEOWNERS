@@ -1,0 +1,10 @@
+# Changes to CI, release, packaging and the signed-update path need the
+# owner's review. Everything else follows the normal pull request rules.
+/.github/                    @braedonsaunders
+/.goreleaser.yaml            @braedonsaunders
+/Dockerfile                  @braedonsaunders
+/packaging/                  @braedonsaunders
+/internal/updater/           @braedonsaunders
+/cmd/ether-release-sign/     @braedonsaunders
+/go.mod                      @braedonsaunders
+/go.sum                      @braedonsaunders

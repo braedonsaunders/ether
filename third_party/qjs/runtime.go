@@ -16,8 +16,15 @@ import (
 //go:embed qjs.wasm
 var wasmBytes []byte
 
+// A wazero CompiledModule is bound to the Runtime (store) that compiled it:
+// its function type IDs are store-local, so instantiating it in another
+// Runtime fails import signature checks (wazero >= 1.10). The process keeps
+// one shared RuntimeConfig whose CompilationCache holds the machine code, and
+// each Runtime compiles the module itself; after the first compile that is a
+// decode plus a cache hit.
 var (
 	compiledQJSModule   wazero.CompiledModule
+	cachedQJSBytes      []byte
 	cachedRuntimeConfig wazero.RuntimeConfig
 	cachedBytesHash     uint64
 	compilationMutex    sync.Mutex
@@ -42,12 +49,11 @@ func createGlobalCompiledModule(
 	disableBuildCache bool,
 	cacheDir string,
 	quickjsWasmBytes ...[]byte,
-) (err error) {
+) (cfg wazero.RuntimeConfig, qjsBytes []byte, err error) {
 	// Protect global compilation state with mutex
 	compilationMutex.Lock()
 	defer compilationMutex.Unlock()
 
-	var qjsBytes []byte
 	if len(quickjsWasmBytes) > 0 && len(quickjsWasmBytes[0]) > 0 {
 		qjsBytes = quickjsWasmBytes[0]
 	} else {
@@ -63,7 +69,7 @@ func createGlobalCompiledModule(
 		if cacheDir == "" {
 			cache = wazero.NewCompilationCache()
 		} else if cache, err = wazero.NewCompilationCacheWithDir(cacheDir); err != nil {
-			return fmt.Errorf("failed to create compilation cache with dir %s: %w", cacheDir, err)
+			return nil, nil, fmt.Errorf("failed to create compilation cache with dir %s: %w", cacheDir, err)
 		}
 
 		cachedRuntimeConfig = wazero.
@@ -73,13 +79,14 @@ func createGlobalCompiledModule(
 		wrt := wazero.NewRuntimeWithConfig(ctx, cachedRuntimeConfig)
 
 		if compiledQJSModule, err = wrt.CompileModule(ctx, qjsBytes); err != nil {
-			return fmt.Errorf("failed to compile qjs module: %w", err)
+			return nil, nil, fmt.Errorf("failed to compile qjs module: %w", err)
 		}
 
+		cachedQJSBytes = qjsBytes
 		cachedBytesHash = currentHash
 	}
 
-	return nil
+	return cachedRuntimeConfig, cachedQJSBytes, nil
 }
 
 // New creates a QuickJS runtime with optional configuration.
@@ -99,13 +106,14 @@ func New(options ...Option) (runtime *Runtime, err error) {
 		return nil, fmt.Errorf("failed to get runtime options: %w", err)
 	}
 
-	if err := createGlobalCompiledModule(
+	runtimeConfig, qjsBytes, err := createGlobalCompiledModule(
 		option.Context,
 		option.CloseOnContextDone,
 		option.DisableBuildCache,
 		option.CacheDir,
 		option.QuickJSWasmBytes,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create global compiled module: %w", err)
 	}
 
@@ -117,8 +125,13 @@ func New(options ...Option) (runtime *Runtime, err error) {
 
 	runtime.wrt = wazero.NewRuntimeWithConfig(
 		option.Context,
-		cachedRuntimeConfig,
+		runtimeConfig,
 	)
+
+	compiled, err := runtime.wrt.CompileModule(option.Context, qjsBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile qjs module: %w", err)
+	}
 
 	if _, err := wsp1.Instantiate(option.Context, runtime.wrt); err != nil {
 		return nil, fmt.Errorf("failed to instantiate WASI: %w", err)
@@ -136,7 +149,7 @@ func New(options ...Option) (runtime *Runtime, err error) {
 	// arguments, or inherited process streams. See SANDBOX.md.
 	if runtime.module, err = runtime.wrt.InstantiateModule(
 		option.Context,
-		compiledQJSModule,
+		compiled,
 		wazero.NewModuleConfig().
 			WithStartFunctions(option.StartFunctionName).
 			WithSysWalltime().

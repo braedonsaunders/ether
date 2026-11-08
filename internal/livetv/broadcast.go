@@ -810,7 +810,14 @@ func (b *broadcast) step(now time.Time) bool {
 		if frame.Video == nil {
 			select {
 			case err := <-b.current.errs:
-				b.noteFailure(current, err, now)
+				if errors.Is(err, io.EOF) && current.interstitial && !current.end.After(now.Add(broadcastStall)) {
+					// A finite clip that runs out within the stall bridge of its
+					// rounded slot ended normally: its last picture holds to the
+					// boundary rather than latching the live fallback.
+					b.retry[current.id] = current.end
+				} else {
+					b.noteFailure(current, err, now)
+				}
 				b.closeInput(b.current)
 				b.current = nil
 			default:

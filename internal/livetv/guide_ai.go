@@ -10,6 +10,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -34,13 +35,16 @@ const aiTopK = 6
 // Input and output are bounded separately. Provider prices vary, so estimates
 // expose calls and a conservative token ceiling rather than invented currency.
 type GuideAIStats struct {
-	Configured     bool  `json:"configured"`
-	EstimatedCalls int   `json:"estimatedCalls"`
-	InputTokens    int   `json:"inputTokens"`
-	Calls          int   `json:"calls"`
-	Cached         int   `json:"cached"`
-	Deferred       int   `json:"deferred"`
-	ElapsedMS      int64 `json:"elapsedMs"`
+	Configured     bool `json:"configured"`
+	EstimatedCalls int  `json:"estimatedCalls"`
+	InputTokens    int  `json:"inputTokens"`
+	Calls          int  `json:"calls"`
+	Cached         int  `json:"cached"`
+	Deferred       int  `json:"deferred"`
+	// Failed counts batches whose reply was unusable; their channels are
+	// retried by the next run.
+	Failed    int   `json:"failed"`
+	ElapsedMS int64 `json:"elapsedMs"`
 }
 type aiCandidate struct {
 	ID         string   `json:"id"`
@@ -65,6 +69,89 @@ type aiDecision struct {
 	Candidate  string  `json:"candidate"`
 	Confidence float64 `json:"confidence"`
 	Reason     string  `json:"reason"`
+}
+
+// UnmarshalJSON tolerates models that answer ids as numbers, an absent
+// candidate as null, or the confidence as a quoted number.
+func (d *aiDecision) UnmarshalJSON(b []byte) error {
+	var w struct {
+		Channel    json.RawMessage `json:"channel"`
+		Candidate  json.RawMessage `json:"candidate"`
+		Confidence json.RawMessage `json:"confidence"`
+		Reason     string          `json:"reason"`
+	}
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	text := func(r json.RawMessage) (string, error) {
+		r = json.RawMessage(strings.TrimSpace(string(r)))
+		if len(r) == 0 || string(r) == "null" {
+			return "", nil
+		}
+		var s string
+		if json.Unmarshal(r, &s) == nil {
+			return strings.TrimSpace(s), nil
+		}
+		var n json.Number
+		if err := json.Unmarshal(r, &n); err != nil {
+			return "", err
+		}
+		return n.String(), nil
+	}
+	var err error
+	if d.Channel, err = text(w.Channel); err != nil {
+		return err
+	}
+	if d.Candidate, err = text(w.Candidate); err != nil {
+		return err
+	}
+	conf, err := text(w.Confidence)
+	if err != nil {
+		return err
+	}
+	d.Confidence = 0
+	if conf != "" {
+		if d.Confidence, err = strconv.ParseFloat(conf, 64); err != nil {
+			return err
+		}
+	}
+	d.Reason = w.Reason
+	return nil
+}
+
+// aiCallSign finds North American broadcast call signs (WABC, KABC-TV),
+// written in capitals as call signs are, so words like "Kids" never match.
+var aiCallSign = regexp.MustCompile(`\b[KW][A-Z]{2,3}\b`)
+
+// callSignConflict reports a channel and guide that each name a call sign
+// and share none: a different station, whatever a model claims.
+func callSignConflict(channel string, guide []string) bool {
+	signs := func(s string) map[string]bool {
+		out := map[string]bool{}
+		for _, m := range aiCallSign.FindAllString(s, -1) {
+			out[m] = true
+		}
+		return out
+	}
+	c := signs(channel)
+	if len(c) == 0 {
+		return false
+	}
+	g := map[string]bool{}
+	for _, s := range guide {
+		for k := range signs(s) {
+			g[k] = true
+		}
+	}
+	if len(g) == 0 {
+		return false
+	}
+	for k := range c {
+		if g[k] {
+			return false
+		}
+	}
+	return true
 }
 
 var aiURL = regexp.MustCompile(`(?i)(?:https?|rtsp|udp|rtmp)://\S+`)
@@ -300,6 +387,9 @@ func (s *Service) aiGuideMatches(ctx context.Context, req GuideMatchRequest, cha
 		if req.AI == "apply" && req.ProposalKeys[item.channel.ID] != item.key {
 			return fmt.Errorf("AI proposal changed; review again")
 		}
+		if callSignConflict(item.channel.Name, append([]string{g.name}, g.aliases...)) {
+			return nil // a different station: leave the channel unmatched
+		}
 		cn, gn := strings.Join(aiNumber.FindAllString(normalizeGuideName(item.channel.Name), -1), ","), strings.Join(aiNumber.FindAllString(normalizeGuideName(g.name), -1), ",")
 		if cn != gn && d.Confidence > .89 {
 			d.Confidence = .89
@@ -389,6 +479,7 @@ func (s *Service) aiGuideMatches(ctx context.Context, req GuideMatchRequest, cha
 		i = end
 	}
 	st.EstimatedCalls = len(batches)
+	var lastErr error
 	for _, batch := range batches {
 		b, _ := json.Marshal(batch)
 		if req.AI != "propose" || !st.Configured {
@@ -398,40 +489,52 @@ func (s *Service) aiGuideMatches(ctx context.Context, req GuideMatchRequest, cha
 		raw, err := s.o.GuideAI.ChatGuide(callCtx, aiGuidePrompt, string(b))
 		callCancel()
 		st.Calls++
-		if err != nil {
-			return nil, fmt.Errorf("guide AI request failed")
-		}
-		if len(raw) > 16384 {
-			return nil, fmt.Errorf("guide AI response exceeds budget")
-		}
+		// One unusable reply costs only its batch: those channels stay
+		// uncached and are retried by the next run instead of stopping this one.
 		var out struct {
 			Decisions []aiDecision `json:"decisions"`
 		}
-		if json.Unmarshal([]byte(raw), &out) != nil {
-			return nil, fmt.Errorf("invalid guide AI response")
+		switch {
+		case err != nil:
+			lastErr = fmt.Errorf("guide AI request failed")
+		case len(raw) > 16384:
+			lastErr = fmt.Errorf("guide AI response exceeds budget")
+		case json.Unmarshal([]byte(raw), &out) != nil:
+			lastErr = fmt.Errorf("invalid guide AI response")
+		default:
+			lastErr = nil
+		}
+		if lastErr != nil {
+			st.Failed++
+			s.o.Logger.Warn("guide AI batch skipped", "err", lastErr, "channels", len(batch))
+			if ctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		decisions := map[string]aiDecision{}
 		valid := map[string]aiItem{}
 		for _, item := range batch {
 			valid[item.ID] = item
 		}
+		// Invalid individual decisions are dropped; a duplicate drops both.
+		dup := map[string]bool{}
 		for _, d := range out.Decisions {
 			item, ok := valid[d.Channel]
-			if !ok {
-				return nil, fmt.Errorf("unknown AI channel")
+			if !ok || dup[d.Channel] || math.IsNaN(d.Confidence) || d.Confidence < 0 || d.Confidence > 1 {
+				continue
 			}
 			if _, exists := decisions[d.Channel]; exists {
-				return nil, fmt.Errorf("duplicate AI decision")
-			}
-			if d.Confidence < 0 || d.Confidence > 1 {
-				return nil, fmt.Errorf("invalid AI confidence")
+				delete(decisions, d.Channel)
+				dup[d.Channel] = true
+				continue
 			}
 			found := d.Candidate == ""
 			for _, g := range item.Candidates {
 				found = found || d.Candidate == g.ID
 			}
 			if !found {
-				return nil, fmt.Errorf("AI candidate outside shortlist")
+				continue
 			}
 			decisions[d.Channel] = d
 		}
@@ -452,6 +555,9 @@ func (s *Service) aiGuideMatches(ctx context.Context, req GuideMatchRequest, cha
 				return nil, err
 			}
 		}
+	}
+	if lastErr != nil && st.Failed == len(batches) {
+		return nil, lastErr
 	}
 	return changed, nil
 }

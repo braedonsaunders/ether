@@ -152,3 +152,44 @@ func (s *Service) Lookup(ctx context.Context, guid string) (core.RatingKey, erro
 	}
 	return found, s.storeMapping(ctx, found, guid, time.Now().Unix())
 }
+
+// Verified is one stored title whose plex:// GUID passed verification.
+type Verified struct {
+	Key  core.RatingKey
+	GUID string
+}
+
+// VerifiedRange pages through stored, verified identities with
+// after < key < below, in key order, at most limit at a time. It reads only
+// the local tables (primary-key range scan) and never calls Plex. Season and
+// episode identities are included only once their parentage is recorded, as
+// Resolve requires.
+func (s *Service) VerifiedRange(ctx context.Context, after, below core.RatingKey, limit int) ([]Verified, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT m.rating_key, m.guid FROM plexguid_mappings m
+		JOIN plexguid_verified v ON v.rating_key=m.rating_key AND v.guid=m.guid
+		WHERE m.rating_key>? AND m.rating_key<? AND m.guid<>''
+		  AND (m.rating_key<3000000000000000 OR m.rating_key>=5000000000000000
+		       OR EXISTS (SELECT 1 FROM plexguid_parentage p WHERE p.rating_key=m.rating_key))
+		ORDER BY m.rating_key LIMIT ?`, int64(after), int64(below), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Verified, 0, limit)
+	for rows.Next() {
+		var v Verified
+		if err := rows.Scan(&v.Key, &v.GUID); err != nil {
+			return nil, err
+		}
+		if kind, ok := guidKind(v.GUID); ok && kind == v.Key.Kind() {
+			out = append(out, v)
+		} else {
+			// Keep the page boundary moving past a malformed row.
+			out = append(out, Verified{Key: v.Key})
+		}
+	}
+	return out, rows.Err()
+}

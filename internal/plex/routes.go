@@ -204,6 +204,7 @@ func (s *Server) routes() chi.Router {
 	get("/{ttype:video|music|audio|subtitles}/:/transcode/universal/subtitles", s.handleTranscodeSubtitles)
 	get("/subtitles/:/transcode/universal/start", s.handleTranscodeSubtitles)
 	get("/transcode/sessions", s.handleTranscodeSessions)
+	get("/transcode/sessions/{session}", s.handleTranscodeSessionStatus)
 	get("/library/parts/{part}/indexes/{index}/{offset}", s.handleIndexFrame)
 	get("/library/parts/{part}/indexes/{index}", s.handleIndexBIF)
 	get("/library/parts/{part}/{changestamp:[0-9]+}/{file}", s.handlePart)

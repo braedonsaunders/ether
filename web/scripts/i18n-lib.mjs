@@ -9,7 +9,7 @@ import {
   messageProblems,
   systemMessageKey,
 } from "@braedonsaunders/appkit-i18n";
-import ts from "typescript";
+import ts from "typescript-api";
 
 export const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const repoRoot = path.resolve(webRoot, "..");

@@ -3,8 +3,8 @@ package plexwatch
 import "github.com/braedonsaunders/ether/internal/store"
 
 // Server-to-server sync with Plex Media Servers the owner runs. These tables
-// are separate from the account path above (plexwatch_account and friends),
-// which stays dormant behind AccountSyncSupported.
+// are separate from the per-viewer account path (plexwatch_account and
+// friends).
 func init() {
 	store.Register("plexwatch_pms", 1, `
 CREATE TABLE plexwatch_pms (

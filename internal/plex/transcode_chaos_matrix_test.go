@@ -178,6 +178,16 @@ func TestTranscodeChaosMatrix(t *testing.T) {
 					defer func() {
 						f.get(t, "/video/:/transcode/universal/stop?session="+id, "X-Plex-Product", "Plex Web", "X-Plex-Platform", "Chrome")
 					}()
+					// Official clients ask for a decision first; start requires
+					// that armed decision, and a refusal carries the reason.
+					protocol := map[string]string{"dash": "dash", "start-mkv": "http"}[path]
+					if protocol == "" {
+						protocol = "hls"
+					}
+					decision := string(get("/video/:/transcode/universal/decision?" + query + "&protocol=" + protocol))
+					if !strings.Contains(decision, `transcodeDecisionCode="1001"`) {
+						t.Fatalf("conversion refused: %s", decision)
+					}
 					switch path {
 					case "hls":
 						get("/video/:/transcode/universal/start.m3u8?" + query + "&protocol=hls")

@@ -591,6 +591,23 @@ func (s *Server) resumedTracks(ctx context.Context, pr *Request, t *core.Title) 
 	return info, releaseID, true
 }
 
+// singleVersionClient reports the Plex smart-TV app build shared by Plex for
+// VIDAA and Plex for LG (both 5.94.x). It caches its playback settings for an
+// item from the first Media list it holds: rows, season lists and a detail
+// page opened before discovery finishes all carry one Media, so a later play
+// queue or detail with several versions makes its player look up a
+// MediaVersion setting it never created ("Unable to find setting item:
+// MediaVersion"). It then never requests a decision (#89, #339, #375). These
+// apps get one stable Auto Media on every surface; quality controls are
+// unaffected, and Auto keeps choosing the release.
+func singleVersionClient(pr *Request) bool {
+	switch strings.ToLower(strings.TrimSpace(pr.Product)) {
+	case "plex for vidaa", "plex for lg":
+		return true
+	}
+	return false
+}
+
 // mediaFor renders the virtual Media/Part of a playable title: one per
 // release variant on detail pages (withVariants, driving the "Play
 // Version" picker), otherwise the single Media. The second return value
@@ -605,8 +622,7 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *core.Title, withS
 	if stamp <= 0 {
 		stamp = 1
 	}
-	// VIDAA has always received a single version, including before playback.
-	if withVariants && withStreams && !sessionMedia && !strings.EqualFold(strings.TrimSpace(pr.Product), "Plex for VIDAA") {
+	if withVariants && withStreams && !sessionMedia && !singleVersionClient(pr) {
 		probed, probedRelease := core.MediaInfo{Estimated: true}, ""
 		if ps != nil {
 			// A client keeps the Media index it chose before playback

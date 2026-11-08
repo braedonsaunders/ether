@@ -5,14 +5,14 @@
  * build moves it to a web worker.
  */
 import { createSystem, createVirtualTypeScriptEnvironment } from "@typescript/vfs";
-import ts from "typescript";
-import es5 from "typescript/lib/lib.es5.d.ts?raw";
-import es2015Core from "typescript/lib/lib.es2015.core.d.ts?raw";
-import es2015Collection from "typescript/lib/lib.es2015.collection.d.ts?raw";
-import es2015Iterable from "typescript/lib/lib.es2015.iterable.d.ts?raw";
-import es2015Promise from "typescript/lib/lib.es2015.promise.d.ts?raw";
-import es2015Symbol from "typescript/lib/lib.es2015.symbol.d.ts?raw";
-import es2015Wellknown from "typescript/lib/lib.es2015.symbol.wellknown.d.ts?raw";
+import ts from "typescript-api";
+import es5 from "typescript-api/lib/lib.es5.d.ts?raw";
+import es2015Core from "typescript-api/lib/lib.es2015.core.d.ts?raw";
+import es2015Collection from "typescript-api/lib/lib.es2015.collection.d.ts?raw";
+import es2015Iterable from "typescript-api/lib/lib.es2015.iterable.d.ts?raw";
+import es2015Promise from "typescript-api/lib/lib.es2015.promise.d.ts?raw";
+import es2015Symbol from "typescript-api/lib/lib.es2015.symbol.d.ts?raw";
+import es2015Wellknown from "typescript-api/lib/lib.es2015.symbol.wellknown.d.ts?raw";
 import { HOST_DTS, SDK_DTS } from "./sdk";
 
 export const PLUGIN_PATH = "/plugin.ts";

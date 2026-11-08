@@ -88,7 +88,7 @@ func TestLogicalRestoreMatchesRowByRowWrites(t *testing.T) {
 	}
 	restore("current dump", dump.Bytes())
 	// A dump from a release before these derived tables existed.
-	restore("dump without derived tables", withoutTables(t, dump.Bytes(), "catalog_show_episodes", "catalog_person_names"))
+	restore("dump without derived tables", withoutTables(t, dump.Bytes(), "catalog_show_episodes", "catalog_person_names", "catalog_stats_tally", "catalog_stats_tally_delta"))
 }
 
 func policyEpoch(t *testing.T, db *sql.DB) int64 {
@@ -98,6 +98,12 @@ func policyEpoch(t *testing.T, db *sql.DB) int64 {
 		t.Fatal(err)
 	}
 	return g
+}
+
+// foldedTallies are the catalogue's delta-kept count tables and their keys.
+var foldedTallies = map[string]string{
+	"catalog_browse_tally": "type,genre,rating_rank",
+	"catalog_stats_tally":  "kind,browsable,home,year_pending",
 }
 
 // tableContents renders every non-empty table as sorted "a|b|c" lines.
@@ -124,7 +130,16 @@ func tableContents(t *testing.T, db *sql.DB) map[string]string {
 	rows.Close()
 	out := map[string]string{}
 	for _, table := range tables {
-		rows, err := db.Query(`SELECT * FROM "` + table + `"`)
+		query := `SELECT * FROM "` + table + `"`
+		if dims, ok := foldedTallies[strings.TrimSuffix(table, "_delta")]; ok {
+			// A restore rebuilds a tally folded; the source may hold
+			// deltas. Both read as the same sums.
+			if strings.HasSuffix(table, "_delta") {
+				continue
+			}
+			query = `SELECT ` + dims + `,SUM(n) FROM (SELECT ` + dims + `,n FROM ` + table + ` UNION ALL SELECT ` + dims + `,d FROM ` + table + `_delta) s GROUP BY ` + dims + ` HAVING SUM(n)<>0`
+		}
+		rows, err := db.Query(query)
 		if err != nil {
 			t.Fatal(err)
 		}

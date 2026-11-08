@@ -87,50 +87,41 @@ func RunCheckpointer(ctx context.Context, db *sql.DB, truncate func() bool, onEr
 	}
 }
 
-// CheckWALBudget pauses bulk imports when a long-lived reader prevents WAL
-// recycling. journal_size_limit only bounds recycled WAL, not pinned frames.
-// Interactive writes can continue; the bulk caller retries with backoff.
-func CheckWALBudget(ctx context.Context, db *sql.DB) error {
-	return checkWALBudget(ctx, db, journalSizeLimit)
-}
-
-func checkWALBudget(ctx context.Context, db *sql.DB, limit int64) error {
-	if DialectOf(db) == Postgres {
-		return nil
-	}
+// walOverBudget reports whether the WAL holds more than limit bytes of
+// frames a PASSIVE checkpoint could not copy (a reader holds them back).
+// journal_size_limit only bounds recycled WAL, not pinned frames.
+func walOverBudget(ctx context.Context, db *sql.DB, limit int64) (bool, int, error) {
 	var seq int
 	var name, path string
 	if err := db.QueryRowContext(ctx, `PRAGMA database_list`).Scan(&seq, &name, &path); err != nil {
-		return err
+		return false, 0, err
 	}
 	if path == "" {
-		return nil
+		return false, 0, nil
 	}
 	st, err := os.Stat(path + "-wal")
 	if os.IsNotExist(err) {
-		return nil
+		return false, 0, nil
 	}
 	if err != nil {
-		return err
+		return false, 0, err
 	}
 	if st.Size() <= limit {
-		return nil
+		return false, 0, nil
 	}
 	conn, err := db.Conn(ctx)
 	if err != nil {
-		return err
+		return false, 0, err
 	}
 	defer conn.Close()
 	_, frames, copied, err := walCheckpoint(ctx, conn, "PASSIVE")
 	if err != nil {
-		return err
+		return false, 0, err
 	}
 	var pageSize int64
 	if err := conn.QueryRowContext(ctx, `PRAGMA page_size`).Scan(&pageSize); err != nil {
-		return err
+		return false, 0, err
 	}
-	if int64(frames-copied)*(pageSize+24) > limit {
-		return fmt.Errorf("sqlite: bulk writes paused: WAL checkpoint blocked by a reader (%d pending frames)", frames-copied)
-	}
-	return nil
+	pending := frames - copied
+	return int64(pending)*(pageSize+24) > limit, pending, nil
 }

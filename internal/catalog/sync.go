@@ -55,112 +55,48 @@ func cloneStats(s Stats) Stats {
 }
 
 // Stats returns mirror counts, last sync time and current sync progress.
+// The counts come from catalog_stats_tally, so they are exact on every
+// call at a cost that does not grow with the library. The last snapshot
+// answers when the database cannot (a busy or timed-out status call).
 func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
-	gen := c.writeGen.Load()
-	minBucket := c.minuteBucket()
-	now := c.now()
-	syncing := c.syncing.Load()
-
-	c.cacheMu.RLock()
-	cached := c.statsCache
-	c.cacheMu.RUnlock()
-
-	if cached.ready && ((cached.gen == gen && cached.minute == minBucket) || (syncing && !cached.fetchedAt.IsZero() && now.Sub(cached.fetchedAt) < 2*time.Second)) {
-		s := cloneStats(cached.stats)
-		return c.finishStats(ctx, s), nil
-	}
-	if cached.ready && cached.stats.Movies+cached.stats.Shows+cached.stats.Seasons+cached.stats.Episodes >= staleCountMin {
-		// The counts walk the whole catalogue. Serve the last ones and
-		// recount behind the read, at most once per recountEvery, as browse
-		// totals and facets do.
-		if now.Sub(cached.fetchedAt) >= recountEvery {
-			_ = c.hydrate(ctx, "stats", 0, func(ctx context.Context) error {
-				_, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
-					return c.loadStats(ctx)
-				})
-				return err
-			})
-		}
-		return c.finishStats(ctx, cloneStats(cached.stats)), nil
-	}
-
-	s, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
-		return c.loadStats(ctx)
-	})
+	s, yearPending, err := c.loadStats(ctx)
 	if err != nil {
 		c.cacheMu.RLock()
 		fallback := c.statsCache
 		c.cacheMu.RUnlock()
 		if fallback.ready {
-			out := cloneStats(fallback.stats)
-			return c.finishStats(ctx, out), nil
+			return c.finishStats(ctx, cloneStats(fallback.stats), fallback.yearPending), nil
 		}
 		return s, err
 	}
-	return c.finishStats(ctx, cloneStats(s)), nil
+	c.cacheMu.Lock()
+	c.statsCache = cachedStats{stats: cloneStats(s), yearPending: yearPending, ready: true}
+	c.cacheMu.Unlock()
+	return c.finishStats(ctx, s, yearPending), nil
 }
 
-func (c *Catalog) finishStats(ctx context.Context, s Stats) Stats {
+func (c *Catalog) finishStats(ctx context.Context, s Stats, yearPending int) Stats {
 	s.Sync = c.SyncProgress()
 	if s.Sync.LastError == "" && !s.Sync.Running {
 		s.Sync.LastError = c.getMeta(ctx, "sync_error")
 	}
-	s.YearCorrection = c.movieYearProgress(ctx)
+	s.YearCorrection = c.movieYearProgressFrom(yearPending)
 	return s
 }
 
-func (c *Catalog) loadStats(ctx context.Context) (Stats, error) {
-	gen := c.writeGen.Load()
-	minBucket := c.minuteBucket()
+func (c *Catalog) loadStats(ctx context.Context) (Stats, int, error) {
 	var s Stats
+	yearPending, err := c.tallyStats(ctx, &s)
+	if err != nil {
+		return s, 0, err
+	}
 	s.Trending = c.TrendStatus(ctx)
-	count := func(q string, dst *int, args ...any) error {
-		return c.db.QueryRowContext(ctx, q, args...).Scan(dst)
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles WHERE type='movie'`, &s.Movies); err != nil {
-		return s, err
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles WHERE type='show'`, &s.Shows); err != nil {
-		return s, err
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles WHERE type='season'`, &s.Seasons); err != nil {
-		return s, err
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles WHERE type='episode'`, &s.Episodes); err != nil {
-		return s, err
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles WHERE type='movie' AND browsable=1`, &s.BrowsableMovies); err != nil {
-		return s, err
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles WHERE type='show' AND browsable=1`, &s.BrowsableShows); err != nil {
-		return s, err
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_collections`, &s.Collections); err != nil {
-		return s, err
-	}
-	if err := c.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(CASE WHEN h.checked=1 THEN 1 ELSE 0 END), 0),
-		       COALESCE(SUM(CASE WHEN h.checked IS NULL OR h.checked=0 THEN 1 ELSE 0 END), 0)
-		FROM catalog_titles t
-		LEFT JOIN catalog_home_release h ON h.key=t.key
-		WHERE t.type='movie' AND t.adult=0 AND t.release_known=1 AND t.released_ts<=?`, c.now().Unix()).Scan(&s.HomeReleaseChecked, &s.HomeReleasePending); err != nil {
-		return s, err
-	}
 	if v := c.getMeta(ctx, "last_sync"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			s.LastSync = time.Unix(n, 0).UTC()
 		}
 	}
-	c.cacheMu.Lock()
-	c.statsCache = cachedStats{
-		stats:     cloneStats(s),
-		gen:       gen,
-		minute:    minBucket,
-		fetchedAt: c.now(),
-		ready:     true,
-	}
-	c.cacheMu.Unlock()
-	return s, nil
+	return s, yearPending, nil
 }
 
 func (c *Catalog) setProgress(fn func(*SyncProgress)) {
@@ -193,6 +129,7 @@ func (c *Catalog) Run(ctx context.Context) {
 	}()
 	go c.refreshRatingsLoop(ctx)
 	go c.refreshShowAddedLoop(ctx)
+	go c.foldLibraryTalliesLoop(ctx)
 	go c.correctMovieYears(ctx)
 	full := schedule.New(c.now(), c.untilDue(ctx))
 	// Preserve the existing resume behavior while the gate is off. If the
@@ -325,6 +262,23 @@ func (c *Catalog) Sync(ctx context.Context) error {
 		}
 	})
 	return err
+}
+
+// clearSyncError forgets the previous attempt's error once this sync has
+// stored a page: a retry that makes progress is no longer failing. The
+// error comes back if this attempt fails too.
+func (c *Catalog) clearSyncError(ctx context.Context) {
+	cleared := false
+	c.setProgress(func(p *SyncProgress) {
+		if p.LastError != "" {
+			p.LastError, cleared = "", true
+		}
+	})
+	if cleared {
+		if _, err := c.db.ExecContext(ctx, `DELETE FROM catalog_meta WHERE k='sync_error'`); err != nil {
+			c.log.Warn("catalog: clear sync error", "err", err)
+		}
+	}
 }
 
 func (c *Catalog) syncLocked(ctx context.Context) error {
@@ -463,12 +417,15 @@ func (c *Catalog) syncSlice(ctx context.Context, tv bool, params tmdb.DiscoverPa
 			}
 		}
 		if len(batch) > 0 {
-			if err := store.CheckWALBudget(ctx, c.db); err != nil {
+			// Back-pressure, not failure: wait for a long read to finish and
+			// the checkpoint to drain, then carry on from this page.
+			if err := store.WaitWALBudget(ctx, c.db); err != nil {
 				return totalPages, err
 			}
 			if err := c.upsertMany(ctx, batch, upsertOpts{browsable: true}); err != nil {
 				return totalPages, fmt.Errorf("catalog: store tv=%t pass=%s year=%d page=%d: %w", tv, pass, year, page, err)
 			}
+			c.clearSyncError(ctx)
 		}
 		added := len(batch)
 		c.setProgress(func(pr *SyncProgress) {

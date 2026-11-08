@@ -1,5 +1,7 @@
 # Ether — developer makefile.
 GO ?= go
+# Pure-Go SIMD yEnc; set GOEXPERIMENT= to build the portable SWAR path.
+export GOEXPERIMENT ?= simd
 VERSION ?= dev
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
@@ -22,10 +24,19 @@ build:
 test:
 	$(GO) test -race ./...
 
-## lint: gofmt + vet + shellcheck (golangci-lint if configured later)
+## lint: the CI lint job: gofmt, go mod tidy, vet, golangci-lint, shellcheck
+## (golangci-lint reports only issues new since LINT_BASE, as CI does)
+LINT_BASE ?= origin/main
 lint: vet
 	@test -z "$$($(GO)fmt -l .)" || { echo "gofmt needed:"; $(GO)fmt -l .; exit 1; }
-	@command -v shellcheck >/dev/null && shellcheck scripts/*.sh packaging/linux/*.sh packaging/macos/*.sh || echo "shellcheck not installed — skipping"
+	@$(GO) mod tidy -diff || { echo "go.mod/go.sum not tidy: run 'go mod tidy'"; exit 1; }
+	@if command -v golangci-lint >/dev/null; then \
+		CGO_ENABLED=0 golangci-lint run --new-from-merge-base=$(LINT_BASE) ./...; \
+	else echo "golangci-lint not installed — skipping (https://golangci-lint.run/docs/welcome/install/)"; fi
+	@if command -v shellcheck >/dev/null; then \
+		shellcheck scripts/*.sh packaging/linux/*.sh packaging/macos/*.sh packaging/docker/*.sh && \
+		git ls-files -z '*.sh' | xargs -0 shellcheck --severity=error; \
+	else echo "shellcheck not installed — skipping"; fi
 
 vet:
 	CGO_ENABLED=0 $(GO) vet ./...

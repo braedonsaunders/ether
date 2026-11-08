@@ -80,19 +80,38 @@ type decision struct {
 	position       int
 }
 
-// rowMatches reports whether a rule's hubId targets a row: by exact hub
-// id, by kind, or by glob over either. Hub ids also match without their
-// screen prefix, so "because.*" covers "home.because.123" and
-// "movie.because.123".
-func rowMatches(pattern, hubID, kind string) bool {
-	for _, cand := range []string{hubID, hubStem(hubID), kind} {
-		if pattern == cand {
-			return true
+// matchRank reports how specifically a rule's hubId targets a row (the
+// console's matchRank in web/src/lib/layout.ts ranks the same way): 3 the
+// full hub id, 2 the kind, 1 the hub id without its screen prefix or a glob
+// over any of them, 0 no match. stem is hubStem(hubID), so "because.*"
+// covers "home.because.123" and "movie.because.123".
+func matchRank(pattern, hubID, stem, kind string) int {
+	switch pattern {
+	case hubID:
+		return 3
+	case kind:
+		return 2
+	case stem:
+		return 1
+	}
+	if !isGlob(pattern) {
+		return 0
+	}
+	for _, cand := range [...]string{hubID, stem, kind} {
+		if ok, _ := path.Match(pattern, cand); ok {
+			return 1
 		}
-		if strings.ContainsAny(pattern, "*?[") {
-			if ok, _ := path.Match(pattern, cand); ok {
-				return true
-			}
+	}
+	return 0
+}
+
+// isGlob reports whether a rule uses path.Match metacharacters. A byte loop
+// rather than strings.ContainsAny, which builds a lookup set on every call.
+func isGlob(pattern string) bool {
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '*', '?', '[':
+			return true
 		}
 	}
 	return false

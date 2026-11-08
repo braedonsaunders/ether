@@ -66,10 +66,13 @@ type Options struct {
 	Discovered     func(context.Context, *core.Title) []core.Release
 	Observed       func(context.Context, *core.Title, core.Release)
 	Invalidated    func(context.Context, string)
-	Logger         *slog.Logger
-	Now            func() time.Time
-	MaxTraces      int
-	RetentionDays  int // posts older than this are penalised; 0 = no extra penalty
+	// SeriesYearConflict reports whether the catalogue holds a different
+	// show titled title that first aired in year (see series_year.go).
+	SeriesYearConflict func(ctx context.Context, show core.RatingKey, title string, year int) (bool, error)
+	Logger             *slog.Logger
+	Now                func() time.Time
+	MaxTraces          int
+	RetentionDays      int // posts older than this are penalised; 0 = no extra penalty
 	// HealthTTL is how long a passed health check is trusted before the
 	// release is sampled again (default 6h; negative disables the cache).
 	HealthTTL time.Duration
@@ -185,6 +188,8 @@ type inflight struct {
 
 // Service implements core.Resolver.
 type Service struct {
+	years                     seriesYears
+	seriesYearConflict        func(ctx context.Context, show core.RatingKey, title string, year int) (bool, error)
 	availabilityGeneration    uint64
 	availabilityDeadlines     availabilityDeadlines
 	availabilityDeadlineByKey map[int64]*availabilityDeadline
@@ -256,7 +261,7 @@ var _ core.Resolver = (*Service)(nil)
 // (typically *newznab.Manager); health may be nil (health checks are
 // then skipped); db may be nil (state then lives in memory).
 func New(indexer core.Indexer, health core.HealthChecker, db *sql.DB, cfg config.Config, opts Options) *Service {
-	s := &Service{searchObserved: opts.SearchObserved, discovered: opts.Discovered, observed: opts.Observed, invalidated: opts.Invalidated,
+	s := &Service{seriesYearConflict: opts.SeriesYearConflict, searchObserved: opts.SearchObserved, discovered: opts.Discovered, observed: opts.Observed, invalidated: opts.Invalidated,
 		indexer: indexer, health: health, db: db,
 		bad: map[string]badMark{}, reps: map[string]reputation{},
 		avail: map[int64]availEntry{}, searchCache: map[string]searchCacheEntry{},
@@ -598,6 +603,11 @@ func (s *Service) Resolve(ctx context.Context, req core.ResolveRequest) (*core.R
 					// caller's answer. Resolve again.
 					continue
 				}
+				if f.err != nil && errors.Is(f.err, core.ErrForegroundOnly) && ctx.Err() == nil && core.OnDemandStreamsAllowed(ctx) {
+					// A warm-up or background check stopped at a source
+					// only a Play may open; this caller may open it.
+					continue
+				}
 				return f.res, f.err
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -880,6 +890,11 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	cands = s.prepareSources(ctx, cands, req.Title, &trace, &checks)
 	trace.SourcePreparationDuration = time.Since(prepareStart)
 	if rcfg.OptimisticStart && !preferTried {
+		if cands[0].rel.OpensOnDemand() && !core.OnDemandStreamsAllowed(ctx) {
+			// Nothing ranked below the add-on stream may stand in for it.
+			trace.Err = errOnDemandForeground.Error()
+			return nil, errOnDemandForeground
+		}
 		at := time.Now()
 		nzb, err := s.indexer.FetchNZB(ctx, cands[0].rel)
 		trace.Candidates[cands[0].trace].Attempted = true
@@ -1269,6 +1284,7 @@ func (s *Service) rankWith(ctx context.Context, env rankEnv, req core.ResolveReq
 	if s.db != nil {
 		s.loadRejectionsFor(ctx, req.Title.Key)
 	}
+	s.prepareSeriesYears(ctx, req.Title, sreq, results)
 	start := 0
 	if trace != nil {
 		start = len(trace.Candidates)
@@ -1442,10 +1458,14 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 				note("larger than the client's connection carries")
 			}
 		}
+		yearGuessed := seriesYearGuessed(rel, sreq)
+		if yearGuessed && trace != nil {
+			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; series year differs but names no other show: ranked after correctly-labelled releases", "; ")
+		}
 		if !langOK && trace != nil {
 			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; ranked after releases in an accepted audio language", "; ")
 		}
-		cands = append(cands, candidate{fallback: fallback, policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, langWanted: langWanted, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth, cf: sc.format, age: usenetAgeScore(rel.PubDate, now), hasAge: !rel.PubDate.IsZero()})
+		cands = append(cands, candidate{fallback: fallback, policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, langWanted: langWanted, starved: starved, quality: rankQuality(rel, profile, starved), bandwidth: bandwidth, yearGuessed: yearGuessed, cf: sc.format, age: usenetAgeScore(rel.PubDate, now), hasAge: !rel.PubDate.IsZero()})
 	}
 	if hot != nil && len(cands) > 0 {
 		releases := make([]core.Release, len(cands))
@@ -1604,7 +1624,8 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 			return "sample"
 		}
 	}
-	if reason := rejectIdentity(rel, t, sreq, s.catalogLanguage()); reason != "" {
+	acceptYear := func(y int) bool { return t != nil && s.seriesYearAccepted(t.ShowKey, y) }
+	if reason := rejectIdentityYears(rel, t, sreq, s.catalogLanguage(), acceptYear); reason != "" {
 		return reason
 	}
 	return rejectPolicy(rel, t, profile, caps, preferred, preferred && s.resolverCfg().OfferHigherVersions)
@@ -1613,6 +1634,12 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 // rejectIdentity checks the result's reported identity without client policy.
 // catalogLang is the language catalogue episode titles are in ("en-US").
 func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest, catalogLang string) string {
+	return rejectIdentityYears(rel, t, sreq, catalogLang, nil)
+}
+
+// rejectIdentityYears is rejectIdentity where acceptYear may accept a series
+// year that differs from the show's (one that names no other show).
+func rejectIdentityYears(rel core.Release, t *core.Title, sreq core.SearchRequest, catalogLang string, acceptYear func(int) bool) string {
 	isEpisode := sreq.Type == core.TypeEpisode
 	idMatch, idConflict := releaseparse.CompareTitleIDs(rel.TitleIDs, sreq.IDs)
 	if idConflict {
@@ -1660,7 +1687,7 @@ func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest, ca
 	}
 	if isEpisode {
 		releaseYear := releaseparse.EpisodeSeriesYear(rel.Name, rel.Info.Year)
-		if !releaseparse.SeriesYearMatches(releaseYear, sreq.Year) {
+		if !releaseparse.SeriesYearMatches(releaseYear, sreq.Year) && (acceptYear == nil || !acceptYear(releaseYear)) {
 			return "series year mismatch"
 		}
 		if releaseYear == 0 && !idMatch && !localizedEpisodeTitle(rel.Info, t, catalogLang) && !releaseparse.EpisodeTitleMatches(rel.Name, sreq.EpisodeTitle) {

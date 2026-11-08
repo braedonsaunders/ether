@@ -9,6 +9,7 @@ import (
 )
 
 // PlexWatchStatus is the viewer-facing connection. It never includes a token.
+// Problem is "", "token" (connect again), "rate_limited" or "network".
 type PlexWatchStatus struct {
 	Connected      bool   `json:"connected"`
 	PlexID         int64  `json:"plexId,omitempty"`
@@ -16,18 +17,13 @@ type PlexWatchStatus struct {
 	Direction      int    `json:"direction"`
 	ImportInterval int    `json:"importInterval"`
 	LastImport     int64  `json:"lastImport"`
+	LastFullImport int64  `json:"lastFullImport"`
 	LastSend       int64  `json:"lastSend"`
 	NextImport     int64  `json:"nextImport"`
 	Problem        string `json:"problem"`
-	ProblemCode    int    `json:"problemCode"`
-	Eligibility    string `json:"eligibility"`
-	Revoked        bool   `json:"revoked"`
+	NeedsReconnect bool   `json:"needsReconnect"`
 	Pending        int    `json:"pending"`
-	Held           int    `json:"held"`
-	HeldLegacy     int    `json:"heldLegacy"`
-	Dead           int    `json:"dead"`
-	InFlight       bool   `json:"inFlight"`
-	Skipped        int    `json:"skipped"`
+	Failed         int    `json:"failed"`
 	Restricted     bool   `json:"restricted"`
 	PINCode        string `json:"pinCode,omitempty"`
 	PINURL         string `json:"pinUrl,omitempty"`
@@ -38,10 +34,10 @@ type PlexWatchStatus struct {
 // Sentinels returned by the app adapter so this package does not import
 // the watch client.
 var (
-	ErrPlexAccountMismatch  = errors.New("plex account does not belong to this viewer")
-	ErrPlexNotEligible      = errors.New("account has not allowed watch-state sync")
-	ErrPlexWatchRevoked     = errors.New("plex rejected this viewer's token")
-	ErrPlexWatchUnsupported = errors.New("plex accepts watch-state sync only from its own servers")
+	ErrPlexAccountMismatch   = errors.New("plex account does not belong to this viewer")
+	ErrPlexWatchRevoked      = errors.New("plex rejected this viewer's token")
+	ErrPlexWatchNotConnected = errors.New("this viewer has not connected a Plex account")
+	ErrPlexWatchDirectionOff = errors.New("that sync direction is off for this viewer")
 )
 
 // PlexWatch is the per-viewer account watch-state integration. Handlers
@@ -53,10 +49,8 @@ type PlexWatch interface {
 	SetDirection(ctx context.Context, userID, plexID int64, direction, interval int) (PlexWatchStatus, error)
 	Disconnect(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
 	Retry(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
-	Resolve(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
 	ExportCurrent(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
 	ImportCurrent(ctx context.Context, userID, plexID int64) (PlexWatchStatus, error)
-	Unmatched(ctx context.Context, userID, plexID int64, after string) ([]string, error)
 }
 
 func (h *Handler) plexWatchViewer(w http.ResponseWriter, r *http.Request) (*ViewerRecord, bool) {
@@ -83,42 +77,53 @@ func (h *Handler) writePlexWatch(w http.ResponseWriter, st PlexWatchStatus, err 
 	switch {
 	case errors.Is(err, ErrPlexAccountMismatch):
 		writeError(w, http.StatusConflict, "account_mismatch", "the Plex account that approved the code is not this viewer")
-	case errors.Is(err, ErrPlexNotEligible):
-		writeError(w, http.StatusForbidden, "not_eligible", "Plex has not allowed watch-state sync for this account")
 	case errors.Is(err, ErrPlexWatchRevoked):
 		writeError(w, http.StatusUnauthorized, "revoked", "Plex rejected this viewer's token")
-	case errors.Is(err, ErrPlexWatchUnsupported):
-		writeError(w, http.StatusConflict, "unsupported", "Plex accepts watch-state sync only from its own servers")
+	case errors.Is(err, ErrPlexWatchNotConnected):
+		writeError(w, http.StatusConflict, "not_connected", "this viewer has not connected a Plex account")
+	case errors.Is(err, ErrPlexWatchDirectionOff):
+		writeError(w, http.StatusConflict, "direction_off", "that sync direction is off for this viewer")
 	default:
 		writeError(w, http.StatusBadRequest, "plex_watch", "plex watch state could not be updated")
 	}
 }
 
-func (h *Handler) handlePlexWatchStatus(w http.ResponseWriter, r *http.Request) {
+// plexWatchCall runs one viewer action with the viewer's stored Plex id.
+func (h *Handler) plexWatchCall(w http.ResponseWriter, r *http.Request, call func(PlexWatch, context.Context, int64, int64) (PlexWatchStatus, error)) {
 	v, ok := h.plexWatchViewer(w, r)
 	if !ok {
 		return
 	}
-	st, err := h.deps.PlexWatch.Status(r.Context(), v.ID, v.PlexID)
+	st, err := call(h.deps.PlexWatch, r.Context(), v.ID, v.PlexID)
 	h.writePlexWatch(w, st, err)
+}
+
+func (h *Handler) handlePlexWatchStatus(w http.ResponseWriter, r *http.Request) {
+	h.plexWatchCall(w, r, PlexWatch.Status)
 }
 
 func (h *Handler) handlePlexWatchPIN(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	st, err := h.deps.PlexWatch.BeginPIN(r.Context(), v.ID, v.PlexID)
-	h.writePlexWatch(w, st, err)
+	h.plexWatchCall(w, r, PlexWatch.BeginPIN)
 }
 
 func (h *Handler) handlePlexWatchPINFinish(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	st, err := h.deps.PlexWatch.FinishPIN(r.Context(), v.ID, v.PlexID)
-	h.writePlexWatch(w, st, err)
+	h.plexWatchCall(w, r, PlexWatch.FinishPIN)
+}
+
+func (h *Handler) handlePlexWatchDisconnect(w http.ResponseWriter, r *http.Request) {
+	h.plexWatchCall(w, r, PlexWatch.Disconnect)
+}
+
+func (h *Handler) handlePlexWatchRetry(w http.ResponseWriter, r *http.Request) {
+	h.plexWatchCall(w, r, PlexWatch.Retry)
+}
+
+func (h *Handler) handlePlexWatchExport(w http.ResponseWriter, r *http.Request) {
+	h.plexWatchCall(w, r, PlexWatch.ExportCurrent)
+}
+
+func (h *Handler) handlePlexWatchImport(w http.ResponseWriter, r *http.Request) {
+	h.plexWatchCall(w, r, PlexWatch.ImportCurrent)
 }
 
 func (h *Handler) handlePlexWatchEnabled(w http.ResponseWriter, r *http.Request) {
@@ -132,72 +137,9 @@ func (h *Handler) handlePlexWatchEnabled(w http.ResponseWriter, r *http.Request)
 	}
 	dec := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
 	if err := dec.Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_json", "expected a JSON object with enabled")
+		writeError(w, http.StatusBadRequest, "bad_json", "expected a JSON object with direction and interval")
 		return
 	}
 	st, err := h.deps.PlexWatch.SetDirection(r.Context(), v.ID, v.PlexID, body.Direction, body.Interval)
 	h.writePlexWatch(w, st, err)
-}
-
-func (h *Handler) handlePlexWatchDisconnect(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	st, err := h.deps.PlexWatch.Disconnect(r.Context(), v.ID, v.PlexID)
-	h.writePlexWatch(w, st, err)
-}
-
-func (h *Handler) handlePlexWatchRetry(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	st, err := h.deps.PlexWatch.Retry(r.Context(), v.ID, v.PlexID)
-	h.writePlexWatch(w, st, err)
-}
-
-func (h *Handler) handlePlexWatchResolve(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	st, err := h.deps.PlexWatch.Resolve(r.Context(), v.ID, v.PlexID)
-	h.writePlexWatch(w, st, err)
-}
-
-func (h *Handler) handlePlexWatchExport(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	st, err := h.deps.PlexWatch.ExportCurrent(r.Context(), v.ID, v.PlexID)
-	h.writePlexWatch(w, st, err)
-}
-
-func (h *Handler) handlePlexWatchImport(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	st, err := h.deps.PlexWatch.ImportCurrent(r.Context(), v.ID, v.PlexID)
-	h.writePlexWatch(w, st, err)
-}
-
-func (h *Handler) handlePlexWatchUnmatched(w http.ResponseWriter, r *http.Request) {
-	v, ok := h.plexWatchViewer(w, r)
-	if !ok {
-		return
-	}
-	after := r.URL.Query().Get("after")
-	if len(after) > 256 {
-		writeError(w, http.StatusBadRequest, "bad_cursor", "invalid cursor")
-		return
-	}
-	items, err := h.deps.PlexWatch.Unmatched(r.Context(), v.ID, v.PlexID, after)
-	if err != nil {
-		h.writePlexWatch(w, PlexWatchStatus{}, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, items)
 }

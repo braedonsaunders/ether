@@ -17,7 +17,8 @@ import (
 // probe and start. PMS decisions are projections of the selected Media,
 // rather than replacement version lists (see the recorded decision corpus).
 func TestVersionIdentityAcrossPlayFlow(t *testing.T) {
-	for _, product := range []string{"Plex for LG", "Plex for Samsung", "Plex for Android (TV)", "Plex Web"} {
+	// Plex for LG and VIDAA hold one Auto Media instead (tv_app_queue_test.go).
+	for _, product := range []string{"Plex for Samsung", "Plex for Android (TV)", "Plex Web"} {
 		for _, count := range []int{0, 1, 3} {
 			t.Run(product+"/"+string(rune('0'+count)), func(t *testing.T) {
 				f, pb := newVariantPlaybackFixture(t)
@@ -165,7 +166,7 @@ func TestVersionFlowSharedAcrossNodes(t *testing.T) {
 			b.srv.d.Playback = pb
 			b.srv.d.Variants = rb
 			path := "/library/metadata/" + fightClub.Key.String()
-			headers := []string{"Accept", "application/json", "X-Plex-Product", "Plex for LG"}
+			headers := []string{"Accept", "application/json", "X-Plex-Product", "Plex for Samsung"}
 			fetch := func(f *fixture, stage, target string) []wireMedia {
 				t.Helper()
 				r := f.get(t, target, headers...)
@@ -202,7 +203,7 @@ func TestVersionFlowSharedAcrossNodes(t *testing.T) {
 			req.Header.Set("X-Plex-Token", ownerToken)
 			req.Header.Set("X-Plex-Client-Identifier", "client-1")
 			req.Header.Set("Accept", "application/json")
-			req.Header.Set("X-Plex-Product", "Plex for LG")
+			req.Header.Set("X-Plex-Product", "Plex for Samsung")
 			qr := httptest.NewRecorder()
 			a.srv.ServeHTTP(qr, req)
 			if qr.Code != 200 {

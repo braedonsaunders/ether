@@ -89,8 +89,8 @@ export function MutationError({ error }: { error: unknown }) {
       <AlertDescription>
         {fields.length ? (
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
-            {fields.map((f) => (
-              <li key={f.field}>
+            {fields.map((f, i) => (
+              <li key={`${f.field}-${i}`}>
                 <code className="text-xs">{f.field}</code> {f.message}
               </li>
             ))}

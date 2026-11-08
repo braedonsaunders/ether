@@ -14,6 +14,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -88,6 +89,48 @@ ALTER TABLE plexwatch_account ADD COLUMN import_failures INTEGER NOT NULL DEFAUL
 ALTER TABLE plexwatch_account ADD COLUMN import_lease INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE plexwatch_account ADD COLUMN next_allowed INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX plexwatch_import_due ON plexwatch_account(next_import, user_id);`)
+	// Discover transport. plexwatch_remote is the last account state Ether
+	// read from (or wrote to) Plex per title: imports act only on what changed
+	// since then, and ours=1 marks a row Ether itself just wrote, so its own
+	// change is not read back as a Plex change. plexwatch_expand queues shows
+	// whose watched-episode count moved, so only their episodes are read.
+	// import_cursor now holds the sweep's last rating key; the old opaque
+	// scrobbles cursor and the echo/unmatched tables of that transport go.
+	store.Register("plexwatch", 6, `
+CREATE TABLE plexwatch_remote (
+  user_id INTEGER NOT NULL,
+  rating_key INTEGER NOT NULL,
+  watched INTEGER NOT NULL DEFAULT 0,
+  viewed_at INTEGER NOT NULL DEFAULT 0,
+  rating INTEGER NOT NULL DEFAULT 0,
+  leaves INTEGER NOT NULL DEFAULT 0,
+  observed_at INTEGER NOT NULL DEFAULT 0,
+  ours INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, rating_key)
+);
+CREATE TABLE plexwatch_expand (
+  user_id INTEGER NOT NULL,
+  show_key INTEGER NOT NULL,
+  after_key INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, show_key)
+);
+ALTER TABLE plexwatch_account ADD COLUMN last_sweep INTEGER NOT NULL DEFAULT 0;
+UPDATE plexwatch_account SET import_cursor='', import_problem='', send_problem='', problem_code=0,
+  import_failures=0, next_allowed=0, next_import=0, import_lease=0, eligibility='unchecked';
+DROP TABLE plexwatch_sent;
+DROP TABLE plexwatch_unmapped;`)
+	// consent is the account's "Sync My Watch State and Ratings" setting as
+	// last read (-1 not read yet, 0 off, 1 on) and consent_checked when.
+	// active_after is the show cursor of the pass over the viewer's active
+	// shows that follows each sweep (-1: not running). view_offset (ms) and
+	// view_state are the resume position and Discover viewState last read or
+	// written per title.
+	store.Register("plexwatch", 7, `
+ALTER TABLE plexwatch_account ADD COLUMN consent INTEGER NOT NULL DEFAULT -1;
+ALTER TABLE plexwatch_account ADD COLUMN consent_checked INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plexwatch_account ADD COLUMN active_after INTEGER NOT NULL DEFAULT -1;
+ALTER TABLE plexwatch_remote ADD COLUMN view_offset INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plexwatch_remote ADD COLUMN view_state TEXT NOT NULL DEFAULT '';`)
 	// Applies after state_plexwatch; standalone state need not import account sync.
 	store.Register("watchsend", 1, `CREATE TABLE plexwatch_attempt (
   attempt_id TEXT PRIMARY KEY,
@@ -113,28 +156,29 @@ INSERT INTO plexwatch_attempt(attempt_id,seq,user_id,rating_key,plex_id,generati
  COALESCE((SELECT plex_id FROM plexwatch_account a WHERE a.user_id=state_sync_journal.user_id),0),
  consent_generation, '', aspect, occurred_at, '', 0, 0 FROM state_sync_journal WHERE delivered_at=0 AND never_sent=0;
 UPDATE state_sync_journal SET dead=1, last_error='uncertain_legacy', claimed_by='', claimed_at=0 WHERE delivered_at=0 AND never_sent=0;`)
+	// Discover writes are idempotent and readable back, so an unconfirmed
+	// send needs no hold table: the journal row itself, with never_sent=0, is
+	// re-checked against Plex before it is sent again. Held rows of the old
+	// transport become that kind of row when they are still a title's newest
+	// intent; their consent generation is checked at delivery like any other.
+	// Rows parked as not eligible or credential-refused (old-transport
+	// reasons) are revived the same way. Older duplicates stay dead.
+	store.Register("watchsend", 2, `
+UPDATE state_sync_journal SET dead=0, attempts=0, next_attempt=0, claimed_by='', claimed_at=0, last_error='',
+  never_sent=CASE WHEN last_error IN ('uncertain_send','uncertain_legacy') THEN 0 ELSE never_sent END
+ WHERE delivered_at=0 AND superseded=0 AND dead=1
+   AND last_error IN ('uncertain_send','uncertain_legacy','credential_forbidden','credential_unavailable','not_eligible')
+   AND NOT EXISTS (SELECT 1 FROM state_sync_journal n
+     WHERE n.user_id=state_sync_journal.user_id AND n.rating_key=state_sync_journal.rating_key
+       AND n.aspect=state_sync_journal.aspect AND n.seq>state_sync_journal.seq);
+DROP TABLE plexwatch_attempt;
+DROP TABLE plexwatch_permit;`)
 }
 
-// AccountSyncSupported gates every watch-state request to scrobbles.plex.tv:
-// sends, scheduled and manual imports, exports and hold reconciliation.
-//
-// Plex has no working path for a server other than its own. PMS reads
-// GET plex.tv/api/v2/server/users/services with its server token and
-// receives, per user, a scrobbling entry carrying an opaque 620-character
-// token (464 bytes of binary once decoded). Presented to
-// scrobbles.plex.tv/state/{id} as Authorization: Bearer or as X-Plex-Token
-// it answers 401 Invalid Token, including for users whose consent is on;
-// PMS derives the real credential from it, and Ether does not reverse
-// engineer that. A viewer PIN token is refused too.
-//
-// While false, nothing is sent or imported, queued intents and held attempts
-// stay parked untouched, and Status reports eligibility and problem
-// "unsupported". Direction, interval, fence and journal plumbing stay intact,
-// so turning a future working credential path on is this constant.
-const AccountSyncSupported = false
-
-// ErrUnsupported means Plex does not accept watch-state sync from Ether.
-var ErrUnsupported = errors.New("plexwatch: Plex accepts watch-state sync only from its own servers")
+// tokenSealLabel is the sealing context of stored account tokens. It names
+// the first transport and stays fixed: changing it would orphan every
+// stored token, which is the same Plex account token used today.
+const tokenSealLabel = "scrobbles.plex.tv"
 
 // GUIDMap resolves a local title to a verified plex:// GUID and the reverse
 // for a GUID already stored for exactly one title.
@@ -143,60 +187,56 @@ type GUIDMap interface {
 	ExactKey(ctx context.Context, guid string) (core.RatingKey, error)
 }
 
+// AccountGUIDs is GUIDMap plus a local, paged walk of verified identities,
+// which bounds the background import to titles Ether already matched.
+type AccountGUIDs interface {
+	GUIDMap
+	VerifiedRange(ctx context.Context, after, below core.RatingKey, limit int) ([]plexguid.Verified, error)
+}
+
 // Options configure a Service. BaseURL is the test origin for every Plex
 // host. Leave it empty in production.
 type Options struct {
-	// ServerIdentity returns the current claimed server token and client identifier.
-	ServerIdentity func() (string, string)
-	DB             *sql.DB
-	State          *state.State
-	Sealer         config.FieldSealer
-	GUID           GUIDMap
-	NodeID         string
-	ClientID       string
-	BaseURL        string
-	HTTP           *http.Client
-	Logger         *slog.Logger
-	Now            func() time.Time
+	DB       *sql.DB
+	State    *state.State
+	Sealer   config.FieldSealer
+	GUID     AccountGUIDs
+	NodeID   string
+	ClientID string
+	BaseURL  string
+	HTTP     *http.Client
+	Logger   *slog.Logger
+	Now      func() time.Time
+	// Watchlist lists a viewer's watchlist titles (optional). Its shows
+	// join the shows with recent activity whose episodes each sweep reads.
+	Watchlist func(ctx context.Context, userID int64) ([]core.RatingKey, error)
+	// Continue mirrors a Continue Watching removal (removed) or restore
+	// read from the account into stores beyond state (optional).
+	Continue func(ctx context.Context, userID int64, key core.RatingKey, removed bool) error
 }
 
 // Service is one server's Plex account watch-state integration.
 type Service struct {
-	db          *sql.DB
-	state       *state.State
-	sealer      config.FieldSealer
-	guid        GUIDMap
-	client      *Client
-	node        string
-	log         *slog.Logger
-	now         func() time.Time
-	claimFor    time.Duration
-	mu          sync.Mutex
-	closed      chan struct{}
-	lastCompact time.Time
-	// supported is AccountSyncSupported; tests of the dormant plumbing set it.
-	supported bool
-	// beforeEnable, when set by a test, runs after eligibility is reread and
-	// before the enable write.
-	beforeEnable func()
-	// attemptStart, when set by a test, runs after this attempt owns the
-	// claim and the title lock.
-	attemptStart func(attempt string)
-	// admitFault, when set by a test, fails the fence read inside admission.
-	// The error stays retryable.
-	admitFault func() error
-	// afterFenceRead, when set by a test, runs after the fence row is locked
-	// and the intent is eligible, and before the permit insert.
-	afterFenceRead func()
-	// Fault hooks exercise crash boundaries; production leaves them unset.
-	afterAdmission  func() error
-	receiptFault    func(string) error
-	admissionCommit func(*sql.Tx) error
-	receiptCommit   func(*sql.Tx) error
-	afterPost       func() error
+	db        *sql.DB
+	state     *state.State
+	sealer    config.FieldSealer
+	guid      AccountGUIDs
+	client    *Client
+	watchlist func(ctx context.Context, userID int64) ([]core.RatingKey, error)
+	continued func(ctx context.Context, userID int64, key core.RatingKey, removed bool) error
+	node      string
+	log       *slog.Logger
+	now       func() time.Time
+	claimFor  time.Duration
+	pace      time.Duration
+	// importBudget caps the Plex reads of one import pass.
+	importBudget int
+	mu           sync.Mutex
+	closed       chan struct{}
+	lastCompact  time.Time
 }
 
-// New starts nothing. Call Run to deliver, or DeliverOnce from tests.
+// New starts nothing. Call Run to deliver and RunImports to import.
 func New(opts Options) (*Service, error) {
 	if opts.DB == nil || opts.State == nil {
 		return nil, errors.New("plexwatch: database and state are required")
@@ -207,9 +247,7 @@ func New(opts Options) (*Service, error) {
 	}
 	node := opts.NodeID
 	if node == "" {
-		var b [8]byte
-		_, _ = rand.Read(b[:])
-		node = hex.EncodeToString(b[:])
+		node = newID()[:16]
 	}
 	log := opts.Logger
 	if log == nil {
@@ -219,18 +257,15 @@ func New(opts Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.serverIdentity = opts.ServerIdentity
 	return &Service{
 		db: opts.DB, state: opts.State, sealer: opts.Sealer, guid: opts.GUID,
-		client: c, node: node, log: log, now: now, claimFor: 2 * time.Minute,
-		closed: make(chan struct{}), supported: AccountSyncSupported,
+		client: c, watchlist: opts.Watchlist, continued: opts.Continue,
+		node: node, log: log, now: now, claimFor: 2 * time.Minute,
+		pace: 250 * time.Millisecond, importBudget: importRequests, closed: make(chan struct{}),
 	}, nil
 }
 
-// Supported reports whether watch state can reach a Plex account at all.
-func (s *Service) Supported() bool { return s.supported }
-
-// Close stops Run.
+// Close stops Run and RunImports.
 func (s *Service) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -243,6 +278,9 @@ func (s *Service) Close() error {
 }
 
 // Status is the viewer-facing connection, with no token and no history.
+// Problem is "" or one of "token" (connect again), "consent" (the account's
+// "Sync My Watch State and Ratings" setting is off in Plex), "rate_limited"
+// or "network".
 type Status struct {
 	Connected      bool   `json:"connected"`
 	PlexID         int64  `json:"plexId,omitempty"`
@@ -250,18 +288,13 @@ type Status struct {
 	Direction      int    `json:"direction"`
 	ImportInterval int    `json:"importInterval"`
 	LastImport     int64  `json:"lastImport"`
+	LastFullImport int64  `json:"lastFullImport"`
 	LastSend       int64  `json:"lastSend"`
 	NextImport     int64  `json:"nextImport"`
 	Problem        string `json:"problem"`
-	ProblemCode    int    `json:"problemCode"`
-	Eligibility    string `json:"eligibility"`
-	Revoked        bool   `json:"revoked"`
+	NeedsReconnect bool   `json:"needsReconnect"`
 	Pending        int    `json:"pending"`
-	Held           int    `json:"held"`
-	HeldLegacy     int    `json:"heldLegacy"`
-	Dead           int    `json:"dead"`
-	InFlight       bool   `json:"inFlight"`
-	Skipped        int    `json:"skipped"`
+	Failed         int    `json:"failed"`
 	Restricted     bool   `json:"restricted"`
 	PINCode        string `json:"pinCode,omitempty"`
 	PINURL         string `json:"pinUrl,omitempty"`
@@ -269,23 +302,30 @@ type Status struct {
 	AccountMatch   bool   `json:"accountMatch"`
 }
 
+// failureReasons are journal outcomes a viewer can retry. Rows dropped
+// because sync was turned off, reconnected or disconnected are not failures.
+var failureReasons = []string{"rejected", "missing_guid", "ambiguous_guid"}
+
 type accountRow struct {
 	userID          int64
 	plexID          int64
 	username        string
 	token           string
 	direction       int
-	eligibility     string
 	revoked         bool
 	cursor          string
 	tokenGeneration int64
+	nextAllowed     int64
+	consent         int   // -1 not read yet, 0 off, 1 on
+	consentChecked  int64 // unix nanoseconds
+	activeAfter     int64 // show cursor of the active-show pass, -1 idle
 }
 
 func (s *Service) Status(ctx context.Context, userID, plexID int64) (Status, error) {
 	if err := viewerIDs(userID, plexID); err != nil {
 		return Status{}, err
 	}
-	st := Status{Eligibility: "unchecked", AccountMatch: true, ImportInterval: 10}
+	st := Status{AccountMatch: true, ImportInterval: 10}
 	row, ok, err := s.loadAccount(ctx, userID)
 	if err != nil {
 		return Status{}, err
@@ -295,49 +335,35 @@ func (s *Service) Status(ctx context.Context, userID, plexID int64) (Status, err
 		st.PlexID = row.plexID
 		st.Username = row.username
 		st.Direction = row.direction
-		var sendProblem string
-		if err := s.db.QueryRowContext(ctx, `SELECT import_interval,last_import,last_send,next_import,import_problem,problem_code,send_problem FROM plexwatch_account WHERE user_id=?`, userID).Scan(&st.ImportInterval, &st.LastImport, &st.LastSend, &st.NextImport, &st.Problem, &st.ProblemCode, &sendProblem); err != nil {
+		var importProblem, sendProblem string
+		if err := s.db.QueryRowContext(ctx, `SELECT import_interval,last_import,last_sweep,last_send,next_import,import_problem,send_problem FROM plexwatch_account WHERE user_id=?`, userID).
+			Scan(&st.ImportInterval, &st.LastImport, &st.LastFullImport, &st.LastSend, &st.NextImport, &importProblem, &sendProblem); err != nil {
 			return Status{}, err
 		}
-		st.Eligibility = row.eligibility
+		st.NextImport /= int64(time.Second)
+		st.Problem = importProblem
 		if st.Problem == "" {
 			st.Problem = sendProblem
 		}
-		st.NextImport /= int64(time.Second)
-		if st.Problem == "" && row.eligibility == "refused" {
+		if row.consent == 0 {
 			st.Problem = "consent"
 		}
 		if row.revoked {
-			st.Problem = "token"
+			st.Problem, st.NeedsReconnect = "token", true
 		}
-		st.Revoked = row.revoked
 		st.AccountMatch = row.plexID == plexID
 		if row.plexID != plexID {
 			st.Connected = false
 			st.Direction = 0
 		}
 	}
-	if !s.supported {
-		st.Eligibility, st.Problem, st.ProblemCode = "unsupported", "unsupported", 0
-	}
-	pending, dead, err := s.state.PendingSyncCount(ctx, userID)
+	pending, _, err := s.state.PendingSyncCount(ctx, userID)
 	if err != nil {
 		return Status{}, err
 	}
-	st.Pending, st.Dead = pending, dead
-
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_attempt WHERE user_id=? AND receipt_at=0`, userID).Scan(&st.Held); err != nil {
-		return Status{}, err
-	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_attempt WHERE user_id=? AND receipt_at=0 AND guid=''`, userID).Scan(&st.HeldLegacy); err != nil {
-		return Status{}, err
-	}
-	var inflight int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_permit WHERE user_id=? AND until_at>?`, userID, s.now().UnixNano()).Scan(&inflight); err != nil {
-		return Status{}, err
-	}
-	st.InFlight = inflight > 0
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_unmapped WHERE user_id=?`, userID).Scan(&st.Skipped); err != nil {
+	st.Pending = pending
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM state_sync_journal WHERE user_id=? AND dead=1 AND delivered_at=0 AND superseded=0 AND last_error IN (?,?,?)`,
+		userID, failureReasons[0], failureReasons[1], failureReasons[2]).Scan(&st.Failed); err != nil {
 		return Status{}, err
 	}
 	if pin, ok, err := s.loadPIN(ctx, userID); err != nil {
@@ -356,9 +382,6 @@ func (s *Service) BeginPIN(ctx context.Context, userID, plexID int64) (Status, e
 	if err := viewerIDs(userID, plexID); err != nil {
 		return Status{}, err
 	}
-	if !s.supported {
-		return Status{}, ErrUnsupported
-	}
 	pin, err := s.client.createPIN(ctx)
 	if err != nil {
 		return Status{}, err
@@ -376,13 +399,13 @@ func (s *Service) BeginPIN(ctx context.Context, userID, plexID int64) (Status, e
 	return s.Status(ctx, userID, plexID)
 }
 
-// FinishPIN stores the account only when its Plex id equals plexID.
+// FinishPIN stores the account only when its Plex id equals plexID. The
+// viewer approving the PIN as themselves is the consent to sync. Connecting
+// the same account again (after Plex refused the old token) keeps the
+// chosen direction, the import cursor and the last-read Plex state.
 func (s *Service) FinishPIN(ctx context.Context, userID, plexID int64) (Status, error) {
 	if err := viewerIDs(userID, plexID); err != nil {
 		return Status{}, err
-	}
-	if !s.supported {
-		return Status{}, ErrUnsupported
 	}
 	pin, ok, err := s.loadPIN(ctx, userID)
 	if err != nil {
@@ -400,39 +423,45 @@ func (s *Service) FinishPIN(ctx context.Context, userID, plexID int64) (Status, 
 	}
 	acct, err := s.client.account(ctx, token)
 	if err != nil {
+		if errors.Is(err, ErrRevoked) {
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM plexwatch_pin WHERE user_id=?`, userID)
+		}
 		return Status{}, err
 	}
 	if acct.ID != plexID {
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM plexwatch_pin WHERE user_id=?`, userID)
 		return Status{}, ErrAccountMismatch
 	}
-	eligibility := "unchecked"
-	switch err := s.client.eligibility(ctx, token, plexID); {
-	case err == nil:
-		eligibility = "allowed"
-	case errors.Is(err, ErrNotEligible):
-		eligibility = "refused"
-	case errors.Is(err, ErrRevoked):
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM plexwatch_pin WHERE user_id=?`, userID)
-		return Status{}, ErrRevoked
-	default:
-		return Status{}, err
-	}
-	sealed, err := config.SealWith(s.sealer, token, "plexwatch", "token", strconv.FormatInt(userID, 10), "scrobbles.plex.tv")
+	sealed, err := config.SealWith(s.sealer, token, "plexwatch", "token", strconv.FormatInt(userID, 10), tokenSealLabel)
 	if err != nil {
 		return Status{}, err
 	}
+	now := s.now().UnixNano()
 	err = s.withFence(ctx, userID, func(tx *sql.Tx) error {
+		var oldPlex int64
+		switch err := tx.QueryRowContext(ctx, `SELECT plex_id FROM plexwatch_account WHERE user_id=?`, userID).Scan(&oldPlex); {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return err
+		case oldPlex != plexID:
+			if err := s.forgetRemoteTx(ctx, tx, userID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE plexwatch_account SET direction=0, import_cursor='', last_sweep=0, active_after=-1 WHERE user_id=?`, userID); err != nil {
+				return err
+			}
+		}
 		var gen int64
 		if err := tx.QueryRowContext(ctx, `UPDATE plexwatch_fence SET generation=generation+1 WHERE user_id=? RETURNING generation`, userID).Scan(&gen); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO plexwatch_account(user_id, plex_id, username, token, direction, eligibility, checked_at, revoked, updated_at, token_generation)
-			VALUES(?,?,?,?,0,?,?,0,?,?)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO plexwatch_account(user_id, plex_id, username, token, direction, checked_at, revoked, updated_at, token_generation)
+			VALUES(?,?,?,?,0,?,0,?,?)
 			ON CONFLICT(user_id) DO UPDATE SET plex_id=excluded.plex_id, username=excluded.username, token=excluded.token,
-			  direction=0, eligibility=excluded.eligibility, checked_at=excluded.checked_at, revoked=0, updated_at=excluded.updated_at,
-			  token_generation=excluded.token_generation, import_lease=0, next_allowed=0, next_import=0, import_problem='', send_problem='', problem_code=0, import_failures=0`,
-			userID, plexID, acct.Username, sealed, eligibility, s.now().UnixNano(), s.now().UnixNano(), gen); err != nil {
+			  checked_at=excluded.checked_at, revoked=0, updated_at=excluded.updated_at, token_generation=excluded.token_generation,
+			  import_lease=0, next_allowed=0, next_import=0, import_problem='', send_problem='', problem_code=0, import_failures=0,
+			  consent=-1, consent_checked=0`,
+			userID, plexID, acct.Username, sealed, now, now, gen); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM plexwatch_pin WHERE user_id=?`, userID); err != nil {
@@ -442,9 +471,6 @@ func (s *Service) FinishPIN(ctx context.Context, userID, plexID int64) (Status, 
 	})
 	if err != nil {
 		return Status{}, err
-	}
-	if eligibility == "allowed" {
-		_ = s.reconcileUser(ctx, userID, false)
 	}
 	st, err := s.Status(ctx, userID, plexID)
 	st.Restricted = acct.Restricted
@@ -457,112 +483,76 @@ func (s *Service) SetDirection(ctx context.Context, userID, plexID int64, direct
 	if direction < 0 || direction > 3 || (interval != 5 && interval != 10 && interval != 30 && interval != 60) {
 		return Status{}, errors.New("plexwatch: invalid sync settings")
 	}
-	if direction != 0 && !s.supported {
-		return Status{}, ErrUnsupported
-	}
 	row, err := s.requireMatch(ctx, userID, plexID)
 	if err != nil {
 		return Status{}, err
 	}
-	if direction != 0 {
-		if err = s.refreshEligibility(ctx, userID, row); err != nil {
-			return Status{}, err
+	now := s.now()
+	err = s.withFence(ctx, userID, func(tx *sql.Tx) error {
+		var current int64
+		var was int
+		if err := tx.QueryRowContext(ctx, `SELECT f.generation, a.direction FROM plexwatch_fence f JOIN plexwatch_account a ON a.user_id=f.user_id WHERE f.user_id=?`, userID).Scan(&current, &was); err != nil {
+			return err
 		}
-		row, err = s.requireMatch(ctx, userID, plexID)
+		if current != row.tokenGeneration {
+			return errStaleGeneration
+		}
+		next := current
+		if direction&1 == 0 && was&1 != 0 {
+			// Turning sending off moves the fence: an intent already queued, or
+			// one whose admission began under the old generation, is not sent.
+			if err := tx.QueryRowContext(ctx, `UPDATE plexwatch_fence SET generation=generation+1 WHERE user_id=? RETURNING generation`, userID).Scan(&next); err != nil {
+				return err
+			}
+			if err := s.state.DropPendingSyncTx(ctx, tx, userID, "disabled"); err != nil {
+				return err
+			}
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE plexwatch_account SET direction=?, import_interval=?, token_generation=?, updated_at=?,
+			next_import=CASE WHEN (direction & 2)=0 AND (? & 2)<>0 THEN ? WHEN import_interval<>? AND (? & 2)<>0 THEN ? ELSE next_import END
+			WHERE user_id=? AND plex_id=? AND token_generation=? AND revoked=0 AND token<>''`,
+			direction, interval, next, now.UnixNano(),
+			direction, now.UnixNano(), interval, direction, now.Add(time.Duration(interval)*time.Minute).UnixNano(),
+			userID, plexID, current)
 		if err != nil {
-			return Status{}, err
+			return err
 		}
-		if row.eligibility != "allowed" {
-			return Status{}, ErrNotEligible
+		if n, err := res.RowsAffected(); err != nil {
+			return err
+		} else if n != 1 {
+			return errStaleGeneration
 		}
-		if s.beforeEnable != nil {
-			s.beforeEnable()
-		}
-	}
-	if direction&1 == 0 {
-		if err = s.rotateDisabled(ctx, userID, plexID, "disabled", direction, interval, row.tokenGeneration); err != nil {
-			return Status{}, err
-		}
-	} else {
-		err = s.withFence(ctx, userID, func(tx *sql.Tx) error {
-			res, e := tx.ExecContext(ctx, `UPDATE plexwatch_account SET direction=?,import_interval=?,next_import=CASE WHEN (direction & 2)=0 AND (? & 2)<>0 THEN ? WHEN import_interval<>? AND (? & 2)<>0 THEN ? ELSE next_import END,updated_at=? WHERE user_id=? AND plex_id=? AND token_generation=? AND revoked=0 AND token<>'' AND eligibility='allowed' AND token_generation=(SELECT generation FROM plexwatch_fence WHERE user_id=?)`, direction, interval, direction, s.now().UnixNano(), interval, direction, s.now().Add(time.Duration(interval)*time.Minute).UnixNano(), s.now().UnixNano(), userID, plexID, row.tokenGeneration, userID)
-			if e != nil {
-				return e
-			}
-			n, e := res.RowsAffected()
-			if e != nil {
-				return e
-			}
-			if n != 1 {
-				return errStaleGeneration
-			}
-			return nil
-		})
-		if err != nil {
-			return Status{}, err
-		}
-		_ = s.reconcileUser(ctx, userID, false)
+		return nil
+	})
+	if err != nil {
+		return Status{}, err
 	}
 	return s.Status(ctx, userID, plexID)
 }
 
-// rotateDisabled bumps the fence, records that generation on the account, and
-// cancels pending intents in one transaction.
-func (s *Service) rotateDisabled(ctx context.Context, userID, plexID int64, reason string, direction, interval int, expected int64) error {
-	return s.withFence(ctx, userID, func(tx *sql.Tx) error {
-		var current int64
-		if err := tx.QueryRowContext(ctx, `SELECT generation FROM plexwatch_fence WHERE user_id=?`, userID).Scan(&current); err != nil {
-			return err
-		}
-		if current != expected {
-			return errStaleGeneration
-		}
-		var next int64
-		if err := tx.QueryRowContext(ctx, `UPDATE plexwatch_fence SET generation=generation+1 WHERE user_id=? AND generation=? RETURNING generation`, userID, current).Scan(&next); err != nil {
-			return err
-		}
-		res, err := tx.ExecContext(ctx, `UPDATE plexwatch_account SET direction=?, import_interval=?, next_import=CASE WHEN (direction & 2)=0 AND (? & 2)<>0 THEN ? WHEN import_interval<>? AND (? & 2)<>0 THEN ? ELSE next_import END, token_generation=?, updated_at=?
-			WHERE user_id=? AND plex_id=? AND token_generation=?`,
-			direction, interval, direction, s.now().UnixNano(), interval, direction, s.now().Add(time.Duration(interval)*time.Minute).UnixNano(), next, s.now().UnixNano(), userID, plexID, current)
-		if err != nil {
-			return err
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if n != 1 {
-			return errStaleGeneration
-		}
-		return s.state.DropPendingSyncTx(ctx, tx, userID, reason)
-	})
-}
-
-// Disconnect removes the stored account token and cancels pending delivery.
+// Disconnect removes the stored account token, cancels pending delivery and
+// forgets what was read from that account.
 func (s *Service) Disconnect(ctx context.Context, userID, plexID int64) (Status, error) {
 	if err := viewerIDs(userID, plexID); err != nil {
 		return Status{}, err
 	}
 	if err := s.withFence(ctx, userID, func(tx *sql.Tx) error {
-		var current int64
-		if err := tx.QueryRowContext(ctx, `SELECT generation FROM plexwatch_fence WHERE user_id=?`, userID).Scan(&current); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE plexwatch_fence SET generation=generation+1 WHERE user_id=? AND generation=?`, userID, current); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE plexwatch_fence SET generation=generation+1 WHERE user_id=?`, userID); err != nil {
 			return err
 		}
 		res, err := tx.ExecContext(ctx, `DELETE FROM plexwatch_account WHERE user_id=? AND plex_id=?`, userID, plexID)
 		if err != nil {
 			return err
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
+		if n, err := res.RowsAffected(); err != nil {
 			return err
-		}
-		if n != 1 {
+		} else if n != 1 {
 			return errStaleGeneration
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM plexwatch_pin WHERE user_id=?`, userID); err != nil {
+			return err
+		}
+		if err := s.forgetRemoteTx(ctx, tx, userID); err != nil {
 			return err
 		}
 		return s.state.DropPendingSyncTx(ctx, tx, userID, "disconnected")
@@ -572,111 +562,41 @@ func (s *Service) Disconnect(ctx context.Context, userID, plexID int64) (Status,
 	return s.Status(ctx, userID, plexID)
 }
 
-// Retry rechecks eligibility, revives retryable rows, and reconciles holds.
+// Retry makes failed sends claimable again and clears a rate-limit or
+// network pause so the next pass runs now.
 func (s *Service) Retry(ctx context.Context, userID, plexID int64) (Status, error) {
-	if !s.supported {
-		return Status{}, ErrUnsupported
-	}
 	row, err := s.requireMatch(ctx, userID, plexID)
 	if err != nil {
 		return Status{}, err
 	}
-	eligErr := s.refreshEligibility(ctx, userID, row)
-	if eligErr != nil && !errors.Is(eligErr, ErrNotEligible) && !errors.Is(eligErr, ErrRevoked) {
-		return Status{}, eligErr
-	}
-	reasons := []string{"missing_guid", "credential_forbidden"}
-	if eligErr == nil {
-		reasons = append(reasons, "not_eligible")
-	}
-	if err := s.state.RetryDeadSync(ctx, userID, reasons); err != nil {
+	if err := s.state.RetryDeadSync(ctx, userID, failureReasons); err != nil {
 		return Status{}, err
 	}
-	if err := s.retryUnmapped(ctx, userID); err != nil {
-		return Status{}, err
-	}
-	if eligErr == nil {
-		_ = s.reconcileUser(ctx, userID, false)
-	}
-	return s.Status(ctx, userID, plexID)
-}
-
-// Resolve reads Plex's current watch state and reconciles held sends for this
-// viewer without blindly re-POSTing.
-func (s *Service) Resolve(ctx context.Context, userID, plexID int64) (Status, error) {
-	if !s.supported {
-		return Status{}, ErrUnsupported
-	}
-	row, err := s.requireMatch(ctx, userID, plexID)
-	if err != nil {
-		return Status{}, err
-	}
-	if err := s.refreshEligibility(ctx, userID, row); err != nil {
-		return Status{}, err
-	}
-	if err := s.reconcileUser(ctx, userID, true); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE plexwatch_account SET next_allowed=0, send_problem='', import_failures=0,
+		next_import=CASE WHEN (direction & 2)<>0 THEN ? ELSE next_import END
+		WHERE user_id=? AND token_generation=?`, s.now().UnixNano(), userID, row.tokenGeneration); err != nil {
 		return Status{}, err
 	}
 	return s.Status(ctx, userID, plexID)
 }
 
-func (s *Service) refreshEligibility(ctx context.Context, userID int64, row accountRow) error {
-	switch err := s.client.eligibility(ctx, row.token, row.plexID); {
-	case err == nil:
-		res, e := s.db.ExecContext(ctx, `UPDATE plexwatch_account SET eligibility='allowed', checked_at=?, updated_at=?
-			WHERE user_id=? AND token_generation=? AND revoked=0 AND token<>''`,
-			s.now().UnixNano(), s.now().UnixNano(), userID, row.tokenGeneration)
-		if e != nil {
-			return e
-		}
-		n, e := res.RowsAffected()
-		if e != nil {
-			return e
-		}
-		if n == 0 {
-			return errStaleGeneration
-		}
-		return nil
-	case errors.Is(err, ErrNotEligible):
-		res, e := s.db.ExecContext(ctx, `UPDATE plexwatch_account SET eligibility='refused', checked_at=?, updated_at=?
-			WHERE user_id=? AND token_generation=? AND revoked=0`,
-			s.now().UnixNano(), s.now().UnixNano(), userID, row.tokenGeneration)
-		if e != nil {
-			return e
-		}
-		n, e := res.RowsAffected()
-		if e != nil {
-			return e
-		}
-		if n == 0 {
-			return nil
-		}
-		return ErrNotEligible
-	case errors.Is(err, ErrRevoked):
-		return s.revoke(ctx, userID, row.tokenGeneration)
-	default:
-		return err
-	}
-}
+// errStaleGeneration means the stored account changed under the caller.
+var errStaleGeneration = errors.New("plexwatch: stored account changed")
 
-// errStaleGeneration means the token that was checked is no longer the
-// stored one. The result must not clear a revoke or change the replacement.
-var errStaleGeneration = errors.New("plexwatch: stored account changed before consent was recorded")
-
+// revoke records that Plex refused the stored token for generation. The
+// token is erased and the fence moves, so nothing queued is sent with it;
+// the chosen direction stays for when the viewer connects again. It returns
+// ErrRevoked when this call made the transition, nil when it was stale.
 func (s *Service) revoke(ctx context.Context, userID, generation int64) error {
 	revoked := false
 	err := s.withFence(ctx, userID, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE plexwatch_account SET token='', direction=0, revoked=1, eligibility='unauthorized', updated_at=?
-			WHERE user_id=? AND token_generation=?`, s.now().UnixNano(), userID, generation)
+		res, err := tx.ExecContext(ctx, `UPDATE plexwatch_account SET token='', revoked=1, updated_at=?
+			WHERE user_id=? AND token_generation=? AND revoked=0`, s.now().UnixNano(), userID, generation)
 		if err != nil {
 			return err
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
 			return err
-		}
-		if n != 1 {
-			return nil
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE plexwatch_fence SET generation=generation+1 WHERE user_id=?`, userID); err != nil {
 			return err
@@ -691,6 +611,7 @@ func (s *Service) revoke(ctx context.Context, userID, generation int64) error {
 		return err
 	}
 	if revoked {
+		s.log.Info("plex account needs to be connected again", "user", userID)
 		return ErrRevoked
 	}
 	return nil
@@ -705,7 +626,7 @@ func (s *Service) requireMatch(ctx context.Context, userID, plexID int64) (accou
 		return accountRow{}, err
 	}
 	if !ok || row.revoked || row.token == "" {
-		return accountRow{}, errors.New("plexwatch: viewer has not connected a Plex account")
+		return accountRow{}, ErrNotConnected
 	}
 	if row.plexID != plexID {
 		return accountRow{}, ErrAccountMismatch
@@ -713,24 +634,8 @@ func (s *Service) requireMatch(ctx context.Context, userID, plexID int64) (accou
 	return row, nil
 }
 
-// ProbeToken reads identity and eligibility for a token the caller already
-// holds. It does not create a PIN, store the token, or send watch state.
-func (s *Service) ProbeToken(ctx context.Context, token string, plexID int64) (remoteAccount, error) {
-	if token == "" || plexID <= 0 {
-		return remoteAccount{}, errors.New("plexwatch: viewer has no Plex account id")
-	}
-	acct, err := s.client.account(ctx, token)
-	if err != nil {
-		return remoteAccount{}, err
-	}
-	if acct.ID != plexID {
-		return remoteAccount{}, ErrAccountMismatch
-	}
-	if err := s.client.eligibility(ctx, token, plexID); err != nil {
-		return acct, err
-	}
-	return acct, nil
-}
+// ErrNotConnected means the viewer has no usable Plex account connection.
+var ErrNotConnected = errors.New("plexwatch: viewer has not connected a Plex account")
 
 func viewerIDs(userID, plexID int64) error {
 	if userID <= 0 || plexID <= 0 {
@@ -741,11 +646,11 @@ func viewerIDs(userID, plexID int64) error {
 
 func (s *Service) loadAccount(ctx context.Context, userID int64) (accountRow, bool, error) {
 	var row accountRow
-	var direction, revoked int
+	var revoked int
 	var sealed string
-	err := s.db.QueryRowContext(ctx, `SELECT plex_id, username, token, direction, eligibility, revoked, import_cursor, token_generation
+	err := s.db.QueryRowContext(ctx, `SELECT plex_id, username, token, direction, revoked, import_cursor, token_generation, next_allowed, consent, consent_checked, active_after
 		FROM plexwatch_account WHERE user_id=?`, userID).
-		Scan(&row.plexID, &row.username, &sealed, &direction, &row.eligibility, &revoked, &row.cursor, &row.tokenGeneration)
+		Scan(&row.plexID, &row.username, &sealed, &row.direction, &revoked, &row.cursor, &row.tokenGeneration, &row.nextAllowed, &row.consent, &row.consentChecked, &row.activeAfter)
 	if errors.Is(err, sql.ErrNoRows) {
 		return accountRow{}, false, nil
 	}
@@ -753,10 +658,9 @@ func (s *Service) loadAccount(ctx context.Context, userID int64) (accountRow, bo
 		return accountRow{}, false, err
 	}
 	row.userID = userID
-	row.direction = direction
 	row.revoked = revoked != 0
 	if sealed != "" {
-		plain, _, err := config.OpenWith(s.sealer, sealed, "plexwatch", "token", strconv.FormatInt(userID, 10), "scrobbles.plex.tv")
+		plain, _, err := config.OpenWith(s.sealer, sealed, "plexwatch", "token", strconv.FormatInt(userID, 10), tokenSealLabel)
 		if err != nil {
 			return accountRow{}, false, err
 		}
@@ -786,4 +690,47 @@ func (s *Service) loadPIN(ctx context.Context, userID int64) (pinRow, bool, erro
 		return pinRow{}, false, err
 	}
 	return pinRow{id: id, code: code, expires: time.Unix(0, exp)}, true, nil
+}
+
+// withFence runs an account transition with the viewer's fence row locked
+// (FOR UPDATE on PostgreSQL). Send admission takes the same lock, so a
+// disable cannot commit between admission's check and its commit.
+func (s *Service) withFence(ctx context.Context, userID int64, fn func(tx *sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO plexwatch_fence(user_id, generation, inflight) VALUES(?,1,0)
+		ON CONFLICT(user_id) DO NOTHING`, userID); err != nil {
+		return err
+	}
+	if _, err := s.lockFence(ctx, tx, userID); err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Service) lockFence(ctx context.Context, tx *sql.Tx, userID int64) (int64, error) {
+	q := `SELECT generation FROM plexwatch_fence WHERE user_id=?` + store.ForUpdate(store.DialectOf(s.db))
+	var gen int64
+	err := tx.QueryRowContext(ctx, q, userID).Scan(&gen)
+	return gen, err
+}
+
+func (s *Service) forgetRemoteTx(ctx context.Context, tx *sql.Tx, userID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM plexwatch_remote WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM plexwatch_expand WHERE user_id=?`, userID)
+	return err
+}
+
+func newID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }

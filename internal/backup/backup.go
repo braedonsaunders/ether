@@ -299,7 +299,10 @@ func (s *Service) Create(ctx context.Context) (Snapshot, error) {
 			return out, e
 		}
 	} else {
-		if _, e = s.db.ExecContext(ctx, `VACUUM INTO '`+strings.ReplaceAll(dbPath, "'", "''")+`'`); e != nil {
+		endRead := store.BeginLongRead(s.db, "a backup")
+		_, e = s.db.ExecContext(ctx, `VACUUM INTO '`+strings.ReplaceAll(dbPath, "'", "''")+`'`)
+		endRead()
+		if e != nil {
 			return out, e
 		}
 		if e = validateDB(ctx, dbPath); e != nil {

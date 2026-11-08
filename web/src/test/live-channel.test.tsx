@@ -12,6 +12,7 @@ const WAIT = { timeout: 4000 };
 class ImmediatelyVisible implements IntersectionObserver {
   readonly root: Element | Document | null = null;
   readonly rootMargin = "";
+  readonly scrollMargin = "";
   readonly thresholds: readonly number[] = [];
   constructor(private readonly callback: IntersectionObserverCallback) {}
   observe(target: Element) {

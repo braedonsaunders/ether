@@ -639,5 +639,14 @@ func (s *Service) ChatGuide(ctx context.Context, system, user string) (string, e
 		return "", fmt.Errorf("llm disabled")
 	}
 	ctx = context.WithValue(ctx, chatBudgetKey{}, 2048)
-	return s.client.Chat(ctx, []Message{{Role: "system", Content: system}, {Role: "user", Content: user}}, true)
+	raw, err := s.client.Chat(ctx, []Message{{Role: "system", Content: system}, {Role: "user", Content: user}}, true)
+	if err != nil {
+		return "", err
+	}
+	// Only OpenAI gets strict JSON mode; other providers and reasoning models
+	// wrap the object in fences, prose or a thinking block.
+	if j := ExtractJSON(raw); j != "" {
+		return j, nil
+	}
+	return raw, nil
 }

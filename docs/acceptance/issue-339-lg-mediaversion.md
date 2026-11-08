@@ -1,5 +1,10 @@
 # LG MediaVersion (#339): revised fix and measurements
 
+> Superseded for Plex for LG by #375: the stable play-flow list below did not
+> cover the season lists, rows and cold details where the app first caches its
+> playback settings with one Media. Plex for LG now receives one stable Auto
+> Media everywhere, as Plex for VIDAA (same 5.94 app) has since #89.
+
 Issue: https://github.com/braedonsaunders/ether/issues/339 (paustin316-cell).
 Base: release/0.3.5 at b4d8d5827. This revision supersedes the broad behavior in
 35b8c5ada. The reporter's server/app versions remain unknown; no physical LG

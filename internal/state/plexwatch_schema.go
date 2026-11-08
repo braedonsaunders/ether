@@ -63,4 +63,11 @@ ALTER TABLE state_sync_journal ADD COLUMN consent_generation INTEGER NOT NULL DE
 ALTER TABLE state_sync_journal ADD COLUMN never_sent INTEGER NOT NULL DEFAULT 0;
 UPDATE state_sync_journal SET never_sent=1 WHERE delivered_at=0 AND attempts=0 AND claimed_by='' AND claimed_at=0 AND last_error='';
 `)
+	// Resume positions are a third aspect ("offset"). A row carries the
+	// resume point in milliseconds (0 clears it) and the duration Ether
+	// knew for the title, which Plex's timeline call requires.
+	store.Register("state_plexwatch", 6, `
+ALTER TABLE state_sync_journal ADD COLUMN offset_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE state_sync_journal ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;
+`)
 }

@@ -7,26 +7,43 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
-// SyncAspect is the independent half of a title's account sync: watched
-// state, or a rating. A newer rating must not erase a pending watch, and
-// the reverse.
+// SyncAspect is an independent part of a title's account sync: watched
+// state, a rating, or the resume position. A newer rating must not erase a
+// pending watch, and the reverse. A watch change does supersede a pending
+// resume position: a finished or unwatched title has none.
 type SyncAspect string
 
 const (
 	SyncWatch  SyncAspect = "watch"
 	SyncRating SyncAspect = "rating"
+	SyncOffset SyncAspect = "offset"
 )
 
 // SyncKind is what a journal row asks a subscriber to deliver. Watch kinds
 // are the Plex viewState values "complete" and "unplayed". "rating" carries
 // the raw local rating; the subscriber decides which values it can send.
+// "offset" carries a resume position (Offset, 0 clears it) and the
+// duration Ether knew for the title. "continue_removed", in the same
+// aspect, removes the title from Continue Watching and carries the position
+// Ether holds, so a position still queued is not lost when a removal
+// replaces it; a later position replaces the removal in turn, as playback
+// brings a title back.
 const (
-	SyncComplete   = "complete"
-	SyncUnplayed   = "unplayed"
-	SyncRatingKind = "rating"
+	SyncComplete        = "complete"
+	SyncUnplayed        = "unplayed"
+	SyncRatingKind      = "rating"
+	SyncOffsetKind      = "offset"
+	SyncContinueRemoved = "continue_removed"
 )
+
+// OffsetHold is how long a resume position reported during playback waits
+// before it is sent. Later positions of the same title replace it in place,
+// so a long playback sends at most one position per hold, never one per
+// heartbeat. A position reported on pause or stop is sent at once.
+const OffsetHold = 5 * time.Minute
 
 // SyncRow is one durable intent. Seq orders intents. Bulk is set when the
 // watch change was one of several keys in the same transaction (a season
@@ -38,6 +55,8 @@ type SyncRow struct {
 	Aspect     SyncAspect
 	Kind       string
 	Rating     float64
+	Offset     time.Duration // SyncOffsetKind: the resume point, 0 clears it
+	Duration   time.Duration // SyncOffsetKind: the title's known duration
 	At         time.Time
 	Bulk       bool
 	Attempts   int
@@ -106,18 +125,9 @@ func (s *State) journalEvents(ctx context.Context, tx *sql.Tx, events []Event, f
 		if !force && gate != nil && !admitted[ev.UserID] {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE state_sync_journal SET superseded=1, claimed_by='', claimed_at=0
-			WHERE user_id=? AND rating_key=? AND aspect=? AND delivered_at=0 AND superseded=0 AND dead=0`,
-			ev.UserID, int64(ev.Key), string(aspect)); err != nil {
-			return err
-		}
 		at := ev.At.UTC()
 		if at.IsZero() {
 			at = time.Now().UTC()
-		}
-		b := 0
-		if bulk && aspect == SyncWatch {
-			b = 1
 		}
 		// Keep the generation the gate observed. Reading the fence again here
 		// would stamp a disable that committed after that observation.
@@ -127,12 +137,65 @@ func (s *State) journalEvents(ctx context.Context, tx *sql.Tx, events []Event, f
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO state_sync_journal(user_id,rating_key,aspect,kind,rating,occurred_at,bulk,consent_generation,never_sent)
-			VALUES(?,?,?,?,?,?,?,?,1)`, ev.UserID, int64(ev.Key), string(aspect), kind, ev.Rating, at.UnixNano(), b, gen); err != nil {
+		var offsetMS, durationMS, next int64
+		if aspect == SyncOffset {
+			offsetMS, durationMS = max(ev.Resume.Milliseconds(), 0), max(ev.Duration.Milliseconds(), 0)
+			if kind == SyncOffsetKind && offsetMS > 0 && durationMS == 0 {
+				// Plex requires the duration, which Ether has not learned
+				// for this title yet; the next position with one is sent.
+				continue
+			}
+			if offsetHeld(ev.State) {
+				next = at.Add(OffsetHold).UnixNano()
+			}
+			// Coalesce: a queued position nobody has picked up yet takes the
+			// newer one in place. It keeps its send time unless this one is
+			// final (pause or stop), so steady playback still sends once per
+			// hold. A row that may already have reached Plex is not reused:
+			// its read-back must compare against what it sent.
+			res, err := tx.ExecContext(ctx, `UPDATE state_sync_journal SET kind=?, offset_ms=?, duration_ms=?, occurred_at=?, consent_generation=?,
+				next_attempt=CASE WHEN ?=1 THEN 0 ELSE next_attempt END
+				WHERE user_id=? AND rating_key=? AND aspect=? AND delivered_at=0 AND superseded=0 AND dead=0 AND claimed_by='' AND never_sent=1`,
+				kind, offsetMS, durationMS, at.UnixNano(), gen, store.BoolInt(next == 0), ev.UserID, int64(ev.Key), string(SyncOffset))
+			if err != nil {
+				return err
+			}
+			if n, err := res.RowsAffected(); err != nil {
+				return err
+			} else if n > 0 {
+				continue
+			}
+		}
+		// A watch change also supersedes a queued resume position, so a
+		// stale position never reaches Plex after the title was finished
+		// or marked unwatched.
+		supersede := `UPDATE state_sync_journal SET superseded=1, claimed_by='', claimed_at=0
+			WHERE user_id=? AND rating_key=? AND aspect=? AND delivered_at=0 AND superseded=0 AND dead=0`
+		args := []any{ev.UserID, int64(ev.Key), string(aspect)}
+		if aspect == SyncWatch {
+			supersede = `UPDATE state_sync_journal SET superseded=1, claimed_by='', claimed_at=0
+			WHERE user_id=? AND rating_key=? AND aspect IN (?,?) AND delivered_at=0 AND superseded=0 AND dead=0`
+			args = append(args, string(SyncOffset))
+		}
+		if _, err := tx.ExecContext(ctx, supersede, args...); err != nil {
+			return err
+		}
+		b := 0
+		if bulk && aspect == SyncWatch {
+			b = 1
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO state_sync_journal(user_id,rating_key,aspect,kind,rating,occurred_at,bulk,consent_generation,never_sent,offset_ms,duration_ms,next_attempt)
+			VALUES(?,?,?,?,?,?,?,?,1,?,?,?)`, ev.UserID, int64(ev.Key), string(aspect), kind, ev.Rating, at.UnixNano(), b, gen, offsetMS, durationMS, next); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// offsetHeld reports a position reported while playback continues. Pause,
+// stop and an explicit resume point ("progress") are final for now.
+func offsetHeld(state string) bool {
+	return state == "playing" || state == "buffering"
 }
 
 func journalKind(ev Event) (SyncAspect, string, bool) {
@@ -143,6 +206,18 @@ func journalKind(ev Event) (SyncAspect, string, bool) {
 		return SyncWatch, SyncUnplayed, true
 	case EventRated:
 		return SyncRating, SyncRatingKind, true
+	case EventProgress:
+		// Only a changed resume point of a movie or episode; a completion
+		// travels as a watch change.
+		if ev.ResumeSet && !ev.Completed && (ev.Key.Kind() == core.KindMovie || ev.Key.Kind() == core.KindEpisode) {
+			return SyncOffset, SyncOffsetKind, true
+		}
+		return "", "", false
+	case EventContinueRemoved:
+		if ev.Key.Kind() == core.KindMovie || ev.Key.Kind() == core.KindEpisode {
+			return SyncOffset, SyncContinueRemoved, true
+		}
+		return "", "", false
 	default:
 		return "", "", false
 	}
@@ -161,14 +236,17 @@ func (s *State) NoteSyncIntents(ctx context.Context, rows []SyncRow) error {
 	defer tx.Rollback()
 	evs := make([]Event, 0, len(rows))
 	for _, row := range rows {
-		kind := EventScrobble
+		ev := Event{Kind: EventScrobble, UserID: row.UserID, Key: row.Key, Rating: row.Rating, At: row.At}
 		switch row.Kind {
 		case SyncUnplayed:
-			kind = EventUnscrobble
+			ev.Kind = EventUnscrobble
 		case SyncRatingKind:
-			kind = EventRated
+			ev.Kind = EventRated
+		case SyncOffsetKind:
+			ev.Kind, ev.State = EventProgress, "stopped"
+			ev.ResumeSet, ev.Resume, ev.Duration = true, row.Offset, row.Duration
 		}
-		evs = append(evs, Event{Kind: kind, UserID: row.UserID, Key: row.Key, Rating: row.Rating, At: row.At})
+		evs = append(evs, ev)
 	}
 	// A multi-row export is not a season batch. Write each row as its own
 	// non-bulk intent so isBulk is reserved for one user action.
@@ -202,14 +280,14 @@ func (s *State) ClaimSync(ctx context.Context, holder string, now time.Time, sta
 	}
 	defer tx.Rollback()
 	var row SyncRow
-	var key, at, bulk int64
+	var key, at, bulk, offsetMS, durationMS int64
 	var aspect, kind string
-	err = tx.QueryRowContext(ctx, `SELECT seq, user_id, rating_key, aspect, kind, rating, occurred_at, bulk, attempts, consent_generation
+	err = tx.QueryRowContext(ctx, `SELECT seq, user_id, rating_key, aspect, kind, rating, occurred_at, bulk, attempts, consent_generation, offset_ms, duration_ms
 		FROM state_sync_journal
 		WHERE delivered_at=0 AND superseded=0 AND dead=0 AND next_attempt<=?
 		  AND (claimed_by='' OR claimed_at<?)
 		ORDER BY seq LIMIT 1`, nowNano, staleNano).
-		Scan(&row.Seq, &row.UserID, &key, &aspect, &kind, &row.Rating, &at, &bulk, &row.Attempts, &row.ConsentGen)
+		Scan(&row.Seq, &row.UserID, &key, &aspect, &kind, &row.Rating, &at, &bulk, &row.Attempts, &row.ConsentGen, &offsetMS, &durationMS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SyncRow{}, false, nil
 	}
@@ -232,6 +310,8 @@ func (s *State) ClaimSync(ctx context.Context, holder string, now time.Time, sta
 	row.Key = core.RatingKey(key)
 	row.Aspect = SyncAspect(aspect)
 	row.Kind = kind
+	row.Offset = time.Duration(offsetMS) * time.Millisecond
+	row.Duration = time.Duration(durationMS) * time.Millisecond
 	row.At = time.Unix(0, at).UTC()
 	row.Bulk = bulk != 0
 	return row, true, tx.Commit()
@@ -313,6 +393,24 @@ func dropPending(ctx context.Context, db interface {
 		SET dead=1, claimed_by='', claimed_at=0, last_error=?
 		WHERE user_id=? AND delivered_at=0 AND superseded=0 AND dead=0`,
 		trimErr(reason), userID)
+	return err
+}
+
+// ParkSync holds every unclaimed live intent of a viewer until until, with
+// reason, without counting an attempt. Account sync parks a viewer's queue
+// while their Plex account does not allow syncing; WakeSync releases it.
+func (s *State) ParkSync(ctx context.Context, userID int64, until time.Time, reason string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE state_sync_journal SET next_attempt=?, last_error=?
+		WHERE delivered_at=0 AND superseded=0 AND dead=0 AND user_id=? AND claimed_by=''`,
+		until.UnixNano(), trimErr(reason), userID)
+	return err
+}
+
+// WakeSync makes a viewer's intents parked with reason claimable now.
+func (s *State) WakeSync(ctx context.Context, userID int64, reason string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE state_sync_journal SET next_attempt=0, last_error=''
+		WHERE delivered_at=0 AND superseded=0 AND dead=0 AND user_id=? AND last_error=?`,
+		userID, trimErr(reason))
 	return err
 }
 
@@ -462,6 +560,88 @@ func (s *State) ApplyRemote(ctx context.Context, userID int64, key core.RatingKe
 			s.emit(ev)
 		}
 	}
+	return nil
+}
+
+// ApplyRemoteResume writes a resume position read from a viewer's account
+// without journaling an upload. at is when the account recorded it (zero:
+// now). The watch clock decides: a local progress, completion or watch
+// mark at or after at wins, so a stale position never resurrects a title
+// the viewer finished. Ether's own rules apply to the position: at or past
+// WatchedThreshold of a known duration it is a completed viewing, at or
+// under a minute (or below StartedThreshold) it clears the resume point.
+// A title the viewer removed from Continue Watching stays removed; only
+// local playback brings it back. ErrLocalNewer means nothing was applied.
+func (s *State) ApplyRemoteResume(ctx context.Context, userID int64, key core.RatingKey, offset time.Duration, at time.Time) error {
+	if userID <= 0 || !key.Valid() || offset < 0 {
+		return errors.New("state: invalid remote resume update")
+	}
+	if err := s.lockWrites(ctx); err != nil {
+		return err
+	}
+	defer s.unlockWrites()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	cur, err := loadTx(ctx, tx, userID, key)
+	if err != nil {
+		return err
+	}
+	if remoteOlder(cur.watchAt, at) {
+		return ErrLocalNewer
+	}
+	now := s.now().UTC()
+	when := at.UTC()
+	if when.IsZero() {
+		when = now
+	}
+	dur := cur.ws.Duration
+	complete := offset > 0 && dur > 0 && float64(offset) >= WatchedThreshold*float64(dur)
+	if offset <= time.Minute || (dur > 0 && float64(offset) < StartedThreshold*float64(dur)) {
+		offset = 0
+	}
+	if complete {
+		if !cur.counted {
+			cur.ws.ViewCount++
+		}
+		cur.counted = true
+		cur.ws.ViewOffset = 0
+		cur.ws.LastViewedAt = when
+	} else {
+		if offset == cur.ws.ViewOffset {
+			return nil
+		}
+		cur.ws.ViewOffset = offset
+		if offset > 0 {
+			cur.counted = false // a (re)viewing in progress
+			cur.ws.LastViewedAt = when
+		}
+	}
+	cur.watchAt = when
+	cur.ws.UpdatedAt = now
+	if err := saveTx(ctx, tx, userID, cur); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	// No timeline state: this is not a local playback, so play tracking and
+	// scrobblers that follow timelines leave it alone.
+	ev := Event{Kind: EventProgress, UserID: userID, Key: key, Offset: offset, Duration: dur,
+		At: when, Imported: true, Account: true}
+	if complete {
+		// Reported like an account watch mark (ApplyRemote).
+		ev.Kind, ev.Completed, ev.Fraction = EventScrobble, true, 1
+	} else {
+		ev.ResumeSet, ev.Resume = true, offset
+		if dur > 0 {
+			ev.Fraction = float64(offset) / float64(dur)
+		}
+	}
+	s.emit(ev)
 	return nil
 }
 

@@ -34,7 +34,7 @@ import { SettingsRow } from "../../components/SettingsRow";
 import { DragHandle, SortableList, type DragHandleProps } from "../../components/Sortable";
 import { localized, t, tn, tx } from "../../i18n";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
-import { api } from "../../lib/api";
+import { ApiError, api } from "../../lib/api";
 import { isPluginDescriptor, textOf } from "../../lib/extend";
 import { relativeTime } from "../../lib/format";
 import {
@@ -297,6 +297,22 @@ function withRenamedProfile(
     );
   });
   return next;
+}
+
+/**
+ * The server names a refused profile by its position in the list sent. Name
+ * the profile instead, so a change blocked by another profile (removing one
+ * while two others clash) says which one to fix.
+ */
+function withProfileNames(e: unknown, sent: QualityProfile[]): unknown {
+  if (!(e instanceof ApiError) || !e.fields?.length) return e;
+  const fields = e.fields.map((f) => {
+    const at = /^quality\.profiles\[(\d+)\]/.exec(f.field);
+    const p = at ? sent[Number(at[1])] : undefined;
+    if (!p) return f;
+    return { ...f, field: t("{name} ({media})", { name: p.name, media: mediaLabel(p.mediaType) }) };
+  });
+  return new ApiError(e.status, e.code, e.message, fields);
 }
 
 /**
@@ -943,7 +959,8 @@ function SyncSection({ quality, onSaved }: { quality: Quality; onSaved: () => Pr
   });
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [saveError, setSaveError] = useState<unknown>(null);
+  const [syncError, setSyncError] = useState<unknown>(null);
   const [report, setReport] = useState<QualitySyncReport | null>(null);
   if (!draft) return null;
   const imported = (quality.profiles ?? []).some((p) => p.import);
@@ -955,7 +972,7 @@ function SyncSection({ quality, onSaved }: { quality: Quality; onSaved: () => Pr
   async function save() {
     if (!draft) return;
     setSaving(true);
-    setError(null);
+    setSaveError(null);
     try {
       // The admin endpoint patches the quality section, so omitted run
       // state stays whatever the server recorded while this form was open.
@@ -965,7 +982,7 @@ function SyncSection({ quality, onSaved }: { quality: Quality; onSaved: () => Pr
       toast.success(t("Sync settings saved"));
       await onSaved();
     } catch (e) {
-      setError(e);
+      setSaveError(e);
     } finally {
       setSaving(false);
     }
@@ -973,13 +990,14 @@ function SyncSection({ quality, onSaved }: { quality: Quality; onSaved: () => Pr
 
   async function syncNow() {
     setSyncing(true);
-    setError(null);
+    setSyncError(null);
+    setReport(null);
     try {
       setReport(await releaseConsole.syncQuality());
       toast.success(t("Guide sync finished"));
       await onSaved();
     } catch (e) {
-      setError(e);
+      setSyncError(e);
     } finally {
       setSyncing(false);
     }
@@ -1038,7 +1056,7 @@ function SyncSection({ quality, onSaved }: { quality: Quality; onSaved: () => Pr
           {syncing ? t("Syncing…") : t("Sync now")}
         </Button>
       </div>
-      {error ? <ErrorPanel error={error} /> : null}
+      {syncError ? <ErrorPanel error={syncError} /> : null}
       {report ? (
         <Alert variant="success" role="status">
           <AlertTitle>{t("Guide sync finished")}</AlertTitle>
@@ -1064,11 +1082,11 @@ function SyncSection({ quality, onSaved }: { quality: Quality; onSaved: () => Pr
       <SaveBar
         dirty={dirty}
         saving={saving}
-        error={error}
+        error={saveError}
         onSave={() => void save()}
         onDiscard={() => {
           reset();
-          setError(null);
+          setSaveError(null);
         }}
       />
     </Section>
@@ -1283,7 +1301,7 @@ function ProfileList({
       setEditing(null);
       setScoring(null);
     } catch (e) {
-      setError(e);
+      setError(withProfileNames(e, list));
       setErrors(recordErrors(e, `quality.profiles[${index}].`));
     } finally {
       setSaving(false);
@@ -1350,7 +1368,7 @@ function ProfileList({
       await commit(next, t("Profile removed"));
       setEditing(null);
     } catch (e) {
-      setError(e);
+      setError(withProfileNames(e, rest));
     } finally {
       setSaving(false);
     }

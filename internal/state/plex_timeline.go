@@ -152,6 +152,7 @@ func (s *State) PlexTimeline(ctx context.Context, user int64, key core.RatingKey
 func (s *State) plexProgressAt(ctx context.Context, user int64, key core.RatingKey, w progressWrite) error {
 	return s.updateAt(ctx, user, []core.RatingKey{key}, w.at, func(cur *row, now time.Time) (bool, bool, []Event) {
 		complete := w.state == "plex-complete"
+		before := cur.ws.ViewOffset
 		if w.duration > 0 {
 			cur.ws.Duration = w.duration
 		}
@@ -175,9 +176,11 @@ func (s *State) plexProgressAt(ctx context.Context, user int64, key core.RatingK
 		if complete {
 			kind = EventCompleted
 		}
-		ev := Event{Kind: kind, UserID: user, Key: key, Offset: w.offset, Duration: w.duration, Completed: complete, State: w.timelineState, At: now}
+		ev := Event{Kind: kind, UserID: user, Key: key, Offset: w.offset, Duration: cur.ws.Duration, Completed: complete, State: w.timelineState, At: now}
 		if complete {
 			ev.Fraction = 1
+		} else {
+			ev.ResumeSet, ev.Resume = cur.ws.ViewOffset != before, cur.ws.ViewOffset
 		}
 		return complete && key.Kind() != core.KindPlaylist, complete, []Event{ev}
 	})

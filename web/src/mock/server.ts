@@ -2183,11 +2183,16 @@ export function createFakeServer(opts: FakeOptions = {}) {
     number,
     {
       connected: boolean;
-      enabled: boolean;
-      eligibility: string;
-      revoked: boolean;
+      direction: number;
+      importInterval: number;
+      lastImport: number;
+      lastFullImport: number;
+      lastSend: number;
+      nextImport: number;
+      problem: string;
+      needsReconnect: boolean;
       pending: number;
-      dead: number;
+      failed: number;
       restricted: boolean;
       pinCode?: string;
       pinUrl?: string;
@@ -3938,30 +3943,27 @@ export function createFakeServer(opts: FakeOptions = {}) {
       if (seg[2] === "plex-watch") {
         const cur = plexWatch.get(id) ?? {
           connected: false,
-          enabled: false,
-          eligibility: "unchecked",
-          revoked: false,
+          direction: 0,
+          importInterval: 10,
+          lastImport: 0,
+          lastFullImport: 0,
+          lastSend: 0,
+          nextImport: 0,
+          problem: "",
+          needsReconnect: false,
           pending: 0,
-          dead: 0,
+          failed: 0,
           restricted: false,
           accountMatch: true,
         };
         const action = seg[3];
-        if (!action && method === "GET")
-          return json({
-            ...cur,
-            eligibility: "unsupported",
-            problem: "unsupported",
-            direction: 0,
-            importInterval: 10,
-            skipped: 0,
-            held: 0,
-          });
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (!action && method === "GET") return json(cur);
         if (action === "pin" && !seg[4] && method === "POST") {
           const next = {
             ...cur,
             pinCode: "MOCK",
-            pinUrl: "https://plex.tv/link",
+            pinUrl: "https://app.plex.tv/auth#?code=MOCK",
             accountMatch: true,
           };
           plexWatch.set(id, next);
@@ -3982,27 +3984,42 @@ export function createFakeServer(opts: FakeOptions = {}) {
             plexId: v.plexId,
             pinCode: undefined,
             pinUrl: undefined,
-            eligibility: "allowed",
+            needsReconnect: false,
+            problem: "",
             accountMatch: true,
           };
           plexWatch.set(id, next);
           return json(next);
         }
         if (!action && method === "PUT") {
-          const next = { ...cur, enabled: Boolean((body as { enabled?: boolean })?.enabled) };
+          const b = body as { direction?: number; interval?: number };
+          const next = {
+            ...cur,
+            direction: b?.direction ?? cur.direction,
+            importInterval: b?.interval ?? cur.importInterval,
+          };
           plexWatch.set(id, next);
           return json(next);
         }
         if (action === "disconnect" && method === "POST") {
-          const next = { ...cur, connected: false, enabled: false, username: undefined };
+          const next = {
+            ...cur,
+            connected: false,
+            direction: 0,
+            needsReconnect: false,
+            problem: "",
+            username: undefined,
+          };
           plexWatch.set(id, next);
           return json(next);
         }
-        if (
-          (action === "retry" || action === "import" || action === "export") &&
-          method === "POST"
-        ) {
-          const next = { ...cur, pending: 0, dead: 0 };
+        if (action === "import" && method === "POST") {
+          const next = { ...cur, lastImport: nowSec, lastFullImport: nowSec };
+          plexWatch.set(id, next);
+          return json(next);
+        }
+        if ((action === "retry" || action === "export") && method === "POST") {
+          const next = { ...cur, pending: 0, failed: 0, lastSend: nowSec };
           plexWatch.set(id, next);
           return json(next);
         }

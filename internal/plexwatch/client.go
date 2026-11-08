@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -21,22 +22,19 @@ import (
 const (
 	plexOrigin     = "https://plex.tv"
 	serversOrigin  = "https://servers.plex.tv"
-	scrobbleOrigin = "https://scrobbles.plex.tv"
+	discoverOrigin = "https://discover.provider.plex.tv"
 	authApp        = "https://app.plex.tv/auth"
 	maxBody        = 1 << 20
+	// discoverIdentifier names the Discover provider in action requests.
+	discoverIdentifier = "tv.plex.provider.discover"
 )
 
 // ErrAccountMismatch means the Plex account that approved a PIN is not the
 // viewer's account.
 var ErrAccountMismatch = errors.New("plexwatch: plex account does not belong to this viewer")
 
-// ErrNotEligible means the viewer has not consented to watch-state sync.
-var ErrNotEligible = errors.New("plexwatch: account has not allowed watch-state sync")
-
-// ErrCredentialForbidden means the credential lacks access to watch state.
-var ErrCredentialForbidden = errors.New("plexwatch: credential is not allowed to access watch state")
-
-// ErrRevoked means the stored account token was rejected.
+// ErrRevoked means Plex refused the viewer's stored account token (HTTP 401
+// or 403). The viewer must connect the account again.
 var ErrRevoked = errors.New("plexwatch: account token rejected")
 
 // StatusError is an HTTP result that is not success. Body is not retained.
@@ -44,34 +42,27 @@ type StatusError struct {
 	Status     int
 	RetryAfter time.Duration
 	Op         string
-	PlexCode   int
 }
 
 func (e *StatusError) Error() string {
 	return fmt.Sprintf("plexwatch: %s: http %d", e.Op, e.Status)
 }
 
+// Is maps definitive credential refusals onto ErrRevoked.
 func (e *StatusError) Is(target error) bool {
-	switch target {
-	case ErrRevoked:
-		return e.Status == http.StatusUnauthorized
-	case ErrCredentialForbidden:
-		return e.Status == http.StatusForbidden
-	default:
-		return false
-	}
+	return target == ErrRevoked && (e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden)
 }
 
-// Client is the allowlisted Plex HTTP API used by this package.
+// Client is the allowlisted Plex HTTP API used by the account path: PIN
+// sign-in and identity on plex.tv, watch state on discover.provider.plex.tv.
+// Every call carries the viewer's own account token in X-Plex-Token.
 type Client struct {
-	serverIdentity func() (string, string)
-	credentials    serviceCredentials
-	plex           *url.URL
-	servers        *url.URL
-	scrobble       *url.URL
-	clientID       string
-	http           *http.Client
-	now            func() time.Time
+	plex     *url.URL
+	servers  *url.URL
+	discover *url.URL
+	clientID string
+	http     *http.Client
+	now      func() time.Time
 }
 
 func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*Client, error) {
@@ -90,7 +81,7 @@ func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*C
 		if c.servers, err = url.Parse(serversOrigin); err != nil {
 			return nil, err
 		}
-		if c.scrobble, err = url.Parse(scrobbleOrigin); err != nil {
+		if c.discover, err = url.Parse(discoverOrigin); err != nil {
 			return nil, err
 		}
 	} else {
@@ -98,7 +89,7 @@ func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*C
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			return nil, errors.New("plexwatch: invalid test origin")
 		}
-		c.plex, c.servers, c.scrobble = u, u, u
+		c.plex, c.servers, c.discover = u, u, u
 	}
 	if hc == nil {
 		hc = egress.Client(egress.CapDirect, 20*time.Second)
@@ -109,13 +100,6 @@ func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*C
 	}
 	c.http = &clone
 	return c, nil
-}
-
-func (c *Client) allowed(u *url.URL) bool {
-	if u.Scheme != c.plex.Scheme {
-		return false
-	}
-	return u.Host == c.plex.Host || u.Host == c.servers.Host || u.Host == c.scrobble.Host
 }
 
 type pinStart struct {
@@ -130,7 +114,7 @@ func (c *Client) createPIN(ctx context.Context) (pinStart, error) {
 		Code      string `json:"code"`
 		ExpiresIn int    `json:"expiresIn"`
 	}
-	if _, err := c.call(ctx, http.MethodPost, c.plex, "/api/v2/pins?strong=true", "", nil, &out, http.StatusCreated, http.StatusOK); err != nil {
+	if err := c.call(ctx, http.MethodPost, c.plex, "/api/v2/pins", url.Values{"strong": {"true"}}, "", &out, http.StatusCreated, http.StatusOK); err != nil {
 		return pinStart{}, err
 	}
 	if out.ID == 0 || out.Code == "" {
@@ -155,8 +139,7 @@ func (c *Client) pollPIN(ctx context.Context, id int64, code string) (string, er
 	var out struct {
 		AuthToken *string `json:"authToken"`
 	}
-	path := "/api/v2/pins/" + strconv.FormatInt(id, 10) + "?code=" + url.QueryEscape(code)
-	if _, err := c.call(ctx, http.MethodGet, c.plex, path, "", nil, &out, http.StatusOK); err != nil {
+	if err := c.call(ctx, http.MethodGet, c.plex, "/api/v2/pins/"+strconv.FormatInt(id, 10), url.Values{"code": {code}}, "", &out, http.StatusOK); err != nil {
 		return "", err
 	}
 	if out.AuthToken == nil {
@@ -177,12 +160,10 @@ func (c *Client) account(ctx context.Context, token string) (remoteAccount, erro
 		Username   string `json:"username"`
 		Title      string `json:"title"`
 		Restricted bool   `json:"restricted"`
-		AuthToken  string `json:"authToken"`
 	}
-	if _, err := c.call(ctx, http.MethodGet, c.servers, "/api/v2/user", token, nil, &out, http.StatusOK); err != nil {
+	if err := c.call(ctx, http.MethodGet, c.servers, "/api/v2/user", nil, token, &out, http.StatusOK); err != nil {
 		return remoteAccount{}, err
 	}
-	out.AuthToken = ""
 	if out.ID == 0 {
 		return remoteAccount{}, errors.New("plexwatch: account response without id")
 	}
@@ -193,142 +174,215 @@ func (c *Client) account(ctx context.Context, token string) (remoteAccount, erro
 	return remoteAccount{ID: out.ID, Username: name, Restricted: out.Restricted}, nil
 }
 
-// eligibility is the read-only view_state_sync check: the account's own
-// "Sync my watch state and ratings" consent, read with the viewer's account
-// token. (server/users/{id}/view_state_sync needs a Plex server token and
-// refuses every account token with 403 code 1080, #288.) Only consent false
-// is ErrNotEligible; HTTP failures are returned separately.
-func (c *Client) eligibility(ctx context.Context, token string, plexID int64) error {
-	_ = plexID // the account endpoint is scoped by the token itself
+// userState is one title's account state on Discover. Watched is
+// viewCount>0: unscrobble resets viewCount but keeps lastViewedAt, so
+// lastViewedAt alone never means watched.
+type userState struct {
+	Key      string
+	Type     string
+	Watched  bool
+	ViewedAt int64 // lastViewedAt, unix seconds
+	Offset   int64 // viewOffset, milliseconds; 0 when not in progress
+	// ViewState is "progress" while in progress and "ignore" once removed
+	// from Continue Watching (the next timeline write clears it).
+	ViewState  string
+	Rating     int // 1–10, 0 when unrated
+	ViewedLeaf int // shows only
+}
+
+// viewIgnore is the viewState of a title removed from Continue Watching.
+const viewIgnore = "ignore"
+
+// removeFromContinueWatching hides key from the account's Continue
+// Watching (viewState "ignore"). It keeps viewOffset.
+func (c *Client) removeFromContinueWatching(ctx context.Context, token, key string) error {
+	return c.action(ctx, token, "/actions/removeFromContinueWatching", key, nil)
+}
+
+// consent reads the account's "Sync My Watch State and Ratings" setting.
+// Plex does not enforce it on the Discover routes; Ether does.
+func (c *Client) consent(ctx context.Context, token string) (bool, error) {
 	var out struct {
-		Consent bool `json:"consent"`
+		Consent *bool `json:"consent"`
 	}
-	if _, err := c.call(ctx, http.MethodGet, c.plex, "/api/v2/user/view_state_sync", token, nil, &out, http.StatusOK); err != nil {
-		return err
+	if err := c.call(ctx, http.MethodGet, c.plex, "/api/v2/user/view_state_sync", nil, token, &out, http.StatusOK); err != nil {
+		return false, err
 	}
-	if !out.Consent {
-		return ErrNotEligible
+	if out.Consent == nil {
+		return false, errors.New("plexwatch: view_state_sync response without consent")
 	}
-	return nil
+	return *out.Consent, nil
 }
 
-type postItem struct {
-	GUID      string `json:"guid"`
-	ViewedAt  int64  `json:"viewedAt,omitempty"`
-	ViewState string `json:"viewState,omitempty"`
-	RatedAt   int64  `json:"ratedAt,omitempty"`
-	Rating    *int   `json:"rating,omitempty"`
-	IsBulk    bool   `json:"isBulk,omitempty"`
+// timelineResult is what Plex holds after a timeline write. ViewCountKnown
+// is false when the answer did not say.
+type timelineResult struct {
+	ViewCount      int
+	ViewCountKnown bool
+	Offset         int64
 }
 
-func (c *Client) postState(ctx context.Context, token string, plexID int64, item postItem) error {
-	body, err := encodeState(plexID, item)
-	if err != nil {
-		return err
+// timeline records a stopped playback position (milliseconds) for key.
+// Discover takes it only as a GET; Plex never marks a title watched from a
+// timeline, so completion is still sent as a scrobble.
+func (c *Client) timeline(ctx context.Context, token, key string, offsetMS, durationMS int64) (timelineResult, error) {
+	if !validHexKey(key) {
+		return timelineResult{}, errors.New("plexwatch: invalid plex metadata key")
 	}
-	_, err = c.stateCall(ctx, http.MethodPost, "/state", token, plexID, body, nil, http.StatusCreated, http.StatusOK)
-	return err
-}
-
-// encodeState is shared by durable admission and the network writer so the
-// immutable payload is exactly the body handed to the HTTP client.
-func encodeState(plexID int64, item postItem) ([]byte, error) {
-	return json.Marshal(struct {
-		Items []postItem `json:"items"`
-		User  int64      `json:"user"`
-	}{Items: []postItem{item}, User: plexID})
-}
-
-type remotePage struct {
-	Items       []remoteItem
-	EndCursor   string
-	HasNextPage bool
-}
-
-type remoteItem struct {
-	GUID      string `json:"guid"`
-	ViewedAt  int64  `json:"viewedAt"`
-	ViewState string `json:"viewState"`
-	RatedAt   int64  `json:"ratedAt"`
-	Rating    *int   `json:"rating"`
-}
-
-func (c *Client) fetchState(ctx context.Context, token string, plexID int64, cursor string) (remotePage, error) {
-	q := url.Values{}
-	q.Set("count", "100")
-	if cursor != "" {
-		q.Set("after", cursor)
+	if offsetMS <= 0 || durationMS <= 0 {
+		return timelineResult{}, errors.New("plexwatch: timeline needs a position and a duration")
+	}
+	q := url.Values{
+		"ratingKey": {key},
+		"key":       {"/library/metadata/" + key},
+		"state":     {"stopped"},
+		"time":      {strconv.FormatInt(offsetMS, 10)},
+		"duration":  {strconv.FormatInt(durationMS, 10)},
 	}
 	var out struct {
-		Items    []remoteItem `json:"items"`
-		PageInfo struct {
-			EndCursor   string `json:"endCursor"`
-			HasNextPage bool   `json:"hasNextPage"`
-		} `json:"pageInfo"`
+		Container struct {
+			ViewCount  *int  `json:"viewCount"`
+			ViewOffset int64 `json:"viewOffset"`
+		} `json:"MediaContainer"`
 	}
-	path := "/state/" + strconv.FormatInt(plexID, 10) + "?" + q.Encode()
-	if _, err := c.stateCall(ctx, http.MethodGet, path, token, plexID, nil, &out, http.StatusOK); err != nil {
-		return remotePage{}, err
+	if err := c.call(ctx, http.MethodGet, c.discover, "/timeline", q, token, &out, http.StatusOK); err != nil {
+		return timelineResult{}, err
 	}
-	return remotePage{Items: out.Items, EndCursor: out.PageInfo.EndCursor, HasNextPage: out.PageInfo.EndCursor != "" && out.PageInfo.HasNextPage}, nil
+	res := timelineResult{Offset: out.Container.ViewOffset}
+	if out.Container.ViewCount != nil {
+		res.ViewCount, res.ViewCountKnown = *out.Container.ViewCount, true
+	}
+	return res, nil
 }
 
-func (c *Client) call(ctx context.Context, method string, base *url.URL, pathAndQuery, token string, body []byte, dest any, ok ...int) (int, error) {
-	u, err := url.Parse(base.String())
+// maxStateBatch caps the keys in one batched userState read.
+const maxStateBatch = 50
+
+// userStates reads the account state for up to maxStateBatch Plex metadata
+// keys in one request. Keys missing from the answer have no known state and
+// are absent from the map; callers must not read absence as "unwatched".
+func (c *Client) userStates(ctx context.Context, token string, keys []string) (map[string]userState, error) {
+	if len(keys) == 0 {
+		return map[string]userState{}, nil
+	}
+	if len(keys) > maxStateBatch {
+		return nil, errors.New("plexwatch: userState batch too large")
+	}
+	for _, k := range keys {
+		if !validHexKey(k) {
+			return nil, errors.New("plexwatch: invalid plex metadata key")
+		}
+	}
+	var out struct {
+		Container struct {
+			UserState json.RawMessage `json:"UserState"`
+		} `json:"MediaContainer"`
+	}
+	path := "/library/metadata/" + strings.Join(keys, ",") + "/userState"
+	if err := c.call(ctx, http.MethodGet, c.discover, path, nil, token, &out, http.StatusOK); err != nil {
+		return nil, err
+	}
+	type wire struct {
+		RatingKey       string  `json:"ratingKey"`
+		Type            string  `json:"type"`
+		ViewCount       int     `json:"viewCount"`
+		ViewOffset      float64 `json:"viewOffset"`
+		ViewState       string  `json:"viewState"`
+		LastViewedAt    int64   `json:"lastViewedAt"`
+		UserRating      float64 `json:"userRating"`
+		ViewedLeafCount int     `json:"viewedLeafCount"`
+	}
+	var items []wire
+	raw := bytes.TrimSpace(out.Container.UserState)
+	switch {
+	case len(raw) == 0 || bytes.Equal(raw, []byte("null")):
+	case raw[0] == '[':
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return nil, errors.New("plexwatch: decode userState")
+		}
+	default:
+		var one wire
+		if err := json.Unmarshal(raw, &one); err != nil {
+			return nil, errors.New("plexwatch: decode userState")
+		}
+		items = []wire{one}
+	}
+	want := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		want[k] = true
+	}
+	found := make(map[string]userState, len(items))
+	for _, it := range items {
+		if !want[it.RatingKey] {
+			continue
+		}
+		rating, _ := plexRatingFromRemote(it.UserRating)
+		offset := int64(0)
+		if it.ViewOffset > 0 && it.ViewOffset < 1<<53 {
+			offset = int64(it.ViewOffset)
+		}
+		found[it.RatingKey] = userState{
+			Key: it.RatingKey, Type: it.Type, Watched: it.ViewCount > 0,
+			ViewedAt: it.LastViewedAt, Offset: offset, ViewState: it.ViewState, Rating: rating, ViewedLeaf: it.ViewedLeafCount,
+		}
+	}
+	return found, nil
+}
+
+// scrobble marks key watched, unscrobble unwatched. Both are idempotent.
+func (c *Client) scrobble(ctx context.Context, token, key string, watched bool) error {
+	action := "/actions/unscrobble"
+	if watched {
+		action = "/actions/scrobble"
+	}
+	return c.action(ctx, token, action, key, nil)
+}
+
+// rate sets key's rating on Plex's 1–10 scale; 0 clears it (rating=-1).
+func (c *Client) rate(ctx context.Context, token, key string, rating int) error {
+	if rating < 0 || rating > 10 {
+		return errors.New("plexwatch: rating out of range")
+	}
+	v := "-1"
+	if rating > 0 {
+		v = strconv.Itoa(rating)
+	}
+	return c.action(ctx, token, "/actions/rate", key, url.Values{"rating": {v}})
+}
+
+func (c *Client) action(ctx context.Context, token, path, key string, extra url.Values) error {
+	if !validHexKey(key) {
+		return errors.New("plexwatch: invalid plex metadata key")
+	}
+	q := url.Values{"identifier": {discoverIdentifier}, "key": {key}}
+	for k, v := range extra {
+		q[k] = v
+	}
+	return c.call(ctx, http.MethodPut, c.discover, path, q, token, nil, http.StatusOK, http.StatusNoContent)
+}
+
+func (c *Client) call(ctx context.Context, method string, base *url.URL, path string, query url.Values, token string, dest any, ok ...int) error {
+	u := *base
+	u.Path = strings.TrimRight(base.Path, "/") + path
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), nil)
 	if err != nil {
-		return 0, err
-	}
-	if i := strings.IndexByte(pathAndQuery, '?'); i >= 0 {
-		u.Path = pathAndQuery[:i]
-		u.RawQuery = pathAndQuery[i+1:]
-	} else {
-		u.Path = pathAndQuery
-	}
-	if !c.allowed(u) {
-		return 0, errors.New("plexwatch: host is not allowlisted")
-	}
-	if (strings.Contains(u.Path, "/services") && (u.Path != "/api/v2/server/users/services" || method != http.MethodGet || base != c.plex || c.serverIdentity == nil)) || strings.Contains(u.Path, "/api/home/") {
-		return 0, errors.New("plexwatch: that credential route is not used")
-	}
-	if strings.HasSuffix(u.Path, "/view_state_sync") && method != http.MethodGet {
-		return 0, errors.New("plexwatch: watch-state consent is read-only")
-	}
-	var rdr io.Reader
-	if body != nil {
-		rdr = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), rdr)
-	if err != nil {
-		return 0, err
+		return err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", "Ether")
-	// Plex selects server service credentials by product as well as claim.
-	if u.Path == "/api/v2/server/users/services" {
-		req.Header.Set("X-Plex-Product", "Plex Media Server")
-	}
 	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 	if token != "" {
-		if u.Path == "/state" || strings.HasPrefix(u.Path, "/state/") {
-			req.Header.Set("Authorization", "Bearer "+token)
-		} else {
-			req.Header.Set("X-Plex-Token", token)
-		}
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Plex-Token", token)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("plexwatch: %s %s: %w", method, u.Host, redactURL(err))
+		return fmt.Errorf("plexwatch: %s %s: %w", method, u.Host, redactURL(err))
 	}
 	defer resp.Body.Close()
 	slurp, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return resp.StatusCode, fmt.Errorf("plexwatch: read %s", u.Host)
-	}
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return resp.StatusCode, &StatusError{Status: resp.StatusCode, Op: method + " " + u.Host}
+		return fmt.Errorf("plexwatch: read %s", u.Host)
 	}
 	good := false
 	for _, want := range ok {
@@ -337,25 +391,15 @@ func (c *Client) call(ctx context.Context, method string, base *url.URL, pathAnd
 		}
 	}
 	if !good {
-		delay, _ := retryafter.Parse(resp.Header.Get("Retry-After"), c.now(), 0)
-		var body struct {
-			Errors []struct {
-				Code int `json:"code"`
-			} `json:"errors"`
-		}
-		_ = json.Unmarshal(slurp, &body)
-		code := 0
-		if len(body.Errors) > 0 {
-			code = body.Errors[0].Code
-		}
-		return resp.StatusCode, &StatusError{Status: resp.StatusCode, RetryAfter: delay, Op: method + " " + u.Host, PlexCode: code}
+		delay, _ := retryafter.Parse(resp.Header.Get("Retry-After"), c.now(), 6*time.Hour)
+		return &StatusError{Status: resp.StatusCode, RetryAfter: delay, Op: method + " " + u.Host}
 	}
 	if dest != nil && len(bytes.TrimSpace(slurp)) > 0 {
 		if err := json.Unmarshal(slurp, dest); err != nil {
-			return resp.StatusCode, fmt.Errorf("plexwatch: decode %s", u.Host)
+			return fmt.Errorf("plexwatch: decode %s", u.Host)
 		}
 	}
-	return resp.StatusCode, nil
+	return nil
 }
 
 func redactURL(err error) error {
@@ -371,14 +415,41 @@ func redactURL(err error) error {
 	return &url.Error{Op: ue.Op, URL: safe, Err: ue.Err}
 }
 
-// starRating is a whole star on Plex's 10-point scale. Captured payloads
-// used 8 and 10. The support article's example is "4 stars" (8). 2, 4 and 6
-// are the same scale. Clears and every other value are not sent.
-func starRating(v float64) (int, bool) {
-	switch v {
-	case 2, 4, 6, 8, 10:
-		return int(v), true
-	default:
+// validHexKey accepts the hex id inside a verified plex:// GUID.
+func validHexKey(k string) bool {
+	if len(k) == 0 || len(k) > 64 {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// plexRating maps Ether's 0–10 rating onto Plex's whole 1–10 scale (five
+// stars in half-star steps). Zero means "no rating" and clears it on Plex.
+// Any positive rating rounds to the nearest half star, never below one.
+func plexRating(local float64) int {
+	if math.IsNaN(local) || local <= 0 {
+		return 0
+	}
+	n := int(math.Round(local))
+	if n < 1 {
+		n = 1
+	}
+	if n > 10 {
+		n = 10
+	}
+	return n
+}
+
+// plexRatingFromRemote reads Plex's userRating. ok is false for no rating.
+func plexRatingFromRemote(v float64) (int, bool) {
+	if math.IsNaN(v) || v <= 0 {
 		return 0, false
 	}
+	return plexRating(v), true
 }

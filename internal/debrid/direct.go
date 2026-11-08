@@ -7,6 +7,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/httpclient"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -110,10 +111,19 @@ func prepareDirect(req *http.Request, p Payload) *http.Request {
 // that is still fetching a file, or behind a misbehaving proxy, may serve
 // it properly later, so none marks the release bad. Only a release whose
 // own link is malformed is rejected (core.ErrReleaseRejected).
+//
+// An on-demand link (core.Release.OpensOnDemand) makes the add-on fetch the
+// release, so work nobody is waiting to watch (a warm-up, a prefetch, an
+// availability check) never opens one: it answers core.ErrForegroundOnly.
+// A probe the add-on does not answer in time also wraps core.ErrPrepareSlow:
+// it may still be preparing the release.
 func (s *Service) DirectPayload(ctx context.Context, rel core.Release) ([]byte, error) {
 	link, err := url.Parse(rel.StreamURL)
 	if err != nil || (link.Scheme != "http" && link.Scheme != "https") || link.Host == "" {
 		return nil, fmt.Errorf("debrid: %q has no HTTP stream link: %w", rel.Name, core.ErrReleaseRejected)
+	}
+	if rel.OpensOnDemand() && !core.OnDemandStreamsAllowed(ctx) {
+		return nil, fmt.Errorf("debrid: add-on stream %q opens only for Play: %w", rel.Name, core.ErrForegroundOnly)
 	}
 	base := Payload{Key: payloadKey(rel), ReleaseID: rel.ID, Kind: KindHTTP, Link: rel.StreamURL, URL: rel.StreamURL,
 		StreamProvider: rel.StreamProvider, Headers: rel.StreamHeaders, Origin: rel.StreamOrigin, Release: rel.Name}
@@ -133,6 +143,10 @@ func (s *Service) DirectPayload(ctx context.Context, rel core.Release) ([]byte, 
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		var timeout net.Error
+		if pctx.Err() != nil || errors.As(err, &timeout) && timeout.Timeout() {
+			return nil, fmt.Errorf("debrid: stream from %s did not answer in time: %w: %w", link.Host, core.ErrSourceUnavailable, core.ErrPrepareSlow)
 		}
 		return nil, fmt.Errorf("debrid: stream from %s: %w: %v", link.Host, core.ErrSourceUnavailable, sanitize(err))
 	}

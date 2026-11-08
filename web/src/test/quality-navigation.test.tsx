@@ -145,6 +145,37 @@ it("saves the automatic sync cadence as a patch and runs it", async () => {
   expect(await screen.findByText("2 formats added")).toBeInTheDocument();
 });
 
+it("shows a sync failure without a settings save bar and clears it on retry", async () => {
+  let fail = true;
+  renderApp("/quality/profiles", {}, (f) => {
+    f.state.config.quality.profiles![0]!.import = {
+      source: "trash",
+      app: "radarr",
+      profile: "UHD Bluray + WEB",
+    };
+    const original = f.fetch;
+    f.fetch = async (input, init) => {
+      if (String(input).endsWith("/releases/quality/sync") && init?.method === "POST" && fail) {
+        fail = false;
+        return new Response(
+          JSON.stringify({ error: { code: "validation", message: "Sync failed" } }),
+          {
+            status: 400,
+          },
+        );
+      }
+      return original(input, init);
+    };
+  });
+  const sync = await screen.findByRole("button", { name: "Sync now" });
+  fireEvent.click(sync);
+  expect(await screen.findByText("Sync failed")).toBeVisible();
+  expect(screen.queryByRole("region", { name: "Unsaved changes" })).not.toBeInTheDocument();
+  fireEvent.click(sync);
+  expect(await screen.findByText("2 formats added")).toBeVisible();
+  expect(screen.queryByText("Sync failed")).not.toBeInTheDocument();
+});
+
 it("keeps an empty media tab selected so its first profile can be added", async () => {
   renderApp("/quality/profiles", {}, (fake) => {
     fake.state.config.quality.profiles = fake.state.config.quality.profiles!.map((p) => ({

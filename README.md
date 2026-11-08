@@ -235,6 +235,8 @@ Dial your storage footprint from **Pass-through (0 GiB)** to **Everyday (32 GiB)
 | **Linux** | [`.deb` / `.rpm`](https://github.com/braedonsaunders/ether/releases/latest) (`amd64`, `arm64`) | Dedicated `ether` systemd service, hardware transcoding group setup (`render`/`video`), bundled FFmpeg. |
 | **Docker** | `ghcr.io/braedonsaunders/ether:latest` | Multi-arch (`amd64`, `arm64`). Ready-made templates for **Unraid, TrueNAS SCALE, and Proxmox**, plus Synology instructions, in [`packaging/community`](packaging/community/README.md). |
 
+PR previews (`linux/amd64` only) are published for PRs whose author has write access to this repository, from a branch here or in the author's own fork, as `ghcr.io/braedonsaunders/ether:pr-<number>`. **Previews are unreviewed PR code: only run one if you trust its author, and never in place of a release.** The `pr-<number>` tag moves with each new head. A second tag, `pr-<number>-<branch>-<12-char head SHA>`, is never replaced; for a strictly immutable reference, pull by the digest shown in the publish run. Eligibility is checked again before every publication, previews remain after a PR closes, and preview tags never collide with release tags.
+
 ```yaml
 services:
   ether:
@@ -305,7 +307,7 @@ Ether never emulates, unlocks, or bypasses Plex Pass, Emby Premiere, or any paid
 <details>
 <summary><b>Which apps work, and why are some web-wrapper apps unsupported?</b></summary>
 
-- **Plex:** Every official Plex client: **Apple TV, iPhone, iPad, Android, Android TV / Nvidia Shield, Fire TV, Roku, PlayStation, Xbox, Smart TVs (LG, Samsung, VIDAA), Plex Desktop, and Plex Web.** (Plex for VIDAA receives one automatic media choice so its playback settings remain stable.)
+- **Plex:** Every official Plex client: **Apple TV, iPhone, iPad, Android, Android TV / Nvidia Shield, Fire TV, Roku, PlayStation, Xbox, Smart TVs (LG, Samsung, VIDAA), Plex Desktop, and Plex Web.** (Plex for LG and Plex for VIDAA receive one automatic media choice so their playback settings remain stable; Play Version is not offered there.)
 - **Jellyfin:** Native clients including **Infuse, Swiftfin, Findroid, Streamyfin, Jellyfin for Android TV, JellyCon, and Jellyfin for Roku.**
 - **Emby:** Native Emby clients (**Android TV, iOS, Android, Roku, Smart TVs**) and **Infuse**.
 - **Silo:** Native **Silo** apps for **Apple TV, iOS, macOS, Android, and Android TV**.
@@ -335,7 +337,7 @@ Yes. In the setup wizard, select Jellyfin, Emby, Silo, Stremio, WebDAV, or DLNA 
 <details>
 <summary><b>Does watch progress sync between Plex, Infuse, Jellyfin, Emby, and Silo?</b></summary>
 
-Yes. Watch history, in-progress resume offsets, favourites/ratings, and subtitle preferences belong to the viewer's Ether account. Starting an episode in Plex on a TV and opening Infuse, Swiftfin, or Silo on a phone or tablet resumes from the same spot, and real-time WebSocket updates notify connected Jellyfin, Emby, and Silo clients when watch state changes. If a viewer also links their `plex.tv` account under **Viewers**, Ether can optionally send watched marks and ratings to `scrobbles.plex.tv`.
+Yes. Watch history, in-progress resume offsets, favourites/ratings, and subtitle preferences belong to the viewer's Ether account. Starting an episode in Plex on a TV and opening Infuse, Swiftfin, or Silo on a phone or tablet resumes from the same spot, and real-time WebSocket updates notify connected Jellyfin, Emby, and Silo clients when watch state changes. If a viewer also connects their own Plex account under **Viewers**, Ether can keep watched marks and ratings in step with that account in either or both directions.
 </details>
 
 <details>
@@ -383,7 +385,7 @@ Ether sends **no usage analytics, crash reports, or behavioural telemetry**. Eve
 1. **Update check (on by default):** Ether checks the signed release feed on GitHub once a day (first check 5 minutes after startup). Turn this off under **Maintenance › Updates** (*Check for updates*).
 2. **TheIntroDB skip markers (on by default):** When a title plays, Ether queries `api.theintrodb.org` by TMDB ID, season/episode number, and duration for intro, recap, and credits timestamps. Turn this off with the lookup switch under **Playback › Extras** or the TheIntroDB switch on **Integrations**.
 3. **TMDB and your configured sources:** Ether queries `api.themoviedb.org` and `image.tmdb.org` with your key or the one built into official builds, plus the Usenet providers, debrid services, indexers, Stremio addons, and optional integrations (OpenSubtitles, Trakt, Simkl, ratings, artwork, notifications, language model) that you configure.
-4. **`plex.tv` (only when Plex is claimed and enabled):** When the Plex app is enabled and claimed, Ether contacts `plex.tv` for PIN sign-in, server and connection registration, friend/share sync, `plex.direct` TLS certificate renewal, and public IP detection when **Remote access** is on (**Apps › Plex › Remote access**). Ether also matches titles to Plex IDs through `metadata.provider.plex.tv`. Full Plex metadata (**Apps › Plex › Account**), outbound watch-state scrobbling (`scrobbles.plex.tv`), and Plex watchlist sync (`discover.provider.plex.tv`) are off until you enable them. Turning the **Plex** app off under **Server › Apps** stops all of this `plex.tv` traffic.
+4. **`plex.tv` (only when Plex is claimed and enabled):** When the Plex app is enabled and claimed, Ether contacts `plex.tv` for PIN sign-in, server and connection registration, friend/share sync, `plex.direct` TLS certificate renewal, and public IP detection when **Remote access** is on (**Apps › Plex › Remote access**). Ether also matches titles to Plex IDs through `metadata.provider.plex.tv`. Full Plex metadata (**Apps › Plex › Account**), per-viewer Plex account watch sync, and Plex watchlist sync (both `discover.provider.plex.tv`) are off until you enable them. Turning the **Plex** app off under **Server › Apps** stops all of this `plex.tv` traffic.
 5. **Features you turn on:** collection sources (StevenLu, AniList), quality-profile imports (TRaSH Guides and Dictionarry, from GitHub), indexer site definitions, the anime ID map (GitHub), the NVEncC runtime download for RTX Video Super Resolution, and trailers (YouTube) contact their own services only when you use them.
 6. **Cluster address detection (clustered nodes only):** each node checks its public IP every 10 minutes (`v4.plex.tv` first, then `api.ipify.org`, `icanhazip.com`, `ifconfig.me`). This has no switch.
 </details>

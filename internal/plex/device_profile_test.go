@@ -16,7 +16,6 @@ func TestLegacyProfileTargetAdmission(t *testing.T) {
 	}{
 		{"generic missing target", "Generic", "", 0, 4005},
 		{"generic declared target", "Generic", "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mpegts&videoCodec=h264&audioCodec=aac)", 0, 1001},
-		{"DV5 unsupported target", "iOS", "", 5, 2003},
 		{"DV8 ordinary conversion", "iOS", "", 8, 1001},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -161,5 +160,64 @@ func TestMDEDecisionProjectsFirstVideoAndSelectedTracks(t *testing.T) {
 		if st["streamType"] == float64(3) && st["location"] != "sidecar-subs" {
 			t.Fatalf("sidecar location=%v", st)
 		}
+	}
+}
+
+// dv5Encoder decides with the real policy and reports whether its ffmpeg can
+// tone-map Dolby Vision profile 5.
+type dv5Encoder struct {
+	*realDecider
+	toneMaps bool
+}
+
+func (e dv5Encoder) ToneMapsDolbyVisionProfile5() bool { return e.toneMaps }
+
+// A profile 5 source has no HDR10 base. Every legacy profile whose streaming
+// target is SDR H.264 still converts it by tone-mapping, as PMS does; only an
+// encoder without the RPU-aware mapper refuses it.
+func TestDV5ConversionTargetToneMaps(t *testing.T) {
+	for _, tc := range []struct {
+		name, header, value, query string
+		toneMaps                   bool
+	}{
+		{"web", "X-Plex-Platform", "Chrome", "", true},
+		{"iOS", "X-Plex-Client-Profile-Name", "iOS", "", true},
+		{"tvOS", "X-Plex-Client-Profile-Name", "tvOS", "", true},
+		{"Android", "X-Plex-Client-Profile-Name", "Android", "", true},
+		{"iOS MDE", "X-Plex-Client-Profile-Name", "iOS", "&hasMDE=1", true},
+		{"encoder without mapper", "X-Plex-Client-Profile-Name", "iOS", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture()
+			defer f.srv.Close()
+			f.srv.d.Transcoder = dv5Encoder{&realDecider{f.trans}, tc.toneMaps}
+			f.playback.info.Streams = append([]core.StreamInfo(nil), sampleInfo.Streams...)
+			f.playback.info.Streams[0] = core.StreamInfo{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Width: 1920, Height: 1080, FrameRate: 24, BitDepth: 10, DolbyVision: true, DolbyVisionProfile: 5, DolbyVisionLevel: 6}
+			headers := append(jsonAccept, tc.header, tc.value)
+			query := "path=/library/metadata/" + fightClub.Key.String() + "&directPlay=0&directStream=1&protocol=hls&session=dv5" + tc.query
+			mc := decodeJSON(t, f.get(t, "/video/:/transcode/universal/decision?"+query, headers...))
+			if !tc.toneMaps {
+				if mc["transcodeDecisionCode"] != float64(2003) {
+					t.Fatalf("encoder without the mapper was not refused: %v", mc)
+				}
+				return
+			}
+			if mc["transcodeDecisionCode"] != float64(1001) {
+				t.Fatalf("DV5 conversion was refused: %v", mc)
+			}
+			if rec := f.get(t, "/video/:/transcode/universal/start.m3u8?"+query, headers...); rec.Code != 200 {
+				t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
+			}
+			f.trans.mu.Lock()
+			defer f.trans.mu.Unlock()
+			if len(f.trans.sessions) != 1 {
+				t.Fatalf("sessions: %d", len(f.trans.sessions))
+			}
+			for _, h := range f.trans.sessions {
+				if d := h.req.Decision; d.Kind != core.DecisionTranscode || d.VideoCopy || !d.ToneMap {
+					t.Fatalf("DV5 was not tone-mapped: %+v", d)
+				}
+			}
+		})
 	}
 }

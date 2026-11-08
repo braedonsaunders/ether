@@ -232,7 +232,9 @@ func (s *Service) clipRequest(c Channel, p Programme, snapshots ...[]Programme) 
 		if next.Item.Key != 0 && !next.Start.Before(p.End) {
 			r.Bind["next.title"] = next.Item.Title
 			r.Bind["next.time"] = next.Start.In(zoneOf(c.Timezone)).Format("15:04")
-			r.Art["next.poster"] = next.Item.Thumb
+			if ref := ArtworkRef(next.Item.Key, next.Item.Thumb, "poster"); ref != "" {
+				r.Art["next.poster"] = ref
+			}
 			break
 		}
 	}

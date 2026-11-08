@@ -1,0 +1,35 @@
+# golangci-lint v2 configuration.
+#
+# CI runs this on pull requests with only-new-issues, so existing findings
+# never block a change; new code must be clean. Run the same check locally
+# with `make lint` (it compares against the merge base with main).
+#
+# The set is deliberately small: bug-class staticcheck checks (SA*) plus
+# simplifications (S1*), vet, ineffective assignments and dead code.
+# errcheck is off because the codebase discards many errors on purpose
+# (best-effort Close, cleanup in tests); enabling it would mostly add noise.
+version: "2"
+
+run:
+  timeout: 15m
+
+linters:
+  default: none
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    staticcheck:
+      checks:
+        - "SA*"
+        - "S1*"
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

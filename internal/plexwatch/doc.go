@@ -1,106 +1,101 @@
-// Package plexwatch delivers one viewer's watched state, and whole-star
-// ratings, to that viewer's own Plex account.
+// Package plexwatch syncs one viewer's watched marks, resume positions and
+// ratings with that viewer's own Plex account, and (pms*.go) with Plex
+// Media Servers the owner runs.
 //
-// In this release the integration is dormant: AccountSyncSupported is false
-// because scrobbles.plex.tv accepts no credential a non-Plex server can hold.
-// Nothing below runs against Plex until that constant is turned on.
+// # Account sync
 //
-// Local watch rows stay authoritative. A watch mark and a rating each have
-// their own timestamp, so one cannot make the other look newer. Intents are
-// rows in state_sync_journal, written in the same transaction as the watch
-// change. This package does not subscribe to in-memory state events.
+// Transport: discover.provider.plex.tv, the calls Plex Web makes for "Mark as
+// watched" on Discover, verified against a real account on 2026-11-07:
 //
-// Provenance of the upstream contract, none of it a live call from this
-// repository except the November 2026 interoperability probe:
+//   - GET /library/metadata/{k1,k2,...}/userState answers MediaContainer.
+//     UserState (an object for one key, an array for several) with ratingKey,
+//     type, viewCount, viewOffset (ms), viewState ("progress", or "ignore"
+//     once removed from Continue Watching), lastViewedAt (unix seconds),
+//     userRating (1–10) and, for shows, viewedLeafCount. Titles with no
+//     state are omitted. Mixed movie/show/episode batches work; reads are
+//     capped at maxStateBatch keys.
+//   - PUT /actions/scrobble, /actions/unscrobble, /actions/rate (rating=1–10,
+//     -1 clears) and /actions/removeFromContinueWatching, each with
+//     identifier=tv.plex.provider.discover&key={key}. They are idempotent.
+//     Scrobble and unscrobble reset viewOffset; unscrobble keeps
+//     lastViewedAt, so "watched" is viewCount>0, never lastViewedAt alone.
+//     removeFromContinueWatching sets viewState "ignore" and keeps
+//     viewOffset.
+//   - GET /timeline?ratingKey={key}&key=/library/metadata/{key}&state=stopped
+//     &time={ms}&duration={ms} sets the resume position (PUT/POST answer
+//     404; no duration answers 400). It moves lastViewedAt, sets viewState
+//     back to "progress", and never marks a title watched, even past 90%:
+//     Ether's own threshold decides and sends a scrobble. An episode's
+//     timeline does not move its show's userState.
 //
-//   - POST https://scrobbles.plex.tv/state returned 201 for items with
-//     guid, viewedAt (unix milliseconds), viewState "complete" or "unplayed",
-//     optional isBulk, and optional ratedAt plus an integer rating.
-//     The user field is the numeric Plex account id. The GET echo is
-//     GET https://scrobbles.plex.tv/state/{accountId}?after={cursor}&count=100
-//     with items and pageInfo.endCursor / hasNextPage. isBulk and a show-level
-//     guid in the POST were omitted from that echo.
-//     Source: PMS verbose log posted by doug316, 2024-06-07,
-//     https://forums.plex.tv/t/mark-as-unwatched-does-not-work/879522
+// {key} is the hex id inside a title's verified plex://movie|show|episode GUID
+// (internal/plexguid). Titles without a verified GUID are never synced and no
+// other identity matching is attempted.
 //
-//   - viewState "complete" for a watched movie, a rating-only item
-//     {"guid","ratedAt","rating"}, and HTTP 422 when viewedAt is in the
-//     future (the whole POST fails). Plex employee gbooker02 identified the
-//     future timestamp. Source: Havohej, 2024-01-24,
-//     https://forums.plex.tv/t/status-sync-for-old-movies-and-series/867157
+// Credential: the viewer's own Plex account token from the PIN sign-in
+// (POST/GET plex.tv/api/v2/pins), stored sealed per viewer and sent only in
+// X-Plex-Token. The PIN must be approved by the Plex account already recorded
+// for that viewer; the owner's token is never used for a viewer. A 401 or
+// 403 from any call erases the token and marks the connection for
+// reconnecting.
 //
-//   - A custom-agent GUID received HTTP 400 and PMS stopped that sync.
-//     Plex employee BigWheel attributed it to the custom agent.
-//     Source: ItsThatJA, 2026-03-19,
-//     https://forums.plex.tv/t/can-these-reviews-for-my-pfofile-be-deleted-by-a-plex-dev/937027
+// Consent: the account's "Sync My Watch State and Ratings" setting, GET
+// plex.tv/api/v2/user/view_state_sync ({"consent":bool}). Plex does not
+// enforce it on the Discover routes, so Ether does: while it is off nothing
+// is imported and nothing is sent. It is read once per viewer per pass,
+// never per title: at the start of every scheduled pass (which also runs,
+// at the viewer's interval, for viewers who only send while it is off) and
+// before the first send of each delivery pass. While it is off the
+// viewer's queued changes are parked, not dropped; the first read that
+// finds it on wakes them, still subject to read-back and newest-wins.
 //
-//   - PMS decides whether to sync with
-//     GET https://plex.tv/api/v2/server/users/{accountId}/view_state_sync
-//     (200 continue, 403 stop). It obtains per-user tokens from
-//     GET https://plex.tv/api/v2/server/users/services?auth_token=<server token>.
-//     The services route is authenticated with Ether's claimed server token.
-//     Service credentials are selected by the connected viewer's account ID.
-//     Sources: https://forums.plex.tv/t/unable-to-install-new-plex-server-on-new-w-11-computer/934457
-//     and https://forums.plex.tv/t/403-response-from-get-https-plex-tv-api-v2-server-users-xxx-view-state-sync-reused/883818
+// Ether → Plex: watch changes write durable intents to state_sync_journal in
+// the watch transaction, stamped with the viewer's fence generation. The
+// sender claims a row, resolves the GUID, and admits it under the fence lock
+// (generation unchanged, sending still on) before the request leaves.
+// Turning sending off, disconnecting and reconnecting move the fence under
+// the same lock, so nothing is admitted afterwards; a request admitted just
+// before cannot be recalled. Admission sets never_sent=0. When an attempt
+// ends without a definitive answer (5xx, timeout, crash), the next attempt
+// reads userState first: if Plex already holds the change it is done, if
+// Plex shows a newer change it yields, otherwise it is sent again. 429 pauses
+// the viewer for Retry-After; other failures back off exponentially.
 //
-//   - Official scope: movies and episodes only, no in-progress offsets, no
-//     music, no movie editions. Activity and profile history depend on the
-//     account setting "Sync My Watch State and Ratings" and on privacy
-//     settings. A POST does not by itself guarantee a Discover Activity card.
-//     https://support.plex.tv/articles/sync-watch-state-and-ratings/ (modified 2025-03-24)
+// Resume positions are a third journal aspect. A position reported during
+// playback is held for state.OffsetHold and later positions of the title
+// replace it in place, so playback sends at most one position per hold;
+// pause and stop send the latest at once. A watch change supersedes a
+// queued position, and positions share the title's watch lock, so a stale
+// position never reaches Plex after a completion or unwatch. Clearing a
+// position (a rewind to the start) is read back first and sent as an
+// unscrobble only while Plex has the title unwatched. A position Ether
+// has no duration for is not queued (Plex refuses it).
 //
-//   - A Plex engineer said metadata.provider.plex.tv scrobble handlers are
-//     deprecated. This package does not call them.
-//     https://github.com/Taxel/PlexTraktSync/discussions/1842
+// Continue Watching removals are journaled in the same aspect, one per
+// in-progress movie or episode the removal covers (a show covers each of
+// its episodes with a position), carrying Ether's position. A removal
+// replaces a queued position in place and a later position replaces a
+// removal, as playback brings a title back. It is read back first: if Plex
+// played the title since, it yields; if Plex lacks the position, the
+// position is sent before removeFromContinueWatching.
 //
-// The token stored here is the authToken from POST/GET /api/v2/pins, the same
-// credential Ether already uses for GET /api/v2/user and the account consent
-// endpoint. It is not sent to scrobbles.plex.tv. The claimed Ether server token
-// obtains the matching account's scrobbling service envelope; the decrypted JWT
-// is sent as Authorization: Bearer. A read-only probe using Ether's own claim
-// returned HTTP 200 with items/pageInfo on 2026-11-04. PMS 1.43.4/1.43.5 loader
-// inspection established the base64/AES-CBC envelope and length-byte padding.
-// Service tokens remain in memory for at most five minutes, bounded by expiry,
-// and are discarded when the claim changes or the service refuses a token.
-// Consent checks never modify Plex settings. Their result is stored only for
-// the generation checked, so late responses cannot restore a revoked account.
-//
-// Permit admission and consent changes (enable, disable, reconnect, revoke)
-// take the same fence-row lock. Admission inserts a permit only when that
-// locked generation matches the intent's stored consent generation and this
-// attempt still owns the live journal row. A database error reading that
-// generation leaves the intent retryable. A confirmed missing or stale
-// generation does not send.
-//
-// Admission also commits an immutable plexwatch_attempt containing the exact
-// account id, consent generation, resolved GUID, aspect, original timestamp
-// and wire payload. It contains no plaintext credential. Failure or uncertainty
-// committing admission means no network send. Once admission is durable, even
-// a crash before transmission leaves an unknown-effect hold. Expiring worker
-// claims or permits never expires that hold. The remote account/GUID/aspect
-// conflict index and a local user/key/aspect check prevent aliases and remaps
-// from bypassing it. Unrelated known targets and other aspects remain usable.
-//
-// A successful response commits the attempt's receipt, import echo and original
-// journal acknowledgement together. A failed or uncertain local commit cannot
-// reopen the network path. Transport/read errors, server failures, ambiguous
-// statuses and Retry-After do not prove no effect; delivery stops until the
-// hold is reconciled against GET /state/{accountId}. Definitive refusals (HTTP
-// 400, 401, 403, 422) clear the attempt fence so later changes to that title
-// are not blocked.
-//
-// Reconciliation reads GET /state/{accountId} on a backoff schedule, on
-// reconnect/consent/remap, and on explicit viewer Resolve. If Plex already
-// reflects the admitted payload, the attempt is receipted without re-POSTing.
-// If Plex does not reflect it and no permit for that attempt is still in
-// flight, the hold is released and one fresh admission of the current intent
-// is allowed.
-//
-// A permit already inserted is in flight. Turning sync off does not delete
-// it, and a request already handed to Plex cannot be recalled. An intent
-// that has not been admitted is not sent after the fence moves, including
-// when lookup began under the previous generation. Releasing one permit
-// does not change another. A journal row records the fence generation
-// observed when it was written; a row that commits after a disable keeps
-// that older generation and is not sent when sync is turned on again.
+// Plex → Ether: a leader-only, bounded background pass per viewer reads
+// userState in batches over Ether's verified movie and show identities,
+// resuming from a key cursor. Shows whose watched-episode count or last view
+// moved queue their episodes for reading. Because an episode's position
+// does not move its show, each sweep is followed by a pass over the
+// viewer's active shows (any watch, progress or rating activity in Ether
+// within 180 days, plus the viewer's watchlist), reading their verified
+// episodes in batches from a show cursor; its cost follows the viewer's
+// activity, never the library. plexwatch_remote keeps what was last read
+// per title, so only changes since then apply: a Plex view or resume
+// position by its lastViewedAt against the local watch clock; an unwatch,
+// cleared position, Continue Watching removal or rating change, which Plex
+// does not timestamp, only when Ether has not changed that title since the
+// previous read. A watch change read together with a position wins over
+// it. A Plex removal of a title Ether has in progress removes it in Ether
+// and keeps the resume point; a Plex playback newer than the viewer's
+// removal in Ether brings the title back. Imported changes are account
+// events, which are never journaled, and values Ether wrote itself are
+// adopted rather than applied, so nothing echoes in either direction.
 package plexwatch

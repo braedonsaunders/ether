@@ -22,7 +22,8 @@ it("opens the owner's own viewer page from the header, with their sign-in tab", 
   // Passwords are reset from the Actions drawer, not an inline form.
   expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Devices" })).toBeInTheDocument();
-});
+  // Six sequential waits of up to 4 s each cannot fit vitest's 5 s default.
+}, 20_000);
 
 it("has no separate /profile page", async () => {
   renderApp("/profile");

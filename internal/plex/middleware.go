@@ -539,7 +539,19 @@ func (s *Server) encodeResponse(r *http.Request, v any) ([]byte, error) {
 			}
 			return out
 		}
-		return model.MarshalWithExclusions(v, pr.Format, names("excludeFields"), names("excludeElements"))
+		elements := names("excludeElements")
+		if mc, ok := v.(*model.MediaContainer); ok && elements["Part"] && !elements["Media"] {
+			// PMS replaces excluded Parts with Media@partCount; Plex's TV
+			// apps exclude Part from their play queues. Containers here are
+			// built per request, so setting the count does not leak.
+			for i := range mc.Metadata {
+				for j := range mc.Metadata[i].Media {
+					m := &mc.Metadata[i].Media[j]
+					m.PartCount = model.Ptr(len(m.Part))
+				}
+			}
+		}
+		return model.MarshalWithExclusions(v, pr.Format, names("excludeFields"), elements)
 	}
 	return model.Marshal(v, pr.Format)
 

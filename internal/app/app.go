@@ -47,6 +47,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/playback"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/plexwatch"
 	"github.com/braedonsaunders/ether/internal/prefetch"
@@ -220,6 +221,7 @@ type App struct {
 	cachefill           *cachefill.Manager
 	plextv              *plextv.Client
 	plexGUID            *plexguid.Service
+	plexMeta            *plexmeta.Service
 	plexWatch           *plexwatch.Service
 	plexServers         *plexwatch.Servers
 	users               *auth.Service

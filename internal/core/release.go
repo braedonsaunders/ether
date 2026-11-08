@@ -223,6 +223,11 @@ type Release struct {
 	StreamURL      string            `json:"streamUrl,omitempty"`
 	StreamHeaders  map[string]string `json:"streamHeaders,omitempty"`
 	StreamOrigin   string            `json:"streamOrigin,omitempty"`
+	// StreamOnDemand marks a StreamURL whose source prepares the release
+	// when the link is opened (a Stremio add-on resolving, downloading or
+	// importing it on request), so every open costs the source real work
+	// (additive). See OpensOnDemand.
+	StreamOnDemand bool `json:"streamOnDemand,omitempty"`
 }
 
 // Resolution is the resolver's answer for a title and client: the winning

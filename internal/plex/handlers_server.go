@@ -23,7 +23,9 @@ const APIVersion = "1.2.3"
 
 // serverInfoAttrs are the ServerConfiguration attributes of / (full) and
 // /media/providers (providers=true, which omits a few, as PMS does).
-func (s *Server) serverInfoAttrs(providers bool) []model.Attr {
+// allowSync is the viewer's own download permission: Plex Web's
+// showSyncDownload gate reads server.allowSync for library providers.
+func (s *Server) serverInfoAttrs(providers bool, viewer *core.User) []model.Attr {
 	id := s.identity()
 	c := s.cfg()
 	signIn, mapping := "none", "unknown"
@@ -44,7 +46,7 @@ func (s *Server) serverInfoAttrs(providers bool) []model.Attr {
 		model.A("allowChannelAccess", false),
 		model.A("allowMediaDeletion", false),
 		model.A("allowSharing", true),
-		model.A("allowSync", s.downloadsEnabled()),
+		model.A("allowSync", s.downloadsAllowed(viewer)),
 		model.A("allowTuners", s.liveTVEnabled()),
 		model.A("apiVersion", APIVersion),
 		model.A("backgroundProcessing", false),
@@ -112,7 +114,7 @@ var rootDirectories = []string{
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	mc := &model.MediaContainer{Extra: s.serverInfoAttrs(false)}
+	mc := &model.MediaContainer{Extra: s.serverInfoAttrs(false, FromContext(r.Context()).User)}
 	for _, d := range rootDirectories {
 		mc.Directory = append(mc.Directory, model.Directory{Count: 1, Key: d, Title: d})
 	}
@@ -213,7 +215,10 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 			{Key: "/library/search", Type: "universalsearch"},
 		},
 	}
-	mc := &model.MediaContainer{Size: 1, Extra: s.serverInfoAttrs(true), MediaProvider: []model.MediaProvider{provider}}
+	if s.downloadsAllowed(u) {
+		provider.Feature = append(provider.Feature, downloadSubscribeFeature)
+	}
+	mc := &model.MediaContainer{Size: 1, Extra: s.serverInfoAttrs(true, u), MediaProvider: []model.MediaProvider{provider}}
 	if p := s.liveTVProvider(r.Context(), FromContext(r.Context()).User); p != nil {
 		mc.MediaProvider = append(mc.MediaProvider, *p)
 		mc.Size++

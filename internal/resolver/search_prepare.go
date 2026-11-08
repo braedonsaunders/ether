@@ -137,6 +137,11 @@ func (p *searchPreparation) pumpLocked() {
 		if active >= 4 || len(p.byID) >= earlyCheckLimit {
 			break
 		}
+		if c.rel.OpensOnDemand() {
+			// Each open makes the add-on fetch the release: ranked
+			// validation opens it, alone, if it is reached (ondemand.go).
+			continue
+		}
 		if prior := p.byID[c.rel.ID]; prior != nil {
 			select {
 			case <-prior.done:

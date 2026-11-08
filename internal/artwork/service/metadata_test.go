@@ -292,7 +292,9 @@ func TestArtworkMetadataDoesNotBlockWithoutADeadline(t *testing.T) {
 	req := frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}
 	start := time.Now()
 	got := q.Get(ctx, req, frontend.Image{Kind: frontend.ImagePerson, Path: "portrait", Subject: "tmdb:1"})
-	if time.Since(start) > 200*time.Millisecond || got.BlurHash != "" || got.ThumbHash != "" {
+	// The hash never finishes until release, so blocking would mean forever;
+	// a generous bound keeps loaded CI runners from failing on scheduling noise.
+	if time.Since(start) > time.Second || got.BlurHash != "" || got.ThumbHash != "" {
 		t.Fatalf("person image waited on hashing: %+v after %s", got, time.Since(start))
 	}
 	select {

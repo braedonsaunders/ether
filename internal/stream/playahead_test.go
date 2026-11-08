@@ -97,6 +97,17 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// playCovered is what the loop guarantees on disk ahead of a reader that
+// stopped at next. It replans only once the target has moved a low-water mark
+// past what it covered, so a reader that stops leaves coverage anywhere in
+// (target-lowWater, target], depending on where the reader was when the last
+// batch was planned: one planned at 2.75 MiB, with the reader then stopping at
+// 3 MiB, leaves the target 256 KiB short, under the mark, for good.
+func playCovered(src *source, next int64) int64 {
+	depth := src.playAheadBytes()
+	return next + depth - min(int64(playLowWater), depth/8)
+}
+
 func TestPlaybackReadAheadKeepsMinutesOnDisk(t *testing.T) {
 	f := newFakeFetcher()
 	f.latency = 3 * time.Millisecond // a slow provider
@@ -114,8 +125,13 @@ func TestPlaybackReadAheadKeepsMinutesOnDisk(t *testing.T) {
 
 	src.SetPlaybackDuration(playDuration)
 	playRead(t, src, 3<<20) // three minutes in
-	// Five minutes ahead of the reader, past the 1 MiB in-memory window.
-	waitFor(t, "five minutes ahead on disk", func() bool { return onDisk(src, cache, 4<<20, 4<<20) })
+	// Five minutes ahead of the reader (less the low-water mark), past the
+	// 1 MiB in-memory window.
+	covered := playCovered(src, 3<<20)
+	if covered <= 7<<20 {
+		t.Fatalf("covered target %d is not minutes past the in-memory window", covered)
+	}
+	waitFor(t, "five minutes ahead on disk", func() bool { return onDisk(src, cache, 4<<20, covered-4<<20) })
 	if f.prio(core.PriorityPrefetch) == 0 {
 		t.Fatal("playback read-ahead did not use the background lane")
 	}
@@ -127,13 +143,9 @@ func TestPlaybackReadAheadKeepsMinutesOnDisk(t *testing.T) {
 		}
 	}
 
-	// The target follows the reader. The loop replans only once the target
-	// has moved a low-water mark past what it covered, so a reader that
-	// stops leaves coverage anywhere in (target-lowWater, target], depending
-	// on where the loop's batches fell relative to the reads.
+	// The target follows the reader.
 	playRead(t, src, 6<<20)
-	depth := src.playAheadBytes()
-	covered := 6<<20 + depth - min(int64(playLowWater), depth/8)
+	covered = playCovered(src, 6<<20)
 	if covered <= 8<<20 {
 		t.Fatalf("covered target %d does not pass the previous target", covered)
 	}

@@ -250,7 +250,17 @@ type session struct {
 	// downMisses counts speed-driven down-failovers that found no
 	// lower-bitrate release. They count toward MaxDownFailovers so a
 	// source that stays too slow cannot retry forever.
-	downMisses       int
+	downMisses int
+	// stallContinues counts times a stall-triggered failover continued
+	// this release because every alternate failed fast — the shape of a
+	// stalled CDN edge rather than an unhealthy release (bounded by
+	// maxStallContinues). The grace is never replenished: one continue
+	// total per playback session, even after a fully recovered read or a
+	// later generation swap, so a long session's second independent edge
+	// glitch escalates as before. A per-outage reset would need sustained
+	// healthy progress plus a cumulative starvation cap (issue #169), not
+	// merely a new request. Guarded by mu; see takeStallContinue.
+	stallContinues   int
 	requiresRemux    bool
 	prefer           string // release ID the viewer picked (PrepareVariant); read-only after creation
 	exact            bool   // exact selection must never switch releases

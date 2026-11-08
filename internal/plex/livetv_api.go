@@ -290,12 +290,10 @@ func liveLogo(c livetv.Channel) string {
 func (s *Server) liveGuideLogo(r *http.Request, c livetv.Channel) string {
 	path := liveLogo(c)
 	pr := FromContext(r.Context())
-	if pr == nil || !(strings.EqualFold(pr.Platform, "tvOS") || strings.EqualFold(pr.Product, "Plex for Apple TV")) || r.Host == "" {
+	if pr == nil || !(strings.EqualFold(pr.Platform, "tvOS") || strings.EqualFold(pr.Product, "Plex for Apple TV") || strings.EqualFold(pr.Product, "Plex Web")) || r.Host == "" {
 		return path
 	}
-	// Native tvOS treats EPG thumbnails as standalone URLs, like Plex's
-	// provider-static images, rather than library paths relative to this PMS.
-	// Its image loader also does not carry the guide request's auth headers.
+	// These clients load guide thumbnails as standalone URLs without auth headers.
 	scheme, host := "http", r.Host
 	if r.TLS != nil {
 		scheme = "https"
@@ -314,7 +312,7 @@ func (s *Server) liveGuideLogo(r *http.Request, c livetv.Channel) string {
 			host = forwarded
 		}
 	}
-	u := url.URL{Scheme: scheme, Host: host, Path: path}
+	u := url.URL{Scheme: scheme, Host: host, Path: "/livetv/channels/" + c.ID + "/logo.png", RawPath: path}
 	q := url.Values{}
 	q.Set("X-Plex-Token", pr.Token)
 	u.RawQuery = q.Encode()

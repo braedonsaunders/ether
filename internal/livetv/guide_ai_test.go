@@ -181,9 +181,15 @@ func guideAIMessyMeasurement(t *testing.T) {
 func TestGuideAIRejectsInventedIDs(t *testing.T) {
 	f := &guideFake{labels: map[string]string{}, invalid: "invented"}
 	s := seedGuideAI(t, f, 2)
-	_, e := s.MatchGuides(context.Background(), GuideMatchRequest{AI: "propose"})
-	if e == nil || !strings.Contains(e.Error(), "outside shortlist") {
-		t.Fatalf("invented candidate: %v", e)
+	// An invented id is dropped; it never maps a channel or stops the run.
+	res, e := s.MatchGuides(context.Background(), GuideMatchRequest{AI: "propose"})
+	if e != nil {
+		t.Fatalf("invented candidate stopped the run: %v", e)
+	}
+	for _, c := range res.Changes {
+		if c.Method == "ai" {
+			t.Fatalf("invented candidate proposed: %+v", c)
+		}
 	}
 }
 

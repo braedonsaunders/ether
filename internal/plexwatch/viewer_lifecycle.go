@@ -8,10 +8,9 @@ func init() {
 	store.RegisterViewerTable("plexwatch", "plexwatch_account", "user_id", store.ViewerMergeMove)
 	store.RegisterViewerTable("plexwatch", "plexwatch_fence", "user_id", store.ViewerMergeMove)
 	store.RegisterViewerTable("plexwatch", "plexwatch_pin", "user_id", store.ViewerMergeMove)
-	store.RegisterViewerTable("plexwatch", "plexwatch_sent", "user_id", store.ViewerMergeMove, "guid", "kind", "at_ms", "rating")
-	store.RegisterViewerTable("plexwatch", "plexwatch_unmapped", "user_id", store.ViewerMergeMove, "guid")
-	store.RegisterViewerTable("plexwatch", "plexwatch_attempt", "user_id", store.ViewerMergeDrop)
-	store.RegisterViewerTable("plexwatch", "plexwatch_permit", "user_id", store.ViewerMergeDrop)
+	// Last-read Plex state is per account; a merged viewer reads it again.
+	store.RegisterViewerTable("plexwatch", "plexwatch_remote", "user_id", store.ViewerMergeDrop)
+	store.RegisterViewerTable("plexwatch", "plexwatch_expand", "user_id", store.ViewerMergeDrop)
 }
 
 // Server-to-server sync. A merged viewer keeps a mapping only where the

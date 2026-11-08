@@ -286,9 +286,9 @@ func TestCPUBaselineAndLoadLevels(t *testing.T) {
 		measureWorker("notify.Service.Drain (SQLite notify_channels poll)", "1s", 1*time.Second, 50, func() {
 			_ = a2.notifications.Drain(ctx)
 		}),
-		measureWorker("plexwatch.ReconcileOnce (SQLite poll)", "2s", 2*time.Second, 50, func() {
+		measureWorker("plexwatch.DeliverOnce (SQLite poll)", "2s", 2*time.Second, 50, func() {
 			if a2.plexWatch != nil {
-				_, _ = a2.plexWatch.ReconcileOnce(ctx)
+				_, _ = a2.plexWatch.DeliverOnce(ctx)
 			}
 		}),
 		measureWorker("housekeeping shard sweep (ImageGrant+Receipt DELETE)", "5s", 5*time.Second, 50, func() {

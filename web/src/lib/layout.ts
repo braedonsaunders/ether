@@ -633,11 +633,6 @@ export function removePolicies(
   }));
 }
 
-/** Whether a layout row is a pattern (glob) rather than one row. */
-export function isPattern(row: string): boolean {
-  return /[*?[]/.test(row);
-}
-
 /** Set or clear (undefined) a page length, for all devices (device null) or one. */
 export function setPageLength(
   doc: HomeLayout,

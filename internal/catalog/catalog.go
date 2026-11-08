@@ -269,7 +269,6 @@ type Catalog struct {
 	hydrateSlots chan struct{}
 
 	trendFlights flight.Group[string, trendSnapshot]
-	statsFlights flight.Group[string, Stats]
 	listMu       sync.Mutex
 	listCache    map[string]listEntry
 
@@ -344,12 +343,12 @@ type cachedFacet struct {
 	counted time.Time
 }
 
+// cachedStats is the last Stats read, served only when the database cannot
+// answer.
 type cachedStats struct {
-	stats     Stats
-	gen       uint64
-	minute    int64
-	fetchedAt time.Time
-	ready     bool
+	stats       Stats
+	yearPending int
+	ready       bool
 }
 
 type listEntry struct {

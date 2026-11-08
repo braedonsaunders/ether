@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+const (
+	// importRequests caps the Plex reads in one import pass for one viewer.
+	importRequests = 40
+	// catchUp is the delay before the next pass while a sweep is unfinished.
+	catchUp = time.Minute
+)
+
 // RunImports is started under cluster leadership. Each pass is bounded and the
 // persisted lease also serializes manual imports and overlapping leaders.
 func (s *Service) RunImports(ctx context.Context) {
@@ -25,12 +32,15 @@ func (s *Service) RunImports(ctx context.Context) {
 	}
 }
 
+// importDue runs the scheduled passes that are due: an import for viewers
+// who read from Plex, and for viewers who only send while their account's
+// sync setting is off, a check of that setting so their held changes flow
+// as soon as it is turned on.
 func (s *Service) importDue(ctx context.Context) {
-	if !s.supported {
-		return
-	}
 	now := s.now().UnixNano()
-	rows, err := s.db.QueryContext(ctx, `SELECT user_id,plex_id FROM plexwatch_account WHERE (direction & 2)<>0 AND revoked=0 AND token<>'' AND next_import<=? AND next_allowed<=? AND import_lease<=? ORDER BY next_import,user_id LIMIT 8`, now, now, now)
+	rows, err := s.db.QueryContext(ctx, `SELECT user_id,plex_id FROM plexwatch_account
+		WHERE ((direction & 2)<>0 OR ((direction & 1)<>0 AND consent=0)) AND revoked=0 AND token<>'' AND next_import<=? AND next_allowed<=? AND import_lease<=?
+		ORDER BY next_import,user_id LIMIT 8`, now, now, now)
 	if err != nil {
 		return
 	}
@@ -47,96 +57,106 @@ func (s *Service) importDue(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		_, _ = s.ImportCurrent(ctx, v.user, v.plex)
+		acct, err := s.requireMatch(ctx, v.user, v.plex)
+		if err != nil {
+			continue
+		}
+		_, _ = s.schedulePass(ctx, acct)
 	}
 }
 
-// ImportCurrent uses the same cursor and persisted status for manual and scheduled imports.
+// ImportCurrent runs one bounded import pass now. Scheduled and manual
+// passes share the cursor, lease and status.
 func (s *Service) ImportCurrent(ctx context.Context, userID, plexID int64) (Status, error) {
-	if !s.supported {
-		return Status{}, ErrUnsupported
-	}
 	acct, err := s.requireMatch(ctx, userID, plexID)
 	if err != nil {
 		return Status{}, err
 	}
+	if acct.direction&2 == 0 {
+		return Status{}, ErrReceivingOff
+	}
+	return s.schedulePass(ctx, acct)
+}
+
+// schedulePass is one pass for one viewer under the persisted lease. It
+// reads the account's sync setting first; the import runs only when the
+// setting is on and the viewer reads from Plex.
+func (s *Service) schedulePass(ctx context.Context, acct accountRow) (Status, error) {
+	userID, plexID := acct.userID, acct.plexID
 	now := s.now()
 	lease := now.Add(15 * time.Minute).UnixNano()
-	res, err := s.db.ExecContext(ctx, `UPDATE plexwatch_account SET import_lease=? WHERE user_id=? AND plex_id=? AND token_generation=? AND import_lease<=? AND next_allowed<=?`, lease, userID, plexID, acct.tokenGeneration, now.UnixNano(), now.UnixNano())
+	res, err := s.db.ExecContext(ctx, `UPDATE plexwatch_account SET import_lease=? WHERE user_id=? AND plex_id=? AND token_generation=? AND import_lease<=? AND next_allowed<=?`,
+		lease, userID, plexID, acct.tokenGeneration, now.UnixNano(), now.UnixNano())
 	if err != nil {
 		return Status{}, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
+	if n, err := res.RowsAffected(); err != nil {
 		return Status{}, err
-	}
-	if n == 0 {
+	} else if n == 0 {
 		return s.Status(ctx, userID, plexID)
 	}
-	importCtx, cancelImport := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancelImport()
-	err = s.refreshEligibility(importCtx, userID, acct)
-	if err == nil {
-		err = s.importCurrent(importCtx, userID, plexID, acct.tokenGeneration)
-		if errors.Is(err, ErrRevoked) {
-			if revokeErr := s.revoke(importCtx, userID, acct.tokenGeneration); revokeErr != nil && !errors.Is(revokeErr, ErrRevoked) {
-				err = revokeErr
-			}
+	importCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	finished, imported := true, false
+	on, err := s.readConsent(importCtx, acct)
+	if err == nil && on && acct.direction&2 != 0 {
+		finished, err = s.importPass(importCtx, acct)
+		imported = err == nil
+	}
+	if errors.Is(err, ErrRevoked) {
+		if rerr := s.revoke(importCtx, userID, acct.tokenGeneration); rerr != nil && !errors.Is(rerr, ErrRevoked) {
+			err = rerr
 		}
 	}
-	if importCtx.Err() != nil { // use a short independent context to release the lease after leadership loss
-		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if importCtx.Err() != nil { // release the lease even after leadership loss
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
 		_, _ = s.db.ExecContext(cleanup, `UPDATE plexwatch_account SET import_lease=0 WHERE user_id=? AND import_lease=?`, userID, lease)
 		return Status{}, importCtx.Err()
 	}
 	now = s.now()
 	var interval, failures int
-	e := s.db.QueryRowContext(ctx, `SELECT import_interval,import_failures FROM plexwatch_account WHERE user_id=? AND token_generation=? AND import_lease=?`, userID, acct.tokenGeneration, lease).Scan(&interval, &failures)
-	if e != nil {
+	if e := s.db.QueryRowContext(ctx, `SELECT import_interval,import_failures FROM plexwatch_account WHERE user_id=? AND import_lease=?`, userID, lease).Scan(&interval, &failures); e != nil {
 		return Status{}, e
 	}
-	code := 0
 	problem := ""
 	nextAllowed := int64(0)
 	last := int64(0)
 	delay := time.Duration(interval) * time.Minute
+	if !finished {
+		delay = catchUp
+	}
 	if err != nil {
 		failures++
 		problem = "network"
+		var st *StatusError
+		errors.As(err, &st)
 		switch {
-		case errors.Is(err, ErrNotEligible):
-			problem = "consent"
 		case errors.Is(err, ErrRevoked):
 			problem = "token"
-		case errors.Is(err, ErrCredentialForbidden):
-			problem = "credential"
+		case st != nil && st.Status == http.StatusTooManyRequests:
+			problem = "rate_limited"
 		}
 		delay = time.Minute * time.Duration(1<<min(failures-1, 8))
-		var status *StatusError
-		if errors.As(err, &status) {
-			code = status.PlexCode
+		if st != nil && st.RetryAfter > delay {
+			delay = st.RetryAfter
 		}
-		if status != nil && status.Status == http.StatusTooManyRequests && status.RetryAfter > delay {
-			delay = status.RetryAfter
-		}
-		maxDelay := time.Unix(0, math.MaxInt64).Sub(now) - time.Minute
-		if maxDelay < 0 {
-			maxDelay = 0
-		}
-		if delay > maxDelay {
-			delay = maxDelay
-		}
+		maxDelay := max(time.Unix(0, math.MaxInt64).Sub(now)-time.Minute, 0)
+		delay = min(delay, maxDelay)
 		nextAllowed = now.Add(delay).UnixNano()
+		s.log.Debug("plex watch import paused", "user", userID, "problem", problem)
 	} else {
 		failures = 0
-		last = now.Unix()
+		if imported {
+			last = now.Unix()
+		}
 	}
-	// Stable per-viewer jitter spreads work without changing the configured interval.
+	// Stable per-viewer jitter spreads work without changing the interval.
 	jitter := time.Duration(userID%61) * time.Second
 	next := now.Add(delay + jitter).UnixNano()
-	_, e = s.db.ExecContext(ctx, `UPDATE plexwatch_account SET import_lease=0,import_problem=?,problem_code=?,import_failures=?,next_allowed=?,next_import=?,last_import=CASE WHEN ?>0 THEN ? ELSE last_import END WHERE user_id=? AND token_generation=? AND import_lease=?`, problem, code, failures, nextAllowed, next, last, last, userID, acct.tokenGeneration, lease)
-	if e != nil {
+	if _, e := s.db.ExecContext(ctx, `UPDATE plexwatch_account SET import_lease=0, import_problem=?, import_failures=?, next_allowed=CASE WHEN ?>next_allowed THEN ? ELSE next_allowed END,
+		next_import=?, last_import=CASE WHEN ?>0 THEN ? ELSE last_import END WHERE user_id=? AND import_lease=?`,
+		problem, failures, nextAllowed, nextAllowed, next, last, last, userID, lease); e != nil {
 		return Status{}, e
 	}
 	st, statusErr := s.Status(ctx, userID, plexID)
@@ -144,25 +164,4 @@ func (s *Service) ImportCurrent(ctx context.Context, userID, plexID int64) (Stat
 		return Status{}, statusErr
 	}
 	return st, err
-}
-
-// Unmatched returns one bounded page of unmatched Plex GUIDs.
-func (s *Service) Unmatched(ctx context.Context, userID, plexID int64, after string) ([]string, error) {
-	if _, err := s.requireMatch(ctx, userID, plexID); err != nil {
-		return nil, err
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT guid FROM plexwatch_unmapped WHERE user_id=? AND guid>? ORDER BY guid LIMIT 100`, userID, after)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make([]string, 0, 100)
-	for rows.Next() {
-		var guid string
-		if err = rows.Scan(&guid); err != nil {
-			return nil, err
-		}
-		out = append(out, guid)
-	}
-	return out, rows.Err()
 }

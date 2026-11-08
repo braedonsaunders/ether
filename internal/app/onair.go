@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/onair"
+	"github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/transcode"
 	"image"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -44,7 +48,7 @@ func (a *App) buildOnAir() error {
 	o.Upcoming = func(ctx context.Context) []core.ClipRequest { return a.livetv.GraphicsRequests(ctx, "") }
 	if a.images != nil {
 		o.Artwork = func(ctx context.Context, ref string) (image.Image, error) {
-			b, _, e := a.images.Get(ctx, ref, 1920)
+			b, e := a.onairArtwork(ctx, ref)
 			if e != nil {
 				return nil, e
 			}
@@ -140,7 +144,7 @@ func (a *App) onairBindings(ctx context.Context, channel, viewer string, at time
 		v["time"] = p.Start.Format("15:04")
 		v["meta"] = fmt.Sprintf("%d min", p.Item.DurationMS/60000)
 		v["logline"] = strings.SplitN(p.Item.Summary, ". ", 2)[0]
-		v["backdrop"] = p.Item.Art
+		v["backdrop"] = livetv.ArtworkRef(p.Item.Key, p.Item.Art, "art")
 		list = append(list, v)
 		if len(list) == 4 {
 			break
@@ -160,3 +164,48 @@ func (a *App) onairBindings(ctx context.Context, channel, viewer string, at time
 }
 
 var _ core.ChannelGraphics = (*onair.Service)(nil)
+
+// onairArtwork loads an On Air artwork reference: a TMDB image path, or a
+// title's poster/backdrop by key, which resolves Plex-sourced art through the
+// verified Plex metadata cache the Plex apps use for the same title.
+func (a *App) onairArtwork(ctx context.Context, ref string) ([]byte, error) {
+	key, element, ok := livetv.ParseArtworkRef(ref)
+	if !ok {
+		b, _, e := a.images.Get(ctx, ref, 1920)
+		return b, e
+	}
+	if a.catalog == nil {
+		return nil, artwork.ErrNotFound
+	}
+	t, e := a.catalog.Get(ctx, key)
+	if e != nil {
+		return nil, e
+	}
+	path := t.PosterPath
+	if element == "art" {
+		path = t.BackdropPath
+	} else if path == "" {
+		path = t.StillPath
+	}
+	if artwork.ValidPath(path) {
+		b, _, e := a.images.Get(ctx, path, 1920)
+		return b, e
+	}
+	if path != plexmeta.RemoteArt || a.plexMeta == nil || a.plexGUID == nil {
+		return nil, artwork.ErrNotFound
+	}
+	row, ok := a.plexMeta.Cached(ctx, key)
+	if !ok || row.Empty() || row.GUID == "" || row.GUID != a.plexGUID.Cached(ctx, key) {
+		return nil, artwork.ErrNotFound
+	}
+	remote := row.ThumbURL
+	if element == "art" {
+		remote = row.ArtURL
+	}
+	u, e := url.Parse(remote)
+	if e != nil || !u.IsAbs() || !plexmeta.ImageHost(u.Host) {
+		return nil, artwork.ErrNotFound
+	}
+	b, _, e := a.images.GetUntrustedURL(ctx, remote)
+	return b, e
+}

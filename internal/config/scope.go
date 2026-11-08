@@ -309,14 +309,24 @@ func SharedJSON(c Config) []byte {
 // document lacks (written by an older version) take their defaults;
 // node-local keys in the document are ignored.
 func MergeShared(local Config, sharedJSON []byte) (Config, error) {
+	c, _, err := mergeShared(local, sharedJSON)
+	return c, err
+}
+
+// mergeShared is MergeShared reporting what settling the document's quality
+// profiles changed: a document written by a release that predates
+// per-media profiles is never run as is (see normalizeQualityDocument).
+func mergeShared(local Config, sharedJSON []byte) (Config, []string, error) {
 	var shared map[string]any
 	if err := json.Unmarshal(sharedJSON, &shared); err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
 	stripRetiredLiveTV(shared)
+	settled := normalizeSharedDocument(shared)
 	base, _ := splitDoc(toDoc(Defaults("")))
 	overlayDeep(base, shared)
 	doc := toDoc(local)
 	overlayShared(doc, base)
-	return fromDoc(doc)
+	c, err := fromDoc(doc)
+	return c, settled, err
 }

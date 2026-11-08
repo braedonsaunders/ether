@@ -2,7 +2,6 @@ package clusterplayback
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -46,8 +45,10 @@ func (r *Runtime) checkSourceFile(ctx context.Context, peer nodewire.Identity, q
 	if r.o.SourcePolicy(ctx, viewer, ps) != nil {
 		return sourceResponse{}, ErrDenied
 	}
+	// Only a verdict travels back; an error is no verdict and the front
+	// keeps the offered (available) state.
 	live, err := checker.CheckFileAvailability(ctx, viewer, q.Key, q.Caps, q.ReleaseID)
-	if err != nil && !errors.Is(err, core.ErrNotAvailable) && !errors.Is(err, core.ErrNotFound) {
+	if err != nil {
 		return sourceResponse{}, nil
 	}
 	return sourceResponse{FileAvailable: &live}, nil

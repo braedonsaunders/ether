@@ -1586,6 +1586,7 @@ func (c *Client) stampBackend(ctx context.Context, run func(context.Context) ([]
 			r.Info = releaseparse.Parse(r.Name)
 		}
 	}
+	c.markOnDemand(results)
 	return results, nil
 }
 

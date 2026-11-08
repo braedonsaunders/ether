@@ -86,16 +86,19 @@ type Service struct {
 	cache          map[string]entry
 	pins           map[string]time.Time
 	pending        map[string]bool
-	renderTimes    map[string]time.Duration
-	progress       map[string]*Progress
-	lookJobs       map[string][]string
-	jobs           chan renderJob
-	clipJobs       chan renderJob
-	importJobs     chan renderJob
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
-	startOnce      sync.Once
+	// failed holds a retry time per content hash after a render error, so a
+	// boundary that re-requests every tick cannot spin a failing render.
+	failed      map[string]failure
+	renderTimes map[string]time.Duration
+	progress    map[string]*Progress
+	lookJobs    map[string][]string
+	jobs        chan renderJob
+	clipJobs    chan renderJob
+	importJobs  chan renderJob
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	startOnce   sync.Once
 }
 
 var _ core.ChannelGraphics = (*Service)(nil)
@@ -447,6 +450,9 @@ func (s *Service) enqueue(j renderJob) bool {
 		s.cache[j.Hash] = v
 		return true
 	}
+	if f, ok := s.failed[j.Hash]; ok && j.scene() && time.Now().Before(f.retry) {
+		return true // backing off; the boundary falls back as it would on a miss
+	}
 	select {
 	case <-s.ctx.Done():
 		return false
@@ -741,9 +747,46 @@ func (s *Service) process(j renderJob) {
 	if errors.Is(e, context.Canceled) && s.ctx.Err() == nil {
 		s.enqueue(j)
 	}
-	if e != nil && s.ctx.Err() == nil {
+	if e != nil && s.ctx.Err() == nil && !errors.Is(e, context.Canceled) && j.scene() {
+		s.mu.Lock()
+		if s.failed == nil {
+			s.failed = map[string]failure{}
+		}
+		if len(s.failed) > 1024 {
+			for k, f := range s.failed {
+				if time.Since(f.retry) > 10*time.Minute {
+					delete(s.failed, k)
+				}
+			}
+		}
+		f := s.failed[j.Hash]
+		f.delay = min(max(2*f.delay, 5*time.Second), 5*time.Minute)
+		f.retry = time.Now().Add(f.delay)
+		s.failed[j.Hash] = f
+		first := f.delay == 5*time.Second
+		s.mu.Unlock()
+		if first {
+			s.o.Logger.Warn("onair job failed", "hash", j.Hash, "error", e)
+		} else {
+			s.o.Logger.Debug("onair job failed again", "hash", j.Hash, "error", e, "retry_in", f.delay)
+		}
+	} else if e != nil && s.ctx.Err() == nil && !errors.Is(e, context.Canceled) {
 		s.o.Logger.Warn("onair job failed", "hash", j.Hash, "error", e)
+	} else if e == nil {
+		s.mu.Lock()
+		delete(s.failed, j.Hash)
+		s.mu.Unlock()
 	}
+}
+
+// scene reports whether j renders a scene master, as opposed to a planning,
+// import or reel conversion job; only scene renders are retried by boundaries.
+func (j renderJob) scene() bool { return j.prepare == nil && j.convert == nil && !j.download }
+
+// failure is a render hash's retry backoff after an error.
+type failure struct {
+	retry time.Time
+	delay time.Duration
 }
 
 func (s *Service) execute(parent context.Context, j renderJob) (err error) {
@@ -936,10 +979,14 @@ func (s *Service) loadAssets(ctx context.Context, j *renderJob) error {
 			if d != "" && s.o.Artwork != nil {
 				im, e := s.o.Artwork(ctx, d)
 				if e != nil {
-					if j.Request.Moment == "bug" && slot == "channel.logo" {
-						continue
+					// Programme artwork is decoration: a poster or backdrop
+					// that cannot load leaves its slot empty instead of
+					// failing the whole scene into the generic fallback.
+					if ctx.Err() != nil {
+						return ctx.Err()
 					}
-					return e
+					s.o.Logger.Debug("onair artwork unavailable", "slot", slot, "moment", j.Request.Moment, "error", e)
+					continue
 				}
 				j.Bind.Assets[d] = im
 				j.Bind.Slots[slot] = d

@@ -146,12 +146,12 @@ func TestPrismUpgradeFromDelivered9503(t *testing.T) {
 	}
 	// afdcb3f7 rejected capability_headers because that slice's base had not
 	// landed it. b7049abd is the reviewed inventory: capability_headers v3 is
-	// required. Account sync has since landed as plexwatch v5,
-	// state_plexwatch v5, and watchsend v1. Session checks below are unchanged.
+	// required. Account sync has since landed as plexwatch v7,
+	// state_plexwatch v6, and watchsend v2. Session checks below are unchanged.
 	if store.KnownMigrations()["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", store.KnownMigrations()["capability_headers"])
 	}
-	if store.KnownMigrations()["plexwatch"] != 5 || store.KnownMigrations()["state_plexwatch"] != 5 || store.KnownMigrations()["watchsend"] != 1 {
+	if store.KnownMigrations()["plexwatch"] != 7 || store.KnownMigrations()["state_plexwatch"] != 6 || store.KnownMigrations()["watchsend"] != 2 {
 		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d watchsend=%d", store.KnownMigrations()["plexwatch"], store.KnownMigrations()["state_plexwatch"], store.KnownMigrations()["watchsend"])
 	}
 
@@ -411,7 +411,7 @@ func assertUpgradeBoundary(t *testing.T) {
 	if known["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
 	}
-	if known["plexwatch"] != 5 || known["state_plexwatch"] != 5 || known["watchsend"] != 1 {
+	if known["plexwatch"] != 7 || known["state_plexwatch"] != 6 || known["watchsend"] != 2 {
 		t.Fatalf("account sync inventory plexwatch=%d state_plexwatch=%d watchsend=%d", known["plexwatch"], known["state_plexwatch"], known["watchsend"])
 	}
 	if known["auth"] != 8 || known["auth_sessions"] != 1 {

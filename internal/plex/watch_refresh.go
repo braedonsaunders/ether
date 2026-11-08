@@ -21,8 +21,10 @@ func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKe
 			return
 		}
 		// A Plex-account import is not a local playback timeline. Refresh the
-		// library for the mark or rating, and do not treat it as an upload.
-		if ev.Account && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble || ev.Kind == state.EventRated) {
+		// library for the mark, resume position or rating, and do not treat
+		// it as an upload.
+		if ev.Account && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble || ev.Kind == state.EventRated ||
+			(ev.Kind == state.EventProgress && ev.ResumeSet)) {
 			refresh(ev.UserID, ev.Key)
 			return
 		}

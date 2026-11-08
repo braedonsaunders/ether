@@ -343,13 +343,27 @@ func profileTarget(rule devicePlaybackRule, pr *Request, protocol string) *devic
 	return nil
 }
 
-func dv5NeedsUnsupportedConversion(info core.MediaInfo, target *deviceMediaRule) bool {
+// dv5ToneMapper is implemented by an encoder that reports whether it can
+// convert Dolby Vision profile 5 to SDR (transcode.Manager).
+type dv5ToneMapper interface{ ToneMapsDolbyVisionProfile5() bool }
+
+// dv5CannotConvert reports a Dolby Vision profile 5 source that this server
+// cannot convert for target. A target carrying the source codec keeps the
+// picture. Any other target is an SDR conversion, which PMS and Ether serve
+// by tone-mapping through the RPU; only an encoder without that mapper must
+// refuse. An encoder that does not report the capability is checked again
+// when the conversion starts.
+func (s *Server) dv5CannotConvert(info core.MediaInfo, target *deviceMediaRule) bool {
 	v := info.Video()
-	return v != nil && v.DolbyVisionProfile == 5 && (target == nil || !profileContains(target.video, plexCodec(v.Codec)))
+	if v == nil || v.DolbyVisionProfile != 5 || target == nil || profileContains(target.video, plexCodec(v.Codec)) {
+		return false
+	}
+	tm, ok := s.d.Transcoder.(dv5ToneMapper)
+	return ok && !tm.ToneMapsDolbyVisionProfile5()
 }
 
 // profileDecisionError retains the per-family decision code when a profile has
-// no streaming target, or cannot preserve the source's color representation.
+// no streaming target, or the encoder cannot convert the source's colour.
 type profileDecisionError struct {
 	direct  string
 	code    int
@@ -368,7 +382,7 @@ func (s *Server) applyDeviceProfile(pr *Request, t *core.Title, ps *core.PlaySes
 			return nil
 		}
 		target := profileTarget(rule, pr, p.protocol)
-		if target != nil && dv5NeedsUnsupportedConversion(ps.Info, target) {
+		if s.dv5CannotConvert(ps.Info, target) {
 			return &profileDecisionError{direct: textDirectPlayDisable, code: 2003, message: "File is unplayable. DoVi (Profile 5) color space is not supported."}
 		}
 		if resolvedPlayerProfile(pr) != "Generic" {
@@ -420,7 +434,7 @@ func (s *Server) applyDeviceProfile(pr *Request, t *core.Title, ps *core.PlaySes
 	if target == nil {
 		return &profileDecisionError{direct: reason, code: 4005, message: "Cannot convert this item. No conversion profile found for protocol " + p.protocol + "."}
 	}
-	if dv5NeedsUnsupportedConversion(ps.Info, target) {
+	if s.dv5CannotConvert(ps.Info, target) {
 		return &profileDecisionError{direct: reason, code: 2003, message: "File is unplayable. DoVi (Profile 5) color space is not supported."}
 	}
 	// Output order is significant; the first declared codec is the preferred

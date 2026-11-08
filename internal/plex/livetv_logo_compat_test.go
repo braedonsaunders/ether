@@ -25,6 +25,37 @@ func (f *logoFetcher) GetUntrustedURL(_ context.Context, u string) ([]byte, stri
 	return f.data, f.contentType, nil
 }
 
+func TestPlexWebGuideLogoUsesServerOriginAndViewer(t *testing.T) {
+	f, service, channel := liveFixture(t)
+	response := f.get(t, liveProviderPath+"/lineups/dvr/channels", "Accept", "application/json", "X-Plex-Product", "Plex Web")
+	channels := decodeJSON(t, response)["Channel"].([]any)
+	logo, err := url.Parse(channels[0].(map[string]any)["thumb"].(string))
+	if err != nil || logo.Scheme != "http" || logo.Host != "example.com" || logo.Path != liveLogo(channel) || logo.Query().Get("X-Plex-Token") != ownerToken {
+		t.Fatal("Plex Web logo does not point to the authenticated server")
+	}
+	if rec := f.get(t, logo.RequestURI()); rec.Code != http.StatusOK {
+		t.Fatalf("logo status: %d", rec.Code)
+	}
+	if err := service.SetChannelViewers(context.Background(), channel.ID, livetv.ChannelViewers{Deny: []int64{friendUser.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	logo.RawQuery = url.Values{"X-Plex-Token": {friendToken}}.Encode()
+	if rec := f.get(t, logo.RequestURI()); rec.Code != http.StatusNotFound {
+		t.Fatalf("restricted logo status: %d", rec.Code)
+	}
+}
+
+func TestPlexWebGuideLogoEscapesChannelID(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	r := httptest.NewRequest("GET", "http://example.com/livetv/dvr/channels", nil)
+	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, &Request{Token: ownerToken, Product: "Plex Web"}))
+	got := f.srv.liveGuideLogo(r, livetv.Channel{ID: "a b%c"})
+	if !strings.HasPrefix(got, "http://example.com/livetv/channels/a%20b%25c/logo.png?") {
+		t.Fatalf("channel ID is not escaped exactly once: %s", got)
+	}
+}
+
 func TestLiveChannelLogoPlezyCompatibility(t *testing.T) {
 	f, service, generated := liveFixture(t)
 	src := livetv.Source{Name: "Logo source", Playlist: "#EXTM3U\n#EXTINF:-1 tvg-id=\"external\" tvg-logo=\"https://logos.example.test/logo.svg\",External\nhttps://stream.example.test/live\n"}

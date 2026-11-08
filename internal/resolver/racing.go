@@ -13,22 +13,23 @@ import (
 )
 
 type candidate struct {
-	fallback   bool
-	pluginKeys map[string]int64
-	policy     releasepolicy.Result
-	rel        core.Release
-	trace      int
-	verified   bool
-	langOK     bool        // declares no audio, or an accepted audio language (acceptedAudio)
-	langWanted bool        // explicitly declares the viewer's wanted audio or MULTI on a foreign title
-	starved    bool        // below its resolution's bitrate floor (bitrateScore)
-	quality    qualityRank // the profile's quality order, ahead of the score
-	bandwidth  int         // fits client cap (+1), unknown (0), or exceeds it (-1)
-	cf         int         // pure custom format score (Servarr ordering)
-	age        float64     // usenet age bucket (Servarr ordering)
-	hasAge     bool
-	prepared   *candidateCheck // validation overlapped with descriptor discovery
-	graceStart time.Time       // discovery start, set only when preparation overran the grace
+	fallback    bool
+	pluginKeys  map[string]int64
+	policy      releasepolicy.Result
+	rel         core.Release
+	trace       int
+	verified    bool
+	langOK      bool        // declares no audio, or an accepted audio language (acceptedAudio)
+	langWanted  bool        // explicitly declares the viewer's wanted audio or MULTI on a foreign title
+	starved     bool        // below its resolution's bitrate floor (bitrateScore)
+	quality     qualityRank // the profile's quality order, ahead of the score
+	bandwidth   int         // fits client cap (+1), unknown (0), or exceeds it (-1)
+	yearGuessed bool        // accepted despite a series year that differs from the show's
+	cf          int         // pure custom format score (Servarr ordering)
+	age         float64     // usenet age bucket (Servarr ordering)
+	hasAge      bool
+	prepared    *candidateCheck // validation overlapped with descriptor discovery
+	graceStart  time.Time       // discovery start, set only when preparation overran the grace
 }
 type validation struct {
 	index                         int
@@ -132,20 +133,35 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 	width := min(race, 4)
 	limit := min(len(cands), maxHealthAttempts)
 	var transient error
+	onDemandHeld := false // see ondemand.go
 	for base := 0; base < limit; {
 		if core.IsSpeculative(ctx) && base >= speculativeHealthAttempts {
 			break
 		}
+		if cands[base].rel.OpensOnDemand() {
+			if !core.OnDemandStreamsAllowed(ctx) {
+				return -1, nil, errors.Join(transient, errOnDemandForeground)
+			}
+			if onDemandHeld {
+				ct := &tr.Candidates[cands[base].trace]
+				ct.Rejected, ct.Reason, ct.err = true, errOnDemandHeld.Error(), errOnDemandHeld
+				transient = errors.Join(transient, errOnDemandHeld)
+				base++
+				continue
+			}
+		}
 		count := min(width, limit-base)
-		if cands[base].verified {
+		if cands[base].verified || cands[base].rel.OpensOnDemand() {
 			// Reusing a known working release must not start speculative
-			// downloads and health checks for other releases alongside it.
+			// downloads and health checks for other releases alongside it,
+			// and an on-demand open makes its add-on fetch the release.
 			count = 1
 		} else {
 			// A race stays inside one policy tier. A healthy fallback must
 			// not be selected while a primary in this window is still valid.
+			// It never includes an on-demand link.
 			same := 1
-			for same < count && releasepolicy.Equivalent(cands[base].policy, cands[base+same].policy) && pluginKeysEqual(cands[base], cands[base+same]) {
+			for same < count && !cands[base+same].rel.OpensOnDemand() && releasepolicy.Equivalent(cands[base].policy, cands[base+same].policy) && pluginKeysEqual(cands[base], cands[base+same]) {
 				same++
 			}
 			count = same
@@ -162,6 +178,7 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 		for j := 0; j < count; j++ {
 			v := <-results
 			noteValidation(ctx, cands[v.index].rel, v)
+			onDemandHeld = onDemandHeld || onDemandSlow(cands[v.index].rel, v)
 			ct := &tr.Candidates[cands[v.index].trace]
 			ct.Attempted = true
 			ct.FetchDuration = v.fetchDuration

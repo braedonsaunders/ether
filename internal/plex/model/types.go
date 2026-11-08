@@ -425,6 +425,9 @@ type Media struct {
 	Protocol              string   `plex:"protocol,omitempty"`
 	Selected              *bool    `plex:"selected"`
 	HasVoiceActivity      *bool    `plex:"hasVoiceActivity"`
+	// PartCount replaces the Part children when a client excludes them
+	// (excludeElements=Part), as PMS does; nil otherwise.
+	PartCount *int `plex:"partCount"`
 
 	Part []Part `plex:"Part"`
 }

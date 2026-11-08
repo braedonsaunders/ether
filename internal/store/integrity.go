@@ -52,6 +52,9 @@ func QuickCheck(ctx context.Context, db *sql.DB) (Integrity, error) {
 		res.Skipped = true
 		return res, nil
 	}
+	// One snapshot of every page: bulk writers wait it out (WaitWALBudget)
+	// instead of growing a WAL the checkpointer cannot drain meanwhile.
+	defer BeginLongRead(db, "the database integrity check")()
 	// FTS5 xIntegrity can reuse a stale segment structure on a pooled
 	// connection after another connection merges segments. Use a new reader
 	// of the same WAL database, not a copy or immutable view. The PRAGMA holds

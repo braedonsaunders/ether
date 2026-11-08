@@ -22,7 +22,7 @@ func (s *Service) launchValidation(wg *sync.WaitGroup, workCtx context.Context, 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		checkCtx, cancel := context.WithTimeout(workCtx, candidateBudget)
+		checkCtx, cancel := context.WithTimeout(workCtx, checkBudget(cand.rel))
 		defer cancel()
 		var v validation
 		if cand.prepared != nil {

@@ -58,7 +58,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	}
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
-	ckey := c.consoleAvailabilityCacheKey(q.Filter) + "|" + browseFilterKey(q.Filter) + fmt.Sprintf("|rules:%s:%#v:%s", q.Filter.RuleVisibility, q.Filter.PreviewRules, q.Filter.PreviewFallback)
+	ckey := c.consoleAvailabilityCacheKey(q.Filter) + "|" + browseFilterKey(c.policyKeyFilter(q.Filter)) + fmt.Sprintf("|rules:%s:%#v:%s", q.Filter.RuleVisibility, q.Filter.PreviewRules, q.Filter.PreviewFallback)
 	bkey := fmt.Sprintf("after:%d|", q.AfterKey) + fmt.Sprintf("%s|%s|%v|%v|%d|%d|%v", ckey, q.Sort, q.Desc, q.SecondarySorts, offset, limit, q.NoTotal)
 	cacheable := !groupHasState(q.Filter.Group)
 	c.cacheMu.RLock()
@@ -101,7 +101,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		if !cacheable {
 			err = c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total)
 		} else {
-			total, err = c.countBrowse(ctx, ckey, where, args)
+			total, err = c.countBrowse(ctx, q.Filter, ckey, where, args)
 		}
 		if err != nil {
 			return core.Page{}, err
@@ -378,6 +378,24 @@ func (c *Catalog) LibraryPosters(ctx context.Context, typ core.MediaType, limit 
 		out = append(out, core.Title{Key: core.RatingKey(key), Type: typ, PosterPath: poster})
 	}
 	return out, rows.Err()
+}
+
+// policyKeyFilter drops the viewer from a cache key when the viewer browses
+// under the owner's rules: browseWhere reads the viewer only to pick those
+// rules, so every such viewer's identical filter shares one cached page and
+// total. A viewer with rules of their own keeps their id and revision.
+func (c *Catalog) policyKeyFilter(f core.Filter) core.Filter {
+	if f.CatalogViewerID == 0 {
+		return f
+	}
+	c.viewerRules.RLock()
+	v, ok := c.viewerRules.entries[f.CatalogViewerID]
+	c.viewerRules.RUnlock()
+	if ok && v.document.Mode != "inherit" && v.document.Mode != "" {
+		return f
+	}
+	f.CatalogViewerID, f.CatalogRuleRevision = 0, 0
+	return f
 }
 
 // browseFilterKey distinguishes a nil IncludeKeys (no restriction) from an
@@ -992,13 +1010,20 @@ const staleCountMin = 10000
 // recountEvery spaces the background recounts of one stale total or facet.
 var recountEvery = 30 * time.Second
 
-// countBrowse counts a browse filter's matches and caches the total.
-func (c *Catalog) countBrowse(ctx context.Context, ckey, where string, args []any) (int, error) {
+// countBrowse counts a browse filter's matches and caches the total. Library
+// listings are answered from the maintained tally (browse_tally.go); other
+// filters count their matches.
+func (c *Catalog) countBrowse(ctx context.Context, f core.Filter, ckey, where string, args []any) (int, error) {
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
-	var total int
-	if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total); err != nil {
+	total, ok, err := c.tallyTotal(ctx, f, where, args)
+	if err != nil {
 		return 0, err
+	}
+	if !ok {
+		if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total); err != nil {
+			return 0, err
+		}
 	}
 	// Stamped with the generation it started at, so a write during the
 	// count makes the next read recount; storing it even then keeps a busy

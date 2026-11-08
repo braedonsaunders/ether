@@ -86,7 +86,13 @@ func TestUnrestrictedConfirmSkipsStartupWrite(t *testing.T) {
 	if _, err := hold.Exec(`UPDATE viewer_policy_epoch SET generation=generation WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
-	playCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	// hold keeps the write lock until the test returns, so a confirm that
+	// tried to write would block until this deadline and fail whatever its
+	// length. The deadline only bounds that failure; it must leave room for
+	// the epoch read, which opens a fresh SQLite connection (hold has the
+	// idle one) and takes hundreds of milliseconds under -race on a loaded
+	// runner.
+	playCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	started := time.Now()
 	fresh, err := policy.ConfirmPlayback(playCtx, owner, false, time.Now())

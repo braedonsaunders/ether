@@ -605,15 +605,16 @@ func TestSameQualityAlternativesAreSeparateVersions(t *testing.T) {
 			t.Fatalf("mediaIndex %d prepared %v, want %s", i+1, pb.variantCalls, want)
 		}
 	}
-	// A multi-version decision requires an explicit selector; index 0 is Auto.
+	// Index 0 is Auto, and so is a decision without a selector, which plays
+	// the first Media as v0.3.4 did.
 	n, prepared := len(pb.variantCalls), pb.prepared
-	if rec := f.get(t, base+"&session=plain"); rec.Code != http.StatusBadRequest {
+	if rec := f.get(t, base+"&session=plain"); rec.Code != http.StatusOK {
 		t.Fatalf("missing selector: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := f.get(t, base+"&mediaIndex=0&session=plain0"); rec.Code != http.StatusOK {
 		t.Fatalf("Auto selector: %d %s", rec.Code, rec.Body.String())
 	}
-	if pb.prepared != prepared+1 || len(pb.variantCalls) != n {
+	if pb.prepared != prepared+2 || len(pb.variantCalls) != n {
 		t.Errorf("plain play prepared=%d variantCalls=%v", pb.prepared, pb.variantCalls)
 	}
 }

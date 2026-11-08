@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 )
@@ -80,6 +81,10 @@ func Generate(ctx context.Context, db *sql.DB, s Scale, now time.Time) error {
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO catalog_show_episodes(show_key, known)
 		SELECT show_key, COUNT(*) FROM catalog_titles WHERE type='episode' AND adult=0 AND release_known=1 AND show_key<>0 GROUP BY show_key`); err != nil {
+		return err
+	}
+	// So are the library totals.
+	if err := catalog.RebuildLibraryCounts(ctx, db); err != nil {
 		return err
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO catalog_titles_fts(catalog_titles_fts) VALUES('rebuild')`); err != nil {

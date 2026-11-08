@@ -488,14 +488,20 @@ func testEncoderLossRecoveryInvariant(t *testing.T, reencoded bool, copyMode ...
 				if err = p.SetPool(ctx, "b/streams", config.RoleTranscode, 1); err != nil {
 					t.Fatal(err)
 				}
-			} else if mode != "tls-replaced" && mode != "tls-denied" && mode != "gone" && mode != "refused" {
-				_ = front.Tick(ctx)
-				time.Sleep(2 * time.Millisecond)
+			}
+			// A transient failure requires at least three failed observations;
+			// modes without positive loss evidence take one tick more. Every tick
+			// that may start the replacement runs on this goroutine, never the
+			// test's: b's start blocks until the test closes b.proceed. On a
+			// loaded runner a clock-quarantine status probe can exceed its 50ms
+			// deadline and count as a failure, so the start comes a tick early.
+			ticks := 3
+			if mode != "boot-before-recovery" && mode != "tls-replaced" && mode != "tls-denied" && mode != "gone" && mode != "refused" {
+				ticks++
 			}
 			replacementDone := make(chan error, 1)
 			go func() {
-				// A transient failure requires at least three failed observations.
-				for i := 0; i < 3; i++ {
+				for i := 0; i < ticks; i++ {
 					err := front.Tick(ctx)
 					front.mu.Lock()
 					replaced := front.executions[q.SessionID].route.Fence.Generation > 1

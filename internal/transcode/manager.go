@@ -456,6 +456,14 @@ func probeState(f features) string {
 	return "filters unread"
 }
 
+// ToneMapsDolbyVisionProfile5 reports whether this ffmpeg can reshape a
+// Dolby Vision profile 5 (IPTPQc2) picture through its RPU and tone-map it
+// to SDR. Profile 5 has no HDR10 base, so without it a video conversion of
+// such a source is refused.
+func (m *Manager) ToneMapsDolbyVisionProfile5() bool {
+	return m != nil && m.feat.hasFilter("tonemapx")
+}
+
 // HWAccel implements core.Transcoder.
 func (m *Manager) HWAccel() core.HWAccel {
 	hw := m.hw
@@ -632,7 +640,7 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 	v := req.Info.Video()
 	// Profile 5 has no HDR10 fallback. Refuse when this ffmpeg cannot reshape
 	// IPTPQc2 through the RPU, rather than delivering a green/purple encode.
-	if v != nil && v.DolbyVision && v.DolbyVisionProfile == 5 && !d.VideoCopy && !m.feat.hasFilter("tonemapx") {
+	if v != nil && v.DolbyVision && v.DolbyVisionProfile == 5 && !d.VideoCopy && !m.ToneMapsDolbyVisionProfile5() {
 		return nil, errors.New("transcode: DoVi (Profile 5) color space is not supported")
 	}
 	if v == nil {

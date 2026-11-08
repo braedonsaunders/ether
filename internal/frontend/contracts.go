@@ -198,6 +198,11 @@ type ItemQuery struct {
 	Filter        core.Filter
 	Watched       *bool
 	Favorite      *bool
+	// NoTotal is for clients that page without a total. A library page
+	// answered from the catalogue's indexes then skips counting the matches,
+	// which reads every title the filter admits; Page.Total is Offset plus
+	// the items returned. Other pages still report their exact total.
+	NoTotal bool
 }
 
 // Continuation distinguishes a known next page from exhaustion and a

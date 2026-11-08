@@ -302,9 +302,13 @@ func TestCatalogPaginatesAcrossLibraries(t *testing.T) {
 				if q.Offset != 2 {
 					t.Fatalf("first offset %d", q.Offset)
 				}
-				return frontend.Page{Total: 2}, nil
+				if q.NoTotal {
+					// A page without a total reports offset plus its items.
+					return frontend.Page{Total: q.Offset}, nil
+				}
+				return frontend.Page{Total: 1}, nil
 			}
-			if view != "second" || q.Offset != 0 {
+			if view != "second" || q.Offset != 1 || !q.NoTotal {
 				t.Fatalf("second: %s %+v", view, q)
 			}
 			title := frontend.Title{Title: "Second library", Type: "movie"}
