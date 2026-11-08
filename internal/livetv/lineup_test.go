@@ -164,6 +164,9 @@ func TestChannelPagePaginatesAndFilters(t *testing.T) {
 			SourceID:  "src",
 			StreamURL: "https://owner.invalid/" + fmt.Sprint(i) + ".m3u8",
 		}
+		if i%2 == 0 {
+			c.Group = "News"
+		}
 		if _, err := s.SaveChannel(ctx, c); err != nil {
 			t.Fatal(err)
 		}
@@ -195,6 +198,10 @@ func TestChannelPagePaginatesAndFilters(t *testing.T) {
 	search, err := s.ChannelPage(ctx, ChannelPageQuery{Filter: "all", Q: "alpha 07", Limit: 100})
 	if err != nil || search.Total != 1 || search.Channels[0].ID != "c07" {
 		t.Fatalf("search: %v %+v", err, search.Channels)
+	}
+	news, err := s.ChannelPage(ctx, ChannelPageQuery{Filter: "live", Group: "News", Limit: 100})
+	if err != nil || news.Total != 10 || news.Channels[0].ID != "c02" {
+		t.Fatalf("group: %v %d", err, news.Total)
 	}
 	missing, err := s.ChannelPage(ctx, ChannelPageQuery{Filter: "missing", Limit: 100})
 	if err != nil || missing.Total != 20 {

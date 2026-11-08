@@ -517,6 +517,25 @@ export function GuideWorkbench({
             {" · "}
             {t("Region conflicts: {count}", { count: formatNumber(matchCounts.regionRejected) })}
           </p>
+          {proposals.length > 1 ? (
+            <label className="flex w-fit cursor-pointer items-center gap-3 px-3 text-xs font-medium text-fg-muted">
+              <input
+                type="checkbox"
+                checked={accepted.size === proposals.length}
+                ref={(el) => {
+                  if (el) el.indeterminate = accepted.size > 0 && accepted.size < proposals.length;
+                }}
+                onChange={() =>
+                  setAccepted(
+                    accepted.size === proposals.length
+                      ? new Set()
+                      : new Set(proposals.map((p) => p.channelId)),
+                  )
+                }
+              />
+              {t("Select all")}
+            </label>
+          ) : null}
           <ul className="max-h-80 space-y-1 overflow-y-auto">
             {proposals.map((p) => {
               const c = byId.get(p.channelId);

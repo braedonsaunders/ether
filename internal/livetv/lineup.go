@@ -68,6 +68,8 @@ type ChannelPageQuery struct {
 	Q      string
 	Filter string
 	Source string
+	// Group keeps only channels in this lineup group (exact name).
+	Group string
 }
 
 type ChannelPage struct {
@@ -219,6 +221,9 @@ func channelCounts(all []ChannelSummary, stats map[guideKey]guideStat) ChannelCo
 }
 
 func channelMatches(c ChannelSummary, q ChannelPageQuery, stats map[guideKey]guideStat) bool {
+	if q.Group != "" && c.Group != q.Group {
+		return false
+	}
 	if q.Source != "" {
 		if q.Source == "virtual" {
 			if c.Kind != "virtual" {
