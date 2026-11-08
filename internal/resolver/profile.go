@@ -42,23 +42,15 @@ func defaultCappedAndroidClient(caps core.ClientCaps) bool {
 	return clientreg.HasQuirk(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, "android-mobile-ceiling")
 }
 
-func isSurroundAudioCodec(c string) bool {
-	switch strings.ToLower(strings.TrimSpace(c)) {
-	case "eac3", "ec3", "e-ac3", "ac3", "dts", "dtshd", "dts-hd", "dtshd_ma", "dca", "dca-ma", "truehd", "mlp":
-		return true
-	}
-	return false
-}
+// IsSurroundAudioCodec reports whether c is a multichannel surround format.
+func IsSurroundAudioCodec(c string) bool { return core.IsSurroundAudioCodec(c) }
 
-func filterOutSurroundAudio(codecs []string) []string {
-	var kept []string
-	for _, c := range codecs {
-		if !isSurroundAudioCodec(c) {
-			kept = append(kept, c)
-		}
-	}
-	return kept
-}
+// FilterOutSurroundAudio returns codecs without surround audio formats.
+func FilterOutSurroundAudio(codecs []string) []string { return core.FilterOutSurroundAudio(codecs) }
+
+func isSurroundAudioCodec(c string) bool { return core.IsSurroundAudioCodec(c) }
+
+func filterOutSurroundAudio(codecs []string) []string { return core.FilterOutSurroundAudio(codecs) }
 
 // ProfileSource names the layer that picked a client's quality profile.
 type ProfileSource string
@@ -205,6 +197,7 @@ type ruleEffect struct {
 }
 
 func stripSurroundAudioCaps(caps core.ClientCaps) core.ClientCaps {
+	caps.ConvertSurroundAudio = true
 	if len(caps.AudioCodecs) == 0 {
 		if defaults := clientreg.Playback(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, nil); len(defaults.Audio) > 0 {
 			caps.AudioCodecs = append([]string(nil), defaults.Audio...)

@@ -233,7 +233,7 @@ func audioTarget(caps core.ClientCaps, src *core.StreamInfo) string {
 	if src != nil && src.Channels > 0 {
 		ch = src.Channels
 	}
-	if ch > 2 {
+	if ch > 2 && !caps.ConvertSurroundAudio {
 		switch {
 		case caps.SupportsAudio("eac3"):
 			return "eac3"
@@ -434,7 +434,7 @@ func collectIssues(info core.MediaInfo, v, a, sub *core.StreamInfo, ctx issueCon
 			videoIssues = append(videoIssues, r)
 		}
 	}
-	if a != nil && len(caps.AudioCodecs) > 0 && !caps.SupportsAudio(a.Codec) {
+	if a != nil && ((len(caps.AudioCodecs) > 0 && !caps.SupportsAudio(a.Codec)) || (caps.ConvertSurroundAudio && core.IsSurroundAudioCodec(a.Codec))) {
 		audioIssues = append(audioIssues, fmt.Sprintf("audio codec %s not supported", a.Codec))
 	}
 	if a != nil {

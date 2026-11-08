@@ -611,6 +611,9 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 		}
 		s.burnOnlyShownSubtitle(pr, p, ps.Info)
 		p.caps.TranscodeAudioCodecs = streamingAudioTarget(pr.ProfileExtra, p.protocol)
+		if p.caps.ConvertSurroundAudio {
+			p.caps.TranscodeAudioCodecs = core.FilterOutSurroundAudio(p.caps.TranscodeAudioCodecs)
+		}
 		if len(p.caps.AudioCodecs) > 0 && len(p.caps.TranscodeAudioCodecs) > 0 {
 			var kept []string
 			for _, c := range p.caps.TranscodeAudioCodecs {

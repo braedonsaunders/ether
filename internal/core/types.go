@@ -6,6 +6,7 @@ package core
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -250,6 +251,10 @@ type ClientCaps struct {
 	// for the client, or a Dolby Vision start stalled on this client
 	// (additive).
 	DolbyVisionBaseOnly bool `json:"dolbyVisionBaseOnly,omitempty"`
+
+	// ConvertSurroundAudio converts Dolby/DTS/TrueHD audio to AAC for players that
+	// do not decode surround formats.
+	ConvertSurroundAudio bool `json:"convertSurroundAudio,omitempty"`
 }
 
 // AudioLimit applies to one audio codec, or all codecs when Codec is "*".
@@ -258,8 +263,33 @@ type AudioLimit struct {
 	Value             int
 }
 
-func (c ClientCaps) SupportsVideo(codec string) bool  { return contains(c.VideoCodecs, codec) }
-func (c ClientCaps) SupportsAudio(codec string) bool  { return contains(c.AudioCodecs, codec) }
+// IsSurroundAudioCodec returns true for multichannel surround formats (Dolby/DTS/TrueHD).
+func IsSurroundAudioCodec(c string) bool {
+	switch strings.ToLower(strings.TrimSpace(c)) {
+	case "eac3", "ec3", "e-ac3", "ac3", "dts", "dtshd", "dts-hd", "dtshd_ma", "dca", "dca-ma", "truehd", "mlp":
+		return true
+	}
+	return false
+}
+
+// FilterOutSurroundAudio returns codecs without surround audio formats.
+func FilterOutSurroundAudio(codecs []string) []string {
+	var kept []string
+	for _, c := range codecs {
+		if !IsSurroundAudioCodec(c) {
+			kept = append(kept, c)
+		}
+	}
+	return kept
+}
+
+func (c ClientCaps) SupportsVideo(codec string) bool { return contains(c.VideoCodecs, codec) }
+func (c ClientCaps) SupportsAudio(codec string) bool {
+	if c.ConvertSurroundAudio && IsSurroundAudioCodec(codec) {
+		return false
+	}
+	return contains(c.AudioCodecs, codec)
+}
 func (c ClientCaps) SupportsContainer(ct string) bool { return contains(c.Containers, ct) }
 
 func contains(xs []string, x string) bool {

@@ -377,6 +377,16 @@ func (s *Server) applyDeviceProfile(pr *Request, t *core.Title, ps *core.PlaySes
 	if !ok {
 		return nil
 	}
+	selectedAudioCodec := ""
+	for _, st := range ps.Info.Streams {
+		if st.Type == "audio" && (p.opts.AudioStream < 0 || st.Index == p.opts.AudioStream) {
+			selectedAudioCodec = st.Codec
+			break
+		}
+	}
+	if p.caps.ConvertSurroundAudio && core.IsSurroundAudioCodec(selectedAudioCodec) {
+		p.opts.DirectPlay = false
+	}
 	if p.mde {
 		if p.opts.DirectPlay {
 			return nil
@@ -390,6 +400,11 @@ func (s *Server) applyDeviceProfile(pr *Request, t *core.Title, ps *core.PlaySes
 		}
 	}
 	rule = extendDeviceProfile(rule, pr.ProfileExtra)
+	if p.caps.ConvertSurroundAudio {
+		for i := range rule.direct {
+			rule.direct[i].audio = strings.Join(core.FilterOutSurroundAudio(splitList(rule.direct[i].audio)), ",")
+		}
+	}
 	source := s.decisionMedia(t, ps, core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: ps.Info.Container}, *p, pr.User)
 	sel := selection{audio: -1, subtitle: -1, subtitleSet: true}
 	for i, st := range ps.Info.Streams {
@@ -422,7 +437,9 @@ func (s *Server) applyDeviceProfile(pr *Request, t *core.Title, ps *core.PlaySes
 				p.caps.VideoCodecs = addUnique(p.caps.VideoCodecs, st.Codec)
 			}
 			if st.Type == "audio" {
-				p.caps.AudioCodecs = addUnique(p.caps.AudioCodecs, st.Codec)
+				if !p.caps.ConvertSurroundAudio || !core.IsSurroundAudioCodec(st.Codec) {
+					p.caps.AudioCodecs = addUnique(p.caps.AudioCodecs, st.Codec)
+				}
 			}
 		}
 		return nil
@@ -449,7 +466,14 @@ func (s *Server) applyDeviceProfile(pr *Request, t *core.Title, ps *core.PlaySes
 		p.caps.TranscodeVideoCodecs = append([]string(nil), p.caps.VideoCodecs...)
 	}
 	if target.audio != "" {
-		p.caps.TranscodeAudioCodecs = splitList(target.audio)
+		codecs := splitList(target.audio)
+		if p.caps.ConvertSurroundAudio {
+			codecs = core.FilterOutSurroundAudio(codecs)
+			if len(codecs) == 0 {
+				codecs = []string{"aac"}
+			}
+		}
+		p.caps.TranscodeAudioCodecs = codecs
 	}
 	applyDeviceTargetLimits(rule, target, ps.Info, p)
 	return nil

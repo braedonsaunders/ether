@@ -81,7 +81,7 @@ func Decide(playback core.Playback, transcoder core.Transcoder, r DecisionReques
 			dec.Container = transcode.HLSContainer(r.Caps, videoCodec, audioCodec)
 		}
 		dec.Reason = "Direct stream preserves playback across source changes."
-		if len(r.Caps.TranscodeAudioCodecs) > 0 && audioCodec != "" && !slices.Contains(r.Caps.TranscodeAudioCodecs, audioCodec) {
+		if (r.Caps.ConvertSurroundAudio && core.IsSurroundAudioCodec(audioCodec)) || (len(r.Caps.TranscodeAudioCodecs) > 0 && audioCodec != "" && !slices.Contains(r.Caps.TranscodeAudioCodecs, audioCodec)) {
 			opts := r.Options
 			opts.DirectPlay = false
 			dec = transcoder.Decide(ps.Info, r.Caps, opts)
