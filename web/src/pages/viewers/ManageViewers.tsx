@@ -52,10 +52,12 @@ export function AddViewerDrawer({
   open,
   onClose,
   onCreated,
+  onOpenPlexImport,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
+  onOpenPlexImport?: () => void;
 }) {
   const plexConnected = useAppOptional()?.boot.plexEnabled !== false;
   const [step, setStep] = useState(1);
@@ -329,23 +331,40 @@ export function AddViewerDrawer({
                 {t("They set their own password or link their Plex account at /ether/me.")}
               </p>
             ) : (
-              <p className="text-sm text-fg-muted">
-                {tx(
-                  "Sharing happens on {link}. Share your server with them there and they appear here automatically within a few minutes.",
-                  {
-                    link: (
-                      <a
-                        href={PLEX_ACCESS_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-primary hover:underline"
-                      >
-                        Plex.tv
-                      </a>
-                    ),
-                  },
-                )}
-              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-fg-muted">
+                  {tx(
+                    "Sharing happens on {link}. Share your server with them there and they appear here automatically within a few minutes.",
+                    {
+                      link: (
+                        <a
+                          href={PLEX_ACCESS_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-primary hover:underline"
+                        >
+                          Plex.tv
+                        </a>
+                      ),
+                    },
+                  )}
+                </p>
+                {onOpenPlexImport ? (
+                  <div className="pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        close();
+                        onOpenPlexImport();
+                      }}
+                    >
+                      <MonitorSmartphone size={14} /> {t("Pull from connected Plex servers")}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
             )}
           </div>
         ) : null}

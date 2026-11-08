@@ -1,6 +1,6 @@
 import { Avatar, Button, EmptyState, PagedTable, Skeleton } from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
-import { Plus, Users } from "lucide-react";
+import { MonitorSmartphone, Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAppOptional } from "../../app-context";
 import { ErrorPanel } from "../../components/feedback";
@@ -16,21 +16,28 @@ import type { EtherUser } from "../../lib/types";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { isActiveViewer, isPlexSource, LifecycleBadges, lifecycleOf } from "./lifecycle";
 import { AddViewerDrawer } from "./ManageViewers";
+import { ImportPlexViewersDrawer } from "./ImportPlexViewersDrawer";
 import { PlexAccessNote } from "./ViewerStatus";
 
 type PeopleFilter = "all" | "active" | "paused" | "plex";
 
 export default function ViewersList() {
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [version, setVersion] = useState(0);
   return (
     <DomainPage
       title={t("Viewers")}
       base="/viewers"
       actions={
-        <Button size="sm" onClick={() => setAdding(true)}>
-          <Plus size={14} /> {t("Add viewer")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+            <MonitorSmartphone size={14} /> {t("Import from Plex")}
+          </Button>
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus size={14} /> {t("Add viewer")}
+          </Button>
+        </div>
       }
     >
       <People key={version} />
@@ -38,6 +45,15 @@ export default function ViewersList() {
         open={adding}
         onClose={() => setAdding(false)}
         onCreated={() => setVersion((v) => v + 1)}
+        onOpenPlexImport={() => {
+          setAdding(false);
+          setImporting(true);
+        }}
+      />
+      <ImportPlexViewersDrawer
+        open={importing}
+        onClose={() => setImporting(false)}
+        onImported={() => setVersion((v) => v + 1)}
       />
     </DomainPage>
   );

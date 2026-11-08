@@ -445,6 +445,9 @@ func (h *Handler) storedViewers(ctx context.Context) ([]ViewerRecord, error) {
 	if h.deps.ViewerDirectory != nil {
 		return h.deps.ViewerDirectory(ctx)
 	}
+	if h.deps.Users == nil {
+		return nil, nil
+	}
 	users, err := h.deps.Users.Users(ctx)
 	if err != nil {
 		return nil, err

@@ -503,3 +503,87 @@ it("deep-links to list sub-tabs and restores hidden recommendations", async () =
     await screen.findByRole("switch", { name: "Show my favourites as a playlist in Plex." }),
   ).toBeInTheDocument();
 });
+
+it("imports viewers from connected Plex servers via drawer", async () => {
+  const candidateServers: Array<{
+    serverId: number;
+    serverName: string;
+    accounts: Array<{
+      serverId: number;
+      serverName: string;
+      accountId: number;
+      accountName: string;
+      isOwner: boolean;
+      matchedViewerId: number;
+      matchedViewerName?: string;
+    }>;
+  }> = [
+    {
+      serverId: 1,
+      serverName: "Old Plex Server",
+      accounts: [
+        {
+          serverId: 1,
+          serverName: "Old Plex Server",
+          accountId: 42,
+          accountName: "PlexFriend",
+          isOwner: false,
+          matchedViewerId: 0,
+        },
+      ],
+    },
+  ];
+
+  const { fake } = renderApp(
+    "/viewers",
+    {},
+    extraRoutes((method, path) => {
+      if (path === "/viewers/plex-candidates" && method === "GET") {
+        return candidateServers;
+      }
+      if (path === "/viewers/import-plex" && method === "POST") {
+        candidateServers[0]!.accounts[0]!.matchedViewerId = 99;
+        candidateServers[0]!.accounts[0]!.matchedViewerName = "PlexFriend";
+        return { id: 99, name: "PlexFriend", inviteUrl: "/invite/test-token" };
+      }
+      return undefined;
+    }),
+  );
+
+  const importBtn = await screen.findByRole("button", { name: /Import from Plex/i }, WAIT);
+  fireEvent.click(importBtn);
+
+  const drawer = await screen.findByRole("dialog", { name: /Import users from connected Plex servers/i }, WAIT);
+  expect(drawer).toBeInTheDocument();
+  expect(await within(drawer).findByText("Old Plex Server", {}, WAIT)).toBeInTheDocument();
+  expect(within(drawer).getByText("PlexFriend")).toBeInTheDocument();
+
+  const addViewerBtn = within(drawer).getByRole("button", { name: /Add as viewer/i });
+  fireEvent.click(addViewerBtn);
+
+  await waitFor(() => {
+    expect(calls(fake, "POST", "/viewers/import-plex")).toHaveLength(1);
+  }, WAIT);
+  expect(calls(fake, "POST", "/viewers/import-plex")[0]!.body).toEqual({
+    serverId: 1,
+    accountId: 42,
+    name: "PlexFriend",
+  });
+
+  // Verify invite link is displayed after import
+  expect(await within(drawer).findByText(/\/invite\/test-token/, {}, WAIT)).toBeInTheDocument();
+
+  // Test search filtering by Plex username
+  const searchInput = within(drawer).getByPlaceholderText(/Search by account name or Plex username/i);
+  fireEvent.change(searchInput, { target: { value: "NonExistent" } });
+  expect(within(drawer).queryByText("PlexFriend")).toBeNull();
+  expect(within(drawer).getByText(/No accounts match "NonExistent"/i)).toBeInTheDocument();
+
+  // Verify accessibility and external link to Plex.tv
+  expect(searchInput).toHaveAttribute("aria-label", "Search by account name or Plex username");
+  const manageLink = within(drawer).getByRole("link", { name: /Manage Library Access/i });
+  expect(manageLink).toHaveAttribute("href", "https://app.plex.tv/desktop/#!/settings/manage-library-access");
+
+  fireEvent.change(searchInput, { target: { value: "PlexFriend" } });
+  expect(within(drawer).getByText("PlexFriend")).toBeInTheDocument();
+});

@@ -251,6 +251,10 @@ type Deps struct {
 	// PlexServers is watch sync with owner-run Plex Media Servers. Nil
 	// hides the routes.
 	PlexServers PlexServers
+
+	// SharePlexViewer grants library access on plex.tv to the given username,
+	// email or user ID for this server. Nil ignores cloud library sharing.
+	SharePlexViewer func(ctx context.Context, usernameOrEmail string, userID int64) error
 }
 
 // Handler is the admin HTTP handler. Use NewHandler when you need access
@@ -463,6 +467,7 @@ func (h *Handler) routes() *http.ServeMux {
 	h.collectionRoutes(mux, api)
 	h.prerollRoutes(api)
 	h.plexServerRoutes(api)
+	h.viewersPlexImportRoutes(api)
 
 	mux.HandleFunc("/api/", h.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such API endpoint")

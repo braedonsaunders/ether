@@ -205,8 +205,9 @@ func (a *App) buildAdmin() http.Handler {
 		},
 		Images:      a.images,
 		PlexWatch:   a.plexWatchAPI(),
-		PlexServers: a.plexServersAPI(),
-		Prerolls:    a.prerollAdmin(),
+		PlexServers:     a.plexServersAPI(),
+		SharePlexViewer: a.sharePlexViewer,
+		Prerolls:        a.prerollAdmin(),
 	}
 	// Optional role-owned dependencies stay absent until a real local or private
 	// service supplies them. This preserves console/auth/config/catalog without
@@ -257,6 +258,24 @@ func (a *App) plexWatchAPI() admin.PlexWatch {
 		return nil
 	}
 	return plexWatchAdmin{a.plexWatch}
+}
+
+func (a *App) sharePlexViewer(ctx context.Context, usernameOrEmail string, userID int64) error {
+	if a.plextv == nil {
+		return nil
+	}
+	cfg := a.cfg.Get()
+	token := cfg.Plex.Token
+	if token == "" || cfg.Server.MachineIdentifier == "" {
+		return nil
+	}
+	if err := a.plextv.ShareServer(ctx, token, usernameOrEmail, userID, nil); err != nil {
+		return err
+	}
+	if a.registrar != nil {
+		_ = a.registrar.SyncFriendsNow(ctx)
+	}
+	return nil
 }
 
 // debridStatus is provider health, counters and latency EWMAs plus the
