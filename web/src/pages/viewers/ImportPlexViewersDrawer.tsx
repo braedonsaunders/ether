@@ -88,7 +88,9 @@ export function ImportPlexViewersDrawer({
         id: number;
         name: string;
         inviteUrl?: string;
+        status?: string;
         sharedPlex?: boolean;
+        shareError?: string;
       }>("/viewers/import-plex", {
         method: "POST",
         body: JSON.stringify({
@@ -97,7 +99,14 @@ export function ImportPlexViewersDrawer({
           name: acct.accountName,
         }),
       });
-      if (res.sharedPlex) {
+      if (res.shareError) {
+        toast.warning(
+          t("Viewer {name} added, but Plex library access failed: {err}", {
+            name: res.name,
+            err: res.shareError,
+          }),
+        );
+      } else if (res.sharedPlex) {
         toast.success(
           t("Viewer {name} added and library access granted on Plex.tv", { name: res.name }),
         );
@@ -122,7 +131,14 @@ export function ImportPlexViewersDrawer({
     const key = `${acct.serverId}:${acct.accountId}`;
     setBusyItem(key);
     try {
-      await apiFetch("/viewers/match-plex", {
+      const res = await apiFetch<{
+        ok: boolean;
+        viewerId: number;
+        serverId: number;
+        accountId: number;
+        sharedPlex?: boolean;
+        shareError?: string;
+      }>("/viewers/match-plex", {
         method: "POST",
         body: JSON.stringify({
           serverId: acct.serverId,
@@ -130,7 +146,13 @@ export function ImportPlexViewersDrawer({
           viewerId,
         }),
       });
-      toast.success(t("Account matched to viewer"));
+      if (res.shareError) {
+        toast.warning(
+          t("Account matched, but Plex library access failed: {err}", { err: res.shareError }),
+        );
+      } else {
+        toast.success(t("Account matched to viewer"));
+      }
       onImported();
       await load();
     } catch (err) {
@@ -144,14 +166,40 @@ export function ImportPlexViewersDrawer({
     if (!unmappedAccounts.length) return;
     setBusyAll(true);
     try {
-      const imported = await apiFetch<
-        Array<{ id: number; name: string; inviteUrl?: string; serverId: number; accountId: number }>
+      const results = await apiFetch<
+        Array<{
+          id?: number;
+          name: string;
+          inviteUrl?: string;
+          serverId: number;
+          accountId: number;
+          status: "imported" | "matched" | "skipped" | "failed";
+          reason?: string;
+          sharedPlex?: boolean;
+          shareError?: string;
+          error?: string;
+        }>
       >("/viewers/import-plex/all", {
         method: "POST",
       });
-      toast.success(t("Imported {count} viewers from Plex", { count: imported.length }));
+      const succeeded = results.filter((r) => r.status === "imported" || r.status === "matched");
+      const failed = results.filter((r) => r.status === "failed");
+      const shareErrors = results.filter((r) => r.shareError);
+      if (failed.length > 0) {
+        toast.error(t("Failed to import {count} viewers from Plex", { count: failed.length }));
+      }
+      if (succeeded.length > 0) {
+        toast.success(t("Imported {count} viewers from Plex", { count: succeeded.length }));
+      }
+      if (shareErrors.length > 0) {
+        toast.warning(
+          t("Plex library access could not be granted for {count} viewers", {
+            count: shareErrors.length,
+          }),
+        );
+      }
       const newInvites: Record<string, string> = {};
-      for (const item of imported) {
+      for (const item of results) {
         if (item.inviteUrl) {
           const fullUrl = new URL(item.inviteUrl, window.location.origin).href;
           newInvites[`${item.serverId}:${item.accountId}`] = fullUrl;

@@ -1226,7 +1226,6 @@ func (s *Service) SyncFriends(ctx context.Context, friends []plextv.Friend) erro
 	friends = append([]plextv.Friend(nil), friends...)
 	sort.SliceStable(friends, func(i, j int) bool { return friends[i].PlexID < friends[j].PlexID })
 	keep := map[int64]bool{}
-	var toForget []int64
 	for _, f := range friends {
 		var uid int64
 		switch {
@@ -1239,69 +1238,7 @@ func (s *Service) SyncFriends(ctx context.Context, friends []plextv.Friend) erro
 			continue
 		default:
 			secs, _ := json.Marshal(sectionIDs(f.Sections, f.AllLibs))
-
-			var existingID int64
-			_ = tx.QueryRowContext(ctx, `SELECT id FROM auth_users WHERE plex_id=?`, f.PlexID).Scan(&existingID)
-
-			var unlinkedID int64
-			_ = tx.QueryRowContext(ctx, `
-SELECT id FROM auth_users
-WHERE plex_id IS NULL AND is_owner=0 AND origin<>'dlna_guest'
-  AND (
-    (? <> '' AND LOWER(username) = LOWER(?))
-    OR (? <> '' AND (LOWER(title) = LOWER(?) OR LOWER(title) = LOWER(?)))
-    OR (? <> '' AND LOWER(email) = LOWER(?))
-  )
-ORDER BY id ASC LIMIT 1`,
-				f.Username, f.Username,
-				f.DisplayName(), f.DisplayName(), f.Title,
-				f.Email, f.Email,
-			).Scan(&unlinkedID)
-
-			if existingID > 0 && unlinkedID > 0 && unlinkedID != existingID {
-				if err := store.MergeViewer(ctx, tx, unlinkedID, existingID); err == nil {
-					_ = store.PurgeViewer(ctx, tx, unlinkedID)
-					if err := deleteViewerRow(ctx, tx, unlinkedID); err == nil {
-						toForget = append(toForget, unlinkedID)
-					}
-				}
-			}
-
-			if existingID == 0 && unlinkedID > 0 {
-				if err := tx.QueryRowContext(ctx, `
-UPDATE auth_users SET
-	plex_id=?,
-	uuid=CASE WHEN ?<>'' THEN ? ELSE uuid END,
-	username=CASE WHEN ?<>'' THEN ? ELSE username END,
-	title=CASE WHEN CAST(? AS TEXT)<>'' THEN CAST(? AS TEXT) ELSE title END,
-	email=CASE WHEN ?<>'' THEN ? ELSE email END,
-	thumb=CASE WHEN ?<>'' THEN ? ELSE thumb END,
-	is_home=?,
-	restricted=?,
-	plex_shared=CASE WHEN is_owner=1 THEN 1 ELSE ? END,
-	active=CASE WHEN is_owner=1 THEN 1 WHEN owner_enabled=1 THEN ? ELSE 0 END,
-	origin=CASE WHEN origin='owner' THEN origin ELSE 'friend' END,
-	plex_sections=?,
-	updated_at=?
-WHERE id=? AND origin<>'dlna_guest'
-RETURNING id`,
-					f.PlexID,
-					f.UUID, f.UUID,
-					f.Username, f.Username,
-					f.DisplayName(), f.DisplayName(),
-					f.Email, f.Email,
-					f.Thumb, f.Thumb,
-					store.BoolInt(f.Home),
-					store.BoolInt(f.Restricted),
-					store.BoolInt(!f.Pending),
-					store.BoolInt(!f.Pending),
-					string(secs),
-					now,
-					unlinkedID).Scan(&uid); err != nil {
-					return fmt.Errorf("auth: adopt friend %d (user %d): %w", f.PlexID, unlinkedID, err)
-				}
-			} else {
-				if err := tx.QueryRowContext(ctx, `
+			if err := tx.QueryRowContext(ctx, `
 INSERT INTO auth_users (plex_id, uuid, username, title, email, thumb, is_home, restricted, active, plex_shared, origin, plex_sections, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'friend', ?, ?, ?)
 ON CONFLICT(plex_id) DO UPDATE SET
@@ -1317,10 +1254,9 @@ ON CONFLICT(plex_id) DO UPDATE SET
 	plex_sections=excluded.plex_sections, updated_at=excluded.updated_at
 WHERE auth_users.origin<>'dlna_guest'
 RETURNING id`,
-					f.PlexID, f.UUID, f.Username, f.DisplayName(), f.Email, f.Thumb, store.BoolInt(f.Home), store.BoolInt(f.Restricted),
-					store.BoolInt(!f.Pending), store.BoolInt(!f.Pending), string(secs), now, now, f.Title, f.Title).Scan(&uid); err != nil {
-					return fmt.Errorf("auth: save friend %d: %w", f.PlexID, err)
-				}
+				f.PlexID, f.UUID, f.Username, f.DisplayName(), f.Email, f.Thumb, store.BoolInt(f.Home), store.BoolInt(f.Restricted),
+				store.BoolInt(!f.Pending), store.BoolInt(!f.Pending), string(secs), now, now, f.Title, f.Title).Scan(&uid); err != nil {
+				return fmt.Errorf("auth: save friend %d: %w", f.PlexID, err)
 			}
 			if !f.Pending {
 				if err := upsertPlexLink(ctx, tx, f.PlexID, f.DisplayName(), now); err != nil {
@@ -1383,14 +1319,9 @@ RETURNING id`,
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	for _, id := range toForget {
-		s.forgetViewer(id)
-	}
-	if len(gone) > 0 || len(toForget) > 0 {
+	if len(gone) > 0 {
 		s.gen.Add(1)
-		if len(gone) > 0 {
-			s.log.Info("friends lost access", "count", len(gone))
-		}
+		s.log.Info("friends lost access", "count", len(gone))
 	}
 	err = s.reload(ctx)
 	s.notify("")

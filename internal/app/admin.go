@@ -262,12 +262,15 @@ func (a *App) plexWatchAPI() admin.PlexWatch {
 
 func (a *App) sharePlexViewer(ctx context.Context, usernameOrEmail string, userID int64) error {
 	if a.plextv == nil {
-		return nil
+		return errors.New("plextv: client not initialized")
 	}
 	cfg := a.cfg.Get()
 	token := cfg.Plex.Token
-	if token == "" || cfg.Server.MachineIdentifier == "" {
-		return nil
+	if token == "" {
+		return errors.New("plextv: plex token not configured")
+	}
+	if cfg.Server.MachineIdentifier == "" {
+		return errors.New("plextv: server machine identifier not configured")
 	}
 	if err := a.plextv.ShareServer(ctx, token, usernameOrEmail, userID, nil); err != nil {
 		return err

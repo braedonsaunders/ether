@@ -2,10 +2,12 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/plexwatch"
 )
@@ -63,53 +65,94 @@ func cleanDisplayName(name string) string {
 	return name
 }
 
-func findMatchingViewer(viewers []ViewerRecord, acct plexwatch.PMSAccount) *ViewerRecord {
-	targetName := strings.TrimSpace(acct.Name)
-	for i := range viewers {
-		v := &viewers[i]
-		if acct.Owner && v.IsOwner {
-			return v
-		}
-		if !acct.Owner && acct.ID > 0 && v.PlexID > 0 && v.PlexID == acct.ID {
-			return v
-		}
-		if targetName != "" {
-			if v.Title != "" && strings.EqualFold(strings.TrimSpace(v.Title), targetName) {
-				return v
+// findExactViewer checks for an unambiguous existing match:
+// 1. An account already mapped to a viewer (acct.UserID > 0).
+// 2. The PMS server owner matched to the owner viewer.
+// 3. Exact stable PlexID match (when known).
+func findExactViewer(viewers []ViewerRecord, acct plexwatch.PMSAccount) *ViewerRecord {
+	// 1. Existing mapping
+	if acct.UserID > 0 {
+		for i := range viewers {
+			if viewers[i].ID == acct.UserID {
+				return &viewers[i]
 			}
-			if v.Username != "" && strings.EqualFold(strings.TrimSpace(v.Username), targetName) {
-				return v
+		}
+	}
+	// 2. Server owner
+	if acct.Owner {
+		for i := range viewers {
+			if viewers[i].IsOwner {
+				return &viewers[i]
 			}
-			if v.Email != "" && strings.EqualFold(strings.TrimSpace(v.Email), targetName) {
-				return v
+		}
+	}
+	// 3. Stable Plex ID
+	if !acct.Owner && acct.ID > 0 {
+		for i := range viewers {
+			if viewers[i].PlexID > 0 && viewers[i].PlexID == acct.ID {
+				return &viewers[i]
 			}
 		}
 	}
 	return nil
 }
 
-func (h *Handler) shareViewerPlex(ctx context.Context, usernameOrEmail string, userID int64) error {
-	usernameOrEmail = strings.TrimSpace(usernameOrEmail)
-	if usernameOrEmail == "" && userID <= 0 {
+// suggestMatchingViewer checks in strict priority order:
+// 1. Exact match (owner or mapped).
+// 2. Exact stable Plex ID match across all viewers.
+// 3. Name or email heuristics (title, username, email).
+// Heuristics are ONLY used to populate candidate suggestions for the owner to review and confirm,
+// NEVER to automatically adopt or merge viewers during import.
+func suggestMatchingViewer(viewers []ViewerRecord, acct plexwatch.PMSAccount) *ViewerRecord {
+	if exact := findExactViewer(viewers, acct); exact != nil {
+		return exact
+	}
+	targetName := strings.TrimSpace(acct.Name)
+	if targetName == "" {
 		return nil
 	}
+	for i := range viewers {
+		v := &viewers[i]
+		if v.Title != "" && strings.EqualFold(strings.TrimSpace(v.Title), targetName) {
+			return v
+		}
+		if v.Username != "" && strings.EqualFold(strings.TrimSpace(v.Username), targetName) {
+			return v
+		}
+		if v.Email != "" && strings.EqualFold(strings.TrimSpace(v.Email), targetName) {
+			return v
+		}
+	}
+	return nil
+}
+
+func (h *Handler) shareViewerPlex(ctx context.Context, usernameOrEmail string) error {
+	usernameOrEmail = strings.TrimSpace(usernameOrEmail)
+	if usernameOrEmail == "" {
+		return errors.New("plextv: username or email required")
+	}
+	// Note: PMS accounts from /accounts have local sequence IDs (e.g. 1 for owner, 2, 3),
+	// NOT global Plex.tv user IDs. Passing userID 0 ensures Plex.tv shares by username/email.
 	if h.deps.SharePlexViewer != nil {
-		err := h.deps.SharePlexViewer(ctx, usernameOrEmail, userID)
+		err := h.deps.SharePlexViewer(ctx, usernameOrEmail, 0)
 		if err != nil {
-			h.log.Warn("share plex library error", "account", usernameOrEmail, "userID", userID, "err", err)
+			h.log.Warn("share plex library error", "account", usernameOrEmail, "err", err)
 		} else {
-			h.log.Info("shared server libraries on plex.tv", "account", usernameOrEmail, "userID", userID)
+			h.log.Info("shared server libraries on plex.tv", "account", usernameOrEmail)
 		}
 		return err
 	}
 	if h.deps.Config == nil {
-		return nil
+		return errors.New("plextv: config dependency not available")
 	}
 	cfg := h.deps.Config.Get()
 	token := cfg.Plex.Token
 	machineID := cfg.Server.MachineIdentifier
-	if token == "" || machineID == "" {
-		return nil
+	if token == "" {
+		return errors.New("plextv: plex token not configured")
+	}
+	if machineID == "" {
+		return errors.New("plextv: server machine identifier not configured")
 	}
 	client, err := plextv.New(plextv.Options{
 		Identity:     plextv.ServerIdentity(cfg, ""),
@@ -120,11 +163,11 @@ func (h *Handler) shareViewerPlex(ctx context.Context, usernameOrEmail string, u
 		h.log.Warn("create plextv client error", "err", err)
 		return err
 	}
-	err = client.ShareServer(ctx, token, usernameOrEmail, userID, nil)
+	err = client.ShareServer(ctx, token, usernameOrEmail, 0, nil)
 	if err != nil {
-		h.log.Warn("share plex library error", "account", usernameOrEmail, "userID", userID, "err", err)
+		h.log.Warn("share plex library error", "account", usernameOrEmail, "err", err)
 	} else {
-		h.log.Info("shared server libraries on plex.tv", "account", usernameOrEmail, "userID", userID)
+		h.log.Info("shared server libraries on plex.tv", "account", usernameOrEmail)
 	}
 	return err
 }
@@ -178,11 +221,11 @@ func (h *Handler) handlePlexCandidates(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				// Pure in-memory heuristic suggestion without GET side-effects.
-				if matched := findMatchingViewer(viewers, acct); matched != nil {
-					suggestedID = matched.ID
-					suggestedName = matched.Title
+				if suggested := suggestMatchingViewer(viewers, acct); suggested != nil {
+					suggestedID = suggested.ID
+					suggestedName = suggested.Title
 					if suggestedName == "" {
-						suggestedName = matched.Username
+						suggestedName = suggested.Username
 					}
 				}
 			}
@@ -251,17 +294,19 @@ func (h *Handler) handleImportPlexViewer(w http.ResponseWriter, r *http.Request)
 		newViewerID int64
 		inviteURL   string
 		direction   = 2 // Plex -> Ether
+		status      = "imported"
 	)
 	if acct.Owner {
 		direction = 3 // Bidirectional for owner
 	}
 
-	// 1. Check if an existing viewer matches
-	if matched := findMatchingViewer(viewers, *acct); matched != nil {
+	// 1. Check if an existing viewer matches EXACTLY (never auto-merge on heuristics)
+	if matched := findExactViewer(viewers, *acct); matched != nil {
 		newViewerID = matched.ID
+		status = "matched"
 	}
 
-	// 2. If no match, create new viewer
+	// 2. If no exact match, create new viewer
 	if newViewerID == 0 {
 		id, secret, err := h.deps.Invites.CreateViewer(r.Context(), displayName)
 		if err != nil {
@@ -284,23 +329,35 @@ func (h *Handler) handleImportPlexViewer(w http.ResponseWriter, r *http.Request)
 	}
 
 	// 4. Grant access on Plex.tv right away if not owner
-	var sharedPlex bool
+	var (
+		sharedPlex bool
+		shareErr   string
+	)
 	if !acct.Owner {
-		if err := h.shareViewerPlex(r.Context(), acct.Name, acct.ID); err == nil {
+		if err := h.shareViewerPlex(r.Context(), acct.Name); err != nil {
+			shareErr = err.Error()
+		} else {
 			sharedPlex = true
 		}
 	}
 
-	_ = h.deps.RefreshViewers(r.Context())
+	if err := h.deps.RefreshViewers(r.Context()); err != nil {
+		h.log.Warn("refresh viewers error", "err", err)
+	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	res := map[string]any{
 		"id":         newViewerID,
 		"name":       displayName,
 		"inviteUrl":  inviteURL,
 		"serverId":   body.ServerID,
 		"accountId":  body.AccountID,
+		"status":     status,
 		"sharedPlex": sharedPlex,
-	})
+	}
+	if shareErr != "" {
+		res["shareError"] = shareErr
+	}
+	writeJSON(w, http.StatusCreated, res)
 }
 
 func (h *Handler) handleMatchPlexViewer(w http.ResponseWriter, r *http.Request) {
@@ -323,13 +380,19 @@ func (h *Handler) handleMatchPlexViewer(w http.ResponseWriter, r *http.Request) 
 	var (
 		isOwner  bool
 		acctName string
+		found    bool
 	)
 	for _, a := range accounts {
 		if a.ID == body.AccountID {
 			isOwner = a.Owner
 			acctName = a.Name
+			found = true
 			break
 		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "not_found", "account not found on server")
+		return
 	}
 	direction := 2
 	if isOwner {
@@ -347,12 +410,32 @@ func (h *Handler) handleMatchPlexViewer(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Grant access on Plex.tv right away if not owner
-	if !isOwner && (acctName != "" || body.AccountID > 0) {
-		_ = h.shareViewerPlex(r.Context(), acctName, body.AccountID)
+	var (
+		sharedPlex bool
+		shareErr   string
+	)
+	if !isOwner && acctName != "" {
+		if err := h.shareViewerPlex(r.Context(), acctName); err != nil {
+			shareErr = err.Error()
+		} else {
+			sharedPlex = true
+		}
 	}
 
-	_ = h.deps.RefreshViewers(r.Context())
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	if err := h.deps.RefreshViewers(r.Context()); err != nil {
+		h.log.Warn("refresh viewers error", "err", err)
+	}
+	res := map[string]any{
+		"ok":         true,
+		"viewerId":   body.ViewerID,
+		"serverId":   body.ServerID,
+		"accountId":  body.AccountID,
+		"sharedPlex": sharedPlex,
+	}
+	if shareErr != "" {
+		res["shareError"] = shareErr
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) handleImportAllPlexViewers(w http.ResponseWriter, r *http.Request) {
@@ -367,47 +450,72 @@ func (h *Handler) handleImportAllPlexViewers(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	type importedItem struct {
-		ID        int64  `json:"id"`
-		Name      string `json:"name"`
-		InviteURL string `json:"inviteUrl,omitempty"`
-		ServerID  int64  `json:"serverId"`
-		AccountID int64  `json:"accountId"`
+	type bulkImportResultItem struct {
+		ID         int64  `json:"id,omitempty"`
+		Name       string `json:"name"`
+		InviteURL  string `json:"inviteUrl,omitempty"`
+		ServerID   int64  `json:"serverId"`
+		AccountID  int64  `json:"accountId"`
+		Status     string `json:"status"` // "imported", "matched", "skipped", "failed"
+		Reason     string `json:"reason,omitempty"`
+		SharedPlex bool   `json:"sharedPlex"`
+		ShareError string `json:"shareError,omitempty"`
+		Error      string `json:"error,omitempty"`
 	}
 
-	var imported []importedItem
+	var results []bulkImportResultItem
 	viewers, _ := h.storedViewers(r.Context())
 
 	for _, srv := range servers {
 		accounts, err := h.deps.PlexServers.Accounts(r.Context(), srv.ID)
 		if err != nil {
+			h.log.Warn("list server accounts error during bulk import", "serverId", srv.ID, "err", err)
 			continue
 		}
 		for _, acct := range accounts {
-			if acct.UserID > 0 {
-				continue // already mapped
-			}
 			name := cleanDisplayName(acct.Name)
+			if acct.UserID > 0 {
+				results = append(results, bulkImportResultItem{
+					ID:        acct.UserID,
+					Name:      name,
+					ServerID:  srv.ID,
+					AccountID: acct.ID,
+					Status:    "skipped",
+					Reason:    "already_mapped",
+				})
+				continue
+			}
+
 			var (
 				vID       int64
 				inviteURL string
+				status    = "imported"
 				direction = 2
 			)
 			if acct.Owner {
 				direction = 3
 			}
 
-			// Check for match among existing viewers
-			if matched := findMatchingViewer(viewers, acct); matched != nil {
+			// Check for EXACT match among existing viewers (mapping, owner, stable Plex ID).
+			// Never auto-merge on heuristics during import.
+			if matched := findExactViewer(viewers, acct); matched != nil {
 				vID = matched.ID
+				status = "matched"
 			} else {
 				id, secret, err := h.deps.Invites.CreateViewer(r.Context(), name)
 				if err != nil {
+					results = append(results, bulkImportResultItem{
+						Name:      name,
+						ServerID:  srv.ID,
+						AccountID: acct.ID,
+						Status:    "failed",
+						Error:     "could not create viewer: " + err.Error(),
+					})
 					continue
 				}
 				vID = id
 				inviteURL = "/ether/me#invite=" + secret
-				viewers = append(viewers, ViewerRecord{ID: id, Title: name})
+				viewers = append(viewers, ViewerRecord{User: core.User{ID: id, Title: name}})
 			}
 
 			_, err = h.deps.PlexServers.MapAccount(r.Context(), srv.ID, acct.ID, plexwatch.PMSMappingInput{
@@ -416,27 +524,48 @@ func (h *Handler) handleImportAllPlexViewers(w http.ResponseWriter, r *http.Requ
 				Interval:  10,
 			})
 			if err != nil {
+				results = append(results, bulkImportResultItem{
+					ID:        vID,
+					Name:      name,
+					ServerID:  srv.ID,
+					AccountID: acct.ID,
+					Status:    "failed",
+					Error:     "map account failed: " + err.Error(),
+				})
 				continue
 			}
 
 			// Share library access on Plex.tv
+			var (
+				sharedPlex bool
+				shareErr   string
+			)
 			if !acct.Owner {
-				_ = h.shareViewerPlex(r.Context(), acct.Name, acct.ID)
+				if err := h.shareViewerPlex(r.Context(), acct.Name); err != nil {
+					shareErr = err.Error()
+				} else {
+					sharedPlex = true
+				}
 			}
 
-			imported = append(imported, importedItem{
-				ID:        vID,
-				Name:      name,
-				InviteURL: inviteURL,
-				ServerID:  srv.ID,
-				AccountID: acct.ID,
+			results = append(results, bulkImportResultItem{
+				ID:         vID,
+				Name:       name,
+				InviteURL:  inviteURL,
+				ServerID:   srv.ID,
+				AccountID:  acct.ID,
+				Status:     status,
+				SharedPlex: sharedPlex,
+				ShareError: shareErr,
 			})
 		}
 	}
 
-	_ = h.deps.RefreshViewers(r.Context())
-	if imported == nil {
-		imported = []importedItem{}
+	if err := h.deps.RefreshViewers(r.Context()); err != nil {
+		h.log.Warn("refresh viewers error after bulk import", "err", err)
 	}
-	writeJSON(w, http.StatusOK, imported)
+	if results == nil {
+		results = []bulkImportResultItem{}
+	}
+	writeJSON(w, http.StatusOK, results)
 }

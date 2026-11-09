@@ -246,8 +246,11 @@ func (c *Client) ServerSectionIDs(ctx context.Context, ownerToken string) ([]int
 }
 
 type v2SharedServer struct {
-	ID                int64  `json:"id"`
-	MachineIdentifier string `json:"machineIdentifier"`
+	ID                int64          `json:"id"`
+	MachineIdentifier string         `json:"machineIdentifier"`
+	AllLibraries      bool           `json:"allLibraries"`
+	LibrarySectionIDs []int64        `json:"librarySectionIds"`
+	Settings          map[string]any `json:"settings"`
 	Invited           struct {
 		ID       int64  `json:"id"`
 		Username string `json:"username"`
@@ -266,7 +269,7 @@ type v2PendingInvite struct {
 	SharedServers []v2SharedServer `json:"sharedServers"`
 }
 
-func (c *Client) findV2ShareID(ctx context.Context, ownerToken, usernameOrEmail string, userID int64) (int64, error) {
+func (c *Client) findV2Share(ctx context.Context, ownerToken, usernameOrEmail string, userID int64) (*v2SharedServer, error) {
 	respAcc, err := c.do(ctx, request{
 		method: http.MethodGet,
 		path:   "/api/v2/shared_servers/owned/accepted",
@@ -279,12 +282,12 @@ func (c *Client) findV2ShareID(ctx context.Context, ownerToken, usernameOrEmail 
 			for _, s := range accepted {
 				if s.MachineIdentifier == c.id.ClientIdentifier {
 					if userID > 0 && s.Invited.ID == userID {
-						return s.ID, nil
+						return &s, nil
 					}
 					if usernameOrEmail != "" && (strings.EqualFold(s.Invited.Username, usernameOrEmail) ||
 						strings.EqualFold(s.Invited.Email, usernameOrEmail) ||
 						strings.EqualFold(s.Invited.Title, usernameOrEmail)) {
-						return s.ID, nil
+						return &s, nil
 					}
 				}
 			}
@@ -311,14 +314,14 @@ func (c *Client) findV2ShareID(ctx context.Context, ownerToken, usernameOrEmail 
 						(usernameOrEmail != "" && (strings.EqualFold(s.Invited.Username, usernameOrEmail) ||
 							strings.EqualFold(s.Invited.Email, usernameOrEmail) ||
 							strings.EqualFold(s.Invited.Title, usernameOrEmail)))) {
-						return s.ID, nil
+						return &s, nil
 					}
 				}
 			}
 		}
 	}
 
-	return 0, nil
+	return nil, nil
 }
 
 // ShareServer grants usernameOrEmail access to the server's libraries on plex.tv.
@@ -385,26 +388,39 @@ func (c *Client) ShareServer(ctx context.Context, ownerToken, usernameOrEmail st
 		return nil
 	}
 
-	// If v2 reported already sharing (422 / 400), try updating existing share via v2
-	shareID, _ := c.findV2ShareID(ctx, ownerToken, usernameOrEmail, userID)
-	if shareID > 0 {
+	// If v2 reported already sharing (422 / 400), check existing share via v2.
+	// Keep existing library grants and content restrictions; only widen access
+	// when the owner explicitly passed sectionIDs.
+	existing, _ := c.findV2Share(ctx, ownerToken, usernameOrEmail, userID)
+	if existing != nil && existing.ID > 0 {
+		targetAll := existing.AllLibraries
+		targetSections := existing.LibrarySectionIDs
+		if len(sectionIDs) > 0 {
+			targetAll = false
+			targetSections = sectionIDs
+		}
+
 		updatePayload := map[string]any{
-			"allLibraries":      allLibraries,
-			"librarySectionIds": sectionIDs,
-			"settings": map[string]any{
+			"allLibraries":      targetAll,
+			"librarySectionIds": targetSections,
+		}
+		if len(existing.Settings) > 0 {
+			updatePayload["settings"] = existing.Settings
+		} else {
+			updatePayload["settings"] = map[string]any{
 				"allowSync":         true,
 				"allowCameraUpload": false,
 				"allowChannels":     false,
 				"filterMovies":      "",
 				"filterTelevision":  "",
 				"filterMusic":       "",
-			},
+			}
 		}
 		updateBody, err := json.Marshal(updatePayload)
 		if err == nil {
 			_, postUpdateErr := c.do(ctx, request{
 				method:      http.MethodPost,
-				path:        "/api/v2/shared_servers/" + strconv.FormatInt(shareID, 10),
+				path:        "/api/v2/shared_servers/" + strconv.FormatInt(existing.ID, 10),
 				token:       ownerToken,
 				body:        updateBody,
 				contentType: "application/json",

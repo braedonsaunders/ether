@@ -178,12 +178,24 @@ func TestShareServerV2ExistingUserUpdate(t *testing.T) {
 			_, _ = w.Write([]byte(`{"errors":[{"code":1123,"message":"You're already sharing this server"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/shared_servers/owned/accepted":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`[{"id":55555,"machineIdentifier":"test-mid","invited":{"id":436647798,"username":"alessiodepoli"}}]`))
+			_, _ = w.Write([]byte(`[{"id":55555,"machineIdentifier":"test-mid","allLibraries":false,"librarySectionIds":[101],"settings":{"filterMovies":"contentRating=PG"},"invited":{"id":436647798,"username":"alessiodepoli"}}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/shared_servers/55555":
 			updateCalled.Store(true)
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode update payload: %v", err)
+			}
+			// Verify that existing grants and content restrictions are preserved
+			if all, ok := payload["allLibraries"].(bool); !ok || all {
+				t.Fatalf("expected allLibraries to remain false, got %v", payload["allLibraries"])
+			}
+			settings, ok := payload["settings"].(map[string]any)
+			if !ok || settings["filterMovies"] != "contentRating=PG" {
+				t.Fatalf("expected filterMovies to remain contentRating=PG, got %v", settings["filterMovies"])
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id":55555,"allLibraries":true,"accepted":true}`))
+			_, _ = w.Write([]byte(`{"id":55555,"allLibraries":false,"accepted":true}`))
 		default:
 			http.NotFound(w, r)
 		}

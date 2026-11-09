@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -189,11 +190,21 @@ func TestViewersPlexImportCandidatesAndFlow(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &imported); err != nil {
 		t.Fatal(err)
 	}
-	if len(imported) != 1 || imported[0]["name"] != "Bob" {
-		t.Fatalf("expected 1 imported account (Bob), got %+v", imported)
+	if len(imported) != 4 {
+		t.Fatalf("expected 4 per-account results (3 skipped, 1 imported), got %+v", imported)
 	}
-	if pms.mapped[4].UserID != int64(imported[0]["id"].(float64)) {
-		t.Fatalf("expected Bob mapped to %v, got %v", imported[0]["id"], pms.mapped[4].UserID)
+	var bobItem map[string]any
+	for _, item := range imported {
+		if item["name"] == "Bob" {
+			bobItem = item
+			break
+		}
+	}
+	if bobItem == nil || bobItem["status"] != "imported" {
+		t.Fatalf("expected Bob imported, got %+v", bobItem)
+	}
+	if pms.mapped[4].UserID != int64(bobItem["id"].(float64)) {
+		t.Fatalf("expected Bob mapped to %v, got %v", bobItem["id"], pms.mapped[4].UserID)
 	}
 
 	sharedPlexMu.Lock()
@@ -323,5 +334,113 @@ func TestViewersPlexImportLongNameClamping(t *testing.T) {
 	name := created["name"].(string)
 	if len(name) > 120 {
 		t.Fatalf("expected name clamped to <= 120 chars, got %d chars: %s", len(name), name)
+	}
+}
+
+func TestViewersPlexImportTwoUsersWithSameNameDoNotMerge(t *testing.T) {
+	db := store.OpenTest(t)
+	storeCfg := newStore(t, seededConfig)
+	invites, err := identity.NewInvite(db, time.Hour, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pms := &mockPlexServers{
+		servers: []plexwatch.PMSServer{{ID: 10, Name: "Plex"}},
+		accounts: map[int64][]plexwatch.PMSAccount{
+			10: {
+				{ID: 101, Name: "Mike", Owner: false, UserID: 0},
+				{ID: 102, Name: "Mike", Owner: false, UserID: 0},
+			},
+		},
+	}
+	deps := admin.Deps{
+		Config:         storeCfg,
+		IsOwnerToken:   storedOwner(storeCfg),
+		PlexServers:    pms,
+		Invites:        invites,
+		RefreshViewers: func(ctx context.Context) error { return nil },
+	}
+	h := admin.NewHandler(deps)
+
+	// Import first "Mike"
+	r1 := req(http.MethodPost, "/ether/api/viewers/import-plex", `{"serverId":10,"accountId":101}`)
+	r1.Header.Set("X-Plex-Token", ownerToken)
+	res1 := serve(h, r1)
+	if res1.Code != http.StatusCreated {
+		t.Fatalf("import first Mike: %d %s", res1.Code, res1.Body)
+	}
+	var res1Data map[string]any
+	_ = json.Unmarshal(res1.Body.Bytes(), &res1Data)
+	id1 := int64(res1Data["id"].(float64))
+
+	// Import second "Mike"
+	r2 := req(http.MethodPost, "/ether/api/viewers/import-plex", `{"serverId":10,"accountId":102}`)
+	r2.Header.Set("X-Plex-Token", ownerToken)
+	res2 := serve(h, r2)
+	if res2.Code != http.StatusCreated {
+		t.Fatalf("import second Mike: %d %s", res2.Code, res2.Body)
+	}
+	var res2Data map[string]any
+	_ = json.Unmarshal(res2.Body.Bytes(), &res2Data)
+	id2 := int64(res2Data["id"].(float64))
+
+	if id1 == id2 {
+		t.Fatalf("two different PMS accounts named 'Mike' must get distinct viewers; both got %d", id1)
+	}
+	if pms.mapped[101].UserID == pms.mapped[102].UserID {
+		t.Fatalf("both PMS accounts mapped to same user ID %d", pms.mapped[101].UserID)
+	}
+}
+
+func TestViewersPlexImportShareErrorReporting(t *testing.T) {
+	db := store.OpenTest(t)
+	storeCfg := newStore(t, seededConfig)
+	invites, err := identity.NewInvite(db, time.Hour, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pms := &mockPlexServers{
+		servers: []plexwatch.PMSServer{{ID: 10, Name: "Plex"}},
+		accounts: map[int64][]plexwatch.PMSAccount{
+			10: {
+				{ID: 201, Name: "Alice", Owner: false, UserID: 0},
+			},
+		},
+	}
+	deps := admin.Deps{
+		Config:       storeCfg,
+		IsOwnerToken: storedOwner(storeCfg),
+		PlexServers:  pms,
+		Invites:      invites,
+		RefreshViewers: func(ctx context.Context) error {
+			return nil
+		},
+		SharePlexViewer: func(ctx context.Context, usernameOrEmail string, userID int64) error {
+			return errors.New("simulated plex.tv network timeout")
+		},
+	}
+	h := admin.NewHandler(deps)
+
+	// Single import reports shareError
+	r := req(http.MethodPost, "/ether/api/viewers/import-plex", `{"serverId":10,"accountId":201}`)
+	r.Header.Set("X-Plex-Token", ownerToken)
+	res := serve(h, r)
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", res.Code, res.Body)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["sharedPlex"] != false {
+		t.Fatalf("expected sharedPlex=false on share failure, got %v", out["sharedPlex"])
+	}
+	if out["shareError"] != "simulated plex.tv network timeout" {
+		t.Fatalf("expected shareError reported, got %v", out["shareError"])
+	}
+	if out["id"].(float64) <= 0 {
+		t.Fatal("expected viewer to still be created locally")
 	}
 }
