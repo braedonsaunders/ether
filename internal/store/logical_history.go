@@ -29,8 +29,18 @@ var (
 	reRename     = regexp.MustCompile(`(?i)\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?([A-Za-z_][A-Za-z0-9_]*)"?\s+RENAME\s+COLUMN\s+"?([A-Za-z_][A-Za-z0-9_]*)"?\s+TO\s+"?([A-Za-z_][A-Za-z0-9_]*)`)
 
 	retiredMu      sync.Mutex
+	retiredTables  = map[string]bool{}
 	retiredColumns = map[string]map[string]bool{}
 )
+
+// RegisterRetiredTable records a table dropped or dialect-only in a way the
+// SQL scan cannot see, allowing logical restore to skip it safely if missing on
+// the restore target.
+func RegisterRetiredTable(table string) {
+	retiredMu.Lock()
+	defer retiredMu.Unlock()
+	retiredTables[strings.ToLower(table)] = true
+}
 
 // RegisterRetiredColumn records a column a migration drops in a way the
 // SQL scan cannot see (a Go migration or a table rebuild).
@@ -74,6 +84,9 @@ func migrationHistory() schemaHistory {
 		}
 	}
 	retiredMu.Lock()
+	for t := range retiredTables {
+		h.tables[t] = true
+	}
 	for t, cs := range retiredColumns {
 		for c := range cs {
 			drop(t, c)

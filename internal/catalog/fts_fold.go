@@ -20,6 +20,7 @@ import (
 // folded rows as soon as the transaction commits. Updates and deletes keep
 // their triggers; only rows a bulk transaction inserts are folded.
 func init() {
+	store.RegisterRetiredTable("catalog_fts_bulk")
 	store.RegisterAfter("catalog_bulk", "catalog")
 	store.Register("catalog_bulk", 1, "SELECT 1;")
 	store.RegisterSQLiteApply("catalog_bulk", 1, func(ctx context.Context, tx *sql.Tx) error {

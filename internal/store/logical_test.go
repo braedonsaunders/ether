@@ -170,6 +170,7 @@ func TestLogicalSkipsVirtualTables(t *testing.T) {
 	}
 	defer db.Close()
 	if _, err := db.ExecContext(ctx, `CREATE TABLE lg_docs (id INTEGER PRIMARY KEY, body TEXT);
+CREATE TABLE catalog_fts_bulk (id INTEGER PRIMARY KEY);
 CREATE VIRTUAL TABLE lg_docs_fts USING fts5(body, content='lg_docs', content_rowid='id', tokenize='trigram');`); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +179,7 @@ CREATE VIRTUAL TABLE lg_docs_fts USING fts5(body, content='lg_docs', content_row
 		t.Fatal(err)
 	}
 	for _, name := range tables {
-		if strings.HasPrefix(name, "lg_docs_fts") {
+		if strings.HasPrefix(name, "lg_docs_fts") || name == "catalog_fts_bulk" {
 			t.Fatalf("dump lists derived table %s (all: %v)", name, tables)
 		}
 	}
@@ -243,5 +244,10 @@ func TestLogicalRestoresAcrossDropsAndRenames(t *testing.T) {
 	}
 	if err := ImportLogical(ctx, OpenTest(t), bytes.NewReader(old(`ALTER TABLE storetest_hist ADD COLUMN never INTEGER`))); err == nil {
 		t.Fatal("restored a column this server never had")
+	}
+
+	RegisterRetiredTable("storetest_retired_table")
+	if err := ImportLogical(ctx, OpenTest(t), bytes.NewReader(old(`CREATE TABLE storetest_retired_table(id INTEGER); INSERT INTO storetest_retired_table(id) VALUES(42);`))); err != nil {
+		t.Fatalf("failed restoring with retired table: %v", err)
 	}
 }

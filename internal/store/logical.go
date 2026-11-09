@@ -99,7 +99,7 @@ func listTables(ctx context.Context, q queryer, d Dialect) ([]string, error) {
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		if name != "schema_migrations" {
+		if name != "schema_migrations" && name != "catalog_fts_bulk" {
 			out = append(out, name)
 		}
 	}
