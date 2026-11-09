@@ -60,7 +60,7 @@ func TestRerouteReplaysPinnedLinkOnAnotherEdge(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": pl.URL}) // pinned forever
 	}))
 	defer api.Close()
-	h.svc.entryByID("torbox-0").p = newTorBox(testKey, fastOpts(api.URL))
+	h.svc.entryByID("torbox-0").p = fixtureTorBox(api.URL)
 
 	source, err := e.Open(context.Background(), "pinned-node", raw)
 	if err != nil {
@@ -166,7 +166,7 @@ func TestRerouteNeverHandsTheTokenToAnotherProvidersEdge(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": pl.URL}) // pinned forever
 	}))
 	defer api.Close()
-	h.svc.entryByID("torbox-0").p = newTorBox(testKey, fastOpts(api.URL))
+	h.svc.entryByID("torbox-0").p = fixtureTorBox(api.URL)
 	h.media.Close() // the node dies; the provider keeps pinning it
 
 	for _, read := range []struct {
@@ -253,21 +253,33 @@ func TestProbeLinkRejectsFalsePositiveAnswers(t *testing.T) {
 func TestTorBoxApprovesCDNEdge(t *testing.T) {
 	p := newTorBox(testKey, fastOpts("http://api.invalid"))
 	raw := "http://nexus-096.torboxcdn.example/dl/abc?auth=1"
+	coUk := "http://a.b.co.uk/dl/abc?auth=1"
+	ipIssued := "http://127.0.0.1:8080/dl/abc?auth=1"
 	for _, c := range []struct {
+		name string
+		raw  string
 		host string
 		want bool
 	}{
-		{"nexus-132.torboxcdn.example:443", true}, // the incident's live edges
-		{"deep.edge.torboxcdn.example", true},     // any host under the parent domain
-		{"nexus-096.torboxcdn.example:8443", true},
-		{"torboxcdn.example:443", false},          // the parent is not claimed by its subdomains alone
-		{"torboxcdn.example.evil.net:443", false}, // …nor wears the parent as a suffix
-		{"another-cdn.net:443", false},
-		{"127.0.0.1:9999", false}, // IP literals match host-to-host only
-		{"", false},
+		{"the incident's live edges", raw, "nexus-132.torboxcdn.example:443", true},
+		{"any host under the registrable domain", raw, "deep.edge.torboxcdn.example", true},
+		{"the parent names the same registrable domain", raw, "torboxcdn.example:443", true},
+		{"another port on the link's own host", raw, "nexus-096.torboxcdn.example:8443", true},
+		{"suffix-wearers of the parent", raw, "torboxcdn.example.evil.net:443", false},
+		{"another registrable domain", raw, "another-cdn.net:443", false},
+		{"an IP candidate shares no domain", raw, "127.0.0.1:9999", false},
+		{"an empty candidate", raw, "", false},
+		// A shared public suffix is not a shared registrable domain: two
+		// tenants of a public suffix are strangers, not one CDN.
+		{"co.uk tenants are strangers", coUk, "x.y.co.uk:443", false},
+		{"co.uk siblings share one domain", coUk, "c.b.co.uk:443", true},
+		// Bare IPs have no registrable domain.
+		{"same IP and port has no registrable domain", ipIssued, "127.0.0.1:8080", false},
+		{"same IP another port is not an edge", ipIssued, "127.0.0.1:8443", false},
+		{"an IP issuer keeps its exclusivity", ipIssued, "edge.torboxcdn.example:443", false},
 	} {
-		if got := p.approvesCDNEdge(raw, c.host); got != c.want {
-			t.Errorf("approvesCDNEdge(%q)=%v, want %v", c.host, got, c.want)
+		if got := p.approvesCDNEdge(c.raw, c.host); got != c.want {
+			t.Errorf("%s: approvesCDNEdge(%q, %q)=%v, want %v", c.name, c.raw, c.host, got, c.want)
 		}
 	}
 }
@@ -336,7 +348,7 @@ func TestResumeOnAnotherEdgeDiscardsProbeStaledByRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h.svc.entryByID("torbox-0").p = newTorBox(testKey, fastOpts("http://api.invalid")) // the API is never asked here
+	h.svc.entryByID("torbox-0").p = fixtureTorBox("http://api.invalid") // the API is never asked here
 	source, err := e.Open(context.Background(), "stale-probe", raw)
 	if err != nil {
 		t.Fatal(err)
@@ -413,5 +425,308 @@ func TestResumeOnAnotherEdgeDiscardsProbeStaledByRefresh(t *testing.T) {
 	}
 	if got := live.requests.Load() - seen; got != 1 {
 		t.Fatalf("probe requests=%d, want 1: a won move asks the edges nothing more", got)
+	}
+}
+
+// A generation change mid-probe can hand the wave a link from a different
+// account. Only that account may vet and probe the next candidate: an old
+// account's approver must not wave a new account's token onto an edge that
+// never served it, and a non-opted-in account ends the wave there.
+func TestResumeOnAnotherEdgeRebuildsApprovalAfterAccountSwitch(t *testing.T) {
+	h := newHarness(t, 4<<20, "torbox", "realdebrid")
+	edgeA := newMediaServer(t, 4<<20) // second candidate: must not be asked
+	edgeB := newMediaServer(t, 4<<20) // freshest: carries the pinned token, stalls the probe
+	tor := h.provs["torbox-0"]
+	tor.mu.Lock()
+	tor.cached[testHash] = true
+	tor.mu.Unlock()
+	cfg := h.svc.Config()
+	cfg.ReadAheadChunks = -1
+	h.svc.UpdateConfig(cfg)
+	raw, err := h.svc.Acquire(context.Background(), torrentRelease("account-switch"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := DecodePayload(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok1 := pl.URL[strings.LastIndex(pl.URL, "/")+1:]
+	e := NewEngine(h.svc, EngineOptions{BlockSize: testBlock, HedgeDelay: -1, Logger: h.svc.log})
+	defer e.Close()
+
+	// Two TorBox edges are seeded straight into the ledger at distinct
+	// times: edgeB is freshest, so the wave reaches for it first. No
+	// witness streams — this test watches the helper, nothing else.
+	e.recent.record("torbox-0", urlHost(edgeA.URL), e.now())
+	e.recent.record("torbox-0", urlHost(edgeB.URL), e.now().Add(time.Minute))
+
+	h.svc.entryByID("torbox-0").p = fixtureTorBox("http://api.invalid")
+	source, err := e.Open(context.Background(), "account-switch", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	f := source.(*httpSource).f
+
+	edgeB.issue(tok1)
+	const off = int64(1 << 20)
+	probeRange := fmt.Sprintf("bytes=%d-%d", off, off+probeSample-1)
+	hold := make(chan struct{})
+	defer func() {
+		select {
+		case <-hold:
+		default:
+			close(hold)
+		}
+	}()
+	edgeB.gate[tok1+"|"+probeRange] = hold // hold the first probe until the account has switched
+	edgeA.issue("rd-token")                // a probe that reached edgeA would even succeed — the point is that it must not arrive
+	failed := pl.URL
+	failedAddr := dialAddr(failed)
+	usable := func(u string) bool {
+		return u != "" && dialAddr(u) != failedAddr && !e.backoff.down(urlHost(u))
+	}
+	seenB := edgeB.requests.Load()
+	res := make(chan [2]bool, 1)
+	go func() {
+		moved, replayed := f.resumeOnAnotherEdge(context.Background(), failed, usable, off)
+		res <- [2]bool{moved, replayed}
+	}()
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if edgeB.requests.Load() > seenB {
+			break // the probe is held in flight
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the probe never reached the freshest edge")
+		}
+	}
+	q := pl
+	q.Provider = "realdebrid-1" // an account that never opted in
+	q.URL = h.media.URL + "/m/rd-token"
+	q.Expires = q.Expires.Add(time.Hour)
+	f.adopt(q)
+	close(hold) // the probe may answer now: the file it learns of has already moved
+	if got := <-res; got != [2]bool{false, false} {
+		t.Fatalf("moved/replayed=%v, want false/false: the new account is not opted in", got)
+	}
+	if p, _ := f.payload(); p.URL != q.URL {
+		t.Fatalf("the helper overwrote the switch: %s, want %s", p.URL, q.URL)
+	}
+	if got := edgeA.requests.Load(); got != 0 {
+		t.Fatalf("the second edge took %d request(s), none expected: the wave probed on the old snapshot", got)
+	}
+}
+
+// Adoption only frees the file if the edge then carries the real read.
+// When it answers the full range with a redirect instead, following that
+// hop would hand Go's Referer — the signed URL, token included — to a host
+// the provider never approved: the read refuses the hop and the wave
+// replaces the link.
+func TestRerouteRedirectedReplayReadKeepsTheTokenHome(t *testing.T) {
+	h := newHarness(t, 4<<20, "torbox")
+	live := newMediaServer(t, 4<<20)
+	tor := h.provs["torbox-0"]
+	tor.mu.Lock()
+	tor.cached[testHash] = true
+	tor.mu.Unlock()
+	cfg := h.svc.Config()
+	cfg.ReadAheadChunks = -1
+	h.svc.UpdateConfig(cfg)
+	raw, err := h.svc.Acquire(context.Background(), torrentRelease("redirected-replay"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := DecodePayload(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok1 := pl.URL[strings.LastIndex(pl.URL, "/")+1:]
+	live.issue(tok1)
+
+	var hopReqs atomic.Int32
+	var hopRef atomic.Pointer[string]
+	hop := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hopReqs.Add(1)
+		ref := r.Header.Get("Referer")
+		hopRef.Store(&ref)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer hop.Close()
+
+	e := NewEngine(h.svc, EngineOptions{BlockSize: testBlock, HedgeDelay: -1, Logger: h.svc.log})
+	defer e.Close()
+
+	witness := pl
+	witness.URL = live.issue("witness")
+	wsrc, err := e.Open(context.Background(), "witness-file", witness.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wsrc.Close()
+	if _, err := wsrc.(readAtContexter).ReadAtContext(context.Background(), make([]byte, 4096), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	relief := live.issue("relief") // the provider's second answer: a fresh link, on the live edge
+	var links atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := pl.URL // pinned to the dead node, as in the incident
+		if links.Add(1) > 3 {
+			u = relief // until it releases a fresh link
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": u})
+	}))
+	defer api.Close()
+	h.svc.entryByID("torbox-0").p = fixtureTorBox(api.URL)
+	source, err := e.Open(context.Background(), "redirected-replay", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	buf := make([]byte, 4096)
+	if _, err := source.(readAtContexter).ReadAtContext(context.Background(), buf, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	h.media.Close() // the pinned node dies; the replay begins like the happy path
+
+	// The edge will answer the real read at the failed offset with a hop
+	// — while its 64-byte probe stays honest, as it was at adoption time.
+	// The first request at a fresh position asks for a whole run.
+	runRange := fmt.Sprintf("bytes=%d-%d", int64(1<<20), int64(1<<20)+int64(freshRunBlocks)*testBlock-1)
+	live.mu.Lock()
+	live.redirect[tok1+"|"+runRange] = hop.URL + "/off-cdn"
+	live.mu.Unlock()
+
+	// One block, not a coalesced prefetch: the redirect is keyed to this
+	// exact range, which is what a single-block fetch asks for.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	n, err := source.(readAtContexter).ReadAtContext(ctx, buf, 1<<20)
+	cancel()
+	if err != nil || n != len(buf) || !bytes.Equal(buf, live.data[1<<20:1<<20+int64(len(buf))]) {
+		t.Fatalf("read after the redirected replay: n=%d err=%v", n, err)
+	}
+	if got := hopReqs.Load(); got != 0 {
+		t.Fatalf("the redirect target took %d request(s) (Referer %q): the replayed read followed an unvetted hop", got, deref(hopRef.Load()))
+	}
+	p, _ := source.(*httpSource).f.payload()
+	if p.URL != relief || p.OnReplayEdge {
+		live.mu.Lock()
+		rs := strings.Join(live.ranges, " ")
+		live.mu.Unlock()
+		t.Fatalf("the wave left the file on %s (replay=%v), want the provider's fresh link %s; live saw [%s]", p.URL, p.OnReplayEdge, relief, rs)
+	}
+	if got := links.Load(); got != 4 {
+		t.Fatalf("requestdl calls=%d, want 4 (a pinned wave, then one dead-link refresh for the redirected read)", got)
+	}
+	// Readback, the round-three way: relink copies the payload it is
+	// handed, so a forced refresh must retire the replay marker at the
+	// provider-link assignment, before the save — a stored link comes back
+	// verbatim, marker and all. Hand the service a marked payload, as a
+	// replayed file's refresh does, and read the row out after it.
+	marked := pl
+	marked.OnReplayEdge = true
+	out, err := h.svc.Refresh(context.Background(), marked, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.OnReplayEdge {
+		t.Fatal("a forced refresh returned a fresh provider link wearing the replay marker")
+	}
+	if stored, ok := h.svc.storedPayload(context.Background(), marked.Key); !ok || stored.OnReplayEdge {
+		t.Fatalf("the store read back a fresh provider link wearing the marker (found=%v)", ok)
+	}
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	n, err = source.(readAtContexter).ReadAtContext(ctx2, buf, 3<<20)
+	cancel2()
+	if err != nil || n != len(buf) || !bytes.Equal(buf, live.data[3<<20:3<<20+int64(len(buf))]) {
+		t.Fatalf("viewer read after the replaced link: n=%d err=%v", n, err)
+	}
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// The ledger's evidence must name the account whose link the request
+// actually fetched: while an adopt loop flips the file between accounts on
+// two different edges, every recorded (provider, host) pair has to belong
+// to that provider's edge — never a URL from one snapshot credited to the
+// other's account.
+func TestRecentEdgesAttributeToTheRequestSnapshot(t *testing.T) {
+	h := newHarness(t, 4<<20, "torbox", "realdebrid")
+	torHostEdge := newMediaServer(t, 4<<20) // serves torbox-0's links
+	rdEdge := newMediaServer(t, 4<<20)      // serves realdebrid-1's links
+	h.cacheEverywhere(testHash)
+	cfg := h.svc.Config()
+	cfg.ReadAheadChunks = -1
+	h.svc.UpdateConfig(cfg)
+	raw, err := h.svc.Acquire(context.Background(), torrentRelease("flip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := DecodePayload(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rd := base
+	rd.Provider = "realdebrid-1"
+	rd.URL = rdEdge.issue("flip-open")
+	const flipBlock = 4 << 10
+	e := NewEngine(h.svc, EngineOptions{BlockSize: flipBlock, HedgeDelay: -1, Logger: h.svc.log})
+	defer e.Close()
+	source, err := e.Open(context.Background(), "flip", rd.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	f := source.(*httpSource).f
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for tick := 1; ; tick++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			q := base
+			q.Expires = time.Now().Add(time.Hour + time.Duration(tick)*time.Minute)
+			if tick%2 == 0 {
+				q.Provider, q.URL = "torbox-0", torHostEdge.issue(fmt.Sprintf("flip%d", tick))
+			} else {
+				q.Provider, q.URL = "realdebrid-1", rdEdge.issue(fmt.Sprintf("flip%d", tick))
+			}
+			f.adopt(q)
+		}
+	}()
+	buf := make([]byte, flipBlock)
+	for i := 0; i < 512; i++ {
+		if _, err := source.(readAtContexter).ReadAtContext(context.Background(), buf, int64(i)*flipBlock); err != nil {
+			close(stop)
+			t.Fatalf("flipped read %d: %v", i, err)
+		}
+	}
+	close(stop)
+	<-done
+
+	torHost, rdHost := urlHost(torHostEdge.URL), urlHost(rdEdge.URL)
+	e.recent.mu.Lock()
+	defer e.recent.mu.Unlock()
+	if len(e.recent.at["torbox-0"]) == 0 || len(e.recent.at["realdebrid-1"]) == 0 {
+		t.Fatalf("the flip taught only one account: %+v", e.recent.at)
+	}
+	for provider, want := range map[string]string{"torbox-0": torHost, "realdebrid-1": rdHost} {
+		for host := range e.recent.at[provider] {
+			if host != want {
+				t.Fatalf("%s's ledger learned %s, a host whose blocks belong to the other account: URL and provider came from different snapshots", provider, host)
+			}
+		}
 	}
 }

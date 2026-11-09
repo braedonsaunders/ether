@@ -7,8 +7,10 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,9 +41,17 @@ type mediaServer struct {
 	// response mid-body: headers and that many bytes go out, then the
 	// handler blocks until the client disconnects.
 	stallAfter map[string]int64
-	size       int64 // advertised total (0 = real)
-	requests   atomic.Int64
-	ranges     []string
+	// redirect, keyed token+"|"+Range like stall, answers that one request
+	// with a 302 to the mapped Location: a one-shot hop, so a client that
+	// refuses redirects retries on its own instead of hitting a wall.
+	redirect map[string]string
+	// gate, keyed token+"|"+Range like stall, holds matching requests on a
+	// channel until the test closes it: a probe in flight stays in flight
+	// deterministically, with no wall clock in the assertion.
+	gate     map[string]chan struct{}
+	size     int64 // advertised total (0 = real)
+	requests atomic.Int64
+	ranges   []string
 	// stallEvery, when > 0, stalls every ranged response mid-body after
 	// that many bytes, until the client disconnects.
 	stallEvery atomic.Int64
@@ -49,10 +59,30 @@ type mediaServer struct {
 	inflight atomic.Int32
 }
 
+// fixtureTorBox builds the real TorBox provider for the engine fixtures.
+// Every fixture host shares one loopback address, so the fixture aliases
+// them as edges of the same CDN; production's strict approval rules run
+// unaliased, and are tested directly in TestTorBoxApprovesCDNEdge.
+func fixtureTorBox(apiURL string) *torBox {
+	p := newTorBox(testKey, fastOpts(apiURL))
+	p.edgeApproval = func(raw, candidate string) bool {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return false
+		}
+		h, _, err := net.SplitHostPort(candidate)
+		if err != nil {
+			h = candidate
+		}
+		return strings.EqualFold(u.Hostname(), strings.Trim(h, "[]"))
+	}
+	return p
+}
+
 func newMediaServer(t testing.TB, size int) *mediaServer {
 	data := make([]byte, size)
 	rand.New(rand.NewSource(1)).Read(data)
-	m := &mediaServer{data: data, valid: map[string]bool{}, status: map[string]int{}, stall: map[string]time.Duration{}, stallAfter: map[string]int64{}}
+	m := &mediaServer{data: data, valid: map[string]bool{}, status: map[string]int{}, stall: map[string]time.Duration{}, stallAfter: map[string]int64{}, redirect: map[string]string{}, gate: map[string]chan struct{}{}}
 	m.Server = httptest.NewServer(http.HandlerFunc(m.serve))
 	t.Cleanup(m.Close)
 	return m
@@ -76,6 +106,7 @@ func (m *mediaServer) serve(w http.ResponseWriter, r *http.Request) {
 	if stallOnce {
 		delete(m.stallAfter, token+"|"+r.Header.Get("Range"))
 	}
+	gate := m.gate[token+"|"+r.Header.Get("Range")]
 	m.mu.Unlock()
 	if n := m.stallEvery.Load(); n > 0 && !stallOnce {
 		stallAfter, stallOnce = n, true
@@ -88,12 +119,29 @@ func (m *mediaServer) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if gate != nil { // hold the request until the test releases it
+		select {
+		case <-gate:
+		case <-r.Context().Done():
+			return
+		}
+	}
 	if status != 0 {
 		w.WriteHeader(status)
 		return
 	}
 	if !ok {
 		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	m.mu.Lock()
+	rk := token + "|" + r.Header.Get("Range")
+	loc := m.redirect[rk]
+	delete(m.redirect, rk)
+	m.mu.Unlock()
+	if loc != "" {
+		w.Header().Set("Location", loc)
+		w.WriteHeader(http.StatusFound)
 		return
 	}
 	if stallOnce {

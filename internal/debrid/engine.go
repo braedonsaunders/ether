@@ -101,6 +101,11 @@ type Engine struct {
 	gate    *hostGate
 	backoff *hostBackoff
 
+	// hcReplay and hedgeReplay refuse redirects: media reads whose link
+	// rides a remembered edge run through them, so a signed URL (and its
+	// token, as Go's Referer) never hops to an unvetted host.
+	hcReplay, hedgeReplay *http.Client
+
 	// recent records edges that served completed media blocks, per provider
 	// account, so a file whose provider-pinned edge died can replay its
 	// link on another edge of the same account (see reroute).
@@ -226,6 +231,8 @@ func NewEngine(svc *Service, opts EngineOptions) *Engine {
 		owned = append(owned, t)
 		e.hedge = client(t)
 	}
+	e.hcReplay = noRedirect(e.hc)
+	e.hedgeReplay = noRedirect(e.hedge)
 	limit.closeIdle = func() {
 		for _, t := range owned {
 			t.CloseIdleConnections()
@@ -631,6 +638,7 @@ func (f *remoteFile) adopt(p Payload) {
 		// to the right place.
 		f.pl.URL, f.pl.Expires = p.URL, p.Expires
 		f.pl.Provider, f.pl.Kind, f.pl.TorrentID, f.pl.FileID, f.pl.Link = p.Provider, p.Kind, p.TorrentID, p.FileID, p.Link
+		f.pl.OnReplayEdge = p.OnReplayEdge // a provider link arrives unmarked; a resumed replay stays marked
 		f.gen++
 	}
 }
@@ -643,32 +651,33 @@ func (f *remoteFile) payload() (Payload, int) {
 	return f.pl, f.gen
 }
 
-// link returns a usable URL, refreshing when the current one is stale or
-// (force) failed at generation gen.
-func (f *remoteFile) link(ctx context.Context, force bool, gen ...int) (string, int, error) {
+// link returns the file's current link as one snapshot (its URL, provider
+// account and replay marker travel together), refreshing when the current
+// one is stale or (force) failed at generation gen.
+func (f *remoteFile) link(ctx context.Context, force bool, gen ...int) (Payload, int, error) {
 	p, g := f.payload()
 	if !force && f.e.svc.fresh(p) {
-		return p.URL, g, nil
+		return p, g, nil
 	}
 	f.linkMu.Lock()
 	defer f.linkMu.Unlock()
 	p, g = f.payload()
 	if force && len(gen) > 0 && g != gen[0] {
-		return p.URL, g, nil // someone else already refreshed
+		return p, g, nil // someone else already refreshed
 	}
 	if !force && f.e.svc.fresh(p) {
-		return p.URL, g, nil
+		return p, g, nil
 	}
 	out, err := f.e.svc.Refresh(ctx, p, force)
 	if err != nil {
 		f.e.stats.errors.Add(1)
-		return "", g, err
+		return Payload{}, g, err
 	}
 	f.e.stats.refreshes.Add(1)
 	f.mu.Lock()
 	if out.Size != f.size {
 		f.mu.Unlock()
-		return "", g, fmt.Errorf("debrid: %s changed size: %w", p.Name(), core.ErrArticleCorrupt)
+		return Payload{}, g, fmt.Errorf("debrid: %s changed size: %w", p.Name(), core.ErrArticleCorrupt)
 	}
 	moved := out.TorrentID != p.TorrentID || out.Provider != p.Provider
 	f.pl = out
@@ -678,7 +687,7 @@ func (f *remoteFile) link(ctx context.Context, force bool, gen ...int) (string, 
 	if moved {
 		f.e.kickLeases() // lease the torrent the file now streams from
 	}
-	return out.URL, g, nil
+	return out, g, nil
 }
 
 // moveFromHost changes provider without regenerating links on the blocked host.
@@ -753,13 +762,14 @@ func (f *remoteFile) reroute(ctx context.Context, failed string, gen int, start 
 	p, _ := f.payload()
 	moved := false
 	for i := 1; i <= rerouteLinks && !moved; i++ {
-		u, g, err := f.link(wctx, true, gen)
+		lp, g, err := f.link(wctx, true, gen)
 		if err != nil {
 			f.e.log.Warn("debrid link refresh after media host failure failed", "release", f.id,
 				"provider", p.Provider, "failedHost", urlHost(failed), "err", sanitize(err))
 			break
 		}
 		gen = g
+		u := lp.URL
 		moved = usable(u)
 		f.e.log.Info("debrid link refreshed after media host failure", "release", f.id, "provider", p.Provider,
 			"failedHost", urlHost(failed), "host", urlHost(u), "attempt", i, "newHost", moved)
@@ -1315,17 +1325,21 @@ func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool
 				return nil, timing{}, servedBy{}, err
 			}
 		}
-		u, gen, err := f.link(ctx, false)
+		// One snapshot for the whole request: its URL, provider account
+		// and replay marker cannot straddle an adopt between two reads.
+		snap, gen, err := f.link(ctx, false)
 		if err != nil {
 			return nil, timing{}, servedBy{}, err
 		}
+		u := snap.URL
 		if attempt == 0 && f.e.backoff != nil && f.e.backoff.down(urlHost(u)) && f.reroute(ctx, u, gen, start) {
 			// The link points at a node other requests just found dead.
-			if u, gen, err = f.link(ctx, false); err != nil {
+			if snap, gen, err = f.link(ctx, false); err != nil {
 				return nil, timing{}, servedBy{}, err
 			}
+			u = snap.URL
 		}
-		payload, _ := f.payload()
+		payload := snap
 		if isAnalysisRead(ctx) {
 			if err := f.e.svc.checkAnalysisAccount(payload.Provider); err != nil {
 				return nil, timing{}, servedBy{}, err
@@ -1343,6 +1357,8 @@ func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool
 		rctx := ctx
 		if payload.IsDirect() || payload.IsPluginProvider() {
 			rctx = withDirect(ctx, payload)
+		} else if payload.OnReplayEdge {
+			rctx = withReplay(ctx)
 		}
 		if isAnalysisRead(ctx) {
 			f.analysis.requests.Add(1)
@@ -1473,6 +1489,31 @@ func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool
 				return nil, tm, servedBy{}, pauseErr
 			}
 			drain(resp)
+		case resp.StatusCode/100 == 3:
+			// A link that answers with a redirect instead of our bytes
+			// does not stand where it is. Only a replayed read lands
+			// here — its client refuses hops so the hop cannot receive
+			// the signed URL as Go's Referer header, token included, and
+			// an ordinary link's client already followed its redirects
+			// (a loop errors out as transport). Count it with the dead
+			// links and take a fresh one (which clears the marker): the
+			// just-succeeded wave's spacing bars a reroute, but not the
+			// need for another link.
+			drain(resp)
+			f.mu.Lock()
+			if gen != f.failedGen {
+				f.failedGen = gen
+				f.linkFails++
+			}
+			fails := f.linkFails
+			f.mu.Unlock()
+			if fails > maxLinkFailures {
+				return nil, tm, servedBy{}, fmt.Errorf("debrid: link for %s keeps failing (HTTP %d): %w", f.name(), resp.StatusCode, core.ErrArticleMissing)
+			}
+			if _, _, err := f.link(ctx, true, gen); err != nil {
+				return nil, tm, servedBy{}, err
+			}
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
 		default:
 			drain(resp)
 			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
@@ -1854,6 +1895,13 @@ func (e *Engine) send(ctx context.Context, hc *http.Client, u string, start, end
 			hc = e.svc.direct.primary
 		}
 		req = prepareDirect(req, p)
+	}
+	if onReplayEdge(ctx) { // the link rides a remembered edge: no hops
+		if hc == e.hc {
+			hc = e.hcReplay
+		} else if hc == e.hedge { // hedged attempts refuse the redirect too
+			hc = e.hedgeReplay
+		}
 	}
 	host := req.URL.Host
 	if err := e.backoff.wait(ctx, host); err != nil {

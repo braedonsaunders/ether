@@ -54,12 +54,7 @@ func (r *recentEdges) record(provider, host string, now time.Time) {
 		edges = map[string]time.Time{}
 		r.at[provider] = edges
 	}
-	for k, t := range edges {
-		if now.Sub(t) > recentEdgeTTL {
-			delete(edges, k)
-		}
-	}
-	edges[host] = now
+	edges[host] = now // pruning waits for freshest, which walks the map anyway
 }
 
 // freshest lists the hosts recorded for provider, freshest first, dropping
@@ -74,7 +69,11 @@ func (r *recentEdges) freshest(provider, exclude string, down func(string) bool,
 	}
 	fresh := make([]seen, 0, len(r.at[provider]))
 	for k, t := range r.at[provider] {
-		if k == exclude || now.Sub(t) > recentEdgeTTL {
+		if now.Sub(t) > recentEdgeTTL {
+			delete(r.at[provider], k) // this walk is the ledger's one prune
+			continue
+		}
+		if k == exclude {
 			continue
 		}
 		if down != nil && down(k) {
@@ -97,6 +96,30 @@ func (r *recentEdges) freshest(provider, exclude string, down func(string) bool,
 type servedBy struct {
 	provider string
 	host     string // req URL host of the response (its final hop)
+}
+
+// replayKey marks a media read whose link rides a remembered CDN edge
+// (Payload.OnReplayEdge). send answers the mark with the engine's
+// redirect-refusing clients.
+type replayKey struct{}
+
+func withReplay(ctx context.Context) context.Context {
+	return context.WithValue(ctx, replayKey{}, true)
+}
+
+func onReplayEdge(ctx context.Context) bool {
+	v, _ := ctx.Value(replayKey{}).(bool)
+	return v
+}
+
+// noRedirect clones a client to answer redirects instead of following
+// them. Go's client sends the outgoing URL as a Referer when it follows a
+// hop, and a replayed link's URL carries its signed token: refusing the
+// hop keeps the token inside the approved CDN.
+func noRedirect(hc *http.Client) *http.Client {
+	c := *hc
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &c
 }
 
 // withHost replays raw's path and query (where a link's token lives) on
@@ -129,9 +152,7 @@ func (e *Engine) probeLink(ctx context.Context, raw string, off, size int64) boo
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, end))
 	req.Header.Set("User-Agent", httpclient.UserAgent)
-	hc := *e.hc // shares the transport; a redirect stays unanswered
-	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := hc.Do(req)
+	resp, err := e.hcReplay.Do(req) // the probe, like the read, answers no redirects
 	if err != nil {
 		return false
 	}
@@ -208,9 +229,13 @@ func cdnReplayApproval(impl Provider) (cdnEdgeApprover, bool) {
 // host while a probe ran wins: that route is checked with the same usable
 // predicate the rest of the wave uses, and the win is reported without
 // claiming the replay. A refresh that left the file on the failed host
-// discards the stale probe and runs the fresh link through the same edge
-// list, within the wave's budget. On adoption the generation bumps the way
-// a refresh bumps it, so concurrent readers pick up the new route.
+// discards the stale probe and re-runs the wave from that snapshot — a
+// fresh link from another account carries another provider's opt-in,
+// approver and ledger, so nothing from the old snapshot may mint the next
+// request. Within the wave's budget. On adoption the generation bumps the
+// way a refresh bumps it and the payload records that it now rides a
+// remembered edge (Payload.OnReplayEdge): the media read that follows will
+// refuse redirects, keeping the token inside the approved CDN.
 func (f *remoteFile) resumeOnAnotherEdge(ctx context.Context, failed string, usable func(string) bool, start int64) (moved, replayed bool) {
 	p, gen := f.payload()
 	off := min(max(start, 0), f.size-1)
@@ -240,10 +265,15 @@ func (f *remoteFile) resumeOnAnotherEdge(ctx context.Context, failed string, usa
 				if usable(p.URL) { // whoever moved the file took it to a live route: they won
 					return true, false
 				}
-				changed = true // the fresh link may still ride an edge; re-run the wave with it
-				continue
+				// The next request must be vetted and minted by the NEW
+				// snapshot's provider: an old account's edge may not
+				// accept the new account's token, and only the new
+				// account's ledger may be probed with it at all.
+				changed = true
+				break // rebuild approver and candidate list, then re-run the wave
 			}
 			f.pl.URL = u
+			f.pl.OnReplayEdge = true // the read that follows must not hop off this edge
 			f.gen++
 			f.mu.Unlock()
 			return true, true
