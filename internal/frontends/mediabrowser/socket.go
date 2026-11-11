@@ -67,7 +67,7 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 		if i.host.Sessions == nil {
 			return write(map[string]any{"MessageType": "Sessions", "Data": []any{}})
 		}
-		rows, err := i.sessionRows(ctx, viewer, device(r))
+		rows, err := i.sessionRows(ctx, viewer, device(r), clientAddress(r, i.host.ClientIP))
 		if err != nil {
 			return err
 		}

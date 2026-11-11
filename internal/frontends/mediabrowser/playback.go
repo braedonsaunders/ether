@@ -50,8 +50,8 @@ func (p *playbackRequest) UnmarshalJSON(data []byte) error {
 		EnableDirectStream  *caps.FlexBool     `json:"EnableDirectStream"`
 		EnableTranscoding   *caps.FlexBool     `json:"EnableTranscoding"`
 		StartTimeTicks      caps.FlexInt64     `json:"StartTimeTicks"`
-		AudioStreamIndex    *caps.FlexInt      `json:"AudioStreamIndex"`
-		SubtitleStreamIndex *caps.FlexInt      `json:"SubtitleStreamIndex"`
+		AudioStreamIndex    json.RawMessage    `json:"AudioStreamIndex"`
+		SubtitleStreamIndex json.RawMessage    `json:"SubtitleStreamIndex"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -63,11 +63,19 @@ func (p *playbackRequest) UnmarshalJSON(data []byte) error {
 		b := bool(*f)
 		return &b
 	}
-	flexInt := func(f *caps.FlexInt) *int {
-		if f == nil {
+	// Jellyfin Web posts "SubtitleStreamIndex":"" when no subtitle is
+	// chosen; an empty string (or null) is no choice, not stream 0, which
+	// is the video stream and made every plan NoCompatibleStream.
+	flexInt := func(raw json.RawMessage) *int {
+		t := strings.TrimSpace(string(raw))
+		if t == "" || t == "null" || t == `""` {
 			return nil
 		}
-		n := int(*f)
+		var f caps.FlexInt
+		if json.Unmarshal(raw, &f) != nil {
+			return nil
+		}
+		n := int(f)
 		return &n
 	}
 	*p = playbackRequest{

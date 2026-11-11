@@ -77,7 +77,7 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 	}
 	liveMedia := normalizeLiveMedia(tunedMedia)
 	grant := rand.Text()
-	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/live/index.m3u8", Protocol: req.Protocol, ViewerID: viewer.ID, Device: p.request.Device, Channel: p.request.Channel, Media: &liveMedia, StartedAt: b.deps.Now()}
+	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/live/index.m3u8", Protocol: req.Protocol, ViewerID: viewer.ID, Device: p.request.Device, Channel: p.request.Channel, Media: &liveMedia, StartedAt: b.deps.Now(), PlayMethod: "Transcode"}
 	if req.Protocol == "silo" {
 		session.ClientSessionID = p.request.Intent.ClientSessionID
 	}

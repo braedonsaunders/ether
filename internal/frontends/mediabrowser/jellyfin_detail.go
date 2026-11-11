@@ -34,6 +34,27 @@ func (i *instance) jellyfinItemDetailDTO(detail frontend.ItemDetail, dto map[str
 	if _, ok := dto["Chapters"]; !ok {
 		dto["Chapters"] = []any{}
 	}
+	// Jellyfin's item detail repeats its default source's streams at the top
+	// level with HasSubtitles; apps read audio and subtitle choices there.
+	if _, ok := dto["MediaStreams"]; !ok {
+		if sources, ok := dto["MediaSources"].([]any); ok && len(sources) > 0 {
+			if source, ok := sources[0].(map[string]any); ok {
+				if streams, ok := source["MediaStreams"].([]any); ok && len(streams) > 0 {
+					dto["MediaStreams"] = streams
+				}
+			}
+		}
+	}
+	if streams, ok := dto["MediaStreams"].([]any); ok {
+		has := false
+		for _, entry := range streams {
+			if stream, ok := entry.(map[string]any); ok && stream["Type"] == "Subtitle" {
+				has = true
+				break
+			}
+		}
+		dto["HasSubtitles"] = has
+	}
 	if width, height, ok := jellyfinVideoSize(dto, detail); ok {
 		dto["Width"] = width
 		dto["Height"] = height

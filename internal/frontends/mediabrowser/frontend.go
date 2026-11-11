@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
+	"github.com/braedonsaunders/ether/internal/webclient"
 )
 
 // Jellyfin provides the native Jellyfin API on an independent surface.
@@ -48,6 +50,9 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 
 	life, cancel := context.WithCancel(ctx)
 	inst := &instance{host: host, info: info, router: r, protocol: protocol, life: life, cancel: cancel, extraClient: newExtraHTTPClient(host.DirectProxy)}
+	if protocol == "jellyfin" && host.ClientsDir != "" {
+		inst.webClient = webclient.New(filepath.Join(host.ClientsDir, "jellyfin-web"), host.MetadataHTTP)
+	}
 	if host.PageFreshness != nil {
 		inst.pages = newBrowseCache()
 	}
@@ -66,7 +71,7 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 			current.ServerName = frontend.AdvertisedName(host.Config())
 		}
 		return current
-	}, inst.publicViewers, host.ClientIP); err != nil {
+	}, inst.publicViewers, host.ClientIP, inst.webClient); err != nil {
 		return nil, err
 	}
 
@@ -141,6 +146,9 @@ type instance struct {
 	personal    personalIdentityCache
 	views       viewFactCache
 	extraClient *http.Client
+	// webClient installs and serves the official Jellyfin Web build. Nil on
+	// Emby and when the host supplies no clients directory.
+	webClient *webclient.Installer
 }
 
 func (i *instance) Handler() http.Handler {

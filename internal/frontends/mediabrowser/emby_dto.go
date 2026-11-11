@@ -132,6 +132,7 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 	}
 	if len(v.Media.Streams) > 0 {
 		m["MediaStreams"] = i.mediaStreams(v.Media.Streams)
+		m["HasSubtitles"] = mediaHasSubtitles(v.Media)
 	}
 }
 

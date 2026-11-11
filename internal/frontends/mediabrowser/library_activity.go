@@ -171,14 +171,24 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		titles = paging.Slice(titles, offset, limit)
 	} else {
 		var types []frontend.MediaType
+		asked := false
 		for _, value := range route.Query(r.URL.Query(), "MediaTypes") {
 			for _, typ := range strings.Split(value, ",") {
-				if !strings.EqualFold(strings.TrimSpace(typ), "Video") {
-					http.Error(w, "Unsupported media type", http.StatusBadRequest)
-					return
+				if strings.TrimSpace(typ) == "" {
+					continue
 				}
-				types = []frontend.MediaType{"movie", "episode"}
+				asked = true
+				if strings.EqualFold(strings.TrimSpace(typ), "Video") {
+					types = []frontend.MediaType{"movie", "episode"}
+				}
 			}
+		}
+		if asked && len(types) == 0 {
+			// Jellyfin Web asks for resumable Book and Audio rows on its home
+			// screen. Ether resumes only video; other media types have no
+			// resume items, which Jellyfin answers as an empty result.
+			i.replyItems(w, r, i.queryResult([]any{}, 0, offset))
+			return
 		}
 		requireExact := true
 		values := route.Query(r.URL.Query(), "EnableTotalRecordCount")
@@ -206,6 +216,13 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		}
 	}
 	if err != nil {
+		if latest && errors.Is(err, frontend.ErrNotFound) && view != "" && i.viewerHasView(r, viewer, view) {
+			// A library the viewer sees but that has no latest feed (a
+			// plugin library) has nothing recently added; Jellyfin Web asks
+			// for every view on its home screen.
+			i.replyItems(w, r, []any{})
+			return
+		}
 		if errors.Is(err, frontend.ErrNotFound) {
 			http.NotFound(w, r)
 		} else {
@@ -214,6 +231,21 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		return
 	}
 	i.writeListedTitles(w, r, viewer, titles, added, total, totalExact, offset, latest)
+}
+
+// viewerHasView reports whether view (a decimal view id) is one of the
+// viewer's library views.
+func (i *instance) viewerHasView(r *http.Request, viewer *frontend.Viewer, view string) bool {
+	views, err := i.host.Experience.Views(r.Context(), viewer)
+	if err != nil {
+		return false
+	}
+	for _, v := range views {
+		if v.ID == view {
+			return true
+		}
+	}
+	return false
 }
 
 // resumeUnderParent answers /UserItems/Resume?parentId=<series or season>:

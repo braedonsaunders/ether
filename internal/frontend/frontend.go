@@ -516,6 +516,11 @@ type Host struct {
 	// files it can regenerate. It may be emptied between mounts. Empty
 	// disables on-disk caches.
 	CacheDir string
+	// ClientsDir is a persistent node-local directory for downloaded
+	// third-party client builds. Unlike CacheDir it is never emptied between
+	// mounts: a completed download must survive restarts. Empty disables
+	// runtime client downloads.
+	ClientsDir string
 	// PersonalHomes keeps the last personalized library list so the first
 	// UserViews after a restart can include it. Nil keeps that list in memory.
 	PersonalHomes PersonalHomeStore

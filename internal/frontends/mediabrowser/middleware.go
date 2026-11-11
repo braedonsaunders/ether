@@ -24,6 +24,7 @@ var publicRoutesAllowlist = map[route.Route]bool{
 	{Method: "GET", Pattern: "/Branding/Configuration"}:                     true,
 	{Method: "GET", Pattern: "/web"}:                                        true,
 	{Method: "GET", Pattern: "/web/{path...}"}:                              true,
+	{Method: "GET", Pattern: "/"}:                                           true,
 	{Method: "GET", Pattern: "/Users/Public"}:                               true,
 	{Method: "POST", Pattern: "/Users/AuthenticateByName"}:                  true,
 	{Method: "POST", Pattern: "/Users/AuthenticateWithQuickConnect"}:        true,

@@ -41,6 +41,9 @@ func TestFrontendImports(t *testing.T) {
 			prefix + "contentrating": true,
 			// Plex wire XML/JSON DTOs and encoders owned by the Plex frontend subpackage.
 			prefix + "frontends/plex/model": true,
+			// Downloaded third-party client builds (the official Jellyfin Web
+			// artifact the native apps load). Stdlib + xz only, no services.
+			prefix + "webclient": true,
 		}
 		for _, imp := range f.Imports {
 			name, err := strconv.Unquote(imp.Path.Value)

@@ -875,7 +875,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if playbackID == "" && req.Protocol != "plex" {
 		playbackID = id
 	}
-	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/file", Protocol: req.Protocol, ViewerID: v.ID, Device: p.request.Device, Item: p.request.Item, StartedAt: b.deps.Now()}
+	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/file", Protocol: req.Protocol, ViewerID: v.ID, Device: p.request.Device, Item: p.request.Item, StartedAt: b.deps.Now(), PlayMethod: playMethod(p.decision.Kind)}
 	if req.Protocol == "silo" {
 		session.ClientSessionID = p.request.Intent.ClientSessionID
 	}

@@ -630,7 +630,7 @@ func (i *instance) browseRoutes() error {
 	endpoints := []struct {
 		path    string
 		handler http.HandlerFunc
-	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, true) }}, {"/Users/{userId}/Items/Latest", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, true) }}, {"/UserItems/Resume", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, false) }}, {"/Users/{userId}/Items/Resume", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, false) }}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Items", i.items}, {"/Users/{userId}/Items", i.items}, {"/Items/{id}/Similar", i.similar}, {"/Items/{id}/Ancestors", i.ancestors}, {"/Items/{id}/LocalTrailers", i.localTrailers}, {"/Items/{id}/SpecialFeatures", i.specialFeatures}, {"/Users/{userId}/Items/{id}/LocalTrailers", i.localTrailers}, {"/Users/{userId}/Items/{id}/SpecialFeatures", i.specialFeatures}, {"/Items/{id}/Intros", i.intros}, {"/Users/{userId}/Items/{id}/Intros", i.intros}, {"/Search/Hints", i.search}, {"/Genres", i.facets("genre")}, {"/Studios", i.facets("studio")}, {"/Persons", i.facets("person")}, {"/Shows/{id}/Seasons", i.children}, {"/Shows/{id}/Episodes", i.episodes}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
+	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, true) }}, {"/Users/{userId}/Items/Latest", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, true) }}, {"/UserItems/Resume", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, false) }}, {"/Users/{userId}/Items/Resume", func(w http.ResponseWriter, r *http.Request) { i.libraryActivity(w, r, false) }}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Items", i.items}, {"/Users/{userId}/Items", i.items}, {"/Items/{id}/Similar", i.similar}, {"/Items/{id}/Collections", i.itemCollections}, {"/Items/{id}/Ancestors", i.ancestors}, {"/Items/{id}/LocalTrailers", i.localTrailers}, {"/Items/{id}/SpecialFeatures", i.specialFeatures}, {"/Users/{userId}/Items/{id}/LocalTrailers", i.localTrailers}, {"/Users/{userId}/Items/{id}/SpecialFeatures", i.specialFeatures}, {"/Items/{id}/Intros", i.intros}, {"/Users/{userId}/Items/{id}/Intros", i.intros}, {"/Search/Hints", i.search}, {"/Genres", i.facets("genre")}, {"/Studios", i.facets("studio")}, {"/Persons", i.facets("person")}, {"/Shows/{id}/Seasons", i.children}, {"/Shows/{id}/Episodes", i.episodes}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
 	for _, e := range endpoints {
 		if err := add("GET", e.path, e.handler); err != nil {
 			return err
@@ -1016,6 +1016,18 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	i.page(w, r, v, page, q.Offset)
+}
+
+// itemCollections answers /Items/{id}/Collections, which Jellyfin Web asks on
+// every detail page. Ether's collections are not offered here yet, so the
+// answer is the empty result real Jellyfin gives an item in no collection.
+func (i *instance) itemCollections(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	i.replyItems(w, r, i.queryResult([]any{}, 0, queryInt(r, "StartIndex", 0)))
 }
 
 // maxItemsByID bounds one /Items?Ids= lookup; apps send a screen's worth.

@@ -773,6 +773,10 @@ type Session struct {
 	Media           *core.MediaInfo
 	StartedAt       time.Time
 	Capabilities    *SessionCapabilities
+	// PlayMethod is the broker's live delivery decision for this session:
+	// "DirectPlay", "DirectStream" (remux) or "Transcode". Empty when the
+	// session is idle, live, or restored on another cluster node.
+	PlayMethod string
 }
 
 // SessionCapabilities are declared by an authenticated device on one surface.

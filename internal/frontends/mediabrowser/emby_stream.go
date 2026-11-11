@@ -41,6 +41,20 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 		dto["ExtendedVideoSubType"] = "None"
 		dto["ExtendedVideoSubTypeDescription"] = "None"
 	}
+	// Emby names the stream's language and, for subtitles, where the track
+	// lives. A stream without a language omits the name rather than guessing.
+	if stream.Type == "audio" || stream.Type == "subtitle" {
+		if strings.TrimSpace(stream.Language) != "" {
+			dto["DisplayLanguage"] = jellyfinLanguageName(stream.Language)
+		}
+	}
+	if stream.Type == "subtitle" {
+		if stream.External {
+			dto["SubtitleLocationType"] = "VideoSide"
+		} else {
+			dto["SubtitleLocationType"] = "InternalStream"
+		}
+	}
 	if stream.CodecTag != "" {
 		dto["CodecTag"] = stream.CodecTag
 	}

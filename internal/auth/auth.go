@@ -1155,8 +1155,31 @@ func (s *Service) setOwnerTx(ctx context.Context, a plextv.Account, serverToken 
 	}
 	defer tx.Rollback()
 	// A Plex claim attaches to the existing local owner, retaining its viewer
-	// ID and all state. A Plex ID already linked to another viewer must fail
-	// rather than silently merging two people's state.
+	// ID and all state. The claim is a plex.tv sign-in, so the claimer
+	// controls this Plex account: a non-owner viewer row already holding it
+	// (a Plex app that signed in before the claim) is the same person, and
+	// is merged into the owner rather than refusing the claim with a
+	// constraint error.
+	var localOwner, holder int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM auth_users WHERE is_owner=1 AND plex_id IS NULL`).Scan(&localOwner); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if localOwner != 0 {
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM auth_users WHERE plex_id=? AND is_owner=0 AND origin<>'dlna_guest'`, a.ID).Scan(&holder); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	if holder != 0 {
+		if err := store.MergeViewer(ctx, tx, holder, localOwner); err != nil {
+			return fmt.Errorf("auth: merge Plex viewer into owner: %w", err)
+		}
+		if err := store.PurgeViewer(ctx, tx, holder); err != nil {
+			return err
+		}
+		if err := deleteViewerRow(ctx, tx, holder); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET plex_id=? WHERE is_owner=1 AND plex_id IS NULL`, a.ID); err != nil {
 		return fmt.Errorf("auth: attach Plex owner: %w", err)
 	}

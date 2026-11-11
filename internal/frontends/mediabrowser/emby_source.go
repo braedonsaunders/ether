@@ -10,8 +10,10 @@ import (
 func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, media frontend.MediaInfo) {
 	if path, ok := source["Path"].(string); ok && embyScopedDirectURL(path) {
 		// Issued capability URLs authorize their own read and must not expose
-		// the account credential in a query parameter.
+		// the account credential in a query parameter. The same alias route
+		// backs Emby's direct-stream URL.
 		source["AddApiKeyToDirectStreamUrl"] = false
+		source["DirectStreamUrl"] = path
 	}
 	if itemID != "" {
 		source["ItemId"] = itemID

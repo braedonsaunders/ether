@@ -475,7 +475,7 @@ func (i *instance) routes() error {
 				http.Error(w, "Unauthorized", 401)
 				return
 			}
-			jsonReply(w, map[string]any{"Id": i.info.ID, "ServerName": i.info.ServerName, "Version": i.info.Version, "ProductName": i.info.ProductName, "StartupWizardCompleted": true, "WebSocketPortNumber": i.listenerPort()})
+			jsonReply(w, i.systemInfoDTO(r))
 		}},
 		{"POST", "/Sessions/Capabilities", i.capabilitiesQuery},
 		{"POST", "/Sessions/Capabilities/Full", func(w http.ResponseWriter, r *http.Request) {

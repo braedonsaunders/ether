@@ -123,3 +123,16 @@ func (b *Broker) recordPlaybackDecision(playID string, dec core.Decision) {
 
 // HLSDecision lives in internal/frontend (host_sessions_experience.go).
 var HLSDecision = frontend.HLSDecision
+
+// playMethod maps a broker decision to the MediaBrowser PlayMethod vocabulary.
+func playMethod(kind core.DecisionKind) string {
+	switch kind {
+	case core.DecisionDirectPlay:
+		return "DirectPlay"
+	case core.DecisionRemux:
+		return "DirectStream"
+	case core.DecisionTranscode:
+		return "Transcode"
+	}
+	return ""
+}

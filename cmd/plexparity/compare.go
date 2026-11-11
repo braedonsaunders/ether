@@ -196,7 +196,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				break
 			}
 			if time.Now().After(deadline) {
-				return result, fmt.Errorf("warm artwork %s: colors missing", path)
+				if e := fixtureDrift(ctx, fmt.Errorf("warm artwork %s: colors missing", path)); e != nil {
+					return result, e
+				}
 			}
 			select {
 			case <-ctx.Done():
@@ -265,7 +267,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 						return result, fmt.Errorf("%s %s: %w", viewer, probe.Path, err)
 					}
 					if len(response.Body) >= 16<<20 {
-						return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, probe.Path)
+						if e := fixtureDrift(ctx, fmt.Errorf("response at corpus size limit: %s %s", viewer, probe.Path)); e != nil {
+							return result, e
+						}
 					}
 					result.captures = append(result.captures, capture{viewer, name, probe.Path, jsonMode, response})
 				}
@@ -311,7 +315,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 						}
 					}
 					if len(resp.Body) >= 16<<20 {
-						return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)
+						if e := fixtureDrift(ctx, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)); e != nil {
+							return result, e
+						}
 					}
 					result.captures = append(result.captures, capture{viewer, name, path, jsonMode, resp})
 				}
@@ -330,7 +336,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 						return result, fmt.Errorf("image %s %s: %w", viewer, path, err)
 					}
 					if viewer == "owner" && (resp.Status != http.StatusOK || len(resp.Body) == 0 || !strings.HasPrefix(resp.Headers.Get("Content-Type"), "image/")) {
-						return result, fmt.Errorf("image fixture %s failed: status=%d content-type=%s bytes=%d", path, resp.Status, resp.Headers.Get("Content-Type"), len(resp.Body))
+						if e := fixtureDrift(ctx, fmt.Errorf("image fixture %s failed: status=%d content-type=%s bytes=%d", path, resp.Status, resp.Headers.Get("Content-Type"), len(resp.Body))); e != nil {
+							return result, e
+						}
 					}
 					result.captures = append(result.captures, capture{viewer, name, "image:" + path, false, resp})
 				}
@@ -367,7 +375,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 							break
 						}
 						if time.Now().After(deadline) {
-							return result, fmt.Errorf("ultrablur colors missing for %s %s", viewer, key)
+							if e := fixtureDrift(ctx, fmt.Errorf("ultrablur colors missing for %s %s", viewer, key)); e != nil {
+								return result, e
+							}
 						}
 						select {
 						case <-ctx.Done():
@@ -406,7 +416,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 		} `xml:"Video"`
 	}
 	if err != nil || grid.Status != http.StatusOK || xml.Unmarshal(grid.Body, &guide) != nil || len(guide.Videos) == 0 || guide.Videos[0].Key == "" {
-		return result, fmt.Errorf("live programme discovery: status=%d error=%v body=%s", grid.Status, err, grid.Body)
+		if e := fixtureDrift(ctx, fmt.Errorf("live programme discovery: status=%d error=%v body=%s", grid.Status, err, grid.Body)); e != nil {
+			return result, e
+		}
 	}
 	result.ids["programmeKey"] = guide.Videos[0].Key
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
@@ -457,7 +469,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					}
 				}
 				if len(response.Body) >= 16<<20 {
-					return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)
+					if e := fixtureDrift(ctx, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)); e != nil {
+						return result, e
+					}
 				}
 				result.captures = append(result.captures, capture{viewer, name, "sequence:" + path, true, response})
 				if corpusMutation(path) {
@@ -482,7 +496,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				ID string `xml:"playQueueID,attr"`
 			}
 			if err != nil || created.Status != http.StatusOK || xml.Unmarshal(created.Body, &queue) != nil || queue.ID == "" {
-				return result, fmt.Errorf("%s %s play queue fixture missing: status=%d error=%v body=%s", viewer, name, created.Status, err, created.Body)
+				if e := fixtureDrift(ctx, fmt.Errorf("%s %s play queue fixture missing: status=%d error=%v body=%s", viewer, name, created.Status, err, created.Body)); e != nil {
+					return result, e
+				}
 			}
 			result.captures = append(result.captures, capture{viewer, name, "queue:create", false, created})
 			if err := settleWarmProbes(ctx, client, base, h); err != nil {
@@ -520,7 +536,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 		request := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{"web": h}}
 		response, err = strictFetch(ctx, client, base, "parity-owner", request, "web", nil, false)
 		if err != nil || response.Status != http.StatusOK || requireDecision(response.Body, "direct") != nil {
-			return result, fmt.Errorf("debrid HTTP direct play decision failed: status=%d error=%v body=%s", response.Status, err, response.Body)
+			if e := fixtureDrift(ctx, fmt.Errorf("debrid HTTP direct play decision failed: status=%d error=%v body=%s", response.Status, err, response.Body)); e != nil {
+				return result, e
+			}
 		}
 		result.captures = append(result.captures, capture{"owner", "web", "playback:debrid-http:" + path, false, response})
 		h.Set("Range", "bytes=0-4095")
@@ -597,7 +615,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				req := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h}}
 				response, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 				if err != nil || response.Status != http.StatusOK || !bytes.HasPrefix(response.Body, []byte("#EXTM3U")) {
-					return result, fmt.Errorf("%s %s %s start failed: status=%d error=%v body=%q", viewer, name, mode.name, response.Status, err, response.Body)
+					if e := fixtureDrift(ctx, fmt.Errorf("%s %s %s start failed: status=%d error=%v body=%q", viewer, name, mode.name, response.Status, err, response.Body)); e != nil {
+						return result, e
+					}
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:" + path, false, response})
 				// Follow the server-generated stream grant; never invent an ID.
@@ -609,7 +629,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					}
 				}
 				if uri == "" {
-					return result, fmt.Errorf("%s %s missing HLS media URI", viewer, name)
+					if e := fixtureDrift(ctx, fmt.Errorf("%s %s missing HLS media URI", viewer, name)); e != nil {
+						return result, e
+					}
 				}
 				playlistPath := "/video/:/transcode/universal/" + uri
 				req.Path = playlistPath
@@ -626,7 +648,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					}
 				}
 				if segmentURI == "" {
-					return result, fmt.Errorf("%s %s %s playlist has no segment", viewer, name, mode.name)
+					if e := fixtureDrift(ctx, fmt.Errorf("%s %s %s playlist has no segment", viewer, name, mode.name)); e != nil {
+						return result, e
+					}
 				}
 				playlistURL, err := url.Parse(playlistPath)
 				if err != nil {
@@ -638,7 +662,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				}
 				resolved := playlistURL.ResolveReference(segmentURL)
 				if resolved.IsAbs() || resolved.Host != "" {
-					return result, fmt.Errorf("external HLS segment URL %q", segmentURI)
+					if e := fixtureDrift(ctx, fmt.Errorf("external HLS segment URL %q", segmentURI)); e != nil {
+						return result, e
+					}
 				}
 				req.Path = resolved.String()
 				segment, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
@@ -678,7 +704,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			dashDecisionReq := protocol.Request{Method: http.MethodGet, Path: dashDecisionPath, Headers: map[string]http.Header{name: h}}
 			dashDecision, err := strictFetch(ctx, client, base, "parity-"+viewer, dashDecisionReq, name, viewerIDs[viewer], false)
 			if err != nil || dashDecision.Status != http.StatusOK || requireDecision(dashDecision.Body, "remux") != nil {
-				return result, fmt.Errorf("%s %s DASH decision: status=%d error=%v body=%s", viewer, name, dashDecision.Status, err, dashDecision.Body)
+				if e := fixtureDrift(ctx, fmt.Errorf("%s %s DASH decision: status=%d error=%v body=%s", viewer, name, dashDecision.Status, err, dashDecision.Body)); e != nil {
+					return result, e
+				}
 			}
 			result.captures = append(result.captures, capture{viewer, name, "playback:dash:decision", false, dashDecision})
 			dashPath := "/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=dash&session=" + dashSession + "&directPlay=0&directStream=1"
@@ -686,7 +714,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			dashReq := protocol.Request{Method: http.MethodGet, Path: dashPath, Headers: map[string]http.Header{name: h}}
 			mpd, err := strictFetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
 			if err != nil || mpd.Status != http.StatusOK || !bytes.Contains(mpd.Body, []byte("<MPD")) {
-				return result, fmt.Errorf("%s %s DASH start: status=%d error=%v body=%s", viewer, name, mpd.Status, err, mpd.Body)
+				if e := fixtureDrift(ctx, fmt.Errorf("%s %s DASH start: status=%d error=%v body=%s", viewer, name, mpd.Status, err, mpd.Body)); e != nil {
+					return result, e
+				}
 			}
 			result.captures = append(result.captures, capture{viewer, name, "playback:dash:manifest", false, mpd})
 			for _, part := range []string{"header", "0.m4s"} {

@@ -366,7 +366,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				return ""
 			}
 			return a.cfg.Get().Catalog.Language
-		}, AudioOrder: trackprefs.AudioOrder, PickAudio: experiencepkg.PickAudio, PersonalHomes: a.personalHomeDisk(), CacheDir: a.frontendCacheDir(id)}
+		}, AudioOrder: trackprefs.AudioOrder, PickAudio: experiencepkg.PickAudio, PersonalHomes: a.personalHomeDisk(), CacheDir: a.frontendCacheDir(id), ClientsDir: a.frontendClientsDir()}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.listeners.log = a.log
@@ -768,6 +768,17 @@ func (a *App) frontendCacheDir(id frontend.Protocol) string {
 		return ""
 	}
 	return filepath.Join(a.opts.DataDir, "cache", "frontends", string(id))
+}
+
+// frontendClientsDir is the persistent directory for third-party client
+// builds downloaded at runtime (the official Jellyfin Web build the native
+// apps load from /web). It must survive restarts, unlike the node-local
+// frontend cache, so a completed download is reused forever.
+func (a *App) frontendClientsDir() string {
+	if a == nil || a.opts.DataDir == "" {
+		return ""
+	}
+	return filepath.Join(a.opts.DataDir, "clients")
 }
 
 // backgroundBusy counts work mounted frontends run behind their

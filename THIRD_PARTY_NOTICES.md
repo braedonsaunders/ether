@@ -225,6 +225,21 @@ MIT License text:
 
 ## Data and API attributions
 
+### Jellyfin Web
+
+Ether serves the official, **unmodified** Jellyfin Web client at `/web` on the
+Jellyfin port. Nothing is bundled: on first use Ether downloads the pinned
+release artifact from `repo.jellyfin.org`
+(`jellyfin-web_12.4+deb13_all.deb`, version 12.4, verified by SHA-256) and
+extracts it under the data directory. Source:
+https://github.com/jellyfin/jellyfin-web/tree/v12.4. The package's own
+`COPYRIGHT` notice is served at `/web/COPYRIGHT`.
+
+Jellyfin Web is licensed under the GNU General Public License, version 2
+(GPL-2.0). Ether distributes it unmodified and dynamically; it is a separate
+program from Ether and its complete licence text travels with the downloaded
+package.
+
 - Metadata and artwork come from **TMDB**. This product uses the TMDB
   API but is not endorsed or certified by TMDB.
 - Content-rating labels in `internal/contentrating` are the per-country

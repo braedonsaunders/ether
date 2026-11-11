@@ -8,5 +8,5 @@ import (
 // A user picker is intentionally not exposed until the host can supply its
 // authorized list of visible viewers.
 func PublicRoutes(r *route.Router, info PublicInfo) error {
-	return publicRoutes(r, func() PublicInfo { return info }, nil, nil)
+	return publicRoutes(r, func() PublicInfo { return info }, nil, nil, nil)
 }
