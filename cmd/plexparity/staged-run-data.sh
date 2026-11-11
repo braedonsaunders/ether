@@ -111,6 +111,11 @@ for name, changes in replacements.items():
   if old in ('deps.Config = a.cfg.Read', 'deps.Config = a.cfg.Get') and 'deps.Now = parityClock()' in text: continue
   if old == 'deps.Config = a.cfg.Read' and text.count(old) == 0 and text.count('deps.Config = a.cfg.Get') == 1: continue
   if old == 'deps.Config = a.cfg.Get' and text.count(old) == 0 and text.count('deps.Config = a.cfg.Read') == 1: continue
+  if old == 'a.catalogOptions()...)' and text.count(old) == 0 and text.count('append(a.catalogOptions(), catalog.WithStartupContext(ctx))') == 1:
+   text = text.replace('append(a.catalogOptions(), catalog.WithStartupContext(ctx))', 'append(append(a.catalogOptions(), parityCatalogueOptions()...), catalog.WithStartupContext(ctx))', 1); continue
+  if old in ('deps.Config = a.cfg.Read', 'deps.Config = a.cfg.Get') and 'deps.Config = a.cfg.' not in text: continue
+  hooks = set(re.findall(r'parity\w+\(', new))
+  if text.count(old) == 0 and hooks and all(h in text for h in hooks): continue
   if text.count(old) != 1: raise SystemExit(f"cannot apply parity seam: {path}: expected exactly one {old!r}")
   text = text.replace(old, new, 1)
  path.write_text(text)
