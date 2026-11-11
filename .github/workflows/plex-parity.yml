@@ -34,7 +34,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          baseline=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          # Temporary: compare v0.3.7 (before Plex moved to the shared host) with the v0.3.9 candidate.
+          baseline=$(git rev-parse "v0.3.7^{commit}")
           set +e
           bash cmd/plexparity/ci.sh "$baseline" "$HEAD_SHA" | tee /tmp/plex-parity-report.txt
           status=${PIPESTATUS[0]}
