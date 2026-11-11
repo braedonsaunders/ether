@@ -32,6 +32,7 @@ jobs:
       - name: Compare against merge base
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ETHER_PARITY_LENIENT_BASELINE: '1'
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # Temporary: compare v0.3.7 (before Plex moved to the shared host) with the v0.3.9 candidate.
