@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   plex-parity:
-    if: github.event.pull_request.head.ref == 'prism'
+    if: github.event.pull_request.head.ref == 'audit/plex-parity-037-039'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
