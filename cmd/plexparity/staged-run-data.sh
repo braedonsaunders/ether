@@ -194,8 +194,12 @@ PYCODE
  cp "$root/harness/parity_session_fixture.go" "$root/$tree/internal/livetv/"
  cp "$root/harness/parity_clock_fixture.go" "$root/$tree/internal/transcode/"
  cp "$root/harness/parity_warm_settle.go" "$root/$tree/internal/playback/"
- cp "$root/harness/parity_warm_route.go" "$root/$tree/internal/frontends/plex/"
- python3 - "$root/$tree/internal/frontends/plex/routes.go" <<'PYCODE'
+ # Plex lived in internal/plex before the move to the shared frontend host (v0.3.7 and older);
+ # those trees carry their own warm route.
+ plexdir=internal/frontends/plex
+ [ -d "$root/$tree/$plexdir" ] || plexdir=internal/plex
+ [ -f "$root/$tree/$plexdir/parity_warm_route.go" ] || cp "$root/harness/parity_warm_route.go" "$root/$tree/$plexdir/"
+ python3 - "$root/$tree/$plexdir/routes.go" <<'PYCODE'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 s = p.read_text()
@@ -205,8 +209,8 @@ if s.count(needle) != 1:
 p.write_text(s.replace(needle, needle + '\tr.Get("/parity/warm-settled", s.handleParityWarmSettled)\n\tr.Get("/parity/warm-probe", s.handleParityWarmProbe)\n', 1))
 PYCODE
  if [ "$tree" = baseline ] && [ "$counterfactual" = 1 ]; then
-  cp "$root/harness/policy_counterfactual.go.txt" "$root/$tree/internal/frontends/plex/zz_parity_policy_counterfactual.go"
-  python3 - "$root/$tree/internal/frontends/plex/handlers_hubs.go" <<'PYCODE'
+  cp "$root/harness/policy_counterfactual.go.txt" "$root/$tree/$plexdir/zz_parity_policy_counterfactual.go"
+  python3 - "$root/$tree/$plexdir/handlers_hubs.go" <<'PYCODE'
 import pathlib,sys
 p=pathlib.Path(sys.argv[1]);s=p.read_text()
 search='func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {'
