@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -73,15 +75,24 @@ func checkGolden(t *testing.T, name string, rec *httptest.ResponseRecorder) {
 	// Generation keys are opaque hashes of the retained row and request scope.
 	// Compare their presence and placement, not the content-dependent digest.
 	body = regexp.MustCompile(`etherShelf=[a-f0-9]{64}`).ReplaceAll(body, []byte("etherShelf=GENERATION"))
+	// Stream and read tokens are per-start random capabilities; compare their
+	// placement, not their value.
+	body = regexp.MustCompile(`X-Ether-Stream-Token=[A-Z0-9]+`).ReplaceAll(body, []byte("X-Ether-Stream-Token=TOKEN"))
+	body = regexp.MustCompile(`X-Ether-Read-Token=[A-Z0-9]+`).ReplaceAll(body, []byte("X-Ether-Read-Token=TOKEN"))
 	ext := ".xml"
-	if strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") {
+	ct := rec.Header().Get("Content-Type")
+	switch {
+	case strings.HasPrefix(ct, "application/json"):
 		ext = ".json"
 		var buf bytes.Buffer
 		if err := json.Indent(&buf, body, "", "  "); err != nil {
 			t.Fatalf("%s: invalid JSON: %v\n%s", name, err, body)
 		}
 		body = append(buf.Bytes(), '\n')
-	} else {
+	case strings.HasPrefix(ct, "application/vnd.apple.mpegurl"), strings.HasPrefix(ct, "application/x-mpegurl"):
+		// HLS playlists are plain text; compare verbatim.
+		ext = ".m3u8"
+	default:
 		d := xml.NewDecoder(bytes.NewReader(body))
 		for {
 			_, err := d.Token()
@@ -167,6 +178,17 @@ func TestGolden(t *testing.T) {
 			checkGolden(t, c.name, f.getWarm(t, c.target, c.hdr...))
 		})
 	}
+}
+
+func TestGoldenStart(t *testing.T) {
+	// A successful start must be served through the production wiring: the
+	// encoder is reached via Host.Sessions (Prism), never Deps.Transcoder.
+	enc := &recordedPlexEncoder{sessions: map[string]core.HLSSession{}}
+	f := newFixture(withTestEncoder(enc))
+	defer f.srv.Close()
+	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
+	f.getWarm(t, decisionPath("/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=start-gold"))
+	checkGolden(t, "start", f.getWarm(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F1000000000000550&session=start-gold"))
 }
 
 func TestGoldenDecisionNotAvailable(t *testing.T) {

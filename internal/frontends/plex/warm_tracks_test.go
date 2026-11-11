@@ -54,7 +54,7 @@ func TestMetadataListsWarmProbedTracks(t *testing.T) {
 
 	probed := sampleInfo
 	probed.Streams = append([]core.StreamInfo(nil), sampleInfo.Streams...)
-	f.srv.d.Playback = &warmProbePlayback{Playback: f.playback, info: probed, ok: true}
+	f.srv.setPlayback(&warmProbePlayback{Playback: f.playback, info: probed, ok: true})
 	info, ps = f.srv.mediaInfoFor(context.Background(), pr, &fightClub)
 	if ps != nil || info.Estimated {
 		t.Fatalf("warm probe: ps=%v estimated=%v, want nil/false", ps != nil, info.Estimated)
@@ -143,7 +143,7 @@ func TestFirstOpenMovieAndShowSeasonWarmProbedTracks(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	wpb := &warmWaiterPlayback{Playback: f.playback, info: probed}
-	f.srv.d.Playback = wpb
+	f.srv.setPlayback(wpb)
 
 	// 1. Cold first open of a movie detail page waits for the warm probe and renders real tracks.
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(),

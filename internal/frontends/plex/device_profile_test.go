@@ -44,7 +44,7 @@ func TestLegacyProfileTargetAdmission(t *testing.T) {
 
 func TestLegacyProfileAudioAndLimitationOrder(t *testing.T) {
 	f := newFixture()
-	f.srv.d.Transcoder = &realDecider{f.trans}
+	f.srv.setTranscoder(&realDecider{f.trans})
 	defer f.srv.Close()
 	f.playback.info = core.MediaInfo{Container: "mp4", Streams: []core.StreamInfo{
 		{Index: 0, Type: "video", Codec: "h264", Profile: "High", BitDepth: 8, Width: 1920, Height: 1080},
@@ -66,7 +66,7 @@ func TestLegacyProfileAudioAndLimitationOrder(t *testing.T) {
 	f2 := newFixture()
 	defer f2.srv.Close()
 	f2.playback.info = f.playback.info
-	f2.srv.d.Transcoder = &realDecider{f2.trans}
+	f2.srv.setTranscoder(&realDecider{f2.trans})
 	rec := f2.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+fightClub.Key.String()+"&directPlay=1&protocol=hls&session=limit", append(jsonAccept, "X-Plex-Client-Profile-Name", "Android")...)
 	if !strings.Contains(rec.Body.String(), "video.profile limitation applies: high 10 != baseline|main|high [list]") {
 		t.Fatalf("named limitation did not precede wildcard: %s", rec.Body.String())
@@ -190,7 +190,7 @@ func TestDV5ConversionTargetToneMaps(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture()
 			defer f.srv.Close()
-			f.srv.d.Transcoder = dv5Encoder{&realDecider{f.trans}, tc.toneMaps}
+			f.srv.setTranscoder(dv5Encoder{&realDecider{f.trans}, tc.toneMaps})
 			f.playback.info.Streams = append([]core.StreamInfo(nil), sampleInfo.Streams...)
 			f.playback.info.Streams[0] = core.StreamInfo{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Width: 1920, Height: 1080, FrameRate: 24, BitDepth: 10, DolbyVision: true, DolbyVisionProfile: 5, DolbyVisionLevel: 6}
 			headers := append(jsonAccept, tc.header, tc.value)

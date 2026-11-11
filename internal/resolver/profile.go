@@ -3,6 +3,7 @@
 package resolver
 
 import (
+	"context"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -45,6 +46,7 @@ type ProfileSource string
 const (
 	ProfileFromRule    ProfileSource = "rule"    // the first matching quality rule
 	ProfileFromRemote  ProfileSource = "remote"  // the Away profile, for a remote client no rule covers
+	ProfileFromLibrary ProfileSource = "library" // the library the title belongs to
 	ProfileFromDefault ProfileSource = "default" // the At home (default) profile
 	ProfileFromFirst   ProfileSource = "first"   // the first configured profile
 	ProfileBuiltin     ProfileSource = "builtin" // no usable profile is configured
@@ -129,7 +131,7 @@ func profileApplies(p core.QualityProfile, media string) bool {
 
 // chooseProfile is the media-neutral form for callers with no title.
 func chooseProfile(q config.Quality, caps core.ClientCaps, user *core.User) profileChoice {
-	return chooseProfileForMedia(q, caps, user, core.MediaAny)
+	return chooseProfileForMedia(q, caps, user, core.MediaAny, "")
 }
 
 // chooseProfileForMedia is the single place that picks a client's profile.
@@ -137,11 +139,13 @@ func chooseProfile(q config.Quality, caps core.ClientCaps, user *core.User) prof
 // Selection order: the first rule whose non-empty matchers all match, whose
 // media scope applies, and whose profile exists and applies; otherwise the
 // media's remote profile for a remote client (when set and applicable);
-// otherwise the media's default; otherwise the first applicable profile;
-// otherwise the built-in default. A rule for a device or viewer is more
-// specific than "away from home", so it wins there too. A movie-scoped
-// profile is never chosen for a show, or the reverse.
-func chooseProfileForMedia(q config.Quality, caps core.ClientCaps, user *core.User, media string) profileChoice {
+// otherwise the quality profile set on the library the title belongs to
+// (libProfile, when set and applicable); otherwise the media's default;
+// otherwise the first applicable profile; otherwise the built-in default. A
+// rule for a device or viewer is more specific than "away from home", so it
+// wins there too. A movie-scoped profile is never chosen for a show, or the
+// reverse.
+func chooseProfileForMedia(q config.Quality, caps core.ClientCaps, user *core.User, media, libProfile string) profileChoice {
 	media = normalizeMedia(media)
 	for i, rule := range q.Rules {
 		if !core.MediaApplies(rule.MediaType, media) || !ruleMatches(rule, caps, user) {
@@ -154,6 +158,11 @@ func chooseProfileForMedia(q config.Quality, caps core.ClientCaps, user *core.Us
 	if caps.Remote {
 		if p, ok := core.FindProfile(q.Profiles, remoteProfileName(q, media), media); ok {
 			return profileChoice{profile: p, source: ProfileFromRemote, rule: -1}
+		}
+	}
+	if libProfile != "" {
+		if p, ok := core.FindProfile(q.Profiles, libProfile, media); ok {
+			return profileChoice{profile: p, source: ProfileFromLibrary, rule: -1}
 		}
 	}
 	if p, ok := core.FindProfile(q.Profiles, defaultProfileName(q, media), media); ok {
@@ -249,18 +258,18 @@ func ApplyClientRulesForMedia(q config.Quality, caps core.ClientCaps, user *core
 		})
 		q.Rules = slices.DeleteFunc(slices.Clone(q.Rules), func(r config.QualityRule) bool { return r.MediaType != core.MediaAny })
 	}
-	caps, _ = applyClientRules(q, caps, user, media)
+	caps, _ = applyClientRules(q, caps, user, media, "")
 	return caps
 }
 
 // ApplyClientRulesForTitle applies the rules that match a specific title's
 // media, so a movie rule cannot change a show's caps or the reverse.
 func ApplyClientRulesForTitle(q config.Quality, caps core.ClientCaps, user *core.User, t *core.Title) core.ClientCaps {
-	caps, _ = applyClientRules(q, caps, user, titleMedia(t))
+	caps, _ = applyClientRules(q, caps, user, titleMedia(t), "")
 	return caps
 }
 
-func applyClientRules(q config.Quality, caps core.ClientCaps, user *core.User, media string) (core.ClientCaps, ruleEffect) {
+func applyClientRules(q config.Quality, caps core.ClientCaps, user *core.User, media, libProfile string) (core.ClientCaps, ruleEffect) {
 	if len(caps.VideoCodecs) == 0 && caps.Protocol != "plex" && !strings.Contains(strings.ToLower(caps.Product), "plex") {
 		if defaults := clientreg.Playback(clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), Version: caps.Version}, nil); defaults.ID != "" && defaults.ID != "generic" && len(defaults.Video) > 0 {
 			caps.VideoCodecs = append([]string(nil), defaults.Video...)
@@ -268,7 +277,7 @@ func applyClientRules(q config.Quality, caps core.ClientCaps, user *core.User, m
 	}
 	// Rule matchers read only protocol, product, platform and viewer, none
 	// of which this function changes, so the choice holds for the result.
-	eff := ruleEffect{choice: chooseProfileForMedia(q, caps, user, media)}
+	eff := ruleEffect{choice: chooseProfileForMedia(q, caps, user, media, libProfile)}
 	if caps.Download {
 		return caps, eff
 	}
@@ -309,6 +318,16 @@ func applyClientRules(q config.Quality, caps core.ClientCaps, user *core.User, m
 	return caps, eff
 }
 
+// libProfileForTitle is the quality profile set on the library a title
+// belongs to, or "" when none applies (no lookup wired, no matching
+// library, or the library left it at Default).
+func (s *Service) libProfileForTitle(ctx context.Context, t *core.Title) string {
+	if s.libProfiles == nil || t == nil {
+		return ""
+	}
+	return s.libProfiles.QualityProfileForTitle(ctx, t)
+}
+
 // SelectProfile picks the quality profile for a client and clamps it
 // to what the client can direct-play. Playback uses it for
 // pre-resolution estimates; the resolver uses it for ranking.
@@ -323,7 +342,15 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 // SelectProfileForMedia is SelectProfile with a movie or show context, so
 // media-scoped profiles and rules apply. An empty media is media-neutral.
 func SelectProfileForMedia(q config.Quality, caps core.ClientCaps, user *core.User, media string) core.QualityProfile {
-	return decideProfile(q, caps, user, media).profile
+	return decideProfile(q, caps, user, media, "").profile
+}
+
+// SelectProfileForTitle is SelectProfileForMedia with the quality profile
+// set on the library the title belongs to (libProfile, from
+// LibraryProfileForTitle). It applies after a client rule and the Away
+// profile, before the generic Movies/Shows default.
+func SelectProfileForTitle(q config.Quality, caps core.ClientCaps, user *core.User, t *core.Title, libProfile string) core.QualityProfile {
+	return decideProfile(q, caps, user, titleMedia(t), libProfile).profile
 }
 
 // profileDecision is SelectProfile's answer with what decided it.
@@ -333,11 +360,11 @@ type profileDecision struct {
 	effect  ruleEffect
 }
 
-func decideProfile(q config.Quality, caps core.ClientCaps, user *core.User, media string) profileDecision {
+func decideProfile(q config.Quality, caps core.ClientCaps, user *core.User, media, libProfile string) profileDecision {
 	if caps.Download && caps.DownloadSourceMaxHeight > caps.MaxHeight {
 		caps.MaxHeight = caps.DownloadSourceMaxHeight
 	}
-	caps, eff := applyClientRules(q, caps, user, media)
+	caps, eff := applyClientRules(q, caps, user, media, libProfile)
 	prof := eff.choice.profile
 	// Deep-copy slices so callers cannot mutate config.
 	prof.PreferredLanguages = append([]string(nil), prof.PreferredLanguages...)

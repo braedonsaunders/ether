@@ -565,7 +565,7 @@ func TestChunkedRestartInsidePublishedGOPKeepsPlan(t *testing.T) {
 			switch {
 			case container == ContainerMatroska && len(b) > emptyClusterSize:
 				t.Errorf("segment 1 after 0 is %d bytes, want the empty Cluster inside the GOP at 0s", len(b))
-			case container == ContainerFMP4 && len(b) > emptyFMP4Size:
+			case container == ContainerFMP4 && !isEmptyFMP4(b):
 				t.Errorf("segment 1 after 0 is %d bytes, want the empty fragment inside the GOP at 0s", len(b))
 			case container == ContainerMPEGTS && gop(b) != "t=0.000":
 				t.Errorf("segment 1: %s, want the GOP at 0s again", gop(b))

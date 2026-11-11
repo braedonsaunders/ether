@@ -267,6 +267,15 @@ func (s *Service) SetPresent(ctx context.Context, id core.LibraryID, p core.Pres
 	return s.setColumn(ctx, id, "present", string(b))
 }
 
+// SetQualityProfile sets the quality profile name titles in this library
+// rank with. An empty name means "Default" (today's Movies/Shows
+// home/away defaults). The name is stored verbatim; whether it names a
+// configured profile is checked at resolution time, so a profile rename
+// or a guide sync never leaves a library pointing at a missing profile.
+func (s *Service) SetQualityProfile(ctx context.Context, id core.LibraryID, name string) error {
+	return s.setColumn(ctx, id, "quality_profile", strings.TrimSpace(name))
+}
+
 // SetRules validates and stores TMDB visibility rules and default visibility
 // on a built-in or filter library. Rules on a single-type library are pinned
 // to that library's media type.

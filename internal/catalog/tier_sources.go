@@ -184,7 +184,7 @@ var tierUntouchedTables = []string{
 	"sessions_xtream_connections", "viewer_alert_preferences", "viewer_episode_scan", "viewer_policy_",
 	"viewer_push_subscriptions", "favorites_mirror", "notinterested_revisions", "state_playlist_markers",
 	"state_source_sequence", "simkl_devices", "simkl_post_pacing", "simkl_tokens", "trakt_tokens",
-	"plexwatch_account", "plexwatch_fence", "plexwatch_pin", "plexwatch_pms", "plexwatch_pms_unmatched",
+	"plexwatch_account", "plexwatch_fence", "plexwatch_pin", "plexwatch_pms", "plexwatch_pms_held", "plexwatch_pms_unmatched",
 	"plexwatch_pms_viewer", "plex_counters", "personalize_overrides", "personalize_ranker",
 	"personalize_row_impressions", "personalize_serves", "personalize_home_layout", "trackprefs_rules",
 	"episodeorder_groups", "watchlist_meta", "watchlist_settings", "migrate_plans",

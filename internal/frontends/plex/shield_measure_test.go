@@ -117,7 +117,7 @@ func newShieldMeasureRig(t *testing.T, mode string, cached bool) *shieldMeasureR
 		x.Close()
 		t.Fatal(err)
 	}
-	x.f.srv.d.Playback = x.mgr
+	x.f.srv.setPlayback(x.mgr)
 	x.f.srv.setVariants(x.rs)
 	if cached {
 		done := x.rs.RefillSearchCache(&fightClub)

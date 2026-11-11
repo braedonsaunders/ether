@@ -108,7 +108,7 @@ func TestTranscodeChaosMatrix(t *testing.T) {
 					if path == "download" {
 						f := newDownloadFixture(t, true)
 						f.playback.info = *info
-						f.srv.d.Playback = &chaosPlayback{f.playback, inputURL}
+						f.srv.setPlayback(&chaosPlayback{f.playback, inputURL})
 						dl, e := m.NewDownloadRemuxer(config.Downloads{})
 						if e != nil {
 							t.Fatal(e)
@@ -149,9 +149,9 @@ func TestTranscodeChaosMatrix(t *testing.T) {
 					f := newFixture()
 					defer f.srv.Close()
 					f.playback.info = *info
-					f.srv.d.Playback = &chaosPlayback{f.playback, inputURL}
+					f.srv.setPlayback(&chaosPlayback{f.playback, inputURL})
 					recorder := &chaosTranscoderRecorder{Transcoder: m}
-					f.srv.d.Transcoder = recorder
+					f.srv.setTranscoder(recorder)
 					id := "matrix-" + path
 					query := "path=%2Flibrary%2Fmetadata%2F" + fightClub.Key.String() + "&session=" + id + "&directPlay=0&directStream=1"
 					if strings.Contains(name, "subtitle") || strings.Contains(name, "broken-") {

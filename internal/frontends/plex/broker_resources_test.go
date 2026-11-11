@@ -16,7 +16,7 @@ func TestBrokerPublishesSelectedTracksHLSAndDASH(t *testing.T) {
 	defer f.srv.Close()
 	audio := f.bindStream(fightClub.Key, 2, sampleInfo.Streams[2])
 	sub := f.bindStream(fightClub.Key, 4, sampleInfo.Streams[4])
-	f.srv.d.Transcoder = &dashTranscoder{fakeTranscoder: f.trans, dash: map[string]*fakeDASH{}}
+	f.srv.setTranscoder(&dashTranscoder{fakeTranscoder: f.trans, dash: map[string]*fakeDASH{}})
 	key := strconv.FormatInt(int64(fightClub.Key), 10)
 	cases := []struct {
 		name, session, path string
@@ -42,7 +42,7 @@ func TestUnmountReleasesPlaybackResources(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	dt := &dashTranscoder{fakeTranscoder: f.trans, dash: map[string]*fakeDASH{}}
-	f.srv.d.Transcoder = dt
+	f.srv.setTranscoder(dt)
 	broker := f.srv.broker()
 	inst, err := Frontend{Server: f.srv}.Mount(context.Background(), frontend.Host{Sessions: broker})
 	if err != nil {

@@ -195,7 +195,7 @@ func TestSelectProfileForMedia(t *testing.T) {
 			if tc.wantSource != ProfileFromRule {
 				wantRule = -1
 			}
-			choice := chooseProfileForMedia(tc.q, tc.caps, nil, tc.media)
+			choice := chooseProfileForMedia(tc.q, tc.caps, nil, tc.media, "")
 			if choice.profile.Name != tc.want || choice.source != tc.wantSource || choice.rule != wantRule {
 				t.Fatalf("choice = %+v, want profile %q source %q rule %d", choice, tc.want, tc.wantSource, wantRule)
 			}
@@ -236,10 +236,10 @@ func TestApplyClientRulesForMediaScopesRules(t *testing.T) {
 	if caps := ApplyClientRules(q, appleTVCaps(), nil); !hasTrueHD(caps) {
 		t.Fatal("title-neutral capabilities applied a movie-only audio rule")
 	}
-	if caps, _ := applyClientRules(q, appleTVCaps(), nil, core.MediaMovie); hasTrueHD(caps) {
+	if caps, _ := applyClientRules(q, appleTVCaps(), nil, core.MediaMovie, ""); hasTrueHD(caps) {
 		t.Fatalf("movie rule did not convert surround audio: %+v", caps.AudioCodecs)
 	}
-	if caps, _ := applyClientRules(q, appleTVCaps(), nil, core.MediaTV); !hasTrueHD(caps) {
+	if caps, _ := applyClientRules(q, appleTVCaps(), nil, core.MediaTV, ""); !hasTrueHD(caps) {
 		t.Fatalf("tv should not apply the movie rule: %+v", caps.AudioCodecs)
 	}
 }

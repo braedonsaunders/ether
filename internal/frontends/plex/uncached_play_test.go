@@ -301,8 +301,8 @@ func newUncachedEnv(t *testing.T, kind string, cachedOnly, usenet bool) *uncache
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.srv.d.Playback = mgr
-	f.srv.d.Transcoder = tr
+	f.srv.setPlayback(mgr)
+	f.srv.setTranscoder(tr)
 	t.Cleanup(func() { f.srv.Close(); mgr.Close() })
 	return &uncachedEnv{f: f, cfg: cfg, dbr: dbr, rs: rs, mgr: mgr, remote: remote, ix: inner, hashes: hashes}
 }

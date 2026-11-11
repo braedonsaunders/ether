@@ -68,7 +68,7 @@ type wireXMLDoc struct {
 func TestIssue191ShieldDVHybridMultiVersionSubtitlesAndTautulli(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	f.srv.d.Transcoder = shieldContractTranscoder{f.trans}
+	f.srv.setTranscoder(shieldContractTranscoder{f.trans})
 
 	prefs := trackprefs.New(store.OpenTest(t))
 	f.srv.setTrackPreferences(prefs)
@@ -101,7 +101,7 @@ func TestIssue191ShieldDVHybridMultiVersionSubtitlesAndTautulli(t *testing.T) {
 		},
 	}})
 	pb := &shieldMetadataPlayback{Playback: f.playback, facts: probed, ready: false}
-	f.srv.d.Playback = pb
+	f.srv.setPlayback(pb)
 
 	path := "/library/metadata/" + fightClub.Key.String()
 	darcyHeaders := map[string]string{
@@ -287,7 +287,7 @@ func TestIssue191PlexIOSFirstOpenProbesEmbeddedSubtitles(t *testing.T) {
 		}
 		f.playback.info = facts
 		pb := &shieldMetadataPlayback{Playback: f.playback, facts: facts, ready: false}
-		f.srv.d.Playback = pb
+		f.srv.setPlayback(pb)
 		headers := map[string]string{
 			"X-Plex-Product":           "Plex for iOS",
 			"X-Plex-Platform":          "iOS",

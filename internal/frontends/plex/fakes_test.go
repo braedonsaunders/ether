@@ -1269,10 +1269,16 @@ func newFixture(opts ...func(*testServerDeps)) *fixture {
 			Host: frontend.Host{
 				Capabilities: frontend.BindClientRules(resolver.ApplyClientRulesForMedia),
 			},
-			Playback:   f.playback,
-			Transcoder: f.trans,
+			// Playback and transcoder are reached only through the session
+			// runtime, as in production (Deps{Host}); never set Deps.Playback.
+			Playback:   nil,
+			Transcoder: nil,
 		},
 	}
+	rt := newTestRuntime()
+	rt.setPlayback(f.playback)
+	rt.setTranscoder(f.trans)
+	d.Deps.Host.Sessions = rt
 	setDepsAuth(&d, &fakeAuth{users: map[string]core.User{ownerToken: ownerUser, friendToken: friendUser}})
 	setDepsHTTPClient(&d, &http.Client{Transport: f.art})
 	setDepsConfig(&d, func() config.Config {
@@ -1301,8 +1307,12 @@ type fixturePlayback struct{ f *fixture }
 func (p *fixturePlayback) UnwrapPlayback() core.Playback { return p.current() }
 
 func (p *fixturePlayback) current() core.Playback {
-	if p.f.srv != nil && p.f.srv.d.Playback != nil {
-		return p.f.srv.d.Playback
+	if p.f.srv != nil {
+		if rt := p.f.srv.testRuntime(); rt != nil {
+			if pb := rt.currentPlayback(); pb != nil {
+				return pb
+			}
+		}
 	}
 	return p.f.playback
 }
@@ -1385,8 +1395,12 @@ type fixtureTranscoder struct{ f *fixture }
 func (t fixtureTranscoder) UnwrapTranscoder() core.Transcoder { return t.current() }
 
 func (t fixtureTranscoder) current() core.Transcoder {
-	if t.f.srv != nil && t.f.srv.d.Transcoder != nil {
-		return t.f.srv.d.Transcoder
+	if t.f.srv != nil {
+		if rt := t.f.srv.testRuntime(); rt != nil {
+			if tc := rt.currentTranscoder(); tc != nil {
+				return tc
+			}
+		}
 	}
 	return t.f.trans
 }
@@ -1482,8 +1496,11 @@ func (p fixtureProgress) Progress(ctx context.Context, viewer int64, key core.Ra
 
 func (f *fixture) attachPlaybackBroker(d testServerDeps) {
 	var lrDeps sessions.LocalRuntimeDeps
-	if lr, ok := f.srv.getHost().Sessions.(*sessions.LocalRuntime); ok && lr != nil {
-		lrDeps = lr.Deps()
+	switch rt := f.srv.sessionRuntime().(type) {
+	case *testRuntime:
+		lrDeps = rt.Deps()
+	case *sessions.LocalRuntime:
+		lrDeps = rt.Deps()
 	}
 	active := func(_ context.Context, id int64) (*core.Viewer, error) {
 		if id <= 0 {
@@ -1531,9 +1548,21 @@ func (f *fixture) attachPlaybackBroker(d testServerDeps) {
 		panic(err)
 	}
 	f.broker = broker
+	if db := f.srv.runtimeDB(); db != nil {
+		broker.SetDB(db)
+	}
 	f.srv.usePlaybackBroker(sessions.BindSurface(broker, "plex"))
 	if lrDeps.Encoder != nil {
 		f.srv.usePlexEncoder(lrDeps.Encoder)
+	}
+}
+
+// setDB swaps the durable store on both the runtime and the mounted broker, so
+// every DB read resolves to the replacement exactly as it does in production.
+func (f *fixture) setDB(db *sql.DB) {
+	f.srv.setDB(db)
+	if f.broker != nil {
+		f.broker.SetDB(db)
 	}
 }
 
@@ -1568,7 +1597,7 @@ func mountTestBroker(s *Server, now func() time.Time) {
 			}
 			return s.catalog().Get(ctx, key)
 		},
-		Playback: s.d.Playback, Transcoder: s.d.Transcoder, Progress: progress, ActiveViewer: active,
+		Playback: s.playback(), Transcoder: s.transcoder(), Progress: progress, ActiveViewer: active,
 		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
 		OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
 		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {

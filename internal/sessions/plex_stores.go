@@ -72,7 +72,21 @@ func (b *Broker) DB() *sql.DB {
 	if b == nil {
 		return nil
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.deps.DB
+}
+
+// SetDB replaces the durable store the broker hands out. It mirrors
+// SetDownloads so a runtime that swaps its store after mount keeps resolving
+// through the broker that wraps it.
+func (b *Broker) SetDB(db *sql.DB) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	b.deps.DB = db
+	b.mu.Unlock()
 }
 
 func (b *Broker) Cluster() frontend.ClusterNode {

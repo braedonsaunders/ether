@@ -68,7 +68,7 @@ func TestIssue341PhonePUTDecisionStart(t *testing.T) {
 		t.Run(codec, func(t *testing.T) {
 			f := newFixture()
 			defer f.srv.Close()
-			f.srv.d.Transcoder = shieldContractTranscoder{f.trans}
+			f.srv.setTranscoder(shieldContractTranscoder{f.trans})
 			f.playback.info = core.MediaInfo{Container: "mkv", Duration: 30 * time.Second, BitrateKbps: 1000, Streams: []core.StreamInfo{
 				{Index: 0, Type: "video", Codec: "h264", Width: 640, Height: 360},
 				{Index: 1, Type: "audio", Codec: "aac", Channels: 2, Default: true},

@@ -52,8 +52,8 @@ func TestTranscodeChaosClients(t *testing.T) {
 		info.Keyframes = nil
 		f := newFixture()
 		f.playback.info = *info
-		f.srv.d.Playback = &chaosPlayback{f.playback, source.URL + "/source.mp4"}
-		f.srv.d.Transcoder = m
+		f.srv.setPlayback(&chaosPlayback{f.playback, source.URL + "/source.mp4"})
+		f.srv.setTranscoder(m)
 		t.Cleanup(func() { f.srv.Close(); m.Close() })
 		return f, m
 	}
@@ -133,7 +133,7 @@ func TestTranscodeChaosClients(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.playback.info = *info
-		f.srv.d.Playback = &chaosPlayback{f.playback, source.URL + "/subtitle.mkv"}
+		f.srv.setPlayback(&chaosPlayback{f.playback, source.URL + "/subtitle.mkv"})
 		var subtitle core.StreamInfo
 		for _, st := range info.Streams {
 			if st.Type == "subtitle" {
@@ -146,7 +146,7 @@ func TestTranscodeChaosClients(t *testing.T) {
 		}
 		track := f.bindStream(fightClub.Key, subtitle.Index, subtitle)
 		recorder := &chaosTranscoderRecorder{Transcoder: m}
-		f.srv.d.Transcoder = recorder
+		f.srv.setTranscoder(recorder)
 		getWeb := func(path string) []byte {
 			r := f.get(t, path, "X-Plex-Client-Identifier", "client-a", "X-Plex-Product", "Plex Web", "X-Plex-Platform", "Chrome")
 			if r.Code != 200 {

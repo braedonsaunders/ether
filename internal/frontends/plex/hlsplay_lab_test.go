@@ -104,8 +104,8 @@ func TestHLSPlayerLab(t *testing.T) {
 			f := newFixture()
 			defer f.srv.Close()
 			f.playback.info = *info
-			f.srv.d.Playback = &playerLabPlayback{f.playback, source.URL + "/fixture.mp4"}
-			f.srv.d.Transcoder = manager
+			f.srv.setPlayback(&playerLabPlayback{f.playback, source.URL + "/fixture.mp4"})
+			f.srv.setTranscoder(manager)
 			server := httptest.NewServer(f.srv)
 			defer server.Close()
 			output := filepath.Join(root, name)
@@ -197,8 +197,8 @@ func TestHLSPlayerDriverLab(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.playback.info = *info
-	f.srv.d.Playback = &playerLabPlayback{f.playback, source.URL + "/fixture.mp4"}
-	f.srv.d.Transcoder = manager
+	f.srv.setPlayback(&playerLabPlayback{f.playback, source.URL + "/fixture.mp4"})
+	f.srv.setTranscoder(manager)
 	server := httptest.NewServer(f.srv)
 	defer server.Close()
 	tokenFile := filepath.Join(root, "viewer-token")
@@ -265,8 +265,8 @@ func TestHLSJellyfinLab(t *testing.T) {
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
-			f.srv.d.Playback = &jellyfinLabPlayback{playerLabPlayback: &playerLabPlayback{f.playback, source.URL + "/" + filepath.Base(input)}, source: &jellyfinLabSource{bytes.NewReader(mediaBytes)}}
-			f.srv.d.Transcoder = manager
+			f.srv.setPlayback(&jellyfinLabPlayback{playerLabPlayback: &playerLabPlayback{f.playback, source.URL + "/" + filepath.Base(input)}, source: &jellyfinLabSource{bytes.NewReader(mediaBytes)}})
+			f.srv.setTranscoder(manager)
 			identity := frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*core.Viewer, error) {
 				if token != ownerToken {
 					return nil, core.ErrUnauthorized

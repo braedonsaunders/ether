@@ -90,7 +90,7 @@ func ExplainQuality(in QualityQuestion) QualityAnswer {
 	if media == core.MediaAny {
 		media = normalizeMedia(in.MediaType)
 	}
-	d := decideProfile(in.Quality, declared, in.User, media)
+	d := decideProfile(in.Quality, declared, in.User, media, "")
 	choice, eff := d.effect.choice, d.effect
 	out := QualityAnswer{Profile: d.profile.Name, MediaType: media, MaxHeight: d.profile.MaxHeight, HDR: d.profile.AllowHDR, DolbyVision: d.profile.AllowDolbyVision}
 

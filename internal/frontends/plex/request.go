@@ -66,6 +66,28 @@ type Request struct {
 	versionFlowKey frontend.RatingKey // selected pre-play/queue item only
 	versionErr     error
 	supportAttempt string // diagnostics-only request correlation; never sent to clients
+
+	// diag is the identity the client actually sent, captured at parse time and
+	// never rewritten by synthetic-device adoption. Support events attribute to
+	// this wire identity so a capture started for a real device still records a
+	// clientless native player's read as its viewer's (unattributed) traffic,
+	// rather than dropping it under a synthetic device the capture never saw.
+	diag *diagIdentity
+}
+
+type diagIdentity struct {
+	ClientID string
+	Product  string
+	Platform string
+}
+
+// wireIdentity returns the identity the client sent, falling back to the live
+// fields for a Request that was built outside ParseRequest (tests, zero value).
+func (pr *Request) wireIdentity() diagIdentity {
+	if pr.diag != nil {
+		return *pr.diag
+	}
+	return diagIdentity{ClientID: pr.ClientID, Product: pr.Product, Platform: pr.Platform}
 }
 
 type ctxKey struct{}
@@ -145,6 +167,7 @@ func ParseRequest(r *http.Request, trusted ...netip.Prefix) *Request {
 	if pr.ClientID == "" {
 		pr.ClientID = plexParam(r, "X-Plex-Client-Id")
 	}
+	pr.diag = &diagIdentity{ClientID: pr.ClientID, Product: pr.Product, Platform: pr.Platform}
 	if pr.SessionID == "" {
 		pr.SessionID = plexParam(r, "X-Plex-Session-Id")
 	}

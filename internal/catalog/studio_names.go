@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -65,4 +66,39 @@ func (c *Catalog) studioNamesLike(like, value string) (string, []any) {
 		return exact + ` AND n.rowid IN (SELECT rowid FROM catalog_studio_names_fts WHERE studio LIKE ?)`, []any{like, "%" + value + "%"}
 	}
 	return exact, []any{like}
+}
+
+// positiveStudioNames returns the studio-name vocabulary subquery and its
+// args for a filter whose studio predicate is exactly one positive clause
+// (the shape Plex's studio= sends), so the total can be summed from
+// catalog_facet_tally's studio rows instead of counting every matching
+// title. ok is false for a filter with no studio predicate, a negative one,
+// or more than one (which the tally cannot express). It mirrors browseWhere's
+// studio block so the tally membership equals the listing's predicate.
+func (c *Catalog) positiveStudioNames(f core.Filter) (string, []any, bool) {
+	if len(f.StudioFilters) == 0 {
+		if f.Studio == "" {
+			return "", nil, false
+		}
+		return `SELECT ?`, []any{f.Studio}, true
+	}
+	if len(f.StudioFilters) != 1 {
+		return "", nil, false
+	}
+	sf := f.StudioFilters[0]
+	val := strings.ToLower(sf.Value)
+	switch sf.Op {
+	case "==":
+		return `SELECT n.studio FROM catalog_studio_names n WHERE n.titles>0 AND LOWER(n.studio)=?`, []any{val}, true
+	case "<=":
+		names, args := c.studioNamesLike(escapeLike(val)+"%", val)
+		return names, args, true
+	case ">=":
+		names, args := c.studioNamesLike("%"+escapeLike(val), val)
+		return names, args, true
+	case "=":
+		names, args := c.studioNamesLike("%"+escapeLike(val)+"%", val)
+		return names, args, true
+	}
+	return "", nil, false
 }

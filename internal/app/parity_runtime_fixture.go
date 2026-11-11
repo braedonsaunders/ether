@@ -78,6 +78,12 @@ func parityWarmPersonalization(ctx context.Context, a *App) error {
 
 func parityPlexTVBaseURL() string { return os.Getenv("ETHER_PARITY_PLEXTV_URL") }
 
+// paritySubtitleBaseURL is wired in by cmd/plexparity's seam patcher, so
+// nothing in the tree calls it directly.
+//
+//nolint:unused // called only from the plexparity seam
+func paritySubtitleBaseURL() string { return os.Getenv("ETHER_PARITY_SUBTITLES_URL") }
+
 // Fixture catalogue is pre-seeded; asynchronous refresh would race requests.
 func parityRunCatalogueWorkers() bool { return false }
 

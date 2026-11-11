@@ -30,7 +30,7 @@ func TestActivePlaybackWatchEvidence(t *testing.T) {
 			case "estimated duration":
 				ps.Info.Estimated = true
 			case "encoder input only", "real converted completion":
-				f.srv.d.Transcoder = evidenceTranscoder{f.trans, scenario == "real converted completion"}
+				f.srv.setTranscoder(evidenceTranscoder{f.trans, scenario == "real converted completion"})
 				f.srv.transcodes.put(&transcodeEntry{id: "no-output", userID: ownerUser.ID, clientID: ps.ClientID, key: ps.Key, started: true})
 			case "real direct binding completion":
 				f.srv.transcodes.put(&transcodeEntry{id: "direct", userID: ownerUser.ID, clientID: ps.ClientID, key: ps.Key, decision: core.Decision{Kind: core.DecisionDirectPlay}})

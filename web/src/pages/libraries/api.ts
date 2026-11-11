@@ -61,6 +61,8 @@ export interface Library {
   rules?: VisibilityRule[];
   visibilityDefault?: string;
   present?: Presentations;
+  /** Quality profile titles in this library rank with; "" = Default. */
+  qualityProfile?: string;
   sort: number;
   hidden: boolean;
   createdAt: string;

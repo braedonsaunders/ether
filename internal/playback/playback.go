@@ -274,6 +274,7 @@ type Manager struct {
 	onDemandWarmAt      map[int64]time.Time
 	onDemandWarmByAddon map[string][]time.Time
 	stalePrefers        map[stalePreferKey]time.Time // picked releases that fell back (stalePreferTTL)
+	namesake            map[core.RatingKey]bool      // cached namesake lookups (namesake.go)
 
 	pinMu        sync.Mutex
 	livePins     map[string]int

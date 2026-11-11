@@ -150,6 +150,14 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			res, cached, fromResume = nil, nil, false
 			continue
 		}
+		if m.releaseNamesakeRejected(ctx, s, res.Release) {
+			// Reported identifiers name the namesake title, not this one.
+			m.markBad(res.Release.ID, "release names the other title")
+			tried = append(tried, res.Release.ID)
+			alternates = res.Alternates
+			res, cached, fromResume = nil, nil, false
+			continue
+		}
 		g, err := m.openGeneration(ctx, s, res, fallback, cached)
 		if err == nil && fromResume && !s.exact && !rememberedInfoCodecCurrent(g.infoSnapshot(), s.caps) {
 			m.dropGeneration(g)
@@ -258,7 +266,7 @@ func (m *Manager) nextResolution(ctx context.Context, s *session, tried []string
 		// release, and a fresh Resolve would reopen the same link.
 		var preparing error
 		for i, alt := range alternates {
-			if alt.ID == "" || m.titleReleaseRejected(ctx, s.ident.key, alt) || slices.Contains(tried, alt.ID) || !releaseMatchesTitle(alt, s.title) {
+			if alt.ID == "" || m.titleReleaseRejected(ctx, s.ident.key, alt) || m.releaseNamesakeRejected(ctx, s, alt) || slices.Contains(tried, alt.ID) || !releaseMatchesTitle(alt, s.title) {
 				continue
 			}
 			if preparing != nil && alt.OpensOnDemand() {
@@ -415,6 +423,18 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 		mi.Duration = 0
 	default:
 		mi = core.CloneMediaInfo(*info)
+	}
+	// A probed duration that contradicts the catalogue runtime of a namesake
+	// request means the indexer served the other film. Reject it and fail
+	// over like any other bad release. Only an exact (non-estimated) probe
+	// is evidence, and only ambiguous (namesake) titles are gated.
+	if !mi.Estimated && s.title != nil && mi.Duration > 0 && m.namesakeRequest(ctx, s.title) &&
+		namesakeDurationMismatch(s.title.Runtime, mi.Duration) {
+		m.dropGeneration(g)
+		m.markBad(res.Release.ID, "runtime doesn't match this title")
+		m.log.Info("trying next candidate", "release", res.Release.Name, "reason", "runtime doesn't match this title",
+			"probed", mi.Duration, "catalogue", s.title.Runtime)
+		return nil, fmt.Errorf("probe %s: %w: runtime doesn't match this title", res.Release.Name, core.ErrReleaseRejected)
 	}
 	if mi.Size <= 0 {
 		mi.Size = src.Size()

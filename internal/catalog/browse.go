@@ -174,6 +174,10 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		return core.Page{Items: items, Total: total}, nil
 	}
 	pageWhere, pageArgs := where, args
+	// A title-sorted page probes a positive studio filter per row instead of
+	// enumerating every matching title; the total (above) keeps the
+	// studio-index-driven IN-list form.
+	pageWhere = c.studioProbe(pageWhere, q.Filter)
 	keysetHint := ""
 	if q.Sort == core.SortKey && q.AfterKey > 0 {
 		pageWhere += " AND t.key>?"
@@ -553,6 +557,39 @@ func flagInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// TitleInFilter reports whether the title key is a member of the saved
+// filter f (a filter library's predicate), using the same indexed SQL the
+// library browse runs: one indexed read of catalog_titles by key, never a
+// walk. The saved filter is used verbatim (type, genres, keywords, year,
+// tags and any advanced group), with the runtime fields browse injects
+// (viewer, date windows, rule preview, availability keys) left zero so
+// membership is a property of the saved filter alone, not of who is asking.
+func (c *Catalog) TitleInFilter(ctx context.Context, f core.Filter, key core.RatingKey) (bool, error) {
+	f.LocalOnly = true
+	f.IncludeKeys = []core.RatingKey{key}
+	f.ExcludeKeys = nil
+	f.CatalogViewerID = 0
+	f.RuleVisibility = ""
+	f.PreviewRules = nil
+	f.PreviewFallback = ""
+	f.ApplyCanonicalInPreview = false
+	f.CatalogCandidates = false
+	f.HiddenMovieSeq, f.HiddenShowSeq, f.HiddenEpisodeSeq = 0, 0, 0
+	f.AvailabilityKeepKeys = nil
+	f.UpdatedAfter, f.UpdatedBefore, f.AddedAfter, f.AddedBefore = 0, 0, 0, 0
+	f.DigitalDiscovery = false
+	f.DigitalDateEvidence = false
+	where, args, err := c.browseWhere(f)
+	if err != nil {
+		return false, err
+	}
+	var n int
+	if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles AS t WHERE `+where, args...).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
@@ -997,14 +1034,16 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	}
 	// Positive studio filters name their studios from the vocabulary
 	// (studio_names.go) and find the titles from catalog_studios' (studio,
-	// key) index, never asking every title for its studios.
+	// key) index, never asking every title for its studios. The count and
+	// the seek drive from the studio index; a title-sorted page probes each
+	// title it walks instead (studioProbe), so a dense studio does not
+	// enumerate its whole matching set per request.
 	byStudio := func(names string, nameArgs []any) {
-		conds = append(conds, `t.key IN (SELECT s.key FROM catalog_studios s WHERE s.studio IN (`+names+`))`)
+		conds = append(conds, studioINListSQL(names))
 		args = append(args, nameArgs...)
 	}
 	if f.Studio != "" && len(f.StudioFilters) == 0 {
-		conds = append(conds, `t.key IN (SELECT bs.key FROM catalog_studios bs WHERE bs.studio=?)`)
-		args = append(args, f.Studio)
+		byStudio(`SELECT ?`, []any{f.Studio})
 	}
 	for _, sf := range f.StudioFilters {
 		val := strings.ToLower(sf.Value)

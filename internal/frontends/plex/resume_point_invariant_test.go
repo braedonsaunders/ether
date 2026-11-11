@@ -50,7 +50,7 @@ func TestDecisionSessionResumePointInvariant(t *testing.T) {
 			watch := state.New(store.OpenTest(t), state.Options{})
 			f.srv.setState(watch)
 			tr := &deliveryTranscoder{fakeTranscoder: f.trans, failed: tc.failed}
-			f.srv.d.Transcoder = tr
+			f.srv.setTranscoder(tr)
 			ctx := context.Background()
 			if err := watch.Progress(ctx, ownerUser.ID, fightClub.Key, previous, length, "playing"); err != nil {
 				t.Fatal(err)

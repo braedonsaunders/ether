@@ -255,8 +255,8 @@ func anyTitleFixture(t *testing.T, opts ...func(*testServerDeps)) (*fixture, *pl
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.srv.d.Playback = mgr
-	f.srv.d.Transcoder = tr
+	f.srv.setPlayback(mgr)
+	f.srv.setTranscoder(tr)
 	t.Cleanup(func() { f.srv.Close(); mgr.Close() })
 	return f, mgr
 }

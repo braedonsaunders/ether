@@ -55,7 +55,7 @@ func TestRestrictedAbsoluteArtworkRequiresVisibleTitle(t *testing.T) {
 	}
 	f := newFixture()
 	defer f.srv.Close()
-	f.srv.d.DB = db
+	f.setDB(db)
 	f.catalog.titles[core.MovieKey(999)] = core.Title{Key: core.MovieKey(999), Type: core.TypeMovie, ContentRating: "PG"}
 	r := httptest.NewRequest("GET", "/photo/:/transcode", nil)
 	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, &Request{User: &core.User{ID: 30, MaxContentRating: "PG"}}))
@@ -378,7 +378,7 @@ func TestCastPortraitTranscodeVisibility(t *testing.T) {
 	}
 	f := newFixture()
 	defer f.srv.Close()
-	f.srv.d.DB = db
+	f.setDB(db)
 	f.srv.testAuth().users["kid"] = core.User{ID: 30, MaxContentRating: "PG"}
 	cases := []struct {
 		name        string

@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"sync/atomic"
@@ -117,29 +118,91 @@ func testStores() *sessions.LocalRuntime {
 	return sessions.NewLocalRuntime(sessions.LocalRuntimeDeps{})
 }
 
+// testRuntime is the session runtime production hands to the Plex server: a
+// real sessions.LocalRuntime with replaceable playback, transcoder and DB.
+// Production wires NewServer(Deps{Host: host}) and reaches everything through
+// host.Sessions; the fixture does the same, so a handler that reads raw
+// s.d.Playback / s.d.Transcoder / s.d.DB fails here exactly as it would in
+// production.
+type testRuntime struct {
+	*sessions.LocalRuntime
+	playback   atomic.Value // core.Playback
+	transcoder atomic.Value // core.Transcoder
+	db         atomic.Value // *sql.DB
+}
+
+func newTestRuntime() *testRuntime {
+	return &testRuntime{LocalRuntime: sessions.NewLocalRuntime(sessions.LocalRuntimeDeps{})}
+}
+
+func (r *testRuntime) setPlayback(p core.Playback) {
+	if r == nil {
+		return
+	}
+	r.playback.Store(&p)
+}
+func (r *testRuntime) setTranscoder(t core.Transcoder) {
+	if r == nil {
+		return
+	}
+	r.transcoder.Store(&t)
+}
+func (r *testRuntime) setDB(db *sql.DB) {
+	if r == nil {
+		return
+	}
+	r.db.Store(&db)
+}
+
+func (r *testRuntime) Playback() frontend.Playback {
+	if p, ok := r.playback.Load().(*core.Playback); ok && p != nil && *p != nil {
+		return *p
+	}
+	return r.LocalRuntime.Playback()
+}
+func (r *testRuntime) Transcoder() frontend.Transcoder {
+	if t, ok := r.transcoder.Load().(*core.Transcoder); ok && t != nil && *t != nil {
+		return *t
+	}
+	return r.LocalRuntime.Transcoder()
+}
+func (r *testRuntime) DB() *sql.DB {
+	if db, ok := r.db.Load().(**sql.DB); ok && db != nil && *db != nil {
+		return *db
+	}
+	return r.LocalRuntime.DB()
+}
+
+// currentPlayback and currentTranscoder return what the runtime holds without
+// re-entering the broker, so fixture wrappers do not recurse through the
+// surface that wraps them.
+func (r *testRuntime) currentPlayback() core.Playback {
+	if p, ok := r.playback.Load().(*core.Playback); ok && p != nil {
+		return *p
+	}
+	return nil
+}
+func (r *testRuntime) currentTranscoder() core.Transcoder {
+	if t, ok := r.transcoder.Load().(*core.Transcoder); ok && t != nil {
+		return *t
+	}
+	return nil
+}
+
 func withTestEncoder(enc frontend.SegmentedEncoder) func(*testServerDeps) {
 	return func(d *testServerDeps) {
-		d.Host.Sessions = sessions.NewLocalRuntime(sessions.LocalRuntimeDeps{Encoder: enc})
+		rt := newTestRuntime()
+		rt.LocalRuntime = sessions.NewLocalRuntime(sessions.LocalRuntimeDeps{Encoder: enc})
+		d.Host.Sessions = rt
 	}
 }
 
-// testDeps fills the required host factories in d from the real
-// sessions implementations, leaving explicitly set fields alone.
+// testDeps fills the required host factories in d, leaving explicitly set
+// fields alone. Playback, transcoder and DB live only on the session runtime,
+// never on Deps, mirroring production wiring.
 func testDeps(d Deps) Deps {
 	if d.Host.Sessions == nil {
-		d.Host.Sessions = sessions.NewLocalRuntime(sessions.LocalRuntimeDeps{
-			Playback:   d.Playback,
-			Transcoder: d.Transcoder,
-			DB:         d.DB,
-			Logger:     d.Host.Log,
-		})
-	} else if lr, ok := d.Host.Sessions.(*sessions.LocalRuntime); ok {
-		lr.FillDefaults(sessions.LocalRuntimeDeps{
-			Playback:   d.Playback,
-			Transcoder: d.Transcoder,
-			DB:         d.DB,
-			Logger:     d.Host.Log,
-		})
+		d.Host.Sessions = newTestRuntime()
 	}
 	if d.Host.Experience == nil {
 		d.Host.Experience = experience.NewDirectService(experience.ServiceDeps{Now: d.Host.Now})
@@ -148,18 +211,28 @@ func testDeps(d Deps) Deps {
 }
 
 func newTestServer(d testServerDeps) *Server {
-	var srvPtr atomic.Pointer[Server]
-	playFn := func() core.Playback {
-		if srv := srvPtr.Load(); srv != nil && srv.d.Playback != nil {
-			return srv.d.Playback
+	if d.Deps.Host.Sessions == nil {
+		rt := newTestRuntime()
+		rt.setPlayback(d.Playback)
+		rt.setTranscoder(d.Transcoder)
+		rt.setDB(d.DB)
+		d.Deps.Host.Sessions = rt
+	} else if rt, ok := d.Host.Sessions.(*testRuntime); ok {
+		if d.Playback != nil {
+			rt.setPlayback(d.Playback)
 		}
-		return d.Playback
-	}
-	transFn := func() core.Transcoder {
-		if srv := srvPtr.Load(); srv != nil && srv.d.Transcoder != nil {
-			return srv.d.Transcoder
+		if d.Transcoder != nil {
+			rt.setTranscoder(d.Transcoder)
 		}
-		return d.Transcoder
+		if d.DB != nil {
+			rt.setDB(d.DB)
+		}
+	} else if lr, ok := d.Host.Sessions.(*sessions.LocalRuntime); ok {
+		lr.FillDefaults(sessions.LocalRuntimeDeps{
+			Playback:   d.Playback,
+			Transcoder: d.Transcoder,
+			DB:         d.DB,
+		})
 	}
 	if d.Deps.Host.Experience == nil {
 		d.Deps.Host.Experience = d.experienceService()
@@ -168,12 +241,49 @@ func newTestServer(d testServerDeps) *Server {
 		d.Deps.Host.PageFreshness = pf
 	}
 	d.Deps = testDeps(d.Deps)
-	if lr, ok := d.Host.Sessions.(*sessions.LocalRuntime); ok {
-		lr.FillDefaults(sessions.LocalRuntimeDeps{PlaybackFunc: playFn, TranscoderFunc: transFn})
+	return NewServer(d.Deps)
+}
+
+// setPlayback replaces the playback implementation the server sees through its
+// session runtime, so the change is visible exactly where production reads it.
+func (s *Server) setPlayback(p core.Playback) {
+	if s == nil {
+		return
 	}
-	srv := NewServer(d.Deps)
-	srvPtr.Store(srv)
-	return srv
+	if rt := s.testRuntime(); rt != nil {
+		rt.setPlayback(p)
+	}
+}
+
+// setTranscoder replaces the transcoder implementation through the runtime.
+func (s *Server) setTranscoder(t core.Transcoder) {
+	if s == nil {
+		return
+	}
+	if rt := s.testRuntime(); rt != nil {
+		rt.setTranscoder(t)
+	}
+}
+
+// setDB replaces the durable store the server sees through the runtime.
+func (s *Server) setDB(db *sql.DB) {
+	if s == nil {
+		return
+	}
+	if rt := s.testRuntime(); rt != nil {
+		rt.setDB(db)
+	}
+}
+
+// testRuntime returns the fixture session runtime from the bound host. It stays
+// reachable there even after a broker mount swaps the runtime the server
+// resolves its playback and transcoder through.
+func (s *Server) testRuntime() *testRuntime {
+	if s == nil {
+		return nil
+	}
+	rt, _ := s.getHost().Sessions.(*testRuntime)
+	return rt
 }
 
 func (s *Server) currentTestDeps() testServerDeps {
@@ -292,6 +402,8 @@ func testServer(d Deps) *Server {
 	}
 }
 
+// updateTestDeps mutates the bound host services on a running server, keeping
+// the session runtime that carries playback, transcoder and DB untouched.
 func setDepsConfig[T any](d *T, fn func() config.Config) {
 	h := hostOf(d)
 	if h == nil {

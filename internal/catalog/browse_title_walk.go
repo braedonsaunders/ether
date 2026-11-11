@@ -20,6 +20,32 @@ func init() {
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC, release_known, released_ts);`)
 }
 
+// studioNamesExpr builds a positive studio predicate's SQL: titles whose
+// studio is one of the vocabulary names the subquery names returns.
+func studioINListSQL(names string) string {
+	return `t.key IN (SELECT s.key FROM catalog_studios s WHERE s.studio IN (` + names + `))`
+}
+
+// studioExistsSQL is the same predicate as a correlated probe, so a walk in
+// title order checks each title's studio against the (studio, key) index and
+// stops at the page rather than enumerating the whole matching set.
+func studioExistsSQL(names string) string {
+	return `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND s.studio IN (` + names + `))`
+}
+
+// studioProbe rewrites f's positive studio predicate in where, if there is
+// exactly one, from the IN-list form to the correlated probe, for a page
+// query that reads only the page's rows. The count and seek keep the
+// IN-list form, which drives from the studio index. genres are handled the
+// same way (genreProbe).
+func (c *Catalog) studioProbe(where string, f core.Filter) string {
+	names, _, ok := c.positiveStudioNames(f)
+	if !ok {
+		return where
+	}
+	return strings.Replace(where, studioINListSQL(names), studioExistsSQL(names), 1)
+}
+
 // genreExistsSQL is browseWhere's genre predicate for n genres.
 func genreExistsSQL(n int) string {
 	return `EXISTS (SELECT 1 FROM catalog_genres g WHERE g.key=t.key AND g.genre IN (` + placeholders(n) + `))`

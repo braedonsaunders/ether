@@ -287,6 +287,7 @@ func (c *librariesConsole) handler() http.Handler {
 			Filter            *core.Filter             `json:"filter"`
 			Rules             *[]core.LibraryExclusion `json:"rules"`
 			VisibilityDefault *string                  `json:"visibilityDefault"`
+			QualityProfile    *string                  `json:"qualityProfile"`
 		}
 		if !decodeLibBody(w, r, &body) {
 			return
@@ -321,6 +322,12 @@ func (c *librariesConsole) handler() http.Handler {
 		if body.Present != nil {
 			if err := svc.SetPresent(ctx, lib.ID, *body.Present); err != nil {
 				libError(w, libErrStatus(err), "Could not update where the library appears")
+				return
+			}
+		}
+		if body.QualityProfile != nil {
+			if err := svc.SetQualityProfile(ctx, lib.ID, *body.QualityProfile); err != nil {
+				libError(w, libErrStatus(err), "Could not update the quality profile")
 				return
 			}
 		}

@@ -37,7 +37,7 @@ const sampleVTT = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello world\n"
 func TestEmbeddedSubtitleServedFromSession(t *testing.T) {
 	f, _ := newSubtitleFixture(t)
 	const vtt = sampleVTT
-	f.srv.d.Transcoder = &extractTranscoder{fakeTranscoder: f.trans, out: vtt}
+	f.srv.setTranscoder(&extractTranscoder{fakeTranscoder: f.trans, out: vtt})
 	f.playback.info = probedInfo
 
 	key := fightClub.Key.String()
@@ -90,7 +90,7 @@ func TestEmbeddedSubtitleServedFromSession(t *testing.T) {
 func TestDirectPlayEmbeddedTextFollowsPMS(t *testing.T) {
 	f, _ := newSubtitleFixture(t)
 	streamer := &assStreamer{fakeTranscoder: f.trans, release: closedChan()}
-	f.srv.d.Transcoder = streamer
+	f.srv.setTranscoder(streamer)
 	f.trans.decision = core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: "mkv"}
 	f.playback.info = core.MediaInfo{
 		Container: "mkv", Duration: 14 * time.Minute, BitrateKbps: 4000,
@@ -252,7 +252,7 @@ func TestSlowEmbeddedSubtitleAnswersImmediately(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			f, _ := newSubtitleFixture(t)
 			slow := &assStreamer{fakeTranscoder: f.trans, release: make(chan struct{})}
-			f.srv.d.Transcoder = slow
+			f.srv.setTranscoder(slow)
 			f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
 			f.playback.info = core.MediaInfo{
 				Container: "mkv", Duration: 14 * time.Minute, BitrateKbps: 4000,

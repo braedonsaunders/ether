@@ -91,8 +91,8 @@ func TestPartRangeOutageEndsInRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.srv.d.Playback = mgr
-	f.srv.d.Transcoder = tr
+	f.srv.setPlayback(mgr)
+	f.srv.setTranscoder(tr)
 	defer f.srv.Close()
 	defer mgr.Close()
 	path := "/library/parts/1000000000000550/1759276800/file.mkv"

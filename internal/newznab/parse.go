@@ -45,11 +45,14 @@ func parseDate(s string) time.Time {
 
 type rawItem struct {
 	title, guid, link, pubDate string
-	size                       int64
-	grabs                      int
-	password                   bool
-	category                   int
-	usenetDate                 string
+	// enclosure is the item's <enclosure url>. Newznab clients (Sonarr,
+	// Radarr) download from it; many indexers put a details page in <link>.
+	enclosure  string
+	size       int64
+	grabs      int
+	password   bool
+	category   int
+	usenetDate string
 	// Torznab
 	infoHash, magnet, encType string
 	seeders, peers            int
@@ -58,7 +61,13 @@ type rawItem struct {
 
 func (r rawItem) toRelease(indexer string) core.Release {
 	name := strings.TrimSpace(r.title)
+	// <link> is the NZB on most indexers, but some put the release's details
+	// page there and the NZB only in <enclosure url> (which is what Sonarr and
+	// Radarr download). Use <link> only when it is an NZB download.
 	nzbURL := r.link
+	if r.enclosure != "" && !strings.HasPrefix(strings.ToLower(r.enclosure), "magnet:") && (nzbURL == "" || !looksLikeNZBDownload(nzbURL)) {
+		nzbURL = r.enclosure
+	}
 	pub := parseDate(r.pubDate)
 	if pub.IsZero() {
 		pub = parseDate(r.usenetDate)
@@ -68,7 +77,13 @@ func (r rawItem) toRelease(indexer string) core.Release {
 		Size: r.size, PubDate: pub, Grabs: r.grabs, Password: r.password, Category: r.category,
 		TitleIDs: r.ids,
 	}
-	rel.ID = releaseID(indexer, r.guid, nzbURL+name)
+	// The id keeps its original link-first input so stored releases, pins and
+	// cached NZBs keep their ids.
+	idURL := r.link
+	if idURL == "" {
+		idURL = r.enclosure
+	}
+	rel.ID = releaseID(indexer, r.guid, idURL+name)
 	if name != "" {
 		rel.Info = releaseparse.Parse(name)
 	}
@@ -76,6 +91,9 @@ func (r rawItem) toRelease(indexer string) core.Release {
 	magnet := r.magnet
 	if magnet == "" && strings.HasPrefix(strings.ToLower(r.link), "magnet:") {
 		magnet = r.link
+	}
+	if magnet == "" && strings.HasPrefix(strings.ToLower(r.enclosure), "magnet:") {
+		magnet = r.enclosure
 	}
 	if strings.HasPrefix(strings.ToLower(rel.NZBURL), "magnet:") {
 		rel.NZBURL = "" // a magnet is not a downloadable document
@@ -145,8 +163,8 @@ func parseXMLStream(reader io.Reader, indexer string, arrived func([]core.Releas
 			case "enclosure":
 				if cur != nil {
 					for _, a := range t.Attr {
-						if a.Name.Local == "url" && cur.link == "" {
-							cur.link = a.Value
+						if a.Name.Local == "url" && cur.enclosure == "" {
+							cur.enclosure = a.Value
 						}
 						if a.Name.Local == "length" {
 							if n, err := strconv.ParseInt(a.Value, 10, 64); err == nil && cur.size == 0 {
@@ -319,8 +337,8 @@ func parseJSONFeed(body []byte, indexer string) ([]core.Release, error) {
 			attrs, _ := enc["@attributes"].(map[string]any)
 			if attrs != nil {
 				r.encType = asString(attrs["type"])
-				if u := asString(attrs["url"]); u != "" && r.link == "" {
-					r.link = u
+				if u := asString(attrs["url"]); u != "" && r.enclosure == "" {
+					r.enclosure = u
 				}
 				if n, err := strconv.ParseInt(asString(attrs["length"]), 10, 64); err == nil && r.size == 0 {
 					r.size = n
@@ -423,3 +441,16 @@ func asString(v any) string {
 // standardCategory reports a Newznab standard category (1000–8999);
 // site-specific categories are numbered from 10000.
 func standardCategory(n int) bool { return n >= 1000 && n < 10000 }
+
+// looksLikeNZBDownload reports whether a feed link is an NZB download rather
+// than a details page: the Newznab get call, a getnzb path or an .nzb file.
+func looksLikeNZBDownload(raw string) bool {
+	l := strings.ToLower(raw)
+	if strings.HasPrefix(l, "magnet:") {
+		return true
+	}
+	if strings.Contains(l, "t=get") || strings.Contains(l, "/getnzb") || strings.Contains(l, "/download") || strings.Contains(l, ".nzb") {
+		return true
+	}
+	return false
+}

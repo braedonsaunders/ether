@@ -48,6 +48,13 @@ func (s *Service) ExactKey(ctx context.Context, guid string) (core.RatingKey, er
 	if n != 1 || !found.Valid() || found.Kind() != kind {
 		return 0, ErrAmbiguous
 	}
+	// A legacy row on a namesake title is not a usable identity: withhold it
+	// and let the priority repair prove or drop it.
+	if s.withheldLegacy(ctx, found) {
+		return 0, core.ErrNotFound
+	}
+	// A served identity predating the credit check is re-verified soon.
+	s.recheckStaleCredits(ctx, found)
 	return found, nil
 }
 
@@ -101,6 +108,9 @@ func (s *Service) Lookup(ctx context.Context, guid string) (core.RatingKey, erro
 		return 0, err
 	}
 	if cached != 0 {
+		if s.withheldLegacy(ctx, cached) {
+			return 0, core.ErrNotFound
+		}
 		return cached, nil
 	}
 	if s.o.Token == nil || s.o.Token() == "" {
@@ -163,7 +173,7 @@ func (s *Service) VerifiedRange(ctx context.Context, after, below core.RatingKey
 	if limit <= 0 || limit > 500 {
 		limit = 500
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.rating_key, m.guid FROM plexguid_mappings m
+	rows, err := s.db.QueryContext(ctx, `SELECT m.rating_key, m.guid, `+identityExists+`, `+staleCreditsRule+` FROM plexguid_mappings m
 		WHERE m.rating_key>? AND m.rating_key<? AND m.guid<>'' AND `+identityVerified+`
 		  AND (m.rating_key<3000000000000000 OR m.rating_key>=5000000000000000
 		       OR EXISTS (SELECT 1 FROM plexguid_parentage p WHERE p.rating_key=m.rating_key))
@@ -171,19 +181,48 @@ func (s *Service) VerifiedRange(ctx context.Context, after, below core.RatingKey
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := make([]Verified, 0, limit)
+	// Read every row before consulting the namesake lookup: the latter issues
+	// its own queries, and a cursor must not be open across them.
+	type candidate struct {
+		key          core.RatingKey
+		guid         string
+		hasIdentity  bool
+		staleCredits bool
+	}
+	var cands []candidate
 	for rows.Next() {
-		var v Verified
-		if err := rows.Scan(&v.Key, &v.GUID); err != nil {
+		var c candidate
+		if err := rows.Scan(&c.key, &c.guid, &c.hasIdentity, &c.staleCredits); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		if kind, ok := guidKind(v.GUID); ok && kind == v.Key.Kind() {
-			out = append(out, v)
+		cands = append(cands, c)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Verified, 0, len(cands))
+	for _, c := range cands {
+		// A legacy row on a namesake title must not be imported as this
+		// title's identity: the guid may name the other work. Withhold it and
+		// enqueue it for priority repair like the other read paths.
+		if !c.hasIdentity && s.hasNamesake(ctx, c.key) {
+			s.enqueuePriority(c.key)
+			continue
+		}
+		// A served row whose identity predates the credit check is re-verified
+		// soon but still imported.
+		if c.staleCredits {
+			s.enqueuePriority(c.key)
+		}
+		if kind, ok := guidKind(c.guid); ok && kind == c.key.Kind() {
+			out = append(out, Verified{Key: c.key, GUID: c.guid})
 		} else {
 			// Keep the page boundary moving past a malformed row.
-			out = append(out, Verified{Key: v.Key})
+			out = append(out, Verified{Key: c.key})
 		}
 	}
-	return out, rows.Err()
+	return out, nil
 }

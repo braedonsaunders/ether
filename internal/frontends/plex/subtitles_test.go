@@ -776,7 +776,7 @@ func TestExplicitSubtitleWinsOverOffMode(t *testing.T) {
 
 func TestEmbeddedToExternalSubtitleSwitch(t *testing.T) {
 	f, subs := newSubtitleFixture(t)
-	f.srv.d.Transcoder = &extractTranscoder{fakeTranscoder: f.trans, out: "WEBVTT\n\n00:02:16.000 --> 00:02:20.000\nEmbedded english\n"}
+	f.srv.setTranscoder(&extractTranscoder{fakeTranscoder: f.trans, out: "WEBVTT\n\n00:02:16.000 --> 00:02:20.000\nEmbedded english\n"})
 	key := fightClub.Key
 	keyS := key.String()
 	subs.cache(key, sidecar("es", "ether-subtitle:cached-es"))

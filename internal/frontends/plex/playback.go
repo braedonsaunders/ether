@@ -1254,7 +1254,15 @@ func applyStreamDecision(st model.Stream, src frontend.StreamInfo, dec frontend.
 		// Android's Matroska segments.
 		inSegments := text && dec.Container == frontend.ContainerMatroska && !dec.BurnSubtitles && dec.SubtitleStream >= 0 && dec.SubtitleStream == src.Index
 		switch {
-		case subtitles == "none" && !inSegments:
+		case subtitles == "none" && !inSegments && !dec.BurnSubtitles:
+			// subtitles=none means "the player draws the track itself"
+			// and nothing delivers it. A track the encoder is burning
+			// into the picture is the exception: Plex for Android and
+			// Android TV send subtitles=none with the same request that
+			// converts an image subtitle (PGS), and PMS still reports
+			// that track decision="burn" so the player knows the cues
+			// are in the video (#191). Swallowing it here left the
+			// player showing no subtitle at all.
 			st.Decision, st.Location = "ignore", ""
 			return st, true
 		case dec.BurnSubtitles && text:

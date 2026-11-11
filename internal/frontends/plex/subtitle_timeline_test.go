@@ -26,7 +26,7 @@ func TestSubtitleTimelineAcrossResume(t *testing.T) {
 			f.get(t, "/library/metadata/"+key)
 			embedded := core.StreamInfo{Index: 3, Type: "subtitle", Codec: "subrip", Language: "fr"}
 			embeddedID := slotHash(fightClub.Key, streamSlot(3, embedded))
-			f.srv.d.Transcoder = &extractTranscoder{fakeTranscoder: f.trans, out: srtToVTT(srt)}
+			f.srv.setTranscoder(&extractTranscoder{fakeTranscoder: f.trans, out: srtToVTT(srt)})
 			f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: container}
 			session := "timeline-" + container
 			f.get(t, decisionPath(fmt.Sprintf("/video/:/transcode/universal/start.m3u8?path=/library/metadata/%s&session=%s&protocol=hls&offset=12&directPlay=0&directStream=1&subtitleStreamID=%d", key, session, id)))

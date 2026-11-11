@@ -71,8 +71,8 @@ func TestTranscodeChaosHTTPHardware(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.playback.info = *info
-	f.srv.d.Playback = &chaosPlayback{f.playback, source.URL + "/input.mp4"}
-	f.srv.d.Transcoder = m
+	f.srv.setPlayback(&chaosPlayback{f.playback, source.URL + "/input.mp4"})
+	f.srv.setTranscoder(m)
 	watch := state.New(store.OpenTest(t), state.Options{})
 	f.srv.setState(watch)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

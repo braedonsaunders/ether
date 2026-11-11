@@ -514,27 +514,78 @@ func emptyCluster(at time.Duration) []byte {
 	return b
 }
 
-// emptyFMP4Size is the size of emptyFMP4's output.
-const emptyFMP4Size = 56
+// emptyFMP4Tracks is the video track an empty fragment is written for: the
+// track id and media timescale from the session's init segment, needed so
+// the fragment carries a well-formed track fragment.
+type emptyFMP4Tracks struct {
+	TrackID   uint32
+	Timescale uint32
+}
 
-// emptyFMP4 is a fragmented MP4 segment holding no samples (styp + moof/mfhd
-// + empty mdat). Sequential HLS fMP4 players that feed fragments into one
-// continuous ISO BMFF stream (e.g. LG webOS GStreamer qtdemux) advance past
-// it without seeing a backward tfdt jump inside a multi-segment GOP.
-func emptyFMP4(seq uint32) []byte {
-	b := make([]byte, 0, emptyFMP4Size)
+// emptyFMP4 is a fragmented MP4 segment holding no samples for one track.
+// Sequential HLS fMP4 players that feed fragments into one continuous ISO
+// BMFF stream (e.g. LG webOS GStreamer qtdemux) advance past it without
+// seeing a backward tfdt jump inside a multi-segment GOP.
+//
+// ISO/IEC 14496-12 requires a moof to contain exactly one mfhd and one or
+// more traf boxes; a moof with only mfhd is malformed and qtdemux (and
+// other strict demuxers) reject it, looping to resync. This fragment is
+// therefore styp + moof(mfhd + traf(tfhd + tfdt + empty trun)) + mdat, with
+// the track's own id and a base media decode time placing it at segment n's
+// start, so the timeline only ever moves forward.
+func emptyFMP4(seq uint32, track emptyFMP4Tracks, baseDecodeTime uint64) []byte {
+	trackID := track.TrackID
+	if trackID == 0 {
+		trackID = 1
+	}
+	var b []byte
+	// styp: segment type, msdh/msix (a media segment).
 	b = append(b,
 		0, 0, 0, 24, 's', 't', 'y', 'p',
 		'm', 's', 'd', 'h',
 		0, 0, 0, 0,
 		'm', 's', 'd', 'h', 'm', 's', 'i', 'x',
-		0, 0, 0, 24, 'm', 'o', 'o', 'f',
+	)
+	// traf: tfhd (16) + tfdt v1 (20) + trun v0 with 0 samples (16) = 52 + 8.
+	trafSize := 8 + 16 + 20 + 16
+	moofSize := 8 + 16 + trafSize // moof hdr + mfhd + traf
+	b = append(b,
+		byte(moofSize>>24), byte(moofSize>>16), byte(moofSize>>8), byte(moofSize),
+		'm', 'o', 'o', 'f',
+		// mfhd: version 0, flags 0, sequence number.
 		0, 0, 0, 16, 'm', 'f', 'h', 'd',
 		0, 0, 0, 0,
 		byte(seq>>24), byte(seq>>16), byte(seq>>8), byte(seq),
+		// traf.
+		byte(trafSize>>24), byte(trafSize>>16), byte(trafSize>>8), byte(trafSize),
+		't', 'r', 'a', 'f',
+		// tfhd: version 0, flags default-base-is-moof (0x020000), track id.
+		0, 0, 0, 16, 't', 'f', 'h', 'd',
+		0x02, 0x00, 0x00, 0x00,
+		byte(trackID>>24), byte(trackID>>16), byte(trackID>>8), byte(trackID),
+		// tfdt: version 1, 64-bit base media decode time.
+		0, 0, 0, 20, 't', 'f', 'd', 't',
+		0x01, 0x00, 0x00, 0x00,
+		byte(baseDecodeTime>>56), byte(baseDecodeTime>>48), byte(baseDecodeTime>>40), byte(baseDecodeTime>>32),
+		byte(baseDecodeTime>>24), byte(baseDecodeTime>>16), byte(baseDecodeTime>>8), byte(baseDecodeTime),
+		// trun: version 0, flags 0, sample count 0.
+		0, 0, 0, 16, 't', 'r', 'u', 'n',
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		// mdat: empty.
 		0, 0, 0, 8, 'm', 'd', 'a', 't',
 	)
 	return b
+}
+
+// emptyFMP4DecodeTime converts a segment start to the video track's base
+// media decode time in its media timescale, in integer math so the tick
+// count is exact.
+func emptyFMP4DecodeTime(start time.Duration, timescale uint32) uint64 {
+	if timescale == 0 || start <= 0 {
+		return 0
+	}
+	return uint64(int64(start) * int64(timescale) / int64(time.Second))
 }
 
 // chunkVint reads an EBML variable-length integer: an element ID (marker
@@ -958,7 +1009,7 @@ func (s *Session) collectChunks(r *run, exited bool) {
 			// keeps the segment and the stream valid; a request that does
 			// not continue the stream (a seek) is served the GOP instead
 			// (Session.decodableMKVLocked).
-			if os.WriteFile(dst, emptyCluster(s.segStart(n)+matroskaOrigin), 0o644) != nil {
+			if os.WriteFile(dst, s.emptyFragmentLocked(n), 0o644) != nil {
 				continue
 			}
 		case sg.alias >= 0 && s.container == ContainerFMP4 && !s.isDASH():
@@ -967,7 +1018,7 @@ func (s *Session) collectChunks(r *run, exited bool) {
 			// the covering GOP's backward tfdt stalls playback in a resync
 			// loop. Serve an empty fragment in order and the covering GOP
 			// on a seek (Session.decodableMKVLocked).
-			if os.WriteFile(dst, emptyFMP4(uint32(n+1)), 0o644) != nil {
+			if os.WriteFile(dst, s.emptyFragmentLocked(n), 0o644) != nil {
 				continue
 			}
 		case sg.alias >= 0:

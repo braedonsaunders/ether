@@ -284,6 +284,11 @@ type tallyShape struct {
 	types   []string
 	genre   string
 	country string // a single country filter, answered by catalog_facet_tally
+	// studioNames is one positive studio filter's name vocabulary subquery,
+	// answered by catalog_facet_tally's studio rows (summed over the names
+	// it returns) rather than counting every matching title.
+	studioNames     string
+	studioNamesArgs []any
 	// years is a year range (yearLo..yearHi, 0 for open), answered by
 	// catalog_facet_tally's year rows.
 	years          bool
@@ -349,21 +354,34 @@ func (c *Catalog) tallyShape(f core.Filter) (tallyShape, bool) {
 	case len(f.Countries) == 1:
 		s.country = f.Countries[0]
 	}
-	if f.YearFrom > 0 || f.YearTo > 0 {
+	if f.Studio != "" || len(f.StudioFilters) > 0 {
+		// A dense studio filter is the one filter whose direct count walks
+		// the whole matching set; its total comes from the studio tally rows
+		// instead. Only as the filter's sole dimension, mirroring country.
 		if s.genre != "" || s.country != "" {
+			return s, false
+		}
+		names, namesArgs, ok := c.positiveStudioNames(f)
+		if !ok {
+			return s, false
+		}
+		s.studioNames, s.studioNamesArgs = names, namesArgs
+	}
+	if f.YearFrom > 0 || f.YearTo > 0 {
+		if s.genre != "" || s.country != "" || s.studioNames != "" {
 			return s, false
 		}
 		s.years, s.yearLo, s.yearHi = true, f.YearFrom, f.YearTo
 	}
 	if len(f.Years) > 0 {
-		if s.genre != "" || s.country != "" || s.years {
+		if s.genre != "" || s.country != "" || s.studioNames != "" || s.years {
 			return s, false
 		}
 		s.yearSet = slices.Compact(slices.Sorted(slices.Values(f.Years)))
 	}
 	if names := sortNameRangeOf(f); names.bounded {
 		buckets, ok := jumpBuckets(names)
-		if !ok || s.genre != "" || s.country != "" || s.years || s.yearSet != nil {
+		if !ok || s.genre != "" || s.country != "" || s.studioNames != "" || s.years || s.yearSet != nil {
 			return s, false
 		}
 		s.first, s.names = buckets, names
@@ -396,6 +414,7 @@ func (c *Catalog) tallyShape(f core.Filter) (tallyShape, bool) {
 	}
 	rest := f
 	rest.Type, rest.Genres, rest.Kids, rest.Countries = "", nil, false, nil
+	rest.Studio, rest.StudioFilters = "", nil
 	rest.YearFrom, rest.YearTo, rest.Years = 0, 0, nil
 	rest.FirstCharacter, rest.NameStartsWith, rest.NameStartsWithOrGreater, rest.NameLessThan = "", "", "", ""
 	rest.MaxContentRating, rest.MinContentRating, rest.SaferPlexRating = "", "", false
@@ -469,6 +488,26 @@ func (c *Catalog) tallyTotal(ctx context.Context, f core.Filter, where string, a
 	case s.country != "":
 		table = "catalog_facet_tally"
 		dims, dimArgs, member, memberArgs = s.facetDims("country", s.country)
+	case s.studioNames != "":
+		// A positive studio filter: sum the studio tally rows of the name
+		// the vocabulary subquery returns, never counting each title. Only
+		// when it matches a single name: a title carrying two matching
+		// studios would be counted twice across their rows, where the
+		// listing counts it once. A substring matching several names is
+		// counted directly (rare next to an exact studio name).
+		var names int
+		if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (`+s.studioNames+`)`, s.studioNamesArgs...).Scan(&names); err != nil {
+			return 0, false, err
+		}
+		if names > 1 {
+			return 0, false, nil
+		}
+		table = "catalog_facet_tally"
+		dims, dimArgs, member, memberArgs = s.facetDims("studio", "")
+		dims += ` AND value IN (` + s.studioNames + `)`
+		dimArgs = append(dimArgs, s.studioNamesArgs...)
+		member += ` AND EXISTS (SELECT 1 FROM catalog_studios st WHERE st.key=t.key AND st.studio IN (` + s.studioNames + `))`
+		memberArgs = append(memberArgs, s.studioNamesArgs...)
 	case s.first != nil:
 		// An alphabet jump: the jump-bar rows of the buckets it spans.
 		table = "catalog_facet_tally"

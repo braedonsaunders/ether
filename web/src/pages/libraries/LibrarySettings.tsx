@@ -1,4 +1,11 @@
-import { Button, SettingsSection, Spinner, Switch, toast } from "@braedonsaunders/appkit-ui";
+import {
+  Button,
+  SearchSelect,
+  SettingsSection,
+  Spinner,
+  Switch,
+  toast,
+} from "@braedonsaunders/appkit-ui";
 import { AlertTriangle, CheckCircle2, RefreshCw, Wand2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -18,6 +25,7 @@ import type { ReleaseMediaType } from "../../lib/release-mode";
 import { isRuleComplete } from "../../lib/rules";
 import { CATALOG } from "../settings/schema";
 import { asObj, SchemaField, type FieldGroup } from "../settings/SchemaForm";
+import { useQuality } from "../releases/useQuality";
 import { librariesApi, type Library, type Presentations } from "./api";
 import { CatalogPickers, isCatalogPicker } from "./browser/CatalogPickers";
 import { CatalogActivity, UpcomingEpisodeSettings } from "./browser/HomeReleaseSettings";
@@ -230,6 +238,57 @@ function PresentationsEditor({ library, onSaved }: { library: Library; onSaved: 
         </Button>
       </div>
     </SettingsSection>
+  );
+}
+
+/**
+ * "Quality profile" (spec #419): Default, or a profile from Releases ›
+ * Profiles filtered to this library's media type. Titles in this library
+ * rank with it wherever they appear.
+ */
+function QualityProfileRow({ library, onSaved }: { library: Library; onSaved: () => void }) {
+  const { quality } = useQuality();
+  const [busy, setBusy] = useState(false);
+  const media = library.filter?.type ?? (library.mediaType === "show" ? "show" : "movie");
+  const profileMedia = media === "show" ? "tv" : "movie";
+  const names = (quality?.profiles ?? [])
+    .filter((p) => !p.mediaType || p.mediaType === profileMedia)
+    .map((p) => p.name);
+  const value = library.qualityProfile ?? "";
+  const current = value && names.includes(value) ? value : "";
+
+  return (
+    <SettingsRow
+      title={t("Quality profile")}
+      description={t(
+        "Titles in this library rank with this profile. Rules and the Away profile still take precedence.",
+      )}
+      control={
+        <div className="w-56">
+          <SearchSelect
+            value={current}
+            onChange={(v) => {
+              if (busy || v === current) return;
+              setBusy(true);
+              librariesApi
+                .patch(library.id, { qualityProfile: v })
+                .then(() => {
+                  toast.success(t("Saved"));
+                  onSaved();
+                })
+                .catch((e) => toast.error(errorMessage(e)))
+                .finally(() => setBusy(false));
+            }}
+            options={[
+              { value: "", label: t("Default") },
+              ...names.map((name) => ({ value: name, label: name })),
+            ]}
+            ariaLabel={t("Quality profile")}
+            searchable={false}
+          />
+        </div>
+      }
+    />
   );
 }
 
@@ -543,6 +602,7 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
             </Link>
           }
         />
+        <QualityProfileRow library={library} onSaved={onSaved} />
       </SettingsSection>
 
       {library.source === "builtin" ? (

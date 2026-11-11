@@ -46,6 +46,12 @@ func (a *App) ensurePlexAccountServices() error {
 		Token:            plexToken,
 		ClientIdentifier: clientID,
 		Background:       true,
+		Namesakes: func(ctx context.Context, k core.RatingKey) (bool, error) {
+			if a.catalog == nil {
+				return false, nil
+			}
+			return a.catalog.Namesakes(ctx, k)
+		},
 	})
 	metadataService := plexmeta.New(a.db, plexmeta.Options{
 		HTTP:             a.opts.plextvHTTP,

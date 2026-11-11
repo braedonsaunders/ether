@@ -141,7 +141,8 @@ func (s *Server) supportEvent(pr *Request, kind frontend.DiagnosticKind) fronten
 	if pr == nil {
 		return ev
 	}
-	ev.DeviceKey = pr.ClientID
+	wire := pr.wireIdentity()
+	ev.DeviceKey = wire.ClientID
 	ev.SessionKey = pr.SessionID
 	ev.AttemptKey = pr.supportAttempt
 	ev.DeviceName = pr.DeviceName
@@ -149,9 +150,9 @@ func (s *Server) supportEvent(pr *Request, kind frontend.DiagnosticKind) fronten
 	if ev.DeviceName == "" {
 		ev.DeviceName = pr.Device
 	}
-	ev.Product = pr.Product
+	ev.Product = wire.Product
 	ev.Model = pr.Model
-	ev.Platform = pr.Platform
+	ev.Platform = wire.Platform
 	ev.AppVersion = pr.Version
 	if pr.RemoteIP.IsValid() {
 		ev.Peer = pr.RemoteIP.String()
@@ -192,8 +193,9 @@ func (s *Server) supportClientFacts(pr *Request, effective frontend.ClientCaps, 
 	if pr == nil {
 		return nil
 	}
-	base := frontend.PlaybackDefaultsFor(pr.Product, pr.Platform, pr.Device, pr.Model, pr.Version, nil)
-	owner := frontend.PlaybackDefaultsFor(pr.Product, pr.Platform, pr.Device, pr.Model, pr.Version, s.cfg().Clients.Overrides)
+	wire := pr.wireIdentity()
+	base := frontend.PlaybackDefaultsFor(wire.Product, wire.Platform, pr.Device, pr.Model, pr.Version, nil)
+	owner := frontend.PlaybackDefaultsFor(wire.Product, wire.Platform, pr.Device, pr.Model, pr.Version, s.cfg().Clients.Overrides)
 	declared := s.declaredCaps(pr)
 	return &frontend.DiagnosticClientFacts{
 		Stage: stage, Registry: base.ID, RegistryMaxHeight: base.MaxHeight, OwnerMaxHeight: owner.MaxHeight,

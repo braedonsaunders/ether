@@ -42,11 +42,16 @@ type Library struct {
 	VisibilityDefault string             `json:"visibilityDefault,omitempty"`
 	// Presentation: how protocols expose this library (§6.2). For builtins
 	// this is synthesised, not stored.
-	Present   Presentations `json:"present,omitempty"`
-	Sort      int           `json:"sort"`   // owner order in every client
-	Hidden    bool          `json:"hidden"` // owner hid it from all clients (still in console)
-	CreatedAt time.Time     `json:"createdAt"`
-	UpdatedAt time.Time     `json:"updatedAt"`
+	Present Presentations `json:"present,omitempty"`
+	// QualityProfile is the owner-set quality profile name titles in this
+	// library rank with. Empty means "Default": today's Movies/Shows
+	// home/away defaults apply. Set on any library, including filter
+	// libraries (an "Anime" library can rank with an anime profile).
+	QualityProfile string    `json:"qualityProfile,omitempty"`
+	Sort           int       `json:"sort"`   // owner order in every client
+	Hidden         bool      `json:"hidden"` // owner hid it from all clients (still in console)
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 // Presentations declares how a library is published per protocol (§6.2).

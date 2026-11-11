@@ -10,7 +10,7 @@ func TestExpiredPlayingEntryEndsPlayback(t *testing.T) {
 	for _, state := range []string{"playing", "paused"} {
 		t.Run(state, func(t *testing.T) {
 			f, m := issue94Fixture(t, true, "open")
-			tr := f.srv.d.Transcoder.(*issue94Transcoder)
+			tr := f.srv.transcoder().(*issue94Transcoder)
 			h := []string{"X-Plex-Client-Identifier", "phone", "X-Plex-Session-Identifier", "play-410", "Accept", "application/json"}
 			for _, path := range []string{"decision?", "start.m3u8?"} {
 				if r := f.get(t, "/video/:/transcode/universal/"+path+issue94Query("trans-410", 3000), h...); r.Code != 200 {

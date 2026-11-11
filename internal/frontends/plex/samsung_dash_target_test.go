@@ -36,7 +36,7 @@ func TestSamsungReportedDASHAudioTarget(t *testing.T) {
 		{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080, BitDepth: 8, Profile: "High", Level: 40},
 		{Index: 1, Type: "audio", Codec: "eac3", Channels: 6, SampleRate: 48000, BitrateKbps: 640},
 	}}
-	f.srv.d.Transcoder = &samsungRealDecider{f.trans}
+	f.srv.setTranscoder(&samsungRealDecider{f.trans})
 	pr := &Request{User: &ownerUser, ClientID: "samsung-fixture", Product: "Plex for Samsung", Platform: "Tizen", PlatformVersion: "9", Version: "5.94.1", Device: "24_KSUE_UB_T09", Model: "UE50DU7100KXXU", ProfileExtra: samsungReportedProfile}
 	p := playRequest{key: fightClub.Key, caps: pr.ClientCaps(0), sessionID: "samsung-fixture", protocol: core.ProtocolDASH, audioSel: -1, subSel: -1, opts: core.DecideOptions{DirectPlay: false, DirectStream: true, AudioStream: -1, SubtitleStream: -1}}
 	_, _, d, err := f.srv.prepare(context.Background(), pr, &p)
@@ -131,8 +131,8 @@ func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.playback.info = *info
-	f.srv.d.Playback = &samsungSourcePlayback{fakePlayback: f.playback, url: source.URL + "/source.mkv"}
-	f.srv.d.Transcoder = mgr
+	f.srv.setPlayback(&samsungSourcePlayback{fakePlayback: f.playback, url: source.URL + "/source.mkv"})
+	f.srv.setTranscoder(mgr)
 	hdr := []string{"X-Plex-Product", "Plex for Samsung", "X-Plex-Platform", "Tizen", "X-Plex-Client-Identifier", "samsung-fixture", "X-Plex-Client-Profile-Extra", samsungReportedProfile}
 	q := "path=%2Flibrary%2Fmetadata%2F1000000000000550&protocol=dash&directPlay=" + directPlay + "&directStream=1&session=samsung-real"
 	decision := f.get(t, "/video/:/transcode/universal/decision?"+q, hdr...)

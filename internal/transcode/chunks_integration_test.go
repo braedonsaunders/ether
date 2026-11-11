@@ -538,7 +538,10 @@ func TestIntegrationCopyWithoutKeyframeIndex(t *testing.T) {
 				for n := from; n < to; n++ {
 					seg := fetch(t, hs, n)
 					name := fmt.Sprintf("%s-%s-%d", label, container, n)
-					if (container == ContainerMatroska || container == ContainerFMP4) && len(seg) < 64 {
+					if container == ContainerMatroska && len(seg) <= emptyClusterSize {
+						continue // an empty placeholder inside a long GOP
+					}
+					if container == ContainerFMP4 && isEmptyFMP4(seg) {
 						continue // an empty placeholder inside a long GOP
 					}
 					first, end := e.videoSpan(t, container, init0, seg, name)

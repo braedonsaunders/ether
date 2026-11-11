@@ -263,7 +263,7 @@ func TestPlaybackFailureClientContract(t *testing.T) {
 					f := newFixture()
 					defer f.srv.Close()
 					p := &failureBudgetPlayback{fakePlayback: f.playback, err: failure}
-					f.srv.d.Playback = p
+					f.srv.setPlayback(p)
 					h := map[string]string{"X-Plex-Product": client.product, "X-Plex-Platform": client.platform,
 						"X-Plex-Client-Identifier": client.name, "X-Plex-Session-Identifier": "attempt",
 						"Accept": "application/" + client.format}

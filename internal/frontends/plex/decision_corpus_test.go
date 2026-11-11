@@ -30,7 +30,7 @@ func TestDecisionCorpusConformsToPMS(t *testing.T) {
 			defer f.srv.Close()
 			f.catalog.titles[burbs.Key] = burbs
 			f.playback.info = burbsInfo
-			f.srv.d.Transcoder = &realDecider{f.trans}
+			f.srv.setTranscoder(&realDecider{f.trans})
 			target := strings.ReplaceAll(rec.Request.Target(), "{{movieKey}}", burbs.Key.String())
 			target = strings.ReplaceAll(target, "{{ratingKey}}", burbs.Key.String())
 			hdr := rec.Request.HeaderMap()

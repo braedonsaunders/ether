@@ -2967,8 +2967,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       if (seg[1] && seg[2] === "step-aside" && method === "PUT") {
         const next = Boolean((body as { stepAside?: boolean }).stepAside);
         const srv = servers.find((x) => (x as { id?: number }).id === Number(seg[1])) as
-          | { stepAside?: boolean }
-          | undefined;
+          { stepAside?: boolean } | undefined;
         if (srv) srv.stepAside = next;
         return json(srv ?? servers[0]);
       }

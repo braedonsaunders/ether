@@ -228,9 +228,9 @@ func TestVersionFlowSharedAcrossNodes(t *testing.T) {
 			// Both frontends route the fake source through one broker owner;
 			// this test isolates version publication from encoder transport.
 			a.srv.usePlaybackBroker(b.srv.broker())
-			a.srv.d.Playback = pb
+			a.srv.setPlayback(pb)
 			a.srv.setVariants(ra)
-			b.srv.d.Playback = pb
+			b.srv.setPlayback(pb)
 			b.srv.setVariants(rb)
 			path := "/library/metadata/" + fightClub.Key.String()
 			headers := []string{"Accept", "application/json", "X-Plex-Product", "Plex for Samsung"}
@@ -252,7 +252,7 @@ func TestVersionFlowSharedAcrossNodes(t *testing.T) {
 			// An ordinary detail may offer versions but never pins a cold singleton.
 			offered := ids(fetch(a, "detail", path))
 			var rows int
-			if err := a.srv.d.DB.QueryRow(`SELECT count(*) FROM plex_version_flows`).Scan(&rows); err != nil {
+			if err := a.srv.runtimeDB().QueryRow(`SELECT count(*) FROM plex_version_flows`).Scan(&rows); err != nil {
 				t.Fatal(err)
 			}
 			if count < 2 && rows != 0 {
@@ -299,7 +299,7 @@ func TestVersionFlowSharedAcrossNodes(t *testing.T) {
 			}
 			// A terminal timeline releases the shared flow, including one opened on B.
 			b.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&state=stopped&time=1000", headers...)
-			if err := a.srv.d.DB.QueryRow(`SELECT count(*) FROM plex_version_flows`).Scan(&rows); err != nil || rows != 0 {
+			if err := a.srv.runtimeDB().QueryRow(`SELECT count(*) FROM plex_version_flows`).Scan(&rows); err != nil || rows != 0 {
 				t.Fatalf("stop left %d rows: %v", rows, err)
 			}
 			if got := fetch(a, "picker after stop", path); len(got) != 3 {

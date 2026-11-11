@@ -23,7 +23,7 @@ func TestConvertSurroundAudioPlexAndroidMobile(t *testing.T) {
 			return c
 		})
 	})
-	f.srv.d.Transcoder = &realDecider{f.trans}
+	f.srv.setTranscoder(&realDecider{f.trans})
 	defer f.srv.Close()
 
 	f.playback.info = core.MediaInfo{
@@ -76,7 +76,7 @@ func TestConvertSurroundAudioDisabledPreservesSurround(t *testing.T) {
 			return c
 		})
 	})
-	f.srv.d.Transcoder = &realDecider{f.trans}
+	f.srv.setTranscoder(&realDecider{f.trans})
 	defer f.srv.Close()
 
 	f.playback.info = core.MediaInfo{
@@ -150,7 +150,7 @@ func TestAndroidMDEDecisionSurroundAudio(t *testing.T) {
 				})
 			})
 			defer f.srv.Close()
-			f.srv.d.Transcoder = &realDecider{f.trans}
+			f.srv.setTranscoder(&realDecider{f.trans})
 			f.playback.resolution = tc.source
 			if tc.stalled {
 				f.srv.starts.Remember(surroundHintKey(&Request{User: &ownerUser, ClientID: "android-client"}), f.srv.now())

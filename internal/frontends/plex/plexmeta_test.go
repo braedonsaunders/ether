@@ -99,7 +99,7 @@ func TestPlexMetaOffIsByteIdentical(t *testing.T) {
 	rt := &plexMetaRoundTrip{body: `{"MediaContainer":{"Metadata":[]}}`}
 	f, _ := plexMetaFixture(t, false, rt)
 	want := f.getWarm(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
-	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{Summary: "Plex summary", Studio: "Plex Studio"})
+	storePlexOverlay(t, f.srv.runtimeDB(), fightClub.Key, plexMetaGUID, plexmeta.Overlay{Summary: "Plex summary", Studio: "Plex Studio"})
 	got := f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
 	if want.Body.String() != got.Body.String() {
 		t.Fatalf("toggle off applied cached Plex fields\nwant %s\ngot %s", want.Body.String(), got.Body.String())
@@ -111,7 +111,7 @@ func TestPlexMetaOffIsByteIdentical(t *testing.T) {
 
 func TestPlexMetaOnServesPlexFieldsOnlyOnPlex(t *testing.T) {
 	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
-	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{
+	storePlexOverlay(t, f.srv.runtimeDB(), fightClub.Key, plexMetaGUID, plexmeta.Overlay{
 		Summary: "Plex summary", Tagline: "Plex tagline", Studio: "Plex Studio",
 		ContentRating: "NC-17", Year: 2001, AvailableAt: time.Date(2001, 2, 3, 0, 0, 0, 0, time.UTC),
 		AudienceRating: 9.2, AudienceRatingImage: "imdb://image.rating",
@@ -165,7 +165,7 @@ func TestPlexMetaRequestPathDoesNotWait(t *testing.T) {
 
 func TestPlexMetaSaferRatingHidesTitle(t *testing.T) {
 	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
-	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R"})
+	storePlexOverlay(t, f.srv.runtimeDB(), fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R"})
 	f.srv.testAuth().users["kid"] = core.User{ID: 30, Username: "kid", MaxContentRating: "PG"}
 	pg := f.catalog.titles[fightClub.Key]
 	pg.ContentRating = "PG"
@@ -178,7 +178,7 @@ func TestPlexMetaSaferRatingHidesTitle(t *testing.T) {
 
 func TestPlexMetaSummaryKeepsTMDBRatingBadge(t *testing.T) {
 	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
-	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{Summary: "Plex summary only"})
+	storePlexOverlay(t, f.srv.runtimeDB(), fightClub.Key, plexMetaGUID, plexmeta.Overlay{Summary: "Plex summary only"})
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
 	body := rec.Body.String()
 	if !strings.Contains(body, `"summary":"Plex summary only"`) {
@@ -191,7 +191,7 @@ func TestPlexMetaSummaryKeepsTMDBRatingBadge(t *testing.T) {
 
 func TestPlexMetaGUIDMismatchIgnored(t *testing.T) {
 	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
-	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, "plex://movie/000000000000000000000000", plexmeta.Overlay{Summary: "stale remap"})
+	storePlexOverlay(t, f.srv.runtimeDB(), fightClub.Key, "plex://movie/000000000000000000000000", plexmeta.Overlay{Summary: "stale remap"})
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String(), jsonAccept...)
 	if strings.Contains(rec.Body.String(), "stale remap") {
 		t.Fatalf("served remapped overlay: %s", rec.Body.String())
@@ -202,7 +202,7 @@ func TestPlexMetaNoGUIDDoesNotSchedule(t *testing.T) {
 	rt := &plexMetaRoundTrip{body: `{"MediaContainer":{"Metadata":[]}}`}
 	f, meta := plexMetaFixture(t, true, rt)
 	for _, table := range []string{"plexguid_mappings", "plexguid_verified", "plexguid_identity"} {
-		if _, err := f.srv.d.DB.Exec(`DELETE FROM ` + table); err != nil {
+		if _, err := f.srv.runtimeDB().Exec(`DELETE FROM ` + table); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -217,7 +217,7 @@ func TestPlexMetaNoGUIDDoesNotSchedule(t *testing.T) {
 // refused a title; it must not hand a hidden title's art to the viewer.
 func TestPlexMetaOverlayImageChecksViewerVisibility(t *testing.T) {
 	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
-	storePlexOverlay(t, f.srv.d.DB, fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R", ThumbURL: "https://metadata-static.plex.tv/fight-club.jpg"})
+	storePlexOverlay(t, f.srv.runtimeDB(), fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R", ThumbURL: "https://metadata-static.plex.tv/fight-club.jpg"})
 	pg := f.catalog.titles[fightClub.Key]
 	pg.ContentRating = "PG"
 	f.catalog.titles[fightClub.Key] = pg

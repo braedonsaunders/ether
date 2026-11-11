@@ -15,7 +15,7 @@ func TestSupersededEncoderLifecycle(t *testing.T) {
 	for _, reused := range []bool{false, true} {
 		t.Run(map[bool]string{false: "changed", true: "reused"}[reused], func(t *testing.T) {
 			f, m := issue94Fixture(t, true, "open")
-			tr := f.srv.d.Transcoder.(*issue94Transcoder)
+			tr := f.srv.transcoder().(*issue94Transcoder)
 			start := func(play, trans string) {
 				h := []string{"X-Plex-Client-Identifier", "phone", "X-Plex-Session-Identifier", play, "Accept", "application/json"}
 				for _, path := range []string{"decision?", "start.m3u8?"} {
@@ -79,8 +79,8 @@ func TestLifecycleBlockedStartHandoff(t *testing.T) {
 	for _, shared := range []bool{false, true} {
 		t.Run(fmt.Sprint(shared), func(t *testing.T) {
 			f, m := issue94Fixture(t, true, "open")
-			b := &lifecycleBlockingEncoder{issue94Transcoder: f.srv.d.Transcoder.(*issue94Transcoder), entered: make(chan struct{}), release: make(chan struct{})}
-			f.srv.d.Transcoder = b
+			b := &lifecycleBlockingEncoder{issue94Transcoder: f.srv.transcoder().(*issue94Transcoder), entered: make(chan struct{}), release: make(chan struct{})}
+			f.srv.setTranscoder(b)
 			var releaseOnce sync.Once
 			release := func() { releaseOnce.Do(func() { close(b.release) }) }
 			defer release()
@@ -178,10 +178,10 @@ func TestLifecycleForwardedStaleStop(t *testing.T) {
 	if _, ok := m.SessionFor(ownerUser.ID, "phone", fightClub.Key); !ok {
 		t.Fatal("forwarded old stop killed current source")
 	}
-	if _, ok := f.srv.d.Transcoder.Session("old"); ok {
+	if _, ok := f.srv.transcoder().Session("old"); ok {
 		t.Fatal("forwarded old stop left encoder")
 	}
-	if _, ok := f.srv.d.Transcoder.Session("new"); !ok {
+	if _, ok := f.srv.transcoder().Session("new"); !ok {
 		t.Fatal("forwarded old stop killed new encoder")
 	}
 }
@@ -216,13 +216,13 @@ func TestLifecycleStopBetweenDecisionAndStart(t *testing.T) {
 			if !ok || current.ID != source.ID {
 				t.Fatal("old encoder stop killed prepared replacement source")
 			}
-			if _, ok := f.srv.d.Transcoder.Session("old-trans"); ok {
+			if _, ok := f.srv.transcoder().Session("old-trans"); ok {
 				t.Fatal("old encoder remains")
 			}
 			if r := f.get(t, "/video/:/transcode/universal/start.m3u8?"+issue94Query("new-trans", 3000), h("new")...); r.Code != 200 {
 				t.Fatal(r.Code)
 			}
-			if _, ok := f.srv.d.Transcoder.Session("new-trans"); !ok {
+			if _, ok := f.srv.transcoder().Session("new-trans"); !ok {
 				t.Fatal("replacement did not start")
 			}
 		})

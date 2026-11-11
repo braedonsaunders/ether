@@ -92,7 +92,7 @@ func TestMetadataFileChecksUseSourceWithoutPlaybackAdmission(t *testing.T) {
 	f := newFixture(func(d *testServerDeps) { d.DisableEnrichment = true })
 	engine := &fileProbeEngine{}
 	m := fileProbeManager(t, f, fileProbeResolver{releases: []string{"checked"}}, engine)
-	f.srv.d.Playback = m
+	f.srv.setPlayback(m)
 	defer f.srv.Close()
 	defer m.Close()
 	for _, option := range []string{"", "checkFiles=1", "asyncCheckFiles=1", "checkFileAvailability=1"} {
@@ -156,7 +156,7 @@ func TestFileAvailabilityOnlyDefinitiveEvidenceHidesAVersion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(func(d *testServerDeps) { d.DisableEnrichment = true })
 			m := fileProbeManager(t, f, tc.resolver, tc.engine)
-			f.srv.d.Playback = m
+			f.srv.setPlayback(m)
 			defer f.srv.Close()
 			defer m.Close()
 			id := int64(fightClub.Key)

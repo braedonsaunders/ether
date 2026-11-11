@@ -87,8 +87,8 @@ func issue94Fixture(t *testing.T, with720 bool, profile string, opts ...func(*te
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.srv.d.Playback = mgr
-	f.srv.d.Transcoder = tr
+	f.srv.setPlayback(mgr)
+	f.srv.setTranscoder(tr)
 	t.Cleanup(func() { f.srv.Close(); mgr.Close() })
 	return f, mgr
 }

@@ -161,6 +161,11 @@ type sessionDelivery struct {
 	playlist []byte
 	listed   []int      // unknown duration: per-track listed prefix; never shrinks
 	dash     *dashState // DASH sessions only
+	// fmp4VideoTrack is the video track id and media timescale from the
+	// published init segment, so an empty in-GOP alias fragment carries a
+	// well-formed traf/tfdt (emptyFMP4) and advances the player's clock.
+	fmp4VideoTrack emptyFMP4Tracks
+	fmp4TrackKnown bool
 	// fmp4Edits is, per HLS fMP4 init scope, the edits of the first init
 	// published there: the clock later runs are held to (fmp4_edit.go).
 	fmp4Edits map[clockScope]map[string]trackEdit

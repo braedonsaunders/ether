@@ -35,8 +35,9 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 	}
 	media := titleMedia(req.Title)
 	q := s.qualityCfg()
-	req.Client, _ = applyClientRules(q, req.Client, req.User, media)
-	profile := SelectProfileForMedia(q, req.Client, req.User, media)
+	libProfile := s.libProfileForTitle(ctx, req.Title)
+	req.Client, _ = applyClientRules(q, req.Client, req.User, media, libProfile)
+	profile := SelectProfileForTitle(q, req.Client, req.User, req.Title, libProfile)
 	sreq := searchRequestFor(req.Title)
 	results, ok := s.peekSearchCache(searchCacheKey(sreq))
 	if !ok || len(results) == 0 {

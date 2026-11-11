@@ -2,6 +2,7 @@ package transcode
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"net/http"
 	"os"
@@ -232,9 +233,12 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 	}
 }
 
-// emptyAliasSize is the byte size of an in-GOP placeholder segment for HLS
-// containers whose players join fragments into a single stream, or 0 when
-// aliases duplicate the covering segment directly (MPEG-TS, DASH).
+// emptyAliasSize reports whether an in-GOP placeholder segment is written
+// for HLS containers whose players join fragments into a single stream: a
+// positive size when placeholders exist, 0 when aliases duplicate the
+// covering segment directly (MPEG-TS, DASH). The fMP4 placeholder's exact
+// size varies with the track, so it is matched structurally (isEmptyFMP4),
+// not by size.
 func (s *Session) emptyAliasSize() int64 {
 	if s.isDASH() {
 		return 0
@@ -243,18 +247,63 @@ func (s *Session) emptyAliasSize() int64 {
 	case ContainerMatroska:
 		return emptyClusterSize
 	case ContainerFMP4:
-		return emptyFMP4Size
+		return 1
 	default:
 		return 0
 	}
 }
 
+// emptyFragmentLocked is the placeholder bytes for in-GOP segment n of the
+// primary track: an empty fMP4 fragment (with a valid traf/tfdt at n's start)
+// or an empty Matroska Cluster. Callers write it in place of repeating the
+// covering GOP.
+func (s *Session) emptyFragmentLocked(n int) []byte {
+	if s.container == ContainerMatroska {
+		return emptyCluster(s.segStart(n) + matroskaOrigin)
+	}
+	track := s.fmp4VideoTrack
+	base := emptyFMP4DecodeTime(s.segStart(n), track.Timescale)
+	return emptyFMP4(uint32(n+1), track, base)
+}
+
 func isEmptyFMP4(b []byte) bool {
-	if len(b) != emptyFMP4Size {
+	top, err := readBoxes(b, 0, len(b))
+	if err != nil || len(top) != 3 || top[0].typ != "styp" || top[1].typ != "moof" || top[2].typ != "mdat" {
 		return false
 	}
-	ref := emptyFMP4(0)
-	return bytes.Equal(b[:44], ref[:44]) && bytes.Equal(b[48:], ref[48:])
+	if top[2].end-top[2].start > 8 {
+		return false // mdat with samples is not an empty placeholder
+	}
+	kids, err := readBoxes(b, top[1].start+top[1].hdr, top[1].end)
+	if err != nil {
+		return false
+	}
+	sawTfdt := false
+	for _, k := range kids {
+		if k.typ != "traf" {
+			continue
+		}
+		grandkids, err := readBoxes(b, k.start+k.hdr, k.end)
+		if err != nil {
+			return false
+		}
+		samples := 0
+		for _, g := range grandkids {
+			switch g.typ {
+			case "tfdt":
+				sawTfdt = true
+			case "trun":
+				p := g.payload(b)
+				if len(p) >= 8 {
+					samples += int(binary.BigEndian.Uint32(p[4:]))
+				}
+			}
+		}
+		if samples != 0 {
+			return false
+		}
+	}
+	return sawTfdt
 }
 
 // coveringSegLocked is the latest segment at or before n that holds a
@@ -275,9 +324,6 @@ func (s *Session) coveringSegLocked(t, n int) int {
 				return k
 			}
 		case ContainerFMP4:
-			if st.Size() != emptyFMP4Size {
-				return k
-			}
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return -1

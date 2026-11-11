@@ -55,7 +55,7 @@ func TestShieldTroyCaptureFollowup(t *testing.T) {
 						troy.Title = "Troy"
 						troy.Year = 2004
 						f.catalog.titles[troy.Key] = troy
-						f.srv.d.Transcoder = shieldContractTranscoder{f.trans}
+						f.srv.setTranscoder(shieldContractTranscoder{f.trans})
 						prefs := trackprefs.New(store.OpenTest(t))
 						f.srv.setTrackPreferences(prefs)
 						rules := trackprefs.Default()
@@ -72,7 +72,7 @@ func TestShieldTroyCaptureFollowup(t *testing.T) {
 						f.playback.info = facts
 						f.srv.setVariants(&fakeVariantResolver{byKey: testVariantLists()})
 						pb := &shieldMetadataPlayback{Playback: f.playback, facts: facts, ready: warm}
-						f.srv.d.Playback = pb
+						f.srv.setPlayback(pb)
 						device := "SHIELD Android TV"
 						if product == "Plex for Android (Mobile)" {
 							device = "Pixel 8"
@@ -154,7 +154,7 @@ func TestShieldTroyCaptureFollowup(t *testing.T) {
 func TestShieldMetadataProbeFailureKeepsNormalResponse(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	f.srv.d.Playback = &shieldMetadataPlayback{Playback: f.playback, facts: sampleInfo, err: core.ErrPrepareSlow}
+	f.srv.setPlayback(&shieldMetadataPlayback{Playback: f.playback, facts: sampleInfo, err: core.ErrPrepareSlow})
 	r := f.get(t, "/library/metadata/"+fightClub.Key.String(), "X-Plex-Product", "Plex for Android (TV)", "X-Plex-Platform", "Android")
 	if r.Code != 200 || r.Header().Get("Retry-After") != "" {
 		t.Fatalf("%d %s", r.Code, r.Body.String())
@@ -167,7 +167,7 @@ func TestAndroidMetadataProbeLeavesOtherClientsUnchanged(t *testing.T) {
 			f := newFixture()
 			defer f.srv.Close()
 			p := &shieldMetadataPlayback{Playback: f.playback, facts: sampleInfo, err: core.ErrPrepareSlow}
-			f.srv.d.Playback = p
+			f.srv.setPlayback(p)
 			r := f.get(t, "/library/metadata/"+fightClub.Key.String(), "X-Plex-Product", product)
 			if r.Code != 200 || p.probes != 0 {
 				t.Fatalf("other client changed: status=%d metadata probes=%d", r.Code, p.probes)

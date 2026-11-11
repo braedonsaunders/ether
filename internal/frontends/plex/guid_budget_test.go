@@ -37,8 +37,8 @@ func TestBulkMetadataUsesCachedGUIDsWithoutNetwork(t *testing.T) {
 	defer upstream.Close()
 	f := newFixture()
 	defer f.srv.Close()
-	warmer := &detailWarmer{Playback: f.srv.d.Playback}
-	f.srv.d.Playback = warmer
+	warmer := &detailWarmer{Playback: f.srv.playback()}
+	f.srv.setPlayback(warmer)
 	f.srv.setPlexGUID(plexguid.New(db, plexguid.Options{BaseURL: upstream.URL, Token: func() string { return "fixture" }}))
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String()+","+alien.Key.String())
 	if rec.Code != 200 || (calls.Load() != 0 || warmer.calls != 0) {
@@ -197,8 +197,8 @@ func (w *keyWarmer) Prewarm(_ context.Context, _ *core.User, k core.RatingKey, _
 func TestShowPageWarmsItsOnDeckEpisode(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	warmer := &keyWarmer{Playback: f.srv.d.Playback}
-	f.srv.d.Playback = warmer
+	warmer := &keyWarmer{Playback: f.srv.playback()}
+	f.srv.setPlayback(warmer)
 	if rec := f.get(t, "/library/metadata/2000000000001396?includeChildren=1&includeOnDeck=1"); rec.Code != 200 {
 		t.Fatalf("show detail: %d", rec.Code)
 	}

@@ -285,7 +285,7 @@ func TestStandaloneServerKeepsSessionsLocalAndQueuesDurable(t *testing.T) {
 		t.Fatalf("standalone queue ids changed: %v", mc["playQueueID"])
 	}
 	var n int
-	if err := f.srv.d.DB.QueryRow(`SELECT COUNT(*) FROM plex_playqueues`).Scan(&n); err != nil || n != 1 {
+	if err := f.srv.runtimeDB().QueryRow(`SELECT COUNT(*) FROM plex_playqueues`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("standalone server did not persist queue: %d %v", n, err)
 	}
 }

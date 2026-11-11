@@ -106,12 +106,12 @@ func TestSplitSharedProfilesKeepsEveryChoice(t *testing.T) {
 				caps.Remote = remote
 				for _, media := range []string{core.MediaAny, core.MediaMovie, core.MediaTV} {
 					at := fmt.Sprintf("%s on %s, remote=%v, media=%q", vn, cn, remote, media)
-					was, now := chooseProfileForMedia(before, caps, user, media), chooseProfileForMedia(after, caps, user, media)
+					was, now := chooseProfileForMedia(before, caps, user, media, ""), chooseProfileForMedia(after, caps, user, media, "")
 					if !reflect.DeepEqual(shared(now.profile), shared(was.profile)) || now.source != was.source || now.rule != was.rule {
 						t.Fatalf("%s: profile %q (%s %d), was %q (%s %d)", at, now.profile.Name, now.source, now.rule, was.profile.Name, was.source, was.rule)
 					}
 					// The profile as clamped to the client, the one ranking uses.
-					if got, want := decideProfile(after, caps, user, media).profile, decideProfile(before, caps, user, media).profile; !reflect.DeepEqual(shared(got), shared(want)) {
+					if got, want := decideProfile(after, caps, user, media, "").profile, decideProfile(before, caps, user, media, "").profile; !reflect.DeepEqual(shared(got), shared(want)) {
 						t.Fatalf("%s: selected %+v, was %+v", at, got, want)
 					}
 					if got, want := ApplyClientRulesForMedia(after, caps, user, media), ApplyClientRulesForMedia(before, caps, user, media); !reflect.DeepEqual(got, want) {

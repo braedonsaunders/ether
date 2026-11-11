@@ -23,7 +23,7 @@ func TestStartRenegotiatesQualityAndTracks(t *testing.T) {
 		t.Run(transport, func(t *testing.T) {
 			f, dt := dashFixture()
 			defer f.srv.Close()
-			f.srv.d.Transcoder = &qualityTranscoder{dt}
+			f.srv.setTranscoder(&qualityTranscoder{dt})
 			protocol, ext := "hls", "m3u8"
 			headers := []string{"X-Plex-Product", "Plex for Apple TV", "X-Plex-Platform", "tvOS"}
 			if transport == "vidaa" {

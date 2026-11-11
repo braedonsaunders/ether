@@ -70,7 +70,7 @@ func sample4KHEVCUsenetInfo() core.MediaInfo {
 func TestLGWebOSUsenet4KHEVCDirectPlaysInsteadOfBrokenHLS(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	f.srv.d.Transcoder = realDecideTranscoder{fakeTranscoder: f.trans}
+	f.srv.setTranscoder(realDecideTranscoder{fakeTranscoder: f.trans})
 	f.playback.info = sample4KHEVCUsenetInfo()
 	f.playback.resolution = &core.Resolution{
 		Title: bbE1.Key,
@@ -104,7 +104,7 @@ func TestLGWebOSUsenet4KHEVCDirectPlaysInsteadOfBrokenHLS(t *testing.T) {
 func TestLGWebOSFallbackTranscodeCapsH264At1080pAndSingleRung(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	f.srv.d.Transcoder = realDecideTranscoder{fakeTranscoder: f.trans}
+	f.srv.setTranscoder(realDecideTranscoder{fakeTranscoder: f.trans})
 	f.playback.info = sample4KHEVCUsenetInfo()
 	f.playback.resolution = &core.Resolution{
 		Title: bbE1.Key,

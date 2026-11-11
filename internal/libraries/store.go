@@ -11,7 +11,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-const libraryCols = `id, key, name, source, media_type, plugin_id, kind_key, filter, rules, visibility_default, present, sort, hidden, created_at, updated_at`
+const libraryCols = `id, key, name, source, media_type, plugin_id, kind_key, filter, rules, visibility_default, quality_profile, present, sort, hidden, created_at, updated_at`
 
 type scanner interface{ Scan(...any) error }
 
@@ -21,7 +21,7 @@ func scanLibrary(sc scanner) (core.Library, error) {
 	var source, mediaType, filterJSON, rulesJSON, visDefault, presentJSON string
 	var hidden int
 	if err := sc.Scan(&id, &lib.Key, &lib.Name, &source, &mediaType, &lib.PluginID, &lib.KindKey,
-		&filterJSON, &rulesJSON, &visDefault, &presentJSON, &sort, &hidden, &created, &updated); err != nil {
+		&filterJSON, &rulesJSON, &visDefault, &lib.QualityProfile, &presentJSON, &sort, &hidden, &created, &updated); err != nil {
 		return core.Library{}, err
 	}
 	lib.ID = core.LibraryID(id)
@@ -89,9 +89,9 @@ func (s *Service) insert(ctx context.Context, tx *sql.Tx, lib core.Library) (cor
 	if lib.Hidden {
 		hidden = 1
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO libraries(`+libraryCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO libraries(`+libraryCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		int64(lib.ID), lib.Key, lib.Name, string(lib.Source), string(lib.MediaType), lib.PluginID, lib.KindKey,
-		filterJSON, rulesJSON, lib.VisibilityDefault, string(presentJSON), lib.Sort, hidden, lib.CreatedAt.Unix(), lib.UpdatedAt.Unix())
+		filterJSON, rulesJSON, lib.VisibilityDefault, lib.QualityProfile, string(presentJSON), lib.Sort, hidden, lib.CreatedAt.Unix(), lib.UpdatedAt.Unix())
 	if err != nil {
 		return core.Library{}, err
 	}

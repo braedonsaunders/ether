@@ -169,7 +169,7 @@ func (x *etheLab) start(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.f.srv.d.Playback = x.mgr
+	x.f.srv.setPlayback(x.mgr)
 	x.f.srv.setVariants(x.observed)
 }
 func (x *etheLab) detail(t *testing.T, label string) []map[string]any {

@@ -62,8 +62,8 @@ func TestIssue417FMP4LongGOPSequentialAndSeek(t *testing.T) {
 		}
 		b := r.Body.Bytes()
 		if n%4 != 0 {
-			if len(b) != emptyFMP4Size {
-				t.Fatalf("sequential alias segment %d is %d bytes, want %d-byte emptyFMP4", n, len(b), emptyFMP4Size)
+			if !isEmptyFMP4(b) {
+				t.Fatalf("sequential alias segment %d is %d bytes, want an emptyFMP4 fragment", n, len(b))
 			}
 			boxes, err := readBoxes(b, 0, len(b))
 			if err != nil || len(boxes) != 3 || boxes[0].typ != "styp" || boxes[1].typ != "moof" || boxes[2].typ != "mdat" {
@@ -109,8 +109,8 @@ func TestIssue417FMP4LongGOPSequentialAndSeek(t *testing.T) {
 	if seg4 := get(t, s, 4); seg4.Code != http.StatusOK || !bytes.Contains(seg4.Body.Bytes(), []byte("t=8.000")) {
 		t.Fatalf("segment 4 after seek: HTTP %d len=%d", seg4.Code, seg4.Body.Len())
 	}
-	if seg5 := get(t, s, 5); seg5.Code != http.StatusOK || seg5.Body.Len() != emptyFMP4Size {
-		t.Fatalf("sequential segment 5: HTTP %d len=%d, want %d", seg5.Code, seg5.Body.Len(), emptyFMP4Size)
+	if seg5 := get(t, s, 5); seg5.Code != http.StatusOK || !isEmptyFMP4(seg5.Body.Bytes()) {
+		t.Fatalf("sequential segment 5: HTTP %d len=%d, want an emptyFMP4 fragment", seg5.Code, seg5.Body.Len())
 	}
 
 	// Fetching init.mp4 resets decoder continuity so the next segment (even 6 after 5) gets its covering GOP.
@@ -177,7 +177,7 @@ func TestIssue417EvictedSegmentRegeneratesAndStoppedReturns410(t *testing.T) {
 	// Seeking to alias 3 whose covering GOP 0 was evicted must regenerate
 	// keyframe media (200 OK), never serve a bare 56B placeholder or 410.
 	regen3 := get(t, s, 3)
-	if regen3.Code != http.StatusOK || regen3.Body.Len() <= emptyFMP4Size || !bytes.Contains(regen3.Body.Bytes(), []byte("t=0.000")) {
+	if regen3.Code != http.StatusOK || isEmptyFMP4(regen3.Body.Bytes()) || !bytes.Contains(regen3.Body.Bytes(), []byte("t=0.000")) {
 		t.Fatalf("evicted-GOP alias 3: HTTP %d len=%d, want regenerated GOP at 0s", regen3.Code, regen3.Body.Len())
 	}
 
@@ -205,7 +205,7 @@ func TestIssue417EvictedSegmentRegeneratesAndStoppedReturns410(t *testing.T) {
 		if res.Code != http.StatusOK {
 			t.Fatalf("evicted segment %d returned HTTP %d (%s), want 200 OK", target, res.Code, res.Body.String())
 		}
-		if res.Body.Len() <= emptyFMP4Size || !bytes.Contains(res.Body.Bytes(), []byte("t=0.000")) {
+		if isEmptyFMP4(res.Body.Bytes()) || !bytes.Contains(res.Body.Bytes(), []byte("t=0.000")) {
 			t.Fatalf("evicted segment %d len=%d, want regenerated keyframe GOP", target, res.Body.Len())
 		}
 	}

@@ -83,7 +83,7 @@ func TestDigitalLargeCatalogueLatency(t *testing.T) {
 	defer a.Close()
 	wrapped := measureCatalog{c, a}
 	f.srv.setCatalog(wrapped)
-	f.srv.d.DB = db
+	f.setDB(db)
 	f.srv.setFilterAvailable(a.FilterDiscovery)
 	keys := make([]core.RatingKey, 200)
 	for i := range keys {

@@ -67,6 +67,12 @@ ALTER TABLE libraries ADD COLUMN visibility_default TEXT NOT NULL DEFAULT '';
 ALTER TABLE libraries ADD COLUMN rules TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE libraries ADD COLUMN visibility_default TEXT NOT NULL DEFAULT '';
 `)
+	store.Register("libraries", 3, `
+ALTER TABLE libraries ADD COLUMN quality_profile TEXT NOT NULL DEFAULT '';
+`)
+	store.RegisterDialect("libraries", 3, store.Postgres, `
+ALTER TABLE libraries ADD COLUMN quality_profile TEXT NOT NULL DEFAULT '';
+`)
 }
 
 var (

@@ -44,6 +44,7 @@ func (c *Catalog) seekPage(ctx context.Context, q core.BrowseQuery, where string
 	order := col + " " + dir + ", t.key ASC"
 	if q.Sort == core.SortTitle {
 		where = c.genreProbe(where, q.Filter)
+		where = c.studioProbe(where, q.Filter)
 	}
 	want := offset + limit
 	ranges := []seekRange{

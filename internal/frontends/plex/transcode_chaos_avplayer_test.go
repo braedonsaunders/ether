@@ -166,9 +166,9 @@ func avplayerCase(t *testing.T, m *transcode.Manager, log *slog.Logger, sourceUR
 	defer f.srv.Close()
 	duration := info.Duration
 	f.playback.info = info
-	f.srv.d.Playback = &chaosPlayback{f.playback, sourceURL + "/" + name + ".media"}
+	f.srv.setPlayback(&chaosPlayback{f.playback, sourceURL + "/" + name + ".media"})
 	rec := &chaosTranscoderRecorder{Transcoder: m}
-	f.srv.d.Transcoder = rec
+	f.srv.setTranscoder(rec)
 	id := "avplayer-" + strings.NewReplacer("/", "-", ".", "-").Replace(name+"-"+path+"-"+scenario)
 	// AVPlayer stands in for an Apple client, so Ether decides for one: the
 	// Plex for Apple TV identity (the ffmpeg sequences use Plex Web's).

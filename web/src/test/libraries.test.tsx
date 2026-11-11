@@ -80,4 +80,15 @@ describe("Libraries workspace", () => {
     expect(screen.queryByText("New releases")).not.toBeInTheDocument();
     expect(screen.queryByText("Source: TMDB")).not.toBeInTheDocument();
   });
+
+  it("sets the quality profile on a library from its settings", async () => {
+    const { fake } = renderApp("/libraries/1/settings");
+    await screen.findByText("Quality profile", {}, { timeout: 15000 });
+    fireEvent.click(screen.getByRole("button", { name: "Quality profile" }));
+    fireEvent.click(await screen.findByRole("option", { name: "4K" }, { timeout: 15000 }));
+    await settleUi(() => {
+      const patch = calls(fake, "PATCH", "/libraries/1").at(-1);
+      expect(patch?.body).toMatchObject({ qualityProfile: "4K" });
+    });
+  });
 });

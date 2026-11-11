@@ -52,9 +52,9 @@ func TestTranscodeChaosCorpusScenarios(t *testing.T) {
 					f := newFixture()
 					defer f.srv.Close()
 					f.playback.info = *info
-					f.srv.d.Playback = &chaosPlayback{f.playback, source.URL + "/" + name + ".media"}
+					f.srv.setPlayback(&chaosPlayback{f.playback, source.URL + "/" + name + ".media"})
 					rec := &chaosTranscoderRecorder{Transcoder: m}
-					f.srv.d.Transcoder = rec
+					f.srv.setTranscoder(rec)
 					headers := []string{"X-Plex-Product", "Plex Web", "X-Plex-Platform", "Chrome"}
 					if path == "hls-fmp4" {
 						headers = append(headers, "X-Plex-Client-Profile-Extra", "add-transcode-target(type=videoProfile&context=streaming&protocol=hls&container=mp4&videoCodec=h264,hevc&audioCodec=aac)")

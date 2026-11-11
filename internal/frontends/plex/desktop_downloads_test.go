@@ -150,7 +150,7 @@ func TestFileAvailabilityAnnotatesEveryPart(t *testing.T) {
 			checker.errs[core.MovieKey(n)] = core.ErrNotAvailable
 		}
 	}
-	f.srv.d.Playback = checker
+	f.srv.setPlayback(checker)
 
 	mc := &model.MediaContainer{}
 	for n := int64(1); n <= 12; n++ {

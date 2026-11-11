@@ -177,6 +177,26 @@ func (s *Session) noteInitLocked(r *run, t int) error {
 			s.clockInput = r.spec.Input
 		}
 	}
+	if t == 0 && s.container == ContainerFMP4 && !s.fmp4TrackKnown {
+		if b, err := os.ReadFile(filepath.Join(s.dir, rel)); err == nil {
+			if tracks, err := parseInitTracks(b); err == nil {
+				v := trackInit{}
+				for _, tr := range tracks {
+					if tr.Handler == "vide" {
+						v = tr
+						break
+					}
+					if v.TrackID == 0 {
+						v = tr
+					}
+				}
+				if v.TrackID != 0 && v.Timescale != 0 {
+					s.fmp4VideoTrack = emptyFMP4Tracks{TrackID: v.TrackID, Timescale: v.Timescale}
+					s.fmp4TrackKnown = true
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -304,11 +324,11 @@ func (s *Session) publishBoundaryAliasLocked(n int) bool {
 	}
 	dst := s.trackSegPath(t, n)
 	if s.container == ContainerMatroska {
-		if os.WriteFile(dst, emptyCluster(s.segStart(n)+matroskaOrigin), 0o644) != nil {
+		if os.WriteFile(dst, s.emptyFragmentLocked(n), 0o644) != nil {
 			return false
 		}
 	} else if s.container == ContainerFMP4 && !s.isDASH() {
-		if os.WriteFile(dst, emptyFMP4(uint32(n+1)), 0o644) != nil {
+		if os.WriteFile(dst, s.emptyFragmentLocked(n), 0o644) != nil {
 			return false
 		}
 	} else if linkOrCopy(s.trackSegPath(t, n-1), dst) != nil {

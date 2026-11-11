@@ -83,8 +83,8 @@ func TestTranscodeChaosPCELongSeek(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.playback.info = *info
-	f.srv.d.Playback = &chaosPlayback{f.playback, url}
-	f.srv.d.Transcoder = m
+	f.srv.setPlayback(&chaosPlayback{f.playback, url})
+	f.srv.setTranscoder(m)
 	count.Store(0)
 	historyMu.Lock()
 	history = nil

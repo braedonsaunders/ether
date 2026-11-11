@@ -199,7 +199,7 @@ func TestTranscodeChaosPlexFaults(t *testing.T) {
 					if path == "download" {
 						f := newDownloadFixture(t, true)
 						f.playback.info = *info
-						f.srv.d.Playback = &chaosPlayback{f.playback, server.URL + "/fixture.mp4"}
+						f.srv.setPlayback(&chaosPlayback{f.playback, server.URL + "/fixture.mp4"})
 						dl, e := m.NewDownloadRemuxer(config.Downloads{})
 						if e != nil {
 							t.Fatal(e)
@@ -243,8 +243,8 @@ func TestTranscodeChaosPlexFaults(t *testing.T) {
 					f := newFixture()
 					defer f.srv.Close()
 					f.playback.info = *info
-					f.srv.d.Playback = &chaosPlayback{f.playback, server.URL + "/fixture.mp4"}
-					f.srv.d.Transcoder = m
+					f.srv.setPlayback(&chaosPlayback{f.playback, server.URL + "/fixture.mp4"})
+					f.srv.setTranscoder(m)
 					id := "fault-" + path
 					query := "path=%2Flibrary%2Fmetadata%2F" + fightClub.Key.String() + "&session=" + id + "&directPlay=0&directStream=1"
 					get := func(url string) []byte {

@@ -86,7 +86,7 @@ func TestSupportPlaybackCaptureIdentityAndAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 			// A failed preparation still needs its decision inputs, before any result trace.
-			f.srv.d.Playback = supportDeniedPrepare{f.playback}
+			f.srv.setPlayback(supportDeniedPrepare{f.playback})
 			headers := map[string]string{"X-Plex-Client-Identifier": "", "Range": "bytes=2-8", "Cookie": "super-secret-cookie", "X-Unknown": "private-extension-secret"}
 			if tc.platform != "" {
 				headers["X-Plex-Product"] = "NowSeen"

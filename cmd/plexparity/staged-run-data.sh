@@ -116,6 +116,11 @@ for name, changes in replacements.items():
   if old in ('deps.Config = a.cfg.Read', 'deps.Config = a.cfg.Get') and 'deps.Config = a.cfg.' not in text: continue
   hooks = set(re.findall(r'parity\w+\(', new))
   if text.count(old) == 0 and hooks and all(h in text for h in hooks): continue
+  if old.endswith('.Options{\n'):
+   i = text.find(old)
+   window = text[i:i+4000] if i >= 0 else ''
+   inserted = [l.strip().rstrip(',') for l in new[len(old):].splitlines() if l.strip()]
+   if inserted and all(f.replace(' ', '') in window.replace(' ', '').replace('\t', '') for f in inserted): continue
   if text.count(old) != 1: raise SystemExit(f"cannot apply parity seam: {path}: expected exactly one {old!r}")
   text = text.replace(old, new, 1)
  path.write_text(text)
@@ -129,8 +134,8 @@ if not re.search(r'Ranker:\s*parityRankerOptions\(\)', data):
  if count != 1: raise SystemExit('cannot preserve parity ranker schedule')
 personal.write_text(data)
 checks = {
- "build_identity.go": r'auth\.Options\{\s*Now:\s*parityClock\(\)',
- "build_personalization.go": r'personalize\.Options\{\s*Now:\s*parityClock\(\)',
+ "build_identity.go": r'auth\.Options\{[\s\S]{0,4000}?\bNow:\s*parityClock\(\)',
+ "build_personalization.go": r'personalize\.Options\{[\s\S]{0,4000}?\bNow:\s*parityClock\(\)',
 }
 for name, pattern in checks.items():
  if not re.search(pattern, (root / name).read_text()): raise SystemExit(f"missing clock seam in {name}")
@@ -225,6 +230,10 @@ done
 mkdir -p "$root/baseline/cmd/parityseed" "$root/candidate/cmd/plexparity"
 cp "$root/harness/seed.go" "$root/baseline/cmd/parityseed/seed.go"
 cp "$root/harness/ranker_fixture.go" "$root/baseline/cmd/parityseed/ranker_fixture.go"
+# Viewer library restrictions were AllowedSections []int before v0.3.8.
+if ! grep -q 'AllowedLibraries' "$root/baseline/internal/core/types.go"; then
+  sed -i -e 's/AllowedLibraries = \[\]core.LibraryID{1}/AllowedSections = []int{1}/' -e 's/AllowedLibraries = nil/AllowedSections = nil/' "$root/baseline/cmd/parityseed/seed.go"
+fi
 # The current seed imports packages the baseline tree may not have yet.
 # They are stdlib-only, so the baseline module can compile them.
 if [ ! -d "$root/baseline/internal/contentrating" ] && [ -d "$root/driver/internal/contentrating" ]; then

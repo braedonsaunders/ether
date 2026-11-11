@@ -66,6 +66,15 @@ type AnimeCour interface {
 	LookupCour(ctx context.Context, req core.SearchRequest) (cour int, episode int, ok bool, err error)
 }
 
+// LibraryProfiles answers which library a title belongs to and the quality
+// profile set on it (spec §419: a quality profile per library). A filter
+// library wins over the built-in Movies/TV Shows library; the lowest
+// library id breaks a tie between filter libraries. An empty name means the
+// library set no profile, so today's home/away defaults apply.
+type LibraryProfiles interface {
+	QualityProfileForTitle(ctx context.Context, t *core.Title) string
+}
+
 // Options tunes a Service. Zero values get sensible defaults.
 type Options struct {
 	SearchObserved func(context.Context, *core.Title, []core.Release)
@@ -77,11 +86,14 @@ type Options struct {
 	SeriesYearConflict func(ctx context.Context, show core.RatingKey, title string, year int) (bool, error)
 	// AnimeCour maps multi-cour TMDB anime season episodes to their cour
 	// and cour-relative episode number; nil disables cour mapping.
-	AnimeCour     AnimeCour
-	Logger        *slog.Logger
-	Now           func() time.Time
-	MaxTraces     int
-	RetentionDays int // posts older than this are penalised; 0 = no extra penalty
+	AnimeCour AnimeCour
+	// LibraryProfiles resolves a title's per-library quality profile; nil
+	// leaves selection to the existing home/away defaults.
+	LibraryProfiles LibraryProfiles
+	Logger          *slog.Logger
+	Now             func() time.Time
+	MaxTraces       int
+	RetentionDays   int // posts older than this are penalised; 0 = no extra penalty
 	// HealthTTL is how long a passed health check is trusted before the
 	// release is sampled again (default 6h; negative disables the cache).
 	HealthTTL time.Duration
@@ -200,6 +212,7 @@ type Service struct {
 	years                     seriesYears
 	seriesYearConflict        func(ctx context.Context, show core.RatingKey, title string, year int) (bool, error)
 	animeCour                 AnimeCour
+	libProfiles               LibraryProfiles
 	availabilityGeneration    uint64
 	availabilityDeadlines     availabilityDeadlines
 	availabilityDeadlineByKey map[int64]*availabilityDeadline
@@ -272,7 +285,7 @@ var _ core.Resolver = (*Service)(nil)
 // (typically *newznab.Manager); health may be nil (health checks are
 // then skipped); db may be nil (state then lives in memory).
 func New(indexer core.Indexer, health core.HealthChecker, db *sql.DB, cfg config.Config, opts Options) *Service {
-	s := &Service{seriesYearConflict: opts.SeriesYearConflict, animeCour: opts.AnimeCour, searchObserved: opts.SearchObserved, discovered: opts.Discovered, observed: opts.Observed, invalidated: opts.Invalidated,
+	s := &Service{seriesYearConflict: opts.SeriesYearConflict, animeCour: opts.AnimeCour, libProfiles: opts.LibraryProfiles, searchObserved: opts.SearchObserved, discovered: opts.Discovered, observed: opts.Observed, invalidated: opts.Invalidated,
 		indexer: indexer, health: health, db: db,
 		bad: map[string]badMark{}, reps: map[string]reputation{},
 		avail: map[int64]availEntry{}, searchCache: map[string]searchCacheEntry{},
@@ -612,8 +625,9 @@ func (s *Service) Resolve(ctx context.Context, req core.ResolveRequest) (*core.R
 	}
 	media := titleMedia(req.Title)
 	q := s.qualityCfg()
-	req.Client, _ = applyClientRules(q, req.Client, req.User, media)
-	profile := SelectProfileForMedia(q, req.Client, req.User, media)
+	libProfile := s.libProfileForTitle(ctx, req.Title)
+	req.Client, _ = applyClientRules(q, req.Client, req.User, media, libProfile)
+	profile := SelectProfileForTitle(q, req.Client, req.User, req.Title, libProfile)
 	key := flightKey(req, profile)
 
 	for {

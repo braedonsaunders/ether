@@ -79,7 +79,7 @@ func dashFixture() (*fixture, *dashTranscoder) {
 	f := newFixture()
 	f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: false, AudioCodec: "aac", Container: "mpegts"}
 	dt := &dashTranscoder{fakeTranscoder: f.trans, dash: map[string]*fakeDASH{}}
-	f.srv.d.Transcoder = dt
+	f.srv.setTranscoder(dt)
 	return f, dt
 }
 
