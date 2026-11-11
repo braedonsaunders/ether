@@ -131,6 +131,14 @@ func preserveProfiles(p DeviceProfile) *core.ClientCapabilityProfiles {
 		return nil
 	}
 	out := &core.ClientCapabilityProfiles{MaxStaticBitrate: p.MaxStaticBitrate, MusicStreamingTranscodingBitrate: p.MusicStreamingTranscodingBitrate, MaxStaticMusicBitrate: p.MaxStaticMusicBitrate}
+	// A profile that lists neither direct-play nor transcoding formats says
+	// nothing about playback; it is not a claim that nothing plays. Findroid
+	// posts exactly this ("Direct play all", both lists empty) and then plays
+	// MediaSources[0] statically with mpv, so it is read as undeclared, the
+	// way PlaybackInfo already treats it for warm-ups.
+	if len(p.DirectPlayProfiles) == 0 && len(p.TranscodingProfiles) == 0 {
+		p.DirectPlayProfiles, p.TranscodingProfiles = nil, nil
+	}
 	if p.DirectPlayProfiles != nil {
 		out.DirectPlay = make([]core.ClientDirectPlayProfile, 0, len(p.DirectPlayProfiles))
 	}

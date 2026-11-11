@@ -358,7 +358,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 							return result, err
 						}
 						if resp.Status != http.StatusOK {
-							return result, fmt.Errorf("ultrablur %s %s returned %d", viewer, key, resp.Status)
+							if err := fixtureDrift(ctx, fmt.Errorf("ultrablur %s %s returned %d", viewer, key, resp.Status)); err != nil {
+								return result, err
+							}
 						}
 						if bytes.Contains(resp.Body, []byte(`"UltraBlurColors"`)) {
 							result.captures = append(result.captures, capture{viewer, name, "ultrablur:" + path, true, resp})
@@ -450,7 +452,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					return result, fmt.Errorf("mutation %s %s: %w", viewer, path, err)
 				}
 				if response.Status < 200 || response.Status >= 300 {
-					return result, fmt.Errorf("mutation %s %s returned %d", viewer, path, response.Status)
+					if err := fixtureDrift(ctx, fmt.Errorf("mutation %s %s returned %d", viewer, path, response.Status)); err != nil {
+						return result, err
+					}
 				}
 				if len(response.Body) >= 16<<20 {
 					return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)

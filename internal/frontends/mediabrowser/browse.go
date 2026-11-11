@@ -955,6 +955,9 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	if i.writeItemsByID(w, r, v) {
+		return
+	}
 	parent := route.Query(r.URL.Query(), "ParentId")
 	if len(parent) > 1 {
 		http.Error(w, "Bad Request", 400)
@@ -1013,6 +1016,45 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	i.page(w, r, v, page, q.Offset)
+}
+
+// maxItemsByID bounds one /Items?Ids= lookup; apps send a screen's worth.
+const maxItemsByID = 200
+
+// writeItemsByID answers /Items?Ids=a,b,c with exactly those titles, in the
+// order asked, each through the viewer's own item authorization. Apps fetch
+// an item page, a queue or a SyncPlay playlist this way (Streamyfin, Findroid,
+// Jellyfin Web); without it the filter was dropped and the whole library came
+// back, so the app opened the first title of the library instead. Ids that
+// are not titles, or that this viewer may not see, are left out.
+func (i *instance) writeItemsByID(w http.ResponseWriter, r *http.Request, v *frontend.Viewer) bool {
+	values := route.Query(r.URL.Query(), "Ids")
+	if len(values) == 0 {
+		return false
+	}
+	var keys []frontend.RatingKey
+	seen := map[frontend.RatingKey]bool{}
+	for _, value := range values {
+		for _, id := range strings.Split(value, ",") {
+			key, err := ids.ParseRatingKeyGUID(strings.TrimSpace(id))
+			if err != nil || seen[key] || len(keys) >= maxItemsByID {
+				continue
+			}
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	page := frontend.Page{Items: make([]frontend.Title, 0, len(keys))}
+	for _, key := range keys {
+		detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
+		if err != nil {
+			continue
+		}
+		page.Items = append(page.Items, detail.Title)
+	}
+	page.Total = len(page.Items)
+	i.page(w, r, v, page, 0)
+	return true
 }
 
 // searchableParent reports whether a search may use the title index: no

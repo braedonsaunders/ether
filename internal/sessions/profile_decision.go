@@ -846,7 +846,10 @@ func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (
 	req.Caps = applyProfileRangeCaps(req.Caps)
 	r := DecisionRequest{Session: ps, Caps: req.Caps, Options: req.Intent.Options, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true}
 	d, err := Decide(b.deps.Playback, b.deps.Transcoder, r)
-	if err != nil || req.Caps.Profiles == nil {
+	// A profile that lists no direct-play and no transcoding formats declares
+	// nothing about playback (Findroid's "Direct play all"); the ordinary
+	// capability decision stands.
+	if err != nil || req.Caps.Profiles == nil || (req.Caps.Profiles.DirectPlay == nil && req.Caps.Profiles.Transcoding == nil) {
 		return d, err
 	}
 	if d.Kind == core.DecisionDirectPlay && profileDirectAllowed(req.Caps.Profiles, ps.Info, d) {

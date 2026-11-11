@@ -585,8 +585,11 @@ func (s *Service) CachedMany(ctx context.Context, keys []core.RatingKey) map[cor
 		}
 		_ = rows.Close()
 		for _, c := range cands {
-			// An unproven row on a namesake title is withheld, never served.
-			if (!c.hasIdentity || c.staleCredits) && s.hasNamesake(ctx, c.key) {
+			// A legacy row on a namesake title is withheld, never served. A
+			// credit-unchecked row is withheld only on the single-title paths
+			// (Cached, Resolve), where apps fetch Cast & Crew: checking a
+			// namesake per listed row would make lists scale with the library.
+			if !c.hasIdentity && s.hasNamesake(ctx, c.key) {
 				s.enqueuePriority(c.key)
 				continue
 			}
