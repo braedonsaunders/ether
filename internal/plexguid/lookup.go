@@ -205,10 +205,11 @@ func (s *Service) VerifiedRange(ctx context.Context, after, below core.RatingKey
 	}
 	out := make([]Verified, 0, len(cands))
 	for _, c := range cands {
-		// A legacy row on a namesake title must not be imported as this
-		// title's identity: the guid may name the other work. Withhold it and
-		// enqueue it for priority repair like the other read paths.
-		if !c.hasIdentity && s.hasNamesake(ctx, c.key) {
+		// An unproven row (legacy, or verified before the credit check) on a
+		// namesake title must not be imported as this title's identity: the
+		// guid may name the other work. Withhold it and enqueue it for
+		// priority repair like the other read paths.
+		if (!c.hasIdentity || c.staleCredits) && s.hasNamesake(ctx, c.key) {
 			s.enqueuePriority(c.key)
 			continue
 		}

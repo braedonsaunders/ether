@@ -47,6 +47,9 @@ func init() {
 	// already-mapped title whose Plex record carries merged credits is
 	// corrected without blanking the whole library.
 	store.Register("plexguid", 7, `ALTER TABLE plexguid_identity ADD COLUMN credits_rule INTEGER NOT NULL DEFAULT 0;`)
+	// The credit check now also compares a movie's cast when its directors
+	// agree; records proved under the director-only check are re-verified.
+	store.Register("plexguid", 8, `UPDATE plexguid_identity SET credits_rule=0 WHERE credits_rule=1;`)
 }
 
 const (
@@ -403,24 +406,25 @@ func (s *Service) hasNamesake(ctx context.Context, k core.RatingKey) bool {
 	return has
 }
 
-// legacyMapping reports whether k currently has a stored guid served only as a
-// legacy row (no identity record for it). One indexed primary-key read.
-func (s *Service) legacyMapping(ctx context.Context, k core.RatingKey) bool {
-	var legacy bool
-	_ = s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM plexguid_mappings m WHERE m.rating_key=? AND m.guid<>'' AND NOT (`+identityExists+`))`, int64(k)).Scan(&legacy)
-	return legacy
+// unprovenMapping reports whether k currently has a stored guid not proved
+// under the current rule: a legacy row (no identity record) or one whose
+// identity predates the credit check. One indexed primary-key read.
+func (s *Service) unprovenMapping(ctx context.Context, k core.RatingKey) bool {
+	var unproven bool
+	_ = s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM plexguid_mappings m WHERE m.rating_key=? AND m.guid<>'' AND (NOT (`+identityExists+`) OR `+staleCreditsRule+`))`, int64(k)).Scan(&unproven)
+	return unproven
 }
 
 // withheldLegacy reports whether a stored mapping for k must not be served
-// because it is a legacy row on a title the catalogue says has a namesake. The
-// guid may name the other work, so it is withheld from every read path and the
-// key is enqueued for priority re-verification. Non-legacy rows (a verified
-// identity record exists) and rows on namesake-free titles keep serving.
+// because it is unproven (legacy, or verified before the credit check) on a
+// title the catalogue says has a namesake. The guid may name the other work,
+// so it is withheld from every read path and the key is enqueued for priority
+// re-verification. Proven rows and rows on namesake-free titles keep serving.
 func (s *Service) withheldLegacy(ctx context.Context, k core.RatingKey) bool {
 	if s == nil || s.o.Namesakes == nil {
 		return false
 	}
-	if !s.legacyMapping(ctx, k) {
+	if !s.unprovenMapping(ctx, k) {
 		return false
 	}
 	if !s.hasNamesake(ctx, k) {
@@ -506,7 +510,7 @@ func (s *Service) Cached(ctx context.Context, k core.RatingKey) string {
 	if guid == "" {
 		return ""
 	}
-	if !hasIdentity && s.hasNamesake(ctx, k) {
+	if (!hasIdentity || staleCredits) && s.hasNamesake(ctx, k) {
 		s.enqueuePriority(k)
 		return ""
 	}
@@ -581,8 +585,8 @@ func (s *Service) CachedMany(ctx context.Context, keys []core.RatingKey) map[cor
 		}
 		_ = rows.Close()
 		for _, c := range cands {
-			// A legacy row on a namesake title is withheld, never served.
-			if !c.hasIdentity && s.hasNamesake(ctx, c.key) {
+			// An unproven row on a namesake title is withheld, never served.
+			if (!c.hasIdentity || c.staleCredits) && s.hasNamesake(ctx, c.key) {
 				s.enqueuePriority(c.key)
 				continue
 			}
@@ -602,9 +606,9 @@ func (s *Service) freshCached(ctx context.Context, k core.RatingKey) (string, bo
 	var at int64
 	var hasIdentity, staleCredits bool
 	if e := s.db.QueryRowContext(ctx, `SELECT m.guid,m.checked_at, `+identityExists+`, `+staleCreditsRule+` FROM plexguid_mappings m WHERE m.rating_key=? AND (m.guid='' OR `+identityVerified+`) AND (m.rating_key<3000000000000000 OR m.rating_key>=5000000000000000 OR m.guid='' OR EXISTS (SELECT 1 FROM plexguid_parentage p WHERE p.rating_key=m.rating_key))`, int64(k)).Scan(&cached, &at, &hasIdentity, &staleCredits); e == nil && time.Since(time.Unix(at, 0)) < recheckInterval {
-		// A legacy row on a namesake title is not fresh: resolution re-verifies
-		// it inline, which either proves the guid or drops it.
-		if cached != "" && !hasIdentity && s.hasNamesake(ctx, k) {
+		// An unproven row on a namesake title is not fresh: it is withheld
+		// until re-verified, which either proves the guid or drops it.
+		if cached != "" && (!hasIdentity || staleCredits) && s.hasNamesake(ctx, k) {
 			s.enqueuePriority(k)
 			return "", false
 		}
@@ -1041,23 +1045,26 @@ func (s *Service) verifyItems(ctx context.Context, k core.RatingKey, kind, guid 
 // A merged Plex record's credits are only evidence when both sides list some.
 // Where the canonical record and the catalogue both name at least one
 // director, they must share one (a merged record names a wholly different
-// director). A movie with no director on either side falls back to its
-// top-billed cast the same way.
-const topBilledCast = 5
+// director). A movie's cast is checked too whenever both sides list one: a
+// merged record can keep the right director and carry another film's cast
+// (Runner 2026 directed by Scott Waugh with the 1962 Runner's cast), and the
+// TV and mobile apps show that cast by the plex:// guid.
+const topBilledCast = 10
 
 // creditsAgree reports whether the canonical record's credits are consistent
 // with the catalogue title's. It withholds only on positive disagreement:
-// where both sides name directors those names must share one; where neither
-// side names a director a movie's top-billed cast stands in. If either side
-// has no credits at all this is today's rule (accept).
+// where both sides name directors those names must share one, and where both
+// sides list a movie's cast the record must include one of the catalogue's
+// top-billed names. If either side has no credits of a kind, that kind is
+// not evidence.
 func creditsAgree(kind string, item providerItem, li localIdentity) bool {
 	dirs, localDirs := personNames(item.Director), li.directors
-	if len(dirs) > 0 && len(localDirs) > 0 {
-		return namesOverlap(dirs, localDirs)
+	if len(dirs) > 0 && len(localDirs) > 0 && !namesOverlap(dirs, localDirs) {
+		return false
 	}
-	if len(dirs) == 0 && len(localDirs) == 0 && kind == "movie" {
-		if cast := personNames(item.Role); len(cast) > 0 && len(li.cast) > 0 {
-			return namesOverlap(cast, li.cast)
+	if kind == "movie" {
+		if cast := personNames(item.Role); len(cast) > 0 && len(li.cast) > 0 && !namesOverlap(cast, li.cast) {
+			return false
 		}
 	}
 	return true

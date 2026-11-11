@@ -319,6 +319,9 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 		if os.Getenv("ETHER_PARITY_EXPIRY_ONLY") == "1" {
 			captureCtx = context.WithValue(ctx, serverPIDKey{}, cmd.Process.Pid)
 		}
+		if i == 0 && os.Getenv("ETHER_PARITY_LENIENT_BASELINE") == "1" {
+			captureCtx = context.WithValue(captureCtx, lenientCaptureKey{}, true)
+		}
 		captured, captureErr := captureCorpusMode(captureCtx, url, subtitleMode)
 		cancel()
 		<-done

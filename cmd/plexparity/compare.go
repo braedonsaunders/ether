@@ -30,6 +30,20 @@ type transcript struct {
 }
 
 // captureCorpus retains literal response bytes. There are no normalizations.
+// lenientCaptureKey marks a capture of an older baseline in a cross-version
+// audit (ETHER_PARITY_LENIENT_BASELINE=1): a fixture assertion that encodes
+// today's behaviour is reported as drift instead of aborting, and the
+// response itself still reaches the comparison.
+type lenientCaptureKey struct{}
+
+func fixtureDrift(ctx context.Context, err error) error {
+	if lenient, _ := ctx.Value(lenientCaptureKey{}).(bool); lenient {
+		fmt.Fprintf(os.Stderr, "BASELINE_DRIFT %v\n", err)
+		return nil
+	}
+	return err
+}
+
 func captureCorpus(ctx context.Context, base string) (transcript, error) {
 	return captureCorpusMode(ctx, base, false)
 }
@@ -282,13 +296,19 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 						return result, fmt.Errorf("browse %s %s: %w", viewer, path, err)
 					}
 					if viewer == "owner" && strings.HasPrefix(path, "/tv.plex.providers.epg.xmltv:1/grid?") && !bytes.Contains(resp.Body, []byte("Fixture Movie")) {
-						return result, fmt.Errorf("live TV grid missing fixture programs: %s", resp.Body)
+						if err := fixtureDrift(ctx, fmt.Errorf("live TV grid missing fixture programs: %s", resp.Body)); err != nil {
+							return result, err
+						}
 					}
 					if strings.HasPrefix(path, "/hubs/items") && (resp.Status != http.StatusOK || !bytes.Contains(resp.Body, []byte("Fixture Movie 020"))) {
-						return result, fmt.Errorf("%s %s missing continue shelf: status=%d body=%s", viewer, path, resp.Status, resp.Body)
+						if err := fixtureDrift(ctx, fmt.Errorf("%s %s missing continue shelf: status=%d body=%s", viewer, path, resp.Status, resp.Body)); err != nil {
+							return result, err
+						}
 					}
 					if viewer == "owner" && ((browsingRefusal(path) && resp.Status != http.StatusBadRequest) || (!browsingRefusal(path) && (resp.Status < 200 || resp.Status >= 300))) {
-						return result, fmt.Errorf("browse fixture %s returned %d", path, resp.Status)
+						if err := fixtureDrift(ctx, fmt.Errorf("browse fixture %s returned %d", path, resp.Status)); err != nil {
+							return result, err
+						}
 					}
 					if len(resp.Body) >= 16<<20 {
 						return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)
