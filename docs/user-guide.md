@@ -505,16 +505,14 @@ and preserves profile and device limits. **Offer higher versions** remains a
 separate opt-in for choices above the profile's resolution ceiling. The new
 mode is off by default.
 
-Plex may check whether these versions are available before Play. Set
-**Apps › Plex › Account › Compatibility › More options › Availability check
-timeout** to allow slower sources more time. The default is 8 seconds,
-increased from the previous 2-second limit. In `config.json`, set
-`plex.fileCheckTimeout` to a duration such as `"15s"`; omitted or `"0s"`
-uses 8 seconds. Console changes apply to new checks without a restart and
-are shared across clustered nodes. A shorter client request deadline still
-wins. Longer checks can delay detail pages; an inconclusive check keeps
-Play available. This setting does not change playback preparation timeouts
-or release ranking.
+Plex may check whether these versions are available before Play. These checks
+keep the existing 2-second default so slow sources do not hold up detail pages.
+For unusual backends that need more time, set `plex.fileCheckTimeout` in
+`config.json` to a duration such as `"8s"` or `"15s"`, then restart Ether.
+The setting is config-only and is shared across clustered nodes; omitted or
+`"0s"` uses 2 seconds. A shorter client request deadline still wins. Longer
+checks can delay detail pages; an inconclusive check keeps Play available.
+This setting does not change playback preparation timeouts or release ranking.
 
 After a restart or candidate-cache expiry, an
 admitted detail-page warm-up that reuses your remembered release also requests a

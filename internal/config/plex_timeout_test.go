@@ -11,9 +11,9 @@ func TestPlexFileCheckTimeout(t *testing.T) {
 		json string
 		want time.Duration
 	}{
-		{`{}`, 8 * time.Second},
-		{`{"fileCheckTimeout":"0s"}`, 8 * time.Second},
-		{`{"fileCheckTimeout":"-1s"}`, 8 * time.Second},
+		{`{}`, 2 * time.Second},
+		{`{"fileCheckTimeout":"0s"}`, 2 * time.Second},
+		{`{"fileCheckTimeout":"-1s"}`, 2 * time.Second},
 		{`{"fileCheckTimeout":"15s"}`, 15 * time.Second},
 	} {
 		var p Plex
@@ -24,7 +24,7 @@ func TestPlexFileCheckTimeout(t *testing.T) {
 			t.Errorf("%s: timeout = %v, want %v", tc.json, got, tc.want)
 		}
 	}
-	if got := Defaults(t.TempDir()).Plex.FileCheckTimeoutOrDefault(); got != 8*time.Second {
+	if got := Defaults(t.TempDir()).Plex.FileCheckTimeoutOrDefault(); got != 2*time.Second {
 		t.Fatalf("new install timeout = %v", got)
 	}
 }

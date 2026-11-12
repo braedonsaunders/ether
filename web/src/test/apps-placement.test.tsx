@@ -5,25 +5,6 @@ import { calls, renderApp } from "./harness";
 const WAIT = { timeout: 8000 };
 
 describe("Apps Plex placement", () => {
-  it("loads and saves the availability check timeout in seconds", async () => {
-    const { fake } = renderApp("/apps/plex", {}, (f) => {
-      f.state.config.plex.fileCheckTimeout = "17s";
-    });
-    fireEvent.click(
-      await screen.findByRole("button", { name: "More options: Compatibility" }, WAIT),
-    );
-    const input = screen.getByLabelText("Availability check timeout");
-    expect(input).toHaveValue(17);
-    expect(
-      screen.getByRole("button", { name: "Availability check timeout unit" }),
-    ).toHaveTextContent("Seconds");
-    fireEvent.change(input, { target: { value: "15" } });
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
-    await waitFor(() => expect(fake.state.config.plex.fileCheckTimeout).toBe("15s"));
-    expect(calls(fake, "PUT", "/config/plex")[0]?.body).toMatchObject({ fileCheckTimeout: "15s" });
-    expect(await screen.findByLabelText("Availability check timeout", {}, WAIT)).toHaveValue(15);
-  });
-
   it("keeps account, remote access, and secure connections on the Plex tab", async () => {
     const { fake } = renderApp("/apps/plex");
     expect(

@@ -46,13 +46,11 @@ const PLEX_TAB_KEYS = [
   "secureConnections",
   "trackLatestVersion",
   "compatibilityVersion",
-  "fileCheckTimeout",
 ];
 const COMPATIBILITY_KEYS = [
   "plex.trackLatestVersion",
   "plex.compatibilityVersion",
   "plex.latestCompatibilityVersion",
-  "plex.fileCheckTimeout",
 ];
 
 function plexGroup(id: string) {

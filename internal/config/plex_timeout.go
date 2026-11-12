@@ -8,5 +8,5 @@ func (p Plex) FileCheckTimeoutOrDefault() time.Duration {
 	if p.FileCheckTimeout > 0 {
 		return p.FileCheckTimeout.D()
 	}
-	return 8 * time.Second
+	return 2 * time.Second
 }

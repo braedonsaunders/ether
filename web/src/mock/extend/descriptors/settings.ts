@@ -359,16 +359,6 @@ export const descriptors: Descriptor<SettingsSchemaMeta>[] = [
                 },
                 kind: "text",
               },
-              {
-                key: "fileCheckTimeout",
-                label: { source: "Availability check timeout" },
-                help: {
-                  source:
-                    "How long Plex may check whether versions are available. Longer checks can slow detail pages. 0 uses 8 seconds. Playback has its own timeout.",
-                },
-                kind: "duration",
-                placeholder: "8s",
-              },
             ],
           },
         ],

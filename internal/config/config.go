@@ -124,7 +124,7 @@ type Server struct {
 
 type Plex struct {
 	// FileCheckTimeout bounds background availability checks requested by Plex.
-	// Zero uses 8s. This does not change playback preparation deadlines.
+	// Zero uses 2s. This does not change playback preparation deadlines.
 	FileCheckTimeout           Duration `json:"fileCheckTimeout,omitempty"`
 	CompatibilityVersion       string   `json:"compatibilityVersion,omitempty"`
 	LatestCompatibilityVersion string   `json:"latestCompatibilityVersion,omitempty"`
