@@ -79,6 +79,7 @@ var mixedSections = map[string]map[string]Scope{
 		"internalAddress": Local,
 	},
 	"plex": {
+		"fileCheckTimeout":           Shared,
 		"compatibilityVersion":       Shared,
 		"latestCompatibilityVersion": Shared,
 		"trackLatestVersion":         Shared,

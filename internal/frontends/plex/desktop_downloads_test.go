@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontends/plex/model"
 )
@@ -111,6 +112,7 @@ type slowChecker struct {
 	mu             sync.Mutex
 	inflight, peak int
 	calls          int
+	remaining      time.Duration
 }
 
 func (c *slowChecker) CheckFileAvailability(ctx context.Context, _ *core.User, key core.RatingKey, _ core.ClientCaps, _ string) (bool, error) {
@@ -118,6 +120,9 @@ func (c *slowChecker) CheckFileAvailability(ctx context.Context, _ *core.User, k
 	c.calls++
 	c.inflight++
 	c.peak = max(c.peak, c.inflight)
+	if deadline, ok := ctx.Deadline(); ok {
+		c.remaining = time.Until(deadline)
+	}
 	c.mu.Unlock()
 	defer func() { c.mu.Lock(); c.inflight--; c.mu.Unlock() }()
 	select {
@@ -129,6 +134,37 @@ func (c *slowChecker) CheckFileAvailability(ctx context.Context, _ *core.User, k
 		return false, err
 	}
 	return !c.dead[key], nil
+}
+
+func TestFileAvailabilityUsesConfiguredTimeoutAndCallerDeadline(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Plex.FileCheckTimeout = config.Duration(13 * time.Second)
+	f := newFixture(func(d *testServerDeps) {
+		d.Host.HostConfig = func() config.Config { return cfg }
+	})
+	defer f.srv.Close()
+	checker := &slowChecker{fakePlayback: newFakePlayback(sampleInfo)}
+	f.srv.d.Playback = checker
+	for _, tc := range []struct {
+		budget time.Duration
+		parent time.Duration
+	}{
+		{13 * time.Second, time.Minute},
+		{300 * time.Millisecond, time.Minute},
+		{13 * time.Second, 100 * time.Millisecond},
+	} {
+		cfg.Plex.FileCheckTimeout = config.Duration(tc.budget)
+		ctx, cancel := context.WithTimeout(t.Context(), tc.parent)
+		req := httptest.NewRequest(http.MethodGet, "/library/metadata/x?checkFiles=1", nil)
+		req = req.WithContext(withRequest(ctx, &Request{User: &ownerUser, ClientID: "c"}))
+		mc := &model.MediaContainer{Metadata: []model.Metadata{{Media: []model.Media{{Part: []model.Part{{ID: int64(fightClub.Key)}}}}}}}
+		f.srv.projectFileAvailability(req, mc)
+		cancel()
+		want := min(tc.budget, tc.parent)
+		if checker.remaining <= 0 || checker.remaining > want || checker.remaining < want-100*time.Millisecond {
+			t.Fatalf("check allowance = %v, want approximately %v", checker.remaining, want)
+		}
+	}
 }
 
 // Every Part of every version carries exists/accessible: checks run with

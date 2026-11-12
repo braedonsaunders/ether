@@ -235,6 +235,15 @@ export const PLEX: FieldGroup[] = localized(() => [
           "Leave empty to use the verified version, or the latest public version when tracking is on.",
         ),
       },
+      {
+        key: "fileCheckTimeout",
+        label: t("Availability check timeout"),
+        kind: "duration",
+        help: t(
+          "How long Plex may check whether versions are available. Longer checks can slow detail pages. 0 uses 8 seconds. Playback has its own timeout.",
+        ),
+        placeholder: "8s",
+      },
     ],
   },
 ]);

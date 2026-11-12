@@ -123,8 +123,11 @@ type Server struct {
 }
 
 type Plex struct {
-	CompatibilityVersion       string `json:"compatibilityVersion,omitempty"`
-	LatestCompatibilityVersion string `json:"latestCompatibilityVersion,omitempty"`
+	// FileCheckTimeout bounds background availability checks requested by Plex.
+	// Zero uses 8s. This does not change playback preparation deadlines.
+	FileCheckTimeout           Duration `json:"fileCheckTimeout,omitempty"`
+	CompatibilityVersion       string   `json:"compatibilityVersion,omitempty"`
+	LatestCompatibilityVersion string   `json:"latestCompatibilityVersion,omitempty"`
 	// TrackLatestVersion advertises the newest public PMS release instead of
 	// the version Ether's responses were verified against. Plex apps enable
 	// features by server version, so tracking can reach endpoints Ether lacks.

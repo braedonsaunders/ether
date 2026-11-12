@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -81,12 +82,35 @@ type spySpeculativeResolver struct {
 	core.Resolver
 	speculative bool
 	purpose     string
+	remaining   time.Duration
 }
 
 func (s *spySpeculativeResolver) Resolve(ctx context.Context, req core.ResolveRequest) (*core.Resolution, error) {
 	s.speculative = core.IsSpeculative(ctx) && core.SpeculativeIndexerWork(ctx)
 	s.purpose = core.IndexerPurpose(ctx)
+	if deadline, ok := ctx.Deadline(); ok {
+		s.remaining = time.Until(deadline)
+	}
 	return s.Resolver.Resolve(ctx, req)
+}
+
+func TestCheckFileAvailabilityUsesUpdatedTimeout(t *testing.T) {
+	h := newHarness(t, []*fakeRelease{{ID: "r1", Name: "Film.mkv", Size: 1 << 20}}, []string{"r1"})
+	defer h.m.Close()
+	spy := &spySpeculativeResolver{Resolver: h.resolver}
+	h.m.deps.Resolver = spy
+	for _, budget := range []time.Duration{13 * time.Second, 300 * time.Millisecond} {
+		cfg := h.m.config()
+		cfg.Plex.FileCheckTimeout = config.Duration(budget)
+		h.m.SetConfig(cfg)
+		live, err := h.m.CheckFileAvailability(t.Context(), owner, movieKey, defaultCaps("plex-detail"), "r1")
+		if err != nil || !live {
+			t.Fatalf("check with %v = (%v, %v)", budget, live, err)
+		}
+		if spy.remaining <= 0 || spy.remaining > budget || spy.remaining < budget-100*time.Millisecond {
+			t.Fatalf("resolver allowance = %v, want approximately %v", spy.remaining, budget)
+		}
+	}
 }
 
 func TestCheckFileAvailabilityRunsAsSpeculativeWarmup(t *testing.T) {

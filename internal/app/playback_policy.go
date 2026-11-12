@@ -44,6 +44,9 @@ func prowlarrRetryAfterHeader(v string) string {
 }
 func validatePlaybackConfig(c config.Config) []admin.FieldError {
 	var errs []admin.FieldError
+	if c.Plex.FileCheckTimeout < 0 {
+		errs = append(errs, admin.FieldError{Field: "plex.fileCheckTimeout", Message: "must be zero or positive"})
+	}
 	switch c.Resolver.HardSubtitles {
 	case "", "exclude", "allow":
 	default:

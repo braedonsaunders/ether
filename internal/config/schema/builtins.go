@@ -52,6 +52,7 @@ func Builtins() []Builtin {
 				{Key: "latestCompatibilityVersion", Label: extend.T("Latest public PMS version"), Kind: KindReadonly},
 			}, More: []Field{
 				{Key: "compatibilityVersion", Label: extend.T("Compatibility version override"), Kind: KindText, Help: extend.T("Leave empty to use the verified version, or the latest public version when tracking is on.")},
+				{Key: "fileCheckTimeout", Label: extend.T("Availability check timeout"), Kind: KindDuration, Help: extend.T("How long Plex may check whether versions are available. Longer checks can slow detail pages. 0 uses 8 seconds. Playback has its own timeout."), Placeholder: "8s"},
 			}},
 		}}},
 		// CACHE

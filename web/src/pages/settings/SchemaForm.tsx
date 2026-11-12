@@ -1336,6 +1336,7 @@ function DurationControl({
         value={current.unit}
         onChange={(e) => update(current.amount, e.currentTarget.value as DurationUnit)}
       >
+        <option value="s">{tn(count, "Second", "Seconds")}</option>
         <option value="m">{tn(count, "Minute", "Minutes")}</option>
         <option value="h">{tn(count, "Hour", "Hours")}</option>
         <option value="d">{tn(count, "Day", "Days")}</option>

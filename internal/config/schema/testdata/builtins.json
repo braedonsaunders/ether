@@ -336,6 +336,17 @@
               "label": {
                 "source": "Compatibility version override"
               }
+            },
+            {
+              "help": {
+                "source": "How long Plex may check whether versions are available. Longer checks can slow detail pages. 0 uses 8 seconds. Playback has its own timeout."
+              },
+              "key": "fileCheckTimeout",
+              "kind": "duration",
+              "label": {
+                "source": "Availability check timeout"
+              },
+              "placeholder": "8s"
             }
           ],
           "title": {

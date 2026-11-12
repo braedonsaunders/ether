@@ -41,6 +41,7 @@ func Defaults(dataDir string) Config {
 			DefaultStreamLimit: 2,
 		},
 		Plex: Plex{
+			FileCheckTimeout:  Duration(8 * time.Second),
 			ClientIdentifier:  randomID(16),
 			UseUPnP:           true,
 			SecureConnections: "preferred",

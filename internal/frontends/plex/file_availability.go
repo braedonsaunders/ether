@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontends/plex/model"
@@ -14,14 +13,11 @@ type fileAvailabilityChecker interface {
 	CheckFileAvailability(context.Context, *frontend.Viewer, frontend.RatingKey, frontend.ClientCaps, string) (bool, error)
 }
 
-// fileCheckBudget bounds one response's file checks; fileCheckParallel bounds
-// how many of them run at once. The playback manager additionally caps file
+// fileCheckParallel bounds how many checks run at once. The configured
+// plex.fileCheckTimeout bounds the whole response. The playback manager caps file
 // checks process-wide (its fileCheckSlots) and answers a busy slot as
 // unchecked, so a burst of requests cannot fan out further.
-const (
-	fileCheckBudget   = 2 * time.Second
-	fileCheckParallel = 4
-)
+const fileCheckParallel = 4
 
 // projectFileAvailability answers checkFiles / asyncCheckFiles /
 // checkFileAvailability: every Part carries exists and accessible. Versions
@@ -66,7 +62,7 @@ func (s *Server) projectFileAvailability(r *http.Request, mc *model.MediaContain
 	if len(order) == 0 {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), fileCheckBudget)
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg().Plex.FileCheckTimeoutOrDefault())
 	defer cancel()
 	pr := FromContext(ctx)
 	caps := s.clientCaps(pr)
