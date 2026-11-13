@@ -308,6 +308,15 @@ func cdnReplayApproval(impl Provider) (cdnEdgeApprover, bool) {
 // remembered edge (Payload.OnReplayEdge): the media read that follows will
 // refuse redirects, keeping the token inside the approved CDN.
 func (f *remoteFile) resumeOnAnotherEdge(ctx context.Context, failed string, usable func(string) bool, start int64) (moved, replayed bool) {
+	return f.rerouteWave(ctx, failed, usable, start, nil)
+}
+
+// rerouteWave is the replay wave; a non-nil visit map selects DISCOVERY
+// mode: candidates already visited in this exploration are skipped
+// without spending attempts, every probe records its candidate, and only
+// a flowing (approved) route is adopted — a discovery wave that merely
+// dribbles ends empty-handed, leaving the degraded route in place.
+func (f *remoteFile) rerouteWave(ctx context.Context, failed string, usable func(string) bool, start int64, visit map[string]bool) (moved, replayed bool) {
 	p, gen := f.payload()
 	off := min(max(start, 0), f.size-1)
 	changed := true // the first pass always runs; later ones only once the link moved under us
@@ -373,6 +382,9 @@ func (f *remoteFile) resumeOnAnotherEdge(ctx context.Context, failed string, usa
 			if wait {
 				continue
 			}
+			if visit != nil && visit[key] {
+				continue // already probed in this exploration: discovery must progress, not re-kiss
+			}
 			if tries >= recentEdgeTries {
 				break
 			}
@@ -405,6 +417,9 @@ func (f *remoteFile) resumeOnAnotherEdge(ctx context.Context, failed string, usa
 				break // rebuild approver and candidate list, then re-run the wave
 			}
 			if verdict != probeApproved {
+				if visit != nil {
+					visit[key] = true
+				}
 				if f.edgeProbeAfter == nil {
 					f.edgeProbeAfter = make(map[string]time.Time)
 				}
@@ -424,8 +439,13 @@ func (f *remoteFile) resumeOnAnotherEdge(ctx context.Context, failed string, usa
 				f.mu.Unlock()
 				continue // same snapshot, no flowing candidate yet: try the next
 			}
+			if visit != nil && f.closed {
+				f.mu.Unlock()
+				return false, false // a hunt does not move a closed file: drop the verdict
+			}
 			f.pl.URL = u
 			f.pl.OnReplayEdge = true // the read that follows must not hop off this edge
+			f.routeDegraded = false  // a flowed route outvotes any degraded one, from a replay or a hunt
 			f.gen++
 			f.mu.Unlock()
 			return true, true
@@ -435,12 +455,16 @@ func (f *remoteFile) resumeOnAnotherEdge(ctx context.Context, failed string, usa
 		// only while this wave is still valid to hand it to. An expired
 		// parent adopts nothing, exactly as a strict verdict would not,
 		// and a snapshot that moved under the wave owns the file now.
-		if fallback != "" && ctx.Err() == nil {
+		if visit == nil && fallback != "" && ctx.Err() == nil {
 			f.mu.Lock()
 			adopt := f.gen == gen
 			if adopt {
 				f.pl.URL = fallback
 				f.pl.OnReplayEdge = true
+				f.routeDegraded = true // flow unproven: block deliveries will drive a bounded hunt
+				f.discoverLeft = routeDiscoveryWaves
+				f.discovered = make(map[string]bool)
+				f.degradedFrom = failed // the hunt excludes the host that failed the file, as this wave did
 				f.gen++
 			}
 			f.mu.Unlock()

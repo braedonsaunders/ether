@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // rerouteWaveFixture is a TorBox file pinned to a dead host with the API
@@ -14,7 +16,7 @@ import (
 // The caller seeds the recent-edge ledger and drives resumeOnAnotherEdge
 // directly, asserting adoption through the payload and probe counts
 // through each edge's request counter.
-func rerouteWaveFixture(t *testing.T, title string) (*Engine, *remoteFile, []byte, string, func(string) bool) {
+func rerouteWaveFixture(t *testing.T, title string) (*Engine, *remoteFile, []byte, string, func(string) bool, core.MediaSource) {
 	t.Helper()
 	h := newHarness(t, 4<<20, "torbox")
 	tor := h.provs["torbox-0"]
@@ -42,7 +44,7 @@ func rerouteWaveFixture(t *testing.T, title string) (*Engine, *remoteFile, []byt
 	usable := func(u string) bool {
 		return u != "" && dialAddr(u) != failedAddr && !e.backoff.down(urlHost(u))
 	}
-	return e, f, raw, failed, usable
+	return e, f, raw, failed, usable, source
 }
 
 func payloadURL(t *testing.T, raw []byte) string {
@@ -91,7 +93,7 @@ func probeRangeAt(off int64) string {
 // must keep walking on degraded verdicts and adopt the healthy edge
 // inside one bounded wave.
 func TestRerouteAdoptsHealthyPastDribblingBatch(t *testing.T) {
-	e, f, raw, failed, usable := rerouteWaveFixture(t, "healthy-fourth")
+	e, f, raw, failed, usable, _ := rerouteWaveFixture(t, "healthy-fourth")
 	const off = int64(1 << 20)
 	tok := payloadToken(t, raw)
 	probeRange := probeRangeAt(off)
@@ -127,7 +129,7 @@ func TestRerouteAdoptsHealthyPastDribblingBatch(t *testing.T) {
 // every probed candidate lands in the probe cooldown so the next wave
 // cannot re-kiss the same dribblers while better hosts sit unexamined.
 func TestRerouteDegradesWhenAllCandidatesDribble(t *testing.T) {
-	e, f, raw, failed, usable := rerouteWaveFixture(t, "all-slow")
+	e, f, raw, failed, usable, _ := rerouteWaveFixture(t, "all-slow")
 	const off = int64(1 << 20)
 	tok := payloadToken(t, raw)
 	probeRange := probeRangeAt(off)
@@ -160,7 +162,7 @@ func TestRerouteDegradesWhenAllCandidatesDribble(t *testing.T) {
 // a fallback remembered before the parent expired is no longer adoptable
 // after it (fail closed), exactly as a strict verdict would be dropped.
 func TestRerouteFallbackFailsClosedOnExpiredParent(t *testing.T) {
-	e, f, raw, failed, usable := rerouteWaveFixture(t, "expired-parent")
+	e, f, raw, failed, usable, _ := rerouteWaveFixture(t, "expired-parent")
 	const off = int64(1 << 20)
 	tok := payloadToken(t, raw)
 	probeRange := probeRangeAt(off)
@@ -189,7 +191,7 @@ func TestRerouteFallbackFailsClosedOnExpiredParent(t *testing.T) {
 // eligible answers must still end on a degraded adoption, not a miss.
 func TestRerouteProbeCapCountsEveryVerdict(t *testing.T) {
 	t.Run("fast-truncated fleet adopts within the cap", func(t *testing.T) {
-		e, f, raw, failed, usable := rerouteWaveFixture(t, "truncated-fleet")
+		e, f, raw, failed, usable, _ := rerouteWaveFixture(t, "truncated-fleet")
 		const off = int64(1 << 20)
 		tok := payloadToken(t, raw)
 		probeRange := probeRangeAt(off)
@@ -220,7 +222,7 @@ func TestRerouteProbeCapCountsEveryVerdict(t *testing.T) {
 		}
 	})
 	t.Run("fast-rejected fleet exhausts exactly the cap", func(t *testing.T) {
-		e, f, _, failed, usable := rerouteWaveFixture(t, "rejecting-fleet")
+		e, f, _, failed, usable, _ := rerouteWaveFixture(t, "rejecting-fleet")
 		const off = int64(1 << 20)
 		var edges []*mediaServer
 		for i := 0; i < 6; i++ {

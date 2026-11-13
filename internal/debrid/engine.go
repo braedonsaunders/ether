@@ -492,6 +492,11 @@ func (e *Engine) releaseFile(f *remoteFile) {
 	// longer in e.files, so trimming never reaches it: end it here.
 	replaced := idle && e.files[f.id] != f
 	e.mu.Unlock()
+	if idle {
+		f.mu.Lock()
+		f.closed = true // stream close ends background hunts before trim cancels f.ctx
+		f.mu.Unlock()
+	}
 	if replaced {
 		f.dropMemory()
 		f.cancel()
@@ -548,20 +553,29 @@ type remoteFile struct {
 	refs     int
 	lastUsed time.Time
 
-	linkMu          sync.Mutex // serializes refreshes
-	mu              sync.Mutex
-	pl              Payload
-	gen             int
-	linkFails       int                  // link generations that failed in a row
-	failedGen       int                  // last generation counted in linkFails (-1 = none)
-	replayAt        time.Time            // replay probes have their own pacing, independent of API backoff
-	edgeProbeAfter  map[string]time.Time // failed probes are specific to this file and signed URL
-	replayURL       string               // a newly signed link may be probed immediately
-	edgeCursorKey   string               // provider whose candidates were last probed for this file
-	edgeCursorHost  string               // last actual probe; next wave starts after this host
-	rerouteAt       time.Time            // next link-regeneration wave allowed after a host failure
-	rerouteSem      chan struct{}        // one reroute wave at a time; waiters reuse its result
-	mediaHealthyKey string               // a shared cooldown must not interrupt another healthy file
+	linkMu         sync.Mutex // serializes refreshes
+	mu             sync.Mutex
+	pl             Payload
+	gen            int
+	linkFails      int                  // link generations that failed in a row
+	failedGen      int                  // last generation counted in linkFails (-1 = none)
+	replayAt       time.Time            // replay probes have their own pacing, independent of API backoff
+	edgeProbeAfter map[string]time.Time // failed probes are specific to this file and signed URL
+	// Degraded-route state: a replay adopted on degraded evidence rides
+	// a route whose flow is unproven, and discovery is the bounded hunt
+	// for a route that proves it, under these guards by f.mu.
+	routeDegraded   bool            // the current route earned only probeDegraded evidence
+	discoverLeft    int             // discovery waves this degraded route may still ask for
+	discovering     bool            // single flight: a kick while a wave runs never queues
+	discovered      map[string]bool // candidates this exploration already probed, so waves progress explicitly
+	closed          bool            // stream released; background hunts end at it even before trim cancels f.ctx
+	degradedFrom    string          // the host the degraded route replaced; the hunt excludes it like a replay wave does
+	replayURL       string          // a newly signed link may be probed immediately
+	edgeCursorKey   string          // provider whose candidates were last probed for this file
+	edgeCursorHost  string          // last actual probe; next wave starts after this host
+	rerouteAt       time.Time       // next link-regeneration wave allowed after a host failure
+	rerouteSem      chan struct{}   // one reroute wave at a time; waiters reuse its result
+	mediaHealthyKey string          // a shared cooldown must not interrupt another healthy file
 	mediaPauseKey   string
 	mediaPause      mediaPause
 
@@ -644,6 +658,7 @@ func (f *remoteFile) adopt(p Payload) {
 		f.pl.URL, f.pl.Expires = p.URL, p.Expires
 		f.pl.Provider, f.pl.Kind, f.pl.TorrentID, f.pl.FileID, f.pl.Link = p.Provider, p.Kind, p.TorrentID, p.FileID, p.Link
 		f.pl.OnReplayEdge = p.OnReplayEdge // a provider link arrives unmarked; a resumed replay stays marked
+		f.routeDegraded = false            // the provider's new route answers for itself; any old hunt is moot
 		f.gen++
 	}
 }
@@ -686,6 +701,7 @@ func (f *remoteFile) link(ctx context.Context, force bool, gen ...int) (Payload,
 	}
 	moved := out.TorrentID != p.TorrentID || out.Provider != p.Provider
 	f.pl = out
+	f.routeDegraded = false // a freshly minted link answers for its own route
 	f.gen++
 	g = f.gen
 	f.mu.Unlock()
@@ -712,6 +728,7 @@ func (f *remoteFile) moveFromHost(ctx context.Context, gen int) bool {
 	}
 	f.mu.Lock()
 	f.pl = out
+	f.routeDegraded = false // another provider's route answers for itself
 	f.gen++
 	f.mu.Unlock()
 	f.e.kickLeases()
@@ -724,6 +741,12 @@ const (
 	rerouteBudget   = 10 * time.Second // bounds one wave: API calls and the alternate provider
 	rerouteSpacing  = 5 * time.Second  // between waves that found a live node
 	rerouteCooldown = 20 * time.Second // after a wave that found none
+	// routeDiscoveryWaves bounds the hunt for a flowing route after a
+	// degraded adoption: each hunt wave is a normal probe wave (cap and
+	// budget) that visits each candidate at most once, so exploration
+	// per generation is bounded by cap × waves, never by the ledger.
+	// Refresh and replay pacing bound how often a fresh hunt may start.
+	routeDiscoveryWaves = 4
 )
 
 // reroute first tries the existing signed link on another approved edge.
@@ -827,6 +850,77 @@ func (f *remoteFile) reroute(ctx context.Context, failed string, gen int, start 
 	f.rerouteAt = f.e.now().Add(wait)
 	f.mu.Unlock()
 	return moved
+}
+
+// kickDiscovery starts one bounded hunt for a flowing route if the file
+// rides a degraded one and no hunt is already in flight. Delivered blocks
+// are the metronome because a slow-but-answering route never trips the
+// zero-byte stall detector: without this, a healthy edge behind a fully
+// dribbled set would stay unfound while the degraded route kept playing.
+// The kick never queues: one flight at a time, no-op when settled.
+func (f *remoteFile) kickDiscovery() {
+	f.mu.Lock()
+	if f.closed || !f.routeDegraded || f.discoverLeft <= 0 || f.discovering {
+		f.mu.Unlock()
+		return
+	}
+	f.discovering = true
+	f.mu.Unlock()
+	go f.discoverStrictRoute()
+}
+
+// discoverStrictRoute probes for a route that FLOWS, away from the
+// delivery path: block reads never wait on it. The flight is one probe
+// wave (the replay wave's cap and budget, shared sem, explicit visited
+// set) under the file's own context, so stream close, engine close and
+// the wave's own deadline all cancel it, and its adoption is guarded by
+// the same snapshot re-check a replay adoption uses. Only an approved
+// candidate is adopted here: a hunt that dribbles settles the degraded
+// route one wave poorer, and after routeDiscoveryWaves such waves the
+// degradation settles until some real failure reroutes the file.
+func (f *remoteFile) discoverStrictRoute() {
+	defer func() {
+		f.mu.Lock()
+		f.discovering = false
+		f.mu.Unlock()
+	}()
+	select {
+	case f.rerouteSem <- struct{}{}:
+	case <-f.ctx.Done():
+		return
+	default: // a wave already owns the slot; this beat is not queued
+		return
+	}
+	defer func() { <-f.rerouteSem }()
+	f.mu.Lock()
+	gen, visit, from := f.gen, f.discovered, f.degradedFrom
+	f.mu.Unlock()
+	wctx, cancel := context.WithTimeout(f.ctx, rerouteBudget)
+	defer cancel()
+	p, _ := f.payload()
+	failed := from
+	if failed == "" {
+		failed = p.URL
+	}
+	failedAddr := dialAddr(failed)
+	usable := func(u string) bool {
+		return u != "" && dialAddr(u) != failedAddr && !f.e.backoff.down(urlHost(u))
+	}
+	moved, replayed := f.rerouteWave(wctx, failed, usable, 0, visit)
+	if replayed {
+		return // promoted on flow proof; the degraded state ended in the wave
+	}
+	if moved { // another route won under us and owns the file's evidence now
+		return
+	}
+	if f.ctx.Err() != nil {
+		return // the file is closing; settle nothing, spend nothing
+	}
+	f.mu.Lock()
+	if f.routeDegraded && f.gen == gen {
+		f.discoverLeft--
+	}
+	f.mu.Unlock()
 }
 
 func (f *remoteFile) blockLen(idx int64) int64 {
@@ -1060,6 +1154,9 @@ func (f *remoteFile) finish(idx int64, fl *blockFlight, data []byte, err error, 
 		delete(f.flights, idx)
 	}
 	f.bmu.Unlock()
+	if err == nil {
+		f.kickDiscovery() // a delivered block is the only metronome a degraded route has
+	}
 	fl.data, fl.err = data, err
 	close(fl.done)
 }
