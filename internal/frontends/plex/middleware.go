@@ -42,6 +42,12 @@ const corsExposeHeaders = "Content-Length, Content-Range, Content-Type, Date, Lo
 
 // commonHeaders sets X-Plex-Protocol and CORS on every response and answers
 // preflights.
+// isCORSPreflight reports whether an OPTIONS request is a browser CORS
+// preflight rather than a direct OPTIONS call.
+func isCORSPreflight(r *http.Request) bool {
+	return r.Header.Get("Origin") != "" && r.Header.Get("Access-Control-Request-Method") != ""
+}
+
 func (s *Server) commonHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -64,7 +70,12 @@ func (s *Server) commonHeaders(next http.Handler) http.Handler {
 		if r.Method == http.MethodOptions {
 			// PMS leaves subtitle-search/upload OPTIONS unimplemented, even
 			// though the rest of the API accepts generic CORS preflights.
-			if strings.HasPrefix(r.URL.Path, "/library/metadata/") && (strings.HasSuffix(r.URL.Path, "/subtitles") || strings.HasSuffix(r.URL.Path, "/tree")) {
+			// A real browser preflight (Origin and Access-Control-Request-Method)
+			// is still answered: the subtitle pick is a PUT with X-Plex headers,
+			// so web-based players (Plex Web, Plex Desktop) always preflight it,
+			// and a 404 makes them fail with "Unable to download subtitles"
+			// without ever sending the PUT.
+			if strings.HasPrefix(r.URL.Path, "/library/metadata/") && ((strings.HasSuffix(r.URL.Path, "/subtitles") && !isCORSPreflight(r)) || strings.HasSuffix(r.URL.Path, "/tree")) {
 				writeHTTPError(w, http.StatusNotFound)
 				return
 			}

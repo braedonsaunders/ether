@@ -548,6 +548,31 @@ func TestSubtitleSearchWithoutServiceIsEmpty(t *testing.T) {
 	}
 }
 
+// Plex Web and Plex Desktop send the subtitle pick (PUT .../subtitles?key=)
+// with X-Plex headers, so the browser preflights it. A 404 preflight makes
+// the app show "Unable to download subtitles" without sending the PUT.
+func TestSubtitleBrowserPreflightIsAnswered(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	path := "/library/metadata/" + fightClub.Key.String() + "/subtitles?key=" + url.QueryEscape("/library/streams/1099511627777")
+	rec := f.request(t, http.MethodOptions, path, map[string]string{
+		"Origin": "https://app.plex.tv", "Access-Control-Request-Method": "PUT",
+		"Access-Control-Request-Headers": "x-plex-token,x-plex-client-identifier", "X-Plex-Token": "",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preflight: %d", rec.Code)
+	}
+	h := rec.Header()
+	if h.Get("Access-Control-Allow-Origin") != "https://app.plex.tv" || !strings.Contains(h.Get("Access-Control-Allow-Methods"), "PUT") ||
+		!strings.Contains(h.Get("Access-Control-Allow-Headers"), "x-plex-token") {
+		t.Fatalf("preflight headers: %v", h)
+	}
+	// A bare OPTIONS (no preflight headers) keeps the PMS 404.
+	if rec := f.request(t, http.MethodOptions, path, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("bare OPTIONS: %d", rec.Code)
+	}
+}
+
 func TestTranscodeSidecarSubtitlesFollowSessionOffset(t *testing.T) {
 	f, _ := newSubtitleFixture(t)
 	f.playback.info = probedInfo
