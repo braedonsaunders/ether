@@ -1,0 +1,38 @@
+# Release choices in Plex's audio menu — throwaway prototype
+
+Question: will an unmodified Plex app display synthetic audio entries and
+restart playback against another release when one is selected?
+
+Run Ether normally (`go run ./cmd/ether`), then enable **Apps → Plex → Account →
+Experimental playback → Show releases in the audio selector** and save.
+The equivalent config key is `plex.releaseAudioSelector` (default `false`).
+
+Open a movie or episode with multiple resolved releases. Its audio menu should
+retain real audio tracks and also offer `Release: Auto` and named release choices.
+Selections through a part PUT or a decision/start `audioStreamID` target the
+existing release preparation path. Normal audio entries still select audio within
+that release. `Release: Auto` clears the release preference. The normal Auto
+path may reuse an already live source; it does not force a new source search.
+
+Virtual stream IDs bind to stable release IDs, not candidate positions. Virtual
+tracks never enter probe facts or encoder options. Selections made through the
+part endpoint live in memory per viewer/title, like existing audio selections;
+they are lost on restart and are not replicated across nodes. Disabling the
+option hides the entries and ignores the release override. Choices still use
+the resolver's normal access, quality and availability rules and fallback.
+
+## Client experiment (verdict pending)
+
+1. Confirm names appear in the target Plex app's audio menu, before and during play.
+2. Pick another release. Check Ether's session details for the actual source.
+3. Check whether the app requests a new decision/start or Part read. An existing
+   connection cannot swap its source merely because a selection PUT returned 200.
+4. Seek, clear the preference with Auto, and verify the playback position. Ether preserves
+   the offset sent by the client; cuts with different timelines are not aligned.
+5. Disable the option and reload the item to return to normal audio menus.
+
+Known uncertainty: some clients hide track titles, require elementary stream
+indexes, or choose audio locally during direct play. Synthetic entries cannot
+force those clients to restart. No Plex client has been validated yet. This is
+an adapter experiment, not a claim of seamless source switching. Remove it or
+replace it with a supported implementation once client testing answers that question.

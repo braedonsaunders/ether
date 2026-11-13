@@ -20,11 +20,12 @@ func slotHash(key frontend.RatingKey, slot string) int64 { return frontend.WireI
 // distinguishing audio/subtitle metadata so an old ID cannot change language
 // when a later release reuses the same stream position.
 type selection struct {
-	audio       int // position in MediaInfo.Streams
-	audioSet    bool
-	audioStream *frontend.StreamInfo
-	subtitle    int // position, -1 = none
-	subtitleSet bool
+	releaseAudio string // prototype release choice; empty = no override
+	audio        int    // position in MediaInfo.Streams
+	audioSet     bool
+	audioStream  *frontend.StreamInfo
+	subtitle     int // position, -1 = none
+	subtitleSet  bool
 	// subtitleStream is the chosen subtitle's identity (language, codec,
 	// and source), not its position. A later variant order can put a
 	// different track in the old slot; resolveSubtitle finds this one.

@@ -200,6 +200,7 @@ type playRequest struct {
 	protocol       string
 	copyTimestamps bool
 	audioSel       int                  // stream position, -1 = default
+	releaseAudio   string               // experimental audio-menu release override
 	audioStream    *frontend.StreamInfo // selected identity, remapped after probing
 	subSel         int                  // stream position, -1 = none/default
 	subSet         bool
@@ -445,6 +446,9 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 		userID = pr.User.ID
 	}
 	sel := s.selections.get(userID, int64(key))
+	if s.cfg().Plex.ReleaseAudioSelector {
+		p.releaseAudio = sel.releaseAudio
+	}
 	if sel.audioSet {
 		p.audioSel, p.audioStream = sel.audio, sel.audioStream
 	}
@@ -457,8 +461,13 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 			return playRequest{}, rerr
 		}
 		if rerr == nil && binding.Key == key && binding.Info.Type == "audio" {
-			info := binding.Info
-			p.audioSel, p.audioStream = binding.Index, &info
+			if release, virtual := s.releaseAudioBinding(binding); virtual {
+				p.releaseAudio = release
+				p.audioSel, p.audioStream = -1, nil
+			} else if !isReleaseAudio(binding.Info) {
+				info := binding.Info
+				p.audioSel, p.audioStream = binding.Index, &info
+			}
 		}
 	}
 	if v := q.Get("subtitleStreamID"); v != "" {
@@ -783,6 +792,9 @@ func (s *Server) awaitSource(ctx context.Context, r *http.Request, pr *Request) 
 	if err != nil || p.key == 0 || p.partReleaseID != "" || p.mediaIndex > 0 || !isPlayableKey(p.key) {
 		return nil, nil
 	}
+	if p.releaseAudio != "" && p.releaseAudio != releaseAudioAuto {
+		return nil, nil // an explicit audio-menu release must not preflight Auto
+	}
 	t, err := s.catalog().Get(ctx, p.key)
 	if err != nil || t == nil || !s.playableTitle(ctx, pr.User, t) {
 		return nil, nil
@@ -904,6 +916,11 @@ func (s *Server) decisionContainer(ctx context.Context, pr *Request, t *frontend
 		p.subtitles = "burn"
 	}
 	md.Media = []model.Media{s.decisionMedia(t, ps, shown, p, pr.User)}
+	menuRelease := p.releaseAudio
+	if p.audioStream != nil {
+		menuRelease = ""
+	}
+	s.appendReleaseAudio(pr, t.Key, &md.Media[0], menuRelease)
 	s.addProbedStreamFeatures(ctx, t.Key, ps.Info, &md)
 	if md.Media[0].Duration > 0 {
 		md.Duration = md.Media[0].Duration
@@ -2025,6 +2042,14 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
+	if s.cfg().Plex.ReleaseAudioSelector && pr.User != nil {
+		if picked := s.selections.get(pr.User.ID, int64(key)).releaseAudio; picked != "" {
+			releaseID = picked
+			if picked == releaseAudioAuto {
+				releaseID = ""
+			}
+		}
+	}
 	title, titleErr := s.metadataTitle(ctx, pr, key)
 	if titleErr != nil || !s.pluginAwarePlayable(ctx, pr.User, title) {
 		writeHTTPError(w, http.StatusNotFound)
@@ -2230,6 +2255,12 @@ func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 				writeHTTPError(w, http.StatusBadRequest)
 				return
 			}
+			if isReleaseAudio(binding.Info) {
+				if _, valid := s.releaseAudioBinding(binding); !valid {
+					writeHTTPError(w, http.StatusBadRequest)
+					return
+				}
+			}
 			audio = &binding
 		}
 	}
@@ -2262,13 +2293,19 @@ func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 	s.selections.update(pr.User.ID, id, func(sel *selection) {
 		if audioDefault {
 			sel.audio, sel.audioSet, sel.audioStream = 0, false, nil
+			sel.releaseAudio = ""
 		}
 		if subDefault {
 			sel.subtitle, sel.subtitleSet, sel.subtitleStream = 0, false, nil
 		}
 		if audio != nil {
-			info := audio.Info
-			sel.audio, sel.audioSet, sel.audioStream = audio.Index, true, &info
+			if release, virtual := s.releaseAudioBinding(*audio); virtual {
+				sel.releaseAudio = release
+				sel.audio, sel.audioSet, sel.audioStream = 0, false, nil
+			} else {
+				info := audio.Info
+				sel.audio, sel.audioSet, sel.audioStream = audio.Index, true, &info
+			}
 		}
 		if clearSub {
 			sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, nil

@@ -125,6 +125,9 @@ type Server struct {
 }
 
 type Plex struct {
+	// ReleaseAudioSelector is an experimental prototype: expose release choices
+	// as virtual audio tracks. A client must restart playback to switch sources.
+	ReleaseAudioSelector       bool   `json:"releaseAudioSelector,omitempty"`
 	CompatibilityVersion       string `json:"compatibilityVersion,omitempty"`
 	LatestCompatibilityVersion string `json:"latestCompatibilityVersion,omitempty"`
 	// TrackLatestVersion advertises the newest public PMS release instead of

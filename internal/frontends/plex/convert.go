@@ -642,7 +642,7 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, w
 	if stamp <= 0 {
 		stamp = 1
 	}
-	if withVariants && withStreams && !sessionMedia && !singleVersionClient(pr) {
+	if withVariants && withStreams && !sessionMedia && (!singleVersionClient(pr) || s.cfg().Plex.ReleaseAudioSelector) {
 		probed, probedRelease := frontend.MediaInfo{Estimated: true}, ""
 		if ps != nil {
 			// A client keeps the Media index it chose before playback
@@ -664,6 +664,14 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, w
 			probed = info
 		}
 		if media, edition := s.mediaForVariants(ctx, pr, t, stamp, probed, probedRelease, ps); len(media) > 0 {
+			if singleVersionClient(pr) {
+				for _, m := range media {
+					if m.Selected != nil && *m.Selected {
+						return []model.Media{m}, edition
+					}
+				}
+				return media[:1], edition
+			}
 			return media, edition
 		}
 	}
@@ -701,6 +709,9 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, w
 		sel := resolveSelection(stored, info)
 		sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 		m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User, pr)
+	}
+	if withStreams {
+		s.appendReleaseAudio(pr, t.Key, &m)
 	}
 	return []model.Media{m}, ""
 }
