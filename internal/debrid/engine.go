@@ -468,6 +468,7 @@ func (e *Engine) acquireFile(ctx context.Context, releaseID string, payload []by
 		e.files[releaseID] = f
 	} else {
 		f.adopt(p)
+		f.closed = false // reviving a retained file under e.mu: the old stream's end must not outlive it
 	}
 	f.refs++
 	first := f.refs == 1
@@ -491,11 +492,20 @@ func (e *Engine) releaseFile(f *remoteFile) {
 	// A file replaced while in use (its payload named another file) is no
 	// longer in e.files, so trimming never reaches it: end it here.
 	replaced := idle && e.files[f.id] != f
-	e.mu.Unlock()
+	var hunt context.CancelFunc
 	if idle {
+		// The transition completes inside e.mu: acquireFile revives files
+		// under the same lock, so a concurrent reopen can neither slip a
+		// closed stamp onto the revived file nor dodge it.
 		f.mu.Lock()
 		f.closed = true // stream close ends background hunts before trim cancels f.ctx
+		hunt = f.huntCancel
+		f.huntCancel = nil
 		f.mu.Unlock()
+	}
+	e.mu.Unlock()
+	if hunt != nil {
+		hunt() // an in-flight exploration dies at the stream's end, not just its adoption
 	}
 	if replaced {
 		f.dropMemory()
@@ -564,18 +574,20 @@ type remoteFile struct {
 	// Degraded-route state: a replay adopted on degraded evidence rides
 	// a route whose flow is unproven, and discovery is the bounded hunt
 	// for a route that proves it, under these guards by f.mu.
-	routeDegraded   bool            // the current route earned only probeDegraded evidence
-	discoverLeft    int             // discovery waves this degraded route may still ask for
-	discovering     bool            // single flight: a kick while a wave runs never queues
-	discovered      map[string]bool // candidates this exploration already probed, so waves progress explicitly
-	closed          bool            // stream released; background hunts end at it even before trim cancels f.ctx
-	degradedFrom    string          // the host the degraded route replaced; the hunt excludes it like a replay wave does
-	replayURL       string          // a newly signed link may be probed immediately
-	edgeCursorKey   string          // provider whose candidates were last probed for this file
-	edgeCursorHost  string          // last actual probe; next wave starts after this host
-	rerouteAt       time.Time       // next link-regeneration wave allowed after a host failure
-	rerouteSem      chan struct{}   // one reroute wave at a time; waiters reuse its result
-	mediaHealthyKey string          // a shared cooldown must not interrupt another healthy file
+	routeDegraded   bool               // the current route earned only probeDegraded evidence
+	discoverLeft    int                // discovery waves this degraded route may still ask for
+	discovering     bool               // single flight: a kick while a wave runs never queues
+	discovered      map[string]bool    // candidates this exploration already probed, so waves progress explicitly
+	closed          bool               // stream released; background hunts end at it even before trim cancels f.ctx
+	huntCancel      context.CancelFunc // ends an in-flight discovery exploration at a lifecycle transition; nil when none runs
+	huntSeq         int64              // identity of the registered flight, so only it may retire its own handle
+	degradedFrom    string             // the host the degraded route replaced; the hunt excludes it like a replay wave does
+	replayURL       string             // a newly signed link may be probed immediately
+	edgeCursorKey   string             // provider whose candidates were last probed for this file
+	edgeCursorHost  string             // last actual probe; next wave starts after this host
+	rerouteAt       time.Time          // next link-regeneration wave allowed after a host failure
+	rerouteSem      chan struct{}      // one reroute wave at a time; waiters reuse its result
+	mediaHealthyKey string             // a shared cooldown must not interrupt another healthy file
 	mediaPauseKey   string
 	mediaPause      mediaPause
 
@@ -650,8 +662,9 @@ func (f *remoteFile) yieldCtx(parent context.Context) (context.Context, context.
 // adopt takes a fresher link from a payload handed in by a caller.
 func (f *remoteFile) adopt(p Payload) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	hunt := f.huntCancel
 	if p.URL != "" && p.Expires.After(f.pl.Expires) {
+		f.huntCancel = nil
 		// The newer link may come from another provider or a re-added
 		// torrent: take its identity with it, so refreshes and timings go
 		// to the right place.
@@ -660,6 +673,12 @@ func (f *remoteFile) adopt(p Payload) {
 		f.pl.OnReplayEdge = p.OnReplayEdge // a provider link arrives unmarked; a resumed replay stays marked
 		f.routeDegraded = false            // the provider's new route answers for itself; any old hunt is moot
 		f.gen++
+	} else {
+		hunt = nil
+	}
+	f.mu.Unlock()
+	if hunt != nil {
+		hunt()
 	}
 }
 
@@ -860,13 +879,24 @@ func (f *remoteFile) reroute(ctx context.Context, failed string, gen int, start 
 // The kick never queues: one flight at a time, no-op when settled.
 func (f *remoteFile) kickDiscovery() {
 	f.mu.Lock()
-	if f.closed || !f.routeDegraded || f.discoverLeft <= 0 || f.discovering {
+	now := f.e.now()
+	if f.closed || !f.routeDegraded || f.discoverLeft <= 0 || f.discovering || now.Before(f.replayAt) {
 		f.mu.Unlock()
 		return
 	}
+	// The hunt paces on replay's stamp: block completions may drive at most
+	// one wave per rerouteSpacing, never a drumbeat; a replay gated behind a
+	// hunt wave waits, as it does behind any recent wave.
+	f.replayAt = now.Add(rerouteSpacing)
 	f.discovering = true
+	// An exploration is cancellable at the next lifecycle transition: stream
+	// close and adopt end the old hunt actively, not merely its adoption.
+	hctx, cancel := context.WithCancel(f.ctx)
+	f.huntCancel = cancel
+	seq := f.huntSeq
+	f.huntSeq++
 	f.mu.Unlock()
-	go f.discoverStrictRoute()
+	go f.discoverStrictRoute(hctx, cancel, seq)
 }
 
 // discoverStrictRoute probes for a route that FLOWS, away from the
@@ -878,25 +908,32 @@ func (f *remoteFile) kickDiscovery() {
 // candidate is adopted here: a hunt that dribbles settles the degraded
 // route one wave poorer, and after routeDiscoveryWaves such waves the
 // degradation settles until some real failure reroutes the file.
-func (f *remoteFile) discoverStrictRoute() {
+func (f *remoteFile) discoverStrictRoute(hctx context.Context, cancel context.CancelFunc, seq int64) {
+	defer cancel()
 	defer func() {
 		f.mu.Lock()
 		f.discovering = false
+		if seq == f.huntSeq-1 {
+			f.huntCancel = nil // only the newest flight may retire the handle; a stolen one stays armed
+		}
 		f.mu.Unlock()
 	}()
 	select {
 	case f.rerouteSem <- struct{}{}:
-	case <-f.ctx.Done():
+	case <-hctx.Done():
 		return
 	default: // a wave already owns the slot; this beat is not queued
 		return
 	}
 	defer func() { <-f.rerouteSem }()
 	f.mu.Lock()
-	gen, visit, from := f.gen, f.discovered, f.degradedFrom
+	gen, visit, from, dead := f.gen, f.discovered, f.degradedFrom, f.closed
 	f.mu.Unlock()
-	wctx, cancel := context.WithTimeout(f.ctx, rerouteBudget)
-	defer cancel()
+	if dead {
+		return // the stream ended between kick and slot; this hunt is already someone else's memory
+	}
+	wctx, waveCancel := context.WithTimeout(hctx, rerouteBudget)
+	defer waveCancel()
 	p, _ := f.payload()
 	failed := from
 	if failed == "" {
@@ -913,8 +950,8 @@ func (f *remoteFile) discoverStrictRoute() {
 	if moved { // another route won under us and owns the file's evidence now
 		return
 	}
-	if f.ctx.Err() != nil {
-		return // the file is closing; settle nothing, spend nothing
+	if f.ctx.Err() != nil || hctx.Err() != nil {
+		return // closed, adopted-over or closing: settle nothing, spend nothing
 	}
 	f.mu.Lock()
 	if f.routeDegraded && f.gen == gen {

@@ -402,6 +402,10 @@ func (f *remoteFile) rerouteWave(ctx context.Context, failed string, usable func
 				return false, false
 			}
 			if f.gen != gen { // a refresh or adopt moved the link while the probe ran
+				if visit != nil {
+					f.mu.Unlock()
+					return false, false // a generation change ends the old exploration: the hunt does not re-probe on someone else's payload
+				}
 				p, gen = f.pl, f.gen
 				f.mu.Unlock()
 				if usable(p.URL) { // whoever moved the file took it to a live route: they won

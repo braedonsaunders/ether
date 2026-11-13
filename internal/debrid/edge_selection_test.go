@@ -104,7 +104,7 @@ func TestRerouteAdoptsHealthyPastDribblingBatch(t *testing.T) {
 		edges = append(edges, m)
 	}
 	for _, i := range []int{0, 1, 2} { // the observed drained band: ~0.6 MB/s
-		edges[i].drip[tok+"|"+probeRange] = mediaDrip{chunk: 6 << 10, pause: 100 * time.Millisecond}
+		edges[i].drip[tok+"|"+probeRange] = mediaDrip{chunk: 60 << 10, pause: 100 * time.Millisecond}
 	}
 	recordFreshestFirst(e, edges) // dribblers freshest, healthy candidate fourth
 
@@ -199,7 +199,7 @@ func TestRerouteProbeCapCountsEveryVerdict(t *testing.T) {
 		for i := 0; i < 6; i++ {
 			m := newMediaServer(t, 4<<20)
 			m.issue(tok)
-			m.drip[tok+"|"+probeRange] = mediaDrip{chunk: 6 << 10, eof: true} // 64 KiB then EOF, instantly
+			m.drip[tok+"|"+probeRange] = mediaDrip{chunk: 6 << 10, eof: true} // 6 KiB then EOF, instantly
 			edges = append(edges, m)
 		}
 		recordFreshestFirst(e, edges)

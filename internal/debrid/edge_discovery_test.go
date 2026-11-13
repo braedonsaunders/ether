@@ -3,6 +3,7 @@ package debrid
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -116,7 +117,9 @@ func TestDiscoverySettlesWithoutAFlowingRoute(t *testing.T) {
 		if left == 0 || time.Now().After(deadline) {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		// One block every ~400 ms: the file's fresh blocks must outlast the
+		// paced hunt's windows, so settling waits on spacing, not EOF.
+		time.Sleep(300 * time.Millisecond)
 	}
 	f.mu.Lock()
 	left, deg := f.discoverLeft, f.routeDegraded
@@ -134,6 +137,11 @@ func TestDiscoverySettlesWithoutAFlowingRoute(t *testing.T) {
 			"one probe per candidate per exploration, and later waves must re-skip it", got)
 	}
 	before := d1.requests.Load()
+	// Between the last wave's consume and the loop's exit, deliveries kept
+	// kicking a spent hunt and the visited edge never saw them; these last
+	// reads run from cache (the file is fetched out by now), checking that
+	// quiescence also holds with no kicks at all.
+	next = 3 << 20
 	for i := 0; i < 3; i++ {
 		readBlock(t, rc, buf, next)
 		next += 64 << 10
@@ -258,4 +266,192 @@ func waitUntil(d time.Duration, ok func() bool) bool {
 func mustPayloadURL(f *remoteFile) string {
 	p, _ := f.payload()
 	return p.URL
+}
+
+// The fourth review round's lifecycle findings, red first.
+
+// Close ends the hunt ACTIVELY: the parked probe dies with the exploration
+// context and the wave never reaches the candidate behind it — proven while
+// the gate stays closed, so only cancellation can end the wave early.
+func TestDiscoveryCancelIsProactive(t *testing.T) {
+	e, f, raw, failed, usable, src := rerouteWaveFixture(t, "cancel-proactive")
+	const off = int64(1 << 20)
+	d0 := newMediaServer(t, 4<<20)
+	degradedAdoption(t, e, f, raw, failed, usable, d0, off)
+	rc := src.(readAtContexter)
+	tok := payloadToken(t, raw)
+	parked, next := newMediaServer(t, 4<<20), newMediaServer(t, 4<<20)
+	parked.issue(tok)
+	hold := make(chan struct{})
+	parked.gate[tok+"|"+probeRangeAt(0)] = hold // outlives the probe budget: the probe sits, then dies on its own
+	defer close(hold)
+	recordFreshestFirst(e, []*mediaServer{parked, next}) // next answers 403 instantly when asked
+	buf := make([]byte, 4096)
+	nextOff := int64(512 << 10)
+	deadline := time.Now().Add(10 * time.Second)
+	for parked.requests.Load() == 0 && time.Now().Before(deadline) {
+		readBlock(t, rc, buf, nextOff)
+		nextOff += 64 << 10 // one fresh block per beat: deliveries are the metronome
+		time.Sleep(50 * time.Millisecond)
+	}
+	if parked.requests.Load() == 0 {
+		t.Fatal("the hunt never probed the freshest candidate")
+	}
+	src.Close() // gate still closed: only a cancelled exploration ends this wave before its next probe
+	time.Sleep(4 * time.Second)
+	if got := next.requests.Load(); got != 0 {
+		t.Fatalf("the candidate behind the parked probe was probed after stream close: requests=%d, want 0 — close must cancel the exploration, not merely refuse adoption", got)
+	}
+}
+
+// A retained file, closed and reopened on the same release ID, is reused
+// from the cache: the old stream's end must not poison the hunt forever.
+func TestDiscoveryResumesAfterReopen(t *testing.T) {
+	e, f, raw, failed, usable, src := rerouteWaveFixture(t, "reopen")
+	const off = int64(1 << 20)
+	d0 := newMediaServer(t, 4<<20)
+	degradedAdoption(t, e, f, raw, failed, usable, d0, off)
+	tok := payloadToken(t, raw)
+	if err := src.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	reopened, err := e.Open(context.Background(), f.id, raw)
+	if err != nil {
+		t.Fatalf("reopen of the retained file failed: %v", err)
+	}
+	defer reopened.Close()
+	healthy := newMediaServer(t, 4<<20)
+	healthy.issue(tok)
+	e.recent.record("torbox-0", strings.TrimPrefix(healthy.URL, "http://"), time.Now().Add(-time.Minute))
+	buf := make([]byte, 4096)
+	nextOff := int64(512 << 10)
+	deadline := time.Now().Add(10 * time.Second)
+	for urlHost(mustPayloadURL(f)) != edgeHost(t, healthy) && time.Now().Before(deadline) {
+		readBlock(t, reopened.(readAtContexter), buf, nextOff)
+		if nextOff += 64 << 10; nextOff+4096 >= 4<<20 {
+			nextOff = 512 << 10 // cycle: cached beats stop kicking, but the loop must survive to the deadline
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if healthy.requests.Load() == 0 {
+		t.Fatal("the reopened cached file never hunted again: the closed flag outlived the stream that set it")
+	}
+	if got := urlHost(mustPayloadURL(f)); got != edgeHost(t, healthy) {
+		t.Fatalf("hunt left the file on %s, want promotion to %s", got, edgeHost(t, healthy))
+	}
+}
+
+// Wave starts pace like the replay wave's: block completions may drive at
+// most one wave per spacing, never a drumbeat. The timing of one probe —
+// not its count — is the assertion.
+func TestDiscoveryWavesArePaced(t *testing.T) {
+	e, f, raw, failed, usable, src := rerouteWaveFixture(t, "paced")
+	const off = int64(1 << 20)
+	d0 := newMediaServer(t, 4<<20)
+	degradedAdoption(t, e, f, raw, failed, usable, d0, off)
+	rc := src.(readAtContexter)
+	tok := payloadToken(t, raw)
+	first := newMediaServer(t, 4<<20) // no token: wave 1 probes it and is refused
+	recordFreshestFirst(e, []*mediaServer{first})
+	buf := make([]byte, 4096)
+	nextOff := int64(512 << 10)
+	deadline := time.Now().Add(12 * time.Second)
+	for first.requests.Load() == 0 && time.Now().Before(deadline) {
+		readBlock(t, rc, buf, nextOff)
+		nextOff += 64 << 10
+		time.Sleep(50 * time.Millisecond)
+	}
+	if first.requests.Load() == 0 {
+		t.Fatal("wave 1 never ran")
+	}
+	wave1 := time.Now()
+	later := newMediaServer(t, 4<<20) // joins after wave 1; wave 2 promotes on it
+	later.issue(tok)
+	recordFreshestFirst(e, []*mediaServer{first, later})
+	var probedAt time.Time
+	deadline = time.Now().Add(25 * time.Second)
+	for time.Now().Before(deadline) {
+		readBlock(t, rc, buf, nextOff)
+		nextOff += 64 << 10 // keep delivering fresh blocks: the kicks must come from real completions
+		if later.requests.Load() > 0 && probedAt.IsZero() {
+			probedAt = time.Now()
+		}
+		if urlHost(mustPayloadURL(f)) == edgeHost(t, later) {
+			break
+		}
+		if nextOff+4096 >= 4<<20 {
+			nextOff = 512 << 10             // cycle past the fresh-block set; the pacing window outlasts it
+			time.Sleep(3 * time.Second / 2) // slow the cached beats so the deadline stays long
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	if got := later.requests.Load(); got != 1 {
+		t.Fatalf("late candidate probed %d times, want exactly 1", got)
+	}
+	if gap := probedAt.Sub(wave1); gap < 4*time.Second {
+		t.Fatalf("wave 2 probed %v after wave 1, want at least the %v spacing: block completions must not drumbeat the hunt", gap, rerouteSpacing)
+	}
+}
+
+// Release and acquire are lifecycle transitions on the same state: hammer
+// them concurrently (under -race) and the reused file must remain huntable.
+func TestDiscoverySurvivesConcurrentReleaseAcquire(t *testing.T) {
+	e, f, raw, failed, usable, src := rerouteWaveFixture(t, "race")
+	const off = int64(1 << 20)
+	d0 := newMediaServer(t, 4<<20)
+	degradedAdoption(t, e, f, raw, failed, usable, d0, off)
+	src.Close()
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 25; j++ {
+				s, err := e.Open(context.Background(), f.id, raw)
+				if err != nil {
+					t.Errorf("concurrent open: %v", err)
+					return
+				}
+				s.Close()
+			}
+		}()
+	}
+	wg.Wait()
+	// Everyone released legitimately: the last Close closed the retained
+	// file. The transition under test is the reuse side — reopening must
+	// finish what release started, under the same lock that serialises them.
+	s, err := e.Open(context.Background(), f.id, raw)
+	if err != nil {
+		t.Fatalf("open after the race: %v", err)
+	}
+	defer s.Close()
+	f.mu.Lock()
+	closed := f.closed
+	f.mu.Unlock()
+	if closed {
+		t.Fatal("the reused file kept the closed flag: acquireFile must finish the lifecycle transition it starts")
+	}
+	// The races legitimately spent hunt budget on refusals; hand the file a
+	// fresh exploration so the assertion below is about huntable-ness, not
+	// about who consumed the budget.
+	f.mu.Lock()
+	f.discoverLeft, f.discovered = routeDiscoveryWaves, map[string]bool{}
+	f.mu.Unlock()
+	tok := payloadToken(t, raw)
+	healthy := newMediaServer(t, 4<<20)
+	healthy.issue(tok)
+	e.recent.record("torbox-0", strings.TrimPrefix(healthy.URL, "http://"), time.Now().Add(-time.Minute))
+	buf := make([]byte, 4096)
+	nextOff := int64(512 << 10)
+	deadline := time.Now().Add(12 * time.Second)
+	for urlHost(mustPayloadURL(f)) != edgeHost(t, healthy) && time.Now().Before(deadline) {
+		readBlock(t, s.(readAtContexter), buf, nextOff)
+		if nextOff += 64 << 10; nextOff+4096 >= 4<<20 {
+			nextOff = 512 << 10 // cycle, as in the paced test: survive the deadline, kick on fresh blocks first
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if healthy.requests.Load() == 0 {
+		t.Fatal("no hunt after concurrent release/acquire churn: the cached file refused its kicks")
+	}
 }
