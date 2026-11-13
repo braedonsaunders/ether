@@ -15,7 +15,7 @@ func TestGraphicsRequestsRequireAViewer(t *testing.T) {
 	db := store.OpenTest(t)
 	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
 	s := &Service{
-		o:        Options{DB: db, Now: func() time.Time { return now }},
+		o:        Options{DB: db, Graphics: testGraphics{}, Now: func() time.Time { return now }},
 		sessions: map[string]*session{},
 	}
 	c := Channel{
@@ -38,11 +38,19 @@ func TestGraphicsRequestsRequireAViewer(t *testing.T) {
 	if got := s.GraphicsRequests(t.Context(), "showcase-80"); len(got) == 0 {
 		t.Fatal("explicit look request planned no graphics")
 	}
-	// Once watched, the channel plans its graphics again.
+	// Supply a graphics duration provider so the clock has real future
+	// boundaries. The next hourly weather segment is beyond the render lead.
+	// Once watched, the channel must prepare that next boundary.
 	s.mu.Lock()
 	s.noteWatchedLocked(c.ID)
 	s.mu.Unlock()
 	if got := s.GraphicsRequests(t.Context(), ""); len(got) == 0 {
 		t.Fatal("watched channel planned no graphics")
+	} else {
+		for _, request := range got {
+			if !request.Boundary.After(now) {
+				t.Fatalf("planned current or past boundary: %v", request.Boundary)
+			}
+		}
 	}
 }

@@ -119,7 +119,10 @@ func (s *Service) GraphicsRequests(ctx context.Context, lookID string) []core.Cl
 				if strings.HasPrefix(p.Item.Slate, "plugin:") || p.Item.ReelClipID != "" {
 					momentLead = max(momentLead, 15*time.Minute)
 				}
-				if p.Start.After(now.Add(momentLead)) {
+				// Masters are bounded to one missing future request below, so
+				// include the next boundary even beyond the render lead. Reel
+				// link resolution retains its bounded preparation window.
+				if p.Item.ReelClipID != "" && p.Start.After(now.Add(momentLead)) {
 					continue
 				}
 				if interstitial(p.Item) || p.Item.Slate == offAirSlate {
@@ -147,8 +150,10 @@ func (s *Service) GraphicsRequests(ctx context.Context, lookID string) []core.Cl
 			if !p.at.After(now) || requestedMaster[request.ChannelID] {
 				continue
 			}
-			if _, cached := s.o.Graphics.Clip(ctx, request); cached {
-				continue
+			if s.o.Graphics != nil {
+				if _, cached := s.o.Graphics.Clip(ctx, request); cached {
+					continue
+				}
 			}
 			requestedMaster[request.ChannelID] = true
 		}
