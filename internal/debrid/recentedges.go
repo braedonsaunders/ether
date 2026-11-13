@@ -141,11 +141,15 @@ func withHost(raw, host string) string {
 	return u.String()
 }
 
-// probeSample is what one probe asks an edge for: enough to try the route,
-// leaving sustained delivery to the real read.
-const probeSample = 64
+// probeSample is what one probe asks an edge for: big enough that one
+// probe budget measures flow, not just a willingness to answer headers.
+// A drained edge delivers a 64-byte sample instantly and then dribbles
+// the real read (observed on TorBox 2026-11-12/13 at ~0.1-0.6 MB/s), so
+// against edgeProbeBudget this sets an acceptance floor near 1 MB/s,
+// while a healthy edge answers the same sample in milliseconds.
+const probeSample = 2 << 20
 
-// probeLink spends one small range read asking an edge whether it serves
+// probeLink spends one bounded range read asking an edge whether it serves
 // this link, at the offset the file just failed on. The edge must answer
 // with a 206 whose Content-Range is exactly bytes off-end of a file of
 // size and deliver the whole sample: a 204, a 200 HTML error page, a 206

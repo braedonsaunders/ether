@@ -251,6 +251,44 @@ func TestProbeLinkRejectsFalsePositiveAnswers(t *testing.T) {
 	}
 }
 
+// A drained edge answers headers promptly and then delivers the body in a
+// dribble (observed on TorBox 2026-11-12/13: edges that had been taken out
+// of service served ~0.1-0.6 MB/s until they refused connections). The
+// probe's sample must be big enough that one probe budget measures flow,
+// not just a willingness to answer headers: a sample delivered slower than
+// probeSample/edgeProbeBudget is evidence to route away from.
+func TestProbeLinkRejectsDribblingEdge(t *testing.T) {
+	h := newHarness(t, 4<<20, "torbox")
+	e := NewEngine(h.svc, EngineOptions{BlockSize: testBlock, HedgeDelay: -1, Logger: h.svc.log})
+	defer e.Close()
+	const off, size = int64(1 << 20), int64(4 << 20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", off, off+probeSample-1, size))
+		w.WriteHeader(http.StatusPartialContent)
+		flusher, _ := w.(http.Flusher)
+		chunk := make([]byte, min(64, probeSample))
+		for written := int64(0); written < probeSample; written += int64(len(chunk)) {
+			if _, err := w.Write(chunk); err != nil {
+				return // the probe gave up; the client hung up
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(10 * time.Millisecond): // ~6 KB/s: headers fast, flow dead
+			}
+		}
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), edgeProbeBudget)
+	defer cancel()
+	if e.probeLink(ctx, srv.URL+"/dl/link?auth=xyz", off, size) {
+		t.Fatal("probeLink approved an edge whose body never flowed within the probe budget")
+	}
+}
+
 // TorBox keeps a link's token inside its own CDN: candidates are vetted
 // against the host the link itself names, before any byte is sent.
 func TestTorBoxApprovesCDNEdge(t *testing.T) {
