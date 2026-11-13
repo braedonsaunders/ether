@@ -169,6 +169,8 @@ export function ChannelStudio({
     { start?: number; blockId?: string; pinId?: string } | undefined
   >();
   const [horizon, setHorizon] = useState<1 | 7>(1);
+  const [seedText, setSeedText] = useState(String(c.seed));
+  useEffect(() => setSeedText(String(c.seed)), [c.seed]);
   // Another channel (or a new one becoming saved) starts on its first tab with
   // the player stopped. Adjusted during render, not in an effect: an effect
   // also runs after mount and could undo a tab picked before it flushed.
@@ -719,8 +721,16 @@ export function ChannelStudio({
                     <Input
                       id="ch-seed"
                       type="number"
-                      value={c.seed}
-                      onChange={(e) => set({ seed: Number(e.currentTarget.value) })}
+                      value={seedText}
+                      onChange={(e) => {
+                        setSeedText(e.currentTarget.value);
+                        const n = e.currentTarget.valueAsNumber;
+                        if (Number.isFinite(n)) set({ seed: n });
+                      }}
+                      onBlur={(e) => {
+                        if (!Number.isFinite(e.currentTarget.valueAsNumber))
+                          setSeedText(String(c.seed));
+                      }}
                     />
                   </Field>
                 </div>

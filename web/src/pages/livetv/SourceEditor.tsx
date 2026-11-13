@@ -933,13 +933,19 @@ export function SourceEditor({
                 min={1}
                 max={8760}
                 aria-label={t("Maximum refresh interval (hours)")}
-                value={draft.refreshHours || 6}
+                placeholder="6"
+                value={draft.refreshHours || ""}
                 onChange={(e) =>
                   setDraft({
                     ...draft,
-                    refreshHours: Math.max(1, Math.min(8760, Number(e.currentTarget.value) || 6)),
+                    refreshHours: e.currentTarget.value
+                      ? Math.max(1, Math.min(8760, Number(e.currentTarget.value)))
+                      : undefined,
                   })
                 }
+                onBlur={(e) => {
+                  if (!e.currentTarget.value) setDraft({ ...draft, refreshHours: 6 });
+                }}
               />
             </Field>
             <Field

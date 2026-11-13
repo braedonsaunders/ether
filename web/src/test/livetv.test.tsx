@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import { invalidateRegistry } from "../lib/extend";
 import LiveTV from "../pages/livetv/LiveTV";
 import { IPTVProviders } from "../pages/sources/IPTV";
+import { ProgrammingEditor } from "../pages/livetv/ProgrammingEditor";
+import type { Channel } from "../pages/livetv/model";
 import { ScheduleTimeline } from "../pages/livetv/ScheduleTimeline";
 import { calls as fakeCalls } from "./harness";
 import { renderAppWith } from "./routes";
@@ -387,6 +389,108 @@ describe("Live TV studio", () => {
     expect(
       body(sent(calls, "POST", /\/livetv\/channels$/)[0]).blocks[0].sources[0].startSeason,
     ).toBe(1);
+  });
+
+  it("lets a block's repeat-gap field be cleared with backspace and restores 0 on blur", async () => {
+    const channel: Channel = {
+      id: "c1",
+      number: "1",
+      name: "Movies",
+      kind: "virtual",
+      enabled: true,
+      favorite: false,
+      epoch: "2026-01-01",
+      seed: 1,
+      shuffle: false,
+      items: [],
+      blocks: [
+        {
+          id: "b1",
+          start: 0,
+          end: 1440,
+          items: [],
+          shuffle: false,
+          name: "Movies",
+          repeatDays: 5,
+          sources: [{ kind: "movies", pool: 40 }],
+        },
+      ],
+    };
+    const onChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <ProgrammingEditor
+          channel={channel}
+          onChange={onChange}
+          collections={[]}
+          editRequest={{ blockId: "b1" }}
+        />
+      </MemoryRouter>,
+    );
+    const repeatInput = await screen.findByRole("spinbutton", {
+      name: "No repeats within (days)",
+    });
+    fireEvent.change(repeatInput, { target: { value: "" } });
+    expect(repeatInput).toHaveValue(null);
+    fireEvent.blur(repeatInput);
+    expect(repeatInput).toHaveValue(0);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onChange).toHaveBeenCalledWith({
+      blocks: [expect.objectContaining({ repeatDays: 0 })],
+    });
+  });
+
+  it("lets the lineup Series fields be cleared with backspace and restore their defaults on blur", async () => {
+    const channel: Channel = {
+      id: "c1",
+      number: "1",
+      name: "Lineup",
+      kind: "virtual",
+      enabled: true,
+      favorite: false,
+      epoch: "2026-01-01",
+      seed: 1,
+      shuffle: false,
+      items: [],
+      blocks: [
+        {
+          id: "b1",
+          start: 0,
+          end: 1440,
+          items: [],
+          shuffle: false,
+          name: "Lineup",
+          sources: [{ kind: "lineup", shows: 10, pool: 30, rotateDays: 7 }],
+        },
+      ],
+    };
+    const onChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <ProgrammingEditor
+          channel={channel}
+          onChange={onChange}
+          collections={[]}
+          editRequest={{ blockId: "b1" }}
+        />
+      </MemoryRouter>,
+    );
+    const showsInput = await screen.findByRole("spinbutton", { name: "Series on air" });
+    const poolInput = screen.getByRole("spinbutton", { name: "Series in the pool" });
+    const rotateInput = screen.getByRole("spinbutton", { name: "New series every" });
+    fireEvent.change(showsInput, { target: { value: "" } });
+    expect(showsInput).toHaveValue(null);
+    fireEvent.blur(showsInput);
+    expect(showsInput).toHaveValue(4);
+    fireEvent.change(poolInput, { target: { value: "" } });
+    expect(poolInput).toHaveValue(null);
+    fireEvent.blur(poolInput);
+    // shows was already reset to its default (4) by the previous step.
+    expect(poolInput).toHaveValue(4 * 3);
+    fireEvent.change(rotateInput, { target: { value: "" } });
+    expect(rotateInput).toHaveValue(null);
+    fireEvent.blur(rotateInput);
+    expect(rotateInput).toHaveValue(0);
   });
 
   it("edits a schedule block in a drawer and previews its applied programming", async () => {
