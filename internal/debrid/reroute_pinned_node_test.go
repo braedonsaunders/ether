@@ -289,6 +289,77 @@ func TestProbeLinkRejectsDribblingEdge(t *testing.T) {
 	}
 }
 
+// TestProbeLinkFlowGate pins the bounded-completion contract of the
+// probe: setup and body share edgeProbeBudget, so a slow start is
+// accepted while it leaves the budget for a fast body; the observed
+// drained-edge band (~0.1-0.6 MB/s, TorBox 2026-11-12/13) is rejected
+// outright; and at the end of the file the floor scales with the
+// remaining bytes, so a valid tiny tail is not rejected for dribbling.
+// Fixture rates sit clear of the probeSample/edgeProbeBudget boundary:
+// an assertion right at ~1 MB/s would be a timing fight, not a contract.
+func TestProbeLinkFlowGate(t *testing.T) {
+	const size = 8 << 20
+	tests := []struct {
+		name       string
+		off        int64
+		startDelay time.Duration // silence before headers: cold setup's share of the budget
+		chunk      int
+		pause      time.Duration // between chunks; 0 streams at loopback speed
+		want       bool
+	}{
+		{name: "healthy edge streams the sample", off: 1 << 20, chunk: 64 << 10, want: true},
+		{name: "slow setup then a fast body completes", off: 1 << 20, startDelay: 750 * time.Millisecond, chunk: 64 << 10, want: true},
+		{name: "observed band top rejects", off: 1 << 20, chunk: 6 << 10, pause: 10 * time.Millisecond, want: false},        // ~0.6 MB/s
+		{name: "observed band floor rejects", off: 1 << 20, chunk: 6 << 10, pause: 24 * time.Millisecond, want: false},      // ~0.25 MB/s
+		{name: "tiny tail dribbles and is accepted", off: size - 4096, chunk: 64, pause: 10 * time.Millisecond, want: true}, // ~6 KB/s over 4 KiB
+	}
+	h := newHarness(t, size, "torbox")
+	e := NewEngine(h.svc, EngineOptions{BlockSize: testBlock, HedgeDelay: -1, Logger: h.svc.log})
+	defer e.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var lo, hi int64
+				if _, err := fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &lo, &hi); err != nil {
+					t.Errorf("probe sent an unparsable range: %q", r.Header.Get("Range"))
+					return
+				}
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(tt.startDelay):
+				}
+				w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", lo, hi, size))
+				w.WriteHeader(http.StatusPartialContent)
+				flusher, _ := w.(http.Flusher)
+				chunk := make([]byte, tt.chunk)
+				for written := int64(0); written < hi-lo+1; written += int64(len(chunk)) {
+					if _, err := w.Write(chunk); err != nil {
+						return // the probe gave up; the client hung up
+					}
+					if flusher != nil {
+						flusher.Flush()
+					}
+					if tt.pause == 0 {
+						continue
+					}
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(tt.pause):
+					}
+				}
+			}))
+			defer srv.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), edgeProbeBudget)
+			defer cancel()
+			if got := e.probeLink(ctx, srv.URL+"/dl/link?auth=xyz", tt.off, size); got != tt.want {
+				t.Fatalf("probeLink = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TorBox keeps a link's token inside its own CDN: candidates are vetted
 // against the host the link itself names, before any byte is sent.
 func TestTorBoxApprovesCDNEdge(t *testing.T) {

@@ -145,17 +145,26 @@ func withHost(raw, host string) string {
 // probe budget measures flow, not just a willingness to answer headers.
 // A drained edge delivers a 64-byte sample instantly and then dribbles
 // the real read (observed on TorBox 2026-11-12/13 at ~0.1-0.6 MB/s), so
-// against edgeProbeBudget this sets an acceptance floor near 1 MB/s,
-// while a healthy edge answers the same sample in milliseconds.
+// against edgeProbeBudget this sets an acceptance floor near 1 MB/s.
+// The floor is coarse on purpose and bounds one completion, not a
+// measured body rate: setup (DNS, TCP, TLS, first byte) shares the
+// budget with the body, so an edge that starts too slowly to leave the
+// budget for its sample is rejected alongside the stalled ones — and an
+// edge that passes has completed a sample, never proven remux
+// capacity. A healthy edge answers the same sample in milliseconds.
 const probeSample = 2 << 20
 
 // probeLink spends one bounded range read asking an edge whether it serves
 // this link, at the offset the file just failed on. The edge must answer
 // with a 206 whose Content-Range is exactly bytes off-end of a file of
 // size and deliver the whole sample: a 204, a 200 HTML error page, a 206
-// truncated short or a 206 for another offset prove nothing. The probe
-// follows no redirects, so the answer comes from the approved edge itself
-// and the link's token never hops to a host the provider never approved.
+// truncated short or a 206 for another offset prove nothing. At the end
+// of the file the sample is capped at the remaining bytes, and the floor
+// scales with them: a few-KiB tail may dribble in below the nominal rate
+// and must not be rejected for it, because the sample there is the last
+// thing left to read. The probe follows no redirects, so the answer comes
+// from the approved edge itself and the link's token never hops to a host
+// the provider never approved.
 func (e *Engine) probeLink(ctx context.Context, raw string, off, size int64) bool {
 	end := min(off+probeSample-1, size-1)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
