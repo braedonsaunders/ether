@@ -301,7 +301,10 @@ func TestDiscoveryCancelIsProactive(t *testing.T) {
 		t.Fatal("the hunt never probed the freshest candidate")
 	}
 	src.Close() // gate still closed: only a cancelled exploration ends this wave before its next probe
-	time.Sleep(4 * time.Second)
+	if !waitUntil(1*time.Second, func() bool { return parked.clientCancels.Load() >= 1 }) {
+		t.Fatal("stream close left the parked request alive: close must cancel it at once, not merely block adoption")
+	}
+	time.Sleep(4 * time.Second) // a full probe round: the wave must also reach no further candidate
 	if got := next.requests.Load(); got != 0 {
 		t.Fatalf("the candidate behind the parked probe was probed after stream close: requests=%d, want 0 — close must cancel the exploration, not merely refuse adoption", got)
 	}
@@ -404,7 +407,30 @@ func TestDiscoverySurvivesConcurrentReleaseAcquire(t *testing.T) {
 	d0 := newMediaServer(t, 4<<20)
 	degradedAdoption(t, e, f, raw, failed, usable, d0, off)
 	src.Close()
-	var wg sync.WaitGroup
+	var wg, rd sync.WaitGroup
+	stop := make(chan struct{})
+	rd.Add(1)
+	go func() { // deliveries drive kicks AT the transitions: without this overlap, a -race pass says nothing about the revive stamp
+		defer rd.Done()
+		buf := make([]byte, 4096)
+		nextOff := int64(512 << 10)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			s, err := e.Open(context.Background(), f.id, raw)
+			if err != nil {
+				return // churn may reject a beat; the hammer below judges the outcome
+			}
+			readBlock(t, s.(readAtContexter), buf, nextOff)
+			if nextOff += 64 << 10; nextOff+4096 >= 4<<20 {
+				nextOff = 512 << 10
+			}
+			s.Close()
+		}
+	}()
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
@@ -420,6 +446,8 @@ func TestDiscoverySurvivesConcurrentReleaseAcquire(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	close(stop)
+	rd.Wait()
 	// Everyone released legitimately: the last Close closed the retained
 	// file. The transition under test is the reuse side — reopening must
 	// finish what release started, under the same lock that serialises them.
@@ -427,18 +455,22 @@ func TestDiscoverySurvivesConcurrentReleaseAcquire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open after the race: %v", err)
 	}
-	defer s.Close()
+	t.Cleanup(func() { s.Close() })
 	f.mu.Lock()
 	closed := f.closed
 	f.mu.Unlock()
 	if closed {
 		t.Fatal("the reused file kept the closed flag: acquireFile must finish the lifecycle transition it starts")
 	}
-	// The races legitimately spent hunt budget on refusals; hand the file a
-	// fresh exploration so the assertion below is about huntable-ness, not
-	// about who consumed the budget.
+	// The races legitimately spent hunt budget and may have refreshed or
+	// re-adopted the payload — each of which retires the degraded state by
+	// design; hand the file a fresh exploration so the assertion below is
+	// about huntable-ness, not about who consumed the budget. The kept-open
+	// stream stays open through the drive: a hunt must stay alive while a
+	// stream holds the file, and a Close here would end it legitimately.
 	f.mu.Lock()
-	f.discoverLeft, f.discovered = routeDiscoveryWaves, map[string]bool{}
+	f.routeDegraded, f.discoverLeft, f.discovered = true, routeDiscoveryWaves, map[string]bool{}
+	f.replayAt = time.Time{}
 	f.mu.Unlock()
 	tok := payloadToken(t, raw)
 	healthy := newMediaServer(t, 4<<20)
