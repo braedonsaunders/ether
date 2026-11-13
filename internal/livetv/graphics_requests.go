@@ -57,13 +57,13 @@ func (s *Service) GraphicsRequests(ctx context.Context, lookID string) []core.Cl
 			lead = max(lead, renderer.RenderLead(channelLook, ""))
 		}
 		horizon := max(lead, 15*time.Minute)
-		// Reusable look masters (1 per look) warm once on first watch, ordered
-		// behind imminent timed boundaries.
-		for _, m := range []string{"standby", "ident", "break", "back", "offair"} {
-			if c.Look == nil {
-				continue
+		if lookID != "" {
+			// Explicit console look queries may enumerate reusable moments.
+			for _, m := range []string{"standby", "ident", "break", "back", "offair"} {
+				if c.Look != nil {
+					pending = append(pending, scheduled{time.Time{}, s.clipRequest(c, Programme{Item: Item{Slate: m}, Start: now, End: now})})
+				}
 			}
-			pending = append(pending, scheduled{time.Time{}, s.clipRequest(c, Programme{Item: Item{Slate: m}, Start: now, End: now})})
 		}
 		if lookID == "" {
 			// Scan far enough ahead to cover the watched channel's current show
@@ -138,8 +138,20 @@ func (s *Service) GraphicsRequests(ctx context.Context, lookID string) []core.Cl
 		return pending[i].at.Before(pending[j].at)
 	})
 	out := make([]core.ClipRequest, 0, len(pending))
+	requestedMaster := map[string]bool{}
 	for _, p := range pending {
 		request := p.request
+		if request.ReelClipID == "" && lookID == "" {
+			// The current moment queues its own cold master. Prepare only the
+			// nearest missing future master for each watched channel.
+			if !p.at.After(now) || requestedMaster[request.ChannelID] {
+				continue
+			}
+			if _, cached := s.o.Graphics.Clip(ctx, request); cached {
+				continue
+			}
+			requestedMaster[request.ChannelID] = true
+		}
 		request.Boundary = p.at
 		out = append(out, request)
 	}

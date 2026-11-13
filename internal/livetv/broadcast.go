@@ -754,30 +754,6 @@ func (b *broadcast) standbyContinuationPlan() (broadcastPlan, bool) {
 	return broadcastPlan{}, false
 }
 
-func (b *broadcast) liveMomentPending(plan broadcastPlan) bool {
-	if !plan.interstitial || !plan.liveMoment || plan.fallback {
-		return false
-	}
-	if _, decided := b.momentInputs[plan.id]; decided {
-		return false
-	}
-	input := b.current
-	if input == nil || input.plan.id != plan.id {
-		input = b.next
-	}
-	if input == nil || input.plan.id != plan.id {
-		input = b.later[plan.id]
-	}
-	if input != nil && len(input.frames) > 0 {
-		return false
-	}
-	if b.opening[plan.id] {
-		at := b.openingAt[plan.id]
-		return at.IsZero() || time.Since(at) < 500*time.Millisecond
-	}
-	return input != nil && input.lastFrameAt.IsZero() && !input.openedAt.IsZero() && time.Since(input.openedAt) < 500*time.Millisecond
-}
-
 func (b *broadcast) step(now time.Time) bool {
 	b.burstReady = false
 	fresh := false
@@ -939,21 +915,10 @@ func (b *broadcast) step(now time.Time) bool {
 			b.open(plan, now)
 		}
 	}
-	// Give live-rendered On Air moments a bounded window to deliver frame 0 on
-	// cold tune or ahead-of-clock startup burst before latching fallback.
+	// Graphics preparation never owns the clock. A missing first frame uses
+	// the plate at this boundary; even the startup burst must advance through
+	// a whole pod without waiting for its masters.
 	frameDuration := time.Second * time.Duration(b.format.FPSDen) / time.Duration(b.format.FPSNum)
-	if !introActive && b.tick == 0 && b.liveMomentPending(current) && time.Since(b.origin) < 500*time.Millisecond {
-		b.origin = time.Now()
-		return false
-	}
-	if b.bursting && now.After(time.Now()) {
-		if !introActive && b.liveMomentPending(current) {
-			return false
-		}
-		if next != nil && !next.start.After(now.Add(frameDuration)) && b.liveMomentPending(*next) {
-			return false
-		}
-	}
 	// The last tick before a moment selects its input once. Decoders that
 	// become ready after that deadline must not replace a live fallback in
 	// the middle of the interval.

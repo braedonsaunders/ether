@@ -58,13 +58,13 @@ func TestBroadcastMomentDeadlineKeepsWholeFallbackInterval(t *testing.T) {
 					}
 					p := momentDeadlinePlanner{
 						programme: broadcastPlan{id: "before", end: origin.Add(lead), open: open(80)},
-						moment:    broadcastPlan{id: moment, element: moment, interstitial: true, start: origin.Add(lead), end: origin.Add(lead + 4*time.Second)},
+						moment:    broadcastPlan{id: moment, element: moment, interstitial: true, liveMoment: true, start: origin.Add(lead), end: origin.Add(lead + 4*time.Second)},
 						after:     broadcastPlan{id: "after", start: origin.Add(lead + 4*time.Second), open: open(90)},
 						fallback:  broadcastPlan{id: "reconnecting", open: open(10)},
 						card:      broadcastPlan{id: "style-card", open: open(30)},
 					}
 					p.moment.open = func(context.Context) (transcode.Decoder, func(), error) {
-						return &delayedMomentDecoder{broadcastFakeDecoder: &broadcastFakeDecoder{format: format, value: 200, closed: make(chan struct{})}, ready: origin.Add(lead + time.Second)}, nil, nil
+						return &delayedMomentDecoder{broadcastFakeDecoder: &broadcastFakeDecoder{format: format, value: 200, closed: make(chan struct{})}, ready: origin.Add(lead + 60*time.Second)}, nil, nil
 					}
 					if lead == 0 {
 						p.card.open = func(context.Context) (transcode.Decoder, func(), error) {

@@ -1178,6 +1178,9 @@ func (s *Service) process(j renderJob) {
 		}
 		f := s.failed[j.Hash]
 		f.delay = min(max(2*f.delay, 5*time.Second), 5*time.Minute)
+		if errors.Is(e, context.DeadlineExceeded) {
+			f.delay = 24 * time.Hour
+		}
 		f.retry = time.Now().Add(f.delay)
 		s.failed[j.Hash] = f
 		first := f.delay == 5*time.Second
@@ -1220,6 +1223,13 @@ func (s *Service) execute(parent context.Context, j renderJob) (err error) {
 		}
 		defer release()
 		ctx = jobCtx
+	}
+	if j.scene() && j.AssetDigest == "" {
+		// Waiting for a playback slot costs no rendering budget. Once acquired,
+		// optional procedural masters have four seconds to finish.
+		var stopRender context.CancelFunc
+		ctx, stopRender = context.WithTimeout(ctx, 4*time.Second)
+		defer stopRender()
 	}
 	started := time.Now()
 	queueWait := started.Sub(queued)
@@ -1300,7 +1310,7 @@ func (s *Service) execute(parent context.Context, j renderJob) (err error) {
 		if s.o.FFmpeg == nil {
 			return fmt.Errorf("ffmpeg unavailable")
 		}
-		opts := encode.Options{Workers: 1, Width: 1280, Height: 720, Audio: j.Doc.Audio, Sounds: sounds, Background: background}
+		opts := encode.Options{Workers: 1, Width: 640, Height: 360, Audio: j.Doc.Audio, Sounds: sounds, Background: background}
 		renderFn := s.o.RenderFrame
 		if renderFn == nil {
 			renderFn = raster.Render

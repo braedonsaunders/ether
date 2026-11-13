@@ -76,6 +76,7 @@ func (s *Service) broadcastSchedule(ctx context.Context, c Channel, from, until 
 	}
 	out := make([]Programme, 0, len(ps))
 	usedPodClips := map[string]bool{}
+	masterRequested := false
 	for i := range ps {
 		orig := ps[i]
 		orig.graphicsID = orig.ID
@@ -148,7 +149,8 @@ func (s *Service) broadcastSchedule(ctx context.Context, c Channel, from, until 
 				if allowed {
 					// Pre-render distant moments via the bounded queue; imminent or
 					// active moments render live and save directly in OpenMoment.
-					if orig.Start.After(from.Add(broadcastPrewarm)) {
+					if !masterRequested && orig.Start.After(from.Add(broadcastPrewarm)) {
+						masterRequested = true
 						req := request
 						req.Boundary = orig.Start
 						s.o.Graphics.Ensure(ctx, req)

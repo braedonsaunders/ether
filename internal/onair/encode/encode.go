@@ -21,7 +21,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/onair/scene"
 )
 
-const Profile = "720p30-h264-high-l4.0-yuv420p-g120-aac48k-stereo-v2"
+const Profile = "360p30-h264-high-l4.0-yuv420p-g120-aac48k-stereo-v3"
 
 // Hash uses encoding/json's stable map ordering, with length-delimited inputs.
 func Hash(rendererVersion string, doc, tokens, bindings, assetDigests, profile any) string {
@@ -266,7 +266,7 @@ func masterFFmpegArgs(width, height, n, fps int, audio, path string, opts Option
 	if len(filters) > 0 {
 		args = append(args, "-filter_complex", strings.Join(filters, ";"))
 	}
-	args = append(args, "-map", videoMap, "-map", audioMap, "-t", strconv.FormatFloat(float64(n)/float64(fps), 'f', 6, 64), "-c:v", "libx264", "-preset", "superfast", "-crf", "20", "-threads", strconv.Itoa(max(2, runtime.NumCPU()/4)), "-profile:v", "high", "-level:v", "4.0", "-pix_fmt", "yuv420p", "-g", "120", "-keyint_min", "120", "-sc_threshold", "0", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", path)
+	args = append(args, "-map", videoMap, "-map", audioMap, "-t", strconv.FormatFloat(float64(n)/float64(fps), 'f', 6, 64), "-c:v", "libx264", "-preset", "superfast", "-crf", "20", "-threads", "1", "-profile:v", "high", "-level:v", "4.0", "-pix_fmt", "yuv420p", "-g", "120", "-keyint_min", "120", "-sc_threshold", "0", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "192k", "-movflags", "+faststart", path)
 	if len(opts.VideoArgs) > 0 {
 		start, end := -1, -1
 		for i, a := range args {

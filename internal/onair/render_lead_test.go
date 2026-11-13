@@ -177,3 +177,42 @@ func TestLivePreparationOrdersByRequiredStart(t *testing.T) {
 		}
 	}
 }
+
+// A renderer needing a minute must relinquish the lane after the small master
+// budget. Reading the cold plate does not wait for that renderer.
+func TestSlowMasterBudget(t *testing.T) {
+	started := make(chan struct{})
+	finished := make(chan time.Duration, 1)
+	s := testService(t, Options{StaticRequests: func(context.Context, string) []core.ClipRequest { return nil }, Render: func(ctx context.Context, _ scene.Document, _ raster.Bindings, _ string) error {
+		at := time.Now()
+		close(started)
+		select {
+		case <-time.After(60 * time.Second):
+		case <-ctx.Done():
+		}
+		finished <- time.Since(at)
+		return ctx.Err()
+	}})
+	r := core.ClipRequest{LookID: "nocturne", Moment: "ident", ChannelID: "slow"}
+	stream, mode, err := s.OpenMoment(t.Context(), r, 160, 90, 30, 1, false, nil)
+	if err != nil || mode != "static-plate" {
+		t.Fatalf("cold plate: mode=%s err=%v", mode, err)
+	}
+	defer stream.Close()
+	<-started
+	pixels := make([]byte, 160*90*3/2)
+	for range 120 {
+		if _, err := stream.ReadFrame(pixels); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case elapsed := <-finished:
+		if elapsed > 5*time.Second {
+			t.Fatalf("slow renderer occupied lane for %v", elapsed)
+		}
+		t.Logf("60s renderer cancelled after %v; plate delivered 120 frames", elapsed)
+	case <-time.After(6 * time.Second):
+		t.Fatal("slow renderer did not release lane")
+	}
+}
