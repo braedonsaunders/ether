@@ -468,7 +468,9 @@ func (e *Engine) acquireFile(ctx context.Context, releaseID string, payload []by
 		e.files[releaseID] = f
 	} else {
 		f.adopt(p)
-		f.closed = false // reviving a retained file under e.mu: the old stream's end must not outlive it
+		f.mu.Lock()
+		f.closed = false // still inside e.mu: the revive is atomic to every f.mu observer, not merely ordered after it
+		f.mu.Unlock()
 	}
 	f.refs++
 	first := f.refs == 1
@@ -660,11 +662,30 @@ func (f *remoteFile) yieldCtx(parent context.Context) (context.Context, context.
 }
 
 // adopt takes a fresher link from a payload handed in by a caller.
+// endHuntLocked detaches the file's in-flight discovery exploration; the
+// caller holds f.mu and invokes the result, if non-nil, after unlocking.
+// Generation replacement retires the old hunt whichever path produced it.
+// freshVisit snapshots the exploration's visited set, minting the map on
+// first use so waves progress explicitly.
+func (f *remoteFile) freshVisit() map[string]bool {
+	if f.discovered == nil {
+		f.discovered = make(map[string]bool)
+	}
+	return f.discovered
+}
+
+func (f *remoteFile) endHuntLocked() context.CancelFunc {
+	hunt := f.huntCancel
+	f.huntCancel = nil
+	f.huntSeq++ // a retired flight can never retire the handle, and neither can a stale one
+	return hunt
+}
+
 func (f *remoteFile) adopt(p Payload) {
 	f.mu.Lock()
-	hunt := f.huntCancel
+	var hunt context.CancelFunc
 	if p.URL != "" && p.Expires.After(f.pl.Expires) {
-		f.huntCancel = nil
+		hunt = f.endHuntLocked()
 		// The newer link may come from another provider or a re-added
 		// torrent: take its identity with it, so refreshes and timings go
 		// to the right place.
@@ -723,7 +744,11 @@ func (f *remoteFile) link(ctx context.Context, force bool, gen ...int) (Payload,
 	f.routeDegraded = false // a freshly minted link answers for its own route
 	f.gen++
 	g = f.gen
+	hunt := f.endHuntLocked()
 	f.mu.Unlock()
+	if hunt != nil {
+		hunt() // a hunt on the refreshed generation's behalf ended with it; parked probes die at once
+	}
 	if moved {
 		f.e.kickLeases() // lease the torrent the file now streams from
 	}
@@ -749,7 +774,11 @@ func (f *remoteFile) moveFromHost(ctx context.Context, gen int) bool {
 	f.pl = out
 	f.routeDegraded = false // another provider's route answers for itself
 	f.gen++
+	hunt := f.endHuntLocked()
 	f.mu.Unlock()
+	if hunt != nil {
+		hunt() // the old provider's hunt has no work left on this provider's evidence
+	}
 	f.e.kickLeases()
 	return true
 }
@@ -895,8 +924,9 @@ func (f *remoteFile) kickDiscovery() {
 	f.huntCancel = cancel
 	seq := f.huntSeq
 	f.huntSeq++
+	baseGen := f.gen // the degraded generation this hunt serves; the replacement payload is not its business
 	f.mu.Unlock()
-	go f.discoverStrictRoute(hctx, cancel, seq)
+	go f.discoverStrictRoute(hctx, cancel, seq, baseGen)
 }
 
 // discoverStrictRoute probes for a route that FLOWS, away from the
@@ -908,7 +938,7 @@ func (f *remoteFile) kickDiscovery() {
 // candidate is adopted here: a hunt that dribbles settles the degraded
 // route one wave poorer, and after routeDiscoveryWaves such waves the
 // degradation settles until some real failure reroutes the file.
-func (f *remoteFile) discoverStrictRoute(hctx context.Context, cancel context.CancelFunc, seq int64) {
+func (f *remoteFile) discoverStrictRoute(hctx context.Context, cancel context.CancelFunc, seq int64, baseGen int) {
 	defer cancel()
 	defer func() {
 		f.mu.Lock()
@@ -927,10 +957,10 @@ func (f *remoteFile) discoverStrictRoute(hctx context.Context, cancel context.Ca
 	}
 	defer func() { <-f.rerouteSem }()
 	f.mu.Lock()
-	gen, visit, from, dead := f.gen, f.discovered, f.degradedFrom, f.closed
+	gen, visit, from, dead := f.gen, f.freshVisit(), f.degradedFrom, f.closed
 	f.mu.Unlock()
-	if dead {
-		return // the stream ended between kick and slot; this hunt is already someone else's memory
+	if dead || gen != baseGen {
+		return // ended between kick and slot: every generation-replacement path cancels, and this check catches any that ever forget to
 	}
 	wctx, waveCancel := context.WithTimeout(hctx, rerouteBudget)
 	defer waveCancel()

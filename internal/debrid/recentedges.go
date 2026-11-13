@@ -36,12 +36,15 @@ const (
 	recentEdgeTTL     = 10 * time.Minute
 	edgeProbeBudget   = 2 * time.Second // one stalled edge must not consume the whole wave
 	edgeProbeCooldown = 30 * time.Second
-	recentEdgeTries   = 4 // probes one reroute wave spends, freshest first; every
+	recentEdgeTries   = 4 // probes one generation-snapshot spends, freshest first; every
 	// probe counts toward the cap whatever its verdict, so the cap bounds
 	// requests where the wall clock cannot (fast answers of every class).
 	// Four reaches a healthy candidate behind three dribbled ones, and an
 	// all-degraded fleet ends under the wave's 10 s budget (4×2 s) with
-	// the parent context still live to adopt under.
+	// the parent context still live to adopt under. A generation change
+	// mid-wave starts the tries counter afresh in ordinary replay (the
+	// rebuild loop predates this cap); a discovery wave instead ends at the
+	// change, so for the hunt the bound holds for one degraded generation.
 )
 
 // record notes that host delivered a complete block for this provider

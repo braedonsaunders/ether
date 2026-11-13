@@ -18,7 +18,13 @@ import (
 // through each edge's request counter.
 func rerouteWaveFixture(t *testing.T, title string) (*Engine, *remoteFile, []byte, string, func(string) bool, core.MediaSource) {
 	t.Helper()
-	h := newHarness(t, 4<<20, "torbox")
+	return rerouteWaveFixtureOn(t, newHarness(t, 4<<20, "torbox"), title)
+}
+
+// rerouteWaveFixtureOn is the same fixture on a ready harness, so a test can
+// bring its own provider set (a provider move needs somewhere to move to).
+func rerouteWaveFixtureOn(t *testing.T, h *harness, title string) (*Engine, *remoteFile, []byte, string, func(string) bool, core.MediaSource) {
+	t.Helper()
 	tor := h.provs["torbox-0"]
 	tor.mu.Lock()
 	tor.cached[testHash] = true

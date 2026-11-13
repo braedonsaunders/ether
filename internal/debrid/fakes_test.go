@@ -48,11 +48,12 @@ type mediaServer struct {
 	// gate, keyed token+"|"+Range like stall, holds matching requests on a
 	// channel until the test closes it: a probe in flight stays in flight
 	// deterministically, with no wall clock in the assertion.
-	gate     map[string]chan struct{}
-	drip     map[string]mediaDrip // keyed token+"|"+Range: paced or truncated 206 bodies
-	size     int64                // advertised total (0 = real)
-	requests atomic.Int64
-	ranges   []string
+	gate          map[string]chan struct{}
+	drip          map[string]mediaDrip // keyed token+"|"+Range: paced or truncated 206 bodies
+	size          int64                // advertised total (0 = real)
+	requests      atomic.Int64
+	clientCancels atomic.Int64 // requests the CLIENT cancelled while a gate held them
+	ranges        []string
 	// stallEvery, when > 0, stalls every ranged response mid-body after
 	// that many bytes, until the client disconnects.
 	stallEvery atomic.Int64
@@ -136,6 +137,7 @@ func (m *mediaServer) serve(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-gate:
 		case <-r.Context().Done():
+			m.clientCancels.Add(1) // the test kept the gate: only client cancellation ended this request
 			return
 		}
 	}

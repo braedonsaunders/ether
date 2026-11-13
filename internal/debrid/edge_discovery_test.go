@@ -2,6 +2,9 @@ package debrid
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -453,5 +456,100 @@ func TestDiscoverySurvivesConcurrentReleaseAcquire(t *testing.T) {
 	}
 	if healthy.requests.Load() == 0 {
 		t.Fatal("no hunt after concurrent release/acquire churn: the cached file refused its kicks")
+	}
+}
+
+// Generation replacement comes from more than adopt: a link refresh and a
+// provider move both retire the degraded generation, and an in-flight hunt
+// must die at each — proven server-side, gate still held, so only client
+// cancellation can end the parked request.
+func TestDiscoveryRefreshEndsParkedProbe(t *testing.T) {
+	e, f, raw, failed, usable, src := rerouteWaveFixture(t, "refresh-cancel")
+	const off = int64(1 << 20)
+	d0 := newMediaServer(t, 4<<20)
+	degradedAdoption(t, e, f, raw, failed, usable, d0, off)
+	rc := src.(readAtContexter)
+	tok := payloadToken(t, raw)
+	parked, next := newMediaServer(t, 4<<20), newMediaServer(t, 4<<20) // next never issues: instant 403 when asked
+	parked.issue(tok)
+	hold := make(chan struct{})
+	parked.gate[tok+"|"+probeRangeAt(0)] = hold
+	defer close(hold) // released after the assertions; nothing in this test opens it
+	recordFreshestFirst(e, []*mediaServer{parked, next})
+	buf := make([]byte, 4096)
+	nextOff := int64(512 << 10)
+	deadline := time.Now().Add(10 * time.Second)
+	for parked.requests.Load() == 0 && time.Now().Before(deadline) {
+		readBlock(t, rc, buf, nextOff)
+		nextOff += 64 << 10
+		time.Sleep(50 * time.Millisecond)
+	}
+	if parked.requests.Load() == 0 {
+		t.Fatal("the hunt never parked a probe on the gated candidate")
+	}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": "http://refresh.invalid/link"})
+	}))
+	defer api.Close()
+	e.svc.entryByID("torbox-0").p = fixtureTorBox(api.URL) // the API is live for this transition, approvals unchanged
+	if _, _, err := f.link(context.Background(), true); err != nil {
+		t.Fatalf("forced refresh: %v", err)
+	}
+	if !waitUntil(1*time.Second, func() bool { return parked.clientCancels.Load() >= 1 }) {
+		t.Fatal("a link refresh left the parked hunt alive: refresh must end the old exploration at once")
+	}
+	time.Sleep(3 * time.Second) // past a full probe budget: no next candidate may be asked on the replacement payload
+	if got := next.requests.Load(); got != 0 {
+		t.Fatalf("next candidate probed %d times after the generation was replaced, want 0", got)
+	}
+	f.mu.Lock()
+	left := f.discoverLeft
+	f.mu.Unlock()
+	if left != routeDiscoveryWaves {
+		t.Fatalf("a cancelled exploration spent %d of the discovery budget, want it unspent", routeDiscoveryWaves-left)
+	}
+}
+
+// The provider move replaces the generation on another provider's evidence:
+// the retired hunt follows it, same proof shape.
+func TestDiscoveryProviderMoveEndsParkedProbe(t *testing.T) {
+	h := newHarness(t, 4<<20, "torbox", "realdebrid")
+	e, f, raw, failed, usable, src := rerouteWaveFixtureOn(t, h, "move-cancel")
+	const off = int64(1 << 20)
+	d0 := newMediaServer(t, 4<<20)
+	degradedAdoption(t, e, f, raw, failed, usable, d0, off)
+	rc := src.(readAtContexter)
+	tok := payloadToken(t, raw)
+	parked, next := newMediaServer(t, 4<<20), newMediaServer(t, 4<<20)
+	parked.issue(tok)
+	hold := make(chan struct{})
+	parked.gate[tok+"|"+probeRangeAt(0)] = hold
+	defer close(hold)
+	recordFreshestFirst(e, []*mediaServer{parked, next})
+	buf := make([]byte, 4096)
+	nextOff := int64(512 << 10)
+	deadline := time.Now().Add(10 * time.Second)
+	for parked.requests.Load() == 0 && time.Now().Before(deadline) {
+		readBlock(t, rc, buf, nextOff)
+		nextOff += 64 << 10
+		time.Sleep(50 * time.Millisecond)
+	}
+	if parked.requests.Load() == 0 {
+		t.Fatal("the hunt never parked a probe on the gated candidate")
+	}
+	rd := h.provs["realdebrid-1"]
+	rd.mu.Lock()
+	rd.cached[testHash] = true
+	rd.mu.Unlock()
+	_, g := f.payload()
+	if !f.moveFromHost(context.Background(), g) {
+		t.Fatal("setup: the alternate provider refused the move")
+	}
+	if !waitUntil(1*time.Second, func() bool { return parked.clientCancels.Load() >= 1 }) {
+		t.Fatal("a provider move left the parked hunt alive: moving providers must end the old exploration at once")
+	}
+	time.Sleep(3 * time.Second)
+	if got := next.requests.Load(); got != 0 {
+		t.Fatalf("next candidate probed %d times after the provider moved, want 0", got)
 	}
 }
