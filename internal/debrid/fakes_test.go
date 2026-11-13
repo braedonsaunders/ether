@@ -49,7 +49,8 @@ type mediaServer struct {
 	// channel until the test closes it: a probe in flight stays in flight
 	// deterministically, with no wall clock in the assertion.
 	gate     map[string]chan struct{}
-	size     int64 // advertised total (0 = real)
+	drip     map[string]mediaDrip // keyed token+"|"+Range: paced or truncated 206 bodies
+	size     int64                // advertised total (0 = real)
 	requests atomic.Int64
 	ranges   []string
 	// stallEvery, when > 0, stalls every ranged response mid-body after
@@ -57,6 +58,16 @@ type mediaServer struct {
 	stallEvery atomic.Int64
 	// inflight counts handlers currently running, for leak assertions.
 	inflight atomic.Int32
+}
+
+// mediaDrip shapes one paced 206 body for a drip key: chunk bytes out,
+// pause, repeat; eof truncates after the first chunk. A pause big enough
+// to outlast the probe budget turns "paced" into "silence after the
+// first chunk", covering the 64-bytes-then-nothing case as well.
+type mediaDrip struct {
+	chunk int64
+	pause time.Duration
+	eof   bool
 }
 
 // fixtureTorBox builds the real TorBox provider for the engine fixtures.
@@ -82,7 +93,7 @@ func fixtureTorBox(apiURL string) *torBox {
 func newMediaServer(t testing.TB, size int) *mediaServer {
 	data := make([]byte, size)
 	rand.New(rand.NewSource(1)).Read(data)
-	m := &mediaServer{data: data, valid: map[string]bool{}, status: map[string]int{}, stall: map[string]time.Duration{}, stallAfter: map[string]int64{}, redirect: map[string]string{}, gate: map[string]chan struct{}{}}
+	m := &mediaServer{data: data, valid: map[string]bool{}, status: map[string]int{}, stall: map[string]time.Duration{}, stallAfter: map[string]int64{}, redirect: map[string]string{}, gate: map[string]chan struct{}{}, drip: map[string]mediaDrip{}}
 	m.Server = httptest.NewServer(http.HandlerFunc(m.serve))
 	t.Cleanup(m.Close)
 	return m
@@ -107,6 +118,8 @@ func (m *mediaServer) serve(w http.ResponseWriter, r *http.Request) {
 		delete(m.stallAfter, token+"|"+r.Header.Get("Range"))
 	}
 	gate := m.gate[token+"|"+r.Header.Get("Range")]
+	spec, isDrip := m.drip[token+"|"+r.Header.Get("Range")]
+	delete(m.drip, token+"|"+r.Header.Get("Range")) // one-shot, like stall
 	m.mu.Unlock()
 	if n := m.stallEvery.Load(); n > 0 && !stallOnce {
 		stallAfter, stallOnce = n, true
@@ -170,6 +183,35 @@ func (m *mediaServer) serve(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", a, b, size))
 		w.WriteHeader(http.StatusPartialContent)
 		w.Write(m.data[a : b+1])
+		return
+	}
+	// A drained edge's answer: valid headers, then either a paced dribble
+	// (pause between chunks) or a truncated body that hits EOF after one
+	// chunk — old eligibility evidence, no flow proof.
+	if isDrip {
+		var a, b int64
+		fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &a, &b)
+		b = min(b, int64(len(m.data))-1)
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", a, b, len(m.data)))
+		w.WriteHeader(http.StatusPartialContent)
+		fl, _ := w.(http.Flusher)
+		for off := a; off <= b; off += spec.chunk {
+			end := min(off+spec.chunk, b+1)
+			if _, err := w.Write(m.data[off:end]); err != nil {
+				return // the client hung up
+			}
+			if fl != nil {
+				fl.Flush()
+			}
+			if spec.eof {
+				return // promised range truncated: EOF before the sample completes
+			}
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(spec.pause):
+			}
+		}
 		return
 	}
 	var body io.ReadSeeker = bytes.NewReader(m.data)

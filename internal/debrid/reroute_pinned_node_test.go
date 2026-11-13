@@ -206,34 +206,34 @@ func TestProbeLinkRejectsFalsePositiveAnswers(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		handler http.HandlerFunc
-		want    bool
+		want    probeVerdict
 	}{
 		{"204 no content", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
-		}, false},
+		}, probeRejected},
 		{"200 HTML error page", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = w.Write([]byte("<html>gone</html>"))
-		}, false},
+		}, probeRejected},
 		{"206 for another offset", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", probeSample-1, size))
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write(make([]byte, probeSample))
-		}, false},
+		}, probeRejected},
 		{"206 for another file size", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", off, off+probeSample-1, size/4))
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write(make([]byte, probeSample))
-		}, false},
+		}, probeRejected},
 		{"206 truncated short", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Range", exact)
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write([]byte("five"))
-		}, false},
+		}, probeRejected},
 		{"302 to an unapproved host", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Location", "http://127.0.0.1:1/hop")
 			w.WriteHeader(http.StatusFound)
-		}, false},
+		}, probeRejected},
 		{"a whole 206 wins", func(w http.ResponseWriter, r *http.Request) {
 			if got := r.Header.Get("Range"); got != fmt.Sprintf("bytes=%d-%d", off, off+probeSample-1) {
 				t.Errorf("probe asked for %s, want the failed read's offset", got)
@@ -241,7 +241,7 @@ func TestProbeLinkRejectsFalsePositiveAnswers(t *testing.T) {
 			w.Header().Set("Content-Range", exact)
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write(make([]byte, probeSample))
-		}, true},
+		}, probeApproved},
 	} {
 		srv := httptest.NewServer(c.handler)
 		if got := e.probeLink(context.Background(), srv.URL+"/dl/link?auth=xyz", off, size); got != c.want {
@@ -284,8 +284,9 @@ func TestProbeLinkRejectsDribblingEdge(t *testing.T) {
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), edgeProbeBudget)
 	defer cancel()
-	if e.probeLink(ctx, srv.URL+"/dl/link?auth=xyz", off, size) {
-		t.Fatal("probeLink approved an edge whose body never flowed within the probe budget")
+	if got := e.probeLink(ctx, srv.URL+"/dl/link?auth=xyz", off, size); got != probeDegraded {
+		t.Fatalf("verdict=%v, want probeDegraded: a 6 KB/s edge earned old main's evidence, "+
+			"but the probe must never approve a body that never completed in budget", got)
 	}
 }
 
@@ -356,8 +357,8 @@ func TestProbeLinkFlowGate(t *testing.T) {
 			defer srv.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), edgeProbeBudget)
 			defer cancel()
-			if got := e.probeLink(ctx, srv.URL+"/dl/link?auth=xyz", tt.off, size); got != tt.want {
-				t.Fatalf("probeLink = %v, want %v", got, tt.want)
+			if got := e.probeLink(ctx, srv.URL+"/dl/link?auth=xyz", tt.off, size) == probeApproved; got != tt.want {
+				t.Fatalf("probeLink approved=%v, want approved=%v", got, tt.want)
 			}
 		})
 	}
