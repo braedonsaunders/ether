@@ -297,6 +297,9 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *frontend.
 	if t.Type == frontend.TypeMovie {
 		edition = vs[0].Edition
 	}
+	for i := range out {
+		s.appendReleaseAudio(pr, t.Key, &out[i])
+	}
 	return out, edition
 }
 
@@ -402,6 +405,12 @@ func partIDFromPath(p string) (int64, bool) {
 // issued to this client. Unknown/stale positions use Auto; a stable Part id
 // identifies its explicit release even when the positional list is gone.
 func (s *Server) resolveVariantSelection(ctx context.Context, pr *Request, p *playRequest) string {
+	if s.cfg().Plex.ReleaseAudioSelector && p.releaseAudio != "" {
+		if p.releaseAudio == releaseAudioAuto {
+			return ""
+		}
+		return p.releaseAudio
+	}
 	if p.partReleaseID != "" {
 		return p.partReleaseID
 	}

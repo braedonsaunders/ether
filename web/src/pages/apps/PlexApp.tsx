@@ -46,6 +46,7 @@ const PLEX_TAB_KEYS = [
   "secureConnections",
   "trackLatestVersion",
   "compatibilityVersion",
+  "releaseAudioSelector",
 ];
 const COMPATIBILITY_KEYS = [
   "plex.trackLatestVersion",
@@ -417,6 +418,24 @@ export function PlexApp({
       {active === "account" ? (
         <>
           <PlexMetadata claimed={plexAccountClaimed(plex)} />
+          <SettingsSection title={t("Experimental playback")}>
+            <FieldList
+              fields={[
+                {
+                  key: "releaseAudioSelector",
+                  label: t("Show releases in the audio selector"),
+                  kind: "bool",
+                  help: t(
+                    "Prototype: adds release choices to Plex's audio menu. Switching requires the app to restart playback; support varies by app.",
+                  ),
+                },
+              ]}
+              value={draft.plex}
+              errors={activeErrors}
+              prefix="plex"
+              onChange={setPlex}
+            />
+          </SettingsSection>
           <OptionGroup
             group={compatibility}
             value={draft.plex}

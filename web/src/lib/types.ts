@@ -270,6 +270,7 @@ export interface EtherConfig {
     ownerUsername: string;
     claimed: boolean;
     usePlexMetadata?: boolean;
+    releaseAudioSelector?: boolean;
     remoteAccess: boolean;
     useUpnp: boolean;
     publicPort: number;

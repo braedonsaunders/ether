@@ -81,6 +81,7 @@ var mixedSections = map[string]map[string]Scope{
 		"internalAddress": Local,
 	},
 	"plex": {
+		"releaseAudioSelector":       Shared,
 		"compatibilityVersion":       Shared,
 		"latestCompatibilityVersion": Shared,
 		"trackLatestVersion":         Shared,
