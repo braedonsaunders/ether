@@ -334,6 +334,9 @@ func TestProbeLinkFlowGate(t *testing.T) {
 				flusher, _ := w.(http.Flusher)
 				chunk := make([]byte, tt.chunk)
 				for written := int64(0); written < hi-lo+1; written += int64(len(chunk)) {
+					if want := hi - lo + 1 - written; want < int64(len(chunk)) {
+						chunk = chunk[:want] // the last partial chunk: deliver exactly the range
+					}
 					if _, err := w.Write(chunk); err != nil {
 						return // the probe gave up; the client hung up
 					}
