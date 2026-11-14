@@ -161,7 +161,7 @@ func (c *librariesConsole) decorate(ctx context.Context, lib core.Library) libra
 				dto.ItemCount = &n
 			}
 		}
-	case core.LibraryFilter:
+	case core.LibraryCatalog:
 		if page, err := c.browseTitles(ctx, lib, core.Filter{}, core.BrowseQuery{Limit: 1}); err == nil {
 			dto.ItemCount = &page.Total
 		}
@@ -177,41 +177,21 @@ func (c *librariesConsole) decorate(ctx context.Context, lib core.Library) libra
 	return dto
 }
 
-// browseTitles browses the TMDB catalogue scoped to a builtin or
-// filter library: the library's saved filter is ANDed with the
-// request filter through a FilterGroup (the same composition
-// experience/library_index.go uses for viewer state).
-// libraryScopeFilter merges a library's media type, saved filter and extra
-// rules onto req. When req.RuleVisibility != "" (rule preview browsing),
-// saved ExtraRules on a filter library are omitted so draft PreviewRules
-// evaluate cleanly over the canonical+filter candidate pool.
+// libraryScopeFilter applies sources and visible rules to the request. Draft
+// previews use the same source pool without applying the saved rules twice.
 func libraryScopeFilter(lib core.Library, req core.Filter) core.Filter {
 	f := req
 	f.LocalOnly = true
+	f.CatalogueSources = lib.Sources
 	if lib.MediaType != "" {
 		f.Type = lib.MediaType
 	}
-	if lib.Filter != nil && lib.Filter.Type != "" {
-		f.Type = lib.Filter.Type
-	}
-	if lib.Source == core.LibraryFilter {
-		if lib.Filter != nil {
-			saved := *lib.Filter
-			saved.Type = "" // already pinned above; keep the group type-free
-			child := core.FilterGroup{Operator: "and", Filter: &saved}
-			if f.Group != nil {
-				f.Group = &core.FilterGroup{Operator: "and", Children: []core.FilterGroup{*f.Group, child}}
-			} else {
-				f.Group = &core.FilterGroup{Operator: "and", Children: []core.FilterGroup{child}}
-			}
-		}
-	}
-	if lib.Source == core.LibraryFilter || lib.Source == core.LibraryCollection {
+	if lib.Source == core.LibraryCatalog || lib.Source == core.LibraryCollection {
 		if lib.Source == core.LibraryCollection && lib.CollectionID > 0 {
 			// Exactly the collection's titles: a SQL semi-join, so the
 			// page reads one statement whatever the collection's size.
 			f.CollectionMembers = lib.CollectionID
-			f.CatalogueSources = lib.Sources
+			f.CatalogueSources = nil
 		}
 		if f.RuleVisibility != "" {
 			f.ApplyCanonicalInPreview = true
@@ -263,11 +243,39 @@ func (c *librariesConsole) handler() http.Handler {
 		}
 		libJSON(w, http.StatusOK, map[string]any{"libraries": out})
 	})
+	mux.HandleFunc("POST /preview", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Sources           []string                `json:"sources"`
+			MediaType         core.MediaType          `json:"mediaType"`
+			Rules             []core.LibraryExclusion `json:"rules"`
+			VisibilityDefault string                  `json:"visibilityDefault"`
+		}
+		if !decodeLibBody(w, r, &body) {
+			return
+		}
+		lib := core.Library{Source: core.LibraryCatalog, MediaType: body.MediaType, Sources: body.Sources}
+		if err := c.app.validateCatalogueSources(r.Context(), lib, body.Sources); err != nil {
+			libError(w, 400, err.Error())
+			return
+		}
+		if _, err := libraryfilter.CompilePolicy(body.Rules, body.VisibilityDefault); err != nil {
+			libError(w, 400, err.Error())
+			return
+		}
+		sf := libraryScopeFilter(lib, core.Filter{RuleVisibility: "all"})
+		result, err := c.app.catalog.PreviewVisibilityScoped(r.Context(), body.Rules, body.VisibilityDefault, &sf)
+		if err != nil {
+			libError(w, 500, "Could not preview catalogue")
+			return
+		}
+		libJSON(w, 200, result)
+	})
 	mux.HandleFunc("POST /{$}", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Sources []string    `json:"sources"`
-			Name    string      `json:"name"`
-			Filter  core.Filter `json:"filter"`
+			Sources           []string                `json:"sources"`
+			Name              string                  `json:"name"`
+			Rules             []core.LibraryExclusion `json:"rules"`
+			VisibilityDefault string                  `json:"visibilityDefault"`
 			// A collection library instead of a filter library: the id of
 			// the owner collection whose titles it shows, and the type it
 			// is browsed as.
@@ -289,13 +297,13 @@ func (c *librariesConsole) handler() http.Handler {
 		if body.CollectionID > 0 {
 			lib, err = c.app.libraries.CreateCollection(r.Context(), body.Name, body.CollectionID, body.MediaType, present)
 		} else {
-			lib, err = c.app.libraries.CreateFilter(r.Context(), body.Name, body.Filter, present)
+			lib, err = c.app.libraries.Create(r.Context(), body.Name, body.MediaType, body.Rules, body.VisibilityDefault, present)
 		}
 		if err != nil {
 			libError(w, libErrStatus(err), "Could not create the library")
 			return
 		}
-		if len(body.Sources) > 0 {
+		if len(body.Sources) > 0 && lib.Source != core.LibraryCollection {
 			if err = c.app.validateCatalogueSources(r.Context(), lib, body.Sources); err != nil {
 				_ = c.app.libraries.Delete(r.Context(), lib.ID)
 				libError(w, 400, err.Error())
@@ -328,7 +336,6 @@ func (c *librariesConsole) handler() http.Handler {
 			Hidden            *bool                    `json:"hidden"`
 			Sort              *int                     `json:"sort"`
 			Present           *core.Presentations      `json:"present"`
-			Filter            *core.Filter             `json:"filter"`
 			Rules             *[]core.LibraryExclusion `json:"rules"`
 			VisibilityDefault *string                  `json:"visibilityDefault"`
 			QualityProfile    *string                  `json:"qualityProfile"`
@@ -338,12 +345,6 @@ func (c *librariesConsole) handler() http.Handler {
 		}
 		ctx := r.Context()
 		svc := c.app.libraries
-		if body.Filter != nil {
-			if err := svc.SetFilter(ctx, lib.ID, *body.Filter); err != nil {
-				libError(w, libErrStatus(err), "Could not update filter")
-				return
-			}
-		}
 		if body.CollectionID != nil {
 			if err := svc.SetCollection(ctx, lib.ID, *body.CollectionID); err != nil {
 				libError(w, libErrStatus(err), "Could not update collection")
@@ -634,9 +635,6 @@ func (c *librariesConsole) handleFacets(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	t := lib.MediaType
-	if lib.Filter != nil && lib.Filter.Type != "" {
-		t = lib.Filter.Type
-	}
 	values, err := c.app.collections.Facets(r.Context(), t, field)
 	if err != nil {
 		libError(w, http.StatusBadRequest, "Unknown filter")

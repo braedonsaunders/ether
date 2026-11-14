@@ -25,7 +25,7 @@ import { errorMessage } from "../../lib/api";
 import { formatNumber } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import { librariesApi, publishedTo, type Library } from "./api";
-import { NewLibraryDrawer } from "./FilterLibraryEditor";
+import { NewLibraryDrawer } from "./LibraryEditor";
 import { LibraryPage } from "./LibraryPage";
 import "./libraries.css";
 
@@ -41,12 +41,13 @@ export default function Libraries() {
 
 function sourceBadge(lib: Library): string {
   if (lib.source === "builtin") return lib.mediaType === "show" ? t("TV shows") : t("Movies");
-  if (lib.source === "filter") return t("Saved filter");
+  if (lib.source === "catalogue") return t("Catalogue sources");
+  if (lib.source === "collection") return t("Collection");
   return lib.pluginName || lib.pluginId || t("Plugin");
 }
 
 function SourceIcon({ lib }: { lib: Library }) {
-  if (lib.source === "filter") return <ListFilter size={18} aria-hidden />;
+  if (lib.source === "catalogue") return <ListFilter size={18} aria-hidden />;
   if (lib.source === "plugin") return <Plug size={18} aria-hidden />;
   return lib.mediaType === "show" ? <Tv size={18} aria-hidden /> : <Film size={18} aria-hidden />;
 }
@@ -125,14 +126,17 @@ function LibrariesList() {
         <div className="libraries-grid">
           {libs.map((lib, i) => {
             const shown = publishedTo(lib);
-            const sources = registry.data
-              ?.filter(
-                (source) =>
-                  lib.sources?.includes(source.id) ||
-                  source.libraries.some((item) => item.id === lib.id),
-              )
-              .map(sourceLabel)
-              .join(", ");
+            const sources =
+              lib.source === "collection"
+                ? t("Collection")
+                : registry.data
+                    ?.filter(
+                      (source) =>
+                        lib.sources?.includes(source.id) ||
+                        source.libraries.some((item) => item.id === lib.id),
+                    )
+                    .map(sourceLabel)
+                    .join(", ");
             const syncBad = lib.sync?.lastError;
             return (
               <section key={lib.id} className="library-card" aria-label={lib.name}>
@@ -146,10 +150,8 @@ function LibrariesList() {
                     </Link>
                     <p className="library-card-meta">
                       {sources || sourceBadge(lib)}
-                      {sources &&
-                      lib.source === "filter" &&
-                      Object.keys(lib.filter ?? {}).some((key) => key !== "type")
-                        ? ` · ${t("Saved filter")}`
+                      {sources && lib.source === "catalogue" && Boolean(lib.rules?.length)
+                        ? ` · ${t("Rules")}`
                         : ""}
                       {typeof lib.itemCount === "number"
                         ? ` · ${tn(lib.itemCount, "{count} item", "{count} items", {
@@ -246,7 +248,7 @@ function LibrariesList() {
                       <ArrowDown size={14} />
                     </Button>
                   </span>
-                  {lib.source === "filter" ? (
+                  {lib.source === "catalogue" ? (
                     <Button
                       size="icon"
                       variant="ghost"

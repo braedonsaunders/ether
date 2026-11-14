@@ -11,18 +11,18 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-const libraryCols = `sources, id, key, name, source, media_type, plugin_id, kind_key, filter, collection_id, rules, visibility_default, quality_profile, present, sort, hidden, created_at, updated_at`
+const libraryCols = `sources, id, key, name, source, media_type, plugin_id, kind_key, collection_id, rules, visibility_default, quality_profile, present, sort, hidden, created_at, updated_at`
 
 type scanner interface{ Scan(...any) error }
 
 func scanLibrary(sc scanner) (core.Library, error) {
 	var lib core.Library
 	var id, sort, created, updated int64
-	var source, mediaType, filterJSON, rulesJSON, visDefault, presentJSON string
+	var source, mediaType, rulesJSON, visDefault, presentJSON string
 	var hidden int
 	var sourcesJSON string
 	if err := sc.Scan(&sourcesJSON, &id, &lib.Key, &lib.Name, &source, &mediaType, &lib.PluginID, &lib.KindKey,
-		&filterJSON, &lib.CollectionID, &rulesJSON, &visDefault, &lib.QualityProfile, &presentJSON, &sort, &hidden, &created, &updated); err != nil {
+		&lib.CollectionID, &rulesJSON, &visDefault, &lib.QualityProfile, &presentJSON, &sort, &hidden, &created, &updated); err != nil {
 		return core.Library{}, err
 	}
 	lib.ID = core.LibraryID(id)
@@ -36,13 +36,6 @@ func scanLibrary(sc scanner) (core.Library, error) {
 	}
 	if updated > 0 {
 		lib.UpdatedAt = time.Unix(updated, 0).UTC()
-	}
-	if filterJSON != "" {
-		var f core.Filter
-		if err := json.Unmarshal([]byte(filterJSON), &f); err != nil {
-			return core.Library{}, err
-		}
-		lib.Filter = &f
 	}
 	if rulesJSON != "" && rulesJSON != "[]" {
 		var rules []core.LibraryExclusion
@@ -61,24 +54,7 @@ func scanLibrary(sc scanner) (core.Library, error) {
 	if err := json.Unmarshal([]byte(sourcesJSON), &lib.Sources); err != nil {
 		return core.Library{}, err
 	}
-	if len(lib.Sources) == 0 {
-		if lib.Source == core.LibraryPlugin {
-			lib.Sources = []string{"plugin:" + lib.PluginID + ":" + lib.KindKey}
-		} else {
-			typ := lib.MediaType
-			if lib.Filter != nil {
-				typ = lib.Filter.Type
-			}
-			id := "tmdb-movies"
-			if typ == core.TypeShow {
-				id = "tmdb-tv"
-			}
-			lib.Sources = []string{id}
-		}
-	}
-	if lib.Source == core.LibraryFilter && lib.Filter != nil {
-		lib.Filter.CatalogueSources = append([]string(nil), lib.Sources...)
-	}
+	lib.Sources = defaultSources(lib)
 	return lib, nil
 }
 
@@ -87,14 +63,6 @@ func scanLibrary(sc scanner) (core.Library, error) {
 func (s *Service) insert(ctx context.Context, tx *sql.Tx, lib core.Library) (core.Library, error) {
 	now := s.now()
 	lib.CreatedAt, lib.UpdatedAt = now.UTC(), now.UTC()
-	filterJSON := ""
-	if lib.Filter != nil {
-		b, err := json.Marshal(lib.Filter)
-		if err != nil {
-			return core.Library{}, err
-		}
-		filterJSON = string(b)
-	}
 	rulesJSON := "[]"
 	if len(lib.Rules) > 0 {
 		b, err := json.Marshal(lib.Rules)
@@ -113,9 +81,9 @@ func (s *Service) insert(ctx context.Context, tx *sql.Tx, lib core.Library) (cor
 	}
 	sourceData, _ := json.Marshal(defaultSources(lib))
 	lib.Sources = defaultSources(lib)
-	_, err = tx.ExecContext(ctx, `INSERT INTO libraries(`+libraryCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO libraries(`+libraryCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		string(sourceData), int64(lib.ID), lib.Key, lib.Name, string(lib.Source), string(lib.MediaType), lib.PluginID, lib.KindKey,
-		filterJSON, lib.CollectionID, rulesJSON, lib.VisibilityDefault, lib.QualityProfile, string(presentJSON), lib.Sort, hidden, lib.CreatedAt.Unix(), lib.UpdatedAt.Unix())
+		lib.CollectionID, rulesJSON, lib.VisibilityDefault, lib.QualityProfile, string(presentJSON), lib.Sort, hidden, lib.CreatedAt.Unix(), lib.UpdatedAt.Unix())
 	if err != nil {
 		return core.Library{}, err
 	}

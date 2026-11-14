@@ -556,6 +556,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		deps.PluginLibraries = a.pluginsRT.kindCatalog
 	} else if a.libraries != nil {
 		deps.PluginLibraries = adapters.AttachKindCatalog(context.Background(), adapters.KindCatalogDeps{
+			TitleInLibrary: func(ctx context.Context, lib core.Library, key core.RatingKey) (bool, error) {
+				return a.catalog.TitleInFilter(ctx, libraryScopeFilter(lib, core.Filter{}), key)
+			},
 			Libraries: a.libraries,
 			Logger:    a.log,
 		})

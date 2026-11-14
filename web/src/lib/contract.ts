@@ -91,7 +91,7 @@ const RULE_FIELDS = [
   "inProgress",
   "addedAt",
 ] as const;
-export type RuleField = (typeof RULE_FIELDS)[number];
+export type RuleField = (typeof RULE_FIELDS)[number] | `browse:${string}` | "group" | "viewer";
 
 const RULE_OPS = [
   "is",

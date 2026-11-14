@@ -437,7 +437,7 @@ func (c *Catalog) LibraryPolicies() LibraryPolicies {
 // SetLibraryPolicies compiles and installs new canonical library policies.
 func (c *Catalog) SetLibraryPolicies(p LibraryPolicies) error {
 	p = cloneLibraryPolicies(p)
-	f, err := libraryfilter.CompileLibraryPolicies(p.MovieRules, p.MovieDefault, p.ShowRules, p.ShowDefault)
+	f, err := c.compileLibraryPolicies(p)
 	if err != nil {
 		return err
 	}
@@ -538,7 +538,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	for _, fn := range opts {
 		fn(c)
 	}
-	visibility, err := libraryfilter.CompileLibraryPolicies(c.libPolicies.MovieRules, c.libPolicies.MovieDefault, c.libPolicies.ShowRules, c.libPolicies.ShowDefault)
+	visibility, err := c.compileLibraryPolicies(c.libPolicies)
 	if err != nil {
 		return nil, err
 	}

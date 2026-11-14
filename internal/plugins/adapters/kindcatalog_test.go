@@ -32,6 +32,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontends/mediabrowser"
 	"github.com/braedonsaunders/ether/internal/frontends/plex"
 	"github.com/braedonsaunders/ether/internal/libraries"
+	"github.com/braedonsaunders/ether/internal/libraryfilter"
 	_ "github.com/braedonsaunders/ether/internal/notinterested"
 	"github.com/braedonsaunders/ether/internal/pluginitems"
 	"github.com/braedonsaunders/ether/internal/plugins"
@@ -130,7 +131,23 @@ func newKindTestHarness(t *testing.T, liveTimeout time.Duration, httpClient *htt
 	}
 	t.Cleanup(func() { _ = blobs.Close() })
 
+	titles := map[core.RatingKey]core.Title{}
 	kc := adapters.AttachKindCatalog(ctx, adapters.KindCatalogDeps{
+		TitleInLibrary: func(ctx context.Context, lib core.Library, key core.RatingKey) (bool, error) {
+			member, err := libs.SourceMember(ctx, lib, key)
+			if err != nil || !member {
+				return member, err
+			}
+			title, ok := titles[key]
+			if !ok {
+				return false, nil
+			}
+			policy, err := libraryfilter.CompilePolicy(lib.Rules, lib.VisibilityDefault)
+			if err != nil {
+				return false, err
+			}
+			return !policy.Hidden(&title), nil
+		},
 		Manager:           mgr,
 		Libraries:         libs,
 		Items:             items,
@@ -179,7 +196,7 @@ func newKindTestHarness(t *testing.T, liveTimeout time.Duration, httpClient *htt
 		resolver: kr,
 		rt:       rt,
 		users:    users,
-		titles:   map[core.RatingKey]core.Title{},
+		titles:   titles,
 	}
 }
 
@@ -1055,7 +1072,7 @@ func TestLiveSearchCoalescingTimeoutAndFilterLibraries(t *testing.T) {
 			ItemTypes      map[string]string `json:"itemTypes,omitempty"`
 		}{CollectionType: "movies"},
 	}
-	filterLib, err := h.libs.CreateFilter(ctx, "Comedy Movies", core.Filter{Type: core.TypeMovie, Genres: []string{"Comedy"}}, present)
+	filterLib, err := h.libs.Create(ctx, "Comedy Movies", core.TypeMovie, libraryRules(core.Filter{Type: core.TypeMovie, Genres: []string{"Comedy"}}), "hide", present)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1076,4 +1093,8 @@ func mustListLibs(t *testing.T, svc *libraries.Service) []core.Library {
 		t.Fatal(err)
 	}
 	return libs
+}
+
+func libraryRules(f core.Filter) []core.LibraryExclusion {
+	return []core.LibraryExclusion{{Action: "show", MediaType: string(f.Type), Match: "all", Rules: core.LibraryPredicateConditions(f)}}
 }

@@ -1,6 +1,7 @@
 package libraryfilter
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -44,4 +45,33 @@ func pluginSQL(q string, typ core.MediaType, fields map[string]string) string {
 func (f *Filter) PluginCatchCountsSQL(typ core.MediaType, fields map[string]string) (string, []any) {
 	q, args := f.CatchCountsSQL()
 	return pluginSQL(q, typ, fields), args
+}
+
+// CompilePluginPolicy rejects catalogue-only conditions instead of silently
+// treating an unsupported plugin condition as a non-match.
+func CompilePluginPolicy(specs []core.LibraryExclusion, fallback string) (*Filter, error) {
+	f, err := CompilePolicy(specs, fallback)
+	if err != nil {
+		return nil, err
+	}
+	var validate func(condition) error
+	validate = func(c condition) error {
+		if c.predicate != nil {
+			return fmt.Errorf("condition %q is only available for catalogue sources", c.field)
+		}
+		for _, child := range c.children {
+			if err := validate(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, g := range f.rules {
+		for _, c := range g.rules {
+			if err := validate(c); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return f, nil
 }

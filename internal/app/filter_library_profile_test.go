@@ -23,7 +23,7 @@ func TestPublishedTVFilterLibraryProfile(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"plex":{"base":"show"}}`), &present); err != nil {
 		t.Fatal(err)
 	}
-	lib, err := a.libraries.CreateFilter(ctx, "Anime Shows", core.Filter{Type: core.TypeShow, Genres: []string{"Animation"}}, present)
+	lib, err := a.libraries.Create(ctx, "Anime Shows", core.TypeShow, libraryRules(core.Filter{Type: core.TypeShow, Genres: []string{"Animation"}}), "hide", present)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,4 +58,8 @@ func TestPublishedTVFilterLibraryProfile(t *testing.T) {
 	if _, ok := profiles.cached(show.Key); !ok {
 		t.Fatal("missing parent show cache entry")
 	}
+}
+
+func libraryRules(f core.Filter) []core.LibraryExclusion {
+	return []core.LibraryExclusion{{Action: "show", MediaType: string(f.Type), Match: "all", Rules: core.LibraryPredicateConditions(f)}}
 }

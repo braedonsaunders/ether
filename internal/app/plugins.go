@@ -340,6 +340,9 @@ func (a *App) buildPlugins(ctx context.Context, cfg config.Config) (*pluginRunti
 	a.closers = append(a.closers, func() { _ = blobs.Close() })
 
 	kindCatalog := adapters.AttachKindCatalog(runCtx, adapters.KindCatalogDeps{
+		TitleInLibrary: func(ctx context.Context, lib core.Library, key core.RatingKey) (bool, error) {
+			return a.catalog.TitleInFilter(ctx, libraryScopeFilter(lib, core.Filter{}), key)
+		},
 		Manager:   mgr,
 		Libraries: a.libraries,
 		Items:     itemsSvc,

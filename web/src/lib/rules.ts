@@ -387,6 +387,7 @@ export function valueFor(meta: FieldMeta, op: RuleOp, prev?: unknown): unknown {
 
 export function newRule(field: RuleField): Rule {
   const meta = FIELD_BY_NAME[field];
+  if (!meta) return { field, op: "is", value: "" };
   return { field, op: meta.defaultOp, value: valueFor(meta, meta.defaultOp) };
 }
 
@@ -403,6 +404,8 @@ export function withField(rule: Rule, field: RuleField): Rule {
 
 /** Incomplete rules (no values picked yet) are left out of previews. */
 export function isRuleComplete(rule: Rule): boolean {
+  if (rule.field === "group")
+    return Array.isArray(rule.value) && rule.value.every((child: Rule) => isRuleComplete(child));
   if (rule.op === "unknown" || rule.op === "known") return true;
   const meta = fieldMeta(rule.field);
   if (!meta) return true;
