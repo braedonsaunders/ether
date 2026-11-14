@@ -340,6 +340,14 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 			v := s.FieldOrder != "progressive"
 			si.ProbedInterlaced = &v
 		}
+		for _, side := range s.SideDataList {
+			if side["side_data_type"] != "Display Matrix" {
+				continue
+			}
+			if rotation, ok := side["rotation"].(float64); ok && !math.IsNaN(rotation) && !math.IsInf(rotation, 0) {
+				si.Rotation = &rotation
+			}
+		}
 		si.PixelFormat = probedColour(s.PixFmt)
 		si.DisplayAspectRatio = probedSAR(s.DAR)
 		if s.Refs != nil && *s.Refs >= 0 {
@@ -441,6 +449,15 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 		if si.Codec == "hevc" {
 			si.MalformedHEVC = malformedHEVCConfig(extra)
 			si.HEVCParameterSets = completeHEVCConfig(extra)
+			// Some ffprobe builds label frame-based interlaced HEVC as
+			// progressive. Explicit SPS interlace evidence must not grant
+			// clients permission to use a progressive-only raw path.
+			if f, err := hevcSPS(hevcConfigSPS(extra)); err == nil && f.interlaced != nil && *f.interlaced {
+				setScanFact(&si, true)
+				if si.FieldOrder == "progressive" {
+					si.FieldOrder = ""
+				}
+			}
 		}
 	case "audio":
 		si.Channels = s.Channels

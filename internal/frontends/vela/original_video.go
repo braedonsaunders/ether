@@ -13,6 +13,16 @@ func originalVideo(media frontend.MediaInfo) object {
 			continue
 		}
 		out := object{}
+		if s.ProbedInterlaced != nil {
+			out["isInterlaced"] = *s.ProbedInterlaced
+		}
+		switch s.FieldOrder {
+		case "progressive", "tt", "bb", "tb", "bt":
+			out["fieldOrder"] = s.FieldOrder
+		}
+		if s.Rotation != nil {
+			out["rotation"] = *s.Rotation
+		}
 		for key, value := range map[string]string{"codec": s.Codec, "profile": s.Profile, "colorPrimaries": s.ColorPrimaries, "colorTransfer": s.ColorTransfer, "colorSpace": s.ColorSpace, "colorRange": s.ColorRange} {
 			if value != "" && value != "unknown" {
 				out[key] = value

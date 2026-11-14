@@ -37,70 +37,72 @@ const (
 
 // Matroska element IDs (https://www.matroska.org/technical/elements.html).
 const (
-	mkvEBML         = 0x1a45dfa3
-	mkvDocType      = 0x4282
-	mkvSegment      = 0x18538067
-	mkvSeekHead     = 0x114d9b74
-	mkvSeek         = 0x4dbb
-	mkvSeekID       = 0x53ab
-	mkvSeekPosition = 0x53ac
-	mkvInfo         = 0x1549a966
-	mkvTimecodeScl  = 0x2ad7b1
-	mkvDuration     = 0x4489
-	mkvTracks       = 0x1654ae6b
-	mkvTrackEntry   = 0xae
-	mkvTrackNumber  = 0xd7
-	mkvTrackType    = 0x83
-	mkvFlagDefault  = 0x88
-	mkvFlagForced   = 0x55aa
-	mkvDefaultDur   = 0x23e383
-	mkvName         = 0x536e
-	mkvLanguage     = 0x22b59c
-	mkvLanguageBCP  = 0x22b59d
-	mkvCodecID      = 0x86
-	mkvCodecPrivate = 0x63a2
-	mkvCodecDelay   = 0x56aa
-	mkvVideo        = 0xe0
-	mkvPixelWidth   = 0xb0
-	mkvPixelHeight  = 0xba
-	mkvColour       = 0x55b0
-	mkvBitsPerChan  = 0x55b2
-	mkvTransfer     = 0x55ba
-	mkvPrimaries    = 0x55bb
-	mkvMatrix       = 0x55b1
-	mkvRange        = 0x55b9
-	mkvDisplayW     = 0x54b0
-	mkvDisplayH     = 0x54ba
-	mkvDisplayU     = 0x54b2
-	mkvAudio        = 0xe1
-	mkvSampling     = 0xb5
-	mkvOutSampling  = 0x78b5
-	mkvChannels     = 0x9f
-	mkvAudioDepth   = 0x6264
-	mkvAddMapping   = 0x41e4
-	mkvAddIDType    = 0x41e7
-	mkvAddIDExtra   = 0x41ed
-	mkvEncodings    = 0x6d80
-	mkvEncoding     = 0x6240
-	mkvEncScope     = 0x5032
-	mkvEncType      = 0x5033
-	mkvChapters     = 0x1043a770
-	mkvEdition      = 0x45b9
-	mkvChapterAtom  = 0xb6
-	mkvChapterUID   = 0x73c4
-	mkvChapterStart = 0x91
-	mkvChapterEnd   = 0x92
-	mkvChapDisplay  = 0x80
-	mkvChapString   = 0x85
-	mkvTags         = 0x1254c367
-	mkvTag          = 0x7373
-	mkvTargets      = 0x63c0
-	mkvTagTrackUID  = 0x63c5
-	mkvSimpleTag    = 0x67c8
-	mkvTagName      = 0x45a3
-	mkvTagString    = 0x4487
-	mkvTrackUID     = 0x73c5
-	mkvCluster      = 0x1f43b675
+	mkvEBML           = 0x1a45dfa3
+	mkvDocType        = 0x4282
+	mkvSegment        = 0x18538067
+	mkvSeekHead       = 0x114d9b74
+	mkvSeek           = 0x4dbb
+	mkvSeekID         = 0x53ab
+	mkvSeekPosition   = 0x53ac
+	mkvInfo           = 0x1549a966
+	mkvTimecodeScl    = 0x2ad7b1
+	mkvDuration       = 0x4489
+	mkvTracks         = 0x1654ae6b
+	mkvTrackEntry     = 0xae
+	mkvTrackNumber    = 0xd7
+	mkvTrackType      = 0x83
+	mkvFlagDefault    = 0x88
+	mkvFlagForced     = 0x55aa
+	mkvDefaultDur     = 0x23e383
+	mkvName           = 0x536e
+	mkvLanguage       = 0x22b59c
+	mkvLanguageBCP    = 0x22b59d
+	mkvCodecID        = 0x86
+	mkvCodecPrivate   = 0x63a2
+	mkvCodecDelay     = 0x56aa
+	mkvVideo          = 0xe0
+	mkvFlagInterlaced = 0x9a
+	mkvFieldOrder     = 0x9d
+	mkvPixelWidth     = 0xb0
+	mkvPixelHeight    = 0xba
+	mkvColour         = 0x55b0
+	mkvBitsPerChan    = 0x55b2
+	mkvTransfer       = 0x55ba
+	mkvPrimaries      = 0x55bb
+	mkvMatrix         = 0x55b1
+	mkvRange          = 0x55b9
+	mkvDisplayW       = 0x54b0
+	mkvDisplayH       = 0x54ba
+	mkvDisplayU       = 0x54b2
+	mkvAudio          = 0xe1
+	mkvSampling       = 0xb5
+	mkvOutSampling    = 0x78b5
+	mkvChannels       = 0x9f
+	mkvAudioDepth     = 0x6264
+	mkvAddMapping     = 0x41e4
+	mkvAddIDType      = 0x41e7
+	mkvAddIDExtra     = 0x41ed
+	mkvEncodings      = 0x6d80
+	mkvEncoding       = 0x6240
+	mkvEncScope       = 0x5032
+	mkvEncType        = 0x5033
+	mkvChapters       = 0x1043a770
+	mkvEdition        = 0x45b9
+	mkvChapterAtom    = 0xb6
+	mkvChapterUID     = 0x73c4
+	mkvChapterStart   = 0x91
+	mkvChapterEnd     = 0x92
+	mkvChapDisplay    = 0x80
+	mkvChapString     = 0x85
+	mkvTags           = 0x1254c367
+	mkvTag            = 0x7373
+	mkvTargets        = 0x63c0
+	mkvTagTrackUID    = 0x63c5
+	mkvSimpleTag      = 0x67c8
+	mkvTagName        = 0x45a3
+	mkvTagString      = 0x4487
+	mkvTrackUID       = 0x73c5
+	mkvCluster        = 0x1f43b675
 )
 
 type metadataReader interface {
@@ -283,6 +285,8 @@ type mkvTrack struct {
 	defaultDur  uint64
 	width       uint64
 	height      uint64
+	interlaced  uint64
+	fieldOrder  *uint64
 
 	transfer    int
 	primaries   int
@@ -994,6 +998,11 @@ func mkvTracksOf(b []byte) ([]mkvTrack, error) {
 				}
 				for _, v := range vs {
 					switch v.id {
+					case mkvFlagInterlaced:
+						t.interlaced = mkvUint(v.body)
+					case mkvFieldOrder:
+						order := mkvUint(v.body)
+						t.fieldOrder = &order
 					case mkvPixelWidth:
 						t.width = mkvUint(v.body)
 					case mkvPixelHeight:
@@ -1234,12 +1243,38 @@ func (t mkvTrack) video(si *core.StreamInfo) error {
 		dw, dh = int(t.displayW), int(t.displayH)
 	}
 	containerPicture(si, t.primaries, t.matrix, fullRange, dw, dh)
+	switch t.interlaced {
+	case 1:
+		setScanFact(si, true)
+		si.FieldOrder = "" // A container flag does not establish field ordering.
+		if t.fieldOrder != nil {
+			switch *t.fieldOrder {
+			case 1:
+				si.FieldOrder = "tt"
+			case 6:
+				si.FieldOrder = "bb"
+			case 9:
+				si.FieldOrder = "tb"
+			case 14:
+				si.FieldOrder = "bt"
+			}
+		}
+	case 2:
+		// A progressive container flag cannot negate explicit SPS
+		// interlace evidence (some HEVC muxers write conflicting flags).
+		if si.ProbedInterlaced == nil || !*si.ProbedInterlaced {
+			setScanFact(si, false)
+		}
+	}
 	return nil
 }
 
 // spsPicture records the sample aspect ratio and colour the SPS VUI
 // signals. A container's own values (mkvColour, colr, pasp) replace them.
 func spsPicture(si *core.StreamInfo, f spsFacts) {
+	if f.interlaced != nil {
+		setScanFact(si, *f.interlaced)
+	}
 	if f.sarNum > 0 && f.sarDen > 0 {
 		n, d := reduce(f.sarNum, f.sarDen)
 		si.SampleAspectRatio = fmt.Sprintf("%d:%d", n, d)
@@ -1509,7 +1544,7 @@ func avcConfigSPS(c []byte) []byte {
 
 // hevcConfigSPS returns the first SPS NAL of an HEVCDecoderConfigurationRecord.
 func hevcConfigSPS(c []byte) []byte {
-	if len(c) < 23 {
+	if len(c) < 23 || c[0] != 1 {
 		return nil
 	}
 	arrays := int(c[22])
@@ -1885,4 +1920,14 @@ var iso6391to2 = map[string]string{
 	"ms": "may", "nb": "nob", "nl": "dut", "nn": "nno", "no": "nor", "pl": "pol", "pt": "por", "ro": "rum",
 	"ru": "rus", "sk": "slo", "sl": "slv", "sr": "srp", "sv": "swe", "ta": "tam", "te": "tel", "th": "tha",
 	"tr": "tur", "uk": "ukr", "vi": "vie", "zh": "chi",
+}
+
+// setScanFact records explicit scan evidence; interlacing alone cannot reveal
+// which field is coded or displayed first.
+func setScanFact(si *core.StreamInfo, interlaced bool) {
+	si.Interlaced = interlaced
+	si.ProbedInterlaced = &interlaced
+	if !interlaced {
+		si.FieldOrder = "progressive"
+	}
 }
