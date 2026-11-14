@@ -1,4 +1,4 @@
-# Configured Plex version slots (v0.3.12)
+# Configured Plex version slots (v0.3.11)
 
 A cold browse response must expose the same menu identities as a warm detail,
 playQueue and playback decision. The previous menu was release-dependent:
@@ -66,8 +66,26 @@ Focused offline checks cover:
 `CGO_ENABLED=0 go build ./...`, focused tests and vet on changed packages
 pass. The coordinator owns the full release gate. Real-device validation is
 pending; the owner TV became unreachable during investigation. Before shipping
-v0.3.12, test the picker, Original quality, lower output quality, seeking,
+v0.3.11, test the picker, Original quality, lower output quality, seeking,
 resume, subtitles, unavailable slots and real-release labels on Web, Android
 TV and the LG/VIDAA/Samsung TV app family. The original issue-483 reporter
 sessions got as far as DASH manifests, so their separate init/segment rejection
 also still needs a real retest; this change does not prove that issue resolved.
+
+## v0.3.11 integration
+
+Applied source commit `57735a510` onto `origin/integration/0311` at
+`a21b0b6b9`. Git merged the later Plex conversion, playback and variant changes
+without conflicts. Decision generation and `plex_decision_arms`, collection
+membership snapshots/revisions, probe facts version 7, source/rule library
+membership, RankedTop10 hubs and trailer previews remain on the integration
+base. Core changes are additive (`Resolution.VersionSelector`,
+`Resolution.MatchesVersion`, and the selector prefix); the frontend adds an
+optional configured-menu capability.
+
+The pure-Go build and focused checks cover configured Web/Android/LG/VIDAA/
+Samsung flows, TV queues, restart after an old timeline stop, subtitle/version
+identity, collection slicing, library profile evidence/precedence and ceilings,
+Plex goldens/conformance, persisted probe facts, playback slot resume, numeric
+ID point lookups and trailer preview isolation. The coordinator owns the full
+release gate and the real-device checks listed above.
