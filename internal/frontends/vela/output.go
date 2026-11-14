@@ -26,6 +26,7 @@ func (i *instance) refreshOutput(ctx context.Context, id string, s *playSession)
 	before, _ := json.Marshal(object{"qualities": paths[0]["qualities"], "preparation": s.plan["preparation"]})
 	if ladder, ok := hs.(interface{ Rungs() []frontend.HLSRung }); ok {
 		qualities := []object{}
+		delete(paths[0], "initialRenditionId")
 		base, _ := paths[0]["url"].(string)
 		base = strings.TrimSuffix(base, "master.m3u8")
 		for _, r := range ladder.Rungs() {
@@ -50,6 +51,9 @@ func (i *instance) refreshOutput(ctx context.Context, id string, s *playSession)
 						}
 					}
 				}
+			}
+			if r.ID == "base" {
+				paths[0]["initialRenditionId"] = "base"
 			}
 			qualities = append(qualities, q)
 		}

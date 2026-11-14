@@ -38,6 +38,9 @@ func TestVelaPlaybackOutputInvariants(t *testing.T) {
 		i := &instance{host: frontend.Host{Sessions: sessions}}
 		s := &playSession{mse: true, source: 3, seek: 4, plan: object{"paths": []object{{"transport": "hls", "url": "/sessions/media/id/scoped-secret/master.m3u8", "qualities": []object{}}}}}
 		i.refreshOutput(context.Background(), "id", s)
+		if s.plan["paths"].([]object)[0]["initialRenditionId"] != "base" {
+			t.Fatal("initial recommendation is not a real advertised rung")
+		}
 		q := s.plan["paths"].([]object)[0]["qualities"].([]object)[0]
 		if q["videoCodec"] != "" || q["codecStatus"] != "pending" || q["url"] != "/sessions/media/id/scoped-secret/base/index.m3u8" {
 			t.Fatal(q)
