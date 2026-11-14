@@ -6,8 +6,23 @@ import (
 	"encoding/json"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"net/http"
+	"strconv"
 	"time"
 )
+
+const defaultRowItemLimit = 20
+
+// The collection's limit counts rows; only a single-row request uses it as
+// an item limit. Keep bootstrap independent of the number of shelves requested.
+func rowItemLimit(r *http.Request) int {
+	n := defaultRowItemLimit
+	if r.PathValue("id") != "" {
+		if requested, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && requested > 0 {
+			n = min(requested, 50)
+		}
+	}
+	return n
+}
 
 type rowCursor struct {
 	Row, Scope string
@@ -24,11 +39,7 @@ func (i *instance) rowPage(r *http.Request, v *frontend.Viewer, id string, offse
 	if !ok {
 		return frontend.Row{}, frontend.ErrNotAvailable
 	}
-	n := 50
-	if r.PathValue("id") != "" {
-		n = min(limit(r), 50)
-	}
-	page, e := views.ResolveRowView(r.Context(), frontend.RowViewPageRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", ID: id, Offset: offset, Limit: n})
+	page, e := views.ResolveRowView(r.Context(), frontend.RowViewPageRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", ID: id, Offset: offset, Limit: rowItemLimit(r)})
 	if e != nil {
 		return frontend.Row{}, e
 	}

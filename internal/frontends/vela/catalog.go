@@ -187,7 +187,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 		}
 	} else {
 		var e error
-		rows, e = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: requestDevice(r), Placement: placement, Item: item, Limit: 50})
+		rows, e = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: requestDevice(r), Placement: placement, Item: item, Limit: rowItemLimit(r)})
 		if e != nil {
 			return nil, false, e
 		}

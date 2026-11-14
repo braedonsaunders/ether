@@ -21,6 +21,13 @@ unmeasured sources retain 0/0. No pixel fetch, trailer discovery, provider call,
 or ranker invocation is added by band composition. Heroes and shelves dedupe
 series families, including continuation pages, without changing issued offsets.
 
+Bootstrap and `/vela/v0/rows` request 20 entries per shelf through the row-view
+pager. Their `limit` still counts shelves. `/vela/v0/rows/{id}` defaults to 20
+entries and accepts an item `limit` capped at 50; missing, invalid or nonpositive
+values use the default. Hero exclusions can shorten the displayed shelf without
+changing its source page size or cursor offset. Metadata and artwork remain
+batched per row; no extra fill queries run to replace excluded heroes.
+
 When Home lacks six eligible cards, an internal Home-only request fills the
 open slots through the existing policy, owner layout and receipt pipeline.
 Persisted weekly charts supply trending candidates without refresh. Recent
