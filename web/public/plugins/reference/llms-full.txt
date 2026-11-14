@@ -7,6 +7,8 @@ Developer documentation and API vocabulary are in English. Capabilities describe
 
 ## Getting started
 
+Get a first result with [Start here in 5 minutes](/plugins/reference/five-minutes), or explore [ten authoring recipes](/plugins/reference/agent-recipes).
+
 Build the smallest plugin that answers one useful question. Start with Plugins → Add plugin → Code, select a Studio template, and run its preview before installing. A plugin adds a source, integration, notification channel, live TV source, extension, or whole content library.
 
 ## Choose a runtime
@@ -26,6 +28,57 @@ export function handle(req) {
 ```
 
 Use [Manifest](/plugins/reference/manifest) to declare identity and runtime, [Capabilities](/plugins/reference/capabilities) to declare behavior, then [Testing](/plugins/reference/testing) before distributing a package. Expand the generated declarations on each page for exact signatures, limits, and validation errors. The Go validator is authoritative where optional wire fields have conditional requirements.
+
+## Start here in 5 minutes
+
+Your first result is a catalogue containing The Matrix. You need an Ether development server you control, its admin token, and the Ether CLI from this checkout. No provider account or media download is needed. The sample describes a movie; playback still needs an owner-configured playable source.
+
+## 1. Create a plugin (one minute)
+From the repository root, build the CLI once if it is not already on your PATH:
+
+```sh
+CGO_ENABLED=0 go build -o ./ether ./cmd/ether
+./ether plugin new catalogue --lang ts ./my-first-plugin
+```
+
+Open `my-first-plugin/src/index.ts` and find the `/catalog/` branch. It returns a real Stremio `metas` entry with an IMDb ID, type and name. The manifest declares the matching `featured` catalogue and a list source named Featured picks. Change the reverse-DNS plugin ID in the manifest before distributing your own project.
+
+## 2. Get a green check (one minute)
+
+```sh
+./ether plugin check ./my-first-plugin
+./ether plugin test ./my-first-plugin
+```
+
+Expect `PASS`. Errors name the field or route to fix and link to its reference topic. For an agent, use `./ether plugin check --json ./my-first-plugin`. All generated templates work without npm dependencies. The check is offline; your local server is used only in the next step.
+
+## 3. Install and keep the loop open (one minute)
+Set `ETHER_TOKEN` in your shell to your local server's admin token, then run:
+
+```sh
+./ether plugin dev ./my-first-plugin --server http://localhost:32400
+```
+
+Use your development server's actual port if it differs. Expect `Reloaded community.example.myfirstplugin` followed by `Watching`. The watcher checks conformance before installing each saved change and prints plugin logs. If a save fails, fix the reported field and save again; the watcher stays open. Ctrl-C stops it. A 401/403 means the token or grants need attention; a connection error means the server address or process needs attention.
+
+## 4. See your result (one minute)
+In that server's console, open Plugins and enable your plugin after reviewing its permissions. Open Collections → New collection. In Sources, choose Featured picks from your plugin, replacing the default catalogue source if present. Keep the media type Movies. The collection preview resolves the sample's IMDb ID to The Matrix in your Ether catalogue. If it is missing, confirm the plugin is enabled and that your development catalogue contains that title; the sample does not populate Ether's TMDB catalogue itself.
+
+For an immediate plugin-owned page without catalogue matching, scaffold `extension` instead of `catalogue`, install it with the same dev command, then open its Language overview page from the plugin. Its ViewSpec displays the sample active language, `en`.
+
+## 5. Make it yours and share it (one minute)
+Edit the catalogue response, save, and re-open the collection preview. Keep IDs stable and page larger results. Put configuration in `settings.schema.json`, labels in `i18n/en.json`, and secrets in sealed settings rather than source. When the result looks right:
+
+```sh
+./ether plugin pack -o ./my-first-plugin.etherpkg ./my-first-plugin
+./ether plugin check ./my-first-plugin.etherpkg
+```
+
+Upload that package through Plugins → Add plugin on another development server. See [the authoring recipes](/plugins/reference/agent-recipes) for ten directions to take next, [Capabilities](/plugins/reference/capabilities) for route shapes, and [Testing](/plugins/reference/testing) for the limits of offline checks.
+
+## Recipes for humans and coding agents
+
+Start with one useful response, then build the next thing you want to use. The guide below covers ten plugin types, exact CLI commands, manifest decisions, host-service permissions, and common repairs. Use the header’s Copy for your AI assistant button to copy all chapters and generated contracts, or give your agent `/ether/plugins/reference/llms.txt` on this server. Hosted code has no Node filesystem or npm resolution; use the shipped host-service contracts and bundle imports.
 
 ## Manifest
 

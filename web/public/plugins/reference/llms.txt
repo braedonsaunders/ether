@@ -10,6 +10,8 @@ Full contract: [llms-full.txt](/ether/plugins/reference/llms-full.txt)
 ## Topics
 
 - [Getting started](/ether/plugins/reference/getting-started)
+- [Start here in 5 minutes](/ether/plugins/reference/five-minutes)
+- [Recipes for humans and coding agents](/ether/plugins/reference/agent-recipes)
 - [Manifest](/ether/plugins/reference/manifest)
 - [Capabilities & contribution routes](/ether/plugins/reference/capabilities)
 - [Content kinds & libraries](/ether/plugins/reference/kinds)
