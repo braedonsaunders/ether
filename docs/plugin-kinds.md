@@ -118,7 +118,30 @@ order. Patterns:
   from a named settings secret (`passwordSecret`), never from your
   response. Ether caches the extracted member.
 - **release** — hand Ether a magnet/infohash/NZB and its existing
-  debrid/Usenet/torrent pipeline opens it.
+  debrid/Usenet/torrent pipeline opens it. For torrents, set
+  `release.fileIndex` (zero-based index in the provider's complete file list),
+  `release.candidate.fileIndex`, or `release.file` (exact path or unique
+  basename) to open audio, books, comics, ROMs or other non-video files.
+  A top-level `fileIndex` overrides the candidate's index. If both index and
+  `file` are supplied they must identify the same file. Empty files,
+  invalid indices and missing or ambiguous names fail without fallback.
+  Without either selector the existing video picker is used. In Go, indices
+  are `*int`: a pointer to zero selects the first file; nil leaves selection
+  automatic. Indices refer to the provider's ordering, not its file IDs;
+  prefer a path when the provider's ordering is unknown. Explicit selectors
+  on an NZB release are rejected; use a container source for archive members.
+  `fileHint` retains its existing meaning as an archive member hint.
+
+`ResolveSources({kind: "indexer_search", query, category})` accepts a
+comma-separated list of Newznab category IDs (`"3000"`, `"7030"`) or standard
+names: `console`, `movies`/`movie`, `audio`/`music`, `pc`, `tv`, `adult`,
+`books`, `comics`, `other`. It sends a generic search with those categories
+and the query unchanged, rather than assuming a movie or TV request.
+Invalid categories are rejected. Stremio/addon sources do not support this
+filter and reject scoped searches. Omit `category` for the default media
+search. Results and acquired files are cached separately by category and
+file selection. The wire shapes are documented in
+[`plugin-sources.v1.json`](../schemas/plugin-sources.v1.json).
 
 URLs may carry `{itemIndex}`, `{pageNumber}` (= itemIndex + 1),
 `{byteStart}`, `{byteEnd}` and `{byteRange}` placeholders; Ether

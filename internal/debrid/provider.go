@@ -678,9 +678,40 @@ func isExtra(p string) bool {
 	return false
 }
 
-// ChooseFile picks the main video file of a torrent: for a target episode
-// the largest file whose name matches it, else the largest video.
+// ChooseFile honors explicit plugin file selectors first, including non-video
+// files. Otherwise it picks the main video: the target episode or largest video.
 func ChooseFile(files []File, target *core.ReleaseTarget) (File, error) {
+	if target != nil && (target.FileIndex != nil || target.ExactFile != "") {
+		matches := func(f File) bool {
+			want := strings.ReplaceAll(target.ExactFile, "\\", "/")
+			name := strings.ReplaceAll(f.Path, "\\", "/")
+			return want == "" || name == want || (!strings.Contains(want, "/") && path.Base(name) == want)
+		}
+		if target.FileIndex != nil {
+			i := *target.FileIndex
+			if i < 0 || i >= len(files) {
+				return File{}, fmt.Errorf("debrid: fileIndex %d outside file list of %d: %w", i, len(files), core.ErrWrongContent)
+			}
+			f := files[i]
+			if f.Size <= 0 || !matches(f) {
+				return File{}, fmt.Errorf("debrid: selected file is empty or does not match file: %w", core.ErrWrongContent)
+			}
+			return f, nil
+		}
+		var chosen File
+		count := 0
+		for _, f := range files {
+			if f.Size > 0 && matches(f) {
+				chosen = f
+				count++
+			}
+		}
+		if count != 1 {
+			return File{}, fmt.Errorf("debrid: file matched %d files: %w", count, core.ErrWrongContent)
+		}
+		return chosen, nil
+	}
+
 	if target != nil && target.Season == 0 && target.AddonSpecialEpisode > 0 {
 		copy := *target
 		copy.Episode = target.AddonSpecialEpisode

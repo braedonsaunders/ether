@@ -28,18 +28,19 @@ func noReserve(context.Context, string) error { return nil }
 
 // query is one search attempt.
 type query struct {
-	mode     string // search, movie-search, tv-search
-	q        string // title (and year for movies)
-	keywords string // q plus the episode string for TV
-	season   int
-	ep       int
-	year     int
-	imdb     string // "tt0133093"
-	tmdb     int64
-	tvdb     int64
-	wanted   []int // Newznab categories wanted
-	idSearch bool
-	test     bool
+	mode            string // search, movie-search, tv-search
+	q               string // title (and year for movies)
+	keywords        string // q plus the episode string for TV
+	season          int
+	ep              int
+	year            int
+	imdb            string // "tt0133093"
+	tmdb            int64
+	tvdb            int64
+	wanted          []int // Newznab categories wanted
+	exactCategories bool  // explicit plugin categories keep subcategory boundaries
+	idSearch        bool
+	test            bool
 }
 
 // sanitizeTitle prepares a title for a site search: apostrophes are
@@ -75,6 +76,13 @@ func hasParam(params []string, p string) bool {
 // attempts builds the ordered queries for a request: an identifier search
 // when the definition supports one, then a keyword search.
 func (r *Runner) attempts(req core.SearchRequest, movieCats, tvCats []int) []query {
+	if req.Category != "" {
+		cats, err := core.SearchCategories(req.Category)
+		if err != nil {
+			return nil
+		}
+		return []query{{mode: "search", wanted: cats, exactCategories: true, q: strings.TrimSpace(req.Title), keywords: strings.TrimSpace(req.Title)}}
+	}
 	isTV := req.Type == core.TypeEpisode || req.Type == core.TypeShow || req.Season > 0
 	base := query{wanted: movieCats, year: req.Year, mode: "movie-search"}
 	if isTV {
@@ -200,6 +208,9 @@ func pathApplies(pathCats, cats []string) bool {
 // aliases, and season-pack / complete-series queries for TV episodes on
 // torrent trackers.
 func (r *Runner) fallbackAttempts(req core.SearchRequest, movieCats, tvCats []int) []query {
+	if req.Category != "" {
+		return nil
+	}
 	isTV := req.Type == core.TypeEpisode || req.Type == core.TypeShow || req.Season > 0
 	base := query{wanted: movieCats, year: req.Year, mode: "movie-search"}
 	if isTV {
@@ -294,6 +305,9 @@ func (r *Runner) fallbackAttempts(req core.SearchRequest, movieCats, tvCats []in
 // Search runs a request's attempts in order and returns the first
 // non-empty result set.
 func (r *Runner) Search(ctx context.Context, req core.SearchRequest, movieCats, tvCats []int, reserve Reserver) ([]core.Release, error) {
+	if _, err := core.SearchCategories(req.Category); err != nil {
+		return nil, err
+	}
 	if reserve == nil {
 		reserve = noReserve
 	}
@@ -485,7 +499,7 @@ func (r *Runner) finish(rows []found, q query) []core.Release {
 			ok := false
 			for _, c := range f.cats {
 				for _, w := range q.wanted {
-					if c == w || family(c) == family(w) {
+					if c == w || (family(c) == family(w) && (!q.exactCategories || w%1000 == 0)) {
 						ok = true
 					}
 				}

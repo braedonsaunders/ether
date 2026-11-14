@@ -707,6 +707,12 @@ func payloadKey(rel core.Release) string {
 	k := rel.ID
 	if rel.Target != nil {
 		k += fmt.Sprintf("|s%de%d", rel.Target.Season, rel.Target.Episode)
+		if rel.Target.FileIndex != nil {
+			k += fmt.Sprintf("|fileIndex:%d", *rel.Target.FileIndex)
+		}
+		if rel.Target.ExactFile != "" {
+			k += fmt.Sprintf("|exactFile:%q", rel.Target.ExactFile)
+		}
 	}
 	return k
 }

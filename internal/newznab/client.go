@@ -725,6 +725,9 @@ func cacheKey(c *Client, req core.SearchRequest) string {
 	// and Usenet streams and read flag languages.
 	// v5: anime BD/BDMux source tags and three-letter audio languages.
 	fmt.Fprint(h, "release-parse-v5|")
+	if req.Category != "" {
+		fmt.Fprintf(h, "category:%s|", req.Category)
+	}
 	if req.Type == core.TypeEpisode && req.Season == 0 && (c.Config().IsStremio() || c.Config().IsAddon()) {
 		// Previously these routes cached empty answers without asking season 0.
 		fmt.Fprintf(h, "special-title-map-v1:%s|", req.EpisodeTitle)
@@ -816,6 +819,13 @@ func releaseIsTV(r core.Release) bool {
 // searchAttempts builds the ordered fallback queries for a request.
 func (c *Client) searchAttempts(req core.SearchRequest, caps *Caps, id config.Identity) []url.Values {
 	cfg := c.Config()
+	if req.Category != "" {
+		cats, err := core.SearchCategories(req.Category)
+		if err != nil {
+			return nil
+		}
+		return []url.Values{{"extended": {"1"}, "limit": {strconv.Itoa(defaultSearchLimit)}, "t": {"search"}, "cat": {joinCats(cats)}, "q": {strings.TrimSpace(req.Title)}}}
+	}
 	isTV := isTVRequest(req)
 	base := func() url.Values {
 		v := url.Values{"extended": {"1"}, "limit": {strconv.Itoa(defaultSearchLimit)}}
@@ -1046,7 +1056,13 @@ func (c *Client) doSearch(ctx context.Context, params url.Values, id config.Iden
 const primaryMissKey = "|primary-miss"
 
 func (c *Client) Search(ctx context.Context, req core.SearchRequest) ([]core.Release, error) {
+	if _, err := core.SearchCategories(req.Category); err != nil {
+		return nil, err
+	}
 	cfg := c.Config()
+	if req.Category != "" && (cfg.IsStremio() || cfg.IsAddon()) {
+		return nil, fmt.Errorf("indexer %q does not support category searches", c.Name())
+	}
 	if !cfg.Enabled {
 		return nil, fmt.Errorf("indexer %q is disabled", c.Name())
 	}

@@ -2419,6 +2419,13 @@ class _KindsClient:
         return self._call("GET", f"/ether/plugin-host/kinds/{urllib.parse.quote(kind)}/items?{q}") or {"items": []}
 
     def resolve_sources(self, query: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Find owner sources. indexer_search accepts category (comma-separated
+        Newznab IDs or family names, e.g. music/books/comics). A release source
+        may set release.fileIndex or candidate.fileIndex (zero-based provider
+        torrent list), or release.file (exact path/unique basename), to open any file
+        kind. Invalid selections fail; omitted selectors retain video selection.
+        Explicit file selection is supported for torrents, not NZB members.
+        """
         result = self._call("POST", "/ether/plugin-host/sources/resolve", query)
         return list((result or {}).get("candidates") or [])
 
