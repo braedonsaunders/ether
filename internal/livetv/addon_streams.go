@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -71,6 +72,10 @@ func mergeAddonStreams(fresh, previous []StreamSource) []StreamSource {
 func (s *Service) redactAddonChannels(_ context.Context, channels []Channel) {
 	for i := range channels {
 		c := &channels[i]
+		// Channel snapshots share their nested inputs with request copies.
+		// Redaction owns its slice so an owner read cannot overwrite playback
+		// URLs/headers or turn a later health sweep into failed probes.
+		c.StreamSources = slices.Clone(c.StreamSources)
 		for j := range c.StreamSources {
 			input := &c.StreamSources[j]
 			if !isAddonInput(input.ID) {
