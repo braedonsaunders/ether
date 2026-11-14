@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"testing"
 
@@ -28,6 +29,7 @@ func TestDictionarryBalancedImportScoreInvariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	imp.Source, imp.ProfileID = ImportSourceDictionarry, "1080p-balanced"
 	plan := PlanQualityImport(imp, AppRadarr, found, config.Config{})
 	if *plan.Profile.MinCustomFormatScore != 200000 {
 		t.Fatal("lost minimum")
@@ -48,7 +50,7 @@ func TestDictionarryBalancedImportScoreInvariant(t *testing.T) {
 		"Ma.vie.de.courgette.2016.tt2321405.1080p.REMUX-merricat",
 	}
 	title := &core.Title{Language: "fr"}
-	wantScores := []int{6, 0, 0, -999999, -999999, -999999, -999999, -999999}
+	wantScores := []int{6, 0, 400, -999999, -999999, -999999, -999999, -999999}
 	for i, name := range names {
 		r := core.Release{Name: name, Info: releaseparse.Parse(name)}
 		score, matches, err := scorer.ScoreForProfile(r, plan.Profile.CustomFormatScores, title)
@@ -74,6 +76,73 @@ func TestDictionarryBalancedImportScoreInvariant(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Fatalf("%s: got %d, want %d (%v)", name, got, tc.want, err)
 		}
+	}
+	// Slug collisions must retain both source formats and their own scores.
+	ddID, ddPlusID := imp.FormatIDs["Dolby Digital"], imp.FormatIDs["Dolby Digital +"]
+	if ddID == ddPlusID || ddID == "" || ddPlusID == "" ||
+		plan.Profile.CustomFormatScores[ddID] != 400 || plan.Profile.CustomFormatScores[ddPlusID] != 600 {
+		t.Fatalf("aliased audio formats: DD=%q DD+=%q scores=%v", ddID, ddPlusID, plan.Profile.CustomFormatScores)
+	}
+	for _, tc := range []struct {
+		codec string
+		want  int
+	}{{"AC3", 400}, {"EAC3", 600}} {
+		name := "Movie.2016.1080p.BluRay." + tc.codec + "-GRP"
+		got, _, err := scorer.ScoreForProfile(core.Release{Name: name, Info: releaseparse.Parse(name)}, plan.Profile.CustomFormatScores, title)
+		if err != nil || got != tc.want {
+			t.Fatalf("%s: got %d, want %d (%v)", name, got, tc.want, err)
+		}
+	}
+	// An install that imported the old shared ID is repaired by the normal
+	// sync, including removal of the obsolete managed definition and score.
+	var saved config.Config
+	if err := plan.Apply(&saved, ""); err != nil {
+		t.Fatal(err)
+	}
+	const legacyID = "dictionarry-radarr-dolby-digital"
+	oldScores := maps.Clone(saved.Quality.Profiles[0].CustomFormatScores)
+	delete(oldScores, ddID)
+	delete(oldScores, ddPlusID)
+	oldScores[legacyID] = 400
+	saved.Quality.Profiles[0].CustomFormatScores = oldScores
+	var oldDefs []core.CustomFormat
+	for _, def := range saved.Resolver.CustomFormats {
+		if def.ID == ddPlusID {
+			continue
+		}
+		if def.ID == ddID {
+			def.ID = legacyID
+		}
+		oldDefs = append(oldDefs, def)
+	}
+	saved.Resolver.CustomFormats = oldDefs
+	syncer := NewQualitySyncer(QualitySyncDeps{
+		Dictionarry: d,
+		Config:      func() config.Config { return saved },
+		Save: func(mutate func(*config.Config) error) error {
+			if err := mutate(&saved); err != nil {
+				return err
+			}
+			_, err := NewFormatScorer(saved.Resolver.CustomFormats)
+			return err
+		},
+	})
+	report, err := syncer.Sync(t.Context())
+	if err != nil || report.ProfilesUpdated != 1 || report.FormatsRemoved != 1 {
+		t.Fatalf("repair shared format ID: %+v (%v)", report, err)
+	}
+	newScores := saved.Quality.Profiles[0].CustomFormatScores
+	if _, old := newScores[legacyID]; old || newScores[ddID] != 400 || newScores[ddPlusID] != 600 {
+		t.Fatalf("shared score survived sync: %v", newScores)
+	}
+	for _, def := range saved.Resolver.CustomFormats {
+		if def.ID == legacyID {
+			t.Fatal("shared definition survived sync")
+		}
+	}
+	report, err = syncer.Sync(t.Context())
+	if err != nil || report.ProfilesUpdated != 0 || report.FormatsAdded != 0 || report.FormatsUpdated != 0 || report.FormatsRemoved != 0 {
+		t.Fatalf("second sync changed repaired profile: %+v (%v)", report, err)
 	}
 	// A failed resolution fallback must retain the strict score verdict.
 	cfg := testCfg()
