@@ -22,6 +22,7 @@ type NeutralHomeRow struct {
 	Type            MediaType
 	Items           []Title
 	ItemCount       int
+	RankedTop10     bool
 	PreviewOnFocus  bool
 	Always          bool
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
@@ -56,7 +57,54 @@ type pluginRuntime struct {
 }
 
 func (a *App) buildPlugins(ctx context.Context, cfg config.Config) (*pluginRuntime, error) {
+	var busyMu sync.Mutex
+	var busyAt time.Time
+	var busyValue bool
 	mgr, err := plugins.New(plugins.Deps{
+		ReadRuntimeConfig: func() config.Plugins { return a.cfg.Read().Plugins },
+		SaveRuntimeConfig: func(id string, limits config.PluginRuntimeLimits) error {
+			return a.cfg.Update(func(c *config.Config) error {
+				if id == "" {
+					c.Plugins.RuntimeLimits = limits
+				} else {
+					next := map[string]config.PluginRuntimeLimits{}
+					for key, value := range c.Plugins.RuntimeOverrides {
+						next[key] = value
+					}
+					next[id] = limits
+					c.Plugins.RuntimeOverrides = next
+				}
+				return nil
+			})
+		},
+		Busy: func() bool {
+			busyMu.Lock()
+			defer busyMu.Unlock()
+			if time.Since(busyAt) < time.Second {
+				return busyValue
+			}
+			busyAt = time.Now()
+			busyValue = false
+			check := func() bool {
+				if a.playback != nil && len(a.playback.Sessions()) > 0 {
+					return true
+				}
+				if a.livetv != nil {
+					if usage, err := a.livetv.LiveUsage(context.Background()); err == nil && usage.Sessions > 0 {
+						return true
+					}
+				}
+				if a.load != nil {
+					s := a.load.Snapshot()
+					if s.Current != nil && (s.Current.CPU > 85 || (s.Current.GPU != nil && *s.Current.GPU > 85)) {
+						return true
+					}
+				}
+				return false
+			}
+			busyValue = check()
+			return busyValue
+		},
 		OnAirContent: a.pluginContent,
 		ImportStylePack: func(ctx context.Context, id string, files map[string][]byte) error {
 			if a.onair == nil {
@@ -340,6 +388,9 @@ func (a *App) buildPlugins(ctx context.Context, cfg config.Config) (*pluginRunti
 	a.closers = append(a.closers, func() { _ = blobs.Close() })
 
 	kindCatalog := adapters.AttachKindCatalog(runCtx, adapters.KindCatalogDeps{
+		TitleInLibrary: func(ctx context.Context, lib core.Library, key core.RatingKey) (bool, error) {
+			return a.catalog.TitleInFilter(ctx, libraryScopeFilter(lib, core.Filter{}), key)
+		},
 		Manager:   mgr,
 		Libraries: a.libraries,
 		Items:     itemsSvc,

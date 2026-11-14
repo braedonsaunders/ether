@@ -26,6 +26,10 @@ const (
 // ReleaseTarget is the episode wanted from a multi-file release such as a
 // season pack.
 type ReleaseTarget struct {
+	// FileIndex is an explicit zero-based torrent file list index (including non-video files).
+	FileIndex *int `json:"fileIndex,omitempty"`
+	// ExactFile selects a plugin-requested path or unambiguous basename, including non-video files.
+	ExactFile string `json:"exactFile,omitempty"`
 	// FileName is the source-matched file hint, never proof of episode identity.
 	FileName string `json:"fileName,omitempty"`
 	// AbsoluteEpisode is the verified anime episode number across seasons.

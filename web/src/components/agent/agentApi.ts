@@ -113,9 +113,13 @@ export async function decideAgentApproval(
   decision: "approved" | "rejected",
   note?: string,
   context?: { route: string; record?: { type: string; id: string } },
-): Promise<void> {
+): Promise<{
+  status: string;
+  failureReason?: string;
+  result?: { channel?: import("../../pages/livetv/model").Channel };
+}> {
   // The server runs the agent's follow-up turn before it replies.
-  await apiFetch<unknown>(`/agent/approvals/${encodeURIComponent(approvalId)}`, {
+  return apiFetch(`/agent/approvals/${encodeURIComponent(approvalId)}`, {
     method: "POST",
     body: JSON.stringify({ decision, note, context }),
   });

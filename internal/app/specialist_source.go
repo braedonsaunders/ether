@@ -85,7 +85,8 @@ func (a *App) buildSourceRole(ctx context.Context, cfg config.Config) error {
 		NativeTrailer: func(ctx context.Context, src core.MediaSource, info *core.MediaInfo) bool {
 			return transcode.ProbeTrailer(ctx, src, src.Size(), info)
 		},
-		FetchNZB: playbackFetchNZB(a, a.opts.DataDir),
+		FetchNZB:           playbackFetchNZB(a, a.opts.DataDir),
+		SelectTitleProfile: a.playbackProfile,
 		SelectProfile: func(caps core.ClientCaps, u *core.User, media string) core.QualityProfile {
 			return resolver.SelectProfileForMedia(a.cfg.Read().Quality, caps, u, media)
 		},

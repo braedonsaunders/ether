@@ -96,7 +96,7 @@ func (s *Service) linkSessionInput(ss *session, c Channel, src StreamSource, inp
 	if account == "" {
 		account = c.SourceID
 	}
-	entry, err := s.sourceEntry(s.ctx, account)
+	entry, err := s.sourceEntry(s.serviceContext(), account)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (s *Service) linkSessionInput(ss *session, c Channel, src StreamSource, inp
 	if err != nil {
 		return nil, err
 	}
-	inputCtx, cancel := context.WithCancel(s.ctx)
+	inputCtx, cancel := context.WithCancel(s.serviceContext())
 	link := &session{ctx: inputCtx, cancel: cancel, info: SessionInfo{ID: "broadcast-" + c.ID, Channel: c}, inputSource: src, inputURL: input, inputHeaders: headers}
 	grant := src
 	grant.URL = input

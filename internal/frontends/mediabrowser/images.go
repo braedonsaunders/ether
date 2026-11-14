@@ -22,6 +22,9 @@ func withPreviewRowArtwork(r *http.Request, enabled bool) *http.Request {
 }
 
 func previewRowArtwork(r *http.Request, item map[string]any) {
+	if len(rankedRowRanks(r)) > 0 {
+		return
+	}
 	if enabled, _ := r.Context().Value(previewRowArtworkKey{}).(bool); !enabled {
 		return
 	}
@@ -57,6 +60,25 @@ func previewRowArtwork(r *http.Request, item map[string]any) {
 		}
 		item["ImageBlurHashes"] = hashes
 	}
+}
+
+type rankedRowKey struct{}
+
+func withRankedRow(r *http.Request, enabled bool, titles []frontend.Title, offset int) *http.Request {
+	if !enabled {
+		return r
+	}
+	ranks := map[frontend.RatingKey]int{}
+	for n, t := range titles {
+		if offset+n < 10 {
+			ranks[t.Key] = offset + n + 1
+		}
+	}
+	return r.WithContext(context.WithValue(r.Context(), rankedRowKey{}, ranks))
+}
+func rankedRowRanks(r *http.Request) map[frontend.RatingKey]int {
+	ranks, _ := r.Context().Value(rankedRowKey{}).(map[frontend.RatingKey]int)
+	return ranks
 }
 
 func (i *instance) gridImagesFor(r *http.Request, titles []frontend.Title) map[frontend.RatingKey]map[string]any {
@@ -127,7 +149,7 @@ func (i *instance) gridImageRows(r *http.Request, titles []frontend.Title, keys 
 		if signer, ok := i.host.ImageGrants.(frontend.ImagePageSigner); ok {
 			for start := 0; start < len(titles); start += 50 {
 				end := min(start+50, len(titles))
-				rows, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{Credential: token, Device: device(r), Titles: titles[start:end], Kinds: gridKinds(kinds)})
+				rows, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{Ranked: rankedRowRanks(r), Credential: token, Device: device(r), Titles: titles[start:end], Kinds: gridKinds(kinds)})
 				if err != nil {
 					continue
 				}
@@ -369,7 +391,7 @@ func (i *instance) addImageMetadata(dto map[string]any, kind, tag string, img fr
 }
 func (i *instance) image(w http.ResponseWriter, r *http.Request) {
 	if i.host.ImageGrants == nil {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	tags := route.Query(r.URL.Query(), "tag")
@@ -378,7 +400,7 @@ func (i *instance) image(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(tags) > 1 {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	// Jellyfin treats tag as an optional cache-buster, and clients such as
@@ -413,7 +435,7 @@ func (i *instance) serveTaglessImage(w http.ResponseWriter, r *http.Request) {
 	if raw := r.PathValue("index"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 0 {
-			http.NotFound(w, r)
+			mediaBrowserError(w, r, http.StatusNotFound)
 			return
 		}
 		index = n
@@ -425,18 +447,18 @@ func (i *instance) serveTaglessImage(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.WithContext(context.WithValue(r.Context(), principalKey{}, principal{viewer: v, token: token}))
 	if v, token, err = i.viewer(r); err != nil || v == nil {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	primaryOnly := strings.EqualFold(imageType, "Primary") && index == 0
 	if _, err := ids.ParseGUID(ids.Channel, wireID); err == nil {
 		if !primaryOnly || i.host.LiveTV == nil {
-			http.NotFound(w, r)
+			mediaBrowserError(w, r, http.StatusNotFound)
 			return
 		}
 		ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
 		if err != nil || ch.ID == "" {
-			http.NotFound(w, r)
+			mediaBrowserError(w, r, http.StatusNotFound)
 			return
 		}
 		for _, img := range ch.Images {
@@ -450,47 +472,86 @@ func (i *instance) serveTaglessImage(w http.ResponseWriter, r *http.Request) {
 			}
 			break
 		}
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	if viewNum, err := ids.ParseGUID(ids.View, wireID); err == nil {
 		if !primaryOnly {
-			http.NotFound(w, r)
+			mediaBrowserError(w, r, http.StatusNotFound)
 			return
 		}
 		secret, _, ok := i.libraryCollageGrant(r, v, viewNum, wireID)
 		if !ok || secret == "" {
-			http.NotFound(w, r)
+			mediaBrowserError(w, r, http.StatusNotFound)
 			return
 		}
 		i.host.ImageGrants.Serve(w, r, secret)
 		return
 	}
-	key, err := ids.ParseRatingKeyGUID(wireID)
-	if err != nil || i.host.Experience == nil {
-		http.NotFound(w, r)
+	item, images, portrait, err := i.imageTarget(r, v, wireID)
+	if err != nil {
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
-	detail, err := i.host.Experience.Item(i.identityContext(r), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
-	if err != nil || !detail.ImagesAuthoritative {
-		http.NotFound(w, r)
-		return
+	img, ok := taglessImage(images, imageType, index)
+	if !ok && portrait && primaryOnly {
+		for _, candidate := range images {
+			if candidate.Kind == frontend.ImagePerson && candidate.Path != "" {
+				img, ok = candidate, true
+				break
+			}
+		}
 	}
-	img, ok := taglessImage(detail.Images, imageType, index)
 	if !ok {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
-	}
-	item := detail.Title.Key
-	if item == 0 {
-		item = key
 	}
 	grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: token, Device: device(r), Item: item, Image: img})
 	if err != nil || grant == "" {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	i.host.ImageGrants.Serve(w, r, grant)
+}
+
+// imageTarget resolves the same edition and person IDs the browse DTOs emit.
+// Artwork-only reads avoid detail enrichment (release lists and user state).
+func (i *instance) imageTarget(r *http.Request, v *frontend.Viewer, wireID string) (frontend.RatingKey, []frontend.Image, bool, error) {
+	key, err := ids.ParseRatingKeyGUID(wireID)
+	if err != nil && i.host.VersionHandles != nil {
+		if scope, e := i.versionScope(r, v); e == nil {
+			if target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, wireID); e == nil && target.Item != 0 {
+				key, err = target.Item, nil
+			}
+		}
+	}
+	if err != nil {
+		if people, ok := i.host.Experience.(frontend.PeopleReader); ok {
+			person, e := people.Person(i.identityContext(r), v, device(r), wireID, frontend.PersonReadOptions{})
+			if e == nil && person.ArtworkItem != 0 {
+				return person.ArtworkItem, person.Images, true, nil
+			}
+		}
+		return 0, nil, false, ids.ErrInvalid
+	}
+	if artwork, ok := i.host.Experience.(frontend.ItemArtwork); ok {
+		images, complete, e := artwork.ItemArtwork(i.identityContext(r), v, device(r), key)
+		if e != nil {
+			return 0, nil, false, e
+		}
+		if !complete {
+			return 0, nil, false, frontend.ErrNotFound
+		}
+		return key, images, false, nil
+	}
+	if i.host.Experience == nil {
+		return 0, nil, false, frontend.ErrNotFound
+	}
+	detail, e := i.host.Experience.Item(i.identityContext(r), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
+	if e != nil || !detail.ImagesAuthoritative {
+		return 0, nil, false, frontend.ErrNotFound
+	}
+	return key, detail.Images, false, nil
 }
 
 // servePublicImage serves title artwork to a fully anonymous tag-less
@@ -503,22 +564,22 @@ func (i *instance) servePublicImage(w http.ResponseWriter, r *http.Request, wire
 	public, experienceOK := i.host.Experience.(frontend.PublicArtwork)
 	server, grantsOK := i.host.ImageGrants.(frontend.PublicImageServer)
 	if !experienceOK || !grantsOK {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	key, err := ids.ParseRatingKeyGUID(wireID)
 	if err != nil {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	images, _, visible, err := public.PublicArtwork(i.identityContext(r), device(r), key)
 	if err != nil || !visible {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	img, ok := taglessImage(images, imageType, index)
 	if !ok {
-		http.NotFound(w, r)
+		mediaBrowserError(w, r, http.StatusNotFound)
 		return
 	}
 	server.ServePublic(w, r, device(r), key, img)
@@ -575,6 +636,13 @@ func (i *instance) itemImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("itemId"))
+	if err != nil && i.host.VersionHandles != nil {
+		if scope, e := i.versionScope(r, v); e == nil {
+			if target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, r.PathValue("itemId")); e == nil && target.Item != 0 {
+				key, err = target.Item, nil
+			}
+		}
+	}
 	if err != nil {
 		mediaBrowserError(w, r, 404)
 		return
@@ -588,15 +656,23 @@ func (i *instance) itemImages(w http.ResponseWriter, r *http.Request) {
 		mediaBrowserError(w, r, 404)
 		return
 	}
+	// Container details carry their key outside Title. Bind their images to
+	// the authorized item, as the detail endpoint does.
+	detail.Title.Key = key
 	tags, backdrops, _ := i.imageTags(r, detail, token)
 	images := []map[string]any{}
 	for _, kind := range []string{"Primary", "Logo", "Thumb", "Banner"} {
 		if tag, ok := tags[kind].(string); ok && tag != "" {
-			images = append(images, map[string]any{"ImageType": kind, "ImageTag": tag, "Size": 0})
+			images = append(images, map[string]any{"ImageType": kind, "ImageIndex": 0, "ImageTag": tag, "Size": 0, "Width": 0, "Height": 0})
 		}
 	}
 	for index, tag := range backdrops {
-		images = append(images, map[string]any{"ImageType": "Backdrop", "ImageIndex": index, "ImageTag": tag, "Size": 0})
+		images = append(images, map[string]any{"ImageType": "Backdrop", "ImageIndex": index, "ImageTag": tag, "Size": 0, "Width": 0, "Height": 0})
+	}
+	for _, info := range images {
+		if img, ok := taglessImage(detail.Images, info["ImageType"].(string), info["ImageIndex"].(int)); ok {
+			info["Width"], info["Height"] = img.Width, img.Height
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(images)

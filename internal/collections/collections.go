@@ -713,7 +713,7 @@ func (s *Service) collectionFor(ctx context.Context, row *specRow, user *core.Us
 	if row.spec.MediaType == MediaMixed && t != "" {
 		keys = sectionKeys(keys, t)
 	}
-	c := core.Collection{PreviewOnFocus: row.spec.PreviewOnFocus, Key: row.key(), Title: row.spec.Name, Summary: row.spec.Description, Kind: "smart",
+	c := core.Collection{PreviewOnFocus: row.spec.PreviewOnFocus, RankedTop10: row.spec.RankedTop10, Key: row.key(), Title: row.spec.Name, Summary: row.spec.Description, Kind: "smart",
 		OwnerUserID: row.owner, ChildCount: len(keys), Upcoming: row.spec.ReleaseMode == "upcoming" || row.spec.ReleaseMode == "mixed"}
 	if row.spec.MediaType == MediaMixed && t != "" {
 		c.Key = core.SectionCollectionKey(c.Key, t)
@@ -776,6 +776,7 @@ func (s *Service) collectionFor(ctx context.Context, row *specRow, user *core.Us
 		c.Type = core.TypeMovie
 	}
 	c.UpdatedAt = row.stamp()
+	c.MembershipRevision = row.buildHash
 	return c
 }
 

@@ -1,14 +1,52 @@
 package livetv
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/onair/families"
 	"github.com/braedonsaunders/ether/internal/onair/raster"
+	"github.com/braedonsaunders/ether/internal/onair/scene"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
+
+type overlayAlwaysGraphics struct{}
+
+func (overlayAlwaysGraphics) Duration(string, string) (time.Duration, bool) {
+	return 8 * time.Second, true
+}
+func (overlayAlwaysGraphics) Clip(context.Context, core.ClipRequest) (core.ClipRef, bool) {
+	return core.ClipRef{}, false
+}
+func (overlayAlwaysGraphics) Ensure(context.Context, core.ClipRequest) {}
+func (overlayAlwaysGraphics) Overlay(context.Context, core.ClipRequest) (scene.Document, raster.Bindings, bool) {
+	doc, _ := families.Get("clean", "bug")
+	return doc, raster.Bindings{Bindings: families.Defaults("clean")}, true
+}
+
+// The owner's Overlays switch ("" is Off, the default) must actually gate
+// whether the corner logo/lower-third render: prepareProgrammeOverlays used
+// to only check that a Look existed, so Off still burned both in.
+func TestPrepareProgrammeOverlaysRespectsOffToggle(t *testing.T) {
+	s := testService(t, Options{Graphics: overlayAlwaysGraphics{}})
+	c := testChannel()
+	c.Look = &ChannelLook{LookID: "clean"}
+	programme := Programme{Item: Item{Key: core.MovieKey(1)}}
+
+	planner := &scheduleBroadcastPlanner{s: s, channel: c, format: transcode.RawFormat{Width: 1920, Height: 1080}}
+	if out := planner.prepareProgrammeOverlays(t.Context(), programme, nil); out != nil {
+		t.Fatalf("Overlays off: expected no overlays, got %+v", out)
+	}
+
+	c.Look.Overlays = "always"
+	planner = &scheduleBroadcastPlanner{s: s, channel: c, format: transcode.RawFormat{Width: 1920, Height: 1080}}
+	if out := planner.prepareProgrammeOverlays(t.Context(), programme, nil); out == nil {
+		t.Fatal("Overlays always: expected overlays to be prepared")
+	}
+}
 
 func BenchmarkBroadcastOverlays(b *testing.B) {
 	for _, height := range []int{720, 1080} {

@@ -52,13 +52,13 @@ func (a *App) validateCatalogueSources(ctx context.Context, lib core.Library, id
 	if len(ids) == 0 || len(ids) > 32 {
 		return fmt.Errorf("choose between one and 32 catalogue sources")
 	}
+	if lib.Source == core.LibraryCollection {
+		return fmt.Errorf("change the collection source from library settings")
+	}
 	if lib.Source == core.LibraryBuiltin {
 		return fmt.Errorf("built-in catalogue sources cannot be changed")
 	}
 	typ := lib.MediaType
-	if lib.Filter != nil {
-		typ = lib.Filter.Type
-	}
 	seen := map[string]bool{}
 	for _, id := range ids {
 		if seen[id] {

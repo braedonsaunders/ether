@@ -68,6 +68,20 @@ func TestPlaybackTextSubtitleTee(t *testing.T) {
 			t.Fatalf("track %d: %+v", index, cues)
 		}
 	}
+	// Renditions share the video's exact segment numbering and produce
+	// complete finite VTT responses from cue windows, without extraction.
+	textPlaylist := httptest.NewRecorder()
+	session.ServeTextSubtitlePlaylist(textPlaylist, httptest.NewRequest(http.MethodGet, "/text-2/index.m3u8", nil), tracks[0])
+	if textPlaylist.Code != 200 || !strings.Contains(textPlaylist.Body.String(), "00000.vtt") || strings.Contains(textPlaylist.Body.String(), "EXT-X-MAP") || strings.Contains(textPlaylist.Body.String(), ".ts") {
+		t.Fatalf("invalid text playlist: %s", textPlaylist.Body.String())
+	}
+	for _, index := range tracks {
+		textSegment := httptest.NewRecorder()
+		session.ServeTextSubtitleSegment(textSegment, httptest.NewRequest(http.MethodGet, "/00000.vtt", nil), index, 0)
+		if textSegment.Code != 200 || !strings.Contains(textSegment.Body.String(), "X-TIMESTAMP-MAP=") || !strings.Contains(textSegment.Body.String(), "-->") {
+			t.Fatalf("missing text fragment: %d %s", textSegment.Code, textSegment.Body.String())
+		}
+	}
 	// The shared command contains one source input and two text outputs.
 	session.mu.Lock()
 	run := session.cur

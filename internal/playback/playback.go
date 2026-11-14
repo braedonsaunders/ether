@@ -51,6 +51,8 @@ type Deps struct {
 	State core.State
 	// SelectProfile picks the quality profile for the title's media and client.
 	SelectProfile func(caps core.ClientCaps, user *core.User, media string) core.QualityProfile
+	// SelectTitleProfile shares library-aware policy with resolution and version lists.
+	SelectTitleProfile func(caps core.ClientCaps, user *core.User, key core.RatingKey) core.QualityProfile
 	// HLSLookup finds the HLS session fed by a playback session, for
 	// mid-stream failover. Defaults to Transcoder.Session(sessionID).
 	HLSLookup func(sessionID string) (core.HLSSession, bool)

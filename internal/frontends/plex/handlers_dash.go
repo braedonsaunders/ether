@@ -129,14 +129,15 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		s.stopPlexHLS(p.sessionID)
 	}
 	hs, err := s.startPlexHLS(context.WithoutCancel(ctx), pr.User, ps.ID, p.sessionID, frontend.HLSRequest{
-		SoftSubtitleStream: sessionSoftSubtitle(entry, pr, dec),
-		SessionID:          p.sessionID,
-		ReleaseID:          ps.SourceReleaseID(),
-		InputURL:           s.playback().InputURL(ps.ID),
-		Info:               ps.Info,
-		Decision:           dec,
-		StartOffset:        p.offset,
-		Protocol:           frontend.ProtocolDASH,
+		SoftSubtitleStream:  sessionSoftSubtitle(entry, pr, dec),
+		TextSubtitleStreams: s.plexTextTracks(pr, ps.Info, dec),
+		SessionID:           p.sessionID,
+		ReleaseID:           ps.SourceReleaseID(),
+		InputURL:            s.playback().InputURL(ps.ID),
+		Info:                ps.Info,
+		Decision:            dec,
+		StartOffset:         p.offset,
+		Protocol:            frontend.ProtocolDASH,
 	})
 	if err != nil {
 		s.writeStartErr(w, r, pr, err)

@@ -286,7 +286,7 @@ func TestSetupStatusAndGating(t *testing.T) {
 		Steps            []admin.SetupStep `json:"steps"`
 	}
 	decode(t, rec, &st)
-	if st.RequiredComplete || len(st.Steps) != 7 {
+	if st.RequiredComplete || len(st.Steps) != 6 {
 		t.Fatalf("bad setup status: %+v", st)
 	}
 

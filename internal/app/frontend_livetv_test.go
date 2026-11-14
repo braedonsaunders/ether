@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
 	"github.com/braedonsaunders/ether/internal/frontends/m3u"
@@ -31,7 +30,7 @@ func (testRemoteLogo) GetUntrustedURL(context.Context, string) ([]byte, string, 
 
 func TestFrontendLiveTVUsesViewerPolicy(t *testing.T) {
 	ctx := context.Background()
-	a := setupTestAppConfigured(t, true, Options{}, func(c *config.Config) { enabled := true; c.LiveTV.Enabled = &enabled })
+	a := setupTestAppConfigured(t, true, Options{}, nil)
 	if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +118,7 @@ func TestFrontendLiveTVUsesViewerPolicy(t *testing.T) {
 
 func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	ctx := context.Background()
-	a := setupTestAppConfigured(t, true, Options{}, func(c *config.Config) { enabled := true; c.LiveTV.Enabled = &enabled })
+	a := setupTestAppConfigured(t, true, Options{}, nil)
 	local, err := identity.NewLocal(a.db)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +222,7 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 // Exercise the real M3U handler through the shared adapter, not a mock guide.
 func TestM3UGuideOver4096Channels(t *testing.T) {
 	ctx := context.Background()
-	a := setupTestAppConfigured(t, true, Options{}, func(c *config.Config) { enabled := true; c.LiveTV.Enabled = &enabled })
+	a := setupTestAppConfigured(t, true, Options{}, nil)
 	if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +273,7 @@ func TestM3UGuideOver4096Channels(t *testing.T) {
 // per-app visibility; the console (no app) and other apps keep the channel.
 func TestFrontendLiveTVHonoursPerAppVisibility(t *testing.T) {
 	ctx := context.Background()
-	a := setupTestAppConfigured(t, true, Options{}, func(c *config.Config) { enabled := true; c.LiveTV.Enabled = &enabled })
+	a := setupTestAppConfigured(t, true, Options{}, nil)
 	if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
 		t.Fatal(err)
 	}

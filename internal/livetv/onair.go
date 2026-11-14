@@ -397,8 +397,8 @@ func (s *Service) ensureGraphics() {
 	}
 	// Both maintenance paths share the measured lead and nearest-boundary order.
 	// A second, three-hour scan must not refill the queue with distant masters.
-	for _, request := range s.GraphicsRequests(s.ctx, "") {
-		s.o.Graphics.Ensure(s.ctx, request)
+	for _, request := range s.GraphicsRequests(s.serviceContext(), "") {
+		s.o.Graphics.Ensure(s.serviceContext(), request)
 	}
 }
 

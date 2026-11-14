@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/mediaproc"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
@@ -94,11 +96,13 @@ func TestStreamingAudioTargetDoesNotRestrictDirectPlay(t *testing.T) {
 // playlist: verify the MPD, initialization and first media segment agree.
 func TestSamsungDASHMediaEndToEnd(t *testing.T) {
 	for _, dp := range []string{"0", "1"} {
-		t.Run("directPlay="+dp, func(t *testing.T) { testSamsungDASHMediaEndToEnd(t, dp) })
+		for _, copyAudio := range []bool{false, true} {
+			t.Run(fmt.Sprintf("directPlay=%s/copyAudio=%t", dp, copyAudio), func(t *testing.T) { testSamsungDASHMediaEndToEnd(t, dp, copyAudio) })
+		}
 	}
 }
 
-func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string) {
+func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string, copyAudio bool) {
 	if testing.Short() {
 		t.Skip("real FFmpeg fixture")
 	}
@@ -133,21 +137,54 @@ func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string) {
 	f.playback.info = *info
 	f.srv.setPlayback(&samsungSourcePlayback{fakePlayback: f.playback, url: source.URL + "/source.mkv"})
 	f.srv.setTranscoder(mgr)
-	hdr := []string{"X-Plex-Product", "Plex for Samsung", "X-Plex-Platform", "Tizen", "X-Plex-Client-Identifier", "samsung-fixture", "X-Plex-Client-Profile-Extra", samsungReportedProfile}
+	rec := diagnostics.New(diagnostics.Deps{Now: func() time.Time { return fixedNow }})
+	f.srv.setSupport(rec)
+	profile := samsungReportedProfile
+	wantAudio, wantCodecs := "aac", "mp4a.40.2"
+	if copyAudio {
+		profile = strings.Replace(profile, "audioCodec=aac)", "audioCodec=aac,eac3)", 1)
+		wantAudio, wantCodecs = "eac3", "ec-3"
+	}
+	hdr := []string{"X-Plex-Product", "Plex for Samsung", "X-Plex-Platform", "Tizen", "X-Plex-Client-Identifier", "samsung-fixture", "X-Plex-Client-Profile-Extra", profile, "X-Plex-Version", "5.94.1"}
 	q := "path=%2Flibrary%2Fmetadata%2F1000000000000550&protocol=dash&directPlay=" + directPlay + "&directStream=1&session=samsung-real"
+	f.get(t, "/identity", hdr...)
+	capture, err := rec.Start("owner", diagnostics.StartIn{DeviceID: rec.Devices()[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	decision := f.get(t, "/video/:/transcode/universal/decision?"+q, hdr...)
 	if decision.Code != 200 {
 		t.Fatalf("decision HTTP%d: %s", decision.Code, decision.Body.String())
 	}
 	entry, ok := f.srv.transcodes.get("samsung-real")
-	if !ok || !entry.decision.VideoCopy || (directPlay == "0" && (entry.decision.AudioCopy || entry.decision.AudioCodec != "aac")) {
+	if !ok || !entry.decision.VideoCopy || (directPlay == "0" && (entry.decision.AudioCopy != copyAudio || entry.decision.AudioCodec != wantAudio)) {
 		t.Fatalf("wrong decision: %+v", entry)
 	}
 	manifest := f.get(t, "/video/:/transcode/universal/start.mpd?"+q, hdr...)
-	if manifest.Code != 200 || !strings.Contains(manifest.Body.String(), "mp4a.40.2") || strings.Contains(manifest.Body.String(), "ec-3") {
+	if manifest.Code != 200 || !strings.Contains(manifest.Body.String(), wantCodecs) {
 		t.Fatalf("bad MPD HTTP%d: %s", manifest.Code, manifest.Body.String())
 	}
-	for rep, want := range []string{"h264", "aac"} {
+	facts := summarizeDASHResponse(manifest.Body.Bytes())
+	if facts == nil {
+		t.Fatal("missing manifest projection")
+	}
+	for _, fact := range facts.Manifest {
+		t.Log(fact)
+	}
+	for _, want := range []string{"MPD.profiles=urn:mpeg:dash:profile:isoff-live:2011", "MPD.type=static", "MPD.mediaPresentationDuration=PT0H0M8S", "SegmentTemplate.timescale=1", "SegmentTemplate.startNumber=0", "Representation.mimeType=video/mp4", "Representation.mimeType=audio/mp4", "Representation.codecs=" + wantCodecs, "AudioChannelConfiguration.schemeIdUri=" + map[bool]string{true: "tag:dolby.com,2014:dash:audio_channel_configuration:2011", false: "urn:mpeg:dash:23003:3:audio_channel_configuration:2011"}[copyAudio], "AudioChannelConfiguration.value=" + map[bool]string{true: "F801", false: "2"}[copyAudio], "xml.escapedAmpersand=true"} {
+		if !strings.Contains(strings.Join(facts.Manifest, "\n"), want) {
+			t.Errorf("missing manifest fact %s", want)
+		}
+	}
+	for _, fact := range facts.Manifest {
+		if strings.HasPrefix(fact, "SegmentTemplate.media=") && fact != "SegmentTemplate.media=relative;representation=true;number=true;time=false;header=false;streamGrant=true;readGrant=true" {
+			t.Errorf("bad media URL: %s", fact)
+		}
+		if strings.HasPrefix(fact, "SegmentTemplate.initialization=") && fact != "SegmentTemplate.initialization=relative;representation=true;number=false;time=false;header=true;streamGrant=true;readGrant=true" {
+			t.Errorf("bad init URL: %s", fact)
+		}
+	}
+	for rep, want := range []string{"h264", wantAudio} {
 		base := fmt.Sprintf("/video/:/transcode/universal/session/samsung-real/%d/", rep)
 		init := f.get(t, base+"header", hdr...)
 		seg := f.get(t, base+"0.m4s", hdr...)
@@ -159,7 +196,7 @@ func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string) {
 			t.Fatal(err)
 		}
 		out, err := mediaproc.CommandContext(ctx, 2*time.Minute, fp, "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", name).CombinedOutput()
-		if err != nil || strings.TrimSpace(string(out)) != want {
+		if err != nil || strings.Trim(strings.TrimSpace(string(out)), ",") != want {
 			t.Fatalf("rep%d codec want%s got%s err%v", rep, want, out, err)
 		}
 		out, err = mediaproc.CommandContext(ctx, 2*time.Minute, ff, "-v", "error", "-nostdin", "-threads", "1", "-i", name, "-f", "null", "-").CombinedOutput()
@@ -167,6 +204,28 @@ func testSamsungDASHMediaEndToEnd(t *testing.T, directPlay string) {
 			t.Fatalf("rep%d decode: %v %s", rep, err, out)
 		}
 		t.Logf("representation %d: %s, init %d bytes, media %d bytes; decoded successfully", rep, want, init.Body.Len(), seg.Body.Len())
+	}
+	rows := supportZIPEvents(t, rec, capture.ID)
+	manifestRecorded, targetRecorded := false, false
+	for _, row := range rows {
+		encoded, _ := json.Marshal(row)
+		for _, token := range []string{entry.streamToken, f.srv.readCaps.token("samsung-real")} {
+			if token != "" && strings.Contains(string(encoded), token) {
+				t.Fatal("support manifest leaked a media credential")
+			}
+		}
+		if response, ok := row["response"].(map[string]any); ok && response["manifest"] != nil {
+			manifestRecorded = true
+		}
+		if row["kind"] == "client.capabilities" {
+			client := row["client"].(map[string]any)
+			if client["transcodeAudioCodecs"] != nil {
+				targetRecorded = true
+			}
+		}
+	}
+	if !manifestRecorded || !targetRecorded {
+		t.Fatalf("support capture missing manifest=%t target=%t", manifestRecorded, targetRecorded)
 	}
 }
 

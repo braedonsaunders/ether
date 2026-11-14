@@ -6,9 +6,11 @@
 package libraryfilter
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/store"
+	"reflect"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/contentrating"
@@ -18,6 +20,13 @@ import (
 )
 
 type condition struct {
+	predicateMatch func(*core.Title) bool
+
+	children      []condition
+	predicate     *core.Filter
+	predicateSQL  string
+	predicateArgs []any
+
 	field, op    string
 	allCountries bool
 	values       []string
@@ -48,8 +57,8 @@ func CompilePolicy(specs []core.LibraryExclusion, fallback string) (*Filter, err
 	default:
 		return nil, fmt.Errorf("visibility default must be show or hide")
 	}
-	if len(specs) > 32 {
-		return nil, fmt.Errorf("at most 32 exclusion groups")
+	if len(specs) > 34 {
+		return nil, fmt.Errorf("at most 34 visibility rules")
 	}
 	f := &Filter{movieFallback: fallback, showFallback: fallback}
 	for i, s := range specs {
@@ -71,8 +80,8 @@ func CompilePolicy(specs []core.LibraryExclusion, fallback string) (*Filter, err
 		if s.Match != "all" && s.Match != "any" {
 			return nil, fmt.Errorf("group %d: match must be all or any", i+1)
 		}
-		if len(s.Rules) == 0 || len(s.Rules) > 20 {
-			return nil, fmt.Errorf("group %d needs 1–20 conditions", i+1)
+		if len(s.Rules) == 0 || len(s.Rules) > 64 {
+			return nil, fmt.Errorf("group %d needs 1–64 conditions", i+1)
 		}
 		g := rule{name: name, action: action, typ: s.MediaType, match: s.Match}
 		switch s.Scope {
@@ -139,7 +148,69 @@ func (f *Filter) RuleName(index int) string {
 	return f.rules[index].name
 }
 
-func compileCondition(r core.CollectionRule) (condition, error) {
+func compileCondition(r core.CollectionRule) (condition, error) { return compileConditionDepth(r, 0) }
+func compileConditionDepth(r core.CollectionRule, depth int) (condition, error) {
+	if depth > 8 {
+		return condition{}, fmt.Errorf("rule groups may nest at most eight levels")
+	}
+	if r.Field == "group" {
+		if r.Op != "is" && r.Op != "in" && r.Op != "isNot" {
+			return condition{}, fmt.Errorf("invalid rule group")
+		}
+		var specs []core.CollectionRule
+		if err := json.Unmarshal(r.Value, &specs); err != nil {
+			return condition{}, err
+		}
+		if len(specs) > 64 {
+			return condition{}, fmt.Errorf("too many conditions")
+		}
+		c := condition{field: r.Field, op: r.Op}
+		for _, s := range specs {
+			child, err := compileConditionDepth(s, depth+1)
+			if err != nil {
+				return condition{}, err
+			}
+			c.children = append(c.children, child)
+		}
+		return c, nil
+	}
+	if strings.HasPrefix(r.Field, "browse:") || r.Field == "viewer" {
+		if r.Op != "is" && r.Op != "isNot" {
+			return condition{}, fmt.Errorf("invalid browse comparison")
+		}
+		var f core.Filter
+		if r.Field == "viewer" {
+			var g core.FilterGroup
+			if err := json.Unmarshal(r.Value, &g); err != nil {
+				return condition{}, err
+			}
+			if g.Filter != nil || len(g.Children) > 0 {
+				return condition{}, fmt.Errorf("viewer conditions only describe activity")
+			}
+			g.Operator = "and"
+			f.Group = &g
+		} else {
+			key := strings.TrimPrefix(r.Field, "browse:")
+			valid := false
+			typ := reflect.TypeOf(f)
+			for i := 0; i < typ.NumField(); i++ {
+				tag := strings.Split(typ.Field(i).Tag.Get("json"), ",")[0]
+				if tag != "-" && tag != "" && tag != "group" && tag != "catalogueSources" && tag == key {
+					valid = true
+				}
+			}
+			if !valid {
+				return condition{}, fmt.Errorf("unknown browse condition %q", key)
+			}
+			data, _ := json.Marshal(map[string]json.RawMessage{key: r.Value})
+			dec := json.NewDecoder(bytes.NewReader(data))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&f); err != nil {
+				return condition{}, err
+			}
+		}
+		return condition{field: r.Field, op: r.Op, predicate: &f}, nil
+	}
 	field := r.Field
 	if field == "network" {
 		field = "studio" // networks are stored with studios
@@ -346,18 +417,25 @@ func (f *Filter) Facts() core.TitleFacts {
 		return 0
 	}
 	var out core.TitleFacts
+	var visit func(condition)
+	visit = func(c condition) {
+		switch c.field {
+		case "genre":
+			out |= core.FactGenres
+		case "studio":
+			out |= core.FactStudios
+		case "country":
+			out |= core.FactCountries
+		case "keyword":
+			out |= core.FactKeywords
+		}
+		for _, child := range c.children {
+			visit(child)
+		}
+	}
 	for _, g := range f.rules {
 		for _, c := range g.rules {
-			switch c.field {
-			case "genre":
-				out |= core.FactGenres
-			case "studio":
-				out |= core.FactStudios
-			case "country":
-				out |= core.FactCountries
-			case "keyword":
-				out |= core.FactKeywords
-			}
+			visit(c)
 		}
 	}
 	return out
@@ -507,6 +585,35 @@ func (g rule) hit(t *core.Title) bool {
 }
 
 func (c condition) matches(t *core.Title) bool {
+	if c.field == "group" {
+		if len(c.children) == 0 {
+			return c.op != "isNot"
+		}
+		yes := c.op != "in"
+		for _, child := range c.children {
+			hit := child.matches(t)
+			if c.op == "in" {
+				yes = yes || hit
+			} else {
+				yes = yes && hit
+			}
+		}
+		if c.op == "isNot" {
+			yes = !yes
+		}
+		return yes
+	}
+	if c.predicate != nil {
+		if c.predicateMatch == nil {
+			return false
+		}
+		yes := c.predicateMatch(t)
+		if c.op == "isNot" {
+			yes = !yes
+		}
+		return yes
+	}
+
 	if c.op == "unknown" || c.op == "known" {
 		return c.known(t) == (c.op == "known")
 	}
@@ -597,6 +704,17 @@ func (c condition) matches(t *core.Title) bool {
 }
 
 func (c condition) known(t *core.Title) bool {
+	if c.predicate != nil {
+		return t != nil && t.Key != 0
+	}
+	if c.field == "group" {
+		for _, child := range c.children {
+			if child.op != "known" && child.op != "unknown" && child.field != "votes" && !child.known(t) {
+				return false
+			}
+		}
+		return true
+	}
 	switch c.field {
 	case "year":
 		return t.Year != 0
@@ -725,22 +843,54 @@ func (g rule) sql() (string, []any) {
 	if g.match == "any" {
 		join = " OR "
 	}
-	q := "(" + strings.Join(rules, join) + ")"
+	q := "1=1"
+	if len(rules) > 0 {
+		q = "(" + strings.Join(rules, join) + ")"
+	}
 	if g.typ != "mixed" {
 		q = "t.type=? AND " + q
-		n := 0
-		for _, c := range g.rules {
-			n += len(c.values) + len(c.nums) + len(c.levels)
-		}
-		at := len(args) - n
-		args = append(args, nil)
-		copy(args[at+1:], args[at:])
-		args[at] = g.typ
+		args = append([]any{g.typ}, args...)
 	}
 	return q, args
 }
 
 func (c condition) sql() (string, []any) {
+	if c.field == "group" {
+		parts := []string{}
+		args := []any{}
+		for _, child := range c.children {
+			q, a := child.sql()
+			parts = append(parts, "("+q+")")
+			args = append(args, a...)
+		}
+		if len(parts) == 0 {
+			if c.op == "isNot" {
+				return "0=1", nil
+			}
+			return "1=1", nil
+		}
+		join := " AND "
+		if c.op == "in" {
+			join = " OR "
+		}
+		q := "(" + strings.Join(parts, join) + ")"
+		if c.op == "isNot" {
+			q = "NOT " + q
+		}
+		return q, args
+	}
+
+	if c.predicate != nil {
+		if c.predicateSQL == "" {
+			return "0=1", nil
+		}
+		q := "(" + c.predicateSQL + ")"
+		if c.op == "isNot" {
+			q = "NOT " + q
+		}
+		return q, c.predicateArgs
+	}
+
 	if c.op == "unknown" || c.op == "known" {
 		q := c.knownSQL()
 		if c.op == "unknown" {
@@ -828,6 +978,19 @@ func (c condition) sql() (string, []any) {
 }
 
 func (c condition) knownSQL() string {
+	if c.predicate != nil {
+		return "1=1"
+	}
+	if c.field == "group" {
+		parts := []string{"1=1"}
+		for _, child := range c.children {
+			if child.op == "known" || child.op == "unknown" || child.field == "votes" {
+				continue
+			}
+			parts = append(parts, "("+child.knownSQL()+")")
+		}
+		return strings.Join(parts, " AND ")
+	}
 	switch c.field {
 	case "year":
 		return "t.year>0"
@@ -889,4 +1052,58 @@ func (f *Filter) CatchCountsSQL() (string, []any) {
 		}
 	}
 	return strings.Join(cols, ","), args
+}
+
+// BindCatalogue compiles compound conditions using the catalogue's indexed
+// browse compiler. It returns a copy; shared policies remain immutable.
+func (f *Filter) BindCatalogue(compile func(core.Filter) (string, []any, error), evaluate func(string, []any, *core.Title) bool) (*Filter, error) {
+	if f == nil {
+		return f, nil
+	}
+	out := *f
+	out.rules = append([]rule(nil), f.rules...)
+	var bind func(condition) (condition, error)
+	bind = func(c condition) (condition, error) {
+		if c.predicate != nil {
+			q, a, err := compile(*c.predicate)
+			if err != nil {
+				return c, err
+			}
+			c.predicateSQL = q
+			c.predicateArgs = a
+			c.predicateMatch = func(t *core.Title) bool { return evaluate(q, a, t) }
+		}
+		c.children = append([]condition(nil), c.children...)
+		for i, child := range c.children {
+			v, err := bind(child)
+			if err != nil {
+				return c, err
+			}
+			c.children[i] = v
+		}
+		return c, nil
+	}
+	for i, g := range out.rules {
+		g.rules = append([]condition(nil), g.rules...)
+		for j, c := range g.rules {
+			v, err := bind(c)
+			if err != nil {
+				return nil, err
+			}
+			g.rules[j] = v
+		}
+		out.rules[i] = g
+	}
+	return &out, nil
+}
+
+// SQLShown keeps a single allow rule sargable: its indexed predicates appear
+// directly in WHERE rather than inside an ordered CASE. More involved policy
+// orderings retain the general first-match compiler.
+func (f *Filter) SQLShown() (string, []any) {
+	if f != nil && f.movieFallback == "hide" && f.showFallback == "hide" && len(f.rules) == 1 && f.rules[0].action == "show" {
+		return f.rules[0].sql()
+	}
+	q, a := f.SQLHidden()
+	return "NOT (" + q + ")", a
 }

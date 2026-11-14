@@ -42,7 +42,7 @@ func (s *Service) breakLoop() {
 	for {
 		if !s.breakLoopActive(s.o.Now()) {
 			select {
-			case <-s.ctx.Done():
+			case <-s.serviceContext().Done():
 				return
 			case observation := <-s.breakObserved:
 				s.storeBreakObservation(observation)
@@ -68,7 +68,7 @@ func (s *Service) breakLoop() {
 		s.analyzeUpcomingBreaks(retry)
 		timer.Reset(time.Minute)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return
 		case observation := <-s.breakObserved:
 			if !timer.Stop() {
@@ -108,7 +108,7 @@ func channelHasNaturalBreakPolicy(c Channel) bool {
 }
 
 func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
-	cs, err := s.virtualChannels(s.ctx)
+	cs, err := s.virtualChannels(s.serviceContext())
 	if err != nil {
 		return
 	}
@@ -149,7 +149,7 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 	admitted := 0
 	for _, task := range pending {
 		p := task.programme
-		if s.ctx.Err() != nil {
+		if s.serviceContext().Err() != nil {
 			return
 		}
 		if done[p.Item.Key] || !p.Start.After(s.o.Now().Add(time.Minute)) {
@@ -161,7 +161,7 @@ func (s *Service) analyzeUpcomingBreaks(retry map[core.RatingKey]time.Time) {
 		}
 		admitted++
 		retry[p.Item.Key] = s.o.Now().Add(15 * time.Minute)
-		ctx, cancel := context.WithTimeout(s.ctx, min(10*time.Minute, p.Start.Sub(s.o.Now())-time.Minute))
+		ctx, cancel := context.WithTimeout(s.serviceContext(), min(10*time.Minute, p.Start.Sub(s.o.Now())-time.Minute))
 		in, e := s.o.BreakInput(ctx, p.Item.Key, task.ownerID)
 		if e != nil {
 			cancel()
@@ -203,7 +203,7 @@ func (s *Service) captureBreakOwner(ctx context.Context, channelID string) {
 }
 
 func (s *Service) publishBreaks(key core.RatingKey, points []markers.BreakPoint, duration int64, releaseID, revision string) {
-	cs, err := s.virtualChannels(s.ctx)
+	cs, err := s.virtualChannels(s.serviceContext())
 	if err != nil {
 		return
 	}
@@ -212,7 +212,7 @@ func (s *Service) publishBreaks(key core.RatingKey, points []markers.BreakPoint,
 			continue
 		}
 		var raw string
-		if s.o.DB.QueryRowContext(s.ctx, `SELECT data FROM livetv_channels WHERE id=?`, listed.ID).Scan(&raw) != nil {
+		if s.o.DB.QueryRowContext(s.serviceContext(), `SELECT data FROM livetv_channels WHERE id=?`, listed.ID).Scan(&raw) != nil {
 			continue
 		}
 		// Decode into a fresh value: listed can be a published guide snapshot's
@@ -274,10 +274,10 @@ func (s *Service) publishBreaks(key core.RatingKey, points []markers.BreakPoint,
 		if e != nil || string(b) == raw {
 			continue
 		}
-		result, e := s.o.DB.ExecContext(s.ctx, `UPDATE livetv_channels SET data=? WHERE id=? AND CAST(data AS TEXT)=?`, string(b), listed.ID, raw)
+		result, e := s.o.DB.ExecContext(s.serviceContext(), `UPDATE livetv_channels SET data=? WHERE id=? AND CAST(data AS TEXT)=?`, string(b), listed.ID, raw)
 		if e == nil {
 			if n, _ := result.RowsAffected(); n > 0 {
-				_ = s.refreshVirtualGuideIfWarm(s.ctx)
+				_ = s.refreshVirtualGuideIfWarm(s.serviceContext())
 				s.invalidate(listed.ID, "")
 				s.bumpLineup()
 			}
@@ -316,7 +316,7 @@ func walkNaturalBreakItems(node any, policy *ChannelLook, visit func(map[string]
 func (s *Service) channelNaturalBreakKeys(c Channel) map[core.RatingKey]bool {
 	keys := map[core.RatingKey]bool{}
 	var raw string
-	if s.o.DB.QueryRowContext(s.ctx, `SELECT data FROM livetv_channels WHERE id=?`, c.ID).Scan(&raw) != nil {
+	if s.o.DB.QueryRowContext(s.serviceContext(), `SELECT data FROM livetv_channels WHERE id=?`, c.ID).Scan(&raw) != nil {
 		return keys
 	}
 	var doc any

@@ -518,7 +518,7 @@ func (s *Service) launchBroadcast(ctx context.Context, ss *session, l broadcastL
 			}
 			planner = provider
 		}
-		b, err := newBroadcast(s.ctx, runner, planner, format)
+		b, err := newBroadcast(s.serviceContext(), runner, planner, format)
 		if err != nil {
 			return nil, err
 		}
@@ -585,7 +585,7 @@ func (p *scheduleBroadcastPlanner) introPlan(now time.Time) (broadcastPlan, time
 		break
 	}
 	p.mu.Unlock()
-	c := p.s.personalChannel(p.s.ctx, p.channel, &p.user)
+	c := p.s.personalChannel(p.s.serviceContext(), p.channel, &p.user)
 	if welcome, ok := p.s.personalWelcome(c, now); ok {
 		p.joinAt = welcome.End
 		return p.programme(welcome), welcome.End.Sub(now)

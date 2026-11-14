@@ -74,6 +74,8 @@ type Approval struct {
 	Details                           json.RawMessage
 	Status, DecisionNote              string
 	FailureReason                     string
+	// Result is returned to the editor after approval; it is not persisted.
+	Result map[string]any
 }
 
 // SecretReq is one durable credential request (never the value).

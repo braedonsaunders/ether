@@ -42,16 +42,29 @@ func continuousSegmentFrames(f RawFormat, segment time.Duration, live bool, seq 
 
 // continuousKeyframeExpr forces the ladder's keyframes in ffmpeg.
 func continuousKeyframeExpr(f RawFormat, segment time.Duration, live bool) string {
+	return continuousKeyframeExprAt(f, segment, live, 0)
+}
+
+// Restart at an unpublished segment without skipping the short opening cuts.
+func continuousKeyframeExprAt(f RawFormat, segment time.Duration, live bool, seq int64) string {
 	g, startup, steady := continuousLadder(f, segment, live)
+	offset, _ := continuousSegmentFrames(f, segment, live, seq)
+	if seq >= int64(len(startup)) {
+		return fmt.Sprintf("expr:gte(n,n_forced*%d)", g)
+	}
 	opening := ""
-	for i, n := range startup {
-		if i > 0 {
+	for _, n := range startup[seq:] {
+		if opening != "" {
 			opening += "+"
 		}
-		opening += fmt.Sprintf("eq(n,%d)", n)
+		opening += fmt.Sprintf("eq(n,%d)", n-offset)
 	}
-	// After the opening n_forced == len(startup); the next cut is at steady.
-	return fmt.Sprintf("expr:if(lt(n,%d),%s,gte(n,(n_forced-%d)*%d))", steady, opening, int64(len(startup))-steady/g, g)
+	if seq == 0 {
+		return fmt.Sprintf("expr:if(lt(n,%d),%s,gte(n,(n_forced-%d)*%d))", steady, opening, int64(len(startup))-steady/g, g)
+	}
+	// n_forced counts only the replacement's pictures; seq accounts for
+	// cuts already published by its predecessor.
+	return fmt.Sprintf("expr:if(lt(n,%d),%s,gte(n,(n_forced+%d-%d)*%d-%d))", steady-offset, opening, seq, int64(len(startup))-steady/g, g, offset)
 }
 
 func continuousFrameTime(f RawFormat, frames int64) time.Duration {

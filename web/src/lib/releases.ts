@@ -60,6 +60,8 @@ export interface ConsoleRelease {
   release: Release;
   score: number;
   formatScore: number;
+  /** Present only when this profile rejected the custom format score. */
+  minimumFormatScore?: number;
   customFormats?: FormatMatch[] | null;
   compatibility?: string;
   /** Why source routing moved this release (faster source, or the hedge). */

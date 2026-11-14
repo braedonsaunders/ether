@@ -118,7 +118,7 @@ function backend(
       if (data instanceof Response) return data;
       if (data !== undefined) return new Response(JSON.stringify(data), { status: 200 });
       data = [];
-      if (url.endsWith("/config")) data = { config: { liveTV: { enabled: true } } };
+      if (url.endsWith("/config")) data = { config: {} };
       else if (/\/livetv\/channels\/[^/]+\/timeline\?/.test(url))
         data = {
           channelId: url.split("/channels/")[1]?.split("/")[0],
@@ -223,7 +223,7 @@ describe("Live TV studio", () => {
   });
 
   it("builds a virtual channel from a catalogue search and named viewer", async () => {
-    const calls = backend([], (url, init) =>
+    const calls = backend([iptv("seed")], (url, init) =>
       url.endsWith("/livetv/channels") && init?.method === "POST"
         ? { ...JSON.parse(String(init.body)), id: "v1" }
         : undefined,
@@ -252,7 +252,7 @@ describe("Live TV studio", () => {
     const created = body(sent(calls, "POST", /\/livetv\/channels$/)[0]);
     expect(created).toMatchObject({
       name: "Movie night",
-      number: "1",
+      number: "101",
       blocks: [
         {
           sources: [
@@ -347,7 +347,7 @@ describe("Live TV studio", () => {
   });
 
   it("programmes a named block from a collection chosen by name", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/collections"))).toBe(true));
     await newBlankChannel("Family TV");
@@ -369,7 +369,7 @@ describe("Live TV studio", () => {
   });
 
   it("restores the default Start season on blur when the field is cleared", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     await newBlankChannel("Reruns");
     fireEvent.click(screen.getAllByRole("button", { name: "Add" }).at(-1)!);
@@ -390,6 +390,55 @@ describe("Live TV studio", () => {
     expect(
       body(sent(calls, "POST", /\/livetv\/channels$/)[0]).blocks[0].sources[0].startSeason,
     ).toBe(1);
+  });
+
+  it("lets a block's repeat-gap field be cleared with backspace and restores 0 on blur", async () => {
+    const channel: Channel = {
+      id: "c1",
+      number: "1",
+      name: "Movies",
+      kind: "virtual",
+      enabled: true,
+      favorite: false,
+      epoch: "2026-01-01",
+      seed: 1,
+      shuffle: false,
+      items: [],
+      blocks: [
+        {
+          id: "b1",
+          start: 0,
+          end: 1440,
+          items: [],
+          shuffle: false,
+          name: "Movies",
+          repeatDays: 5,
+          sources: [{ kind: "movies", pool: 40 }],
+        },
+      ],
+    };
+    const onChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <ProgrammingEditor
+          channel={channel}
+          onChange={onChange}
+          collections={[]}
+          editRequest={{ blockId: "b1" }}
+        />
+      </MemoryRouter>,
+    );
+    const repeatInput = await screen.findByRole("spinbutton", {
+      name: "No repeats within (days)",
+    });
+    fireEvent.change(repeatInput, { target: { value: "" } });
+    expect(repeatInput).toHaveValue(null);
+    fireEvent.blur(repeatInput);
+    expect(repeatInput).toHaveValue(0);
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onChange).toHaveBeenCalledWith({
+      blocks: [expect.objectContaining({ repeatDays: 0 })],
+    });
   });
 
   it("keeps a running strip's startDate when only its start season or episode is corrected", async () => {
@@ -561,7 +610,7 @@ describe("Live TV studio", () => {
   });
 
   it("imports a guide-only XMLTV source", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Guide source/ }));
@@ -662,7 +711,7 @@ describe("Live TV preview player", () => {
 
 describe("Live TV source sign-in", () => {
   it("imports an Xtream Codes source from a server and login", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /IPTV source/ }));
@@ -946,7 +995,7 @@ describe("Live TV Stremio plugins", () => {
   it("adds a plugin through the shared drawer, then imports its channels", async () => {
     invalidateRegistry();
     let sources: unknown[] = [];
-    const calls = backend([], (url, init) => {
+    const calls = backend([iptv("seed")], (url, init) => {
       const method = init?.method ?? "GET";
       if (url.includes("/extend/registry")) return { version: 1, descriptors: [addonDescriptor] };
       if (url.endsWith("/plugins/addons/preview"))

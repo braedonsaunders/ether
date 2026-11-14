@@ -32,6 +32,8 @@ const (
 
 // KindCatalogDeps configures a KindCatalog adapter.
 type KindCatalogDeps struct {
+	TitleInLibrary func(context.Context, core.Library, core.RatingKey) (bool, error)
+
 	Manager           *plugins.Manager
 	Libraries         *libraries.Service
 	Items             *pluginitems.Service
@@ -51,6 +53,8 @@ type liveSearchCall struct {
 // experience.PluginLibraries so client surfaces read exclusively from the
 // local store on browse, detail, children and facet paths.
 type KindCatalog struct {
+	titleInLibrary func(context.Context, core.Library, core.RatingKey) (bool, error)
+
 	syncCtx           context.Context
 	mgr               *plugins.Manager
 	libs              *libraries.Service
@@ -87,6 +91,7 @@ func AttachKindCatalog(syncCtx context.Context, deps KindCatalogDeps) *KindCatal
 	}
 	c := &KindCatalog{
 		syncCtx:           syncCtx,
+		titleInLibrary:    deps.TitleInLibrary,
 		mgr:               deps.Manager,
 		libs:              deps.Libraries,
 		items:             deps.Items,
@@ -763,17 +768,17 @@ func (c *KindCatalog) MemberOf(ctx context.Context, lib core.Library, key core.R
 	if c == nil || c.libs == nil || key == 0 {
 		return false, nil
 	}
+	if c.titleInLibrary != nil {
+		return c.titleInLibrary(ctx, lib, key)
+	}
 	ok, err := c.libs.SourceMember(ctx, lib, key)
 	if err != nil || !ok {
 		return ok, err
 	}
-	if lib.Source == core.LibraryFilter {
-		return true, nil
+	if lib.Source == core.LibraryCollection {
+		return c.libs.CollectionMember(ctx, lib.CollectionID, key)
 	}
-	if lib.Source != core.LibraryCollection || lib.CollectionID <= 0 {
-		return false, nil
-	}
-	return c.libs.CollectionMember(ctx, lib.CollectionID, key)
+	return len(lib.Rules) == 0 && lib.VisibilityDefault != "hide", nil
 }
 
 func (c *KindCatalog) runLiveSearch(ctx context.Context, rec pluginitems.KindRecord, query string, limit int) []core.KindItem {

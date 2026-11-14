@@ -104,7 +104,7 @@ func (s *Service) triggerBreakWarm(channelID string, window []Programme, now tim
 		if !s.isActivelyWatched(channelID) {
 			return
 		}
-		ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
+		ctx, cancel := context.WithTimeout(s.serviceContext(), 15*time.Second)
 		err := s.o.Warm(ctx, p.Item.Key, offset)
 		cancel()
 		if err != nil {

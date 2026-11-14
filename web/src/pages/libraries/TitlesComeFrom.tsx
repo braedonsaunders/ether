@@ -47,13 +47,15 @@ export function TitlesComeFrom({
           ? t("Manage {app}", { app: attached[0].owner })
           : t("Manage in Integrations")
       : t("Manage in Integrations");
-  const mediaType = String(library.mediaType ?? library.filter?.type ?? "movie");
+  const mediaType = String(library.mediaType ?? "movie");
   const save = () => {
     if (draft) {
       onChange(draft);
       setDraft(null);
     }
   };
+  if (library.source === "collection")
+    return <SettingsSection title={t("Titles come from")}>{children}</SettingsSection>;
   return (
     <>
       <SettingsSection title={t("Titles come from")}>

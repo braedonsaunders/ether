@@ -103,6 +103,10 @@ func TestBroadcastSlowStartLargeOffsetRemote(t *testing.T) {
 	// Mode=order uses the weekly midnight anchor. Use the legacy epoch recipe so
 	// the requested join is exactly the large offset under test.
 	c.Mode = ""
+	if _, err := s.SaveChannel(t.Context(), c); err != nil {
+		t.Fatal(err)
+	}
+	s.ReconcileEnabled()
 	planner := &scheduleBroadcastPlanner{s: s, channel: c, user: core.User{ID: 1, IsOwner: true}, format: format, runner: runner}
 	b, err := newBroadcast(ctx, runner, planner, format)
 	if err != nil {

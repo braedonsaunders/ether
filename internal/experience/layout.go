@@ -78,7 +78,7 @@ func LayoutRows(ctx context.Context, source core.NeutralHomeLayoutSource, librar
 	indices := make(map[string]int, len(rows))
 	for i, row := range rows {
 		indices[row.ID] = i
-		n := core.NeutralHomeRow{ID: row.ID, Title: row.Title, Kind: row.Kind, Purpose: row.Purpose, ItemCount: len(row.Entries), Always: row.Layout.Always, PreviewOnFocus: row.PreviewOnFocus}
+		n := core.NeutralHomeRow{ID: row.ID, Title: row.Title, Kind: row.Kind, Purpose: row.Purpose, ItemCount: len(row.Entries), Always: row.Layout.Always, PreviewOnFocus: row.PreviewOnFocus, RankedTop10: row.RankedTop10}
 		for _, entry := range row.Entries {
 			if entry.Title != nil {
 				n.Items = append(n.Items, *entry.Title)
@@ -107,6 +107,8 @@ func LayoutRows(ctx context.Context, source core.NeutralHomeLayoutSource, librar
 		row.Layout.Always = arranged.Always
 		row.PreviewOnFocus = arranged.PreviewOnFocus
 		row.Layout.PreviewOnFocus = arranged.PreviewOnFocus
+		row.RankedTop10 = arranged.RankedTop10
+		row.Layout.RankedTop10 = arranged.RankedTop10
 		out = append(out, row)
 	}
 	return out, nil

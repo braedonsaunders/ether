@@ -129,6 +129,8 @@ type LiveTVTuneDiagnosis struct {
 // Viewer must be from the authenticated session. GUID resolution never returns
 // channels or programmes that the viewer is not permitted to see.
 type LiveTV interface {
+	// Enabled reports whether any channels exist, independent of viewer access.
+	Enabled() bool
 	Channels(context.Context, *core.Viewer) ([]LiveChannel, error)
 	Guide(context.Context, *core.Viewer, LiveGuideQuery) ([]LiveProgramme, error)
 	ResolveChannelGUID(context.Context, *core.Viewer, string) (LiveChannel, error)

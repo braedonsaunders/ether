@@ -538,6 +538,7 @@ function updatePage(
 function tidyPolicy(p: RowPolicy): RowPolicy {
   const out: RowPolicy = { row: p.row, status: p.status };
   if (p.previewOnFocus !== undefined) out.previewOnFocus = p.previewOnFocus;
+  if (p.rankedTop10 !== undefined) out.rankedTop10 = p.rankedTop10;
   if (p.slot) {
     out.slot = p.slot;
     if (out.status !== "off") out.status = "always";

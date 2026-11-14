@@ -80,13 +80,13 @@ func titleMedia(t *core.Title) string {
 	switch t.Type {
 	case core.TypeMovie:
 		return core.MediaMovie
-	case core.TypeEpisode:
+	case core.TypeShow, core.TypeSeason, core.TypeEpisode:
 		return core.MediaTV
 	}
 	switch t.Key.Kind() {
 	case core.KindMovie:
 		return core.MediaMovie
-	case core.KindEpisode:
+	case core.KindShow, core.KindSeason, core.KindEpisode:
 		return core.MediaTV
 	}
 	return core.MediaAny
@@ -597,4 +597,10 @@ func ruleMatches(rule config.QualityRule, caps core.ClientCaps, user *core.User)
 	// A rule with no matchers at all would match everything; require
 	// at least one matcher to avoid surprises from empty config rows.
 	return rule.Protocol != "" || rule.Product != "" || rule.Platform != "" || rule.UserID != 0
+}
+
+// ProfileForTitle is the shared library-aware policy used by playback caches,
+// resolution, and discovery. Context is used only for bounded local membership reads.
+func (s *Service) ProfileForTitle(ctx context.Context, caps core.ClientCaps, user *core.User, t *core.Title) core.QualityProfile {
+	return SelectProfileForTitle(s.qualityCfg(), caps, user, t, s.libProfileForTitle(ctx, t))
 }

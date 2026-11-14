@@ -158,6 +158,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 		row.Layout = meta.Layout
 		row.Style = meta.Layout.Style
 		row.PreviewOnFocus = meta.Layout.PreviewOnFocus
+		row.RankedTop10 = row.RankedTop10 || meta.Layout.RankedTop10
 		rows = append(rows, row)
 	} else if hasViews {
 		vv, e := views.ListRowViews(r.Context(), frontend.RowViewRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", Placement: placement, Item: item, Refresh: refresh})
@@ -183,6 +184,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 			row.Layout = view.Layout
 			row.Style = view.Layout.Style
 			row.PreviewOnFocus = view.Layout.PreviewOnFocus
+			row.RankedTop10 = row.RankedTop10 || view.Layout.RankedTop10
 			rows = append(rows, row)
 		}
 	} else {
@@ -220,6 +222,11 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 
 // rowWire retains source entry receipts while converting one authorized page.
 func (i *instance) rowWire(r *http.Request, v *frontend.Viewer, token string, row frontend.Row, sourceOffset int, excludedHeroes []string, hasViews bool) (object, error) {
+	if row.RankedTop10 {
+		row.Entries = row.Entries[:min(len(row.Entries), 10)]
+		row.Items = row.Items[:min(len(row.Items), 10)]
+		row.More = false
+	}
 	ts := []frontend.Title{}
 	for _, e := range row.Entries {
 		if e.Kind == frontend.RowEntryTitle && e.Title != nil {
@@ -284,6 +291,10 @@ func (i *instance) rowWire(r *http.Request, v *frontend.Viewer, token string, ro
 		continuation = "unknown"
 	}
 	wire := object{"id": row.ID, "name": row.Title, "purpose": row.Purpose, "receiptToken": row.Handle, "style": row.Style, "items": entries, "continuation": continuation}
+	if row.RankedTop10 {
+		wire["presentation"] = "ranked"
+		wire["continuation"] = "exhausted"
+	}
 	if row.PreviewOnFocus {
 		wire["previewOnFocus"] = true
 	}

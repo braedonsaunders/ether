@@ -301,6 +301,8 @@ func TestBreakerSingleRecoveryCommand(t *testing.T) {
 }
 
 func TestBodyPipelineCanceledMemberDoesNotAbortPeers(t *testing.T) {
+	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
 	wire := make(chan []string, 1)
 	gate := make(chan struct{})
 	reply := pipelineReply(t, "payload")
@@ -308,40 +310,60 @@ func TestBodyPipelineCanceledMemberDoesNotAbortPeers(t *testing.T) {
 	o.withDefaults()
 	p := newPool("test", config.UsenetProvider{Host: "test", Connections: 1}, &o, o.Logger, -1)
 	defer p.close()
-	c, err := p.get(context.Background(), core.PriorityLive)
+	c, err := p.get(ctx, core.PriorityLive)
 	if err != nil {
 		t.Fatal(err)
 	}
-	canceled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(ctx)
 	defer cancel()
 	gone := make(chan error, 1)
 	peers := make(chan error, 2)
 	go func() { _, err := p.body(canceled, "cancel@test", nil, core.PriorityLive); gone <- err }()
 	for i := 0; i < 2; i++ {
 		go func(i int) {
-			part, err := p.body(context.Background(), fmt.Sprintf("peer%d@test", i), nil, core.PriorityLive)
+			part, err := p.body(ctx, fmt.Sprintf("peer%d@test", i), nil, core.PriorityLive)
 			if err == nil && string(part.Data) != "payload" {
 				err = errors.New("wrong peer body")
 			}
 			peers <- err
 		}(i)
 	}
-	waitPipeline(t, func() bool { p.bodyMu.Lock(); defer p.bodyMu.Unlock(); return len(p.bodyQueue[0]) == 2 })
+	// Two queued requests can also mean only two callers have registered and
+	// the worker has not claimed either yet. The fake server requires all
+	// three commands in one window, so hold the socket until all callers are
+	// registered and the worker has claimed its first request.
+	waitPipeline(t, func() bool {
+		p.bodyMu.Lock()
+		defer p.bodyMu.Unlock()
+		return len(p.bodyFlights) == 3 && p.bodyClaimed[core.PriorityLive] == 1 && len(p.bodyQueue[core.PriorityLive]) == 2
+	})
 	p.put(c, core.PriorityLive)
-	<-wire // All three BODY commands are irrevocably on the socket.
+	select {
+	case commands := <-wire: // All three BODY commands are irrevocably on the socket.
+		if len(commands) != 3 {
+			t.Fatalf("pipeline commands: %v", commands)
+		}
+	case <-ctx.Done():
+		t.Fatal("waiting for pipeline commands:", ctx.Err())
+	}
 	cancel()
 	select {
 	case err := <-gone:
 		if !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("canceled member waited for its body")
+	case <-ctx.Done():
+		t.Fatal("canceled member waited for its body:", ctx.Err())
 	}
 	close(gate)
 	for i := 0; i < 2; i++ {
-		if err := <-peers; err != nil {
-			t.Fatal(err)
+		select {
+		case err := <-peers:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-ctx.Done():
+			t.Fatal("waiting for peer body:", ctx.Err())
 		}
 	}
 	waitPipeline(t, func() bool { return p.sem.stats().InUse == 0 })

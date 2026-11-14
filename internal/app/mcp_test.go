@@ -33,8 +33,6 @@ func TestMCPBuiltinToolsAndEndToEndWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := cfg.Update(func(c *config.Config) error {
-		enabled := true
-		c.LiveTV.Enabled = &enabled
 		c.SetupComplete = true
 		c.Frontends = map[string]config.Frontend{"plex": {Enabled: false}}
 		c.Transcode.FFmpegPath = "/not-installed/ffmpeg"

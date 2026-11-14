@@ -13,7 +13,7 @@ import (
 
 func supportDocumentPath(path string) bool {
 	p := strings.ToLower(path)
-	if strings.Contains(p, "/transcode/universal/decision") {
+	if strings.Contains(p, "/transcode/universal/decision") || strings.HasSuffix(p, "/start.mpd") {
 		return true
 	}
 	for _, segment := range []string{"/thumb", "/art", "/banner", "/theme", "/logo", "/image", "/posters", "/backgrounds"} {
@@ -92,6 +92,9 @@ func summarizePlexResponse(raw []byte, truncated bool, encoding string) *fronten
 			return &frontend.DiagnosticResponseSummary{Truncated: true}
 		}
 		raw = decoded
+	}
+	if out := summarizeDASHResponse(raw); out != nil {
+		return out
 	}
 	var c journalContainer
 	var doc struct {

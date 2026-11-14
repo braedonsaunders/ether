@@ -52,7 +52,7 @@ func (s *Service) virtualCandidates(c Channel, current Programme) []Programme {
 			add(standIn(c, item, now))
 		}
 	}
-	for _, p := range s.viewerSchedule(s.ctx, c, start, start.Add(24*time.Hour)) {
+	for _, p := range s.viewerSchedule(s.serviceContext(), c, start, start.Add(24*time.Hour)) {
 		add(p)
 	}
 	if c.Personal != nil {

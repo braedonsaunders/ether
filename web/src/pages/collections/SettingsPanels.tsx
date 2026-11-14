@@ -646,6 +646,11 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
           onChange={(previewOnFocus) => update({ previewOnFocus })}
         />
         <ToggleRow
+          title={t("Ranked (Top 10)")}
+          checked={Boolean(spec.rankedTop10)}
+          onChange={(rankedTop10) => update({ rankedTop10 })}
+        />
+        <ToggleRow
           title={t("Collections tab")}
           description={t("Listed in the matching libraries.")}
           checked={tg.collectionsTab}

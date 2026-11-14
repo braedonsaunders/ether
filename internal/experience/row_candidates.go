@@ -10,6 +10,7 @@ import (
 
 // RankedCandidate carries protocol-neutral selection and presentation data.
 type RankedCandidate struct {
+	RankedTop10    bool
 	ID             string
 	Purpose        core.RowPurpose
 	Title          string

@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
@@ -17,18 +16,6 @@ import (
 )
 
 func (a *App) buildLiveTV() error {
-	// Resolve the additive switch once from existing owner state, before workers start.
-	if a.cfg.Read().LiveTV.Enabled == nil {
-		// Existing setup is an opt-in, even when every saved channel is disabled.
-		// Probe only for existence and never persist OFF after a database error.
-		var enabled bool
-		if err := a.db.QueryRowContext(context.Background(), `SELECT EXISTS(SELECT 1 FROM livetv_sources) OR EXISTS(SELECT 1 FROM livetv_channels)`).Scan(&enabled); err != nil {
-			return err
-		}
-		if err := a.cfg.Update(func(c *config.Config) error { c.LiveTV.Enabled = &enabled; return nil }); err != nil {
-			return err
-		}
-	}
 	if err := a.buildOnAir(); err != nil {
 		return err
 	}
@@ -44,7 +31,7 @@ func (a *App) buildLiveTV() error {
 	if a.transcoder != nil {
 		ffmpeg = a.transcoder.FFmpegPath()
 	}
-	svc, err := livetv.New(livetv.Options{Enabled: func() bool { v := a.cfg.Read().LiveTV.Enabled; return v != nil && *v }, SessionsChanged: a.notifySessionsChanged, SourcesChanged: a.publishDashboard, VODChanged: func() {
+	svc, err := livetv.New(livetv.Options{ActivityChanged: a.onair.SetEnabled, SessionsChanged: a.notifySessionsChanged, SourcesChanged: a.publishDashboard, VODChanged: func() {
 		if a.resolver != nil {
 			a.resolver.SourcesChanged(context.Background())
 		}
@@ -88,23 +75,7 @@ func (a *App) buildLiveTV() error {
 	svc.SetOnChange(func() {
 		a.frontends.notifyLiveLineup(0)
 	})
-	var enabledMu sync.Mutex
-	wasEnabled := svc.Enabled()
 	a.cfg.Subscribe(func(config.Config) {
-		enabledMu.Lock()
-		defer enabledMu.Unlock()
-		enabled := svc.Enabled()
-		if enabled {
-			a.onair.SetEnabled(true)
-		}
-		if enabled && !wasEnabled {
-			if err := svc.EnableShowcaseDefaults(context.Background()); err != nil {
-				a.log.Warn("live showcase enable failed", "error", err)
-			}
-		}
-		wasEnabled = enabled
-		svc.ReconcileEnabled()
-		a.onair.SetEnabled(svc.Enabled())
 		if err := svc.RefreshGuide(context.Background()); err != nil {
 			a.log.Warn("live guide configuration refresh failed", "error", err)
 		}

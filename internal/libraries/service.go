@@ -102,11 +102,6 @@ func cloneRule(r core.LibraryExclusion) core.LibraryExclusion {
 
 func cloneLibrary(lib core.Library) core.Library {
 	lib.Sources = append([]string(nil), lib.Sources...)
-	if lib.Filter != nil {
-		f := *lib.Filter
-		f.CatalogueSources = append([]string(nil), f.CatalogueSources...)
-		lib.Filter = &f
-	}
 	if len(lib.Rules) > 0 {
 		rules := make([]core.LibraryExclusion, len(lib.Rules))
 		for i, r := range lib.Rules {
@@ -131,20 +126,18 @@ func (s *Service) ByKey(ctx context.Context, key string) (core.Library, error) {
 	return core.Library{}, core.ErrNotFound
 }
 
-// CreateFilter saves an owner filter-library (§1.5): a named
-// core.Filter over the TMDB catalogue. Only the filter's
-// JSON-serialised fields persist; its runtime fields are injected at
-// query time. The caller passes the zero Presentations for the
-// console-only default (§15.3) and the owner opts in per protocol
-// afterwards with SetPresent.
-func (s *Service) CreateFilter(ctx context.Context, name string, f core.Filter, p core.Presentations) (core.Library, error) {
+// Create saves a library with sources and visible visibility rules.
+func (s *Service) Create(ctx context.Context, name string, mediaType core.MediaType, rules []core.LibraryExclusion, fallback string, p core.Presentations) (core.Library, error) {
 	name = strings.TrimSpace(name)
 	slug := slugify(name)
 	if name == "" || slug == "" {
-		return core.Library{}, fmt.Errorf("%w: filter library needs a name with letters or digits", ErrInvalid)
+		return core.Library{}, fmt.Errorf("%w: library needs a name with letters or digits", ErrInvalid)
 	}
-	if f.Type != "" && f.Type != core.TypeMovie && f.Type != core.TypeShow {
-		return core.Library{}, fmt.Errorf("%w: filter library type must be movie or show", ErrInvalid)
+	if mediaType != core.TypeMovie && mediaType != core.TypeShow {
+		return core.Library{}, fmt.Errorf("%w: library type must be movie or show", ErrInvalid)
+	}
+	if _, err := libraryfilter.CompilePolicy(rules, fallback); err != nil {
+		return core.Library{}, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -159,10 +152,9 @@ func (s *Service) CreateFilter(ctx context.Context, name string, f core.Filter, 
 	if err != nil {
 		return core.Library{}, err
 	}
-	filter := f // stored verbatim, never the caller's pointer target
 	lib, err := s.insert(ctx, tx, core.Library{
-		ID: id, Key: key, Name: name, Source: core.LibraryFilter,
-		MediaType: f.Type, Filter: &filter, Present: p, Sort: int(id),
+		ID: id, Key: key, Name: name, Source: core.LibraryCatalog,
+		MediaType: mediaType, Rules: rules, VisibilityDefault: fallback, Present: p, Sort: int(id),
 	})
 	if err != nil {
 		return core.Library{}, err
@@ -355,9 +347,9 @@ func (s *Service) SetRules(ctx context.Context, id core.LibraryID, rules []core.
 		pinnedType = "mixed"
 	}
 	switch {
-	case lib.ID == core.LibraryMovies || lib.MediaType == core.TypeMovie || (lib.Filter != nil && lib.Filter.Type == core.TypeMovie):
+	case lib.ID == core.LibraryMovies || lib.MediaType == core.TypeMovie:
 		pinnedType = string(core.TypeMovie)
-	case lib.ID == core.LibraryShows || lib.MediaType == core.TypeShow || (lib.Filter != nil && lib.Filter.Type == core.TypeShow):
+	case lib.ID == core.LibraryShows || lib.MediaType == core.TypeShow:
 		pinnedType = string(core.TypeShow)
 	}
 	normalized := make([]core.LibraryExclusion, len(rules))
@@ -370,7 +362,11 @@ func (s *Service) SetRules(ctx context.Context, id core.LibraryID, rules []core.
 		}
 		normalized[i] = cp
 	}
-	if _, err := libraryfilter.CompilePolicy(normalized, visibilityDefault); err != nil {
+	compile := libraryfilter.CompilePolicy
+	if lib.Source == core.LibraryPlugin {
+		compile = libraryfilter.CompilePluginPolicy
+	}
+	if _, err := compile(normalized, visibilityDefault); err != nil {
 		return fmt.Errorf("%w: %s", ErrInvalid, err.Error())
 	}
 	vis := ""

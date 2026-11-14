@@ -238,11 +238,11 @@ func (s *Service) handleApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{
-		"approvalId": appr.ID, "status": appr.Status, "decisionNote": appr.DecisionNote,
+		"approvalId": appr.ID, "status": appr.Status, "decisionNote": appr.DecisionNote, "result": appr.Result,
 	}
 	// The card promises the agent carries on; run that turn before replying
 	// so the console's refetch shows it. A failed apply does not continue.
-	if appr.Status == "approved" || appr.Status == "rejected" {
+	if (appr.Status == "approved" || appr.Status == "rejected") && appr.Input["editorChannel"] == nil {
 		continued, err := s.ContinueAfterApproval(context.WithoutCancel(r.Context()), OwnerPrincipal(), appr, body.Context)
 		if err != nil {
 			s.log.Warn("agent approval follow-up failed", "id", appr.ID, "err", err)

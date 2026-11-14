@@ -110,6 +110,7 @@ type RowDirectory struct {
 
 // RowLayout describes Home Designer presentation selected by experience.
 type RowLayout struct {
+	RankedTop10    bool
 	PreviewOnFocus bool
 	Order          int
 	Style          string
@@ -124,6 +125,7 @@ type RowPaint struct {
 }
 
 type Row struct {
+	RankedTop10    bool
 	PreviewOnFocus bool
 	// Situation is the server-owned ranking context retained for deferred receipts.
 	Situation    core.HomeSituation

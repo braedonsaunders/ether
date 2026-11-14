@@ -1014,6 +1014,18 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), ids.Decimal(id), q)
 	} else if key, e := ids.ParseRatingKeyGUID(parent[0]); e == nil {
 		page, err = i.host.Experience.Children(r.Context(), v, device(r), key, q)
+		if key.Kind() == frontend.KindCollection && err == nil {
+			detail, e := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
+			if e == nil && detail.Collection != nil && detail.Collection.RankedTop10 {
+				if q.Offset >= 10 {
+					page.Items = nil
+				} else {
+					page.Items = page.Items[:min(len(page.Items), 10-q.Offset)]
+				}
+				page.Total = min(page.Total, 10)
+				r = withRankedRow(r, true, page.Items, q.Offset)
+			}
+		}
 	} else {
 		http.NotFound(w, r)
 		return

@@ -29,6 +29,9 @@ type selection struct {
 	// and source), not its position. A later variant order can put a
 	// different track in the old slot; resolveSubtitle finds this one.
 	subtitleStream *frontend.StreamInfo
+	// subtitlePart scopes a manually downloaded sidecar to the version picked.
+	// Zero retains the ordinary title-wide language preference.
+	subtitlePart int64
 }
 
 type selectionStore struct {

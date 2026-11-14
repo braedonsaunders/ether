@@ -26,6 +26,10 @@ func (m *Manager) Handler() http.Handler {
 	mux.HandleFunc("POST /install/preview", m.handlePreview)
 	mux.HandleFunc("POST /install", m.handleInstall)
 	mux.HandleFunc("GET /{id}", m.handleGet)
+	mux.HandleFunc("GET /runtime-limits", m.handleRuntimeLimits)
+	mux.HandleFunc("PUT /runtime-limits", m.handleRuntimeLimits)
+	mux.HandleFunc("GET /{id}/jobs", m.handleActionJobs)
+	mux.HandleFunc("POST /{id}/jobs/cancel", m.handleCancelActionJob)
 	mux.HandleFunc("GET /{id}/resources/{resource}", m.handleStremioResource)
 	mux.HandleFunc("GET /{id}/directories/{key}", m.handleDirectory)
 	mux.HandleFunc("GET /{id}/settings", m.handleGetSettings)
@@ -147,8 +151,9 @@ func (m *Manager) summary(r Record, h Health) Summary {
 // privacy label and impact.
 type Detail struct {
 	Summary
-	Manifest    Manifest `json:"manifest"`
-	Permissions struct {
+	Manifest      Manifest       `json:"manifest"`
+	RuntimeLimits *RuntimeLimits `json:"runtimeLimits,omitempty"`
+	Permissions   struct {
 		Lines        []string    `json:"lines"`
 		Declared     Permissions `json:"declared"`
 		Grants       Grants      `json:"grants"`
@@ -253,7 +258,7 @@ func (m *Manager) handleGet(w http.ResponseWriter, r *http.Request) {
 	h, _ := m.store.health(r.Context(), id)
 	h = m.liveHealth(rec, h)
 	g, _ := m.store.grants(r.Context(), id)
-	d := Detail{Summary: m.summary(rec, h), Manifest: rec.Manifest, HealthDetail: h}
+	d := Detail{Summary: m.summary(rec, h), Manifest: rec.Manifest, RuntimeLimits: m.grantedRuntimeLimits(rec.Manifest), HealthDetail: h}
 	d.Permissions.Lines, d.Permissions.NeedsViewers, d.Permissions.NeedsFolders = PermissionSheet(rec.Manifest)
 	if rec.Manifest.Ether != nil {
 		d.Permissions.Declared = rec.Manifest.Ether.Permissions
@@ -995,7 +1000,10 @@ func (m *Manager) handleAction(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(resp.Body)
 		return
 	}
-	m.startActionJob(id, resp.Body)
+	if err := m.startActionJob(id, resp.Body); err != nil {
+		m.fail(w, err)
+		return
+	}
 	result, err := m.saveActionProposal(r.Context(), id, resp.Body)
 	if err != nil {
 		m.fail(w, err)

@@ -700,9 +700,7 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, w
 			userID = pr.User.ID
 		}
 		stored := s.selections.get(userID, int64(t.Key))
-		if stored.subtitleSet {
-			info = infoWithSelectedSidecar(info, stored.subtitleStream)
-		}
+		info, stored = subtitleInfoForPart(info, stored, m.Part[0].ID)
 		sel := resolveSelection(stored, info)
 		sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 		m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User, pr)

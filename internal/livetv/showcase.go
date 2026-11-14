@@ -370,7 +370,6 @@ func (s *Service) seedShowcase(ctx context.Context) error {
 
 func (s *Service) showcaseLoop() {
 	defer s.wg.Done()
-	seeded := false
 	timer := s.newTimer(5 * time.Minute)
 	if !timer.Stop() {
 		select {
@@ -380,22 +379,10 @@ func (s *Service) showcaseLoop() {
 	}
 	defer timer.Stop()
 	for {
-		wait := 5 * time.Minute
-		if !seeded {
-			if err := s.seedShowcase(s.ctx); err != nil {
-				if s.ctx.Err() == nil {
-					s.o.Logger.Warn("showcase channels could not be added", "error", err)
-				}
-			} else {
-				seeded = true
-			}
-		}
-		if seeded {
-			wait = s.refreshShowcaseNext(s.ctx)
-		}
+		wait := s.refreshShowcaseNext(s.serviceContext())
 		timer.Reset(wait)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return
 		case <-timer.C:
 		}
@@ -816,9 +803,13 @@ func localZoneName() string {
 	return ""
 }
 
-// EnableShowcaseDefaults applies only to an explicit off-to-on choice. Later
-// per-channel edits remain authoritative, including while recipes are pending.
-func (s *Service) EnableShowcaseDefaults(ctx context.Context) error {
+// AddShowcaseDefaults is an explicit owner action; startup never creates channels.
+func (s *Service) AddShowcaseDefaults(ctx context.Context) error {
+	// Explicitly adding the defaults can restore deleted channels. Automatic
+	// refresh still respects their tombstones and never recreates them.
+	if _, err := s.o.DB.ExecContext(ctx, `DELETE FROM livetv_showcase WHERE NOT EXISTS (SELECT 1 FROM livetv_channels WHERE livetv_channels.id=livetv_showcase.channel_id)`); err != nil {
+		return err
+	}
 	if err := s.seedShowcase(ctx); err != nil {
 		return err
 	}

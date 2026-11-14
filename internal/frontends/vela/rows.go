@@ -47,7 +47,7 @@ func (i *instance) rowPage(r *http.Request, v *frontend.Viewer, id string, offse
 	if page.Truncated {
 		kind = "truncated"
 	}
-	return frontend.Row{Kind: kind, ID: id, Entries: page.Entries, Handle: page.ImpressionHandle, More: page.More}, nil
+	return frontend.Row{RankedTop10: page.RankedTop10, Kind: kind, ID: id, Entries: page.Entries, Handle: page.ImpressionHandle, More: page.More}, nil
 }
 func (i *instance) rowToken(r *http.Request, v *frontend.Viewer, id string, offset int, exclude []string) string {
 	return i.sealRowCursor(rowCursor{Row: id, Scope: i.cursorScope(r, v), Offset: offset, Exclude: exclude, Expires: time.Now().Add(10 * time.Minute).Unix()})

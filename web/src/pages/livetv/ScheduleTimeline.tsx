@@ -68,6 +68,7 @@ export function ScheduleTimeline({
   snapshot,
   range: requestedRange,
   loadMore = false,
+  showLegend = true,
   onSelect,
   onAdd,
   selectedId,
@@ -76,6 +77,7 @@ export function ScheduleTimeline({
   snapshot?: TimelineResponse;
   range: TimelineRange;
   loadMore?: boolean;
+  showLegend?: boolean;
   onSelect?: (element: TimelineElement) => void;
   onAdd?: (value: { start: number; blockId?: string }) => void;
   selectedId?: string;
@@ -508,17 +510,19 @@ export function ScheduleTimeline({
           {error}
         </p>
       )}
-      <div
-        className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-muted"
-        aria-label={t("Legend")}
-      >
-        {TIMELINE_KINDS.map((k) => (
-          <span key={k} className="inline-flex items-center gap-1">
-            <i className={`schedule-key schedule-${k}`} />
-            {kindLabel(k)}
-          </span>
-        ))}
-      </div>
+      {showLegend && (
+        <div
+          className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-muted"
+          aria-label={t("Legend")}
+        >
+          {TIMELINE_KINDS.map((k) => (
+            <span key={k} className="inline-flex items-center gap-1">
+              <i className={`schedule-key schedule-${k}`} />
+              {kindLabel(k)}
+            </span>
+          ))}
+        </div>
+      )}
       {tip &&
         createPortal(
           <div

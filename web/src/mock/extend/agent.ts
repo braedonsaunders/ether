@@ -8,8 +8,9 @@
  * served by GET /agent/threads/{id}/messages, never in the live stream,
  * which is the contract AgentPanel is built around.
  */
+import { referenceLooks } from "../../pages/livetv/onair/fixtures";
 import { createStyleSteps } from "../create-style";
-import type { Look } from "../../pages/livetv/onair/model";
+import { onair, type Look } from "../../pages/livetv/onair/model";
 import type { CollectionSpec, Rule } from "../../lib/contract";
 import { normalizeSpec } from "../../lib/rules";
 import { GENRES } from "../data";
@@ -627,7 +628,38 @@ export function createAgentMock(): { handle: ExtendHandler } {
         const { lines, delays } = describeChunks(id, steps);
         return sseResponse(lines, thread.id, delays);
       }
-      const plan = planTurn(prompt);
+      const plan = planTurn(
+        context.route === "/livetv/channel-builder" ? "create a channel" : prompt,
+      );
+      if (context.route === "/livetv/channel-builder") {
+        const draft = asRecord(asRecord(context.draft).channel);
+        const output = asRecord(plan.tools[0]?.output);
+        output.channel = {
+          ...draft,
+          name: "Family Movie Night",
+          filter: { type: "movie", genres: ["Adventure"], yearFrom: 1980, yearTo: 1989 },
+          items: [],
+        };
+        if (!/no (theme|branding|look)/i.test(prompt)) {
+          const base = structuredClone(referenceLooks[0]!);
+          base.name = "Family Movie Night";
+          const steps = createStyleSteps(base, prompt);
+          const last = [...steps].reverse().find((step) => "draft" in step);
+          if (last && "draft" in last) output.style = last.draft.output.look;
+        }
+        if (plan.tools[0]) {
+          plan.tools[0].toolName = "livetv_channel_apply";
+          plan.tools[0].output = output;
+        }
+        if (plan.approval) {
+          plan.approval.details = [
+            { label: "Channel", value: `${draft.number} · Family Movie Night` },
+            { label: "Schedule", value: "Family films every evening" },
+          ];
+        }
+        plan.text =
+          "I've drafted the programming. Review it below; Apply updates your editor draft.";
+      }
       const assistant: MockAgentMessage = {
         id: nextId("msg"),
         role: "assistant",
@@ -687,7 +719,7 @@ export function createAgentMock(): { handle: ExtendHandler } {
             {
               type: "text",
               text:
-                record.toolName === "channel_draft"
+                record.toolName === "channel_draft" || record.toolName === "livetv_channel_apply"
                   ? decision === "approved"
                     ? "Channel draft approved."
                     : "Channel draft declined."
@@ -701,7 +733,34 @@ export function createAgentMock(): { handle: ExtendHandler } {
         });
         thread.updatedAt = now();
       }
-      return json({ status: decision });
+      const proposal = thread?.messages
+        .find((m) => m.id === record.messageId)
+        ?.parts.find((p) => asRecord(p).type === "dynamic-tool");
+      return (async () => {
+        const result =
+          decision === "approved" ? structuredClone(asRecord(proposal).output) : undefined;
+        // Match the real Apply contract: save branding only on approval, then
+        // return the new look reference on the unsaved editor channel.
+        if (decision === "approved" && record.toolName === "livetv_channel_apply") {
+          const output = asRecord(result);
+          if (output.style) {
+            const look = await onair.saveLook({
+              ...(output.style as Look),
+              id: "",
+              channelIds: [],
+            });
+            const channel = asRecord(output.channel);
+            channel.look = {
+              ident: true,
+              upNext: true,
+              offAir: true,
+              ...asRecord(channel.look),
+              lookId: look.id,
+            };
+          }
+        }
+        return json({ status: decision, result });
+      })();
     }
 
     if (method === "POST" && seg[1] === "secrets" && seg[2]) {

@@ -95,7 +95,7 @@ func (s *Service) acquirePassthrough(ss *session) *ownedLease {
 		sh = nil
 	}
 	if sh == nil {
-		ctx, cancel := context.WithCancel(s.ctx)
+		ctx, cancel := context.WithCancel(s.serviceContext())
 		log := s.logger().With("channel", c.ID, "owned", "passthrough")
 		tl := newOwnedTimeline(c.ID, log, nil, reserve, slates)
 		tl.setHint(slateProfileFromInfo(c.ID, ss.info.MediaInfo, "ts"))

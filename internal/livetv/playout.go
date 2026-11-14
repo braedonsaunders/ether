@@ -140,7 +140,7 @@ func (ss *session) cancelBound() {
 func (s *Service) startOwnedHLS(request context.Context, ss *session, req core.HLSRequest) (core.HLSSession, context.CancelFunc, error) {
 	base := ss.ctx
 	if base == nil {
-		base = s.ctx
+		base = s.serviceContext()
 	}
 	if base == nil {
 		base = context.Background()
@@ -348,7 +348,7 @@ func (s *Service) TuneWithSession(ctx context.Context, u *core.User, channelID s
 		},
 		streamGrant: randomID(), user: *u, caps: caps, last: s.o.Now(),
 	}
-	base := s.ctx
+	base := s.serviceContext()
 	if base == nil {
 		base = context.Background()
 	}

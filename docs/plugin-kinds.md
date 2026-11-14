@@ -118,7 +118,30 @@ order. Patterns:
   from a named settings secret (`passwordSecret`), never from your
   response. Ether caches the extracted member.
 - **release** — hand Ether a magnet/infohash/NZB and its existing
-  debrid/Usenet/torrent pipeline opens it.
+  debrid/Usenet/torrent pipeline opens it. For torrents, set
+  `release.fileIndex` (zero-based index in the provider's complete file list),
+  `release.candidate.fileIndex`, or `release.file` (exact path or unique
+  basename) to open audio, books, comics, ROMs or other non-video files.
+  A top-level `fileIndex` overrides the candidate's index. If both index and
+  `file` are supplied they must identify the same file. Empty files,
+  invalid indices and missing or ambiguous names fail without fallback.
+  Without either selector the existing video picker is used. In Go, indices
+  are `*int`: a pointer to zero selects the first file; nil leaves selection
+  automatic. Indices refer to the provider's ordering, not its file IDs;
+  prefer a path when the provider's ordering is unknown. Explicit selectors
+  on an NZB release are rejected; use a container source for archive members.
+  `fileHint` retains its existing meaning as an archive member hint.
+
+`ResolveSources({kind: "indexer_search", query, category})` accepts a
+comma-separated list of Newznab category IDs (`"3000"`, `"7030"`) or standard
+names: `console`, `movies`/`movie`, `audio`/`music`, `pc`, `tv`, `adult`,
+`books`, `comics`, `other`. It sends a generic search with those categories
+and the query unchanged, rather than assuming a movie or TV request.
+Invalid categories are rejected. Stremio/addon sources do not support this
+filter and reject scoped searches. Omit `category` for the default media
+search. Results and acquired files are cached separately by category and
+file selection. The wire shapes are documented in
+[`plugin-sources.v1.json`](../schemas/plugin-sources.v1.json).
 
 URLs may carry `{itemIndex}`, `{pageNumber}` (= itemIndex + 1),
 `{byteStart}`, `{byteEnd}` and `{byteRange}` placeholders; Ether
@@ -281,3 +304,96 @@ this declaration is present. The declaration also travels in frontend item
 details. The next upsert without `unavailable` clears it, even with the same
 etag. This is independent of the level's `playable` capability; clearing the
 reason does not grant playback to a nonplayable level.
+
+### Large downloads and ZIP members (v0.3.11)
+
+Hosted and remote clients can keep large data in the host's existing library
+blob cache, without copying the complete file into guest memory:
+
+```ts
+const cached = await ctx.ether.http.fetchToCache!({
+  url: "https://datasets.example/platform.zip",
+  libraryKey: "pk-community-example-library-games", // this plugin's own library
+  name: "platform.zip",
+});
+const members = await ctx.ether.archive!.list(cached.blob);
+const member = members.find(m => m.name === "games/example.json")!;
+const chunk = await ctx.ether.archive!.open(cached.blob, member.index, {
+  offset: 0, length: Math.min(member.size, 1048576),
+}); // Uint8Array; request another range for the next piece
+```
+
+`http.fetchToCache({url, headers?, libraryKey, name})` performs a GET, streams
+up to the owner download ceiling (8 GiB by default), further bounded by the library cache quota, into the plugin's own library cache, and returns
+`{blob, size, crc32, md5, sha1, status}`. SHA-256 is the blob reference.
+Digests cover the stored response bytes in one pass. Compare the digest with
+trusted catalogue metadata before serving a verified download. Non-2xx responses,
+network failures, size overflow and quota failures return errors; they do not
+publish a truncated blob. Redirects recheck the live network grant and the
+existing SSRF policy. The existing content capability, network host declaration
+and library cache quota apply; no new permission is needed. The operation is
+synchronous and bounded by the current call's deadline; there is no background
+prefetch. Cache eviction still applies to returned refs.
+
+`cache.read(blob, {offset, length})` reads at most 1 MiB from a cached blob.
+`archive.list(blob)` returns `[{index, name, size}]`, reading the ZIP directory
+without loading all compressed bytes. `archive.open(blob, memberIndex,
+{offset, length})` returns at most 1 MiB from the **uncompressed** member.
+Offsets are nonnegative integers; lengths are 1..1048576. A read at EOF returns
+empty bytes and reads crossing EOF return the available suffix. Raw host calls
+return `{bodyBase64, size}`; SDK clients decode this into bytes. Every call opens
+only the calling plugin's cache namespace and closes the reader afterward.
+The Go `RemoteHostClient` provides `FetchToCache`, `CacheRead`, `ArchiveList` and
+`ArchiveOpen` through the optional `BlobHost` interface, with `DataRange` options.
+
+ZIP sizes and member counts use owner global/per-plugin ceilings: defaults are
+8 GiB compressed archive/member, 32 GiB total expansion and 65,535 members.
+The central directory is bounded to 64 MiB (1024 bytes per member name), with a
+1000:1 maximum expansion ratio per member. ZIP64 is supported; split archives
+remain unsupported. Store and Deflate are supported. Unsafe paths, special files, encryption,
+Split archives are rejected. Nothing is extracted to a filesystem.
+Deflate ranges inflate and discard up to the requested offset on each call;
+prefer large sequential chunks, and avoid repeatedly rescanning a large member.
+Range reads do not independently verify the full member CRC; use trusted digests
+when integrity matters. Local owner-granted paths are not archive inputs: first
+use a plugin-owned cached blob. Gzip files are not ZIPs and are unsupported here.
+An HTTP `Content-Encoding: gzip` response may be transparently decoded by the
+HTTP client; its digests then describe the decoded bytes. A `.gz` file is not
+automatically decompressed by this archive service.
+
+Direct `http.fetch` still limits the raw response to 10 MiB. Its JSON result
+allowance now includes encoding expansion (binary base64 or escaped text), so the
+4 MiB general host-result cap no longer blocks that documented limit. This is
+an I/O ceiling, not a guarantee of guest heap space: the default guest has 32 MiB
+and the owner ceiling defaults to 2 GiB (adjustable up to wasm32 4 GiB), with temporary JSON strings and parsed objects
+using additional memory. Use fetch-to-cache and ranged reads for large inputs;
+do not concatenate all chunks into one guest buffer. Other host results remain
+capped at 4 MiB.
+
+### Owner-started multi-call work and resource requests
+
+A page action returning `{job: "build-catalogue"}` starts a background job.
+The job returns `continueInMs`, an opaque JSON `continuation`, and a `progress`
+string to continue; Ether forwards the token in the next POST body. `done: true`
+finishes, `failed: "reason"` fails, and an absent `continueInMs` finishes too.
+Jobs use the owner's time ceiling (12h by default), a 1,000,000-call sanity bound,
+a minimum 100ms pause, OS background CPU/IO priority, and cooperative pauses
+between calls and host operations during playback, Live TV or high host load.
+They are cancellable with visible progress. Persist checkpoints in KV for
+recovery on a later owner action after restart; Ether does not resume eagerly.
+
+`ether.runtime.limits` requests memory, time, compute, download and archive
+resources within owner-controlled global/per-plugin ceilings. Defaults: 2 GiB
+memory ceiling (up to 4 GiB; omitted heap request stays 32 MiB), 12h, effectively
+unlimited background work units, 8 GiB download/member, 32 GiB total expansion,
+and 65,535 members. The library cache quota further bounds downloads. The owner
+sees requested versus granted values before install and in the drawer, and can
+raise or lower ceilings under Plugins → Settings or for one plugin. Saving
+stops affected jobs so the new ceilings apply immediately.
+
+Viewer browse/search/playback calls retain tight budgets: `/stream/`, `/catalog/`,
+`/meta/`, `/subtitles/`, `/ether/open`, `/ether/metadata/`, `/ether/subtitles/`,
+`/ether/markers`, and `/ether/v1/kinds/` use at most 10,000 units/30s plus tighter
+route/caller deadlines. Ranking budgets stay unchanged. Administrative setup,
+actions, tools, events and jobs use owner grants. Health/configuration/view/options
+keep short protocol deadlines. See the SDK README for exact fields and APIs.

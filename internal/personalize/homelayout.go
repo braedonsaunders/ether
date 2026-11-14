@@ -380,6 +380,9 @@ func arrangeLayout(rows []core.HomeRow, d core.HomeLayout, user int64, hc core.H
 		if p != nil && p.PreviewOnFocus != nil {
 			row.Hub.PreviewOnFocus = *p.PreviewOnFocus
 		}
+		if p != nil && p.RankedTop10 != nil {
+			row.Hub.RankedTop10 = *p.RankedTop10
+		}
 		row.PolicyLayer = ""
 		explicitAlways := false
 		if p != nil {
@@ -738,7 +741,7 @@ func (e *Engine) finalizeNeutralHome(ctx context.Context, user *core.User, situa
 		if kind == "" {
 			kind = hubKind(candidate.ID)
 		}
-		h := core.Hub{ID: candidate.ID, Title: candidate.Title, Type: candidate.Type, Items: candidate.Items, ItemCount: candidate.ItemCount, PreviewOnFocus: candidate.PreviewOnFocus}
+		h := core.Hub{ID: candidate.ID, Title: candidate.Title, Type: candidate.Type, Items: candidate.Items, ItemCount: candidate.ItemCount, PreviewOnFocus: candidate.PreviewOnFocus, RankedTop10: candidate.RankedTop10}
 		rows = append(rows, core.HomeRow{HubID: candidate.ID, Title: candidate.Title, Kind: kind, Source: core.RowSourcePrecomposed, Items: candidate.Items, Hub: h})
 		byID[candidate.ID] = candidate
 	}
@@ -775,6 +778,7 @@ func (e *Engine) finalizeNeutralHome(ctx context.Context, user *core.User, situa
 	for _, row := range arranged {
 		if candidate, ok := byID[row.HubID]; ok {
 			candidate.PreviewOnFocus = row.Hub.PreviewOnFocus
+			candidate.RankedTop10 = row.Hub.RankedTop10
 			candidate.Always = row.Policy != nil && row.Policy.Status == "always"
 			out = append(out, candidate)
 		}

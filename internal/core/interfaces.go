@@ -343,6 +343,7 @@ type ImageURLFunc func(path, size string) string
 
 // Hub is a Home row or a section row.
 type Hub struct {
+	RankedTop10    bool      `json:"rankedTop10,omitempty"`
 	ID             string    `json:"id"` // stable identifier, e.g. "trending.week.movie"
 	Title          string    `json:"title"`
 	Type           MediaType `json:"type"`            // item type in the row ("mixed" allowed via "")
@@ -359,6 +360,7 @@ type Hub struct {
 }
 
 type Collection struct {
+	RankedTop10    bool      `json:"rankedTop10,omitempty"`
 	PreviewOnFocus bool      `json:"previewOnFocus,omitempty"`
 	Key            RatingKey `json:"key"`
 	Title          string    `json:"title"`
@@ -375,6 +377,9 @@ type Collection struct {
 	// UpdatedAt changes when the collection's members or artwork change, so
 	// Plex clients refetch artwork (additive).
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+	// MembershipRevision identifies ordered source membership, including changes
+	// within one timestamp tick. Internal only; wire protocols choose their token.
+	MembershipRevision string `json:"-"`
 }
 
 type Collections interface {
@@ -539,6 +544,8 @@ type Auth interface {
 // Indexers and resolver (internal/newznab, internal/resolver)
 
 type SearchRequest struct {
+	// Category is an explicit Newznab category list for a generic plugin search.
+	Category      string
 	Type          MediaType // movie or episode
 	IDs           IDs       // movie ids, or the show's ids for episodes
 	Title         string

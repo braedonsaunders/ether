@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -519,13 +520,38 @@ func extractDictionarryCatalog(ctx context.Context, db *sql.DB) (*dictionarryCat
 	}
 	sRows.Close()
 
-	// 5. Compile custom formats for both apps.
+	// 5. Allocate IDs from all source names before compiling either app. A
+	// profile's subset must not decide which colliding name keeps an ID.
+	nameRows, err := db.QueryContext(ctx, `SELECT name FROM custom_formats ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("%w: query format names: %v", ErrDictionarryUnavailable, err)
+	}
+	var formatNames []string
+	for nameRows.Next() {
+		var name string
+		if err := nameRows.Scan(&name); err != nil {
+			nameRows.Close()
+			return nil, err
+		}
+		formatNames = append(formatNames, name)
+	}
+	if err := nameRows.Err(); err != nil {
+		nameRows.Close()
+		return nil, err
+	}
+	nameRows.Close()
+	formatIDs := map[string]map[string]string{}
+	for _, app := range []string{AppRadarr, AppSonarr} {
+		formatIDs[app] = dictionarryFormatIDs(app, formatNames)
+	}
+
+	// Compile custom formats for both apps.
 	formats := map[string]map[string]core.CustomFormat{
 		AppRadarr: {},
 		AppSonarr: {},
 	}
 	for _, app := range []string{AppRadarr, AppSonarr} {
-		cfMap, err := extractDictionarryFormats(ctx, db, app, profileScores[app])
+		cfMap, err := extractDictionarryFormats(ctx, db, app, profileScores[app], formatIDs[app])
 		if err != nil {
 			return nil, err
 		}
@@ -553,7 +579,7 @@ func extractDictionarryCatalog(ctx context.Context, db *sql.DB) (*dictionarryCat
 		group := dictionarryProfileGroup(p.name, p.tags)
 
 		for _, app := range []string{AppRadarr, AppSonarr} {
-			imp, ok := buildDictionarryImport(app, id, p, qItems, apiNames[app], profileScores[app][p.name])
+			imp, ok := buildDictionarryImport(app, id, p, qItems, apiNames[app], profileScores[app][p.name], formatIDs[app])
 			if !ok {
 				continue
 			}
@@ -639,6 +665,7 @@ func buildDictionarryImport(
 	qItems []dictionarryQualityItem,
 	apiMap map[string]string,
 	scores map[string]int,
+	formatIDs map[string]string,
 ) (QualityImport, bool) {
 	type starrItem struct {
 		Name    string   `json:"name"`
@@ -667,7 +694,7 @@ func buildDictionarryImport(
 
 	formatItems := make(map[string]string, len(scores))
 	for cfName := range scores {
-		formatItems[cfName] = dictionarryFormatID(app, cfName)
+		formatItems[cfName] = formatIDs[cfName]
 	}
 
 	var lang string
@@ -725,8 +752,25 @@ func buildDictionarryImport(
 	return imp, true
 }
 
-func dictionarryFormatID(app, cfName string) string {
-	return "dictionarry-" + app + "-" + trashSlug(cfName)
+// dictionarryFormatIDs preserves readable IDs for unambiguous names. For
+// colliding slugs ("Dolby Digital" / "Dolby Digital +"), every member gets
+// its exact UTF-8 name encoded after a colon. Slugs cannot contain a colon,
+// and hex is lossless, so neither another slug nor another name can alias it.
+// Both definitions and profile references use this same catalog-wide mapping.
+func dictionarryFormatIDs(app string, names []string) map[string]string {
+	counts := map[string]int{}
+	for _, name := range names {
+		counts[trashSlug(name)]++
+	}
+	ids := make(map[string]string, len(names))
+	for _, name := range names {
+		slug := trashSlug(name)
+		if counts[slug] > 1 {
+			slug += ":" + hex.EncodeToString([]byte(name))
+		}
+		ids[name] = "dictionarry-" + app + "-" + slug
+	}
+	return ids
 }
 
 func extractDictionarryFormats(
@@ -734,6 +778,7 @@ func extractDictionarryFormats(
 	db *sql.DB,
 	app string,
 	profileScores map[string]map[string]int,
+	formatIDs map[string]string,
 ) (map[string]core.CustomFormat, error) {
 	// Load all regex patterns once.
 	regexes := map[string]string{}
@@ -830,9 +875,10 @@ func extractDictionarryFormats(
 
 	out := make(map[string]core.CustomFormat, len(specsByCF))
 	for cfName, specs := range specsByCF {
-		fid := dictionarryFormatID(app, cfName)
+		fid := formatIDs[cfName]
 		scores := map[string]int{}
-		for profName, profMap := range profileScores {
+		for _, profName := range slices.Sorted(maps.Keys(profileScores)) {
+			profMap := profileScores[profName]
 			if sc, ok := profMap[cfName]; ok {
 				scores[profName] = sc
 				if _, hasDef := scores["default"]; !hasDef {

@@ -45,6 +45,7 @@ type LayoutTuning struct {
 	Variety *float64 `json:"variety,omitempty"`
 }
 type RowPolicy struct {
+	RankedTop10 *bool `json:"rankedTop10,omitempty"`
 	// Nil inherits the collection setting; false explicitly disables previews.
 	PreviewOnFocus *bool       `json:"previewOnFocus,omitempty"`
 	Row            string      `json:"row"`

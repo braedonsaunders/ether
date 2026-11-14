@@ -16,7 +16,7 @@ import { asObj } from "../settings/SchemaForm";
 import { librariesApi, type Library } from "./api";
 import { CatalogBrowser } from "./browser/Catalog";
 import { RulesPanel, type VisibilityRule } from "./browser/LibraryVisibility";
-import { FilterLibraryEditor } from "./FilterLibraryEditor";
+import { LibraryEditor } from "./LibraryEditor";
 import { LibrarySettings } from "./LibrarySettings";
 import { PluginBrowse } from "./PluginBrowse";
 
@@ -28,12 +28,10 @@ interface RulesDraft {
 function LibraryRulesTab({
   library,
   mediaType,
-  scopeFilter,
   onSaved,
 }: {
   library: Library;
   mediaType: "movie" | "show";
-  scopeFilter?: Record<string, unknown>;
   onSaved: () => void;
 }) {
   const stored = useMemo<RulesDraft>(
@@ -72,28 +70,13 @@ function LibraryRulesTab({
     }
   }, [draft, library.id, onSaved]);
 
-  const intro =
-    library.source === "filter"
-      ? mediaType === "show"
-        ? t("TV Shows rules apply first; rules here narrow this library further.")
-        : t("Movies rules apply first; rules here narrow this library further.")
-      : mediaType === "show"
-        ? t(
-            "Rules for TV Shows apply across every app and saved-filter TV library. Set viewer exceptions in Viewers.",
-          )
-        : t(
-            "Rules for Movies apply across every app and saved-filter movie library. Set viewer exceptions in Viewers.",
-          );
-
   return (
     <div className="catalog-scroll app-scroll">
       <div className="mx-auto max-w-6xl space-y-4 px-5 pb-5 pt-4 lg:px-7">
-        {library.source !== "plugin" ? <p className="text-sm text-fg-muted">{intro}</p> : null}
         <RulesPanel
           pluginLibrary={library.source === "plugin" ? library : undefined}
           libraryId={library.id}
           mediaType={library.source === "plugin" ? undefined : mediaType}
-          libraryFilter={scopeFilter}
           rules={rules}
           fallback={fallback}
           region={region}
@@ -153,9 +136,7 @@ export function LibraryPage() {
     { key: "settings", label: t("Settings") },
   ];
   const tab = tabs.some((x) => x.key === rawTab) ? rawTab! : "browse";
-  const catalogType =
-    lib.mediaType || (typeof lib.filter?.type === "string" ? lib.filter.type : "");
-  const scopeFilter = lib.filter ? { ...lib.filter, type: undefined } : undefined;
+  const catalogType = lib.mediaType || "";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -209,7 +190,6 @@ export function LibraryPage() {
               libraryScope={{
                 id: lib.id,
                 type: catalogType,
-                filter: scopeFilter as Record<string, unknown> | undefined,
               }}
             />
           )
@@ -217,7 +197,6 @@ export function LibraryPage() {
           <LibraryRulesTab
             library={lib}
             mediaType={catalogType === "show" ? "show" : "movie"}
-            scopeFilter={scopeFilter as Record<string, unknown> | undefined}
             onSaved={() => {
               void library.reload();
               void refreshDashboard();
@@ -232,8 +211,9 @@ export function LibraryPage() {
         )}
       </Workspace>
       {savingAsLibrary ? (
-        <FilterLibraryEditor
-          seed={new URLSearchParams(params.toString())}
+        <LibraryEditor
+          sources={lib.sources}
+          seed={new URLSearchParams({ ...Object.fromEntries(params), type: catalogType })}
           onClose={() => setSavingAsLibrary(false)}
           onCreated={(created) => {
             setSavingAsLibrary(false);

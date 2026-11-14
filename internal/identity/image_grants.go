@@ -127,6 +127,11 @@ func validImageSecret(secret string) (string, bool) {
 	return hex.EncodeToString(h[:]), true
 }
 func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, channel string, image frontend.Image) error {
+	base, _, _, rankErr := frontend.UnrankArtwork(image)
+	if rankErr != nil {
+		return rankErr
+	}
+	image = base
 	if strings.HasPrefix(image.Path, frontend.LibraryCollagePrefix) {
 		experience := s.experience()
 		if experience == nil {
@@ -296,8 +301,13 @@ func (s *ImageGrantService) ServePublic(w http.ResponseWriter, r *http.Request, 
 		http.NotFound(w, r)
 		return
 	}
+	base, _, _, rankErr := frontend.UnrankArtwork(img)
+	if rankErr != nil {
+		http.NotFound(w, r)
+		return
+	}
 	for _, candidate := range images {
-		if frontend.SameImage(candidate, img) {
+		if frontend.SameImage(candidate, base) {
 			s.writeGrantedImage(w, r, reader, device, item, "", img, "", "", "")
 			return
 		}

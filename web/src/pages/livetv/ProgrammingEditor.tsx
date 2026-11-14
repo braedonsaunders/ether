@@ -553,8 +553,16 @@ export function ProgrammingEditor({
                 type="number"
                 min={0}
                 max={30}
-                value={v.repeatDays || 0}
-                onChange={(e) => update({ repeatDays: Number(e.currentTarget.value) })}
+                placeholder="0"
+                value={v.repeatDays ?? ""}
+                onChange={(e) =>
+                  update({
+                    repeatDays: e.currentTarget.value ? Number(e.currentTarget.value) : undefined,
+                  })
+                }
+                onBlur={(e) => {
+                  if (!e.currentTarget.value) update({ repeatDays: 0 });
+                }}
               />
             </Field>
             {editing.kind === "block" && !(v.sources?.length === 1 && v.sources[0]?.strip) && (
@@ -1029,8 +1037,16 @@ function Breaks({
                 max={600}
                 step={4}
                 aria-label={t("Pod length (seconds)")}
-                value={value.breakSeconds || 120}
-                onChange={(e) => set({ breakSeconds: Number(e.currentTarget.value) })}
+                placeholder="120"
+                value={value.breakSeconds || ""}
+                onChange={(e) =>
+                  set({
+                    breakSeconds: e.currentTarget.value ? Number(e.currentTarget.value) : undefined,
+                  })
+                }
+                onBlur={(e) => {
+                  if (!e.currentTarget.value) set({ breakSeconds: 120 });
+                }}
               />
             </Field>
           )}
@@ -1413,8 +1429,14 @@ function LineupFields({
             type="number"
             min={1}
             max={48}
-            value={shows}
-            onChange={(e) => onChange({ shows: Number(e.currentTarget.value) })}
+            placeholder="4"
+            value={source.shows || ""}
+            onChange={(e) =>
+              onChange({ shows: e.currentTarget.value ? Number(e.currentTarget.value) : undefined })
+            }
+            onBlur={(e) => {
+              if (!e.currentTarget.value) onChange({ shows: 4 });
+            }}
           />
         </Field>
         <Field label={t("Series in the pool")}>
@@ -1423,8 +1445,14 @@ function LineupFields({
             type="number"
             min={1}
             max={48}
-            value={source.pool || (source.rotateDays ? shows * 3 : shows)}
-            onChange={(e) => onChange({ pool: Number(e.currentTarget.value) })}
+            placeholder={String(source.rotateDays ? shows * 3 : shows)}
+            value={source.pool || ""}
+            onChange={(e) =>
+              onChange({ pool: e.currentTarget.value ? Number(e.currentTarget.value) : undefined })
+            }
+            onBlur={(e) => {
+              if (!e.currentTarget.value) onChange({ pool: source.rotateDays ? shows * 3 : shows });
+            }}
           />
         </Field>
         <Field label={t("New series every")} hint={t("Days on air. 0 keeps the same series.")}>
@@ -1433,8 +1461,16 @@ function LineupFields({
             type="number"
             min={0}
             max={365}
-            value={source.rotateDays || 0}
-            onChange={(e) => onChange({ rotateDays: Number(e.currentTarget.value) })}
+            placeholder="0"
+            value={source.rotateDays ?? ""}
+            onChange={(e) =>
+              onChange({
+                rotateDays: e.currentTarget.value ? Number(e.currentTarget.value) : undefined,
+              })
+            }
+            onBlur={(e) => {
+              if (!e.currentTarget.value) onChange({ rotateDays: 0 });
+            }}
           />
         </Field>
       </div>

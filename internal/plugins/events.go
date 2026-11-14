@@ -229,6 +229,7 @@ func (m *Manager) DeliverOutbox(ctx context.Context, pluginID string) error {
 // ends. Leader plugins run jobs and event delivery only on the leader;
 // every_node plugins run everywhere. Health checks run on every node.
 func (m *Manager) Run(ctx context.Context) {
+	defer m.cancelActionJobs("")
 	defer func() {
 		m.hashMu.Lock()
 		defer m.hashMu.Unlock()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
+	"strconv"
 )
 
 func init() {
@@ -38,6 +39,9 @@ func (s *Service) SetSources(ctx context.Context, id core.LibraryID, sources []s
 }
 
 func defaultSources(lib core.Library) []string {
+	if lib.Source == core.LibraryCollection {
+		return []string{"collection:" + strconv.FormatInt(lib.CollectionID, 10)}
+	}
 	if len(lib.Sources) > 0 {
 		return lib.Sources
 	}
@@ -45,9 +49,6 @@ func defaultSources(lib core.Library) []string {
 		return []string{"plugin:" + lib.PluginID + ":" + lib.KindKey}
 	}
 	typ := lib.MediaType
-	if lib.Filter != nil {
-		typ = lib.Filter.Type
-	}
 	if typ == core.TypeShow {
 		return []string{"tmdb-tv"}
 	}
@@ -56,6 +57,9 @@ func defaultSources(lib core.Library) []string {
 
 // SourceMember checks persisted membership without network work in playback.
 func (s *Service) SourceMember(ctx context.Context, lib core.Library, key core.RatingKey) (bool, error) {
+	if lib.Source == core.LibraryCollection {
+		return s.CollectionMember(ctx, lib.CollectionID, key)
+	}
 	for _, id := range lib.Sources {
 		if id == "tmdb-movies" || id == "tmdb-tv" {
 			return true, nil
@@ -73,21 +77,6 @@ func (s *Service) SourceMember(ctx context.Context, lib core.Library, key core.R
 	return len(lib.Sources) == 0, nil
 }
 
-func (s *Service) SetFilter(ctx context.Context, id core.LibraryID, filter core.Filter) error {
-	lib, err := s.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-	if lib.Source != core.LibraryFilter || lib.Filter == nil || filter.Type != lib.Filter.Type {
-		return ErrInvalid
-	}
-	filter.CatalogueSources = nil
-	data, err := json.Marshal(filter)
-	if err != nil {
-		return err
-	}
-	return s.setColumn(ctx, id, "filter", string(data))
-}
 func (s *Service) SetCollection(ctx context.Context, id core.LibraryID, collectionID int64) error {
 	lib, err := s.Get(ctx, id)
 	if err != nil {
@@ -96,5 +85,10 @@ func (s *Service) SetCollection(ctx context.Context, id core.LibraryID, collecti
 	if lib.Source != core.LibraryCollection || collectionID <= 0 {
 		return ErrInvalid
 	}
-	return s.setColumn(ctx, id, "collection_id", collectionID)
+	data, _ := json.Marshal([]string{"collection:" + strconv.FormatInt(collectionID, 10)})
+	_, err = s.db.ExecContext(ctx, `UPDATE libraries SET collection_id=?, sources=?, updated_at=? WHERE id=?`, collectionID, string(data), s.now().Unix(), int64(id))
+	if err == nil {
+		s.gen.Add(1)
+	}
+	return err
 }

@@ -144,7 +144,7 @@ func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubC
 		}
 	}
 	related := hc.related != 0
-	pinned := hc.section != 0 && hs.state == nil && hs.key == ""
+	pinned := (hc.section != 0 || h.Key != 0) && hs.state == nil && hs.key == "" && !related
 	var sourceItems []frontend.Title
 	render := func() []model.Metadata {
 		sourceItems = build()
@@ -156,48 +156,41 @@ func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubC
 	}
 	var md []model.Metadata
 	generation := ""
+	var canonicalTotal *int
 	if pinned {
 		h.More = false
 		var selected []frontend.Title
-		selected, generation = s.shelfSnapshot(ctx, pr, h, hc, func() ([]frontend.Title, []model.Metadata) {
-			// A generation stores membership, not card presentation. Apply the
-			// same admission checks as renderTitles, but defer watch counts,
-			// artwork, GUIDs and episode-order decoration to the visible page.
-			// Rendering the whole 200-item window here discarded that work and
-			// then repeated it for the cards returned below.
-			sourceItems = build()
-			if h.Key != 0 && !h.Key.IsEphemeral() && s.collections() != nil {
-				if c, err := s.collectionRaw(ctx, pr.User, h.Key); err == nil && (hs.Hub.More || c.ChildCount > len(sourceItems)) {
-					if page, err := s.collectionSelection().Page(ctx, pr.User, c, h.Key, collectionDevice(ctx), 0, int(^uint(0)>>1)); err == nil && len(page.Items) > 0 {
-						seen := make(map[frontend.RatingKey]bool, len(sourceItems)+len(page.Items))
-						for _, item := range sourceItems {
-							seen[item.Key] = true
-						}
-						now := s.now()
-						for _, item := range page.Items {
-							if seen[item.Key] || (h.Type != "" && item.Type != h.Type) || item.IsFutureRelease(now) {
-								continue
-							}
-							seen[item.Key] = true
-							sourceItems = append(sourceItems, item)
-						}
-					}
+		if h.Key != 0 && !h.Key.IsEphemeral() && s.collections() != nil {
+			if c, err := s.collectionRaw(ctx, pr.User, h.Key); err == nil && !c.Upcoming {
+				selected, generation, _ = s.collectionSnapshot(ctx, pr, c, h.Key, h.Type)
+				if generation != "" {
+					canonicalTotal = model.Ptr(len(selected))
 				}
 			}
-			members := s.openableTitles(withStoredPolicy(ctx), pr.User, sourceItems, shelfContainsAll(ctx, sourceItems))
-			identities := make([]model.Metadata, 0, len(members))
-			for _, title := range members {
-				identities = append(identities, model.Metadata{RatingKey: title.Key.String()})
-			}
-			return sourceItems, identities
-		})
+		}
+		if generation == "" {
+			selected, generation = s.shelfSnapshot(ctx, pr, h, hc, func() ([]frontend.Title, []model.Metadata) {
+				// Snapshot membership before decorating the visible page.
+				sourceItems = build()
+				members := s.openableTitles(withStoredPolicy(ctx), pr.User, sourceItems, shelfContainsAll(ctx, sourceItems))
+				identities := make([]model.Metadata, 0, len(members))
+				for _, title := range members {
+					identities = append(identities, model.Metadata{RatingKey: title.Key.String()})
+				}
+				return sourceItems, identities
+			})
+		}
+		selected = s.openableTitles(withShelfMembers(withStoredPolicy(ctx), selected), pr.User, selected, true)
+		if canonicalTotal != nil {
+			canonicalTotal = model.Ptr(len(selected))
+		}
 		// Membership was already evaluated in the generation; refresh presentation
 		// (watch badges, artwork enrichment) without reapplying live availability.
 		if hc.visible > 0 && len(selected) > hc.visible {
 			selected = selected[:hc.visible]
 			h.More = true
 		}
-		md = s.renderTitles(ctx, pr, selected, renderOpts{media: true, availabilityInSQL: true})
+		md = s.renderTitles(withShelfMembers(ctx, selected), pr, selected, renderOpts{media: true, availabilityInSQL: true})
 		// More is calculated from the canonical generation, not source hints.
 	} else {
 		md = render()
@@ -239,8 +232,9 @@ func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubC
 		Size:           len(md),
 		More:           h.More,
 		Style:          style,
-		PreviewOnFocus: h.PreviewOnFocus,
-		Metadata:       md,
+		PreviewOnFocus: h.PreviewOnFocus, RankedTop10: h.RankedTop10,
+		Metadata:  md,
+		TotalSize: canonicalTotal,
 	}
 	if h.ID == "tv.upnext" {
 		mh.UpNext = model.Ptr(true)

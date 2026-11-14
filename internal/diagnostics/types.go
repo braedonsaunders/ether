@@ -117,6 +117,8 @@ type Event struct {
 }
 
 type ResponseSummary struct {
+	// Manifest contains bounded, allowlisted DASH facts; never raw URLs or tokens.
+	Manifest  []string     `json:"manifest,omitempty"`
 	Size      int          `json:"size"`
 	ItemCount int          `json:"itemCount,omitempty"`
 	Decision  string       `json:"decision,omitempty"`
@@ -457,11 +459,16 @@ type FinishIn struct {
 // ClientFacts records the capability calculation, not raw HTTP credentials.
 // Inputs records header/query presence only; no client identifiers or arbitrary
 // profile directives are copied. MaxHeight describes the exact caps handed to
-// playback when Stage is admission, otherwise the request declarations.
+// playback when Stage is admission. Stage output adds the final protocol and
+// target codecs after profile processing; request describes declarations.
 type ClientFacts struct {
-	Stage             string `json:"stage"`
-	Registry          string `json:"registry"`
-	RegistryMaxHeight int    `json:"registryMaxHeight"`
+	OutputProtocol       string   `json:"outputProtocol,omitempty"`
+	PlayerProfile        string   `json:"playerProfile,omitempty"`
+	TranscodeVideoCodecs []string `json:"transcodeVideoCodecs,omitempty"`
+	TranscodeAudioCodecs []string `json:"transcodeAudioCodecs,omitempty"`
+	Stage                string   `json:"stage"`
+	Registry             string   `json:"registry"`
+	RegistryMaxHeight    int      `json:"registryMaxHeight"`
 	// OwnerMaxHeight is the registry ceiling after client overrides, not the owner quality profile.
 	OwnerMaxHeight       int           `json:"ownerMaxHeight"`
 	DeclaredMaxHeight    int           `json:"declaredMaxHeight"`

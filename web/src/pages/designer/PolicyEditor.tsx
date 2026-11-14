@@ -112,6 +112,22 @@ export function PolicyEditor({
             "Vela and Moonfin can play the focused title's trailer. Other apps show wide artwork.",
           )}
         </p>
+        <p className="text-fg-muted">{t("Ranked (Top 10)")}</p>
+        <Segmented
+          ariaLabel={t("Ranked (Top 10)")}
+          size="sm"
+          value={
+            policy.rankedTop10 === undefined ? "default" : policy.rankedTop10 ? "on" : "off"
+          }
+          onChange={(v) =>
+            onChange({ ...policy, rankedTop10: v === "default" ? undefined : v === "on" })
+          }
+          options={[
+            { value: "default", label: t("Default") },
+            { value: "on", label: t("On") },
+            { value: "off", label: t("Off") },
+          ]}
+        />
       </div>
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
         <span className="text-fg-muted">{t("Anchor to slot")}</span>

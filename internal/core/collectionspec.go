@@ -19,6 +19,7 @@ type CollectionSpec struct {
 	Rules       []CollectionRule   `json:"rules"`
 	Exclude     []CollectionRule   `json:"exclude"`
 	// Sort: popularity | rating | released | title | added | random | personal | source.
+	RankedTop10    bool              `json:"rankedTop10,omitempty"`
 	Sort           string            `json:"sort"`
 	SortDesc       bool              `json:"sortDesc"`
 	Limit          int               `json:"limit"`   // 0 = no limit
