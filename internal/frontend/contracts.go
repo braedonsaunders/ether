@@ -784,6 +784,7 @@ type OpenRequest struct {
 	Device   core.Device
 }
 type Session struct {
+	Purpose       string // preview grants never report library progress
 	ID, MediaPath string
 	Protocol      Protocol
 	ViewerID      int64

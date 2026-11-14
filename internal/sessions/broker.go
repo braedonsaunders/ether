@@ -27,6 +27,7 @@ import (
 
 // BrokerDeps are the explicit dependencies shared by all protocol surfaces.
 type BrokerDeps struct {
+	PreviewSource func(context.Context, *core.Viewer, *core.Title, string) (PreviewSource, error)
 	SurfacePolicy func(frontend.Protocol) core.SessionPolicy
 	// OnActualPlaying runs in a bounded worker after authenticated playing telemetry.
 	OnActualPlaying func(context.Context, *Broker, PlayingSubtitleSession)
@@ -165,6 +166,8 @@ type retiredSession struct {
 
 // Broker coordinates playback admission for every protocol, including Plex.
 type Broker struct {
+	previews            map[string]previewSession
+	previewPending      map[int64]bool
 	autoSubtitleWG      sync.WaitGroup
 	autoSubtitleRunning int
 	sampleLimit         int
@@ -1041,6 +1044,12 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 	b.mu.Lock()
 	liveness, checkLiveness := b.deps.Playback.(interface{ SessionActive(string) bool })
 	var out []frontend.Session
+	b.prunePreviewsLocked()
+	for _, s := range b.previews {
+		if owner || s.public.ViewerID == v.ID {
+			out = append(out, s.public)
+		}
+	}
 	for _, s := range b.sessions {
 		if checkLiveness && !s.live && s.playID != "" && !liveness.SessionActive(s.playID) {
 			continue
@@ -1063,7 +1072,7 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 	}
 	visible := out[:0]
 	for i := range out {
-		if b.cluster != nil && !b.policy(out[i].Protocol).ExternalAdmission {
+		if out[i].Purpose != "preview" && b.cluster != nil && !b.policy(out[i].Protocol).ExternalAdmission {
 			active, err := b.cluster.store.current(ctx, out[i].ID)
 			if err != nil {
 				return nil, err
@@ -1080,6 +1089,9 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 	return visible, nil
 }
 func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
+	if handled, err := b.previewControl(ctx, a, id, t.State == "stopped"); handled {
+		return err
+	}
 	if _, handled, err := b.forwardNeutralControl(ctx, a, id, "report", t, frontend.StreamRequest{}); handled {
 		return err
 	}
@@ -1336,6 +1348,9 @@ func (b *Broker) ReportProgress(ctx context.Context, a frontend.SessionAccess, i
 	return nil
 }
 func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) error {
+	if handled, err := b.previewControl(ctx, a, id, true); handled {
+		return err
+	}
 	if _, handled, err := b.forwardNeutralControl(ctx, a, id, "stop", frontend.Timeline{}, frontend.StreamRequest{}); handled {
 		return err
 	}
@@ -1529,6 +1544,10 @@ func (b *Broker) Close(ctx context.Context) {
 	}
 	firstClose := !b.closed
 	b.closed = true
+	for _, s := range b.previews {
+		s.cancel()
+	}
+	b.previews = nil
 	if b.historyCancel != nil {
 		b.historyCancel()
 	}
