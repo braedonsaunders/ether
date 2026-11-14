@@ -92,8 +92,9 @@ type KindChangesRequest struct {
 
 // SourceQuery asks Ether to find sources (Host.ResolveSources).
 type SourceQuery struct {
-	Kind       string   `json:"kind"` // indexer_search|debrid_check|debrid_acquire
-	Query      string   `json:"query,omitempty"`
+	Kind  string `json:"kind"` // indexer_search|debrid_check|debrid_acquire
+	Query string `json:"query,omitempty"`
+	// Category accepts comma-separated Newznab IDs or standard family names.
 	Category   string   `json:"category,omitempty"`
 	InfoHashes []string `json:"infoHashes,omitempty"`
 	InfoHash   string   `json:"infoHash,omitempty"`
@@ -102,10 +103,11 @@ type SourceQuery struct {
 
 // SourceCandidate is one Ether-found release for a resolver to rank.
 type SourceCandidate struct {
-	InfoHash  string `json:"infoHash,omitempty"`
-	Magnet    string `json:"magnet,omitempty"`
-	NZBURL    string `json:"nzbUrl,omitempty"`
-	FileIndex int    `json:"fileIndex,omitempty"`
+	InfoHash string `json:"infoHash,omitempty"`
+	Magnet   string `json:"magnet,omitempty"`
+	NZBURL   string `json:"nzbUrl,omitempty"`
+	// FileIndex selects a zero-based entry in the torrent provider file list; nil uses video selection.
+	FileIndex *int   `json:"fileIndex,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Size      int64  `json:"size,omitempty"`
 	Seeders   int    `json:"seeders,omitempty"`
@@ -192,12 +194,16 @@ type VolumeRef struct {
 
 // ReleaseHint hands a release to Ether's Usenet/debrid/torrent pipeline.
 type ReleaseHint struct {
-	NZBURL         string           `json:"nzbUrl,omitempty"`
-	Magnet         string           `json:"magnet,omitempty"`
-	InfoHash       string           `json:"infoHash,omitempty"`
-	Candidate      *SourceCandidate `json:"candidate,omitempty"`
-	FileHint       string           `json:"fileHint,omitempty"`
-	PasswordSecret string           `json:"passwordSecret,omitempty"`
+	// FileIndex overrides candidate.fileIndex; out-of-range indices fail without fallback.
+	FileIndex *int             `json:"fileIndex,omitempty"`
+	NZBURL    string           `json:"nzbUrl,omitempty"`
+	Magnet    string           `json:"magnet,omitempty"`
+	InfoHash  string           `json:"infoHash,omitempty"`
+	Candidate *SourceCandidate `json:"candidate,omitempty"`
+	// File selects an exact torrent path or unique basename, including non-video files.
+	File           string `json:"file,omitempty"`
+	FileHint       string `json:"fileHint,omitempty"`
+	PasswordSecret string `json:"passwordSecret,omitempty"`
 }
 
 // KindResolveRequest asks a resolver for playable sources for one item.

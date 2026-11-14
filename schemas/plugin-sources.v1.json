@@ -1,0 +1,105 @@
+{
+  "$id": "https://ether.dev/schemas/plugin-sources.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Plugin source host queries, candidates and release hints. File selectors apply to torrents only. See docs/plugin-kinds.md.",
+  "$defs": {
+    "sourceQuery": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "indexer_search",
+            "debrid_check",
+            "debrid_acquire"
+          ]
+        },
+        "query": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "description": "Comma-separated Newznab category IDs (1000\u20138999) or standard family names. Applied to generic indexer_search only."
+        },
+        "infoHashes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "infoHash": {
+          "type": "string"
+        },
+        "magnet": {
+          "type": "string"
+        }
+      }
+    },
+    "sourceCandidate": {
+      "type": "object",
+      "properties": {
+        "infoHash": {
+          "type": "string"
+        },
+        "magnet": {
+          "type": "string"
+        },
+        "nzbUrl": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "fileIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zero-based index in the provider torrent file list. Omit for automatic video selection."
+        },
+        "size": {
+          "type": "integer"
+        },
+        "seeders": {
+          "type": "integer"
+        },
+        "cached": {
+          "type": "boolean"
+        }
+      }
+    },
+    "releaseHint": {
+      "type": "object",
+      "properties": {
+        "nzbUrl": {
+          "type": "string"
+        },
+        "magnet": {
+          "type": "string"
+        },
+        "infoHash": {
+          "type": "string"
+        },
+        "passwordSecret": {
+          "type": "string"
+        },
+        "candidate": {
+          "$ref": "#/$defs/sourceCandidate"
+        },
+        "fileIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zero-based index in the provider torrent file list. Omit for automatic video selection."
+        },
+        "file": {
+          "type": "string",
+          "description": "Exact torrent path or unambiguous basename; if combined with fileIndex both must match."
+        },
+        "fileHint": {
+          "type": "string",
+          "description": "Archive member hint when composing a release with container extraction."
+        }
+      }
+    }
+  }
+}

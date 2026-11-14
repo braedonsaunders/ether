@@ -410,6 +410,7 @@ export interface KindChangePage {
 export interface SourceQuery {
   kind: "indexer_search" | "debrid_check" | "debrid_acquire";
   query?: string;
+  /** Comma-separated Newznab category IDs or standard family names; uses generic search. */
   category?: string;
   infoHashes?: string[];
   infoHash?: string;
@@ -420,6 +421,7 @@ export interface SourceCandidate {
   infoHash?: string;
   magnet?: string;
   nzbUrl?: string;
+  /** Zero-based index in the provider torrent file list. Omit for normal video selection. */
   fileIndex?: number;
   title?: string;
   size?: number;
@@ -466,6 +468,11 @@ export interface PlayableSource {
     magnet?: string;
     infoHash?: string;
     candidate?: SourceCandidate;
+    /** Zero-based torrent file index; overrides candidate.fileIndex. Invalid selections fail. */
+    fileIndex?: number;
+    /** Exact torrent path or unique basename, including non-video files. */
+    file?: string;
+    /** Archive member name when composing a release with container extraction. */
     fileHint?: string;
     passwordSecret?: string;
   };
