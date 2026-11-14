@@ -23,7 +23,9 @@ func init() {
 		store.RegisterLocalTable(table)
 	}
 	store.RegisterRestore("livetv_search", func(ctx context.Context, tx *sql.Tx) (func(context.Context, *sql.Tx) error, error) {
-		_, err := tx.ExecContext(ctx, `UPDATE livetv_search_state SET active=0,ready=0 WHERE id=1`)
+		// Keep the migration seed for active: SQLite starts idle; PostgreSQL
+		// maintains GIN indexes unconditionally and starts active.
+		_, err := tx.ExecContext(ctx, `UPDATE livetv_search_state SET ready=0 WHERE id=1`)
 		return nil, err
 	}, "livetv_search_channel_keys", "livetv_search_programme_keys", "livetv_search_channels", "livetv_search_programmes")
 
