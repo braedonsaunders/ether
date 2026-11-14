@@ -40,14 +40,15 @@ func PlexDASHURLs(sessionID string) (string, string) {
 
 // dashRep is one Representation of a DASH session's MPD.
 type dashRep struct {
-	ID         int
-	Kind       string // "video" or "audio"
-	Codecs     string
-	Bandwidth  int // bits per second
-	Width      int
-	Height     int
-	SampleRate int
-	Channels   int
+	ID            int
+	Kind          string // "video" or "audio"
+	Codecs        string
+	Bandwidth     int // bits per second
+	Width         int
+	Height        int
+	SampleRate    int
+	ChannelLayout string
+	Channels      int
 }
 
 func (r dashRep) mimeType() string {
@@ -149,7 +150,7 @@ func renderMPD(duration, segDur time.Duration, initURL, mediaURL string, reps []
 			}
 			b.WriteString(">\n")
 			if r.Channels > 0 {
-				fmt.Fprintf(&b, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"urn:mpeg:dash:23003:3:audio_channel_configuration:2011\" value=\"%d\"/>\n", r.Channels)
+				writeDASHChannelConfiguration(&b, r)
 			}
 		} else {
 			if r.Width > 0 && r.Height > 0 {
@@ -221,12 +222,16 @@ func dashReps(info core.MediaInfo, d core.Decision) []dashRep {
 			r.Bandwidth = copiedAudioKbps(a) * 1000
 			r.SampleRate = a.SampleRate
 			r.Channels = a.Channels
+			r.ChannelLayout = a.ChannelLayout
 		} else {
 			codec = d.AudioCodec
 			if codec == "" {
 				codec = "aac"
 			}
 			r.Channels = decisionAudioChannels(d, a)
+			if r.Channels == a.Channels {
+				r.ChannelLayout = a.ChannelLayout
+			}
 			r.SampleRate = decisionAudioRate(d)
 			r.Bandwidth = audioBitrateKbps(codec, r.Channels) * 1000
 		}
@@ -462,4 +467,45 @@ func renderLiveMPD(start, now time.Time, segDur time.Duration, last int, initURL
 	}
 	b.WriteString(`</Period></MPD>`)
 	return b.Bytes()
+}
+
+// Dolby uses a speaker-position bit mask, not the MPEG channel count.
+// DASH-IF IOP 4.2 section 9.4.2; Dolby's AudioChannelConfiguration table
+// assigns pairs (Lc/Rc, Lrs/Rrs) a single bit, rather than one bit per speaker.
+func writeDASHChannelConfiguration(b *bytes.Buffer, r dashRep) {
+	scheme, value := "urn:mpeg:dash:23003:3:audio_channel_configuration:2011", strconv.Itoa(r.Channels)
+	if r.Codecs == "ec-3" || r.Codecs == "ac-3" {
+		scheme = "tag:dolby.com,2014:dash:audio_channel_configuration:2011"
+		layout := r.ChannelLayout
+		if layout == "" {
+			layout = defaultChannelLayout("eac3", r.Channels)
+		}
+		switch layout {
+		case "mono":
+			value = "4000"
+		case "stereo":
+			value = "A000"
+		case "2.1":
+			value = "A001"
+		case "3.0":
+			value = "E000"
+		case "3.0(back)":
+			value = "A100"
+		case "4.0":
+			value = "E100"
+		case "quad", "quad(side)":
+			value = "B800"
+		case "5.0", "5.0(side)":
+			value = "F800"
+		case "5.1", "5.1(side)":
+			value = "F801"
+		case "6.1":
+			value = "F901"
+		case "7.1":
+			value = "FA01"
+		default:
+			return // An unknown layout cannot be inferred from channel count.
+		}
+	}
+	fmt.Fprintf(b, "\t\t\t\t<AudioChannelConfiguration schemeIdUri=\"%s\" value=\"%s\"/>\n", scheme, value)
 }

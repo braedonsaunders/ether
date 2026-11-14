@@ -5,6 +5,8 @@ func cloneClient(in *ClientFacts) *ClientFacts {
 		return nil
 	}
 	c := *in
+	c.TranscodeVideoCodecs = append([]string(nil), in.TranscodeVideoCodecs...)
+	c.TranscodeAudioCodecs = append([]string(nil), in.TranscodeAudioCodecs...)
 	c.VideoCodecs = append([]string(nil), in.VideoCodecs...)
 	c.AudioCodecs = append([]string(nil), in.AudioCodecs...)
 	c.Containers = append([]string(nil), in.Containers...)
@@ -21,6 +23,10 @@ func boundClient(in *ClientFacts, uses []secretUse) *ClientFacts {
 	c.VideoCodecs = boundClientStrings(c.VideoCodecs, uses)
 	c.AudioCodecs = boundClientStrings(c.AudioCodecs, uses)
 	c.Containers = boundClientStrings(c.Containers, uses)
+	c.TranscodeVideoCodecs = boundClientStrings(c.TranscodeVideoCodecs, uses)
+	c.TranscodeAudioCodecs = boundClientStrings(c.TranscodeAudioCodecs, uses)
+	c.OutputProtocol = clipNetwork(c.OutputProtocol, 32, uses)
+	c.PlayerProfile = clipNetwork(c.PlayerProfile, 80, uses)
 	c.Stage = clipNetwork(c.Stage, 32, uses)
 	c.Registry = clipNetwork(c.Registry, 80, uses)
 	if len(c.Inputs) > 24 {

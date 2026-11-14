@@ -57,6 +57,7 @@ func boundEvent(e Event, uses []secretUse) Event {
 			more := *v.More
 			v.More = &more
 		}
+		v.Manifest = boundManifestFacts(v.Manifest, uses)
 		v.Decision = clipNetwork(v.Decision, 80, uses)
 		v.ErrorCode = clipNetwork(v.ErrorCode, 80, uses)
 		v.Error = clipNetwork(v.Error, maxExcerpt, uses)
@@ -202,4 +203,15 @@ func itoa(n int) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
+}
+
+func boundManifestFacts(in []string, uses []secretUse) []string {
+	if len(in) > 64 {
+		in = in[:64]
+	}
+	out := make([]string, len(in))
+	for i, v := range in {
+		out[i] = clipNetwork(v, maxExcerpt, uses)
+	}
+	return out
 }
