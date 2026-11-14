@@ -65,6 +65,9 @@ func (s *Session) watch(r *run) {
 			return
 		case <-t.C:
 			collect(false)
+			s.mu.Lock()
+			s.advanceHandoffLocked(r)
+			s.mu.Unlock()
 			watchdog.check(s, r)
 			if s.traceOn() {
 				s.mu.Lock()
@@ -222,6 +225,11 @@ func (s *Session) noteSegSizeLocked(n int, path string) {
 // progressedLocked reacts to run r finishing segments: failure counters,
 // the governor, chaining at a plan mode boundary, throttling, waiters.
 func (s *Session) progressedLocked(r *run) {
+	s.advanceHandoffLocked(r)
+	if s.cur != r {
+		s.broadcastLocked()
+		return
+	}
 	if r.produced > 0 && s.cur == r {
 		if r.rtx && r.rtxConfirmed.Load() {
 			s.decision.Enhancement.State = "running"
@@ -376,7 +384,7 @@ func (s *Session) finish(r *run) {
 	r.err = err
 	r.paused = false
 	defer s.broadcastLocked()
-	if s.closed || r.stopped {
+	if s.closed || r.stopped || s.cur != r {
 		return
 	}
 	if s.traceOn() {

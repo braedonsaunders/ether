@@ -1037,7 +1037,8 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 	}
 	s.mu.Lock()
 	var err error
-	if !req.LazyStart {
+	// A ladder has no selected rendition until the first media/init GET.
+	if !req.LazyStart && (len(rungs) <= 1 || len(warmAt) > 0) {
 		err = s.startRunForLocked(startSeg, false, "session start")
 	}
 	s.mu.Unlock()

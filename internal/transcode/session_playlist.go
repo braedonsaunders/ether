@@ -243,7 +243,20 @@ func (s *Session) runPlanLocked(seg int) runPlan {
 		rp.mode = ModeTranscode
 		return rp
 	}
-	if s.isDASH() || s.plan == nil || s.wantTrack != 0 {
+	if s.isDASH() || s.plan == nil {
+		return rp
+	}
+
+	if s.wantTrack != 0 {
+		// The media playlist already commits every rendition to the base clock.
+		// A lower rung must cut the same 2s startup slots before the 4s steady
+		// slots, rather than labelling four seconds of media as a two-second slot.
+		rp.mode = ModeTranscode
+		if seg < s.plan.rampSegs {
+			rp.hlsDur = s.plan.Dur(seg)
+			rp.planEnd = s.plan.rampSegs
+			rp.fastStart = true
+		}
 		return rp
 	}
 	rp.mode = s.plan.ModeAt(seg)

@@ -12,7 +12,8 @@ import (
 // The ABR ladder: one session, one shared segment Timeline, several
 // rungs. The primary rung ("base", track 0) is the decision the session
 // was started with; lower rungs are transcodes planned from the same
-// decision. Only one ffmpeg runs at a time — a segment request on an
+// decision. One steady encoder runs; a rendition switch briefly retains
+// the old encoder until the requested replacement segment is ready. A request on an
 // idle rung restarts the encoder at that segment with the rung's
 // decision (unused rungs are therefore stopped, not just paused, which
 // is the cheapest idle state). Segment files are kept per rung (the

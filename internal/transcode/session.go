@@ -124,6 +124,8 @@ type sessionEncoding struct {
 	pendingTrack   int
 	reaping        <-chan struct{} // previous encoder exit barrier; waited without mu
 	resumeAt       int             // segment to restart at after a throttle stop; -1 none
+	handoff        *run            // previous rendition, retained only until replacement publishes
+	handoffAt      time.Time
 	cur            *run
 	runSeq         int
 	endSeg         int // last segment of the input once a run hit EOF; -1 unknown
