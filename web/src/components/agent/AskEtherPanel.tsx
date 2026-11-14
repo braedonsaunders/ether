@@ -8,7 +8,8 @@ import {
   type AgentPanelLabels,
   type AgentSecretRequestLabels,
 } from "@braedonsaunders/appkit-ai/react";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Button } from "@braedonsaunders/appkit-ui";
 import { t } from "../../i18n";
 import { useLocale } from "../../i18n/react";
 import { useRegistry } from "../../lib/extend";
@@ -88,6 +89,45 @@ export default function AskEtherPanel({
   hasOlderMessages: boolean;
   onLoadOlderMessages: () => Promise<void>;
 }) {
+  const panel = useRef<HTMLDivElement>(null);
+  const [retryPrompt, setRetryPrompt] = useState("");
+  const sendWithRetry = async (prompt: string, signal: AbortSignal) => {
+    setRetryPrompt("");
+    try {
+      const response = await send(prompt, signal);
+      if (!response.ok || !response.body) {
+        setRetryPrompt(prompt);
+        return response;
+      }
+      const decoder = new TextDecoder();
+      let pending = "";
+      const body = response.body.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            pending += decoder.decode(chunk, { stream: true });
+            const lines = pending.split("\n");
+            pending = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data: {")) continue;
+              try {
+                // The SDK may stop reading on an error chunk, so expose retry
+                // immediately instead of waiting for the stream to flush.
+                if (JSON.parse(line.slice(6)).type === "error" && !signal.aborted)
+                  setRetryPrompt(prompt);
+              } catch {
+                /* A non-JSON SSE line is not a turn error. */
+              }
+            }
+            controller.enqueue(chunk);
+          },
+        }),
+      );
+      return new Response(body, { status: response.status, headers: response.headers });
+    } catch (error) {
+      if (!signal.aborted) setRetryPrompt(prompt);
+      throw error;
+    }
+  };
   const { locale } = useLocale();
   const { descriptors } = useRegistry("command", "tool");
 
@@ -113,19 +153,44 @@ export default function AskEtherPanel({
   }, [descriptors, locale]);
 
   return (
-    <AgentPanel
-      enabled
-      initialMessages={messages}
-      suggestions={suggestions}
-      labels={labels}
-      approvalRequestLabels={approvalRequestLabels}
-      secretRequestLabels={secretRequestLabels}
-      toolLabels={toolLabels}
-      send={send}
-      onDecideApprovalRequest={onDecideApprovalRequest}
-      onSubmitSecretRequest={onSubmitSecretRequest}
-      hasOlderMessages={hasOlderMessages}
-      onLoadOlderMessages={onLoadOlderMessages}
-    />
+    <div ref={panel} className="contents">
+      <AgentPanel
+        enabled
+        initialMessages={messages}
+        suggestions={suggestions}
+        labels={labels}
+        approvalRequestLabels={approvalRequestLabels}
+        secretRequestLabels={secretRequestLabels}
+        toolLabels={toolLabels}
+        send={sendWithRetry}
+        composerActions={
+          retryPrompt ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const box = panel.current?.querySelector("textarea");
+                if (!box) return;
+                Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+                  box,
+                  retryPrompt,
+                );
+                box.dispatchEvent(new Event("input", { bubbles: true }));
+                box.focus();
+                requestAnimationFrame(() =>
+                  box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+                );
+              }}
+            >
+              {t("Try again")}
+            </Button>
+          ) : undefined
+        }
+        onDecideApprovalRequest={onDecideApprovalRequest}
+        onSubmitSecretRequest={onSubmitSecretRequest}
+        hasOlderMessages={hasOlderMessages}
+        onLoadOlderMessages={onLoadOlderMessages}
+      />
+    </div>
   );
 }

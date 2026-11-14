@@ -20,7 +20,13 @@ type channelCommercials interface {
 
 func validateChannelDraft(c livetv.Channel, links []string) error {
 	if c.Kind != "virtual" || strings.TrimSpace(c.Name) == "" || len(c.Name) > 120 || strings.TrimSpace(c.Number) == "" || len(c.Number) > 32 {
-		return tools.Userf("provide a named virtual channel")
+		if strings.TrimSpace(c.Name) == "" || len(c.Name) > 120 {
+			return tools.Userf("channel.name must contain 1–120 characters")
+		}
+		if strings.TrimSpace(c.Number) == "" || len(c.Number) > 32 {
+			return tools.Userf("channel.number must contain 1–32 characters (a string, for example \"101\")")
+		}
+		return tools.Userf("channel.kind must be virtual")
 	}
 	if len(c.Items) > 10000 || len(c.Blocks) > 48 || len(c.Sources) > 32 || len(links) > 30 {
 		return tools.Userf("channel proposal exceeds limits")
@@ -60,7 +66,14 @@ func validateChannelDraft(c livetv.Channel, links []string) error {
 }
 
 func channelBuilderTools(d Deps) []tools.Tool {
-	return []tools.Tool{tool(tools.Tool{Name: "livetv_channel_apply", OpenWorld: true, Title: "Apply channel", Description: `Propose creating or updating a virtual channel. Returns a reviewable before/after and never writes until owner approval. Submit channel programming fields (unrelated access and stream settings are preserved): id (empty for new), name, number, kind=virtual, enabled, items [{key,title,durationMs}], collection, filter, sources, blocks [{name,start,end,days,items,mode,collection,filter,sources}], mode (order,shuffle,random,marathon,newest), timezone, look. Catalogue and collection keys must be JSON numbers, not strings. Filters use {type:"movie"|"show",genres:["Comedy"],yearFrom:1980,yearTo:1989,minVotes:100,minRating:6}. Prefer bounded collection/filter sources over enumerating titles. Explicit item durations are milliseconds; fetch title_details for runtimeMinutes and multiply by 60000. Optional style is a complete validated On Air look from look_draft; it is saved only on Apply. commercialLinks holds at most 30 HTTPS YouTube/Vimeo video links, downloaded only on Apply, each limited to 120 seconds. Use web_search to find links from search terms first. Preserve all unrelated fields on updates.`, InputSchema: schema(map[string]any{"expectedRevision": pString("Opaque revision for approval replay; omit on first proposal", 64), "channel": map[string]any{"type": "object", "additionalProperties": true}, "style": map[string]any{"type": "object", "additionalProperties": true}, "commercialLinks": map[string]any{"type": "array", "maxItems": 30, "items": pString("YouTube or Vimeo video URL", 2048)}}, "channel"), Execute: func(ctx context.Context, _ tools.Principal, in map[string]any) (tools.Result, error) {
+	return []tools.Tool{tool(tools.Tool{Name: "livetv_channel_apply", OpenWorld: true, Title: "Apply channel", Description: `Propose creating or updating a virtual channel. Returns a reviewable before/after and never writes until owner approval. Submit channel programming fields (unrelated access and stream settings are preserved): id (empty for new), name, number, kind=virtual, enabled, items [{key,title,durationMs}], collection, filter, sources, blocks [{name,start,end,days,items,mode,collection,filter,sources}], mode (order,shuffle,random,marathon,newest), timezone, look. Catalogue and collection keys must be JSON numbers, not strings. Filters use {type:"movie"|"show",genres:["Comedy"],yearFrom:1980,yearTo:1989,minVotes:100,minRating:6}. Prefer bounded collection/filter sources over enumerating titles. Explicit item durations are milliseconds; fetch title_details for runtimeMinutes and multiply by 60000. No theme or branding: omit style and channel.look; do not call look_draft. Optional style is a complete validated On Air look from look_draft; it is saved only on Apply. commercialLinks holds at most 30 HTTPS YouTube/Vimeo video links, downloaded only on Apply, each limited to 120 seconds. Use web_search to find links from search terms first. Preserve all unrelated fields on updates.`, InputSchema: schema(map[string]any{"expectedRevision": pString("Opaque revision for approval replay; omit on first proposal", 64), "channel": map[string]any{"type": "object", "description": "Channel programming. For a new channel provide name and number. Optional fields may be omitted; no theme means omit look and style.", "additionalProperties": true, "properties": map[string]any{
+		"id":   pString("Existing channel id; omit for a new channel", 128),
+		"name": pString("Channel name", 120), "number": pString("Channel number as a string, e.g. 101", 32),
+		"kind": pEnum("Channel kind", "virtual"), "enabled": pBool("Whether the channel is enabled"),
+		"mode":       pEnum("Programming order", "order", "shuffle", "random", "marathon", "newest"),
+		"collection": map[string]any{"type": "integer", "description": "Existing numeric collection key"},
+		"filter":     map[string]any{"type": "object", "additionalProperties": true, "description": "Catalogue rules, e.g. {type:movie,genres:[Comedy],yearFrom:1980,yearTo:1989}"},
+	}}, "style": map[string]any{"type": "object", "additionalProperties": true}, "commercialLinks": map[string]any{"type": "array", "maxItems": 30, "items": pString("YouTube or Vimeo video URL", 2048)}}, "channel"), Execute: func(ctx context.Context, _ tools.Principal, in map[string]any) (tools.Result, error) {
 		w, ok := d.LiveTV.(channelLookWriter)
 		if !ok {
 			return tools.Result{}, tools.Userf("Live TV is unavailable")
@@ -75,7 +88,7 @@ func channelBuilderTools(d Deps) []tools.Tool {
 			Links   []string       `json:"commercialLinks"`
 		}
 		if e = json.Unmarshal(b, &input); e != nil {
-			return tools.Result{}, tools.Userf("invalid channel proposal")
+			return tools.Result{}, tools.Userf("invalid channel proposal: %v", e)
 		}
 		c := input.Channel
 		var before *livetv.Channel
