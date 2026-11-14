@@ -202,6 +202,9 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 	if tkhd, ok := child(b, trak, "tkhd"); ok && len(tkhd.payload(b)) >= 4 {
 		si.Default = tkhd.payload(b)[3]&1 != 0
 		data := tkhd.payload(b)
+		if handler == "vide" {
+			si.Rotation = mp4Rotation(data)
+		}
 		offset := 12
 		if data[0] == 1 {
 			offset = 20
@@ -695,4 +698,31 @@ func editDuration(p []byte) uint64 {
 		}
 	}
 	return total
+}
+
+// mp4Rotation reads the track's explicit display matrix. As with ffprobe,
+// the ordinary identity matrix carries no rotation side data. Preserve the
+// signed counterclockwise angle rather than normalizing it to [0, 360).
+func mp4Rotation(tkhd []byte) *float64 {
+	at := 40
+	if len(tkhd) > 0 && tkhd[0] == 1 {
+		at = 52
+	}
+	if len(tkhd) < at+36 {
+		return nil
+	}
+	var m [9]int32
+	for i := range m {
+		m[i] = int32(binary.BigEndian.Uint32(tkhd[at+4*i:]))
+	}
+	if m == [9]int32{65536, 0, 0, 0, 65536, 0, 0, 0, 1 << 30} {
+		return nil
+	}
+	sx := math.Hypot(float64(m[0]), float64(m[3]))
+	sy := math.Hypot(float64(m[1]), float64(m[4]))
+	if sx == 0 || sy == 0 {
+		return nil
+	}
+	angle := -math.Atan2(float64(m[1])/sy, float64(m[0])/sx) * 180 / math.Pi
+	return &angle
 }

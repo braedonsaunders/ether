@@ -75,11 +75,6 @@ func (r *bitReader) ueMax(max uint64) uint64 {
 }
 
 func hevcVUITail(r *bitReader, maxSub int, width, height, subWidth, subHeight uint64, crop [4]uint64) {
-	if r.flag() { // chroma_loc_info_present_flag
-		r.ueMax(5)
-		r.ueMax(5)
-	}
-	r.skip(3) // neutral chroma, field sequence, frame/field information
 	if r.flag() {
 		for i := 0; i < 4; i++ {
 			crop[i] += r.ue()

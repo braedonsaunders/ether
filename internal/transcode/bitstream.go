@@ -102,8 +102,9 @@ type spsFacts struct {
 	// refs is max_num_ref_frames (H.264) or the highest temporal layer's
 	// max_dec_pic_buffering (H.265). hasRefs is false when the SPS did not
 	// reach that field.
-	refs    int
-	hasRefs bool
+	refs       int
+	hasRefs    bool
+	interlaced *bool
 }
 
 // avcSPS parses an H.264 sequence parameter set NAL (header byte included).
@@ -161,10 +162,13 @@ func avcSPS(nal []byte) (spsFacts, error) {
 	}
 	f.refs = int(r.ue()) // max_num_ref_frames
 	f.hasRefs = r.err == nil
-	r.skip(1) // gaps_in_frame_num_value_allowed_flag
-	r.ue()    // pic_width_in_mbs_minus1
-	r.ue()    // pic_height_in_map_units_minus1
-	if !r.flag() {
+	r.skip(1)             // gaps_in_frame_num_value_allowed_flag
+	r.ue()                // pic_width_in_mbs_minus1
+	r.ue()                // pic_height_in_map_units_minus1
+	frameOnly := r.flag() // frame_mbs_only_flag
+	interlaced := !frameOnly
+	f.interlaced = &interlaced
+	if !frameOnly {
 		r.skip(1) // mb_adaptive_frame_field_flag
 	}
 	r.skip(1) // direct_8x8_inference_flag
@@ -315,8 +319,11 @@ func parseHEVCSPS(nal []byte, strict bool) (spsFacts, error) {
 		return spsFacts{}, errBits
 	}
 	r.skip(1) // sps_temporal_id_nesting_flag
-	// profile_tier_level(1, maxSub)
-	r.skip(96)
+	// profile_tier_level(1, maxSub): source scan constraints precede
+	// the remaining constraint flags and level.
+	r.skip(40)
+	progressiveSource, interlacedSource := r.flag(), r.flag()
+	r.skip(54)
 	subProfile := make([]bool, maxSub)
 	subLevel := make([]bool, maxSub)
 	for i := 0; i < maxSub; i++ {
@@ -369,6 +376,9 @@ func parseHEVCSPS(nal []byte, strict bool) (spsFacts, error) {
 		return spsFacts{}, errBits
 	}
 	f := spsFacts{bitDepth: int(r.ue()) + 8, fullRange: -1, chroma: chroma}
+	if progressiveSource != interlacedSource {
+		f.interlaced = &interlacedSource
+	}
 	chromaDepth := int(r.ue()) + 8 // bit_depth_chroma_minus8
 	pocBits := int(r.ue()) + 4
 	if strict && (f.bitDepth > 16 || chromaDepth > 16 || pocBits > 16) {
@@ -462,6 +472,18 @@ func parseHEVCSPS(nal []byte, strict bool) (spsFacts, error) {
 	}
 	if r.flag() {
 		vuiFacts(r, &f, strict)
+		if r.flag() { // chroma_loc_info_present_flag
+			r.ueMax(5)
+			r.ueMax(5)
+		}
+		r.skip(1)            // neutral_chroma_indication_flag
+		fieldSeq := r.flag() // field_seq_flag
+		// Frame pictures may still contain interlaced content. Only an
+		// affirmative field sequence proves interlacing on its own.
+		if fieldSeq {
+			f.interlaced = &fieldSeq
+		}
+		r.skip(1) // frame_field_info_present_flag
 		if strict {
 			hevcVUITail(r, maxSub, width, height, subWidth, subHeight, crop)
 		}
