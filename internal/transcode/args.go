@@ -938,7 +938,18 @@ func hlsMuxArgs(s runSpec) []string {
 		// was moved before them. HLS does not use sidx, and the chunked
 		// path already drops it from multi-chunk segments.
 		options := "movflags=+frag_discont+skip_sidx"
-		if s.NormalizeNegativeDTS {
+		audioOnlyAAC := s.Info.Video() == nil && !s.Decision.AudioCopy && s.Decision.AudioCodec == "aac"
+		if audioOnlyAAC {
+			// MSE ignores an empty edit that delays the first AAC sample.
+			// Keep this rendition's title clock in tfdt itself, without
+			// depending on client edit-list support. frag_discont and the
+			// inner timestamp policy below preserve the absolute clock.
+			options += ":use_editlist=0"
+		}
+		if s.NormalizeNegativeDTS || audioOnlyAAC {
+			// The inner MP4 muxer's automatic timestamp policy otherwise
+			// rebases positive audio starts too. Shift only negative priming
+			// at title zero; preserve positive seek timestamps unchanged.
 			options += ":avoid_negative_ts=make_non_negative"
 		}
 		if s.VideoTimescale != 0 {

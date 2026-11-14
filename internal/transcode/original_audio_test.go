@@ -45,7 +45,16 @@ func TestOriginalAudioOnlyRendition(t *testing.T) {
 		t.Fatalf("expected 640 kbps 5.1 fixture, got %+v", selected)
 	}
 	info.Streams = []core.StreamInfo{selected}
-	hs, err := e.m.StartHLS(ctx, core.HLSRequest{SessionID: "audio-only", InputURL: e.url("original.mkv"), Info: *info, StartOffset: 4 * time.Second, SegmentDuration: AudioFallbackSegmentDuration, Decision: core.Decision{Kind: core.DecisionTranscode, Container: ContainerFMP4, VideoCopy: true, AudioCodec: "aac", AudioStream: selected.Index, SubtitleStream: -1, AudioChannels: 2, AudioSampleRate: 48000, AudioBitrateKbps: 192}})
+	for _, position := range []time.Duration{0, 4 * time.Second, 6 * time.Second} {
+		t.Run(position.String(), func(t *testing.T) {
+			checkOriginalAudioRendition(t, ctx, e, info, selected.Index, position)
+		})
+	}
+}
+
+func checkOriginalAudioRendition(t *testing.T, ctx context.Context, e *realEnv, info *core.MediaInfo, audioIndex int, position time.Duration) {
+	t.Helper()
+	hs, err := e.m.StartHLS(ctx, core.HLSRequest{SessionID: "audio-only", InputURL: e.url("original.mkv"), Info: *info, StartOffset: position, SegmentDuration: AudioFallbackSegmentDuration, Decision: core.Decision{Kind: core.DecisionTranscode, Container: ContainerFMP4, VideoCopy: true, AudioCodec: "aac", AudioStream: audioIndex, SubtitleStream: -1, AudioChannels: 2, AudioSampleRate: 48000, AudioBitrateKbps: 192}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +71,21 @@ func TestOriginalAudioOnlyRendition(t *testing.T) {
 		t.Fatalf("too few fragments: %s", playlist)
 	}
 	init := fetch(t, hs, InitSegment)
+	track, err := parseInit(init)
+	if err != nil || track.Timescale != 48000 || track.EditBad || track.EditShift != 0 {
+		t.Fatalf("audio init clock: %+v %v", track, err)
+	}
+	top, err := readBoxes(init, 0, len(init))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, box := range top {
+		if box.typ == "moov" {
+			if _, ok := path(init, box, "trak", "edts"); ok {
+				t.Fatal("audio init must not depend on edit-list support")
+			}
+		}
+	}
 	var bytes []byte
 	for i, entry := range entries {
 		if entry.dur <= 0 || entry.dur > 2*time.Second {
@@ -113,6 +137,12 @@ func TestOriginalAudioOnlyRendition(t *testing.T) {
 			t.Fatalf("fragment %d actual duration=%f", i, span)
 		}
 		if i == 0 {
+			// ffprobe applies edit lists; MSE needs the decode time itself
+			// on the title clock, with no edit shifting it into place.
+			clock, err := fmp4ChunkStart(path, track.TrackID, track.Timescale)
+			if err != nil || clock < position-time.Second*1024/48000-time.Microsecond || clock > position+time.Second*1024/48000+time.Microsecond {
+				t.Fatalf("MSE decode clock %v at %v: %v", clock, position, err)
+			}
 			bytes = combined
 		}
 	}
@@ -141,7 +171,7 @@ func TestOriginalAudioOnlyRendition(t *testing.T) {
 		t.Fatalf("not audio only: %s", out)
 	}
 	pts, err := strconv.ParseFloat(probe.Packets[0].PTS, 64)
-	if err != nil || pts < 3.9 || pts > 4.1 {
+	if err != nil || pts < position.Seconds()-0.03 || pts > position.Seconds()+0.03 {
 		t.Fatalf("audio clock %v %v", pts, err)
 	}
 }

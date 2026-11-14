@@ -1,0 +1,36 @@
+<!doctype html><title>Audio fallback MSE title clock</title><audio muted></audio><pre id="results">Ready</pre>
+<script>
+const event = (target, name) => new Promise((resolve, reject) => {
+ const timer = setTimeout(() => reject(new Error('Timeout: '+name)), 5000);
+ target.addEventListener(name, e => {clearTimeout(timer);resolve(e)}, {once:true});
+});
+window.runClock = async () => {
+ const audio = document.querySelector('audio'); const results = [];
+ for (const position of [0,4,6]) {
+  const media = new MediaSource();const url = URL.createObjectURL(media);
+  try {
+   const opened=event(media,'sourceopen'); audio.src=url; await opened;
+   const source=media.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"');
+   const playlist=await (await fetch('after-'+position+'/index.m3u8')).text();
+   const files=['init.mp4',...playlist.split('\n').filter(l=>l && !l.startsWith('#'))];
+   for(const file of files) {
+    const bytes=await(await fetch('after-'+position+'/'+file)).arrayBuffer();
+    const appended=event(source,'updateend');source.appendBuffer(bytes);await appended;
+   }
+   const ranges=Array.from({length:source.buffered.length},(_,i)=>[source.buffered.start(i),source.buffered.end(i)]);
+   if(Math.abs(ranges[0][0]-position)>1024/48000+0.000002)throw new Error('Wrong buffer start '+JSON.stringify(ranges));
+   media.endOfStream();
+   if(position>0) {const sought=event(audio,'seeked');audio.currentTime=position;await sought;}
+   await audio.play(); const started=audio.currentTime;
+   await new Promise(resolve=>setTimeout(resolve,300));
+   const played=audio.currentTime;
+   if(played<position+0.1 || audio.ended)throw new Error('Clock failed '+position+': '+played);
+   const target=position+1; const sought=event(audio,'seeked');audio.currentTime=target;await sought;
+   await new Promise(resolve=>setTimeout(resolve,200));
+   if(audio.currentTime<target+0.05)throw new Error('Seek failed '+audio.currentTime);
+   results.push({generation:results.length+1,position,ranges,started,played,seekTarget:target,seekPlayed:audio.currentTime,error:audio.error});
+  }finally{audio.pause();audio.removeAttribute('src');audio.load();URL.revokeObjectURL(url);}
+ }
+ document.querySelector('#results').textContent=JSON.stringify(results,null,2);return results;
+};
+</script>
