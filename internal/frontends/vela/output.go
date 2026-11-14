@@ -20,14 +20,18 @@ func (i *instance) refreshOutput(ctx context.Context, id string, s *playSession)
 		return false
 	}
 	paths, _ := s.plan["paths"].([]object)
-	if len(paths) == 0 || paths[0]["transport"] != "hls" {
+	if len(paths) == 0 {
 		return false
 	}
-	before, _ := json.Marshal(object{"qualities": paths[0]["qualities"], "preparation": s.plan["preparation"]})
+	path := selectedPlaybackPath(s.plan, paths)
+	if path["transport"] != "hls" {
+		return false
+	}
+	before, _ := json.Marshal(object{"qualities": path["qualities"], "preparation": s.plan["preparation"]})
 	if ladder, ok := hs.(interface{ Rungs() []frontend.HLSRung }); ok {
 		qualities := []object{}
-		delete(paths[0], "initialRenditionId")
-		base, _ := paths[0]["url"].(string)
+		delete(path, "initialRenditionId")
+		base, _ := path["url"].(string)
 		base = strings.TrimSuffix(base, "master.m3u8")
 		for _, r := range ladder.Rungs() {
 			if r.Width <= 0 || r.Height <= 0 || r.Bandwidth <= 0 {
@@ -53,11 +57,11 @@ func (i *instance) refreshOutput(ctx context.Context, id string, s *playSession)
 				}
 			}
 			if r.ID == "base" {
-				paths[0]["initialRenditionId"] = "base"
+				path["initialRenditionId"] = "base"
 			}
 			qualities = append(qualities, q)
 		}
-		paths[0]["qualities"] = qualities
+		path["qualities"] = qualities
 	}
 	if diagnostics, ok := hs.(frontend.HLSDiagnosticSession); ok {
 		d := diagnostics.PlaybackDiagnostics()
@@ -66,6 +70,6 @@ func (i *instance) refreshOutput(ctx context.Context, id string, s *playSession)
 		events = append(events, d.Events...)
 		s.plan["preparation"] = object{"sourceGeneration": s.source, "seekGeneration": s.seek, "events": events}
 	}
-	after, _ := json.Marshal(object{"qualities": paths[0]["qualities"], "preparation": s.plan["preparation"]})
+	after, _ := json.Marshal(object{"qualities": path["qualities"], "preparation": s.plan["preparation"]})
 	return string(before) != string(after)
 }

@@ -494,6 +494,9 @@ type Host struct {
 	Log       *slog.Logger
 	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
 	ViewerPortalURL func(context.Context, *http.Request) (string, error)
+	// SecureOrigins returns trusted published HTTPS base origins, preferred first.
+	// It never probes the network or derives hosts from request headers.
+	SecureOrigins func(context.Context, *http.Request) []string
 	// SecurePortalURL selects a verified reachable HTTPS portal address.
 	SecurePortalURL func(context.Context, *http.Request) (string, error)
 	// SurfaceURL returns a reachable, verified base for this frontend's routes.

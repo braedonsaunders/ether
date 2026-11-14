@@ -204,7 +204,7 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 		// Media elements cannot attach the API bearer/device headers. The
 		// surface-bound broker authenticates the URL grant, viewer and current
 		// policy on every read, including playlists, segments and subtitles.
-		i.serveObservedMedia(w, r.WithContext(i.identityContext(r)))
+		i.serveMedia(w, r.WithContext(i.identityContext(r)))
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/vela/v0/") {
@@ -212,7 +212,7 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(i.identityContext(r))
-	if r.Method != "POST" {
+	if r.Method != "POST" && r.Method != "DELETE" {
 		i.mux.ServeHTTP(w, r)
 		return
 	}
@@ -234,7 +234,7 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "request", "idempotency_key_required")
 		return
 	}
-	public := strings.HasPrefix(r.URL.Path, "/vela/v0/auth/") && !strings.HasSuffix(r.URL.Path, "/approve") && !strings.HasSuffix(r.URL.Path, "/revoke")
+	public := strings.HasPrefix(r.URL.Path, "/vela/v0/auth/") && !strings.HasSuffix(r.URL.Path, "/approve") && !strings.HasSuffix(r.URL.Path, "/revoke") && r.URL.Path != "/vela/v0/auth/web-code"
 	public = public || r.URL.Path == "/vela/v0/negotiate"
 	scope := ""
 	if !public {
@@ -340,9 +340,9 @@ func (i *instance) route(method, path string, h http.HandlerFunc) {
 func (i *instance) routes() {
 	i.route("GET", "/libraries", i.libraries)
 	i.route("GET", "/libraries/{id}/items", i.libraryItems)
-	i.route("GET", "/capabilities", func(w http.ResponseWriter, r *http.Request) { cache(w, r, i.capabilities()) })
+	i.route("GET", "/capabilities", func(w http.ResponseWriter, r *http.Request) { cache(w, r, i.requestCapabilities(r)) })
 	i.route("POST", "/negotiate", i.negotiate)
-	for _, p := range []string{"sign-in", "refresh", "revoke", "web-code/redeem", "device", "device/poll", "device/approve", "quick-connect", "quick-connect/poll", "quick-connect/approve"} {
+	for _, p := range []string{"sign-in", "refresh", "revoke", "web-code", "web-code/redeem", "device", "device/poll", "device/approve", "quick-connect", "quick-connect/poll", "quick-connect/approve"} {
 		i.route("POST", "/auth/"+p, i.auth)
 	}
 	i.route("GET", "/bootstrap", i.bootstrap)
@@ -365,6 +365,8 @@ func (i *instance) routes() {
 	i.route("POST", "/interactions", i.interactions)
 	i.route("POST", "/playback", i.playback)
 	i.route("POST", "/titles/{id}/trailer-preview", i.trailerPreview)
+	i.route("POST", "/sessions/{id}/audio-fallback", i.audioFallback)
+	i.route("DELETE", "/sessions/{id}/audio-fallback/{audioId}", i.audioFallback)
 	i.route("GET", "/sessions/{id}", i.snapshot)
 	i.route("GET", "/sessions/{id}/events", i.events)
 	i.route("POST", "/sessions/{id}/commands", i.command)
@@ -390,7 +392,7 @@ func (i *instance) capabilities() object {
 	if source, ok := i.host.Identity.(frontend.AuthenticationFeatureSource); ok {
 		auth = source.AuthenticationFeatures()
 	}
-	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(live), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(trackChanges), "extraPlayback": f(false), "trailerPreview": f(i.previewAvailable())}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
+	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(live), "extras": f(false), "initialTrackSelection": f(true), "audioFallback": f(i.audioFallbackAvailable()), "sessionTrackChanges": f(trackChanges), "extraPlayback": f(false), "trailerPreview": f(i.previewAvailable())}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
 }
 func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 	var b struct {
@@ -406,7 +408,7 @@ func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 				problem(w, 400, "request", "unsupported_client_build")
 				return
 			}
-			send(w, 200, object{"capabilities": i.capabilities(), "client": b.Client})
+			send(w, 200, object{"capabilities": i.requestCapabilities(r), "client": b.Client})
 			return
 		}
 	}
@@ -419,4 +421,43 @@ func (i *instance) grantScope(ctx context.Context, token string, device frontend
 		return "", frontend.ErrIdentityUnavailable
 	}
 	return service.GrantScope(ctx, token, device)
+}
+
+func (i *instance) requestCapabilities(r *http.Request) object {
+	c := i.capabilities()
+	if i.host.SecureOrigins != nil {
+		if origins := i.host.SecureOrigins(r.Context(), r); len(origins) > 0 {
+			c["secureOrigins"] = origins
+		}
+	}
+	return c
+}
+
+// Check the refresh family on every media request, rather than waiting for the
+// event subscription's expiry ticker. The broker still validates the URL grant
+// and current title/source policy before accessing the shared byte engine.
+func (i *instance) serveMedia(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/sessions/media/")
+	id, _, ok := strings.Cut(rest, "/")
+	i.mu.Lock()
+	s := i.sessions[id]
+	i.mu.Unlock()
+	scopes, has := i.host.Identity.(frontend.GrantScopes)
+	if !ok || s == nil || !has {
+		http.NotFound(w, r)
+		return
+	}
+	s.mu.Lock()
+	ended := !s.ended.IsZero() || (!s.previewExpires.IsZero() && !s.previewExpires.After(time.Now()))
+	scope, deviceID := s.scope, s.device
+	s.mu.Unlock()
+	if ended {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := scopes.GrantScopeCurrent(r.Context(), scope, frontend.Device{ID: deviceID}); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	i.serveObservedMedia(w, r)
 }

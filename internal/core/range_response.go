@@ -15,8 +15,11 @@ type RangeRepresentation struct {
 	ServeBody         func(status int, start, length int64) error
 }
 type RangeResponse struct {
-	MIME  func(string) string
-	Serve func(http.ResponseWriter, *http.Request, RangeRepresentation) error
+	// StrictRanges prevents an original-byte client from receiving a full file
+	// after a malformed range or a failed representation precondition.
+	StrictRanges bool
+	MIME         func(string) string
+	Serve        func(http.ResponseWriter, *http.Request, RangeRepresentation) error
 }
 type rangeResponseKey struct{}
 

@@ -785,3 +785,22 @@ func (s surface) policy() core.SessionPolicy {
 	}
 	return core.SessionPolicy{}
 }
+
+func (s surface) AudioFallbackAvailable() bool {
+	service, ok := s.broker.(frontend.AudioFallback)
+	return s.protocol == "vela" && ok && service.AudioFallbackAvailable()
+}
+func (s surface) StartAudioFallback(ctx context.Context, a frontend.SessionAccess, id string, track int, pos time.Duration) (frontend.AudioFallbackResult, error) {
+	service, ok := s.broker.(frontend.AudioFallback)
+	if !ok || a.Protocol != s.protocol {
+		return frontend.AudioFallbackResult{}, core.ErrUnauthorized
+	}
+	return service.StartAudioFallback(ctx, a, id, track, pos)
+}
+func (s surface) StopAudioFallback(ctx context.Context, a frontend.SessionAccess, id, audioID string) error {
+	service, ok := s.broker.(frontend.AudioFallback)
+	if !ok || a.Protocol != s.protocol {
+		return core.ErrUnauthorized
+	}
+	return service.StopAudioFallback(ctx, a, id, audioID)
+}

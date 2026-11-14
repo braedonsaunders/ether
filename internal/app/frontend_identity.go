@@ -326,3 +326,29 @@ func (s surfaceIdentity) AuthenticationFeatures() frontend.AuthenticationFeature
 	native := !s.policy.ExternalIdentity && s.grants != nil && s.login != nil
 	return frontend.AuthenticationFeatures{Password: native && s.local != nil, QuickConnect: native && s.quick != nil && s.poll != nil}
 }
+
+// IssueOriginWebCode is invoked only after the adapter validates a published
+// HTTPS destination and proves the caller's current device grant.
+func (s surfaceIdentity) IssueOriginWebCode(ctx context.Context, access string, device core.Device, origin string) (string, error) {
+	if s.surface != "vela" || s.grants == nil || s.policy.ExternalIdentity {
+		return "", core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.login, "ether-web"); err != nil {
+		return "", err
+	}
+	v, _, err := s.grants.ResolveDevice(ctx, string(s.surface), access, device)
+	if err != nil {
+		return "", err
+	}
+	return s.grants.IssueOriginWebCode(ctx, v.ID, string(s.surface), origin)
+}
+func (s surfaceIdentity) RedeemOriginWebCode(ctx context.Context, code string, device core.Device, origin string) (string, error) {
+	if s.surface != "vela" || s.grants == nil || s.policy.ExternalIdentity {
+		return "", core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.login, "ether-web"); err != nil {
+		return "", err
+	}
+	token, _, err := s.grants.RedeemOriginWebCode(ctx, code, string(s.surface), device, origin)
+	return token, err
+}
