@@ -164,6 +164,7 @@ func stableHomeHubs(rows []model.Hub) []model.Hub {
 			h.Metadata = h.Metadata[:min(10, len(h.Metadata))]
 			rankedMetadata(h.Metadata)
 			h.Size = len(h.Metadata)
+			h.TotalSize = model.Ptr(h.Size)
 			h.More = false
 			h.Meta = &model.Meta{DisplayImage: []model.DisplayImage{{Type: h.Type, ImageType: "coverArt"}}}
 		}
