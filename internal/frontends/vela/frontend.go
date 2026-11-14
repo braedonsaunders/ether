@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -97,9 +98,28 @@ func fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, frontend.ErrRowViewStale):
 		problem(w, 409, "conflict", "cursor_expired")
-	case errors.Is(err, frontend.ErrTranscodeCapacity), errors.Is(err, frontend.ErrStreamLimit):
-		problem(w, 503, "capacity", "playback_capacity")
-	case errors.Is(err, frontend.ErrNoSources), errors.Is(err, frontend.ErrSourceUnavailable):
+	case errors.Is(err, frontend.ErrTranscodeCapacity), errors.Is(err, frontend.ErrStreamLimit), errors.Is(err, frontend.ErrSessionBusy):
+		var delay time.Duration
+		var busy *frontend.SessionBusyError
+		var encoder *frontend.TranscodeCapacityError
+		if errors.As(err, &busy) {
+			delay = busy.RetryAfter
+		}
+		if errors.As(err, &encoder) {
+			delay = encoder.RetryAfter
+		}
+		if delay > 0 && delay <= 5*time.Minute {
+			seconds := min(300, int(delay/time.Second))
+			if delay%time.Second != 0 && seconds < 300 {
+				seconds++
+			}
+			seconds = max(seconds, 1)
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+			send(w, 503, object{"error": object{"class": "capacity", "code": "playback_capacity", "message": "playback capacity", "retry": object{"allowed": true, "afterSeconds": seconds, "maxAttempts": 3}}})
+		} else {
+			problem(w, 503, "capacity", "playback_capacity")
+		}
+	case errors.Is(err, frontend.ErrNoSources), errors.Is(err, frontend.ErrSourceUnavailable), errors.Is(err, frontend.ErrSourceGone):
 		problem(w, 502, "source", "source_unavailable")
 	case errors.Is(err, frontend.ErrNotFound):
 		problem(w, 404, "not-found", "not_found")
@@ -198,9 +218,13 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	public := strings.HasPrefix(r.URL.Path, "/vela/v0/auth/") && !strings.HasSuffix(r.URL.Path, "/approve") && !strings.HasSuffix(r.URL.Path, "/revoke")
 	public = public || r.URL.Path == "/vela/v0/negotiate"
-	scope := r.Header.Get("Authorization")
+	scope := ""
 	if !public {
-		if _, _, err := i.viewer(r); err != nil {
+		_, token, err := i.viewer(r)
+		if err == nil {
+			scope, err = i.grantScope(r.Context(), token, requestDevice(r))
+		}
+		if err != nil {
 			fail(w, err)
 			return
 		}
@@ -215,7 +239,7 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		scope = d.ID
 	}
-	key := hash(scope + "\x00" + r.URL.Path + "\x00" + envelope.IdempotencyKey)
+	key := hash(scope + "\x00" + r.Method + "\x00" + r.URL.Path + "\x00" + envelope.IdempotencyKey)
 	digest := hash(string(raw))
 	i.replayMu.Lock()
 	if old := i.replays[key]; old != nil {
@@ -309,7 +333,13 @@ func (i *instance) routes() {
 	i.route("GET", "/titles/{id}/extras", i.detail)
 	i.route("POST", "/search", i.search)
 	i.route("POST", "/search/ai", i.unavailable)
-	i.route("GET", "/search/ai/{id}", i.unavailable)
+	i.route("GET", "/search/ai/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if _, _, err := i.viewer(r); err != nil {
+			fail(w, err)
+			return
+		}
+		i.unavailable(w, r)
+	})
 	i.route("POST", "/search/ai/{id}/cancel", i.unavailable)
 	i.route("GET", "/images/{secret}", func(w http.ResponseWriter, r *http.Request) {
 		if i.host.ImageGrants == nil {
@@ -335,7 +365,11 @@ func (*instance) unavailable(w http.ResponseWriter, r *http.Request) {
 func (i *instance) capabilities() object {
 	f := func(v bool) object { return object{"available": v} }
 	s := i.host.ServerIdentity
-	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(true), "deviceGrant": f(true), "quickConnect": f(true), "descriptiveSearch": f(true), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(i.host.LiveTV != nil), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
+	auth := frontend.AuthenticationFeatures{}
+	if source, ok := i.host.Identity.(frontend.AuthenticationFeatureSource); ok {
+		auth = source.AuthenticationFeatures()
+	}
+	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(true), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(i.host.LiveTV != nil), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
 }
 func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 	var b struct {
@@ -356,4 +390,12 @@ func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	problem(w, 400, "request", "unsupported_version")
+}
+
+func (i *instance) grantScope(ctx context.Context, token string, device frontend.Device) (string, error) {
+	service, ok := i.host.Identity.(frontend.GrantScopes)
+	if !ok {
+		return "", frontend.ErrIdentityUnavailable
+	}
+	return service.GrantScope(ctx, token, device)
 }

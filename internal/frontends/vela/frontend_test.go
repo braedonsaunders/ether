@@ -18,6 +18,12 @@ type identityFake struct{ frontend.SurfaceIdentity }
 func (identityFake) ResolveDevice(context.Context, string, frontend.Device) (*frontend.Viewer, time.Time, error) {
 	return &frontend.Viewer{ID: 1, Username: "viewer"}, time.Now().Add(time.Hour), nil
 }
+func (identityFake) GrantScope(context.Context, string, frontend.Device) (string, error) {
+	return "fake-family", nil
+}
+func (identityFake) GrantScopeCurrent(context.Context, string, frontend.Device) (*frontend.Viewer, error) {
+	return &frontend.Viewer{ID: 1, Username: "viewer"}, nil
+}
 func TestVelaProtocolInvariants(t *testing.T) {
 	for version, want := range map[string]bool{"0.1.0": true, "0.1.9": true, "0.1.0+build.7": true, "0.1.1-beta.2": true, "0.2.0-rc.1": true, "0.0.9": false, "0.1.0-alpha": false, "0.2.0": false, "1.0.0": false, "0.1": false, "0.01.0": false, "0.1.1-01": false, "": false} {
 		if got := compatibleBuild(version); got != want {
@@ -51,15 +57,17 @@ func TestVelaProtocolInvariants(t *testing.T) {
 		calls++
 		send(w, 200, object{"secret": "access-token", "calls": calls})
 	})
+	credential := "test"
 	request := func(b string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", "/vela/v0/test", strings.NewReader(b))
-		r.Header.Set("Authorization", "Bearer test")
+		r.Header.Set("Authorization", "Bearer "+credential)
 		r.Header.Set("X-Vela-Device-Id", "device")
 		w := httptest.NewRecorder()
 		i.serve(w, r)
 		return w
 	}
 	first := request(`{"idempotencyKey":"one"}`)
+	credential = "rotated-access"
 	second := request(`{"idempotencyKey":"one"}`)
 	if first.Code != 200 || second.Body.String() != first.Body.String() || calls != 1 {
 		t.Fatalf("replay: %d %d calls %d", first.Code, second.Code, calls)

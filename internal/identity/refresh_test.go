@@ -31,6 +31,16 @@ func TestRefreshRotationAndReuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	scope, err := g.GrantScope(ctx, "silo", access, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.GrantScopeCurrent(ctx, "emby", scope, d); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("cross-surface family scope", err)
+	}
+	if _, err = g.GrantScopeCurrent(ctx, "silo", scope, core.Device{ID: "other"}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("cross-device family scope", err)
+	}
 	if _, err = g.Resolve(ctx, "silo", refresh); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("refresh used as access: %v", err)
 	}
@@ -53,11 +63,21 @@ func TestRefreshRotationAndReuse(t *testing.T) {
 	if _, err = g.Resolve(ctx, "silo", next); err != nil {
 		t.Fatal(err)
 	}
+	rotatedScope, err := g.GrantScope(ctx, "silo", next, d)
+	if err != nil || rotatedScope != scope {
+		t.Fatal("family scope changed across valid refresh", err)
+	}
+	if _, err = g.GrantScopeCurrent(ctx, "silo", scope, d); err != nil {
+		t.Fatal("valid rotation ended family", err)
+	}
 	if _, _, err = g.Refresh(ctx, "silo", refresh, d); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("reuse: %v", err)
 	}
 	if _, err = g.Resolve(ctx, "silo", next); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("reuse did not revoke access: %v", err)
+	}
+	if _, err = g.GrantScopeCurrent(ctx, "silo", scope, d); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("revoked family remains current", err)
 	}
 	if _, _, err = g.Refresh(ctx, "silo", nextRefresh, d); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("reuse did not revoke family: %v", err)

@@ -91,6 +91,10 @@ func (i *instance) auth(w http.ResponseWriter, r *http.Request) {
 		}
 		i.tokens(w, r, a, "", d)
 	case "device", "quick-connect":
+		if path == "device" && i.host.ViewerPortalURL == nil {
+			i.unavailable(w, r)
+			return
+		}
 		code, secret, e := i.host.Identity.QuickConnectInitiate(ctx, d)
 		if e != nil {
 			fail(w, e)

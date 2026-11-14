@@ -101,42 +101,43 @@ func (i *instance) titles(r *http.Request, v *frontend.Viewer, token string, ts 
 	}
 	return out, nil
 }
-func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]object, error) {
+func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]object, bool, error) {
 	placement := frontend.Placement(r.URL.Query().Get("placement"))
 	if placement == "" {
 		placement = frontend.PlacementHome
 	}
 	if placement != frontend.PlacementHome && placement != frontend.PlacementDetail && placement != frontend.PlacementLibrary {
-		return nil, frontend.ErrNotFound
+		return nil, false, frontend.ErrNotFound
 	}
 	var item frontend.RatingKey
 	if s := r.URL.Query().Get("titleId"); s != "" {
 		var err error
 		item, err = ids.ParseRatingKeyGUID(s)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 	rows := []frontend.Row{}
+	outerMore := false
 	views, hasViews := i.host.Experience.(frontend.RowViews)
 	if id := r.PathValue("id"); id != "" && hasViews {
 		offset := 0
 		if token := r.URL.Query().Get("cursor"); token != "" {
 			c, e := i.readRowToken(r, v, token)
 			if e != nil || c.Row != id {
-				return nil, frontend.ErrRowViewStale
+				return nil, false, frontend.ErrRowViewStale
 			}
 			offset = c.Offset
 		}
 		row, e := i.rowPage(r, v, id, offset)
 		if e != nil {
-			return nil, e
+			return nil, false, e
 		}
 		i.rowMu.Lock()
 		meta, found := i.rowMeta[id]
 		i.rowMu.Unlock()
 		if !found {
-			return nil, frontend.ErrRowViewStale
+			return nil, false, frontend.ErrRowViewStale
 		}
 		row.Title = meta.Title
 		row.Purpose = meta.Purpose
@@ -145,8 +146,10 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 	} else if hasViews {
 		vv, e := views.ListRowViews(r.Context(), frontend.RowViewRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", Placement: placement, Item: item})
 		if e != nil {
-			return nil, e
+			return nil, false, e
 		}
+		outerMore = len(vv) > limit(r)
+		vv = vv[:min(len(vv), limit(r))]
 		for _, view := range vv {
 			i.rowMu.Lock()
 			if len(i.rowMeta) >= 2000 {
@@ -156,7 +159,7 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 			i.rowMu.Unlock()
 			row, e := i.rowPage(r, v, view.ID, 0)
 			if e != nil {
-				return nil, e
+				return nil, false, e
 			}
 			row.Title = view.Title
 			row.Purpose = view.Purpose
@@ -165,10 +168,14 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 		}
 	} else {
 		var e error
-		rows, e = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: requestDevice(r), Placement: placement, Item: item, Limit: min(limit(r), 50)})
+		rows, e = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: requestDevice(r), Placement: placement, Item: item, Limit: 50})
 		if e != nil {
-			return nil, e
+			return nil, false, e
 		}
+	}
+	if r.PathValue("id") == "" && len(rows) > limit(r) {
+		outerMore = true
+		rows = rows[:limit(r)]
 	}
 	out := []object{}
 	for _, row := range rows {
@@ -183,7 +190,7 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 		}
 		converted, e := i.titles(r, v, token, ts)
 		if e != nil {
-			return nil, e
+			return nil, false, e
 		}
 		byID := map[string]object{}
 		for _, t := range converted {
@@ -202,24 +209,6 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 				base["id"] = c.ID
 				base["kind"] = "channel"
 				base["channel"] = object{"id": c.ID, "number": c.Number, "name": c.Name, "kind": "", "favorite": false, "artwork": []object{}}
-			case e.Directory != nil:
-				base["id"] = e.Directory.ID
-				base["targetId"] = e.Directory.ID
-				base["kind"] = "directory"
-				base["name"] = e.Directory.Title
-				base["artwork"] = []object{}
-			case e.Collection != nil:
-				base["id"] = ids.RatingKeyGUID(e.Collection.Key)
-				base["targetId"] = base["id"]
-				base["kind"] = "collection"
-				base["name"] = e.Collection.Title
-				base["artwork"] = []object{}
-			case e.Playlist != nil:
-				base["id"] = ids.RatingKeyGUID(e.Playlist.Key)
-				base["targetId"] = base["id"]
-				base["kind"] = "playlist"
-				base["name"] = e.Playlist.Title
-				base["artwork"] = []object{}
 			default:
 				continue
 			}
@@ -246,7 +235,7 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 		}
 		out = append(out, wire)
 	}
-	return out, nil
+	return out, outerMore, nil
 }
 func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 	v, t, e := i.viewer(r)
@@ -254,7 +243,7 @@ func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 		fail(w, e)
 		return
 	}
-	rows, e := i.home(r, v, t)
+	rows, _, e := i.home(r, v, t)
 	if e != nil {
 		fail(w, e)
 		return
@@ -270,7 +259,7 @@ func (i *instance) rows(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("id") == "" && !noCursor(w, r) {
 		return
 	}
-	rows, e := i.home(r, v, t)
+	rows, more, e := i.home(r, v, t)
 	if e != nil {
 		fail(w, e)
 		return
@@ -285,7 +274,11 @@ func (i *instance) rows(w http.ResponseWriter, r *http.Request) {
 		problem(w, 404, "not-found", "not_found")
 		return
 	}
-	cache(w, r, object{"items": rows, "continuation": "exhausted"})
+	continuation := "exhausted"
+	if more {
+		continuation = "unknown"
+	}
+	cache(w, r, object{"items": rows, "continuation": continuation})
 }
 func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	v, t, e := i.viewer(r)

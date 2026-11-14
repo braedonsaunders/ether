@@ -23,7 +23,11 @@ func (i *instance) rowPage(r *http.Request, v *frontend.Viewer, id string, offse
 	if !ok {
 		return frontend.Row{}, frontend.ErrNotAvailable
 	}
-	page, e := views.ResolveRowView(r.Context(), frontend.RowViewPageRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", ID: id, Offset: offset, Limit: min(limit(r), 50)})
+	n := 50
+	if r.PathValue("id") != "" {
+		n = min(limit(r), 50)
+	}
+	page, e := views.ResolveRowView(r.Context(), frontend.RowViewPageRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", ID: id, Offset: offset, Limit: n})
 	if e != nil {
 		return frontend.Row{}, e
 	}

@@ -24,12 +24,14 @@ type client struct {
 	SubtitleFormats  []string `json:"subtitleFormats"`
 	HLS              bool     `json:"hls"`
 	MSE              bool     `json:"mse"`
-	MaxWidth         int      `json:"maxWidth"`
-	MaxHeight        int      `json:"maxHeight"`
-	MaxBitrate       int      `json:"maxBitrate"`
-	HDR              []string `json:"hdr"`
+	MaxWidth         int      `json:"maxWidth,omitempty"`
+	MaxHeight        int      `json:"maxHeight,omitempty"`
+	MaxBitrate       int      `json:"maxBitrate,omitempty"`
+	HDR              []string `json:"hdr,omitempty"`
 }
 type playSession struct {
+	scope string
+
 	mu                               sync.Mutex
 	viewer                           int64
 	device                           string
@@ -60,14 +62,37 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct {
 		TitleID, ChannelID, ExtraID string
+		LiveMode                    string
 		Client                      client
 		PositionSeconds             *float64
 		AllowTranscode              *bool
 		AudioTrackID                string
 		SubtitleTrackID             json.RawMessage
 	}
-	if body(r, &b) != nil || b.Client.Device.ID != requestDevice(r).ID || (b.TitleID == "") == (b.ChannelID == "") || b.ExtraID != "" {
+	if body(r, &b) != nil || b.Client.Device.ID != requestDevice(r).ID {
 		problem(w, 400, "request", "invalid_target")
+		return
+	}
+	targets := 0
+	for _, id := range []string{b.TitleID, b.ChannelID, b.ExtraID} {
+		if id != "" {
+			targets++
+		}
+	}
+	if targets != 1 {
+		problem(w, 400, "request", "invalid_target")
+		return
+	}
+	if b.ExtraID != "" {
+		if _, err := ids.ParseRatingKeyGUID(b.ExtraID); err != nil {
+			problem(w, 400, "request", "invalid_target")
+			return
+		}
+		i.unavailable(w, r)
+		return
+	}
+	if b.LiveMode != "" && b.LiveMode != "adaptive" && b.LiveMode != "low-delay" {
+		problem(w, 400, "request", "invalid_live_mode")
 		return
 	}
 	var pos time.Duration
@@ -78,6 +103,11 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 			problem(w, 400, "request", "invalid_position")
 			return
 		}
+	}
+	scope, e := i.grantScope(r.Context(), token, requestDevice(r))
+	if e != nil {
+		fail(w, e)
+		return
 	}
 	options := frontend.DecideOptions{DirectPlay: true, DirectStream: b.Client.HLS, AudioStream: -1, SubtitleStream: -1}
 	audioSet, subtitleSet := false, false
@@ -154,7 +184,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if plan.Estimated {
-		problem(w, 503, "source", "source_unresolved")
+		problem(w, 502, "source", "source_unresolved")
 		return
 	}
 	s, e := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "vela", PlanID: plan.ID, Viewer: v, Device: requestDevice(r)})
@@ -214,6 +244,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			t["url"] = url
+			t["codec"] = "webvtt"
 			subs = append(subs, t)
 			if track.Index == plan.Decision.SubtitleStream {
 				selectedSub = t["id"]
@@ -221,6 +252,9 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	p := object{"sessionId": s.ID, "revision": uint64(1), "sourceGeneration": uint64(1), "seekGeneration": uint64(1), "state": "ready", "positionSeconds": pos.Seconds(), "durationSeconds": plan.Media.Duration.Seconds(), "paths": []object{path}, "selectedPathId": "primary", "audioTracks": audio, "subtitleTracks": subs, "selectedSubtitleTrackId": selectedSub, "chapters": chapters(plan.Media), "fallback": object{"state": "unsupported"}}
+	if plan.Media.Duration <= 0 {
+		delete(p, "durationSeconds")
+	}
 	if selectedAudio != "" {
 		p["selectedAudioTrackId"] = selectedAudio
 	}
@@ -228,8 +262,14 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		p["titleId"] = b.TitleID
 	} else {
 		p["channelId"] = b.ChannelID
+		mode := b.LiveMode
+		if mode == "" {
+			mode = "adaptive"
+		}
+		p["live"] = object{"mode": mode}
+		delete(p, "durationSeconds")
 	}
-	ps := &playSession{viewer: v.ID, device: requestDevice(r).ID, plan: p, source: 1, seek: 1, revision: 1, cursor: 1, signal: make(chan struct{}), position: pos}
+	ps := &playSession{scope: scope, viewer: v.ID, device: requestDevice(r).ID, plan: p, source: 1, seek: 1, revision: 1, cursor: 1, signal: make(chan struct{}), position: pos}
 	i.mu.Lock()
 	for id, old := range i.sessions {
 		old.mu.Lock()
@@ -242,18 +282,32 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 	i.sessions[s.ID] = ps
 	i.mu.Unlock()
 	send(w, 200, p)
-	i.watchSession(v, requestDevice(r), s.ID, token, ps)
+	i.watchSession(v, requestDevice(r), s.ID, scope, ps)
 }
 func (i *instance) session(w http.ResponseWriter, r *http.Request) (*frontend.Viewer, *playSession) {
-	v, _, e := i.viewer(r)
+	v, token, e := i.viewer(r)
+	if e != nil {
+		fail(w, e)
+		return nil, nil
+	}
+	scope, e := i.grantScope(r.Context(), token, requestDevice(r))
 	if e != nil {
 		fail(w, e)
 		return nil, nil
 	}
 	i.mu.Lock()
 	s := i.sessions[r.PathValue("id")]
+	if s != nil {
+		s.mu.Lock()
+		expired := !s.ended.IsZero() && time.Since(s.ended) >= 10*time.Minute
+		s.mu.Unlock()
+		if expired {
+			delete(i.sessions, r.PathValue("id"))
+			s = nil
+		}
+	}
 	i.mu.Unlock()
-	if s == nil || s.viewer != v.ID || s.device != requestDevice(r).ID {
+	if s == nil || s.viewer != v.ID || s.device != requestDevice(r).ID || s.scope != scope {
 		problem(w, 404, "not-found", "session_not_found")
 		return nil, nil
 	}
@@ -381,6 +435,8 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 		SourceGeneration, SeekGeneration, Sequence uint64
 		PositionSeconds                            float64
 		State, SelectedPathID                      string
+		AudioTrackID                               *string
+		SubtitleTrackID                            json.RawMessage
 	}
 	if body(r, &b) != nil {
 		problem(w, 400, "request", "invalid_request")
@@ -393,10 +449,6 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.ended.IsZero() {
 		send(w, 200, object{"accepted": true})
-		return
-	}
-	if !s.ended.IsZero() {
-		problem(w, 409, "conflict", "session_ended")
 		return
 	}
 	if b.Sequence <= s.sequence {
@@ -414,12 +466,46 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "request", "invalid_state")
 		return
 	}
-	if e := i.host.Sessions.Report(r.Context(), i.access(r, v), r.PathValue("id"), frontend.Timeline{Sequence: b.Sequence, Position: pos, State: b.State}); e != nil {
+	var audioIndex, subtitleIndex *int
+	if b.AudioTrackID != nil {
+		n, ok := offeredTrack(s.plan, "audioTracks", *b.AudioTrackID)
+		if !ok {
+			problem(w, 400, "request", "invalid_audio_track")
+			return
+		}
+		audioIndex = &n
+	}
+	var subtitleID any
+	if len(b.SubtitleTrackID) > 0 {
+		n := -1
+		if string(b.SubtitleTrackID) != "null" {
+			var id string
+			if json.Unmarshal(b.SubtitleTrackID, &id) != nil {
+				problem(w, 400, "request", "invalid_subtitle_track")
+				return
+			}
+			var ok bool
+			n, ok = offeredTrack(s.plan, "subtitleTracks", id)
+			if !ok {
+				problem(w, 400, "request", "invalid_subtitle_track")
+				return
+			}
+			subtitleID = id
+		}
+		subtitleIndex = &n
+	}
+	if e := i.host.Sessions.Report(r.Context(), i.access(r, v), r.PathValue("id"), frontend.Timeline{Sequence: b.Sequence, Position: pos, State: b.State, AudioStreamIndex: audioIndex, SubtitleStreamIndex: subtitleIndex}); e != nil {
 		fail(w, e)
 		return
 	}
 	s.sequence = b.Sequence
 	s.position = pos
+	if b.AudioTrackID != nil {
+		s.plan["selectedAudioTrackId"] = *b.AudioTrackID
+	}
+	if len(b.SubtitleTrackID) > 0 {
+		s.plan["selectedSubtitleTrackId"] = subtitleID
+	}
 	if b.State == "ended" {
 		if e := i.host.Sessions.Stop(r.Context(), i.access(r, v), r.PathValue("id")); e != nil {
 			fail(w, e)
@@ -428,8 +514,12 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 		s.ended = time.Now()
 		s.plan["state"] = "ended"
 		s.publish("ended")
-	} else if b.State != "buffering" {
-		s.plan["state"] = b.State
+	} else {
+		state := b.State
+		if state == "buffering" {
+			state = "recovering"
+		}
+		s.plan["state"] = state
 		s.publish("plan")
 	}
 	send(w, 200, object{"accepted": true})
@@ -463,7 +553,11 @@ func (i *instance) events(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
-		if _, _, err := i.viewer(r); err != nil {
+		identity, ok := i.host.Identity.(frontend.GrantScopes)
+		if !ok {
+			return
+		}
+		if _, err := identity.GrantScopeCurrent(r.Context(), s.scope, requestDevice(r)); err != nil {
 			return
 		}
 		s.mu.Lock()
@@ -520,4 +614,15 @@ func chapters(media frontend.MediaInfo) []object {
 		out = append(out, object{"id": strconv.FormatInt(c.ID, 10), "name": c.Title, "startSeconds": c.Start.Seconds(), "endSeconds": c.End.Seconds()})
 	}
 	return out
+}
+
+func offeredTrack(plan object, key, id string) (int, bool) {
+	tracks, _ := plan[key].([]object)
+	for _, track := range tracks {
+		if track["id"] == id {
+			n, err := strconv.Atoi(id)
+			return n, err == nil && n >= 0
+		}
+	}
+	return 0, false
 }

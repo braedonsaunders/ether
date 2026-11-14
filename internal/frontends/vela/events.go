@@ -2,13 +2,14 @@ package vela
 
 import (
 	"context"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"time"
 )
 
 // Subscribe only after a viewer opens playback. The broker owns stop and remote
 // control events; disabling the frontend cancels every subscription.
-func (i *instance) watchSession(viewer *frontend.Viewer, device frontend.Device, id, token string, s *playSession) {
+func (i *instance) watchSession(viewer *frontend.Viewer, device frontend.Device, id, scope string, s *playSession) {
 	ctx, cancel := context.WithCancel(i.ctx)
 	events, err := i.host.Sessions.Events(ctx, frontend.EventScope{Viewer: viewer, Protocol: "vela", SessionID: id, Device: device})
 	if err != nil {
@@ -24,11 +25,17 @@ func (i *instance) watchSession(viewer *frontend.Viewer, device frontend.Device,
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				resolver, ok := i.host.Identity.(frontend.DeviceIdentity)
+				resolver, ok := i.host.Identity.(frontend.GrantScopes)
 				if !ok {
 					return
 				}
-				_, _, err := resolver.ResolveDevice(ctx, token, device)
+				_, err := resolver.GrantScopeCurrent(ctx, scope, device)
+				if err != nil && !errors.Is(err, frontend.ErrUnauthorized) && !errors.Is(err, frontend.ErrNotFound) {
+					continue
+				}
+				if err != nil {
+					_ = i.host.Sessions.Stop(ctx, frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: "vela"}, id)
+				}
 				s.mu.Lock()
 				ended := !s.ended.IsZero()
 				if err != nil && !ended {

@@ -309,3 +309,20 @@ func (s surfaceIdentity) RedeemDeviceWebCode(ctx context.Context, code string, d
 	token, _, err := s.grants.RedeemDeviceWebCode(ctx, code, string(s.surface), device, "")
 	return token, err
 }
+
+func (s surfaceIdentity) GrantScope(ctx context.Context, token string, device core.Device) (string, error) {
+	if s.grants == nil || s.policy.ExternalIdentity {
+		return "", core.ErrUnauthorized
+	}
+	return s.grants.GrantScope(ctx, string(s.surface), token, device)
+}
+func (s surfaceIdentity) GrantScopeCurrent(ctx context.Context, scope string, device core.Device) (*core.Viewer, error) {
+	if s.grants == nil || s.policy.ExternalIdentity {
+		return nil, core.ErrUnauthorized
+	}
+	return s.grants.GrantScopeCurrent(ctx, string(s.surface), scope, device)
+}
+func (s surfaceIdentity) AuthenticationFeatures() frontend.AuthenticationFeatures {
+	native := !s.policy.ExternalIdentity && s.grants != nil && s.login != nil
+	return frontend.AuthenticationFeatures{Password: native && s.local != nil, QuickConnect: native && s.quick != nil && s.poll != nil}
+}
