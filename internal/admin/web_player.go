@@ -121,7 +121,7 @@ func (h *Handler) webPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 	path := "/web/ether-signin"
 	if target == "vela" {
-		path = "/"
+		path = ""
 	}
 	writeJSON(w, 200, map[string]string{"url": origin + path + "#code=" + url.QueryEscape(code)})
 }

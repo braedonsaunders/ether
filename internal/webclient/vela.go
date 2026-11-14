@@ -2,6 +2,7 @@ package webclient
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,15 +25,21 @@ func ServeVela(w http.ResponseWriter, r *http.Request, dir string) {
 		http.Error(w, "Method not allowed", 405)
 		return
 	}
+	if r.URL.Path == "/vela/" {
+		target := url.URL{Path: "/vela", RawQuery: r.URL.RawQuery, Fragment: r.URL.Fragment, RawFragment: r.URL.RawFragment}
+		// Browsers retain an incoming fragment across a redirect whose Location
+		// omits one; ordinary HTTP requests never transmit that fragment.
+		http.Redirect(w, r, target.String(), http.StatusPermanentRedirect)
+		return
+	}
 	if !VelaReady(dir) {
 		http.Error(w, "Vela client is not installed", 503)
 		return
 	}
-	if r.URL.Path == "/vela" {
-		http.Redirect(w, r, "/vela/", 307)
-		return
-	}
 	path := strings.TrimPrefix(r.URL.Path, "/vela/")
+	if r.URL.Path == "/vela" {
+		path = ""
+	}
 	f, e := os.OpenRoot(dir)
 	if e != nil {
 		http.Error(w, "Vela client is unavailable", 503)
