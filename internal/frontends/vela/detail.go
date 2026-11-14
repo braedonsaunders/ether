@@ -65,8 +65,8 @@ func mediaSummary(d frontend.ItemDetail) object {
 	return object{"video": video, "audio": audio}
 }
 
-func crew(t frontend.Title) []object {
-	out := []object{}
+func crewPeople(t frontend.Title) []frontend.Person {
+	out := []frontend.Person{}
 	seen := map[string]bool{}
 	for _, group := range [][]frontend.Person{t.Crew, t.Directors, t.Writers} {
 		for _, p := range group {
@@ -86,11 +86,7 @@ func crew(t frontend.Title) []object {
 				continue
 			}
 			seen[key] = true
-			entry := object{"name": p.Name}
-			if p.Role != "" {
-				entry["role"] = p.Role
-			}
-			out = append(out, entry)
+			out = append(out, p)
 		}
 	}
 	return out
@@ -134,11 +130,31 @@ func (i *instance) detailChildren(r *http.Request, v *frontend.Viewer, token str
 	return nil
 }
 
-// cast uses the portraits already selected with the authorized title detail.
-// One batch proves current credit membership and admits grants for all portraits;
-// no person lookup or metadata refresh is needed here.
+// cast and crew use only portraits selected with the authorized title detail.
 func (i *instance) cast(r *http.Request, token string, d frontend.ItemDetail) ([]object, error) {
 	out := make([]object, 0, len(d.Title.Cast))
+	for _, person := range d.Title.Cast {
+		out = append(out, object{"name": person.Name, "role": person.Role})
+	}
+	return i.creditArtwork(r, token, d, d.Title.Cast, out)
+}
+
+func (i *instance) crew(r *http.Request, token string, d frontend.ItemDetail) ([]object, error) {
+	people := crewPeople(d.Title)
+	out := make([]object, 0, len(people))
+	for _, person := range people {
+		entry := object{"name": person.Name}
+		if person.Role != "" {
+			entry["role"] = person.Role
+		}
+		out = append(out, entry)
+	}
+	return i.creditArtwork(r, token, d, people, out)
+}
+
+// Each batch proves current credit membership and admits portrait grants;
+// no person lookup or metadata refresh is needed here.
+func (i *instance) creditArtwork(r *http.Request, token string, d frontend.ItemDetail, people []frontend.Person, out []object) ([]object, error) {
 	portraits := map[string]frontend.Image{}
 	if d.ImagesAuthoritative {
 		for _, image := range d.Images {
@@ -151,8 +167,7 @@ func (i *instance) cast(r *http.Request, token string, d frontend.ItemDetail) ([
 	}
 	targets := []frontend.PersonImageTarget{}
 	positions := []int{}
-	for n, person := range d.Title.Cast {
-		out = append(out, object{"name": person.Name, "role": person.Role})
+	for n, person := range people {
 		if person.TMDB <= 0 {
 			continue
 		}

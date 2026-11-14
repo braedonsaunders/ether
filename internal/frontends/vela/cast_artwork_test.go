@@ -58,6 +58,15 @@ func (castArtwork) Read(_ context.Context, req frontend.ArtworkRequest, image fr
 }
 
 func TestVelaCastArtworkScopedGrants(t *testing.T) {
+	testVelaCreditArtworkScopedGrants(t, "cast")
+}
+
+func TestVelaCrewArtworkScopedGrants(t *testing.T) {
+	testVelaCreditArtworkScopedGrants(t, "crew")
+}
+
+func testVelaCreditArtworkScopedGrants(t *testing.T, field string) {
+	t.Helper()
 	ctx := context.Background()
 	db := store.OpenTest(t)
 	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0),(2,456,0,0)`); err != nil {
@@ -79,7 +88,14 @@ func TestVelaCastArtworkScopedGrants(t *testing.T) {
 	image := frontend.Image{Kind: frontend.ImagePerson, Path: "opaque-person", Tag: "v1", Subject: "tmdb:10", Width: 185, Height: 278}
 	exp := &castExperience{image: image, allowed: true}
 	exp.ItemFunc = func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: core.Title{Key: core.MovieKey(42), Cast: []core.Person{{TMDB: 10, Name: "Actor", Role: "Character"}, {TMDB: 20, Name: "No portrait"}}}, Images: []frontend.Image{image}, ImagesAuthoritative: true}, nil
+		title := core.Title{Key: core.MovieKey(42), Cast: []core.Person{{TMDB: 10, Name: "Actor", Role: "Character"}, {TMDB: 20, Name: "No portrait"}}}
+		if field == "crew" {
+			title.Cast = nil
+			title.Crew = []core.Person{{TMDB: 10, Name: "Director", Role: "Director", ThumbPath: "/known.jpg"}, {TMDB: 20, Name: "No portrait"}, {Name: "Name only"}, {Role: "Unnamed"}}
+			title.Directors = []core.Person{title.Crew[0]}
+			title.Writers = []core.Person{{TMDB: 10, Name: "Director", Role: "Writer", ThumbPath: "/known.jpg"}}
+		}
+		return frontend.ItemDetail{Title: title, Images: []frontend.Image{image}, ImagesAuthoritative: true}, nil
 	}
 	service, err := identity.NewArtworkImageGrantService(db, "vela", grants, func() frontend.Experience { return exp }, castArtwork{}, time.Minute, nil)
 	if err != nil {
@@ -92,25 +108,36 @@ func TestVelaCastArtworkScopedGrants(t *testing.T) {
 	r.Header.Set("X-Vela-Device-Id", "tv")
 	w := httptest.NewRecorder()
 	i.detail(w, r)
-	var result struct {
-		Cast []struct {
-			Name, Role string
-			Artwork    *struct {
-				Kind  string
-				Sizes []struct {
-					Width, Height int
-					URL           string
-				}
+	type credit struct {
+		Name, Role string
+		Artwork    *struct {
+			Kind  string
+			Sizes []struct {
+				Width, Height int
+				URL           string
 			}
 		}
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil {
+	// The title and other detail fields have different shapes.
+	var envelope map[string]json.RawMessage
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &envelope) != nil {
 		t.Fatalf("detail: %d %s", w.Code, w.Body.String())
 	}
-	if len(result.Cast) != 2 || result.Cast[0].Artwork == nil || result.Cast[1].Artwork != nil || exp.batches != 1 {
-		t.Fatalf("cast=%+v batches=%d", result.Cast, exp.batches)
+	var credits []credit
+	if err := json.Unmarshal(envelope[field], &credits); err != nil {
+		t.Fatal(err)
 	}
-	art := result.Cast[0].Artwork
+	wantCount := 2
+	if field == "crew" {
+		wantCount = 4
+	}
+	if len(credits) != wantCount || credits[0].Artwork == nil || credits[1].Artwork != nil || exp.batches != 1 {
+		t.Fatalf("%s=%+v batches=%d", field, credits, exp.batches)
+	}
+	if field == "crew" && (credits[0].Name != "Director" || credits[0].Role != "Director" || credits[2].Artwork != nil || credits[3].Role != "Writer" || credits[3].Artwork == nil) {
+		t.Fatalf("crew deduplication/portraits=%+v", credits)
+	}
+	art := credits[0].Artwork
 	if art.Kind != "person" || len(art.Sizes) != 1 || art.Sizes[0].Width != 185 || art.Sizes[0].Height != 278 {
 		t.Fatalf("artwork=%+v", art)
 	}

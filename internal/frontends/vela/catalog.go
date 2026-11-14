@@ -424,7 +424,12 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		fail(w, e)
 		return
 	}
-	out := object{"title": ts[0], "extras": extras, "chapters": []object{}, "cast": cast, "crew": crew(d.Title)}
+	crew, e := i.crew(r, t, d)
+	if e != nil {
+		fail(w, e)
+		return
+	}
+	out := object{"title": ts[0], "extras": extras, "chapters": []object{}, "cast": cast, "crew": crew}
 	if d.CanPlay != nil {
 		out["canPlay"] = *d.CanPlay
 	}
