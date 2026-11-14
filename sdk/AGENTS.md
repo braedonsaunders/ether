@@ -41,7 +41,7 @@ From an Ether checkout, build the CLI once (pure Go):
 
 ```sh
 CGO_ENABLED=0 go build -o ./ether ./cmd/ether
-./ether plugin new --kind integration --lang ts ./my-plugin
+./ether plugin new catalogue --lang ts ./my-plugin
 ./ether plugin check ./my-plugin
 ./ether plugin test ./my-plugin
 ./ether plugin pack -o ./my-plugin.etherpkg ./my-plugin
@@ -59,7 +59,9 @@ to its admin token in your shell and run:
 
 Alternatively open Plugins → Add plugin and upload `my-plugin.etherpkg`. Review
 requested permissions and enable it. Do not use a production server for iteration.
-`check --json` is the structured report for agents. `test` also runs recorded
+`check --json` is the structured report for agents. `dev` installs hosted
+packages; remote Python/Go sidecars must run separately and be connected by
+manifest URL or tunnel. `test` also runs recorded
 fixtures; ETHER_BIN enables its headless integration check, ETHER_PLUGIN_URL tests
 an already running remote sidecar. `pack` compiles TypeScript and checks the
 package. No separate npm install is needed for generated hosted templates.
@@ -128,7 +130,8 @@ and `./ether plugin pack DIR` after editing each recipe.
 ./ether plugin new --kind integration --lang ts ./my-catalogue
 ```
 
-Replace the generated `/catalog/` branch's empty `metas` with a small bounded
+Or run `./ether plugin new catalogue ./my-catalogue` for a starter that already
+returns The Matrix. Replace the generated `/catalog/` branch's empty `metas` with a small bounded
 list of `{id:"tt0133093",type:"movie",name:"The Matrix"}`. Keep the listSources
 catalog ID (`featured`) aligned with `/catalog/movie/featured.json`. Full typed
 catalogue/meta handlers: `sdk/examples/hello/typescript/plugin.ts`.
@@ -179,11 +182,11 @@ opening a page should read saved data, not repeatedly scan the catalogue.
 ### 6. Scheduled job
 
 ```sh
-./ether plugin new --kind integration --lang ts ./my-job
+./ether plugin new job --lang ts ./my-job
 ```
 
-Add `ether.schedule: [{"every":"1h","call":"/ether/refresh"}]` to the manifest
-and handle that path. Store a cursor/etag in KV and process a bounded batch per
+The job recipe includes `ether.schedule: [{"every":"1h","call":"/ether/refresh"}]` to the manifest
+and a handler for that path. Store a cursor/etag in KV and process a bounded batch per
 run. Do not create timers in plugin code. Cache external results; keep the job
 unconfigured until the owner needs it. Settings changes must be read each run.
 

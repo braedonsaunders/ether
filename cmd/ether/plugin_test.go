@@ -61,8 +61,8 @@ func TestPluginCLINewCheckTestPackInstallRoundTrip(t *testing.T) {
 
 	var out, errBuf bytes.Buffer
 
-	// 1. ether plugin new --kind livetv_source x
-	if code := runPlugin([]string{"new", "--kind", "livetv_source", plugDir}, &out, &errBuf); code != 0 {
+	// 1. Scaffold a catalogue with real sample data using the positional recipe.
+	if code := runPlugin([]string{"new", "catalogue", plugDir}, &out, &errBuf); code != 0 {
 		t.Fatalf("plugin new exited %d: stderr=%s", code, errBuf.String())
 	}
 
@@ -86,7 +86,7 @@ func TestPluginCLINewCheckTestPackInstallRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
 		t.Fatalf("unmarshal check JSON: %v (raw=%s)", err, out.String())
 	}
-	if !rep.OK || rep.Kind != "livetv_source" {
+	if !rep.OK || rep.Kind != "integration" {
 		t.Fatalf("unexpected JSON report: %+v", rep)
 	}
 

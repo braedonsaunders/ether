@@ -13,11 +13,12 @@ import (
 
 // TemplateOptions configures a scaffolded plugin project.
 type TemplateOptions struct {
-	Kind string // source|integration|notification_channel|livetv_source|extension
-	Lang string // ts|js|python
-	Dir  string
-	ID   string
-	Name string
+	Recipe string // optional catalogue/catalog/job recipe over the integration kind
+	Kind   string // source|integration|notification_channel|livetv_source|extension
+	Lang   string // ts|js|python
+	Dir    string
+	ID     string
+	Name   string
 }
 
 var slugCleanRe = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -463,9 +464,21 @@ func GenerateTemplateFiles(opts TemplateOptions) (map[string][]byte, error) {
 		},
 	}
 
+	if opts.Recipe == "catalogue" || opts.Recipe == "catalog" {
+		manifestMap["types"] = []string{"movie"}
+		manifestMap["resources"] = []string{"catalog"}
+		manifestMap["catalogs"] = []map[string]any{{"type": "movie", "id": "featured", "name": "Featured picks"}}
+	}
 	manBytes, err := json.MarshalIndent(manifestMap, "", "  ")
 	if err != nil {
 		return nil, err
+	}
+	if opts.Recipe == "job" {
+		manifestMap["ether"].(map[string]any)["schedule"] = []map[string]string{{"every": "1h", "call": "/ether/refresh"}}
+		manBytes, err = json.MarshalIndent(manifestMap, "", "  ")
+		if err != nil {
+			return nil, err
+		}
 	}
 	files["manifest.json"] = append(manBytes, '\n')
 
@@ -481,6 +494,9 @@ func GenerateTemplateFiles(opts TemplateOptions) (map[string][]byte, error) {
 	}
 	files["settings.schema.json"] = append(schemaBytes, '\n')
 
+	if opts.Recipe == "job" {
+		fixtures = append(fixtures, FixtureCase{Name: "refresh", Method: "POST", Path: "/ether/refresh", WantStatus: 200, WantFields: map[string]any{"ok": true}})
+	}
 	fxBytes, err := json.MarshalIndent(FixtureSuite{Cases: fixtures}, "", "  ")
 	if err != nil {
 		return nil, err
@@ -488,6 +504,20 @@ func GenerateTemplateFiles(opts TemplateOptions) (map[string][]byte, error) {
 	files["tests/fixtures.json"] = append(fxBytes, '\n')
 
 	code := generatePluginCode(opts.Lang)
+	if opts.Recipe == "catalogue" || opts.Recipe == "catalog" {
+		code = strings.ReplaceAll(code, "metas: []", `metas: [{id: "tt0133093", type: "movie", name: "The Matrix"}]`)
+		code = strings.ReplaceAll(code, `"metas": []`, `"metas": [{"id": "tt0133093", "type": "movie", "name": "The Matrix"}]`)
+	}
+	if opts.Recipe == "job" {
+		if isPython {
+			code = strings.Replace(code, `    if path == "/ether/health":`, `    if path == "/ether/refresh":
+        return 200, {"ok": True}
+    if path == "/ether/health":`, 1)
+		} else {
+			code = strings.Replace(code, `  if (p === "/ether/health")`, `  if (p === "/ether/refresh") return jsonResponse(200, { ok: true });
+  if (p === "/ether/health")`, 1)
+		}
+	}
 	switch opts.Lang {
 	case "ts":
 		files["src/index.ts"] = []byte(code)
