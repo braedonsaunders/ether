@@ -45,7 +45,7 @@ func (s *Session) PlaybackDiagnostics() core.HLSPlaybackDiagnostics {
 }
 
 func (s *Session) noteOutputCodecsLocked(t int, file string) {
-	if !s.diagnosticsEnabled || s.container != ContainerFMP4 || s.outputCodecs[t] != "" {
+	if !s.diagnosticsEnabled || s.container != ContainerFMP4 || s.outputInit[t] == file {
 		return
 	}
 	st, err := os.Stat(file)
@@ -56,6 +56,7 @@ func (s *Session) noteOutputCodecsLocked(t int, file string) {
 	if err != nil {
 		return
 	}
+	s.outputCodecs[t] = ""
 	tracks, err := parseInitTracks(data)
 	if err != nil {
 		return
@@ -68,12 +69,21 @@ func (s *Session) noteOutputCodecsLocked(t int, file string) {
 				if track.Codecs == "" {
 					return
 				}
+
+				if handler == "vide" && t >= 0 && t < len(s.rungs) && track.Width > 0 && track.Height > 0 {
+					s.rungs[t].width = track.Width
+					s.rungs[t].height = track.Height
+				}
+				if handler == "soun" {
+					s.outputAudioChannels[t] = track.Channels
+				}
 				codecs = append(codecs, track.Codecs)
 			}
 		}
 	}
 	if len(codecs) > 0 {
 		s.outputCodecs[t] = strings.Join(codecs, ",")
+		s.outputInit[t] = file
 	}
 }
 

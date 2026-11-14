@@ -41,6 +41,9 @@ func (b *Broker) mintEncoderInput(ctx context.Context, playID string) (core.Enco
 }
 
 func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id string, req frontend.StreamRequest) (string, error) {
+	if (req.AudioStream != nil || req.SubtitleStream != nil) && req.Format != frontend.StreamHLS && req.Format != frontend.StreamDASH {
+		return "", core.ErrNotAvailable
+	}
 	if req.Position < 0 || req.SegmentDuration < 0 {
 		return "", core.ErrNotAvailable
 	}
@@ -76,6 +79,9 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		return "", core.ErrUnauthorized
 	}
 	if s.restored {
+		if req.AudioStream != nil || req.SubtitleStream != nil {
+			return "", core.ErrNotAvailable
+		}
 		if req.Format != s.format || req.Position != s.streamPosition || req.SegmentDuration != s.segmentDuration {
 			return "", core.ErrNotAvailable
 		}
@@ -105,6 +111,9 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	path := "/sessions/media/" + s.public.ID + "/" + s.grant + "/"
 	if s.live {
+		if req.AudioStream != nil || req.SubtitleStream != nil {
+			return "", core.ErrNotAvailable
+		}
 		if req.Format != frontend.StreamHLS {
 			return "", core.ErrNotAvailable
 		}

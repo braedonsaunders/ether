@@ -43,6 +43,12 @@ func (i *instance) refreshOutput(ctx context.Context, id string, s *playSession)
 				q["codecStatus"] = "verified"
 				if len(codecs) > 1 {
 					q["audioCodec"] = codecs[1]
+					tracks, _ := s.plan["audioTracks"].([]object)
+					for _, track := range tracks {
+						if track["id"] == s.plan["selectedAudioTrackId"] && r.OutputAudioChannels > 0 {
+							track["channels"] = r.OutputAudioChannels
+						}
+					}
 				}
 			}
 			qualities = append(qualities, q)

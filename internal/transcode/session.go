@@ -29,6 +29,8 @@ type Session struct {
 	preparation             []core.HLSPreparationEvent
 	diagnosticRecords       []core.HLSDiagnosticRecord
 	outputCodecs            map[int]string
+	outputInit              map[int]string
+	outputAudioChannels     map[int]int
 	resumeWarm              *Session
 	resumeWarmAt            int
 	resumeWarmUsed          bool

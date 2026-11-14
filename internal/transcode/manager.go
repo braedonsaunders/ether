@@ -952,6 +952,8 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		proto:                   proto,
 		diagnosticsEnabled:      req.Diagnostics,
 		outputCodecs:            map[int]string{},
+		outputInit:              map[int]string{},
+		outputAudioChannels:     map[int]int{},
 		requireIndependentProof: req.RequireIndependentProof,
 		log:                     m.log.With("session", id, "initialRelease", req.ReleaseID),
 		created:                 time.Now(),

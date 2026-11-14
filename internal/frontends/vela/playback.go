@@ -2,6 +2,7 @@ package vela
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -36,6 +37,7 @@ type playSession struct {
 	diagnostics       any
 	observedRecords   []object
 	diagnosticHistory []object
+	clientErrors      []object
 
 	mu                               sync.Mutex
 	viewer                           int64
@@ -253,6 +255,13 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 				selectedAudio = t["id"].(string)
 			}
 		} else {
+			// Burned output has no second client overlay. Preserve the real source
+			// codec/ID, especially for image subtitles that cannot become WebVTT.
+			if track.Index == plan.Decision.SubtitleStream && plan.Decision.BurnSubtitles {
+				subs = append(subs, t)
+				selectedSub = t["id"]
+				continue
+			}
 			url, err := i.host.Sessions.SubtitleURL(r.Context(), i.access(r, v), s.ID, track.Index, "vtt")
 			if err != nil {
 				continue
@@ -339,7 +348,7 @@ func (i *instance) session(w http.ResponseWriter, r *http.Request) (*frontend.Vi
 	return v, s
 }
 func (s *playSession) snapshot() object {
-	return object{"cursor": strconv.FormatUint(s.cursor, 10), "revision": s.revision, "plan": s.plan, "publishedRanges": []object{}, "lastObservationSequence": s.sequence, "diagnostics": object{"encoder": s.diagnostics, "media": s.observedRecords, "history": s.diagnosticHistory}}
+	return object{"cursor": strconv.FormatUint(s.cursor, 10), "revision": s.revision, "plan": s.plan, "publishedRanges": []object{}, "lastObservationSequence": s.sequence, "diagnostics": object{"encoder": s.diagnostics, "media": s.observedRecords, "history": s.diagnosticHistory, "clientErrors": s.clientErrors}}
 }
 func (s *playSession) publish(kind string) {
 	s.cursor++
@@ -492,6 +501,13 @@ func (i *instance) command(w http.ResponseWriter, r *http.Request) {
 				}
 				paths[0]["kind"] = kind
 				paths[0]["decisionReason"] = d.Reason
+				tracks, _ := s.plan["audioTracks"].([]object)
+				for _, track := range tracks {
+					if track["id"] == b.AudioTrackID && !d.AudioCopy && d.AudioCodec != "" {
+						track["codec"] = d.AudioCodec
+						delete(track, "channels")
+					}
+				}
 			}
 		}
 		if audio != nil {
@@ -537,6 +553,7 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 		State, SelectedPathID                      string
 		AudioTrackID                               *string
 		SubtitleTrackID                            json.RawMessage
+		Error                                      *struct{ Class, Message string }
 	}
 	if body(r, &b) != nil {
 		problem(w, 400, "request", "invalid_request")
@@ -601,6 +618,18 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 	if e := i.host.Sessions.Report(r.Context(), i.access(r, v), r.PathValue("id"), frontend.Timeline{Sequence: b.Sequence, Position: pos, State: b.State, AudioStreamIndex: audioIndex, SubtitleStreamIndex: subtitleIndex}); e != nil {
 		fail(w, e)
 		return
+	}
+
+	if b.Error != nil {
+		switch b.Error.Class {
+		case "source", "decoder", "transient":
+			// Keep correlation without retaining arbitrary client text containing URLs.
+			digest := sha256.Sum256([]byte(b.Error.Message))
+			s.clientErrors = append(s.clientErrors, object{"at": time.Now().UTC(), "sourceGeneration": s.source, "seekGeneration": s.seek, "class": b.Error.Class, "messageHash": fmt.Sprintf("%x", digest), "positionSeconds": pos.Seconds()})
+			if len(s.clientErrors) > 8 {
+				s.clientErrors = s.clientErrors[len(s.clientErrors)-8:]
+			}
+		}
 	}
 	s.sequence = b.Sequence
 	s.position = pos
