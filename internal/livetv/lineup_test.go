@@ -56,8 +56,17 @@ func TestGuideForChannelsIsSetBased(t *testing.T) {
 			t.Fatalf("missing programmes for %s", id)
 		}
 	}
-	if q := stats.Queries(); q > 3 {
+	// One more on a cold cache: the source's paused state (sourceEntry),
+	// read once per source, never per channel.
+	if q := stats.Queries(); q > 4 {
 		t.Fatalf("guide used %d queries for %d channels", q, len(want))
+	}
+	statsCtx, stats = store.WithQueryStats(ctx)
+	if _, err := s.GuideForChannels(statsCtx, ownerUser(), guideTestNow, guideTestNow.Add(2*time.Hour), want); err != nil {
+		t.Fatal(err)
+	}
+	if q := stats.Queries(); q > 3 {
+		t.Fatalf("warm guide used %d queries for %d channels", q, len(want))
 	}
 	all, err := s.Guide(ctx, ownerUser(), guideTestNow, guideTestNow.Add(2*time.Hour))
 	if err != nil || len(all) != 24 {
@@ -116,8 +125,17 @@ func TestAllowedChannelsBatchesCurrentProgramme(t *testing.T) {
 	if len(allowed) != 1 || allowed[0].GuideID != "b" {
 		t.Fatalf("restricted lineup: %+v", allowed)
 	}
-	if q := stats.Queries(); q > 3 {
+	// One more on a cold cache: the source's paused state, read once per
+	// source and then cached.
+	if q := stats.Queries(); q > 4 {
 		t.Fatalf("allowed channels used %d queries for %d channels", q, len(channels))
+	}
+	statsCtx, stats = store.WithQueryStats(ctx)
+	if _, err := s.AllowedChannels(statsCtx, viewer); err != nil {
+		t.Fatal(err)
+	}
+	if q := stats.Queries(); q > 3 {
+		t.Fatalf("warm allowed channels used %d queries for %d channels", q, len(channels))
 	}
 	if _, err := s.AllowedChannel(ctx, viewer, byGuide["a"]); !errors.Is(err, core.ErrNotFound) {
 		t.Fatalf("restricted channel permitted: %v", err)

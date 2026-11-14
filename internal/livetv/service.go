@@ -1189,7 +1189,7 @@ func (s *Service) withPolicy(ctx context.Context, u *core.User) (context.Context
 }
 
 func (s *Service) allowedWithLookup(ctx context.Context, u *core.User, c Channel, p *Programme, lookup func(context.Context, core.RatingKey) (*core.Title, error), strict bool) bool {
-	if u == nil || !c.Enabled || !publishedTo(ctx, c) {
+	if u == nil || !c.Enabled || !publishedTo(ctx, c) || s.sourcePaused(ctx, c) {
 		return false
 	}
 	if !u.IsOwner && s.sweepState(c) == "unavailable" {
@@ -2055,6 +2055,8 @@ func (s *Service) importSource(ctx context.Context, src Source) (Source, error) 
 		s.forgetSourceAuth(old.ID)
 		s.wakeSourceRefresh()
 		s.notifySourcesChanged()
+		// The source's channels leave or rejoin every lineup and guide.
+		s.bumpLineup()
 		old.Playlist, old.Guide = "", ""
 		redactSourceAuth(&old)
 		return old, err

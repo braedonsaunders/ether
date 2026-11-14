@@ -455,6 +455,9 @@ type authEntry struct {
 	gap     time.Duration // least time between new provider streams
 	perHour int           // new provider streams per hour; 0 is no cap
 	at      time.Time
+	// disabled caches a paused source, so channel listings and policy checks
+	// need no database read per channel. forgetSourceAuth clears it.
+	disabled bool
 }
 
 const authCacheTTL = 30 * time.Second
@@ -493,6 +496,17 @@ func (s *Service) sourceConnectionLimit(id string) int {
 	return e.limit
 }
 
+// sourcePaused reports whether the owner disabled the source that owns c.
+// A paused source keeps its settings and channels, but its channels are not
+// listed, guided or tuned until it is enabled again.
+func (s *Service) sourcePaused(ctx context.Context, c Channel) bool {
+	if c.SourceID == "" {
+		return false
+	}
+	_, err := s.sourceEntry(ctx, c.SourceID)
+	return errors.Is(err, core.ErrNotAvailable)
+}
+
 // defaultTuneGap spaces new streams on a connection-limited account: a
 // viewer flicking through channels must not look like a scan.
 const defaultTuneGap = 2 * time.Second
@@ -507,6 +521,9 @@ func (s *Service) sourceEntry(ctx context.Context, id string) (authEntry, error)
 	gen := c.gen
 	c.mu.Unlock()
 	if ok && s.o.Now().Sub(e.at) < authCacheTTL {
+		if e.disabled {
+			return authEntry{}, core.ErrNotAvailable
+		}
 		return e, nil
 	}
 	src, err := s.storedSourceByID(ctx, id)
@@ -517,6 +534,14 @@ func (s *Service) sourceEntry(ctx context.Context, id string) (authEntry, error)
 		return authEntry{}, err
 	}
 	if src.Disabled {
+		c.mu.Lock()
+		if c.gen == gen {
+			if c.m == nil {
+				c.m = map[string]authEntry{}
+			}
+			c.m[id] = authEntry{at: s.o.Now(), disabled: true}
+		}
+		c.mu.Unlock()
 		return authEntry{}, core.ErrNotAvailable
 	}
 	e = authEntry{auth: src.Auth, at: s.o.Now(), perHour: max(src.TunesPerHour, 0)}
@@ -538,7 +563,7 @@ func (s *Service) sourceEntry(ctx context.Context, id string) (authEntry, error)
 			c.m = map[string]authEntry{}
 		}
 		c.m[id] = e
-	} else if cur, exists := c.m[id]; exists && s.o.Now().Sub(cur.at) < authCacheTTL {
+	} else if cur, exists := c.m[id]; exists && !cur.disabled && s.o.Now().Sub(cur.at) < authCacheTTL {
 		e = cur
 	}
 	c.mu.Unlock()

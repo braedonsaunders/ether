@@ -2,9 +2,11 @@ package livetv
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/debrid"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/usenet"
@@ -57,5 +59,74 @@ func TestDisabledSourceManagers(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Every frontend (Plex, Jellyfin, M3U) builds its lineup from AllowedChannels
+// and tunes through AllowedChannel/TuneWithSession: a paused source's channels
+// leave all of them, for the owner too, and come back when it is enabled.
+func TestDisabledSourceChannelsLeaveLineup(t *testing.T) {
+	ctx := context.Background()
+	s := testService(t, Options{})
+	for _, src := range []Source{
+		{ID: "paused", Name: "Paused", Playlist: "#EXTM3U\n#EXTINF:-1 tvg-chno=\"1\",One\nhttps://example.invalid/one.m3u8\n"},
+		{ID: "kept", Name: "Kept", Playlist: "#EXTM3U\n#EXTINF:-1 tvg-chno=\"2\",Two\nhttps://example.invalid/two.m3u8\n"},
+	} {
+		if _, err := s.ImportSource(ctx, src); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owner := &core.User{ID: 1, IsOwner: true}
+	sources := func() []string {
+		t.Helper()
+		cs, err := s.AllowedChannels(ctx, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range cs {
+			out = append(out, c.SourceID)
+		}
+		return out
+	}
+	all, err := s.Channels(ctx)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("channels: %v %v", all, err)
+	}
+	paused := all[0]
+	if paused.SourceID != "paused" {
+		paused = all[1]
+	}
+	if got := sources(); len(got) != 2 {
+		t.Fatalf("enabled lineup: %v", got)
+	}
+	if _, err := s.ImportSource(ctx, Source{ID: "paused", Disabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sources(); len(got) != 1 || got[0] != "kept" {
+		t.Fatalf("paused source still listed: %v", got)
+	}
+	if _, err := s.AllowedChannel(ctx, owner, paused.ID); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("paused channel resolved for tune: %v", err)
+	}
+	if _, err := s.TuneWithSession(ctx, owner, paused.ID, core.ClientCaps{ClientID: "test"}, "test"); err == nil {
+		t.Fatal("paused channel tuned")
+	}
+	if !s.VisibleTo(ctx, owner) {
+		t.Fatal("enabled source hidden")
+	}
+	if _, err := s.ImportSource(ctx, Source{ID: "kept", Disabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if s.VisibleTo(ctx, owner) {
+		t.Fatal("Live TV visible with every source paused")
+	}
+	for _, id := range []string{"paused", "kept"} {
+		if _, err := s.ImportSource(ctx, Source{ID: id, Disabled: false}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := sources(); len(got) != 2 || !s.VisibleTo(ctx, owner) {
+		t.Fatalf("re-enabled lineup: %v", got)
 	}
 }
