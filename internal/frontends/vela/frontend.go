@@ -337,6 +337,8 @@ func (i *instance) route(method, path string, h http.HandlerFunc) {
 	i.mux.HandleFunc(method+" /vela/v0"+path, h)
 }
 func (i *instance) routes() {
+	i.route("GET", "/libraries", i.libraries)
+	i.route("GET", "/libraries/{id}/items", i.libraryItems)
 	i.route("GET", "/capabilities", func(w http.ResponseWriter, r *http.Request) { cache(w, r, i.capabilities()) })
 	i.route("POST", "/negotiate", i.negotiate)
 	for _, p := range []string{"sign-in", "refresh", "revoke", "web-code/redeem", "device", "device/poll", "device/approve", "quick-connect", "quick-connect/poll", "quick-connect/approve"} {

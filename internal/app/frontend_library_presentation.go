@@ -6,6 +6,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontends/plex"
 	"github.com/braedonsaunders/ether/internal/frontends/silo"
 	"github.com/braedonsaunders/ether/internal/frontends/stremio"
+	"github.com/braedonsaunders/ether/internal/frontends/vela"
 	"github.com/braedonsaunders/ether/internal/frontends/xtream"
 )
 
@@ -20,6 +21,7 @@ var libraryPresentations = map[core.Protocol]libraryPresentation{
 	"jellyfin": {mediabrowser.NativeLibraryType, mediabrowser.ProjectLibrary}, // Native adapter wiring.
 	"emby":     {mediabrowser.NativeLibraryType, mediabrowser.ProjectLibrary}, // Native adapter wiring.
 	"silo":     {silo.NativeLibraryType, silo.ProjectLibrary},
+	"vela":     {vela.NativeLibraryType, vela.ProjectLibrary},
 	"stremio":  {stremio.NativeLibraryType, stremio.ProjectLibrary},
 	"xtream":   {xtream.NativeLibraryType, xtream.ProjectLibrary},
 	"dlna":     {plex.NativeLibraryType, fileLibraryPresentation},

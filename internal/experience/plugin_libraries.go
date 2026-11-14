@@ -163,7 +163,12 @@ func (s *Service) storedViews(ctx context.Context, v *core.User) ([]frontend.Vie
 		if !ok {
 			continue
 		}
+		revision := ""
+		if !lib.UpdatedAt.IsZero() {
+			revision = lib.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+		}
 		out = append(out, frontend.View{
+			Revision:  revision,
 			ID:        strconv.FormatInt(int64(lib.ID), 10),
 			LibraryID: lib.ID,
 			Name:      lib.Name,

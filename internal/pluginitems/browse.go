@@ -16,6 +16,8 @@ import (
 // BrowseQuery specifies a keyset-paged browse over a plugin library and level
 // (spec §2.3, §3.4).
 type BrowseQuery struct {
+	// NoTotal avoids count queries for clients using cursor continuation.
+	NoTotal   bool
 	Policy    *libraryfilter.Filter
 	Hidden    bool
 	LibraryID core.LibraryID
@@ -150,7 +152,9 @@ func (s *Service) Browse(ctx context.Context, q BrowseQuery) (BrowsePage, error)
 
 	// Compute total count.
 	var total int
-	if !hasFacets && parentRef == "" && level != "" {
+	if q.NoTotal {
+		// Count-free request: the page and cursor below are sufficient.
+	} else if !hasFacets && parentRef == "" && level != "" {
 		_ = s.db.QueryRowContext(ctx,
 			`SELECT COALESCE(n, 0) FROM plugin_item_tally WHERE library_id = ? AND level = ?`,
 			int64(q.LibraryID), level).Scan(&total)
@@ -276,6 +280,9 @@ LIMIT ?`
 		}
 	}
 
+	if q.NoTotal {
+		total = len(items)
+	}
 	return BrowsePage{
 		Items:      items,
 		Total:      total,
