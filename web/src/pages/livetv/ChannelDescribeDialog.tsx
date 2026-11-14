@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@braedonsaunders/appkit-ai/react";
 import { Button, Spinner } from "@braedonsaunders/appkit-ui";
-import { Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Radio, Sparkles } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import AskEtherPanel from "../../components/agent/AskEtherPanel";
 import {
@@ -17,13 +17,16 @@ import { readAgentStream } from "../plugins/LiveStage";
 import { t } from "../../i18n";
 import { useLocale } from "../../i18n/react";
 import { apiStream, errorMessage } from "../../lib/api";
-import { LookTile } from "./onair/Stage";
+import { ScenePoster, styleBindings } from "./onair/Stage";
 import type { Look } from "./onair/model";
 import { tv, type Programme, type Channel } from "./model";
 import { Artwork } from "../../components/Artwork";
 import { programmeArtwork } from "./model";
+import "./channel-describe.css";
+import "../collections/describe.css";
+import "../plugins/stage.css";
 import { ScheduleTimeline, type TimelineResponse } from "./ScheduleTimeline";
-export function SchedulePreview({ channel }: { channel: Channel }) {
+function SchedulePreview({ channel, hero }: { channel: Channel; hero: ReactNode }) {
   const [programmes, setProgrammes] = useState<Programme[]>([]);
   const [data, setData] = useState<TimelineResponse>();
   const [error, setError] = useState("");
@@ -34,6 +37,15 @@ export function SchedulePreview({ channel }: { channel: Channel }) {
     setData(undefined);
     setProgrammes([]);
     setError("");
+    if (
+      !channel.items.length &&
+      !channel.filter &&
+      !channel.collection &&
+      !channel.sources?.length &&
+      !channel.blocks?.length &&
+      !channel.personal
+    )
+      return () => ctl.abort();
     tv.preview(JSON.parse(key) as Channel, ctl.signal, {
       from: new Date(range.from),
       until: new Date(range.to),
@@ -45,7 +57,13 @@ export function SchedulePreview({ channel }: { channel: Channel }) {
           channelId: channel.id || "draft",
           timezone: channel.timezone || "UTC",
           now: range.from,
-          dayparts: [],
+          dayparts: (channel.blocks ?? []).map((block, i) => ({
+            id: String(i),
+            name: block.name || "",
+            start: block.start,
+            end: block.end,
+            days: block.days?.length ? block.days : [0, 1, 2, 3, 4, 5, 6],
+          })),
           elements: programmes
             .filter((p) => !p.slate)
             .map((p) => ({
@@ -63,27 +81,57 @@ export function SchedulePreview({ channel }: { channel: Channel }) {
       });
     return () => ctl.abort();
   }, [key, range]);
-  return error ? (
-    <p role="alert">{error}</p>
-  ) : data ? (
-    <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
-        {programmes.map((p) => (
-          <div key={p.id} className="min-w-0">
-            <Artwork
-              src={programmeArtwork(p.item.thumb)}
-              alt=""
-              title={p.item.title}
-              className="aspect-[2/3] overflow-hidden rounded-lg bg-bg-subtle"
-              imgClassName="object-cover"
-            />
-            <p className="mt-1 truncate text-xs text-fg-muted">{p.item.title}</p>
+  return (
+    <div className="grid items-center gap-3 sm:grid-cols-[1.4fr_1fr]">
+      {hero}
+      <div className="min-w-0">
+        {data ? (
+          <div className="flex gap-3 overflow-hidden">
+            {programmes.map((p) => (
+              <div key={p.id} className="stage-flow w-16 shrink-0">
+                <Artwork
+                  src={programmeArtwork(p.item.thumb)}
+                  alt=""
+                  title={p.item.title}
+                  className="aspect-[2/3] overflow-hidden rounded-lg bg-bg-subtle"
+                  imgClassName="object-cover"
+                />
+                <p className="mt-1 truncate text-xs text-fg-muted">{p.item.title}</p>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : (
+          <div aria-hidden className="flex gap-3 overflow-hidden">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div
+                key={i}
+                className="describe-ghost h-28 w-20 shrink-0"
+                style={{ animationDelay: `${i * 100}ms` }}
+              />
+            ))}
+          </div>
+        )}
       </div>
-      <ScheduleTimeline channelId={channel.id || "draft"} snapshot={data} range={range} />
+      <div className="min-w-0 sm:col-span-2">
+        {error ? (
+          <p role="alert">{error}</p>
+        ) : data ? (
+          <ScheduleTimeline
+            channelId={channel.id || "draft"}
+            snapshot={data}
+            range={range}
+            showLegend={false}
+          />
+        ) : (
+          <div aria-hidden className="flex gap-2">
+            {[2, 3, 2, 1].map((n, i) => (
+              <div key={i} className="describe-ghost h-16" style={{ flex: n }} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
-  ) : null;
+  );
 }
 
 const ROUTE = "/livetv/channel-builder";
@@ -104,6 +152,7 @@ export function ChannelDescribeDialog({
   const [style, setStyle] = useState<Look>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [applied, setApplied] = useState(false);
   const thread = useRef<string | undefined>(undefined);
   const turn = useRef<string | undefined>(undefined);
   const chat = useRef<HTMLDivElement>(null);
@@ -207,6 +256,7 @@ export function ChannelDescribeDialog({
   return (
     <DescribeSurface
       open
+      roomyChat
       onClose={onClose}
       title={
         <span className="flex items-center gap-2">
@@ -218,29 +268,75 @@ export function ChannelDescribeDialog({
         "Describe the programming. Apply updates this draft; save the channel when you’re ready.",
       )}
       error={error}
+      footer={
+        <Button disabled={!applied || busy} onClick={onClose}>
+          {t("Continue editing")}
+        </Button>
+      }
       preview={
-        <div className="space-y-4 p-4">
-          <div className="flex items-center gap-2">
-            <h3 className="flex-1 text-lg font-semibold">{proposal.name || t("New channel")}</h3>
-            <span className="text-xs text-fg-muted">
-              {busy ? t("Building…") : t("Live preview")}
-            </span>
-          </div>
-          {style?.scenes && <LookTile look={style} playOnHover />}
-          <SchedulePreview channel={proposal} />
-          <div className="flex flex-wrap gap-2">
-            {examples.map((text) => (
-              <Button
-                key={text}
-                variant="outline"
-                size="sm"
-                disabled={busy}
-                onClick={() => fillComposer(chat.current, text)}
+        <div className={`channel-build p-4 ${busy ? "describe-building" : ""}`}>
+          <SchedulePreview
+            channel={proposal}
+            hero={
+              <div
+                className="channel-build-hero relative overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
+                style={{
+                  background: `radial-gradient(ellipse at 80% 0%, ${style?.brand.palette.accent || "#7960ed"}33, transparent 65%), ${style?.brand.palette.background || "#121323"}`,
+                  color: style?.brand.palette.text || "#f8f8ff",
+                }}
               >
-                {text}
-              </Button>
-            ))}
-          </div>
+                <div className="channel-build-glow" aria-hidden />
+                <div className="relative grid items-center gap-3 p-4 sm:grid-cols-[1fr_120px]">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-widest opacity-70">
+                      <Radio size={14} /> {t("Channel {number}", { number: proposal.number })}
+                      <span className="ml-auto flex items-center gap-1.5 normal-case tracking-normal">
+                        <span
+                          className={`size-1.5 rounded-full bg-current ${busy ? "animate-pulse" : ""}`}
+                        />
+                        {busy ? t("Building…") : t("Live preview")}
+                      </span>
+                    </div>
+                    <h3 className="truncate text-xl font-semibold tracking-tight">
+                      {proposal.name || t("New channel")}
+                    </h3>
+                    <p className="mt-1 text-sm opacity-70">
+                      {style?.brand.tagline ||
+                        t("Programming, schedule and a look, built with you.")}
+                    </p>
+                    <div className="mt-3 flex items-center gap-2">
+                      {style ? (
+                        <>
+                          {Object.values(style.brand.palette).map((color, i) => (
+                            <span
+                              key={i}
+                              className="size-4 rounded-full ring-1 ring-white/30"
+                              style={{ background: color }}
+                            />
+                          ))}
+                          <span className="ml-1 truncate text-xs opacity-70">{style.name}</span>
+                        </>
+                      ) : (
+                        <span className="text-xs opacity-50">
+                          {t("Your channel takes shape here")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="hidden overflow-hidden rounded-xl border border-white/10 bg-black/20 shadow-lg sm:block">
+                    {style?.scenes.some((s) => s.enabled) ? (
+                      <DraftBrand look={style} channel={proposal} />
+                    ) : (
+                      <div className="relative grid aspect-video place-items-center">
+                        <div className="channel-build-orbit absolute size-24 rounded-full border border-white/15" />
+                        <Radio size={32} className="opacity-50" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            }
+          />
         </div>
       }
     >
@@ -255,40 +351,79 @@ export function ChannelDescribeDialog({
             </Link>
           </div>
         ) : (
-          <AskEtherPanel
-            route={ROUTE}
-            messages={messages}
-            labels={labels}
-            approvalRequestLabels={{
-              ...approvalRequestLabels(),
-              approve: t("Apply"),
-              approved: t("Applied"),
-            }}
-            secretRequestLabels={{}}
-            send={send}
-            hasOlderMessages={hasOlder}
-            onLoadOlderMessages={async () => {
-              if (!thread.current) return;
-              const page = await fetchAgentMessages(thread.current, messages[0]?.id);
-              setMessages((previous) => [...page.messages, ...previous]);
-              setHasOlder(page.hasOlder);
-            }}
-            onSubmitSecretRequest={async () => {}}
-            onDecideApprovalRequest={async (id, decision, note) => {
-              const result = await decideAgentApproval(id, decision, note, { route: ROUTE });
-              if (result.status === "failed")
-                throw new Error(result.failureReason || t("Could not apply the draft"));
-              if (decision === "approved" && result.result?.channel) {
-                const next = { ...result.result.channel, id: channel.id };
-                current.current = next;
-                setProposal(next);
-                onApply(next);
-              }
-              await sync();
-            }}
-          />
+          <>
+            <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-border px-4 py-2">
+              {examples.map((text) => (
+                <button
+                  key={text}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => fillComposer(chat.current, text)}
+                  className="rounded-full border border-border px-2.5 py-1 text-xs text-fg-muted transition-colors hover:border-primary/50 hover:text-fg disabled:opacity-50"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+            <AskEtherPanel
+              route={ROUTE}
+              messages={messages}
+              labels={labels}
+              approvalRequestLabels={{
+                ...approvalRequestLabels(),
+                approve: t("Apply"),
+                approved: t("Applied"),
+              }}
+              secretRequestLabels={{}}
+              send={send}
+              hasOlderMessages={hasOlder}
+              onLoadOlderMessages={async () => {
+                if (!thread.current) return;
+                const page = await fetchAgentMessages(thread.current, messages[0]?.id);
+                setMessages((previous) => [...page.messages, ...previous]);
+                setHasOlder(page.hasOlder);
+              }}
+              onSubmitSecretRequest={async () => {}}
+              onDecideApprovalRequest={async (id, decision, note) => {
+                const result = await decideAgentApproval(id, decision, note, { route: ROUTE });
+                if (result.status === "failed")
+                  throw new Error(result.failureReason || t("Could not apply the draft"));
+                if (decision === "approved" && result.result?.channel) {
+                  const next = { ...result.result.channel, id: channel.id };
+                  current.current = next;
+                  setProposal(next);
+                  onApply(next);
+                  setApplied(true);
+                }
+                await sync();
+              }}
+            />
+          </>
         )}
       </div>
     </DescribeSurface>
   );
+}
+
+/** Only the open builder animates; reduced-motion owners get the scene poster. */
+function DraftBrand({ look, channel }: { look: Look; channel: Channel }) {
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setPlaying(!query.matches && !document.hidden);
+    update();
+    query.addEventListener("change", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      query.removeEventListener("change", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, []);
+  const scene =
+    look.scenes.find((s) => s.role === "ident" && s.enabled) || look.scenes.find((s) => s.enabled);
+  const bindings = useMemo(
+    () => styleBindings(look, { channel: { name: channel.name, logo: channel.logo } }),
+    [look, channel.name, channel.logo],
+  );
+  return scene ? <ScenePoster scene={scene} bindings={bindings} playing={playing} /> : null;
 }
