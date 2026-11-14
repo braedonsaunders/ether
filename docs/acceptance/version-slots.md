@@ -10,10 +10,12 @@ when a previously absent MediaVersion control becomes necessary.
 
 `resolver.configuredSlots` is the single menu policy. It reads owner settings
 and the effective profile/device ceiling, without searching or resolving a
-release. Auto is first. The default mode reserves the configured same-quality
-alternatives and three distinct tier/cut choices; the existing seven-entry
-cap applies. The per-resolution and per-source modes reserve their tier/source
-choices in rounds so one busy resolution cannot consume the whole menu.
+release. Auto is first. The default mode reserves exactly the configured
+same-quality alternatives (zero means Auto only; N means Auto plus N).
+Enabling `offerHigherVersions` also reserves three distinct tier/cut choices;
+the existing seven-entry cap applies. The per-resolution and per-source modes
+reserve their tier/source choices in rounds so one busy resolution cannot
+consume the whole menu.
 Unknown availability leaves a stable placeholder, rather than removing a row.
 
 A slot's selector is its identity. Numeric Media/Part IDs bind title plus

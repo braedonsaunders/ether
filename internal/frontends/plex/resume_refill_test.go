@@ -268,19 +268,21 @@ func TestResumedDetailColdRestartRefill(t *testing.T) {
 	if x.idx.searches.Load() != 1 || x.idx.fetches.Load() != 0 {
 		t.Fatal("refill must search only once")
 	}
-	ids, ok := x.f.srv.playIDs.releases(playIdentityKey{ownerUser.ID, "client-1", x.title.Key}, fixedNow)
-	if !ok {
+	pin := x.f.srv.playIDs.pinned(playIdentityKey{ownerUser.ID, "client-1", x.title.Key}, false, fixedNow)
+	if !pin.resolved {
 		t.Fatal("render order missing")
 	}
-	for i, id := range ids {
-		if id == "offline-1" {
+	// Slot IDs remain selectors; cached concrete releases only fill labels
+	// and tracks. The remembered release still selects its offered slot.
+	for i, v := range pin.variants {
+		if v.Release.ID == "offline-1" {
 			if second[i]["selected"] != true {
 				t.Fatal("offered remembered release not selected")
 			}
 			return
 		}
 	}
-	t.Fatalf("remembered candidate missing: %v", ids)
+	t.Fatalf("remembered candidate missing: %v", pin.variants)
 }
 
 func TestResumedDetailNoResumeControl(t *testing.T) {
@@ -313,8 +315,10 @@ func TestResumedDetailRefillDoesNotWaitOrChangeSource(t *testing.T) {
 		t.Fatal("warm completion canceled independent search")
 	default:
 	}
-	if len(x.detail(t, "search-blocked")) != 1 {
-		t.Fatal("blocked search unexpectedly filled cache")
+	// A blocked search cannot delay or collapse the configured menu;
+	// these rows are stable placeholders until discovery supplies labels.
+	if len(x.detail(t, "search-blocked")) != 4 {
+		t.Fatal("blocked search changed the configured menu")
 	}
 	// Another client of the same viewer is independently admitted, but joins the
 	// episode search. Its canceled request must not cancel either background path.
@@ -394,8 +398,10 @@ func TestResumedDetailRefillFailureKeepsMedia(t *testing.T) {
 			x.assertNoWarm(t)
 			waitResumeRefill(t, x.scheduledRefill(t))
 			media := x.detail(t, tc.name)
-			if len(media) != 1 || media[0]["id"] != float64(x.title.Key) {
-				t.Fatal("unsuccessful search must retain the single Auto Media")
+			// Settings reserve Auto plus three stable placeholders from the
+			// first response, even when discovery/refill finds no releases.
+			if len(media) != 4 || media[0]["id"] != float64(x.title.Key) {
+				t.Fatal("unsuccessful search must retain the configured menu and Auto identity")
 			}
 			remembered, releaseID, ok := x.mgr.ResumedTracks(t.Context(), &ownerUser, x.title.Key, x.caps)
 			if !ok || releaseID != "offline-1" {

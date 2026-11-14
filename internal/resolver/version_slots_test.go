@@ -13,13 +13,13 @@ import (
 // Verify cold/warm/expired caches, optional modes and admission of an explicit
 // logical choice, including its unavailable-source fallback.
 func TestConfiguredVersionSlots(t *testing.T) {
-	for _, mode := range []string{"default", "resolution", "source", "both"} {
+	for _, mode := range []string{"default", "higher", "resolution", "source", "both"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := testCfg()
 			cfg.Resolver.SameQualityAlternatives = 2
 			cfg.Resolver.AlternativesPerResolution = mode == "resolution" || mode == "both"
 			cfg.Resolver.AlternativesPerSource = mode == "source" || mode == "both"
-			cfg.Resolver.OfferHigherVersions = true
+			cfg.Resolver.OfferHigherVersions = mode != "default"
 			idx := &fakeIndexer{releases: variantReleases()}
 			svc := New(idx, fakeHealth{}, nil, cfg, Options{})
 			req := core.ResolveRequest{Title: matrixTitle(), Client: appleTVCaps()}
@@ -35,8 +35,10 @@ func TestConfiguredVersionSlots(t *testing.T) {
 				}
 				return out
 			}
-			want := 6
-			if mode != "default" {
+			want := 3
+			if mode == "higher" {
+				want = 6
+			} else if mode != "default" {
 				want = core.MaxVariants
 			}
 			if len(cold) != want {

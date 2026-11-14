@@ -26,6 +26,16 @@ func (s *Server) slotMedia(ctx context.Context, pr *Request, t *frontend.Title, 
 	selected := pin.selected
 	if selected == 0 {
 		selected = int64(t.Key)
+		if ps == nil && !info.Estimated {
+			if _, releaseID, ok := s.resumedTracks(ctx, pr, t); ok {
+				for _, v := range versions {
+					if v.Release.ID == releaseID {
+						selected = s.variantMediaID(t, v)
+						break
+					}
+				}
+			}
+		}
 	}
 	out := make([]model.Media, 0, len(versions))
 	caps := s.clientCapsForKey(pr, t.Key)
@@ -35,10 +45,12 @@ func (s *Server) slotMedia(ctx context.Context, pr *Request, t *frontend.Title, 
 	}
 	for _, v := range versions {
 		id := s.variantMediaID(t, v)
-		if ps != nil && id == selected {
+		// A stopped session's persisted probe is just as authoritative as
+		// a live probe for the selected slot; placeholders retain their IDs.
+		if id == selected && (ps != nil || !info.Estimated && info.Video() != nil) {
 			claimed := v.Info
 			v.Info = info
-			if ps.Resolution != nil && (ps.Resolution.Release.Name != "" || ps.Resolution.Release.Info.Height > 0) {
+			if ps != nil && ps.Resolution != nil && (ps.Resolution.Release.Name != "" || ps.Resolution.Release.Info.Height > 0) {
 				v.Release = ps.Resolution.Release
 				if v.Auto {
 					v.Label = probedAutoTitle(v.Release, claimed, info)
