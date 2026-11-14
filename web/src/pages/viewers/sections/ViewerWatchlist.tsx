@@ -22,9 +22,7 @@ type Item = {
 const known = (value?: string) => Boolean(value && !value.startsWith("0001"));
 
 const formatSources = (sources: string[]) =>
-  Array.from(
-    new Set(sources.map((s) => (s.startsWith("plex-community:") ? "plex-community" : s))),
-  );
+  Array.from(new Set(sources.map((s) => (s.startsWith("plex-community:") ? "plex-community" : s))));
 
 /** One viewer's watched-for titles: sync, check and remove (viewer profile › Watchlist). */
 export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
