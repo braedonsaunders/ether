@@ -8,8 +8,8 @@ import (
 
 func TestRankedHubNativeTypesAndIsolation(t *testing.T) {
 	source := model.Metadata{Type: "movie", RatingKey: "123", Key: "/library/metadata/123", Thumb: "/original/poster", Art: "/original/art", Image: []model.Image{{Type: "coverPoster", URL: "/original/poster"}}}
-	rows := stableHomeHubs([]model.Hub{{Type: "movie", HubIdentifier: "ranked", RankedTop10: true, Metadata: []model.Metadata{source}}})
-	if len(rows) != 1 || rows[0].Meta == nil || rows[0].Meta.DisplayImage[0].ImageType != "coverArt" {
+	rows := stableHomeHubs([]model.Hub{{Type: "movie", HubIdentifier: "ranked", RankedTop10: true, TotalSize: model.Ptr(100), Metadata: []model.Metadata{source}}})
+	if len(rows) != 1 || rows[0].TotalSize == nil || *rows[0].TotalSize != 1 || rows[0].Meta == nil || rows[0].Meta.DisplayImage[0].ImageType != "coverArt" {
 		t.Fatal(rows)
 	}
 	got := rows[0].Metadata[0]
