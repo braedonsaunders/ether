@@ -384,4 +384,5 @@ The standalone Top 10 raster experiment in `docs/research/top10-prototype`
 includes Anton, Copyright 2020 The Anton Project Authors, under the SIL Open
 Font License 1.1. Source: https://github.com/google/fonts/tree/main/ofl/anton.
 The full licence is [OFL.txt](docs/research/top10-prototype/OFL.txt).
-This font is confined to the research prototype and is not wired into the server.
+The ranked artwork compositor also bundles this font under `internal/overlays`,
+with the complete licence in `internal/overlays/anton-OFL.txt`.

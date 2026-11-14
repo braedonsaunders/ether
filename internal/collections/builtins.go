@@ -86,6 +86,7 @@ func (s *Service) seedBuiltins(ctx context.Context) error {
 func mergeBuiltin(fixed, edited core.CollectionSpec) core.CollectionSpec {
 	out := fixed
 	out.Enabled = edited.Enabled
+	out.RankedTop10 = edited.RankedTop10
 	out.Targets = edited.Targets
 	out.Artwork = edited.Artwork
 	out.Rotate = edited.Rotate

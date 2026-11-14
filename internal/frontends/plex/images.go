@@ -140,6 +140,10 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key frontend.RatingKey, element string, width int) {
+	if r.URL.Query().Has("ranked") {
+		s.serveRankedArtwork(w, r, key, width)
+		return
+	}
 	if reader, ok := s.getHost().Artwork.(frontend.OwnerArtworkReader); ok {
 		kind := ""
 		switch element {
