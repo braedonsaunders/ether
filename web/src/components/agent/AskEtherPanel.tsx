@@ -101,7 +101,6 @@ export default function AskEtherPanel({
       }
       const decoder = new TextDecoder();
       let pending = "";
-      let failed = false;
       const body = response.body.pipeThrough(
         new TransformStream<Uint8Array, Uint8Array>({
           transform(chunk, controller) {
@@ -111,15 +110,15 @@ export default function AskEtherPanel({
             for (const line of lines) {
               if (!line.startsWith("data: {")) continue;
               try {
-                if (JSON.parse(line.slice(6)).type === "error") failed = true;
+                // The SDK may stop reading on an error chunk, so expose retry
+                // immediately instead of waiting for the stream to flush.
+                if (JSON.parse(line.slice(6)).type === "error" && !signal.aborted)
+                  setRetryPrompt(prompt);
               } catch {
                 /* A non-JSON SSE line is not a turn error. */
               }
             }
             controller.enqueue(chunk);
-          },
-          flush() {
-            if (failed && !signal.aborted) setRetryPrompt(prompt);
           },
         }),
       );
