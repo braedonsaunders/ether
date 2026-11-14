@@ -223,8 +223,12 @@ func TestLiveSearchRestoreDemand(t *testing.T) {
 	if err := target.o.DB.QueryRowContext(ctx, `SELECT active,ready FROM livetv_search_state WHERE id=1`).Scan(&active, &ready); err != nil {
 		t.Fatal(err)
 	}
-	if active != 0 || ready != 0 {
-		t.Fatalf("restore enabled search cache: %d/%d", active, ready)
+	wantActive := 0
+	if store.DialectOf(target.o.DB) == store.Postgres {
+		wantActive = 1
+	}
+	if active != wantActive || ready != 0 {
+		t.Fatalf("restored search state: %d/%d, want %d/0", active, ready, wantActive)
 	}
 	if store.DialectOf(target.o.DB) != store.Postgres {
 		var count int
