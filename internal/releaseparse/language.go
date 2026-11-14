@@ -266,7 +266,7 @@ func parseSubtitleLanguages(spaced string, floor int) []string {
 // multiAudioAfter reports a MULTI audio tag after floor. "Multi-Subs" and
 // "MULTi SUB" declare subtitles, not audio.
 func multiAudioAfter(spaced string, floor int) bool {
-	upper := strings.ToUpper(spaced)
+	upper := upperASCII(spaced)
 	for from := max(floor+1, 0); ; {
 		i := tokenIndex(upper[from:], "MULTI")
 		if i < 0 {
@@ -290,7 +290,7 @@ func multiAudioAfter(spaced string, floor int) bool {
 // local dub + original language (LanguageDual) and does not imply English on
 // a non-English film.
 func dualAudioKindAfter(spaced string, floor int) string {
-	upper := strings.ToUpper(spaced)
+	upper := upperASCII(spaced)
 	hasBareDual := false
 	for from := max(floor+1, 0); ; {
 		i := tokenIndex(upper[from:], "DUAL")
@@ -315,4 +315,18 @@ func dualAudioKindAfter(spaced string, floor int) string {
 		return LanguageDual
 	}
 	return ""
+}
+
+// upperASCII upper-cases ASCII letters only, so byte offsets computed on the
+// original string (floor) stay valid. strings.ToUpper can change the byte
+// length of non-ASCII names (e.g. "ı" → "I"), which made slicing by the
+// original offsets panic on some IPTV/VOD titles.
+func upperASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'a' <= c && c <= 'z' {
+			b[i] = c - ('a' - 'A')
+		}
+	}
+	return string(b)
 }
