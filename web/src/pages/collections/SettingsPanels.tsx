@@ -634,6 +634,14 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
         </div>
         <ToggleRow
           title={t("Play trailer preview on focus")}
+          description={
+            tg.homeRow || tg.sectionRow
+              ? t(
+                  "Vela and Moonfin can play the focused title's trailer. Other apps show wide artwork.",
+                )
+              : t("Turn on a Home or Library row to use trailer previews.")
+          }
+          disabled={!tg.homeRow && !tg.sectionRow}
           checked={Boolean(spec.previewOnFocus)}
           onChange={(previewOnFocus) => update({ previewOnFocus })}
         />

@@ -8,6 +8,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
+// TrailerPreviewAvailability reports current owner/resolver/cache readiness without work.
+type TrailerPreviewAvailability interface{ TrailerPreviewAvailable() bool }
+
 // TrailerPreviews is optional. Call only after viewer focus/open, never while
 // projecting homes or rows. Client capabilities must be authenticated/bounded
 // by the protocol adapter before filling Device and Caps.

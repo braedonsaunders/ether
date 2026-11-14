@@ -43,6 +43,7 @@ type playSession struct {
 	signal                           chan struct{}
 	stream                           context.CancelFunc
 	ended                            time.Time
+	previewExpires                   time.Time
 }
 
 func seconds(n float64) (time.Duration, bool) {
@@ -299,7 +300,7 @@ func (i *instance) session(w http.ResponseWriter, r *http.Request) (*frontend.Vi
 	s := i.sessions[r.PathValue("id")]
 	if s != nil {
 		s.mu.Lock()
-		expired := !s.ended.IsZero() && time.Since(s.ended) >= 10*time.Minute
+		expired := (!s.ended.IsZero() && time.Since(s.ended) >= 10*time.Minute) || (!s.previewExpires.IsZero() && !s.previewExpires.After(time.Now()))
 		s.mu.Unlock()
 		if expired {
 			delete(i.sessions, r.PathValue("id"))
@@ -379,6 +380,10 @@ func (i *instance) command(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "conflict", "session_ended")
 		return
 	}
+	if s.plan["purpose"] == "preview" && b.Kind != "stop" {
+		problem(w, 400, "request", "preview_command_unsupported")
+		return
+	}
 	id := r.PathValue("id")
 	switch b.Kind {
 	case "stop":
@@ -444,6 +449,10 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.plan["purpose"] == "preview" {
+		problem(w, 400, "request", "preview_observation_unsupported")
+		return
+	}
 	if stale(w, s, b.SourceGeneration, b.SeekGeneration) {
 		return
 	}
@@ -527,6 +536,13 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 func (i *instance) events(w http.ResponseWriter, r *http.Request) {
 	_, s := i.session(w, r)
 	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	preview := s.plan["purpose"] == "preview"
+	s.mu.Unlock()
+	if preview {
+		problem(w, 400, "request", "preview_events_unsupported")
 		return
 	}
 	flush, ok := w.(http.Flusher)

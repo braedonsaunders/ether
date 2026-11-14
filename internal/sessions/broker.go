@@ -27,8 +27,9 @@ import (
 
 // BrokerDeps are the explicit dependencies shared by all protocol surfaces.
 type BrokerDeps struct {
-	PreviewSource func(context.Context, *core.Viewer, *core.Title, string) (PreviewSource, error)
-	SurfacePolicy func(frontend.Protocol) core.SessionPolicy
+	PreviewAvailable func() bool
+	PreviewSource    func(context.Context, *core.Viewer, *core.Title, string) (PreviewSource, error)
+	SurfacePolicy    func(frontend.Protocol) core.SessionPolicy
 	// OnActualPlaying runs in a bounded worker after authenticated playing telemetry.
 	OnActualPlaying func(context.Context, *Broker, PlayingSubtitleSession)
 	// DistributedHLS is opt-in; unsupported plans stay local before reservation.
@@ -168,6 +169,8 @@ type retiredSession struct {
 type Broker struct {
 	previews            map[string]previewSession
 	previewPending      map[int64]bool
+	previewPreparations map[int64]*previewPreparation
+	previewWG           sync.WaitGroup
 	autoSubtitleWG      sync.WaitGroup
 	autoSubtitleRunning int
 	sampleLimit         int
@@ -1548,6 +1551,10 @@ func (b *Broker) Close(ctx context.Context) {
 		s.cancel()
 	}
 	b.previews = nil
+	for _, job := range b.previewPreparations {
+		job.cancel()
+	}
+	b.previewPreparations = nil
 	if b.historyCancel != nil {
 		b.historyCancel()
 	}
@@ -1578,6 +1585,7 @@ func (b *Broker) Close(ctx context.Context) {
 		cancel()
 	}
 	b.autoSubtitleWG.Wait()
+	b.previewWG.Wait()
 	// Shutdown must still release sessions when its caller has already been
 	// canceled; bound the cleanup so an unresponsive gate cannot block forever.
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.shutdownTimeout)

@@ -51,6 +51,9 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		}
 	}
 	return sessions.NewBroker(sessions.BrokerDeps{SurfacePolicy: sessionPolicy,
+		PreviewAvailable: func() bool {
+			return a.extras != nil && a.extras.Enabled() && a.cfg.Read().Extras.TrailerCacheMaxBytes >= 0
+		},
 		PreviewSource: func(ctx context.Context, viewer *core.Viewer, title *core.Title, lang string) (sessions.PreviewSource, error) {
 			if a.extras == nil {
 				return sessions.PreviewSource{}, core.ErrNotAvailable

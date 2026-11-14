@@ -440,3 +440,10 @@ func (s scorecardSessionWrapper) TrailerPreview(ctx context.Context, r frontend.
 	}
 	return frontend.TrailerPreviewResult{State: "unavailable", Reason: "unsupported"}, nil
 }
+
+func (s scorecardSessionWrapper) TrailerPreviewAvailable() bool {
+	if p, ok := s.embeddedScorecardSessions.(frontend.TrailerPreviewAvailability); ok {
+		return p.TrailerPreviewAvailable()
+	}
+	return false
+}

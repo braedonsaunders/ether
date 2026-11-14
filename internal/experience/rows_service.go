@@ -164,6 +164,10 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 		}
 	}
 
+	for index := range out {
+		out[index].Layout.PreviewOnFocus = out[index].PreviewOnFocus
+	}
+
 	situation, err := s.d.Situation(ctx, req)
 	if err != nil {
 		return nil, err

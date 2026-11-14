@@ -5,7 +5,7 @@ It is forwarded by `sessions.BindSurface` and the scorecard session wrapper.
 The app wires `BrokerDeps.PreviewSource` to the existing extras discovery and
 resolver, then to the durable trailer cache. No home/row projection calls it.
 
-## Vela route integration (not in this branch's base)
+## Vela route contract
 
 On an authenticated `POST /vela/v0/titles/:id/trailer-preview`, validate the
 body `{idempotencyKey, client}`, map client capabilities using the same bounded
@@ -34,16 +34,18 @@ stop-command discovery. No movie session, resume read/write, watch receipt,
 scrobble, timeline callbacks, feature prefetch or encoder reservation occurs.
 A late ready response after focus cancellation must be stopped by the client.
 The route must advertise the feature only when integrated; discovery/hero
-projection must never mint grants. Integration with Vela's plan response store
-and generation validation remains the route owner's work.
+projection must never mint grants. The adapter integration below supplies command lineage and generation validation.
 
 ## Resource and playback semantics
 
 Preview allowance is separate from feature-film stream slots: one active
 preview per viewer, at most 128 grants and four pending requests per broker.
-The extras cache admits only one fill at a time. Busy requests return preparing;
-there is no detached download job. Download, discovery and resolver operations
-inherit the requesting focus/open context, and downloads time out at 90 seconds.
+The extras cache admits only one fill at a time. Busy requests return preparing.
+Cold focus starts bounded preparation, waits at most 100 ms, then returns
+preparing while that focus-triggered work completes. No grant/session exists
+until a fresh poll rechecks current policy. Four preparations maximum, each
+with a 90-second bound; replacement and broker shutdown cancel preparation.
+Ordinary LocalTrailers downloads retain their requesting open context.
 Stop, replacement, surface teardown and broker close revoke active grants and
 cancel ongoing response reads. Grants are local to this node; cluster routing
 must keep preview POST, media and commands on the same node (fail closed on
@@ -78,3 +80,13 @@ The coordinator must verify real Vela focus/cancellation/stop after route wiring
 Moonfin LocalTrailers focus (including Apple/HLS behavior), and Jellyfin/Emby
 explicit trailers. Confirm downloads only start on focus/open/play and preview
 never changes Continue Watching/resume/history or starts a feature release.
+
+## Vela adapter integration
+
+The integration branch `w0312/vela-trailer-preview` merges the Vela server chain, owner row controls, and this backend. It mounts POST /vela/v0/titles/{id}/trailer-preview, preserves ordinary POST idempotency, maps bounded authenticated client capabilities, and forwards the exact ready/preparing/unavailable union. Current owner extras/resolver/cache readiness is exposed through optional TrailerPreviewAvailability on the broker, surface and scorecard wrapper. The route enforces 20 new focus requests per viewer per ten seconds with a bounded lazy rate table; no worker or timer exists at idle.
+
+Row.previewOnFocus is taken from shared row snapshots, including continuation pages. Hero.previewOnFocus comes only from its actual featured source row. Neither capability support nor optional trailer metadata enables a row/hero by itself. Preview grants keep lightweight, expiring command lineage (bounded to 128) in the Vela adapter; they do not open ordinary plans/watchers. Existing commands accept only generation-matched stop for previews and return an ended plan with purpose=preview. Observations and SSE are rejected for preview sessions. Canceled issuance revokes a late broker grant. A ready grant is immutable and broker-local; the existing node-affinity limitation still applies.
+
+Owner hints are translated in all 19 locales. The collection control is disabled with a reason until a Home or Library row is enabled. Collection-tab grids retain ordinary artwork; only opted-in Home/library rows receive preview presentation. Console screenshots are mock-console verification, not proof of real-device focus playback. Real Vela and Moonfin focus/media/stop flows remain the coordinator's release gate.
+
+Cold Vela focus now waits at most 100 ms for source preparation, then returns preparing without a session/grant. At most four focus-triggered preparations exist; each has a 90-second cancellation bound, cancels on another title/device focus or broker shutdown, and starts no idle worker. A fresh poll rechecks viewer/title policy before issuing a grant. The prior viewer grant is revoked before cold work begins. Completed source handles are held for at most a minute on lazy access (four total); cached bytes remain under the durable owner cap.

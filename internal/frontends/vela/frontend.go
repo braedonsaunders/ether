@@ -64,15 +64,16 @@ type instance struct {
 	rowMu   sync.Mutex
 	rowMeta map[string]frontend.RowView
 
-	host     frontend.Host
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mux      *http.ServeMux
-	assets   string
-	mu       sync.Mutex
-	sessions map[string]*playSession
-	replayMu sync.Mutex
-	replays  map[string]*replay
+	host         frontend.Host
+	ctx          context.Context
+	cancel       context.CancelFunc
+	mux          *http.ServeMux
+	assets       string
+	mu           sync.Mutex
+	previewRates map[int64]previewRate
+	sessions     map[string]*playSession
+	replayMu     sync.Mutex
+	replays      map[string]*replay
 }
 
 func (i *instance) Handler() http.Handler { return http.HandlerFunc(i.serve) }
@@ -363,6 +364,7 @@ func (i *instance) routes() {
 	i.route("GET", "/images/{secret}", i.image)
 	i.route("POST", "/interactions", i.interactions)
 	i.route("POST", "/playback", i.playback)
+	i.route("POST", "/titles/{id}/trailer-preview", i.trailerPreview)
 	i.route("GET", "/sessions/{id}", i.snapshot)
 	i.route("GET", "/sessions/{id}/events", i.events)
 	i.route("POST", "/sessions/{id}/commands", i.command)
@@ -387,7 +389,7 @@ func (i *instance) capabilities() object {
 	if source, ok := i.host.Identity.(frontend.AuthenticationFeatureSource); ok {
 		auth = source.AuthenticationFeatures()
 	}
-	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(live), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
+	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(live), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false), "trailerPreview": f(i.previewAvailable())}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
 }
 func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 	var b struct {

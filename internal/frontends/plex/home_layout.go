@@ -258,6 +258,12 @@ func landscapeMetadata(items []model.Metadata) {
 		}
 		if art != "" {
 			m.Thumb = art
+			m.Image = append([]model.Image(nil), m.Image...)
+			for n := range m.Image {
+				if m.Image[n].Type == "coverPoster" {
+					m.Image[n].URL = art
+				}
+			}
 		}
 	}
 }

@@ -27,7 +27,11 @@ func heroesFromRows(rows []object) ([]object, []object) {
 			// Extras discovery/resolution is not a cached playback capability. This
 			// source supplies no cached trailer grant, so the optional trailer stays
 			// absent rather than triggering background or request-path resolution.
-			heroes = append(heroes, object{"title": title, "receiptToken": receipt})
+			hero := object{"title": title, "receiptToken": receipt}
+			if enabled, _ := row["previewOnFocus"].(bool); enabled {
+				hero["previewOnFocus"] = true
+			}
+			heroes = append(heroes, hero)
 			chosen[id] = true
 		}
 	}

@@ -29,16 +29,34 @@ func previewRowArtwork(r *http.Request, item map[string]any) {
 	if len(backdrops) == 0 || backdrops[0] == "" {
 		return
 	}
-	tags := map[string]any{}
-	if old, ok := item["ImageTags"].(map[string]any); ok {
+	tags := map[string]string{}
+	switch old := item["ImageTags"].(type) {
+	case map[string]string:
 		for k, v := range old {
 			tags[k] = v
+		}
+	case map[string]any:
+		for k, v := range old {
+			if value, ok := v.(string); ok {
+				tags[k] = value
+			}
 		}
 	}
 	tags["Primary"] = backdrops[0]
 	item["ImageTags"] = tags
 	item["PrimaryImageAspectRatio"] = float64(16) / 9
-	delete(item, "ImageBlurHashes")
+	if old, ok := item["ImageBlurHashes"].(map[string]any); ok {
+		hashes := map[string]any{}
+		for kind, values := range old {
+			if kind != "Primary" {
+				hashes[kind] = values
+			}
+		}
+		if byTag, ok := old["Backdrop"].(map[string]string); ok && byTag[backdrops[0]] != "" {
+			hashes["Primary"] = map[string]string{backdrops[0]: byTag[backdrops[0]]}
+		}
+		item["ImageBlurHashes"] = hashes
+	}
 }
 
 func (i *instance) gridImagesFor(r *http.Request, titles []frontend.Title) map[frontend.RatingKey]map[string]any {

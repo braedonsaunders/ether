@@ -155,6 +155,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 		row.Title = meta.Title
 		row.Purpose = meta.Purpose
 		row.Style = meta.Layout.Style
+		row.PreviewOnFocus = meta.Layout.PreviewOnFocus
 		rows = append(rows, row)
 	} else if hasViews {
 		vv, e := views.ListRowViews(r.Context(), frontend.RowViewRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", Placement: placement, Item: item, Refresh: refresh})
@@ -177,6 +178,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 			row.Title = view.Title
 			row.Purpose = view.Purpose
 			row.Style = view.Layout.Style
+			row.PreviewOnFocus = view.Layout.PreviewOnFocus
 			rows = append(rows, row)
 		}
 	} else {
@@ -256,6 +258,9 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 			continuation = "unknown"
 		}
 		wire := object{"id": row.ID, "name": row.Title, "purpose": row.Purpose, "receiptToken": row.Handle, "style": row.Style, "items": entries, "continuation": continuation}
+		if row.PreviewOnFocus {
+			wire["previewOnFocus"] = true
+		}
 		if row.More && hasViews {
 			offset := len(row.Entries)
 			if old := r.URL.Query().Get("cursor"); old != "" {

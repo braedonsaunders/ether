@@ -1013,13 +1013,6 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 	} else if id, e := ids.ParseGUID(ids.View, parent[0]); e == nil {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), ids.Decimal(id), q)
 	} else if key, e := ids.ParseRatingKeyGUID(parent[0]); e == nil {
-		if key.Kind() == frontend.KindCollection || key.Kind() == frontend.KindSmart {
-			if source := i.host.Experience.CollectionsSource(); source != nil {
-				if collection, e := source.Get(r.Context(), v, key); e == nil && collection != nil {
-					r = withPreviewRowArtwork(r, collection.PreviewOnFocus)
-				}
-			}
-		}
 		page, err = i.host.Experience.Children(r.Context(), v, device(r), key, q)
 	} else {
 		http.NotFound(w, r)

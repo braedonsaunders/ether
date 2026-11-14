@@ -22,13 +22,21 @@ func TestTrailerPreviewPurposeIsolation(t *testing.T) {
 	progress := &fakeProgress{}
 	timeline := 0
 	fills := 0
+	cold := make(chan struct{})
 	path := filepath.Join(t.TempDir(), "trailer.mp4")
 	if err := os.WriteFile(path, []byte("preview bytes"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	b, err := NewBroker(BrokerDeps{SurfacePolicy: testSessionPolicy, Playback: pb, Progress: progress, ActiveViewer: active, Events: events, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, Now: func() time.Time { return now }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) { timeline++ }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
 		return &core.Title{Key: k}, nil
-	}, PreviewSource: func(context.Context, *core.Viewer, *core.Title, string) (PreviewSource, error) {
+	}, PreviewSource: func(ctx context.Context, _ *core.Viewer, title *core.Title, _ string) (PreviewSource, error) {
+		if title.Key == core.MovieKey(99) {
+			select {
+			case <-cold:
+			case <-ctx.Done():
+				return PreviewSource{}, ctx.Err()
+			}
+		}
 		fills++
 		return PreviewSource{MIMEType: "video/mp4", SourceGeneration: "internal-hash", Open: func() (*os.File, error) { return os.Open(path) }}, nil
 	}})
@@ -107,4 +115,19 @@ func TestTrailerPreviewPurposeIsolation(t *testing.T) {
 	if code := serve(expired.Grant, nil); code != 404 {
 		t.Fatal("expired grant survived", code)
 	}
+	// Cold focus must return promptly without promising a grant. A fresh poll
+	// can issue a grant only after preparation completes and policy is rechecked.
+	req.Item, req.IdempotencyKey = core.MovieKey(99), "cold-focus"
+	started := time.Now()
+	preparing, err := previews.TrailerPreview(ctx, req)
+	if err != nil || preparing.State != "preparing" || preparing.Grant != nil || time.Since(started) > time.Second {
+		t.Fatal("cold focus blocked or fabricated a grant", preparing, err)
+	}
+	close(cold)
+	req.IdempotencyKey = "cold-poll"
+	ready, err := previews.TrailerPreview(ctx, req)
+	if err != nil || ready.State != "ready" || ready.Grant == nil {
+		t.Fatal("prepared focus did not become ready", ready, err)
+	}
+
 }
