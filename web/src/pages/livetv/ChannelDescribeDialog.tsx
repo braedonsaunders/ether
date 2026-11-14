@@ -153,6 +153,8 @@ export function ChannelDescribeDialog({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [applied, setApplied] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [transcriptRevision, setTranscriptRevision] = useState(0);
   const thread = useRef<string | undefined>(undefined);
   const turn = useRef<string | undefined>(undefined);
   const chat = useRef<HTMLDivElement>(null);
@@ -180,10 +182,25 @@ export function ChannelDescribeDialog({
     if (alive.current) {
       setMessages(page.messages);
       setHasOlder(page.hasOlder);
+      setTranscriptRevision((revision) => revision + 1);
     }
   }, []);
+  // AppKit adopts host messages in an effect. Wait for that render before
+  // revealing the approval card, which arrives after the live stream ends.
+  // History pagination deliberately does not increment this revision.
+  useEffect(() => {
+    if (!transcriptRevision) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const viewport = chat.current?.querySelector<HTMLElement>(".app-scroll");
+        if (viewport) viewport.scrollTop = viewport.scrollHeight;
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [transcriptRevision]);
   const send = async (prompt: string, signal: AbortSignal) => {
     setError("");
+    setStarted(true);
     const ctl = new AbortController();
     active.current = ctl;
     const stop = () => {
@@ -352,19 +369,21 @@ export function ChannelDescribeDialog({
           </div>
         ) : (
           <>
-            <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-border px-4 py-2">
-              {examples.map((text) => (
-                <button
-                  key={text}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => fillComposer(chat.current, text)}
-                  className="rounded-full border border-border px-2.5 py-1 text-xs text-fg-muted transition-colors hover:border-primary/50 hover:text-fg disabled:opacity-50"
-                >
-                  {text}
-                </button>
-              ))}
-            </div>
+            {!started && (
+              <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-border px-4 py-2">
+                {examples.map((text) => (
+                  <button
+                    key={text}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => fillComposer(chat.current, text)}
+                    className="rounded-full border border-border px-2.5 py-1 text-xs text-fg-muted transition-colors hover:border-primary/50 hover:text-fg disabled:opacity-50"
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            )}
             <AskEtherPanel
               route={ROUTE}
               messages={messages}

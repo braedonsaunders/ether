@@ -10,7 +10,7 @@
  */
 import { referenceLooks } from "../../pages/livetv/onair/fixtures";
 import { createStyleSteps } from "../create-style";
-import type { Look } from "../../pages/livetv/onair/model";
+import { onair, type Look } from "../../pages/livetv/onair/model";
 import type { CollectionSpec, Rule } from "../../lib/contract";
 import { normalizeSpec } from "../../lib/rules";
 import { GENRES } from "../data";
@@ -736,10 +736,31 @@ export function createAgentMock(): { handle: ExtendHandler } {
       const proposal = thread?.messages
         .find((m) => m.id === record.messageId)
         ?.parts.find((p) => asRecord(p).type === "dynamic-tool");
-      return json({
-        status: decision,
-        result: decision === "approved" ? asRecord(proposal).output : undefined,
-      });
+      return (async () => {
+        const result =
+          decision === "approved" ? structuredClone(asRecord(proposal).output) : undefined;
+        // Match the real Apply contract: save branding only on approval, then
+        // return the new look reference on the unsaved editor channel.
+        if (decision === "approved" && record.toolName === "livetv_channel_apply") {
+          const output = asRecord(result);
+          if (output.style) {
+            const look = await onair.saveLook({
+              ...(output.style as Look),
+              id: "",
+              channelIds: [],
+            });
+            const channel = asRecord(output.channel);
+            channel.look = {
+              ident: true,
+              upNext: true,
+              offAir: true,
+              ...asRecord(channel.look),
+              lookId: look.id,
+            };
+          }
+        }
+        return json({ status: decision, result });
+      })();
     }
 
     if (method === "POST" && seg[1] === "secrets" && seg[2]) {
