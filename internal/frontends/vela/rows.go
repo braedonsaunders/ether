@@ -11,6 +11,7 @@ import (
 
 type rowCursor struct {
 	Row, Scope string
+	Exclude    []string
 	Offset     int
 	Expires    int64
 }
@@ -37,23 +38,35 @@ func (i *instance) rowPage(r *http.Request, v *frontend.Viewer, id string, offse
 	}
 	return frontend.Row{Kind: kind, ID: id, Entries: page.Entries, Handle: page.ImpressionHandle, More: page.More}, nil
 }
-func (i *instance) rowToken(r *http.Request, v *frontend.Viewer, id string, offset int) string {
+func (i *instance) rowToken(r *http.Request, v *frontend.Viewer, id string, offset int, exclude []string) string {
+	return i.sealRowCursor(rowCursor{Row: id, Scope: i.cursorScope(r, v), Offset: offset, Exclude: exclude, Expires: time.Now().Add(10 * time.Minute).Unix()})
+}
+
+func (i *instance) sealRowCursor(c rowCursor) string {
 	nonce := make([]byte, i.seal.NonceSize())
 	if _, e := rand.Read(nonce); e != nil {
 		return ""
 	}
-	b, _ := json.Marshal(rowCursor{Row: id, Scope: i.cursorScope(r, v), Offset: offset, Expires: time.Now().Add(10 * time.Minute).Unix()})
+	b, _ := json.Marshal(c)
 	return base64.RawURLEncoding.EncodeToString(i.seal.Seal(nonce, nonce, b, []byte("vela-row")))
 }
 func (i *instance) readRowToken(r *http.Request, v *frontend.Viewer, token string) (rowCursor, error) {
 	var c rowCursor
+	if len(token) > 4096 {
+		return c, frontend.ErrRowViewStale
+	}
 	b, e := base64.RawURLEncoding.DecodeString(token)
 	if e != nil || len(b) < i.seal.NonceSize() {
 		return c, frontend.ErrRowViewStale
 	}
 	b, e = i.seal.Open(nil, b[:i.seal.NonceSize()], b[i.seal.NonceSize():], []byte("vela-row"))
-	if e != nil || json.Unmarshal(b, &c) != nil || c.Expires < time.Now().Unix() || c.Scope != i.cursorScope(r, v) || c.Offset < 0 || c.Offset > 10000 {
+	if e != nil || json.Unmarshal(b, &c) != nil || c.Expires < time.Now().Unix() || c.Scope != i.cursorScope(r, v) || c.Offset < 0 || c.Offset > 10000 || len(c.Exclude) > 5 {
 		return c, frontend.ErrRowViewStale
+	}
+	for _, id := range c.Exclude {
+		if len(id) > 256 {
+			return rowCursor{}, frontend.ErrRowViewStale
+		}
 	}
 	return c, nil
 }

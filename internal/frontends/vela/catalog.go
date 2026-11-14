@@ -129,6 +129,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 		}
 	}
 	rows := []frontend.Row{}
+	var excludedHeroes []string
 	outerMore := false
 	views, hasViews := i.host.Experience.(frontend.RowViews)
 	if id := r.PathValue("id"); id != "" && hasViews {
@@ -139,6 +140,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 				return nil, false, frontend.ErrRowViewStale
 			}
 			offset = c.Offset
+			excludedHeroes = c.Exclude
 		}
 		row, e := i.rowPage(r, v, id, offset)
 		if e != nil {
@@ -230,6 +232,25 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 				entries = append(entries, object{"id": t["id"], "kind": "title", "title": t, "receiptToken": ""})
 			}
 		}
+
+		if len(excludedHeroes) > 0 {
+			omitted := map[string]bool{}
+			for _, id := range excludedHeroes {
+				omitted[id] = true
+			}
+			filtered := entries[:0]
+			for _, entry := range entries {
+				if entry["kind"] == "title" {
+					if title, ok := entry["title"].(object); ok {
+						if id, _ := title["id"].(string); omitted[id] {
+							continue
+						}
+					}
+				}
+				filtered = append(filtered, entry)
+			}
+			entries = filtered
+		}
 		continuation := "exhausted"
 		if row.More || row.Kind == "truncated" {
 			continuation = "unknown"
@@ -241,7 +262,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 				c, _ := i.readRowToken(r, v, old)
 				offset += c.Offset
 			}
-			wire["nextCursor"] = i.rowToken(r, v, row.ID, offset)
+			wire["nextCursor"] = i.rowToken(r, v, row.ID, offset, excludedHeroes)
 			wire["continuation"] = "more"
 		}
 		out = append(out, wire)
@@ -262,6 +283,26 @@ func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 	heroes, shelves := heroesFromRows(rows)
 	out := object{"viewer": viewerWire(v), "capabilities": i.capabilities(), "defaultSkinId": "default", "rows": shelves}
 	if len(heroes) > 0 {
+		ids := make([]string, 0, len(heroes))
+		for _, hero := range heroes {
+			ids = append(ids, hero["title"].(object)["id"].(string))
+		}
+		for _, shelf := range shelves {
+			if token, ok := shelf["nextCursor"].(string); ok && token != "" {
+				cursor, err := i.readRowToken(r, v, token)
+				if err != nil {
+					fail(w, err)
+					return
+				}
+				cursor.Exclude = ids
+				next := i.sealRowCursor(cursor)
+				if next == "" {
+					problem(w, 503, "transient", "service_unavailable")
+					return
+				}
+				shelf["nextCursor"] = next
+			}
+		}
 		out["heroes"] = heroes
 	}
 	cache(w, r, out)

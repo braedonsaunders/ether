@@ -1,6 +1,10 @@
 package vela
 
-import "testing"
+import (
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestFeaturedHeroesPreserveReceiptsAndDeduplicate(t *testing.T) {
 	entry := func(id, receipt string) object {
@@ -41,5 +45,23 @@ func TestFeaturedHeroesPreserveReceiptsAndDeduplicate(t *testing.T) {
 	}
 	if len(featured["items"].([]object)) != 8 {
 		t.Fatal("dedup mutated source visit")
+	}
+
+	seal, err := encryption(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst := &instance{seal: seal}
+	r := httptest.NewRequest("GET", "/vela/v0/rows/featured", nil)
+	r.Header.Set("X-Vela-Device-Id", "device")
+	viewer := &frontend.Viewer{ID: 1}
+	token := inst.rowToken(r, viewer, "featured", 50, []string{"A", "B", "C", "D", "E"})
+	cursor, err := inst.readRowToken(r, viewer, token)
+	if err != nil || cursor.Offset != 50 || len(cursor.Exclude) != 5 {
+		t.Fatal("hero pagination exclusion lost", cursor, err)
+	}
+	r.Header.Set("X-Vela-Device-Id", "another")
+	if _, err := inst.readRowToken(r, viewer, token); err == nil {
+		t.Fatal("hero exclusions crossed device scope")
 	}
 }
