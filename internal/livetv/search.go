@@ -248,14 +248,6 @@ func (h liveTVHost) SearchLiveTV(ctx context.Context, viewer *core.Viewer, query
 	}
 	return out, nil
 }
-func containsID(ids []string, id string) bool {
-	for _, v := range ids {
-		if v == id {
-			return true
-		}
-	}
-	return false
-}
 
 // First use asks for preparation and returns immediately; never walk a large
 // lineup in a search request. Backfill yields between small write transactions.

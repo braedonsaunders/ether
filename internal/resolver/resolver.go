@@ -2409,63 +2409,6 @@ func packCoversSeason(info core.ReleaseInfo, season int) bool {
 	return false
 }
 
-// sourceOrder lists the release types a quality order names, in the order
-// they first appear.
-func sourceOrder(order []core.QualityItem) []core.Source {
-	var out []core.Source
-	for _, item := range order {
-		for _, q := range item.Qualities {
-			src, _, _ := strings.Cut(q, "-")
-			s := core.Source(src)
-			if src == "unknown" {
-				s = core.SourceUnknown
-			}
-			if !slices.Contains(out, s) {
-				out = append(out, s)
-			}
-		}
-	}
-	return out
-}
-
-// compareFallbackSource preserves an imported profile's order for sources it
-// names (order, from sourceOrder), and uses the usual source hierarchy for
-// the remaining source types.
-func compareFallbackSource(a, b core.Source, order []core.Source) int {
-	level := func(s core.Source) int {
-		switch s {
-		case core.SourceRemux:
-			return 6
-		case core.SourceBluRay:
-			return 5
-		case core.SourceWEBDL, core.SourceWEBRip:
-			return 4
-		case core.SourceHDTV:
-			return 3
-		case core.SourceDVD:
-			return 2
-		default:
-			return 1
-		}
-	}
-	rank := func(s core.Source) int {
-		best := -10000
-		for i, allowed := range order {
-			d := level(s) - level(allowed)
-			if d < 0 {
-				d = -d
-			}
-			score := 1000 - i*100 - d*10
-			if s == allowed {
-				score++
-			}
-			best = max(best, score)
-		}
-		return best*10 + level(s)
-	}
-	return rank(a) - rank(b)
-}
-
 func fallbackHeight(info core.ReleaseInfo) int {
 	if info.Height == 0 && info.Source == core.SourceDVD {
 		return 480

@@ -24,4 +24,5 @@ func init() {
 		return dropLock(ctx, tx, fromID)
 	})
 	store.RegisterViewerTable("watchlist", "watchlist_availability_jobs", "user_id", store.ViewerMergeDrop)
+	store.RegisterViewerTable("watchlist", "watchlist_warm_intents", "user_id", store.ViewerMergeDrop)
 }

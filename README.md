@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/braedonsaunders/ether/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/braedonsaunders/ether?label=release&color=1f6feb" /></a>
-  <a href="https://discord.gg/t8ewTZ7gpa"><img alt="Discord" src="https://img.shields.io/discord/1567272301672796331?label=discord&logo=discord&logoColor=white&color=5865F2" /></a>
+  <a href="https://discord.gg/kAhN4QxM"><img alt="Discord" src="https://img.shields.io/discord/1567272301672796331?label=discord&logo=discord&logoColor=white&color=5865F2" /></a>
   <img alt="Platforms" src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Docker-555" />
   <img alt="Pure Go" src="https://img.shields.io/badge/Go-CGO__ENABLED%3D0-00ADD8" />
   <a href="LICENSE"><img alt="GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-555" /></a>

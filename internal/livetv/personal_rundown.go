@@ -18,6 +18,7 @@ import (
 func init() {
 	store.Register("livetv", 7, `CREATE TABLE livetv_personal(viewer_id INTEGER NOT NULL,channel_id TEXT NOT NULL,day TEXT NOT NULL,rundown TEXT NOT NULL,cursor_ms BIGINT NOT NULL,built_at BIGINT NOT NULL,away_ms BIGINT NOT NULL DEFAULT 0,PRIMARY KEY(viewer_id,channel_id,day));`)
 	store.RegisterViewerTable("livetv", "livetv_personal", "viewer_id", store.ViewerMergeMove, "channel_id", "day")
+	store.RegisterViewerTable("livetv", "livetv_search_virtual", "viewer_id", store.ViewerMergeDrop)
 }
 
 type personalKey struct {
