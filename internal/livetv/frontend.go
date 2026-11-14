@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
+	"sort"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -155,14 +157,44 @@ type liveTVHost struct {
 	s *Service
 }
 
+func (h liveTVHost) Enabled() bool { return h.s.Enabled() }
+
 func (h liveTVHost) Channels(ctx context.Context, v *core.Viewer) ([]frontend.LiveChannel, error) {
 	cs, err := h.s.AllowedChannels(ctx, v)
 	if err != nil {
 		return nil, err
 	}
+	gs, err := h.s.OwnerGuides(ctx)
+	if err != nil {
+		return nil, err
+	}
+	individual := map[string][]frontend.LiveGuide{}
+	order := map[string]int{}
+	for i, g := range gs {
+		order[g.ID] = i
+		if !g.Hidden {
+			for _, id := range g.Channels {
+				individual[id] = append(individual[id], frontend.LiveGuide{ID: g.ID, Name: g.Name})
+			}
+		}
+	}
+	memberships := map[GuideGroup][]frontend.LiveGuide{}
 	out := make([]frontend.LiveChannel, len(cs))
 	for i, c := range cs {
-		out[i] = frontend.LiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Kind: c.Kind, Logo: c.Logo, Rating: c.Rating, Group: c.Group, Favorite: c.Favorite}
+		group := GuideGroup{c.SourceID, c.Group}
+		guides, ok := memberships[group]
+		if !ok {
+			guides = guideMemberships(gs, c.SourceID, c.Group)
+			memberships[group] = guides
+		}
+		guides = slices.Clone(guides)
+		for _, g := range individual[c.ID] {
+			if !slices.ContainsFunc(guides, func(v frontend.LiveGuide) bool { return v.ID == g.ID }) {
+				guides = append(guides, g)
+			}
+		}
+		sort.SliceStable(guides, func(i, j int) bool { return order[guides[i].ID] < order[guides[j].ID] })
+		out[i] = frontend.LiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Kind: c.Kind, Logo: c.Logo, Rating: c.Rating, Group: c.Group, Favorite: c.Favorite, Guides: guides}
 	}
 	return out, nil
 }
@@ -180,7 +212,7 @@ func (h liveTVHost) Guide(ctx context.Context, v *core.Viewer, q frontend.LiveGu
 	}
 	out := make([]frontend.LiveProgramme, 0, len(ps))
 	for _, p := range ps {
-		out = append(out, frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating, ShowTitle: p.Item.ShowTitle, EpisodeTitle: p.Item.EpisodeTitle, Season: p.Item.Season, Episode: p.Item.Episode})
+		out = append(out, frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Genres: p.Item.Genres, MediaType: p.Item.MediaType, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating, ShowTitle: p.Item.ShowTitle, EpisodeTitle: p.Item.EpisodeTitle, Season: p.Item.Season, Episode: p.Item.Episode})
 		if q.Limit > 0 && len(out) >= q.Limit {
 			break
 		}

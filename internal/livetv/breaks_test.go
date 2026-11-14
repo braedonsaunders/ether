@@ -48,7 +48,6 @@ func TestBreakAnalysisNeverOnRequestPath(t *testing.T) {
 		t.Fatal("request opened analysis source")
 		return markers.BreakInput{}, nil
 	}
-	s.o.BreakAnalyzer = &markers.BreakAnalyzer{DB: s.o.DB}
 	c := testChannel()
 	p, _ := EraBreakPattern("1980s")
 	c.Look = &ChannelLook{BreakPattern: &p, ReelID: "ads"}
@@ -56,6 +55,10 @@ func TestBreakAnalysisNeverOnRequestPath(t *testing.T) {
 	if _, err := s.SaveChannel(t.Context(), c); err != nil {
 		t.Fatal(err)
 	}
+	// Start this lifetime without the analysis worker, then install the detector
+	// spy. This test isolates request work; background analysis has its own test.
+	s.ReconcileEnabled()
+	s.o.BreakAnalyzer = &markers.BreakAnalyzer{DB: s.o.DB}
 	if _, err := s.Channel(t.Context(), c.ID); err != nil {
 		t.Fatal(err)
 	}

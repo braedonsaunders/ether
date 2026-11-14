@@ -56,7 +56,7 @@ func TestLibrariesConsoleRulesPreviewAndPluginsSetup(t *testing.T) {
 	}
 
 	// Create an Action saved-filter library and add an extra rule hiding Japanese movies on it.
-	w = call(h, "POST", "/", `{"name":"Action Picks","filter":{"type":"movie","genres":["Action"]}}`)
+	w = call(h, "POST", "/", `{"name":"Action Picks","mediaType":"movie"}`)
 	if w.Code != 201 {
 		t.Fatalf("create filter library %d %s", w.Code, w.Body)
 	}

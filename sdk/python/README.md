@@ -115,3 +115,24 @@ Content-kind item dictionaries may include `unavailable: {"code": "no_verified_s
 and refuses resolution until a later upsert omits the field. `pattern: "file"`
 with a `path` is reserved for hosted resolvers with `folders: read`; Python
 sidecars cannot access host files or call `folders.hash`. See `docs/plugin-kinds.md`.
+
+### Continuing background jobs
+
+A `job` handler receives `{"name": ..., "continuation": ...}`. Return
+`{"continueInMs": 0, "continuation": {"next": 41}, "progress": "Platform 41 of 92"}`
+to continue. Return `{"done": True}` or `{"failed": "reason"}` to finish; an
+absent `continueInMs` also finishes. Store durable checkpoints in KV to recover
+on a later owner-started run after restart. Tokens are at most 64 KiB and progress
+at most 1,024 UTF-8 bytes. The drawer supports progress and cancellation.
+
+Ether uses owner-controlled global/per-plugin ceilings under Plugins: default
+2 GiB memory (up to wasm32 4 GiB), 12 hours, effectively unlimited background
+compute, 8 GiB downloads/member expansion, 32 GiB total expansion and 65,535 ZIP
+members. Downloads also obey library cache quotas. Hosted manifests request
+`ether.runtime.limits` with `memoryBytes`, `deadline`, `unitBudget`, `fetchBytes`,
+`archiveMemberBytes`, `archiveExpandedBytes` and `archiveMembers`. Install preview
+and detail show requested and granted values. Jobs pause during playback/high
+host load and use low CPU/IO priority. A 1,000,000-call sanity bound applies;
+viewer browse/search/resolve/playback calls retain tight time and compute budgets.
+Remote Python processes manage their own CPU/memory. See the TypeScript SDK
+README for route classification, policy APIs and complete job behavior.

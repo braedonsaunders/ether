@@ -45,10 +45,6 @@ type Service struct {
 	cache      map[string]*cacheEntry
 	flights    map[string]chan struct{}
 	generation uint64
-
-	// Vibe refinement cache (vibe.go).
-	vibeCache   map[string]vibeCacheEntry
-	vibeFlights map[string]bool
 }
 
 type cacheEntry struct {
@@ -572,8 +568,6 @@ func (s *Service) UpdateConfig(cfg config.LLM) {
 	}
 	s.client.UpdateConfig(cfg)
 	s.generation++
-	s.vibeCache = nil
-	s.vibeFlights = nil
 	s.cache = map[string]*cacheEntry{}
 	s.flights = map[string]chan struct{}{}
 }

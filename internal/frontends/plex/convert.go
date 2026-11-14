@@ -616,28 +616,10 @@ func (s *Server) resumedTracks(ctx context.Context, pr *Request, t *frontend.Tit
 	return info, releaseID, true
 }
 
-// singleVersionClient reports the Plex smart-TV app build shared by Plex for
-// VIDAA and Plex for LG (both 5.94.x). It caches its playback settings for an
-// item from the first Media list it holds: rows, season lists and a detail
-// page opened before discovery finishes all carry one Media, so a later play
-// queue or detail with several versions makes its player look up a
-// MediaVersion setting it never created ("Unable to find setting item:
-// MediaVersion"). It then never requests a decision (#89, #339, #375). These
-// apps get one stable Auto Media on every surface; quality controls are
-// unaffected, and Auto keeps choosing the release.
-func singleVersionClient(pr *Request) bool {
-	switch strings.ToLower(strings.TrimSpace(pr.Product)) {
-	case "plex for vidaa", "plex for lg":
-		return true
-	}
-	return false
-}
-
-// mediaFor renders the virtual Media/Part of a playable title: one per
-// release variant on detail pages (withVariants, driving the "Play
-// Version" picker), otherwise the single Media. The second return value
-// is the item's editionTitle, or "". Detail and queue versions retain their
-// flow identity; /status/sessions projects only the admitted version.
+// mediaFor renders the configured menu on every playable Media surface.
+// Providers without configured slots expose their actual editions on detail
+// pages. The second result is editionTitle; session monitoring projects only
+// the admitted source. withVariants permits cached labels on detail/queue.
 func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, withStreams, withVariants, sessionMedia bool) ([]model.Media, string) {
 	info, ps, probedSource := s.mediaInfoWithSource(ctx, pr, t)
 	stamp := unixOrZero(t.UpdatedAt)
@@ -647,7 +629,24 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, w
 	if stamp <= 0 {
 		stamp = 1
 	}
-	if withVariants && withStreams && !sessionMedia && !singleVersionClient(pr) {
+	if source, ok := s.svc().variants.(frontend.VersionSlots); ok && !sessionMedia {
+		req := frontend.ResolveRequest{Title: t, Client: s.clientCapsForKey(pr, t.Key), User: pr.User}
+		if ps != nil && ps.Resolution != nil {
+			req.PlayedRelease = ps.Resolution.Release.ID
+		} else if !info.Estimated {
+			_, req.PlayedRelease, _ = s.resumedTracks(ctx, pr, t)
+		}
+		versions, err := source.VersionSlots(ctx, req, frontend.MaxVariants, withVariants && withStreams)
+		if err != nil {
+			pr.versionErr = err
+			return nil, ""
+		}
+		if len(versions) > 0 {
+			pr.configuredSlots = true
+			return s.slotMedia(ctx, pr, t, versions, info, ps, stamp, withStreams), versions[0].Edition
+		}
+	}
+	if withVariants && withStreams && !sessionMedia {
 		probed, probedRelease := frontend.MediaInfo{Estimated: true}, ""
 		if ps != nil {
 			// A client keeps the Media index it chose before playback
@@ -700,9 +699,7 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, w
 			userID = pr.User.ID
 		}
 		stored := s.selections.get(userID, int64(t.Key))
-		if stored.subtitleSet {
-			info = infoWithSelectedSidecar(info, stored.subtitleStream)
-		}
+		info, stored = subtitleInfoForPart(info, stored, m.Part[0].ID)
 		sel := resolveSelection(stored, info)
 		sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 		m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User, pr)

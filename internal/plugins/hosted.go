@@ -71,7 +71,7 @@ type rankingBudget struct {
 // above its defaults, so a manifest can lower budgets but never raise them.
 // Studio replay uses it to run a plugin under its installed budgets.
 func HotLimits(m Manifest) wasm.Limits {
-	var lim wasm.Limits
+	lim := RuntimeLimitsFor(m)
 	if m.Ether == nil {
 		return lim
 	}
@@ -115,6 +115,13 @@ func HostedRuntimeFactory(eng *wasm.Engine) RuntimeFactory {
 		decl := inst.Manifest.Ether.Runtime
 		host := hostBridge{h: inst.Host}
 		lim := HotLimits(inst.Manifest)
+		if inst.RuntimeLimits != nil {
+			l := inst.RuntimeLimits
+			lim.MemoryBytes = l.MemoryBytes
+			lim.Deadline, _ = time.ParseDuration(l.Deadline)
+			lim.UnitBudget = l.UnitBudget
+		}
+		lim.Busy = inst.Busy
 		switch {
 		case decl.Module != "":
 			module, ok := inst.Files(decl.Module)
@@ -363,6 +370,12 @@ func (b hostBridge) CallHost(ctx context.Context, name string, raw json.RawMessa
 		return out, err
 	}
 	switch name {
+	case "http.fetchToCache", "cache.read", "archive.list", "archive.open":
+		out, err := CallDataHost(ctx, b.h, name, raw)
+		if err != nil {
+			return nil, mapHostError(err)
+		}
+		return out, nil
 	case "kv.get":
 		v, ok, err := b.h.KVGet(ctx, str(0))
 		if err != nil || !ok {
@@ -600,7 +613,7 @@ func mapHostError(err error) error {
 // FetchResult is the guest-facing http.fetch answer. body is the response
 // as text (JSON, HTML, playlists); bodyBase64 carries the exact bytes only
 // for responses that are not valid UTF-8 (archives, images), so a large
-// text response is not sent twice into the 4 MiB host-result cap.
+// text response is not sent twice into guest memory.
 func FetchResult(resp FetchResponse) map[string]any {
 	out := map[string]any{"status": resp.Status, "headers": resp.Headers}
 	if utf8.Valid(resp.Body) {
@@ -611,3 +624,11 @@ func FetchResult(resp FetchResponse) map[string]any {
 	}
 	return out
 }
+
+// RuntimeLimitsFor returns the granted hosted resources, also used by Studio.
+func RuntimeLimitsFor(m Manifest) wasm.Limits {
+	return runtimeLimitsWithCeilings(m, defaultRuntimeCeilings())
+}
+
+// GrantedRuntimeLimits reports the default-policy grant for standalone tools.
+func GrantedRuntimeLimits(m Manifest) *RuntimeLimits { return (&Manager{}).grantedRuntimeLimits(m) }

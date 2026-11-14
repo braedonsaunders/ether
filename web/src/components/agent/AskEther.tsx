@@ -15,16 +15,7 @@
 import type { AgentMessage } from "@braedonsaunders/appkit-ai/react";
 import { Spinner, buttonVariants, toast } from "@braedonsaunders/appkit-ui";
 import { History, Plug, Plus, Sparkles, Trash2 } from "lucide-react";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { t } from "../../i18n";
 import { useLocale } from "../../i18n/react";
@@ -53,15 +44,7 @@ import { McpPairingDrawer } from "./McpPairing";
 // it loads only when the owner opens the drawer.
 const AskEtherPanel = lazy(() => import("./AskEtherPanel"));
 
-export function AskEther({
-  builder,
-  draft,
-  preview,
-}: {
-  builder?: "create" | "refine";
-  draft?: unknown;
-  preview?: (messages: AgentMessage[]) => ReactNode;
-} = {}) {
+export function AskEther() {
   const location = useLocation();
   const navigate = useNavigate();
   const { locale } = useLocale();
@@ -80,12 +63,8 @@ export function AskEther({
   const threadIdRef = useRef<string | undefined>(undefined);
   const navigateArmedRef = useRef(false);
   const seenNavigateRef = useRef<Set<string>>(new Set());
-  const route = builder ? "/livetv/channel-builder" : location.pathname;
-  const title = builder
-    ? builder === "create"
-      ? t("Create a channel with AI")
-      : t("Refine with AI")
-    : t("Ask Ether");
+  const route = location.pathname;
+  const title = t("Ask Ether");
 
   const setCurrentThread = useCallback((id: string | undefined) => {
     threadIdRef.current = id;
@@ -175,7 +154,6 @@ export function AskEther({
   }, [open, status?.enabled, panelEpoch]);
 
   useEffect(() => {
-    if (builder) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.altKey || !(event.metaKey || event.ctrlKey)) return;
       if (event.key.toLowerCase() !== "j") return;
@@ -184,7 +162,7 @@ export function AskEther({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [builder]);
+  }, []);
 
   const send = useCallback(
     async (prompt: string, signal: AbortSignal): Promise<Response> => {
@@ -195,7 +173,7 @@ export function AskEther({
         body: JSON.stringify({
           threadId: threadIdRef.current,
           prompt,
-          context: { route, record: inferRecord(route), draft },
+          context: { route, record: inferRecord(route) },
         }),
       });
       const headerId = response.headers.get("X-Ether-Thread-Id");
@@ -232,7 +210,7 @@ export function AskEther({
         headers: response.headers,
       });
     },
-    [route, draft, refetchMessages, setCurrentThread],
+    [route, refetchMessages, setCurrentThread],
   );
 
   const onLoadOlderMessages = useCallback(async () => {
@@ -255,10 +233,8 @@ export function AskEther({
       });
       const id = threadIdRef.current;
       if (id) await refetchMessages(id);
-      if (builder && decision === "approved")
-        window.dispatchEvent(new Event("ether:channels-changed"));
     },
-    [refetchMessages, route, builder],
+    [refetchMessages, route],
   );
 
   const submitSecret = useCallback(
@@ -358,19 +334,18 @@ export function AskEther({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-label={title}
-        aria-keyshortcuts={builder ? undefined : "Meta+J"}
+        aria-keyshortcuts="Meta+J"
         aria-expanded={open}
         title={title}
         className="inline-flex h-9 shrink-0 px-2 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <Sparkles size={16} aria-hidden />
-        {builder ? <span className="ml-2 whitespace-nowrap">{title}</span> : null}
       </button>
 
       <Drawer
         open={open}
         onClose={() => setOpen(false)}
-        size={builder ? "lg" : "sm"}
+        size="sm"
         title={
           <span className="inline-flex items-center gap-2">
             <Sparkles size={16} className="text-primary" aria-hidden />
@@ -418,7 +393,6 @@ export function AskEther({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col [&>div>header]:hidden">
-            {preview?.(messages)}
             <Suspense
               fallback={
                 <div className="grid flex-1 place-items-center">
@@ -431,11 +405,7 @@ export function AskEther({
                 route={route}
                 messages={messages}
                 labels={labels}
-                approvalRequestLabels={
-                  builder
-                    ? { ...approvalRequestLabels, approve: t("Apply") }
-                    : approvalRequestLabels
-                }
+                approvalRequestLabels={approvalRequestLabels}
                 secretRequestLabels={secretRequestLabels}
                 send={send}
                 onDecideApprovalRequest={decideApproval}

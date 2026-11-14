@@ -292,6 +292,9 @@ func (s *Service) VisibleTo(ctx context.Context, u *core.User) bool {
 		trueValue = "'true'"
 	}
 	enabled := store.JSONText(d, "data", "enabled") + "=" + trueValue
+	// A paused source's channels are not offered.
+	sourceID := store.JSONText(d, "livetv_channels.data", "sourceId")
+	enabled += " AND (" + sourceID + " IS NULL OR " + sourceID + " NOT IN (SELECT id FROM livetv_sources WHERE " + store.JSONText(d, "livetv_sources.data", "disabled") + "=" + trueValue + "))"
 	if app := core.LiveApp(ctx); slices.Contains(Apps, app) {
 		// Apps are fixed identifiers, so the literal is safe; the stored list
 		// is a JSON array of them.

@@ -418,6 +418,14 @@ func (c *Catalog) tallyShape(f core.Filter) (tallyShape, bool) {
 		return s, false
 	}
 	rest := f
+	// A full TMDB source makes the source union unrestricted, just as in
+	// browseWhere. It must not disable the maintained totals and facets.
+	for _, source := range rest.CatalogueSources {
+		if source == "tmdb-movies" || source == "tmdb-tv" {
+			rest.CatalogueSources = nil
+			break
+		}
+	}
 	rest.Type, rest.Genres, rest.Kids, rest.Countries = "", nil, false, nil
 	rest.Studio, rest.StudioFilters = "", nil
 	rest.YearFrom, rest.YearTo, rest.Years = 0, 0, nil

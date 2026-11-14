@@ -83,6 +83,8 @@ type PublicImageServer interface {
 // ImagePageRequest signs artwork for titles the caller has already authorized
 // for this page. The signer does not write a grant row.
 type ImagePageRequest struct {
+	Ranked     map[core.RatingKey]int
+	RankedWide bool
 	Credential string
 	Device     core.Device
 	Titles     []core.Title

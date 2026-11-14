@@ -119,6 +119,10 @@ func TestRelayHandOffToSteadySplicesOneStream(t *testing.T) {
 func TestHistoryStartsDamagedSourceReencoded(t *testing.T) {
 	tc := &decisionTranscoder{}
 	s := testService(t, Options{Transcoder: tc})
+	if _, err := s.SaveChannel(t.Context(), testChannel()); err != nil {
+		t.Fatal(err)
+	}
+	s.ReconcileEnabled()
 	src := StreamSource{ID: "src", URL: "http://127.0.0.1:1/live.ts", Enabled: true}
 	ss := &session{info: SessionInfo{ID: "h", Channel: Channel{ID: "c", Kind: "iptv"}}, inputSource: src}
 	info := core.MediaInfo{Container: "mpegts", Streams: []core.StreamInfo{{Index: 0, Type: "video", Codec: "h264", Width: 1280, Height: 720}, {Index: 1, Type: "audio", Codec: "aac", Channels: 2, Default: true}}}

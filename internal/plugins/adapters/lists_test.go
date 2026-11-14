@@ -526,8 +526,21 @@ func TestCollectionViewerUsesSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.cols.Rebuild(ctx, created.ID); err != nil {
-		t.Fatal(err)
+	// CreateSpec starts the remote build asynchronously. An immediate Rebuild
+	// can finish before that goroutine starts, leaving its later catalogue
+	// call incorrectly attributed to the viewer reads below.
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		sp, err := h.cols.GetSpec(ctx, created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sp.LastBuiltAt != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("initial snapshot did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	h.rt.resetCalls()
 	got, err := h.cols.List(ctx, &core.User{ID: 1, IsOwner: true}, core.TypeMovie)

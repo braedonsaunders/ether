@@ -130,15 +130,22 @@ func (s *Service) evictIdleVirtualGuide(now time.Time) bool {
 		return false
 	}
 	s.virtualGuide.mu.Lock()
-	defer s.virtualGuide.mu.Unlock()
 	if !s.virtualGuide.lastDemand.IsZero() && now.Sub(s.virtualGuide.lastDemand) < virtualGuideIdleWindow {
+		s.virtualGuide.mu.Unlock()
 		return false
 	}
-	if !s.virtualGuide.lastDemand.IsZero() {
+	evicted := !s.virtualGuide.lastDemand.IsZero()
+	if evicted {
 		s.virtualGuide.entries = nil
 		s.virtualGuide.timeline = nil
 		s.virtualGuide.lastDemand = time.Time{}
 		s.virtualGuide.timelineDemand = time.Time{}
+	}
+	s.virtualGuide.mu.Unlock()
+	if evicted {
+		s.searchVirtualMu.Lock()
+		s.searchVirtualSnapshots = nil
+		s.searchVirtualMu.Unlock()
 	}
 	return true
 }
@@ -167,23 +174,23 @@ func (s *Service) virtualGuideLoop() {
 		if !s.virtualGuideActive(now) {
 			s.evictIdleVirtualGuide(now)
 			select {
-			case <-s.ctx.Done():
+			case <-s.serviceContext().Done():
 				return
 			case <-s.virtualGuide.wake:
 				continue
 			}
 		}
-		if err := s.refreshVirtualGuide(s.ctx); err != nil && s.ctx.Err() == nil {
+		if err := s.refreshVirtualGuide(s.serviceContext()); err != nil && s.serviceContext().Err() == nil {
 			s.o.Logger.Debug("virtual guide snapshot refresh failed", "error", err)
 		}
 		if s.timelineGuideActive(s.o.Now()) {
-			if err := s.refreshTimelineGuide(s.ctx); err != nil && s.ctx.Err() == nil {
+			if err := s.refreshTimelineGuide(s.serviceContext()); err != nil && s.serviceContext().Err() == nil {
 				s.o.Logger.Debug("timeline snapshot refresh failed", "error", err)
 			}
 		}
 		timer.Reset(virtualGuideRefreshEvery)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return
 		case <-timer.C:
 		case <-s.virtualGuide.wake:
@@ -209,6 +216,9 @@ func (s *Service) publishVirtualGuideEntry(id string, epoch int64, entry *virtua
 	}
 	s.virtualGuide.entries[id] = &published
 	s.virtualGuide.mu.Unlock()
+	if err := s.indexVirtualSearchSnapshot(s.serviceContext(), id, &published); err != nil {
+		s.o.Logger.Warn("virtual guide search index failed", "channel", id, "error", err)
+	}
 }
 
 func (s *Service) startChannelPrep(c Channel, epoch int64, revision uint64, now time.Time, compiled *guideCompileCache) *virtualGuideFlight {
@@ -217,7 +227,7 @@ func (s *Service) startChannelPrep(c Channel, epoch int64, revision uint64, now 
 		s.virtualGuide.mu.Unlock()
 		return f
 	}
-	if !s.Enabled() || s.ctx == nil || s.ctx.Err() != nil {
+	if !s.Enabled() || s.serviceContext() == nil || s.serviceContext().Err() != nil {
 		s.virtualGuide.mu.Unlock()
 		f := &virtualGuideFlight{done: make(chan struct{}), err: context.Canceled}
 		close(f.done)
@@ -239,7 +249,7 @@ func (s *Service) startChannelPrep(c Channel, epoch int64, revision uint64, now 
 			close(f.done)
 			s.virtualGuide.mu.Unlock()
 		}()
-		f.err = s.warmSingleVirtualChannel(s.ctx, c, epoch, revision, now, compiled, nil)
+		f.err = s.warmSingleVirtualChannel(s.serviceContext(), c, epoch, revision, now, compiled, nil)
 	}()
 	return f
 }
@@ -434,7 +444,7 @@ func (s *Service) virtualProgrammes(c Channel, from, until time.Time, kind strin
 	entry := s.virtualGuide.entries[c.ID]
 	s.virtualGuide.mu.RUnlock()
 	if entry == nil || from.Before(entry.from) || until.After(entry.until) {
-		if s.ctx != nil {
+		if s.serviceContext() != nil {
 			s.noteVirtualGuideDemand(false)
 		} else {
 			s.wakeVirtualGuide()
@@ -541,7 +551,7 @@ func (s *Service) withVirtualGuide(ctx context.Context, cs []Channel) (context.C
 		}
 	}
 	now := s.o.Now()
-	if s.ctx != nil {
+	if s.serviceContext() != nil {
 		s.evictIdleVirtualGuide(now)
 	}
 	s.virtualGuide.mu.RLock()
@@ -551,7 +561,7 @@ func (s *Service) withVirtualGuide(ctx context.Context, cs []Channel) (context.C
 		if c.Kind == "virtual" && c.Enabled {
 			entry := s.virtualGuide.entries[c.ID]
 			ok := entry != nil && entry.epoch == epoch && entry.revision == s.virtualGuide.revision
-			if s.ctx != nil {
+			if s.serviceContext() != nil {
 				ok = entryCoversNow(entry, c, epoch, s.virtualGuide.revision, now)
 			}
 			if !ok {
@@ -562,20 +572,20 @@ func (s *Service) withVirtualGuide(ctx context.Context, cs []Channel) (context.C
 	}
 	s.virtualGuide.mu.RUnlock()
 	if !ready {
-		if s.ctx != nil && len(missing) > 0 {
+		if s.serviceContext() != nil && len(missing) > 0 {
 			if err := s.prepareVirtualChannels(ctx, missing, epoch, now); err != nil {
 				return ctx, err
 			}
 			return context.WithValue(ctx, virtualGuideContextKey{}, epoch), nil
 		}
-		if s.ctx != nil {
+		if s.serviceContext() != nil {
 			s.noteVirtualGuideDemand(false)
 		} else {
 			s.wakeVirtualGuide()
 		}
 		return ctx, core.ErrNotAvailable
 	}
-	if s.ctx != nil {
+	if s.serviceContext() != nil {
 		s.noteVirtualGuideDemand(false)
 	}
 	// Reuse the epoch query within this request, but always check each requested
@@ -589,7 +599,7 @@ func (s *Service) refreshVirtualGuideIfWarm(ctx context.Context) error {
 	s.virtualGuide.mu.RLock()
 	warm := len(s.virtualGuide.entries) > 0
 	s.virtualGuide.mu.RUnlock()
-	if !warm && (s.ctx == nil || !s.virtualGuideActive(s.o.Now())) {
+	if !warm && (s.serviceContext() == nil || !s.virtualGuideActive(s.o.Now())) {
 		_, _, err := s.channelSnapshot(ctx)
 		return err
 	}
@@ -607,7 +617,7 @@ func (s *Service) RefreshGuide(ctx context.Context) error {
 	s.virtualGuide.revision++
 	warm := len(s.virtualGuide.entries) > 0
 	s.virtualGuide.mu.Unlock()
-	if !warm && (s.ctx == nil || !s.virtualGuideActive(s.o.Now())) {
+	if !warm && (s.serviceContext() == nil || !s.virtualGuideActive(s.o.Now())) {
 		return nil
 	}
 	return s.refreshVirtualGuide(ctx)
@@ -638,14 +648,14 @@ func (s *Service) ProgrammesSnapshot(ctx context.Context, u *core.User, id strin
 	if err != nil {
 		return nil, err
 	}
-	if s.ctx != nil {
+	if s.serviceContext() != nil {
 		s.evictIdleVirtualGuide(s.o.Now())
 	}
 	s.virtualGuide.mu.RLock()
 	entry := s.virtualGuide.entries[id]
 	epoch, revision := s.virtualGuide.epoch, s.virtualGuide.revision
 	s.virtualGuide.mu.RUnlock()
-	if entry == nil && s.ctx != nil {
+	if entry == nil && s.serviceContext() != nil {
 		if ch, chErr := s.Channel(ctx, id); chErr == nil && ch.Kind == "virtual" && ch.Enabled {
 			if nextCtx, prepErr := s.withVirtualGuide(ctx, []Channel{ch}); prepErr == nil {
 				ctx = nextCtx
@@ -665,7 +675,7 @@ func (s *Service) ProgrammesSnapshot(ctx context.Context, u *core.User, id strin
 		s.virtualGuide.mu.RUnlock()
 	}
 	if entry == nil || (view == SnapshotTimeline && (entry.epoch != epoch || entry.revision != revision)) {
-		if s.ctx != nil {
+		if s.serviceContext() != nil {
 			s.noteVirtualGuideDemand(extendedTimeline || view == SnapshotTimeline)
 		} else {
 			s.wakeVirtualGuide()
@@ -689,7 +699,7 @@ func (s *Service) ProgrammesSnapshot(ctx context.Context, u *core.User, id strin
 		ps, err = s.personalProgrammes(ctx, c, u, from, until)
 	} else {
 		if from.Before(entry.from) || until.After(entry.until) {
-			if s.ctx != nil && view == SnapshotTimeline {
+			if s.serviceContext() != nil && view == SnapshotTimeline {
 				s.noteVirtualGuideDemand(true)
 			}
 			return nil, core.ErrNotAvailable
@@ -720,7 +730,7 @@ func (s *Service) checkVirtualWindow(c Channel, from, until time.Time) error {
 	entry := s.virtualGuide.entries[c.ID]
 	s.virtualGuide.mu.RUnlock()
 	if entry == nil || from.Before(entry.from) || until.After(entry.until) {
-		if s.ctx != nil {
+		if s.serviceContext() != nil {
 			s.noteVirtualGuideDemand(false)
 		} else {
 			s.wakeVirtualGuide()

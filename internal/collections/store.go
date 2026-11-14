@@ -16,6 +16,9 @@ import (
 )
 
 func init() {
+	// Profile membership checks seek one title within a collection, independent of its size.
+	store.Register("collections", 8, `CREATE INDEX collections_members_profile_lookup ON collections_members(spec_id,key,shared);`)
+
 	store.Register("collections", 2, `
 CREATE TABLE collections_specs (
   id INTEGER PRIMARY KEY,

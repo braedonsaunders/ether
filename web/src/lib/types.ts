@@ -333,6 +333,8 @@ export interface EtherConfig {
     retentionDays?: number;
     replayBoostHours?: number;
     disableSpeculation?: boolean;
+    speculativeWarming?: "on" | "off";
+    keepWarmTitles?: number[];
     detailWarmup?: string;
     detailBytes?: number;
     playbackReadAheadMinutes?: number;
@@ -418,7 +420,6 @@ export interface EtherConfig {
     sourceOrder?: string[];
   };
   liveTV?: {
-    enabled?: boolean;
     logoIndexUrl?: string;
     healthSweepMinutes?: number;
     stability?: "fastest" | "balanced" | "rocksolid" | "";

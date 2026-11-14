@@ -21,13 +21,15 @@ var (
 	// the article. The fetcher turns "every provider said 430" into
 	// core.ErrArticleMissing.
 	ErrNoSuchArticle = errors.New("nntp: no such article")
-	// ErrAuthFailed means the provider rejected the credentials (481/482).
+	// ErrAuthFailed means the provider rejected the credentials, excluding capacity replies.
 	ErrAuthFailed = errors.New("nntp: authentication failed")
 	// ErrAuthRequired is a 480 reply to a command.
 	ErrAuthRequired = errors.New("nntp: authentication required")
 	// ErrServiceUnavailable is a 400/502 greeting or reply: the server is
 	// refusing service, usually because of too many connections.
 	ErrServiceUnavailable = errors.New("nntp: service unavailable")
+	// ErrConnectionLimit is a temporary account/session capacity refusal.
+	ErrConnectionLimit = fmt.Errorf("nntp: connection limit: %w", ErrServiceUnavailable)
 	// ErrNoSuchGroup is a 411 reply to GROUP.
 	ErrNoSuchGroup = errors.New("nntp: no such group")
 	// ErrCorrupt means an article was received but did not decode as valid
@@ -68,6 +70,9 @@ func (e *ProtocolError) Error() string {
 
 // Unwrap maps well-known codes to sentinel errors.
 func (e *ProtocolError) Unwrap() error {
+	if (e.Code == 400 || e.Code == 481 || e.Code == 482 || e.Code == 502) && isConnLimitMsg(e.Msg) {
+		return ErrConnectionLimit
+	}
 	switch e.Code {
 	// 451 is how some providers (Giganews) refuse an article that was taken
 	// down: unavailable here, so another provider may still have it.
@@ -76,9 +81,6 @@ func (e *ProtocolError) Unwrap() error {
 	case 480:
 		return ErrAuthRequired
 	case 481, 482:
-		if isConnLimitMsg(e.Msg) {
-			return ErrServiceUnavailable
-		}
 		return ErrAuthFailed
 	case 400, 502:
 		return ErrServiceUnavailable
@@ -93,7 +95,12 @@ func (e *ProtocolError) Unwrap() error {
 // bad credentials.
 func isConnLimitMsg(msg string) bool {
 	m := strings.ToLower(msg)
-	return strings.Contains(m, "connection") || strings.Contains(m, "too many")
+	for _, hint := range []string{"max", "simultaneous", "connection", "too many", "already logged in", "in use"} {
+		if strings.Contains(m, hint) {
+			return true
+		}
+	}
+	return false
 }
 
 // isNetworkError reports I/O-level failures: the connection is unusable.

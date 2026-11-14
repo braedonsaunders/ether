@@ -467,6 +467,20 @@ func (s *Service) planRaw(r core.ClipRequest) (renderJob, bool) {
 		}
 	} else {
 		selected, ok = pickScene(l, r)
+		if !ok {
+			// A channel can enable "Upcoming shows" or "Up next" independent
+			// of whether its look actually has that scene (e.g. a custom
+			// look built before the role existed): fall back through the
+			// same chain standby uses, rather than dropping the title card.
+			for _, fallback := range momentFallbacks[r.Moment] {
+				pick := r
+				pick.Moment = fallback
+				if sc, found := pickScene(l, pick); found {
+					selected, ok = sc, true
+					break
+				}
+			}
+		}
 		if !ok && r.AssetDigest == "" {
 			return renderJob{}, false
 		}
@@ -1546,6 +1560,15 @@ func (s *Service) StyleScreens(id string) *config.LiveTVScreens {
 		return &cp
 	}
 	return nil
+}
+
+// momentFallbacks lets a channel enable a moment (e.g. "Upcoming shows" or
+// "Up next") independent of whether the active look actually defines that
+// role's scene, degrading to the next best title card instead of dropping it.
+var momentFallbacks = map[string][]string{
+	"tonight": {"upnext", "ident"},
+	"upnext":  {"ident"},
+	"back":    {"ident"},
 }
 
 func pickScene(l Look, r core.ClipRequest) (StyleScene, bool) {

@@ -136,6 +136,9 @@ func New(ctx context.Context, db *sql.DB, o Options) (*Service, error) {
 	if err := s.seedBuiltins(ctx); err != nil {
 		return nil, fmt.Errorf("libraries: seed builtins: %w", err)
 	}
+	if err := s.convertPredicates(ctx); err != nil {
+		return nil, err
+	}
 	libs, err := s.listDB(ctx)
 	if err != nil {
 		return nil, err

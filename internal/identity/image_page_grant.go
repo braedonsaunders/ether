@@ -136,6 +136,9 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		return nil, core.ErrNotAvailable
 	}
 	expires := s.pageExpires()
+	// Page grants support only title artwork, so authorize with visibility
+	// rows just as IssueBatch does, without loading credited portraits.
+	ctx = frontend.WithArtworkRows(ctx)
 	experience := s.experience()
 	if page, ok := experience.(frontend.ItemArtworkPage); ok {
 		keys := make([]core.RatingKey, 0, len(req.Titles))
@@ -152,6 +155,13 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		listed, err := page.ItemArtworkPage(frontend.WithArtworkKinds(ctx, wanted), viewer, req.Device, keys)
 		if err != nil {
 			return nil, err
+		}
+		if len(req.Ranked) > 0 {
+			copyListed := make(map[core.RatingKey][]frontend.Image, len(listed))
+			for key, images := range listed {
+				copyListed[key] = rankedPageImages(images, req.Ranked[key], req.RankedWide)
+			}
+			listed = copyListed
 		}
 		ctx = s.withCheckedTags(ctx, master, listed, wanted)
 		out := make([]frontend.ImageBatchItem, 0, len(keys))
@@ -189,7 +199,7 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		if err != nil {
 			return nil, err
 		}
-		item, err := s.sealPageImages(ctx, master, source, deviceJSON, viewer.ID, expires, title.Key, images, complete, wanted)
+		item, err := s.sealPageImages(ctx, master, source, deviceJSON, viewer.ID, expires, title.Key, rankedPageImages(images, req.Ranked[title.Key], req.RankedWide), complete, wanted)
 		if err != nil {
 			return nil, err
 		}
@@ -609,7 +619,7 @@ func (s *ImageGrantService) serveShortTag(w http.ResponseWriter, r *http.Request
 			images, _, visible, err := public.PublicArtwork(r.Context(), core.Device{}, key)
 			if err == nil && visible {
 				master := s.pageKey()
-				for _, image := range images {
+				for _, image := range rankedRecoveryImages(images) {
 					img := pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject}
 					if shortClaimMatches(pageClaims{Kind: img.Kind, Path: img.Path}, r) && (contentImageTag(master, int64(key), img, 0) == secret || contentImageTag(master, int64(key), img, s.Generation()) == secret) {
 						s.ServePublic(w, r, core.Device{}, key, image)
@@ -674,7 +684,8 @@ func (s *ImageGrantService) resolveShortTag(r *http.Request, secret string) (pag
 		return pageClaims{}, false
 	}
 	master := s.pageKey()
-	for _, image := range images {
+	variants := rankedRecoveryImages(images)
+	for _, image := range variants {
 		img := pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject}
 		if contentImageTag(master, int64(key), img, 0) != secret && contentImageTag(master, int64(key), img, s.Generation()) != secret {
 			continue
@@ -853,4 +864,42 @@ func (s *ImageGrantService) requestToken(r *http.Request) string {
 		return ""
 	}
 	return s.requestOptions.Token(r)
+}
+
+func rankedPageImages(images []frontend.Image, rank int, wide bool) []frontend.Image {
+	if rank < 1 || rank > 10 {
+		return images
+	}
+	out := make([]frontend.Image, 0, len(images)+1)
+	hasPoster := false
+	for _, img := range images {
+		if img.Kind == frontend.ImagePoster {
+			hasPoster = true
+			break
+		}
+	}
+	for _, img := range images {
+		if hasPoster && img.Kind == frontend.ImageThumb {
+			continue
+		}
+		out = append(out, frontend.RankedArtwork(img, rank, wide))
+		if img.Kind == frontend.ImagePoster {
+			out = append(out, frontend.RankedCardThumb(img, rank))
+		}
+	}
+	return out
+}
+
+// At most thirty variants per poster; only used to recover a signed short tag
+// after its in-memory record has expired. This never fetches or renders art.
+func rankedRecoveryImages(images []frontend.Image) []frontend.Image {
+	out := append([]frontend.Image(nil), images...)
+	for _, img := range images {
+		if img.Kind == frontend.ImagePoster {
+			for rank := 1; rank <= 10; rank++ {
+				out = append(out, frontend.RankedArtwork(img, rank, false), frontend.RankedArtwork(img, rank, true), frontend.RankedCardThumb(img, rank))
+			}
+		}
+	}
+	return out
 }

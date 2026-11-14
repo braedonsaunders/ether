@@ -1006,7 +1006,10 @@ class PluginInstance:
             if not fn:
                 return _error_response(404, "not_found", "Job handler is not registered.")
             job_name = urllib.parse.unquote(path[len("/ether/job/") :])
-            return _ok_response(fn({"name": job_name}, ctx))
+            return _ok_response(fn({
+                "name": job_name,
+                "continuation": _parse_json_body(req.get("body")).get("continuation"),
+            }, ctx))
 
         if method == "POST" and path == "/ether/rank-key":
             fn = self.routes.get("rank_key") or self.routes.get("rankKey")
@@ -2419,6 +2422,13 @@ class _KindsClient:
         return self._call("GET", f"/ether/plugin-host/kinds/{urllib.parse.quote(kind)}/items?{q}") or {"items": []}
 
     def resolve_sources(self, query: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Find owner sources. indexer_search accepts category (comma-separated
+        Newznab IDs or family names, e.g. music/books/comics). A release source
+        may set release.fileIndex or candidate.fileIndex (zero-based provider
+        torrent list), or release.file (exact path/unique basename), to open any file
+        kind. Invalid selections fail; omitted selectors retain video selection.
+        Explicit file selection is supported for torrents, not NZB members.
+        """
         result = self._call("POST", "/ether/plugin-host/sources/resolve", query)
         return list((result or {}).get("candidates") or [])
 

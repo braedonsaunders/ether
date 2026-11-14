@@ -204,11 +204,9 @@ func (r *VariantIDs) Prune(ctx context.Context, liveIDs []int64, liveRefs []Vari
 func (r *VariantIDs) forgetPruned(ctx context.Context, cutoff int64) error {
 	r.mu.Lock()
 	var stale []int64
-	if r.loaded {
-		for id, e := range r.byID {
-			if e.seen < cutoff {
-				stale = append(stale, id)
-			}
+	for id, e := range r.byID {
+		if e.seen < cutoff {
+			stale = append(stale, id)
 		}
 	}
 	size := len(r.byID)

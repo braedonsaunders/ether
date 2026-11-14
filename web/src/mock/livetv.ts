@@ -198,6 +198,40 @@ export function createLiveTVMock(titles: FakeTitle[], empty = false) {
       useVOD: true,
       vodStatus: { movies: 102431, series: 18204, updated: Math.floor(Date.now() / 1000) - 120 },
       name: "Demo Xtream panel",
+      account: {
+        status: "Active",
+        activeConnections: 1,
+        maxConnections: 1,
+        checkedAt: new Date(Date.now()).toISOString(),
+        expiresAt: new Date(Date.now() + 90 * 86400e3).toISOString(),
+      },
+      logins: [
+        {
+          id: "demo-second",
+          username: "demo-family",
+          password: "••••",
+          account: {
+            status: "Active",
+            activeConnections: 0,
+            maxConnections: 1,
+            checkedAt: new Date(Date.now()).toISOString(),
+            expiresAt: new Date(Date.now() + 60 * 86400e3).toISOString(),
+          },
+        },
+        {
+          id: "demo-third",
+          username: "demo-extra",
+          password: "••••",
+          error: "login refused",
+          account: {
+            status: "Expired",
+            activeConnections: 0,
+            maxConnections: 1,
+            checkedAt: new Date(Date.now()).toISOString(),
+            expiresAt: new Date(Date.now() - 86400e3).toISOString(),
+          },
+        },
+      ],
       auth: {
         type: "xtream",
         server: "http://panel.example:8080",
@@ -520,10 +554,86 @@ export function createLiveTVMock(titles: FakeTitle[], empty = false) {
     return saved;
   };
 
+  // Dedicated large editor fixture: ordinary guide/player mocks stay small.
+  const guideChannels = Array.from({ length: 10000 }, (_, i) => ({
+    id: `guide-${i}`,
+    name: i === 41 ? "World News" : `Channel ${i + 1}`,
+    number: String(i + 1),
+    sourceId: "large-lineup",
+    group: `${["News", "Sports", "Movies", "Kids", "Music"][Math.floor(i / 40) % 5]} ${Math.floor(i / 40) + 1}`,
+  }));
+  const guideGroups = [
+    ...new Map(
+      guideChannels.map((c) => [
+        c.group,
+        { sourceId: c.sourceId, name: c.group, sourceName: "10,000 channel lineup", count: 40 },
+      ]),
+    ).values(),
+  ];
+  let ownerGuides = [
+    {
+      id: "news",
+      name: "News and current affairs",
+      groups: guideGroups.filter((g) => g.name.startsWith("News")),
+      channels: [] as string[],
+      hidden: false,
+    },
+    {
+      id: "sports",
+      name: "Sports",
+      groups: guideGroups.filter((g) => g.name.startsWith("Sports")),
+      channels: [] as string[],
+      hidden: false,
+    },
+    {
+      id: "family",
+      name: "Family favourites",
+      groups: guideGroups.filter((g) => g.name.startsWith("Kids")),
+      channels: ["guide-41"],
+      hidden: false,
+    },
+    {
+      id: "movies",
+      name: "Movies",
+      groups: guideGroups.filter((g) => g.name.startsWith("Movies")),
+      channels: [] as string[],
+      hidden: true,
+    },
+  ];
   function handle(method: string, seg: string[], q: URLSearchParams, body: unknown) {
     if (seg[0] !== "livetv") return null;
     const route = `${method} /${seg.slice(1).join("/")}`;
     const now = Date.now();
+    if (route === "PUT /guides") {
+      ownerGuides = body as typeof ownerGuides;
+      return { body: { guides: ownerGuides, groups: guideGroups, channels: guideChannels } };
+    }
+    if (route === "GET /search") {
+      const query = (q.get("q") ?? "").toLowerCase();
+      return {
+        body: {
+          channels:
+            query && "world news 42".includes(query)
+              ? [{ id: "guide-41", name: "World News", number: "42" }]
+              : [],
+          programmes:
+            query && "world news morning report satellite launch".includes(query)
+              ? [
+                  {
+                    id: "guide-41-now",
+                    channelId: "guide-41",
+                    title: "World News: Morning Report",
+                    episodeTitle: "Satellite Launch",
+                    start: new Date(now).toISOString(),
+                    end: new Date(now + 3600000).toISOString(),
+                  },
+                ]
+              : [],
+        },
+      };
+    }
+    if (route === "GET /guides")
+      return { body: { guides: ownerGuides, groups: guideGroups, channels: guideChannels } };
     if (route === "GET /usage")
       return { body: { sessions: 0, viewers: 0, watching: [], sources: [] } };
     if (method === "GET" && seg[1] === "channels" && seg[3] === "timeline") {
@@ -552,6 +662,23 @@ export function createLiveTVMock(titles: FakeTitle[], empty = false) {
           channels.find((c) => c.id === seg[2])?.look as ChannelLook | undefined,
         ),
       };
+    }
+    if (route === "POST /channels/decades") {
+      for (const [i, name] of ["CHROMA 80", "RIOT 90", "ORBIT 00", "SHIFT 10"].entries()) {
+        const id = `showcase-${i}`;
+        if (!channels.some((c) => c.id === id))
+          channels.push({
+            id,
+            number: String(1980 + 10 * i),
+            name,
+            kind: "virtual",
+            enabled: true,
+            favorite: false,
+            items: movies.slice(i * 3, i * 3 + 3).map(item),
+            group: "Decades",
+          });
+      }
+      return { body: { ok: true } };
     }
     if (route === "GET /channels/summary") return { body: channels };
     if (route === "GET /channels/page") {

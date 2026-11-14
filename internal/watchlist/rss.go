@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
 const (
@@ -71,6 +73,7 @@ type rssChannel struct {
 }
 
 type rssXMLItem struct {
+	Author     string        `xml:"author"`
 	Title      string        `xml:"title"`
 	Guids      []rssGUID     `xml:"guid"`
 	Links      []rssLink     `xml:"link"`
@@ -101,6 +104,7 @@ type rssCategory struct {
 }
 
 type rssItem struct {
+	Author     string
 	Title      string
 	Guids      []string
 	Links      []string
@@ -129,6 +133,33 @@ func validateRSSURL(raw string) error {
 	return nil
 }
 
+func rssHTTPClient(base *http.Client) *http.Client {
+	var c http.Client
+	if base != nil {
+		c = *base
+	} else {
+		c.Timeout = 20 * time.Second
+	}
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+			return errors.New("unsupported redirect scheme")
+		}
+		if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return errors.New("refusing https to http redirect")
+		}
+		if len(via) > 0 && !strings.EqualFold(req.URL.Host, via[len(via)-1].URL.Host) {
+			req.Header.Del("Authorization")
+			req.Header.Del("Cookie")
+			req.Header.Del("X-Plex-Token")
+		}
+		return nil
+	}
+	return (&safefetch.Guard{}).Client(&c)
+}
+
 // SyncRSS polls configured Plex watchlist RSS feeds: the household "Friends'
 // watchlists" set (unattributed) and the owner's "Your Watchlist" feed.
 func (s *Service) SyncRSS(ctx context.Context) error {
@@ -140,7 +171,7 @@ func (s *Service) SyncRSS(ctx context.Context) error {
 		return nil
 	}
 	var us []core.User
-	if cfg.PlexOwnerRSSURL != "" && s.o.Users != nil {
+	if s.o.Users != nil {
 		us, err = s.o.Users(ctx)
 		if err != nil {
 			return err
@@ -150,6 +181,8 @@ func (s *Service) SyncRSS(ctx context.Context) error {
 }
 
 func (s *Service) syncRSSUsers(ctx context.Context, us []core.User) error {
+	s.rssMu.Lock()
+	defer s.rssMu.Unlock()
 	cfg, err := s.settings(ctx)
 	if err != nil {
 		return err
@@ -159,7 +192,7 @@ func (s *Service) syncRSSUsers(ctx context.Context, us []core.User) error {
 	}
 	var errs []error
 	if cfg.PlexFriendsRSSURL != "" {
-		if e := s.pollRSSFeed(ctx, cfg.PlexFriendsRSSURL, metaKeyFriendsRSS, sourcePlexFriendsRSS, true, nil); e != nil {
+		if e := s.pollRSSFeed(ctx, cfg.PlexFriendsRSSURL, metaKeyFriendsRSS, sourcePlexFriendsRSS, true, nil, us); e != nil {
 			errs = append(errs, e)
 		}
 	}
@@ -171,14 +204,14 @@ func (s *Service) syncRSSUsers(ctx context.Context, us []core.User) error {
 				break
 			}
 		}
-		if e := s.pollRSSFeed(ctx, cfg.PlexOwnerRSSURL, metaKeyOwnerRSS, sourcePlexOwnerRSS, false, owner); e != nil {
+		if e := s.pollRSSFeed(ctx, cfg.PlexOwnerRSSURL, metaKeyOwnerRSS, sourcePlexOwnerRSS, false, owner, us); e != nil {
 			errs = append(errs, e)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source string, friendsFeed bool, owner *core.User) error {
+func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source string, friendsFeed bool, owner *core.User, us []core.User) error {
 	if s.o.Catalog == nil {
 		return errors.New("Plex watchlist RSS requires a catalog")
 	}
@@ -192,7 +225,7 @@ func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source stri
 		ownerID = owner.ID
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	req, err := http.NewRequestWithContext(safefetch.WithTrustedOrigin(ctx, feedURL), http.MethodGet, feedURL, nil)
 	if err != nil {
 		meta.Problem = rssProblemInvalidFeed
 		meta.Error = "Invalid feed URL"
@@ -211,7 +244,7 @@ func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source stri
 		}
 	}
 
-	resp, err := s.o.Client.Do(req)
+	resp, err := s.rssClient.Do(req)
 	if err != nil {
 		// Never return or log *url.Error raw: it embeds the secret feed URL.
 		meta.Problem = rssProblemNetwork
@@ -269,6 +302,7 @@ func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source stri
 	}
 
 	var resolved []core.Title
+	byAuthor := map[string][]core.Title{}
 	unmatchedTitles := 0
 	for _, it := range items {
 		title, e := s.resolveRSSItem(ctx, it)
@@ -284,11 +318,17 @@ func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source stri
 			continue
 		}
 		resolved = append(resolved, *title)
+		if friendsFeed && it.Author != "" {
+			byAuthor[it.Author] = append(byAuthor[it.Author], *title)
+		}
 	}
 
 	var imported int
 	if friendsFeed {
-		imported, err = s.replaceHouseholdFeedSnapshot(ctx, source, resolved)
+		imported, err = s.replaceHouseholdFeedSnapshotWithAuthors(ctx, source, resolved, byAuthor)
+		if err == nil && len(byAuthor) > 0 && len(us) > 0 {
+			err = s.attributeFriendsRSSItems(ctx, byAuthor, us)
+		}
 	} else {
 		imported, err = s.replaceOwnerFeedSnapshot(ctx, source, owner, resolved)
 	}
@@ -340,6 +380,7 @@ func parseRSSItems(data []byte) ([]rssItem, error) {
 	out := make([]rssItem, 0, len(xmlItems)+len(doc.Entries))
 	for _, x := range xmlItems {
 		it := rssItem{
+			Author:     strings.TrimSpace(x.Author),
 			Title:      strings.TrimSpace(x.Title),
 			Categories: x.Categories,
 		}
@@ -407,6 +448,52 @@ func parsePlexRSSJSON(data []byte) ([]rssItem, error) {
 		out = append(out, it)
 	}
 	return out, nil
+}
+
+func (s *Service) attributeFriendsRSSItems(ctx context.Context, byAuthor map[string][]core.Title, us []core.User) error {
+	statuses := map[string]FriendFeedStatus{}
+	for _, st := range s.friendStatuses(ctx) {
+		statuses[st.ID] = st
+	}
+	for authorID, titles := range byAuthor {
+		st, ok := statuses[authorID]
+		if !ok {
+			st = FriendFeedStatus{ID: authorID}
+		}
+		u := matchCommunityFriend(plextv.CommunityFriend{ID: st.ID, Username: st.Username}, us)
+		if u == nil {
+			continue
+		}
+		src := "plex-community:" + st.ID
+		if err := s.withCommunityWriterLock(ctx, "friend:"+st.ID, func() error {
+			latest, err := s.user(ctx, u.ID)
+			if err != nil {
+				return err
+			}
+			if latest.PlexID != u.PlexID || latest.UUID != u.UUID {
+				return errors.New("Viewer identity changed")
+			}
+			for _, t := range titles {
+				if !s.allowed(latest, &t) {
+					continue
+				}
+				var exists bool
+				if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM watchlist_items WHERE user_id=? AND item_key=?)`, latest.ID, t.Key).Scan(&exists); err != nil {
+					return err
+				}
+				if err := s.upsert(ctx, latest.ID, src, t); err != nil {
+					return err
+				}
+				if !exists {
+					s.queueRSSCheck(*latest)
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type externalRef struct {
@@ -644,6 +731,10 @@ func leadingDigits(s string) string {
 // replaceHouseholdFeedSnapshot atomically reconciles the shared household
 // "Friends' watchlists" set (user_id=0, source="plex-friends-rss").
 func (s *Service) replaceHouseholdFeedSnapshot(ctx context.Context, source string, titles []core.Title) (int, error) {
+	return s.replaceHouseholdFeedSnapshotWithAuthors(ctx, source, titles, nil)
+}
+
+func (s *Service) replaceHouseholdFeedSnapshotWithAuthors(ctx context.Context, source string, titles []core.Title, byAuthor map[string][]core.Title) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -664,6 +755,9 @@ func (s *Service) replaceHouseholdFeedSnapshot(ctx context.Context, source strin
 		imported++
 		raw, err := json.Marshal(t)
 		if err != nil {
+			return 0, err
+		}
+		if err := queueWarmAdd(ctx, tx, householdUserID, t.Key, added); err != nil {
 			return 0, err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, householdUserID, t.Key, source, string(raw), added); err != nil {
@@ -707,6 +801,22 @@ func (s *Service) replaceHouseholdFeedSnapshot(ctx context.Context, source strin
 		changed = true
 	}
 
+	if source == sourcePlexFriendsRSS {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM watchlist_rss_authors`); err != nil {
+			return 0, err
+		}
+		for author, titles := range byAuthor {
+			for _, t := range titles {
+				if !keys[t.Key] {
+					continue
+				}
+				if _, err := tx.ExecContext(ctx, `INSERT INTO watchlist_rss_authors(friend_id,item_key) VALUES(?,?) ON CONFLICT DO NOTHING`, author, t.Key); err != nil {
+					return 0, err
+				}
+			}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
@@ -725,6 +835,23 @@ func (s *Service) replaceOwnerFeedSnapshot(ctx context.Context, source string, o
 		return 0, err
 	}
 	defer tx.Rollback()
+
+	if owner != nil && strings.HasPrefix(source, "plex-community:") {
+		// Upgrade the old shared source inside the snapshot transaction. A
+		// duplicate keeps the strongest availability/notification history.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added,checked,available,notified,warmed)
+			SELECT user_id,item_key,?,title,added,checked,available,notified,warmed FROM watchlist_items WHERE user_id=? AND source='plex-community'
+			ON CONFLICT(user_id,item_key,source) DO UPDATE SET added=CASE WHEN watchlist_items.added<excluded.added THEN watchlist_items.added ELSE excluded.added END,checked=CASE WHEN watchlist_items.checked>excluded.checked THEN watchlist_items.checked ELSE excluded.checked END,available=CASE WHEN watchlist_items.available>excluded.available THEN watchlist_items.available ELSE excluded.available END,notified=CASE WHEN watchlist_items.notified>excluded.notified THEN watchlist_items.notified ELSE excluded.notified END,warmed=CASE WHEN watchlist_items.warmed>excluded.warmed THEN watchlist_items.warmed ELSE excluded.warmed END`, source, owner.ID); err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM watchlist_items WHERE user_id=? AND source='plex-community'`, owner.ID); err != nil {
+			return 0, err
+		}
+		titles, err = s.preserveActiveFriendsRSSItems(ctx, tx, owner.ID, source, titles)
+		if err != nil {
+			return 0, err
+		}
+	}
 
 	keys := map[core.RatingKey]bool{}
 	var toPush []core.Title
@@ -747,6 +874,9 @@ func (s *Service) replaceOwnerFeedSnapshot(ctx context.Context, source string, o
 			}
 			raw, err := json.Marshal(t)
 			if err != nil {
+				return 0, err
+			}
+			if err := queueWarmAdd(ctx, tx, owner.ID, t.Key, added); err != nil {
 				return 0, err
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, owner.ID, t.Key, source, string(raw), added); err != nil {
@@ -854,6 +984,11 @@ func (s *Service) clearFeedSource(ctx context.Context, source, metaKey string) e
 	}
 	for _, p := range removed {
 		if err := forgetEpisodes(ctx, tx, p.uid, p.key); err != nil {
+			return err
+		}
+	}
+	if source == sourcePlexFriendsRSS {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM watchlist_rss_authors`); err != nil {
 			return err
 		}
 	}

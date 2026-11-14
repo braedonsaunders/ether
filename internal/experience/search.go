@@ -154,6 +154,15 @@ func (s Search) Resolve(ctx context.Context, viewer *core.User, query string, ty
 		}
 	}
 	items, err := s.Find(ctx, viewer, query, types, limit)
+	if err == nil && len(items) == 0 && !collections {
+		collection, members, handled, vibeErr := s.Vibe.Find(ctx, viewer, query)
+		if vibeErr != nil {
+			return SearchResults{}, vibeErr
+		}
+		if handled {
+			return SearchResults{Collection: collection, Items: members, CollectionSearch: true}, nil
+		}
+	}
 	return SearchResults{Items: items}, err
 }
 

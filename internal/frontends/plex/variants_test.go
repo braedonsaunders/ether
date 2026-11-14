@@ -435,7 +435,7 @@ func TestVariantIDCollisionProbeAndPartTitle(t *testing.T) {
 	}
 }
 
-func assertVIDAAXMLIdentity(t *testing.T, body string) {
+func assertTVSlotXMLIdentity(t *testing.T, body string) {
 	t.Helper()
 	var doc struct {
 		Videos []struct {
@@ -450,7 +450,7 @@ func assertVIDAAXMLIdentity(t *testing.T, body string) {
 	if err := xml.Unmarshal([]byte(body), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Videos) != 1 || len(doc.Videos[0].Media) != 1 {
+	if len(doc.Videos) != 1 || len(doc.Videos[0].Media) != 3 {
 		t.Fatalf("unexpected media: %s", body)
 	}
 	m := doc.Videos[0].Media[0]
@@ -459,26 +459,26 @@ func assertVIDAAXMLIdentity(t *testing.T, body string) {
 	}
 }
 
-func TestVIDAAMetadataStaysSingleMediaAfterVariantsResolve(t *testing.T) {
-	f, _ := newVariantPlaybackFixture(t)
+func TestTVMetadataConfiguredSlotsAfterVariantsResolve(t *testing.T) {
+	f, _, _ := configuredVariantFixture(t)
 	variants := f.resolver.byKey[fightClub.Key]
 	f.resolver.byKey[fightClub.Key] = nil
 	path := "/library/metadata/" + fightClub.Key.String()
 	headers := []string{"X-Plex-Product", "Plex for VIDAA"}
 	cold := f.get(t, path, headers...)
-	if cold.Code != http.StatusOK || strings.Count(cold.Body.String(), "<Media ") != 1 {
+	if cold.Code != http.StatusOK || strings.Count(cold.Body.String(), "<Media ") != 3 {
 		t.Fatalf("cold metadata: %d %s", cold.Code, cold.Body.String())
 	}
-	assertVIDAAXMLIdentity(t, cold.Body.String())
+	assertTVSlotXMLIdentity(t, cold.Body.String())
 	f.resolver.byKey[fightClub.Key] = variants
 	warm := f.get(t, path, headers...)
-	if warm.Code != http.StatusOK || strings.Count(warm.Body.String(), "<Media ") != 1 {
-		t.Fatalf("warm VIDAA metadata should retain one media: %d %s", warm.Code, warm.Body.String())
+	if warm.Code != http.StatusOK || strings.Count(warm.Body.String(), "<Media ") != 3 {
+		t.Fatalf("warm TV metadata should retain the configured menu: %d %s", warm.Code, warm.Body.String())
 	}
-	assertVIDAAXMLIdentity(t, warm.Body.String())
+	assertTVSlotXMLIdentity(t, warm.Body.String())
 	for _, product := range []string{"plex for vidaa", "  Plex for VIDAA  "} {
 		r := f.get(t, path, "X-Plex-Product", product)
-		assertVIDAAXMLIdentity(t, r.Body.String())
+		assertTVSlotXMLIdentity(t, r.Body.String())
 	}
 	jr := f.get(t, path, "X-Plex-Product", "Plex for VIDAA", "Accept", "application/json")
 	var j map[string]any
@@ -488,7 +488,7 @@ func TestVIDAAMetadataStaysSingleMediaAfterVariantsResolve(t *testing.T) {
 	mc := j["MediaContainer"].(map[string]any)
 	v := mc["Metadata"].([]any)[0].(map[string]any)
 	media := v["Media"].([]any)
-	if len(media) != 1 {
+	if len(media) != 3 {
 		t.Fatalf("JSON media: %s", jr.Body.String())
 	}
 	jm := media[0].(map[string]any)
@@ -503,7 +503,7 @@ func TestVIDAAMetadataStaysSingleMediaAfterVariantsResolve(t *testing.T) {
 }
 
 func TestVIDAAPlaybackMetadataLifecycle(t *testing.T) {
-	f, pb := newVariantPlaybackFixture(t)
+	f, pb, _ := configuredVariantFixture(t)
 	path := "/library/metadata/" + fightClub.Key.String()
 	headers := []string{"X-Plex-Product", "Plex for VIDAA"}
 	check := func(stage string) {
@@ -512,7 +512,7 @@ func TestVIDAAPlaybackMetadataLifecycle(t *testing.T) {
 		if r.Code != 200 {
 			t.Fatalf("%s metadata: %d %s", stage, r.Code, r.Body.String())
 		}
-		assertVIDAAXMLIdentity(t, r.Body.String())
+		assertTVSlotXMLIdentity(t, r.Body.String())
 	}
 	check("warm")
 	q := httptest.NewRequest(http.MethodPost, "/playQueues?type=video&uri="+urlEsc(path), nil)
@@ -524,7 +524,7 @@ func TestVIDAAPlaybackMetadataLifecycle(t *testing.T) {
 	if qr.Code != 200 {
 		t.Fatalf("queue: %d %s", qr.Code, qr.Body.String())
 	}
-	assertVIDAAXMLIdentity(t, qr.Body.String())
+	assertTVSlotXMLIdentity(t, qr.Body.String())
 	query := "path=" + urlEsc(path) + "&session=vidaa&mediaIndex=0&directPlay=0&protocol=hls"
 	for _, endpoint := range []string{"decision?", "start.m3u8?"} {
 		r := f.get(t, "/video/:/transcode/universal/"+endpoint+query, headers...)
@@ -532,7 +532,7 @@ func TestVIDAAPlaybackMetadataLifecycle(t *testing.T) {
 			t.Fatalf("%s: %d %s", endpoint, r.Code, r.Body.String())
 		}
 		if endpoint == "decision?" {
-			assertVIDAAXMLIdentity(t, r.Body.String())
+			assertTVSlotXMLIdentity(t, r.Body.String())
 		}
 	}
 	if pb.prepared == 0 || len(pb.variantCalls) != 0 {

@@ -433,3 +433,10 @@ func (s scorecardSessionWrapper) DeleteBinding(ctx context.Context, id string) e
 	}
 	return store.DeleteBinding(ctx, id)
 }
+
+func (s scorecardSessionWrapper) TrailerPreview(ctx context.Context, r frontend.TrailerPreviewRequest) (frontend.TrailerPreviewResult, error) {
+	if p, ok := s.embeddedScorecardSessions.(frontend.TrailerPreviews); ok {
+		return p.TrailerPreview(ctx, r)
+	}
+	return frontend.TrailerPreviewResult{State: "unavailable", Reason: "unsupported"}, nil
+}

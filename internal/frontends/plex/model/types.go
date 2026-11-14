@@ -532,19 +532,22 @@ type Stream struct {
 
 // Hub is a row of items.
 type Hub struct {
-	HubKey        string `plex:"hubKey,omitempty"`
-	UpNext        *bool  `plex:"upNext"`
-	Key           string `plex:"key,omitempty"`
-	Title         string `plex:"title"`
-	Type          string `plex:"type"`
-	HubIdentifier string `plex:"hubIdentifier"`
-	Context       string `plex:"context"`
-	Size          int    `plex:"size"`
-	TotalSize     *int   `plex:"totalSize"`
-	More          bool   `plex:"more"`
-	Style         string `plex:"style,omitempty"`
-	Promoted      *bool  `plex:"promoted"`
-	Random        *bool  `plex:"random"`
+	Channel       []SearchChannel `plex:"Channel"`
+	Meta          *Meta           `plex:"Meta,object"`
+	RankedTop10   bool            `plex:"-"`
+	HubKey        string          `plex:"hubKey,omitempty"`
+	UpNext        *bool           `plex:"upNext"`
+	Key           string          `plex:"key,omitempty"`
+	Title         string          `plex:"title"`
+	Type          string          `plex:"type"`
+	HubIdentifier string          `plex:"hubIdentifier"`
+	Context       string          `plex:"context"`
+	Size          int             `plex:"size"`
+	TotalSize     *int            `plex:"totalSize"`
+	More          bool            `plex:"more"`
+	Style         string          `plex:"style,omitempty"`
+	Promoted      *bool           `plex:"promoted"`
+	Random        *bool           `plex:"random"`
 
 	Metadata  []Metadata  `plex:"Metadata"`
 	Directory []Directory `plex:"Directory"`
@@ -560,9 +563,16 @@ type SearchResult struct {
 
 // Meta describes a section's types, filters, sorts and fields
 // (includeMeta=1).
+type DisplayImage struct {
+	Type      string `plex:"type"`
+	Subtype   string `plex:"subtype,omitempty"`
+	ImageType string `plex:"imageType"`
+}
+
 type Meta struct {
-	Type      []MetaType  `plex:"Type"`
-	FieldType []FieldType `plex:"FieldType"`
+	DisplayImage []DisplayImage `plex:"DisplayImage,omitempty"`
+	Type         []MetaType     `plex:"Type"`
+	FieldType    []FieldType    `plex:"FieldType"`
 }
 
 type MetaType struct {
@@ -621,14 +631,21 @@ type MediaProvider struct {
 	Feature    []Feature `plex:"Feature"`
 }
 
+type GridChannelFilter struct {
+	Key            string `plex:"key"`
+	GenreRatingKey string `plex:"genreRatingKey"`
+	Title          string `plex:"title"`
+}
+
 type Feature struct {
-	Flavor        string              `plex:"flavor,omitempty"`
-	ScrobbleKey   string              `plex:"scrobbleKey,omitempty"`
-	UnscrobbleKey string              `plex:"unscrobbleKey,omitempty"`
-	Key           string              `plex:"key,omitempty"`
-	Type          string              `plex:"type"`
-	Directory     []ProviderDirectory `plex:"Directory"`
-	Action        []Action            `plex:"Action"`
+	GridChannelFilter []GridChannelFilter `plex:"GridChannelFilter"`
+	Flavor            string              `plex:"flavor,omitempty"`
+	ScrobbleKey       string              `plex:"scrobbleKey,omitempty"`
+	UnscrobbleKey     string              `plex:"unscrobbleKey,omitempty"`
+	Key               string              `plex:"key,omitempty"`
+	Type              string              `plex:"type"`
+	Directory         []ProviderDirectory `plex:"Directory"`
+	Action            []Action            `plex:"Action"`
 }
 
 type Action struct {

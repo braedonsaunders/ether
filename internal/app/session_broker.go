@@ -2,13 +2,16 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/state"
@@ -48,6 +51,28 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		}
 	}
 	return sessions.NewBroker(sessions.BrokerDeps{SurfacePolicy: sessionPolicy,
+		PreviewSource: func(ctx context.Context, viewer *core.Viewer, title *core.Title, lang string) (sessions.PreviewSource, error) {
+			if a.extras == nil {
+				return sessions.PreviewSource{}, core.ErrNotAvailable
+			}
+			clips, err := a.extras.List(ctx, title, lang)
+			if err != nil {
+				return sessions.PreviewSource{}, err
+			}
+			for _, clip := range clips {
+				if clip.IsTrailer() {
+					cached, err := a.extras.CacheTrailer(ctx, clip)
+					if errors.Is(err, extras.ErrCachePreparing) {
+						return sessions.PreviewSource{}, sessions.ErrPreviewPreparing
+					}
+					if err != nil {
+						return sessions.PreviewSource{}, err
+					}
+					return sessions.PreviewSource{MIMEType: cached.MIMEType, SourceGeneration: cached.SourceGeneration, Open: func() (*os.File, error) { return a.extras.OpenCachedTrailer(cached) }}, nil
+				}
+			}
+			return sessions.PreviewSource{}, core.ErrNotFound
+		},
 		OnActualPlaying:     a.automaticSubtitleWork,
 		DistributedHLS:      a.distributedHLS(),
 		Trickplay:           a.trickplay.Borrow(),

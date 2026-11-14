@@ -55,7 +55,7 @@ func (d *breakTapDecoder) Close() error {
 	return d.Decoder.Close()
 }
 func (s *Service) storeBreakObservation(observed breakObservation) {
-	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(s.serviceContext(), 5*time.Second)
 	defer cancel()
 	if s.o.BreakAnalyzer.ObservePoints(ctx, observed.input, observed.points) == nil {
 		merged, err := s.o.BreakAnalyzer.CachedBreakPoints(ctx, observed.input)

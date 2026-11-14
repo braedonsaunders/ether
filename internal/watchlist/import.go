@@ -19,6 +19,9 @@ func ImportTitleTx(ctx context.Context, tx *sql.Tx, userID int64, title core.Tit
 	if err != nil {
 		return err
 	}
+	if err := queueWarmAdd(ctx, tx, userID, title.Key, added); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,'imported',?,?) ON CONFLICT(user_id,item_key,source) DO NOTHING`, userID, title.Key, string(raw), added)
 	return err
 }

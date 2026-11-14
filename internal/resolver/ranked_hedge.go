@@ -45,7 +45,7 @@ func (s *Service) healthHedgeDelay(rel core.Release) time.Duration {
 }
 
 func equivalentHedge(lead, backup candidate, margin float64) bool {
-	return releasepolicy.Equivalent(lead.policy, backup.policy) && pluginKeysEqual(lead, backup) &&
+	return samePreferenceTier(lead, backup) && releasepolicy.Equivalent(lead.policy, backup.policy) && pluginKeysEqual(lead, backup) &&
 		!lead.verified && backup.bandwidth >= lead.bandwidth &&
 		sameTier(backup, lead) &&
 		backup.rel.Info.Edition == lead.rel.Info.Edition &&

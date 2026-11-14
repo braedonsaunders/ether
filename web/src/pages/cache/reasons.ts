@@ -129,6 +129,10 @@ export function shelfStateLabel(state?: string): string {
 export function selectionReason(codes?: string[], args?: Record<string, number>): string {
   const out = (codes ?? []).map((code) => {
     switch (code) {
+      case "watchlist":
+        return t("Watchlist");
+      case "owner-pin":
+        return t("Keep warm");
       case "catalogue-popularity":
         return t("Catalogue popularity");
       case "recent-release":

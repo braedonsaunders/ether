@@ -333,6 +333,7 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 	}
 
 	var info, tracks, chapters []byte
+	var clusterStart, clusterEnd int64
 	targets := map[uint64]int64{}
 	load := func(start, stop int64) ([]byte, error) {
 		if stop-start > nativeElementLimit {
@@ -349,6 +350,7 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 			return nil, err
 		}
 		if id == mkvCluster {
+			clusterStart, clusterEnd = start, stop
 			break
 		}
 		switch id {
@@ -431,6 +433,28 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 	index := 0
 	hasVideo := false
 	for _, t := range parsed {
+		complete := completeHEVCConfig(t.private)
+		if t.codecID == "V_MPEGH/ISO/HEVC" && !complete && !t.privScoped && !t.encrypted {
+			sets := hevcParameterNALs(t.private, 0)
+			if len(sets[33]) > 0 {
+				t.private = hevcProbeConfig(t.private, sets)
+			} else {
+				if clusterStart == 0 {
+					for off, n := segStart, 0; off < segEnd && n < 64; n++ {
+						id, start, stop, err := s.header(off, segEnd)
+						if err != nil || stop <= off {
+							break
+						}
+						if id == mkvCluster {
+							clusterStart, clusterEnd = start, stop
+							break
+						}
+						off = stop
+					}
+				}
+				t.private = s.firstHEVCParameters(clusterStart, clusterEnd, t.number, t.private)
+			}
+		}
 		si, accepted, err := t.stream(index)
 		if err != nil {
 			return nil, err
@@ -443,6 +467,7 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 			continue // a demuxed data stream ffprobe would not map
 		}
 		if si.Type == "video" {
+			si.HEVCParameterSets = complete
 			hasVideo = true
 		}
 		if si.TimeBase == "" && scale > 0 && 1_000_000_000%scale == 0 {
@@ -1302,6 +1327,7 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 			return incomplete("hevc SPS: %v", err)
 		}
 		si.MalformedHEVC = malformedHEVCConfig(p)
+		si.HEVCParameterSets = completeHEVCConfig(p)
 		si.BitDepth = f.bitDepth
 		si.PixelFormat = yuvPixFmt(f.chroma, f.bitDepth)
 		applyReferenceFrames(si, f)
@@ -1483,6 +1509,9 @@ func avcConfigSPS(c []byte) []byte {
 
 // hevcConfigSPS returns the first SPS NAL of an HEVCDecoderConfigurationRecord.
 func hevcConfigSPS(c []byte) []byte {
+	if len(c) < 23 {
+		return nil
+	}
 	arrays := int(c[22])
 	b := c[23:]
 	for i := 0; i < arrays; i++ {
@@ -1519,11 +1548,11 @@ func (t mkvTrack) audio(si *core.StreamInfo) error {
 	case strings.HasPrefix(id, "A_AAC"):
 		si.Codec = "aac"
 		if len(t.private) >= 2 {
-			profile, sbrRate, channels, ok := aacConfig(t.private)
+			profile, sbrRate, channels, layout, ok := aacConfig(t.private)
 			if !ok {
 				return incomplete("bad AudioSpecificConfig")
 			}
-			si.Profile = profile
+			si.Profile, si.ChannelLayout = profile, layout
 			if sbrRate > 0 {
 				rate = float64(sbrRate)
 			}
@@ -1591,13 +1620,15 @@ func (t mkvTrack) audio(si *core.StreamInfo) error {
 		return incomplete("audio codec delay out of range")
 	}
 	si.DecodedPadding = int(padding)
-	si.ChannelLayout = defaultChannelLayout(si.Codec, si.Channels)
+	if si.ChannelLayout == "" {
+		si.ChannelLayout = defaultChannelLayout(si.Codec, si.Channels)
+	}
 	return nil
 }
 
 // aacConfig reads an AudioSpecificConfig: libavcodec's profile name, the
-// SBR output rate when explicitly signalled, and the channel configuration.
-func aacConfig(b []byte) (profile string, sbrRate, channels int, ok bool) {
+// SBR output rate when explicitly signalled, and the decoded channel count/layout.
+func aacConfig(b []byte) (profile string, sbrRate, channels int, layout string, ok bool) {
 	r := &bitReader{b: b}
 	rates := []int{96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350}
 	objectType := func() int {
@@ -1619,7 +1650,7 @@ func aacConfig(b []byte) (profile string, sbrRate, channels int, ok bool) {
 	}
 	aot := objectType()
 	rate()
-	channels = int(r.u(4))
+	channels, layout = aacChannelConfig(int(r.u(4)))
 	sbr, ps := false, false
 	if aot == 5 || aot == 29 {
 		sbr, ps = true, aot == 29
@@ -1644,24 +1675,56 @@ func aacConfig(b []byte) (profile string, sbrRate, channels int, ok bool) {
 		r.err = nil // extension parsing is optional
 	}
 	if r.err != nil || channels == 0 {
-		return "", 0, 0, false
+		return "", 0, 0, "", false
 	}
 	// libavcodec decodes mono SBR as stereo in case parametric stereo is
 	// present.
 	if sbr && channels == 1 {
-		channels = 2
+		channels, layout = 2, "stereo"
 	}
 	switch {
 	case ps:
-		return "HE-AACv2", sbrRate, channels, true
+		return "HE-AACv2", sbrRate, channels, layout, true
 	case sbr:
-		return "HE-AAC", sbrRate, channels, true
+		return "HE-AAC", sbrRate, channels, layout, true
 	}
 	names := map[int]string{1: "Main", 2: "LC", 3: "SSR", 4: "LTP", 23: "LD", 39: "ELD", 42: "xHE-AAC"}
 	if name, found := names[aot]; found {
-		return name, 0, channels, true
+		return name, 0, channels, layout, true
 	}
-	return "", 0, 0, false
+	return "", 0, 0, "", false
+}
+
+// aacChannelConfig maps ISO/IEC 14496-3 Table 1.19 configuration IDs to
+// channel counts and ffmpeg layout names. Zero requires a PCE; reserved IDs
+// and PCE-only layouts stay unknown so native probing can fall back.
+func aacChannelConfig(config int) (channels int, layout string) {
+	switch config {
+	case 1:
+		return 1, "mono"
+	case 2:
+		return 2, "stereo"
+	case 3:
+		return 3, "3.0"
+	case 4:
+		return 4, "4.0"
+	case 5:
+		return 5, "5.0"
+	case 6:
+		return 6, "5.1"
+	case 7:
+		return 8, "7.1(wide)"
+	case 11:
+		return 7, "6.1(back)"
+	case 12:
+		return 8, "7.1"
+	case 13:
+		return 24, "22.2"
+	case 14:
+		return 8, "5.1.2(back)"
+	default:
+		return 0, ""
+	}
 }
 
 // defaultChannelLayout is the layout name ffmpeg's decoders report for a

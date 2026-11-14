@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"strconv"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -298,4 +299,20 @@ func (s subtitleSurface) Download(ctx context.Context, viewer *core.Viewer, devi
 		}
 	}
 	return info.Index, nil
+}
+
+func (s extraSurface) OpenCachedExtra(ctx context.Context, key core.RatingKey) (*os.File, string, error) {
+	if s.extras == nil {
+		return nil, "", core.ErrNotAvailable
+	}
+	clip, ok := s.extras.Lookup(key)
+	if !ok || !clip.IsTrailer() {
+		return nil, "", core.ErrNotAvailable
+	}
+	cached, err := s.extras.CacheTrailer(ctx, clip)
+	if err != nil {
+		return nil, "", err
+	}
+	f, err := s.extras.OpenCachedTrailer(cached)
+	return f, cached.MIMEType, err
 }

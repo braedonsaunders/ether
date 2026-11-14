@@ -1,5 +1,8 @@
 # Android TV sign-in investigation
 
+See [the v0.3.11 follow-up](investigations/421-roku-shield-0311.md) for
+the additional official client names missed by this initial fix.
+
 Reviewed latest release v0.20.0 and its pinned jellyfin-sdk-kotlin v1.8.12,
 read-only. No upstream implementation was copied.
 

@@ -80,6 +80,8 @@ func TestEnabledVirtualChannelsWithNoViewersDoZeroRendersAndZeroWarming(t *testi
 	var masterRenders atomic.Int64
 	var liveFrameRenders atomic.Int64
 	var warmCalls atomic.Int64
+	var upcomingMu sync.Mutex
+	pauseUpcoming := false
 
 	var ltv *Service
 	oa, err := onair.New(onair.Options{
@@ -88,7 +90,9 @@ func TestEnabledVirtualChannelsWithNoViewersDoZeroRendersAndZeroWarming(t *testi
 		Showcase: true,
 		Now:      clock.Now,
 		Upcoming: func(c context.Context) []core.ClipRequest {
-			if ltv == nil {
+			upcomingMu.Lock()
+			defer upcomingMu.Unlock()
+			if pauseUpcoming || ltv == nil {
 				return nil
 			}
 			return ltv.GraphicsRequests(c, "")
@@ -105,7 +109,6 @@ func TestEnabledVirtualChannelsWithNoViewersDoZeroRendersAndZeroWarming(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	oa.Start()
 	defer oa.Close()
 
 	reels, err := oa.Reels(ctx)
@@ -127,6 +130,7 @@ func TestEnabledVirtualChannelsWithNoViewersDoZeroRendersAndZeroWarming(t *testi
 		t.Fatal(err)
 	}
 	defer ltv.Close()
+	oa.Start()
 
 	bp, _ := EraBreakPattern("1980s")
 	tonightOn := true
@@ -194,6 +198,11 @@ func TestEnabledVirtualChannelsWithNoViewersDoZeroRendersAndZeroWarming(t *testi
 		t.Fatalf("expected livetv WarmCount == 0, got %d", got)
 	}
 
+	// Inspect demand before the render worker consumes it. Otherwise it may
+	// cache all missing masters before GraphicsRequests below runs.
+	upcomingMu.Lock() // Drain an already-running upcoming scan too.
+	pauseUpcoming = true
+	upcomingMu.Unlock()
 	// Now attach an active viewer ONLY to chroma-80; retro-90 stays enabled with 0 viewers.
 	ltv.mu.Lock()
 	ltv.sessions["sess-1"] = &session{info: SessionInfo{ID: "sess-1", Channel: Channel{ID: "chroma-80"}}}
@@ -638,6 +647,18 @@ func TestNeverHoldOnStillOnceStandbyMasterExistsAndVisibilityLogs(t *testing.T) 
 		}
 	}
 	_ = ms.Close()
+
+	// Cold airing queues its master independently of the plate reader. Wait
+	// for the premise of this test before asking the planner to select it.
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if _, ok := oa.CachedStandby(ctx, "nocturne"); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("standby master did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	ltv, err := New(Options{
 		DB:       db,

@@ -125,6 +125,8 @@ var mixedSections = map[string]map[string]Scope{
 		"retentionDays":            Local,
 		"replayBoostHours":         Local,
 		"disableSpeculation":       Local,
+		"speculativeWarming":       Local,
+		"keepWarmTitles":           Local,
 		"detailWarmup":             Local,
 		"detailBytes":              Local,
 		"playbackReadAheadMinutes": Local,
@@ -174,6 +176,8 @@ var mixedSections = map[string]map[string]Scope{
 	"extras": {
 		"enabled":      Shared,
 		"prewarmBytes": Shared,
+		// Trailer bytes live under this node's cache directory.
+		"trailerCacheMaxBytes": Local,
 		// The resolver tool is a binary on this node's disk.
 		"resolverCommand": Local,
 		"resolverArgs":    Local,

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -151,6 +152,58 @@ func TestOnDemandAddonStreamsOpenOneLinkPerPlay(t *testing.T) {
 		}
 		if got := a.links(); len(got) != 1 {
 			t.Fatalf("%s: play after it opened %v", name, got)
+		}
+	}
+}
+
+// On-demand checks must remain sequential across timeouts, retire the losing
+// request before advancing, and stop opening sources when the Play ends.
+func TestOnDemandBoundedSequentialChecks(t *testing.T) {
+	for _, race := range []int{0, 3} {
+		for _, abandon := range []bool{false, true} {
+			synctest.Test(t, func(t *testing.T) {
+				var opened []string
+				var previous context.Context
+				h := windowHealth(func(ctx context.Context, id string) (bool, error) {
+					if previous != nil && previous.Err() == nil {
+						t.Error("next candidate opened before previous request was cancelled")
+					}
+					previous = ctx
+					opened = append(opened, id)
+					if id == "slow" {
+						<-ctx.Done()
+						return false, ctx.Err()
+					}
+					time.Sleep(time.Second)
+					return true, nil
+				})
+				s := New(&fakeIndexer{}, h, nil, testCfg(), Options{})
+				defer s.Close()
+				cs, tr := windowCandidates("slow", "healthy", "unneeded")
+				for i := range cs {
+					cs[i].rel.Protocol = core.ProtocolHTTP
+					cs[i].rel.StreamOnDemand = true
+					cs[i].rel.StreamURL = "https://addon.example/play/" + cs[i].rel.ID
+				}
+				ctx := context.Background()
+				if abandon {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, time.Second)
+					defer cancel()
+				}
+				started := time.Now()
+				winner, _, err := s.validateCandidates(ctx, cs, tr, race)
+				if abandon {
+					if err != context.DeadlineExceeded || winner != -1 || len(opened) != 1 {
+						t.Fatalf("race %d: abandoned Play: winner=%d err=%v opened=%v", race, winner, err, opened)
+					}
+				} else if err != nil || winner != 1 || !slices.Equal(opened, []string{"slow", "healthy"}) || time.Since(started) != onDemandBudget+time.Second {
+					t.Fatalf("race %d: winner=%d err=%v opened=%v elapsed=%s", race, winner, err, opened, time.Since(started))
+				}
+				if previous == nil || previous.Err() == nil {
+					t.Fatal("validation returned with a live request scope")
+				}
+			})
 		}
 	}
 }

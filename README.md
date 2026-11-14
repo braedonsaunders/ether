@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/braedonsaunders/ether/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/braedonsaunders/ether?label=release&color=1f6feb" /></a>
-  <a href="https://discord.gg/t8ewTZ7gpa"><img alt="Discord" src="https://img.shields.io/discord/1567272301672796331?label=discord&logo=discord&logoColor=white&color=5865F2" /></a>
+  <a href="https://discord.gg/kAhN4QxM"><img alt="Discord" src="https://img.shields.io/discord/1567272301672796331?label=discord&logo=discord&logoColor=white&color=5865F2" /></a>
   <img alt="Platforms" src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Docker-555" />
   <img alt="Pure Go" src="https://img.shields.io/badge/Go-CGO__ENABLED%3D0-00ADD8" />
   <a href="LICENSE"><img alt="GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-555" /></a>
@@ -147,7 +147,7 @@ The sidebar groups everything by what you are doing:
 - **Overview, Activity & Viewers** at the top for live sessions, 30-day playback history, and household accounts.
 - **Library:** **Catalog** (browser, three New releases modes, and ordered show/hide **Rules**), **Collections**, **Home** (Home Designer), **Live TV**, **Calendar**, and **Metadata** (Ratings, Artwork, Episode order).
 - **Streaming:** **Sources** (Debrid, Usenet, Indexers, Stats on one level), **Quality** (Profiles, Rules, Check quality, Searching, Blocklist, Pinned, History), **Cache**, and **Playback**.
-- **Server:** **General** (every app's port and address under **How apps connect**, plus an optional outbound HTTP/SOCKS5 proxy for source traffic), **Apps**, **Integrations**, **Notifications**, **Cluster**, and **Maintenance** (Backups & import, Updates, Health, Logs). Press ⌘K (Ctrl+K elsewhere) to search pages and individual settings; choosing a setting opens its page, expands **More options** if needed, and highlights the row.
+- **Server:** **General** (every app's port and address under **How apps connect**, plus an optional outbound HTTP/SOCKS5 proxy for source traffic, including Live TV/IPTV), **Apps**, **Integrations**, **Notifications**, **Cluster**, and **Maintenance** (Backups & import, Updates, Health, Logs). Press ⌘K (Ctrl+K elsewhere) to search pages and individual settings; choosing a setting opens its page, expands **More options** if needed, and highlights the row.
 
 ### Release profiles, sources, and new-release modes
 Quality profiles are scoped to a media type, the way Radarr and Sonarr work: every profile is for **Movies** or for **Shows**, and each media has its own **At home** and **Away** default. **Quality › Profiles** has a **Movies | Shows** picker; the profile table, its default badges, new profiles and imported presets follow the selected media. Import presets from **TRaSH Guides**, **Profilarr** or pasted Radarr/Sonarr JSON (a Radarr profile becomes a movie profile, a Sonarr one a show profile), and turn on **Keep imported profiles in sync** to pick up guide changes on a schedule or with **Sync now**. Upgrading from 0.3.4 splits each existing profile into a movie and a show copy with the same name, so every rule and default keeps choosing exactly what it did before.
@@ -460,3 +460,9 @@ Ether is an independent, clean-room implementation of the HTTP protocols used by
 "Plex" is a trademark of Plex, Inc. "Jellyfin" is a trademark of the Jellyfin project. "Emby" is a trademark of Emby LLC. "Silo" and "Stremio" are trademarks of their respective owners. Ether is **not affiliated with, sponsored by, or endorsed by Plex, Inc., the Jellyfin project, Emby LLC, Silo, or Stremio.** This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 [**GPL-3.0 License**](LICENSE) · [**Contributing**](CONTRIBUTING.md) · [**Legal**](LEGAL.md) · [**Third-Party Notices**](THIRD_PARTY_NOTICES.md)
+
+## Build a plugin
+
+Start with [the plugin author and coding-agent guide](sdk/AGENTS.md): ten recipes,
+manifest decisions, local live reload, conformance, and packaging. The console
+also includes a searchable reference under Plugins → Reference.

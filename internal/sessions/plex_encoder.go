@@ -44,7 +44,7 @@ func (b *Broker) StartSegmentedHLS(ctx context.Context, viewer *core.User, playI
 	}
 	remote := b.deps.DistributedHLS
 	if remote != nil {
-		if remote.Supports(q) {
+		if len(q.TextSubtitleStreams) == 0 && remote.Supports(q) {
 			revision := sourceRevision(ps)
 			if revision == "" {
 				return nil, core.ErrSourceChanged

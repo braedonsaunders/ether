@@ -307,7 +307,9 @@ export function WhoGetsWhat() {
             ) : null}
             {title && (
               <p className="text-xs text-fg-muted">
-                {t("Quality limits apply to this title; available releases may differ.")}
+                {t(
+                  "Minimum score and preferred qualities guide ranking. If none match, Ether uses the best available release. Hard limits still apply.",
+                )}
               </p>
             )}
           </div>

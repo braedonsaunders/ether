@@ -595,6 +595,9 @@ type DecisionOwner struct {
 	ID                  string
 	UserID              int64
 	ClientID, SessionID string
+	// Generation identifies a delivery attempt within the public player.
+	// It scopes stale timeline stops; it never authorizes another player.
+	Generation string
 }
 
 // VersionFlowKey scopes issued versions to one viewer, client and title.
@@ -873,6 +876,7 @@ type DecisionArms interface {
 	Arm(pr DecisionOwner, key core.RatingKey)
 	Armed(pr DecisionOwner, key core.RatingKey) bool
 	Disarm(pr DecisionOwner, key core.RatingKey)
+	Current(pr DecisionOwner, key core.RatingKey) bool
 	Refresh(now time.Time)
 	ClearOwn()
 }

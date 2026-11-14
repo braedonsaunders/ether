@@ -70,19 +70,6 @@ func (a *App) searchSourcesFor(stepAside *experience.StepAside) experience.Searc
 			return stepAside.FilterAvailable(ctx, ts), nil
 		}
 	}
-	if a.discoveryFeatures != nil {
-		src.Natural = experience.DiscoverySearch(a.discoveryFeatures.Frontend())
-		if stepAside != nil {
-			baseNatural := src.Natural
-			src.Natural = func(ctx context.Context, viewer *core.User, query string, limit int) ([]core.Title, bool) {
-				ts, ok := baseNatural(ctx, viewer, query, limit)
-				if !ok {
-					return nil, false
-				}
-				return stepAside.FilterAvailable(core.WithCatalogViewer(ctx, viewer), ts), true
-			}
-		}
-	}
 	if a.state != nil {
 		src.Familiar = experience.FamiliarFrom(a.state)
 	}
@@ -305,7 +292,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			}
 		}
 		return a.catalog.RecentAirFiltered(ctx, typ, f, offset, limit)
-	}, CountUnplayedAired: countUnplayedAired, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Scheduled: a.scheduledEpisodes, Grouped: a.groupedShows, Search: a.experienceSearch(vis, stepAside), CachedGet: a.catalog.CachedGet, CachedGetMany: a.catalog.CachedGetMany, ArtworkGet: a.catalog.ArtworkTitle, ArtworkGetMany: a.catalog.ArtworkTitles, ArtworkRows: a.catalog.ArtworkRows, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	}, CountUnplayedAired: countUnplayedAired, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Scheduled: a.scheduledEpisodes, Grouped: a.groupedShows, Search: a.experienceSearch(vis, stepAside), CachedGet: a.catalog.CachedGet, CachedGetMany: a.catalog.CachedGetMany, ArtworkGet: a.catalog.ArtworkTitle, ArtworkGetMany: a.catalog.ArtworkTitles, ArtworkRows: a.catalog.ArtworkRows, VisibilityRows: a.catalog.CachedVisibilityRows, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		return a.catalog.ResolveShowParents(ctx, keys)
 	}, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
 		if a.episodeorder != nil {
@@ -556,6 +543,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		deps.PluginLibraries = a.pluginsRT.kindCatalog
 	} else if a.libraries != nil {
 		deps.PluginLibraries = adapters.AttachKindCatalog(context.Background(), adapters.KindCatalogDeps{
+			TitleInLibrary: func(ctx context.Context, lib core.Library, key core.RatingKey) (bool, error) {
+				return a.catalog.TitleInFilter(ctx, libraryScopeFilter(lib, core.Filter{}), key)
+			},
 			Libraries: a.libraries,
 			Logger:    a.log,
 		})
@@ -1231,4 +1221,21 @@ func (v stepAsideVibe) VibeCollection(ctx context.Context, user *core.User, quer
 		return c, items, ok, err
 	}
 	return c, v.stepAside.FilterAvailable(core.WithCatalogViewer(ctx, user), items), ok, nil
+}
+
+func (v stepAsideVibe) DescriptiveSearchAvailable() bool {
+	source, ok := v.VibeSearcher.(core.DescriptiveSearcher)
+	return ok && source.DescriptiveSearchAvailable()
+}
+
+func (v stepAsideVibe) DescribeSearch(ctx context.Context, user *core.User, query string, wait bool) (core.DescriptiveResult, error) {
+	source, ok := v.VibeSearcher.(core.DescriptiveSearcher)
+	if !ok {
+		return core.DescriptiveResult{State: "unavailable"}, nil
+	}
+	result, err := source.DescribeSearch(ctx, user, query, wait)
+	if err == nil {
+		result.Items = v.stepAside.FilterAvailable(core.WithCatalogViewer(ctx, user), result.Items)
+	}
+	return result, err
 }

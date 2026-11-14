@@ -1,0 +1,41 @@
+{
+  "observed": "2026-11-14",
+  "method": "read-only authenticated GET; tokens never stored",
+  "dvrs": [
+    {
+      "key": "48",
+      "epgIdentifier": "tv.plex.providers.epg.xmltv:48",
+      "deviceCount": 1,
+      "deviceStates": [
+        "dead"
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "identifier": "tv.plex.providers.epg.xmltv:48",
+      "id": 49,
+      "parentID": 48,
+      "title": "Live TV & DVR",
+      "epgSource": "XMLTV",
+      "friendlyName": "[server name redacted]",
+      "gridFeature": [
+        {
+          "key": "/tv.plex.providers.epg.xmltv:48/grid",
+          "type": "grid"
+        }
+      ]
+    }
+  ],
+  "watchnow": {
+    "size": 1,
+    "Type": [
+      {
+        "key": "/tv.plex.providers.epg.xmltv:48/watchnow/all",
+        "type": "mixed",
+        "title": "All Channels",
+        "active": false
+      }
+    ]
+  }
+}

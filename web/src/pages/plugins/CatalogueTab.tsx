@@ -25,7 +25,7 @@ import { t, tn } from "../../i18n";
 import { useLocale } from "../../i18n/react";
 import { apiFetch, errorMessage } from "../../lib/api";
 import { invalidateRegistry } from "../../lib/extend";
-import { PermissionSheet } from "./PermissionSheet";
+import { PermissionSheet, RuntimeLimitsCard } from "./PermissionSheet";
 import {
   categoryLabel,
   kindIcon,
@@ -472,16 +472,22 @@ export function CatalogueTab({
             ) : null}
 
             {preview ? (
-              <PermissionSheet
-                permissions={preview.permissions}
-                verified={preview.verified}
-                needsViewers={preview.needsViewers}
-                needsFolders={preview.needsFolders}
-                viewers={viewers}
-                onChangeViewers={setViewers}
-                folders={folders}
-                onChangeFolders={setFolders}
-              />
+              <>
+                <RuntimeLimitsCard
+                  limits={preview.runtimeLimits}
+                  requested={preview.manifest.ether?.runtime?.limits}
+                />
+                <PermissionSheet
+                  permissions={preview.permissions}
+                  verified={preview.verified}
+                  needsViewers={preview.needsViewers}
+                  needsFolders={preview.needsFolders}
+                  viewers={viewers}
+                  onChangeViewers={setViewers}
+                  folders={folders}
+                  onChangeFolders={setFolders}
+                />
+              </>
             ) : null}
 
             {!isSelectedInstalled ? (

@@ -9,7 +9,7 @@ import { SettingsRow } from "../../components/SettingsRow";
 import { t } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { invalidateRegistry } from "../../lib/extend";
-import { PermissionSheet } from "./PermissionSheet";
+import { PermissionSheet, RuntimeLimitsCard } from "./PermissionSheet";
 import {
   isPrivateUrl,
   kindIcon,
@@ -326,6 +326,10 @@ export function InstallDrawer({
               </div>
             </div>
 
+            <RuntimeLimitsCard
+              limits={preview.runtimeLimits}
+              requested={preview.manifest.ether?.runtime?.limits}
+            />
             <PermissionSheet
               permissions={preview.permissions}
               verified={preview.verified}

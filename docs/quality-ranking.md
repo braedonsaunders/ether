@@ -194,33 +194,21 @@ release pools of 4 to 14 releases, and four devices (Apple
 TV 4K with Dolby Vision, an SDR 4K TV, a 1080p phone, a remote browser at
 8 Mbps). It does this for the shipped 4K, 1080p and 720p profiles, which
 reach the ranker through `config.Open` as on a fresh install. The
-golden (`testdata/ranking_corpus_golden.json`) was recorded by the old
-ranking before any code changed, at 081e60661 (re-recorded there when the
-season packs were added; its movie cases came out identical). The test
-fails on any change in the set of accepted releases, on any first-pick
-difference it can't explain, and if a profile keeps fewer than 98% of its
-first picks.
+golden (`testdata/ranking_corpus_golden.json`) records the full order, including
+closest matches below the profile minimum. The test fails on any accepted-set
+or order change. Regenerate a reviewed change with:
 
-| Profile | Same first pick | Same full order | Pack first (old) | Why the rest differ |
-| --- | ---: | ---: | ---: | --- |
-| 4K | 98.4% | 95.5% | 42 (40) | 10 × same quality, the format score now outranks age, grabs and bitrate |
-| 1080p | 99.5% | 97.2% | 45 (45) | 3 × same quality and score, Radarr's later keys decide |
-| 720p | 99.1% | 94.7% | 44 (44) | 3 × score before soft points, 3 × later keys |
+```sh
+go test ./internal/resolver -run '^TestRankingCorpusMatchesGolden$' -update-ranking-corpus
+```
 
-640 cases per profile; every accepted set is identical. "Pack first" counts
-the cases whose first pick is a season pack, with the old ranking's count
-in brackets: packs win about as often as before, on quality and score. The
-differences fall into three kinds:
-
-- **Score before soft points.** Same quality; the new pick has the higher
-  custom format score. The old total score added Ether's age penalty,
-  grabs and bitrate points to the format points. Radarr compares the
-  format score first and age, seeders and size after it.
-- **Later keys.** Same quality and score; Radarr's protocol, seeders/age or
-  size key decided where Ether's soft points did.
-- **Pack size.** A season pack and a single episode of the same quality and
-  score: the pack's season size no longer compares, so a later key or the
-  single-episode tie-break decides. (None in the current corpus.)
+For v0.3.11 the full corpus was compared against the parent of the soft-minimum
+change (`a21b0b6b9`). All 1,920 cases preserve every previously accepted release,
+in exactly its previous order, as a strict prefix. The new ranking appends 2,060
+closest matches across 951 cases; it removes no releases. The historical golden
+predated the Radarr/Sonarr comparer and already differed from that parent in 81
+cases. Those existing comparer differences are included in this refreshed
+snapshot; they were not caused by soft minimums.
 
 ## Decisions
 

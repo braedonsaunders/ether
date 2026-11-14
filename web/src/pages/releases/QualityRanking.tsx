@@ -213,7 +213,7 @@ export function QualityOrderSection({ draft, patch }: { draft: QualityProfile; p
           stacked
           title={t("Allowed qualities")}
           description={t(
-            "Other release type and resolution pairs are never played with this profile.",
+            "Prefer these qualities. When none match, Ether uses the best available release.",
           )}
         >
           <span className="flex flex-wrap items-center gap-1.5">
@@ -448,7 +448,7 @@ export function CustomFormatsSection({
       <SettingsRow
         title={t("Minimum score")}
         description={t(
-          "Releases whose custom formats score lower aren't played. Ether's own formats don't count.",
+          "Prefer releases that reach this score. When none do, Ether uses the best available release. Scores of -10000 or lower on a custom format block matching releases.",
         )}
         control={
           <span className="flex items-center gap-2">

@@ -26,7 +26,7 @@ func TestTapStartupBodyIdleAndCancellation(t *testing.T) {
 			defer up.Close()
 			s := testService(t, Options{HTTPClient: up.Client()})
 			u, _ := url.Parse(up.URL)
-			g := &inputGrant{origin: relayOrigin(u), headers: http.Header{}, ctx: s.ctx}
+			g := &inputGrant{origin: relayOrigin(u), headers: http.Header{}, ctx: s.serviceContext()}
 			tap, _, _ := s.inputRelay.taps.acquire("test", "", 0, g)
 			done := make(chan struct{})
 			go func() { s.openTap(tap, g, up.URL, http.Header{}, context.Background()); close(done) }()
@@ -79,7 +79,7 @@ func TestTapSlowTransportStreamUsesIdleNotTotalTimeout(t *testing.T) {
 	defer up.Close()
 	s := testService(t, Options{HTTPClient: &http.Client{Timeout: 10 * time.Millisecond}})
 	u, _ := url.Parse(up.URL)
-	g := &inputGrant{origin: relayOrigin(u), headers: http.Header{}, ctx: s.ctx}
+	g := &inputGrant{origin: relayOrigin(u), headers: http.Header{}, ctx: s.serviceContext()}
 	tap, _, _ := s.inputRelay.taps.acquire("slow", "", 0, g)
 	s.openTap(tap, g, up.URL, http.Header{}, context.Background())
 	defer tap.close(nil)
@@ -107,7 +107,7 @@ func TestTapOpeningDeadlineIncludesFirstBodyByte(t *testing.T) {
 	}))
 	defer up.Close()
 	s := testService(t, Options{HTTPClient: up.Client()})
-	g := &inputGrant{origin: up.URL, headers: http.Header{}, ctx: s.ctx}
+	g := &inputGrant{origin: up.URL, headers: http.Header{}, ctx: s.serviceContext()}
 	tap, _, _ := s.inputRelay.taps.acquire("deadline", "", 0, g)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()

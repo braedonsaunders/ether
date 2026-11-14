@@ -109,3 +109,17 @@ func (s surfaceEditions) Available(ctx context.Context, key core.RatingKey) (boo
 	}
 	return s.app.resolver.Available(ctx, key)
 }
+
+func (s surfaceEditions) VersionSlots(ctx context.Context, req core.ResolveRequest, max int, labels bool) ([]core.ReleaseVariant, error) {
+	if s.app == nil || s.app.resolver == nil {
+		return nil, nil
+	}
+	if labels {
+		req.User = s.app.withEffectiveAudioLanguages(ctx, req.User)
+	}
+	versions, err := s.app.resolver.VersionSlots(ctx, req, max, labels)
+	if err == nil && labels && s.app.playback != nil {
+		versions = s.app.playback.WithCachedVariantInfo(ctx, req.User, req.Title, versions)
+	}
+	return versions, err
+}

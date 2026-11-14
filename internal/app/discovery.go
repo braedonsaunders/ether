@@ -53,8 +53,19 @@ func (a *App) buildDiscovery() {
 		},
 		ClientIdentifier: plexguid.ClientIdentifier(a.cfg.Get().Plex.ClientIdentifier, a.cfg.Get().Server.MachineIdentifier),
 		PrewarmBytes:     a.cfg.Get().Cache.PrefetchBytes,
+		ManagedWarming:   true,
+		OnAdded:          a.cachefill.Wake,
 		ResumeSchedule:   a.clustered(), // a new leader continues the schedule
 		OnAvailable: func(ctx context.Context, userID int64, key core.RatingKey) {
+			warmKey := key
+			if warmKey.Kind() == core.KindEpisode {
+				warmKey = core.ShowKey(warmKey.TMDB())
+			}
+			_, err := a.db.ExecContext(ctx, `INSERT INTO watchlist_warm_intents(user_id,item_key,added) VALUES(?,?,?) ON CONFLICT(user_id,item_key) DO UPDATE SET added=excluded.added`, userID, warmKey, time.Now().Unix())
+			if err != nil {
+				a.log.Warn("queue watchlist warm intent", "err", err)
+			}
+			a.cachefill.Wake()
 			if a.sessionEvents == nil {
 				return
 			}
@@ -195,7 +206,7 @@ func discoveryViewerToken(ctx context.Context, u *core.User, home bool, ownerTok
 	if u.IsOwner {
 		return ownerToken, nil
 	}
-	if home {
+	if home && u.PlexID > 0 {
 		return switchHome(ctx, ownerToken, u.PlexID, "")
 	}
 	return "", core.ErrUnauthorized

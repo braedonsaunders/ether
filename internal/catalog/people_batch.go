@@ -195,8 +195,22 @@ func (c *Catalog) CachedVisibleTitles(ctx context.Context, keys []core.RatingKey
 // without credits. The partial titles are not cached.
 func (c *Catalog) CachedVisibilityRows(ctx context.Context, keys []core.RatingKey, facts core.TitleFacts) (map[core.RatingKey]core.Title, error) {
 	out := make(map[core.RatingKey]core.Title, len(keys))
+	// A full snapshot already has every requested fact. Reuse it exactly as
+	// CachedGetMany does, so repeated policy/facet checks on a listing do
+	// not replace cache hits with fresh SQL reads. Partial rows stay uncached.
+	gen, minute := c.writeGen.Load(), c.minuteBucket()
+	var missing []core.RatingKey
+	for _, key := range keys {
+		if title, ok := c.cachedStored(key, gen, minute); ok {
+			if title.Type != core.TypeSeason && c.cachedListVisible(&title) {
+				out[key] = title
+			}
+			continue
+		}
+		missing = append(missing, key)
+	}
 	facts |= c.viewerPolicyFacts(ctx) | c.policyFacts(c.visibilityFor(ctx))
-	for part := range store.Chunks(keys, 200) {
+	for part := range store.Chunks(missing, 200) {
 		args := make([]any, len(part))
 		for i, k := range part {
 			args[i] = int64(k)

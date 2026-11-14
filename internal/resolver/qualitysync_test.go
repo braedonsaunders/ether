@@ -162,6 +162,9 @@ func TestQualitySyncSkipsFailedAndUnusableProfiles(t *testing.T) {
 	tree := trashTree()
 	tree["radarr/quality-profiles/impossible.json"] = `{"trash_id":"p9","name":"Impossible","minFormatScore":999999,
 		"items":[{"name":"WEBDL-1080p","allowed":true}],"formatItems":{"WEB Tier 01":"cf-web1"}}`
+	tree["radarr/quality-profiles/unusable.json"] = `{"trash_id":"p10","name":"Unusable","items":[{"name":"WEBDL-1080p","allowed":false}]}`
+	unusable := trashImported("Unusable", "unusable")
+	unusable.CustomFormatScores = map[string]int{"cf-web1": 9}
 	bad := trashImported("Bad", "missing")
 	bad.CustomFormatScores = map[string]int{"cf-web1": 4}
 	impossible := trashImported("Impossible", "impossible")
@@ -170,26 +173,30 @@ func TestQualitySyncSkipsFailedAndUnusableProfiles(t *testing.T) {
 		trashImported("Good", "hd-bluray-web"),
 		bad,
 		impossible,
+		unusable,
 	}}}
 	f := newSyncFixture(t, tree, cfg)
 	report, err := f.syncer.Sync(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.ProfilesUpdated != 1 || len(report.Warnings) != 2 {
+	if report.ProfilesUpdated != 2 || len(report.Warnings) != 3 {
 		t.Fatalf("report %+v", report)
 	}
 	joined := strings.Join(report.Warnings, "\n")
 	if !strings.Contains(joined, "Bad") || !strings.Contains(joined, "no such profile") && !strings.Contains(joined, "no longer exists") {
 		t.Fatalf("warnings %v", report.Warnings)
 	}
-	if !strings.Contains(joined, "Impossible") || !strings.Contains(joined, "no release could ever be accepted") {
-		t.Fatalf("unusable warning missing: %v", report.Warnings)
+	if !strings.Contains(joined, "Impossible") || !strings.Contains(joined, "at most 1700") {
+		t.Fatalf("minimum warning missing: %v", report.Warnings)
 	}
 	if got := f.cfg.Quality.Profiles[1]; got.CustomFormatScores["cf-web1"] != 4 || got.Import.SyncedAt.IsZero() != true {
 		t.Fatalf("failed profile overwritten: %+v", got)
 	}
-	if got := f.cfg.Quality.Profiles[2]; got.CustomFormatScores["cf-web1"] != 8 {
+	if got := f.cfg.Quality.Profiles[2]; got.CustomFormatScores["cf-web1"] != 1700 || got.Import.SyncedAt.IsZero() {
+		t.Fatalf("unreachable minimum profile was not updated: %+v", got)
+	}
+	if got := f.cfg.Quality.Profiles[3]; got.CustomFormatScores["cf-web1"] != 9 || !got.Import.SyncedAt.IsZero() {
 		t.Fatalf("unusable profile overwritten: %+v", got)
 	}
 	if f.cfg.Quality.Sync.LastError == "" {

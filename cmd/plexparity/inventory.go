@@ -65,6 +65,12 @@ func missingRoutes() []string {
 // unprobedRoutes are GET routes the offline parity world cannot compare
 // byte for byte, each with the reason. They are not counted as covered.
 var unprobedRoutes = map[string]string{
+	// Owner-defined guides and genre-filtered channel menus have no recorded
+	// PMS baseline. Populated membership and visibility are exercised by
+	// internal/frontends/plex/livetv_guides_test.go.
+	"/tv.plex.providers.epg.xmltv:1/categories/{category}/channels":        "owner guide category channels have no recorded PMS baseline",
+	"/tv.plex.providers.epg.xmltv:1/guides/{guide}/channels":               "owner-defined guides have no recorded PMS baseline",
+	"/tv.plex.providers.epg.xmltv:1/watchnow/categories/{category}":        "owner guide category listings have no recorded PMS baseline",
 	"/service/ultrablur/colors":                                            "colours come from the artwork palette cache, which the offline world does not warm",
 	"/services/ultrablur/colors":                                           "colours come from the artwork palette cache, which the offline world does not warm",
 	"/library/parts/{part}/{changestamp}/":                                 "PM4K bare changestamp route has no offline parity request",

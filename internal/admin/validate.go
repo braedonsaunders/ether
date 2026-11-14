@@ -354,6 +354,18 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.Cache.ReplayBoostHours < 0 || cfg.Cache.ReplayBoostHours > 720 {
 		v.add("cache.replayBoostHours", "must be between 0 and 720")
 	}
+	if cfg.Cache.SpeculativeWarming != "" && cfg.Cache.SpeculativeWarming != "on" && cfg.Cache.SpeculativeWarming != "off" {
+		v.add("cache.speculativeWarming", "must be on or off")
+	}
+	if len(cfg.Cache.KeepWarmTitles) > 200 {
+		v.add("cache.keepWarmTitles", "must contain at most 200 titles")
+	}
+	for _, key := range cfg.Cache.KeepWarmTitles {
+		if key.Kind() != core.KindMovie && key.Kind() != core.KindShow {
+			v.add("cache.keepWarmTitles", "must contain movie or show keys")
+			break
+		}
+	}
 	if cfg.Cache.DetailWarmup != "" && cfg.Cache.DetailWarmup != "on" && cfg.Cache.DetailWarmup != "off" {
 		v.add("cache.detailWarmup", "must be on or off")
 	}

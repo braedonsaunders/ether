@@ -1,14 +1,14 @@
-import { ChannelAIBuilder } from "./ChannelAIBuilder";
+import { OwnerGuides } from "./OwnerGuides";
+import { ChannelDescribeDialog } from "./ChannelDescribeDialog";
 import Library, { LibraryAside } from "./library/Library";
 import { styleCopy } from "./onair/naming";
 import { stylesName } from "./onair/naming";
 import { useLooks, LooksAside, LooksGallery, LookSurfaces } from "./onair/LooksGallery";
-import { SubtabNav } from "../../components/layout";
+import { OverflowTabs } from "../../components/OverflowTabs";
 import {
   Badge,
   Button,
   Input,
-  Switch,
   Popover,
   cn,
   confirmDialog,
@@ -121,66 +121,6 @@ function selectionFrom(params: URLSearchParams): Selection {
  * workbench, all edited in place.
  */
 export default function LiveTV() {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  useEffect(() => {
-    api
-      .getConfig()
-      .then((c) => setEnabled(c.liveTV?.enabled ?? false))
-      .catch((e) => toast.error(errorMessage(e)));
-  }, []);
-  const toggleLiveTV = async (value: boolean) => {
-    try {
-      const c = await api.getConfig();
-      await api.putConfig({ ...c, liveTV: { ...c.liveTV, enabled: value } });
-      setEnabled(value);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  };
-  if (enabled === null) return null;
-  if (!enabled)
-    return (
-      <div className="mx-auto max-w-3xl p-6 sm:py-12">
-        <section className="space-y-5 rounded-xl border border-border bg-surface p-6 sm:p-8">
-          <h1 className="text-2xl font-semibold">{t("Live TV is off")}</h1>
-          <p className="text-fg-muted">
-            {t("A familiar channel guide for your library and IPTV, ready to watch in your apps.")}
-          </p>
-          <ul className="list-disc space-y-2 pl-5">
-            <li>{t("Four decade channels, ready to watch, plus any IPTV you add later")}</li>
-            <li>{t("Build your own channels with AI.")}</li>
-          </ul>
-          <Button onClick={() => toggleLiveTV(true)}>{t("Turn on Live TV")}</Button>
-          <p className="text-sm text-fg-muted">{t("No background work while nobody watches.")}</p>
-        </section>
-      </div>
-    );
-  return (
-    <>
-      <div className="px-6 pt-4">
-        <Button onClick={() => setSettingsOpen(true)}>{t("Settings")}</Button>
-      </div>
-      <Drawer
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        title={t("Live TV settings")}
-      >
-        <label className="flex items-center justify-between gap-4">
-          {t("Live TV")}
-          <Switch
-            aria-label={t("Turn off Live TV")}
-            checked={enabled}
-            onChange={(e) => toggleLiveTV(e.target.checked)}
-          />
-        </label>
-      </Drawer>
-      <LiveTVWorkspace />
-    </>
-  );
-}
-
-function LiveTVWorkspace() {
   const { tab } = useParams();
   const { looks, reels, reload: reloadLooks } = useLooks();
   const navigate = useNavigate();
@@ -220,8 +160,8 @@ function LiveTVWorkspace() {
             ? "guide"
             : tab === "sources"
               ? "sources"
-              : prev === "guide"
-                ? "guide"
+              : prev === "guide" || prev === "guides"
+                ? prev
                 : "channels",
     );
   }, [tab]);
@@ -231,6 +171,7 @@ function LiveTVWorkspace() {
 
   const [checkedChannels, setCheckedChannels] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [addingDecades, setAddingDecades] = useState(false);
   const bulkLock = useRef(false);
   const selectionAnchor = useRef<string | null>(null);
   const [page, setPage] = useState<ChannelPage | null>(null);
@@ -293,6 +234,7 @@ function LiveTVWorkspace() {
   const [inspected, setInspected] = useState<InspectedProgramme | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [previewChannel, setPreviewChannel] = useState<Channel | null>(null);
+  const [describing, setDescribing] = useState(false);
   const [draft, setDraft] = useState<StudioDraft | null>(null);
   const [baseline, setBaseline] = useState("");
   const [saving, setSaving] = useState(false);
@@ -463,6 +405,7 @@ function LiveTVWorkspace() {
       setDraft(d);
       setBaseline(JSON.stringify(d));
     } else if (selection.kind !== "new") {
+      setDescribing(false);
       setDraft(null);
       setBaseline("");
     }
@@ -655,9 +598,10 @@ function LiveTVWorkspace() {
     const base = emptyChannel();
     base.number = page?.nextNumber ?? "1";
     base.timezone = browserTimeZone();
-    const d = studioDraft(template.apply(base));
+    const d = studioDraft(templateKey === "describe" ? base : template.apply(base));
     setDraft(d);
     setBaseline("");
+    setDescribing(templateKey === "describe");
   };
 
   const saveDraft = async () => {
@@ -796,7 +740,6 @@ function LiveTVWorkspace() {
 
   const actions = (
     <div className="flex items-center gap-2">
-      <ChannelAIBuilder />
       <AddMenu
         onChannel={() => void go({ kind: "new" })}
         onPersonal={() =>
@@ -859,22 +802,26 @@ function LiveTVWorkspace() {
                     });
                 }}
                 placeholder={
-                  leftTab === "library"
-                    ? t("Search Library")
-                    : leftTab === "looks"
-                      ? styleCopy("Search styles…")
-                      : leftTab === "sources"
-                        ? t("Find a channel, group or source…")
-                        : leftTab === "guide"
-                          ? t("Find a channel or guide…")
-                          : t("Find a channel or group…")
+                  leftTab === "guides"
+                    ? t("Search")
+                    : leftTab === "library"
+                      ? t("Search Library")
+                      : leftTab === "looks"
+                        ? styleCopy("Search styles…")
+                        : leftTab === "sources"
+                          ? t("Find a channel, group or source…")
+                          : leftTab === "guide"
+                            ? t("Find a channel or guide…")
+                            : t("Find a channel or group…")
                 }
                 aria-label={
-                  leftTab === "library"
-                    ? t("Search Library")
-                    : leftTab === "looks"
-                      ? styleCopy("Search styles")
-                      : t("Search channels")
+                  leftTab === "guides"
+                    ? t("Search")
+                    : leftTab === "library"
+                      ? t("Search Library")
+                      : leftTab === "looks"
+                        ? styleCopy("Search styles")
+                        : t("Search channels")
                 }
                 className="h-8 pl-7 text-sm"
               />
@@ -898,7 +845,7 @@ function LiveTVWorkspace() {
                 ]}
                 menuClassName="w-48"
               />
-            ) : leftTab === "looks" ? null : (
+            ) : leftTab === "looks" || leftTab === "guides" ? null : (
               <>
                 <ToolbarPicker
                   ariaLabel={t("Show")}
@@ -929,24 +876,26 @@ function LiveTVWorkspace() {
             )}
           </div>
         }
-        <SubtabNav
-          ariaLabel={t("Lineup")}
-          className="justify-start"
-          active={leftTab}
-          onSelect={(next) => {
-            setLeftTab(next);
-            if (next === "library") navigate("/livetv/library");
-            else if (next === "looks") navigate("/livetv/looks");
-            else if (tab === "looks" || tab === "library")
-              navigate(next === "sources" ? "/livetv/sources" : "/livetv");
-          }}
-          tabs={[
-            { key: "channels", label: t("Channels") },
-            { key: "guide", label: t("Guide") },
-            { key: "looks", label: stylesName() },
-            { key: "library", label: t("Library") },
-          ]}
-        />
+        <div className="min-w-0 w-full">
+          <OverflowTabs
+            ariaLabel={t("Lineup")}
+            active={leftTab}
+            onSelect={(next) => {
+              setLeftTab(next);
+              if (next === "library") navigate("/livetv/library");
+              else if (next === "looks") navigate("/livetv/looks");
+              else if (tab === "looks" || tab === "library")
+                navigate(next === "sources" ? "/livetv/sources" : "/livetv");
+            }}
+            tabs={[
+              { key: "channels", label: t("Channels") },
+              { key: "guide", label: t("Guide") },
+              { key: "guides", label: t("Guides") },
+              { key: "looks", label: stylesName() },
+              { key: "library", label: t("Library") },
+            ]}
+          />
+        </div>
       </PanelHead>
     ),
     [
@@ -980,7 +929,7 @@ function LiveTVWorkspace() {
     <>
       {panelHead}
       <div className="app-scroll min-h-0 flex-1 lg:overflow-y-auto">
-        {leftTab === "library" ? (
+        {leftTab === "guides" ? null : leftTab === "library" ? (
           <LibraryAside />
         ) : leftTab === "looks" ? (
           <LooksAside
@@ -1101,7 +1050,9 @@ function LiveTVWorkspace() {
   const guideSource = guideSourceId ? sources.find((x) => x.id === guideSourceId) : undefined;
   const mainClassName = "";
   const main =
-    leftTab === "library" ? (
+    leftTab === "guides" ? (
+      <OwnerGuides query={q} />
+    ) : leftTab === "library" ? (
       <div className="p-4 sm:p-6">
         <Library />
       </div>
@@ -1244,39 +1195,97 @@ function LiveTVWorkspace() {
         ? t("Edit channel")
         : t("Virtual channel");
   const live = page?.counts.live ?? 0;
+  const empty = page?.counts.all === 0 && leftTab === "channels" && selection.kind === "guide";
+  const emptyState = (
+    <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-6 py-12 text-center sm:py-20">
+      <div className="mb-6 rounded-2xl bg-primary/10 p-5">
+        <Tv size={40} className="text-primary" aria-hidden />
+      </div>
+      <h1 className="text-3xl font-semibold tracking-tight">{t("No channels yet")}</h1>
+      <p className="mt-4 max-w-xl text-fg-muted">
+        {t(
+          "Start with four channels from the 1980s, 1990s, 2000s and 2010s, add IPTV, or create your own.",
+        )}
+      </p>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Button
+          disabled={addingDecades}
+          onClick={async () => {
+            setAddingDecades(true);
+            try {
+              await tv.addDecades();
+              await reloadAll();
+            } catch (e) {
+              toast.error(errorMessage(e));
+            } finally {
+              setAddingDecades(false);
+            }
+          }}
+        >
+          {t("Add the four decade channels")}
+        </Button>
+        <Button variant="outline" onClick={() => navigate("/sources/iptv?new=playlist")}>
+          {t("Add IPTV")}
+        </Button>
+      </div>
+      <Button className="mt-5" variant="ghost" onClick={() => void go({ kind: "new" })}>
+        {t("New virtual channel")}
+      </Button>
+      <p className="mt-8 text-sm text-fg-muted">
+        {t("A familiar channel guide for your library and IPTV, ready to watch in your apps.")}
+      </p>
+    </div>
+  );
   return (
     <>
-      <Workspace
-        title={t("Live TV")}
-        subtitle={
-          page
-            ? missingCount
-              ? tn(
-                  live,
-                  "{count} channel on air · {missing} need a guide · Plex Pass required in Plex",
-                  "{count} channels on air · {missing} need a guide · Plex Pass required in Plex",
-                  { missing: formatNumber(missingCount) },
-                )
-              : tn(
-                  live,
-                  "{count} channel on air · Plex Pass required in Plex",
-                  "{count} channels on air · Plex Pass required in Plex",
-                )
-            : undefined
-        }
-        actions={actions}
-        asideLabel={t("Lineup")}
-        asideClassName={cn(
-          "[scrollbar-gutter:auto] lg:overflow-hidden",
-          channelOpen && "lg:relative lg:z-[60]",
-        )}
-        mainLabel={t("Live TV workspace")}
-        mainClassName={mainClassName}
-        aside={aside}
-        main={main}
-      >
-        {state ?? (leftTab === "channels" ? lineupGuide : undefined)}
-      </Workspace>
+      {empty ? (
+        emptyState
+      ) : (
+        <Workspace
+          title={t("Live TV")}
+          subtitle={
+            page
+              ? missingCount
+                ? tn(
+                    live,
+                    "{count} channel on air · {missing} need a guide · Plex Pass required in Plex",
+                    "{count} channels on air · {missing} need a guide · Plex Pass required in Plex",
+                    { missing: formatNumber(missingCount) },
+                  )
+                : tn(
+                    live,
+                    "{count} channel on air · Plex Pass required in Plex",
+                    "{count} channels on air · Plex Pass required in Plex",
+                  )
+              : undefined
+          }
+          actions={actions}
+          asideLabel={t("Lineup")}
+          asideClassName={cn(
+            "[scrollbar-gutter:auto] lg:overflow-hidden",
+            channelOpen && "lg:relative lg:z-[60]",
+          )}
+          mainLabel={t("Live TV workspace")}
+          mainClassName={mainClassName}
+          aside={aside}
+          main={main}
+        >
+          {state ??
+            (leftTab === "guides" ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {panelHead}
+                <main
+                  aria-label={t("Live TV workspace")}
+                  className="app-scroll min-h-0 flex-1 overflow-y-auto"
+                >
+                  {main}
+                </main>
+              </div>
+            ) : leftTab === "channels" ? (
+              lineupGuide
+            ) : undefined)}
+        </Workspace>
+      )}
       <Drawer
         open={guideOpen}
         onClose={() => void go({ kind: "guide" })}
@@ -1371,6 +1380,16 @@ function LiveTVWorkspace() {
           ) : null
         }
       >
+        {selection.kind === "new" && describing && draft && (
+          <ChannelDescribeDialog
+            channel={draft.channel}
+            onClose={() => {
+              setDescribing(false);
+              if (!draft.channel.name) setDraft(null);
+            }}
+            onApply={(channel) => setDraft(studioDraft(channel))}
+          />
+        )}
         <ChannelDrawerBody>
           {selection.kind === "new" && !draft ? (
             <TemplateGallery onPick={(k) => void startNew(k)} />
@@ -1611,6 +1630,22 @@ function TemplateGallery({ onPick }: { onPick: (key: string) => void }) {
           {t("What should it play?")}
         </h2>
       </div>
+      <button
+        type="button"
+        onClick={() => onPick("describe")}
+        className="group flex w-full max-w-xl items-center gap-4 rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-surface p-5 text-left shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary text-primary-fg shadow-md">
+          <Sparkles size={22} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-base font-semibold">{t("Describe it")}</span>
+          <span className="mt-1 block text-sm text-fg-muted">
+            {t("Programming, schedule and a look, built with you.")}
+          </span>
+        </span>
+        <Plus size={18} className="shrink-0 text-primary" />
+      </button>
       <div className="grid gap-3 @md:grid-cols-2 @4xl:grid-cols-3">
         {TEMPLATES.map((template) => (
           <button

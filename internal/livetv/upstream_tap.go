@@ -762,6 +762,9 @@ func (t *upstreamTap) dropReader(rd *tapReader) {
 // tapSource names the provider account behind a grant and its connection
 // limit; "" when the input does not belong to a capped source.
 func (s *Service) tapSource(g *inputGrant) (string, int) {
+	if g.login != nil {
+		return g.source + "/login/" + g.login.login, g.login.limit
+	}
 	if g.source == "" {
 		return "", 0
 	}
@@ -890,7 +893,7 @@ func (c openContext) Deadline() (time.Time, bool) { return c.deadline, true }
 // and the open is abandoned if it ends first.
 func (s *Service) openTap(t *upstreamTap, g *inputGrant, raw string, hdr http.Header, opener context.Context) {
 	started := time.Now()
-	ctx, cancel := context.WithCancel(s.ctx)
+	ctx, cancel := context.WithCancel(s.serviceContext())
 	t.mu.Lock()
 	t.ctx, t.cancel = ctx, cancel
 	t.mu.Unlock()
@@ -940,6 +943,9 @@ func (s *Service) openTap(t *upstreamTap, g *inputGrant, raw string, hdr http.He
 	}
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusPartialContent {
 		res.Body.Close()
+		if res.StatusCode == 401 || res.StatusCode == 403 {
+			s.failedLogin(g.login)
+		}
 		close(t.ready)
 		t.close(nil)
 		return
@@ -1517,6 +1523,15 @@ func (s *Service) sniffInput(ctx context.Context, ss *session, n int) ([]byte, s
 		return nil, "", Diagnose("upstream_headers", t.openErr)
 	}
 	if t.status != http.StatusOK && t.status != http.StatusPartialContent {
+		if g.login != nil && (t.status == 401 || t.status == 403) && ctx.Err() == nil {
+			src := ss.inputSource
+			src.URL = ss.inputURL
+			s.revokeInput(ss)
+			if err := s.grantInputFor(ss, src, ss.inputHeaders, g.steady, g.lead); err != nil {
+				return nil, "", err
+			}
+			return s.sniffInput(ctx, ss, n)
+		}
 		return nil, "", providerResponseError(t.status)
 	}
 	if t.isManifest {

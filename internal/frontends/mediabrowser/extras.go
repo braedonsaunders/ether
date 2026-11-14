@@ -252,6 +252,21 @@ func (i *instance) serveExtra(w http.ResponseWriter, r *http.Request, viewer *fr
 		http.NotFound(w, r)
 		return
 	}
+
+	if cached, ok := i.host.ExtraStreams.(frontend.CachedExtraStreams); ok && isTrailerExtra(clip) {
+		file, mime, err := cached.OpenCachedExtra(r.Context(), key)
+		if err == nil {
+			defer file.Close()
+			info, err := file.Stat()
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", mime)
+			http.ServeContent(w, r, "trailer.mp4", info.ModTime(), file)
+			return
+		}
+	}
 	_, rawURL, headers, err := i.host.ExtraStreams.Open(r.Context(), key)
 	if err != nil || !publicExtraURL(rawURL) {
 		http.Error(w, "Playback unavailable", http.StatusServiceUnavailable)

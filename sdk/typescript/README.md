@@ -151,3 +151,65 @@ control in the installed plugin's Settings drawer. Ether forwards `q` and
 carry coordinates and a display name together. Search never saves settings.
 Background requests receive the server process locale (`LC_ALL`, `LC_MESSAGES`,
 then `LANG`) in the `X-Ether-Locale` header when the caller has not supplied one.
+
+### Owner-controlled resources and continuing jobs
+
+`ether.runtime.limits` requests `memoryBytes`, `deadline` (a positive Go duration
+such as `12h`), `unitBudget`, `fetchBytes`, `archiveMemberBytes`,
+`archiveExpandedBytes` and `archiveMembers`. Ether grants each request up to the
+owner's global or per-plugin ceiling. Owners can raise or lower ceilings under
+Plugins → Settings and in each plugin's drawer. A per-plugin value overrides the
+global value, including raising it. Zero inherits; global zero uses the default.
+Saving cancels affected jobs and closes runtimes so lowered ceilings apply.
+
+The default memory ceiling is **2 GiB**, adjustable up to wasm32's **4 GiB**;
+omitted guest heap requests still use **32 MiB**, allocated only as needed.
+The default call/job time ceiling is **12 hours** and background compute is
+effectively unlimited (2^60 units per call); owners and manifests may lower it.
+The default download and expanded-member ceilings are **8 GiB** each, total
+archive expansion **32 GiB**, and archive members **65,535**. Downloads also obey
+the library cache quota (2 GiB unless the manifest declares a different quota).
+The host reports requested fields in the manifest and exact grants as
+`runtimeLimits` in install preview and detail, displayed side by side.
+
+Viewer request-path calls remain bounded: `/stream/`, `/catalog/`, `/meta/`,
+`/subtitles/`, `/ether/open`, `/ether/metadata/`, `/ether/subtitles/`,
+`/ether/markers`, and `/ether/v1/kinds/` (browse/search/resolve/match) get at most
+10,000 units and 30 seconds, further shortened by each route/caller's deadline.
+Ranking stays at its existing 2 ms per-candidate and 50 ms per-batch defaults.
+Administrative setup, actions, tools, events and jobs use the owner-granted
+resources; short health/configuration/view/options protocol deadlines still
+protect the host's control plane. Remote plugin processes manage their own CPU
+and memory; owner download/archive ceilings also apply to their host services.
+
+An action returning `{job: "build-catalogue"}` starts an owner-triggered job.
+Return `{continueInMs: 0, continuation: {next: 41}, progress: "Platform 41 of 92"}`
+from its handler to continue. The next `JobRequest.continuation` is that opaque
+JSON token. Return `{done: true, progress: "Ready"}` to finish, or
+`{failed: "reason"}` to stop. A response without `continueInMs` also finishes.
+Non-2xx responses, invalid results and call failures stop the job.
+
+Ether allows 0–300,000 ms between calls with a minimum 100 ms pause. Total wall
+time uses the owner time ceiling (12 hours by default), with a 1,000,000-call
+sanity bound. Each call gets fresh per-call grants. At most two jobs run per
+plugin and the same route cannot overlap. Job threads use OS background CPU/IO
+priority on macOS, Linux and Windows. They pause before calls and host-service
+operations during playback, Live TV viewing or high CPU/GPU load; pure compute
+runs at reduced scheduling priority. Cancellation interrupts in-flight hosted
+calls. Work starts only following an owner action; no eager background work.
+
+Tokens are limited to 64 KiB and progress to 1,024 UTF-8 bytes. The drawer shows
+progress and a Cancel button. The owner API provides `GET /api/plugins/{id}/jobs`
+and `POST /api/plugins/{id}/jobs/cancel` with `{"path":"/ether/job/build-catalogue"}`.
+Status includes total-time and attempt caps. Disabling, removing or reloading a
+plugin, or stopping Ether, cancels work. The last sixteen route snapshots per
+plugin are retained in memory. Store durable checkpoints in KV to recover on a
+later owner-started run after restart; Ether does not restart work automatically.
+
+Owner policy is persisted in `plugins.runtimeLimits` and
+`plugins.runtimeOverrides[pluginId]`, with the same resource field names as the
+manifest. `GET /api/plugins/runtime-limits` returns policy;
+`PUT /api/plugins/runtime-limits` takes `{plugin?: string, limits: {...}}`.
+Memory cannot exceed 4 GiB, job time has a one-year sanity bound, and member count
+has a 1,000,000-entry sanity bound. The ZIP directory has a 64 MiB allocation
+bound; traversal, encryption, special files and 1000:1 expansion checks remain.

@@ -358,30 +358,9 @@ func (h *host) CachePut(ctx context.Context, libraryKey, name string, r io.Reade
 	if err := h.requireWritableToolContext(ctx); err != nil {
 		return "", err
 	}
-	rec, _, err := h.record(ctx)
+	decl, err := h.cacheWriteCheck(ctx, libraryKey, name)
 	if err != nil {
 		return "", err
-	}
-	man := rec.Manifest
-	man.Ether = man.EffectiveEther()
-	// The library key must name one of this plugin's own kinds; the
-	// blob cache namespace follows from it, so a plugin can never
-	// write into another library's cache.
-	var decl MediaKindMeta
-	found := false
-	if man.Ether != nil {
-		for _, k := range man.Ether.Contributes.MediaKinds {
-			if core.PluginLibraryKey(h.plugin, k.Key) == libraryKey {
-				decl, found = k, true
-			}
-		}
-	}
-	if !found || !(man.HasCapability(CapCatalogProvider) || man.HasCapability(CapKindResolver)) {
-		h.noteDenied("cache")
-		return "", fmt.Errorf("%w: cache", ErrPermissionDenied)
-	}
-	if strings.TrimSpace(name) == "" {
-		return "", fmt.Errorf("plugins: cache put needs a name")
 	}
 	backend := h.m.kindBackends().CachePut
 	if backend == nil {
@@ -472,4 +451,33 @@ func (h *host) CacheOpen(ctx context.Context, blobRef string) (io.ReadSeekCloser
 		return nil, ErrUnavailable
 	}
 	return backend(ctx, h.plugin, blobRef)
+}
+
+func (h *host) cacheWriteCheck(ctx context.Context, libraryKey, name string) (MediaKindMeta, error) {
+	rec, _, err := h.record(ctx)
+	if err != nil {
+		return MediaKindMeta{}, err
+	}
+	man := rec.Manifest
+	man.Ether = man.EffectiveEther()
+	// The library key must name one of this plugin's own kinds; the
+	// blob cache namespace follows from it, so a plugin can never
+	// write into another library's cache.
+	var decl MediaKindMeta
+	found := false
+	if man.Ether != nil {
+		for _, k := range man.Ether.Contributes.MediaKinds {
+			if core.PluginLibraryKey(h.plugin, k.Key) == libraryKey {
+				decl, found = k, true
+			}
+		}
+	}
+	if !found || !(man.HasCapability(CapCatalogProvider) || man.HasCapability(CapKindResolver)) {
+		h.noteDenied("cache")
+		return MediaKindMeta{}, fmt.Errorf("%w: cache", ErrPermissionDenied)
+	}
+	if strings.TrimSpace(name) == "" {
+		return MediaKindMeta{}, fmt.Errorf("plugins: cache put needs a name")
+	}
+	return decl, nil
 }

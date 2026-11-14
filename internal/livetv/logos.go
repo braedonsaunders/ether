@@ -90,7 +90,7 @@ func (s *Service) fetchLogoIndex(ctx context.Context, raw string) ([]byte, error
 	}
 	client := s.o.LogoHTTP
 	if client == nil {
-		client = (&safefetch.Guard{}).Client(egress.Client(egress.CapStremio, 20*time.Second))
+		client = (&safefetch.Guard{}).Client(egress.Client(egress.CapLiveTV, 20*time.Second))
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

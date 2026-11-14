@@ -150,7 +150,7 @@ func (s *Service) slateFor(c Channel) func(slateProfile) *slateClip {
 		cache.mu.Unlock()
 		go func() {
 			defer close(e.done)
-			ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+			ctx, cancel := context.WithTimeout(s.serviceContext(), 2*time.Minute)
 			defer cancel()
 			select {
 			case cache.encode <- struct{}{}:

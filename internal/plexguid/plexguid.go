@@ -808,17 +808,28 @@ func hasExternalID(item providerItem, want ...string) bool {
 	return false
 }
 
+func conflictingTMDB(item providerItem, tmdbID string) bool {
+	for _, id := range item.IDs {
+		if strings.HasPrefix(id.ID, "tmdb://") && id.ID != tmdbID {
+			return true
+		}
+	}
+	return false
+}
+
 // localIdentity is what Ether knows about a local title, read once per
 // resolution so verification can compare identity rather than title text.
 type localIdentity struct {
+	title     string
 	year      int
+	imdb      string
 	directors []string // catalogue directors, TMDB order
 	cast      []string // top-billed cast, TMDB billing order
 }
 
 func (s *Service) localIdentity(ctx context.Context, k core.RatingKey) localIdentity {
 	var li localIdentity
-	_ = s.db.QueryRowContext(ctx, `SELECT year FROM catalog_titles WHERE key=?`, int64(k)).Scan(&li.year)
+	_ = s.db.QueryRowContext(ctx, `SELECT title, year, imdb FROM catalog_titles WHERE key=?`, int64(k)).Scan(&li.title, &li.year, &li.imdb)
 	li.directors = s.localCreditNames(ctx, k, "director", 0)
 	li.cast = s.localCreditNames(ctx, k, "cast", topBilledCast)
 	return li
@@ -856,7 +867,7 @@ func (s *Service) localCreditNames(ctx context.Context, k core.RatingKey, kind s
 // carries the local title's TMDB id and a year that cannot be a namesake: the
 // title and year must agree within the release-year tolerance. Without a
 // title/year match the external ids alone are not proof for a movie or show.
-func (s *Service) verifyTitle(ctx context.Context, k core.RatingKey, kind, guid string, li localIdentity) (identityRecord, bool, error) {
+func (s *Service) verifyTitle(ctx context.Context, k core.RatingKey, kind, guid string, li localIdentity, wantIDs ...string) (identityRecord, bool, error) {
 	items, err := s.getItems(ctx, "/library/metadata/"+guidHex(guid, kind), url.Values{"includeGuids": {"1"}})
 	if errors.Is(err, core.ErrNotFound) {
 		return identityRecord{}, false, nil // no canonical record: not verified
@@ -864,7 +875,7 @@ func (s *Service) verifyTitle(ctx context.Context, k core.RatingKey, kind, guid 
 	if err != nil {
 		return identityRecord{}, false, err
 	}
-	if id := s.verifyItems(ctx, k, kind, guid, items, li); id.GUID != "" {
+	if id := s.verifyItemsWithProof(ctx, k, kind, guid, items, li, wantIDs...); id.GUID != "" {
 		return id, true, nil
 	}
 	return identityRecord{}, false, nil
@@ -872,17 +883,30 @@ func (s *Service) verifyTitle(ctx context.Context, k core.RatingKey, kind, guid 
 
 // verifyItems is verifyTitle over a canonical record already fetched.
 func (s *Service) verifyItems(ctx context.Context, k core.RatingKey, kind, guid string, items []providerItem, li localIdentity) identityRecord {
+	return s.verifyItemsWithProof(ctx, k, kind, guid, items, li, fmt.Sprintf("tmdb://%d", k.TMDB()))
+}
+
+func (s *Service) verifyItemsWithProof(ctx context.Context, k core.RatingKey, kind, guid string, items []providerItem, li localIdentity, wantIDs ...string) identityRecord {
 	tmdbID := fmt.Sprintf("tmdb://%d", k.TMDB())
+	if len(wantIDs) == 0 {
+		wantIDs = []string{tmdbID}
+		if validIMDBID(li.imdb) {
+			wantIDs = append(wantIDs, "imdb://"+li.imdb)
+		}
+	}
 	titleWanted := kind == "movie" || kind == "show"
-	localTitle := ""
-	if titleWanted {
+	localTitle := li.title
+	if titleWanted && localTitle == "" {
 		localTitle, _ = s.localTitle(ctx, k)
 	}
 	for _, item := range items {
 		if item.GUID != guid || item.Type != kind {
 			continue
 		}
-		if !hasExternalID(item, tmdbID) {
+		if conflictingTMDB(item, tmdbID) {
+			continue
+		}
+		if len(wantIDs) > 0 && !hasExternalID(item, wantIDs...) {
 			continue
 		}
 		// TMDB and Plex years can differ by one (festival vs release); a
@@ -893,7 +917,10 @@ func (s *Service) verifyItems(ctx context.Context, k core.RatingKey, kind, guid 
 		}
 		// When the canonical record and the local catalogue both name the
 		// work, those titles must be the same work. Without both, the exact
-		// TMDB id is the only identity available.
+		// external id is the only identity available.
+		if !hasExternalID(item, tmdbID) && (localTitle == "" || item.Title == "") {
+			continue
+		}
 		if titleWanted && localTitle != "" && item.Title != "" && !titlesAgree(localTitle, item.Title) {
 			continue
 		}
@@ -1053,37 +1080,64 @@ func normalizeTitle(s string) string {
 
 var trailingYear = regexp.MustCompile(`\s*\(?(19|20)\d{2}\)?$`)
 
+func validIMDBID(id string) bool {
+	if !strings.HasPrefix(id, "tt") || len(id) < 3 {
+		return false
+	}
+	for _, c := range id[2:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Service) resolveMovieOrShow(ctx context.Context, k core.RatingKey, kind, typ string) (string, error) {
-	external := fmt.Sprintf("tmdb://%d", k.TMDB())
-	items, err := s.getItems(ctx, "/library/metadata/matches", url.Values{"type": {typ}, "guid": {external}, "includeGuids": {"1"}})
+	tmdbID := fmt.Sprintf("tmdb://%d", k.TMDB())
+	li := s.localIdentity(ctx, k)
+	found, foundGUID, err := s.matchMovieOrShow(ctx, k, kind, li, url.Values{"type": {typ}, "guid": {tmdbID}, "includeGuids": {"1"}}, tmdbID)
 	if err != nil {
 		return "", err
 	}
-	li := s.localIdentity(ctx, k)
+	if foundGUID == "" && validIMDBID(li.imdb) {
+		imdbID := "imdb://" + li.imdb
+		found, foundGUID, err = s.matchMovieOrShow(ctx, k, kind, li, url.Values{"type": {typ}, "guid": {imdbID}, "includeGuids": {"1"}}, tmdbID, imdbID)
+		if err != nil {
+			return "", err
+		}
+	}
+	now := time.Now().Unix()
+	err = s.storeMapping(ctx, k, found, now)
+	return foundGUID, err
+}
+
+func (s *Service) matchMovieOrShow(ctx context.Context, k core.RatingKey, kind string, li localIdentity, q url.Values, wantIDs ...string) (identityRecord, string, error) {
+	items, err := s.getItems(ctx, "/library/metadata/matches", q)
+	if err != nil {
+		return identityRecord{}, "", err
+	}
 	var found identityRecord
 	foundGUID := ""
 	for _, item := range items {
 		if item.Type != kind || !validKindGUID(item.GUID, kind) {
 			continue
 		}
-		if !hasExternalID(item, external) {
+		if len(wantIDs) > 0 && !hasExternalID(item, wantIDs...) {
 			continue
 		}
-		id, ok, err := s.verifyTitle(ctx, k, kind, item.GUID, li)
+		id, ok, err := s.verifyTitle(ctx, k, kind, item.GUID, li, wantIDs...)
 		if err != nil {
-			return "", err
+			return identityRecord{}, "", err
 		}
 		if !ok {
 			continue
 		}
 		if foundGUID != "" && foundGUID != item.GUID {
-			return "", fmt.Errorf("ambiguous Plex identity")
+			return identityRecord{}, "", fmt.Errorf("ambiguous Plex identity")
 		}
 		found, foundGUID = id, item.GUID
 	}
-	now := time.Now().Unix()
-	err = s.storeMapping(ctx, k, found, now)
-	return foundGUID, err
+	return found, foundGUID, nil
 }
 
 func (s *Service) resolveSeason(ctx context.Context, k core.RatingKey) (string, error) {

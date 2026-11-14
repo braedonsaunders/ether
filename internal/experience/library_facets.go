@@ -238,7 +238,7 @@ func (s *Service) FilterFacets(ctx context.Context, viewer *core.Viewer, device 
 					}
 					return values, err
 				}
-				if lib.Source == core.LibraryFilter {
+				if lib.Source == core.LibraryCatalog {
 					values, _, err := s.filterLibraryFacets(ctx, viewer, lib, queryName)
 					if len(values) > 256 {
 						values = values[:256]

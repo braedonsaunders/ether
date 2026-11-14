@@ -60,7 +60,7 @@ func (s *Service) AcquireProvider(ctx context.Context, id string) (func(), error
 	if limit == 0 {
 		limit = 1
 	}
-	return s.reserveVODProvider(id, limit, core.SpeculativeIndexerWork(ctx))
+	return s.reserveVODProvider(ctx, id, limit, core.SpeculativeIndexerWork(ctx))
 }
 func (s *Service) vodClient(src Source, background bool) xtream.Client {
 	a := src.Auth
@@ -72,11 +72,20 @@ func (s *Service) vodClient(src Source, background bool) xtream.Client {
 		if src.MaxConnections > 0 {
 			limit = min(limit, src.MaxConnections)
 		}
-		release, err := s.reserveVODProvider(src.ID, limit, background)
+		requestCtx, cancel := context.WithCancel(ctx)
+		requestCtx = core.WithProviderLeaseCancel(requestCtx, cancel)
+		slot, err := s.reserveVODProvider(requestCtx, src.ID, limit, background)
+		release := func() {
+			if slot != nil {
+				slot()
+			}
+			cancel()
+		}
 		if err != nil {
+			cancel()
 			return nil, xtream.ErrBusy
 		}
-		rc, err := s.openURL(ctx, raw, a.header())
+		rc, err := s.openURL(requestCtx, raw, a.header())
 		if err != nil {
 			release()
 			return nil, err
@@ -139,7 +148,7 @@ func (s *Service) waitVOD(timer *time.Timer, d time.Duration) bool {
 	timer.Reset(d)
 	for {
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return false
 		case <-timer.C:
 			return true
@@ -160,14 +169,14 @@ func (s *Service) vodLoop() {
 	timer := s.newTimer(time.Second)
 	defer timer.Stop()
 	select {
-	case <-s.ctx.Done():
+	case <-s.serviceContext().Done():
 		return
 	case <-timer.C:
 	}
 	for {
-		sources, err := s.xtreamVODSources(s.ctx)
+		sources, err := s.xtreamVODSources(s.serviceContext())
 		if err != nil {
-			if s.ctx.Err() != nil {
+			if s.serviceContext().Err() != nil {
 				return
 			}
 			if !s.waitVOD(timer, time.Minute) {
@@ -177,7 +186,7 @@ func (s *Service) vodLoop() {
 		}
 		if len(sources) == 0 && store.DialectOf(s.o.DB) == store.SQLite {
 			select {
-			case <-s.ctx.Done():
+			case <-s.serviceContext().Done():
 				return
 			case <-s.vodWake:
 				if !s.waitVOD(timer, time.Minute) {
@@ -189,19 +198,19 @@ func (s *Service) vodLoop() {
 		var earliest int64
 		for _, v := range sources {
 			var next int64
-			_ = s.o.DB.QueryRowContext(s.ctx, `SELECT next FROM xtream_vod_refresh WHERE provider=?`, v.ID).Scan(&next)
+			_ = s.o.DB.QueryRowContext(s.serviceContext(), `SELECT next FROM xtream_vod_refresh WHERE provider=?`, v.ID).Scan(&next)
 			if next <= s.o.Now().Unix() {
-				ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+				ctx, cancel := context.WithTimeout(s.serviceContext(), 10*time.Minute)
 				err = s.RefreshVOD(ctx, v.ID)
 				cancel()
-				if err != nil && s.ctx.Err() == nil && !errors.Is(err, errVODSourceChanged) && !errors.Is(err, sql.ErrNoRows) {
+				if err != nil && s.serviceContext().Err() == nil && !errors.Is(err, errVODSourceChanged) && !errors.Is(err, sql.ErrNoRows) {
 					var attempt *vodRefreshFailure
 					if errors.As(err, &attempt) {
-						s.recordVODFailure(s.ctx, v.ID, attempt.sourceData)
+						s.recordVODFailure(s.serviceContext(), v.ID, attempt.sourceData)
 					}
 				}
 				next = 0
-				_ = s.o.DB.QueryRowContext(s.ctx, `SELECT next FROM xtream_vod_refresh WHERE provider=?`, v.ID).Scan(&next)
+				_ = s.o.DB.QueryRowContext(s.serviceContext(), `SELECT next FROM xtream_vod_refresh WHERE provider=?`, v.ID).Scan(&next)
 			}
 			if next > 0 && (earliest == 0 || next < earliest) {
 				earliest = next
@@ -220,9 +229,6 @@ func (s *Service) vodLoop() {
 // RefreshVOD streams large lists into a transaction. Unchanged revisions keep
 // cached details; a failed refresh never removes the previous index.
 func (s *Service) RefreshVOD(ctx context.Context, id string) (err error) {
-	if !s.Enabled() {
-		return core.ErrNotAvailable
-	}
 	if !s.vodRefreshMu.TryLock() {
 		return ErrProviderBusy
 	}
@@ -619,7 +625,7 @@ func (v *VODIndexer) hasVOD() bool {
 	if s == nil {
 		return false
 	}
-	sources, err := s.xtreamVODSources(s.ctx)
+	sources, err := s.xtreamVODSources(s.serviceContext())
 	return err == nil && len(sources) > 0
 }
 func (v *VODIndexer) MissingSources() error {
@@ -644,7 +650,41 @@ func (v *VODIndexer) FetchNZB(ctx context.Context, r core.Release) ([]byte, erro
 func (v *VODIndexer) HasDirectSources() bool { return v.hasVOD() }
 
 // The service mutex also covers live sessions and broadcast reservations.
-func (s *Service) reserveVODProvider(id string, limit int, background bool) (func(), error) {
+func (s *Service) reserveVODProvider(ctx context.Context, id string, limit int, background bool) (func(), error) {
+	entry, err := s.sourceEntry(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if entry.pool != nil && (entry.pool.LoginPool || len(entry.pool.Logins) > 0) {
+		if background {
+			s.loginPool.mu.Lock()
+			playing := false
+			for _, l := range s.loginPool.live {
+				if l.source == id && !strings.HasPrefix(l.raw, "vod:") {
+					playing = true
+					break
+				}
+			}
+			s.loginPool.mu.Unlock()
+			if playing {
+				return nil, ErrProviderBusy
+			}
+		}
+		// VOD URLs belong to the primary login; a second live account must
+		// never increase the primary account's VOD connection allowance.
+		lease, err := s.leaseLogin(ctx, id, "vod:"+randomID(), nil)
+		if err != nil {
+			return nil, err
+		}
+		if lease == nil {
+			return nil, ErrProviderBusy
+		}
+		s.loginPool.mu.Lock()
+		lease.onLost = core.ProviderLeaseCancel(ctx)
+		s.loginPool.mu.Unlock()
+		var once sync.Once
+		return func() { once.Do(func() { s.releaseLogin(lease) }) }, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	channels := map[string]bool{}

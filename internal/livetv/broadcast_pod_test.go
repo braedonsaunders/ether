@@ -37,12 +37,16 @@ func TestBroadcastPodPrewarmsAlternateProgrammeClock(t *testing.T) {
 		format := smallBroadcastFormat()
 		playback := &alternatePodPlayback{}
 		s := testService(t, Options{Playback: playback})
+		channel := testChannel()
+		if _, err := s.SaveChannel(t.Context(), channel); err != nil {
+			t.Fatal(err)
+		}
+		s.ReconcileEnabled()
 		// The readiness worker has settled; admit the alternate locally.
 		synctest.Wait()
 		s.mu.Lock()
 		s.readyTitles = map[core.RatingKey]bool{core.MovieKey(2): true}
 		s.mu.Unlock()
-		channel := testChannel()
 		after := Programme{ID: "planned", ChannelID: channel.ID, Start: origin.Add(2 * time.Minute), End: origin.Add(3 * time.Minute), Item: channel.Items[0]}
 		runner := &broadcastFakeRunner{decoder: func(context.Context, transcode.DecoderRequest) (transcode.Decoder, error) {
 			return &podSequenceDecoder{broadcastFakeDecoder: &broadcastFakeDecoder{format: format, closed: make(chan struct{})}}, nil
@@ -312,6 +316,10 @@ func TestBroadcastPodProgrammeInputsRetainSeparateIdentities(t *testing.T) {
 		return &broadcastFakeDecoder{format: format, closed: make(chan struct{})}, nil
 	}}
 	channel := testChannel()
+	if _, err := s.SaveChannel(t.Context(), channel); err != nil {
+		t.Fatal(err)
+	}
+	s.ReconcileEnabled()
 	planner := &scheduleBroadcastPlanner{s: s, channel: channel, user: core.User{ID: 1, IsOwner: true}, format: format, runner: runner}
 	now := time.Now()
 	first := Programme{ID: "first", ChannelID: channel.ID, Start: now, End: now.Add(time.Minute), Item: channel.Items[0]}

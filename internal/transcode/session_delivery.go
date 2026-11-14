@@ -124,7 +124,8 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 		// old representation must not switch the current video encoder.
 		// Audio shares the active video run and never chooses its rung.
 		previousTrack := s.wantTrack
-		if !waitTail && !stale && r.Context().Err() == nil && r.Method == http.MethodGet {
+		handoffFetch := s.handoff != nil && s.handoff.track == t
+		if !handoffFetch && !waitTail && !stale && r.Context().Err() == nil && r.Method == http.MethodGet {
 			if !s.isDASH() || t != s.audioTrackLocked() {
 				s.wantTrack = t
 				if s.isDASH() {
@@ -142,14 +143,14 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 		// Only the oldest outstanding fetch may move the encoder. A request
 		// for a segment the encoder has already raced to is a buffer fill,
 		// not a seek, and must not abandon the segment the client is on.
-		if !waitTail && !s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
+		if !handoffFetch && !waitTail && !s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
 			s.throttleLocked()
 			s.mu.Unlock()
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, "segment is ahead of the playhead", http.StatusServiceUnavailable)
 			return
 		}
-		if !waitTail && s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
+		if !handoffFetch && !waitTail && s.mayMoveEncoderLocked(t, n, tracked) && s.needsRestartLocked(n) {
 			// The cap covers the empty position and what follows it, never
 			// a segment before it: a seek back there still has media.
 			if s.emptyRuns >= emptyRestartCap && n >= s.emptyAt && (s.lastReal < 0 || n > s.lastReal) && !s.segmentPublishedLocked(t, n) {
@@ -515,7 +516,7 @@ func (s *Session) restartLimit() int {
 // restarting it at n: wait when n is at or a little ahead of the encoder,
 // restart when n is behind the run's start, far ahead, or nothing runs.
 func (s *Session) needsRestartLocked(n int) bool {
-	if s.liveRecovering {
+	if s.liveRecovering || s.headerRecovering {
 		return false
 	}
 	if s.pendingStart && s.pendingSegment == n && s.pendingTrack == s.wantTrack {
@@ -551,7 +552,7 @@ func (s *Session) rungDwellLocked(media bool, n int) time.Duration {
 		return 0
 	}
 	if s.deliveredTrack == r.track && s.deliveredCount > 0 {
-		if media && n == s.deliveredSeg+1 {
+		if media && n > s.deliveredSeg && n <= s.deliveredSeg+s.aheadLimit() {
 			return 0
 		}
 		// fMP4/DASH players load initialization before the next media GET.
@@ -631,7 +632,7 @@ func (s *Session) serveInit(w http.ResponseWriter, r *http.Request, t int) {
 		// a probe deadlocked every lazy rung: the player asks for no media
 		// segment until the init succeeds. Only DASH keeps the ranged-probe
 		// guard; non-GET requests stay probes on both protocols.
-		probe := r.Method != http.MethodGet || (s.isDASH() && r.Header.Get("Range") != "")
+		probe := r.Method != http.MethodGet || (s.isDASH() && r.Header.Get("Range") != "" && (s.cur != nil || s.runSeq > 0))
 		selectTrack := !s.isDASH() || t != s.audioTrackLocked()
 		if probe && (s.cur == nil || s.cur.finished || s.cur.stopped || (selectTrack && s.cur.track != t)) {
 			s.mu.Unlock()
@@ -643,7 +644,7 @@ func (s *Session) serveInit(w http.ResponseWriter, r *http.Request, t int) {
 			s.wantTrack = t
 		}
 		var dwell *time.Timer
-		if (s.cur == nil || s.cur.finished || s.cur.stopped || (selectTrack && s.cur.track != t)) && !restarted && !probe {
+		if (s.cur == nil || s.cur.finished || s.cur.stopped || (selectTrack && s.cur.track != t)) && !restarted && !probe && !s.pendingStart && !s.headerRecovering {
 			left := s.rungDwellLocked(false, s.lastReq)
 			if s.isDASH() && selectTrack && !s.videoRequested && s.runSeq <= 1 {
 				// No video was requested yet: the initial quality choice

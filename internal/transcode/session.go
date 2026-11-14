@@ -102,6 +102,15 @@ type sessionInput struct {
 	liveRecovering      bool
 	liveDiscontinuities map[int]bool
 	liveDurations       map[int]time.Duration // live: each published segment's real length (session_playlist.go)
+
+	// Header recovery survives input swaps and HTTP retries.
+	headerInputs          map[string]int // deterministic header attempts, retained across swaps
+	headerRestarts        restartBudget
+	headerLastFailure     time.Time
+	headerRecovering      bool
+	headerFallbackPending string
+	headerRejected        map[string]bool
+
 	// contract is the delivered video a static-header session keeps
 	// across failovers; nil for every other session (contract.go).
 	contract       *videoContract
@@ -120,6 +129,8 @@ type sessionEncoding struct {
 	pendingTrack   int
 	reaping        <-chan struct{} // previous encoder exit barrier; waited without mu
 	resumeAt       int             // segment to restart at after a throttle stop; -1 none
+	handoff        *run            // previous rendition, retained only until replacement publishes
+	handoffAt      time.Time
 	cur            *run
 	runSeq         int
 	endSeg         int // last segment of the input once a run hit EOF; -1 unknown

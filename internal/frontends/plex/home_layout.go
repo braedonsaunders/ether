@@ -13,8 +13,8 @@ import (
 // stay on the wire row. Callers record the report when they paint the row.
 func homeLayoutFacts(row model.Hub) (frontend.Hub, frontend.NeutralHomeRow) {
 	count := max(row.Size, len(row.Metadata)+len(row.Directory))
-	hub := frontend.Hub{ID: row.HubIdentifier, Title: row.Title, Type: frontend.MediaType(row.Type), Context: row.Context, ItemCount: count}
-	neutral := frontend.NeutralHomeRow{ID: row.HubIdentifier, Title: row.Title, Type: frontend.MediaType(row.Type), Purpose: frontend.HomePurpose(frontend.Hub{ID: row.HubIdentifier, Type: frontend.MediaType(row.Type)}), ItemCount: count}
+	hub := frontend.Hub{ID: row.HubIdentifier, Title: row.Title, Type: frontend.MediaType(row.Type), Context: row.Context, ItemCount: count, RankedTop10: row.RankedTop10}
+	neutral := frontend.NeutralHomeRow{ID: row.HubIdentifier, Title: row.Title, Type: frontend.MediaType(row.Type), Purpose: frontend.HomePurpose(frontend.Hub{ID: row.HubIdentifier, Type: frontend.MediaType(row.Type)}), ItemCount: count, RankedTop10: row.RankedTop10}
 	return hub, neutral
 }
 
@@ -102,6 +102,26 @@ func (s *Server) arrangeHomeRows(ctx context.Context, pr *Request, hc frontend.H
 			return rows
 		}
 	}
+	if source, ok := s.recommender().(frontend.NeutralHomeLayoutSource); ok {
+		sit := frontend.HomeSituation{Device: hc.Device, Daypart: hc.Daypart, Weekend: hc.Weekend, Now: hc.Now, LibraryID: hc.SectionID, Product: hc.Product, Platform: hc.Platform, SessionID: hc.SessionID, ClientID: hc.ClientID}
+		ordered, err := source.FinalizeNeutralHome(ctx, pr.User, sit, section, neutral)
+		if err != nil {
+			return rows
+		}
+		byID := make(map[string]int, len(neutral))
+		for i, row := range neutral {
+			byID[row.ID] = i
+		}
+		out := make([]model.Hub, 0, len(ordered))
+		for _, row := range ordered {
+			if index, ok := byID[row.ID]; ok {
+				painted := rows[index]
+				painted.RankedTop10 = row.RankedTop10
+				out = append(out, painted)
+			}
+		}
+		return out
+	}
 	indices, err := s.exp().ArrangeHome(ctx, s.recommender(), pr.User, hc, section, hubs, neutral)
 	if err != nil {
 		if s.log != nil {
@@ -137,6 +157,15 @@ func stableHomeHubs(rows []model.Hub) []model.Hub {
 				continue
 			}
 			seen[h.HubIdentifier] = true
+		}
+		if h.RankedTop10 {
+			h.Metadata = append([]model.Metadata(nil), h.Metadata...)
+			h.Metadata = h.Metadata[:min(10, len(h.Metadata))]
+			rankedMetadata(h.Metadata)
+			h.Size = len(h.Metadata)
+			h.TotalSize = model.Ptr(h.Size)
+			h.More = false
+			h.Meta = &model.Meta{DisplayImage: []model.DisplayImage{{Type: h.Type, ImageType: "coverArt"}}}
 		}
 		out = append(out, h)
 	}

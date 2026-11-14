@@ -27,7 +27,7 @@ func TestAndroidTVSignIn(t *testing.T) {
 	ident := frontendtest.GrantDeviceIdentity{
 		Identity: frontendtest.Identity{
 			SignInFunc: func(_ context.Context, user, pw string, d frontend.Device) (string, error) {
-				if user != "alice" || pw != "secret" || d.ID != hash("alice") || d.Client != "Jellyfin for Android TV" || d.DeviceName != "SHIELD Android TV" {
+				if user != "alice" || pw != "secret" || d.ID != hash("alice") || !frontend.JellyfinAndroidTVClient(d.Client) || d.DeviceName != "SHIELD Android TV" {
 					return "", errors.New("bad login")
 				}
 				stored = d
@@ -63,17 +63,19 @@ func TestAndroidTVSignIn(t *testing.T) {
 		inst.Handler().ServeHTTP(w, r)
 		return w.Code
 	}
-	if got := call("POST", "/Users/AuthenticateByName", `{"Username":"alice","Pw":"secret"}`, hash("alice"), "Jellyfin+for+Android+TV", ""); got != 200 {
-		t.Fatal("login", got)
-	}
-	if got := call("GET", "/Users/Me", "", hash(uuid), "Jellyfin+for+Android+TV", "valid"); got != 200 {
-		t.Fatal("session", got)
-	}
-	if got := call("GET", "/Users/Me", "", hash(uuid), "Other", "valid"); got != 401 {
-		t.Fatal("foreign client", got)
-	}
-	if got := call("GET", "/Users/Me", "", hash(uuid), "Jellyfin+for+Android+TV", "revoked"); got != 401 {
-		t.Fatal("bad token", got)
+	for _, client := range []string{"Android+TV", "Jellyfin+Android+TV", "Jellyfin+for+Android+TV"} {
+		if got := call("POST", "/Users/AuthenticateByName", `{"Username":"alice","Pw":"secret"}`, hash("alice"), client, ""); got != 200 {
+			t.Fatal("login", got)
+		}
+		if got := call("GET", "/Users/Me", "", hash(uuid), client, "valid"); got != 200 {
+			t.Fatal("session", got)
+		}
+		if got := call("GET", "/Users/Me", "", hash(uuid), "Other", "valid"); got != 401 {
+			t.Fatal("foreign client", got)
+		}
+		if got := call("GET", "/Users/Me", "", hash(uuid), client, "revoked"); got != 401 {
+			t.Fatal("bad token", got)
+		}
 	}
 }
 

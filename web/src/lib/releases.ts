@@ -60,6 +60,8 @@ export interface ConsoleRelease {
   release: Release;
   score: number;
   formatScore: number;
+  /** Present only when this profile rejected the custom format score. */
+  minimumFormatScore?: number;
   customFormats?: FormatMatch[] | null;
   compatibility?: string;
   /** Why source routing moved this release (faster source, or the hedge). */
@@ -309,7 +311,7 @@ export interface QualityImportPlan {
   trashId?: string;
   /** The media the source app's profile describes. */
   mediaType?: ProfileMedia;
-  /** Non-empty when the profile cannot work (e.g. minimum score unreachable). */
+  /** Non-empty when the profile cannot be imported. A score shortfall is a warning. */
   unusable?: string;
   profile: QualityProfile;
   scoreSet?: string;

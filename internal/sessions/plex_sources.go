@@ -94,7 +94,7 @@ func (s PartSources) Part(viewer int64, client string, key core.RatingKey, relea
 	result := PartSource{Session: ps, Matches: ok, AnonymousContinuation: anonymous}
 	if ok && ps != nil {
 		result.PreviousID = ps.ID
-		if release != "" && (ps.Resolution == nil || ps.Resolution.Release.ID != release) {
+		if release != "" && (ps.Resolution == nil || !ps.Resolution.MatchesVersion(release)) {
 			result.Matches = false
 		}
 	}

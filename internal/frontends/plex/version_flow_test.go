@@ -17,7 +17,8 @@ import (
 // probe and start. PMS decisions are projections of the selected Media,
 // rather than replacement version lists (see the recorded decision corpus).
 func TestVersionIdentityAcrossPlayFlow(t *testing.T) {
-	// Plex for LG and VIDAA hold one Auto Media instead (tv_app_queue_test.go).
+	// Configured menus for all TV/web clients are exercised below; these
+	// cases retain the actual edition list issued by a source provider.
 	for _, product := range []string{"Plex for Samsung", "Plex for Android (TV)", "Plex Web"} {
 		for _, count := range []int{0, 1, 3} {
 			t.Run(product+"/"+string(rune('0'+count)), func(t *testing.T) {
@@ -434,5 +435,58 @@ func TestAndroidTVSubtitleDownloadDuringPlayback(t *testing.T) {
 	defer pb.mu.Unlock()
 	if len(pb.variantCalls) == 0 || pb.variantCalls[len(pb.variantCalls)-1] != "rel-4k" {
 		t.Fatalf("restart prepared %v, want rel-4k last", pb.variantCalls)
+	}
+}
+
+func TestConfiguredVersionSlotsFlow(t *testing.T) {
+	for _, product := range []string{"Plex Web", "Plex for Android (TV)", "Plex for LG", "Plex for VIDAA", "Plex for Samsung"} {
+		t.Run(product, func(t *testing.T) {
+			f, _, src := configuredVariantFixture(t)
+			src.byKey[fightClub.Key] = nil
+			headers := []string{"Accept", "application/json", "X-Plex-Product", product}
+			signature := func(ms []wireMedia) []string {
+				out := []string{}
+				for _, m := range ms {
+					if len(m.Part) != 1 {
+						t.Fatal("slot missing Part")
+					}
+					out = append(out, fmt.Sprint(m.ID, "/", m.Part[0].ID))
+				}
+				return out
+			}
+			hub := signature(configuredResponseMedia(t, f.get(t, "/hubs/home/recentlyAdded", headers...), fightClub.Key))
+			if src.calls != 0 {
+				t.Fatal("hub requested discovery")
+			}
+			path := "/library/metadata/" + fightClub.Key.String()
+			check := func(stage, target string) {
+				t.Helper()
+				got := signature(configuredResponseMedia(t, f.get(t, target, headers...), fightClub.Key))
+				if !reflect.DeepEqual(got, hub) {
+					t.Fatalf("%s reshaped slots: %v, held %v", stage, got, hub)
+				}
+			}
+			check("cold detail", path)
+			src.byKey[fightClub.Key] = testVariantLists()[fightClub.Key]
+			check("discovery completed", path)
+			req := httptest.NewRequest("POST", "/playQueues?type=video&uri="+urlEsc(path), nil)
+			req.Header.Set("X-Plex-Token", ownerToken)
+			req.Header.Set("X-Plex-Client-Identifier", "client-1")
+			for i := 0; i < len(headers); i += 2 {
+				req.Header.Set(headers[i], headers[i+1])
+			}
+			rec := httptest.NewRecorder()
+			f.srv.ServeHTTP(rec, req)
+			if got := signature(configuredResponseMedia(t, rec, fightClub.Key)); !reflect.DeepEqual(got, hub) {
+				t.Fatalf("queue: %v", got)
+			}
+			query := "path=" + urlEsc(path) + "&session=configured-slots&mediaIndex=1&directPlay=1&directStream=1&protocol=hls"
+			check("explicit decision", "/video/:/transcode/universal/decision?"+query)
+			src.byKey[fightClub.Key] = nil
+			check("cache expired", path)
+			check("lower output quality decision", "/video/:/transcode/universal/decision?"+query+"&videoResolution=1280x720&videoBitrate=2000")
+			f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&state=stopped&time=1000", headers...)
+			check("resume decision", "/video/:/transcode/universal/decision?"+query)
+		})
 	}
 }

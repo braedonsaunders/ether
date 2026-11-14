@@ -53,6 +53,20 @@ func compareCandidates(a, b candidate) bool {
 	if a.identityWeak != b.identityWeak {
 		return !a.identityWeak
 	}
+	// Soft profile preferences precede the ordinary quality comparer.
+	if a.belowScore != b.belowScore {
+		return !a.belowScore
+	}
+	if a.belowScore && a.counted != b.counted {
+		return a.counted > b.counted
+	}
+	if a.fallback != b.fallback {
+		return !a.fallback
+	}
+	// Unlisted lower qualities still prefer the closest resolution.
+	if a.fallback && b.fallback && a.keys.height != b.keys.height {
+		return a.keys.height > b.keys.height
+	}
 	// Gates.
 	if a.policy.Fallback != b.policy.Fallback {
 		return a.policy.Fallback < b.policy.Fallback
@@ -249,4 +263,9 @@ func preferredSource(mode string) string {
 		return m
 	}
 	return ""
+}
+
+func samePreferenceTier(a, b candidate) bool {
+	return a.belowScore == b.belowScore && a.fallback == b.fallback &&
+		(!a.belowScore || a.counted == b.counted) && (!a.fallback || a.keys.height == b.keys.height)
 }

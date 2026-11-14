@@ -139,6 +139,8 @@ type Release struct {
 // Resolution is the resolver's answer for a title and client: the winning
 // release, already health-checked, plus fallbacks for mid-stream failover.
 type Resolution struct {
+	// VersionSelector is the configured slot that this concrete release fulfilled.
+	VersionSelector string `json:"versionSelector,omitempty"`
 	// HealthVerified means the complete volume sample passed, rather than an
 	// optimistic start or an inconclusive health check.
 	HealthVerified  bool      `json:"healthVerified,omitempty"`
@@ -148,6 +150,11 @@ type Resolution struct {
 	NZB             []byte    `json:"-"`
 	Alternates      []Release `json:"alternates"` // next candidates, best first
 	ResolvedAt      time.Time `json:"resolvedAt"`
+}
+
+// MatchesVersion compares concrete picks and resolver-validated logical slots.
+func (r *Resolution) MatchesVersion(id string) bool {
+	return r != nil && (r.Release.ID == id || id != "" && r.VersionSelector == id)
 }
 
 // Media scopes a quality profile or rule. Every profile serves exactly one
@@ -259,7 +266,7 @@ type QualityProfile struct {
 	// with its settings ({} for none). A step adds the number its plugin
 	// returns for a release to the release's custom format score.
 	PluginScores     map[string]json.RawMessage `json:"pluginScores,omitempty"`
-	AllowedQualities []string                   `json:"allowedQualities,omitempty"` // imported source-resolution gates
+	AllowedQualities []string                   `json:"allowedQualities,omitempty"` // preferred imported source-resolution pairs
 	// QualityOrder ranks qualities best first, as Radarr and Sonarr do: a
 	// release ranks by the first item listing its quality, qualities in one
 	// item (a group) rank equally, and a quality no item lists ranks below
@@ -271,9 +278,9 @@ type QualityProfile struct {
 	// formats ("ether:…", BuiltinFormats) and Prefer rules ("rule:<id>").
 	// A format the map does not list scores 0, as in Radarr and Sonarr.
 	CustomFormatScores map[string]int `json:"customFormatScores,omitempty"`
-	// MinCustomFormatScore rejects a release whose custom formats (the
+	// MinCustomFormatScore prefers releases whose custom formats (the
 	// owner's and imported ones, not Ether's built-ins, rules or plugins)
-	// score strictly lower. nil sets no minimum.
+	// reach this score. Lower scores remain playable. nil sets no preference.
 	MinCustomFormatScore *int           `json:"minCustomFormatScore,omitempty"`
 	Name                 string         `json:"name"`
 	MediaType            string         `json:"mediaType,omitempty"` // "movie" or "tv" (ProfileMediaTypes); empty only in configs saved before profiles were per media
@@ -353,7 +360,8 @@ func (p QualityProfile) ComputeSelectionKey() string {
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(b)
+	// Ranking semantics are part of policy identity: discard remembered hard-floor verdicts.
+	sum := sha256.Sum256(append([]byte("soft-quality-v1:"), b...))
 	return hex.EncodeToString(sum[:])[:16]
 }
 

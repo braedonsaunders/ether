@@ -45,12 +45,19 @@ func TestDeploymentAndDrainBoundary(t *testing.T) {
 	if err := WriteDrainControl(dir, DrainStatusFile, DrainControl{Boot: "boot1", State: "running"}); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- RequestDrain(ctx, dir) }()
 	var req DrainControl
-	for i := 0; i < 100; i++ {
+	// ACL protection and fsync can take longer than 100 short sleeps on
+	// Windows runners. Await the request within the operation deadline.
+	for ctx.Err() == nil {
+		select {
+		case err := <-done:
+			t.Fatalf("drain ended before publishing its request: %v", err)
+		default:
+		}
 		req, err = ReadDrainControl(dir, DrainRequestFile)
 		if err == nil {
 			break

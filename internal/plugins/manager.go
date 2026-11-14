@@ -23,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/logredact"
 	"github.com/braedonsaunders/ether/internal/notify"
 	"github.com/braedonsaunders/ether/internal/onair"
+	"github.com/braedonsaunders/ether/internal/plugins/wasm"
 	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
@@ -59,14 +60,17 @@ type Backends struct {
 
 // Deps are the plugin host's explicit dependencies.
 type Deps struct {
-	ImportStylePack func(context.Context, string, map[string][]byte) error
-	OnAirContent    *onair.PluginContentCache
-	DB              *sql.DB
-	Sealer          config.FieldSealer
-	Registry        *extend.Registry
-	Tools           *tools.Catalogue
-	Notifications   *notify.Service
-	Logger          *slog.Logger
+	Busy              func() bool
+	ReadRuntimeConfig func() config.Plugins
+	SaveRuntimeConfig func(string, config.PluginRuntimeLimits) error
+	ImportStylePack   func(context.Context, string, map[string][]byte) error
+	OnAirContent      *onair.PluginContentCache
+	DB                *sql.DB
+	Sealer            config.FieldSealer
+	Registry          *extend.Registry
+	Tools             *tools.Catalogue
+	Notifications     *notify.Service
+	Logger            *slog.Logger
 	// IsLeader reports cluster leadership; nil means always leader.
 	IsLeader func() bool
 	// Bus broadcasts invalidate:plugins; nil disables it.
@@ -123,8 +127,10 @@ type Manager struct {
 	// warming holds plugin ids whose runtime is loading in the background
 	// (guarded by mu), so the hot path never waits for a load.
 	warming map[string]bool
-	// jobs holds "plugin|path" for action-started jobs still running.
-	jobs sync.Map
+	// jobs holds bounded "plugin|path" action-job snapshots.
+	jobs         sync.Map
+	jobsMu       sync.Mutex
+	runtimeEpoch map[string]uint64 // guarded by mu; rejects stale in-flight loads
 	// shadow mirrors each plugin's shadow flag (guarded by mu) so the play
 	// path can skip shadow plugins without a database read.
 	shadow map[string]bool
@@ -346,6 +352,7 @@ func (m *Manager) ResolveText(ctx context.Context, plugin, key, locale string) (
 func (m *Manager) runtimeFor(ctx context.Context, r Record) (Runtime, error) {
 	m.mu.Lock()
 	rt, ok := m.runtimes[r.ID]
+	epoch := m.runtimeEpoch[r.ID]
 	f, hasFactory := m.fatories[r.Manifest.RuntimeKind()]
 	m.mu.Unlock()
 	if ok {
@@ -355,6 +362,7 @@ func (m *Manager) runtimeFor(ctx context.Context, r Record) (Runtime, error) {
 		return nil, ErrNoRuntime
 	}
 	inst := Installed{
+		RuntimeLimits: m.grantedRuntimeLimits(r.Manifest), Busy: m.deps.Busy,
 		ID: r.ID, Manifest: r.Manifest, SourceURL: r.SourceURL, Host: m.HostFor(r.ID),
 		Files: func(path string) ([]byte, bool) {
 			fctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -367,6 +375,11 @@ func (m *Manager) runtimeFor(ctx context.Context, r Record) (Runtime, error) {
 		return nil, err
 	}
 	m.mu.Lock()
+	if epoch != m.runtimeEpoch[r.ID] {
+		m.mu.Unlock()
+		_ = rt.Close()
+		return nil, ErrUnavailable
+	}
 	if existing, ok := m.runtimes[r.ID]; ok {
 		m.mu.Unlock()
 		_ = rt.Close()
@@ -457,7 +470,12 @@ func (m *Manager) CallStream(ctx context.Context, pluginID string, req Request) 
 }
 
 func (m *Manager) closeRuntime(id string) {
+	m.cancelActionJobs(id)
 	m.mu.Lock()
+	if m.runtimeEpoch == nil {
+		m.runtimeEpoch = map[string]uint64{}
+	}
+	m.runtimeEpoch[id]++
 	rt := m.runtimes[id]
 	addon := m.runtimes[id+addonRuntimeSuffix]
 	delete(m.runtimes, id)
@@ -546,7 +564,14 @@ func (m *Manager) Call(ctx context.Context, pluginID string, req Request) (Respo
 	}
 	start := m.now()
 	deadline := DeadlineFor(req.Path)
-	if r.Manifest.SpeaksStremio() {
+	if !wasm.ViewerRequestPath(req.Path) && (strings.HasPrefix(req.Path, "/ether/job/") || strings.HasPrefix(req.Path, "/ether/v1/setup/") || strings.HasPrefix(req.Path, "/ether/action/") || strings.HasPrefix(req.Path, "/ether/tool/") || req.Path == "/ether/event") {
+		if l := m.grantedRuntimeLimits(r.Manifest); l != nil {
+			deadline, _ = time.ParseDuration(l.Deadline)
+		} else {
+			deadline = m.runtimeCeilings(pluginID).deadline
+		}
+	}
+	if r.Manifest.SpeaksStremio() && !strings.HasPrefix(req.Path, "/ether/job/") {
 		deadline = stremioDeadline(req.Path)
 	}
 	cctx, cancel := context.WithTimeout(withViewerHeader(ctx, req.Headers), deadline)
@@ -1044,6 +1069,12 @@ func (m *Manager) Remove(ctx context.Context, id string, undoFirst bool) error {
 	if m.deps.Notifications != nil {
 		m.deps.Notifications.Kinds().RemovePlugin(extend.PluginID(id, "notify"), id)
 	}
+	m.jobs.Range(func(key, value any) bool {
+		if strings.HasPrefix(key.(string), id+"|") {
+			m.jobs.Delete(key)
+		}
+		return true
+	})
 	if err := m.store.purge(ctx, id); err != nil {
 		return err
 	}
@@ -1062,39 +1093,6 @@ func (m *Manager) OnRemove(fn func(ctx context.Context, id string)) {
 	m.mu.Lock()
 	m.removeHooks = append(m.removeHooks, fn)
 	m.mu.Unlock()
-}
-
-// startActionJob lets a page action start long work: when the action's
-// result names a job ({"job": "/ether/job/<name>"}), the host runs that job
-// in the background with the job deadline (5 minutes), once at a time per
-// plugin and job, so a scan of a large library is not cut off by the
-// 10-second action deadline.
-func (m *Manager) startActionJob(pluginID string, body json.RawMessage) {
-	var out struct {
-		Job string `json:"job"`
-	}
-	if json.Unmarshal(body, &out) != nil || out.Job == "" {
-		return
-	}
-	path := out.Job
-	if !strings.HasPrefix(path, "/ether/job/") {
-		path = "/ether/job/" + strings.TrimPrefix(path, "/")
-	}
-	if strings.Contains(path, "..") || strings.ContainsAny(path, "?#") {
-		return
-	}
-	key := pluginID + "|" + path
-	if _, running := m.jobs.LoadOrStore(key, true); running {
-		return
-	}
-	go func() {
-		defer m.jobs.Delete(key)
-		ctx, cancel := context.WithTimeout(context.Background(), DeadlineFor(path))
-		defer cancel()
-		if _, err := m.Call(ctx, pluginID, Request{Method: "POST", Path: path}); err != nil {
-			m.log.Warn("plugins: action job", "plugin", pluginID, "job", path, "err", err)
-		}
-	}()
 }
 
 // Prune applies the plugin retention that is not bounded at write time:

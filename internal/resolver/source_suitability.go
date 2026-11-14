@@ -12,7 +12,7 @@ import (
 // DiscoveryCandidate is local, name-based negative evidence only. It does not
 // certify quality or fetch a provider. Feed and playback share this policy.
 func (s *Service) DiscoveryCandidate(t *core.Title, r core.Release) string {
-	return sourceSuitability(r, t, SelectProfileForMedia(s.qualityCfg(), core.ClientCaps{HDR10: true, DolbyVision: true}, nil, titleMedia(t)), false)
+	return sourceSuitability(r, t, s.ProfileForTitle(context.Background(), feedClient, nil, t), false)
 }
 
 func sourceSuitability(r core.Release, t *core.Title, p core.QualityProfile, explicit bool) string {
@@ -95,28 +95,37 @@ func (s *Service) knownUnavailableSince(ctx context.Context, keys []core.RatingK
 				args = append(args, k)
 			}
 			args = append(args, now.Unix())
-			rows, err := s.db.QueryContext(ctx, `SELECT rating_key,checked_at FROM resolver_availability WHERE rating_key IN (`+strings.Join(marks, ",")+`) AND available=0 AND expires_at>?`, args...)
+			rows, err := s.db.QueryContext(ctx, `SELECT rating_key,checked_at,profile_key FROM resolver_availability WHERE rating_key IN (`+strings.Join(marks, ",")+`) AND available=0 AND expires_at>?`, args...)
 			if err != nil {
 				continue
 			}
+			policies := make(map[core.RatingKey]string)
 			for rows.Next() {
 				var k core.RatingKey
 				var checked int64
-				if rows.Scan(&k, &checked) == nil {
+				var policy string
+				if rows.Scan(&k, &checked, &policy) == nil {
+					policies[k] = policy
 					out[k] = time.Unix(checked, 0)
 				}
 			}
 			rows.Close()
+			for k, policy := range policies {
+				if policy != s.availabilityProfileKey(ctx, k) {
+					delete(out, k)
+				}
+			}
 		}
 	}
 	if !memo {
 		return out
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	for _, k := range keys {
-		if e, ok := s.avail[int64(k)]; ok {
-			if !e.available && now.Before(e.expires) {
+		s.mu.RLock()
+		e, ok := s.avail[int64(k)]
+		s.mu.RUnlock()
+		if ok {
+			if !e.available && now.Before(e.expires) && e.policy == s.availabilityProfileKey(ctx, k) {
 				out[k] = e.checked
 			} else {
 				delete(out, k)

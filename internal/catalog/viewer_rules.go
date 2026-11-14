@@ -66,7 +66,7 @@ func IsRuleExempt(skip map[string]bool, rule core.LibraryExclusion) bool {
 		skip[RuleIdentity(withMediaType(rule, ""))]
 }
 
-func compileViewerRules(p ViewerRules, pol LibraryPolicies) (*libraryfilter.Filter, error) {
+func compileViewerRulesDocument(p ViewerRules, pol LibraryPolicies) (*libraryfilter.Filter, error) {
 	switch p.Mode {
 	case "", "inherit":
 		return libraryfilter.CompileLibraryPolicies(pol.MovieRules, pol.MovieDefault, pol.ShowRules, pol.ShowDefault)
@@ -102,7 +102,7 @@ func (c *Catalog) recompileViewerRules(pol LibraryPolicies) error {
 	defer c.viewerRules.Unlock()
 	entries := make(map[int64]compiledViewerRules, len(c.viewerRules.entries))
 	for id, v := range c.viewerRules.entries {
-		f, err := compileViewerRules(v.document, pol)
+		f, err := c.compileViewerRules(v.document, pol)
 		if err != nil {
 			return err
 		}
@@ -131,7 +131,7 @@ func (c *Catalog) reloadViewerRules(ctx context.Context) error {
 		if err := json.Unmarshal([]byte(raw), &v.document); err != nil {
 			return err
 		}
-		v.browse, err = compileViewerRules(v.document, pol)
+		v.browse, err = c.compileViewerRules(v.document, pol)
 		if err != nil {
 			return err
 		}
@@ -223,7 +223,7 @@ func (c *Catalog) PutViewerRules(ctx context.Context, id int64, p ViewerRules) e
 		return fmt.Errorf("invalid viewer")
 	}
 	pol := c.LibraryPolicies()
-	if _, err := compileViewerRules(p, pol); err != nil {
+	if _, err := c.compileViewerRules(p, pol); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(p)
@@ -387,4 +387,19 @@ func (c *Catalog) RefreshViewerRules(ctx context.Context) error {
 	c.viewerRules.RUnlock()
 	iv.Notify("")
 	return nil
+}
+
+func (c *Catalog) compileLibraryPolicies(p LibraryPolicies) (*libraryfilter.Filter, error) {
+	f, err := libraryfilter.CompileLibraryPolicies(p.MovieRules, p.MovieDefault, p.ShowRules, p.ShowDefault)
+	if err != nil {
+		return nil, err
+	}
+	return c.bindLibraryRules(f)
+}
+func (c *Catalog) compileViewerRules(p ViewerRules, pol LibraryPolicies) (*libraryfilter.Filter, error) {
+	f, err := compileViewerRulesDocument(p, pol)
+	if err != nil {
+		return nil, err
+	}
+	return c.bindLibraryRules(f)
 }

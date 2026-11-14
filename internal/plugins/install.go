@@ -40,7 +40,8 @@ type Source struct {
 
 // Preview is what the install sheet shows before the owner confirms.
 type Preview struct {
-	Manifest Manifest `json:"manifest"`
+	Manifest      Manifest       `json:"manifest"`
+	RuntimeLimits *RuntimeLimits `json:"runtimeLimits,omitempty"`
 	// Summary is the manifest summary with any "$t:" reference resolved
 	// from the package's own strings.
 	Summary          string   `json:"summary,omitempty"`
@@ -464,7 +465,7 @@ func (m *Manager) PreviewInstall(ctx context.Context, src Source) (*Preview, err
 	if src.Version != "" && man.Version != src.Version {
 		return nil, fmt.Errorf("plugins: manifest version %q does not match catalogue version %q", man.Version, src.Version)
 	}
-	p := &Preview{Manifest: man, source: src, files: files, manifestRaw: raw, Verified: src.Verified, StremioOnly: man.IsStremioOnly()}
+	p := &Preview{Manifest: man, RuntimeLimits: m.grantedRuntimeLimits(man), source: src, files: files, manifestRaw: raw, Verified: src.Verified, StremioOnly: man.IsStremioOnly()}
 	p.PermissionLines, p.NeedsViewers, p.NeedsFolders = PermissionSheet(man)
 	if err := p.resolve(); err != nil {
 		return nil, err
@@ -717,7 +718,7 @@ func (m *Manager) ApplyUpdate(ctx context.Context, id string, acceptAdded bool) 
 	if err := json.Unmarshal([]byte(r.updateFiles), &files); err != nil {
 		return Record{}, err
 	}
-	p := &Preview{Manifest: man, files: files, manifestRaw: json.RawMessage(r.updateManifest),
+	p := &Preview{Manifest: man, RuntimeLimits: m.grantedRuntimeLimits(man), files: files, manifestRaw: json.RawMessage(r.updateManifest),
 		source: Source{Kind: r.SourceKind, URL: r.SourceURL, Verified: r.Verified}}
 	if err := p.resolve(); err != nil {
 		return Record{}, err
@@ -760,7 +761,7 @@ func (m *Manager) Rollback(ctx context.Context, id string) (Record, error) {
 		return Record{}, err
 	}
 	// Strings and schema come from the rolled-back package files.
-	p := &Preview{Manifest: man, files: map[string][]byte{}, source: Source{Kind: r.SourceKind}}
+	p := &Preview{Manifest: man, RuntimeLimits: m.grantedRuntimeLimits(man), files: map[string][]byte{}, source: Source{Kind: r.SourceKind}}
 	// Reload known files for the target version so resolution works.
 	for _, name := range artifactPaths(man) {
 		if b, ok := m.store.file(ctx, id, prev, name); ok {

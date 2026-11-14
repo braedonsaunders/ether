@@ -1,3 +1,4 @@
+import { WarmingControls } from "../../cache/WarmingControls";
 import { PanelSlots, PluginActionMenu } from "../../../viewspec/slots/Slots";
 import { Badge, Button, Spinner, SubtabNav } from "@braedonsaunders/appkit-ui";
 import { useState, type ReactNode } from "react";
@@ -40,11 +41,13 @@ export function TitleInspector({
   titleKey,
   onClose,
   watchlistAction,
+  watchlistViewers,
   onLibraryChange,
 }: {
   titleKey: string;
   onClose: () => void;
   watchlistAction?: ReactNode;
+  watchlistViewers?: ReactNode;
   onLibraryChange?: () => void;
 }) {
   const state = useAsync(() => api.title(titleKey), [titleKey]);
@@ -115,7 +118,6 @@ export function TitleInspector({
         ) : undefined
       }
     >
-      {watchlistAction ? <div className="px-5 pt-4">{watchlistAction}</div> : null}
       {state.error ? (
         <ErrorPanel className="m-5" error={state.error} onRetry={() => void state.reload()} />
       ) : !title ? (
@@ -137,6 +139,8 @@ export function TitleInspector({
         />
       ) : (
         <Overview
+          watchlistAction={watchlistAction}
+          watchlistViewers={watchlistViewers}
           title={title}
           library={library.data ?? null}
           onLibraryReload={async () => {
@@ -275,6 +279,8 @@ function LibraryStatusSection({
 }
 
 function Overview({
+  watchlistAction,
+  watchlistViewers,
   title,
   library,
   onLibraryReload,
@@ -287,6 +293,8 @@ function Overview({
   onReload,
   onClose,
 }: {
+  watchlistAction?: ReactNode;
+  watchlistViewers?: ReactNode;
   title: TitleDetail;
   library: TitleLibraryStatus | null;
   onLibraryReload: () => Promise<void>;
@@ -341,6 +349,13 @@ function Overview({
         </div>
       </div>
       <div className="catalog-detail-body">
+        {watchlistAction || isShow || title.type === "movie" ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {watchlistAction}
+            {isShow || title.type === "movie" ? <WarmingControls titleKey={title.key} /> : null}
+            {watchlistViewers}
+          </div>
+        ) : null}
         <LibraryStatusSection titleKey={title.key} status={library} onChanged={onLibraryReload} />
         {isShow ? (
           <NextEpisodeCard

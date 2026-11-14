@@ -362,6 +362,9 @@ func (s *Session) collectDASH(r *run, exited bool) {
 	}
 	changed := false
 	for _, in := range inits {
+		if s.cur != r && in.t == s.audioTrackLocked() {
+			continue
+		}
 		old := s.dash.inits[in.t]
 		s.dash.inits[in.t] = in.file
 		s.dash.codecs[in.t] = in.info.Codecs
@@ -373,6 +376,12 @@ func (s *Session) collectDASH(r *run, exited bool) {
 		changed = true
 	}
 	for _, sp := range segs {
+		if s.cur != r && sp.t == s.audioTrackLocked() {
+			if sp.file != "" {
+				s.removals.remove(sp.file)
+			}
+			continue
+		}
 		done := s.done[sp.t]
 		n := sp.out.n
 		if done[n] {
@@ -413,6 +422,7 @@ func (s *Session) collectDASH(r *run, exited bool) {
 		changed = true
 	}
 	if changed {
+		s.advanceHandoffLocked(r)
 		if r.produced > 0 && s.cur == r {
 			if r.rtx && r.rtxConfirmed.Load() {
 				s.decision.Enhancement.State = "running"

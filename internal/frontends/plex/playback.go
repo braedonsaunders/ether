@@ -522,6 +522,9 @@ func applySelections(p *playRequest, info frontend.MediaInfo, langs []string) {
 	if audio >= 0 && audio < len(info.Streams) && info.Streams[audio].Type == "audio" {
 		p.opts.AudioStream = info.Streams[audio].Index
 	}
+	// Rebuilding a plan must clear the prior selection when the viewer
+	// switches subtitles off or their language is absent on this source.
+	p.opts.SubtitleStream = -1
 	if p.subSet && p.subSel >= 0 && p.subSel < len(info.Streams) && info.Streams[p.subSel].Type == "subtitle" {
 		st := info.Streams[p.subSel]
 		if !st.External {
@@ -597,7 +600,13 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*fro
 		// The chosen sidecar has to be on this media before track resolution.
 		// Otherwise a language already present in the probe drops it, and the
 		// decision either selects the other track or no subtitle at all.
-		ps = ensureSelectedSidecar(ps, p.subStream)
+		if p.subNamed && p.subStream != nil && p.subStream.External {
+			cp := *ps
+			cp.Info = infoWithExactSidecar(ps.Info, p.subStream)
+			ps = &cp
+		} else {
+			ps = ensureSelectedSidecar(ps, p.subStream)
+		}
 		resolvePlaySelection(p, ps.Info)
 		s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
 		applySelections(p, ps.Info, s.audioLanguages(pr.User))
@@ -649,6 +658,12 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*fro
 		if err := s.applyDeviceProfile(pr, t, ps, p); err != nil {
 			return frontend.PlanAdmission{}, err
 		}
+		if s.svc().support != nil && s.svc().support.Recording() {
+			ev := s.supportEvent(pr, frontend.DiagnosticKindClientCapabilities)
+			ev.Client = s.supportClientFacts(pr, p.caps, "output")
+			ev.Client.OutputProtocol = p.protocol
+			s.svc().support.Observe(ev)
+		}
 		return frontend.PlanAdmission{
 			Source: ps, Media: ps.Info, Caps: p.caps, Options: p.opts, PreferRemux: p.mde, Protocol: p.protocol,
 			RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,
@@ -694,7 +709,9 @@ func (s *Server) handleDecision(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	if arm, err := s.parsePlayRequest(r); err == nil {
-		s.armDecision(pr, arm.key)
+		owner := decisionOwner(pr)
+		owner.Generation = arm.sessionID
+		s.decisionArms.Arm(owner, arm.key)
 	}
 	// A slow source search must not hold the owner gates (timeline and stop
 	// share them) or outlast the client's request timeout.
@@ -886,7 +903,7 @@ func decisionItem(md *model.Metadata) {
 
 func (s *Server) decisionContainer(ctx context.Context, pr *Request, t *frontend.Title, ps *frontend.PlaySession, dec frontend.Decision, p playRequest) *model.MediaContainer {
 	mc := s.itemContainer(t.Type)
-	md := s.metadata(ctx, pr, t, renderOpts{detail: true})
+	md := s.metadata(ctx, pr, t, renderOpts{detail: true, media: true})
 	decisionItem(&md)
 	// With hasMDE=1 and direct play allowed, the client's own decision
 	// engine decides: PMS answers with the source media as direct play and
@@ -920,10 +937,23 @@ func (s *Server) decisionContainer(ctx context.Context, pr *Request, t *frontend
 	if plexAndroidClient(pr) && shown.BurnSubtitles && p.subtitles == "none" {
 		p.subtitles = "burn"
 	}
-	md.Media = []model.Media{s.decisionMedia(t, ps, shown, p, pr.User)}
+	chosen := s.decisionMedia(t, ps, shown, p, pr.User)
+	if pr.configuredSlots && len(md.Media) > 0 {
+		for i := range md.Media {
+			md.Media[i].Selected = nil
+			if len(md.Media[i].Part) > 0 {
+				md.Media[i].Part[0].Selected = nil
+			}
+			if md.Media[i].ID == chosen.ID {
+				md.Media[i] = chosen
+			}
+		}
+	} else {
+		md.Media = []model.Media{chosen}
+	}
 	s.addProbedStreamFeatures(ctx, t.Key, ps.Info, &md)
-	if md.Media[0].Duration > 0 {
-		md.Duration = md.Media[0].Duration
+	if chosen.Duration > 0 {
+		md.Duration = chosen.Duration
 	}
 	mc.Metadata = []model.Metadata{md}
 	mc.Size = 1
@@ -1451,14 +1481,15 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	hs, err := s.startPlexHLS(context.WithoutCancel(ctx), pr.User, ps.ID, p.sessionID, frontend.HLSRequest{
-		SoftSubtitleStream: sessionSoftSubtitle(entry, pr, dec),
-		SessionID:          p.sessionID,
-		ReleaseID:          ps.SourceReleaseID(),
-		InputURL:           s.playback().InputURL(ps.ID),
-		Info:               ps.Info,
-		Decision:           dec,
-		StartOffset:        p.offset,
-		ResumeHint:         resumeHint,
+		SoftSubtitleStream:  sessionSoftSubtitle(entry, pr, dec),
+		TextSubtitleStreams: s.plexTextTracks(pr, ps.Info, dec),
+		SessionID:           p.sessionID,
+		ReleaseID:           ps.SourceReleaseID(),
+		InputURL:            s.playback().InputURL(ps.ID),
+		Info:                ps.Info,
+		Decision:            dec,
+		StartOffset:         p.offset,
+		ResumeHint:          resumeHint,
 	})
 	if err != nil {
 		s.writeStartErr(w, r, pr, err)
@@ -1505,6 +1536,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		return
 	}
 	entry, _ := s.transcodes.get(sessionID)
+	subtitleTags, subtitleGroup := s.textRenditionTags(r, sessionID, hs, entry, info, dec)
 	// A ladder-capable session advertises every rung; the client's native
 	// ABR (AVPlayer, hls.js) steps between them and the session starts a
 	// rung's encoder lazily on its first segment request. The primary
@@ -1520,7 +1552,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		}
 		if len(rungs) > 1 {
 			var b strings.Builder
-			b.WriteString("#EXTM3U\n")
+			b.WriteString("#EXTM3U\n" + subtitleTags)
 			for _, rg := range rungs {
 				line := fmt.Sprintf("#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=%d", rg.Bandwidth)
 				if rg.AverageBandwidth > 0 {
@@ -1536,7 +1568,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 					line += fmt.Sprintf(",FRAME-RATE=%.3f", rg.FrameRate)
 				}
 				uri := s.mediaURL("session/"+sessionID+"/"+rg.ID+"/index.m3u8", sessionID, entry.streamToken)
-				b.WriteString(line + "\n" + uri + "\n")
+				b.WriteString(line + subtitleGroup + "\n" + uri + "\n")
 			}
 			body := b.String()
 			h := w.Header()
@@ -1582,7 +1614,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		}
 	}
 	line += frontend.HLSVariantAttributes(info, dec)
-	body := "#EXTM3U\n" + line + "\n" + s.mediaURL("session/"+sessionID+"/base/index.m3u8", sessionID, entry.streamToken) + "\n"
+	body := "#EXTM3U\n" + subtitleTags + line + subtitleGroup + "\n" + s.mediaURL("session/"+sessionID+"/base/index.m3u8", sessionID, entry.streamToken) + "\n"
 	h := w.Header()
 	h.Set("Content-Type", "application/vnd.apple.mpegurl")
 	h.Set("Cache-Control", "no-cache")
@@ -1617,6 +1649,22 @@ func (s *Server) handleTranscodeSession(w http.ResponseWriter, r *http.Request) 
 	name := rest
 	if i := strings.LastIndexByte(rest, '/'); i >= 0 {
 		name = rest[i+1:]
+	}
+	if dir, _, found := strings.Cut(rest, "/"); found && strings.HasPrefix(dir, "text-") {
+		index, err := strconv.Atoi(strings.TrimPrefix(dir, "text-"))
+		source, supported := hs.(playbackTextSubtitles)
+		if err != nil || !supported || !source.HasTextSubtitle(index) {
+			http.NotFound(w, r)
+			return
+		}
+		if name == "index.m3u8" {
+			s.serveStreamManifest(w, r, id, func(w http.ResponseWriter, r *http.Request) { source.ServeTextSubtitlePlaylist(w, r, index) })
+		} else if n, ok := segmentNumber(name); ok && strings.HasSuffix(name, ".vtt") {
+			source.ServeTextSubtitleSegment(w, r, index, n)
+		} else {
+			http.NotFound(w, r)
+		}
+		return
 	}
 	// ABR ladder: session/{id}/{rung}/index.m3u8 and .../{rung}/{seg}.ts.
 	// The primary rung is "base"; sessions without a ladder fall through
@@ -2289,16 +2337,19 @@ func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 			sel.audio, sel.audioSet, sel.audioStream = 0, false, nil
 		}
 		if subDefault {
-			sel.subtitle, sel.subtitleSet, sel.subtitleStream = 0, false, nil
+			sel.subtitle, sel.subtitleSet, sel.subtitleStream, sel.subtitlePart = 0, false, nil, 0
 		}
 		if audio != nil {
 			info := audio.Info
 			sel.audio, sel.audioSet, sel.audioStream = audio.Index, true, &info
 		}
 		if clearSub {
-			sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, nil
+			sel.subtitle, sel.subtitleSet, sel.subtitleStream, sel.subtitlePart = -1, true, nil, 0
 		} else if sub != nil {
 			info := sub.Info
+			if sel.subtitleStream == nil || sel.subtitleStream.ExternalURL != info.ExternalURL {
+				sel.subtitlePart = 0
+			}
 			sel.subtitle, sel.subtitleSet, sel.subtitleStream = sub.Index, true, &info
 		}
 	})
@@ -2386,7 +2437,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		}
 		s.selections.update(pr.User.ID, int64(binding.Key), func(sel *selection) {
 			if sel.subtitleStream != nil && sel.subtitleStream.ExternalURL == binding.Info.ExternalURL {
-				sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, nil
+				sel.subtitle, sel.subtitleSet, sel.subtitleStream, sel.subtitlePart = -1, true, nil, 0
 			}
 		})
 		if tp := s.svc().trackPrefs; tp != nil {

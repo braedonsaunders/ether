@@ -83,6 +83,9 @@ func (a *App) buildAdmin() http.Handler {
 		},
 		Sessions: a.users,
 		TestUsenet: func(ctx context.Context, p config.UsenetProvider) error {
+			if a.fetcher != nil {
+				return a.fetcher.TestProvider(ctx, p)
+			}
 			return usenet.TestProvider(ctx, p)
 		},
 		TestIndexer: func(ctx context.Context, ix config.Indexer) error {

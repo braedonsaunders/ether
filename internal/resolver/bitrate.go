@@ -138,7 +138,7 @@ func sameTier(a, b candidate) bool {
 // source, since a remux is not a re-encode, nor a disc encode a web file.
 // A faster or preferred source never swaps one for another.
 func sameQuality(a, b candidate) bool {
-	return releasepolicy.Equivalent(a.policy, b.policy) && pluginKeysEqual(a, b) &&
+	return samePreferenceTier(a, b) && releasepolicy.Equivalent(a.policy, b.policy) && pluginKeysEqual(a, b) &&
 		sameTier(a, b) &&
 		sourceClass(a.rel.Info.Source) == sourceClass(b.rel.Info.Source)
 }

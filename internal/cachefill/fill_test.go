@@ -91,7 +91,7 @@ func harness(t *testing.T) (*Manager, *config.Cache, *engineFake, *resolverFake)
 	cat := catalogFake{items: []core.Title{{Key: core.MovieKey(1), Title: "One", Type: core.TypeMovie, Released: time.Now().Add(-time.Hour)}, {Key: core.MovieKey(2), Title: "Two", Type: core.TypeMovie, Released: time.Now().Add(-time.Hour)}}}
 	eng := &engineFake{cache: c}
 	res := &resolverFake{}
-	m, err := New(dir, Deps{Catalog: cat, Resolver: res, Engine: eng, Cache: c, Config: func() config.Cache { return *cfg }, Owner: func(context.Context) (*core.User, error) { return &core.User{ID: 1}, nil }, FreeBytes: func() (int64, error) { return 100 << 30, nil }})
+	m, err := New(dir, Deps{Catalog: cat, Resolver: res, Engine: eng, Cache: c, State: &watchFake{history: map[int64][]core.HistoryEntry{1: {{Key: core.MovieKey(999), ViewedAt: time.Now()}}}}, Household: func(context.Context, string) ([]core.User, error) { return []core.User{{ID: 1}}, nil }, Config: func() config.Cache { return *cfg }, Owner: func(context.Context) (*core.User, error) { return &core.User{ID: 1}, nil }, FreeBytes: func() (int64, error) { return 100 << 30, nil }})
 	if err != nil {
 		t.Fatal(err)
 	}

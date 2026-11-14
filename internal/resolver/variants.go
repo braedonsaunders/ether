@@ -52,7 +52,7 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 		pinID = pin.Release.ID
 		results = withRelease(results, pin.Release)
 	}
-	// Auto is exactly what normal resolution would pick: strict profile.
+	// Auto uses the same preferences and hard rules as normal resolution.
 	strict, _, err := s.rankCandidates(ctx, req, sreq, profile, results, nil, pinID)
 	if err != nil {
 		return nil, err
@@ -104,6 +104,20 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 		}
 	}
 	labelPlayedAuto(req.Title, vs, played, results, s.LookupRelease, wanted)
+	// Every client version picker gets the same honest preference shortfall.
+	for i := range vs {
+		for _, c := range pool {
+			if c.rel.ID != vs[i].Release.ID {
+				continue
+			}
+			if c.belowScore {
+				vs[i].Label += fmt.Sprintf(" — below profile minimum (score %d of %d)", c.counted, *profile.MinCustomFormatScore)
+			} else if c.fallback {
+				vs[i].Label += " — below preferred quality"
+			}
+			break
+		}
+	}
 	return vs, nil
 }
 
@@ -295,9 +309,12 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 		seenEdition[ed] = true
 		add(c.rel, "edition", false)
 	}
-	// Remaining distinct tiers fill any open slots.
+	// Preferred distinct tiers fill open slots first. Newly eligible soft
+	// tiers use only space left after Auto's same-quality alternatives.
 	for _, c := range pool {
-		add(c.rel, "tier", false)
+		if !c.belowScore && !c.fallback {
+			add(c.rel, "tier", false)
+		}
 	}
 
 	// Same-quality alternatives sit right after Auto, so plain Play and the
@@ -313,6 +330,10 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 			kept = append(kept, rel)
 		}
 		alts = kept
+	}
+	tierMax = min(tierMax, max-len(alts))
+	for _, c := range pool {
+		add(c.rel, "tier", false)
 	}
 	if len(alts) == 0 {
 		return out

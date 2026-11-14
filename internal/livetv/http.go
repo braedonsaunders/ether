@@ -142,7 +142,7 @@ func (s *Service) startHTTPStream(ctx context.Context, ss *session, id string, i
 	}
 	ss.mu.Unlock()
 
-	hs, err := s.transcoder().StartHLS(s.ctx, core.HLSRequest{
+	hs, err := s.transcoder().StartHLS(s.serviceContext(), core.HLSRequest{
 		SessionID: "livetv-http-" + id, InputURL: input, LiveInput: liveInput,
 		Info: copyInfo, Decision: dec, Protocol: core.ProtocolHTTP, SegmentDuration: segmentDuration,
 	})

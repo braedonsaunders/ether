@@ -165,11 +165,38 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	if s.closed {
 		return errors.New("transcode: session closed")
 	}
+	if s.headerRecovering {
+		return nil
+	}
 	if s.inputFailed {
 		return errInputExhausted
 	}
+
 	s.encoder.decisionEncoding(!s.decision.VideoCopy)
-	s.stopRunLocked()
+	// Keep a delivered rendition alive while a replacement starts at the exact
+	// requested segment. A second switch retires the preceding overlap first.
+	s.stopHandoffLocked()
+	overlap := s.cur != nil && !s.cur.finished && !s.cur.stopped && s.cur.track != s.wantTrack && len(s.rungs) > 1 && !s.liveInput && !s.cur.rtx
+	if overlap {
+		s.handoff = s.cur
+		s.handoffAt = time.Now()
+		s.cur = nil
+		if s.handoff.paused {
+			if s.handoff.proc.Resume() == nil {
+				s.handoff.paused = false
+			}
+		}
+	} else {
+		s.stopRunLocked()
+	}
+	started := false
+	defer func() {
+		if !started && s.cur == nil && s.handoff != nil {
+			s.cur = s.handoff
+			s.handoff = nil
+		}
+	}()
+
 	// This start replaces any throttle resume. Clear it before waiting on
 	// the old process: a collector can take the lock during that wait and
 	// would otherwise start the old lead as a second run.
@@ -545,6 +572,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	}
 	r.proc = proc
 	s.cur = r
+	started = true
 	// A previous run's EOF does not bound the replacement. The copy of a
 	// short title can finish before a governor clamp restarts at an earlier
 	// segment, and a DASH seek can end on an empty trailing fragment. The
@@ -591,6 +619,11 @@ func (s *Session) chunkedLocked(d core.Decision) bool {
 // stopRunLocked detaches the current run immediately. Process reaping happens
 // outside the session lock and is included in Close's watcher barrier.
 func (s *Session) stopRunLocked() {
+	s.stopHandoffLocked()
+	s.stopCurrentRunLocked()
+}
+
+func (s *Session) stopCurrentRunLocked() {
 	reason := s.traceStop
 	s.traceStop = ""
 	r := s.cur
@@ -686,4 +719,41 @@ func (s *Session) noteEncoder(started bool, args []string) {
 		return
 	}
 	s.m.opts.onEncoder(s.id, started, strings.Join(redactedRTXArgs(args), " "))
+}
+
+// stopHandoffLocked uses the normal owned stop/reaping path. Close therefore
+// drains both processes and their readers through the same lifetime barrier.
+func (s *Session) stopHandoffLocked() {
+	if s.handoff == nil {
+		return
+	}
+	current := s.cur
+	s.cur = s.handoff
+	s.handoff = nil
+	s.stopCurrentRunLocked()
+	s.cur = current
+}
+
+func (s *Session) advanceHandoffLocked(r *run) {
+	if s.handoff == nil {
+		return
+	}
+	if s.cur == r && r.produced > 0 && r.track >= 0 && r.track < len(s.done) && s.done[r.track][r.startSeg] {
+		s.stopHandoffLocked()
+		return
+	}
+	// A failed replacement cannot hold two processes indefinitely. Bound
+	// overlap to five seconds and the same small read-ahead as normal playback.
+	if time.Since(s.handoffAt) > 5*time.Second {
+		s.stopHandoffLocked()
+		return
+	}
+	old := s.handoff
+	if !old.paused && old.maxDone-s.lastReq > s.aheadLimit() {
+		if old.proc.Pause() == nil {
+			old.paused = true
+		} else {
+			s.stopHandoffLocked()
+		}
+	}
 }

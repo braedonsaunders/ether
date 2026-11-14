@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -105,6 +106,12 @@ func (s *Service) FilterDiscoveryCurrent(ctx context.Context, items []core.Title
 func (s *Service) JudgedOnFacts(ctx context.Context) func(core.Title) bool {
 	snap := s.snapshotFor(ctx)
 	return func(t core.Title) bool {
+		// Digital-mode movies use indexed home-date evidence exclusively.
+		// Their genres, names and credits cannot affect this decision. Old
+		// read-only schemas still run the legacy release matcher.
+		if s.hasGateTable && t.Type == core.TypeMovie && snap.availability.ModeFor(hiddenMovies) == config.ModeDigital {
+			return false
+		}
 		return !snap.upcomingMovie(t) && evidenceWindow(t, snap.now, snap.availability)
 	}
 }

@@ -217,6 +217,10 @@ type Channel struct {
 	adult bool
 }
 type Source struct {
+	LoginPool    bool            `json:"loginPool,omitempty"`
+	Logins       []ProviderLogin `json:"logins,omitempty"`
+	loginStreams map[string]map[string]string
+
 	Disabled bool `json:"disabled,omitempty"`
 	// LiveTV defaults to true for existing connections; VOD is opt-in.
 	LiveTV      *bool      `json:"useLiveTV,omitempty"`
@@ -366,9 +370,9 @@ type Policy struct {
 	channelSet map[string]struct{} // Channels as a set for long lists; see indexChannels
 }
 type Options struct {
-	Enabled   func() bool
-	NewTimer  func(time.Duration) *time.Timer
-	NewTicker func(time.Duration) *time.Ticker
+	ActivityChanged func(bool) // worker lifetime transition after channels appear or disappear
+	NewTimer        func(time.Duration) *time.Timer
+	NewTicker       func(time.Duration) *time.Ticker
 
 	VODChanged      func() // provider index or connection changed
 	SessionsChanged func() // viewer live sessions started, stopped or expired
@@ -440,4 +444,14 @@ type SessionInfo struct {
 	Channel         Channel         `json:"channel"`
 	Programme       *Programme      `json:"programme,omitempty"`
 	StartedAt       time.Time       `json:"startedAt"`
+}
+
+// ProviderLogin adds an account without importing another lineup.
+type ProviderLogin struct {
+	ID          string           `json:"id"`
+	Username    string           `json:"username,omitempty"`
+	Password    string           `json:"password,omitempty"`
+	PlaylistURL string           `json:"playlistUrl,omitempty"`
+	Account     *ProviderAccount `json:"account,omitempty"`
+	Error       string           `json:"error,omitempty"`
 }

@@ -427,6 +427,12 @@ func seedFourShowcaseChannels(t *testing.T, dataDir string, cat core.Catalog, no
 		db.Close()
 		t.Fatal(err)
 	}
+	if err := ltv.AddShowcaseDefaults(ctx); err != nil {
+		ltv.Close()
+		oa.Close()
+		db.Close()
+		t.Fatal(err)
+	}
 	oa.Start()
 	for deadline := time.Now().Add(15 * time.Second); ; {
 		var live int

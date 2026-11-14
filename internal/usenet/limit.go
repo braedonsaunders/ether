@@ -13,10 +13,10 @@ import (
 // (400/502 greeting, or 481/482 naming connections) caps the pool:
 //
 //   - When the server states its limit N ("connection limit (N)", "max N
-//     connections"), the pool never runs above N minus ~10% headroom (at
-//     least one slot), leaving room for sockets the server is still tearing
+//     connections"), the pool never runs above N minus one connection,
+//     leaving room for sockets the server is still tearing
 //     down. That ceiling only ever goes down for the life of the pool.
-//   - Whether or not N is stated, the pool is also capped at what the server
+//   - When no limit is stated, the pool is capped at what the server
 //     was carrying when it refused, and widens by one connection per widen
 //     step while requests succeed, until the next refusal or the configured
 //     count (or ceiling) is reached.
@@ -141,7 +141,7 @@ func statedConnLimit(err error) int {
 
 // limitCeiling is the most connections Ether runs against a stated limit.
 func limitCeiling(stated int) int {
-	return max(1, stated-max(1, stated/10))
+	return max(1, stated-1)
 }
 
 // effectiveLocked is the connection count the semaphore runs at: the target,
@@ -209,10 +209,12 @@ func (p *pool) teardownLocked(now time.Time) bool {
 func (p *pool) refused(err error, live int) bool {
 	t := &p.o.limits
 	now := time.Now()
+	stated := statedConnLimit(err)
 	p.mu.Lock()
-	teardown := p.teardownLocked(now)
+	// An explicit ceiling remains authoritative during local socket teardown.
+	teardown := stated == 0 && p.teardownLocked(now)
 	if teardown {
-		p.limit.dialAfter = later(p.limit.dialAfter, now.Add(t.refusalPause))
+		p.limit.dialAfter = later(p.limit.dialAfter, now.Add(limitJitter(t.refusalPause, t.refusalPause*2)))
 	}
 	p.mu.Unlock()
 	if teardown {
@@ -221,7 +223,6 @@ func (p *pool) refused(err error, live int) bool {
 		return true
 	}
 	p.limitRefusals.Add(1)
-	stated := statedConnLimit(err)
 	p.mu.Lock()
 	if stated > 0 {
 		c := limitCeiling(stated)
@@ -229,8 +230,10 @@ func (p *pool) refused(err error, live int) bool {
 			p.limit.ceiling = c
 			p.limit.stated = stated
 		}
-	}
-	if live > 0 {
+		// A stated limit is authoritative even while other handshakes are
+		// in flight. Drop any cap learned from an earlier unknown refusal.
+		p.limit.cap = 0
+	} else if live > 0 || errors.Is(err, ErrConnectionLimit) {
 		l := &p.limit
 		switch {
 		case l.refusedAt == 0 || live > l.refusedAt || l.widenStep == 0:
@@ -243,17 +246,20 @@ func (p *pool) refused(err error, live int) bool {
 		// Refusals without a widen in between (a burst of dials hitting
 		// the limit together) keep the step.
 		l.refusedAt, l.probed = live, false
-		l.cap = live
-		l.widenAt = now.Add(l.widenStep)
+		l.cap = max(live, 1)
+		l.widenAt = now.Add(limitJitter(l.widenStep, t.widenMax))
 	}
-	p.limit.dialAfter = later(p.limit.dialAfter, now.Add(t.refusalPause))
+	p.limit.dialAfter = later(p.limit.dialAfter, now.Add(limitJitter(t.refusalPause, t.refusalPause*2)))
 	configured := p.targetLocked()
 	p.mu.Unlock()
 	if n, changed := p.applySize(); changed {
 		p.log.Info("usenet: server allows fewer connections than configured; adapting",
 			"configured", configured, "using", n, "server_limit", stated)
 	}
-	return live > 0
+	// A capacity response proves the account is full even when every usable
+	// socket is still completing its handshake. Scheduling those completions
+	// must not turn the same response into a provider/credential failure.
+	return live > 0 || errors.Is(err, ErrConnectionLimit) || stated > 0
 }
 
 // widenLocked steps an unknown-limit cap up by one after a success, at most
@@ -268,7 +274,7 @@ func (p *pool) widenLocked(now time.Time) bool {
 	}
 	p.limit.cap++
 	p.limit.probed = true
-	p.limit.widenAt = now.Add(p.limit.widenStep)
+	p.limit.widenAt = now.Add(limitJitter(p.limit.widenStep, p.o.limits.widenMax))
 	top := p.targetLocked()
 	if c := p.limit.ceiling; c > 0 {
 		top = min(top, c)
@@ -340,4 +346,9 @@ func later(a, b time.Time) time.Time {
 		return b
 	}
 	return a
+}
+
+// limitJitter spreads capacity retries across clients sharing an account.
+func limitJitter(d, cap time.Duration) time.Duration {
+	return min(d+time.Duration(rand.Float64()*float64(d)/8), cap)
 }

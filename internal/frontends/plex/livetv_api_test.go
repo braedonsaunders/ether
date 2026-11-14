@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -370,6 +371,17 @@ func TestLiveTVProviderRequiresAccessibleEnabledChannel(t *testing.T) {
 	if visible(friendToken) {
 		t.Fatal("empty viewer allow-list advertised Live TV")
 	}
+	if err := service.DeleteChannel(ctx, channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	if visible(ownerToken) || visible(friendToken) {
+		t.Fatal("empty lineup advertised Live TV")
+	}
+	dvrs := f.request(t, "GET", "/livetv/dvrs", map[string]string{"Accept": "application/json"})
+	if dvrs.Code != http.StatusOK || decodeJSON(t, dvrs)["size"].(float64) != 0 {
+		t.Fatalf("last deletion left a DVR: %d %s", dvrs.Code, dvrs.Body.String())
+	}
+
 }
 
 func TestLiveTVProviderAfterXtreamLiveImportDisabled(t *testing.T) {
@@ -812,4 +824,71 @@ func liveRefreshedAt(t *testing.T, f *fixture) float64 {
 	}
 	dvrs := decodeJSON(t, rec)["Dvr"].([]any)
 	return dvrs[0].(map[string]any)["refreshedAt"].(float64)
+}
+
+// A disabled (paused) source keeps its settings and channels, but none of its
+// channels may be listed, guided or tuned until it is enabled again.
+func TestLiveTVDisabledSourceHidesAndRefusesChannels(t *testing.T) {
+	ctx := context.Background()
+	f, service, channel := liveFixture(t)
+	input := channel.StreamURL
+	if input == "" && len(channel.StreamSources) > 0 {
+		input = channel.StreamSources[0].URL
+	}
+	other, err := service.ImportSource(ctx, livetv.Source{Name: "Other IPTV", Playlist: "#EXTM3U\n#EXTINF:-1 tvg-chno=\"8\",Other channel\n" + input + "\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setDisabled := func(id string, disabled bool) {
+		t.Helper()
+		v, err := service.ImportSource(ctx, livetv.Source{ID: id, Disabled: disabled})
+		if err != nil || v.Disabled != disabled {
+			t.Fatalf("set disabled=%v: %v %+v", disabled, err, v)
+		}
+	}
+	lineup := func() []string {
+		t.Helper()
+		r := f.request(t, "GET", liveProviderPath+"/lineups/dvr/channels", map[string]string{"Accept": "application/json"})
+		if r.Code != http.StatusOK {
+			t.Fatalf("lineup status %d: %s", r.Code, r.Body.String())
+		}
+		channels, _ := decodeJSON(t, r)["Channel"].([]any)
+		var ids []string
+		for _, c := range channels {
+			ids = append(ids, fmt.Sprint(c.(map[string]any)["id"]))
+		}
+		return ids
+	}
+	provider := func() bool {
+		t.Helper()
+		r := f.request(t, "GET", "/media/providers", map[string]string{"Accept": "application/json"})
+		return r.Code == http.StatusOK && strings.Contains(r.Body.String(), livetv.Provider)
+	}
+	tune := func() int {
+		t.Helper()
+		return f.request(t, "POST", "/livetv/dvrs/1/channels/"+url.PathEscape(channel.ID)+"/tune", map[string]string{"Accept": "application/json"}).Code
+	}
+	listed := func() bool { return slices.Contains(lineup(), channel.ID) }
+	if !listed() || len(lineup()) != 2 {
+		t.Fatalf("enabled sources not listed: %v", lineup())
+	}
+	setDisabled(channel.SourceID, true)
+	if ids := lineup(); slices.Contains(ids, channel.ID) || len(ids) != 1 {
+		t.Errorf("disabled source still listed: %v", ids)
+	}
+	if code := tune(); code == http.StatusOK {
+		t.Error("disabled source channel tuned")
+	}
+	if n := len(service.ViewingSessions()); n != 0 {
+		t.Errorf("disabled source tune left %d session(s)", n)
+	}
+	setDisabled(other.ID, true)
+	if provider() {
+		t.Error("Live TV advertised with every source disabled")
+	}
+	setDisabled(other.ID, false)
+	setDisabled(channel.SourceID, false)
+	if ok, code := listed(), tune(); !ok || code != http.StatusOK {
+		t.Fatalf("re-enabled source not restored: listed=%v tune=%d", ok, code)
+	}
 }

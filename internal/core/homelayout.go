@@ -45,6 +45,8 @@ type LayoutTuning struct {
 	Variety *float64 `json:"variety,omitempty"`
 }
 type RowPolicy struct {
+	// Nil inherits the collection setting; false explicitly disables ranked artwork.
+	RankedTop10    *bool       `json:"rankedTop10,omitempty"`
 	Row            string      `json:"row"`
 	Status         string      `json:"status"`
 	Slot           int         `json:"slot,omitempty"`

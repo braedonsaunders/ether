@@ -1,0 +1,31 @@
+.channel-describe-chat textarea {
+  height: 76px;
+  min-height: 76px;
+  resize: vertical;
+}
+.channel-build-glow {
+  position: absolute;
+  inset: -100% -20%;
+  background: conic-gradient(from 45deg, transparent, #ffffff08, transparent 40%);
+  animation: channel-orbit 24s linear infinite;
+  pointer-events: none;
+}
+.channel-build-orbit {
+  animation: channel-orbit 12s linear infinite;
+  border-top-color: #ffffff88;
+  box-shadow: 0 0 40px #a49aff18;
+}
+@keyframes channel-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .channel-build-glow,
+  .channel-build-orbit {
+    animation: none;
+  }
+}
+.channel-describe-chat header {
+  display: none;
+}

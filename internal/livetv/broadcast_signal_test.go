@@ -31,6 +31,10 @@ func TestBroadcastAllCandidatesFailUsesLiveSignal(t *testing.T) {
 		c.Look = &ChannelLook{LookID: "signal-test"}
 		c.Items[0].DurationMS = 3600000
 		c.Items[1].DurationMS = 3600000
+		if _, err := s.SaveChannel(t.Context(), c); err != nil {
+			t.Fatal(err)
+		}
+		s.ReconcileEnabled()
 		runner := &broadcastFakeRunner{}
 		format := smallBroadcastFormat()
 		planner := &scheduleBroadcastPlanner{s: s, channel: c, user: core.User{ID: 1, IsOwner: true}, format: format, runner: runner}

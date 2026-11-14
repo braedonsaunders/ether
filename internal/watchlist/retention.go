@@ -33,6 +33,9 @@ type onceForgetter interface {
 // unavailable and records its newest episode without an alert, so nothing
 // recorded before the removal is needed again.
 func forgetEpisodes(ctx context.Context, tx *sql.Tx, userID int64, key core.RatingKey) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM watchlist_warm_intents WHERE user_id=? AND item_key=? AND NOT EXISTS(SELECT 1 FROM watchlist_items WHERE user_id=? AND item_key=?)`, userID, key, userID, key); err != nil {
+		return err
+	}
 	_, err := tx.ExecContext(ctx, `DELETE FROM watchlist_episodes WHERE user_id=? AND item_key=? AND NOT EXISTS(SELECT 1 FROM watchlist_items WHERE user_id=? AND item_key=?)`, userID, key, userID, key)
 	return err
 }

@@ -10,6 +10,7 @@ import { AlertTriangle, FolderOpen, Plus, Shield, ShieldCheck, Users, X } from "
 import { useState } from "react";
 import { ChipGroup } from "../../components/fields";
 import { useViewers, viewerName } from "../../components/pickers";
+import type { RuntimeLimits } from "./types";
 import { t } from "../../i18n";
 
 export function ViewerGrantsPicker({
@@ -206,6 +207,64 @@ export function PermissionSheet({
       {needsViewers ? <ViewerGrantsPicker value={viewers} onChange={onChangeViewers} /> : null}
 
       {needsFolders ? <FolderGrantsPicker value={folders} onChange={onChangeFolders} /> : null}
+    </div>
+  );
+}
+
+export function RuntimeLimitsCard({
+  limits,
+  requested,
+}: {
+  limits?: RuntimeLimits;
+  requested?: Partial<RuntimeLimits>;
+}) {
+  if (!limits) return null;
+  const resources: { label: string; value: (l?: Partial<RuntimeLimits>) => React.ReactNode }[] = [
+    {
+      label: t("Memory (MiB)"),
+      value: (l) => (l?.memoryBytes ? l.memoryBytes / 1048576 : t("Default")),
+    },
+    { label: t("Time"), value: (l) => l?.deadline || t("Default") },
+    {
+      label: t("Work units"),
+      value: (l) =>
+        !l?.unitBudget ? t("Default") : l.unitBudget >= 2 ** 53 ? t("Unlimited") : l.unitBudget,
+    },
+    {
+      label: t("Download (GiB)"),
+      value: (l) => (l?.fetchBytes ? l.fetchBytes / 1073741824 : t("Default")),
+    },
+    {
+      label: t("Archive member (GiB)"),
+      value: (l) => (l?.archiveMemberBytes ? l.archiveMemberBytes / 1073741824 : t("Default")),
+    },
+    {
+      label: t("Archive total (GiB)"),
+      value: (l) => (l?.archiveExpandedBytes ? l.archiveExpandedBytes / 1073741824 : t("Default")),
+    },
+    { label: t("Archive members"), value: (l) => l?.archiveMembers || t("Default") },
+  ];
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <h3 className="mb-2 text-sm font-medium">{t("Limits")}</h3>
+      <table className="w-full text-xs">
+        <thead>
+          <tr>
+            <th />
+            <th>{t("Requested")}</th>
+            <th>{t("Granted")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {resources.map((resource) => (
+            <tr key={resource.label}>
+              <th className="py-1 text-left">{resource.label}</th>
+              <td className="text-center">{resource.value(requested)}</td>
+              <td className="text-center">{resource.value(limits)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

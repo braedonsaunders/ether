@@ -90,15 +90,13 @@ describe("Quality profile import from guides", () => {
     expect(option).toHaveTextContent("3 own · 32 default");
   });
 
-  it("refuses to save a profile no release can satisfy", async () => {
+  it("warns and permits a profile with an unreachable preferred score", async () => {
     const { fake } = renderApp("/quality/profiles");
     const drawer = await openImport();
     fireEvent.click(await within(drawer).findByRole("button", { name: "TRaSH profile" }, WAIT));
     fireEvent.click(await screen.findByRole("option", { name: /Needs a perfect release/ }, WAIT));
-    expect(
-      await within(drawer).findByText(/minimum custom format score \(100\)/, {}, WAIT),
-    ).toBeInTheDocument();
-    expect(within(drawer).getByRole("button", { name: "Add profile" })).toBeDisabled();
+    expect(await within(drawer).findByText(/prefers a score of 100/, {}, WAIT)).toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: "Add profile" })).toBeEnabled();
     expect(imports(fake)).toHaveLength(0);
   });
 

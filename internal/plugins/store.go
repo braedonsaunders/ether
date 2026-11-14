@@ -15,6 +15,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/logredact"
+	"github.com/braedonsaunders/ether/internal/plugins/wasm"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/textclip"
 )
@@ -62,7 +63,7 @@ const (
 	// JournalSettledMaxAge is how long an undone or shadow journal entry
 	// (one undo can no longer act on) stays in the activity history.
 	JournalSettledMaxAge = 90 * 24 * time.Hour
-	MaxFetchBytes        = 10 << 20
+	MaxFetchBytes        = wasm.MaxFetchBodyBytes
 )
 
 // Grants is what the owner has granted one plugin on top of its manifest

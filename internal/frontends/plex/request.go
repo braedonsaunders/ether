@@ -62,10 +62,11 @@ type Request struct {
 	// session/segment handlers may serve a capability-scoped request.
 	Capability bool
 
-	versionItemKey frontend.RatingKey // single detail or selected queue item
-	versionFlowKey frontend.RatingKey // selected pre-play/queue item only
-	versionErr     error
-	supportAttempt string // diagnostics-only request correlation; never sent to clients
+	versionItemKey  frontend.RatingKey // single detail or selected queue item
+	versionFlowKey  frontend.RatingKey // selected pre-play/queue item only
+	configuredSlots bool               // configured identities, independent of discovery
+	versionErr      error
+	supportAttempt  string // diagnostics-only request correlation; never sent to clients
 
 	// diag is the identity the client actually sent, captured at parse time and
 	// never rewritten by synthetic-device adoption. Support events attribute to

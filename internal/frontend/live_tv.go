@@ -11,15 +11,29 @@ import (
 // LiveTVProvider is the EPG provider identifier reported on Plex Live TV routes.
 const LiveTVProvider = "tv.plex.providers.epg.xmltv:1"
 
-// LiveChannel contains public metadata and a neutral channel identifier.
-// It never contains IPTV source URLs or credentials.
+// LiveGuide is an ordered owner guide descriptor. Its ID survives renames.
+type LiveGuide struct {
+	ID   string
+	Name string
+}
+
+// LiveTVGuides optionally exposes owner guides without changing channel identity.
+type LiveTVGuides interface {
+	Guides(context.Context, *core.User) ([]LiveGuide, error)
+	GuideChannels(context.Context, *core.User, string) ([]LiveTVChannel, error)
+}
+
+// LiveChannel contains public metadata, never provider URLs or credentials.
 type LiveChannel struct {
+	Guides                               []LiveGuide
 	ID, Number, Name, Kind, Logo, Rating string
 	Group                                string
 	Favorite                             bool
 	Images                               []Image
 }
 type LiveProgramme struct {
+	Genres                          []string
+	MediaType                       string
 	ID, ChannelID                   string
 	Start, End                      time.Time
 	Item                            core.RatingKey
@@ -109,6 +123,8 @@ type LiveTVTuneDiagnosis struct {
 // Viewer must be from the authenticated session. GUID resolution never returns
 // channels or programmes that the viewer is not permitted to see.
 type LiveTV interface {
+	// Enabled reports whether any channels exist, independent of viewer access.
+	Enabled() bool
 	Channels(context.Context, *core.Viewer) ([]LiveChannel, error)
 	Guide(context.Context, *core.Viewer, LiveGuideQuery) ([]LiveProgramme, error)
 	ResolveChannelGUID(context.Context, *core.Viewer, string) (LiveChannel, error)
@@ -184,4 +200,16 @@ func ShowcaseLogo(c LiveTVChannel) (repoPath string, png []byte, ok bool) {
 		return showcaseLogoFunc(c)
 	}
 	return "", nil, false
+}
+
+// LiveTVSearch is an optional indexed, policy-filtered search across visible guides.
+// Results are bounded, use the ordinary Live TV IDs, and are not a total count.
+type LiveTVSearch interface {
+	SearchLiveTV(context.Context, *core.Viewer, string, int) (LiveSearchResults, error)
+}
+type LiveSearchResults struct {
+	Partial           bool // Preparation is in progress; counts are never authoritative.
+	Channels          []LiveTVChannel
+	Programmes        []LiveTVProgramme
+	ProgrammeChannels []LiveTVChannel
 }

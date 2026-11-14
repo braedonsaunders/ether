@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/logredact"
 )
 
 // Test checks the owner's OpenSubtitles settings: with account credentials
@@ -32,29 +33,22 @@ func testSubDL(ctx context.Context, hc *http.Client, base string, cfg config.Sub
 	if key == "" {
 		return errors.New("a SubDL API key is required")
 	}
-	base = strings.TrimSuffix(base, "/")
-	u := base + "/subtitles?api_key=" + url.QueryEscape(key) + "&type=movie&film_name=inception"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req, err := subdlSearchRequest(ctx, base, key, "Ether v1", url.Values{
+		"client":        {subdlClient},
+		"type":          {"movie"},
+		"film_name":     {"inception"},
+		"subs_per_page": {"1"},
+	})
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-API-Key", key)
-	req.Header.Set("User-Agent", "Ether v1")
-	req.Header.Set("Accept", "application/json")
 	resp, err := hc.Do(req)
 	if err != nil {
-		return fmt.Errorf("subdl: %w", err)
+		return logredact.TransportError(err, "subdl", nil)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	switch {
-	case resp.StatusCode == http.StatusOK:
-		return nil
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return errors.New("SubDL rejected the API key")
-	default:
-		return fmt.Errorf("subdl: %s: %s", resp.Status, truncate(string(body), 120))
-	}
+	_, err = readSubDLSearch(resp)
+	return err
 }
 
 func test(ctx context.Context, hc *http.Client, base string, cfg config.OpenSubtitles) error {

@@ -23,7 +23,7 @@ func (s *Service) NoteClientActivity() {
 	idle := (s.lastClientActivity.IsZero() || now.Sub(s.lastClientActivity) >= clientIdleWindow) && len(s.sessions) == 0
 	s.lastClientActivity = now
 	s.mu.Unlock()
-	if idle && s.ctx.Err() == nil {
+	if idle && s.serviceContext().Err() == nil {
 		select {
 		case s.activityWake <- struct{}{}:
 		default:

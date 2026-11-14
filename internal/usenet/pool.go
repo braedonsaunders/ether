@@ -338,6 +338,13 @@ func (p *pool) dialNew(ctx context.Context, probe bool) (*Conn, error) {
 		p.mu.Unlock()
 		return nil, ErrPoolClosed
 	}
+	// Slots acquired before a concurrent refusal may exceed the newly learned
+	// size. Count pending handshakes under the same lock as the ceiling so
+	// those old admissions cannot start another over-limit connection.
+	if p.live >= p.effectiveLocked() {
+		p.mu.Unlock()
+		return nil, errAtLimit
+	}
 	p.live++
 	p.limit.dialing++
 	p.mu.Unlock()
@@ -365,7 +372,7 @@ func (p *pool) dialNew(ctx context.Context, probe bool) (*Conn, error) {
 			p.errs.Add(1)
 			d := p.brk.authFailure(err)
 			p.log.Error("usenet: provider rejected credentials; disabled until a login probe succeeds or its settings change", "err", err, "retry_in", d)
-		case errors.Is(err, ErrServiceUnavailable) && p.refused(err, p.liveCount()):
+		case errors.Is(err, ErrServiceUnavailable) && p.refused(err, p.establishedCount()):
 			// The server is up and serving our other connections (the
 			// account is at its real connection limit, now learned), or it
 			// is still tearing down a socket we closed. Either way keep the
@@ -374,7 +381,7 @@ func (p *pool) dialNew(ctx context.Context, probe bool) (*Conn, error) {
 			return nil, fmt.Errorf("%w: %w", errAtLimit, err)
 		default:
 			p.errs.Add(1)
-			if !errors.Is(err, ErrServiceUnavailable) {
+			if !errors.Is(err, ErrServiceUnavailable) || errors.Is(err, ErrConnectionLimit) {
 				p.dialFailed()
 			}
 			if d := p.brk.connFailure(err); d > 0 {
@@ -390,10 +397,11 @@ func (p *pool) dialNew(ctx context.Context, probe bool) (*Conn, error) {
 	return c, nil
 }
 
-func (p *pool) liveCount() int {
+// establishedCount excludes handshakes that have not proved usable yet.
+func (p *pool) establishedCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.live
+	return p.live - p.limit.dialing
 }
 
 // put returns a connection and its slot. Broken connections are closed.

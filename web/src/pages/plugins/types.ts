@@ -90,7 +90,7 @@ export interface PluginManifest {
     license?: string;
     repo?: string;
     icon?: string;
-    runtime?: { kind?: string; entry?: string; module?: string };
+    runtime?: { kind?: string; entry?: string; module?: string; limits?: Partial<RuntimeLimits> };
     /** How to run a remote plugin's program (sidecars). */
     sidecar?: {
       docker?: string;
@@ -109,7 +109,18 @@ export interface PluginManifest {
   };
 }
 
+export interface RuntimeLimits {
+  fetchBytes?: number;
+  archiveMemberBytes?: number;
+  archiveExpandedBytes?: number;
+  archiveMembers?: number;
+  memoryBytes: number;
+  deadline: string;
+  unitBudget: number;
+}
+
 export interface PluginDetail extends PluginSummary {
+  runtimeLimits?: RuntimeLimits;
   manifest: PluginManifest;
   permissions: {
     lines: string[];
@@ -140,6 +151,7 @@ export interface PluginDetail extends PluginSummary {
 }
 
 export interface InstallPreview {
+  runtimeLimits?: RuntimeLimits;
   manifest: PluginManifest;
   /** Manifest summary with any "$t:" reference resolved by the server. */
   summary?: string;
