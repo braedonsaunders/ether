@@ -734,6 +734,12 @@ func (s *Session) serveFiles(w http.ResponseWriter, r *http.Request, paths []str
 // serveCounted is http.ServeContent with delivery goodput measured over
 // the write phase only (the wait for ffmpeg already happened).
 func (s *Session) serveCounted(w http.ResponseWriter, r *http.Request, name string, mod time.Time, content io.ReadSeeker, t, n int) {
+	if s.diagnosticsEnabled {
+		dw := &diagnosticWriter{ResponseWriter: w, session: s, track: t, segment: n, resource: name}
+		defer dw.finish()
+		w = dw
+	}
+
 	if r.Method != http.MethodGet || n == InitSegment {
 		http.ServeContent(w, r, name, mod, content)
 		return

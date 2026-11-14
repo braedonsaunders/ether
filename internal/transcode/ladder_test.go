@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -349,5 +351,74 @@ func TestBuildRungsHealthyLinkKeepsOriginal(t *testing.T) {
 	file := HLSCopyPeakKbps(info, 0)
 	if dropped := info.BitrateKbps - base.avgKbps; dropped <= 0 || base.peakKbps != file-dropped {
 		t.Fatalf("base peak %d avg %d, file peak %d", base.peakKbps, base.avgKbps, file)
+	}
+}
+
+// One contract covers the MSE startup invariants: metadata is free, first
+// selected rendition starts once, and every rung advertises the same clock.
+func TestMSELazyContinuousRenditions(t *testing.T) {
+	fr := newFakeRunner()
+	m := newTestManager(t, fr, config.Transcode{ABRLadder: true})
+	req := ladderEncodeRequest(t, "mse-lazy", 10*time.Minute)
+	req.LazyStart, req.Continuous, req.Diagnostics = true, true, true
+	req.Decision.Container = ContainerFMP4
+	s := startSession(t, m, req)
+	if n := fr.startCount(); n != 0 {
+		t.Fatalf("metadata started %d encoders", n)
+	}
+	var clock string
+	for _, rung := range s.Rungs() {
+		if rung.OutputCodecs != "" {
+			t.Fatal("unproduced output claims verified codecs")
+		}
+		rec := httptest.NewRecorder()
+		s.ServeRungPlaylist(rec, httptest.NewRequest("GET", "/"+rung.ID+"/index.m3u8", nil), rung.ID)
+		playlist := rec.Body.String()
+		if !strings.Contains(playlist, "#EXT-X-MAP") || strings.Contains(playlist, "#EXT-X-DISCONTINUITY") {
+			t.Fatalf("noncontinuous fMP4: %s", playlist)
+		}
+		var durations []string
+		for _, line := range strings.Split(playlist, "\n") {
+			if strings.HasPrefix(line, "#EXTINF") {
+				durations = append(durations, line)
+			}
+		}
+		got := strings.Join(durations, "\n")
+		if clock == "" {
+			clock = got
+		} else if got != clock {
+			t.Fatal("rung segment clocks differ")
+		}
+	}
+	if fr.startCount() != 0 {
+		t.Fatal("playlist GET started encoder")
+	}
+	rungs := s.Rungs()
+	chosen := rungs[len(rungs)-1].ID
+	rec := httptest.NewRecorder()
+	s.ServeRungSegment(rec, httptest.NewRequest("GET", "/"+chosen+"/init.mp4", nil), chosen, InitSegment)
+	if rec.Code != 200 || fr.startCount() != 1 {
+		t.Fatalf("selected init status=%d starts=%d", rec.Code, fr.startCount())
+	}
+	if !strings.Contains(argValue(fr.lastStart(), "-hls_segment_filename"), "rung-"+chosen) {
+		t.Fatal("initial encoder started on wrong rung")
+	}
+	// Encoder restart/fallback metadata must come from that run's real init,
+	// even when the first init used a different profile or output dimensions.
+	evidence := &Session{diagnosticsEnabled: true, container: ContainerFMP4, outputCodecs: map[int]string{}, outputInit: map[int]string{}, outputAudioChannels: map[int]int{}, sessionAdaptation: sessionAdaptation{rungs: []rung{{}}}}
+	dir := t.TempDir()
+	for n, c := range []struct {
+		entry []byte
+		codec string
+		width int
+	}{{avc1Entry(1280, 720, 0x64, 0, 0x28), "avc1.640028", 1280}, {avc1Entry(640, 360, 0x42, 0, 0x1e), "avc1.42001e", 640}} {
+		file := filepath.Join(dir, fmt.Sprintf("init-%d.mp4", n))
+		if err := os.WriteFile(file, testInit("vide", 90000, 0, c.entry), 0600); err != nil {
+			t.Fatal(err)
+		}
+		evidence.noteOutputCodecsLocked(0, file)
+		if evidence.outputCodecs[0] != c.codec || evidence.rungs[0].width != c.width {
+			t.Fatalf("unverified/stale output metadata: %s %+v", evidence.outputCodecs[0], evidence.rungs[0])
+		}
 	}
 }

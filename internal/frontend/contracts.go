@@ -721,6 +721,12 @@ const (
 // StreamRequest describes output, not an upstream URL or credential. The
 // broker owns the input, decision and stream grant.
 type StreamRequest struct {
+	// Track changes are source stream indices, validated before output restart.
+	AudioStream, SubtitleStream *int
+	// LazyStart leaves the encoder idle until a rendition is requested.
+	LazyStart bool
+	// Continuous uses one uniform segment clock, without adaptive discontinuities.
+	Continuous      bool
 	Format          StreamFormat
 	Position        time.Duration
 	SegmentDuration time.Duration
@@ -751,10 +757,11 @@ type PlanRequest struct {
 	Intent  PlayIntent
 }
 type PlayPlan struct {
-	ID        string
-	Estimated bool
-	Media     core.MediaInfo
-	Decision  core.Decision
+	SourceChosenAt, DecisionAt time.Time
+	ID                         string
+	Estimated                  bool
+	Media                      core.MediaInfo
+	Decision                   core.Decision
 	// Alternatives are evaluated against this same source and client policy.
 	// DirectPlay, DirectStream, Transcoding are evaluated against this same source.
 	DirectPlay, DirectStream, Transcoding bool
@@ -990,4 +997,9 @@ type RowReceiptIssuer interface {
 // FilterFacetReader supplies bounded indexed filter values without a title walk.
 type FilterFacetReader interface {
 	FilterFacets(context.Context, *Viewer, Device, string, string) ([]FacetValue, error)
+}
+
+// StreamDecisionReader returns the admitted decision after an authorized restart.
+type StreamDecisionReader interface {
+	StreamDecision(context.Context, SessionAccess, string) (core.Decision, error)
 }

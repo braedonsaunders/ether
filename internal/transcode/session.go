@@ -25,6 +25,12 @@ import (
 // track per representation (video, audio); ffmpeg's dash muxer writes short
 // chunks that the session regroups into numbered segments by timestamp.
 type Session struct {
+	diagnosticsEnabled      bool
+	preparation             []core.HLSPreparationEvent
+	diagnosticRecords       []core.HLSDiagnosticRecord
+	outputCodecs            map[int]string
+	outputInit              map[int]string
+	outputAudioChannels     map[int]int
 	resumeWarm              *Session
 	resumeWarmAt            int
 	resumeWarmUsed          bool

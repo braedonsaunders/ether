@@ -117,6 +117,16 @@ func (s surface) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	return s.broker.StartStream(ctx, a, id, r)
 }
+func (s surface) StreamDecision(ctx context.Context, a frontend.SessionAccess, id string) (core.Decision, error) {
+	if a.Protocol != s.protocol {
+		return core.Decision{}, core.ErrUnauthorized
+	}
+	if reader, ok := s.broker.(frontend.StreamDecisionReader); ok {
+		return reader.StreamDecision(ctx, a, id)
+	}
+	return core.Decision{}, core.ErrNotAvailable
+}
+
 func (s surface) SubtitleURL(ctx context.Context, a frontend.SessionAccess, id string, index int, format string) (string, error) {
 	if a.Protocol != s.protocol {
 		return "", core.ErrUnauthorized

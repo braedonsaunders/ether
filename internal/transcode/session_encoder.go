@@ -567,6 +567,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		s.decision.Enhancement.State = "starting"
 		s.decision.Enhancement.Reason = "waiting for enhanced segments from NVEncC/NGX"
 	}
+	s.preparationLocked("encoder-start", r.track)
 	r.proc = proc
 	s.cur = r
 	started = true

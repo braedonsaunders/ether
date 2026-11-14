@@ -447,3 +447,10 @@ func (s scorecardSessionWrapper) TrailerPreviewAvailable() bool {
 	}
 	return false
 }
+
+func (s scorecardSessionWrapper) StreamDecision(ctx context.Context, a frontend.SessionAccess, id string) (core.Decision, error) {
+	if reader, ok := s.embeddedScorecardSessions.(frontend.StreamDecisionReader); ok {
+		return reader.StreamDecision(ctx, a, id)
+	}
+	return core.Decision{}, core.ErrNotAvailable
+}

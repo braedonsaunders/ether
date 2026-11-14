@@ -126,3 +126,8 @@ var IsGrantCredential = core.IsGrantCredential
 
 // HomeSituation is the protocol-neutral Home presentation context.
 type HomeSituation = core.HomeSituation
+
+// HLS output evidence is shared with adapters without exposing the encoder.
+type HLSRung = core.HLSRung
+type HLSDiagnosticSession = core.HLSDiagnosticSession
+type HLSPreparationEvent = core.HLSPreparationEvent

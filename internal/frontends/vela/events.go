@@ -13,15 +13,36 @@ func (i *instance) watchSession(viewer *frontend.Viewer, device frontend.Device,
 	ctx, cancel := context.WithCancel(i.ctx)
 	events, err := i.host.Sessions.Events(ctx, frontend.EventScope{Viewer: viewer, Protocol: "vela", SessionID: id, Device: device})
 	if err != nil {
-		cancel()
-		return
+		if !s.mse {
+			cancel()
+			return
+		}
+		events = nil
 	}
 	go func() {
 		defer cancel()
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
+
+		var output <-chan time.Time
+		if s.mse {
+			t := time.NewTicker(250 * time.Millisecond)
+			defer t.Stop()
+			output = t.C
+		}
 		for {
 			select {
+
+			case <-output:
+				s.mu.Lock()
+				if !s.ended.IsZero() {
+					s.mu.Unlock()
+					return
+				}
+				if i.refreshOutput(ctx, id, s) {
+					s.publish("plan")
+				}
+				s.mu.Unlock()
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
@@ -49,6 +70,10 @@ func (i *instance) watchSession(viewer *frontend.Viewer, device frontend.Device,
 				}
 			case e, ok := <-events:
 				if !ok {
+					if s.mse {
+						events = nil
+						continue
+					}
 					return
 				}
 				if e.SessionID != id {

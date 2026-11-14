@@ -849,6 +849,9 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		// the playlist clock), or with no later keyframe the copy published
 		// nothing and the playlist's tail failed. An unindexed copy keeps one
 		// copy plan from its first segment instead, like fMP4 and Matroska.
+		if req.Continuous {
+			adapt.FastStart, adapt.Governor = false, false
+		}
 		fastStart := !req.LiveInput && adapt.FastStart && v != nil && (!d.VideoCopy || (d.Container == ContainerMPEGTS && len(req.Info.Keyframes) > 0))
 		plan = buildTimeline(span, segDur, timelineOptions{
 			steadyMode:      steadyMode,
@@ -947,6 +950,10 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		total:                   total,
 		container:               d.Container,
 		proto:                   proto,
+		diagnosticsEnabled:      req.Diagnostics,
+		outputCodecs:            map[int]string{},
+		outputInit:              map[int]string{},
+		outputAudioChannels:     map[int]int{},
 		requireIndependentProof: req.RequireIndependentProof,
 		log:                     m.log.With("session", id, "initialRelease", req.ReleaseID),
 		created:                 time.Now(),
@@ -1034,7 +1041,7 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 	var err error
 	// A ladder has no selected rendition until the first media/init GET.
 	// Avoid encoding an expensive base only to discard it at that GET.
-	if len(rungs) <= 1 || len(warmAt) > 0 {
+	if !req.LazyStart && (len(rungs) <= 1 || len(warmAt) > 0) {
 		err = s.startRunForLocked(startSeg, false, "session start")
 	}
 	s.mu.Unlock()

@@ -16,9 +16,12 @@ type HLSRung struct {
 	AverageBandwidth int
 	Width            int
 	Height           int
-	// Codecs is an RFC 6381 codecs string ("avc1...,mp4a...").
-	Codecs    string
-	FrameRate float64
+	// Codecs is the planned RFC 6381 string; it may contain estimates.
+	Codecs string
+	// OutputCodecs is read from an actually produced init segment; empty until known.
+	OutputCodecs        string
+	OutputAudioChannels int
+	FrameRate           float64
 }
 
 // HLSLadderSession is an HLSSession that can serve a multi-rung ABR

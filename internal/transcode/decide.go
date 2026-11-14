@@ -767,6 +767,10 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 		}
 	}
 	d.ToneMap = v != nil && encodedRange(v) != rangeSDR && !keepHDR
+	if d.ToneMap {
+		heightCap = minPositive(heightCap, opts.ToneMapMaxHeight)
+		bitrateCap = minPositive(bitrateCap, opts.ToneMapMaxBitrateKbps)
+	}
 	// A re-encode drops DV RPUs and enhancement layers: kept HDR is the base
 	// layer's HDR10/HLG.
 
@@ -843,6 +847,9 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 	parts = append(parts, fmt.Sprintf("video -> %s %dp %d kbps", codec, height, videoKbps))
 	if d.ToneMap {
 		parts = append(parts, fmt.Sprintf("tone-mapping %s to SDR", hdrLabel(v)))
+		if opts.ToneMapMaxHeight > 0 || opts.ToneMapMaxBitrateKbps > 0 {
+			parts = append(parts, "tone-map output limited by client processing budget")
+		}
 	} else if keepHDR {
 		parts = append(parts, "keeping HDR")
 	}

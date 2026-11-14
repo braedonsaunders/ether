@@ -25,8 +25,13 @@ type HLSRamp struct {
 }
 
 type HLSRequest struct {
-	Ramp   HLSRamp    `json:",omitzero"`
-	Resume *HLSResume `json:",omitempty"`
+	// LazyStart defers the first encoder until the client selects a rendition.
+	LazyStart   bool
+	Diagnostics bool
+	// Continuous disables ramps and governor changes that introduce discontinuities.
+	Continuous bool
+	Ramp       HLSRamp    `json:",omitzero"`
+	Resume     *HLSResume `json:",omitempty"`
 	// RecoveryStart is trusted composition only; nil preserves legacy behavior.
 	RecoveryStart *RecoveryStart `json:",omitempty"`
 
@@ -154,6 +159,9 @@ type SubtitleExtractor interface {
 
 // DecideOptions are per-request choices from the Plex decision request.
 type DecideOptions struct {
+	// ToneMap limits apply only to HDR-to-SDR video conversion, never direct
+	// playback or copy-only remux. Zero preserves the existing output budget.
+	ToneMapMaxHeight, ToneMapMaxBitrateKbps int
 	// DisableVideoTranscode prevents optional enhancement from promoting direct playback.
 	DisableVideoTranscode bool
 
