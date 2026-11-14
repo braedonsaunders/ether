@@ -59,6 +59,8 @@ type ToolRequest struct {
 	Tools       []ToolDef
 	Temperature float64
 	MaxTokens   int
+	// ToolChoice is empty for automatic selection, "required", or a tool name.
+	ToolChoice string
 }
 
 // EventKind classifies stream events.
@@ -384,6 +386,13 @@ func (c *Client) streamOpenAI(ctx context.Context, base string, cfg config.LLM, 
 	if len(tools) > 0 {
 		body["tools"] = tools
 	}
+	if req.ToolChoice != "" {
+		choice := any(req.ToolChoice)
+		if req.ToolChoice != "required" {
+			choice = map[string]any{"type": "function", "function": map[string]any{"name": req.ToolChoice}}
+		}
+		body["tool_choice"] = choice
+	}
 	if req.Temperature != 0 {
 		body["temperature"] = req.Temperature
 	}
@@ -553,6 +562,13 @@ func (c *Client) streamOpenAIResponses(ctx context.Context, base string, cfg con
 	}
 	if len(tools) > 0 {
 		body["tools"] = tools
+	}
+	if req.ToolChoice != "" {
+		choice := any(req.ToolChoice)
+		if req.ToolChoice != "required" {
+			choice = map[string]any{"type": "function", "name": req.ToolChoice}
+		}
+		body["tool_choice"] = choice
 	}
 	if req.MaxTokens > 0 {
 		body["max_output_tokens"] = req.MaxTokens
@@ -746,6 +762,13 @@ func (c *Client) streamAnthropic(ctx context.Context, base string, cfg config.LL
 	if len(tools) > 0 {
 		body["tools"] = tools
 	}
+	if req.ToolChoice != "" {
+		choice := map[string]any{"type": "any"}
+		if req.ToolChoice != "required" {
+			choice = map[string]any{"type": "tool", "name": req.ToolChoice}
+		}
+		body["tool_choice"] = choice
+	}
 	rc, err := c.openStream(ctx, base+"/messages", anthropicHeaders(cfg.APIKey), body)
 	if err != nil {
 		return err
@@ -914,6 +937,13 @@ func (c *Client) streamGemini(ctx context.Context, base string, cfg config.LLM, 
 	}
 	if len(decls) > 0 {
 		body["tools"] = []map[string]any{{"functionDeclarations": decls}}
+	}
+	if req.ToolChoice != "" {
+		choice := map[string]any{"mode": "ANY"}
+		if req.ToolChoice != "required" {
+			choice["allowedFunctionNames"] = []string{req.ToolChoice}
+		}
+		body["toolConfig"] = map[string]any{"functionCallingConfig": choice}
 	}
 	if req.Temperature != 0 {
 		body["generationConfig"] = map[string]any{"temperature": req.Temperature}
