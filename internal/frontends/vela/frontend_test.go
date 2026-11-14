@@ -25,8 +25,51 @@ func (identityFake) GrantScope(context.Context, string, frontend.Device) (string
 func (identityFake) GrantScopeCurrent(context.Context, string, frontend.Device) (*frontend.Viewer, error) {
 	return &frontend.Viewer{ID: 1, Username: "viewer"}, nil
 }
+
+type descriptiveFake struct {
+	frontendtest.Experience
+	available bool
+	calls     int
+}
+
+func (f *descriptiveFake) DescriptiveSearchAvailable() bool { return f.available }
+func (f *descriptiveFake) DescriptiveSearch(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.SearchPage, error) {
+	f.calls++
+	return frontend.SearchPage{Continuation: frontend.ContinuationUnknown}, nil
+}
+
 func TestVelaProtocolInvariants(t *testing.T) {
 	t.Run("pairing lineage", checkPairingLineage)
+	t.Run("search capability and mode", func(t *testing.T) {
+		source := &descriptiveFake{available: true}
+		fastCalls := 0
+		source.SearchFunc = func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.SearchPage, error) {
+			fastCalls++
+			return frontend.SearchPage{Continuation: frontend.ContinuationUnknown}, nil
+		}
+		i := &instance{host: frontend.Host{Identity: identityFake{}, Experience: source}}
+		for _, mode := range []string{"descriptive", "fast"} {
+			raw := json.RawMessage(`{"query":"80s sci-fi","mode":"` + mode + `"}`)
+			r := httptest.NewRequest(http.MethodPost, "/vela/v0/search", nil)
+			r = r.WithContext(context.WithValue(r.Context(), bodyKey{}, raw))
+			r.Header.Set("Authorization", "Bearer token")
+			r.Header.Set("X-Vela-Device-Id", "device")
+			w := httptest.NewRecorder()
+			i.search(w, r)
+			if w.Code != 200 {
+				t.Fatalf("%s search: %d", mode, w.Code)
+			}
+		}
+		if source.calls != 1 || fastCalls != 1 {
+			t.Fatal("search modes shared the wrong source")
+		}
+		for _, available := range []bool{true, false} {
+			source.available = available
+			if got := i.capabilities()["features"].(object)["descriptiveSearch"].(object)["available"]; got != available {
+				t.Fatal("descriptive capability does not match source availability")
+			}
+		}
+	})
 	t.Run("broker media mount", func(t *testing.T) {
 		mediaPath := "/sessions/media/session/grant/master.m3u8"
 		mounted := false

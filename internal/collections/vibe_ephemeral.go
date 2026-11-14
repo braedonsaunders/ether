@@ -176,7 +176,7 @@ func vibeOwner(user *core.User) int64 {
 // VibeCollection implements core.VibeSearcher.
 func (s *Service) VibeCollection(ctx context.Context, user *core.User, query string) (*core.Collection, []core.Title, bool, error) {
 	v, ok := ParseVibe(query)
-	if !ok {
+	if !ok && !core.LocalResponse(ctx) {
 		if r := s.vibeRefinerDep(); r != nil {
 			bctx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
 			rv, rok, err := r.RefineVibe(bctx, user, query)
@@ -192,11 +192,27 @@ func (s *Service) VibeCollection(ctx context.Context, user *core.User, query str
 	if !ok {
 		return nil, nil, false, nil
 	}
+	// A local descriptive read must not trigger provider-backed name or seed
+	// resolution. Structured cached-catalogue filters remain available.
+	if core.LocalResponse(ctx) && (v.PersonName != "" || v.SimilarSeed != "") {
+		return nil, nil, false, nil
+	}
 	if err := s.resolveVibe(ctx, &v); err != nil {
 		// An unresolvable person/seed means it probably was a title
 		// search after all; let plain search have it.
 		s.log.Debug("collections: vibe unresolved", "query", query, "err", err)
 		return nil, nil, false, nil
+	}
+	if core.LocalResponse(ctx) {
+		// Immediate search needs members only. Do not register a browseable
+		// collection or save a bounded prefix as its exact membership count.
+		f := v.Filter
+		f.LocalOnly = true
+		if user != nil {
+			f.MaxContentRating = user.MaxContentRating
+		}
+		page, err := s.cat.Browse(ctx, core.BrowseQuery{Filter: f, Sort: v.Sort, Desc: v.Desc, Limit: vibeTopItems, NoTotal: true})
+		return nil, page.Items, len(page.Items) > 0, err
 	}
 	owner := vibeOwner(user)
 	sig := vibeSig(owner, v)

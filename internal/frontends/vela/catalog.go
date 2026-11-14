@@ -384,7 +384,21 @@ func (i *instance) search(w http.ResponseWriter, r *http.Request) {
 		n = 50
 	}
 	n = min(n, 100)
-	p, e := i.host.Experience.Search(i.host.Experience.NoProviderWait(r.Context()), v, requestDevice(r), b.Query, frontend.ItemQuery{Limit: n, NoTotal: true})
+	var p frontend.SearchPage
+	switch b.Mode {
+	case "descriptive":
+		source, ok := i.host.Experience.(frontend.DescriptiveSearcher)
+		if !ok || !source.DescriptiveSearchAvailable() {
+			i.unavailable(w, r)
+			return
+		}
+		p, e = source.DescriptiveSearch(r.Context(), v, requestDevice(r), b.Query, frontend.ItemQuery{Limit: n, NoTotal: true})
+	case "fast":
+		p, e = i.host.Experience.Search(i.host.Experience.NoProviderWait(r.Context()), v, requestDevice(r), b.Query, frontend.ItemQuery{Limit: n, NoTotal: true})
+	default:
+		problem(w, 400, "request", "invalid_search_mode")
+		return
+	}
 	if e != nil {
 		fail(w, e)
 		return

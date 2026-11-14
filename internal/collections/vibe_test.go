@@ -292,4 +292,16 @@ func TestVibeRefinerFallback(t *testing.T) {
 	if ref.calls.Load() != before {
 		t.Fatal("refiner consulted for a parseable query")
 	}
+	local := core.WithLocalResponse(ctx)
+	for _, query := range []string{"movies that feel like a warm hug", "christopher nolan films", "shows like the office"} {
+		if _, _, ok, err := svc.VibeCollection(local, user, query); err != nil || ok {
+			t.Fatalf("local read attempted model or external resolution for %q: handled=%v err=%v", query, ok, err)
+		}
+	}
+	if _, items, ok, err := svc.VibeCollection(local, user, "80s sci-fi"); err != nil || !ok || len(items) == 0 {
+		t.Fatalf("local structured query lost: items=%v handled=%v err=%v", items, ok, err)
+	}
+	if ref.calls.Load() != before {
+		t.Fatal("local response consulted the model refiner")
+	}
 }

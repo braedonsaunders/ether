@@ -375,11 +375,15 @@ func (*instance) unavailable(w http.ResponseWriter, r *http.Request) {
 func (i *instance) capabilities() object {
 	f := func(v bool) object { return object{"available": v} }
 	s := i.host.ServerIdentity
+	descriptive := false
+	if source, ok := i.host.Experience.(frontend.DescriptiveSearcher); ok {
+		descriptive = source.DescriptiveSearchAvailable()
+	}
 	auth := frontend.AuthenticationFeatures{}
 	if source, ok := i.host.Identity.(frontend.AuthenticationFeatureSource); ok {
 		auth = source.AuthenticationFeatures()
 	}
-	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(true), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(i.host.LiveTV != nil), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
+	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(i.host.LiveTV != nil), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
 }
 func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 	var b struct {
