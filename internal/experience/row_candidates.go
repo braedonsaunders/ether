@@ -85,6 +85,9 @@ func (c CandidateComposer) Rows(ctx context.Context, req frontend.RowRequest, si
 		for i := range hubs {
 			if hubs[i].ID == "home.continue" {
 				hubs[i].Items = resume
+				// Continuation has one shared featured presentation, whether
+				// the ranker supplied its placeholder or we insert the row.
+				hubs[i].Style, hubs[i].Promoted = "hero", true
 				inserted = true
 			}
 		}

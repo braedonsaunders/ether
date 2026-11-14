@@ -48,7 +48,7 @@ func TestCandidateComposerHomeVisitAndPolicy(t *testing.T) {
 	child := core.Title{Key: core.EpisodeKey(8, 1, 1), Type: core.TypeEpisode, ShowKey: show}
 	hidden := core.Title{Key: core.MovieKey(3), Type: core.TypeMovie, Adult: true}
 	good := core.Title{Key: core.MovieKey(4), Type: core.TypeMovie}
-	rank := &candidateRankerFake{rows: []RankedCandidate{{ID: "home.continue"}, {ID: "other"}, {ID: "home.continue"}}}
+	rank := &candidateRankerFake{rows: []RankedCandidate{{ID: "home.continue", Style: "shelf"}, {ID: "other", Style: "shelf"}, {ID: "home.continue", Style: "shelf"}}}
 	resume := &resumeCandidatesFake{items: []core.Title{good}}
 	composer := CandidateComposer{Ranker: rank, Resume: resume, Restricted: func(*core.User) bool { return true }, Visibility: Visibility{GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) {
 		return &core.Title{Key: show, Adult: true}, nil
@@ -58,6 +58,9 @@ func TestCandidateComposerHomeVisitAndPolicy(t *testing.T) {
 	got, err := composer.Rows(ctx, req, situation)
 	if err != nil || rank.calls != 1 || resume.calls != 1 || !reflect.DeepEqual(rank.seen, situation) || len(got) != 3 || got[0].Items[0].Key != good.Key || got[2].Items[0].Key != good.Key {
 		t.Fatalf("rows=%+v rank=%+v resume=%+v err=%v", got, rank, resume, err)
+	}
+	if got[0].Style != "hero" || !got[0].Promoted || got[2].Style != "hero" || !got[2].Promoted || got[1].Style != "shelf" {
+		t.Fatalf("shared Continue presentation lost or another row promoted: %+v", got)
 	}
 	if rank.allow == nil || rank.allow(ctx, req.Viewer, &hidden) || rank.allow(ctx, req.Viewer, &child) || !rank.allow(ctx, req.Viewer, &good) {
 		t.Fatal("ranking did not receive inherited viewer policy")
