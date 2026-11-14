@@ -460,3 +460,9 @@ Ether is an independent, clean-room implementation of the HTTP protocols used by
 "Plex" is a trademark of Plex, Inc. "Jellyfin" is a trademark of the Jellyfin project. "Emby" is a trademark of Emby LLC. "Silo" and "Stremio" are trademarks of their respective owners. Ether is **not affiliated with, sponsored by, or endorsed by Plex, Inc., the Jellyfin project, Emby LLC, Silo, or Stremio.** This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 [**GPL-3.0 License**](LICENSE) · [**Contributing**](CONTRIBUTING.md) · [**Legal**](LEGAL.md) · [**Third-Party Notices**](THIRD_PARTY_NOTICES.md)
+
+## Build a plugin
+
+Start with [the plugin author and coding-agent guide](sdk/AGENTS.md): ten recipes,
+manifest decisions, local live reload, conformance, and packaging. The console
+also includes a searchable reference under Plugins → Reference.
