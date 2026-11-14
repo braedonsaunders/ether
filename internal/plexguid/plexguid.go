@@ -829,8 +829,7 @@ type localIdentity struct {
 
 func (s *Service) localIdentity(ctx context.Context, k core.RatingKey) localIdentity {
 	var li localIdentity
-	_ = s.db.QueryRowContext(ctx, `SELECT year FROM catalog_titles WHERE key=?`, int64(k)).Scan(&li.year)
-	_ = s.db.QueryRowContext(ctx, `SELECT title, imdb FROM catalog_titles WHERE key=?`, int64(k)).Scan(&li.title, &li.imdb)
+	_ = s.db.QueryRowContext(ctx, `SELECT title, year, imdb FROM catalog_titles WHERE key=?`, int64(k)).Scan(&li.title, &li.year, &li.imdb)
 	li.directors = s.localCreditNames(ctx, k, "director", 0)
 	li.cast = s.localCreditNames(ctx, k, "cast", topBilledCast)
 	return li
@@ -889,6 +888,12 @@ func (s *Service) verifyItems(ctx context.Context, k core.RatingKey, kind, guid 
 
 func (s *Service) verifyItemsWithProof(ctx context.Context, k core.RatingKey, kind, guid string, items []providerItem, li localIdentity, wantIDs ...string) identityRecord {
 	tmdbID := fmt.Sprintf("tmdb://%d", k.TMDB())
+	if len(wantIDs) == 0 {
+		wantIDs = []string{tmdbID}
+		if validIMDBID(li.imdb) {
+			wantIDs = append(wantIDs, "imdb://"+li.imdb)
+		}
+	}
 	titleWanted := kind == "movie" || kind == "show"
 	localTitle := li.title
 	if titleWanted && localTitle == "" {
@@ -913,7 +918,7 @@ func (s *Service) verifyItemsWithProof(ctx context.Context, k core.RatingKey, ki
 		// When the canonical record and the local catalogue both name the
 		// work, those titles must be the same work. Without both, the exact
 		// external id is the only identity available.
-		if len(wantIDs) == 0 && (localTitle == "" || item.Title == "") {
+		if !hasExternalID(item, tmdbID) && (localTitle == "" || item.Title == "") {
 			continue
 		}
 		if titleWanted && localTitle != "" && item.Title != "" && !titlesAgree(localTitle, item.Title) {
@@ -1075,6 +1080,18 @@ func normalizeTitle(s string) string {
 
 var trailingYear = regexp.MustCompile(`\s*\(?(19|20)\d{2}\)?$`)
 
+func validIMDBID(id string) bool {
+	if !strings.HasPrefix(id, "tt") || len(id) < 3 {
+		return false
+	}
+	for _, c := range id[2:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Service) resolveMovieOrShow(ctx context.Context, k core.RatingKey, kind, typ string) (string, error) {
 	tmdbID := fmt.Sprintf("tmdb://%d", k.TMDB())
 	li := s.localIdentity(ctx, k)
@@ -1082,7 +1099,7 @@ func (s *Service) resolveMovieOrShow(ctx context.Context, k core.RatingKey, kind
 	if err != nil {
 		return "", err
 	}
-	if foundGUID == "" && strings.HasPrefix(li.imdb, "tt") {
+	if foundGUID == "" && validIMDBID(li.imdb) {
 		imdbID := "imdb://" + li.imdb
 		found, foundGUID, err = s.matchMovieOrShow(ctx, k, kind, li, url.Values{"type": {typ}, "guid": {imdbID}, "includeGuids": {"1"}}, tmdbID, imdbID)
 		if err != nil {

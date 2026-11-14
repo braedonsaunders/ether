@@ -2,6 +2,7 @@ package watchlist
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -143,10 +144,7 @@ func (s *Service) syncCommunityFriends(ctx context.Context, us []core.User, only
 					if latest.PlexID != u.PlexID || latest.UUID != u.UUID {
 						return errors.New("Viewer identity changed")
 					}
-					_, _ = s.db.ExecContext(ctx, `UPDATE watchlist_items SET source=? WHERE user_id=? AND source='plex-community' AND NOT EXISTS (SELECT 1 FROM watchlist_items w2 WHERE w2.user_id=watchlist_items.user_id AND w2.item_key=watchlist_items.item_key AND w2.source=?)`, source, latest.ID, source)
-					_, _ = s.db.ExecContext(ctx, `DELETE FROM watchlist_items WHERE user_id=? AND source='plex-community'`, latest.ID)
-					merged := s.preserveActiveFriendsRSSItems(ctx, latest.ID, source, titles)
-					st.Imported, err = s.replaceOwnerFeedSnapshot(ctx, source, latest, merged)
+					st.Imported, err = s.replaceOwnerFeedSnapshot(ctx, source, latest, titles)
 				}
 				return err
 			})
@@ -172,29 +170,36 @@ func (s *Service) syncCommunityFriends(ctx context.Context, us []core.User, only
 	return errors.Join(errs...)
 }
 
-func (s *Service) preserveActiveFriendsRSSItems(ctx context.Context, userID int64, source string, titles []core.Title) []core.Title {
+func (s *Service) preserveActiveFriendsRSSItems(ctx context.Context, tx *sql.Tx, userID int64, source string, titles []core.Title) ([]core.Title, error) {
 	have := make(map[core.RatingKey]bool, len(titles))
 	for _, t := range titles {
 		have[t.Key] = true
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 		SELECT wi.title
 		FROM watchlist_items wi
 		JOIN watchlist_items rss ON rss.user_id = 0 AND rss.source = ? AND rss.item_key = wi.item_key
-		WHERE wi.user_id = ? AND wi.source = ?`, sourcePlexFriendsRSS, userID, source)
+		JOIN watchlist_rss_authors a ON a.item_key = wi.item_key AND a.friend_id = ?
+		WHERE wi.user_id = ? AND wi.source = ?`, sourcePlexFriendsRSS, strings.TrimPrefix(source, "plex-community:"), userID, source)
 	if err != nil {
-		return titles
+		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var raw string
 		var t core.Title
-		if rows.Scan(&raw) == nil && json.Unmarshal([]byte(raw), &t) == nil && t.Key != 0 && !have[t.Key] {
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &t); err != nil {
+			return nil, err
+		}
+		if t.Key != 0 && !have[t.Key] {
 			have[t.Key] = true
 			titles = append(titles, t)
 		}
 	}
-	return titles
+	return titles, rows.Err()
 }
 
 func (s *Service) communityTitles(ctx context.Context, token, id string) ([]core.Title, int, error) {

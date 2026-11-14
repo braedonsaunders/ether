@@ -186,8 +186,78 @@ func TestCommunityTitlesSkipsAmbiguousIdentityAndPreservesRSS(t *testing.T) {
 	if err := s.upsert(ctx, householdUserID, sourcePlexFriendsRSS, rssTitle); err != nil {
 		t.Fatal(err)
 	}
-	merged := s.preserveActiveFriendsRSSItems(ctx, viewerID, source, nil)
+	if _, err := db.ExecContext(ctx, `INSERT INTO watchlist_rss_authors(friend_id,item_key) VALUES(?,?)`, "friend-1", rssKey); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	merged, err := s.preserveActiveFriendsRSSItems(ctx, tx, viewerID, source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(merged) != 1 || merged[0].Key != rssKey {
 		t.Fatalf("preserveActiveFriendsRSSItems=%+v, want %d", merged, rssKey)
+	}
+}
+
+// Snapshot replacement must preserve only this friend's current RSS proof,
+// retain monitoring history through legacy upgrades, and roll back on failure.
+func TestCommunitySnapshotAttributionAndRollback(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := New(db, Options{})
+	u := &core.User{ID: 20}
+	const source = "plex-community:friend-1"
+	title := core.Title{Key: core.MovieKey(202), Type: core.TypeMovie, Title: "RSS"}
+	if err := s.upsert(ctx, u.ID, "plex-community", title); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE watchlist_items SET checked=11,available=12,notified=1,warmed=1 WHERE user_id=?`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.replaceHouseholdFeedSnapshotWithAuthors(ctx, sourcePlexFriendsRSS, []core.Title{title}, map[string][]core.Title{"friend-1": {title}}); err != nil {
+		t.Fatal(err)
+	}
+	// Malformed preserved metadata must abort both upgrade and replacement.
+	if _, err := db.ExecContext(ctx, `UPDATE watchlist_items SET title='{' WHERE user_id=?`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.replaceOwnerFeedSnapshot(ctx, source, u, nil); err == nil {
+		t.Fatal("corrupt metadata accepted")
+	}
+	var legacy int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM watchlist_items WHERE user_id=? AND source='plex-community'`, u.ID).Scan(&legacy); err != nil || legacy != 1 {
+		t.Fatalf("upgrade did not roll back: %d %v", legacy, err)
+	}
+	if err := s.upsert(ctx, u.ID, "plex-community", title); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.replaceOwnerFeedSnapshot(ctx, source, u, nil); err != nil {
+		t.Fatal(err)
+	}
+	var checked, available, notified, warmed int
+	if err := db.QueryRowContext(ctx, `SELECT checked,available,notified,warmed FROM watchlist_items WHERE user_id=? AND source=?`, u.ID, source).Scan(&checked, &available, &notified, &warmed); err != nil {
+		t.Fatal(err)
+	}
+	if checked != 11 || available != 12 || notified != 1 || warmed != 1 {
+		t.Fatalf("monitoring history lost: %d %d %d %d", checked, available, notified, warmed)
+	}
+	// The same movie remaining in somebody else's RSS cannot pin this row.
+	if _, err := s.replaceHouseholdFeedSnapshotWithAuthors(ctx, sourcePlexFriendsRSS, []core.Title{title}, map[string][]core.Title{"friend-2": {title}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.replaceOwnerFeedSnapshot(ctx, source, u, nil); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM watchlist_items WHERE user_id=?`, u.ID).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("another friend's RSS preserved viewer row: %d %v", count, err)
 	}
 }

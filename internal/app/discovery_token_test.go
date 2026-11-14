@@ -21,7 +21,8 @@ func TestDiscoveryViewerToken(t *testing.T) {
 		{"owner", "owner", true, false, "owner", false},
 		{"managed", "kid", false, true, "member", false},
 		{"home account", "spouse", false, true, "member", false},
-		{"guest", "", false, false, "member", false},
+		{"unverified guest", "", false, false, "", true},
+		{"home guest", "", false, true, "member", false},
 		{"friend", "friend", false, false, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
