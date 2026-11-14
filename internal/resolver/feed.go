@@ -21,7 +21,7 @@ const feedRejectedReason = "not accepted by the current quality policy"
 // searching. Broad capabilities mean the default owner's profile determines
 // eligibility; this is source evidence, never a claim about every device.
 func (s *Service) FeedCandidate(ctx context.Context, t *core.Title, r core.Release) (core.Release, string, error) {
-	e, err := s.feedEvaluationForMedia(ctx, titleMedia(t))
+	e, err := s.feedEvaluationForProfile(ctx, titleMedia(t), s.ProfileForTitle(ctx, feedClient, nil, t))
 	if err != nil {
 		return r, "", err
 	}
@@ -38,6 +38,10 @@ func (s *Service) FeedEvaluation(ctx context.Context) (core.FeedEvaluation, erro
 
 func (s *Service) feedEvaluationForMedia(ctx context.Context, media string) (*feedEvaluation, error) {
 	p := SelectProfileForMedia(s.qualityCfg(), feedClient, nil, media)
+	return s.feedEvaluationForProfile(ctx, media, p)
+}
+
+func (s *Service) feedEvaluationForProfile(ctx context.Context, media string, p core.QualityProfile) (*feedEvaluation, error) {
 	policy, err := s.compileRules(p.ReleaseRules)
 	if err != nil {
 		return nil, err
@@ -78,7 +82,17 @@ func (e *feedEvaluationSet) forTitle(t *core.Title) *feedEvaluation {
 func (e *feedEvaluationSet) Key() string { return e.movie.Key() + "|" + e.tv.Key() }
 
 func (e *feedEvaluationSet) Evaluate(ctx context.Context, t *core.Title, rs []core.Release) ([]core.FeedVerdict, error) {
-	return e.forTitle(t).Evaluate(ctx, t, rs)
+	base := e.forTitle(t)
+	p := base.s.ProfileForTitle(ctx, feedClient, nil, t)
+	if p.SelectionKey == base.profile.SelectionKey {
+		return base.Evaluate(ctx, t, rs)
+	}
+	selected, err := base.s.feedEvaluationForProfile(ctx, titleMedia(t), p)
+	if err != nil {
+		return nil, err
+	}
+	defer selected.Close()
+	return selected.Evaluate(ctx, t, rs)
 }
 
 func (e *feedEvaluationSet) Transient(id string) string { return e.movie.Transient(id) }
@@ -110,7 +124,16 @@ func (e *feedEvaluation) Key() string {
 	}
 	profile := e.profile
 	profile.Import = nil // provenance is not policy; SyncedAt must not invalidate verdicts
-	b, _ := json.Marshal([]any{"feed-verdict-v3", e.media, profile.SelectionKey, profile, e.env.rcfg, e.env.lang, e.s.profileAllowsCam(), registry})
+	var libraries string
+	if policy, ok := e.s.libProfiles.(interface{ PolicyKey(context.Context) string }); ok {
+		libraries = policy.PolicyKey(context.Background())
+	}
+	quality := e.s.qualityCfg()
+	quality.Profiles = slices.Clone(quality.Profiles)
+	for i := range quality.Profiles {
+		quality.Profiles[i].Import = nil
+	}
+	b, _ := json.Marshal([]any{"feed-verdict-v4", libraries, quality, e.media, profile.SelectionKey, profile, e.env.rcfg, e.env.lang, e.s.profileAllowsCam(), registry})
 	sum := sha256.Sum256(b)
 	e.key = hex.EncodeToString(sum[:])
 	return e.key

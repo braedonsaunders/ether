@@ -6,10 +6,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
 func init() {
+	store.Register("resolver", 7, `ALTER TABLE resolver_availability ADD COLUMN profile_key TEXT NOT NULL DEFAULT '';`)
 	store.Register("resolver", 1, `
 CREATE TABLE resolver_bad (
   release_id TEXT PRIMARY KEY,
@@ -131,6 +133,7 @@ func (s *Service) recordReputation(ctx context.Context, indexer string, success 
 }
 
 type availEntry struct {
+	policy    string
 	checked   time.Time
 	available bool
 	expires   time.Time
@@ -138,11 +141,12 @@ type availEntry struct {
 
 func (s *Service) setAvailability(ctx context.Context, key int64, available bool, ttl time.Duration) {
 	now := s.now()
+	policy := s.availabilityProfileKey(ctx, core.RatingKey(key))
 	exp := now.Add(ttl)
 	s.mu.Lock()
 	previous, known := s.avail[key]
 	boundMap(s.avail, maxAvailEntries, func(e availEntry) bool { return now.After(e.expires) })
-	s.avail[key] = availEntry{available: available, expires: exp, checked: now}
+	s.avail[key] = availEntry{available: available, expires: exp, checked: now, policy: policy}
 	if !known || now.After(previous.expires) || previous.available != available {
 		s.availabilityGeneration++
 	}
@@ -154,9 +158,9 @@ func (s *Service) setAvailability(ctx context.Context, key int64, available bool
 			v = 1
 		}
 		if _, err := s.db.ExecContext(ctx,
-			`INSERT INTO resolver_availability(rating_key, available, checked_at, expires_at) VALUES (?,?,?,?)
-			 ON CONFLICT(rating_key) DO UPDATE SET available=excluded.available, checked_at=excluded.checked_at, expires_at=excluded.expires_at`,
-			key, v, s.now().Unix(), exp.Unix()); err == nil {
+			`INSERT INTO resolver_availability(rating_key, available, checked_at, expires_at, profile_key) VALUES (?,?,?,?,?)
+			 ON CONFLICT(rating_key) DO UPDATE SET available=excluded.available, checked_at=excluded.checked_at, expires_at=excluded.expires_at, profile_key=excluded.profile_key`,
+			key, v, s.now().Unix(), exp.Unix(), policy); err == nil {
 			s.notify("avail:" + strconv.FormatInt(key, 10))
 		}
 	}
@@ -178,7 +182,7 @@ func (s *Service) lastUnavailableChecked(ctx context.Context, key int64) (time.T
 	e, ok := s.avail[key]
 	s.mu.RUnlock()
 	if ok {
-		if e.available {
+		if e.available || e.policy != s.availabilityProfileKey(ctx, core.RatingKey(key)) {
 			return time.Time{}, false
 		}
 		return e.checked, true
@@ -186,10 +190,11 @@ func (s *Service) lastUnavailableChecked(ctx context.Context, key int64) (time.T
 	if s.db != nil {
 		var v int
 		var checked int64
+		var policy string
 		err := s.db.QueryRowContext(ctx,
-			`SELECT available, checked_at FROM resolver_availability WHERE rating_key=?`, key).Scan(&v, &checked)
+			`SELECT available, checked_at, profile_key FROM resolver_availability WHERE rating_key=?`, key).Scan(&v, &checked, &policy)
 		if err == nil {
-			if v == 1 {
+			if v == 1 || policy != s.availabilityProfileKey(ctx, core.RatingKey(key)) {
 				return time.Time{}, false
 			}
 			return time.Unix(checked, 0), true
@@ -205,7 +210,7 @@ func (s *Service) getAvailability(ctx context.Context, key int64) (availEntry, b
 	e, ok := s.avail[key]
 	s.mu.RUnlock()
 	if ok {
-		if s.now().After(e.expires) {
+		if s.now().After(e.expires) || e.policy != s.availabilityProfileKey(ctx, core.RatingKey(key)) {
 			return availEntry{}, false
 		}
 		return e, true
@@ -213,11 +218,12 @@ func (s *Service) getAvailability(ctx context.Context, key int64) (availEntry, b
 	if s.db != nil {
 		var v int
 		var exp, checked int64
+		var policy string
 		err := s.db.QueryRowContext(ctx,
-			`SELECT available, expires_at,checked_at FROM resolver_availability WHERE rating_key=?`, key).Scan(&v, &exp, &checked)
+			`SELECT available, expires_at,checked_at,profile_key FROM resolver_availability WHERE rating_key=?`, key).Scan(&v, &exp, &checked, &policy)
 		if err == nil {
-			e := availEntry{available: v == 1, expires: time.Unix(exp, 0), checked: time.Unix(checked, 0)}
-			if s.now().After(e.expires) {
+			e := availEntry{available: v == 1, expires: time.Unix(exp, 0), checked: time.Unix(checked, 0), policy: policy}
+			if s.now().After(e.expires) || e.policy != s.availabilityProfileKey(ctx, core.RatingKey(key)) {
 				return availEntry{}, false
 			}
 			now := s.now()
@@ -232,4 +238,11 @@ func (s *Service) getAvailability(ctx context.Context, key int64) (availEntry, b
 		}
 	}
 	return availEntry{}, false
+}
+
+// Availability is broad source evidence under the title's current home policy,
+// rather than a guarantee for a specific viewer/device. Profile edits must not
+// reuse either positive or negative evidence from a different library policy.
+func (s *Service) availabilityProfileKey(ctx context.Context, key core.RatingKey) string {
+	return s.ProfileForTitle(ctx, feedClient, nil, &core.Title{Key: key}).SelectionKey
 }

@@ -290,8 +290,9 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
       const body: Record<string, unknown> = {
         name: draft.name.trim(),
         hidden: draft.hidden,
-        qualityProfile: draft.qualityProfile,
       };
+      if (library.source !== "plugin" && draft.qualityProfile !== stored.qualityProfile)
+        body.qualityProfile = draft.qualityProfile;
       if (library.source !== "builtin") body.present = draft.present;
       if (JSON.stringify(draft.sources) !== JSON.stringify(stored.sources))
         body.sources = draft.sources;
@@ -395,13 +396,15 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
               onChange={(present) => setDraft({ ...draft, present })}
             />
           )}
-          <SettingsSection title={t("Quality")}>
-            <QualityProfileRow
-              library={library}
-              value={draft.qualityProfile}
-              onChange={(qualityProfile) => setDraft({ ...draft, qualityProfile })}
-            />
-          </SettingsSection>
+          {library.source !== "plugin" && (
+            <SettingsSection title={t("Quality")}>
+              <QualityProfileRow
+                library={library}
+                value={draft.qualityProfile}
+                onChange={(qualityProfile) => setDraft({ ...draft, qualityProfile })}
+              />
+            </SettingsSection>
+          )}
           {cache.data ? (
             <LibraryCacheCard
               library={library}
