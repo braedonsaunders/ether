@@ -149,7 +149,7 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 		if s.artwork == nil {
 			return core.ErrNotAvailable
 		}
-		images, complete, err := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Device: device, Channel: channel})
+		images, complete, err := s.artwork.List(core.WithLiveApp(ctx, string(s.surface)), channelImageRequest(viewer, device, channel, image))
 		if err != nil {
 			return err
 		}
@@ -440,7 +440,7 @@ func (s *ImageGrantService) writeGrantedImage(w http.ResponseWriter, r *http.Req
 	var contentType string
 	var err error
 	if s.artwork != nil {
-		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: item, Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur, Quality: quality, Fit: mediaBrowser || s.surface == "vela"})
+		data, contentType, err = s.artwork.Read(core.WithLiveApp(r.Context(), string(s.surface)), grantedArtworkRequest(viewer, device, item, channel, img), img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur, Quality: quality, Fit: mediaBrowser || s.surface == "vela"})
 	} else {
 		data, contentType, err = s.images.Get(r.Context(), img.Path, width)
 	}
@@ -496,4 +496,21 @@ func grantedImageWidth(r *http.Request, surface frontend.Protocol) int {
 		width = 500
 	}
 	return width
+}
+
+// Programme descriptors use the existing channel capability and persist the
+// exact airing identity in image_subject. Both admission and reads re-enumerate
+// that airing under current channel/programme policy, without a library scan.
+func channelImageRequest(viewer *core.Viewer, device core.Device, channel string, image frontend.Image) frontend.ArtworkRequest {
+	req := frontend.ArtworkRequest{Viewer: viewer, Device: device, Channel: channel}
+	if image.Kind == frontend.ImageStill || image.Kind == frontend.ImageBackdrop {
+		req.Programme = image.Subject
+	}
+	return req
+}
+func grantedArtworkRequest(viewer *core.Viewer, device core.Device, item core.RatingKey, channel string, image frontend.Image) frontend.ArtworkRequest {
+	if channel != "" {
+		return channelImageRequest(viewer, device, channel, image)
+	}
+	return frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: item}
 }

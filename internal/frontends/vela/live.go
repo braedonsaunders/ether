@@ -41,7 +41,16 @@ func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
 	start := min(cursor.Offset, len(channels))
 	end := start + min(limit(r), len(channels)-start)
 	for _, c := range channels[start:end] {
-		out = append(out, object{"id": c.ID, "number": c.Number, "name": c.Name, "kind": c.Kind, "artwork": []object{}, "favorite": c.Favorite, "rating": c.Rating})
+		art, err := i.liveArtwork(r, token, 0, c.ID, c.Images)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		channel := object{"id": c.ID, "number": c.Number, "name": c.Name, "kind": c.Kind, "artwork": art, "favorite": c.Favorite, "rating": c.Rating}
+		if c.Group != "" {
+			channel["group"] = c.Group
+		}
+		out = append(out, channel)
 	}
 	page := object{"items": out, "continuation": "exhausted"}
 	if end < len(channels) {
@@ -101,7 +110,24 @@ func (i *instance) guide(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []object{}
 	for _, p := range programmes.Items {
-		out = append(out, object{"id": p.ID, "channelId": p.ChannelID, "name": p.Title, "summary": p.Summary, "start": p.Start.UTC().Format(time.RFC3339), "end": p.End.UTC().Format(time.RFC3339), "episodeTitle": p.EpisodeTitle, "seasonNumber": p.Season, "episodeNumber": p.Episode, "artwork": []object{}, "rating": p.Rating})
+		art := []object{}
+		for _, img := range p.Images {
+			item, channel := p.Item, ""
+			if img.Subject == p.ID {
+				item, channel = 0, p.ChannelID
+			}
+			images, err := i.liveArtwork(r, token, item, channel, []frontend.Image{img})
+			if err != nil {
+				fail(w, err)
+				return
+			}
+			art = append(art, images...)
+		}
+		programme := object{"id": p.ID, "channelId": p.ChannelID, "name": p.Title, "summary": p.Summary, "start": p.Start.UTC().Format(time.RFC3339), "end": p.End.UTC().Format(time.RFC3339), "episodeTitle": p.EpisodeTitle, "seasonNumber": p.Season, "episodeNumber": p.Episode, "artwork": art, "rating": p.Rating}
+		if len(p.Genres) > 0 {
+			programme["genres"] = p.Genres
+		}
+		out = append(out, programme)
 	}
 	page := object{"items": out, "from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339), "continuation": "exhausted"}
 	if programmes.More {
@@ -117,4 +143,21 @@ func (i *instance) guide(w http.ResponseWriter, r *http.Request) {
 		page["continuation"], page["nextCursor"] = "more", next
 	}
 	cache(w, r, page)
+}
+
+// Issue bounded, current-policy image capabilities for this response page.
+// Source URLs and credentials never enter the Vela wire model.
+func (i *instance) liveArtwork(r *http.Request, token string, item frontend.RatingKey, channel string, images []frontend.Image) ([]object, error) {
+	out := []object{}
+	if i.host.ImageGrants == nil || (item == 0 && channel == "") {
+		return out, nil
+	}
+	for _, img := range images {
+		secret, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: token, Device: requestDevice(r), Item: item, Channel: channel, Image: img})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, object{"id": hash(img.Path), "kind": img.Kind, "tag": img.Tag, "sizes": []object{imageSize(img, secret)}})
+	}
+	return out, nil
 }

@@ -142,6 +142,7 @@ type frontendArtworkEntry struct {
 	discovery                     bool
 	remotePath                    string
 	channel                       bool
+	programmePath                 string
 	channelLogo                   string
 	channelNumber, channelName    string
 	ultra                         *Palette
@@ -221,6 +222,9 @@ func (a Source) entries(ctx context.Context, req frontend.ArtworkRequest) ([]fro
 	}
 
 	if req.Channel != "" {
+		if req.Programme != "" {
+			return a.programmeEntries(ctx, req)
+		}
 		channel, err := s.oneChannel(ctx, req.Viewer, req.Channel)
 		if err != nil {
 			return nil, false, err

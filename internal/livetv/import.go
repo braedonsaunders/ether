@@ -426,6 +426,22 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 				}
 			}
 			item := Item{Thumb: p.Icon.Src}
+			for _, category := range p.Category {
+				genre := strings.TrimSpace(category.Value)
+				if genre == "" {
+					continue
+				}
+				duplicate := false
+				for _, existing := range item.Genres {
+					if existing == genre {
+						duplicate = true
+						break
+					}
+				}
+				if !duplicate {
+					item.Genres = append(item.Genres, genre)
+				}
+			}
 			if !end.IsZero() {
 				item.DurationMS = end.Sub(start).Milliseconds()
 			}

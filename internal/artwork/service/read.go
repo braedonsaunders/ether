@@ -142,6 +142,14 @@ func (a Source) remote(ctx context.Context, path string, width int) ([]byte, str
 }
 func (a Source) readEntry(ctx context.Context, req frontend.ArtworkRequest, entry frontendArtworkEntry, width int) ([]byte, string, error) {
 	switch {
+	case entry.programmePath != "":
+		if strings.HasPrefix(entry.programmePath, "https://") || strings.HasPrefix(entry.programmePath, "http://") {
+			if a.URLImages == nil {
+				return nil, "", core.ErrNotAvailable
+			}
+			return a.URLImages.GetUntrustedURL(ctx, entry.programmePath)
+		}
+		return a.remote(ctx, entry.programmePath, width)
 	case entry.ownerKind != "":
 		return a.OwnerArtwork(ctx, req, entry.ownerKind)
 	case entry.channel:

@@ -22,6 +22,9 @@ type ArtworkRequest struct {
 	// Channel is a stable LiveTV channel ID. Exactly one of Item and Channel
 	// identifies the subject.
 	Channel string
+	// Programme selects one airing on Channel. Its ID is carried by Image.Subject
+	// in a channel-bound programme image capability; it never grants a title.
+	Programme string
 }
 
 // ArtworkTransform describes the requested output. Zero dimensions preserve

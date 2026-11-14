@@ -21,10 +21,11 @@ const maxLiveProgrammes = 10000
 var errLiveQuery = errors.New("invalid live guide query")
 
 type surfaceLiveTV struct {
-	app            *App
-	surface        string // the app this lineup is for; the owner's per-app visibility applies
-	channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
-	artwork        frontend.Artwork
+	app              *App
+	surface          string // the app this lineup is for; the owner's per-app visibility applies
+	channelArtwork   func(*core.Viewer, livetv.Channel) frontend.Image
+	programmeArtwork func(*core.Viewer, livetv.Programme) []frontend.Image
+	artwork          frontend.Artwork
 }
 
 func (s surfaceLiveTV) host() frontend.LiveTV {
@@ -149,7 +150,7 @@ func (s surfaceLiveTV) guidePage(ctx context.Context, v *core.Viewer, pageQuery 
 			continue
 		}
 		if paged {
-			if err := encoder.Encode([]any{p.ID, p.ChannelID, p.Start.UTC(), p.End.UTC(), p.Item.Key, p.Item.Title, p.Item.Summary, p.Item.Rating}); err != nil {
+			if err := encoder.Encode([]any{p.ID, p.ChannelID, p.Start.UTC(), p.End.UTC(), p.Item.Key, p.Item.Title, p.Item.Summary, p.Item.Rating, p.Item.Thumb, p.Item.Art, p.Item.Genres}); err != nil {
 				return frontend.LiveGuidePage{}, err
 			}
 		}
@@ -170,15 +171,29 @@ func (s surfaceLiveTV) guidePage(ctx context.Context, v *core.Viewer, pageQuery 
 	out := make([]frontend.LiveProgramme, 0, len(selectedPage))
 	imageCache := make(map[core.RatingKey][]frontend.Image)
 	for _, p := range selectedPage {
-		item := frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating}
+		item := frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating, ShowTitle: p.Item.ShowTitle, EpisodeTitle: p.Item.EpisodeTitle, Season: p.Item.Season, Episode: p.Item.Episode, Genres: p.Item.Genres}
+		if s.programmeArtwork != nil {
+			item.Images = s.programmeArtwork(viewer, p)
+		}
 		if p.Item.Key != 0 && s.app.catalog != nil {
 			if title, e := s.app.catalog.Get(ctx, p.Item.Key); e == nil {
-				item.ShowTitle = title.ShowTitle
-				item.EpisodeTitle = title.Title
-				item.Season = title.Season
-				item.Episode = title.Episode
+				if item.ShowTitle == "" {
+					item.ShowTitle = title.ShowTitle
+				}
+				if item.EpisodeTitle == "" && title.Type == core.TypeEpisode {
+					item.EpisodeTitle = title.Title
+				}
+				if item.Season == 0 {
+					item.Season = title.Season
+				}
+				if item.Episode == 0 {
+					item.Episode = title.Episode
+				}
+				if len(item.Genres) == 0 {
+					item.Genres = title.Genres
+				}
 			}
-			if s.artwork != nil {
+			if s.artwork != nil && len(item.Images) == 0 {
 				images, found := imageCache[p.Item.Key]
 				if !found {
 					var complete bool

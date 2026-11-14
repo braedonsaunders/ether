@@ -27,6 +27,7 @@ type LiveProgramme struct {
 	ShowTitle, EpisodeTitle         string
 	Season, Episode                 int
 	Images                          []Image
+	Genres                          []string
 }
 type LiveGuideQuery struct {
 	Channels    []string

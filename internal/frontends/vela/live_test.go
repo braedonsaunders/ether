@@ -157,3 +157,63 @@ func checkFreshHomeVisit(t *testing.T) {
 		t.Fatal("old row silently refreshed", err)
 	}
 }
+
+func TestVelaLiveGuideArtwork(t *testing.T) {
+	checkLivePages(t)
+	now := time.Date(2026, 11, 14, 4, 0, 0, 0, time.UTC)
+	source := &livePageFake{snapshot: "art", channels: []frontend.LiveChannel{{ID: "iptv", Kind: "iptv", Group: "News", Images: []frontend.Image{{Kind: frontend.ImageChannel, Path: "opaque-logo", Tag: "logo"}}}}, programmes: []frontend.LiveProgramme{{ID: "iptv-1", ChannelID: "iptv", Title: "News", Start: now, End: now.Add(time.Hour), Genres: []string{"News"}, Images: []frontend.Image{{Kind: frontend.ImageStill, Path: "opaque-epg", Subject: "iptv-1", Tag: "epg"}}}}}
+	seal, _ := encryption(make([]byte, 32))
+	issued := 0
+	i := &instance{seal: seal, host: frontend.Host{Identity: identityFake{}, Experience: frontendtest.Experience{}, LiveTV: source, ImageGrants: frontendtest.ImageGrants{IssueFunc: func(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
+		if req.Channel != "iptv" || req.Item != 0 || req.Credential != "token" || req.Device.ID != "device" {
+			t.Fatalf("wrong scope: %+v", req)
+		}
+		issued++
+		return "opaque-capability", nil
+	}}}}
+	for _, path := range []string{"/vela/v0/live/channels?limit=100", "/vela/v0/live/guide?limit=100&from=2026-11-14T04:00:00Z&until=2026-11-14T05:00:00Z"} {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer token")
+		r.Header.Set("X-Vela-Device-Id", "device")
+		w := httptest.NewRecorder()
+		if strings.Contains(path, "/channels") {
+			i.channels(w, r)
+		} else {
+			i.guide(w, r)
+		}
+		if w.Code != 200 {
+			t.Fatalf("response %d %s", w.Code, w.Body.String())
+		}
+		var page struct {
+			Items []struct {
+				Artwork []struct {
+					Sizes []struct {
+						URL           string
+						Width, Height int
+					}
+				}
+				Group  string
+				Genres []string
+			}
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) != 1 || len(page.Items[0].Artwork) != 1 {
+			t.Fatal("missing artwork", w.Body.String())
+		}
+		size := page.Items[0].Artwork[0].Sizes[0]
+		if size.URL != "/vela/v0/images/opaque-capability?w=0" || size.Width != 0 || size.Height != 0 {
+			t.Fatal("fabricated source sizing", size)
+		}
+		if strings.Contains(path, "/channels") && page.Items[0].Group != "News" {
+			t.Fatal("missing group")
+		}
+		if strings.Contains(path, "/guide") && len(page.Items[0].Genres) != 1 {
+			t.Fatal("missing genres")
+		}
+	}
+	if issued != 2 {
+		t.Fatal("unbounded image issue", issued)
+	}
+}
