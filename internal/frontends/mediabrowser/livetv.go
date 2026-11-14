@@ -53,8 +53,13 @@ func (i *instance) channelDTO(r *http.Request, token string, ch frontend.LiveCha
 	if err != nil {
 		return nil, false
 	}
+	tags := []string{}
+	for _, g := range ch.Guides {
+		tags = append(tags, g.Name)
+	}
 	item := map[string]any{
-		"Id": id, "Name": ch.Name, "Number": ch.Number, "Type": "TvChannel",
+		"Tags": tags,
+		"Id":   id, "Name": ch.Name, "Number": ch.Number, "Type": "TvChannel",
 		"ChannelType": "TV", "MediaType": "Video", "IsFolder": false,
 		"MediaSources": []any{i.liveChannelMediaSourceDTO(id, ch.Name)},
 		"UserData":     map[string]any{"Key": id, "IsFavorite": ch.Favorite},
@@ -154,6 +159,11 @@ func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
 	channels, err := i.host.LiveTV.Channels(r.Context(), viewer)
 	if err != nil {
 		w.Header().Set("Retry-After", "1")
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	channels, err = i.filterLiveChannels(r, viewer, channels)
+	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -322,7 +332,8 @@ func (i *instance) programmeDTO(p frontend.LiveProgramme, channel frontend.LiveC
 	item := map[string]any{
 		"Id": id, "ChannelId": channelID, "Name": p.Title, "Overview": p.Summary, "Type": "Program",
 		"StartDate": wireTime(p.Start), "EndDate": wireTime(p.End), "OfficialRating": contentrating.Prefixed(p.Rating),
-		"IndexNumber": p.Episode, "ParentIndexNumber": p.Season, "IsMovie": false, "IsSeries": p.Episode > 0 || p.Season > 0,
+		"IndexNumber": p.Episode, "ParentIndexNumber": p.Season, "Genres": append([]string{}, p.Genres...), "IsMovie": frontend.LiveCategory(p.Genres, "movie", p.MediaType), "IsSeries": frontend.LiveCategory(p.Genres, "series", p.MediaType) || p.Episode > 0 || p.Season > 0,
+		"IsSports": frontend.LiveCategory(p.Genres, "sports", p.MediaType), "IsNews": frontend.LiveCategory(p.Genres, "news", p.MediaType), "IsKids": frontend.LiveCategory(p.Genres, "kids", p.MediaType),
 		"MediaType": "Video", "IsFolder": false, "UserData": map[string]any{"Key": id, "PlaybackPositionTicks": 0, "PlayCount": 0, "IsFavorite": false, "Played": false},
 	}
 	if channel.ID != "" {
@@ -429,7 +440,7 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	q := frontend.LiveGuideQuery{From: now, Until: now.Add(24 * time.Hour), Limit: queryInt(r, "Limit", 100), Device: device(r)}
+	q := frontend.LiveGuideQuery{From: now, Until: now.Add(24 * time.Hour), Limit: 0, Device: device(r)}
 	for _, p := range []struct {
 		name string
 		dest *time.Time
@@ -469,7 +480,7 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	i.writeProgrammes(w, r, viewer, rows, queryInt(r, "StartIndex", 0), 0)
+	i.writeProgrammes(w, r, viewer, rows, queryInt(r, "StartIndex", 0), queryInt(r, "Limit", 100))
 }
 
 func (i *instance) recommendedProgrammes(w http.ResponseWriter, r *http.Request) {
@@ -525,6 +536,13 @@ func (i *instance) writeProgrammes(w http.ResponseWriter, r *http.Request, viewe
 			}
 		}
 	}
+	filtered := make([]frontend.LiveProgramme, 0, len(rows))
+	for _, p := range rows {
+		if liveProgrammeMatches(r, p) {
+			filtered = append(filtered, p)
+		}
+	}
+	rows = filtered
 	total := len(rows)
 	if limit > 0 {
 		rows = paging.Slice(rows, offset, limit)

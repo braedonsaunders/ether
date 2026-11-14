@@ -162,9 +162,20 @@ func (h liveTVHost) Channels(ctx context.Context, v *core.Viewer) ([]frontend.Li
 	if err != nil {
 		return nil, err
 	}
+	gs, err := h.s.OwnerGuides(ctx)
+	if err != nil {
+		return nil, err
+	}
+	memberships := map[GuideGroup][]frontend.LiveGuide{}
 	out := make([]frontend.LiveChannel, len(cs))
 	for i, c := range cs {
-		out[i] = frontend.LiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Kind: c.Kind, Logo: c.Logo, Rating: c.Rating, Group: c.Group, Favorite: c.Favorite}
+		group := GuideGroup{c.SourceID, c.Group}
+		guides, ok := memberships[group]
+		if !ok {
+			guides = guideMemberships(gs, c.SourceID, c.Group)
+			memberships[group] = guides
+		}
+		out[i] = frontend.LiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Kind: c.Kind, Logo: c.Logo, Rating: c.Rating, Group: c.Group, Favorite: c.Favorite, Guides: guides}
 	}
 	return out, nil
 }
@@ -182,7 +193,7 @@ func (h liveTVHost) Guide(ctx context.Context, v *core.Viewer, q frontend.LiveGu
 	}
 	out := make([]frontend.LiveProgramme, 0, len(ps))
 	for _, p := range ps {
-		out = append(out, frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating, ShowTitle: p.Item.ShowTitle, EpisodeTitle: p.Item.EpisodeTitle, Season: p.Item.Season, Episode: p.Item.Episode})
+		out = append(out, frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Genres: p.Item.Genres, MediaType: p.Item.MediaType, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating, ShowTitle: p.Item.ShowTitle, EpisodeTitle: p.Item.EpisodeTitle, Season: p.Item.Season, Episode: p.Item.Episode})
 		if q.Limit > 0 && len(out) >= q.Limit {
 			break
 		}
