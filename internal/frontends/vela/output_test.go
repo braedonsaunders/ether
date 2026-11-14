@@ -86,6 +86,26 @@ func TestVelaPlaybackOutputInvariants(t *testing.T) {
 		if w := request(); w.Code != 409 || calls != 1 {
 			t.Fatal("stale track command restarted encoder", w.Code, calls)
 		}
+
+		if origin := s.plan["paths"].([]object)[0]["timelineOriginSeconds"]; origin != float64(47) {
+			t.Fatal("track restart lost playlist origin", origin)
+		}
+		sessions.StartStreamFunc = func(_ context.Context, _ frontend.SessionAccess, _ string, r frontend.StreamRequest) (string, error) {
+			if r.Position != 1433500*time.Millisecond || r.AudioStream != nil {
+				t.Fatal("seek offset was not absolute", r)
+			}
+			return "/sessions/media/session/grant/master.m3u8", nil
+		}
+		r := httptest.NewRequest("POST", "/vela/v0/sessions/session/commands", nil)
+		r.SetPathValue("id", "session")
+		r.Header.Set("Authorization", "Bearer token")
+		r.Header.Set("X-Vela-Device-Id", "device")
+		r = r.WithContext(context.WithValue(r.Context(), bodyKey{}, json.RawMessage(`{"kind":"seek","positionSeconds":1433.5,"sourceGeneration":3,"seekGeneration":4}`)))
+		w := httptest.NewRecorder()
+		i.command(w, r)
+		if w.Code != 200 || s.plan["paths"].([]object)[0]["timelineOriginSeconds"] != 1433.5 || s.position.Seconds() != 1433.5 {
+			t.Fatal("seek origin was doubled/lost", w.Code, s.plan)
+		}
 	})
 	t.Run("sanitized manifests", func(t *testing.T) {
 		got := sanitizePlaylist("#EXTM3U\n#EXT-X-MAP:URI=\"https://provider.invalid/source/init.mp4?token=secret\"\n/sessions/media/id/grant/00001.m4s?token=secret\n")

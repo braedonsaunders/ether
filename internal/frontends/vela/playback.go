@@ -117,6 +117,10 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	options := frontend.DecideOptions{DirectPlay: true, DirectStream: b.Client.HLS || b.Client.MSE, AudioStream: -1, SubtitleStream: -1}
+	if b.Client.MSE {
+		options.ToneMapMaxHeight = 720
+		options.ToneMapMaxBitrateKbps = 4000
+	}
 	audioSet, subtitleSet := false, false
 	if b.AudioTrackID != "" {
 		n, err := strconv.Atoi(b.AudioTrackID)
@@ -234,6 +238,10 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 	}
 	path := object{"id": "primary", "kind": kind, "transport": transport, "url": url, "mimeType": mime, "readiness": "ready", "qualities": []object{}, "boundaries": []object{}}
 	path["decisionReason"] = plan.Decision.Reason
+	path["timelineOriginSeconds"] = float64(0)
+	if format == frontend.StreamHLS {
+		path["timelineOriginSeconds"] = pos.Seconds()
+	}
 	if plan.ETag != "" {
 		path["sourceId"] = plan.ETag
 	}
@@ -436,6 +444,7 @@ func (i *instance) command(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			paths[0]["url"] = url
+			paths[0]["timelineOriginSeconds"] = pos.Seconds()
 		}
 		s.retainDiagnostics()
 		s.seek++
@@ -493,6 +502,7 @@ func (i *instance) command(w http.ResponseWriter, r *http.Request) {
 		paths := s.plan["paths"].([]object)
 		paths[0]["url"], paths[0]["transport"], paths[0]["mimeType"] = url, "hls", "application/vnd.apple.mpegurl"
 		paths[0]["qualities"] = []object{}
+		paths[0]["timelineOriginSeconds"] = s.position.Seconds()
 		if reader, ok := i.host.Sessions.(frontend.StreamDecisionReader); ok {
 			if d, e := reader.StreamDecision(r.Context(), i.access(r, v), id); e == nil {
 				kind := "remux"

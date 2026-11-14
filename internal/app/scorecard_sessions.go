@@ -433,3 +433,10 @@ func (s scorecardSessionWrapper) DeleteBinding(ctx context.Context, id string) e
 	}
 	return store.DeleteBinding(ctx, id)
 }
+
+func (s scorecardSessionWrapper) StreamDecision(ctx context.Context, a frontend.SessionAccess, id string) (core.Decision, error) {
+	if reader, ok := s.embeddedScorecardSessions.(frontend.StreamDecisionReader); ok {
+		return reader.StreamDecision(ctx, a, id)
+	}
+	return core.Decision{}, core.ErrNotAvailable
+}

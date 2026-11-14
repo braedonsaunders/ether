@@ -40,27 +40,32 @@ func TestScopedOutputTrackRestart(t *testing.T) {
 	ps.Info = core.MediaInfo{Container: "mkv", Duration: 10 * time.Minute, Streams: []core.StreamInfo{{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080}, {Index: 1, Type: "audio", Codec: "aac"}, {Index: 7, Type: "audio", Codec: "aac", Language: "fr"}}}
 	tc := &trackOutputTranscoder{fakeMediaTranscoder: &fakeMediaTranscoder{sessions: map[string]*fakeMediaSession{}}}
 	b.deps.Transcoder = tc
+	bound := BindSurface(b, "jellyfin")
+	reader, ok := bound.(frontend.StreamDecisionReader)
+	if !ok {
+		t.Fatal("surface hides track output decision")
+	}
 	audio := 7
 	access := frontend.SessionAccess{Viewer: v, Device: device, Protocol: "jellyfin"}
 	req := frontend.StreamRequest{Format: frontend.StreamHLS, Position: 47 * time.Second, AudioStream: &audio, LazyStart: true, Continuous: true}
 	wrong := access
 	wrong.Device.ID = "another-device"
-	if _, err := b.StartStream(ctx, wrong, s.ID, req); err == nil {
+	if _, err := bound.StartStream(ctx, wrong, s.ID, req); err == nil {
 		t.Fatal("track restart accepted another device")
 	}
-	if _, err := b.StartStream(ctx, access, s.ID, req); err != nil {
+	if _, err := bound.StartStream(ctx, access, s.ID, req); err != nil {
 		t.Fatal(err)
 	}
 	if tc.last.Decision.AudioStream != 7 || tc.last.StartOffset != 47*time.Second || !tc.last.LazyStart || !tc.last.Continuous {
 		t.Fatalf("wrong output request: %+v", tc.last)
 	}
-	d, err := b.StreamDecision(ctx, access, s.ID)
+	d, err := reader.StreamDecision(ctx, access, s.ID)
 	if err != nil || d.AudioStream != 7 {
 		t.Fatal("unavailable admitted output decision", d, err)
 	}
 	old := tc.sessions[s.ID]
 	audio = 999
-	if _, err := b.StartStream(ctx, access, s.ID, req); err == nil {
+	if _, err := bound.StartStream(ctx, access, s.ID, req); err == nil {
 		t.Fatal("unprobed source track accepted")
 	}
 	if tc.sessions[s.ID] != old {
