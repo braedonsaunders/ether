@@ -968,25 +968,19 @@ function ProfileList({
 
             <SettingsSection
               title={t("Never play")}
-              description={
-                draft.fallbackBelowMin
-                  ? t(
-                      "When no release meets this profile, allow lower resolutions, including qualities excluded by an imported profile. Other limits still apply.",
-                    )
-                  : t("Releases outside these limits are skipped.")
-              }
+              description={t(
+                "Maximum limits and blocked releases always apply. Minimum resolution is a preference.",
+              )}
             >
               <SettingsRow
                 title={t("Resolution")}
                 description={
                   errors.minHeight || errors.maxHeight ? (
                     <span className="text-danger">{errors.minHeight || errors.maxHeight}</span>
-                  ) : draft.fallbackBelowMin ? (
-                    t(
-                      "When no release meets this profile, allow lower resolutions, including qualities excluded by an imported profile. Other limits still apply.",
-                    )
                   ) : (
-                    t("Lowest and highest acceptable.")
+                    t(
+                      "Maximum limits and blocked releases always apply. Minimum resolution is a preference.",
+                    )
                   )
                 }
                 control={
@@ -1013,19 +1007,6 @@ function ProfileList({
                       />
                     </span>
                   </span>
-                }
-              />
-              <SettingsRow
-                title={t("Fall back below minimum resolution")}
-                description={t(
-                  "When no release meets this profile, allow lower resolutions, including qualities excluded by an imported profile. Other limits still apply.",
-                )}
-                control={
-                  <Switch
-                    aria-label={t("Fall back below minimum resolution")}
-                    checked={draft.fallbackBelowMin ?? false}
-                    onChange={(e) => patch({ fallbackBelowMin: e.currentTarget.checked })}
-                  />
                 }
               />
               <div className="grid gap-6 border-t border-border px-4 py-3 sm:grid-cols-2">

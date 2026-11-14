@@ -298,7 +298,7 @@ func TestImportQualityProfileDetectsApp(t *testing.T) {
 	}
 }
 
-func TestPlanMarksUnusableWhenMinimumScoreIsImpossible(t *testing.T) {
+func TestPlanWarnsWhenMinimumScoreIsImpossible(t *testing.T) {
 	min := 5000
 	imp := QualityImport{
 		Source: ImportSourceTrash,
@@ -312,16 +312,16 @@ func TestPlanMarksUnusableWhenMinimumScoreIsImpossible(t *testing.T) {
 	found := map[string]core.CustomFormat{"low": format("low", "Low", map[string]int{"default": 100}, titleSpec)}
 	cfg := config.Config{Quality: config.Quality{Profiles: []core.QualityProfile{{Name: "Other"}}}}
 	plan := PlanQualityImport(imp, AppRadarr, found, cfg)
-	if plan.Unusable == "" || !strings.Contains(plan.Unusable, "at most 100") {
+	if plan.Unusable != "" || !strings.Contains(strings.Join(plan.Warnings, " "), "at most 100") {
 		t.Fatalf("unusable %q", plan.Unusable)
 	}
 	if plan.Profile.CustomFormatScores["low"] != 100 {
 		t.Fatalf("scores %v", plan.Profile.CustomFormatScores)
 	}
-	if err := plan.Apply(&cfg, "Strict"); !errors.Is(err, ErrImportUnusable) {
+	if err := plan.Apply(&cfg, "Strict"); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if len(cfg.Quality.Profiles) != 1 || len(cfg.Resolver.CustomFormats) != 0 {
+	if len(cfg.Quality.Profiles) != 2 || len(cfg.Resolver.CustomFormats) != 1 {
 		t.Fatalf("unusable import was saved: %+v", cfg)
 	}
 	// Exactly the best possible score is still reachable.
@@ -353,18 +353,18 @@ func TestQualityGateMatchesUnknownHeightBySource(t *testing.T) {
 		t.Fatalf("unknown-height WEB-DL rejected: %q", got)
 	}
 	profile.MinHeight = 1080
-	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceWEBDL}}, nil, profile, core.ClientCaps{}, false, false); got != "below profile min resolution" {
+	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceWEBDL}}, nil, profile, core.ClientCaps{}, false, false); got != "" {
 		t.Fatalf("min resolution not applied: %q", got)
 	}
 	profile.MinHeight = 0
-	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceBluRay}}, nil, profile, core.ClientCaps{}, false, false); got != "quality excluded by imported profile" {
+	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceBluRay}}, nil, profile, core.ClientCaps{}, false, false); got != "" {
 		t.Fatalf("other source allowed: %q", got)
 	}
 	profile.AllowedQualities = []string{"webdl-2160"}
 	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceWEBDL}}, nil, profile, core.ClientCaps{}, false, false); got != "" {
 		t.Fatalf("unknown height should match any height of its source: %q", got)
 	}
-	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceWEBDL, Height: 720}}, nil, profile, core.ClientCaps{}, false, false); got != "quality excluded by imported profile" {
+	if got := rejectPolicy(core.Release{Info: core.ReleaseInfo{Source: core.SourceWEBDL, Height: 720}}, nil, profile, core.ClientCaps{}, false, false); got != "" {
 		t.Fatalf("known wrong height allowed: %q", got)
 	}
 }

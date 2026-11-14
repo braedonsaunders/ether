@@ -132,7 +132,7 @@ func (s *Service) lastResort(ctx context.Context, p *unverifiedPool, key core.Ra
 			_, inconclusive := p.nzbs[o.rel.ID]
 			return tr.Candidates[o.trace].Rejected && !inconclusive
 		})
-		if c.fallback {
+		if c.fallback || c.belowScore {
 			res.QualityFallback = qualityFallbackReason(c.rel, tr)
 			tr.Downgrade = res.QualityFallback
 		}

@@ -370,6 +370,9 @@ func (s *Service) sourceAlwaysFirst(cands []candidate, want string, trace *Trace
 		if a.langOK != b.langOK {
 			return a.langOK
 		}
+		if !samePreferenceTier(a, b) {
+			return compareCandidates(a, b)
+		}
 		return preferred(a) && !preferred(b)
 	})
 	// A remembered success may break a score tie, but cannot jump ahead

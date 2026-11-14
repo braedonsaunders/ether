@@ -469,7 +469,7 @@ func PlanQualityImport(imp QualityImport, app string, found map[string]core.Cust
 		plan.Profile.CustomFormatScores[id] = v
 	}
 	// No release can exceed the sum of the positive scores the import can
-	// score, so a higher minimum would reject every release for ever.
+	// score, so a higher preferred minimum can only produce closest matches.
 	bestPossible := 0
 	for _, v := range scores {
 		if v > 0 {
@@ -477,7 +477,7 @@ func PlanQualityImport(imp QualityImport, app string, found map[string]core.Cust
 		}
 	}
 	if min := plan.Profile.MinCustomFormatScore; min != nil && *min > bestPossible {
-		plan.Unusable = fmt.Sprintf("This profile requires a custom format score of at least %d, but its importable formats can score at most %d, so no release could ever be accepted.", *min, bestPossible)
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("This profile prefers a custom format score of at least %d, but its importable formats can score at most %d. Ether will use the best available release while keeping hard rules.", *min, bestPossible))
 	}
 	plan.Profile.Name = uniqueProfileName(plan.Profile.Name, plan.MediaType, cfg.Quality.Profiles)
 	return plan

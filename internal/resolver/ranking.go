@@ -63,6 +63,20 @@ func compareCandidates(a, b candidate) bool {
 	if a.bandwidth != b.bandwidth {
 		return a.bandwidth > b.bandwidth
 	}
+	// Soft profile preferences precede the ordinary quality comparer.
+	if a.belowScore != b.belowScore {
+		return !a.belowScore
+	}
+	if a.belowScore && a.counted != b.counted {
+		return a.counted > b.counted
+	}
+	if a.fallback != b.fallback {
+		return !a.fallback
+	}
+	// Unlisted lower qualities still prefer the closest resolution.
+	if a.fallback && b.fallback && a.keys.height != b.keys.height {
+		return a.keys.height > b.keys.height
+	}
 	// Radarr/Sonarr.
 	x, y := a.keys, b.keys
 	if x.position != y.position {
@@ -249,4 +263,8 @@ func preferredSource(mode string) string {
 		return m
 	}
 	return ""
+}
+
+func samePreferenceTier(a, b candidate) bool {
+	return a.belowScore == b.belowScore && a.fallback == b.fallback && (!a.belowScore || a.counted == b.counted)
 }

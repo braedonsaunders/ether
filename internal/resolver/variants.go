@@ -52,7 +52,7 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 		pinID = pin.Release.ID
 		results = withRelease(results, pin.Release)
 	}
-	// Auto is exactly what normal resolution would pick: strict profile.
+	// Auto uses the same preferences and hard rules as normal resolution.
 	strict, _, err := s.rankCandidates(ctx, req, sreq, profile, results, nil, pinID)
 	if err != nil {
 		return nil, err
@@ -104,6 +104,20 @@ func (s *Service) Variants(ctx context.Context, req core.ResolveRequest, max int
 		}
 	}
 	labelPlayedAuto(req.Title, vs, played, results, s.LookupRelease, wanted)
+	// Every client version picker gets the same honest preference shortfall.
+	for i := range vs {
+		for _, c := range pool {
+			if c.rel.ID != vs[i].Release.ID {
+				continue
+			}
+			if c.belowScore {
+				vs[i].Label += fmt.Sprintf(" — below profile minimum (score %d of %d)", c.counted, *profile.MinCustomFormatScore)
+			} else if c.fallback {
+				vs[i].Label += " — below preferred quality"
+			}
+			break
+		}
+	}
 	return vs, nil
 }
 
