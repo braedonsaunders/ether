@@ -1,4 +1,5 @@
 import { Button, Switch } from "@braedonsaunders/appkit-ui";
+import { Flame } from "lucide-react";
 import { useState } from "react";
 import { t } from "../../i18n";
 import { apiFetch } from "../../lib/api";
@@ -25,64 +26,68 @@ export function WarmingControls({ titleKey }: { titleKey?: string }) {
     }
   }
   const data = state.data;
+  const pinned = data?.titles.some((x) => x.key === Number(titleKey)) ?? false;
+  const problem =
+    state.error || error ? (
+      <ErrorPanel error={error ?? state.error} onRetry={() => void state.reload()} />
+    ) : null;
+  if (titleKey)
+    return (
+      <>
+        <Button
+          size="sm"
+          variant={pinned ? "default" : "outline"}
+          aria-pressed={pinned}
+          disabled={!data || busy}
+          onClick={() => void save({ key: Number(titleKey), pinned: !pinned })}
+        >
+          <Flame size={14} fill={pinned ? "currentColor" : "none"} />
+          {t("Keep warm")}
+        </Button>
+        {problem}
+      </>
+    );
   return (
     <section className="shrink-0 rounded-xl border border-border bg-surface p-4">
-      {titleKey ? (
-        <div className="flex items-center justify-between gap-4">
-          <label htmlFor="keep-warm" className="text-sm font-medium">
-            {t("Keep warm")}
-          </label>
-          <Switch
-            id="keep-warm"
-            checked={data?.titles.some((x) => x.key === Number(titleKey)) ?? false}
-            disabled={!data || busy}
-            onChange={(e) => void save({ key: Number(titleKey), pinned: e.currentTarget.checked })}
-          />
-        </div>
-      ) : (
-        <>
-          <h3 className="text-sm font-medium">{t("Keep warm")}</h3>
-          <p className="mt-1 text-xs text-muted">
-            {t("People's next episodes come first, then your pins. Uses your cache budget.")}
-          </p>
-          <ul className="my-3 max-h-36 space-y-2 overflow-y-auto">
-            {data?.titles.map((title) => (
-              <li key={title.key} className="flex items-center justify-between gap-3 text-sm">
-                <span>{title.title}</span>
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void save({ key: title.key, pinned: false })}
-                >
-                  {t("Remove")}
-                </Button>
-              </li>
-            ))}
-          </ul>
-          {data && !data.titles.length && (
-            <p className="my-3 text-xs text-muted">{t("Choose Keep warm on a movie or show.")}</p>
-          )}
-          <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
-            <div>
-              <label htmlFor="speculative-warming" className="text-sm font-medium">
-                {t("Speculative warming")}
-              </label>
-              <p className="text-xs text-muted">
-                {t("Off: only pins, watchlists and what people are watching.")}
-              </p>
-            </div>
-            <Switch
-              id="speculative-warming"
-              checked={data?.speculative ?? false}
-              disabled={!data || busy}
-              onChange={(e) => void save({ speculative: e.currentTarget.checked })}
-            />
-          </div>
-        </>
+      <h3 className="text-sm font-medium">{t("Keep warm")}</h3>
+      <p className="mt-1 text-xs text-muted">
+        {t("People's next episodes come first, then your pins. Uses your cache budget.")}
+      </p>
+      <ul className="my-3 max-h-36 space-y-2 overflow-y-auto">
+        {data?.titles.map((title) => (
+          <li key={title.key} className="flex items-center justify-between gap-3 text-sm">
+            <span>{title.title}</span>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => void save({ key: title.key, pinned: false })}
+            >
+              {t("Remove")}
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {data && !data.titles.length && (
+        <p className="my-3 text-xs text-muted">{t("Choose Keep warm on a movie or show.")}</p>
       )}
-      {state.error || error ? (
-        <ErrorPanel error={error ?? state.error} onRetry={() => void state.reload()} />
-      ) : null}
+      <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
+        <div>
+          <label htmlFor="speculative-warming" className="text-sm font-medium">
+            {t("Speculative warming")}
+          </label>
+          <p className="text-xs text-muted">
+            {t("Off: only pins, watchlists and what people are watching.")}
+          </p>
+        </div>
+        <Switch
+          id="speculative-warming"
+          checked={data?.speculative ?? false}
+          disabled={!data || busy}
+          onChange={(e) => void save({ speculative: e.currentTarget.checked })}
+        />
+      </div>
+
+      {problem}
     </section>
   );
 }

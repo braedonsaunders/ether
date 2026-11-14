@@ -752,7 +752,7 @@ export function CatalogBrowser({
           }}
           watchlistAction={
             <>
-              {watchlistPicker()}
+              <div className="w-full">{watchlistPicker()}</div>
               {watchButton(selected)}
             </>
           }

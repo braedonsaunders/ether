@@ -389,11 +389,9 @@ export default function Cache() {
           }
           className={cn(
             "app-scroll flex min-h-0 flex-1 flex-col bg-bg",
-            tab === "overview"
-              ? "overflow-y-auto"
-              : tab === "libraries"
-                ? "overflow-y-auto cockpit:overflow-hidden"
-                : "overflow-hidden",
+            tab === "overview" || tab === "libraries"
+              ? "overflow-y-auto cockpit:overflow-hidden"
+              : "overflow-hidden",
           )}
         >
           {error ? (
@@ -407,8 +405,7 @@ export default function Cache() {
             </div>
           ) : null}
           {tab === "overview" ? (
-            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-4 sm:p-5">
-              <WarmingControls />
+            <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-5 cockpit:min-h-0 cockpit:flex-1">
               <CacheOverview
                 snapshot={snap}
                 policy={snap?.policy ?? saved}
@@ -445,7 +442,10 @@ export default function Cache() {
               <LibraryCaches />
             </div>
           ) : (
-            <div className="app-scroll mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 sm:p-5 lg:grid-cols-12 lg:overflow-hidden">
+            <div className="app-scroll mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 sm:p-5 lg:grid-cols-12">
+              <div className="lg:col-span-12">
+                <WarmingControls />
+              </div>
               <div className="lg:col-span-12">
                 <WarmNewArrivals />
               </div>
