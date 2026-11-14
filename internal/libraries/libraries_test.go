@@ -171,7 +171,7 @@ func TestOwnerEditsAndDelete(t *testing.T) {
 	if err := s.Delete(ctx, 1); !errors.Is(err, ErrBuiltinLibrary) {
 		t.Fatalf("delete builtin = %v, want ErrBuiltinLibrary", err)
 	}
-	filter, err := s.Create(ctx, "Short Lived", core.TypeShow, libraryRules(core.Filter{Type: core.TypeShow}), "hide", core.Presentations{})
+	filter, err := s.Create(ctx, "Short Lived", core.TypeShow, nil, "show", core.Presentations{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestOwnerEditsAndDelete(t *testing.T) {
 		t.Fatalf("deleted filter still readable: %v", err)
 	}
 	// A deleted id is never reused.
-	next, err := s.Create(ctx, "Next", core.TypeShow, libraryRules(core.Filter{Type: core.TypeShow}), "hide", core.Presentations{})
+	next, err := s.Create(ctx, "Next", core.TypeShow, nil, "show", core.Presentations{})
 	if err != nil || next.ID == filter.ID {
 		t.Fatalf("id reused: %+v, %v", next, err)
 	}

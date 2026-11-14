@@ -21,7 +21,14 @@ func TestLibraryRulesUpgradeInvariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	_, err = db.Exec(`INSERT INTO libraries(id,key,name,source,media_type,filter,created_at,updated_at) VALUES(3,'anime','Anime Shows','filter','show','{"type":"show","genres":["Animation"]}',1,1)`)
+	_, err = db.Exec(`INSERT INTO libraries(id,key,name,source,media_type,filter,created_at,updated_at) VALUES(3,'anime','Anime Shows','filter','show','{"type":"show","group":{"operator":"and","children":[{"operator":"and","filter":{"genres":["Animation"]}}]} }',1,1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const source = "stremio:addon.example:popular"
+	_, err = db.Exec(`INSERT INTO libraries(id,key,name,source,media_type,filter,sources,created_at,updated_at) VALUES
+(4,'cinemeta','Cinemeta Popular','filter','show','{"type":"show"}',?,1,1),
+(5,'empty-group','Empty group','filter','show','{"type":"show","group":{"operator":"and","children":[{"operator":"and","filter":{}}]}}',?,1,1)`, `["`+source+`"]`, `["`+source+`"]`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +42,18 @@ func TestLibraryRulesUpgradeInvariant(t *testing.T) {
 	}
 	if lib.Source != core.LibraryCatalog || lib.VisibilityDefault != "hide" || len(lib.Rules) != 1 || lib.Rules[0].Action != "show" || len(lib.Sources) != 1 || lib.Sources[0] != "tmdb-tv" {
 		t.Fatalf("upgrade: %+v", lib)
+	}
+	if len(lib.Rules[0].Rules) != 1 || lib.Rules[0].Rules[0].Field != "genre" {
+		t.Fatalf("single-child groups survived: %+v", lib.Rules)
+	}
+	for _, id := range []core.LibraryID{4, 5} {
+		converted, err := svc.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(converted.Sources) != 1 || converted.Sources[0] != source || len(converted.Rules) != 0 || converted.VisibilityDefault != "show" {
+			t.Fatalf("empty predicate/source upgrade: %+v", converted)
+		}
 	}
 	if _, err = libraries.New(ctx, db, libraries.Options{}); err != nil {
 		t.Fatalf("second open: %v", err)
@@ -54,6 +73,23 @@ func TestLibraryRulesUpgradeInvariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = db.Exec(`INSERT INTO libraries_catalogue_members(source_id,key) SELECT ?,key FROM catalog_titles WHERE tmdb_id<=498`, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []core.LibraryID{4, 5} {
+		lib, err := svc.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: lib.MediaType, CatalogueSources: lib.Sources, ExtraRules: lib.Rules, ExtraFallback: lib.VisibilityDefault}, Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Total != 498 {
+			t.Fatalf("source membership changed: library %d count %d", id, page.Total)
+		}
+	}
 	predicates := []core.Filter{
 		{Type: core.TypeShow},
 		{Type: core.TypeShow, Genres: []string{"Animation"}},
@@ -65,8 +101,14 @@ func TestLibraryRulesUpgradeInvariant(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rules := []core.LibraryExclusion{{Action: "show", MediaType: "show", Match: "all", Rules: core.LibraryPredicateConditions(p)}}
-		converted, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeShow, ExtraRules: rules, ExtraFallback: "hide"}, Limit: 10})
+		conditions := core.LibraryPredicateConditions(p)
+		var rules []core.LibraryExclusion
+		fallback := "show"
+		if len(conditions) > 0 {
+			rules = []core.LibraryExclusion{{Action: "show", MediaType: "show", Match: "all", Rules: conditions}}
+			fallback = "hide"
+		}
+		converted, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeShow, ExtraRules: rules, ExtraFallback: fallback}, Limit: 10})
 		if err != nil {
 			t.Fatal(err)
 		}

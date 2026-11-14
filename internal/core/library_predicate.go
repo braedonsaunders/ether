@@ -7,18 +7,15 @@ import (
 
 // LibraryPredicateConditions converts a browse predicate to the shared rules
 // language. Every persisted field is retained; nested boolean groups become
-// nested rule groups. There is no saved library predicate after conversion.
+// nested rule groups. An empty result means the source needs no visibility
+// rule. There is no saved library predicate after conversion.
 func LibraryPredicateConditions(f Filter) []CollectionRule {
 	f.Type = ""
 	f.CatalogueSources = nil
 	raw, _ := json.Marshal(f)
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
-	out := predicateFields(fields)
-	if len(out) == 0 {
-		return []CollectionRule{{Field: "group", Op: "is", Value: json.RawMessage(`[]`)}}
-	}
-	return out
+	return predicateFields(fields)
 }
 func predicateFields(fields map[string]json.RawMessage) []CollectionRule {
 	keys := make([]string, 0, len(fields))
@@ -36,7 +33,10 @@ func predicateFields(fields map[string]json.RawMessage) []CollectionRule {
 		if k == "group" {
 			var g FilterGroup
 			_ = json.Unmarshal(v, &g)
-			out = append(out, predicateGroup(g))
+			r := predicateGroup(g)
+			if !emptyPredicateGroup(r) {
+				out = append(out, r)
+			}
 			continue
 		}
 		out = append(out, CollectionRule{Field: "browse:" + k, Op: "is", Value: v})
@@ -64,7 +64,16 @@ func predicateGroup(g FilterGroup) CollectionRule {
 		rules = append(rules, predicateFields(fields)...)
 	} else {
 		for _, child := range g.Children {
-			rules = append(rules, predicateGroup(child))
+			r := predicateGroup(child)
+			if emptyPredicateGroup(r) {
+				if g.Operator == "or" {
+					return r // true OR anything is true
+				}
+				if g.Operator != "not" {
+					continue // true adds nothing to an intersection
+				}
+			}
+			rules = append(rules, r)
 		}
 	}
 	op := "is"
@@ -74,6 +83,18 @@ func predicateGroup(g FilterGroup) CollectionRule {
 	if g.Operator == "not" {
 		op = "isNot"
 	}
+	if len(rules) == 1 && op != "isNot" {
+		return rules[0]
+	}
+	if len(rules) == 0 {
+		rules = []CollectionRule{}
+	}
 	v, _ := json.Marshal(rules)
 	return CollectionRule{Field: "group", Op: op, Value: v}
+}
+
+// An empty positive group is the constant true, including an empty OR in
+// browse predicates. Keep negated groups intact.
+func emptyPredicateGroup(r CollectionRule) bool {
+	return r.Field == "group" && r.Op != "isNot" && string(r.Value) == "[]"
 }

@@ -34,18 +34,18 @@ func (s *Service) convertPredicates(ctx context.Context) error {
 	if done == "1" {
 		return tx.Commit()
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id, filter, rules, visibility_default FROM libraries WHERE source='filter'`)
+	rows, err := tx.QueryContext(ctx, `SELECT id, filter, rules, visibility_default, sources FROM libraries WHERE source='filter'`)
 	if err != nil {
 		return err
 	}
 	type upgrade struct {
-		id                         int64
-		predicate, rules, fallback string
+		id                                  int64
+		predicate, rules, fallback, sources string
 	}
 	var pending []upgrade
 	for rows.Next() {
 		var u upgrade
-		if err := rows.Scan(&u.id, &u.predicate, &u.rules, &u.fallback); err != nil {
+		if err := rows.Scan(&u.id, &u.predicate, &u.rules, &u.fallback, &u.sources); err != nil {
 			rows.Close()
 			return err
 		}
@@ -69,16 +69,23 @@ func (s *Service) convertPredicates(ctx context.Context) error {
 			return err
 		}
 		conditions := core.LibraryPredicateConditions(f)
-		if len(rules) > 0 {
-			// A leading outside-predicate hide preserves the intersection with every
-			// pre-existing rule, including ordered Show rules and either fallback.
-			raw, _ := json.Marshal(conditions)
-			rules = append([]core.LibraryExclusion{{Action: "hide", MediaType: string(f.Type), Match: "all", Rules: []core.CollectionRule{{Field: "group", Op: "isNot", Value: raw}}}}, rules...)
+		fallback := u.fallback
+		if fallback != "hide" {
+			fallback = "show"
 		}
-		if u.fallback != "hide" {
-			rules = append(rules, core.LibraryExclusion{Action: "show", MediaType: string(f.Type), Match: "all", Rules: conditions})
+		if len(conditions) > 0 {
+			if len(rules) > 0 {
+				// A leading outside-predicate hide preserves the intersection with every
+				// pre-existing rule, including ordered Show rules and either fallback.
+				raw, _ := json.Marshal(conditions)
+				rules = append([]core.LibraryExclusion{{Action: "hide", MediaType: string(f.Type), Match: "all", Rules: []core.CollectionRule{{Field: "group", Op: "isNot", Value: raw}}}}, rules...)
+			}
+			if u.fallback != "hide" {
+				rules = append(rules, core.LibraryExclusion{Action: "show", MediaType: string(f.Type), Match: "all", Rules: conditions})
+			}
+			fallback = "hide"
 		}
-		if _, err := libraryfilter.CompilePolicy(rules, "hide"); err != nil {
+		if _, err := libraryfilter.CompilePolicy(rules, fallback); err != nil {
 			return fmt.Errorf("library %d rules: %w", u.id, err)
 		}
 		data, err := json.Marshal(rules)
@@ -89,8 +96,16 @@ func (s *Service) convertPredicates(ctx context.Context) error {
 		if f.Type == core.TypeShow {
 			source = "tmdb-tv"
 		}
-		sources, _ := json.Marshal([]string{source})
-		if _, err = tx.ExecContext(ctx, `UPDATE libraries SET source='catalogue', media_type=?, sources=?, rules=?, visibility_default='hide', filter='' WHERE id=?`, string(f.Type), string(sources), string(data), u.id); err != nil {
+		var existingSources []string
+		if err := json.Unmarshal([]byte(u.sources), &existingSources); err != nil {
+			return fmt.Errorf("library %d sources: %w", u.id, err)
+		}
+		sources := u.sources
+		if len(existingSources) == 0 {
+			data, _ := json.Marshal([]string{source})
+			sources = string(data)
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE libraries SET source='catalogue', media_type=?, sources=?, rules=?, visibility_default=?, filter='' WHERE id=?`, string(f.Type), sources, string(data), fallback, u.id); err != nil {
 			return err
 		}
 	}

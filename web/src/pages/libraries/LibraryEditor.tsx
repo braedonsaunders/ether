@@ -273,14 +273,15 @@ export function LibraryEditor({
     };
     // A type-only source choice is the full source pool. Only an actual
     // saved browse predicate needs an initial Show rule and a Hide default.
-    if (allTitles || Object.keys(predicate).length === 0) return [];
+    const conditions = conditionsFromBrowse(predicate);
+    if (allTitles || conditions.length === 0) return [];
     return [
       {
         name: "",
         action: "show",
         mediaType: seed?.get("type") === "show" ? "show" : "movie",
         match: "all",
-        rules: conditionsFromBrowse(predicate),
+        rules: conditions,
       },
     ];
   });

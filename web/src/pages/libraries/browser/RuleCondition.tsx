@@ -356,24 +356,36 @@ export function conditionsFromBrowse(filter: Record<string, unknown>, nested = f
     if (key === "group") {
       const walk = (value: unknown): Rule => {
         const group = value as Record<string, unknown>;
+        const wrap = (children: Rule[], op: Rule["op"]): Rule =>
+          children.length === 1 && op !== "isNot"
+            ? children[0]!
+            : { field: "group", op, value: children };
         if (group.filter)
-          return {
-            field: "group",
-            op: "is",
-            value: conditionsFromBrowse(group.filter as Record<string, unknown>, true),
-          };
+          return wrap(conditionsFromBrowse(group.filter as Record<string, unknown>, true), "is");
         const { operator, children, ...state } = group;
         if (Object.keys(state).length) return { field: "viewer", op: "is", value: state };
-        return {
-          field: "group",
-          op: operator === "or" ? "in" : "is",
-          value: ((children ?? []) as unknown[]).map(walk),
-        };
+        const converted = ((children ?? []) as unknown[]).map(walk);
+        if (operator === "or" && converted.some(emptyGroup))
+          return { field: "group", op: "is", value: [] };
+        return wrap(
+          operator === "not" ? converted : converted.filter((r) => !emptyGroup(r)),
+          operator === "or" ? "in" : operator === "not" ? "isNot" : "is",
+        );
       };
-      rules.push(walk(value));
+      const rule = walk(value);
+      if (!emptyGroup(rule)) rules.push(rule);
       continue;
     }
     rules.push({ field: `browse:${key}`, op: "is", value });
   }
-  return rules.length ? rules : [{ field: "group", op: "is", value: [] }];
+  return rules;
+}
+
+function emptyGroup(rule: Rule): boolean {
+  return (
+    rule.field === "group" &&
+    rule.op !== "isNot" &&
+    Array.isArray(rule.value) &&
+    rule.value.length === 0
+  );
 }
