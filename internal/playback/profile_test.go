@@ -18,10 +18,10 @@ func TestSelectProfileForMediaUsesTitleKind(t *testing.T) {
 	if p := m.selectProfile(core.ClientCaps{}, nil, core.EpisodeKey(1, 1, 1)); p.Name != core.MediaTV {
 		t.Fatalf("episode profile %q", p.Name)
 	}
-	if p := m.selectProfile(core.ClientCaps{}, nil, core.ShowKey(1)); p.Name != core.MediaAny {
+	if p := m.selectProfile(core.ClientCaps{}, nil, core.ShowKey(1)); p.Name != core.MediaTV {
 		t.Fatalf("show key profile %q", p.Name)
 	}
-	if len(got) != 3 || got[0] != core.MediaMovie || got[1] != core.MediaTV || got[2] != core.MediaAny {
+	if len(got) != 3 || got[0] != core.MediaMovie || got[1] != core.MediaTV || got[2] != core.MediaTV {
 		t.Fatalf("media passed to selector %v", got)
 	}
 }

@@ -2,7 +2,11 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"sync"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/lru"
@@ -17,15 +21,19 @@ const libraryProfileCacheEntries = 8192
 // libraryProfiles answers resolver.LibraryProfiles: which quality profile a
 // title ranks with, from the library it belongs to (spec #419). A filter
 // library that contains the title wins over the built-in Movies/TV Shows
-// library; the lowest library id breaks a tie between matching filter
-// libraries. Membership is one indexed read per filter library (no walk),
-// and the answer is cached per title until the libraries generation moves.
+// library; the lowest library id with a compatible explicit profile breaks
+// a tie between matching filter/collection libraries, independent of entry point.
+// Membership is one indexed read per filter library (no walk),
+// and the answer is cached until local generations move or the short TTL expires.
 type libraryProfiles struct {
 	app *App
 
-	mu    sync.Mutex
-	gen   uint64
-	cache *lru.Cache[core.RatingKey, string]
+	mu         sync.Mutex
+	gen        uint64
+	catalogGen uint64
+	configGen  uint64
+	at         time.Time
+	cache      *lru.Cache[core.RatingKey, string]
 }
 
 func newLibraryProfiles(a *App) *libraryProfiles {
@@ -52,9 +60,14 @@ func (l *libraryProfiles) cached(key core.RatingKey) (string, bool) {
 	gen := l.app.libraries.Generation()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.gen != gen {
+	catalogGen := l.app.catalog.WriteGeneration()
+	configGen := l.app.cfg.Generation()
+	if l.gen != gen || l.configGen != configGen || l.catalogGen != catalogGen || time.Since(l.at) > 30*time.Second {
 		l.cache.Clear()
 		l.gen = gen
+		l.catalogGen = catalogGen
+		l.configGen = configGen
+		l.at = time.Now()
 	}
 	return l.cache.Get(key)
 }
@@ -81,7 +94,18 @@ func (l *libraryProfiles) resolve(ctx context.Context, t *core.Title) string {
 	// track the minimum.
 	var winner core.Library
 	found := false
+	profiles := l.app.cfg.Read().Quality.Profiles
 	for _, lib := range libs {
+		if lib.QualityProfile == "" {
+			continue
+		}
+		scope := core.MediaMovie
+		if media == string(core.TypeShow) {
+			scope = core.MediaTV
+		}
+		if _, ok := core.FindProfile(profiles, lib.QualityProfile, scope); !ok {
+			continue
+		}
 		if lib.Source != core.LibraryFilter && lib.Source != core.LibraryCollection {
 			continue
 		}
@@ -101,6 +125,7 @@ func (l *libraryProfiles) resolve(ctx context.Context, t *core.Title) string {
 			}
 			membership = core.Filter{Type: lib.MediaType, CollectionMembers: lib.CollectionID}
 		}
+		membership.CatalogueSources = lib.Sources
 		if l.app.catalog == nil {
 			continue
 		}
@@ -116,7 +141,11 @@ func (l *libraryProfiles) resolve(ctx context.Context, t *core.Title) string {
 		return winner.QualityProfile
 	}
 	// No filter library matched: the canonical built-in library.
-	if canonical := core.CanonicalLibraryForTitle(t.Type); canonical != 0 {
+	canonical := core.LibraryMovies
+	if media == string(core.TypeShow) {
+		canonical = core.LibraryShows
+	}
+	if canonical != 0 {
 		if lib, err := l.app.libraries.Get(ctx, canonical); err == nil {
 			return lib.QualityProfile
 		}
@@ -135,7 +164,7 @@ func titleMedia(t *core.Title) string {
 	switch t.Key.Kind() {
 	case core.KindMovie:
 		return core.MediaMovie
-	case core.KindEpisode:
+	case core.KindShow, core.KindSeason, core.KindEpisode:
 		return string(core.TypeShow)
 	}
 	return core.MediaAny
@@ -146,5 +175,30 @@ func libraryProfileKey(t *core.Title) core.RatingKey {
 	if (t.Type == core.TypeSeason || t.Type == core.TypeEpisode) && t.ShowKey != 0 {
 		return t.ShowKey
 	}
+	switch t.Key.Kind() {
+	case core.KindSeason, core.KindEpisode:
+		return core.ShowKey(t.Key.TMDB())
+	}
 	return t.Key
+}
+
+// PolicyKey binds durable feed evidence to library profile assignments and filters.
+func (l *libraryProfiles) PolicyKey(ctx context.Context) string {
+	libs, err := l.app.libraries.List(ctx)
+	if err != nil {
+		return "unavailable"
+	}
+	b, _ := json.Marshal(libs)
+	return fmt.Sprintf("%x", sha256.Sum256(b))
+}
+
+func (a *App) playbackProfile(caps core.ClientCaps, user *core.User, key core.RatingKey) core.QualityProfile {
+	ctx := context.Background()
+	// Plugin items open their own ByteSource; video release filters have no meaning.
+	if key.IsPluginKey() {
+		return core.QualityProfile{}
+	}
+	// Encoded keys identify movie/show and the parent show without hydrating
+	// metadata or calling a catalogue provider on the playback path.
+	return a.resolver.ProfileForTitle(ctx, caps, user, &core.Title{Key: key})
 }

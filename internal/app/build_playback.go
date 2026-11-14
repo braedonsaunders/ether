@@ -40,12 +40,13 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 		NativeTrailer: func(ctx context.Context, src core.MediaSource, info *core.MediaInfo) bool {
 			return transcode.ProbeTrailer(ctx, src, src.Size(), info)
 		},
-		Resolver:   a.resolver,
-		Engine:     playbackEngine(a),
-		Transcoder: tc,
-		Catalog:    a.catalog,
-		Cache:      a.cache,
-		State:      a.state,
+		Resolver:           a.resolver,
+		Engine:             playbackEngine(a),
+		Transcoder:         tc,
+		Catalog:            a.catalog,
+		Cache:              a.cache,
+		State:              a.state,
+		SelectTitleProfile: a.playbackProfile,
 		SelectProfile: func(caps core.ClientCaps, u *core.User, media string) core.QualityProfile {
 			return resolver.SelectProfileForMedia(a.cfg.Read().Quality, caps, u, media)
 		},

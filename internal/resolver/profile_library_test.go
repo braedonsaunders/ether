@@ -1,10 +1,13 @@
 package resolver
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releaseparse"
 )
 
 // TestSelectProfileForTitlePrecedence pins the per-library quality profile
@@ -54,5 +57,66 @@ func TestSelectProfileForTitlePrecedence(t *testing.T) {
 				t.Fatalf("SelectProfileForTitle = %q, want %q", got.Name, tc.want)
 			}
 		})
+	}
+}
+
+type invariantLibraryProfile struct{ name string }
+
+func (p *invariantLibraryProfile) QualityProfileForTitle(context.Context, *core.Title) string {
+	return p.name
+}
+func (p *invariantLibraryProfile) PolicyKey(context.Context) string { return p.name }
+
+func TestLibraryProfileEvidenceInvariant(t *testing.T) {
+	cfg := testCfg()
+	cfg.Quality = config.Quality{Profiles: []core.QualityProfile{
+		{Name: "Home", MediaType: core.MediaMovie, MaxHeight: 2160, AllowHDR: true},
+		{Name: "Library", MediaType: core.MediaMovie, MaxHeight: 720},
+	}, DefaultMovie: "Home"}
+	lookup := &invariantLibraryProfile{name: "Library"}
+	s := New(&fakeIndexer{}, nil, nil, cfg, Options{LibraryProfiles: lookup})
+	defer s.Close()
+	ctx := t.Context()
+	title := matrixTitle()
+	r := rel("1080", "The.Signal.1999.1080p.WEB-DL.x264-GRP", 4000)
+	r.Info = releaseparse.Parse(r.Name)
+	_, reason, err := s.FeedCandidate(ctx, title, r)
+	if err != nil || reason == "" {
+		t.Fatalf("feed ignored library: %q %v", reason, err)
+	}
+	ev, err := s.FeedEvaluation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldKey := ev.Key()
+	verdicts, err := ev.Evaluate(ctx, title, []core.Release{r})
+	ev.Close()
+	if err != nil || len(verdicts) != 1 || verdicts[0].Reason == "" {
+		t.Fatalf("batch feed ignored library: %+v %v", verdicts, err)
+	}
+	s.setAvailability(ctx, int64(title.Key), false, time.Hour)
+	lookup.name = "Home"
+	if known, _ := s.Available(ctx, title.Key); known {
+		t.Fatal("old library availability survived profile change")
+	}
+	if got := s.KnownUnavailableSince(ctx, []core.RatingKey{title.Key}); len(got) != 0 {
+		t.Fatalf("old negative policy survived: %v", got)
+	}
+	ev, err = s.FeedEvaluation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ev.Close()
+	if oldKey == ev.Key() {
+		t.Fatal("library policy did not invalidate durable feed evidence")
+	}
+	verdicts, err = ev.Evaluate(ctx, title, []core.Release{r})
+	if err != nil || verdicts[0].Reason != "" {
+		t.Fatalf("home policy rejected release: %+v %v", verdicts, err)
+	}
+	for _, title := range []*core.Title{{Type: core.TypeShow}, {Type: core.TypeSeason}, {Key: core.ShowKey(1)}, {Key: core.SeasonKey(1, 1)}} {
+		if got := titleMedia(title); got != core.MediaTV {
+			t.Fatalf("show media = %q", got)
+		}
 	}
 }

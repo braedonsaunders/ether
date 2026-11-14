@@ -13,6 +13,8 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { Check, Download, Film, Plus, RefreshCw, SlidersHorizontal, Tv } from "lucide-react";
 import { useState } from "react";
+import { useAsync } from "../../lib/hooks";
+import { librariesApi } from "../libraries/api";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { ChipGroup, NumberInput, Segmented } from "../../components/fields";
 import { Section } from "../../components/layout";
@@ -526,6 +528,7 @@ function ProfileList({
   onMediaChange: (media: ProfileMedia) => void;
 }) {
   const { fields } = useRankingRegistry();
+  const libraries = useAsync((signal) => librariesApi.list(signal), []);
   const profiles = quality.profiles ?? [];
   const visible = profiles
     .map((profile, index) => ({ profile, index }))
@@ -811,7 +814,9 @@ function ProfileList({
         ) : (
           <ul className="divide-y divide-border">
             {visible.map(({ profile: p, index: i }) => {
-              const usedBy = rules.filter((r) => r.profile === p.name).length;
+              const usedBy = rules.filter(
+                (r) => r.profile === p.name && (!r.mediaType || r.mediaType === p.mediaType),
+              ).length;
               return (
                 <RecordItem
                   key={`${p.name}-${i}`}
@@ -820,6 +825,19 @@ function ProfileList({
                   meta={
                     <>
                       <MediaBadge media={profileMediaType(p)} />
+                      {(libraries.data ?? [])
+                        .filter(
+                          (lib) =>
+                            lib.source !== "plugin" &&
+                            lib.qualityProfile === p.name &&
+                            ((lib.filter?.type ?? lib.mediaType) === "show" ? "tv" : "movie") ===
+                              p.mediaType,
+                        )
+                        .map((lib) => (
+                          <Badge key={lib.id} variant="secondary">
+                            {t("Libraries")}: {lib.name}
+                          </Badge>
+                        ))}
                       {homeDefault === p.name ? (
                         <Badge variant="info">{t("Default at home")}</Badge>
                       ) : null}
