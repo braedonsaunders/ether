@@ -21,6 +21,8 @@ type impression struct {
 type servedRow struct {
 	hubID, kind, title string
 	position           int
+	itemsOnly          bool
+	itemOffset         int
 	keys               []core.RatingKey
 }
 
@@ -141,20 +143,22 @@ func aggregate(batch []impression, loc *time.Location) ([]rowAgg, []itemAgg) {
 		day := dayOf(imp.at, loc)
 		at := ms(imp.at)
 		for _, sr := range imp.rows {
-			k := rk{imp.userID, day, sr.hubID}
-			if i, ok := rowIdx[k]; ok {
-				r := &rows[i]
-				r.serves++
-				r.bestPosition = min(r.bestPosition, sr.position)
-				r.first, r.last = min(r.first, at), max(r.last, at)
-				r.hc, r.title = imp.hc, sr.title
-			} else {
-				rowIdx[k] = len(rows)
-				rows = append(rows, rowAgg{userID: imp.userID, day: day, hubID: sr.hubID, kind: sr.kind, title: sr.title,
-					serves: 1, bestPosition: sr.position, first: at, last: at, hc: imp.hc})
+			if !sr.itemsOnly {
+				k := rk{imp.userID, day, sr.hubID}
+				if i, ok := rowIdx[k]; ok {
+					r := &rows[i]
+					r.serves++
+					r.bestPosition = min(r.bestPosition, sr.position)
+					r.first, r.last = min(r.first, at), max(r.last, at)
+					r.hc, r.title = imp.hc, sr.title
+				} else {
+					rowIdx[k] = len(rows)
+					rows = append(rows, rowAgg{userID: imp.userID, day: day, hubID: sr.hubID, kind: sr.kind, title: sr.title,
+						serves: 1, bestPosition: sr.position, first: at, last: at, hc: imp.hc})
+				}
 			}
 			for idx, key := range sr.keys {
-				rank := sr.position*1000 + idx
+				rank := sr.position*1000 + sr.itemOffset + idx
 				k := ik{imp.userID, day, key, sr.hubID}
 				if i, ok := itemIdx[k]; ok {
 					it := &items[i]

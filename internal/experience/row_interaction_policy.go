@@ -19,6 +19,7 @@ type RowInteractionPolicy struct {
 	AllowEntry        func(context.Context, *core.User, string, string) bool
 	CollectionMembers func(context.Context, *core.User, core.RatingKey, []core.NeutralEntryRef) bool
 	Impression        func(*core.User, core.NeutralImpression)
+	EntryImpression   func(*core.User, core.NeutralImpression, core.NeutralEntryRef)
 	DetailOpen        func(context.Context, *core.User, *core.Title)
 }
 
@@ -81,16 +82,54 @@ func (p RowInteractionPolicy) Allowed(ctx context.Context, u *core.User, subject
 	return false
 }
 
+// AllowedAction distinguishes a row exposure from one actually visible entry.
+func (p RowInteractionPolicy) AllowedAction(subject ReceiptSubject, kind frontend.RowInteractionKind) bool {
+	if subject.Impression == nil {
+		return false
+	}
+	if subject.Kind == "row" {
+		return kind == frontend.RowPlay || (kind == frontend.RowImpression && p.Impression != nil)
+	}
+	if _, ok := receiptEntry(subject); !ok {
+		return false
+	}
+	switch kind {
+	case frontend.RowImpression:
+		return p.EntryImpression != nil
+	case frontend.RowClick, frontend.RowPlay:
+		return true
+	}
+	return false
+}
+
+func receiptEntry(subject ReceiptSubject) (core.NeutralEntryRef, bool) {
+	if subject.Impression != nil {
+		for _, entry := range subject.Impression.Entries {
+			if subject.Kind == entry.Kind && subject.ID == subject.Impression.RowID+"/"+entry.Kind+"/"+entry.ID {
+				return entry, true
+			}
+		}
+	}
+	return core.NeutralEntryRef{}, false
+}
+
 func (p RowInteractionPolicy) Record(ctx context.Context, u *core.User, subject ReceiptSubject, kind frontend.RowInteractionKind) error {
 	// The playback watch event already supplies the play reward. A row play
 	// receipt acknowledges its validated attribution without counting another
 	// impression (which would inflate the number of times this shelf was seen).
-	if kind == frontend.RowPlay && subject.Kind == "row" && subject.Impression != nil {
+	if kind == frontend.RowPlay && subject.Impression != nil && (subject.Kind == "row" || p.AllowedAction(subject, kind)) {
 		return nil
 	}
 	if kind == frontend.RowImpression && subject.Impression != nil {
-		p.Impression(u, *subject.Impression)
-		return nil
+		if subject.Kind == "row" && p.Impression != nil {
+			p.Impression(u, *subject.Impression)
+			return nil
+		}
+		if entry, ok := receiptEntry(subject); ok && p.EntryImpression != nil {
+			p.EntryImpression(u, *subject.Impression, entry)
+			return nil
+		}
+		return ErrReceipt
 	}
 	if kind == frontend.RowClick && subject.Kind == string(frontend.RowEntryTitle) {
 		idx := strings.LastIndex(subject.ID, "/title/")
@@ -107,6 +146,13 @@ func (p RowInteractionPolicy) Record(ctx context.Context, u *core.User, subject 
 		}
 		p.DetailOpen(ctx, u, title)
 		return nil
+	}
+	// Non-title destinations have no title-detail reward. Their validated
+	// selection still remains deduplicated in the receipt action ledger.
+	if kind == frontend.RowClick && subject.Kind != "row" {
+		if _, ok := receiptEntry(subject); ok {
+			return nil
+		}
 	}
 	return errors.New("experience: unsupported row interaction")
 }

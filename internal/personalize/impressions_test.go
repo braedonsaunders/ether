@@ -210,6 +210,24 @@ func TestNeutralImpressionsPreserveKindAndRankWithoutChangingPlexKinds(t *testin
 			t.Fatal("neutral event modified Plex kind registry")
 		}
 	}
+	t.Run("only visible entry exposure", func(t *testing.T) {
+		hidden, visible := movieKey(0, 30), movieKey(0, 31)
+		ref := core.NeutralEntryRef{Kind: "title", ID: visible.String()}
+		imp := core.NeutralImpression{RowID: "visible.entry", Kind: KindTop10, Rank: 2, Items: []core.RatingKey{hidden, visible}, Entries: []core.NeutralEntryRef{{Kind: "title", ID: hidden.String()}, ref}, Situation: core.HomeSituation{Now: testNow}}
+		h.e.RecordNeutralEntryImpression(user, imp, ref)
+		h.e.Flush(ctx)
+		var rows, items, shows, rank int
+		if err := h.db.QueryRow(`SELECT COUNT(*) FROM personalize_row_impressions WHERE hub_id='visible.entry'`).Scan(&rows); err != nil || rows != 0 {
+			t.Fatal("entry visibility counted a shelf serve", rows, err)
+		}
+		if err := h.db.QueryRow(`SELECT COUNT(*) FROM personalize_item_impressions WHERE hub_id='visible.entry'`).Scan(&items); err != nil || items != 1 {
+			t.Fatal("offscreen exposure recorded", items, err)
+		}
+		if err := h.db.QueryRow(`SELECT shows,best_rank FROM personalize_item_impressions WHERE hub_id='visible.entry' AND item_key=?`, int64(visible)).Scan(&shows, &rank); err != nil || shows != 1 || rank != 2001 {
+			t.Fatal("entry rank/exposure changed", shows, rank, err)
+		}
+	})
+
 }
 
 func TestSemanticRowKindUsesRegisteredProducer(t *testing.T) {

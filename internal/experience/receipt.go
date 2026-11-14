@@ -95,7 +95,7 @@ func NewReceipts(o ReceiptOptions) (*Receipts, error) {
 	return &Receipts{opts: o, codec: codec}, nil
 }
 
-var ErrReceipt = errors.New("experience: invalid interaction receipt")
+var ErrReceipt = frontend.ErrInteractionReceipt
 
 func snapshotMatches(subject ReceiptSubject, imp *core.NeutralImpression) bool {
 	if imp == nil || imp.RowID == "" || imp.Purpose != subject.Purpose || imp.Rank != subject.Rank {

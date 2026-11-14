@@ -96,6 +96,8 @@ func problem(w http.ResponseWriter, status int, class, code string) {
 }
 func fail(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, frontend.ErrInteractionReceipt):
+		problem(w, 400, "request", "invalid_receipt")
 	case errors.Is(err, frontend.ErrRowViewStale):
 		problem(w, 409, "conflict", "cursor_expired")
 	case errors.Is(err, frontend.ErrTranscodeCapacity), errors.Is(err, frontend.ErrStreamLimit), errors.Is(err, frontend.ErrSessionBusy):
@@ -194,6 +196,7 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 		webclient.ServeVela(w, r, i.assets)
 		return
 	}
+	r = r.WithContext(i.identityContext(r))
 	if r.Method != "POST" {
 		i.mux.ServeHTTP(w, r)
 		return

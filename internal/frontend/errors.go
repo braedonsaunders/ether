@@ -31,3 +31,6 @@ var ErrDownloadBudget = core.ErrDownloadBudget
 // ErrDownloadNeedsTranscode identifies a download source that cannot be
 // copied to MP4. It shares identity with the domain error for errors.Is.
 var ErrDownloadNeedsTranscode = core.ErrDownloadNeedsTranscode
+
+// ErrInteractionReceipt is an invalid, stale or out-of-scope interaction handle.
+var ErrInteractionReceipt = errors.New("experience: invalid interaction receipt")
