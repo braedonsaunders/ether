@@ -211,7 +211,7 @@ func (s *Service) publishVirtualGuideEntry(id string, epoch int64, entry *virtua
 	s.virtualGuide.mu.Unlock()
 }
 
-func (s *Service) startChannelPrep(c Channel, epoch int64, revision uint64, now time.Time, compiled *guideCompileCache) *virtualGuideFlight {
+func (s *Service) startChannelPrep(c Channel, epoch int64, revision uint64, now time.Time, compiled *guideCompileCache, users []core.User) *virtualGuideFlight {
 	s.virtualGuide.mu.Lock()
 	if f := s.virtualGuide.inflight[c.ID]; f != nil {
 		s.virtualGuide.mu.Unlock()
@@ -239,7 +239,7 @@ func (s *Service) startChannelPrep(c Channel, epoch int64, revision uint64, now 
 			close(f.done)
 			s.virtualGuide.mu.Unlock()
 		}()
-		f.err = s.warmSingleVirtualChannel(s.ctx, c, epoch, revision, now, compiled, nil)
+		f.err = s.warmSingleVirtualChannel(s.ctx, c, epoch, revision, now, compiled, users)
 	}()
 	return f
 }
@@ -362,18 +362,23 @@ func (s *Service) refreshVirtualGuide(ctx context.Context) error {
 	expected := map[string]bool{}
 	compiled := &guideCompileCache{}
 	warm := func(c Channel) error {
-		s.virtualGuide.mu.RLock()
-		existingFlight := s.virtualGuide.inflight[c.ID]
-		s.virtualGuide.mu.RUnlock()
-		if existingFlight != nil {
+		// Share the same per-channel flight with a tune arriving during a
+		// refresh, rather than building its snapshot twice.
+		if s.ctx == nil {
+			// Offline callers have no service lifetime for asynchronous prep.
+			if err := s.warmSingleVirtualChannel(ctx, c, epoch, revision, now, compiled, users); err != nil {
+				return err
+			}
+		} else {
+			flight := s.startChannelPrep(c, epoch, revision, now, compiled, users)
 			select {
-			case <-existingFlight.done:
+			case <-flight.done:
+				if flight.err != nil {
+					return flight.err
+				}
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-		}
-		if err := s.warmSingleVirtualChannel(ctx, c, epoch, revision, now, compiled, users); err != nil {
-			return err
 		}
 		seenMu.Lock()
 		seen[c.ID] = true
@@ -470,6 +475,10 @@ func (s *Service) allowedProgramme(ctx context.Context, u *core.User, c Channel,
 
 type virtualGuideContextKey struct{}
 
+// virtualTuneGuideKey lets tune use its startup deadline for a cold snapshot.
+// Guide browsing retains its short cold-cache response budget.
+type virtualTuneGuideKey struct{}
+
 func entryCoversNow(entry *virtualGuideSnapshot, c Channel, epoch int64, revision uint64, now time.Time) bool {
 	if entry == nil || entry.epoch != epoch || entry.revision != revision {
 		return false
@@ -487,11 +496,17 @@ func (s *Service) prepareVirtualChannels(ctx context.Context, missing []Channel,
 	compiled := &guideCompileCache{}
 	flights := make([]*virtualGuideFlight, 0, len(missing))
 	for _, c := range missing {
-		flights = append(flights, s.startChannelPrep(c, epoch, revision, now, compiled))
+		flights = append(flights, s.startChannelPrep(c, epoch, revision, now, compiled, nil))
 	}
 	s.noteVirtualGuideDemand(false)
 
-	waitTimer := s.newTimer(virtualGuideColdWait)
+	wait := virtualGuideColdWait
+	if tuning, _ := ctx.Value(virtualTuneGuideKey{}).(bool); tuning {
+		if deadline, ok := ctx.Deadline(); ok {
+			wait = time.Until(deadline)
+		}
+	}
+	waitTimer := s.newTimer(wait)
 	defer waitTimer.Stop()
 	for _, f := range flights {
 		select {

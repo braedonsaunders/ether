@@ -255,6 +255,15 @@ func (s *Service) TuneWithSession(ctx context.Context, u *core.User, channelID s
 	if err != nil {
 		return SessionInfo{}, err
 	}
+	if c.Kind == "virtual" {
+		// Cold guide preparation and source startup share the first-playlist
+		// budget. A tune immediately after restart may need more than the
+		// five seconds allowed to an ordinary guide request.
+		var cancelStartup context.CancelFunc
+		ctx, cancelStartup = context.WithTimeout(ctx, 20*time.Second)
+		defer cancelStartup()
+		ctx = context.WithValue(ctx, virtualTuneGuideKey{}, true)
+	}
 	c = s.personalChannel(ctx, c, u)
 	ps, err := s.programmes(ctx, c, s.o.Now(), s.o.Now().Add(time.Second))
 	if err != nil {
