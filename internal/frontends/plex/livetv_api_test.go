@@ -371,6 +371,17 @@ func TestLiveTVProviderRequiresAccessibleEnabledChannel(t *testing.T) {
 	if visible(friendToken) {
 		t.Fatal("empty viewer allow-list advertised Live TV")
 	}
+	if err := service.DeleteChannel(ctx, channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	if visible(ownerToken) || visible(friendToken) {
+		t.Fatal("empty lineup advertised Live TV")
+	}
+	dvrs := f.request(t, "GET", "/livetv/dvrs", map[string]string{"Accept": "application/json"})
+	if dvrs.Code != http.StatusOK || decodeJSON(t, dvrs)["size"].(float64) != 0 {
+		t.Fatalf("last deletion left a DVR: %d %s", dvrs.Code, dvrs.Body.String())
+	}
+
 }
 
 func TestLiveTVProviderAfterXtreamLiveImportDisabled(t *testing.T) {

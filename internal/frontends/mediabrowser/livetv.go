@@ -23,7 +23,9 @@ import (
 // CollectionType livetv.
 const liveTVViewNumber int64 = 1 << 61
 
-func (i *instance) liveTVEnabled() bool { return i != nil && i.host.LiveTV != nil }
+func (i *instance) liveTVEnabled() bool {
+	return i != nil && i.host.LiveTV != nil && i.host.LiveTV.Enabled()
+}
 
 func (i *instance) liveTVInfo(w http.ResponseWriter, r *http.Request) {
 	viewer, _, err := i.viewer(r)

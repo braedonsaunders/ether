@@ -1177,7 +1177,7 @@ func (s *Service) RefreshSource(ctx context.Context, id string) (Source, error) 
 }
 
 func (s *Service) refreshSource(ctx context.Context, id, reason string) (Source, error) {
-	if !s.Enabled() {
+	if reason != "manual" && !s.Enabled() {
 		return Source{}, core.ErrNotAvailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, refreshBudget)

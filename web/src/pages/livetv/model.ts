@@ -454,6 +454,7 @@ export type LiveUsage = {
 export const CHANNELS_PER_PAGE = 200;
 
 export const tv = {
+  addDecades: () => apiFetch("/livetv/channels/decades", { method: "POST" }),
   usage: async (signal?: AbortSignal): Promise<LiveUsage> => {
     const u = await apiFetch<Partial<LiveUsage> | null>("/livetv/usage", { signal });
     return {

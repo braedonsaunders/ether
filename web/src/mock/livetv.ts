@@ -553,6 +553,23 @@ export function createLiveTVMock(titles: FakeTitle[], empty = false) {
         ),
       };
     }
+    if (route === "POST /channels/decades") {
+      for (const [i, name] of ["CHROMA 80", "RIOT 90", "ORBIT 00", "SHIFT 10"].entries()) {
+        const id = `showcase-${i}`;
+        if (!channels.some((c) => c.id === id))
+          channels.push({
+            id,
+            number: String(1980 + 10 * i),
+            name,
+            kind: "virtual",
+            enabled: true,
+            favorite: false,
+            items: movies.slice(i * 3, i * 3 + 3).map(item),
+            group: "Decades",
+          });
+      }
+      return { body: { ok: true } };
+    }
     if (route === "GET /channels/summary") return { body: channels };
     if (route === "GET /channels/page") {
       const needle = (q.get("q") || "").toLowerCase();
