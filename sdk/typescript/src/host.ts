@@ -8,6 +8,7 @@
  */
 
 import type { MaybePromise } from "./types.ts";
+import type { ArchiveMember } from "./kit.ts";
 
 export interface HostFetchRequest {
   method?: string;
@@ -22,6 +23,44 @@ export interface HostFetchResponse {
   headers: Record<string, string>;
   body: string;
   bodyBase64?: string;
+}
+
+export interface DataRange { offset: number; length: number }
+export interface FetchCacheRequest { url: string; headers?: Record<string, string>; libraryKey: string; name: string }
+export interface FetchCacheResult { blob: string; size: number; crc32: string; md5: string; sha1: string; status: number }
+
+function checkDataRange(r: DataRange): void {
+  if (!Number.isSafeInteger(r.offset) || r.offset < 0 || r.offset > 256 * 1024 * 1024 || !Number.isSafeInteger(r.length) || r.length <= 0 || r.length > 1024 * 1024) throw new Error("Data range needs nonnegative offset and length 1..1048576");
+}
+function encodeData(data: Uint8Array): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const parts: string[] = [];
+  for (let i = 0; i < data.length; i += 3) {
+    const n = (data[i]! << 16) | ((data[i + 1] ?? 0) << 8) | (data[i + 2] ?? 0);
+    parts.push(alphabet[(n >>> 18) & 63]! + alphabet[(n >>> 12) & 63]! + (i + 1 < data.length ? alphabet[(n >>> 6) & 63] : "=") + (i + 2 < data.length ? alphabet[n & 63] : "="));
+  }
+  return parts.join("");
+}
+function encodeText(text: string): Uint8Array {
+  const encoded = encodeURIComponent(text); const bytes: number[] = [];
+  for (let i = 0; i < encoded.length; i++) {
+    if (encoded[i] === "%") { bytes.push(parseInt(encoded.slice(i + 1, i + 3), 16)); i += 2; }
+    else bytes.push(encoded.charCodeAt(i));
+  }
+  return new Uint8Array(bytes);
+}
+function decodeData(r: { bodyBase64: string }): Uint8Array {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const text = r.bodyBase64;
+  const out = new Uint8Array(Math.floor(text.length * 3 / 4) - (text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0));
+  let acc = 0, bits = 0, pos = 0;
+  for (const c of text) {
+    if (c === "=") break;
+    const n = alphabet.indexOf(c); if (n < 0) throw new Error("Invalid base64 host result");
+    acc = (acc << 6) | n; bits += 6;
+    if (bits >= 8) { bits -= 8; out[pos++] = (acc >> bits) & 255; }
+  }
+  return out;
 }
 
 export interface FolderHashJob { id: string; state: "running" | "done" | "canceled" | "error"; bytes: number; result?: FolderHash; error?: string }
@@ -69,6 +108,7 @@ export interface EtherHost {
   };
   http: {
     fetch(req: HostFetchRequest): MaybePromise<HostFetchResponse>;
+    fetchToCache?(req: FetchCacheRequest): MaybePromise<FetchCacheResult>;
   };
   catalog: {
     search(
@@ -115,6 +155,11 @@ export interface EtherHost {
   cache?: {
     put(libraryKey: string, name: string, data: Uint8Array): MaybePromise<string>;
     open(blobRef: string): MaybePromise<Uint8Array>;
+    read?(blobRef: string, range: DataRange): MaybePromise<Uint8Array>;
+  };
+  archive?: {
+    list(blobRef: string): MaybePromise<ArchiveMember[]>;
+    open(blobRef: string, member: number, range: DataRange): MaybePromise<Uint8Array>;
   };
   /**
    * Frontend-adapter host services (spec §6.5). streamUrl mints a scoped,
@@ -201,6 +246,15 @@ export function createHostedClient(): EtherHost {
   };
 
   return {
+    archive: {
+      list: (blob) => callHost<ArchiveMember[]>("archive.list", [blob]),
+      open: (blob, member, range) => { checkDataRange(range); return decodeData(callHost("archive.open", [blob, member, range])); },
+    },
+    cache: {
+      put: (lib, name, data) => callHost<{blob: string}>("cache.put", [lib, name, {bodyBase64: encodeData(data)}]).blob,
+      open: (blob) => { const r = callHost<{body?: string; bodyBase64?: string}>("cache.open", [blob]); return r.bodyBase64 ? decodeData({bodyBase64: r.bodyBase64}) : encodeText(r.body ?? ""); },
+      read: (blob, range) => { checkDataRange(range); return decodeData(callHost("cache.read", [blob, range])); },
+    },
     settings: { get: () => callHost<Record<string, unknown>>("settings.get", []) },
     kv: {
       get(key: string): string | null {
@@ -233,6 +287,7 @@ export function createHostedClient(): EtherHost {
       },
     },
     http: {
+      fetchToCache: (req) => callHost<FetchCacheResult>("http.fetchToCache", [req]),
       fetch(req: HostFetchRequest): HostFetchResponse {
         const normalized = {
           method: req.method ?? "GET",
@@ -419,6 +474,10 @@ export function createRemoteHostClient(opts: RemoteHostOptions = {}): EtherHost 
   };
 
   return {
+    archive: {
+      list: async (blob) => (await callJson<ArchiveMember[]>("POST", "/ether/plugin-host/data/archive.list", [blob])) ?? [],
+      open: async (blob, member, range) => { checkDataRange(range); return decodeData((await callJson<{bodyBase64: string}>("POST", "/ether/plugin-host/data/archive.open", [blob, member, range]))!); },
+    },
     ...(credential ? { settings: { get: async () => (await callJson<{ settings: Record<string, unknown> }>("GET", "/ether/plugin-host/settings"))?.settings ?? {} } } : {}),
     kv: {
       async get(key: string): Promise<string | null> {
@@ -454,6 +513,7 @@ export function createRemoteHostClient(opts: RemoteHostOptions = {}): EtherHost 
       },
     },
     http: {
+      fetchToCache: async (req) => (await callJson<FetchCacheResult>("POST", "/ether/plugin-host/data/http.fetchToCache", [req]))!,
       async fetch(req: HostFetchRequest): Promise<HostFetchResponse> {
         const resp = await doFetch(req.url, {
           method: req.method ?? "GET",
@@ -565,6 +625,7 @@ export function createRemoteHostClient(opts: RemoteHostOptions = {}): EtherHost 
       },
     },
     cache: {
+      read: async (blob, range) => { checkDataRange(range); return decodeData((await callJson<{bodyBase64: string}>("POST", "/ether/plugin-host/data/cache.read", [blob, range]))!); },
       async put(libraryKey, name, data) {
         const resp = await doFetch(`${base}/ether/plugin-host/cache/${encodeURIComponent(libraryKey)}?name=${encodeURIComponent(name)}`, {
           method: "POST",

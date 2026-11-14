@@ -308,6 +308,7 @@
                     "type": "object"
                   },
                   "cache": {
+                    "description": "Plugin-owned blob cache. http.fetchToCache streams a GET here under the existing network grant and library quota (at most 256 MiB per fetch). cache.read and archive.list/open use only this plugin-owned blob namespace, with 1 MiB range results. ZIP supports Store/Deflate only; ZIP64, split and encrypted archives are refused.",
                     "properties": {
                       "maxBytes": {
                         "type": "integer"

@@ -77,9 +77,9 @@ type Response struct {
 
 // Host is the plugin-to-Ether service surface (SPEC 5.1.5). Name is a dotted
 // service method: kv.get, kv.put, kv.delete, kv.list, secret.get,
-// http.fetch, catalog.search, catalog.get, viewers.history,
+// http.fetch, http.fetchToCache, archive.list, archive.open, catalog.search, catalog.get, viewers.history,
 // viewers.setWatchState, collections.upsert, kinds.upsert, kinds.delete,
-// kinds.items, sources.resolve, cache.put, cache.open, frontend.streamURL,
+// kinds.items, sources.resolve, cache.put, cache.open, cache.read, frontend.streamURL,
 // folders.list, folders.stat, notify.owner, log. Args is a JSON array of positional
 // arguments; the result is any JSON value. Return a *Fault to classify the
 // failure (forbidden for a missing or revoked grant).
@@ -94,7 +94,7 @@ type HostFunc func(ctx context.Context, name string, args json.RawMessage) (json
 // host functions. Wall time adds 1 unit per WallUnitInterval.
 var DefaultCosts = map[string]int64{
 	"log": 1, "kv.get": 5, "kv.put": 10, "kv.delete": 5, "kv.list": 10,
-	"secret.get": 5, "http.fetch": 100, "addon.get": 100, "catalog.search": 50, "catalog.get": 20,
+	"secret.get": 5, "http.fetch": 100, "http.fetchToCache": 100, "cache.read": 20, "archive.list": 50, "archive.open": 50, "addon.get": 100, "catalog.search": 50, "catalog.get": 20,
 	"viewers.history": 50, "viewers.setWatchState": 50, "collections.upsert": 50,
 	"kinds.upsert": 50, "kinds.delete": 50, "kinds.items": 20,
 	"sources.resolve": 100, "cache.put": 50, "cache.open": 20, "frontend.streamURL": 5,
@@ -114,7 +114,10 @@ const (
 	MaxMemoryBytes = 64 << 20
 	// MaxResponseBytes caps a plugin response.
 	MaxResponseBytes = 8 << 20
-	// MaxHostResultBytes caps one host-call result returned to a guest.
+	// MaxFetchBodyBytes caps a direct HTTP response before JSON encoding.
+	MaxFetchBodyBytes = 10 << 20
+	// MaxHostResultBytes caps general results; http.fetch additionally permits
+	// the worst-case JSON encoding of MaxFetchBodyBytes plus header space.
 	MaxHostResultBytes = 4 << 20
 	maxLogsPerCall     = 100
 )
@@ -317,7 +320,13 @@ func (cs *callState) dispatch(name string, args json.RawMessage) (json.RawMessag
 		}
 		return nil, &Fault{Code: "host_error", Message: err.Error()}
 	}
-	if len(out) > MaxHostResultBytes {
+	limit := MaxHostResultBytes
+	// JSON can escape each text byte as six bytes. HTTPFetch bounds the raw
+	// body to 10 MiB; leave room for its headers and JSON envelope.
+	if name == "http.fetch" {
+		limit = (6 * MaxFetchBodyBytes) + (1 << 20)
+	}
+	if len(out) > limit {
 		return nil, &Fault{Code: "host_error", Message: "host result exceeds size cap"}
 	}
 	if len(out) == 0 {
