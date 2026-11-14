@@ -58,6 +58,28 @@ func ServeVela(w http.ResponseWriter, r *http.Request, dir string) {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Service-Worker-Allowed", "/vela")
 	}
+	// Native installer pages are ordinary nested index documents. FileServer
+	// redirects their explicit index.html URL to a directory; a SPA fallback
+	// there would serve the player instead. Serve existing nested indexes as
+	// documents, without changing the canonical /vela home redirect.
+	indexPath := ""
+	if e == nil && s.IsDir() {
+		indexPath = strings.TrimSuffix(path, "/") + "/index.html"
+	} else if e == nil && strings.HasSuffix(path, "/index.html") {
+		indexPath = path
+	}
+	if indexPath != "" {
+		if info, err := f.Stat(indexPath); err == nil && info.Mode().IsRegular() {
+			file, err := f.Open(indexPath)
+			if err != nil {
+				http.Error(w, "Vela client is unavailable", 503)
+				return
+			}
+			defer file.Close()
+			http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+			return
+		}
+	}
 	if e != nil || s.IsDir() {
 		r = r.Clone(r.Context())
 		u := *r.URL
