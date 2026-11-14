@@ -19,7 +19,7 @@ export function DescribeSurface({
       <section
         className={
           roomyChat
-            ? "relative min-h-0 flex-[1.3] basis-0 overflow-auto border-b border-border"
+            ? "relative min-h-0 flex-[0.8] basis-0 overflow-auto border-b border-border"
             : "relative min-h-0 flex-[2] basis-0 overflow-auto border-b border-border"
         }
         aria-label={t("Live build")}

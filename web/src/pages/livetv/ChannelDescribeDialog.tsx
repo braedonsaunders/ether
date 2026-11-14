@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@braedonsaunders/appkit-ai/react";
 import { Button, Spinner } from "@braedonsaunders/appkit-ui";
 import { Radio, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import AskEtherPanel from "../../components/agent/AskEtherPanel";
 import {
@@ -26,7 +26,7 @@ import "./channel-describe.css";
 import "../collections/describe.css";
 import "../plugins/stage.css";
 import { ScheduleTimeline, type TimelineResponse } from "./ScheduleTimeline";
-function SchedulePreview({ channel }: { channel: Channel }) {
+function SchedulePreview({ channel, hero }: { channel: Channel; hero: ReactNode }) {
   const [programmes, setProgrammes] = useState<Programme[]>([]);
   const [data, setData] = useState<TimelineResponse>();
   const [error, setError] = useState("");
@@ -81,46 +81,54 @@ function SchedulePreview({ channel }: { channel: Channel }) {
       });
     return () => ctl.abort();
   }, [key, range]);
-  return error ? (
-    <p role="alert">{error}</p>
-  ) : data ? (
-    <div className="space-y-2">
-      <div className="flex gap-3 overflow-hidden">
-        {programmes.map((p) => (
-          <div key={p.id} className="stage-flow w-16 shrink-0">
-            <Artwork
-              src={programmeArtwork(p.item.thumb)}
-              alt=""
-              title={p.item.title}
-              className="aspect-[2/3] overflow-hidden rounded-lg bg-bg-subtle"
-              imgClassName="object-cover"
-            />
-            <p className="mt-1 truncate text-xs text-fg-muted">{p.item.title}</p>
+  return (
+    <div className="grid items-center gap-3 sm:grid-cols-[1.4fr_1fr]">
+      {hero}
+      <div className="min-w-0">
+        {data ? (
+          <div className="flex gap-3 overflow-hidden">
+            {programmes.map((p) => (
+              <div key={p.id} className="stage-flow w-16 shrink-0">
+                <Artwork
+                  src={programmeArtwork(p.item.thumb)}
+                  alt=""
+                  title={p.item.title}
+                  className="aspect-[2/3] overflow-hidden rounded-lg bg-bg-subtle"
+                  imgClassName="object-cover"
+                />
+                <p className="mt-1 truncate text-xs text-fg-muted">{p.item.title}</p>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : (
+          <div aria-hidden className="flex gap-3 overflow-hidden">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div
+                key={i}
+                className="describe-ghost h-28 w-20 shrink-0"
+                style={{ animationDelay: `${i * 100}ms` }}
+              />
+            ))}
+          </div>
+        )}
       </div>
-      <ScheduleTimeline
-        channelId={channel.id || "draft"}
-        snapshot={data}
-        range={range}
-        showLegend={false}
-      />
-    </div>
-  ) : (
-    <div aria-hidden className="space-y-3">
-      <div className="flex gap-3 overflow-hidden">
-        {Array.from({ length: 8 }, (_, i) => (
-          <div
-            key={i}
-            className="describe-ghost h-28 w-20 shrink-0"
-            style={{ animationDelay: `${i * 100}ms` }}
+      <div className="min-w-0 sm:col-span-2">
+        {error ? (
+          <p role="alert">{error}</p>
+        ) : data ? (
+          <ScheduleTimeline
+            channelId={channel.id || "draft"}
+            snapshot={data}
+            range={range}
+            showLegend={false}
           />
-        ))}
-      </div>
-      <div className="flex gap-2">
-        {[2, 3, 2, 1].map((n, i) => (
-          <div key={i} className="describe-ghost h-12" style={{ flex: n }} />
-        ))}
+        ) : (
+          <div aria-hidden className="flex gap-2">
+            {[2, 3, 2, 1].map((n, i) => (
+              <div key={i} className="describe-ghost h-16" style={{ flex: n }} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -266,62 +274,69 @@ export function ChannelDescribeDialog({
         </Button>
       }
       preview={
-        <div className={`channel-build space-y-2 p-4 ${busy ? "describe-building" : ""}`}>
-          <div
-            className="channel-build-hero relative overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
-            style={{
-              background: `radial-gradient(ellipse at 80% 0%, ${style?.brand.palette.accent || "#7960ed"}33, transparent 65%), ${style?.brand.palette.background || "#121323"}`,
-              color: style?.brand.palette.text || "#f8f8ff",
-            }}
-          >
-            <div className="channel-build-glow" aria-hidden />
-            <div className="relative grid items-center gap-4 p-4 sm:grid-cols-[1fr_180px]">
-              <div className="min-w-0">
-                <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-widest opacity-70">
-                  <Radio size={14} /> {t("Channel {number}", { number: proposal.number })}
-                  <span className="ml-auto flex items-center gap-1.5 normal-case tracking-normal">
-                    <span
-                      className={`size-1.5 rounded-full bg-current ${busy ? "animate-pulse" : ""}`}
-                    />
-                    {busy ? t("Building…") : t("Live preview")}
-                  </span>
-                </div>
-                <h3 className="truncate text-xl font-semibold tracking-tight">
-                  {proposal.name || t("New channel")}
-                </h3>
-                <p className="mt-1 text-sm opacity-70">
-                  {style?.brand.tagline || t("Programming, schedule and a look, built with you.")}
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  {style ? (
-                    <>
-                      {Object.values(style.brand.palette).map((color, i) => (
+        <div className={`channel-build p-4 ${busy ? "describe-building" : ""}`}>
+          <SchedulePreview
+            channel={proposal}
+            hero={
+              <div
+                className="channel-build-hero relative overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
+                style={{
+                  background: `radial-gradient(ellipse at 80% 0%, ${style?.brand.palette.accent || "#7960ed"}33, transparent 65%), ${style?.brand.palette.background || "#121323"}`,
+                  color: style?.brand.palette.text || "#f8f8ff",
+                }}
+              >
+                <div className="channel-build-glow" aria-hidden />
+                <div className="relative grid items-center gap-3 p-4 sm:grid-cols-[1fr_120px]">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-widest opacity-70">
+                      <Radio size={14} /> {t("Channel {number}", { number: proposal.number })}
+                      <span className="ml-auto flex items-center gap-1.5 normal-case tracking-normal">
                         <span
-                          key={i}
-                          className="size-4 rounded-full ring-1 ring-white/30"
-                          style={{ background: color }}
+                          className={`size-1.5 rounded-full bg-current ${busy ? "animate-pulse" : ""}`}
                         />
-                      ))}
-                      <span className="ml-1 truncate text-xs opacity-70">{style.name}</span>
-                    </>
-                  ) : (
-                    <span className="text-xs opacity-50">{t("Your channel takes shape here")}</span>
-                  )}
+                        {busy ? t("Building…") : t("Live preview")}
+                      </span>
+                    </div>
+                    <h3 className="truncate text-xl font-semibold tracking-tight">
+                      {proposal.name || t("New channel")}
+                    </h3>
+                    <p className="mt-1 text-sm opacity-70">
+                      {style?.brand.tagline ||
+                        t("Programming, schedule and a look, built with you.")}
+                    </p>
+                    <div className="mt-3 flex items-center gap-2">
+                      {style ? (
+                        <>
+                          {Object.values(style.brand.palette).map((color, i) => (
+                            <span
+                              key={i}
+                              className="size-4 rounded-full ring-1 ring-white/30"
+                              style={{ background: color }}
+                            />
+                          ))}
+                          <span className="ml-1 truncate text-xs opacity-70">{style.name}</span>
+                        </>
+                      ) : (
+                        <span className="text-xs opacity-50">
+                          {t("Your channel takes shape here")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="hidden overflow-hidden rounded-xl border border-white/10 bg-black/20 shadow-lg sm:block">
+                    {style?.scenes.some((s) => s.enabled) ? (
+                      <DraftBrand look={style} channel={proposal} />
+                    ) : (
+                      <div className="relative grid aspect-video place-items-center">
+                        <div className="channel-build-orbit absolute size-24 rounded-full border border-white/15" />
+                        <Radio size={32} className="opacity-50" />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="hidden overflow-hidden rounded-xl border border-white/10 bg-black/20 shadow-lg sm:block">
-                {style?.scenes.some((s) => s.enabled) ? (
-                  <DraftBrand look={style} channel={proposal} />
-                ) : (
-                  <div className="relative grid aspect-video place-items-center">
-                    <div className="channel-build-orbit absolute size-24 rounded-full border border-white/15" />
-                    <Radio size={32} className="opacity-50" />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          <SchedulePreview channel={proposal} />
+            }
+          />
         </div>
       }
     >
