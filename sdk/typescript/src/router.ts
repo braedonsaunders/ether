@@ -584,7 +584,7 @@ export function plugin<S = Record<string, unknown>>(
         return errorResponse(404, "not_found", "Job handler is not registered.");
       }
       const name = decodeURIComponent(path.slice("/ether/job/".length));
-      return mapResult(routes.job({ name }, ctx));
+      return mapResult(routes.job({ name, continuation: parseJsonBody(req.body).continuation }, ctx));
     }
 
     if (method === "POST" && path === "/ether/rank-key") {

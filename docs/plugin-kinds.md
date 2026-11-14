@@ -324,7 +324,7 @@ const chunk = await ctx.ether.archive!.open(cached.blob, member.index, {
 ```
 
 `http.fetchToCache({url, headers?, libraryKey, name})` performs a GET, streams
-at most 256 MiB into the plugin's own library cache, and returns
+up to the owner download ceiling (8 GiB by default), further bounded by the library cache quota, into the plugin's own library cache, and returns
 `{blob, size, crc32, md5, sha1, status}`. SHA-256 is the blob reference.
 Digests cover the stored response bytes in one pass. Compare the digest with
 trusted catalogue metadata before serving a verified download. Non-2xx responses,
@@ -346,11 +346,12 @@ only the calling plugin's cache namespace and closes the reader afterward.
 The Go `RemoteHostClient` provides `FetchToCache`, `CacheRead`, `ArchiveList` and
 `ArchiveOpen` through the optional `BlobHost` interface, with `DataRange` options.
 
-ZIP limits: 256 MiB compressed archive; 4096 members; 4 MiB central directory;
-512 KiB total member-name bytes (1024 bytes per name); 64 MiB per uncompressed
-member; 256 MiB total expanded size; 1000:1 maximum expansion per member.
-Store and Deflate are supported. Unsafe paths, special files, encryption,
-ZIP64 and split archives are rejected. Nothing is extracted to a filesystem.
+ZIP sizes and member counts use owner global/per-plugin ceilings: defaults are
+8 GiB compressed archive/member, 32 GiB total expansion and 65,535 members.
+The central directory is bounded to 64 MiB (1024 bytes per member name), with a
+1000:1 maximum expansion ratio per member. ZIP64 is supported; split archives
+remain unsupported. Store and Deflate are supported. Unsafe paths, special files, encryption,
+Split archives are rejected. Nothing is extracted to a filesystem.
 Deflate ranges inflate and discard up to the requested offset on each call;
 prefer large sequential chunks, and avoid repeatedly rescanning a large member.
 Range reads do not independently verify the full member CRC; use trusted digests
@@ -364,7 +365,35 @@ Direct `http.fetch` still limits the raw response to 10 MiB. Its JSON result
 allowance now includes encoding expansion (binary base64 or escaped text), so the
 4 MiB general host-result cap no longer blocks that documented limit. This is
 an I/O ceiling, not a guarantee of guest heap space: the default guest has 32 MiB
-and the hard ceiling is 64 MiB, with temporary JSON strings and parsed objects
+and the owner ceiling defaults to 2 GiB (adjustable up to wasm32 4 GiB), with temporary JSON strings and parsed objects
 using additional memory. Use fetch-to-cache and ranged reads for large inputs;
 do not concatenate all chunks into one guest buffer. Other host results remain
 capped at 4 MiB.
+
+### Owner-started multi-call work and resource requests
+
+A page action returning `{job: "build-catalogue"}` starts a background job.
+The job returns `continueInMs`, an opaque JSON `continuation`, and a `progress`
+string to continue; Ether forwards the token in the next POST body. `done: true`
+finishes, `failed: "reason"` fails, and an absent `continueInMs` finishes too.
+Jobs use the owner's time ceiling (12h by default), a 1,000,000-call sanity bound,
+a minimum 100ms pause, OS background CPU/IO priority, and cooperative pauses
+between calls and host operations during playback, Live TV or high host load.
+They are cancellable with visible progress. Persist checkpoints in KV for
+recovery on a later owner action after restart; Ether does not resume eagerly.
+
+`ether.runtime.limits` requests memory, time, compute, download and archive
+resources within owner-controlled global/per-plugin ceilings. Defaults: 2 GiB
+memory ceiling (up to 4 GiB; omitted heap request stays 32 MiB), 12h, effectively
+unlimited background work units, 8 GiB download/member, 32 GiB total expansion,
+and 65,535 members. The library cache quota further bounds downloads. The owner
+sees requested versus granted values before install and in the drawer, and can
+raise or lower ceilings under Plugins → Settings or for one plugin. Saving
+stops affected jobs so the new ceilings apply immediately.
+
+Viewer browse/search/playback calls retain tight budgets: `/stream/`, `/catalog/`,
+`/meta/`, `/subtitles/`, `/ether/open`, `/ether/metadata/`, `/ether/subtitles/`,
+`/ether/markers`, and `/ether/v1/kinds/` use at most 10,000 units/30s plus tighter
+route/caller deadlines. Ranking budgets stay unchanged. Administrative setup,
+actions, tools, events and jobs use owner grants. Health/configuration/view/options
+keep short protocol deadlines. See the SDK README for exact fields and APIs.

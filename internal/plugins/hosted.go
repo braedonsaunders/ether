@@ -71,7 +71,7 @@ type rankingBudget struct {
 // above its defaults, so a manifest can lower budgets but never raise them.
 // Studio replay uses it to run a plugin under its installed budgets.
 func HotLimits(m Manifest) wasm.Limits {
-	var lim wasm.Limits
+	lim := RuntimeLimitsFor(m)
 	if m.Ether == nil {
 		return lim
 	}
@@ -115,6 +115,13 @@ func HostedRuntimeFactory(eng *wasm.Engine) RuntimeFactory {
 		decl := inst.Manifest.Ether.Runtime
 		host := hostBridge{h: inst.Host}
 		lim := HotLimits(inst.Manifest)
+		if inst.RuntimeLimits != nil {
+			l := inst.RuntimeLimits
+			lim.MemoryBytes = l.MemoryBytes
+			lim.Deadline, _ = time.ParseDuration(l.Deadline)
+			lim.UnitBudget = l.UnitBudget
+		}
+		lim.Busy = inst.Busy
 		switch {
 		case decl.Module != "":
 			module, ok := inst.Files(decl.Module)
@@ -617,3 +624,11 @@ func FetchResult(resp FetchResponse) map[string]any {
 	}
 	return out
 }
+
+// RuntimeLimitsFor returns the granted hosted resources, also used by Studio.
+func RuntimeLimitsFor(m Manifest) wasm.Limits {
+	return runtimeLimitsWithCeilings(m, defaultRuntimeCeilings())
+}
+
+// GrantedRuntimeLimits reports the default-policy grant for standalone tools.
+func GrantedRuntimeLimits(m Manifest) *RuntimeLimits { return (&Manager{}).grantedRuntimeLimits(m) }

@@ -68,10 +68,21 @@ export interface PluginAuthor {
   url?: string;
 }
 
+/** Hosted/data requests are clamped to the owner's global or per-plugin ceilings. */
+export interface RuntimeLimits {
+  fetchBytes?: number;
+  archiveMemberBytes?: number;
+  archiveExpandedBytes?: number;
+  archiveMembers?: number;
+  memoryBytes?: number;
+  deadline?: string;
+  unitBudget?: number;
+}
 export interface RuntimeDecl {
   kind: "hosted" | "remote";
   entry?: string;
   module?: string;
+  limits?: RuntimeLimits;
 }
 
 export interface HealthDecl {
@@ -898,9 +909,17 @@ export type ToolResponse = Record<string, unknown>;
 
 export interface JobRequest {
   name: string;
+  continuation?: unknown;
 }
 
 export interface JobResponse {
+  /** Presence asks Ether to call again after 0..300000 ms (minimum pause 100ms). */
+  continueInMs?: number;
+  /** Opaque JSON checkpoint forwarded as the next request's continuation. */
+  continuation?: unknown;
+  progress?: string;
+  done?: boolean;
+  failed?: string;
   ok?: boolean;
   [key: string]: unknown;
 }

@@ -768,7 +768,7 @@ const chunk = await ctx.ether.archive!.open(cached.blob, member.index, {
 ```
 
 `http.fetchToCache({url, headers?, libraryKey, name})` performs a GET, streams
-at most 256 MiB into the plugin's own library cache, and returns
+up to the owner download ceiling (8 GiB by default), further bounded by the library cache quota, into the plugin's own library cache, and returns
 `{blob, size, crc32, md5, sha1, status}`. SHA-256 is the blob reference.
 Digests cover the stored response bytes in one pass. Compare the digest with
 trusted catalogue metadata before serving a verified download. Non-2xx responses,
@@ -790,11 +790,12 @@ only the calling plugin's cache namespace and closes the reader afterward.
 The Go `RemoteHostClient` provides `FetchToCache`, `CacheRead`, `ArchiveList` and
 `ArchiveOpen` through the optional `BlobHost` interface, with `DataRange` options.
 
-ZIP limits: 256 MiB compressed archive; 4096 members; 4 MiB central directory;
-512 KiB total member-name bytes (1024 bytes per name); 64 MiB per uncompressed
-member; 256 MiB total expanded size; 1000:1 maximum expansion per member.
-Store and Deflate are supported. Unsafe paths, special files, encryption,
-ZIP64 and split archives are rejected. Nothing is extracted to a filesystem.
+ZIP sizes and member counts use owner global/per-plugin ceilings: defaults are
+8 GiB compressed archive/member, 32 GiB total expansion and 65,535 members.
+The central directory is bounded to 64 MiB (1024 bytes per member name), with a
+1000:1 maximum expansion ratio per member. ZIP64 is supported; split archives
+remain unsupported. Store and Deflate are supported. Unsafe paths, special files, encryption,
+Split archives are rejected. Nothing is extracted to a filesystem.
 Deflate ranges inflate and discard up to the requested offset on each call;
 prefer large sequential chunks, and avoid repeatedly rescanning a large member.
 Range reads do not independently verify the full member CRC; use trusted digests
@@ -808,11 +809,95 @@ Direct `http.fetch` still limits the raw response to 10 MiB. Its JSON result
 allowance now includes encoding expansion (binary base64 or escaped text), so the
 4 MiB general host-result cap no longer blocks that documented limit. This is
 an I/O ceiling, not a guarantee of guest heap space: the default guest has 32 MiB
-and the hard ceiling is 64 MiB, with temporary JSON strings and parsed objects
+and the owner ceiling defaults to 2 GiB (adjustable up to wasm32 4 GiB), with temporary JSON strings and parsed objects
 using additional memory. Use fetch-to-cache and ranged reads for large inputs;
 do not concatenate all chunks into one guest buffer. Other host results remain
 capped at 4 MiB.
 
+### Owner-started multi-call work and resource requests
+
+A page action returning `{job: "build-catalogue"}` starts a background job.
+The job returns `continueInMs`, an opaque JSON `continuation`, and a `progress`
+string to continue; Ether forwards the token in the next POST body. `done: true`
+finishes, `failed: "reason"` fails, and an absent `continueInMs` finishes too.
+Jobs use the owner's time ceiling (12h by default), a 1,000,000-call sanity bound,
+a minimum 100ms pause, OS background CPU/IO priority, and cooperative pauses
+between calls and host operations during playback, Live TV or high host load.
+They are cancellable with visible progress. Persist checkpoints in KV for
+recovery on a later owner action after restart; Ether does not resume eagerly.
+
+`ether.runtime.limits` requests memory, time, compute, download and archive
+resources within owner-controlled global/per-plugin ceilings. Defaults: 2 GiB
+memory ceiling (up to 4 GiB; omitted heap request stays 32 MiB), 12h, effectively
+unlimited background work units, 8 GiB download/member, 32 GiB total expansion,
+and 65,535 members. The library cache quota further bounds downloads. The owner
+sees requested versus granted values before install and in the drawer, and can
+raise or lower ceilings under Plugins → Settings or for one plugin. Saving
+stops affected jobs so the new ceilings apply immediately.
+
+Viewer browse/search/playback calls retain tight budgets: `/stream/`, `/catalog/`,
+`/meta/`, `/subtitles/`, `/ether/open`, `/ether/metadata/`, `/ether/subtitles/`,
+`/ether/markers`, and `/ether/v1/kinds/` use at most 10,000 units/30s plus tighter
+route/caller deadlines. Ranking budgets stay unchanged. Administrative setup,
+actions, tools, events and jobs use owner grants. Health/configuration/view/options
+keep short protocol deadlines. See the SDK README for exact fields and APIs.
+
+
+## Source: internal/config/plugins.go#Plugins.fields.md
+
+| Field | Go type | Wire presence | Description |
+|---|---|---|---|
+| `runtimeLimits` | `PluginRuntimeLimits` | may be omitted (see validation for conditions) |  |
+| `runtimeOverrides` | `map[string]PluginRuntimeLimits` | may be omitted (see validation for conditions) |  |
+| `indexUrl` | `string` | may be omitted (see validation for conditions) | IndexURL is the URL of index.json (with a sibling index.json.sig). Empty disables automatic catalogue fetches. |
+| `publicKey` | `string` | may be omitted (see validation for conditions) | PublicKey is the base64-encoded ed25519 public key that signs index.json. |
+
+
+## Source: internal/config/plugins.go#Plugins
+
+``````
+// Plugins configures the signed plugin catalogue (SPEC WS12). Ether ships
+// no third-party catalogue URL; the owner sets IndexURL and PublicKey when
+// connecting a catalogue they trust.
+type Plugins struct {
+	RuntimeLimits    PluginRuntimeLimits            `json:"runtimeLimits,omitempty"`
+	RuntimeOverrides map[string]PluginRuntimeLimits `json:"runtimeOverrides,omitempty"`
+	// IndexURL is the URL of index.json (with a sibling index.json.sig).
+	// Empty disables automatic catalogue fetches.
+	IndexURL string `json:"indexUrl,omitempty"`
+	// PublicKey is the base64-encoded ed25519 public key that signs index.json.
+	PublicKey string `json:"publicKey,omitempty"`
+}
+``````
+
+## Source: internal/config/plugins.go#PluginRuntimeLimits.fields.md
+
+| Field | Go type | Wire presence | Description |
+|---|---|---|---|
+| `fetchBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveMemberBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveExpandedBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveMembers` | `int` | may be omitted (see validation for conditions) |  |
+| `memoryBytes` | `uint64` | may be omitted (see validation for conditions) |  |
+| `deadline` | `string` | may be omitted (see validation for conditions) |  |
+| `unitBudget` | `int64` | may be omitted (see validation for conditions) | zero means effectively unlimited |
+
+
+## Source: internal/config/plugins.go#PluginRuntimeLimits
+
+``````
+// PluginRuntimeLimits are owner-controlled ceilings, not allocations. Zero
+// inherits the default (globally) or the global ceiling (per plugin).
+type PluginRuntimeLimits struct {
+	FetchBytes           int64  `json:"fetchBytes,omitempty"`
+	ArchiveMemberBytes   int64  `json:"archiveMemberBytes,omitempty"`
+	ArchiveExpandedBytes int64  `json:"archiveExpandedBytes,omitempty"`
+	ArchiveMembers       int    `json:"archiveMembers,omitempty"`
+	MemoryBytes          uint64 `json:"memoryBytes,omitempty"`
+	Deadline             string `json:"deadline,omitempty"`
+	UnitBudget           int64  `json:"unitBudget,omitempty"` // zero means effectively unlimited
+}
+``````
 
 ## Source: internal/core/kinditem.go#ItemRef
 
@@ -1429,6 +1514,287 @@ type KindResolveResponse struct {
 }
 ``````
 
+## Source: internal/plugins/action_jobs.go#ActionJobTotal
+
+``````
+const (
+	ActionJobTotal    = 12 * time.Hour
+	ActionJobAttempts = 1000000
+	actionJobMinDelay = 100 * time.Millisecond
+)
+``````
+
+## Source: internal/plugins/action_jobs.go#ActionJobStatus.fields.md
+
+| Field | Go type | Wire presence | Description |
+|---|---|---|---|
+| `path` | `string` | emitted (validation may require a value) |  |
+| `state` | `string` | emitted (validation may require a value) | running, done, canceled, error |
+| `progress` | `string` | may be omitted (see validation for conditions) |  |
+| `error` | `string` | may be omitted (see validation for conditions) |  |
+| `attempts` | `int` | emitted (validation may require a value) |  |
+| `started` | `time.Time` | emitted (validation may require a value) |  |
+| `totalLimitMs` | `int64` | emitted (validation may require a value) |  |
+| `attemptLimit` | `int` | emitted (validation may require a value) |  |
+
+
+## Source: internal/plugins/action_jobs.go#ActionJobStatus
+
+``````
+// ActionJobStatus is a bounded, in-memory snapshot. Checkpoints belong in plugin
+// KV when they must survive a server restart; tokens are only passed between calls.
+type ActionJobStatus struct {
+	Path         string    `json:"path"`
+	State        string    `json:"state"` // running, done, canceled, error
+	Progress     string    `json:"progress,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	Attempts     int       `json:"attempts"`
+	Started      time.Time `json:"started"`
+	TotalLimitMS int64     `json:"totalLimitMs"`
+	AttemptLimit int       `json:"attemptLimit"`
+}
+``````
+
+## Source: internal/plugins/action_jobs.go#actionJob.fields.md
+
+| Field | Go type | Wire presence | Description |
+|---|---|---|---|
+
+
+## Source: internal/plugins/action_jobs.go#actionJob
+
+``````
+type actionJob struct {
+	mu     sync.Mutex
+	status ActionJobStatus
+	cancel context.CancelFunc
+}
+``````
+
+## Source: internal/plugins/action_jobs.go#*actionJob.snapshot
+
+``````
+func (j *actionJob) snapshot() ActionJobStatus { j.mu.Lock(); defer j.mu.Unlock(); return j.status }
+``````
+
+## Source: internal/plugins/action_jobs.go#*actionJob.finish
+
+``````
+func (j *actionJob) finish(state, reason string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.status.State, j.status.Error = state, reason
+}
+``````
+
+## Source: internal/plugins/action_jobs.go#*Manager.startActionJob
+
+``````
+// startActionJob runs only owner-started work. At most two jobs run per plugin;
+// at most sixteen route snapshots are retained per plugin, including running jobs.
+func (m *Manager) startActionJob(pluginID string, body json.RawMessage) error {
+	var out struct {
+		Job string `json:"job"`
+	}
+	if json.Unmarshal(body, &out) != nil || out.Job == "" {
+		return nil
+	}
+	path := out.Job
+	if !strings.HasPrefix(path, "/ether/job/") {
+		path = "/ether/job/" + strings.TrimPrefix(path, "/")
+	}
+	if len(path) > 256 || strings.Contains(path, "..") || strings.ContainsAny(path, "?#\\") {
+		return nil
+	}
+	key := pluginID + "|" + path
+	m.jobsMu.Lock()
+	defer m.jobsMu.Unlock()
+	if old, ok := m.jobs.Load(key); ok && old.(*actionJob).snapshot().State == "running" {
+		return nil
+	}
+	active, count := 0, 0
+	oldestKey := ""
+	var oldest time.Time
+	m.jobs.Range(func(k, v any) bool {
+		if !strings.HasPrefix(k.(string), pluginID+"|") {
+			return true
+		}
+		s := v.(*actionJob).snapshot()
+		count++
+		if s.State == "running" {
+			active++
+		} else if oldestKey == "" || s.Started.Before(oldest) {
+			oldestKey, oldest = k.(string), s.Started
+		}
+		return true
+	})
+	if active >= 2 {
+		return fmt.Errorf("two background jobs are already running; wait for one to finish")
+	}
+	if _, exists := m.jobs.Load(key); !exists && count >= 16 {
+		m.jobs.Delete(oldestKey)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), m.runtimeCeilings(pluginID).deadline)
+	j := &actionJob{cancel: cancel, status: ActionJobStatus{Path: path, State: "running", Started: time.Now().UTC(), TotalLimitMS: m.runtimeCeilings(pluginID).deadline.Milliseconds(), AttemptLimit: ActionJobAttempts}}
+	m.jobs.Store(key, j)
+	go func() {
+		runtime.LockOSThread() // Do not unlock: this lowered-priority thread is discarded on return.
+		lowerJobPriority()
+		defer cancel()
+		err := runActionJob(ctx, j, ActionJobAttempts, func(ctx context.Context, token json.RawMessage) (Response, error) {
+			if err := wasm.WaitBackground(ctx, m.deps.Busy); err != nil {
+				return Response{}, err
+			}
+			payload, _ := json.Marshal(struct {
+				Continuation json.RawMessage `json:"continuation,omitempty"`
+			}{token})
+			return m.Call(ctx, pluginID, Request{Method: "POST", Path: path, Body: payload})
+		})
+		if err != nil {
+			state := "error"
+			if ctx.Err() == context.Canceled {
+				state = "canceled"
+			}
+			if ctx.Err() == context.DeadlineExceeded {
+				err = fmt.Errorf("job reached its total time limit of %s", m.runtimeCeilings(pluginID).deadline)
+			}
+			reason := m.store.redactKnown(context.Background(), pluginID, err.Error())
+			j.finish(state, reason)
+			m.log.Warn("plugins: action job", "plugin", pluginID, "job", path, "err", reason)
+		} else {
+			j.finish("done", "")
+		}
+	}()
+	return nil
+}
+``````
+
+## Source: internal/plugins/action_jobs.go#runActionJob
+
+``````
+// runActionJob treats an absent continuation flag as completion for existing
+// one-call jobs. Explicit failures and non-success HTTP responses always stop.
+func runActionJob(ctx context.Context, j *actionJob, attempts int, call func(context.Context, json.RawMessage) (Response, error)) error {
+	var token json.RawMessage
+	for n := 0; n < attempts; n++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("job stopped: %w", err)
+		}
+		j.mu.Lock()
+		j.status.Attempts++
+		j.mu.Unlock()
+		resp, err := call(ctx, token)
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("job stopped: %w", err)
+		}
+		if resp.Status < 200 || resp.Status >= 300 {
+			return fmt.Errorf("job returned HTTP %d", resp.Status)
+		}
+		var step struct {
+			ContinueInMS *int64          `json:"continueInMs"`
+			Continuation json.RawMessage `json:"continuation"`
+			Progress     string          `json:"progress"`
+			Done         bool            `json:"done"`
+			Failed       string          `json:"failed"`
+		}
+		if len(resp.Body) > 0 {
+			if err = json.Unmarshal(resp.Body, &step); err != nil {
+				return fmt.Errorf("invalid job response: %w", err)
+			}
+		}
+		if len(step.Progress) > 1024 {
+			return fmt.Errorf("job progress exceeds 1024 bytes")
+		}
+		j.mu.Lock()
+		if step.Progress != "" {
+			j.status.Progress = step.Progress
+		}
+		j.mu.Unlock()
+		if step.Failed != "" {
+			return fmt.Errorf("job failed: %.1024s", step.Failed)
+		}
+		if step.Done || step.ContinueInMS == nil {
+			return nil
+		}
+		if *step.ContinueInMS < 0 || *step.ContinueInMS > 300000 {
+			return fmt.Errorf("continueInMs must be between 0 and 300000")
+		}
+		if len(step.Continuation) > 64<<10 {
+			return fmt.Errorf("job continuation exceeds 64 KiB")
+		}
+		token = step.Continuation
+		if n+1 == attempts {
+			break
+		}
+		timer := time.NewTimer(max(actionJobMinDelay, time.Duration(*step.ContinueInMS)*time.Millisecond))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("job stopped: %w", ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return fmt.Errorf("job reached its limit of %d calls", attempts)
+}
+``````
+
+## Source: internal/plugins/action_jobs.go#*Manager.cancelActionJobs
+
+``````
+func (m *Manager) cancelActionJobs(id string) {
+	m.jobs.Range(func(k, v any) bool {
+		if id == "" || strings.HasPrefix(k.(string), id+"|") {
+			v.(*actionJob).cancel()
+		}
+		return true
+	})
+}
+``````
+
+## Source: internal/plugins/action_jobs.go#*Manager.handleActionJobs
+
+``````
+func (m *Manager) handleActionJobs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := m.Get(r.Context(), id); err != nil {
+		m.fail(w, err)
+		return
+	}
+	jobs := []ActionJobStatus{}
+	m.jobs.Range(func(k, v any) bool {
+		if strings.HasPrefix(k.(string), id+"|") {
+			s := v.(*actionJob).snapshot()
+			s.Progress = m.store.redactKnown(r.Context(), id, s.Progress)
+			jobs = append(jobs, s)
+		}
+		return true
+	})
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Started.After(jobs[j].Started) })
+	writeJSON(w, http.StatusOK, jobs)
+}
+``````
+
+## Source: internal/plugins/action_jobs.go#*Manager.handleCancelActionJob
+
+``````
+func (m *Manager) handleCancelActionJob(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, 400, "invalid", "The request was not understood.", nil)
+		return
+	}
+	if job, ok := m.jobs.Load(r.PathValue("id") + "|" + req.Path); ok {
+		job.(*actionJob).cancel()
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+``````
+
 ## Source: internal/plugins/contract.go#Protocol
 
 ``````
@@ -1699,6 +2065,7 @@ func (m Manifest) RuntimeKind() string {
 | `kind` | `string` | emitted (validation may require a value) | "hosted" or "remote" |
 | `entry` | `string` | may be omitted (see validation for conditions) |  |
 | `module` | `string` | may be omitted (see validation for conditions) |  |
+| `limits` | `*RuntimeLimits` | may be omitted (see validation for conditions) |  |
 
 
 ## Source: internal/plugins/contract.go#RuntimeDecl
@@ -1707,9 +2074,39 @@ func (m Manifest) RuntimeKind() string {
 // RuntimeDecl declares how a plugin runs: hosted (Entry JS or Module WASM)
 // or remote (the manifest URL or a tunnel is the endpoint).
 type RuntimeDecl struct {
-	Kind   string `json:"kind"` // "hosted" or "remote"
-	Entry  string `json:"entry,omitempty"`
-	Module string `json:"module,omitempty"`
+	Kind   string         `json:"kind"` // "hosted" or "remote"
+	Entry  string         `json:"entry,omitempty"`
+	Module string         `json:"module,omitempty"`
+	Limits *RuntimeLimits `json:"limits,omitempty"`
+}
+``````
+
+## Source: internal/plugins/contract.go#RuntimeLimits.fields.md
+
+| Field | Go type | Wire presence | Description |
+|---|---|---|---|
+| `fetchBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveMemberBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveExpandedBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveMembers` | `int` | may be omitted (see validation for conditions) |  |
+| `memoryBytes` | `uint64` | may be omitted (see validation for conditions) | default 32 MiB, ceiling owner-controlled, up to 4 GiB |
+| `deadline` | `string` | may be omitted (see validation for conditions) | Go duration; default 12h, owner-controlled ceiling |
+| `unitBudget` | `int64` | may be omitted (see validation for conditions) | default effectively unlimited, owner-controlled ceiling |
+
+
+## Source: internal/plugins/contract.go#RuntimeLimits
+
+``````
+// RuntimeLimits requests per-call hosted resources. Ether grants defaults for
+// omitted fields and clamps requests to owner-controlled ceilings.
+type RuntimeLimits struct {
+	FetchBytes           int64  `json:"fetchBytes,omitempty"`
+	ArchiveMemberBytes   int64  `json:"archiveMemberBytes,omitempty"`
+	ArchiveExpandedBytes int64  `json:"archiveExpandedBytes,omitempty"`
+	ArchiveMembers       int    `json:"archiveMembers,omitempty"`
+	MemoryBytes          uint64 `json:"memoryBytes,omitempty"` // default 32 MiB, ceiling owner-controlled, up to 4 GiB
+	Deadline             string `json:"deadline,omitempty"`    // Go duration; default 12h, owner-controlled ceiling
+	UnitBudget           int64  `json:"unitBudget,omitempty"`  // default effectively unlimited, owner-controlled ceiling
 }
 ``````
 
@@ -2610,8 +3007,10 @@ type Runtime interface {
 // Installed is the host's record of one installed plugin, handed to a
 // RuntimeFactory when an instance is opened.
 type Installed struct {
-	ID       string
-	Manifest Manifest
+	RuntimeLimits *RuntimeLimits
+	Busy          func() bool
+	ID            string
+	Manifest      Manifest
 	// SourceURL is where the manifest came from (remote endpoint base).
 	SourceURL string
 	// Files returns an artifact file (entry, module, strings, schema) for
@@ -3813,6 +4212,7 @@ func (m *Manager) DeliverOutbox(ctx context.Context, pluginID string) error {
 // ends. Leader plugins run jobs and event delivery only on the leader;
 // every_node plugins run everywhere. Health checks run on every node.
 func (m *Manager) Run(ctx context.Context) {
+	defer m.cancelActionJobs("")
 	defer func() {
 		m.hashMu.Lock()
 		defer m.hashMu.Unlock()
@@ -4429,6 +4829,9 @@ func (h *host) openFetch(ctx context.Context, req FetchRequest) (*http.Response,
 	// Recheck the current grant before every redirect, as well as the SSRF
 	// guard's own redirect policy. A redirect is another network request.
 	client := *h.m.client
+	if deadline, ok := ctx.Deadline(); ok {
+		client.Timeout = time.Until(deadline)
+	}
 	previousRedirect := client.CheckRedirect
 	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		current, grants, err := h.record(next.Context())
@@ -5112,12 +5515,12 @@ func (h *host) noteFetchTraffic(ctx context.Context, req FetchRequest, size int6
 // Data-service limits are host enforced, independent of guest memory. All
 // operations are on demand and use the existing plugin-owned cache namespace.
 const (
-	MaxDataFetchBytes       = 256 << 20
+	MaxDataFetchBytes       = 8 << 30
 	MaxDataRangeBytes       = 1 << 20
-	maxArchiveMembers       = 4096
-	maxArchiveDirectory     = 4 << 20
-	maxArchiveMemberBytes   = 64 << 20
-	maxArchiveExpandedBytes = 256 << 20
+	maxArchiveMembers       = 65535
+	maxArchiveDirectory     = 64 << 20
+	maxArchiveMemberBytes   = 8 << 30
+	maxArchiveExpandedBytes = 32 << 30
 	maxArchiveRatio         = 1000
 )
 ``````
@@ -5234,7 +5637,8 @@ func (h *host) HTTPFetchToCache(ctx context.Context, req FetchCacheRequest) (Fet
 	if err := h.requireWritableToolContext(ctx); err != nil {
 		return FetchCacheResult{}, err
 	}
-	if _, err := h.cacheWriteCheck(ctx, req.LibraryKey, req.Name); err != nil {
+	decl, err := h.cacheWriteCheck(ctx, req.LibraryKey, req.Name)
+	if err != nil {
 		return FetchCacheResult{}, err
 	}
 	resp, err := h.openFetch(ctx, req.FetchRequest)
@@ -5246,7 +5650,7 @@ func (h *host) HTTPFetchToCache(ctx context.Context, req FetchCacheRequest) (Fet
 		return FetchCacheResult{}, fmt.Errorf("plugins: fetchToCache HTTP %d", resp.StatusCode)
 	}
 	crc, m, s := crc32.NewIEEE(), md5.New(), sha1.New()
-	reader := &boundedDataReader{ctx: ctx, r: resp.Body, left: MaxDataFetchBytes}
+	reader := &boundedDataReader{ctx: ctx, r: resp.Body, left: min(h.DataLimits(ctx).FetchBytes, decl.Cache.EffectiveMaxBytes())}
 	ref, err := h.CachePut(ctx, req.LibraryKey, req.Name, io.TeeReader(reader, io.MultiWriter(crc, m, s)))
 	h.noteFetchTraffic(ctx, req.FetchRequest, reader.size)
 	if err != nil {
@@ -5260,7 +5664,7 @@ func (h *host) HTTPFetchToCache(ctx context.Context, req FetchCacheRequest) (Fet
 
 ``````
 func validDataRange(r DataRange) error {
-	if r.Offset < 0 || r.Length <= 0 || r.Length > MaxDataRangeBytes || r.Offset > MaxDataFetchBytes {
+	if r.Offset < 0 || r.Length <= 0 || r.Length > MaxDataRangeBytes || r.Offset > 1<<60 {
 		return fmt.Errorf("plugins: range needs nonnegative offset and length 1..%d", MaxDataRangeBytes)
 	}
 	return nil
@@ -5276,7 +5680,7 @@ func readDataRange(ctx context.Context, r io.Reader, opt DataRange) (map[string]
 	if err := validDataRange(opt); err != nil {
 		return nil, err
 	}
-	cr := &boundedDataReader{ctx: ctx, r: r, left: MaxDataFetchBytes}
+	cr := &boundedDataReader{ctx: ctx, r: r, left: opt.Offset + opt.Length}
 	if _, err := io.CopyN(io.Discard, cr, opt.Offset); err != nil {
 		return nil, err
 	}
@@ -5345,12 +5749,18 @@ type ArchiveMember struct {
 ## Source: internal/plugins/host_data.go#openDataZIP
 
 ``````
-func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
+func openDataZIP(ctx context.Context, rc io.ReadSeeker, grants ...RuntimeLimits) (*zip.Reader, error) {
+	limits := defaultDataLimits()
+	if len(grants) > 0 {
+		limits = grants[0]
+	}
+	directoryCap := min(int64(maxArchiveDirectory), int64(limits.ArchiveMembers)*65536)
+
 	size, err := rc.Seek(0, io.SeekEnd)
 	if err != nil {
 		return nil, err
 	}
-	if size < 22 || size > MaxDataFetchBytes {
+	if size < 22 || size > limits.FetchBytes {
 		return nil, fmt.Errorf("plugins: ZIP size outside limit")
 	}
 	ra := seekReaderAt{ctx, rc}
@@ -5359,26 +5769,54 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 	if _, err := ra.ReadAt(tail, size-tailSize); err != nil {
 		return nil, err
 	}
-	// Inspect EOCD before zip.NewReader allocates the central directory. ZIP64
-	// and split archives are deliberately refused by this bounded ZIP service.
+	// Inspect classic/ZIP64 EOCD before zip.NewReader allocates the directory.
+	// Split archives are refused; counts and bytes use owner ceilings.
 	found := false
 	for i := len(tail) - 22; i >= 0; i-- {
 		if binary.LittleEndian.Uint32(tail[i:]) != 0x06054b50 || i+22+int(binary.LittleEndian.Uint16(tail[i+20:])) != len(tail) {
 			continue
 		}
 		e := tail[i:]
-		count := binary.LittleEndian.Uint16(e[10:])
-		directory := binary.LittleEndian.Uint32(e[12:])
-		if binary.LittleEndian.Uint16(e[4:]) != 0 || binary.LittleEndian.Uint16(e[6:]) != 0 || binary.LittleEndian.Uint16(e[8:]) != count || count > maxArchiveMembers || directory > maxArchiveDirectory || binary.LittleEndian.Uint32(e[16:]) == 0xffffffff {
-			return nil, fmt.Errorf("plugins: ZIP directory exceeds limits or uses unsupported ZIP64/split format")
+		count := uint64(binary.LittleEndian.Uint16(e[10:]))
+		directory := uint64(binary.LittleEndian.Uint32(e[12:]))
+		offset := uint64(binary.LittleEndian.Uint32(e[16:]))
+		directoryEnd := size - tailSize + int64(i)
+		if binary.LittleEndian.Uint16(e[4:]) != 0 || binary.LittleEndian.Uint16(e[6:]) != 0 || uint64(binary.LittleEndian.Uint16(e[8:])) != count {
+			return nil, fmt.Errorf("plugins: split ZIP archives are unsupported")
 		}
-		// Require a contiguous, bounded directory ending at this EOCD.
-		offset := int64(binary.LittleEndian.Uint32(e[16:]))
-		if offset+int64(directory) != size-tailSize+int64(i) {
-			return nil, fmt.Errorf("plugins: unsupported ZIP directory layout")
+		if count == 65535 || directory == 0xffffffff || offset == 0xffffffff {
+			locator := make([]byte, 20)
+			if directoryEnd < 20 {
+				return nil, fmt.Errorf("plugins: invalid ZIP64 locator")
+			}
+			if _, err := ra.ReadAt(locator, directoryEnd-20); err != nil {
+				return nil, err
+			}
+			if binary.LittleEndian.Uint32(locator) != 0x07064b50 || binary.LittleEndian.Uint32(locator[4:]) != 0 || binary.LittleEndian.Uint32(locator[16:]) != 1 {
+				return nil, fmt.Errorf("plugins: invalid or split ZIP64 archive")
+			}
+			recordAt := binary.LittleEndian.Uint64(locator[8:])
+			if recordAt > uint64(directoryEnd-20) || uint64(directoryEnd-20)-recordAt < 56 {
+				return nil, fmt.Errorf("plugins: invalid ZIP64 directory offset")
+			}
+			record := make([]byte, 56)
+			if _, err := ra.ReadAt(record, int64(recordAt)); err != nil {
+				return nil, err
+			}
+			recordLength := binary.LittleEndian.Uint64(record[4:])
+			if binary.LittleEndian.Uint32(record) != 0x06064b50 || recordLength < 44 || recordLength > 1<<20 || recordAt+12+recordLength != uint64(directoryEnd-20) || binary.LittleEndian.Uint32(record[16:]) != 0 || binary.LittleEndian.Uint32(record[20:]) != 0 || binary.LittleEndian.Uint64(record[24:]) != binary.LittleEndian.Uint64(record[32:]) {
+				return nil, fmt.Errorf("plugins: invalid ZIP64 directory")
+			}
+			count = binary.LittleEndian.Uint64(record[32:])
+			directory = binary.LittleEndian.Uint64(record[40:])
+			offset = binary.LittleEndian.Uint64(record[48:])
+			directoryEnd = int64(recordAt)
+		}
+		if count > uint64(limits.ArchiveMembers) || directory > uint64(directoryCap) || offset > uint64(directoryEnd) || directory > uint64(directoryEnd)-offset || offset+directory != uint64(directoryEnd) {
+			return nil, fmt.Errorf("plugins: ZIP directory exceeds owner limits or has unsupported layout")
 		}
 		raw := make([]byte, int(directory))
-		if _, err := ra.ReadAt(raw, offset); err != nil {
+		if _, err := ra.ReadAt(raw, int64(offset)); err != nil {
 			return nil, err
 		}
 		pos := 0
@@ -5405,7 +5843,7 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(z.File) > maxArchiveMembers {
+	if len(z.File) > limits.ArchiveMembers {
 		return nil, fmt.Errorf("plugins: ZIP has too many members")
 	}
 	var total uint64
@@ -5413,7 +5851,7 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 	for _, f := range z.File {
 		name := strings.TrimSuffix(f.Name, "/")
 		names += len(f.Name)
-		if name == "" || len(f.Name) > 1024 || names > MaxDataRangeBytes/2 || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") || path.Clean(name) != name || name == ".." || strings.HasPrefix(name, "../") {
+		if name == "" || len(f.Name) > 1024 || int64(names) > directoryCap || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") || path.Clean(name) != name || name == ".." || strings.HasPrefix(name, "../") {
 			return nil, fmt.Errorf("plugins: unsafe ZIP member name")
 		}
 		if !f.FileInfo().IsDir() && !f.Mode().IsRegular() {
@@ -5422,13 +5860,13 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 		if f.Flags&1 != 0 || (f.Method != zip.Store && f.Method != zip.Deflate) {
 			return nil, fmt.Errorf("plugins: encrypted or unsupported ZIP member")
 		}
-		if f.CompressedSize64 > uint64(size) || f.UncompressedSize64 > maxArchiveMemberBytes || (f.UncompressedSize64 > 0 && (f.CompressedSize64 == 0 || f.UncompressedSize64 > f.CompressedSize64*maxArchiveRatio)) {
+		if f.CompressedSize64 > uint64(size) || f.UncompressedSize64 > uint64(limits.ArchiveMemberBytes) || (f.UncompressedSize64 > 0 && (f.CompressedSize64 == 0 || (f.CompressedSize64 <= ^uint64(0)/maxArchiveRatio && f.UncompressedSize64 > f.CompressedSize64*maxArchiveRatio))) {
 			return nil, fmt.Errorf("plugins: ZIP member exceeds size or compression-ratio limit")
 		}
-		total += f.UncompressedSize64
-		if total > maxArchiveExpandedBytes {
+		if f.UncompressedSize64 > uint64(limits.ArchiveExpandedBytes)-total {
 			return nil, fmt.Errorf("plugins: ZIP expanded size exceeds limit")
 		}
+		total += f.UncompressedSize64
 	}
 	return z, nil
 }
@@ -5441,14 +5879,24 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 // named services are accepted; cache access rechecks plugin ownership each call.
 func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage) (json.RawMessage, error) {
 	// Remote callers receive the same maximum I/O deadline as hosted calls.
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	limits := defaultDataLimits()
+	if provider, ok := h.(interface {
+		DataLimits(context.Context) RuntimeLimits
+	}); ok {
+		limits = provider.DataLimits(ctx)
+	}
+	deadline, err := time.ParseDuration(limits.Deadline)
+	if err != nil || deadline <= 0 {
+		deadline = 12 * time.Hour
+	}
+	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 	var args []json.RawMessage
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
 	var value any
-	var err error
+	err = nil
 	if name == "http.fetchToCache" {
 		var req struct {
 			Method     string            `json:"method"`
@@ -5524,7 +5972,7 @@ func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage)
 			opt.Offset = 0
 			value, err = readDataRange(ctx, rc, opt)
 		} else {
-			z, e := openDataZIP(ctx, rc)
+			z, e := openDataZIP(ctx, rc, limits)
 			if e != nil {
 				return nil, e
 			}
@@ -5555,6 +6003,14 @@ func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage)
 		return nil, err
 	}
 	return json.Marshal(value)
+}
+``````
+
+## Source: internal/plugins/host_data.go#defaultDataLimits
+
+``````
+func defaultDataLimits() RuntimeLimits {
+	return RuntimeLimits{FetchBytes: MaxDataFetchBytes, ArchiveMemberBytes: maxArchiveMemberBytes, ArchiveExpandedBytes: maxArchiveExpandedBytes, ArchiveMembers: maxArchiveMembers, Deadline: "12h"}
 }
 ``````
 
@@ -6242,7 +6698,7 @@ type rankingBudget struct {
 // above its defaults, so a manifest can lower budgets but never raise them.
 // Studio replay uses it to run a plugin under its installed budgets.
 func HotLimits(m Manifest) wasm.Limits {
-	var lim wasm.Limits
+	lim := RuntimeLimitsFor(m)
 	if m.Ether == nil {
 		return lim
 	}
@@ -6294,6 +6750,13 @@ func HostedRuntimeFactory(eng *wasm.Engine) RuntimeFactory {
 		decl := inst.Manifest.Ether.Runtime
 		host := hostBridge{h: inst.Host}
 		lim := HotLimits(inst.Manifest)
+		if inst.RuntimeLimits != nil {
+			l := inst.RuntimeLimits
+			lim.MemoryBytes = l.MemoryBytes
+			lim.Deadline, _ = time.ParseDuration(l.Deadline)
+			lim.UnitBudget = l.UnitBudget
+		}
+		lim.Busy = inst.Busy
 		switch {
 		case decl.Module != "":
 			module, ok := inst.Files(decl.Module)
@@ -6886,6 +7349,22 @@ func FetchResult(resp FetchResponse) map[string]any {
 	}
 	return out
 }
+``````
+
+## Source: internal/plugins/hosted.go#RuntimeLimitsFor
+
+``````
+// RuntimeLimitsFor returns the granted hosted resources, also used by Studio.
+func RuntimeLimitsFor(m Manifest) wasm.Limits {
+	return runtimeLimitsWithCeilings(m, defaultRuntimeCeilings())
+}
+``````
+
+## Source: internal/plugins/hosted.go#GrantedRuntimeLimits
+
+``````
+// GrantedRuntimeLimits reports the default-policy grant for standalone tools.
+func GrantedRuntimeLimits(m Manifest) *RuntimeLimits { return (&Manager{}).grantedRuntimeLimits(m) }
 ``````
 
 ## Source: internal/plugins/kit/check.go#Check
@@ -10643,6 +11122,22 @@ func (m Manifest) Validate() error {
 	default:
 		add("ether.runtime.kind", "must be hosted, remote or data")
 	}
+	if l := e.Runtime.Limits; l != nil {
+		if e.Runtime.Kind != "hosted" {
+			add("ether.runtime.limits", "only hosted plugins can request runtime limits")
+		}
+		if l.Deadline != "" {
+			if d, err := time.ParseDuration(l.Deadline); err != nil || d <= 0 {
+				add("ether.runtime.limits.deadline", "must be a positive duration such as 120s")
+			}
+		}
+		if l.FetchBytes < 0 || l.ArchiveMemberBytes < 0 || l.ArchiveExpandedBytes < 0 || l.ArchiveMembers < 0 {
+			add("ether.runtime.limits", "data ceilings must not be negative")
+		}
+		if l.UnitBudget < 0 {
+			add("ether.runtime.limits.unitBudget", "must not be negative")
+		}
+	}
 	validateSidecar(e, add)
 	if e.Cluster != "" && e.Cluster != "leader" && e.Cluster != "every_node" {
 		add("ether.cluster", "must be leader or every_node")
@@ -12511,6 +13006,205 @@ func (h *HostHandler) dataCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#runtimeCeilings.fields.md
+
+| Field | Go type | Wire presence | Description |
+|---|---|---|---|
+
+
+## Source: internal/plugins/runtime_limits.go#runtimeCeilings
+
+``````
+type runtimeCeilings struct {
+	memory                  uint64
+	deadline                time.Duration
+	units                   int64
+	fetch, member, expanded int64
+	members                 int
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#defaultRuntimeCeilings
+
+``````
+func defaultRuntimeCeilings() runtimeCeilings {
+	return runtimeCeilings{memory: 2 << 30, deadline: 12 * time.Hour, units: 1 << 60, fetch: 8 << 30, member: 8 << 30, expanded: 32 << 30, members: 65535}
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#applyRuntimeCeilings
+
+``````
+func applyRuntimeCeilings(c runtimeCeilings, l config.PluginRuntimeLimits) runtimeCeilings {
+	if l.MemoryBytes > 0 {
+		c.memory = min(l.MemoryBytes, uint64(wasm.MaxMemoryBytes))
+	}
+	if d, err := time.ParseDuration(l.Deadline); err == nil && d > 0 {
+		c.deadline = min(d, 365*24*time.Hour)
+	}
+	if l.UnitBudget > 0 {
+		c.units = l.UnitBudget
+	}
+	if l.FetchBytes > 0 {
+		c.fetch = min(l.FetchBytes, int64(1<<60))
+	}
+	if l.ArchiveMemberBytes > 0 {
+		c.member = min(l.ArchiveMemberBytes, int64(1<<60))
+	}
+	if l.ArchiveExpandedBytes > 0 {
+		c.expanded = min(l.ArchiveExpandedBytes, int64(1<<60))
+	}
+	if l.ArchiveMembers > 0 {
+		c.members = min(l.ArchiveMembers, 1000000)
+	}
+	return c
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#*Manager.runtimeConfig
+
+``````
+func (m *Manager) runtimeConfig() config.Plugins {
+	if m.deps.ReadRuntimeConfig != nil {
+		return m.deps.ReadRuntimeConfig()
+	}
+	return config.Plugins{}
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#*Manager.runtimeCeilings
+
+``````
+func (m *Manager) runtimeCeilings(id string) runtimeCeilings {
+	cfg := m.runtimeConfig()
+	c := applyRuntimeCeilings(defaultRuntimeCeilings(), cfg.RuntimeLimits)
+	return applyRuntimeCeilings(c, cfg.RuntimeOverrides[id])
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#runtimeLimitsWithCeilings
+
+``````
+func runtimeLimitsWithCeilings(m Manifest, c runtimeCeilings) wasm.Limits {
+	l := wasm.Limits{MemoryBytes: min(uint64(32<<20), c.memory), Deadline: c.deadline, UnitBudget: c.units}
+	if m.Ether != nil && m.Ether.Runtime.Limits != nil {
+		r := m.Ether.Runtime.Limits
+		if r.MemoryBytes > 0 {
+			l.MemoryBytes = min(r.MemoryBytes, c.memory)
+		}
+		if d, err := time.ParseDuration(r.Deadline); err == nil && d > 0 {
+			l.Deadline = min(d, c.deadline)
+		}
+		if r.UnitBudget > 0 {
+			l.UnitBudget = min(r.UnitBudget, c.units)
+		}
+	}
+	return l
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#*Manager.grantedRuntimeLimits
+
+``````
+func (m *Manager) grantedRuntimeLimits(man Manifest) *RuntimeLimits {
+	if man.RuntimeKind() != "hosted" {
+		return nil
+	}
+	c := m.runtimeCeilings(man.ID)
+	l := runtimeLimitsWithCeilings(man, c)
+	r := &RuntimeLimits{MemoryBytes: l.MemoryBytes, Deadline: l.Deadline.String(), UnitBudget: l.UnitBudget}
+	r.FetchBytes = c.fetch
+	r.ArchiveMemberBytes = c.member
+	r.ArchiveExpandedBytes = c.expanded
+	r.ArchiveMembers = c.members
+	if req := man.Ether.Runtime.Limits; req != nil {
+		if req.FetchBytes > 0 {
+			r.FetchBytes = min(r.FetchBytes, req.FetchBytes)
+		}
+		if req.ArchiveMemberBytes > 0 {
+			r.ArchiveMemberBytes = min(r.ArchiveMemberBytes, req.ArchiveMemberBytes)
+		}
+		if req.ArchiveExpandedBytes > 0 {
+			r.ArchiveExpandedBytes = min(r.ArchiveExpandedBytes, req.ArchiveExpandedBytes)
+		}
+		if req.ArchiveMembers > 0 {
+			r.ArchiveMembers = min(r.ArchiveMembers, req.ArchiveMembers)
+		}
+	}
+	return r
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#*Manager.handleRuntimeLimits
+
+``````
+func (m *Manager) handleRuntimeLimits(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut {
+		var req struct {
+			Plugin string                     `json:"plugin"`
+			Limits config.PluginRuntimeLimits `json:"limits"`
+		}
+		if err := decode(r, &req); err != nil {
+			m.fail(w, err)
+			return
+		}
+		if req.Limits.MemoryBytes > wasm.MaxMemoryBytes || req.Limits.UnitBudget < 0 || req.Limits.FetchBytes < 0 || req.Limits.ArchiveMemberBytes < 0 || req.Limits.ArchiveExpandedBytes < 0 || req.Limits.ArchiveMembers < 0 || req.Limits.ArchiveMembers > 1000000 {
+			m.fail(w, fmt.Errorf("memory must be at most 4 GiB and work units must not be negative"))
+			return
+		}
+		if req.Limits.Deadline != "" {
+			if d, err := time.ParseDuration(req.Limits.Deadline); err != nil || d <= 0 || d > 365*24*time.Hour {
+				m.fail(w, fmt.Errorf("time limit must be positive and at most one year"))
+				return
+			}
+		}
+		if req.Plugin != "" {
+			if _, err := m.Get(r.Context(), req.Plugin); err != nil {
+				m.fail(w, err)
+				return
+			}
+		}
+		if m.deps.SaveRuntimeConfig == nil {
+			m.fail(w, fmt.Errorf("runtime settings are unavailable"))
+			return
+		}
+		if err := m.deps.SaveRuntimeConfig(req.Plugin, req.Limits); err != nil {
+			m.fail(w, err)
+			return
+		}
+		// Closing runtimes cancels jobs so lowered ceilings take effect immediately.
+		recs, err := m.List(r.Context())
+		if err != nil {
+			m.fail(w, err)
+			return
+		}
+		for _, rec := range recs {
+			if req.Plugin == "" || req.Plugin == rec.ID {
+				m.closeRuntime(rec.ID)
+			}
+		}
+		m.broadcast(r.Context())
+	}
+	writeJSON(w, http.StatusOK, m.runtimeConfig())
+}
+``````
+
+## Source: internal/plugins/runtime_limits.go#*host.DataLimits
+
+``````
+// DataLimits exposes owner grants to shared hosted/remote data services.
+func (h *host) DataLimits(ctx context.Context) RuntimeLimits {
+	rec, err := h.m.Get(ctx, h.plugin)
+	if err == nil {
+		if l := h.m.grantedRuntimeLimits(rec.Manifest); l != nil {
+			return *l
+		}
+	}
+	c := h.m.runtimeCeilings(h.plugin)
+	return RuntimeLimits{FetchBytes: c.fetch, ArchiveMemberBytes: c.member, ArchiveExpandedBytes: c.expanded, ArchiveMembers: c.members, Deadline: c.deadline.String()}
 }
 ``````
 
@@ -15481,6 +16175,51 @@ func ensureUICap(etherObj map[string]any) {
 }
 ``````
 
+## Source: internal/plugins/wasm/background.go#ViewerRequestPath
+
+``````
+// ViewerRequestPath identifies calls on a viewer's browse/search/playback path.
+// Administrative actions, setup and background jobs use owner-granted limits.
+func ViewerRequestPath(path string) bool {
+	for _, prefix := range []string{"/stream/", "/catalog/", "/meta/", "/subtitles/", "/ether/open", "/ether/metadata/", "/ether/subtitles/", "/ether/markers"} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return strings.HasPrefix(path, "/ether/v1/kinds/")
+}
+``````
+
+## Source: internal/plugins/wasm/background.go#WaitBackground
+
+``````
+// WaitBackground yields before starting work and at each host-service boundary.
+func WaitBackground(ctx context.Context, busy func() bool) error {
+	for busy != nil && busy() {
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return ctx.Err()
+}
+``````
+
+## Source: internal/plugins/wasm/background.go#limitsForRequest
+
+``````
+func limitsForRequest(l Limits, path string) Limits {
+	if ViewerRequestPath(path) {
+		l.Deadline = min(l.Deadline, 30*time.Second)
+		l.UnitBudget = min(l.UnitBudget, int64(10000))
+	}
+	return l
+}
+``````
+
 ## Source: internal/plugins/wasm/js.go#faultPrefix
 
 ``````
@@ -16395,7 +17134,7 @@ const (
 	// BaseCallUnits is charged once per handle call.
 	BaseCallUnits = 10
 	// MaxMemoryBytes is the hard ceiling for a plugin instance.
-	MaxMemoryBytes = 64 << 20
+	MaxMemoryBytes = 4 << 30
 	// MaxResponseBytes caps a plugin response.
 	MaxResponseBytes = 8 << 20
 	// MaxFetchBodyBytes caps a direct HTTP response before JSON encoding.
@@ -16418,9 +17157,10 @@ const (
 ``````
 // Limits bound one plugin. Zero fields take the defaults in normalize.
 type Limits struct {
-	MemoryBytes uint64        // per instance; default 32 MiB, max 64 MiB
+	MemoryBytes uint64        // per instance; default 32 MiB, max wasm32 4 GiB
 	Deadline    time.Duration // per handle call; default 30s
 	UnitBudget  int64         // per handle call; default 10000
+	Busy        func() bool   // background work yields while playback or host load is high
 	PoolSize    int           // instances per pool; default 2
 	// Hot-path budgets. A manifest may lower these, never raise them:
 	// normalize clamps to the defaults below.
@@ -16447,6 +17187,9 @@ func (l *Limits) normalize() {
 	}
 	if l.Deadline <= 0 {
 		l.Deadline = 30 * time.Second
+	}
+	if l.Deadline > 365*24*time.Hour {
+		l.Deadline = 365 * 24 * time.Hour
 	}
 	if l.UnitBudget <= 0 {
 		l.UnitBudget = 10000
@@ -16581,19 +17324,20 @@ func (c *counters) snapshot() Stats {
 // instance serves one call at a time, so no locking is needed beyond the
 // exceeded flag (read after the call from the same goroutine).
 type callState struct {
-	ctx       context.Context
-	host      Host
-	lim       *Limits
-	start     time.Time
-	last      time.Time
-	units     int64
-	logs      int
-	hot       bool
-	exceeded  bool
-	aborted   bool
-	abortCode uint32
-	logger    *slog.Logger
-	pluginID  string
+	ctx        context.Context
+	host       Host
+	lim        *Limits
+	start      time.Time
+	last       time.Time
+	units      int64
+	logs       int
+	background bool
+	hot        bool
+	exceeded   bool
+	aborted    bool
+	abortCode  uint32
+	logger     *slog.Logger
+	pluginID   string
 }
 ``````
 
@@ -16644,6 +17388,13 @@ func (cs *callState) finishUnits() int64 {
 // hot-path lockdown. It is the single funnel for JS ether.* and raw
 // ether.host_call.
 func (cs *callState) dispatch(name string, args json.RawMessage) (json.RawMessage, *Fault) {
+	if cs.background {
+		waitedAt := time.Now()
+		if err := WaitBackground(cs.ctx, cs.lim.Busy); err != nil {
+			return nil, &Fault{Code: string(StatusTimeout), Message: err.Error()}
+		}
+		cs.last = cs.last.Add(time.Since(waitedAt))
+	}
 	if cs.hot && name != "log" {
 		return nil, Forbidden("host services are not available on the hot path: " + name)
 	}
@@ -17136,10 +17887,12 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
 		out.Status = StatusError
 		return Response{}, out, &Error{Status: StatusError, Message: err.Error()}
 	}
-	callCtx, cancel := context.WithTimeout(ctx, p.lim.Deadline)
+	lim := limitsForRequest(p.lim, req.Path)
+	callCtx, cancel := context.WithTimeout(ctx, lim.Deadline)
 	defer cancel()
-	cs := &callState{ctx: callCtx, host: p.host, lim: &p.lim, start: start, last: start,
-		units: BaseCallUnits, logger: p.eng.logger, pluginID: p.id}
+	cs := &callState{ctx: callCtx, host: p.host, lim: &lim, start: start, last: start,
+		background: strings.HasPrefix(req.Path, "/ether/job/"),
+		units:      BaseCallUnits, logger: p.eng.logger, pluginID: p.id}
 	in, err := p.svc.get(callCtx)
 	if err != nil {
 		out.Status = StatusTimeout
@@ -17349,6 +18102,14 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
 | `ether.runtime` | `object` | true | {"required":["kind"]} |
 | `ether.runtime.entry` | `string` | false | {"description":"Compiled JS file. Hosted only."} |
 | `ether.runtime.kind` | `any` | true | {"enum":["hosted","remote"]} |
+| `ether.runtime.limits` | `object` | false | {"description":"Hosted/data requests are clamped to owner-controlled global or per-plugin ceilings. Default ceilings: 2 GiB memory (up to wasm32 4 GiB), 12h, effectively unlimited background compute, 8 GiB download/member and 32 GiB total expansion. Viewer request-path time/compute budgets stay tight."} |
+| `ether.runtime.limits.archiveExpandedBytes` | `integer` | false | {"default":34359738368,"description":"Clamped to the owner ceiling; omitted or zero uses that ceiling.","minimum":0} |
+| `ether.runtime.limits.archiveMemberBytes` | `integer` | false | {"default":8589934592,"description":"Clamped to the owner ceiling; omitted or zero uses that ceiling.","minimum":0} |
+| `ether.runtime.limits.archiveMembers` | `integer` | false | {"default":65535,"description":"Clamped to the owner ceiling; omitted or zero uses that ceiling.","minimum":0} |
+| `ether.runtime.limits.deadline` | `string` | false | {"description":"Positive Go duration; omitted uses the owner ceiling (default 12h)."} |
+| `ether.runtime.limits.fetchBytes` | `integer` | false | {"default":8589934592,"description":"Clamped to the owner ceiling; omitted or zero uses that ceiling.","minimum":0} |
+| `ether.runtime.limits.memoryBytes` | `integer` | false | {"default":33554432,"minimum":0} |
+| `ether.runtime.limits.unitBudget` | `integer` | false | {"default":1152921504606847000,"minimum":0} |
 | `ether.runtime.module` | `string` | false | {"description":"WASM file. Hosted only."} |
 | `ether.schedule` | `any` | false | {"anyOf":[{"type":"string"},{"items":{"properties":{"call":{"pattern":"^/","type":"string"},"every":{"description":"Go duration, at least 15m.","type":"string"}},"required":["every","call"],"type":"object"},"type":"array"}]} |
 | `ether.settings` | `any` | false | {"description":"Settings schema, {} or {\"$ref\":\"file\"}."} |
@@ -18259,6 +19020,50 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
             "module": {
               "description": "WASM file. Hosted only.",
               "type": "string"
+            },
+            "limits": {
+              "type": "object",
+              "description": "Hosted/data requests are clamped to owner-controlled global or per-plugin ceilings. Default ceilings: 2 GiB memory (up to wasm32 4 GiB), 12h, effectively unlimited background compute, 8 GiB download/member and 32 GiB total expansion. Viewer request-path time/compute budgets stay tight.",
+              "properties": {
+                "memoryBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 33554432
+                },
+                "deadline": {
+                  "type": "string",
+                  "description": "Positive Go duration; omitted uses the owner ceiling (default 12h)."
+                },
+                "unitBudget": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 1152921504606846976
+                },
+                "fetchBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 8589934592,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                },
+                "archiveMemberBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 8589934592,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                },
+                "archiveExpandedBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 34359738368,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                },
+                "archiveMembers": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 65535,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                }
+              }
             }
           },
           "required": [
@@ -28774,7 +29579,14 @@ func (p *Plugin) Dispatch(ctx context.Context, req RawRequest) RawResponse {
 			return errorJSON(http.StatusNotFound, "not_found", "Job handler is not registered.")
 		}
 		jobName, _ := url.PathUnescape(strings.TrimPrefix(path, "/ether/job/"))
-		res, err := p.routes.Job(pctx, JobRequest{Name: jobName})
+		jobReq := JobRequest{Name: jobName}
+		if len(req.Body) > 0 {
+			if err := json.Unmarshal(req.Body, &jobReq); err != nil {
+				return errorJSON(http.StatusBadRequest, "invalid_json", "Job body must be valid JSON.")
+			}
+		}
+		jobReq.Name = jobName
+		res, err := p.routes.Job(pctx, jobReq)
 		if err != nil {
 			return toRouteErrorResponse(err)
 		}
@@ -30332,6 +31144,7 @@ type PluginAuthor struct {
 | `kind` | `string` | emitted (validation may require a value) |  |
 | `entry` | `string` | may be omitted (see validation for conditions) |  |
 | `module` | `string` | may be omitted (see validation for conditions) |  |
+| `limits` | `*RuntimeLimits` | may be omitted (see validation for conditions) |  |
 
 
 ## Source: sdk/go/types.go#RuntimeDecl
@@ -30339,9 +31152,39 @@ type PluginAuthor struct {
 ``````
 // RuntimeDecl declares how the plugin is executed.
 type RuntimeDecl struct {
-	Kind   string `json:"kind"`
-	Entry  string `json:"entry,omitempty"`
-	Module string `json:"module,omitempty"`
+	Kind   string         `json:"kind"`
+	Entry  string         `json:"entry,omitempty"`
+	Module string         `json:"module,omitempty"`
+	Limits *RuntimeLimits `json:"limits,omitempty"`
+}
+``````
+
+## Source: sdk/go/types.go#RuntimeLimits.fields.md
+
+| Field | Go type | Wire presence | Description |
+|---|---|---|---|
+| `fetchBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveMemberBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveExpandedBytes` | `int64` | may be omitted (see validation for conditions) |  |
+| `archiveMembers` | `int` | may be omitted (see validation for conditions) |  |
+| `memoryBytes` | `uint64` | may be omitted (see validation for conditions) |  |
+| `deadline` | `string` | may be omitted (see validation for conditions) |  |
+| `unitBudget` | `int64` | may be omitted (see validation for conditions) |  |
+
+
+## Source: sdk/go/types.go#RuntimeLimits
+
+``````
+// RuntimeLimits requests hosted/data resources within owner-controlled ceilings.
+// Defaults: 32 MiB heap, 12h, effectively unlimited background work units.
+type RuntimeLimits struct {
+	FetchBytes           int64  `json:"fetchBytes,omitempty"`
+	ArchiveMemberBytes   int64  `json:"archiveMemberBytes,omitempty"`
+	ArchiveExpandedBytes int64  `json:"archiveExpandedBytes,omitempty"`
+	ArchiveMembers       int    `json:"archiveMembers,omitempty"`
+	MemoryBytes          uint64 `json:"memoryBytes,omitempty"`
+	Deadline             string `json:"deadline,omitempty"`
+	UnitBudget           int64  `json:"unitBudget,omitempty"`
 }
 ``````
 
@@ -32043,6 +32886,7 @@ type ToolResponse map[string]any
 | Field | Go type | Wire presence | Description |
 |---|---|---|---|
 | `name` | `string` | emitted (validation may require a value) |  |
+| `continuation` | `json.RawMessage` | may be omitted (see validation for conditions) |  |
 
 
 ## Source: sdk/go/types.go#JobRequest
@@ -32050,14 +32894,17 @@ type ToolResponse map[string]any
 ``````
 // JobRequest is passed to a Job route handler.
 type JobRequest struct {
-	Name string `json:"name"`
+	Name         string          `json:"name"`
+	Continuation json.RawMessage `json:"continuation,omitempty"`
 }
 ``````
 
 ## Source: sdk/go/types.go#JobResponse
 
 ``````
-// JobResponse is returned by a Job route handler.
+// JobResponse returns continueInMs, continuation and progress to continue;
+// done:true completes, failed:string stops with an error. Ether caps jobs at
+// the owner time ceiling (12h by default) and 1000000 calls; store checkpoints in KV for restart recovery.
 type JobResponse map[string]any
 ``````
 
@@ -32418,6 +33265,27 @@ Content-kind item dictionaries may include `unavailable: {"code": "no_verified_s
 and refuses resolution until a later upsert omits the field. `pattern: "file"`
 with a `path` is reserved for hosted resolvers with `folders: read`; Python
 sidecars cannot access host files or call `folders.hash`. See `docs/plugin-kinds.md`.
+
+### Continuing background jobs
+
+A `job` handler receives `{"name": ..., "continuation": ...}`. Return
+`{"continueInMs": 0, "continuation": {"next": 41}, "progress": "Platform 41 of 92"}`
+to continue. Return `{"done": True}` or `{"failed": "reason"}` to finish; an
+absent `continueInMs` also finishes. Store durable checkpoints in KV to recover
+on a later owner-started run after restart. Tokens are at most 64 KiB and progress
+at most 1,024 UTF-8 bytes. The drawer supports progress and cancellation.
+
+Ether uses owner-controlled global/per-plugin ceilings under Plugins: default
+2 GiB memory (up to wasm32 4 GiB), 12 hours, effectively unlimited background
+compute, 8 GiB downloads/member expansion, 32 GiB total expansion and 65,535 ZIP
+members. Downloads also obey library cache quotas. Hosted manifests request
+`ether.runtime.limits` with `memoryBytes`, `deadline`, `unitBudget`, `fetchBytes`,
+`archiveMemberBytes`, `archiveExpandedBytes` and `archiveMembers`. Install preview
+and detail show requested and granted values. Jobs pause during playback/high
+host load and use low CPU/IO priority. A 1,000,000-call sanity bound applies;
+viewer browse/search/resolve/playback calls retain tight time and compute budgets.
+Remote Python processes manage their own CPU/memory. See the TypeScript SDK
+README for route classification, policy APIs and complete job behavior.
 
 
 ## Source: sdk/python/ether_plugin.py
@@ -33431,7 +34299,10 @@ class PluginInstance:
             if not fn:
                 return _error_response(404, "not_found", "Job handler is not registered.")
             job_name = urllib.parse.unquote(path[len("/ether/job/") :])
-            return _ok_response(fn({"name": job_name}, ctx))
+            return _ok_response(fn({
+                "name": job_name,
+                "continuation": _parse_json_body(req.get("body")).get("continuation"),
+            }, ctx))
 
         if method == "POST" and path == "/ether/rank-key":
             fn = self.routes.get("rank_key") or self.routes.get("rankKey")
@@ -35386,6 +36257,68 @@ control in the installed plugin's Settings drawer. Ether forwards `q` and
 carry coordinates and a display name together. Search never saves settings.
 Background requests receive the server process locale (`LC_ALL`, `LC_MESSAGES`,
 then `LANG`) in the `X-Ether-Locale` header when the caller has not supplied one.
+
+### Owner-controlled resources and continuing jobs
+
+`ether.runtime.limits` requests `memoryBytes`, `deadline` (a positive Go duration
+such as `12h`), `unitBudget`, `fetchBytes`, `archiveMemberBytes`,
+`archiveExpandedBytes` and `archiveMembers`. Ether grants each request up to the
+owner's global or per-plugin ceiling. Owners can raise or lower ceilings under
+Plugins → Settings and in each plugin's drawer. A per-plugin value overrides the
+global value, including raising it. Zero inherits; global zero uses the default.
+Saving cancels affected jobs and closes runtimes so lowered ceilings apply.
+
+The default memory ceiling is **2 GiB**, adjustable up to wasm32's **4 GiB**;
+omitted guest heap requests still use **32 MiB**, allocated only as needed.
+The default call/job time ceiling is **12 hours** and background compute is
+effectively unlimited (2^60 units per call); owners and manifests may lower it.
+The default download and expanded-member ceilings are **8 GiB** each, total
+archive expansion **32 GiB**, and archive members **65,535**. Downloads also obey
+the library cache quota (2 GiB unless the manifest declares a different quota).
+The host reports requested fields in the manifest and exact grants as
+`runtimeLimits` in install preview and detail, displayed side by side.
+
+Viewer request-path calls remain bounded: `/stream/`, `/catalog/`, `/meta/`,
+`/subtitles/`, `/ether/open`, `/ether/metadata/`, `/ether/subtitles/`,
+`/ether/markers`, and `/ether/v1/kinds/` (browse/search/resolve/match) get at most
+10,000 units and 30 seconds, further shortened by each route/caller's deadline.
+Ranking stays at its existing 2 ms per-candidate and 50 ms per-batch defaults.
+Administrative setup, actions, tools, events and jobs use the owner-granted
+resources; short health/configuration/view/options protocol deadlines still
+protect the host's control plane. Remote plugin processes manage their own CPU
+and memory; owner download/archive ceilings also apply to their host services.
+
+An action returning `{job: "build-catalogue"}` starts an owner-triggered job.
+Return `{continueInMs: 0, continuation: {next: 41}, progress: "Platform 41 of 92"}`
+from its handler to continue. The next `JobRequest.continuation` is that opaque
+JSON token. Return `{done: true, progress: "Ready"}` to finish, or
+`{failed: "reason"}` to stop. A response without `continueInMs` also finishes.
+Non-2xx responses, invalid results and call failures stop the job.
+
+Ether allows 0–300,000 ms between calls with a minimum 100 ms pause. Total wall
+time uses the owner time ceiling (12 hours by default), with a 1,000,000-call
+sanity bound. Each call gets fresh per-call grants. At most two jobs run per
+plugin and the same route cannot overlap. Job threads use OS background CPU/IO
+priority on macOS, Linux and Windows. They pause before calls and host-service
+operations during playback, Live TV viewing or high CPU/GPU load; pure compute
+runs at reduced scheduling priority. Cancellation interrupts in-flight hosted
+calls. Work starts only following an owner action; no eager background work.
+
+Tokens are limited to 64 KiB and progress to 1,024 UTF-8 bytes. The drawer shows
+progress and a Cancel button. The owner API provides `GET /api/plugins/{id}/jobs`
+and `POST /api/plugins/{id}/jobs/cancel` with `{"path":"/ether/job/build-catalogue"}`.
+Status includes total-time and attempt caps. Disabling, removing or reloading a
+plugin, or stopping Ether, cancels work. The last sixteen route snapshots per
+plugin are retained in memory. Store durable checkpoints in KV to recover on a
+later owner-started run after restart; Ether does not restart work automatically.
+
+Owner policy is persisted in `plugins.runtimeLimits` and
+`plugins.runtimeOverrides[pluginId]`, with the same resource field names as the
+manifest. `GET /api/plugins/runtime-limits` returns policy;
+`PUT /api/plugins/runtime-limits` takes `{plugin?: string, limits: {...}}`.
+Memory cannot exceed 4 GiB, job time has a one-year sanity bound, and member count
+has a 1,000,000-entry sanity bound. The ZIP directory has a 64 MiB allocation
+bound; traversal, encryption, special files and 1000:1 expansion checks remain.
 
 
 ## Source: sdk/typescript/src/host.ts
@@ -37432,7 +38365,7 @@ export function plugin<S = Record<string, unknown>>(
         return errorResponse(404, "not_found", "Job handler is not registered.");
       }
       const name = decodeURIComponent(path.slice("/ether/job/".length));
-      return mapResult(routes.job({ name }, ctx));
+      return mapResult(routes.job({ name, continuation: parseJsonBody(req.body).continuation }, ctx));
     }
 
     if (method === "POST" && path === "/ether/rank-key") {
@@ -38790,10 +39723,21 @@ export interface PluginAuthor {
   url?: string;
 }
 
+/** Hosted/data requests are clamped to the owner's global or per-plugin ceilings. */
+export interface RuntimeLimits {
+  fetchBytes?: number;
+  archiveMemberBytes?: number;
+  archiveExpandedBytes?: number;
+  archiveMembers?: number;
+  memoryBytes?: number;
+  deadline?: string;
+  unitBudget?: number;
+}
 export interface RuntimeDecl {
   kind: "hosted" | "remote";
   entry?: string;
   module?: string;
+  limits?: RuntimeLimits;
 }
 
 export interface HealthDecl {
@@ -39620,9 +40564,17 @@ export type ToolResponse = Record<string, unknown>;
 
 export interface JobRequest {
   name: string;
+  continuation?: unknown;
 }
 
 export interface JobResponse {
+  /** Presence asks Ether to call again after 0..300000 ms (minimum pause 100ms). */
+  continueInMs?: number;
+  /** Opaque JSON checkpoint forwarded as the next request's continuation. */
+  continuation?: unknown;
+  progress?: string;
+  done?: boolean;
+  failed?: string;
   ok?: boolean;
   [key: string]: unknown;
 }

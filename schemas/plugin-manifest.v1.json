@@ -892,6 +892,50 @@
             "module": {
               "description": "WASM file. Hosted only.",
               "type": "string"
+            },
+            "limits": {
+              "type": "object",
+              "description": "Hosted/data requests are clamped to owner-controlled global or per-plugin ceilings. Default ceilings: 2 GiB memory (up to wasm32 4 GiB), 12h, effectively unlimited background compute, 8 GiB download/member and 32 GiB total expansion. Viewer request-path time/compute budgets stay tight.",
+              "properties": {
+                "memoryBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 33554432
+                },
+                "deadline": {
+                  "type": "string",
+                  "description": "Positive Go duration; omitted uses the owner ceiling (default 12h)."
+                },
+                "unitBudget": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 1152921504606846976
+                },
+                "fetchBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 8589934592,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                },
+                "archiveMemberBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 8589934592,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                },
+                "archiveExpandedBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 34359738368,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                },
+                "archiveMembers": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 65535,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
+                }
+              }
             }
           },
           "required": [

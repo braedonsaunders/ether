@@ -182,7 +182,7 @@ func TestDataHostInvariants(t *testing.T) {
 		}
 		bomb := dataZIP(t, "bomb", zip.Deflate, bytes.Repeat([]byte("a"), 2<<20))
 		central := bytes.Index(bomb, []byte{0x50, 0x4b, 0x01, 0x02})
-		binary.LittleEndian.PutUint32(bomb[central+24:], maxArchiveMemberBytes)
+		binary.LittleEndian.PutUint32(bomb[central+24:], 64<<20)
 		if _, err := openDataZIP(ctx, bytes.NewReader(bomb)); err == nil {
 			t.Fatal("compression bomb accepted")
 		}

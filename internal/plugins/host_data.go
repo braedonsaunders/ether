@@ -19,12 +19,12 @@ import (
 // Data-service limits are host enforced, independent of guest memory. All
 // operations are on demand and use the existing plugin-owned cache namespace.
 const (
-	MaxDataFetchBytes       = 256 << 20
+	MaxDataFetchBytes       = 8 << 30
 	MaxDataRangeBytes       = 1 << 20
-	maxArchiveMembers       = 4096
-	maxArchiveDirectory     = 4 << 20
-	maxArchiveMemberBytes   = 64 << 20
-	maxArchiveExpandedBytes = 256 << 20
+	maxArchiveMembers       = 65535
+	maxArchiveDirectory     = 64 << 20
+	maxArchiveMemberBytes   = 8 << 30
+	maxArchiveExpandedBytes = 32 << 30
 	maxArchiveRatio         = 1000
 )
 
@@ -83,7 +83,8 @@ func (h *host) HTTPFetchToCache(ctx context.Context, req FetchCacheRequest) (Fet
 	if err := h.requireWritableToolContext(ctx); err != nil {
 		return FetchCacheResult{}, err
 	}
-	if _, err := h.cacheWriteCheck(ctx, req.LibraryKey, req.Name); err != nil {
+	decl, err := h.cacheWriteCheck(ctx, req.LibraryKey, req.Name)
+	if err != nil {
 		return FetchCacheResult{}, err
 	}
 	resp, err := h.openFetch(ctx, req.FetchRequest)
@@ -95,7 +96,7 @@ func (h *host) HTTPFetchToCache(ctx context.Context, req FetchCacheRequest) (Fet
 		return FetchCacheResult{}, fmt.Errorf("plugins: fetchToCache HTTP %d", resp.StatusCode)
 	}
 	crc, m, s := crc32.NewIEEE(), md5.New(), sha1.New()
-	reader := &boundedDataReader{ctx: ctx, r: resp.Body, left: MaxDataFetchBytes}
+	reader := &boundedDataReader{ctx: ctx, r: resp.Body, left: min(h.DataLimits(ctx).FetchBytes, decl.Cache.EffectiveMaxBytes())}
 	ref, err := h.CachePut(ctx, req.LibraryKey, req.Name, io.TeeReader(reader, io.MultiWriter(crc, m, s)))
 	h.noteFetchTraffic(ctx, req.FetchRequest, reader.size)
 	if err != nil {
@@ -105,7 +106,7 @@ func (h *host) HTTPFetchToCache(ctx context.Context, req FetchCacheRequest) (Fet
 }
 
 func validDataRange(r DataRange) error {
-	if r.Offset < 0 || r.Length <= 0 || r.Length > MaxDataRangeBytes || r.Offset > MaxDataFetchBytes {
+	if r.Offset < 0 || r.Length <= 0 || r.Length > MaxDataRangeBytes || r.Offset > 1<<60 {
 		return fmt.Errorf("plugins: range needs nonnegative offset and length 1..%d", MaxDataRangeBytes)
 	}
 	return nil
@@ -117,7 +118,7 @@ func readDataRange(ctx context.Context, r io.Reader, opt DataRange) (map[string]
 	if err := validDataRange(opt); err != nil {
 		return nil, err
 	}
-	cr := &boundedDataReader{ctx: ctx, r: r, left: MaxDataFetchBytes}
+	cr := &boundedDataReader{ctx: ctx, r: r, left: opt.Offset + opt.Length}
 	if _, err := io.CopyN(io.Discard, cr, opt.Offset); err != nil {
 		return nil, err
 	}
@@ -155,12 +156,18 @@ type ArchiveMember struct {
 	Size  uint64 `json:"size"`
 }
 
-func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
+func openDataZIP(ctx context.Context, rc io.ReadSeeker, grants ...RuntimeLimits) (*zip.Reader, error) {
+	limits := defaultDataLimits()
+	if len(grants) > 0 {
+		limits = grants[0]
+	}
+	directoryCap := min(int64(maxArchiveDirectory), int64(limits.ArchiveMembers)*65536)
+
 	size, err := rc.Seek(0, io.SeekEnd)
 	if err != nil {
 		return nil, err
 	}
-	if size < 22 || size > MaxDataFetchBytes {
+	if size < 22 || size > limits.FetchBytes {
 		return nil, fmt.Errorf("plugins: ZIP size outside limit")
 	}
 	ra := seekReaderAt{ctx, rc}
@@ -169,26 +176,54 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 	if _, err := ra.ReadAt(tail, size-tailSize); err != nil {
 		return nil, err
 	}
-	// Inspect EOCD before zip.NewReader allocates the central directory. ZIP64
-	// and split archives are deliberately refused by this bounded ZIP service.
+	// Inspect classic/ZIP64 EOCD before zip.NewReader allocates the directory.
+	// Split archives are refused; counts and bytes use owner ceilings.
 	found := false
 	for i := len(tail) - 22; i >= 0; i-- {
 		if binary.LittleEndian.Uint32(tail[i:]) != 0x06054b50 || i+22+int(binary.LittleEndian.Uint16(tail[i+20:])) != len(tail) {
 			continue
 		}
 		e := tail[i:]
-		count := binary.LittleEndian.Uint16(e[10:])
-		directory := binary.LittleEndian.Uint32(e[12:])
-		if binary.LittleEndian.Uint16(e[4:]) != 0 || binary.LittleEndian.Uint16(e[6:]) != 0 || binary.LittleEndian.Uint16(e[8:]) != count || count > maxArchiveMembers || directory > maxArchiveDirectory || binary.LittleEndian.Uint32(e[16:]) == 0xffffffff {
-			return nil, fmt.Errorf("plugins: ZIP directory exceeds limits or uses unsupported ZIP64/split format")
+		count := uint64(binary.LittleEndian.Uint16(e[10:]))
+		directory := uint64(binary.LittleEndian.Uint32(e[12:]))
+		offset := uint64(binary.LittleEndian.Uint32(e[16:]))
+		directoryEnd := size - tailSize + int64(i)
+		if binary.LittleEndian.Uint16(e[4:]) != 0 || binary.LittleEndian.Uint16(e[6:]) != 0 || uint64(binary.LittleEndian.Uint16(e[8:])) != count {
+			return nil, fmt.Errorf("plugins: split ZIP archives are unsupported")
 		}
-		// Require a contiguous, bounded directory ending at this EOCD.
-		offset := int64(binary.LittleEndian.Uint32(e[16:]))
-		if offset+int64(directory) != size-tailSize+int64(i) {
-			return nil, fmt.Errorf("plugins: unsupported ZIP directory layout")
+		if count == 65535 || directory == 0xffffffff || offset == 0xffffffff {
+			locator := make([]byte, 20)
+			if directoryEnd < 20 {
+				return nil, fmt.Errorf("plugins: invalid ZIP64 locator")
+			}
+			if _, err := ra.ReadAt(locator, directoryEnd-20); err != nil {
+				return nil, err
+			}
+			if binary.LittleEndian.Uint32(locator) != 0x07064b50 || binary.LittleEndian.Uint32(locator[4:]) != 0 || binary.LittleEndian.Uint32(locator[16:]) != 1 {
+				return nil, fmt.Errorf("plugins: invalid or split ZIP64 archive")
+			}
+			recordAt := binary.LittleEndian.Uint64(locator[8:])
+			if recordAt > uint64(directoryEnd-20) || uint64(directoryEnd-20)-recordAt < 56 {
+				return nil, fmt.Errorf("plugins: invalid ZIP64 directory offset")
+			}
+			record := make([]byte, 56)
+			if _, err := ra.ReadAt(record, int64(recordAt)); err != nil {
+				return nil, err
+			}
+			recordLength := binary.LittleEndian.Uint64(record[4:])
+			if binary.LittleEndian.Uint32(record) != 0x06064b50 || recordLength < 44 || recordLength > 1<<20 || recordAt+12+recordLength != uint64(directoryEnd-20) || binary.LittleEndian.Uint32(record[16:]) != 0 || binary.LittleEndian.Uint32(record[20:]) != 0 || binary.LittleEndian.Uint64(record[24:]) != binary.LittleEndian.Uint64(record[32:]) {
+				return nil, fmt.Errorf("plugins: invalid ZIP64 directory")
+			}
+			count = binary.LittleEndian.Uint64(record[32:])
+			directory = binary.LittleEndian.Uint64(record[40:])
+			offset = binary.LittleEndian.Uint64(record[48:])
+			directoryEnd = int64(recordAt)
+		}
+		if count > uint64(limits.ArchiveMembers) || directory > uint64(directoryCap) || offset > uint64(directoryEnd) || directory > uint64(directoryEnd)-offset || offset+directory != uint64(directoryEnd) {
+			return nil, fmt.Errorf("plugins: ZIP directory exceeds owner limits or has unsupported layout")
 		}
 		raw := make([]byte, int(directory))
-		if _, err := ra.ReadAt(raw, offset); err != nil {
+		if _, err := ra.ReadAt(raw, int64(offset)); err != nil {
 			return nil, err
 		}
 		pos := 0
@@ -215,7 +250,7 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(z.File) > maxArchiveMembers {
+	if len(z.File) > limits.ArchiveMembers {
 		return nil, fmt.Errorf("plugins: ZIP has too many members")
 	}
 	var total uint64
@@ -223,7 +258,7 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 	for _, f := range z.File {
 		name := strings.TrimSuffix(f.Name, "/")
 		names += len(f.Name)
-		if name == "" || len(f.Name) > 1024 || names > MaxDataRangeBytes/2 || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") || path.Clean(name) != name || name == ".." || strings.HasPrefix(name, "../") {
+		if name == "" || len(f.Name) > 1024 || int64(names) > directoryCap || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") || path.Clean(name) != name || name == ".." || strings.HasPrefix(name, "../") {
 			return nil, fmt.Errorf("plugins: unsafe ZIP member name")
 		}
 		if !f.FileInfo().IsDir() && !f.Mode().IsRegular() {
@@ -232,13 +267,13 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 		if f.Flags&1 != 0 || (f.Method != zip.Store && f.Method != zip.Deflate) {
 			return nil, fmt.Errorf("plugins: encrypted or unsupported ZIP member")
 		}
-		if f.CompressedSize64 > uint64(size) || f.UncompressedSize64 > maxArchiveMemberBytes || (f.UncompressedSize64 > 0 && (f.CompressedSize64 == 0 || f.UncompressedSize64 > f.CompressedSize64*maxArchiveRatio)) {
+		if f.CompressedSize64 > uint64(size) || f.UncompressedSize64 > uint64(limits.ArchiveMemberBytes) || (f.UncompressedSize64 > 0 && (f.CompressedSize64 == 0 || (f.CompressedSize64 <= ^uint64(0)/maxArchiveRatio && f.UncompressedSize64 > f.CompressedSize64*maxArchiveRatio))) {
 			return nil, fmt.Errorf("plugins: ZIP member exceeds size or compression-ratio limit")
 		}
-		total += f.UncompressedSize64
-		if total > maxArchiveExpandedBytes {
+		if f.UncompressedSize64 > uint64(limits.ArchiveExpandedBytes)-total {
 			return nil, fmt.Errorf("plugins: ZIP expanded size exceeds limit")
 		}
+		total += f.UncompressedSize64
 	}
 	return z, nil
 }
@@ -247,14 +282,24 @@ func openDataZIP(ctx context.Context, rc io.ReadSeeker) (*zip.Reader, error) {
 // named services are accepted; cache access rechecks plugin ownership each call.
 func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage) (json.RawMessage, error) {
 	// Remote callers receive the same maximum I/O deadline as hosted calls.
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	limits := defaultDataLimits()
+	if provider, ok := h.(interface {
+		DataLimits(context.Context) RuntimeLimits
+	}); ok {
+		limits = provider.DataLimits(ctx)
+	}
+	deadline, err := time.ParseDuration(limits.Deadline)
+	if err != nil || deadline <= 0 {
+		deadline = 12 * time.Hour
+	}
+	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 	var args []json.RawMessage
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
 	var value any
-	var err error
+	err = nil
 	if name == "http.fetchToCache" {
 		var req struct {
 			Method     string            `json:"method"`
@@ -330,7 +375,7 @@ func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage)
 			opt.Offset = 0
 			value, err = readDataRange(ctx, rc, opt)
 		} else {
-			z, e := openDataZIP(ctx, rc)
+			z, e := openDataZIP(ctx, rc, limits)
 			if e != nil {
 				return nil, e
 			}
@@ -361,4 +406,8 @@ func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage)
 		return nil, err
 	}
 	return json.Marshal(value)
+}
+
+func defaultDataLimits() RuntimeLimits {
+	return RuntimeLimits{FetchBytes: MaxDataFetchBytes, ArchiveMemberBytes: maxArchiveMemberBytes, ArchiveExpandedBytes: maxArchiveExpandedBytes, ArchiveMembers: maxArchiveMembers, Deadline: "12h"}
 }

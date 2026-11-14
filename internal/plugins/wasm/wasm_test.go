@@ -550,14 +550,31 @@ func TestConcurrentCallsAndRanking(t *testing.T) {
 }
 
 func TestLimitsClamp(t *testing.T) {
-	lim := Limits{MemoryBytes: 1 << 30, RankPerCandidate: time.Second, RankBatch: time.Minute}
+	lim := Limits{MemoryBytes: 1 << 40, Deadline: time.Hour, UnitBudget: 1 << 40, RankPerCandidate: time.Second, RankBatch: time.Minute}
 	lim.normalize()
 	if lim.MemoryBytes != MaxMemoryBytes {
 		t.Fatalf("memory = %d", lim.MemoryBytes)
 	}
+	if lim.Deadline != time.Hour || lim.UnitBudget != 1<<40 {
+		t.Fatalf("owner call grants were changed: %+v", lim)
+	}
 	if lim.RankPerCandidate != 2*time.Millisecond || lim.RankBatch != 50*time.Millisecond {
 		t.Fatalf("hot budgets not clamped: %v %v", lim.RankPerCandidate, lim.RankBatch)
 	}
+	viewer := limitsForRequest(lim, "/ether/v1/kinds/games/browse")
+	if viewer.UnitBudget != 10000 || viewer.Deadline != 30*time.Second {
+		t.Fatalf("viewer budgets: %+v", viewer)
+	}
+	job := limitsForRequest(lim, "/ether/job/build")
+	if job.UnitBudget != lim.UnitBudget || job.Deadline != lim.Deadline {
+		t.Fatalf("job budgets were lowered: %+v", job)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := WaitBackground(ctx, func() bool { return true }); err != context.Canceled {
+		t.Fatalf("busy wait cancellation: %v", err)
+	}
+
 }
 
 // roomyHot gives correctness tests budgets no loaded machine can miss, so
