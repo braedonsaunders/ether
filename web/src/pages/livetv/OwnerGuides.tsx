@@ -199,7 +199,7 @@ export function OwnerGuides() {
                               }
                             />
                             <span>{g.name || t("Ungrouped")}</span>
- <span className="text-xs text-fg-muted">{g.sourceName}</span>
+                            <span className="text-xs text-fg-muted">{g.sourceName}</span>
                             <span className="ml-auto text-fg-muted">{g.count}</span>
                           </label>
                         ))}
