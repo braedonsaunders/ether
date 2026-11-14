@@ -78,14 +78,16 @@ func main() {
 		return
 	}
 
-	logger := setupLogging(*dataDir, logLevelFor(*logLevel, *dataDir))
+	level := new(slog.LevelVar)
+	level.Set(logLevelFor(*logLevel, *dataDir))
+	logger := setupLogging(*dataDir, level)
 	run := func(ctx context.Context) error {
 		exe, err := os.Executable()
 		if err != nil {
 			return err
 		}
 		return app.Serve(ctx, app.Options{
-			DataDir: *dataDir, Logger: logger, Spike: *spike, SpikeFiles: fs.Args(),
+			DataDir: *dataDir, Logger: logger, LogLevel: level, Spike: *spike, SpikeFiles: fs.Args(),
 			NotificationExecutable: exe,
 		})
 	}
@@ -130,7 +132,7 @@ func logLevelFor(flagLevel, dataDir string) slog.Level {
 // (unrecovered panics, "fatal error:" crashes) at <dataDir>/logs/crash.log.
 // Under a Windows service stderr goes nowhere and launchd never rotates
 // it, so the files are the durable record. Failures degrade to stderr.
-func setupLogging(dataDir string, level slog.Level) *slog.Logger {
+func setupLogging(dataDir string, level slog.Leveler) *slog.Logger {
 	logDir := filepath.Join(dataDir, "logs")
 	var out io.Writer = os.Stderr
 	lw, fileErr := logfile.Open(filepath.Join(logDir, "ether.log"), logfile.DefaultMaxSize, logfile.DefaultKeep)

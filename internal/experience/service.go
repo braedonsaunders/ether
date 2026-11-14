@@ -582,12 +582,6 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	// catalogue total when this viewer has no extra visibility filter. The
 	// browse total already excludes adult and hidden titles.
 	plainTotal := bounded && !expand && q.Watched == nil && q.Favorite == nil && len(q.Types) == 0 && q.Season == nil && plainItemFilter(q.Filter) && v.MaxContentRating == "" && (v.IsOwner || len(v.AllowedLibraries) == 0) && s.d.Visibility.FilterAvailable == nil && s.d.Visibility.Policy == nil
-	if expand && wantShowEpisodes && s.d.Grandchildren == nil {
-		return core.Page{}, errors.New("experience: recursive library unavailable")
-	}
-	if expand && wantShowChildren && s.d.Children == nil {
-		return core.Page{}, errors.New("experience: recursive library unavailable")
-	}
 	// Recursive episode queries keep at most one bounded batch of visible,
 	// statically matching candidates in addition to the existing results.
 	var recursiveBatch []core.Title
@@ -673,6 +667,11 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	} else if ok {
 		return page, nil
 	}
+	if page, ok, err := s.indexedRecursivePage(ctx, v, library, q); err != nil {
+		return core.Page{}, err
+	} else if ok {
+		return page, nil
+	}
 	if page, ok, err := s.indexedLibraryPage(ctx, v, library, q); err != nil {
 		return core.Page{}, err
 	} else if ok {
@@ -681,6 +680,12 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		// A sort or request shape SQL cannot page uses the bounded
 		// in-process walk; an indexed page already returned above.
 		return s.collectionLibraryScan(ctx, v, library, q, stored.CollectionID)
+	}
+	if expand && wantShowEpisodes && s.d.Grandchildren == nil {
+		return core.Page{}, errors.New("experience: recursive library unavailable")
+	}
+	if expand && wantShowChildren && s.d.Children == nil {
+		return core.Page{}, errors.New("experience: recursive library unavailable")
 	}
 	for offset := 0; ; {
 		filter := q.Filter

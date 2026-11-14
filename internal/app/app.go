@@ -101,6 +101,8 @@ type Options struct {
 	Version                string
 	// Logger receives everything; the admin log ring is teed onto it.
 	Logger *slog.Logger
+	// LogLevel controls the process handler, including existing child loggers.
+	LogLevel *slog.LevelVar
 	// Spike forces spike mode (local files, no Usenet) on top of config.
 	Spike bool
 	// SpikeFiles are extra local files for spike mode.
@@ -306,7 +308,10 @@ func New(ctx context.Context, opts Options) (_ *App, err error) {
 	a := &App{opts: opts, logs: admin.NewLogBuffer(4000)}
 	base := opts.Logger
 	if base == nil {
-		base = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		if a.opts.LogLevel == nil {
+			a.opts.LogLevel = new(slog.LevelVar)
+		}
+		base = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: a.opts.LogLevel}))
 	}
 	// The in-memory buffer behind Logs gets the same scrubbing as the file.
 	a.log = slog.New(logredact.Handler(admin.TeeHandler(base.Handler(), a.logs)))
@@ -363,6 +368,21 @@ func New(ctx context.Context, opts Options) (_ *App, err error) {
 	}
 	if a.cfg, err = config.Open(opts.DataDir); err != nil {
 		return nil, startFail(startup.FailConfig, fmt.Errorf("config: %w", err))
+	}
+	// Subscribe independently of playback/source wiring: specialist roles also
+	// serve the console. Keep a startup --log-level override until an edit.
+	if a.opts.LogLevel != nil {
+		if opts.Logger == nil {
+			level := slog.LevelInfo
+			_ = level.UnmarshalText([]byte(a.cfg.Get().Server.LogLevel))
+			a.opts.LogLevel.Set(level)
+		}
+		a.cfg.Subscribe(func(c config.Config) {
+			level := slog.LevelInfo
+			if c.Server.LogLevel == "" || level.UnmarshalText([]byte(c.Server.LogLevel)) == nil {
+				a.opts.LogLevel.Set(level)
+			}
+		})
 	}
 	if warning := config.DataDirWarning(opts.DataDir); warning != "" {
 		a.log.Warn(warning)
