@@ -163,7 +163,7 @@ func (c *Catalog) consoleDomainEmpty(ctx context.Context, f core.Filter) (bool, 
 
 func consoleHasSparseCandidates(f core.Filter) bool {
 	for _, v := range mandatoryConsoleFilters(f) {
-		if v.Person > 0 || len(v.Credits) > 0 || len(v.Keywords) > 0 || len(v.Tags) > 0 || v.Anime || v.Collection > 0 || len(v.Collections) > 0 || v.DateAddedFrom != 0 || v.DateAddedTo != 0 || v.EtherAddedFrom != 0 || v.EtherAddedTo != 0 || len(v.ReleasedFilters) > 0 {
+		if v.Topic != "" || v.Person > 0 || len(v.Credits) > 0 || len(v.Keywords) > 0 || len(v.Tags) > 0 || v.Anime || v.Collection > 0 || len(v.Collections) > 0 || v.DateAddedFrom != 0 || v.DateAddedTo != 0 || v.EtherAddedFrom != 0 || v.EtherAddedTo != 0 || len(v.ReleasedFilters) > 0 {
 			return true
 		}
 	}

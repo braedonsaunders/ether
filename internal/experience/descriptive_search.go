@@ -12,7 +12,8 @@ func (s *Service) DescriptiveSearchAvailable() bool { return s.d.Search.Vibe.Sou
 
 // DescriptiveSearch selects the collection-reading lane directly, using the
 // same policy and availability boundary as ordinary neutral search. Local
-// response mode excludes model refinement, remote name/seed lookup and totals.
+// response mode reads cached refinement, schedules misses asynchronously, and
+// excludes remote name/seed lookup and totals.
 func (s *Service) DescriptiveSearch(ctx context.Context, viewer *core.User, device core.Device, query string, q frontend.ItemQuery) (frontend.SearchPage, error) {
 	if !s.DescriptiveSearchAvailable() {
 		return frontend.SearchPage{}, core.ErrNotAvailable

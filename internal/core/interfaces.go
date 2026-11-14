@@ -79,6 +79,8 @@ type FilterGroup struct {
 
 // Filter narrows a browse or a smart collection. Zero values mean "any".
 type Filter struct {
+	// Topic matches a bounded local keyword/overview candidate set.
+	Topic               string       `json:"topic,omitempty"`
 	LocalOnly           bool         `json:"-"` // console filtering never hydrates remote credits on the request path
 	CatalogCandidates   bool         `json:"-"`
 	CatalogViewerID     int64        `json:"-"`

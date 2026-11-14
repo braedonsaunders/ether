@@ -123,13 +123,13 @@ func vibeSetup(t *testing.T, now *atomic.Int64, opts ...collections.Option) *col
 		t.Fatal(err)
 	}
 	seed := []core.Title{
-		{Key: core.MovieKey(1), Type: core.TypeMovie, IDs: core.IDs{TMDB: 1}, Title: "Alien Invasion",
+		{Key: core.MovieKey(1), Type: core.TypeMovie, IDs: core.IDs{TMDB: 1}, Title: "Alien Invasion", Keywords: []string{"space mission"},
 			Genres: []string{"Science Fiction"}, Year: 1985, Released: time.Date(1985, 6, 1, 0, 0, 0, 0, time.UTC),
 			Runtime: 100 * time.Minute, Rating: 8.5, VoteCount: 100, Popularity: 50, ContentRating: "PG-13", PosterPath: "/a.jpg"},
-		{Key: core.MovieKey(2), Type: core.TypeMovie, IDs: core.IDs{TMDB: 2}, Title: "Saga Returns",
+		{Key: core.MovieKey(2), Type: core.TypeMovie, IDs: core.IDs{TMDB: 2}, Title: "Saga Returns", Summary: "A time travel adventure.",
 			Genres: []string{"Science Fiction"}, Year: 1987, Released: time.Date(1987, 6, 1, 0, 0, 0, 0, time.UTC),
 			Runtime: 110 * time.Minute, Rating: 8.1, VoteCount: 100, Popularity: 40, ContentRating: "R"},
-		{Key: core.MovieKey(3), Type: core.TypeMovie, IDs: core.IDs{TMDB: 3}, Title: "Modern Drama",
+		{Key: core.MovieKey(3), Type: core.TypeMovie, IDs: core.IDs{TMDB: 3}, Title: "Modern Drama", Keywords: []string{"heist"},
 			Genres: []string{"Drama"}, Year: 2020, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 			Runtime: 95 * time.Minute, Rating: 9.0, VoteCount: 100, Popularity: 60, ContentRating: "PG"},
 	}
@@ -293,7 +293,10 @@ func TestVibeRefinerFallback(t *testing.T) {
 		t.Fatal("refiner consulted for a parseable query")
 	}
 	local := core.WithLocalResponse(ctx)
-	for _, query := range []string{"movies that feel like a warm hug", "christopher nolan films", "shows like the office"} {
+	if c, items, ok, err := svc.VibeCollection(local, user, "movies that feel like a warm hug"); err != nil || !ok || c != nil || len(items) != 1 {
+		t.Fatalf("local cached refinement: c=%v items=%v ok=%v err=%v", c, items, ok, err)
+	}
+	for _, query := range []string{"christopher nolan films", "shows like the office"} {
 		if _, _, ok, err := svc.VibeCollection(local, user, query); err != nil || ok {
 			t.Fatalf("local read attempted model or external resolution for %q: handled=%v err=%v", query, ok, err)
 		}
@@ -301,7 +304,26 @@ func TestVibeRefinerFallback(t *testing.T) {
 	if _, items, ok, err := svc.VibeCollection(local, user, "80s sci-fi"); err != nil || !ok || len(items) == 0 {
 		t.Fatalf("local structured query lost: items=%v handled=%v err=%v", items, ok, err)
 	}
-	if ref.calls.Load() != before {
-		t.Fatal("local response consulted the model refiner")
+	if ref.calls.Load() != before+1 {
+		t.Fatal("local response did not consult the refinement cache exactly once")
+	}
+	// Topic candidates must survive the shared service, viewer policy and the
+	// ephemeral-to-saved lifecycle without widening into the whole catalogue.
+	for _, query := range []string{"space exploration", "time travel", "heist"} {
+		if _, items, ok, err := svc.VibeCollection(local, user, query); err != nil || !ok || len(items) != 1 {
+			t.Fatalf("local topic %q: items=%v ok=%v err=%v", query, items, ok, err)
+		}
+	}
+	topic, items, ok, err := svc.VibeCollection(ctx, user, "movies about space exploration")
+	if err != nil || !ok || topic == nil || len(items) != 1 {
+		t.Fatalf("topic collection: %v %v %v", topic, ok, err)
+	}
+	saved, ok, err := svc.PromoteEphemeral(ctx, user, topic.Key)
+	if err != nil || !ok {
+		t.Fatalf("save topic: %v %v", ok, err)
+	}
+	page, err := svc.Items(ctx, user, saved.Key, 0, 50)
+	if err != nil || len(page.Items) != 1 || page.Items[0].Key != core.MovieKey(1) {
+		t.Fatalf("saved topic widened: %+v %v", page, err)
 	}
 }

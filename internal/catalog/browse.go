@@ -134,7 +134,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 			// listing's total still comes from the tally (tallyTotal).
 			var ok bool
 			if total, ok, err = c.tallyTotal(ctx, q.Filter, where, args); err == nil && !ok {
-				err = c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total)
+				err = c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t`+c.topicIndexHint(q.Filter)+` WHERE `+where, args...).Scan(&total)
 			}
 		} else {
 			total, err = c.countBrowse(ctx, q.Filter, ckey, where, args)
@@ -200,13 +200,13 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	// enumerating every matching title; the total (above) keeps the
 	// studio-index-driven IN-list form.
 	pageWhere = c.studioProbe(ctx, pageWhere, q.Filter)
-	keysetHint := ""
+	keysetHint := c.topicIndexHint(q.Filter)
 	if q.Sort == core.SortKey && q.AfterKey > 0 {
 		pageWhere += " AND t.key>?"
 		pageArgs = append(append([]any{}, args...), q.AfterKey)
 		// Pin the seek: planner statistics must never turn a keyset page back
 		// into a sort of the type's whole browse set.
-		if q.Filter.Type != "" && store.DialectOf(c.db) != store.Postgres {
+		if q.Filter.Topic == "" && q.Filter.Type != "" && store.DialectOf(c.db) != store.Postgres {
 			keysetHint = c.indexedBy(keysetIndex)
 		}
 	}
@@ -630,6 +630,11 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	}
 	var conds []string
 	var args []any
+	if f.Topic != "" {
+		match, topicArgs := c.topicMatch(f.Topic)
+		conds = append(conds, match)
+		args = append(args, topicArgs...)
+	}
 	for _, tag := range f.Tags {
 		conds = append(conds, "t.key IN (SELECT key FROM catalog_owner_tags WHERE tag=?)")
 		args = append(args, strings.ToLower(strings.TrimSpace(tag)))
@@ -1234,7 +1239,7 @@ func (c *Catalog) countBrowse(ctx context.Context, f core.Filter, ckey, where st
 		return 0, err
 	}
 	if !ok {
-		if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total); err != nil {
+		if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t`+c.topicIndexHint(f)+` WHERE `+where, args...).Scan(&total); err != nil {
 			return 0, err
 		}
 	}
@@ -1469,7 +1474,7 @@ func (c *Catalog) mergedTypeKeys(ctx context.Context, where string, args []any, 
 	desc := dir == "DESC"
 	var all []sortedKey
 	for _, typ := range []core.MediaType{core.TypeMovie, core.TypeShow} {
-		hint := ""
+		hint := c.topicIndexHint(q.Filter)
 		if q.Filter.LocalOnly && q.Sort == core.SortPopularity && len(q.SecondarySorts) == 0 && store.DialectOf(c.db) != store.Postgres && !consoleHasSparseCandidates(q.Filter) {
 			hint = c.indexHint("catalog_titles_console_pop_page")
 		}

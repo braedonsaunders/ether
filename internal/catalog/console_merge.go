@@ -26,7 +26,7 @@ func (c *Catalog) consoleMergedKeys(ctx context.Context, where string, args []an
 		vals []any
 	}
 	var all []row
-	hint := ""
+	hint := c.topicIndexHint(q.Filter)
 	if store.DialectOf(c.db) != store.Postgres && !consolePositiveEvidence(q.Filter) && !consoleHasSparseCandidates(q.Filter) {
 		if q.Sort == core.SortPopularity && len(q.SecondarySorts) == 0 {
 			hint = c.indexHint("catalog_titles_console_pop_page")

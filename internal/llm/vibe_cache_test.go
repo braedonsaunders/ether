@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // Search must return while inference is stalled, coalesce repeated requests,
@@ -33,7 +34,7 @@ func TestVibeRefinementCacheLifecycle(t *testing.T) {
 	defer unblock()
 	cfg := config.LLM{Enabled: true, BaseURL: server.URL, Model: "test"}
 	s := New(ServiceOptions{Client: NewClient(ClientOptions{Config: cfg}), Catalog: fakeCatalog{}, CallTimeout: time.Second})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(core.WithLocalResponse(context.Background()))
 	done := make(chan struct{})
 	go func() { defer close(done); s.RefineVibe(ctx, nil, "regional cinema") }()
 	select {
@@ -44,7 +45,7 @@ func TestVibeRefinementCacheLifecycle(t *testing.T) {
 	cancel()
 	waitFor(t, func() bool { return calls.Load() == 1 })
 	for range 10 {
-		s.RefineVibe(context.Background(), nil, "regional cinema")
+		s.RefineVibe(core.WithLocalResponse(context.Background()), nil, "regional cinema")
 	}
 	s.mu.Lock()
 	if len(s.vibeFlights) != 1 {
@@ -53,7 +54,7 @@ func TestVibeRefinementCacheLifecycle(t *testing.T) {
 	s.mu.Unlock()
 	unblock()
 	waitFor(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return len(s.vibeFlights) == 0 })
-	v, ok, err := s.RefineVibe(context.Background(), nil, "regional cinema")
+	v, ok, err := s.RefineVibe(core.WithLocalResponse(context.Background()), nil, "regional cinema")
 	if err != nil || !ok || len(v.Filter.Languages) != 6 || v.Filter.Languages[0] != "te" || v.Filter.Languages[3] != "kn" {
 		t.Fatalf("cached language constraints: %+v %v %v", v, ok, err)
 	}

@@ -24,6 +24,12 @@ func ParseVibe(query string) (core.VibeQuery, bool) {
 	if q == "" || len(q) > 300 {
 		return core.VibeQuery{}, false
 	}
+	// Explicit subject phrases must win over the "<person> movies" shape.
+	for _, prefix := range []string{"movies about ", "films about ", "shows about ", "series about ", "about "} {
+		if strings.HasPrefix(strings.ToLower(q), prefix) {
+			return parseTopicVibe(q)
+		}
+	}
 	// "shows like the office" / "movies similar to heat" / "like dark".
 	if v, ok := parseSimilar(q); ok {
 		return v, true
@@ -628,4 +634,39 @@ func parseByPerson(q string) (core.VibeQuery, bool) {
 	}
 	v.Title = titleCaseName(v.PersonName) + " " + mediaNoun(v.Filter.Type, "Films")
 	return v, true
+}
+
+// parseTopicVibe leaves free-form topics to bounded catalogue keyword and
+// overview matching. Keep ParseVibe conservative for its standalone callers.
+func parseTopicVibe(query string) (core.VibeQuery, bool) {
+	q := strings.TrimSpace(query)
+	if q == "" || len(q) > 300 {
+		return core.VibeQuery{}, false
+	}
+	topic := strings.ToLower(q)
+	var typ core.MediaType
+	for _, prefix := range []string{"movies about ", "films about ", "shows about ", "series about ", "about "} {
+		if strings.HasPrefix(topic, prefix) {
+			if strings.HasPrefix(prefix, "movies") || strings.HasPrefix(prefix, "films") {
+				typ = core.TypeMovie
+			}
+			if strings.HasPrefix(prefix, "shows") || strings.HasPrefix(prefix, "series") {
+				typ = core.TypeShow
+			}
+			topic = strings.TrimSpace(strings.TrimPrefix(topic, prefix))
+			break
+		}
+	}
+	words := strings.Fields(topic)
+	if len(words) == 0 || len(words) > 12 {
+		return core.VibeQuery{}, false
+	}
+	for _, word := range words {
+		for _, r := range word {
+			if !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '-' {
+				return core.VibeQuery{}, false
+			}
+		}
+	}
+	return core.VibeQuery{Query: q, Title: q, Filter: core.Filter{Type: typ, Topic: strings.Join(words, " ")}, Sort: core.SortPopularity, Desc: true}, true
 }

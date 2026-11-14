@@ -37,8 +37,9 @@ type VibeSearcher interface {
 }
 
 // VibeRefiner maps an otherwise unparseable vibe query to a VibeQuery
-// (implemented by the optional LLM service). It must be quick, respect
-// ctx, and report ok=false when it cannot help.
+// (implemented by the optional LLM service). It must only read cached results
+// and schedule bounded asynchronous work on a miss, including under
+// LocalResponse. It must never wait for inference, and must respect ctx.
 type VibeRefiner interface {
 	RefineVibe(ctx context.Context, user *User, query string) (VibeQuery, bool, error)
 }

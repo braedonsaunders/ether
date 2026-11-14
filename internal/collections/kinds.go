@@ -371,6 +371,31 @@ func (catalogKind) Describe() KindDescribe {
 }
 func (catalogKind) Validate(*ValidationError, string, core.CollectionSource) {}
 func (catalogKind) Gather(g *Gather) {
+	if topic := g.Src.Params["topic"]; topic != "" {
+		// A saved descriptive collection keeps its topic as a bounded local
+		// catalogue source rather than widening into the whole library.
+		f := core.Filter{Topic: topic, LocalOnly: true}
+		switch g.Spec.MediaType {
+		case MediaMovie:
+			f.Type = core.TypeMovie
+		case MediaShow:
+			f.Type = core.TypeShow
+		}
+		for offset := 0; offset < 3072; offset += 500 {
+			page, err := g.Svc.cat.Browse(g.Ctx, core.BrowseQuery{Filter: f, Sort: core.SortPopularity, Desc: true, Offset: offset, Limit: 500, NoTotal: true})
+			if err != nil {
+				g.Fail(err)
+				return
+			}
+			for _, title := range page.Items {
+				g.Res.keys = append(g.Res.keys, title.Key)
+			}
+			if len(page.Items) < 500 {
+				break
+			}
+		}
+		return
+	}
 	g.Res.all = true
 	if g.Spec.ReleaseMode != "upcoming" && g.Spec.ReleaseMode != "mixed" {
 		return

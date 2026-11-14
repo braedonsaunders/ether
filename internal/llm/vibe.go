@@ -77,8 +77,9 @@ func (s *Service) refreshVibe(key, query string, generation uint64) {
 
 func (s *Service) computeVibe(ctx context.Context, query string) (core.VibeQuery, bool, error) {
 	prompt := fmt.Sprintf(`A viewer typed this into a movie/TV search bar: %q.
-Decide whether it describes a browseable category (genres, era, mood, language, runtime, a person, a studio, or "like some title") rather than one specific title.
-Reply with JSON only, exactly: {"vibe":true,"title":"short collection title","type":"movie|show|","genres":[],"yearFrom":0,"yearTo":0,"minRating":0,"maxRuntimeMin":0,"minRuntimeMin":0,"languages":[],"countries":[],"personName":"","studio":"","similarTo":"","sort":"popularity|rating|released|title"}
+Decide whether it describes a browseable category (genres, era, mood, topic, language, runtime, a person, a studio, or "like some title") rather than one specific title.
+Reply with JSON only, exactly: {"vibe":true,"title":"short collection title","type":"movie|show|","genres":[],"topic":"","yearFrom":0,"yearTo":0,"minRating":0,"maxRuntimeMin":0,"minRuntimeMin":0,"languages":[],"countries":[],"personName":"","studio":"","similarTo":"","sort":"popularity|rating|released|title"}
+For subject matter such as space exploration or heists, put a short literal topic phrase in topic; do not replace it with a broad genre. Leave topic empty for queries fully represented by other filters.
 Use only these genres: %s. Languages are ISO 639-1 codes (up to six distinct languages); for South Indian include te, ta, ml and kn. Choose a useful broad category rather than adding unrequested rating or country restrictions. If it is a specific title or you are unsure, reply {"vibe":false}.`, query, strings.Join(vibeGenreNames, ", "))
 
 	content, err := s.client.Chat(ctx, []Message{
@@ -117,6 +118,7 @@ type vibeJSON struct {
 	Title         string   `json:"title"`
 	Type          string   `json:"type"`
 	Genres        []string `json:"genres"`
+	Topic         string   `json:"topic"`
 	YearFrom      int      `json:"yearFrom"`
 	YearTo        int      `json:"yearTo"`
 	MinRating     float64  `json:"minRating"`
@@ -228,8 +230,12 @@ func parseVibeJSON(content string) (core.VibeQuery, bool) {
 	}
 	v.Desc = v.Sort != core.SortTitle
 
+	v.Filter.Topic = strings.TrimSpace(in.Topic)
+	if len(v.Filter.Topic) > 120 {
+		v.Filter.Topic = ""
+	}
 	f := v.Filter
-	constrained := len(f.Genres) > 0 || f.YearFrom > 0 || f.YearTo > 0 ||
+	constrained := f.Topic != "" || len(f.Genres) > 0 || f.YearFrom > 0 || f.YearTo > 0 ||
 		f.MinRating > 0 || f.MaxRuntime > 0 || f.MinRuntime > 0 ||
 		len(f.Languages) > 0 || len(f.Countries) > 0 || f.Studio != "" ||
 		v.PersonName != "" || v.SimilarSeed != ""

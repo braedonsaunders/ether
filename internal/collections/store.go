@@ -452,6 +452,9 @@ func specFromFilter(c core.Collection) core.CollectionSpec {
 		Artwork: core.CollectionArtwork{Mode: "auto"},
 		Targets: core.CollectionTargets{CollectionsTab: true, Users: core.AllUsers()},
 	}
+	if f.Topic != "" {
+		sp.Sources[0].Params = map[string]string{"topic": f.Topic}
+	}
 	switch typ {
 	case core.TypeMovie:
 		sp.MediaType = MediaMovie

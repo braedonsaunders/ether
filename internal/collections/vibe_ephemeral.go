@@ -176,11 +176,11 @@ func vibeOwner(user *core.User) int64 {
 // VibeCollection implements core.VibeSearcher.
 func (s *Service) VibeCollection(ctx context.Context, user *core.User, query string) (*core.Collection, []core.Title, bool, error) {
 	v, ok := ParseVibe(query)
-	if !ok && !core.LocalResponse(ctx) {
+	if !ok {
 		if r := s.vibeRefinerDep(); r != nil {
-			bctx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
-			rv, rok, err := r.RefineVibe(bctx, user, query)
-			cancel()
+			// RefineVibe only reads its cache and schedules bounded asynchronous
+			// work on a miss, including for local responses.
+			rv, rok, err := r.RefineVibe(ctx, user, query)
 			if err == nil && rok {
 				v, ok = rv, true
 				if v.Query == "" {
@@ -188,6 +188,9 @@ func (s *Service) VibeCollection(ctx context.Context, user *core.User, query str
 				}
 			}
 		}
+	}
+	if !ok {
+		v, ok = parseTopicVibe(query)
 	}
 	if !ok {
 		return nil, nil, false, nil
