@@ -440,9 +440,12 @@ func (s *ImageGrantService) writeGrantedImage(w http.ResponseWriter, r *http.Req
 	var contentType string
 	var err error
 	if s.artwork != nil {
-		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: item, Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur, Quality: quality, Fit: mediaBrowser})
+		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: item, Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur, Quality: quality, Fit: mediaBrowser || s.surface == "vela"})
 	} else {
 		data, contentType, err = s.images.Get(r.Context(), img.Path, width)
+	}
+	if err == nil && s.surface == "vela" && !strings.HasPrefix(contentType, "image/svg") {
+		data, contentType, err = fitGrantedImage(data, contentType, width, height)
 	}
 	if err != nil {
 		http.Error(w, "image unavailable", 502)
@@ -489,7 +492,7 @@ func grantedImageWidth(r *http.Request, surface frontend.Protocol) int {
 	if width < 0 || width > 4000 {
 		width = 500
 	}
-	if width == 0 && r.URL.Query().Get("h") == "" && surface != "jellyfin" && surface != "emby" {
+	if width == 0 && r.URL.Query().Get("h") == "" && surface != "jellyfin" && surface != "emby" && surface != "vela" {
 		width = 500
 	}
 	return width

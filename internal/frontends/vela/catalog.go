@@ -86,7 +86,7 @@ func (i *instance) titles(r *http.Request, v *frontend.Viewer, token string, ts 
 			for _, item := range images {
 				for _, g := range item.Images {
 					im := g.Image
-					art[item.Item] = append(art[item.Item], object{"id": hash(im.Path), "kind": im.Kind, "tag": im.Tag, "sizes": []object{{"width": im.Width, "height": im.Height, "url": "/vela/v0/images/" + g.Secret}}, "blurHash": im.BlurHash, "thumbHash": im.ThumbHash})
+					art[item.Item] = append(art[item.Item], object{"id": hash(im.Path), "kind": im.Kind, "tag": im.Tag, "sizes": []object{imageSize(im, g.Secret)}, "blurHash": im.BlurHash, "thumbHash": im.ThumbHash})
 				}
 			}
 		}

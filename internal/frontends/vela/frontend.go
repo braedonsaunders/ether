@@ -360,13 +360,7 @@ func (i *instance) routes() {
 		i.unavailable(w, r)
 	})
 	i.route("POST", "/search/ai/{id}/cancel", i.unavailable)
-	i.route("GET", "/images/{secret}", func(w http.ResponseWriter, r *http.Request) {
-		if i.host.ImageGrants == nil {
-			i.unavailable(w, r)
-			return
-		}
-		i.host.ImageGrants.Serve(w, r, r.PathValue("secret"))
-	})
+	i.route("GET", "/images/{secret}", i.image)
 	i.route("POST", "/interactions", i.interactions)
 	i.route("POST", "/playback", i.playback)
 	i.route("GET", "/sessions/{id}", i.snapshot)
