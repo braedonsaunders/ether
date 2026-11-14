@@ -169,7 +169,7 @@ func (m *Manager) prewarm(_ context.Context, user *core.User, key core.RatingKey
 		reason = core.PrewarmDetail
 	}
 	cfg := m.config().Cache
-	if cfg.DisableSpeculation || cfg.Mode == "off" || (reason == core.PrewarmDetail && cfg.DetailWarmup == "off") {
+	if cfg.DisableSpeculation || cfg.Mode == "off" || (cfg.SpeculativeWarming == "off" && reason != core.PrewarmNextEpisode && !metadata) || (reason == core.PrewarmDetail && cfg.DetailWarmup == "off") {
 		return false
 	}
 	automaticReserve := reason == core.PrewarmDetail && opts.PrefetchBytes <= 0 && cfg.DetailBytes <= 0
@@ -272,6 +272,9 @@ func (m *Manager) prewarm(_ context.Context, user *core.User, key core.RatingKey
 	}
 	budgetReason := "speculative"
 	rateLimit := 6
+	if reason == core.PrewarmNextEpisode {
+		budgetReason = core.PrewarmNextEpisode
+	}
 	if reason == core.PrewarmDetail {
 		budgetReason = core.PrewarmDetail
 		rateLimit = 30

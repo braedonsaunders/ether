@@ -32,6 +32,9 @@ type Selection struct {
 }
 type candidate struct {
 	Title core.Title
+	// priority is independent of popularity and owner blend weights.
+	priority int // 3: active continuation, 2: owner pin, 1: watchlist, 0: speculation
+	intent   *WarmIntent
 	Selection
 }
 type cursor struct {
@@ -90,15 +93,40 @@ func (m *Manager) learn(ctx context.Context, cfg config.Cache) (signals, error) 
 			continue
 		}
 		seenUsers[u.ID] = true
-		s.count++
 		history, err := m.deps.State.History(ctx, u.ID, since, 2000)
 		if err != nil {
 			return s, fmt.Errorf("read household history: %w", err)
 		}
+		progress, err := m.deps.State.InProgress(ctx, u.ID, 200)
+		if err != nil {
+			return s, fmt.Errorf("read household progress: %w", err)
+		}
+		activeSince := now.Add(-7 * 24 * time.Hour)
+		active := false
+		for _, h := range history {
+			if !h.ViewedAt.Before(activeSince) && !h.ViewedAt.After(now) {
+				active = true
+				break
+			}
+		}
+		for _, p := range progress {
+			at := p.LastViewedAt
+			if at.IsZero() {
+				at = p.UpdatedAt
+			}
+			if !at.Before(activeSince) && !at.After(now) {
+				active = true
+				break
+			}
+		}
+		if !active {
+			continue
+		}
+		s.count++
 		own := map[core.RatingKey]float64{}
 		daily := map[string]int{}
 		setCursor := func(k core.RatingKey, at time.Time, resume bool) {
-			if k.Kind() != core.KindEpisode || at.Before(since) || at.After(now) {
+			if k.Kind() != core.KindEpisode || at.Before(activeSince) || at.After(now) {
 				return
 			}
 			root := rootKey(k)
@@ -132,20 +160,20 @@ func (m *Manager) learn(ctx context.Context, cfg config.Cache) (signals, error) 
 			}
 			own[k] += math.Exp2(-now.Sub(h.ViewedAt).Hours() / 24 / halfLife)
 		}
-		progress, err := m.deps.State.InProgress(ctx, u.ID, 200)
-		if err != nil {
-			return s, fmt.Errorf("read household progress: %w", err)
-		}
 		for _, p := range progress {
-			if p.LastViewedAt.Before(since) || p.LastViewedAt.After(now) {
+			at := p.LastViewedAt
+			if at.IsZero() {
+				at = p.UpdatedAt
+			}
+			if at.Before(activeSince) || at.After(now) {
 				continue
 			}
 			if p.Key.Kind() != core.KindMovie && p.Key.Kind() != core.KindEpisode {
 				continue
 			}
-			setCursor(p.Key, p.LastViewedAt, true)
+			setCursor(p.Key, at, true)
 			s.resumes[p.Key] = true
-			own[rootKey(p.Key)] += .5 * math.Exp2(-now.Sub(p.LastViewedAt).Hours()/24/halfLife)
+			own[rootKey(p.Key)] += .5 * math.Exp2(-now.Sub(at).Hours()/24/halfLife)
 		}
 		for k, n := range own {
 			// Saturate each viewer separately; one prolific viewer never gets
@@ -209,28 +237,33 @@ func (m *Manager) selectCandidates(ctx context.Context, cfg config.Cache, maxTit
 	roots := map[core.RatingKey]core.Title{}
 	catalogueRanks := map[core.RatingKey]int{}
 	pool := min(15000, max(60, maxTitles*3))
-	for _, typ := range types {
-		for offset := 0; offset < pool; offset += 50 {
-			if err := ctx.Err(); err != nil {
-				return selectionPlan{}, err
-			}
-			page, err := m.deps.Catalog.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: typ}, Sort: order, Desc: true, Offset: offset, Limit: min(50, pool-offset)})
-			if err != nil {
-				return selectionPlan{}, fmt.Errorf("browse preload catalogue: %w", err)
-			}
-			for i, t := range page.Items {
-				if t.Type == typ && !t.Adult && t.IsReleased(now) {
-					roots[t.Key] = t
-					catalogueRanks[t.Key] = offset + i
+	if cfg.SpeculativeWarming != "off" && s.count > 0 && cfg.PreloadEnabled {
+		for _, typ := range types {
+			for offset := 0; offset < pool; offset += 50 {
+				if err := ctx.Err(); err != nil {
+					return selectionPlan{}, err
 				}
-			}
-			if len(page.Items) == 0 || offset+len(page.Items) >= page.Total {
-				break
+				page, err := m.deps.Catalog.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: typ}, Sort: order, Desc: true, Offset: offset, Limit: min(50, pool-offset)})
+				if err != nil {
+					return selectionPlan{}, fmt.Errorf("browse preload catalogue: %w", err)
+				}
+				for i, t := range page.Items {
+					if t.Type == typ && !t.Adult && t.IsReleased(now) {
+						roots[t.Key] = t
+						catalogueRanks[t.Key] = offset + i
+					}
+				}
+				if len(page.Items) == 0 || offset+len(page.Items) >= page.Total {
+					break
+				}
 			}
 		}
 	}
 	// Household favourites need not appear in the top catalogue page.
 	for k := range s.frequency {
+		if cfg.SpeculativeWarming == "off" && len(s.cursors[k]) == 0 && !s.resumes[k] {
+			continue
+		}
 		if _, ok := roots[k]; ok {
 			continue
 		}
@@ -239,6 +272,13 @@ func (m *Manager) selectCandidates(ctx context.Context, cfg config.Cache, maxTit
 			continue
 		}
 		if t.Type == core.TypeMovie && cfg.PreloadContent != "tv" || t.Type == core.TypeShow && cfg.PreloadContent != "movies" {
+			roots[k] = *t
+		}
+	}
+	pinned := map[core.RatingKey]bool{}
+	for _, k := range cfg.KeepWarmTitles {
+		pinned[k] = true
+		if t, err := m.deps.Catalog.CachedTitle(ctx, k); err == nil && t != nil && !t.Adult && t.IsReleased(now) {
 			roots[k] = *t
 		}
 	}
@@ -279,7 +319,19 @@ func (m *Manager) selectCandidates(ctx context.Context, cfg config.Cache, maxTit
 				codes = []string{"household-genres"}
 			}
 		}
-		ranked = append(ranked, candidate{Title: t, Selection: Selection{Key: t.Key, Title: displayTitle(t), Type: t.Type, Score: 100 * ((1-weight)*cat + weight*household), Catalogue: 100 * cat, Household: 100 * household, Reason: reason, ReasonCodes: codes, ReasonArgs: args}})
+		priority := 0
+		if pinned[t.Key] {
+			priority = 2
+			reason = "Owner pin"
+			codes = []string{"owner-pin"}
+		}
+		if len(s.cursors[t.Key]) > 0 || s.resumes[t.Key] {
+			priority = 3
+		}
+		if priority == 0 && (!cfg.PreloadEnabled || cfg.SpeculativeWarming == "off" || s.count == 0) {
+			continue
+		}
+		ranked = append(ranked, candidate{Title: t, priority: priority, Selection: Selection{Key: t.Key, Title: displayTitle(t), Type: t.Type, Score: 100 * ((1-weight)*cat + weight*household), Catalogue: 100 * cat, Household: 100 * household, Reason: reason, ReasonCodes: codes, ReasonArgs: args}})
 	}
 	sortCandidates(ranked)
 	var out []candidate
@@ -330,6 +382,17 @@ func (m *Manager) selectCandidates(ctx context.Context, cfg config.Cache, maxTit
 			out = append(out, ec)
 		}
 	}
+	if m.deps.WatchlistIntents != nil {
+		intents, err := m.deps.WatchlistIntents(ctx)
+		if err != nil {
+			return selectionPlan{}, err
+		}
+		watchlist, err := m.watchlistCandidates(ctx, cfg, intents)
+		if err != nil {
+			return selectionPlan{}, err
+		}
+		out = append(out, watchlist...)
+	}
 	sortCandidates(out)
 	// Status is an owner-only explanation of the next selection, not a second
 	// manifest and not individual users' history. No names or account IDs leave.
@@ -345,6 +408,12 @@ func (m *Manager) selectCandidates(ctx context.Context, cfg config.Cache, maxTit
 }
 func sortCandidates(v []candidate) {
 	sort.SliceStable(v, func(i, j int) bool {
+		if v[i].priority != v[j].priority {
+			return v[i].priority > v[j].priority
+		}
+		if v[i].intent != nil && v[j].intent != nil && !v[i].intent.Added.Equal(v[j].intent.Added) {
+			return v[i].intent.Added.After(v[j].intent.Added)
+		}
 		if v[i].Score != v[j].Score {
 			return v[i].Score > v[j].Score
 		}

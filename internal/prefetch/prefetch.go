@@ -309,7 +309,9 @@ func (p *Prefetcher) OnTimeline(user *core.User, key core.RatingKey, offset, dur
 	}
 	// Post-play hook queue (#30): movies and finales pre-buffer their
 	// #1 pick near the end. Runs before the episode-only path below.
-	p.onTimelinePostPlay(user, key, offset, duration, state)
+	if p.config().SpeculativeWarming != "off" {
+		p.onTimelinePostPlay(user, key, offset, duration, state)
+	}
 	if user == nil || key.Kind() != core.KindEpisode || duration <= 0 || offset <= 0 {
 		return
 	}
@@ -447,11 +449,6 @@ func (p *Prefetcher) nextEpisode(ctx context.Context, user *core.User, key core.
 		return nil // not aired yet; don't spend indexer budget
 	}
 	p.setCurrent(episodeLabel(next), core.CacheCauseNextEpisode)
-	if p.postplayEnabled() && next.Key.Season() != key.Season() {
-		// Season finale: the post-play hook queue owns the pre-buffer
-		// (its #1 pick may not be next season's opener) — don't warm both.
-		return nil
-	}
 	var caps core.ClientCaps
 	if p.deps.Hints != nil {
 		caps, _, _ = p.deps.Hints.ClientCaps(user.ID, key)
@@ -579,7 +576,7 @@ func (p *Prefetcher) warmPass(ctx context.Context) error {
 			continue
 		}
 		for _, st := range list {
-			if st.ViewOffset <= 0 {
+			if st.ViewOffset <= 0 || p.now().Sub(maxTime(st.LastViewedAt, st.UpdatedAt)) > 7*24*time.Hour {
 				continue
 			}
 			if k := st.Key.Kind(); k != core.KindMovie && k != core.KindEpisode {

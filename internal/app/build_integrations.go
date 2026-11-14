@@ -23,7 +23,10 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 		sharedShelf = cachefill.NewSharedStore(a.db, a.cacheNodeID())
 	}
 	a.cachefill, err = cachefill.New(a.cache.Directory(), cachefill.Deps{
-		Shared:  sharedShelf,
+		Shared:            sharedShelf,
+		Allowed:           a.safety.Allowed,
+		WatchlistPosition: a.cacheWatchlistPosition,
+		WatchlistIntents:  a.cacheWatchlistIntents, WatchlistDone: a.cacheWatchlistDone,
 		Catalog: a.catalog, Resolver: a.resolver, Engine: a.media, Cache: a.cache,
 		State: a.state, Household: a.cacheHousehold,
 		Config: a.runningCacheConfig, Owner: a.users.Owner,

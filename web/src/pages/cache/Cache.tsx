@@ -1,3 +1,4 @@
+import { WarmingControls } from "./WarmingControls";
 import { SubtabNav } from "../../components/layout";
 import { Badge, Button, Input, Spinner, cn, toast } from "@braedonsaunders/appkit-ui";
 import { ArrowLeft, ArrowUpRight, HardDrive, Network, Settings2, Sparkles } from "lucide-react";
@@ -388,9 +389,11 @@ export default function Cache() {
           }
           className={cn(
             "app-scroll flex min-h-0 flex-1 flex-col bg-bg",
-            tab === "overview" || tab === "libraries"
-              ? "overflow-y-auto cockpit:overflow-hidden"
-              : "overflow-hidden",
+            tab === "overview"
+              ? "overflow-y-auto"
+              : tab === "libraries"
+                ? "overflow-y-auto cockpit:overflow-hidden"
+                : "overflow-hidden",
           )}
         >
           {error ? (
@@ -404,7 +407,8 @@ export default function Cache() {
             </div>
           ) : null}
           {tab === "overview" ? (
-            <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-5 cockpit:min-h-0 cockpit:flex-1">
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-4 sm:p-5">
+              <WarmingControls />
               <CacheOverview
                 snapshot={snap}
                 policy={snap?.policy ?? saved}

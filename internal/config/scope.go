@@ -125,6 +125,8 @@ var mixedSections = map[string]map[string]Scope{
 		"retentionDays":            Local,
 		"replayBoostHours":         Local,
 		"disableSpeculation":       Local,
+		"speculativeWarming":       Local,
+		"keepWarmTitles":           Local,
 		"detailWarmup":             Local,
 		"detailBytes":              Local,
 		"playbackReadAheadMinutes": Local,
