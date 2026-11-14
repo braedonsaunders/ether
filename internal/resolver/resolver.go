@@ -116,7 +116,7 @@ type CandidateTrace struct {
 	Indexer       string                `json:"indexer"`
 	Score         float64               `json:"score"`
 	CustomFormats []FormatMatch         `json:"customFormats,omitempty"`
-	// MinimumFormatScore is set only for a custom-format score rejection.
+	// MinimumFormatScore records a soft score shortfall, including accepted releases.
 	MinimumFormatScore  *int   `json:"minimumFormatScore,omitempty"`
 	CompatibilityReason string `json:"compatibilityReason,omitempty"`
 	// Route explains a move by source routing (routing.go), e.g. "faster
@@ -746,7 +746,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 			for {
 				if ready := early.readyResultsAfter(0); len(ready) > 0 {
 					candidates, _, rankErr := s.rankCandidates(ctx, req, sreq, profile, ready, &trace, "")
-					if rankErr == nil && len(candidates) > 0 && !candidates[0].fallback {
+					if rankErr == nil && len(candidates) > 0 && !candidates[0].fallback && !candidates[0].belowScore {
 						early.attach(candidates)
 						idx, payload, checkErr := s.validateCandidates(ctx, candidates, &trace, 0)
 						if checkErr == nil && idx >= 0 {
@@ -1122,29 +1122,11 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 			return s.acceptResolution(ctx, t.Key, downgrades, index, nzb, &trace), nil
 		}
 	}
-	var fallbackCands []candidate
-	if profile.FallbackBelowMin && profile.MinHeight > 0 && ctx.Err() == nil && !hasFallbackCandidates(cands) {
-		fbCands, fbRejected, ferr := s.rankBelowMinFallback(ctx, req, sreq, profile, results, &trace)
-		clientRejected = clientRejected || fbRejected
-		if ferr == nil && len(fbCands) > 0 {
-			var fbChecks candidateChecks
-			defer fbChecks.close()
-			at := time.Now()
-			fbCands = s.prepareSources(ctx, fbCands, req.Title, &trace, &fbChecks)
-			trace.SourcePreparationDuration += time.Since(at)
-			fallbackCands = fbCands
-			cands = append(cands, fbCands...)
-			index, nzb, verr := s.validateCandidates(ctx, fallbackCands, &trace, rcfg.HealthRace)
-			if verr == nil && index >= 0 {
-				return s.acceptResolution(ctx, t.Key, fallbackCands, index, nzb, &trace), nil
-			}
-		}
-	}
 
 	// The resolver's own order: comparable quality (rescue included)
 	// before any drastic downgrade, which are already sorted by quality.
-	if res := s.lastResort(ctx, inconclusive, t.Key, concat(lead, primary, rescuePrimary, downgrades, fallbackCands), &trace); res != nil {
-		if slices.ContainsFunc(downgrades, func(c candidate) bool { return c.rel.ID == res.Release.ID }) {
+	if res := s.lastResort(ctx, inconclusive, t.Key, concat(lead, primary, rescuePrimary, downgrades), &trace); res != nil {
+		if res.QualityFallback == "" && slices.ContainsFunc(downgrades, func(c candidate) bool { return c.rel.ID == res.Release.ID }) {
 			trace.Downgrade = downgradeNote(reference, res.Release, len(primary) > 0)
 		}
 		return res, nil
@@ -1162,7 +1144,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	// broken Usenet release): say so, send one to download when the owner
 	// allows it, and do not record the title unavailable (a download may
 	// finish, or the provider may cache it, at any time).
-	all := concat(lead, primary, rescuePrimary, downgrades, fallbackCands)
+	all := concat(lead, primary, rescuePrimary, downgrades)
 	if i, payload, uerr, ok := s.uncachedOutcome(ctx, all, results, &trace); ok {
 		if i >= 0 {
 			return s.acceptResolution(ctx, t.Key, all, i, payload, &trace), nil
@@ -1519,42 +1501,7 @@ func (s *Service) rankWith(ctx context.Context, env rankEnv, req core.ResolveReq
 		s.loadRejectionsFor(ctx, req.Title.Key)
 	}
 	s.prepareSeriesYears(ctx, req.Title, sreq, results)
-	start := 0
-	if trace != nil {
-		start = len(trace.Candidates)
-	}
-	cands, rejected, err := s.rankPass(ctx, env, req, sreq, profile, results, trace, pinID, false)
-	if err != nil || len(cands) > 0 || !profile.FallbackBelowMin || profile.MinHeight <= 0 {
-		return cands, rejected, err
-	}
-	// Re-evaluate the same search results, relaxing only the quality floor
-	// and imported allowlist. Keep the strict verdict for releases that are
-	// not eligible for the lower-resolution pass.
-	var fallbackTrace *Trace
-	if trace != nil {
-		fallbackTrace = &Trace{}
-	}
-	fallback, fallbackRejected, err := s.rankPass(ctx, env, req, sreq, profile, results, fallbackTrace, pinID, true)
-	if trace != nil {
-		for i, ct := range fallbackTrace.Candidates {
-			if h := fallbackHeight(results[i].Info); h > 0 && h < profile.MinHeight {
-				trace.Candidates[start+i] = ct
-			}
-		}
-		for i := range fallback {
-			fallback[i].trace += start
-		}
-	}
-	return fallback, rejected || fallbackRejected, err
-}
-
-func hasFallbackCandidates(cands []candidate) bool {
-	for _, c := range cands {
-		if c.fallback {
-			return true
-		}
-	}
-	return false
+	return s.rankPass(ctx, env, req, sreq, profile, results, trace, pinID)
 }
 
 func onlyUncachedOrDead(cands []candidate, tr *Trace) bool {
@@ -1578,59 +1525,7 @@ func onlyUncachedOrDead(cands []candidate, tr *Trace) bool {
 	return sawUncached
 }
 
-// rankBelowMinFallback evaluates below-minimum releases after every strict
-// candidate has failed health or debrid-cache checks, updating their existing
-// trace entries in place so no duplicate candidate rows are recorded.
-func (s *Service) rankBelowMinFallback(ctx context.Context, req core.ResolveRequest, sreq core.SearchRequest, profile core.QualityProfile, results []core.Release, trace *Trace) ([]candidate, bool, error) {
-	policy, err := s.compileRules(profile.ReleaseRules)
-	if err != nil {
-		return nil, true, err
-	}
-	env := rankEnv{policy: policy}
-	if usesPluginRanking(profile) {
-		env.hot = s.rankingSession(ctx, req.Client)
-		if env.hot != nil {
-			defer env.hot.Close()
-		}
-	}
-	env.exclude = map[string]bool{}
-	for _, id := range req.Exclude {
-		env.exclude[id] = true
-	}
-	env.rcfg = s.resolverCfg()
-	env.lang = s.catalogLanguage()
-	env.audio(profile, req)
-	if s.db != nil {
-		s.loadRejectionsFor(ctx, req.Title.Key)
-	}
-	s.prepareSeriesYears(ctx, req.Title, sreq, results)
-	var fbTrace Trace
-	fbCands, rejected, err := s.rankPass(ctx, env, req, sreq, profile, results, &fbTrace, "", true)
-	if err != nil || len(fbCands) == 0 {
-		return nil, rejected, err
-	}
-	if trace != nil {
-		for i := range fbCands {
-			fbCT := fbTrace.Candidates[fbCands[i].trace]
-			placed := false
-			for j := range trace.Candidates {
-				if trace.Candidates[j].ReleaseID == fbCands[i].rel.ID && !trace.Candidates[j].Attempted {
-					trace.Candidates[j] = fbCT
-					fbCands[i].trace = j
-					placed = true
-					break
-				}
-			}
-			if !placed {
-				trace.Candidates = append(trace.Candidates, fbCT)
-				fbCands[i].trace = len(trace.Candidates) - 1
-			}
-		}
-	}
-	return fbCands, rejected, nil
-}
-
-func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveRequest, sreq core.SearchRequest, profile core.QualityProfile, results []core.Release, trace *Trace, pinID string, fallback bool) ([]candidate, bool, error) {
+func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveRequest, sreq core.SearchRequest, profile core.QualityProfile, results []core.Release, trace *Trace, pinID string) ([]candidate, bool, error) {
 	t := req.Title
 	policy, hot, exclude, rcfg, wanted, accepted := env.policy, env.hot, env.exclude, env.rcfg, env.wanted, env.accepted
 	upscales := presumedUpscales(results, isAnime(t))
@@ -1673,18 +1568,7 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 			}
 			continue
 		}
-		if fallback {
-			h := fallbackHeight(rel.Info)
-			if h == 0 || h >= profile.MinHeight {
-				ct.Rejected = true
-				ct.Reason = "not below profile minimum"
-				if trace != nil {
-					trace.Candidates = append(trace.Candidates, ct)
-				}
-				continue
-			}
-		}
-		pinned := !fallback && pinID != "" && rel.ID == pinID
+		pinned := pinID != "" && rel.ID == pinID
 		ct.Pinned = pinned
 		// Catalogue language is applied here, after the search cache.
 		// The cache stores indexer results only; it does not freeze a
@@ -1702,7 +1586,7 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 		if len(profile.ReleaseRules) > 0 {
 			ct.Preferences = &policyResult
 		}
-		preferred := !fallback && (pinned || (req.Prefer != "" && rel.ID == req.Prefer))
+		preferred := pinned || (req.Prefer != "" && rel.ID == req.Prefer)
 		var reason string
 		identityReason := identity.reject(rel, t, sreq)
 		if s.HardSubtitleBlocked(ctx, rel) {
@@ -1717,23 +1601,16 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 			reason = "ambiguous series identity (name only)"
 		} else if pinned {
 			reason = s.pinRejectReason(rel, sreq, req.Client, exclude)
-		} else if !preferred && policyResult.Rejected {
+		} else if policyResult.Rejected {
 			reason = preferenceReason(policyResult)
 		} else {
-			gateProfile := profile
-			if fallback {
-				gateProfile.MinHeight = 0
-				gateProfile.AllowedQualities = nil
-				gateProfile.AllowCam = false
-				preferred = false
-			}
-			reason = s.rejectReason(rel, t, sreq, gateProfile, rcfg, req.Client, exclude, preferred)
-			if !fallback && reason == "video codec unsupported by client" && req.ExactHEVCTranscode && !req.Client.Download && req.Prefer != "" && rel.ID == req.Prefer && strings.EqualFold(rel.Info.VideoCodec, "hevc") {
+			reason = s.rejectReason(rel, t, sreq, profile, rcfg, req.Client, exclude, preferred)
+			if reason == "video codec unsupported by client" && req.ExactHEVCTranscode && !req.Client.Download && req.Prefer != "" && rel.ID == req.Prefer && strings.EqualFold(rel.Info.VideoCodec, "hevc") {
 				// Only relax the codec gate for the explicitly selected source;
 				// every other policy and the final probed output decision still apply.
 				caps := req.Client
 				caps.VideoCodecs = append(slices.Clone(caps.VideoCodecs), rel.Info.VideoCodec)
-				reason = s.rejectReason(rel, t, sreq, gateProfile, rcfg, caps, exclude, preferred)
+				reason = s.rejectReason(rel, t, sreq, profile, rcfg, caps, exclude, preferred)
 			}
 		}
 		if reason != "" {
@@ -1785,15 +1662,30 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 			return nil, clientRejected, err
 		}
 		ct.CustomFormats = sc.matches
-		if minimum := profile.MinCustomFormatScore; minimum != nil && sc.counted < *minimum && !preferred {
-			clientRejected = true
-			ct.Rejected = true
-			ct.MinimumFormatScore = minimum
-			ct.Reason = fmt.Sprintf("Score %d is below this profile's minimum of %d", sc.counted, *minimum)
+		// Imported packs use -10000 (TRaSH) or -999999 (Dictionarry)
+		// for forbidden formats. They remain hard vetoes even if another
+		// matching format would offset the penalty or the owner pins it.
+		blocked := false
+		for _, match := range sc.matches {
+			if core.CountsTowardMinimum(match.ID) && match.Score <= -10000 {
+				ct.Rejected, ct.Reason = true, "blocked custom format: "+match.Name
+				blocked = true
+				break
+			}
+		}
+		if blocked {
 			if trace != nil {
 				trace.Candidates = append(trace.Candidates, ct)
 			}
 			continue
+		}
+		belowScore := profile.MinCustomFormatScore != nil && sc.counted < *profile.MinCustomFormatScore
+		belowQuality := belowPreferredQuality(rel.Info, profile)
+		if belowScore {
+			ct.MinimumFormatScore = profile.MinCustomFormatScore
+			ct.Reason = fmt.Sprintf("Best available — below this profile's minimum (score %d of %d)", sc.counted, *profile.MinCustomFormatScore)
+		} else if belowQuality {
+			ct.Reason = "Best available — below this profile's preferred quality"
 		}
 		ct.CompatibilityReason = sc.compat
 		rel.Score = float64(sc.total)
@@ -1829,37 +1721,34 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 				note("ranked after releases in an accepted audio language")
 			}
 		}
-		cands = append(cands, candidate{identityWeak: !pinned && identity.ambiguous(rel, sreq), identityConflict: namesake && episodeRegionConflict(rel, t), fallback: fallback, policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, langWanted: langWanted, starved: starved, bandwidth: bandwidth, yearGuessed: yearGuessed, cf: sc.total, keys: keysFor(rel, starved, rc)})
+		cands = append(cands, candidate{identityWeak: !pinned && identity.ambiguous(rel, sreq), identityConflict: namesake && episodeRegionConflict(rel, t), fallback: belowQuality, belowScore: belowScore, counted: sc.counted, policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, langWanted: langWanted, starved: starved, bandwidth: bandwidth, yearGuessed: yearGuessed, cf: sc.total, keys: keysFor(rel, starved, rc)})
 	}
 	if hot != nil && len(cands) > 0 {
 		s.addPluginScores(hot, profile, cands, trace)
 	}
-	if fallback {
-		order := sourceOrder(profile.QualityOrder)
-		sort.SliceStable(cands, func(i, j int) bool {
-			if cands[i].identityWeak != cands[j].identityWeak {
-				return !cands[i].identityWeak
-			}
-			a, b := fallbackHeight(cands[i].rel.Info), fallbackHeight(cands[j].rel.Info)
-			if a != b {
-				return a > b
-			}
-			if len(profile.AllowedQualities) > 0 {
-				a, b := cands[i].rel.Info.Source, cands[j].rel.Info.Source
-				if a != b {
-					if order := compareFallbackSource(a, b, order); order != 0 {
-						return order > 0
-					}
-				}
-			}
-			return compareCandidates(cands[i], cands[j])
-		})
-		return cands, clientRejected, nil
-	}
+
 	return s.orderCandidates(cands, req.Title, trace), clientRejected, nil
 }
 
 func (s *Service) orderCandidates(cands []candidate, title *core.Title, trace *Trace) []candidate {
+	// Rank strict matches in isolation so additional closest matches cannot
+	// affect their existing sort or source routing. Keep input order within
+	// each partition, including for stable tie-breaks.
+	strict := make([]candidate, 0, len(cands))
+	soft := make([]candidate, 0)
+	for _, c := range cands {
+		if c.belowScore || c.fallback {
+			soft = append(soft, c)
+		} else {
+			strict = append(strict, c)
+		}
+	}
+	strict = s.orderPreferenceCandidates(strict, title, trace)
+	soft = s.orderPreferenceCandidates(soft, title, trace)
+	return append(strict, soft...)
+}
+
+func (s *Service) orderPreferenceCandidates(cands []candidate, title *core.Title, trace *Trace) []candidate {
 	sort.SliceStable(cands, func(i, j int) bool {
 		return compareCandidates(cands[i], cands[j])
 	})
@@ -2277,18 +2166,6 @@ func preferenceReason(result releasepolicy.Result) string {
 // set only when the owner opted in to higher versions, is what lets that
 // pick exceed the ceiling. Codec support is never bypassed.
 func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, caps core.ClientCaps, preferred, ceilingBypass bool) string {
-	if !ceilingBypass && len(profile.AllowedQualities) > 0 {
-		allowed := false
-		for _, q := range profile.AllowedQualities {
-			if qualityGateMatch(q, rel.Info) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return "quality excluded by imported profile"
-		}
-	}
 	if !ceilingBypass && profile.MaxHeight > 0 && rel.Info.Height > profile.MaxHeight {
 		// The effective ceiling is min(configured profile, client caps):
 		// name the strictly lower one as the limiter. An unlimited
@@ -2300,9 +2177,6 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 			return ReasonAboveClientMaxResolution
 		}
 		return ReasonAboveProfileMaxResolution
-	}
-	if h := floorHeight(rel.Info); !preferred && profile.MinHeight > 0 && h > 0 && h < profile.MinHeight {
-		return ReasonBelowProfileMinResolution
 	}
 	if !ceilingBypass && rel.Info.DolbyVision && !profile.AllowDolbyVision && !(rel.Info.HDR10 && profile.AllowHDR) {
 		return "dolby vision not allowed for client"
@@ -2642,3 +2516,19 @@ func languageConflict(rel core.Release, t *core.Title) bool {
 // episodeRegionConflict is language evidence used to break otherwise equal
 // rankings for known namesakes.
 func episodeRegionConflict(rel core.Release, t *core.Title) bool { return languageConflict(rel, t) }
+
+// belowPreferredQuality is ranking evidence, never permission to exceed a ceiling.
+func belowPreferredQuality(info core.ReleaseInfo, profile core.QualityProfile) bool {
+	if h := floorHeight(info); profile.MinHeight > 0 && h > 0 && h < profile.MinHeight {
+		return true
+	}
+	if len(profile.AllowedQualities) == 0 {
+		return false
+	}
+	for _, quality := range profile.AllowedQualities {
+		if qualityGateMatch(quality, info) {
+			return false
+		}
+	}
+	return true
+}

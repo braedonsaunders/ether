@@ -2,7 +2,6 @@ package resolver
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"os"
 	"testing"
@@ -144,7 +143,7 @@ func TestDictionarryBalancedImportScoreInvariant(t *testing.T) {
 	if err != nil || report.ProfilesUpdated != 0 || report.FormatsAdded != 0 || report.FormatsUpdated != 0 || report.FormatsRemoved != 0 {
 		t.Fatalf("second sync changed repaired profile: %+v (%v)", report, err)
 	}
-	// A failed resolution fallback must retain the strict score verdict.
+	// An unreachable score minimum is a preference, with an honest reason.
 	cfg := testCfg()
 	cfg.Resolver.CustomFormats = plan.Definitions
 	s := New(&fakeIndexer{}, nil, nil, cfg, Options{})
@@ -162,16 +161,16 @@ func TestDictionarryBalancedImportScoreInvariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(trace.Candidates) != 1 || trace.Candidates[0].MinimumFormatScore == nil || *trace.Candidates[0].MinimumFormatScore != 200000 || trace.Candidates[0].Reason != fmt.Sprintf("Score %d is below this profile's minimum of %d", 6, 200000) {
+	if len(trace.Candidates) != 1 || trace.Candidates[0].Rejected || trace.Candidates[0].MinimumFormatScore == nil || *trace.Candidates[0].MinimumFormatScore != 200000 || trace.Candidates[0].Reason != "Best available — below this profile's minimum (score 6 of 200000)" {
 		t.Fatalf("lost strict score verdict: %+v", trace.Candidates)
 	}
-	// Lower-resolution candidates still replace their strict resolution verdict,
-	// and indexes remain relative to the caller's pre-existing trace rows.
+	// A release reaching the minimum outranks the closer resolution. Trace
+	// indexes remain relative to the caller's pre-existing rows.
 	lowName := "My.Life.As.A.Zucchini.2016.720p.WEB-DL.H264-GRP"
 	low := core.Release{ID: "low", Name: lowName, Info: releaseparse.Parse(lowName), Size: 4 << 30}
 	trace = Trace{Candidates: []CandidateTrace{{ReleaseID: "previous"}}}
 	cands, _, err := s.rankCandidates(t.Context(), req, searchRequestFor(req.Title), profile, []core.Release{rel, low}, &trace, "")
-	if err != nil || len(cands) != 1 || cands[0].trace != 2 || len(trace.Candidates) != 3 || trace.Candidates[1].Reason != "Score 6 is below this profile's minimum of 200000" || trace.Candidates[2].Rejected {
+	if err != nil || len(cands) != 2 || cands[0].trace != 2 || len(trace.Candidates) != 3 || trace.Candidates[1].Reason != "Best available — below this profile's minimum (score 6 of 200000)" || trace.Candidates[2].Rejected {
 		t.Fatalf("fallback trace mapping: candidates=%+v trace=%+v err=%v", cands, trace.Candidates, err)
 	}
 }

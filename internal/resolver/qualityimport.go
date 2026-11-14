@@ -336,8 +336,9 @@ type QualityImportPlan struct {
 	Skipped   []string            `json:"skippedQualities"`
 	// Unusable, when set, is why the profile cannot work in Ether; Apply
 	// refuses it.
-	Unusable string   `json:"unusable,omitempty"`
-	Warnings []string `json:"warnings"`
+	Unusable       string   `json:"unusable,omitempty"`
+	MinimumWarning string   `json:"-"`
+	Warnings       []string `json:"warnings"`
 	// Definitions holds the source's current definition of every format
 	// the profile scores, including ones already saved. The guide sync
 	// upserts them so a saved profile tracks the source exactly. Not part
@@ -469,15 +470,19 @@ func PlanQualityImport(imp QualityImport, app string, found map[string]core.Cust
 		plan.Profile.CustomFormatScores[id] = v
 	}
 	// No release can exceed the sum of the positive scores the import can
-	// score, so a higher minimum would reject every release for ever.
+	// score, so a higher preferred minimum can only produce closest matches.
 	bestPossible := 0
 	for _, v := range scores {
 		if v > 0 {
 			bestPossible += v
 		}
 	}
+	if len(imp.FormatIDs) > 0 && len(scores) == 0 {
+		plan.Unusable = "None of this profile's custom formats can be imported."
+	}
 	if min := plan.Profile.MinCustomFormatScore; min != nil && *min > bestPossible {
-		plan.Unusable = fmt.Sprintf("This profile requires a custom format score of at least %d, but its importable formats can score at most %d, so no release could ever be accepted.", *min, bestPossible)
+		plan.MinimumWarning = fmt.Sprintf("This profile prefers a custom format score of at least %d, but its importable formats can score at most %d. Ether will use the best available release while keeping hard rules.", *min, bestPossible)
+		plan.Warnings = append(plan.Warnings, plan.MinimumWarning)
 	}
 	plan.Profile.Name = uniqueProfileName(plan.Profile.Name, plan.MediaType, cfg.Quality.Profiles)
 	return plan

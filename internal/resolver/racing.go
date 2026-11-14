@@ -14,6 +14,8 @@ import (
 
 type candidate struct {
 	identityWeak     bool // shared title without evidence identifying this show
+	belowScore       bool
+	counted          int
 	fallback         bool
 	pluginKeys       map[string]int64
 	policy           releasepolicy.Result
@@ -91,7 +93,7 @@ func (s *Service) resolution(key core.RatingKey, cands []candidate, winner int, 
 	res := s.resolutionSkipping(key, cands, winner, nzb, func(c candidate) bool { return tr.Candidates[c.trace].Rejected })
 	ct := tr.Candidates[cands[winner].trace]
 	res.HealthVerified = ct.HealthChecked && ct.Healthy && !tr.Unverified
-	if cands[winner].fallback {
+	if cands[winner].fallback || cands[winner].belowScore {
 		res.QualityFallback = qualityFallbackReason(cands[winner].rel, tr)
 		tr.Downgrade = res.QualityFallback
 	}
@@ -155,7 +157,7 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 			// not be selected while a primary in this window is still valid.
 			// It never includes an on-demand link.
 			same := 1
-			for same < count && !cands[base+same].rel.OpensOnDemand() && releasepolicy.Equivalent(cands[base].policy, cands[base+same].policy) && pluginKeysEqual(cands[base], cands[base+same]) {
+			for same < count && !cands[base+same].rel.OpensOnDemand() && samePreferenceTier(cands[base], cands[base+same]) && releasepolicy.Equivalent(cands[base].policy, cands[base+same].policy) && pluginKeysEqual(cands[base], cands[base+same]) {
 				same++
 			}
 			count = same
@@ -254,6 +256,23 @@ func permanentFailure(err error) bool {
 }
 
 func qualityFallbackReason(rel core.Release, tr *Trace) string {
+	for _, c := range tr.Candidates {
+		if c.ReleaseID != rel.ID {
+			continue
+		}
+		if c.MinimumFormatScore != nil {
+			score := 0
+			for _, match := range c.CustomFormats {
+				if core.CountsTowardMinimum(match.ID) {
+					score += match.Score
+				}
+			}
+			return fmt.Sprintf("Best available — below this profile's minimum (score %d of %d)", score, *c.MinimumFormatScore)
+		}
+		if !c.Rejected && strings.HasPrefix(c.Reason, "Best available") {
+			return c.Reason
+		}
+	}
 	height := fallbackHeight(rel.Info)
 	label := "unknown resolution"
 	if height > 0 {

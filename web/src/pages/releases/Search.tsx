@@ -208,6 +208,16 @@ function verdict(r: ConsoleRelease) {
       <Badge variant={r.winner ? "success" : "secondary"}>
         {r.winner ? t("Plays first") : t("Fallback #{rank}", { rank: r.rank ?? "?" })}
       </Badge>
+      {r.minimumFormatScore != null ? (
+        <span className="mt-1 block text-xs text-warning">
+          {t("Best available — below this profile's minimum (score {score} of {minimum})", {
+            score: r.formatScore,
+            minimum: r.minimumFormatScore,
+          })}
+        </span>
+      ) : r.reason ? (
+        <span className="mt-1 block text-xs text-fg-muted">{r.reason}</span>
+      ) : null}
       {r.route ? <span className="mt-1 block text-[11px] text-fg-subtle">{r.route}</span> : null}
       {r.compatibility ? (
         <span className="mt-1 block text-[11px] text-fg-subtle">{r.compatibility}</span>

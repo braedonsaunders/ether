@@ -274,22 +274,44 @@ func TestConsoleProfileListSurfacesPartialFailure(t *testing.T) {
 }
 
 func TestConsoleImportRejectsUnusableProfile(t *testing.T) {
-	f := newImportFixture(t, true)
-	pasted := `{"name":"Impossible","minFormatScore":5000,"items":[{"name":"WEBDL-1080p","allowed":true}],
-		"formatItems":{"WEB Tier 01":"cf-web1"}}`
-	var plan QualityImportPlan
-	if code := f.do(t, "POST", "/quality-import/preview", body(importRequest{App: AppRadarr, JSON: pasted}), &plan); code != 200 {
-		t.Fatalf("preview status %d", code)
-	}
-	if plan.Unusable == "" || !strings.Contains(plan.Unusable, "at most 1700") {
-		t.Fatalf("plan unusable %q", plan.Unusable)
-	}
-	var e apiError
-	if code := f.do(t, "POST", "/quality-import", body(importRequest{App: AppRadarr, JSON: pasted}), &e); code != 400 || e.Error.Code != "unusable" {
-		t.Fatalf("apply unusable profile: %d %+v", code, e)
-	}
-	if f.saves != 0 || len(f.cfg.Quality.Profiles) != len(testCfg().Quality.Profiles) {
-		t.Fatalf("unusable import was saved: %d saves", f.saves)
+	for name, tc := range map[string]struct {
+		formatID string
+		allowed  bool
+		status   int
+		unusable bool
+	}{
+		"unreachable minimum":   {"cf-web1", true, 200, false},
+		"no importable formats": {"cf-missing", true, 400, true},
+		"no playable qualities": {"cf-web1", false, 400, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newImportFixture(t, true)
+			pasted := fmt.Sprintf(`{"name":"Imported","minFormatScore":5000,"items":[{"name":"WEBDL-1080p","allowed":%t}],"formatItems":{"WEB Tier 01":%q}}`, tc.allowed, tc.formatID)
+			req := body(importRequest{App: AppRadarr, JSON: pasted})
+			if tc.allowed {
+				var plan QualityImportPlan
+				if code := f.do(t, "POST", "/quality-import/preview", req, &plan); code != 200 {
+					t.Fatalf("preview status %d", code)
+				}
+				if (plan.Unusable != "") != tc.unusable {
+					t.Fatalf("plan %+v", plan)
+				}
+				if !tc.unusable && !strings.Contains(strings.Join(plan.Warnings, " "), "at most 1700") {
+					t.Fatalf("missing minimum warning: %+v", plan)
+				}
+			}
+			var e apiError
+			if code := f.do(t, "POST", "/quality-import", req, &e); code != tc.status {
+				t.Fatalf("apply: %d %+v", code, e)
+			}
+			wantSaves := 0
+			if tc.status == 200 {
+				wantSaves = 1
+			}
+			if f.saves != wantSaves {
+				t.Fatalf("saves=%d want %d", f.saves, wantSaves)
+			}
+		})
 	}
 }
 

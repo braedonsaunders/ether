@@ -382,16 +382,15 @@ function plan(
     .filter((f) => f.status === "present" || f.status === "add")
     .reduce((sum, f) => sum + Math.max(0, f.score), 0);
   const minScore = native.minFormatScore ?? 0;
-  const unusable =
-    minScore > best
-      ? `Its minimum custom format score (${minScore}) is higher than the best score it can reach (${best}), so no release would ever play.`
-      : undefined;
+  if (minScore > best)
+    warnings.push(
+      `This profile prefers a score of ${minScore}; Ether will use the best available release while keeping hard rules.`,
+    );
   return {
     app,
     source: meta.source ?? "trash",
     profileId: meta.id,
     mediaType: mediaTypeForApp(app),
-    ...(unusable ? { unusable } : {}),
     profile,
     scoreSet,
     formats,

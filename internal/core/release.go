@@ -266,7 +266,7 @@ type QualityProfile struct {
 	// with its settings ({} for none). A step adds the number its plugin
 	// returns for a release to the release's custom format score.
 	PluginScores     map[string]json.RawMessage `json:"pluginScores,omitempty"`
-	AllowedQualities []string                   `json:"allowedQualities,omitempty"` // imported source-resolution gates
+	AllowedQualities []string                   `json:"allowedQualities,omitempty"` // preferred imported source-resolution pairs
 	// QualityOrder ranks qualities best first, as Radarr and Sonarr do: a
 	// release ranks by the first item listing its quality, qualities in one
 	// item (a group) rank equally, and a quality no item lists ranks below
@@ -278,9 +278,9 @@ type QualityProfile struct {
 	// formats ("ether:…", BuiltinFormats) and Prefer rules ("rule:<id>").
 	// A format the map does not list scores 0, as in Radarr and Sonarr.
 	CustomFormatScores map[string]int `json:"customFormatScores,omitempty"`
-	// MinCustomFormatScore rejects a release whose custom formats (the
+	// MinCustomFormatScore prefers releases whose custom formats (the
 	// owner's and imported ones, not Ether's built-ins, rules or plugins)
-	// score strictly lower. nil sets no minimum.
+	// reach this score. Lower scores remain playable. nil sets no preference.
 	MinCustomFormatScore *int           `json:"minCustomFormatScore,omitempty"`
 	Name                 string         `json:"name"`
 	MediaType            string         `json:"mediaType,omitempty"` // "movie" or "tv" (ProfileMediaTypes); empty only in configs saved before profiles were per media
@@ -360,7 +360,8 @@ func (p QualityProfile) ComputeSelectionKey() string {
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(b)
+	// Ranking semantics are part of policy identity: discard remembered hard-floor verdicts.
+	sum := sha256.Sum256(append([]byte("soft-quality-v1:"), b...))
 	return hex.EncodeToString(sum[:])[:16]
 }
 

@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -18,9 +19,11 @@ import (
 
 // The ranking corpus records which releases Ether picked, in order, for a
 // deterministic set of realistic release pools, profiles and devices. The
-// golden file was recorded by the ranking Ether used before the
-// Radarr/Sonarr-standard model (docs/quality-ranking.md); the shipped
-// profiles reach the ranker through config.Open, as on a fresh install.
+// golden file records the full order with soft minimum preferences; the
+// shipped profiles reach the ranker through config.Open, as on a fresh install.
+// Regenerate only after reviewing every order change:
+// go test ./internal/resolver -run '^TestRankingCorpusMatchesGolden$' -update-ranking-corpus
+var updateRankingCorpus = flag.Bool("update-ranking-corpus", false, "update the reviewed ranking corpus golden")
 
 const rankingGoldenPath = "testdata/ranking_corpus_golden.json"
 
@@ -238,6 +241,15 @@ const (
 
 func TestRankingCorpusMatchesGolden(t *testing.T) {
 	got, picks := rankCorpus(t)
+	if *updateRankingCorpus {
+		b, err := json.MarshalIndent(got, "", " ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(rankingGoldenPath, append(b, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	b, err := os.ReadFile(rankingGoldenPath)
 	if err != nil {
 		t.Fatal(err)
@@ -266,6 +278,8 @@ func TestRankingCorpusMatchesGolden(t *testing.T) {
 		}
 		if strings.Join(w, ",") == strings.Join(g, ",") {
 			tl.full++
+		} else {
+			t.Errorf("%s: order %v, golden %v", k, g, w)
 		}
 		if len(w) > 0 && picks[k][w[0]].pack {
 			tl.packWas++

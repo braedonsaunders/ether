@@ -133,7 +133,7 @@ func (e *feedEvaluation) Key() string {
 	for i := range quality.Profiles {
 		quality.Profiles[i].Import = nil
 	}
-	b, _ := json.Marshal([]any{"feed-verdict-v4", libraries, quality, e.media, profile.SelectionKey, profile, e.env.rcfg, e.env.lang, e.s.profileAllowsCam(), registry})
+	b, _ := json.Marshal([]any{"feed-verdict-v5", libraries, quality, e.media, profile.SelectionKey, profile, e.env.rcfg, e.env.lang, e.s.profileAllowsCam(), registry})
 	sum := sha256.Sum256(b)
 	e.key = hex.EncodeToString(sum[:])
 	return e.key

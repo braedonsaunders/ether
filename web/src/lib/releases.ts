@@ -311,7 +311,7 @@ export interface QualityImportPlan {
   trashId?: string;
   /** The media the source app's profile describes. */
   mediaType?: ProfileMedia;
-  /** Non-empty when the profile cannot work (e.g. minimum score unreachable). */
+  /** Non-empty when the profile cannot be imported. A score shortfall is a warning. */
   unusable?: string;
   profile: QualityProfile;
   scoreSet?: string;

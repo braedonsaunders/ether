@@ -124,6 +124,9 @@ func (s *QualitySyncer) Sync(ctx context.Context) (QualitySyncReport, error) {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("%s: %s", prof.Name, plan.Unusable))
 			continue
 		}
+		if plan.MinimumWarning != "" {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("%s: %s", prof.Name, plan.MinimumWarning))
+		}
 		targets = append(targets, target{name: prof.Name, media: prof.MediaType, imp: *imp, plan: plan})
 	}
 	if err := ctx.Err(); err != nil {
