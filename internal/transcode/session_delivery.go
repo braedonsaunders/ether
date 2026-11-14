@@ -632,7 +632,7 @@ func (s *Session) serveInit(w http.ResponseWriter, r *http.Request, t int) {
 		// a probe deadlocked every lazy rung: the player asks for no media
 		// segment until the init succeeds. Only DASH keeps the ranged-probe
 		// guard; non-GET requests stay probes on both protocols.
-		probe := r.Method != http.MethodGet || (s.isDASH() && r.Header.Get("Range") != "" && s.runSeq > 0)
+		probe := r.Method != http.MethodGet || (s.isDASH() && r.Header.Get("Range") != "" && (s.cur != nil || s.runSeq > 0))
 		selectTrack := !s.isDASH() || t != s.audioTrackLocked()
 		if probe && (s.cur == nil || s.cur.finished || s.cur.stopped || (selectTrack && s.cur.track != t)) {
 			s.mu.Unlock()
