@@ -597,7 +597,13 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*fro
 		// The chosen sidecar has to be on this media before track resolution.
 		// Otherwise a language already present in the probe drops it, and the
 		// decision either selects the other track or no subtitle at all.
-		ps = ensureSelectedSidecar(ps, p.subStream)
+		if p.subNamed && p.subStream != nil && p.subStream.External {
+			cp := *ps
+			cp.Info = infoWithExactSidecar(ps.Info, p.subStream)
+			ps = &cp
+		} else {
+			ps = ensureSelectedSidecar(ps, p.subStream)
+		}
 		resolvePlaySelection(p, ps.Info)
 		s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
 		applySelections(p, ps.Info, s.audioLanguages(pr.User))
@@ -2313,16 +2319,19 @@ func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 			sel.audio, sel.audioSet, sel.audioStream = 0, false, nil
 		}
 		if subDefault {
-			sel.subtitle, sel.subtitleSet, sel.subtitleStream = 0, false, nil
+			sel.subtitle, sel.subtitleSet, sel.subtitleStream, sel.subtitlePart = 0, false, nil, 0
 		}
 		if audio != nil {
 			info := audio.Info
 			sel.audio, sel.audioSet, sel.audioStream = audio.Index, true, &info
 		}
 		if clearSub {
-			sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, nil
+			sel.subtitle, sel.subtitleSet, sel.subtitleStream, sel.subtitlePart = -1, true, nil, 0
 		} else if sub != nil {
 			info := sub.Info
+			if sel.subtitleStream == nil || sel.subtitleStream.ExternalURL != info.ExternalURL {
+				sel.subtitlePart = 0
+			}
 			sel.subtitle, sel.subtitleSet, sel.subtitleStream = sub.Index, true, &info
 		}
 	})
@@ -2410,7 +2419,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		}
 		s.selections.update(pr.User.ID, int64(binding.Key), func(sel *selection) {
 			if sel.subtitleStream != nil && sel.subtitleStream.ExternalURL == binding.Info.ExternalURL {
-				sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, nil
+				sel.subtitle, sel.subtitleSet, sel.subtitleStream, sel.subtitlePart = -1, true, nil, 0
 			}
 		})
 		if tp := s.svc().trackPrefs; tp != nil {

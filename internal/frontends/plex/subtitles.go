@@ -97,6 +97,46 @@ func (s *Server) withCachedSidecars(ctx context.Context, u *frontend.User, t *fr
 	return out
 }
 
+// subtitleInfoForPart publishes a manual download on the Part it was picked
+// for. Advertising the same new stream on every Media can make clients infer a
+// different version when they locate the downloaded stream after polling.
+func subtitleInfoForPart(info frontend.MediaInfo, sel selection, partID int64) (frontend.MediaInfo, selection) {
+	if sel.subtitlePart == 0 || sel.subtitleStream == nil || !sel.subtitleStream.External || sel.subtitleStream.ExternalURL == "" {
+		if sel.subtitleSet {
+			info = infoWithSelectedSidecar(info, sel.subtitleStream)
+		}
+		return info, sel
+	}
+	want := sel.subtitleStream
+	if sel.subtitlePart != partID {
+		streams := make([]frontend.StreamInfo, 0, len(info.Streams))
+		for _, st := range info.Streams {
+			if st.ExternalURL != want.ExternalURL {
+				streams = append(streams, st)
+			}
+		}
+		info.Streams = streams
+		sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, false, nil
+		return info, sel
+	}
+	return infoWithExactSidecar(info, want), sel
+}
+
+// A manual choice names an exact file, even when a release sidecar in the
+// same language is already present. Keep the provider's new ID.
+func infoWithExactSidecar(info frontend.MediaInfo, want *frontend.StreamInfo) frontend.MediaInfo {
+	if want == nil || !want.External || want.ExternalURL == "" {
+		return info
+	}
+	for _, st := range info.Streams {
+		if st.ExternalURL == want.ExternalURL {
+			return info
+		}
+	}
+	info.Streams = append(append([]frontend.StreamInfo(nil), info.Streams...), *want)
+	return info
+}
+
 // resolveSubtitle finds a chosen subtitle in info by language, codec, and
 // source. The old stream position is only a tie-break. -1 when info has none.
 func resolveSubtitle(want *frontend.StreamInfo, pos int, info frontend.MediaInfo) int {
@@ -482,32 +522,49 @@ func (s *Server) handleSubtitlePick(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusServiceUnavailable)
 		return
 	}
+	// Capture the playing Part before the async work: a stop/restart while
+	// downloading must not attach the result to another version.
+	partID := int64(t.Key)
+	if pin := s.playIDs.pinned(s.playIdentityFor(pr, t.Key), true, s.now()); pin.selected != 0 {
+		partID = pin.selected
+	}
 	activity := rand.Text()
 	// Register the pick before answering, so a metadata re-read racing
 	// this response waits for the download instead of missing the track.
-	finishPick := s.subtitlePicks.begin(pr.User.ID, t.Key)
+	finishPick := sync.OnceFunc(s.subtitlePicks.begin(pr.User.ID, t.Key))
 	w.Header().Set("X-Plex-Activity", activity)
 	w.WriteHeader(http.StatusOK)
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		defer finishPick()
-		ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+		// Retain the viewer/client identity used by subtitle correction to
+		// find this playback session, while surviving the PUT disconnect.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		stop := context.AfterFunc(s.ctx, cancel)
+		defer stop()
 		defer cancel()
 		s.publishNotification(model.NotificationContainer{Type: "activity", Size: 1, ActivityNotification: []model.ActivityNotification{{Event: "started", UUID: activity, Activity: &model.Activity{UUID: activity, Type: "subtitle.download", Title: "Downloading subtitles", UserID: pr.User.ID}}}}, pr.User.ID)
+		s.log.Info("subtitle pick downloading", "key", t.Key, "part", partID, "offer", providerID)
 		st, err := searcher.DownloadSubtitle(ctx, t, pr.User, providerID)
 		if err != nil {
 			s.log.Warn("subtitle download failed", "key", t.Key, "offer", providerID, "err", err)
 			s.finishSubtitleActivity(activity, pr.User.ID)
 			return
 		}
-		s.selections.update(pr.User.ID, int64(t.Key), func(sel *selection) { sel.subtitle, sel.subtitleSet, sel.subtitleStream = -1, true, &st })
+		s.selections.update(pr.User.ID, int64(t.Key), func(sel *selection) {
+			sel.subtitle, sel.subtitleSet, sel.subtitleStream, sel.subtitlePart = -1, true, &st, partID
+		})
+		// Metadata can expose the stream now; saving preferences must not
+		// hold the client behind another five-second polling wait.
+		finishPick()
+		s.log.Info("subtitle pick ready", "key", t.Key, "part", partID, "offer", providerID)
+		s.finishSubtitleActivity(activity, pr.User.ID)
 		if s.svc().trackPrefs != nil {
 			if err := s.svc().trackPrefs.Remember(ctx, pr.User.ID, t.Key, "subtitle", &st); err != nil {
 				s.log.Warn("save stream preference", "error", err)
 			}
 		}
-		s.finishSubtitleActivity(activity, pr.User.ID)
 	}()
 
 }
