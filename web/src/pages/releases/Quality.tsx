@@ -830,8 +830,7 @@ function ProfileList({
                           (lib) =>
                             lib.source !== "plugin" &&
                             lib.qualityProfile === p.name &&
-                            (lib.mediaType === "show" ? "tv" : "movie") ===
-                              p.mediaType,
+                            (lib.mediaType === "show" ? "tv" : "movie") === p.mediaType,
                         )
                         .map((lib) => (
                           <Badge key={lib.id} variant="secondary">

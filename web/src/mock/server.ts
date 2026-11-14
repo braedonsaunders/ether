@@ -973,7 +973,15 @@ export function createFakeServer(opts: FakeOptions = {}) {
   }
 
   function matches(t: FakeTitle, r: Rule): boolean {
-    if(r.field==="group") {const children=r.value as Rule[];if(!children.length)return r.op!=="isNot";const hit=r.op==="in"?children.some(child=>matches(t,child)):children.every(child=>matches(t,child));return r.op==="isNot"?!hit:hit;}
+    if (r.field === "group") {
+      const children = r.value as Rule[];
+      if (!children.length) return r.op !== "isNot";
+      const hit =
+        r.op === "in"
+          ? children.some((child) => matches(t, child))
+          : children.every((child) => matches(t, child));
+      return r.op === "isNot" ? !hit : hit;
+    }
 
     if (r.field === "contentRating") return ratingMatches(t, r);
     const vals = fieldValues(t, r.field);
@@ -2616,13 +2624,42 @@ export function createFakeServer(opts: FakeOptions = {}) {
     name: "Family films",
     source: "catalogue",
     sources: ["tmdb-movies"],
-    rules: [{ name: "", action: "show", mediaType: "movie", match: "all", rules: [{ field: "genre", op: "in", value: ["Family"] }] }], visibilityDefault: "hide",
+    rules: [
+      {
+        name: "",
+        action: "show",
+        mediaType: "movie",
+        match: "all",
+        rules: [{ field: "genre", op: "in", value: ["Family"] }],
+      },
+    ],
+    visibilityDefault: "hide",
     sort: 6,
     hidden: true,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   });
-  mockLibs.push({id:7,key:"anime-shows",name:"Anime Shows",source:"catalogue",sources:["tmdb-tv"],mediaType:"show",rules:[{name:"",action:"show",mediaType:"show",match:"all",rules:[{field:"genre",op:"in",value:["Animation"]}]}],visibilityDefault:"hide",sort:7,hidden:false,itemCount:4500});
+  mockLibs.push({
+    id: 7,
+    key: "anime-shows",
+    name: "Anime Shows",
+    source: "catalogue",
+    sources: ["tmdb-tv"],
+    mediaType: "show",
+    rules: [
+      {
+        name: "",
+        action: "show",
+        mediaType: "show",
+        match: "all",
+        rules: [{ field: "genre", op: "in", value: ["Animation"] }],
+      },
+    ],
+    visibilityDefault: "hide",
+    sort: 7,
+    hidden: false,
+    itemCount: 4500,
+  });
   const mockMatches: Record<string, unknown>[] = [];
   function hydrateLib(lib: Record<string, unknown>) {
     if (!lib.sources)
@@ -4111,21 +4148,27 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const reqLibId = Number((body as { libraryId?: number }).libraryId ?? 0);
         const reqLib = reqLibId ? mockLibs.find((l) => l.id === reqLibId) : undefined;
         const reqType = reqLib
-          ? String(
-              reqLib.mediaType ?? "",
-            )
-          : String((body as {mediaType?:string}).mediaType??"");
+          ? String(reqLib.mediaType ?? "")
+          : String((body as { mediaType?: string }).mediaType ?? "");
         const scopedCatalog = reqType ? catalog.filter((t) => t.type === reqType) : catalog;
         const groups =
           (body as { exclusions: { mediaType: string; match: string; rules: Rule[] }[] })
-            .exclusions ?? (body as {rules?: {mediaType:string;match:string;rules:Rule[]}[]}).rules ?? [];
+            .exclusions ??
+          (body as { rules?: { mediaType: string; match: string; rules: Rule[] }[] }).rules ??
+          [];
         const hits = (g: (typeof groups)[number]) =>
           scopedCatalog.filter(
             (t) =>
               (g.mediaType === "mixed" || g.mediaType === t.type) &&
               (g.match === "any"
-                ? g.rules.some((r) => (r.field==="group"||fieldValues(t, r.field).length > 0) && matches(t, r))
-                : g.rules.every((r) => (r.field==="group"||fieldValues(t, r.field).length > 0) && matches(t, r))),
+                ? g.rules.some(
+                    (r) =>
+                      (r.field === "group" || fieldValues(t, r.field).length > 0) && matches(t, r),
+                  )
+                : g.rules.every(
+                    (r) =>
+                      (r.field === "group" || fieldValues(t, r.field).length > 0) && matches(t, r),
+                  )),
           );
         const items = scopedCatalog.filter((t) =>
           hiddenByRules(
