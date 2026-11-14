@@ -110,6 +110,8 @@ type brokerPlan struct {
 }
 type brokerSession struct {
 	observedSourceRevision string
+	audio                  *audioRendition
+	audioGeneration        uint64
 
 	manualSubtitle        bool
 	autoSubtitleIdentity  *int
@@ -324,6 +326,14 @@ func clientKey(protocol frontend.Protocol, device core.Device) string {
 	return fmt.Sprintf("%d:%s%s", len(protocol), protocol, device.ID)
 }
 func copyRequest(r frontend.PlanRequest) frontend.PlanRequest {
+	if r.Intent.OriginalPlayback != nil {
+		original := *r.Intent.OriginalPlayback
+		original.DemuxContainers = slices.Clone(original.DemuxContainers)
+		original.VideoDecoders = slices.Clone(original.VideoDecoders)
+		original.AudioDecoders = slices.Clone(original.AudioDecoders)
+		r.Intent.OriginalPlayback = &original
+	}
+
 	if r.Intent.AudioOrdinal != nil {
 		ordinal := *r.Intent.AudioOrdinal
 		r.Intent.AudioOrdinal = &ordinal
@@ -1410,6 +1420,9 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 	return b.stopLocked(ctx, s)
 }
 func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
+	if err := b.retireAudio(ctx, s); err != nil {
+		return err
+	}
 	if s.autoSubtitleCancel != nil {
 		s.autoSubtitleCancel()
 	}

@@ -365,7 +365,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			if a.registrar != nil {
 				a.registrar.ObserveRemoteClient(address)
 			}
-		}, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
+		}, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SecureOrigins: r.secureOrigins, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
 			return scorecardSurfaceURL(ctx, r, id, req)
 		}, PublicOrigin: publicOrigin, RepoFileURL: repoFile, TracePlayback: a.tracePlayback, ServerIdentity: serverIdentity, OwnerSubscription: ownerSub, LANViewer: lanViewer, PageFreshness: func() frontend.PageFreshness {
 			f := a.browseFreshness()

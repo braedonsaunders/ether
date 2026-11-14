@@ -31,6 +31,7 @@ func (b *Broker) planAlternatives(source *core.PlaySession, req frontend.PlanReq
 	}
 	if req.Intent.Options.DirectStream && b.deps.Transcoder != nil {
 		candidate := req
+		candidate.Intent.OriginalPlayback = nil
 		candidate.Intent.Options.DirectPlay = false
 		candidate.Intent.Options.DirectStream = true
 		d, err := b.decideProfile(source, candidate)
@@ -38,6 +39,7 @@ func (b *Broker) planAlternatives(source *core.PlaySession, req frontend.PlanReq
 	}
 	if b.deps.Transcoder != nil && (req.Intent.AllowTranscoding == nil || *req.Intent.AllowTranscoding) {
 		candidate := req
+		candidate.Intent.OriginalPlayback = nil
 		candidate.Intent.Options.DirectPlay = false
 		candidate.Intent.Options.DirectStream = false
 		d, err := b.decideProfile(source, candidate)
@@ -50,6 +52,15 @@ func (b *Broker) planAlternatives(source *core.PlaySession, req frontend.PlanReq
 // containers preserved by the transcoder are authoritative here; an unknown
 // value may be normalized later and must not become a guessed DTO claim.
 func (b *Broker) hlsPlanOutput(source *core.PlaySession, req frontend.PlanRequest, decision core.Decision) (bool, string) {
+	if decision.Reason == "original_runtime" {
+		req.Intent.OriginalPlayback = nil
+		req.Intent.Options.DirectPlay = false
+		var err error
+		decision, err = b.decideProfile(source, req)
+		if err != nil {
+			return false, ""
+		}
+	}
 	output, eligible := b.hlsOutputDecision(source, req.Caps, req.Intent.Options, req.Intent.AllowTranscoding, decision)
 	if !eligible || source == nil || !knownHLSVideo(source.Info) {
 		return false, ""

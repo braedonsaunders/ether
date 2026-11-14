@@ -172,6 +172,14 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		return "", core.ErrNotAvailable
 	}
 	dec := s.decision
+	if dec.Reason == "original_runtime" {
+		opts := s.opts
+		opts.DirectPlay = false
+		dec, err = b.decideProfile(ps, frontend.PlanRequest{Protocol: s.public.Protocol, Caps: s.caps, Intent: frontend.PlayIntent{Options: opts, AllowTranscoding: s.allowTranscoding}})
+		if err != nil {
+			return "", err
+		}
+	}
 	proto := core.ProtocolHLS
 	if req.Format == frontend.StreamDASH {
 		proto = core.ProtocolDASH
@@ -528,6 +536,9 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 		}
 	}
 	tail := parts[2:]
+	if serveAudioRendition(w, r, s, tail) {
+		return
+	}
 	if s.live && len(tail) >= 2 && tail[0] == "live" && b.deps.Live != nil {
 		if liveBase == "" {
 			liveBase = "/sessions/media/" + s.public.ID + "/" + s.grant + "/live/"
@@ -545,6 +556,11 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 		return
 	}
 	if len(tail) == 1 && tail[0] == "file" && s.format == frontend.StreamDirect {
+		if s.decision.Reason == "original_runtime" {
+			policy, _ := core.RangeResponseFrom(r.Context())
+			policy.StrictRanges = true
+			r = r.WithContext(core.WithRangeResponse(r.Context(), policy))
+		}
 		b.deps.Playback.ServeRange(w, r, s.playID)
 		return
 	}

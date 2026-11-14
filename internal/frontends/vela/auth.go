@@ -32,8 +32,8 @@ func (i *instance) tokens(w http.ResponseWriter, r *http.Request, access, refres
 }
 func (i *instance) auth(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Username, Password, RefreshToken, Code, Browser, ExistingToken, UserCode, DeviceCode, Secret string
-		Device                                                                                       device `json:"device"`
+		Username, Password, RefreshToken, Code, Browser, ExistingToken, UserCode, DeviceCode, Secret, TargetOrigin string
+		Device                                                                                                     device `json:"device"`
 	}
 	if body(r, &b) != nil {
 		problem(w, 400, "request", "invalid_request")
@@ -43,6 +43,30 @@ func (i *instance) auth(w http.ResponseWriter, r *http.Request) {
 	d := b.Device.neutral()
 	path := strings.TrimPrefix(r.URL.Path, "/vela/v0/auth/")
 	switch path {
+	case "web-code":
+		_, access, err := i.viewer(r)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if d.ID != requestDevice(r).ID || !i.trustedSecureOrigin(r, b.TargetOrigin) {
+			problem(w, 400, "request", "invalid_target_origin")
+			return
+		}
+		issuer, ok := i.host.Identity.(interface {
+			IssueOriginWebCode(context.Context, string, frontend.Device, string) (string, error)
+		})
+		if !ok {
+			i.unavailable(w, r)
+			return
+		}
+		code, err := issuer.IssueOriginWebCode(ctx, access, d, b.TargetOrigin)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		send(w, 200, object{"code": code, "targetOrigin": b.TargetOrigin, "expiresAt": time.Now().Add(time.Minute).UTC().Format(time.RFC3339)})
+
 	case "sign-in":
 		a, e := i.host.Identity.SignIn(ctx, b.Username, b.Password, d)
 		if e != nil {
@@ -76,7 +100,15 @@ func (i *instance) auth(w http.ResponseWriter, r *http.Request) {
 			i.unavailable(w, r)
 			return
 		}
-		a, e := service.RedeemDeviceWebCode(ctx, b.Code, d)
+		var a string
+		var e error
+		if bound, ok := i.host.Identity.(interface {
+			RedeemOriginWebCode(context.Context, string, frontend.Device, string) (string, error)
+		}); ok && r.TLS != nil && i.trustedSecureOrigin(r, "https://"+r.Host) {
+			a, e = bound.RedeemOriginWebCode(ctx, b.Code, d, "https://"+r.Host)
+		} else {
+			a, e = service.RedeemDeviceWebCode(ctx, b.Code, d)
+		}
 		if e != nil {
 			fail(w, e)
 			return
@@ -158,4 +190,16 @@ func (i *instance) auth(w http.ResponseWriter, r *http.Request) {
 		}
 		send(w, 200, object{"accepted": true})
 	}
+}
+
+func (i *instance) trustedSecureOrigin(r *http.Request, origin string) bool {
+	if i.host.SecureOrigins == nil {
+		return false
+	}
+	for _, candidate := range i.host.SecureOrigins(r.Context(), r) {
+		if candidate == origin {
+			return true
+		}
+	}
+	return false
 }

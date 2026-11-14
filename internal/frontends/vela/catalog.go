@@ -318,7 +318,7 @@ func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 			heroes, shelves = heroesFromRows(append(rows, fill...), sources)
 		}
 	}
-	out := object{"viewer": viewerWire(v), "capabilities": i.capabilities(), "defaultSkinId": "default", "rows": shelves}
+	out := object{"viewer": viewerWire(v), "capabilities": i.requestCapabilities(r), "defaultSkinId": "default", "rows": shelves}
 	if len(heroes) > 0 {
 		ids := make([]string, 0, len(heroes))
 		for _, hero := range heroes {

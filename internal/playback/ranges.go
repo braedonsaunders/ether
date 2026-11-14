@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // byteRange is one satisfiable range of a representation.
@@ -224,11 +226,16 @@ func serveRepresentation(w http.ResponseWriter, r *http.Request, rep representat
 		ctype = "application/octet-stream"
 	}
 
+	policy, _ := core.RangeResponseFrom(r.Context())
+	if policy.StrictRanges && r.Header.Get("Range") != "" && !ifRangeMatches(r.Header.Get("If-Range"), rep.etag, rep.modTime) {
+		http.Error(w, "source validator changed", http.StatusPreconditionFailed)
+		return nil
+	}
 	var ranges []byteRange
 	if rh := r.Header.Get("Range"); rh != "" && ifRangeMatches(r.Header.Get("If-Range"), rep.etag, rep.modTime) {
 		rs, err := parseRange(rh, rep.size)
 		switch {
-		case errors.Is(err, errRangeUnsatisfiable):
+		case errors.Is(err, errRangeUnsatisfiable) || (policy.StrictRanges && err != nil):
 			h.Set("Content-Range", fmt.Sprintf("bytes */%d", rep.size))
 			http.Error(w, "requested range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
 			return nil

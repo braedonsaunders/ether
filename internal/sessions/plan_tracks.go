@@ -21,7 +21,7 @@ import (
 // original ps unchanged (never nil) so the caller's deferred release stays
 // valid.
 func (b *Broker) pinRequestedTracks(ctx context.Context, req *frontend.PlanRequest, ps *core.PlaySession) (*core.PlaySession, bool, error) {
-	if req.Intent.AudioOrdinal != nil || req.Intent.SubtitleStreamIndex != nil {
+	if req.Intent.AudioOrdinal != nil || req.Intent.SubtitleStreamIndex != nil || (req.Protocol == "vela" && req.Intent.OriginalPlayback.Valid()) {
 		if ps.Info.Estimated {
 			return ps, false, frontend.ErrTrackSourceUnavailable
 		}

@@ -447,3 +447,22 @@ func (s scorecardSessionWrapper) TrailerPreviewAvailable() bool {
 	}
 	return false
 }
+
+func (s scorecardSessionWrapper) AudioFallbackAvailable() bool {
+	audio, ok := s.embeddedScorecardSessions.(frontend.AudioFallback)
+	return ok && audio.AudioFallbackAvailable()
+}
+func (s scorecardSessionWrapper) StartAudioFallback(ctx context.Context, a frontend.SessionAccess, id string, track int, pos time.Duration) (frontend.AudioFallbackResult, error) {
+	audio, ok := s.embeddedScorecardSessions.(frontend.AudioFallback)
+	if !ok {
+		return frontend.AudioFallbackResult{}, core.ErrNotAvailable
+	}
+	return audio.StartAudioFallback(ctx, a, id, track, pos)
+}
+func (s scorecardSessionWrapper) StopAudioFallback(ctx context.Context, a frontend.SessionAccess, id, audioID string) error {
+	audio, ok := s.embeddedScorecardSessions.(frontend.AudioFallback)
+	if !ok {
+		return core.ErrNotAvailable
+	}
+	return audio.StopAudioFallback(ctx, a, id, audioID)
+}

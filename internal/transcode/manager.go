@@ -1348,3 +1348,9 @@ func (t *tailWriter) String() string {
 	defer t.mu.Unlock()
 	return string(t.buf)
 }
+
+// AudioFallbackAvailable requires the actual AAC encoder and fragmented MP4
+// segment muxers discovered at startup. Unknown inventory fails closed.
+func (m *Manager) AudioFallbackAvailable() bool {
+	return m.ffmpeg != "" && m.feat.encoders["aac"] && m.feat.muxers["hls"] && m.feat.muxers["mp4"]
+}

@@ -603,3 +603,35 @@ func portalPublicAddress(ctx context.Context, connections []remote.Connection) (
 	}
 	return "", errors.New("public address unavailable")
 }
+
+// secureOrigins reads the same published snapshot as Plex resources. It does
+// no reachability probes and never upgrades an untrusted request hostname.
+func (r *frontendRuntime) secureOrigins(ctx context.Context, req *http.Request) []string {
+	if r.app == nil {
+		return nil
+	}
+	var connections []remote.Connection
+	if r.app.registrar != nil {
+		connections = r.app.registrar.Status().Connections
+	}
+	var out []string
+	seen := map[string]bool{}
+	peer, _ := r.app.frontendClientIP(req)
+	for _, local := range []bool{identity.LAN(peer), !identity.LAN(peer)} {
+		for _, c := range connections {
+			if c.Local != local {
+				continue
+			}
+			u, err := url.Parse(c.URI)
+			if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+				continue
+			}
+			origin := "https://" + u.Host
+			if !seen[origin] {
+				out = append(out, origin)
+				seen[origin] = true
+			}
+		}
+	}
+	return out
+}

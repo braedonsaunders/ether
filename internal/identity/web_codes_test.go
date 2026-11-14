@@ -2,6 +2,7 @@ package identity_test
 
 import (
 	"context"
+	"github.com/braedonsaunders/ether/internal/core"
 	"testing"
 	"time"
 
@@ -50,5 +51,51 @@ func TestWebCodeLifecycle(t *testing.T) {
 	now = now.Add(time.Minute)
 	if _, _, err = g.RedeemWebCode(ctx, code, "0123456789abcdef", ""); err == nil {
 		t.Fatal("expired code accepted")
+	}
+}
+
+func TestWebCodeOriginIsolation(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 0)
+	g, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := "https://192-168-1-5.server.plex.direct:32550"
+	code, err := g.IssueOriginWebCode(ctx, 1, "vela", origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "new-https-device-uuid"}
+	if _, _, err = g.RedeemDeviceWebCode(ctx, code, "vela", device, ""); err == nil {
+		t.Fatal("origin bypassed via console redeem")
+	}
+	if _, _, err = g.RedeemOriginWebCode(ctx, code, "jellyfin", device, origin); err == nil {
+		t.Fatal("wrong surface")
+	}
+	if _, _, err = g.RedeemOriginWebCode(ctx, code, "vela", device, "https://other.invalid"); err == nil {
+		t.Fatal("wrong origin")
+	}
+	token, id, err := g.RedeemOriginWebCode(ctx, code, "vela", device, origin)
+	if err != nil || id != 1 {
+		t.Fatalf("target redeem: %d %v", id, err)
+	}
+	if _, _, err = g.ResolveDevice(ctx, "vela", token, device); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = g.RedeemOriginWebCode(ctx, code, "vela", device, origin); err == nil {
+		t.Fatal("reused")
+	}
+	code, err = g.IssueOriginWebCode(ctx, 1, "vela", origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	if _, _, err = g.RedeemOriginWebCode(ctx, code, "vela", device, origin); err == nil {
+		t.Fatal("expired")
 	}
 }

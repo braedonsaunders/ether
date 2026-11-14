@@ -648,6 +648,10 @@ type Experience interface {
 }
 
 type PlayIntent struct {
+	// OriginalPlayback declares an installed demux/decoder runtime independently
+	// of native media element capabilities. Originals are pinned for byte reads.
+	OriginalPlayback *OriginalPlaybackCapabilities
+
 	Estimate bool
 	Options  core.DecideOptions
 	// ExactVersion treats PlanRequest.Version as a scoped opaque handle and

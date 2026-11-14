@@ -853,6 +853,20 @@ func (b *Broker) h264EncoderVerified() bool {
 }
 
 func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (core.Decision, error) {
+	if req.Protocol == "vela" && req.Channel == "" && req.Intent.Options.DirectPlay && ps != nil && (req.Intent.OriginalPlayback.Supports(ps.Info, req.Intent.Options.AudioStream) || (b.AudioFallbackAvailable() && req.Intent.OriginalPlayback.SupportsAudio("aac") && (req.Intent.AllowTranscoding == nil || *req.Intent.AllowTranscoding) && req.Intent.OriginalPlayback.SupportsVideo(ps.Info))) {
+		d := core.Decision{Kind: core.DecisionDirectPlay, Reason: "original_runtime", Container: ps.Info.Container, VideoCopy: true, AudioCopy: true, AudioStream: req.Intent.Options.AudioStream, SubtitleStream: req.Intent.Options.SubtitleStream}
+		for _, s := range ps.Info.Streams {
+			if s.Type == "video" {
+				d.VideoCodec = s.Codec
+			}
+			if s.Type == "audio" && (s.Index == d.AudioStream || d.AudioStream < 0) {
+				d.AudioStream = s.Index
+				d.AudioCodec = s.Codec
+			}
+		}
+		return d, nil
+	}
+
 	// The progressive client renders text outside the video. Keep the user's
 	// selection in the plan, but never ask the video decision to burn it in.
 	if ps != nil {
