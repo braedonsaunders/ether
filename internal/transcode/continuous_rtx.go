@@ -42,6 +42,7 @@ type continuousPicture struct {
 
 type continuousChild struct {
 	rtx         bool
+	hardware    bool
 	plan        continuousRTXPlan
 	attemptKey  continuousRTXAttemptKey
 	startSeq    int64
@@ -235,7 +236,7 @@ func continuousRTXMuxArgs(r EncoderRequest, plan continuousRTXPlan, h264Sock, au
 
 func continuousTeeArgs(r EncoderRequest, base string, startSeq, tsOffsetTick int64) []string {
 	f := r.Source
-	g, _, _ := continuousLadder(f, r.SegmentDuration, r.LiveSource)
+	g, startup, _ := continuousLadder(f, r.SegmentDuration, r.LiveSource)
 	duration := float64(g*int64(f.FPSDen)) / float64(f.FPSNum)
 	ds := strconv.FormatFloat(duration, 'f', 6, 64)
 	window := continuousWindow(r.DVRWindow, time.Second*time.Duration(g*int64(f.FPSDen))/time.Duration(f.FPSNum)) + 3
@@ -249,10 +250,11 @@ func continuousTeeArgs(r EncoderRequest, base string, startSeq, tsOffsetTick int
 	}
 
 	hlsOpts := fmt.Sprintf("hls_time=%s", ds)
-	if startSeq == 0 {
+	if startSeq < int64(len(startup)) {
 		initial := strconv.FormatFloat(duration/4, 'f', 6, 64)
 		hlsOpts += ":hls_init_time=" + initial
-	} else {
+	}
+	if startSeq > 0 {
 		hlsOpts += fmt.Sprintf(":start_number=%d", startSeq)
 	}
 
@@ -455,6 +457,9 @@ func (e *continuousEncoder) clearRTXFailureIfOff(key continuousRTXAttemptKey) {
 }
 
 func (e *continuousEncoder) wantBoundarySwap(cur *continuousChild) bool {
+	if e.forceCPU {
+		return false
+	}
 	plan, key, wantRTX := e.m.continuousRTXPlanFor(e.req, cur != nil && cur.rtx)
 	e.clearRTXFailureIfOff(key)
 	if wantRTX && e.rtxBlocked(key) {
@@ -475,7 +480,7 @@ func (e *continuousEncoder) wantBoundarySwap(cur *continuousChild) bool {
 func (e *continuousEncoder) startGeneration(startSeq, startTick, tsOffsetTick int64) (*continuousChild, error) {
 	plan, key, wantRTX := e.m.continuousRTXPlanFor(e.req, false)
 	e.clearRTXFailureIfOff(key)
-	if wantRTX && !e.rtxBlocked(key) {
+	if wantRTX && !e.forceCPU && !e.rtxBlocked(key) {
 		child, err := e.startRTXChild(startSeq, startTick, tsOffsetTick, plan, key)
 		if err == nil {
 			e.setChild(child)
@@ -519,11 +524,21 @@ func (e *continuousEncoder) startOrdinaryChild(startSeq, startTick, tsOffsetTick
 		}
 		sockets = append(sockets, s)
 	}
-	args := e.m.continuousEncodeArgsAt(e.req, sockets, e.store.url(), startSeq, tsOffsetTick)
+	accel := e.m.hw
+	if e.forceCPU {
+		accel = core.HWAccel{Name: AccelNone}
+	}
+	_, hardware := videoEncoder(e.req.Decision.VideoCodec, accel, e.m.feat)
+	args := e.m.continuousEncodeArgsAt(e.req, sockets, e.store.url(), startSeq, tsOffsetTick, accel)
 	p, err := e.m.startContinuous(e.ctx, args, e.dir, false, sockets, e.stream, nil, e.speedObserver)
 	if err != nil {
 		for _, s := range sockets {
 			s.close()
+		}
+		if hardware && !e.forceCPU && e.ctx.Err() == nil {
+			e.forceCPU = true
+			e.m.log.Warn("continuous hardware encoder failed to start; falling back to software", "session", e.req.SessionID, "err", err)
+			return e.startOrdinaryChild(startSeq, startTick, tsOffsetTick)
 		}
 		return nil, err
 	}
@@ -531,6 +546,7 @@ func (e *continuousEncoder) startOrdinaryChild(startSeq, startTick, tsOffsetTick
 	close(rtxDone)
 	child := &continuousChild{
 		rtx:       false,
+		hardware:  hardware,
 		startSeq:  startSeq,
 		startTick: startTick,
 		video:     make(chan continuousPicture, 8),
