@@ -295,14 +295,11 @@ func (h *sourceHistoryStore) evictLocked() {
 // start loads the table and runs the write-behind (and, on PostgreSQL, the
 // cluster refresh) until the service context ends.
 func (h *sourceHistoryStore) start(s *Service) {
-	h.s = s
-	h.wake = make(chan struct{}, 1)
 	db := s.o.DB
 	if db == nil {
 		return
 	}
-	h.pg = store.DialectOf(db) == store.Postgres
-	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(s.serviceContext(), 10*time.Second)
 	defer cancel()
 	cutoff := s.o.Now().Add(-historyRetention).UnixMilli()
 	var stale bool
@@ -407,7 +404,7 @@ func (h *sourceHistoryStore) loop(db *sql.DB) {
 			flushC = flush.C
 		}
 		select {
-		case <-h.s.ctx.Done():
+		case <-h.s.serviceContext().Done():
 			return
 		case <-h.wake:
 			if !armed {
@@ -416,7 +413,7 @@ func (h *sourceHistoryStore) loop(db *sql.DB) {
 			}
 		case <-flushC:
 			armed = false
-			h.flush(h.s.ctx, db)
+			h.flush(h.s.serviceContext(), db)
 			h.mu.Lock()
 			stillDirty := len(h.dirty) > 0
 			h.mu.Unlock()
@@ -437,7 +434,7 @@ func (h *sourceHistoryStore) refresh(db *sql.DB) {
 	h.mu.Lock()
 	since := h.seen - time.Minute.Milliseconds()
 	h.mu.Unlock()
-	ctx, cancel := context.WithTimeout(h.s.ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(h.s.serviceContext(), 10*time.Second)
 	defer cancel()
 	if err := h.load(ctx, db, `SELECT key, updated_ms, data FROM livetv_source_history WHERE updated_ms > ? ORDER BY updated_ms LIMIT ?`, since, historyLimit); err != nil && ctx.Err() == nil {
 		h.s.o.Logger.Debug("source history refresh failed", "err", err)

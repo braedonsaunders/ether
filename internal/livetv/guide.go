@@ -1360,25 +1360,25 @@ func (s *Service) refreshLoop() {
 	}
 	defer timer.Stop()
 	for {
-		wait, armed := s.nextSourceRefreshWait(s.ctx)
+		wait, armed := s.nextSourceRefreshWait(s.serviceContext())
 		if !armed {
 			select {
-			case <-s.ctx.Done():
+			case <-s.serviceContext().Done():
 				return
 			case <-s.sourceWake:
 			case <-s.activityWake:
 				if !s.noActivitySources.Load() {
-					s.refreshSources(s.ctx, true)
+					s.refreshSources(s.serviceContext(), true)
 				}
 			}
 			continue
 		}
 		timer.Reset(wait)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return
 		case <-timer.C:
-			s.refreshDueSources(s.ctx)
+			s.refreshDueSources(s.serviceContext())
 		case <-s.sourceWake:
 			if !timer.Stop() {
 				select {
@@ -1394,7 +1394,7 @@ func (s *Service) refreshLoop() {
 				}
 			}
 			if !s.noActivitySources.Load() {
-				s.refreshSources(s.ctx, true)
+				s.refreshSources(s.serviceContext(), true)
 			}
 		}
 	}

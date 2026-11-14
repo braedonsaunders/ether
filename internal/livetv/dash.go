@@ -99,7 +99,7 @@ func (s *Service) ensureDASH(ctx context.Context, ss *session, id string) (core.
 	if err != nil {
 		return nil, err
 	}
-	hs, err := s.transcoder().StartHLS(s.ctx, core.HLSRequest{SessionID: "livetv-dash-" + id, InputURL: input, LiveInput: true, Info: *info, Decision: dec, Protocol: core.ProtocolDASH, SegmentDuration: segmentDuration})
+	hs, err := s.transcoder().StartHLS(s.serviceContext(), core.HLSRequest{SessionID: "livetv-dash-" + id, InputURL: input, LiveInput: true, Info: *info, Decision: dec, Protocol: core.ProtocolDASH, SegmentDuration: segmentDuration})
 	if err != nil {
 		return nil, err
 	}

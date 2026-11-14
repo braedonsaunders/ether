@@ -98,8 +98,12 @@ func TestPluginUnratedChannelRule(t *testing.T) {
 
 func TestPluginViewerPolicy(t *testing.T) {
 	s := testService(t, Options{})
-	c := Channel{ID: "policy-plugin", Enabled: true, Look: &ChannelLook{AllowUnratedSegments: true}}
+	c := Channel{ID: "policy-plugin", Name: "Plugin policy", Number: "1", Kind: "virtual", Enabled: true, OffAir: true, Look: &ChannelLook{AllowUnratedSegments: true}}
 	p := Programme{Item: Item{Slate: "plugin:weather/forecast"}}
+	if _, err := s.SaveChannel(t.Context(), c); err != nil {
+		t.Fatal(err)
+	}
+	s.ReconcileEnabled()
 	u := &core.User{ID: 10, MaxContentRating: "PG"}
 	if s.allowed(context.Background(), u, c, &p) {
 		t.Fatal("unrated segment bypassed viewer cap")

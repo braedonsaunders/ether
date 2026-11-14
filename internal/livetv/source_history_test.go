@@ -23,6 +23,14 @@ func historyService(t *testing.T, db *sql.DB, opts ...func(*Options)) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// History persistence belongs to an active Live TV lifetime. Save a paused
+	// fixture channel so these tests exercise loading and write-behind workers.
+	c := testChannel()
+	c.Enabled = false
+	if _, err := s.SaveChannel(t.Context(), c); err != nil {
+		t.Fatal(err)
+	}
+	s.ReconcileEnabled()
 	return s
 }
 

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,11 +135,12 @@ func TestSeriesCollectionSlicingInvariant(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	key := core.SmartKey(9822)
-	clock := fixedNow
-	f.srv.setTestNow(func() time.Time { return clock })
+	var clock atomic.Int64
+	clock.Store(fixedNow.UnixNano())
+	f.srv.setTestNow(func() time.Time { return time.Unix(0, clock.Load()) })
 	admission := &collectionAdmissionCatalog{Catalog: f.catalog, open: true}
 	f.srv.setCatalog(admission)
-	f.cols.cols[key] = core.Collection{Key: key, Title: "Series", Type: core.TypeShow, UpdatedAt: clock, MembershipRevision: "first"}
+	f.cols.cols[key] = core.Collection{Key: key, Title: "Series", Type: core.TypeShow, UpdatedAt: fixedNow, MembershipRevision: "first"}
 	var expected []string
 	for i := 0; i < 160; i++ {
 		title := breakingBad
@@ -173,7 +175,7 @@ func TestSeriesCollectionSlicingInvariant(t *testing.T) {
 		return keys
 	}
 	first := read(path, 0, 84)
-	clock = clock.Add(6 * time.Minute)
+	clock.Add(int64(6 * time.Minute))
 	admission.open = false
 	// Simulate a changed series ordering/new episode and discovery gate while
 	// the underlying collection membership generation is unchanged.

@@ -440,30 +440,30 @@ func (s *Service) personalLoop() {
 	for {
 		now := s.o.Now()
 		clockActive := s.advancePersonal(now)
-		personal, err := s.enabledPersonalChannels(s.ctx)
+		personal, err := s.enabledPersonalChannels(s.serviceContext())
 		hasPersonal := err == nil && len(personal) > 0
 		if hasPersonal && !now.Before(next) {
 			next = now.Add(time.Minute)
-			users, err := s.o.Users.Users(s.ctx)
+			users, err := s.o.Users.Users(s.serviceContext())
 			if err == nil {
 				for _, u := range users {
 					for _, c := range personal {
-						c = s.personalChannel(s.ctx, c, &u)
-						if !s.allowed(s.ctx, &u, c, nil) {
+						c = s.personalChannel(s.serviceContext(), c, &u)
+						if !s.allowed(s.serviceContext(), &u, c, nil) {
 							continue
 						}
-						if err := s.buildPersonal(s.ctx, c, &u); err != nil {
+						if err := s.buildPersonal(s.serviceContext(), c, &u); err != nil {
 							s.o.Logger.Debug("personal rundown build failed", "viewer", u.ID, "channel", c.ID, "error", err)
 						}
 						if c.Look != nil && s.o.Graphics != nil && len(s.recentlyWatched()) > 0 {
-							r, err := s.readPersonal(s.ctx, personalKey{u.ID, c.ID})
+							r, err := s.readPersonal(s.serviceContext(), personalKey{u.ID, c.ID})
 							if err == nil {
 								for _, p := range r.programmes {
 									if p.Start.UnixMilli() <= r.cursor && p.End.UnixMilli() > r.cursor {
 										minutes := (r.cursor - p.Start.UnixMilli()) / 60000
 										p.Item.Slate = "welcome"
 										p.Item.Summary = strconv.FormatInt(minutes, 10)
-										s.o.Graphics.Ensure(s.ctx, s.clipRequest(c, p))
+										s.o.Graphics.Ensure(s.serviceContext(), s.clipRequest(c, p))
 										break
 									}
 								}
@@ -482,7 +482,7 @@ func (s *Service) personalLoop() {
 		}
 		if wait <= 0 {
 			select {
-			case <-s.ctx.Done():
+			case <-s.serviceContext().Done():
 				return
 			case <-s.personalWake:
 				next = time.Time{}
@@ -491,7 +491,7 @@ func (s *Service) personalLoop() {
 		}
 		timer.Reset(wait)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return
 		case <-timer.C:
 		case <-s.personalWake:
@@ -525,7 +525,7 @@ func (s *Service) advancePersonal(now time.Time) bool {
 	}
 	for k := range active {
 		if s.personalClocks[k] == nil {
-			r, err := s.readPersonal(s.ctx, k)
+			r, err := s.readPersonal(s.serviceContext(), k)
 			if err == nil {
 				s.personalClocks[k] = &personalClock{cursor: r.cursor, at: now, timeAway: now}
 			}
@@ -554,7 +554,7 @@ func (s *Service) advancePersonal(now time.Time) bool {
 		clock.at = now
 		if left || now.Sub(clock.saved) >= personalClockSave {
 			clock.saved = now
-			_, _ = s.o.DB.ExecContext(s.ctx, `UPDATE livetv_personal SET cursor_ms=?,away_ms=? WHERE viewer_id=? AND channel_id=?`, clock.cursor, now.UnixMilli(), k.viewer, k.channel)
+			_, _ = s.o.DB.ExecContext(s.serviceContext(), `UPDATE livetv_personal SET cursor_ms=?,away_ms=? WHERE viewer_id=? AND channel_id=?`, clock.cursor, now.UnixMilli(), k.viewer, k.channel)
 		}
 	}
 	return anyActive
@@ -566,7 +566,7 @@ func (s *Service) beginPersonal(c Channel, u *core.User) {
 	}
 	k := personalKey{u.ID, c.ID}
 	now := s.o.Now()
-	r, err := s.readPersonalClock(s.ctx, k)
+	r, err := s.readPersonalClock(s.serviceContext(), k)
 	if err != nil {
 		return
 	}
@@ -577,7 +577,7 @@ func (s *Service) beginPersonal(c Channel, u *core.User) {
 	clock := s.personalClocks[k]
 	if clock == nil {
 		var away int64
-		_ = s.o.DB.QueryRowContext(s.ctx, `SELECT away_ms FROM livetv_personal WHERE viewer_id=? AND channel_id=?`, u.ID, c.ID).Scan(&away)
+		_ = s.o.DB.QueryRowContext(s.serviceContext(), `SELECT away_ms FROM livetv_personal WHERE viewer_id=? AND channel_id=?`, u.ID, c.ID).Scan(&away)
 		clock = &personalClock{cursor: r.cursor}
 		if away > 0 {
 			clock.timeAway = time.UnixMilli(away)
@@ -634,7 +634,7 @@ func (s *Service) endPersonal(c Channel, viewer int64) {
 	clock.active = false
 	clock.timeAway = now
 	clock.at = now
-	_, _ = s.o.DB.ExecContext(s.ctx, `UPDATE livetv_personal SET cursor_ms=?,away_ms=? WHERE viewer_id=? AND channel_id=?`, clock.cursor, now.UnixMilli(), viewer, c.ID)
+	_, _ = s.o.DB.ExecContext(s.serviceContext(), `UPDATE livetv_personal SET cursor_ms=?,away_ms=? WHERE viewer_id=? AND channel_id=?`, clock.cursor, now.UnixMilli(), viewer, c.ID)
 }
 func (s *Service) personalWelcome(c Channel, now time.Time) (Programme, bool) {
 	if c.Personal == nil || c.personalViewer == nil {
@@ -649,7 +649,7 @@ func (s *Service) personalWelcome(c Channel, now time.Time) (Programme, bool) {
 	}
 	end, cursor := clock.welcomeUntil, clock.cursor
 	s.personalMu.Unlock()
-	r, err := s.readPersonal(s.ctx, k)
+	r, err := s.readPersonal(s.serviceContext(), k)
 	if err != nil {
 		return Programme{}, false
 	}

@@ -68,7 +68,7 @@ func (s *Service) refreshReels() {
 	if s.o.Reels == nil {
 		return
 	}
-	cs, err := s.virtualChannels(s.ctx)
+	cs, err := s.virtualChannels(s.serviceContext())
 	if err != nil {
 		return
 	}
@@ -87,7 +87,7 @@ func (s *Service) refreshReels() {
 			}
 			id := look.ReelID
 			seen[id] = true
-			snapshot, err := s.o.Reels(s.ctx, id)
+			snapshot, err := s.o.Reels(s.serviceContext(), id)
 			if err != nil {
 				continue
 			}

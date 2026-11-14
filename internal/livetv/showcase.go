@@ -379,10 +379,10 @@ func (s *Service) showcaseLoop() {
 	}
 	defer timer.Stop()
 	for {
-		wait := s.refreshShowcaseNext(s.ctx)
+		wait := s.refreshShowcaseNext(s.serviceContext())
 		timer.Reset(wait)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return
 		case <-timer.C:
 		}

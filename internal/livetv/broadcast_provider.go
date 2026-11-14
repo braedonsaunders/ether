@@ -432,7 +432,7 @@ func (s *Service) linkSteadySource(ctx context.Context, c Channel, src StreamSou
 		release()
 		return nil, err
 	}
-	inputCtx, cancel := context.WithCancel(s.ctx)
+	inputCtx, cancel := context.WithCancel(s.serviceContext())
 	ss := &session{ctx: inputCtx, cancel: cancel, info: SessionInfo{ID: reservation, Channel: c}, inputSource: src, inputURL: resolved, inputHeaders: headers}
 	grant := src
 	grant.URL = resolved

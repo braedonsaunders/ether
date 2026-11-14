@@ -489,7 +489,7 @@ func (s *Service) sourceAuth(ctx context.Context, id string) (*SourceAuth, error
 // sourceConnectionLimit is how many connections the source's provider
 // allows at once (an Xtream panel's max_connections); 0 means no limit.
 func (s *Service) sourceConnectionLimit(id string) int {
-	e, err := s.sourceEntry(s.ctx, id)
+	e, err := s.sourceEntry(s.serviceContext(), id)
 	if err != nil {
 		return 0
 	}
