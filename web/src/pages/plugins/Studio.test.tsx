@@ -28,7 +28,7 @@ vi.mock("./CodeStudio", () => ({
   Reference: () => null,
   ReferenceButton: () => null,
 }));
-vi.mock("./PermissionSheet", () => ({ PermissionSheet: () => null }));
+vi.mock("./PermissionSheet", () => ({ PermissionSheet: () => null, RuntimeLimitsCard: () => null }));
 vi.mock("./StudioActions", () => ({
   StudioActions: ({ onInstall }: { onInstall: () => void }) => (
     <button onClick={onInstall}>Install draft</button>

@@ -5896,7 +5896,6 @@ func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage)
 		return nil, err
 	}
 	var value any
-	err = nil
 	if name == "http.fetchToCache" {
 		var req struct {
 			Method     string            `json:"method"`
@@ -17996,7 +17995,7 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
 | `ether.contributes.mediaKinds[].browse.search` | `boolean` | false | {} |
 | `ether.contributes.mediaKinds[].browse.searchFields` | `array` | false | {} |
 | `ether.contributes.mediaKinds[].browse.sorts` | `array` | false | {} |
-| `ether.contributes.mediaKinds[].cache` | `object` | false | {"description":"Plugin-owned blob cache. http.fetchToCache streams a GET here under the existing network grant and library quota (at most 256 MiB per fetch). cache.read and archive.list/open use only this plugin-owned blob namespace, with 1 MiB range results. ZIP supports Store/Deflate only; ZIP64, split and encrypted archives are refused."} |
+| `ether.contributes.mediaKinds[].cache` | `object` | false | {} |
 | `ether.contributes.mediaKinds[].cache.maxBytes` | `integer` | false | {} |
 | `ether.contributes.mediaKinds[].cache.ttl` | `string` | false | {} |
 | `ether.contributes.mediaKinds[].fields` | `array` | false | {} |
@@ -18436,7 +18435,6 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
                     "type": "object"
                   },
                   "cache": {
-                    "description": "Plugin-owned blob cache. http.fetchToCache streams a GET here under the existing network grant and library quota (at most 256 MiB per fetch). cache.read and archive.list/open use only this plugin-owned blob namespace, with 1 MiB range results. ZIP supports Store/Deflate only; ZIP64, split and encrypted archives are refused.",
                     "properties": {
                       "maxBytes": {
                         "type": "integer"
@@ -19017,53 +19015,53 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
                 "remote"
               ]
             },
+            "limits": {
+              "description": "Hosted/data requests are clamped to owner-controlled global or per-plugin ceilings. Default ceilings: 2 GiB memory (up to wasm32 4 GiB), 12h, effectively unlimited background compute, 8 GiB download/member and 32 GiB total expansion. Viewer request-path time/compute budgets stay tight.",
+              "properties": {
+                "archiveExpandedBytes": {
+                  "default": 34359738368,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "archiveMemberBytes": {
+                  "default": 8589934592,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "archiveMembers": {
+                  "default": 65535,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "deadline": {
+                  "description": "Positive Go duration; omitted uses the owner ceiling (default 12h).",
+                  "type": "string"
+                },
+                "fetchBytes": {
+                  "default": 8589934592,
+                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "memoryBytes": {
+                  "default": 33554432,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "unitBudget": {
+                  "default": 1152921504606847000,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
             "module": {
               "description": "WASM file. Hosted only.",
               "type": "string"
-            },
-            "limits": {
-              "type": "object",
-              "description": "Hosted/data requests are clamped to owner-controlled global or per-plugin ceilings. Default ceilings: 2 GiB memory (up to wasm32 4 GiB), 12h, effectively unlimited background compute, 8 GiB download/member and 32 GiB total expansion. Viewer request-path time/compute budgets stay tight.",
-              "properties": {
-                "memoryBytes": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "default": 33554432
-                },
-                "deadline": {
-                  "type": "string",
-                  "description": "Positive Go duration; omitted uses the owner ceiling (default 12h)."
-                },
-                "unitBudget": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "default": 1152921504606846976
-                },
-                "fetchBytes": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "default": 8589934592,
-                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
-                },
-                "archiveMemberBytes": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "default": 8589934592,
-                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
-                },
-                "archiveExpandedBytes": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "default": 34359738368,
-                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
-                },
-                "archiveMembers": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "default": 65535,
-                  "description": "Clamped to the owner ceiling; omitted or zero uses that ceiling."
-                }
-              }
             }
           },
           "required": [
