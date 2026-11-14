@@ -281,19 +281,26 @@ Stremio apps require an **`https://`** addon URL unless you are connecting to
 
 ## How Ether reaches the internet
 
-Ether can send indexers, Stremio addons, debrid and Usenet through one proxy
-on this computer, and leave Plex, updates, UPnP and remote access on the
-normal connection. The setting is off until you turn it on, under
+Ether can send indexers, Stremio addons, plugins, Live TV/IPTV, debrid and
+Usenet through one proxy on this computer, and leave Plex, updates, UPnP
+and remote access on the normal connection. The setting is off until you turn it on, under
 **Server › General › How Ether reaches the internet**. Enter one proxy address,
 or pick a layout from **Common setups**, then choose **Test connection**. A
 username and password, under **More options**, are stored with Ether's other
 secrets and are not put in the address.
 
+Live TV/IPTV follows the **Stremio addons, plugins and Live TV/IPTV** option
+under **More options**. This includes M3U and Xtream playlists, guide data,
+live streams, and Xtream movies and series. Ether relays provider traffic,
+including ffmpeg and ffprobe inputs, so TV apps need no VPN app. Virtual
+channels playing your local library and Plex stay on the normal connection.
+Private provider addresses and names listed as local also stay direct.
+
 Two layouts are common:
 
 1. **Split tunnel.** Ether stays on the host network so Plex discovery and
-   remote access keep working. A VPN container publishes a proxy. Gluetun's
-   HTTP proxy listens on port 8888 when `HTTPPROXY=on`. From a host-network
+   remote access keep working. A VPN container publishes a proxy for source
+   traffic, including IPTV. Gluetun's HTTP proxy listens on port 8888 when `HTTPPROXY=on`. From a host-network
    Ether process that address is `http://127.0.0.1:8888`, because Docker DNS
    names are not visible there. On a shared Docker network it is
    `http://gluetun:8888`. SOCKS on port 1080 is only useful if you enabled a
