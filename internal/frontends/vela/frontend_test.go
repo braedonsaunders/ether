@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 	_ "modernc.org/sqlite"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,37 @@ func (identityFake) GrantScopeCurrent(context.Context, string, frontend.Device) 
 }
 func TestVelaProtocolInvariants(t *testing.T) {
 	t.Run("pairing lineage", checkPairingLineage)
+	t.Run("broker media mount", func(t *testing.T) {
+		mediaPath := "/sessions/media/session/grant/master.m3u8"
+		mounted := false
+		for _, listener := range (&instance{}).Listeners() {
+			if listener.Shared && strings.HasPrefix(mediaPath, listener.PathPrefix+"/") {
+				mounted = true
+			}
+		}
+		if !mounted {
+			t.Fatal("broker URL falls through to another frontend")
+		}
+		calls := 0
+		i := &instance{host: frontend.Host{Sessions: frontendtest.Sessions{ServeMediaFunc: func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if r.URL.Path != mediaPath {
+				t.Fatal("media path changed before grant authentication")
+			}
+			// The broker, rather than API bearer authentication, owns denial.
+			w.WriteHeader(http.StatusNotFound)
+		}}}}
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			w := httptest.NewRecorder()
+			i.serve(w, httptest.NewRequest(method, mediaPath, nil))
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("broker denial replaced: %d", w.Code)
+			}
+		}
+		if calls != 2 {
+			t.Fatal("media reads bypassed the scoped broker")
+		}
+	})
 	for version, want := range map[string]bool{"0.1.0": true, "0.1.9": true, "0.1.0+build.7": true, "0.1.1-beta.2": true, "0.2.0-rc.1": true, "0.0.9": false, "0.1.0-alpha": false, "0.2.0": false, "1.0.0": false, "0.1": false, "0.01.0": false, "0.1.1-01": false, "": false} {
 		if got := compatibleBuild(version); got != want {
 			t.Fatalf("build %q: got %v, want %v", version, got, want)

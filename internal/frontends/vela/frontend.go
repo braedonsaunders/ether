@@ -77,7 +77,7 @@ type instance struct {
 
 func (i *instance) Handler() http.Handler { return http.HandlerFunc(i.serve) }
 func (*instance) Listeners() []frontend.ListenerSpec {
-	return []frontend.ListenerSpec{{Shared: true, PathPrefix: "/vela"}}
+	return []frontend.ListenerSpec{{Shared: true, PathPrefix: "/vela"}, {Shared: true, PathPrefix: "/sessions/media"}}
 }
 func (*instance) Discovery() []frontend.Announcer { return nil }
 func (i *instance) Status(context.Context) frontend.Status {
@@ -192,6 +192,13 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 }
 func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if strings.HasPrefix(r.URL.Path, "/sessions/media/") {
+		// Media elements cannot attach the API bearer/device headers. The
+		// surface-bound broker authenticates the URL grant, viewer and current
+		// policy on every read, including playlists, segments and subtitles.
+		i.host.Sessions.ServeMedia(w, r.WithContext(i.identityContext(r)))
+		return
+	}
 	if !strings.HasPrefix(r.URL.Path, "/vela/v0/") {
 		webclient.ServeVela(w, r, i.assets)
 		return
