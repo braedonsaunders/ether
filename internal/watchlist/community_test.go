@@ -3,6 +3,7 @@ package watchlist
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -92,5 +93,101 @@ func TestCommunityFriendsPagedSnapshots(t *testing.T) {
 	statuses := s.friendStatuses(ctx)
 	if len(statuses) != 2 || statuses[0].Error == "" {
 		t.Fatalf("missing per-friend status: %+v", statuses)
+	}
+}
+
+func TestCommunityTitlesUppercaseType(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":{"userV2":{"watchlist":{"nodes":[{"id":"5d77682a880197001ec96873","type":"MOVIE"},{"id":"tmdb://202","type":"SHOW"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+	}))
+	defer server.Close()
+
+	movieKey := core.MovieKey(101)
+	showKey := core.ShowKey(202)
+	titles := map[core.RatingKey]core.Title{
+		movieKey: {Key: movieKey, Type: core.TypeMovie, Title: "Movie"},
+		showKey:  {Key: showKey, Type: core.TypeShow, Title: "Show"},
+	}
+	var lookedUp []string
+	s := New(db, Options{
+		Catalog:   fakeCatalog{titles: titles},
+		Community: &plextv.CommunityClient{Client: server.Client(), URL: server.URL},
+		PlexLookup: func(_ context.Context, guid string) (core.RatingKey, error) {
+			lookedUp = append(lookedUp, guid)
+			if guid == "plex://movie/5d77682a880197001ec96873" {
+				return movieKey, nil
+			}
+			return 0, core.ErrNotFound
+		},
+	})
+	got, unmatched, err := s.communityTitles(ctx, "owner", "friend-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unmatched != 0 || len(got) != 2 {
+		t.Fatalf("got=%d unmatched=%d (%+v)", len(got), unmatched, got)
+	}
+	if len(lookedUp) != 1 || lookedUp[0] != "plex://movie/5d77682a880197001ec96873" {
+		t.Fatalf("lookedUp=%v", lookedUp)
+	}
+}
+
+func TestCommunityTitlesSkipsAmbiguousIdentityAndPreservesRSS(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":{"userV2":{"watchlist":{"nodes":[{"id":"ambiguous-guid","type":"MOVIE"},{"id":"valid-guid","type":"MOVIE"}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+	}))
+	defer server.Close()
+
+	movieKey := core.MovieKey(101)
+	rssKey := core.MovieKey(202)
+	movieTitle := core.Title{Key: movieKey, Type: core.TypeMovie, Title: "Valid Movie"}
+	rssTitle := core.Title{Key: rssKey, Type: core.TypeMovie, Title: "RSS Only Movie"}
+	s := New(db, Options{
+		Catalog:   fakeCatalog{titles: map[core.RatingKey]core.Title{movieKey: movieTitle}},
+		Community: &plextv.CommunityClient{Client: server.Client(), URL: server.URL},
+		PlexLookup: func(_ context.Context, guid string) (core.RatingKey, error) {
+			if guid == "plex://movie/ambiguous-guid" {
+				return 0, errors.New("ambiguous Plex identity")
+			}
+			if guid == "plex://movie/valid-guid" {
+				return movieKey, nil
+			}
+			return 0, core.ErrNotFound
+		},
+	})
+
+	got, unmatched, err := s.communityTitles(ctx, "owner", "friend-1")
+	if err != nil {
+		t.Fatalf("communityTitles error: %v", err)
+	}
+	if unmatched != 1 || len(got) != 1 || got[0].Key != movieKey {
+		t.Fatalf("got=%+v unmatched=%d, want 1 valid and 1 unmatched", got, unmatched)
+	}
+
+	const source = "plex-community:friend-1"
+	const viewerID int64 = 20
+	if err := s.upsert(ctx, viewerID, source, rssTitle); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.upsert(ctx, householdUserID, sourcePlexFriendsRSS, rssTitle); err != nil {
+		t.Fatal(err)
+	}
+	merged := s.preserveActiveFriendsRSSItems(ctx, viewerID, source, nil)
+	if len(merged) != 1 || merged[0].Key != rssKey {
+		t.Fatalf("preserveActiveFriendsRSSItems=%+v, want %d", merged, rssKey)
 	}
 }

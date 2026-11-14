@@ -520,3 +520,183 @@ func TestPlexRSSFeedImportLifecycle(t *testing.T) {
 		t.Fatal("expected collection and Home row to hide once Friends' RSS set is empty")
 	}
 }
+
+func TestPlexRSSFollowsRedirect(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	sealer, err := config.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sealer.UpgradeCredentials(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	cat, err := catalog.New(db, nil, config.Catalog{Language: "en-US", Region: "US", MinPopularity: 1, MinVotes: 1}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	movie := core.Title{
+		Key:        core.MovieKey(999),
+		Type:       core.TypeMovie,
+		Title:      "Redirected Film",
+		Year:       2024,
+		Released:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Rating:     8.0,
+		Popularity: 80,
+		VoteCount:  1000,
+		PosterPath: "/film.jpg",
+		IDs:        core.IDs{TMDB: 999, IMDB: "tt9991111"},
+	}
+	if err := cat.UpsertTitle(ctx, movie, true); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/friends":
+			http.Redirect(w, r, "/target", http.StatusFound)
+		case "/target":
+			w.Header().Set("Content-Type", "application/rss+xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Friends</title>
+<item><title>Redirected Film (2024)</title><guid>imdb://tt9991111</guid><category>movie</category></item>
+</channel></rss>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	// Do not pass Client so New() configures the default CheckRedirect = ErrUseLastResponse.
+	s := New(db, Options{
+		Catalog: cat,
+		Sealer:  sealer,
+	})
+	if err := s.SaveSettings(ctx, Settings{
+		Enabled:           true,
+		Plex:              true,
+		PlexFriendsRSSURL: srv.URL + "/friends",
+		CheckHours:        6,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SyncRSS(ctx); err != nil {
+		t.Fatalf("SyncRSS failed on 302 redirect: %v", err)
+	}
+	items, err := s.HouseholdItems(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Title.Key != movie.Key {
+		t.Fatalf("expected redirected RSS item %d, got %+v", movie.Key, items)
+	}
+	// Ensure the shared Client still refuses redirects for Community/Plex token requests.
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/friends", nil)
+	resp, err := s.o.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected shared s.o.Client to keep 302, got %d", resp.StatusCode)
+	}
+}
+
+func TestPlexFriendsRSSAttributesAuthorToViewer(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	sealer, err := config.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sealer.UpgradeCredentials(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 11, 14, 13, 0, 0, 0, time.UTC)
+	show := core.Title{
+		Key: core.ShowKey(201), Type: core.TypeShow, Title: "The Rings of Power", Year: 2022,
+		ContentRating: "TV-14", Released: now.Add(-48 * time.Hour),
+		Rating: 7.0, Popularity: 80, VoteCount: 1000, PosterPath: "/rop.jpg",
+		IDs: core.IDs{TMDB: 201, TVDB: 367506},
+	}
+
+	catCfg := config.Catalog{Language: "en-US", Region: "US", MinPopularity: 1, MinVotes: 1}
+	cat, err := catalog.New(db, nil, catCfg, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cat.UpsertTitle(ctx, show, true); err != nil {
+		t.Fatal(err)
+	}
+
+	viewer := core.User{ID: 20, PlexID: 143405302, Username: "Aayoshi", Title: "Aayoshi"}
+	rssServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Plex Watchlist</title>
+    <item>
+      <author>93f1c58b6f64a6dc</author>
+      <category>show</category>
+      <title>The Lord of the Rings: The Rings of Power (2022)</title>
+      <guid isPermaLink="false">tvdb://367506</guid>
+    </item>
+  </channel>
+</rss>`))
+	}))
+	defer rssServer.Close()
+
+	s := New(db, Options{
+		Sealer:  sealer,
+		Catalog: cat,
+		Users:   func(context.Context) ([]core.User, error) { return []core.User{viewer}, nil },
+		Now:     func() time.Time { return now },
+		Logger:  slog.Default(),
+	})
+
+	s.recordFriend(ctx, FriendFeedStatus{ID: "93f1c58b6f64a6dc", Username: "Aayoshi"})
+	if err := s.SaveSettings(ctx, Settings{Enabled: true, Plex: true, PlexFriendsRSSURL: rssServer.URL, CheckHours: 6}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SyncRSS(ctx); err != nil {
+		t.Fatalf("SyncRSS: %v", err)
+	}
+
+	viewerItems, err := s.Items(ctx, &viewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(viewerItems) != 1 || viewerItems[0].Title.Key != show.Key || !slices.Equal(viewerItems[0].Sources, []string{"plex-community:93f1c58b6f64a6dc"}) {
+		t.Fatalf("expected attributed viewer item %d from plex-community:93f1c58b6f64a6dc, got %+v", show.Key, viewerItems)
+	}
+	if queued := s.drainRSSChecks(); len(queued) != 1 || queued[0].ID != viewer.ID {
+		t.Fatalf("expected viewer %d queued for immediate availability check, got %+v", viewer.ID, queued)
+	}
+	if err := s.SyncRSS(ctx); err != nil {
+		t.Fatalf("second SyncRSS: %v", err)
+	}
+	if queued := s.drainRSSChecks(); len(queued) != 0 {
+		t.Fatalf("expected no duplicate check queued for existing item, got %+v", queued)
+	}
+
+	householdItems, err := s.Items(ctx, &core.User{ID: householdUserID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(householdItems) != 1 || householdItems[0].Title.Key != show.Key || !slices.Equal(householdItems[0].Sources, []string{sourcePlexFriendsRSS}) {
+		t.Fatalf("expected household item %d from %s, got %+v", show.Key, sourcePlexFriendsRSS, householdItems)
+	}
+}
