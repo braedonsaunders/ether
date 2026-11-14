@@ -176,6 +176,7 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 	for i := range out {
 		row := &out[i]
 		row.Situation = situation
+		row.Layout.RankedTop10 = row.RankedTop10
 		if row.RankedTop10 {
 			row.Entries = row.Entries[:min(10, len(row.Entries))]
 			row.More = false
