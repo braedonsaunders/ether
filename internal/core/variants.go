@@ -6,8 +6,8 @@ import "context"
 // "Play Version" picker: a distinct candidate release, by quality tier or
 // edition (cut).
 type ReleaseVariant struct {
-	// ID is stable for the title and release; front ends encode it (or its
-	// position) in Media/Part ids.
+	// ID is the stable menu identity; configured slots keep it while the
+	// concrete Release changes. Frontends encode it in Media/Part ids.
 	ID string `json:"id"`
 	// Label is the viewer-facing name, e.g. "4K Dolby Vision Remux" or
 	// "1080p WEB-DL (High Compatibility)".
@@ -84,3 +84,7 @@ type DecisionCandidate struct {
 type DecisionTraceSource interface {
 	LatestDecision(key RatingKey) (DecisionTrace, bool)
 }
+
+// VersionSelectorPrefix identifies a configured menu choice rather than a
+// concrete release. Only the resolver interprets or authorizes its payload.
+const VersionSelectorPrefix = "ether-slot:v1:"

@@ -50,3 +50,10 @@ type EditionBatch interface {
 type VersionHandleBatch interface {
 	IssueBatch(context.Context, VersionScope, core.RatingKey, []string) (map[string]string, error)
 }
+
+// VersionSlots is the cache-independent, configured version menu capability.
+// labels permits cached release facts on detail responses; false is the cheap
+// browse projection and must never search or resolve a title.
+type VersionSlots interface {
+	VersionSlots(context.Context, core.ResolveRequest, int, bool) ([]core.ReleaseVariant, error)
+}

@@ -303,7 +303,7 @@ func (s *Server) variantMediaID(t *frontend.Title, v frontend.ReleaseVariant) in
 	if v.Auto || s.variantIDs == nil {
 		return int64(t.Key)
 	}
-	return s.variantIDs.idFor(t.Key, v.Release.ID)
+	return s.variantIDs.idFor(t.Key, versionIdentity(v))
 }
 
 // buildMediaVariant renders one variant's Media/Part. Auto keeps the
@@ -355,7 +355,7 @@ func buildMediaVariant(t *frontend.Title, v frontend.ReleaseVariant, stamp int64
 	if v.Auto || registry == nil {
 		id = int64(t.Key)
 	} else {
-		id = registry.idFor(t.Key, v.Release.ID)
+		id = registry.idFor(t.Key, versionIdentity(v))
 	}
 	if id != int64(t.Key) {
 		ext := containerExt(plexContainer(v.Info.Container))
@@ -638,7 +638,21 @@ func (s *Server) preparePlayback(ctx context.Context, pr *Request, p *playReques
 		caps := s.clientCapsForKey(pr, p.key)
 		return s.prepareForRelease(ctx, pr.User, p.key, caps, "")
 	}
-	if s.versionFlows != nil {
+	configured := false
+	if source, ok := s.svc().variants.(frontend.VersionSlots); ok {
+		if titles := s.getTitles(ctx, []frontend.RatingKey{p.key}); len(titles) == 1 {
+			plan, err := source.VersionSlots(ctx, frontend.ResolveRequest{Title: &titles[0], Client: s.clientCapsForKey(pr, p.key), User: pr.User}, frontend.MaxVariants, false)
+			if err != nil {
+				return nil, err
+			}
+			if len(plan) > 0 {
+				configured = true
+				pr.configuredSlots = true
+				s.playIDs.issueConfiguredSlots(s.playIdentityFor(pr, p.key), plan, s.now())
+			}
+		}
+	}
+	if s.versionFlows != nil && !configured {
 		ik := s.playIdentityFor(pr, p.key)
 		// Freeze the list this client was issued, not an empty one: when
 		// the shared row has expired (90s pre-play TTL) or was never

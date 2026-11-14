@@ -99,7 +99,7 @@ func (m *Manager) CheckFileAvailability(ctx context.Context, user *core.User, ke
 			// this check open it: without that permission the resolver stops
 			// at the link without opening it. With permission it opened and
 			// validated the release, so measure it like any other source.
-			if err != nil || res == nil || release != "" && res.Release.ID != release || (res.Release.OpensOnDemand() && !openAddon) {
+			if err != nil || res == nil || release != "" && !res.MatchesVersion(release) || (res.Release.OpensOnDemand() && !openAddon) {
 				// Nothing found yet, or the resolver prefers another release
 				// (this one may simply be outside the bounded warm-up search).
 				return result{err: errFileCheckInconclusive}

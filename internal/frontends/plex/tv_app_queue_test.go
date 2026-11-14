@@ -10,20 +10,13 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// The Plex smart-TV app (Plex for LG and Plex for VIDAA 5.94) caches an
-// item's playback settings from the first Media list it sees and fails with
-// "Unable to find setting item: MediaVersion" when a later response lists
-// more versions, before it ever asks for a decision (#89, #339, #375). Its
-// episode play flow crosses a season list, the detail page, a checkFiles
-// pre-play, a Part-less play queue over the following episodes and the
-// decision. Every one of them must show the title as the same single Media,
-// whatever versions discovery has found, and the queue must read like PMS's:
-// its selection attributes name the selected row and an excluded Part
-// leaves Media@partCount behind.
+// All clients see the configured slots across season lists, detail, preplay,
+// Part-less queues and decisions. Discovery changes labels, never the menu
+// count or identities. Excluding Parts still leaves PMS's partCount.
 func TestTVAppPlayQueueContract(t *testing.T) {
-	for _, product := range []string{"Plex for LG", "Plex for VIDAA"} {
+	for _, product := range []string{"Plex for LG", "Plex for VIDAA", "Plex for Samsung", "Plex Web", "Plex for Android (TV)"} {
 		t.Run(product, func(t *testing.T) {
-			f, pb := newVariantPlaybackFixture(t)
+			f, pb, _ := configuredVariantFixture(t)
 			cat := f.srv.catalog().(*fakeCatalog)
 			for _, x := range []core.Title{breakingBad, bbS1, bbE1, bbE2} {
 				cat.titles[x.Key] = x
@@ -80,8 +73,8 @@ func TestTVAppPlayQueueContract(t *testing.T) {
 					if r.RatingKey != key.String() {
 						continue
 					}
-					if len(r.Media) != 1 || int64(r.Media[0].ID) != int64(key) {
-						t.Fatalf("%s: %s media %+v, want one Auto Media", stage, key, r.Media)
+					if len(r.Media) != 3 || int64(r.Media[0].ID) != int64(key) {
+						t.Fatalf("%s: %s media %+v, want the configured menu with Auto first", stage, key, r.Media)
 					}
 					if parts && (len(r.Media[0].Part) != 1 || int64(r.Media[0].Part[0].ID) != int64(key)) {
 						t.Fatalf("%s: part %+v", stage, r.Media[0].Part)

@@ -131,6 +131,12 @@ func (s *Server) addProbedStreamFeatures(ctx context.Context, key frontend.Ratin
 	if len(m.Media) > 0 && len(m.Media[0].Part) > 0 {
 		partID = m.Media[0].Part[0].ID
 	}
+	for _, media := range m.Media {
+		if media.Selected != nil && *media.Selected && len(media.Part) > 0 {
+			partID = media.Part[0].ID
+			break
+		}
+	}
 	for i, c := range info.Chapters {
 		if c.Start < 0 || c.End <= c.Start || c.End > info.Duration {
 			continue

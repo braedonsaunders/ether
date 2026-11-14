@@ -270,7 +270,7 @@ func (p *playIdentities) releases(k playIdentityKey, now time.Time) ([]string, b
 	}
 	ids := make([]string, len(e.variants))
 	for i, v := range e.variants {
-		ids[i] = v.Release.ID
+		ids[i] = versionIdentity(v)
 	}
 	return ids, true
 }

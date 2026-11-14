@@ -786,7 +786,7 @@ func (m *Manager) takeWarmResolution(ctx context.Context, id identity, profile c
 	if m.warm[id] != e {
 		return nil
 	}
-	if prefer != "" && (e.res == nil || e.res.Release.ID != prefer) {
+	if prefer != "" && (e.res == nil || !e.res.MatchesVersion(prefer)) {
 		return nil // keep it: a plain Prepare may still use it
 	}
 	if !warmAcceptable(e, profile, caps, originalLanguage) || (e.res != nil && m.releaseBlocked(ctx, e.res.Release.ID)) {
