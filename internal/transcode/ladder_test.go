@@ -169,6 +169,11 @@ func TestLadderSessionLazyRungStart(t *testing.T) {
 	if low.ID == "" || low.Height != 720 || low.Bandwidth <= 0 || low.Codecs == "" {
 		t.Fatalf("720 rung = %+v", low)
 	}
+	// Metadata is lazy; request the first segment before testing cached
+	// older media after a later switch.
+	if r := get(t, s, 0); r.Code != 200 {
+		t.Fatalf("base segment 0: %d", r.Code)
+	}
 	// Primary only until a lower rung is requested.
 	if r := get(t, s, 3); r.Code != 200 {
 		t.Fatalf("base segment 3: %d", r.Code)
@@ -189,9 +194,7 @@ func TestLadderSessionLazyRungStart(t *testing.T) {
 	if rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "segment 10") {
 		t.Fatalf("rung segment 10: %d %q", rec.Code, rec.Body.String())
 	}
-	if !primaryProc.wasKilled() {
-		t.Error("primary encoder not stopped when the rung took over")
-	}
+	waitFor(t, "previous rung stop after handoff", primaryProc.wasKilled)
 	last := fr.lastStart()
 	mustContain(t, last, "-start_number 10", "scale_vt=w=1280:h=720")
 	mustNotContain(t, last, "-c:v copy")

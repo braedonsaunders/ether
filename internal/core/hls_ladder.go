@@ -22,8 +22,9 @@ type HLSRung struct {
 }
 
 // HLSLadderSession is an HLSSession that can serve a multi-rung ABR
-// ladder. Only the primary rung's encoder runs until a client requests a
-// segment on another rung; at most one rung encodes at a time.
+// ladder. Encoding begins when a client requests a rendition. A switch
+// retains the previous encoder only until its replacement publishes the
+// requested segment; no unused rung has a persistent encoder.
 type HLSLadderSession interface {
 	HLSSession
 	// Rungs lists the ladder, highest first; Rungs()[0] is "base".

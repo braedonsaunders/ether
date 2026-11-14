@@ -1031,7 +1031,12 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		s.speculative = true
 	}
 	s.mu.Lock()
-	err := s.startRunForLocked(startSeg, false, "session start")
+	var err error
+	// A ladder has no selected rendition until the first media/init GET.
+	// Avoid encoding an expensive base only to discard it at that GET.
+	if len(rungs) <= 1 || len(warmAt) > 0 {
+		err = s.startRunForLocked(startSeg, false, "session start")
+	}
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err
