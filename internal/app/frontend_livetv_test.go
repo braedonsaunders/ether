@@ -89,6 +89,25 @@ func TestFrontendLiveTVUsesViewerPolicy(t *testing.T) {
 	if rows, err := facade.Guide(ctx, viewer, q); err != nil || len(rows) != 0 {
 		t.Fatal(rows, err)
 	}
+	paged := frontend.LiveGuidePageQuery{LiveGuideQuery: q}
+	paged.Limit = 1
+	first, err := facade.GuidePage(ctx, owner, paged)
+	if err != nil || len(first.Items) != 1 || !first.More || first.Snapshot == "" {
+		t.Fatal("missing guide continuation", first, err)
+	}
+	paged.Offset, paged.Snapshot = 1, first.Snapshot
+	second, err := facade.GuidePage(ctx, owner, paged)
+	if err != nil || len(second.Items) != 1 || second.Items[0].ID == first.Items[0].ID {
+		t.Fatal("guide page repeated", second, err)
+	}
+	paged.Snapshot = "changed"
+	if _, err := facade.GuidePage(ctx, owner, paged); !errors.Is(err, frontend.ErrLiveGuideStale) {
+		t.Fatal("changed guide snapshot accepted", err)
+	}
+	paged.Snapshot, paged.Offset = "", 0
+	if page, err := facade.GuidePage(ctx, viewer, paged); err != nil || len(page.Items) != 0 || page.More {
+		t.Fatal("restricted guide page leaked", page, err)
+	}
 	q.Until = q.From.Add(8 * 24 * time.Hour)
 	if _, err := facade.Guide(ctx, owner, q); err == nil {
 		t.Fatal("unbounded window")

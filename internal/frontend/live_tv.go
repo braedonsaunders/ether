@@ -35,6 +35,25 @@ type LiveGuideQuery struct {
 	Device      core.Device
 }
 
+// LiveGuidePageQuery selects a page of one immutable guide window. Snapshot
+// binds later pages to the same authorized source order; empty starts a visit.
+type LiveGuidePageQuery struct {
+	LiveGuideQuery
+	Offset   int
+	Snapshot string
+}
+
+type LiveGuidePage struct {
+	Items    []LiveProgramme
+	Snapshot string
+	More     bool
+}
+
+// LiveGuidePager keeps metadata enrichment bounded to the requested page.
+type LiveGuidePager interface {
+	GuidePage(context.Context, *Viewer, LiveGuidePageQuery) (LiveGuidePage, error)
+}
+
 // LiveTVItem is the frontend boundary representation of a scheduled programme's item metadata.
 type LiveTVItem struct {
 	Key          RatingKey

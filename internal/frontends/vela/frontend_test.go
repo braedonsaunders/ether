@@ -40,6 +40,8 @@ func (f *descriptiveFake) DescriptiveSearch(context.Context, *frontend.Viewer, f
 
 func TestVelaProtocolInvariants(t *testing.T) {
 	t.Run("pairing lineage", checkPairingLineage)
+	t.Run("live pages", checkLivePages)
+	t.Run("fresh home visit", checkFreshHomeVisit)
 	t.Run("identity retry budget", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		fail(w, &frontend.IdentityRateLimitError{RetryAfter: 125*time.Second + time.Millisecond})

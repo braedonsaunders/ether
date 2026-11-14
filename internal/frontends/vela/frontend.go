@@ -98,7 +98,7 @@ func fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, frontend.ErrInteractionReceipt):
 		problem(w, 400, "request", "invalid_receipt")
-	case errors.Is(err, frontend.ErrRowViewStale):
+	case errors.Is(err, frontend.ErrRowViewStale), errors.Is(err, frontend.ErrLiveGuideStale):
 		problem(w, 409, "conflict", "cursor_expired")
 	case errors.Is(err, frontend.ErrTranscodeCapacity), errors.Is(err, frontend.ErrStreamLimit), errors.Is(err, frontend.ErrSessionBusy):
 		var delay time.Duration
@@ -386,11 +386,12 @@ func (i *instance) capabilities() object {
 	if source, ok := i.host.Experience.(frontend.DescriptiveSearcher); ok {
 		descriptive = source.DescriptiveSearchAvailable()
 	}
+	_, live := i.host.LiveTV.(frontend.LiveGuidePager)
 	auth := frontend.AuthenticationFeatures{}
 	if source, ok := i.host.Identity.(frontend.AuthenticationFeatureSource); ok {
 		auth = source.AuthenticationFeatures()
 	}
-	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(i.host.LiveTV != nil), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
+	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(live), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
 }
 func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 	var b struct {

@@ -2,6 +2,7 @@ package vela
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"net/http"
@@ -102,6 +103,16 @@ func (i *instance) titles(r *http.Request, v *frontend.Viewer, token string, ts 
 	return out, nil
 }
 func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]object, bool, error) {
+	rows, more, err := i.homeVisit(r, v, token, false)
+	if errors.Is(err, frontend.ErrRowViewStale) && r.PathValue("id") == "" && r.URL.Query().Get("cursor") == "" {
+		// A first page starts a visit; stale cached manifests are a server
+		// assembly concern. Refresh once, retaining strict old-cursor rejection.
+		return i.homeVisit(r, v, token, true)
+	}
+	return rows, more, err
+}
+
+func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, refresh bool) ([]object, bool, error) {
 	placement := frontend.Placement(r.URL.Query().Get("placement"))
 	if placement == "" {
 		placement = frontend.PlacementHome
@@ -144,7 +155,7 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 		row.Style = meta.Layout.Style
 		rows = append(rows, row)
 	} else if hasViews {
-		vv, e := views.ListRowViews(r.Context(), frontend.RowViewRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", Placement: placement, Item: item})
+		vv, e := views.ListRowViews(r.Context(), frontend.RowViewRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", Placement: placement, Item: item, Refresh: refresh})
 		if e != nil {
 			return nil, false, e
 		}
