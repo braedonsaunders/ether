@@ -563,12 +563,14 @@ export function ReleaseSearch({ onPinsChanged }: { onPinsChanged?: () => void })
                         <span className="tabular-nums">{r.score.toFixed(0)}</span>
                         {(r.customFormats ?? []).length ? (
                           <span className="mt-1 block text-xs text-fg-muted">
-                            {(r.customFormats ?? []).map((f) =>
-                              t("{score} {format}", {
-                                score: f.score > 0 ? `+${f.score}` : String(f.score),
-                                format: f.name,
-                              }),
-                            ).join(" · ")}
+                            {(r.customFormats ?? [])
+                              .map((f) =>
+                                t("{score} {format}", {
+                                  score: f.score > 0 ? `+${f.score}` : String(f.score),
+                                  format: f.name,
+                                }),
+                              )
+                              .join(" · ")}
                           </span>
                         ) : null}
                       </span>

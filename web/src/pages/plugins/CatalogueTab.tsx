@@ -473,17 +473,20 @@ export function CatalogueTab({
 
             {preview ? (
               <>
-              <RuntimeLimitsCard limits={preview.runtimeLimits} requested={preview.manifest.ether?.runtime?.limits} />
-              <PermissionSheet
-                permissions={preview.permissions}
-                verified={preview.verified}
-                needsViewers={preview.needsViewers}
-                needsFolders={preview.needsFolders}
-                viewers={viewers}
-                onChangeViewers={setViewers}
-                folders={folders}
-                onChangeFolders={setFolders}
-              />
+                <RuntimeLimitsCard
+                  limits={preview.runtimeLimits}
+                  requested={preview.manifest.ether?.runtime?.limits}
+                />
+                <PermissionSheet
+                  permissions={preview.permissions}
+                  verified={preview.verified}
+                  needsViewers={preview.needsViewers}
+                  needsFolders={preview.needsFolders}
+                  viewers={viewers}
+                  onChangeViewers={setViewers}
+                  folders={folders}
+                  onChangeFolders={setFolders}
+                />
               </>
             ) : null}
 

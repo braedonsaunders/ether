@@ -760,7 +760,10 @@ function LiveWorkspace({
                   )
                 : t("The saved draft becomes a real plugin on this server.")}
             </p>
-            <RuntimeLimitsCard limits={installing.runtimeLimits} requested={installing.manifest.ether?.runtime?.limits} />
+            <RuntimeLimitsCard
+              limits={installing.runtimeLimits}
+              requested={installing.manifest.ether?.runtime?.limits}
+            />
             <PermissionSheet
               permissions={installing.permissions}
               verified={installing.verified}

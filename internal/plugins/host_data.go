@@ -299,7 +299,6 @@ func CallDataHost(ctx context.Context, h Host, name string, raw json.RawMessage)
 		return nil, err
 	}
 	var value any
-	err = nil
 	if name == "http.fetchToCache" {
 		var req struct {
 			Method     string            `json:"method"`

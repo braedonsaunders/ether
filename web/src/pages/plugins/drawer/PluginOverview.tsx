@@ -61,7 +61,9 @@ export function PluginOverview({
         <ProblemCard health={health} onRetry={onRetry} onActivity={onActivity} />
       ) : null}
       <LiveNow detail={detail} calls={calls} onClose={onClose} onFresh={onFresh} />
-      {detail.manifest.ether?.runtime?.kind && detail.manifest.ether.runtime.kind !== "data" ? <ActionJobs id={detail.id} /> : null}
+      {detail.manifest.ether?.runtime?.kind && detail.manifest.ether.runtime.kind !== "data" ? (
+        <ActionJobs id={detail.id} />
+      ) : null}
       <RuntimeLimitsCard
         limits={detail.runtimeLimits}
         requested={detail.manifest.ether?.runtime?.limits}
