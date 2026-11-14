@@ -35,3 +35,12 @@ Hosted SDK imports must be bundled into the entry artifact before packaging;
 bare imports do not resolve inside the hosted virtual filesystem. Remote and
 hosted APIs differ: folder/secret services are hosted only. Test paid accounts
 through the owner's connection test after offline conformance.
+
+Agents can read `/ether/plugins/reference/llms.txt` for the entry guide and topic
+index, or `llms-full.txt` for every authored chapter and generated declaration.
+The Reference header's “Copy for your AI assistant” button fetches the full text
+only when clicked. Both files are static Vite public assets, included in the
+embedded console build; no server index or background work is involved.
+`go generate ./internal/plugins/devreference` updates all three artifacts. The
+same `TestReferenceMatchesContract` CI gate checks both text files for drift,
+including changes to authored guides and `sdk/AGENTS.md`.
