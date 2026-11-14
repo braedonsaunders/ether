@@ -25,8 +25,12 @@ type HLSRamp struct {
 }
 
 type HLSRequest struct {
-	Ramp   HLSRamp    `json:",omitzero"`
-	Resume *HLSResume `json:",omitempty"`
+	// LazyStart defers the first encoder until the client selects a rendition.
+	LazyStart bool
+	// Continuous disables ramps and governor changes that introduce discontinuities.
+	Continuous bool
+	Ramp       HLSRamp    `json:",omitzero"`
+	Resume     *HLSResume `json:",omitempty"`
 	// RecoveryStart is trusted composition only; nil preserves legacy behavior.
 	RecoveryStart *RecoveryStart `json:",omitempty"`
 

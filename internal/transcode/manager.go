@@ -849,6 +849,9 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		// the playlist clock), or with no later keyframe the copy published
 		// nothing and the playlist's tail failed. An unindexed copy keeps one
 		// copy plan from its first segment instead, like fMP4 and Matroska.
+		if req.Continuous {
+			adapt.FastStart, adapt.Governor = false, false
+		}
 		fastStart := !req.LiveInput && adapt.FastStart && v != nil && (!d.VideoCopy || (d.Container == ContainerMPEGTS && len(req.Info.Keyframes) > 0))
 		plan = buildTimeline(span, segDur, timelineOptions{
 			steadyMode:      steadyMode,
@@ -1031,7 +1034,10 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		s.speculative = true
 	}
 	s.mu.Lock()
-	err := s.startRunForLocked(startSeg, false, "session start")
+	var err error
+	if !req.LazyStart {
+		err = s.startRunForLocked(startSeg, false, "session start")
+	}
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err

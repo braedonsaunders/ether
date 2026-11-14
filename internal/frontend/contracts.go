@@ -711,6 +711,10 @@ const (
 // StreamRequest describes output, not an upstream URL or credential. The
 // broker owns the input, decision and stream grant.
 type StreamRequest struct {
+	// LazyStart leaves the encoder idle until a rendition is requested.
+	LazyStart bool
+	// Continuous uses one uniform segment clock, without adaptive discontinuities.
+	Continuous      bool
 	Format          StreamFormat
 	Position        time.Duration
 	SegmentDuration time.Duration
