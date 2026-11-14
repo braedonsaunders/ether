@@ -37,7 +37,7 @@ func TestParseConnLimit(t *testing.T) {
 }
 
 func TestLimitCeilingHeadroom(t *testing.T) {
-	for stated, want := range map[int]int{1: 1, 2: 1, 8: 7, 10: 9, 20: 18, 50: 45, 100: 90} {
+	for stated, want := range map[int]int{1: 1, 2: 1, 8: 7, 10: 9, 20: 19, 50: 49, 100: 99} {
 		if got := limitCeiling(stated); got != want {
 			t.Errorf("limitCeiling(%d) = %d, want %d", stated, got, want)
 		}
@@ -179,9 +179,12 @@ func TestTeardownGraceRetriesRefusal(t *testing.T) {
 		}
 	})
 	t.Run("without grace", func(t *testing.T) {
-		st, _ := run(t, time.Nanosecond)
-		if st.TeardownRefusals != 0 || st.LimitRefusals == 0 || st.Errors == 0 {
-			t.Fatalf("expected the refusal to count without the grace: %+v", st)
+		st, err := run(t, time.Nanosecond)
+		if err != nil {
+			t.Fatalf("capacity retry without teardown grace failed: %v", err)
+		}
+		if st.TeardownRefusals != 0 || st.LimitRefusals == 0 || st.Errors != 0 || st.State != StateOK {
+			t.Fatalf("expected capacity accounting without provider failure: %+v", st)
 		}
 	})
 }

@@ -338,6 +338,13 @@ func (p *pool) dialNew(ctx context.Context, probe bool) (*Conn, error) {
 		p.mu.Unlock()
 		return nil, ErrPoolClosed
 	}
+	// Slots acquired before a concurrent refusal may exceed the newly learned
+	// size. Count pending handshakes under the same lock as the ceiling so
+	// those old admissions cannot start another over-limit connection.
+	if p.live >= p.effectiveLocked() {
+		p.mu.Unlock()
+		return nil, errAtLimit
+	}
 	p.live++
 	p.limit.dialing++
 	p.mu.Unlock()

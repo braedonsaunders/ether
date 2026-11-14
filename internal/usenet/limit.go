@@ -13,8 +13,8 @@ import (
 // (400/502 greeting, or 481/482 naming connections) caps the pool:
 //
 //   - When the server states its limit N ("connection limit (N)", "max N
-//     connections"), the pool never runs above N minus ~10% headroom (at
-//     least one slot), leaving room for sockets the server is still tearing
+//     connections"), the pool never runs above N minus one connection,
+//     leaving room for sockets the server is still tearing
 //     down. That ceiling only ever goes down for the life of the pool.
 //   - When no limit is stated, the pool is capped at what the server
 //     was carrying when it refused, and widens by one connection per widen
@@ -141,7 +141,7 @@ func statedConnLimit(err error) int {
 
 // limitCeiling is the most connections Ether runs against a stated limit.
 func limitCeiling(stated int) int {
-	return max(1, stated-max(1, stated/10))
+	return max(1, stated-1)
 }
 
 // effectiveLocked is the connection count the semaphore runs at: the target,
@@ -209,8 +209,10 @@ func (p *pool) teardownLocked(now time.Time) bool {
 func (p *pool) refused(err error, live int) bool {
 	t := &p.o.limits
 	now := time.Now()
+	stated := statedConnLimit(err)
 	p.mu.Lock()
-	teardown := p.teardownLocked(now)
+	// An explicit ceiling remains authoritative during local socket teardown.
+	teardown := stated == 0 && p.teardownLocked(now)
 	if teardown {
 		p.limit.dialAfter = later(p.limit.dialAfter, now.Add(limitJitter(t.refusalPause, t.refusalPause*2)))
 	}
@@ -221,7 +223,6 @@ func (p *pool) refused(err error, live int) bool {
 		return true
 	}
 	p.limitRefusals.Add(1)
-	stated := statedConnLimit(err)
 	p.mu.Lock()
 	if stated > 0 {
 		c := limitCeiling(stated)
@@ -255,7 +256,10 @@ func (p *pool) refused(err error, live int) bool {
 		p.log.Info("usenet: server allows fewer connections than configured; adapting",
 			"configured", configured, "using", n, "server_limit", stated)
 	}
-	return live > 0
+	// A capacity response proves the account is full even when every usable
+	// socket is still completing its handshake. Scheduling those completions
+	// must not turn the same response into a provider/credential failure.
+	return live > 0 || errors.Is(err, ErrConnectionLimit) || stated > 0
 }
 
 // widenLocked steps an unknown-limit cap up by one after a success, at most
