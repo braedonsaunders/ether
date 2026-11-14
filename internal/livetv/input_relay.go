@@ -199,7 +199,7 @@ func (s *Service) grantInputFor(ss *session, src StreamSource, headers http.Head
 	if reserve == 0 {
 		lead = 0
 	}
-	ctx, cancel := context.WithCancel(s.ctx)
+	ctx, cancel := context.WithCancel(s.serviceContext())
 	histSrc := src
 	if ss.inputSource.ID != "" {
 		histSrc = ss.inputSource
@@ -287,7 +287,7 @@ func (s *Service) relayInput(ss *session) (string, error) {
 
 func (s *Service) startRelayLocked() error {
 	r := &s.inputRelay
-	if s.ctx.Err() != nil {
+	if s.serviceContext().Err() != nil {
 		return core.ErrNotAvailable
 	}
 	if r.host != "" {
@@ -309,7 +309,7 @@ func (s *Service) startRelayLocked() error {
 	r.grants, r.bySess = map[[sha256.Size]byte]*inputGrant{}, map[*session]*inputGrant{}
 	go srv.Serve(ln)
 	go func() {
-		<-s.ctx.Done()
+		<-s.serviceContext().Done()
 		srv.Close()
 	}()
 	return nil

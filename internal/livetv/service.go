@@ -114,6 +114,7 @@ type Service struct {
 	coverageAt       time.Time
 	coverageRev      int64
 	nextSubscription int64 // guarded by mu
+	ctxMu            sync.RWMutex
 	ctx              context.Context
 	cancel           context.CancelFunc
 	wg               sync.WaitGroup
@@ -162,6 +163,11 @@ func New(o Options) (*Service, error) {
 		kinds = NewKindRegistry()
 	}
 	s := &Service{breakObserved: make(chan breakObservation, 64), observedBreaks: map[core.RatingKey]breakObservation{}, graphicsWake: make(chan struct{}, 1), o: o, kinds: kinds, sessions: map[string]*session{}, ctx: ctx, cancel: cancel, lineupUnix: o.Now().Unix()}
+	// Identity and wake channels stay stable across worker restarts. History
+	// loading and background work remain gated on channel existence.
+	s.history.s = s
+	s.history.wake = make(chan struct{}, 1)
+	s.history.pg = store.DialectOf(o.DB) == store.Postgres
 	s.readinessWake = make(chan struct{}, 1)
 	s.readiness = map[string]channelReadiness{}
 	s.activityWake = make(chan struct{}, 1)
@@ -249,7 +255,14 @@ func (s *Service) ReconcileEnabled() {
 		s.running = false
 		return
 	}
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+	// The first activation keeps the context created by New: a request may
+	// already have attached a session to it. Only a drained lifetime needs a
+	// replacement context.
+	s.ctxMu.Lock()
+	if s.ctx.Err() != nil {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+	}
+	s.ctxMu.Unlock()
 	s.broadcasts.mu.Lock()
 	s.broadcasts.closed = false
 	s.broadcasts.mu.Unlock()
@@ -420,7 +433,7 @@ func (s *Service) maintain() {
 		if !s.maintainActive() {
 			wasio = false
 			select {
-			case <-s.ctx.Done():
+			case <-s.serviceContext().Done():
 				return
 			case <-s.maintainWake:
 				continue
@@ -450,7 +463,7 @@ func (s *Service) maintain() {
 		}
 		timer.Reset(15 * time.Second)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			return
 		case <-s.graphicsWake:
 			if !timer.Stop() {
@@ -477,7 +490,7 @@ func (s *Service) warmProgrammes() {
 	if len(active) == 0 {
 		return
 	}
-	cs, err := s.virtualChannels(s.ctx)
+	cs, err := s.virtualChannels(s.serviceContext())
 	if err != nil {
 		return
 	}
@@ -522,7 +535,7 @@ func (s *Service) warmProgrammes() {
 			if !s.isActivelyWatched(c.ID) {
 				break
 			}
-			ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
+			ctx, cancel := context.WithTimeout(s.serviceContext(), 15*time.Second)
 			err := s.o.Warm(ctx, p.Item.Key, offset)
 			cancel()
 			if err == nil {
@@ -2605,4 +2618,13 @@ func (s *Service) hasBroadcastOutput(channel string) bool {
 		}
 	}
 	return false
+}
+
+// serviceContext snapshots the current worker lifetime. Requests can read it
+// while the lifetime controller starts or restarts workers.
+func (s *Service) serviceContext() context.Context {
+	s.ctxMu.RLock()
+	ctx := s.ctx
+	s.ctxMu.RUnlock()
+	return ctx
 }

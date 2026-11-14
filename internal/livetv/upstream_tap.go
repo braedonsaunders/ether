@@ -890,7 +890,7 @@ func (c openContext) Deadline() (time.Time, bool) { return c.deadline, true }
 // and the open is abandoned if it ends first.
 func (s *Service) openTap(t *upstreamTap, g *inputGrant, raw string, hdr http.Header, opener context.Context) {
 	started := time.Now()
-	ctx, cancel := context.WithCancel(s.ctx)
+	ctx, cancel := context.WithCancel(s.serviceContext())
 	t.mu.Lock()
 	t.ctx, t.cancel = ctx, cancel
 	t.mu.Unlock()

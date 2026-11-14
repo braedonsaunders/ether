@@ -75,9 +75,9 @@ func (s *Service) hasSweepableIPTV(ctx context.Context) bool {
 func (s *Service) healthSweepLoop() {
 	defer s.wg.Done()
 	for {
-		if !s.hasSweepableIPTV(s.ctx) {
+		if !s.hasSweepableIPTV(s.serviceContext()) {
 			select {
-			case <-s.ctx.Done():
+			case <-s.serviceContext().Done():
 				return
 			case <-s.sweepWake:
 				continue
@@ -95,7 +95,7 @@ func (s *Service) healthSweepLoop() {
 		}
 		timer := s.newTimer(time.Duration(minutes) * time.Minute)
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			timer.Stop()
 			return
 		case <-s.sweepWake:
@@ -107,7 +107,7 @@ func (s *Service) healthSweepLoop() {
 			continue
 		}
 		if s.transcoder() != nil {
-			s.sweepChannels(s.ctx)
+			s.sweepChannels(s.serviceContext())
 		}
 	}
 }

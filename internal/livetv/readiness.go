@@ -19,7 +19,7 @@ type channelReadiness struct {
 // budgeted resolver check, serialized here and paced before every real check.
 func (s *Service) readinessLoop() {
 	defer s.wg.Done()
-	rows, err := s.o.DB.QueryContext(s.ctx, `SELECT channel_id,active_until FROM livetv_readiness WHERE active_until>?`, s.o.Now().UnixMilli())
+	rows, err := s.o.DB.QueryContext(s.serviceContext(), `SELECT channel_id,active_until FROM livetv_readiness WHERE active_until>?`, s.o.Now().UnixMilli())
 	if err == nil {
 		for rows.Next() {
 			var id string
@@ -51,7 +51,7 @@ func (s *Service) readinessLoop() {
 			tick = timer.C
 		}
 		select {
-		case <-s.ctx.Done():
+		case <-s.serviceContext().Done():
 			if timer != nil {
 				timer.Stop()
 			}
@@ -81,7 +81,7 @@ func (s *Service) readinessLoop() {
 			if !s.readinessWatched(id) {
 				continue
 			}
-			c, err := s.Channel(s.ctx, id)
+			c, err := s.Channel(s.serviceContext(), id)
 			if err != nil || c.Kind != "virtual" {
 				continue
 			}
@@ -90,7 +90,7 @@ func (s *Service) readinessLoop() {
 				missing := s.virtualGuide.entries[c.ID] == nil
 				s.virtualGuide.mu.RUnlock()
 				if missing {
-					if _, err := s.withVirtualGuide(s.ctx, []Channel{c}); err != nil {
+					if _, err := s.withVirtualGuide(s.serviceContext(), []Channel{c}); err != nil {
 						continue
 					}
 				}
@@ -99,7 +99,7 @@ func (s *Service) readinessLoop() {
 			s.mu.Lock()
 			r := s.readiness[id]
 			s.mu.Unlock()
-			_, _ = s.o.DB.ExecContext(s.ctx, `INSERT INTO livetv_readiness(channel_id,active_until) VALUES(?,?) ON CONFLICT(channel_id) DO UPDATE SET active_until=excluded.active_until`, id, r.until.UnixMilli())
+			_, _ = s.o.DB.ExecContext(s.serviceContext(), `INSERT INTO livetv_readiness(channel_id,active_until) VALUES(?,?) ON CONFLICT(channel_id) DO UPDATE SET active_until=excluded.active_until`, id, r.until.UnixMilli())
 			ps := s.readinessSchedule(c, now, now.Add(3*time.Hour))
 			if c.Personal != nil {
 				s.mu.Lock()
@@ -109,7 +109,7 @@ func (s *Service) readinessLoop() {
 				}
 				s.mu.Unlock()
 				if len(viewers) == 0 {
-					rows, err := s.o.DB.QueryContext(s.ctx, `SELECT DISTINCT viewer_id FROM livetv_personal WHERE channel_id=? LIMIT 64`, c.ID)
+					rows, err := s.o.DB.QueryContext(s.serviceContext(), `SELECT DISTINCT viewer_id FROM livetv_personal WHERE channel_id=? LIMIT 64`, c.ID)
 					if err == nil {
 						for rows.Next() {
 							var uid int64
@@ -121,7 +121,7 @@ func (s *Service) readinessLoop() {
 					}
 				}
 				for _, u := range viewers {
-					personal, _ := s.personalProgrammesLimit(s.ctx, c, u, now, now.Add(3*time.Hour), 0)
+					personal, _ := s.personalProgrammesLimit(s.serviceContext(), c, u, now, now.Add(3*time.Hour), 0)
 					ps = append(ps, s.readyProgrammes(c, personal)...)
 				}
 			}
@@ -145,10 +145,10 @@ func (s *Service) readinessLoop() {
 					if !s.readinessWatched(id) {
 						break
 					}
-					s.checkReady(s.ctx, p.Item.Key)
+					s.checkReady(s.serviceContext(), p.Item.Key)
 				}
 				select {
-				case <-s.ctx.Done():
+				case <-s.serviceContext().Done():
 					return
 				case <-time.After(100 * time.Millisecond):
 				}
@@ -160,7 +160,7 @@ func (s *Service) readinessLoop() {
 				if !s.readinessWatched(id) {
 					break
 				}
-				s.checkReady(s.ctx, it.Key)
+				s.checkReady(s.serviceContext(), it.Key)
 			}
 			s.replaceUnready(c, ps)
 		}
@@ -279,14 +279,14 @@ func (s *Service) replaceUnready(c Channel, ps []Programme) {
 			// active viewer may cause a new provider lookup.
 			if (!known || !ok) && s.readinessWatched(c.ID) {
 				select {
-				case <-s.ctx.Done():
+				case <-s.serviceContext().Done():
 					return
 				case <-time.After(100 * time.Millisecond):
 				}
 				if !s.readinessWatched(c.ID) {
 					return
 				}
-				s.checkReady(s.ctx, it.Key)
+				s.checkReady(s.serviceContext(), it.Key)
 				s.mu.Lock()
 				ok = s.readyTitles[it.Key]
 				s.mu.Unlock()

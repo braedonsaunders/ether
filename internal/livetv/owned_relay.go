@@ -178,7 +178,7 @@ func (s *Service) newRelayProducer(ss *session, info core.MediaInfo, caps core.C
 func (s *Service) runRelay(ss *session, p *relayProducer) *ownedLease {
 	base := ss.ctx
 	if base == nil {
-		base = s.ctx
+		base = s.serviceContext()
 	}
 	runCtx, stop := context.WithCancel(base)
 	go p.tl.run(runCtx)
@@ -832,7 +832,7 @@ func (s *Service) segmentDamaged(data []byte) bool {
 	if ffmpeg == "" {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, 700*time.Millisecond)
+	ctx, cancel := context.WithTimeout(s.serviceContext(), 700*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-v", "error", "-threads", "1", "-f", "mpegts", "-i", "pipe:0", "-f", "null", "-")
 	cmd.Stdin = bytes.NewReader(data)
