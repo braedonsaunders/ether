@@ -35,3 +35,8 @@ Hosted SDK imports must be bundled into the entry artifact before packaging;
 bare imports do not resolve inside the hosted virtual filesystem. Remote and
 hosted APIs differ: folder/secret services are hosted only. Test paid accounts
 through the owner's connection test after offline conformance.
+
+Large data services added in v0.3.11 are generated from `host_data.go` and both
+SDK clients: `http.fetchToCache`, `cache.read`, `archive.list`, and `archive.open`.
+See `plugin-kinds.md` for the wire shapes, grant rules, ZIP safety bounds, and
+why a 10 MiB direct fetch can still exceed a 32 MiB guest's available heap.

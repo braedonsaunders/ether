@@ -92,6 +92,7 @@ func NewHostHandler(opts HostOptions) *HostHandler {
 		h.log = slog.Default()
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /ether/plugin-host/data/{service}", h.dataCall)
 	mux.HandleFunc("GET /ether/plugin-host/kv", h.kvList)
 	mux.HandleFunc("GET /ether/plugin-host/kv/{key...}", h.kvGet)
 	mux.HandleFunc("PUT /ether/plugin-host/kv/{key...}", h.kvPut)
@@ -557,4 +558,25 @@ func writeHostError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": map[string]any{"code": code, "message": message},
 	})
+}
+
+// dataCall exposes only bounded blob/archive services, authenticated like all
+// other plugin-host calls. HostAdapter performs the live grant checks.
+func (h *HostHandler) dataCall(w http.ResponseWriter, r *http.Request) {
+	var args json.RawMessage
+	if !h.decode(w, r, maxHostBodyBytes, &args) {
+		return
+	}
+	service, ok := h.host.(interface {
+		CallDataHost(context.Context, string, string, json.RawMessage) (json.RawMessage, error)
+	})
+	if !ok {
+		writeHostError(w, http.StatusServiceUnavailable, "unavailable", "Data services unavailable")
+		return
+	}
+	out, err := service.CallDataHost(r.Context(), pluginIDOf(r), r.PathValue("service"), args)
+	if !h.finishErr(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

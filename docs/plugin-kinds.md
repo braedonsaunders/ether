@@ -304,3 +304,67 @@ this declaration is present. The declaration also travels in frontend item
 details. The next upsert without `unavailable` clears it, even with the same
 etag. This is independent of the level's `playable` capability; clearing the
 reason does not grant playback to a nonplayable level.
+
+### Large downloads and ZIP members (v0.3.11)
+
+Hosted and remote clients can keep large data in the host's existing library
+blob cache, without copying the complete file into guest memory:
+
+```ts
+const cached = await ctx.ether.http.fetchToCache!({
+  url: "https://datasets.example/platform.zip",
+  libraryKey: "pk-community-example-library-games", // this plugin's own library
+  name: "platform.zip",
+});
+const members = await ctx.ether.archive!.list(cached.blob);
+const member = members.find(m => m.name === "games/example.json")!;
+const chunk = await ctx.ether.archive!.open(cached.blob, member.index, {
+  offset: 0, length: Math.min(member.size, 1048576),
+}); // Uint8Array; request another range for the next piece
+```
+
+`http.fetchToCache({url, headers?, libraryKey, name})` performs a GET, streams
+at most 256 MiB into the plugin's own library cache, and returns
+`{blob, size, crc32, md5, sha1, status}`. SHA-256 is the blob reference.
+Digests cover the stored response bytes in one pass. Compare the digest with
+trusted catalogue metadata before serving a verified download. Non-2xx responses,
+network failures, size overflow and quota failures return errors; they do not
+publish a truncated blob. Redirects recheck the live network grant and the
+existing SSRF policy. The existing content capability, network host declaration
+and library cache quota apply; no new permission is needed. The operation is
+synchronous and bounded by the current call's deadline; there is no background
+prefetch. Cache eviction still applies to returned refs.
+
+`cache.read(blob, {offset, length})` reads at most 1 MiB from a cached blob.
+`archive.list(blob)` returns `[{index, name, size}]`, reading the ZIP directory
+without loading all compressed bytes. `archive.open(blob, memberIndex,
+{offset, length})` returns at most 1 MiB from the **uncompressed** member.
+Offsets are nonnegative integers; lengths are 1..1048576. A read at EOF returns
+empty bytes and reads crossing EOF return the available suffix. Raw host calls
+return `{bodyBase64, size}`; SDK clients decode this into bytes. Every call opens
+only the calling plugin's cache namespace and closes the reader afterward.
+The Go `RemoteHostClient` provides `FetchToCache`, `CacheRead`, `ArchiveList` and
+`ArchiveOpen` through the optional `BlobHost` interface, with `DataRange` options.
+
+ZIP limits: 256 MiB compressed archive; 4096 members; 4 MiB central directory;
+512 KiB total member-name bytes (1024 bytes per name); 64 MiB per uncompressed
+member; 256 MiB total expanded size; 1000:1 maximum expansion per member.
+Store and Deflate are supported. Unsafe paths, special files, encryption,
+ZIP64 and split archives are rejected. Nothing is extracted to a filesystem.
+Deflate ranges inflate and discard up to the requested offset on each call;
+prefer large sequential chunks, and avoid repeatedly rescanning a large member.
+Range reads do not independently verify the full member CRC; use trusted digests
+when integrity matters. Local owner-granted paths are not archive inputs: first
+use a plugin-owned cached blob. Gzip files are not ZIPs and are unsupported here.
+An HTTP `Content-Encoding: gzip` response may be transparently decoded by the
+HTTP client; its digests then describe the decoded bytes. A `.gz` file is not
+automatically decompressed by this archive service.
+
+Direct `http.fetch` still limits the raw response to 10 MiB. Its JSON result
+allowance now includes encoding expansion (binary base64 or escaped text), so the
+4 MiB general host-result cap no longer blocks that documented limit. This is
+an I/O ceiling, not a guarantee of guest heap space: the default guest has 32 MiB
+and the hard ceiling is 64 MiB, with temporary JSON strings and parsed objects
+using additional memory. Use fetch-to-cache and ranged reads for large inputs;
+do not concatenate all chunks into one guest buffer. Other host results remain
+capped at 4 MiB.
