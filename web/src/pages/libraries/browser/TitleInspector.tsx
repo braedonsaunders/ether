@@ -116,12 +116,12 @@ export function TitleInspector({
         ) : undefined
       }
     >
-      {title && (isShow || isMovie) ? (
-        <div className="px-5 pt-4">
-          <WarmingControls titleKey={title.key} />
+      {watchlistAction || (title && (isShow || isMovie)) ? (
+        <div className="flex flex-wrap items-center gap-2 px-5 py-3">
+          {watchlistAction}
+          {title && (isShow || isMovie) ? <WarmingControls titleKey={title.key} /> : null}
         </div>
       ) : null}
-      {watchlistAction ? <div className="px-5 pt-4">{watchlistAction}</div> : null}
       {state.error ? (
         <ErrorPanel className="m-5" error={state.error} onRetry={() => void state.reload()} />
       ) : !title ? (
