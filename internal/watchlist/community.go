@@ -2,6 +2,7 @@ package watchlist
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -168,6 +169,39 @@ func (s *Service) syncCommunityFriends(ctx context.Context, us []core.User, only
 	s.notifyFriendsRSSChanged(ctx)
 	return errors.Join(errs...)
 }
+
+func (s *Service) preserveActiveFriendsRSSItems(ctx context.Context, tx *sql.Tx, userID int64, source string, titles []core.Title) ([]core.Title, error) {
+	have := make(map[core.RatingKey]bool, len(titles))
+	for _, t := range titles {
+		have[t.Key] = true
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT wi.title
+		FROM watchlist_items wi
+		JOIN watchlist_items rss ON rss.user_id = 0 AND rss.source = ? AND rss.item_key = wi.item_key
+		JOIN watchlist_rss_authors a ON a.item_key = wi.item_key AND a.friend_id = ?
+		WHERE wi.user_id = ? AND wi.source = ?`, sourcePlexFriendsRSS, strings.TrimPrefix(source, "plex-community:"), userID, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw string
+		var t core.Title
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &t); err != nil {
+			return nil, err
+		}
+		if t.Key != 0 && !have[t.Key] {
+			have[t.Key] = true
+			titles = append(titles, t)
+		}
+	}
+	return titles, rows.Err()
+}
+
 func (s *Service) communityTitles(ctx context.Context, token, id string) ([]core.Title, int, error) {
 	var out []core.Title
 	unmatched := 0
@@ -185,7 +219,8 @@ func (s *Service) communityTitles(ctx context.Context, token, id string) ([]core
 			if item.ID == "" {
 				return nil, 0, errors.New("Plex community item identity missing")
 			}
-			if item.Type != "movie" && item.Type != "show" {
+			itemType := strings.ToLower(strings.TrimSpace(item.Type))
+			if itemType != "movie" && itemType != "show" {
 				unmatched++
 				continue
 			}
@@ -193,7 +228,7 @@ func (s *Service) communityTitles(ctx context.Context, token, id string) ([]core
 			if strings.HasPrefix(item.ID, "plex://") || !strings.Contains(item.ID, "://") {
 				guid := item.ID
 				if !strings.HasPrefix(guid, "plex://") {
-					guid = "plex://" + item.Type + "/" + guid
+					guid = "plex://" + itemType + "/" + guid
 				}
 				if s.o.PlexLookup == nil {
 					return nil, 0, errors.New("Plex identity lookup unavailable")
@@ -203,13 +238,17 @@ func (s *Service) communityTitles(ctx context.Context, token, id string) ([]core
 				}
 				key, e := s.o.PlexLookup(ctx, guid)
 				if e != nil && !errors.Is(e, core.ErrNotFound) {
+					if strings.Contains(e.Error(), "ambiguous Plex identity") {
+						unmatched++
+						continue
+					}
 					return nil, 0, e
 				}
 				if e == nil {
 					title, err = s.o.Catalog.Get(ctx, key)
 				}
 			} else {
-				title, err = s.resolveRSSItem(ctx, rssItem{Guids: []string{item.ID}, Categories: []rssCategory{{Value: item.Type}}})
+				title, err = s.resolveRSSItem(ctx, rssItem{Guids: []string{item.ID}, Categories: []rssCategory{{Value: itemType}}})
 			}
 			if err != nil && !errors.Is(err, core.ErrNotFound) {
 				return nil, 0, err
