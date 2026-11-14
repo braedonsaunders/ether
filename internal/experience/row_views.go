@@ -439,6 +439,7 @@ func (s *RowViewService) ResolveRowView(ctx context.Context, req frontend.RowVie
 	if !s.o.ValidRow(ctx, u, req.Device, req.Protocol, snap) {
 		return page, ErrRowViewStale
 	}
+	page.RankedTop10 = snap.Row.RankedTop10 || snap.Row.Layout.RankedTop10
 	allowedKinds := map[frontend.RowEntryKind]bool{}
 	for _, kind := range req.Kinds {
 		allowedKinds[kind] = true

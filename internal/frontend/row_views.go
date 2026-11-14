@@ -33,6 +33,7 @@ type RowViewPageRequest struct {
 }
 
 type RowViewPage struct {
+	RankedTop10      bool
 	Entries          []RowEntry
 	ImpressionHandle string
 	Total            int
