@@ -63,7 +63,16 @@ func (d *directClients) init() {
 			g = &safefetch.Guard{}
 		}
 		mk := func() *http.Client {
-			return g.Client(&http.Client{Transport: streamingTransport(nil, egress.CapStremio), CheckRedirect: dropHeadersAcrossOrigins})
+			tr := streamingTransport(nil, egress.CapStremio)
+			// Xtream VOD shares these guarded stream pools with addon files.
+			tr.Proxy = func(req *http.Request) (*url.URL, error) {
+				cap := egress.CapStremio
+				if p, ok := req.Context().Value(directKey{}).(Payload); ok && p.StreamProvider != "" {
+					cap = egress.CapLiveTV
+				}
+				return egress.ProxyFunc(cap)(req)
+			}
+			return g.Client(&http.Client{Transport: tr, CheckRedirect: dropHeadersAcrossOrigins})
 		}
 		d.primary, d.hedge = mk(), mk()
 	})
@@ -92,7 +101,7 @@ func withDirect(ctx context.Context, p Payload) context.Context {
 // prepareDirect applies a direct payload's policy to a media request:
 // the trusted origin and, on the link's own origin, the addon's headers.
 func prepareDirect(req *http.Request, p Payload) *http.Request {
-	req = req.WithContext(safefetch.WithTrustedOriginFor(req.Context(), p.Origin, req.URL.String()))
+	req = req.WithContext(safefetch.WithTrustedOriginFor(withDirect(req.Context(), p), p.Origin, req.URL.String()))
 	if safefetch.SameOrigin(p.Link, req.URL.String()) {
 		for k, v := range p.Headers {
 			if k != "Range" && k != "Host" {

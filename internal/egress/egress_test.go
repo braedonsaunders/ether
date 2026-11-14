@@ -31,6 +31,12 @@ func TestRouteMatrix(t *testing.T) {
 	if hits != 1 {
 		t.Fatalf("indexer hits %d", hits)
 	}
+	if err := get(CapLiveTV, "http://provider.example/live"); err != nil {
+		t.Fatal(err)
+	}
+	if hits != 2 {
+		t.Fatalf("Live TV hits %d", hits)
+	}
 	before := hits
 	_ = get(CapDirect, "http://indexer.example/plex")
 	_ = get(CapMetadata, "http://indexer.example/meta")

@@ -44,6 +44,9 @@ const (
 	// plugin calls and plugin http.fetch. It follows the Stremio route
 	// decision, so a source proxy carries it with add-on traffic.
 	CapPlugins
+	// CapLiveTV is IPTV playlists, guide data and provider streams. It
+	// follows the Stremio source route, including Xtream movies and series.
+	CapLiveTV
 )
 
 // Policy is the live routing decision. Proxy is nil when there is nothing
@@ -189,7 +192,7 @@ func (p Policy) routes(cap Capability) bool {
 	switch cap {
 	case CapIndexers:
 		return p.Indexers
-	case CapStremio, CapPlugins:
+	case CapStremio, CapPlugins, CapLiveTV:
 		return p.Stremio
 	case CapDebrid:
 		return p.Debrid

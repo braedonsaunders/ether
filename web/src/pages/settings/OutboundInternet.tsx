@@ -246,7 +246,7 @@ export function OutboundInternet({ hidden = false }: { hidden?: boolean }) {
           onChange={(indexers) => patch({ indexers })}
         />
         <RouteSwitch
-          label={t("Stremio addons")}
+          label={t("Stremio addons, plugins and Live TV/IPTV")}
           checked={draft.stremio}
           onChange={(stremio) => patch({ stremio })}
         />

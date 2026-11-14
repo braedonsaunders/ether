@@ -164,7 +164,7 @@ func New(o Options) (*Service, error) {
 		o.Logger = slog.Default()
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = egress.Client(egress.CapDirect, 20*time.Second)
+		o.HTTPClient = egress.Client(egress.CapLiveTV, 20*time.Second)
 	}
 	o.HTTPClient = sourceHTTPClient(o.HTTPClient)
 	ctx, cancel := context.WithCancel(context.Background())
