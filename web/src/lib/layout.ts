@@ -537,6 +537,7 @@ function updatePage(
 /** Normalise a policy the way the server does (status for anchors, neutral values dropped). */
 function tidyPolicy(p: RowPolicy): RowPolicy {
   const out: RowPolicy = { row: p.row, status: p.status };
+  if (p.previewOnFocus !== undefined) out.previewOnFocus = p.previewOnFocus;
   if (p.slot) {
     out.slot = p.slot;
     if (out.status !== "off") out.status = "always";
