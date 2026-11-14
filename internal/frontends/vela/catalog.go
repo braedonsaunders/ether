@@ -84,7 +84,7 @@ func (i *instance) titles(r *http.Request, v *frontend.Viewer, token string, ts 
 				return nil, e
 			}
 			for _, item := range images {
-				for _, g := range item.Images {
+				for _, g := range titleArtwork(item.Item, item.Images) {
 					im := g.Image
 					art[item.Item] = append(art[item.Item], object{"id": hash(im.Path), "kind": im.Kind, "tag": im.Tag, "sizes": []object{imageSize(im, g.Secret)}, "blurHash": im.BlurHash, "thumbHash": im.ThumbHash})
 				}
@@ -102,6 +102,24 @@ func (i *instance) titles(r *http.Request, v *frontend.Viewer, token string, ts 
 	}
 	return out, nil
 }
+
+// Episode cards have one landscape image: their own still, or an explicitly
+// typed fallback. Do not leave inherited series art competing with a still.
+// Selection happens after batch signing, so every URL retains its item scope.
+func titleArtwork(key frontend.RatingKey, images []frontend.GrantedImage) []frontend.GrantedImage {
+	if key.Kind() != frontend.KindEpisode {
+		return images
+	}
+	for _, kind := range []string{frontend.ImageStill, frontend.ImageBackdrop, frontend.ImagePoster} {
+		for _, image := range images {
+			if image.Image.Kind == kind && image.Image.Path != "" && image.Secret != "" {
+				return []frontend.GrantedImage{image}
+			}
+		}
+	}
+	return nil
+}
+
 func (i *instance) home(r *http.Request, v *frontend.Viewer, token string, sources ...map[string]heroSource) ([]object, bool, error) {
 	rows, more, err := i.homeVisit(r, v, token, false, sources...)
 	if errors.Is(err, frontend.ErrRowViewStale) && r.PathValue("id") == "" && r.URL.Query().Get("cursor") == "" {

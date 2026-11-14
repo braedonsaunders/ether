@@ -19,3 +19,9 @@ The descriptor uses cached source metadata and never fetches image bytes while
 building a catalogue page. When source dimensions are unmeasured, both are zero
 and the URL includes `w=0`: the client can display it and learn natural dimensions
 from the image without guessing or injecting a thumbnail width.
+
+Episode title artwork contains the episode's own `kind:"still"` image when
+available. Otherwise it contains a `kind:"backdrop"` fallback, then a
+`kind:"poster"` fallback if no backdrop exists; the original kind is preserved.
+No artwork is returned if none is available. Episode pages use the same bounded
+batch signing and viewer/device-scoped capabilities as other title pages.
