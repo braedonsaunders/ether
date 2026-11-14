@@ -319,12 +319,13 @@ func browserPin(p Pin) Pin {
 
 // ConsoleRelease is one search result as Resolve would judge it.
 type ConsoleRelease struct {
-	Preferences   *releasepolicy.Result `json:"preferences,omitempty"`
-	Release       core.Release          `json:"release"`
-	Score         float64               `json:"score"`
-	FormatScore   int                   `json:"formatScore"`
-	CustomFormats []FormatMatch         `json:"customFormats,omitempty"`
-	Compatibility string                `json:"compatibility,omitempty"`
+	Preferences        *releasepolicy.Result `json:"preferences,omitempty"`
+	Release            core.Release          `json:"release"`
+	Score              float64               `json:"score"`
+	FormatScore        int                   `json:"formatScore"`
+	MinimumFormatScore *int                  `json:"minimumFormatScore,omitempty"`
+	CustomFormats      []FormatMatch         `json:"customFormats,omitempty"`
+	Compatibility      string                `json:"compatibility,omitempty"`
 	// Rejected and Reason are Resolve's verdict for this profile.
 	Rejected bool   `json:"rejected"`
 	Reason   string `json:"reason,omitempty"`
@@ -421,7 +422,7 @@ func (s *Service) SearchReleases(ctx context.Context, t *core.Title, opts Search
 		rel := results[i]
 		cr := ConsoleRelease{Preferences: ct.Preferences, Release: browserRelease(rel), Score: ct.Score, CustomFormats: ct.CustomFormats,
 			Compatibility: ct.CompatibilityReason, Rejected: ct.Rejected, Reason: ct.Reason,
-			Rank: rank[rel.ID], Winner: rel.ID == out.Winner && !ct.Rejected, Pinned: ct.Pinned, Route: ct.Route}
+			MinimumFormatScore: ct.MinimumFormatScore, Rank: rank[rel.ID], Winner: rel.ID == out.Winner && !ct.Rejected, Pinned: ct.Pinned, Route: ct.Route}
 		// Rejected releases are scored too, so the owner can compare.
 		pol := releasepolicy.Result{}
 		if ct.Preferences != nil {
@@ -722,17 +723,18 @@ func (s *Service) SeasonReleases(ctx context.Context, season *core.Title, episod
 				continue
 			}
 			cr := ConsoleRelease{
-				Preferences:   ct.Preferences,
-				Release:       browserRelease(rel),
-				Score:         ct.Score,
-				CustomFormats: ct.CustomFormats,
-				Compatibility: ct.CompatibilityReason,
-				Rejected:      ct.Rejected,
-				Reason:        ct.Reason,
-				Rank:          rank[rel.ID],
-				Winner:        rel.ID == epOut.Winner && !ct.Rejected,
-				Pinned:        ct.Pinned,
-				Route:         ct.Route,
+				Preferences:        ct.Preferences,
+				Release:            browserRelease(rel),
+				Score:              ct.Score,
+				CustomFormats:      ct.CustomFormats,
+				Compatibility:      ct.CompatibilityReason,
+				Rejected:           ct.Rejected,
+				Reason:             ct.Reason,
+				MinimumFormatScore: ct.MinimumFormatScore,
+				Rank:               rank[rel.ID],
+				Winner:             rel.ID == epOut.Winner && !ct.Rejected,
+				Pinned:             ct.Pinned,
+				Route:              ct.Route,
 			}
 			pol := releasepolicy.Result{}
 			if ct.Preferences != nil {

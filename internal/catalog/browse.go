@@ -621,7 +621,7 @@ func (c *Catalog) TitleInFilter(ctx context.Context, f core.Filter, key core.Rat
 	f.UpdatedAfter, f.UpdatedBefore, f.AddedAfter, f.AddedBefore = 0, 0, 0, 0
 	f.DigitalDiscovery = false
 	f.DigitalDateEvidence = false
-	where, args, err := c.browseWhere(f)
+	where, args, err := c.browseWhereMode(f, true)
 	if err != nil {
 		return false, err
 	}
@@ -633,6 +633,11 @@ func (c *Catalog) TitleInFilter(ctx context.Context, f core.Filter, key core.Rat
 }
 
 func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
+	return c.browseWhereMode(f, false)
+}
+
+// Membership evaluates saved predicates independently of presentation/release gates.
+func (c *Catalog) browseWhereMode(f core.Filter, membershipOnly bool) (string, []any, error) {
 	// Positive metadata flags retain their source meaning; absence is unknown.
 	if f.Anime {
 		f.Keywords = append(append([]string{}, f.Keywords...), "anime")
@@ -656,22 +661,24 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		conds = append(conds, "EXISTS (SELECT 1 FROM catalog_genres kg WHERE kg.key=t.key AND kg.genre='Kids')")
 	}
 	nowTS := c.now().Unix()
-	if cfg := c.config(); cfg.ShowUpcomingMovies && f.RuleVisibility == "" {
-		conds = append(conds, "(t.browsable=1 OR (t.type='movie' AND t.release_known=1 AND t.released_ts>? AND ((?<=0 AND ?<=0) OR (?>0 AND t.popularity>=?) OR (?>0 AND t.vote_count>=?))))", "t.adult=0")
-		args = append(args, nowTS, cfg.MinPopularity, cfg.MinVotes, cfg.MinPopularity, cfg.MinPopularity, cfg.MinVotes, cfg.MinVotes)
-	} else {
-		conds = append(conds, "t.browsable=1", "t.adult=0")
-	}
-	// queryTitles keeps released titles, plus explicitly enabled upcoming
-	// movies. Apply that same guard before counting and paging.
-	// The Postgres driver binds Go bools as 0/1 for the BIGINT flag
-	// columns; a bare `AND ?` would make Postgres infer boolean and reject
-	// the int. Compare the flag numerically with an int argument instead.
-	conds = append(conds, "t.release_known=1 AND (t.released_ts<=? OR (t.type='movie' AND ?<>0))")
-	args = append(args, nowTS, flagInt(c.config().ShowUpcomingMovies))
-	if gc, ga := browseGateConds(f, nowTS); len(gc) > 0 {
-		conds = append(conds, gc...)
-		args = append(args, ga...)
+	if !membershipOnly {
+		if cfg := c.config(); cfg.ShowUpcomingMovies && f.RuleVisibility == "" {
+			conds = append(conds, "(t.browsable=1 OR (t.type='movie' AND t.release_known=1 AND t.released_ts>? AND ((?<=0 AND ?<=0) OR (?>0 AND t.popularity>=?) OR (?>0 AND t.vote_count>=?))))", "t.adult=0")
+			args = append(args, nowTS, cfg.MinPopularity, cfg.MinVotes, cfg.MinPopularity, cfg.MinPopularity, cfg.MinVotes, cfg.MinVotes)
+		} else {
+			conds = append(conds, "t.browsable=1", "t.adult=0")
+		}
+		// queryTitles keeps released titles, plus explicitly enabled upcoming
+		// movies. Apply that same guard before counting and paging.
+		// The Postgres driver binds Go bools as 0/1 for the BIGINT flag
+		// columns; a bare `AND ?` would make Postgres infer boolean and reject
+		// the int. Compare the flag numerically with an int argument instead.
+		conds = append(conds, "t.release_known=1 AND (t.released_ts<=? OR (t.type='movie' AND ?<>0))")
+		args = append(args, nowTS, flagInt(c.config().ShowUpcomingMovies))
+		if gc, ga := browseGateConds(f, nowTS); len(gc) > 0 {
+			conds = append(conds, gc...)
+			args = append(args, ga...)
+		}
 	}
 	for _, hidden := range []struct {
 		kind string
@@ -730,7 +737,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 			conds = append(conds, "("+clause+")")
 			args = append(args, values...)
 		}
-	} else if !f.CatalogCandidates {
+	} else if !membershipOnly && !f.CatalogCandidates {
 		if policy := c.viewerFilter(f.CatalogViewerID, false); policy != nil {
 			clause, a := c.policySQLHidden(f.CatalogViewerID, policy)
 			conds = append(conds, clause)
@@ -745,7 +752,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		}
 	}
 	if len(f.ExtraRules) > 0 || f.ExtraFallback != "" {
-		extra, err := c.compileLibraryRules(f.ExtraRules, f.ExtraFallback)
+		extra, err := c.compileLibraryRulesMode(f.ExtraRules, f.ExtraFallback, membershipOnly)
 		if err != nil {
 			return "", nil, err
 		}
@@ -757,7 +764,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	}
 	// Rule browsing gates like everything else: its totals must match the
 	// titles queryTitles hands back, which never include ungated movies.
-	if cfg := c.config(); cfg.ReleaseMode == config.ModeDigital && !(f.DigitalDiscovery && f.HiddenMovieSeq != 0) {
+	if cfg := c.config(); !membershipOnly && cfg.ReleaseMode == config.ModeDigital && !(f.DigitalDiscovery && f.HiddenMovieSeq != 0) {
 		gateSQL := homeReleaseSQL("t")
 		if cfg.ShowUpcomingMovies {
 			gateSQL = "(t.type='movie' AND t.release_known=1 AND t.released_ts>? OR (" + gateSQL + "))"
@@ -1199,7 +1206,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 			}
 		}
 	}
-	if f.RuleVisibility == "" {
+	if !membershipOnly && f.RuleVisibility == "" {
 		// The unary plus keeps "released by now" (nearly every title) from
 		// steering the plan: without planner statistics SQLite took it as a
 		// selective range on catalog_titles_type_browse_count and sorted the

@@ -24,6 +24,10 @@ type surfaceLiveTV struct {
 	artwork        frontend.Artwork
 }
 
+func (s surfaceLiveTV) Enabled() bool {
+	return s.app != nil && s.app.livetv != nil && s.app.livetv.Enabled()
+}
+
 func (s surfaceLiveTV) host() frontend.LiveTV {
 	if s.app == nil || s.app.livetv == nil {
 		return nil

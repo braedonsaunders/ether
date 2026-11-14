@@ -34,6 +34,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/langtag"
+	"github.com/braedonsaunders/ether/internal/logredact"
 )
 
 const (
@@ -126,6 +127,47 @@ type subdlResponse struct {
 	} `json:"subtitles"`
 }
 
+// subdlSearchRequest is shared by subtitle searches and the console connection
+// test, so both authenticate using the API's required query parameter.
+func subdlSearchRequest(ctx context.Context, base, key, agent string, q url.Values) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/subtitles", nil)
+	if err != nil {
+		return nil, logredact.TransportError(err, "subdl", nil)
+	}
+	params := req.URL.Query()
+	for name, values := range q {
+		params[name] = append([]string(nil), values...)
+	}
+	params.Set("api_key", strings.TrimSpace(key))
+	req.URL.RawQuery = params.Encode()
+	req.Header.Set("User-Agent", agent)
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func readSubDLSearch(resp *http.Response) (subdlResponse, error) {
+	var sr subdlResponse
+	// Do not include provider response bodies in errors: they may echo the
+	// authenticated URL. Transport errors must omit that URL as well.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return sr, fmt.Errorf("SubDL rejected the API key")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return sr, fmt.Errorf("subdl search: HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return sr, err
+	}
+	if err := json.Unmarshal(body, &sr); err != nil {
+		return sr, fmt.Errorf("subdl search decode: %w", err)
+	}
+	if !sr.Status {
+		return sr, fmt.Errorf("subdl search: request rejected")
+	}
+	return sr, nil
+}
+
 // searchSubDL searches SubDL and maps its results onto Candidates. SubDL
 // has no moviehash parameter, so release-name matching carries ranking.
 func (s *Service) searchSubDL(ctx context.Context, title *core.Title, lang string) ([]Candidate, error) {
@@ -147,37 +189,16 @@ func (s *Service) searchSubDL(ctx context.Context, title *core.Title, lang strin
 	s.mu.Lock()
 	key := s.subdl.APIKey
 	s.mu.Unlock()
-	u := s.subdlBase + "/subtitles?" + q.Encode()
 	resp, err := s.send(ctx, func() (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("X-API-Key", key)
-		req.Header.Set("User-Agent", s.agent)
-		req.Header.Set("Accept", "application/json")
-		return req, nil
+		return subdlSearchRequest(ctx, s.subdlBase, key, s.agent, q)
 	})
 	if err != nil {
-		return nil, err
+		return nil, logredact.TransportError(err, "subdl", nil)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	sr, err := readSubDLSearch(resp)
 	if err != nil {
 		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("subdl search: %s: %s", resp.Status, truncate(string(body), 200))
-	}
-	var sr subdlResponse
-	if err := json.Unmarshal(body, &sr); err != nil {
-		return nil, fmt.Errorf("subdl search decode: %w", err)
-	}
-	if !sr.Status {
-		if sr.Error != "" {
-			return nil, fmt.Errorf("subdl search: %s", truncate(sr.Error, 200))
-		}
-		return nil, fmt.Errorf("subdl search: request rejected")
 	}
 	lang = langtag.Normalize(lang)
 	var out []Candidate
@@ -258,32 +279,33 @@ func (s *Service) downloadSubDL(ctx context.Context, c Candidate) ([]byte, error
 	s.mu.Lock()
 	key := s.subdl.APIKey
 	s.mu.Unlock()
-	link := c.DownloadURL
-	if key != "" {
-		sep := "?"
-		if strings.Contains(link, "?") {
-			sep = "&"
-		}
-		link += sep + "api_key=" + url.QueryEscape(key)
+	link, err := url.Parse(c.DownloadURL)
+	if err != nil {
+		return nil, fmt.Errorf("subdl: invalid download url")
+	}
+	if key = strings.TrimSpace(key); key != "" {
+		q := link.Query()
+		q.Set("api_key", key)
+		link.RawQuery = q.Encode()
 	}
 	resp, err := s.send(ctx, func() (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, link.String(), nil)
 		if err != nil {
-			return nil, err
+			return nil, logredact.TransportError(err, "subdl", nil)
 		}
 		req.Header.Set("User-Agent", s.agent)
 		return req, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, logredact.TransportError(err, "subdl", nil)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxSubtitleBytes+1))
 	if err != nil {
-		return nil, err
+		return nil, logredact.TransportError(err, "subdl", nil)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("subdl download: %s", resp.Status)
+		return nil, fmt.Errorf("subdl download: HTTP %d", resp.StatusCode)
 	}
 	if len(raw) > maxSubtitleBytes {
 		return nil, fmt.Errorf("subtitle download too large")

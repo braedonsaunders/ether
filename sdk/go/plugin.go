@@ -698,7 +698,14 @@ func (p *Plugin) Dispatch(ctx context.Context, req RawRequest) RawResponse {
 			return errorJSON(http.StatusNotFound, "not_found", "Job handler is not registered.")
 		}
 		jobName, _ := url.PathUnescape(strings.TrimPrefix(path, "/ether/job/"))
-		res, err := p.routes.Job(pctx, JobRequest{Name: jobName})
+		jobReq := JobRequest{Name: jobName}
+		if len(req.Body) > 0 {
+			if err := json.Unmarshal(req.Body, &jobReq); err != nil {
+				return errorJSON(http.StatusBadRequest, "invalid_json", "Job body must be valid JSON.")
+			}
+		}
+		jobReq.Name = jobName
+		res, err := p.routes.Job(pctx, jobReq)
 		if err != nil {
 			return toRouteErrorResponse(err)
 		}

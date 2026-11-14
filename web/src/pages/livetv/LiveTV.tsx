@@ -8,7 +8,6 @@ import {
   Badge,
   Button,
   Input,
-  Switch,
   Popover,
   cn,
   confirmDialog,
@@ -121,66 +120,6 @@ function selectionFrom(params: URLSearchParams): Selection {
  * workbench, all edited in place.
  */
 export default function LiveTV() {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  useEffect(() => {
-    api
-      .getConfig()
-      .then((c) => setEnabled(c.liveTV?.enabled ?? false))
-      .catch((e) => toast.error(errorMessage(e)));
-  }, []);
-  const toggleLiveTV = async (value: boolean) => {
-    try {
-      const c = await api.getConfig();
-      await api.putConfig({ ...c, liveTV: { ...c.liveTV, enabled: value } });
-      setEnabled(value);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  };
-  if (enabled === null) return null;
-  if (!enabled)
-    return (
-      <div className="mx-auto max-w-3xl p-6 sm:py-12">
-        <section className="space-y-5 rounded-xl border border-border bg-surface p-6 sm:p-8">
-          <h1 className="text-2xl font-semibold">{t("Live TV is off")}</h1>
-          <p className="text-fg-muted">
-            {t("A familiar channel guide for your library and IPTV, ready to watch in your apps.")}
-          </p>
-          <ul className="list-disc space-y-2 pl-5">
-            <li>{t("Four decade channels, ready to watch, plus any IPTV you add later")}</li>
-            <li>{t("Build your own channels with AI.")}</li>
-          </ul>
-          <Button onClick={() => toggleLiveTV(true)}>{t("Turn on Live TV")}</Button>
-          <p className="text-sm text-fg-muted">{t("No background work while nobody watches.")}</p>
-        </section>
-      </div>
-    );
-  return (
-    <>
-      <div className="px-6 pt-4">
-        <Button onClick={() => setSettingsOpen(true)}>{t("Settings")}</Button>
-      </div>
-      <Drawer
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        title={t("Live TV settings")}
-      >
-        <label className="flex items-center justify-between gap-4">
-          {t("Live TV")}
-          <Switch
-            aria-label={t("Turn off Live TV")}
-            checked={enabled}
-            onChange={(e) => toggleLiveTV(e.target.checked)}
-          />
-        </label>
-      </Drawer>
-      <LiveTVWorkspace />
-    </>
-  );
-}
-
-function LiveTVWorkspace() {
   const { tab } = useParams();
   const { looks, reels, reload: reloadLooks } = useLooks();
   const navigate = useNavigate();
@@ -231,6 +170,7 @@ function LiveTVWorkspace() {
 
   const [checkedChannels, setCheckedChannels] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [addingDecades, setAddingDecades] = useState(false);
   const bulkLock = useRef(false);
   const selectionAnchor = useRef<string | null>(null);
   const [page, setPage] = useState<ChannelPage | null>(null);
@@ -1244,39 +1184,85 @@ function LiveTVWorkspace() {
         ? t("Edit channel")
         : t("Virtual channel");
   const live = page?.counts.live ?? 0;
+  const empty = page?.counts.all === 0 && leftTab === "channels" && selection.kind === "guide";
+  const emptyState = (
+    <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-6 py-12 text-center sm:py-20">
+      <div className="mb-6 rounded-2xl bg-primary/10 p-5">
+        <Tv size={40} className="text-primary" aria-hidden />
+      </div>
+      <h1 className="text-3xl font-semibold tracking-tight">{t("No channels yet")}</h1>
+      <p className="mt-4 max-w-xl text-fg-muted">
+        {t(
+          "Start with four channels from the 1980s, 1990s, 2000s and 2010s, add IPTV, or create your own.",
+        )}
+      </p>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Button
+          disabled={addingDecades}
+          onClick={async () => {
+            setAddingDecades(true);
+            try {
+              await tv.addDecades();
+              await reloadAll();
+            } catch (e) {
+              toast.error(errorMessage(e));
+            } finally {
+              setAddingDecades(false);
+            }
+          }}
+        >
+          {t("Add the four decade channels")}
+        </Button>
+        <Button variant="outline" onClick={() => navigate("/sources/iptv?new=playlist")}>
+          {t("Add IPTV")}
+        </Button>
+        <ChannelAIBuilder />
+      </div>
+      <Button className="mt-5" variant="ghost" onClick={() => void go({ kind: "new" })}>
+        {t("New virtual channel")}
+      </Button>
+      <p className="mt-8 text-sm text-fg-muted">
+        {t("A familiar channel guide for your library and IPTV, ready to watch in your apps.")}
+      </p>
+    </div>
+  );
   return (
     <>
-      <Workspace
-        title={t("Live TV")}
-        subtitle={
-          page
-            ? missingCount
-              ? tn(
-                  live,
-                  "{count} channel on air · {missing} need a guide · Plex Pass required in Plex",
-                  "{count} channels on air · {missing} need a guide · Plex Pass required in Plex",
-                  { missing: formatNumber(missingCount) },
-                )
-              : tn(
-                  live,
-                  "{count} channel on air · Plex Pass required in Plex",
-                  "{count} channels on air · Plex Pass required in Plex",
-                )
-            : undefined
-        }
-        actions={actions}
-        asideLabel={t("Lineup")}
-        asideClassName={cn(
-          "[scrollbar-gutter:auto] lg:overflow-hidden",
-          channelOpen && "lg:relative lg:z-[60]",
-        )}
-        mainLabel={t("Live TV workspace")}
-        mainClassName={mainClassName}
-        aside={aside}
-        main={main}
-      >
-        {state ?? (leftTab === "channels" ? lineupGuide : undefined)}
-      </Workspace>
+      {empty ? (
+        emptyState
+      ) : (
+        <Workspace
+          title={t("Live TV")}
+          subtitle={
+            page
+              ? missingCount
+                ? tn(
+                    live,
+                    "{count} channel on air · {missing} need a guide · Plex Pass required in Plex",
+                    "{count} channels on air · {missing} need a guide · Plex Pass required in Plex",
+                    { missing: formatNumber(missingCount) },
+                  )
+                : tn(
+                    live,
+                    "{count} channel on air · Plex Pass required in Plex",
+                    "{count} channels on air · Plex Pass required in Plex",
+                  )
+              : undefined
+          }
+          actions={actions}
+          asideLabel={t("Lineup")}
+          asideClassName={cn(
+            "[scrollbar-gutter:auto] lg:overflow-hidden",
+            channelOpen && "lg:relative lg:z-[60]",
+          )}
+          mainLabel={t("Live TV workspace")}
+          mainClassName={mainClassName}
+          aside={aside}
+          main={main}
+        >
+          {state ?? (leftTab === "channels" ? lineupGuide : undefined)}
+        </Workspace>
+      )}
       <Drawer
         open={guideOpen}
         onClose={() => void go({ kind: "guide" })}

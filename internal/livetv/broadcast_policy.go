@@ -93,9 +93,15 @@ func (s *Service) broadcastPolicyContext(ctx context.Context, ss *session, u *co
 func (s *Service) broadcastTagsAllowed(ctx context.Context, ss *session, tags []any) bool {
 	ss.mu.Lock()
 	user := ss.user
+	sourceID := ss.info.Channel.SourceID
 	ss.mu.Unlock()
 	ctx, err := s.broadcastPolicyContext(ctx, ss, &user)
 	if err != nil {
+		return false
+	}
+	// A paused source stops serving its running channels too. Checked before
+	// ss.mu: a cold cache reads the database.
+	if s.sourcePaused(ctx, Channel{SourceID: sourceID}) {
 		return false
 	}
 	ss.mu.Lock()
@@ -145,7 +151,7 @@ func (s *Service) broadcastSegmentAllowed(ctx context.Context, ss *session, seg 
 // Audience admission is independent of the programme's rating. Checking a
 // channel's empty rating first would incorrectly hide a permitted programme.
 func (s *Service) audienceAllowed(ctx context.Context, u *core.User, c Channel) bool {
-	if u == nil || !c.Enabled || !publishedTo(ctx, c) || (!u.IsOwner && s.sweepState(c) == "unavailable") {
+	if u == nil || !c.Enabled || !publishedTo(ctx, c) || s.sourcePaused(ctx, c) || (!u.IsOwner && s.sweepState(c) == "unavailable") {
 		return false
 	}
 	_, pol, err := s.withPolicy(ctx, u)

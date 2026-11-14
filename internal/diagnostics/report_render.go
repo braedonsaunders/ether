@@ -111,6 +111,9 @@ func reportResponse(e exportEvent) string {
 	}
 	r := e.Response
 	var parts []string
+	if len(r.Manifest) > 0 {
+		return "DASH: " + strings.Join(r.Manifest, "; ")
+	}
 	if len(r.Hubs) > 0 {
 		heroes := 0
 		for _, h := range r.Hubs {

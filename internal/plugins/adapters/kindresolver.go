@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -269,11 +270,15 @@ func (r *KindResolver) ResolveSources(ctx context.Context, _ string, q core.Sour
 	}
 	switch q.Kind {
 	case "indexer_search":
+		if _, err := core.SearchCategories(q.Category); err != nil {
+			return nil, err
+		}
 		if r.indexer == nil {
 			return []core.SourceCandidate{}, nil
 		}
 		rels, err := r.indexer.Search(ctx, core.SearchRequest{
-			Title: strings.TrimSpace(q.Query),
+			Title:    strings.TrimSpace(q.Query),
+			Category: strings.TrimSpace(q.Category),
 		})
 		if err != nil {
 			return nil, err
@@ -694,6 +699,16 @@ func (r *KindResolver) openRelease(ctx context.Context, hint core.ReleaseHint) (
 		return nil, core.ErrSourceUnavailable
 	}
 	var rel core.Release
+	fileIndex := hint.FileIndex
+	if fileIndex == nil && hint.Candidate != nil {
+		fileIndex = hint.Candidate.FileIndex
+	}
+	if fileIndex != nil && *fileIndex < 0 {
+		return nil, fmt.Errorf("release fileIndex must be non-negative")
+	}
+	if fileIndex != nil || strings.TrimSpace(hint.File) != "" {
+		rel.Target = &core.ReleaseTarget{FileIndex: fileIndex, ExactFile: strings.TrimSpace(hint.File)}
+	}
 	if hint.Candidate != nil {
 		rel.InfoHash = strings.ToLower(strings.TrimSpace(hint.Candidate.InfoHash))
 		rel.MagnetURL = strings.TrimSpace(hint.Candidate.Magnet)
@@ -711,6 +726,10 @@ func (r *KindResolver) openRelease(ctx context.Context, hint core.ReleaseHint) (
 		rel.NZBURL = u
 	}
 	rel.ID = "kind:" + firstNonEmpty(rel.InfoHash, rel.NZBURL, rel.MagnetURL)
+	if rel.Target != nil {
+		selection, _ := json.Marshal(rel.Target)
+		rel.ID += fmt.Sprintf(":file:%x", sha256.Sum256(selection))
+	}
 	if rel.Name == "" {
 		rel.Name = firstNonEmpty(hint.FileHint, rel.InfoHash, "kind-release")
 	}
@@ -727,6 +746,9 @@ func (r *KindResolver) openRelease(ctx context.Context, hint core.ReleaseHint) (
 		return r.engine.Open(ctx, rel.ID, payload)
 	}
 	if rel.NZBURL != "" {
+		if rel.Target != nil {
+			return nil, fmt.Errorf("explicit release file selection requires a torrent; use a container source for NZB members")
+		}
 		if r.indexer == nil {
 			return nil, core.ErrSourceUnavailable
 		}

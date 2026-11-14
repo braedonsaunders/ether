@@ -386,6 +386,19 @@ func (c *librariesConsole) handler() http.Handler {
 			}
 		}
 		if body.QualityProfile != nil {
+			name := strings.TrimSpace(*body.QualityProfile)
+			media := core.MediaMovie
+			if lib.MediaType == core.TypeShow {
+				media = core.MediaTV
+			}
+			if name != "" {
+				_, valid := core.FindProfile(c.app.cfg.Read().Quality.Profiles, name, media)
+				if lib.Source == core.LibraryPlugin || !valid {
+					libError(w, http.StatusBadRequest, "Could not update the quality profile")
+					return
+				}
+			}
+
 			if err := svc.SetQualityProfile(ctx, lib.ID, *body.QualityProfile); err != nil {
 				libError(w, libErrStatus(err), "Could not update the quality profile")
 				return

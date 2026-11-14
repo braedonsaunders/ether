@@ -32,7 +32,7 @@ func TestSubDLSearchDownloadRank(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/subtitles", func(w http.ResponseWriter, r *http.Request) {
 		searchQuery = r.URL.RawQuery
-		if r.Header.Get("X-API-Key") != "subdl-key" {
+		if r.URL.Query().Get("api_key") != "subdl-key" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -66,6 +66,10 @@ func TestSubDLSearchDownloadRank(t *testing.T) {
 	})
 	srv = httptest.NewServer(mux)
 	defer srv.Close()
+
+	if err := testSubDL(context.Background(), srv.Client(), srv.URL, config.SubDL{APIKey: "subdl-key"}); err != nil {
+		t.Fatalf("connection test: %v", err)
+	}
 
 	svc := New(Options{
 		SubDL:            config.SubDL{Enabled: true, APIKey: "subdl-key"},

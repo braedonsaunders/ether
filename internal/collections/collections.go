@@ -776,6 +776,7 @@ func (s *Service) collectionFor(ctx context.Context, row *specRow, user *core.Us
 		c.Type = core.TypeMovie
 	}
 	c.UpdatedAt = row.stamp()
+	c.MembershipRevision = row.buildHash
 	return c
 }
 

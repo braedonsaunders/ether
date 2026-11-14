@@ -45,8 +45,6 @@ import { ProwlarrImport } from "../components/ProwlarrImport";
 import { DEBRID_KINDS } from "./sources/Debrid";
 import { DEBRID_TOKEN_URL } from "./sources/cards";
 import { addonUrlHasDebridKey, isStremio, normalizeAddonUrl } from "./sources/Indexers";
-import { Drawer } from "../components/Drawer";
-import { SourceEditor } from "./livetv/SourceEditor";
 import { LanguageStep } from "./setup/LanguageStep";
 import { StarterBundlesCard } from "./setup/StarterBundlesCard";
 import { SetupReady, connectDevicePath } from "./setup/SetupReady";
@@ -61,7 +59,7 @@ import { normalizeRules, type StreamRules } from "./viewers/shared";
 import { MIN_LOCAL_PASSWORD } from "./me/SignInMethods";
 
 export type WizardStepId =
-  "livetv" | "language" | "apps" | "account" | "sources" | "indexers" | "cache" | "catalog";
+  "language" | "apps" | "account" | "sources" | "indexers" | "cache" | "catalog";
 
 /** Survives a remount after the owner account is created so the visit does not start over. */
 export const SETUP_STEP_KEY = "ether.setup.step";
@@ -114,7 +112,6 @@ export function wizardSteps(
     { id: "sources", title: STEP_COPY.sourcesTitle, heading: STEP_COPY.sourcesHeading },
     { id: "indexers", title: STEP_COPY.indexersTitle, heading: STEP_COPY.indexersHeading },
     { id: "cache", title: STEP_COPY.cacheTitle, heading: STEP_COPY.cacheHeading },
-    { id: "livetv", title: t("Live TV"), heading: t("Do you want Live TV?") },
     { id: "catalog", title: STEP_COPY.catalogTitle, heading: STEP_COPY.catalogHeading },
   ];
 }
@@ -365,7 +362,6 @@ export function canAdvance(
   },
 ): boolean {
   switch (step) {
-    case "livetv":
     case "language":
     case "apps":
     case "cache":
@@ -408,7 +404,6 @@ export function canAdvance(
 export default function Setup() {
   const navigate = useNavigate();
   const app = useAppOptional();
-  const [liveSourceOpen, setLiveSourceOpen] = useState(false);
   const [cfg, setCfg] = useState<EtherConfig | null>(null);
   const [languageChoice, setLanguageChoice] = useState<HouseholdLanguage | null>(null);
   const languageBaseline = useRef<HouseholdLanguage | null>(null);
@@ -828,10 +823,7 @@ export default function Setup() {
         const status = await api.setupStatus();
         setServerSteps(Object.fromEntries(status.steps.map((item) => [item.id, item.complete])));
       }
-      let draft =
-        stepId === "livetv"
-          ? { ...cfg, liveTV: { ...cfg.liveTV, enabled: cfg.liveTV?.enabled ?? false } }
-          : cfg;
+      let draft = cfg;
       if (stepId === "language" && languageChoice) {
         const baseline = languageBaseline.current;
         const edited = !baseline || !sameHouseholdLanguage(languageChoice, baseline);
@@ -1037,66 +1029,6 @@ export default function Setup() {
       {stepId === "language" && languageChoice ? (
         <LanguageStep choice={languageChoice} onChange={setLanguageChoice} />
       ) : null}
-      {stepId === "livetv" ? (
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[true, false].map((enabled) => (
-              <button
-                key={String(enabled)}
-                type="button"
-                aria-label={enabled ? t("Yes") : t("Not now")}
-                aria-pressed={cfg.liveTV?.enabled === enabled}
-                onClick={() => setCfg({ ...cfg, liveTV: { ...cfg.liveTV, enabled } })}
-                className={`rounded-xl border-2 p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${cfg.liveTV?.enabled === enabled ? "border-primary bg-primary/10" : "border-border bg-surface hover:bg-surface-hover"}`}
-              >
-                <span className="flex items-center justify-between gap-3 font-semibold">
-                  {enabled ? t("Yes") : t("Not now")}
-                  <span aria-hidden="true">{cfg.liveTV?.enabled === enabled ? "●" : "○"}</span>
-                </span>
-                <span className="mt-2 block text-sm text-fg-muted">
-                  {enabled
-                    ? t("Four decade channels, ready to watch, plus any IPTV you add later")
-                    : t("Live TV stays off and costs nothing; turn it on any time in Live TV")}
-                </span>
-              </button>
-            ))}
-          </div>
-          {cfg.liveTV?.enabled ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                className="px-4 py-2"
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    await api.putConfig(cfg);
-                    setLiveSourceOpen(true);
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : String(e));
-                  }
-                }}
-              >
-                {t("Add a source now")}
-              </Button>
-              <Button className="px-4 py-2" variant="ghost" onClick={() => next()}>
-                {t("Later")}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      <Drawer
-        open={liveSourceOpen}
-        onClose={() => setLiveSourceOpen(false)}
-        title={t("Add a source now")}
-        size="lg"
-      >
-        <SourceEditor
-          source={null}
-          kind="playlist"
-          onSaved={() => setLiveSourceOpen(false)}
-          onDeleted={() => setLiveSourceOpen(false)}
-        />
-      </Drawer>
       {stepId === "apps" ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">

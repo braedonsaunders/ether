@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -354,8 +355,8 @@ func (q *QuickConnect) replay(ctx context.Context, tx *sql.Tx, requestedSurface,
 	// Android TV initiates with a random user-scoped device hash, but
 	// redeems with its installation ID. The approved secret authorizes
 	// redemption; keep the original grant binding on retries as well.
-	rotatingAndroidTV := surface == "jellyfin" && storedClient == "Jellyfin for Android TV" && device.Client == storedClient
-	if (!rotatingAndroidTV && device.ID != storedDevice) || device.Client != storedClient {
+	rotatingAndroidTV := surface == "jellyfin" && frontend.JellyfinAndroidTVClient(storedClient) && frontend.JellyfinAndroidTVClient(device.Client)
+	if !rotatingAndroidTV && (device.ID != storedDevice || device.Client != storedClient) {
 		return "", core.ErrUnauthorized
 	}
 	grantHashValue, ok := grantHash(token)

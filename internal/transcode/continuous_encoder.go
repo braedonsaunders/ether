@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 var _ ContinuousRunner = (*Manager)(nil)
@@ -23,6 +25,7 @@ type continuousEncoder struct {
 	mu            sync.Mutex
 	child         *continuousChild
 	fatalErr      error
+	forceCPU      bool // latched for this output after a hardware failure
 	hasRTXFailure bool
 	rtxFailed     continuousRTXAttemptKey
 	req           EncoderRequest
@@ -78,22 +81,30 @@ func (e *continuousEncoder) writeError() error {
 	return io.ErrClosedPipe
 }
 
-func (e *continuousEncoder) recoverFromRTXFailure(child **continuousChild, tick int64, startup []int64) error {
+func (e *continuousEncoder) recoverFromEncoderFailure(child **continuousChild, tick int64) error {
 	old := *child
 	err := old.failure()
-	e.recordRTXFailure(old.attemptKey)
+	if !old.rtx && (!old.hardware || e.forceCPU) {
+		return err
+	}
+	message := "continuous hardware encoder exited; falling back to software"
+	if old.rtx {
+		e.recordRTXFailure(old.attemptKey)
+		message = "continuous RTX Video exited; falling back to ordinary encoder"
+	} else {
+		e.forceCPU = true
+	}
 	if e.m != nil && e.m.log != nil {
-		e.m.log.Warn("continuous RTX Video exited; falling back to ordinary encoder",
+		e.m.log.Warn(message,
 			"session", e.req.SessionID,
 			"tick", tick,
 			"err", err)
 	}
 	old.forceClose()
+	// Include every fully published pair before choosing the replacement sequence.
+	e.index.refresh()
 
 	resumeSeq := e.index.nextSeq()
-	if resumeSeq > 0 && resumeSeq < int64(len(startup)) {
-		resumeSeq = int64(len(startup))
-	}
 	tsOffsetTick, _ := continuousSegmentFrames(e.req.Source, e.req.SegmentDuration, e.req.LiveSource, resumeSeq)
 	replacement, startErr := e.startOrdinaryChild(resumeSeq, tick, tsOffsetTick)
 	if startErr != nil {
@@ -199,6 +210,19 @@ func (m *Manager) StartEncoder(ctx context.Context, r EncoderRequest) (Continuou
 			}
 		}()
 
+		watchdog := time.NewTicker(time.Second)
+		defer watchdog.Stop()
+		var watched *continuousChild
+		var published int64
+		progressAt := time.Now()
+		stalled := func(feeding bool) bool {
+			next := enc.index.nextSeq()
+			if watched != child || published != next || !feeding {
+				watched, published, progressAt = child, next, time.Now()
+				return false
+			}
+			return child.hardware && time.Since(progressAt) >= max(10*time.Second, 3*r.SegmentDuration)
+		}
 		var tick int64
 		for {
 			var f RawFrame
@@ -213,15 +237,19 @@ func (m *Manager) StartEncoder(ctx context.Context, r EncoderRequest) (Continuou
 					return
 				case <-m.stop:
 					return
+				case <-watchdog.C:
+					if stalled(len(enc.frames) > 0) {
+						child.forceClose()
+						if err := enc.recoverFromEncoderFailure(&child, tick); err != nil {
+							enc.fail(err)
+							return
+						}
+					}
 				case <-child.proc.done:
 					if enc.ctx.Err() != nil {
 						return
 					}
-					if !child.rtx {
-						enc.fail(child.proc.result())
-						return
-					}
-					if err := enc.recoverFromRTXFailure(&child, tick, startup); err != nil {
+					if err := enc.recoverFromEncoderFailure(&child, tick); err != nil {
 						enc.fail(err)
 						return
 					}
@@ -229,7 +257,7 @@ func (m *Manager) StartEncoder(ctx context.Context, r EncoderRequest) (Continuou
 					if enc.ctx.Err() != nil {
 						return
 					}
-					if err := enc.recoverFromRTXFailure(&child, tick, startup); err != nil {
+					if err := enc.recoverFromEncoderFailure(&child, tick); err != nil {
 						enc.fail(err)
 						return
 					}
@@ -273,15 +301,21 @@ func (m *Manager) StartEncoder(ctx context.Context, r EncoderRequest) (Continuou
 						return
 					case <-m.stop:
 						return
+					case <-watchdog.C:
+						if stalled(true) {
+							child.forceClose()
+							if err := enc.recoverFromEncoderFailure(&child, tick); err != nil {
+								enc.fail(err)
+								return
+							}
+							recovered = true
+							vch, ach = nil, nil
+						}
 					case <-child.proc.done:
 						if enc.ctx.Err() != nil {
 							return
 						}
-						if !child.rtx {
-							enc.fail(child.proc.result())
-							return
-						}
-						if err := enc.recoverFromRTXFailure(&child, tick, startup); err != nil {
+						if err := enc.recoverFromEncoderFailure(&child, tick); err != nil {
 							enc.fail(err)
 							return
 						}
@@ -291,7 +325,7 @@ func (m *Manager) StartEncoder(ctx context.Context, r EncoderRequest) (Continuou
 						if enc.ctx.Err() != nil {
 							return
 						}
-						if err := enc.recoverFromRTXFailure(&child, tick, startup); err != nil {
+						if err := enc.recoverFromEncoderFailure(&child, tick); err != nil {
 							enc.fail(err)
 							return
 						}
@@ -311,10 +345,14 @@ func (m *Manager) StartEncoder(ctx context.Context, r EncoderRequest) (Continuou
 	return enc, nil
 }
 
-func (m *Manager) continuousEncodeArgsAt(r EncoderRequest, s []*rawSocket, base string, startSeq, tsOffsetTick int64) []string {
+func (m *Manager) continuousEncodeArgsAt(r EncoderRequest, s []*rawSocket, base string, startSeq, tsOffsetTick int64, accel core.HWAccel) []string {
 	f := r.Source
 	rate := fmt.Sprintf("%d/%d", f.FPSNum, f.FPSDen)
 	args := []string{"-hide_banner", "-loglevel", "warning", "-stats_period", "1", "-progress", "pipe:2", "-nostdin", "-y", "-filter_threads", "1"}
+	enc, _ := videoEncoder(r.Decision.VideoCodec, accel, m.feat)
+	if strings.HasSuffix(enc, "_qsv") && accel.Device != "" {
+		args = append(args, "-qsv_device", accel.Device)
+	}
 	for i := range 2 {
 		args = append(args, "-thread_queue_size", "8", "-probesize", "32", "-analyzeduration", "0")
 		if i == 0 {
@@ -328,7 +366,6 @@ func (m *Manager) continuousEncodeArgsAt(r EncoderRequest, s []*rawSocket, base 
 	if codec == "" {
 		codec = "h264"
 	}
-	enc, _ := videoEncoder(codec, m.hw, m.feat)
 	w, h := outputSize(f.Width, f.Height, r.Decision.MaxHeight)
 	vf := fmt.Sprintf("scale=%d:%d,setsar=1,format=yuv420p", w, h)
 	if strings.HasSuffix(enc, "_videotoolbox") || strings.HasSuffix(enc, "_qsv") {
@@ -336,11 +373,11 @@ func (m *Manager) continuousEncodeArgsAt(r EncoderRequest, s []*rawSocket, base 
 	}
 	vf += ",fps=" + rate
 	if strings.HasSuffix(enc, "_vaapi") {
-		args = append(args, "-vaapi_device", m.hw.Device)
+		args = append(args, "-vaapi_device", accel.Device)
 		vf += ",format=nv12,hwupload"
 	}
 	args = append(args, "-map", "0:v:0", "-map", "1:a:0", "-vf", vf)
-	spec := runSpec{Decision: r.Decision, Accel: m.hw, Features: m.feat}
+	spec := runSpec{Decision: r.Decision, Accel: accel, Features: m.feat}
 	spec.Decision.VideoCodec = codec
 	ceiling := r.Decision.BitrateKbps
 	if ceiling <= 0 {
@@ -381,7 +418,7 @@ func (m *Manager) continuousEncodeArgsAt(r EncoderRequest, s []*rawSocket, base 
 	}
 	keyExpr := continuousKeyframeExpr(f, r.SegmentDuration, r.LiveSource)
 	if startSeq > 0 {
-		keyExpr = fmt.Sprintf("expr:gte(n,n_forced*%d)", g)
+		keyExpr = continuousKeyframeExprAt(f, r.SegmentDuration, r.LiveSource, startSeq)
 	}
 	args = append(args, "-pix_fmt", pix, "-bf", "0", "-g", strconv.Itoa(g), "-keyint_min", strconv.Itoa(g/4), "-sc_threshold", "0", "-force_key_frames", keyExpr, "-flags", "+global_header+cgop", "-c:a", "aac", "-b:a", fmt.Sprintf("%dk", max(r.Decision.AudioBitrateKbps, 128)), "-ar", "48000", "-ac", "2")
 	return append(args, continuousTeeArgs(r, base, startSeq, tsOffsetTick)...)

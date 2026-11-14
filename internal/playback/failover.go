@@ -306,26 +306,27 @@ func (m *Manager) nextResolution(ctx context.Context, s *session, tried []string
 	}
 	m.mu.Unlock()
 	if m.deps.FetchNZB != nil {
-		// An add-on that did not answer one on-demand link may still be
-		// preparing it; opening another would make it fetch a second
-		// release, and a fresh Resolve would reopen the same link.
-		var preparing error
+		// Fetches run sequentially. A timed-out on-demand fetch has returned
+		// and cancelled its request, so the next eligible source may open.
+		var fetchErr error
+		fetched := 0
 		for i, alt := range alternates {
 			if alt.ID == "" || !m.channelSourceAllowed(s, alt) || m.titleReleaseRejected(ctx, s.ident.key, alt) || m.releaseNamesakeRejected(ctx, s, alt) || slices.Contains(tried, alt.ID) || !releaseMatchesTitle(alt, s.title) {
 				continue
 			}
-			if preparing != nil && alt.OpensOnDemand() {
-				continue
+			if fetched >= m.opts.MaxAttempts {
+				return nil, fetchErr
 			}
+			fetched++
 			nzb, err := m.deps.FetchNZB(ctx, alt)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
 				}
 				m.log.Warn("alternate nzb fetch failed", "release", alt.Name, "err", err)
-				if alt.OpensOnDemand() && (errors.Is(err, core.ErrPrepareSlow) || errors.Is(err, context.DeadlineExceeded)) {
-					preparing = err
-				}
+				fetchErr = err
+				// A fresh Resolve must not retry a link that just timed out.
+				tried = append(tried, alt.ID)
 				continue
 			}
 			return &core.Resolution{
@@ -336,8 +337,8 @@ func (m *Manager) nextResolution(ctx context.Context, s *session, tried []string
 				ResolvedAt: m.now(),
 			}, nil
 		}
-		if preparing != nil {
-			return nil, preparing
+		if fetchErr != nil && fetched >= m.opts.MaxAttempts {
+			return nil, fetchErr
 		}
 	}
 	u := s.user

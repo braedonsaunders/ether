@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -77,9 +78,9 @@ type Response struct {
 
 // Host is the plugin-to-Ether service surface (SPEC 5.1.5). Name is a dotted
 // service method: kv.get, kv.put, kv.delete, kv.list, secret.get,
-// http.fetch, catalog.search, catalog.get, viewers.history,
+// http.fetch, http.fetchToCache, archive.list, archive.open, catalog.search, catalog.get, viewers.history,
 // viewers.setWatchState, collections.upsert, kinds.upsert, kinds.delete,
-// kinds.items, sources.resolve, cache.put, cache.open, frontend.streamURL,
+// kinds.items, sources.resolve, cache.put, cache.open, cache.read, frontend.streamURL,
 // folders.list, folders.stat, notify.owner, log. Args is a JSON array of positional
 // arguments; the result is any JSON value. Return a *Fault to classify the
 // failure (forbidden for a missing or revoked grant).
@@ -94,7 +95,7 @@ type HostFunc func(ctx context.Context, name string, args json.RawMessage) (json
 // host functions. Wall time adds 1 unit per WallUnitInterval.
 var DefaultCosts = map[string]int64{
 	"log": 1, "kv.get": 5, "kv.put": 10, "kv.delete": 5, "kv.list": 10,
-	"secret.get": 5, "http.fetch": 100, "addon.get": 100, "catalog.search": 50, "catalog.get": 20,
+	"secret.get": 5, "http.fetch": 100, "http.fetchToCache": 100, "cache.read": 20, "archive.list": 50, "archive.open": 50, "addon.get": 100, "catalog.search": 50, "catalog.get": 20,
 	"viewers.history": 50, "viewers.setWatchState": 50, "collections.upsert": 50,
 	"kinds.upsert": 50, "kinds.delete": 50, "kinds.items": 20,
 	"sources.resolve": 100, "cache.put": 50, "cache.open": 20, "frontend.streamURL": 5,
@@ -111,19 +112,23 @@ const (
 	// BaseCallUnits is charged once per handle call.
 	BaseCallUnits = 10
 	// MaxMemoryBytes is the hard ceiling for a plugin instance.
-	MaxMemoryBytes = 64 << 20
+	MaxMemoryBytes = 4 << 30
 	// MaxResponseBytes caps a plugin response.
 	MaxResponseBytes = 8 << 20
-	// MaxHostResultBytes caps one host-call result returned to a guest.
+	// MaxFetchBodyBytes caps a direct HTTP response before JSON encoding.
+	MaxFetchBodyBytes = 10 << 20
+	// MaxHostResultBytes caps general results; http.fetch additionally permits
+	// the worst-case JSON encoding of MaxFetchBodyBytes plus header space.
 	MaxHostResultBytes = 4 << 20
 	maxLogsPerCall     = 100
 )
 
 // Limits bound one plugin. Zero fields take the defaults in normalize.
 type Limits struct {
-	MemoryBytes uint64        // per instance; default 32 MiB, max 64 MiB
+	MemoryBytes uint64        // per instance; default 32 MiB, max wasm32 4 GiB
 	Deadline    time.Duration // per handle call; default 30s
 	UnitBudget  int64         // per handle call; default 10000
+	Busy        func() bool   // background work yields while playback or host load is high
 	PoolSize    int           // instances per pool; default 2
 	// Hot-path budgets. A manifest may lower these, never raise them:
 	// normalize clamps to the defaults below.
@@ -146,6 +151,9 @@ func (l *Limits) normalize() {
 	}
 	if l.Deadline <= 0 {
 		l.Deadline = 30 * time.Second
+	}
+	if l.Deadline > 365*24*time.Hour {
+		l.Deadline = 365 * 24 * time.Hour
 	}
 	if l.UnitBudget <= 0 {
 		l.UnitBudget = 10000
@@ -234,19 +242,20 @@ func (c *counters) snapshot() Stats {
 // instance serves one call at a time, so no locking is needed beyond the
 // exceeded flag (read after the call from the same goroutine).
 type callState struct {
-	ctx       context.Context
-	host      Host
-	lim       *Limits
-	start     time.Time
-	last      time.Time
-	units     int64
-	logs      int
-	hot       bool
-	exceeded  bool
-	aborted   bool
-	abortCode uint32
-	logger    *slog.Logger
-	pluginID  string
+	ctx        context.Context
+	host       Host
+	lim        *Limits
+	start      time.Time
+	last       time.Time
+	units      int64
+	logs       int
+	background bool
+	hot        bool
+	exceeded   bool
+	aborted    bool
+	abortCode  uint32
+	logger     *slog.Logger
+	pluginID   string
 }
 
 func (cs *callState) chargeWall() {
@@ -281,6 +290,13 @@ func (cs *callState) finishUnits() int64 {
 // hot-path lockdown. It is the single funnel for JS ether.* and raw
 // ether.host_call.
 func (cs *callState) dispatch(name string, args json.RawMessage) (json.RawMessage, *Fault) {
+	if cs.background {
+		waitedAt := time.Now()
+		if err := WaitBackground(cs.ctx, cs.lim.Busy); err != nil {
+			return nil, &Fault{Code: string(StatusTimeout), Message: err.Error()}
+		}
+		cs.last = cs.last.Add(time.Since(waitedAt))
+	}
 	if cs.hot && name != "log" {
 		return nil, Forbidden("host services are not available on the hot path: " + name)
 	}
@@ -317,7 +333,13 @@ func (cs *callState) dispatch(name string, args json.RawMessage) (json.RawMessag
 		}
 		return nil, &Fault{Code: "host_error", Message: err.Error()}
 	}
-	if len(out) > MaxHostResultBytes {
+	limit := MaxHostResultBytes
+	// JSON can escape each text byte as six bytes. HTTPFetch bounds the raw
+	// body to 10 MiB; leave room for its headers and JSON envelope.
+	if name == "http.fetch" {
+		limit = (6 * MaxFetchBodyBytes) + (1 << 20)
+	}
+	if len(out) > limit {
 		return nil, &Fault{Code: "host_error", Message: "host result exceeds size cap"}
 	}
 	if len(out) == 0 {
@@ -629,10 +651,12 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
 		out.Status = StatusError
 		return Response{}, out, &Error{Status: StatusError, Message: err.Error()}
 	}
-	callCtx, cancel := context.WithTimeout(ctx, p.lim.Deadline)
+	lim := limitsForRequest(p.lim, req.Path)
+	callCtx, cancel := context.WithTimeout(ctx, lim.Deadline)
 	defer cancel()
-	cs := &callState{ctx: callCtx, host: p.host, lim: &p.lim, start: start, last: start,
-		units: BaseCallUnits, logger: p.eng.logger, pluginID: p.id}
+	cs := &callState{ctx: callCtx, host: p.host, lim: &lim, start: start, last: start,
+		background: strings.HasPrefix(req.Path, "/ether/job/"),
+		units:      BaseCallUnits, logger: p.eng.logger, pluginID: p.id}
 	in, err := p.svc.get(callCtx)
 	if err != nil {
 		out.Status = StatusTimeout

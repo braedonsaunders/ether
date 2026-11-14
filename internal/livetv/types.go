@@ -366,9 +366,9 @@ type Policy struct {
 	channelSet map[string]struct{} // Channels as a set for long lists; see indexChannels
 }
 type Options struct {
-	Enabled   func() bool
-	NewTimer  func(time.Duration) *time.Timer
-	NewTicker func(time.Duration) *time.Ticker
+	ActivityChanged func(bool) // worker lifetime transition after channels appear or disappear
+	NewTimer        func(time.Duration) *time.Timer
+	NewTicker       func(time.Duration) *time.Ticker
 
 	VODChanged      func() // provider index or connection changed
 	SessionsChanged func() // viewer live sessions started, stopped or expired

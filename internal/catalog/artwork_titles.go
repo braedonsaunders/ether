@@ -150,7 +150,10 @@ func (c *Catalog) PersistsArtwork(ctx context.Context, key core.RatingKey) bool 
 	default:
 		return true
 	}
-	_, err := c.loadByKey(ctx, key)
+	// Persistence depends only on whether a row exists. Hydrating a title
+	// here loads every credit for a cache miss while merely touching artwork.
+	var present int
+	err := c.db.QueryRowContext(ctx, `SELECT 1 FROM catalog_titles WHERE key=?`, int64(key)).Scan(&present)
 	return err == nil
 }
 

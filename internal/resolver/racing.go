@@ -135,7 +135,6 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 	width := min(race, 4)
 	limit := min(len(cands), maxHealthAttempts)
 	var transient error
-	onDemandHeld := false // see ondemand.go
 	for base := 0; base < limit; {
 		if core.IsSpeculative(ctx) && base >= speculativeHealthAttempts {
 			break
@@ -143,13 +142,6 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 		if cands[base].rel.OpensOnDemand() {
 			if !core.OnDemandAllowedAt(ctx, cands[base].rel, base) {
 				return -1, nil, errors.Join(transient, errOnDemandForeground)
-			}
-			if onDemandHeld {
-				ct := &tr.Candidates[cands[base].trace]
-				ct.Rejected, ct.Reason, ct.err = true, errOnDemandHeld.Error(), errOnDemandHeld
-				transient = errors.Join(transient, errOnDemandHeld)
-				base++
-				continue
 			}
 		}
 		count := min(width, limit-base)
@@ -180,7 +172,6 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 		for j := 0; j < count; j++ {
 			v := <-results
 			noteValidation(ctx, cands[v.index].rel, v)
-			onDemandHeld = onDemandHeld || onDemandSlow(cands[v.index].rel, v)
 			ct := &tr.Candidates[cands[v.index].trace]
 			ct.Attempted = true
 			ct.FetchDuration = v.fetchDuration

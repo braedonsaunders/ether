@@ -262,18 +262,30 @@ func (c *Catalog) PreviewVisibilityScoped(ctx context.Context, specs []core.Libr
 }
 
 func (c *Catalog) compileLibraryRules(rules []core.LibraryExclusion, fallback string) (*libraryfilter.Filter, error) {
+	return c.compileLibraryRulesMode(rules, fallback, false)
+}
+
+func (c *Catalog) compileLibraryRulesMode(rules []core.LibraryExclusion, fallback string, membershipOnly bool) (*libraryfilter.Filter, error) {
 	f, err := libraryfilter.CompilePolicy(rules, fallback)
 	if err != nil {
 		return nil, err
 	}
-	return c.bindLibraryRules(f)
+	return c.bindLibraryRulesMode(f, membershipOnly)
 }
 
 func (c *Catalog) bindLibraryRules(f *libraryfilter.Filter) (*libraryfilter.Filter, error) {
+	return c.bindLibraryRulesMode(f, false)
+}
+
+func (c *Catalog) bindLibraryRulesMode(f *libraryfilter.Filter, membershipOnly bool) (*libraryfilter.Filter, error) {
 	return f.BindCatalogue(func(p core.Filter) (string, []any, error) {
 		p.LocalOnly = true
 		p.CatalogCandidates = true
-		return c.browseWhere(p)
+		where, args, err := c.browseWhereMode(p, membershipOnly)
+		if err == nil && where == "" {
+			where = "1=1"
+		}
+		return where, args, err
 	}, func(q string, args []any, t *core.Title) bool {
 		if t == nil || t.Key == 0 {
 			return false

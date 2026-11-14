@@ -28,10 +28,25 @@ func (s *Service) NamedFacetIDs(ctx context.Context, viewer *core.Viewer, _ core
 	if err != nil {
 		return nil, err
 	}
-	// A list row already carries the stored title. CachedGet keeps genre and
-	// studio ids off the refresh path that getSeason uses for an open detail.
+	// Facet identifiers require current membership and policy facts, not a
+	// title's credits, trailers or alternate names.
+	facts := core.FactGenres
+	if kind == "studio" {
+		facts = core.FactStudios
+	}
 	var title *core.Title
-	if s.d.CachedGet != nil {
+	rows, err := s.visibilityRows(ctx, active, []core.RatingKey{key}, facts)
+	if err != nil {
+		return nil, err
+	}
+	if rows != nil {
+		if row, ok := rows[key]; ok {
+			title = &row
+		}
+		if title == nil || title.Key != key || !s.visible(ctx, active, title) {
+			err = core.ErrNotFound
+		}
+	} else if s.d.CachedGet != nil {
 		title, err = s.d.CachedGet(ctx, key)
 		if err == nil && (title == nil || title.Key != key || !s.visible(ctx, active, title)) {
 			err = core.ErrNotFound

@@ -133,7 +133,7 @@ describe("Server › Plugins (WS10a)", () => {
     );
 
     // Setup: settings with validation and Test.
-    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    fireEvent.click(within(tabs).getByRole("tab", { name: "Settings" }));
     expect(await screen.findByText("Region")).toBeTruthy();
     expect(
       screen.getByText("Saved. Leave as is to keep it, or type a new value to replace it."),

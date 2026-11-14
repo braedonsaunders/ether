@@ -394,9 +394,6 @@ describe("setup wizard", () => {
       target: { value: "/cache" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-    await screen.findByRole("heading", { name: "Do you want Live TV?" });
-    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("button", { name: "Finish setup" });
     const finishNow = screen.getByRole("button", { name: "Finish setup" });
     fireEvent.click(finishNow);
@@ -945,9 +942,6 @@ describe("setup wizard", () => {
         if (f.state.config.debrid) f.state.config.debrid.providers = [];
       },
     );
-    await screen.findByRole("heading", { name: "Do you want Live TV?" });
-    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     const finishNow = await screen.findByRole("button", {
       name: "Finish setup",
     });
@@ -989,9 +983,6 @@ describe("setup wizard", () => {
         f.state.config.setupComplete = false;
       },
     );
-    await screen.findByRole("heading", { name: "Do you want Live TV?" });
-    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     fireEvent.click(await screen.findByRole("button", { name: "Finish setup" }));
     const readyRegion = await screen.findByRole("region", { name: "Ether is ready" });
     // The Escape listener is attached in an effect after the region renders;

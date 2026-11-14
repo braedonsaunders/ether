@@ -193,8 +193,9 @@ type KindMatchResponse struct {
 // SourceQuery asks Ether to find sources for a kind resolver
 // (spec §4.5).
 type SourceQuery struct {
-	Kind       string   `json:"kind"` // indexer_search|debrid_check|debrid_acquire
-	Query      string   `json:"query,omitempty"`
+	Kind  string `json:"kind"` // indexer_search|debrid_check|debrid_acquire
+	Query string `json:"query,omitempty"`
+	// Category accepts comma-separated Newznab IDs or standard family names.
 	Category   string   `json:"category,omitempty"`
 	InfoHashes []string `json:"infoHashes,omitempty"`
 	InfoHash   string   `json:"infoHash,omitempty"`
@@ -204,10 +205,11 @@ type SourceQuery struct {
 // SourceCandidate is one Ether-found release for a resolver to rank,
 // carrying the release-hint fields plus the facts matching needs.
 type SourceCandidate struct {
-	InfoHash  string `json:"infoHash,omitempty"`
-	Magnet    string `json:"magnet,omitempty"`
-	NZBURL    string `json:"nzbUrl,omitempty"`
-	FileIndex int    `json:"fileIndex,omitempty"`
+	InfoHash string `json:"infoHash,omitempty"`
+	Magnet   string `json:"magnet,omitempty"`
+	NZBURL   string `json:"nzbUrl,omitempty"`
+	// FileIndex selects a zero-based entry in the torrent provider file list; nil uses video selection.
+	FileIndex *int   `json:"fileIndex,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Size      int64  `json:"size,omitempty"`
 	Seeders   int    `json:"seeders,omitempty"`
@@ -282,12 +284,16 @@ type VolumeRef struct {
 // ReleaseHint hands an NZB, magnet, infohash, or pre-built Candidate to Ether's
 // existing Usenet / debrid / torrent acquisition pipeline (spec §4.1, §4.3).
 type ReleaseHint struct {
-	NZBURL         string           `json:"nzbUrl,omitempty"`
-	Magnet         string           `json:"magnet,omitempty"`
-	InfoHash       string           `json:"infoHash,omitempty"`
-	Candidate      *SourceCandidate `json:"candidate,omitempty"`
-	FileHint       string           `json:"fileHint,omitempty"`
-	PasswordSecret string           `json:"passwordSecret,omitempty"`
+	// FileIndex overrides candidate.fileIndex; out-of-range indices fail without fallback.
+	FileIndex *int             `json:"fileIndex,omitempty"`
+	NZBURL    string           `json:"nzbUrl,omitempty"`
+	Magnet    string           `json:"magnet,omitempty"`
+	InfoHash  string           `json:"infoHash,omitempty"`
+	Candidate *SourceCandidate `json:"candidate,omitempty"`
+	// File selects an exact torrent path or unique basename, including non-video files.
+	File           string `json:"file,omitempty"`
+	FileHint       string `json:"fileHint,omitempty"`
+	PasswordSecret string `json:"passwordSecret,omitempty"`
 }
 
 // KindResolveRequest is the payload sent to a plugin's kind_resolve handler

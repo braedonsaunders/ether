@@ -34,8 +34,13 @@ CREATE TABLE livetv_policies(user_id INTEGER PRIMARY KEY, data TEXT NOT NULL);`)
 }
 
 type Service struct {
-	lifecycleMu sync.Mutex
-	running     bool
+	closeOnce    sync.Once
+	lifetimeStop chan struct{}
+	lifetimeDone chan struct{}
+	lifetimeWake chan struct{}
+	hasChannels  atomic.Bool
+	lifecycleMu  sync.Mutex
+	running      bool
 
 	readinessWake         chan struct{}
 	readiness             map[string]channelReadiness
@@ -168,12 +173,50 @@ func New(o Options) (*Service, error) {
 	s.sweepWake = make(chan struct{}, 1)
 	s.broadcasts.onAcquire = s.wakeMaintenance
 	s.virtualGuide.wake = make(chan struct{}, 1)
+	s.lifetimeStop = make(chan struct{})
+	s.lifetimeDone = make(chan struct{})
+	s.lifetimeWake = make(chan struct{}, 1)
+	var exists bool
+	if err := o.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM livetv_channels LIMIT 1)`).Scan(&exists); err != nil {
+		cancel()
+		return nil, err
+	}
+	s.hasChannels.Store(exists)
 	s.ReconcileEnabled()
+	go func() {
+		defer close(s.lifetimeDone)
+		for {
+			select {
+			case <-s.lifetimeStop:
+				return
+			case <-s.lifetimeWake:
+				s.ReconcileEnabled()
+				if s.o.ActivityChanged != nil {
+					s.o.ActivityChanged(s.Enabled())
+				}
+			}
+		}
+	}()
 	return s, nil
 }
 
 // Enabled is shared by protocol surfaces and all background work admission.
-func (s *Service) Enabled() bool { return s.o.Enabled == nil || s.o.Enabled() }
+// An indexed existence probe also sees channels committed by another cluster node.
+// It never decodes a lineup or scans the media library. Changes wake the sleeping
+// lifetime controller; workers never wait for themselves to drain.
+func (s *Service) Enabled() bool {
+	var exists bool
+	if err := s.o.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM livetv_channels LIMIT 1)`).Scan(&exists); err != nil {
+		return false
+	}
+	if s.hasChannels.Swap(exists) != exists {
+		select {
+		case s.lifetimeWake <- struct{}{}:
+		default:
+		}
+	}
+	return exists
+}
 
 // ReconcileEnabled drains workers before changing their lifetime context.
 func (s *Service) ReconcileEnabled() {
@@ -199,6 +242,9 @@ func (s *Service) ReconcileEnabled() {
 		}
 		s.virtualGuide.mu.Lock()
 		s.virtualGuide.entries = nil
+		s.virtualGuide.timeline = nil
+		s.virtualGuide.lastDemand = time.Time{}
+		s.virtualGuide.timelineDemand = time.Time{}
 		s.virtualGuide.mu.Unlock()
 		s.running = false
 		return
@@ -212,7 +258,6 @@ func (s *Service) ReconcileEnabled() {
 		s.wg.Add(1)
 		go s.personalLoop()
 	}
-	s.virtualGuide.wake = make(chan struct{}, 1)
 	s.wg.Add(1)
 	go s.virtualGuideLoop()
 	// Channel readiness belongs to the Live TV lifetime: it stops when Live
@@ -276,18 +321,22 @@ func sourceOrigin(src Source) string {
 	return urlOrigin(src.GuideURL)
 }
 func (s *Service) Close() error {
-	s.cancel()
-	s.broadcasts.close()
-	s.wg.Wait()
-	s.waitVirtualGuideInflight()
-	s.mu.Lock()
-	all := s.sessions
-	s.sessions = map[string]*session{}
-	s.mu.Unlock()
-	for _, ss := range all {
-		ss.close(s)
-	}
-	s.history.close()
+	s.closeOnce.Do(func() {
+		close(s.lifetimeStop)
+		<-s.lifetimeDone
+		s.cancel()
+		s.broadcasts.close()
+		s.wg.Wait()
+		s.waitVirtualGuideInflight()
+		s.mu.Lock()
+		all := s.sessions
+		s.sessions = map[string]*session{}
+		s.mu.Unlock()
+		for _, ss := range all {
+			ss.close(s)
+		}
+		s.history.close()
+	})
 	return nil
 }
 
@@ -1107,6 +1156,7 @@ func (s *Service) LineupChanged() time.Time {
 }
 
 func (s *Service) bumpLineup() {
+	s.Enabled() // reconcile channel existence after every committed lineup change
 	s.wakeVirtualGuide()
 	select {
 	case s.graphicsWake <- struct{}{}:
@@ -1189,7 +1239,7 @@ func (s *Service) withPolicy(ctx context.Context, u *core.User) (context.Context
 }
 
 func (s *Service) allowedWithLookup(ctx context.Context, u *core.User, c Channel, p *Programme, lookup func(context.Context, core.RatingKey) (*core.Title, error), strict bool) bool {
-	if u == nil || !c.Enabled || !publishedTo(ctx, c) {
+	if u == nil || !c.Enabled || !publishedTo(ctx, c) || s.sourcePaused(ctx, c) {
 		return false
 	}
 	if !u.IsOwner && s.sweepState(c) == "unavailable" {
@@ -2013,9 +2063,6 @@ func (s *Service) readURL(ctx context.Context, raw string, max int64) (string, e
 // Owner changes to mapping, enabled state, channel numbering, favourites and
 // restrictions survive refresh.
 func (s *Service) ImportSource(ctx context.Context, src Source) (Source, error) {
-	if !s.Enabled() {
-		return Source{}, core.ErrNotAvailable
-	}
 	ctx, cancel := context.WithTimeout(ctx, refreshBudget)
 	defer cancel()
 	if src.ID == "" {
@@ -2055,6 +2102,8 @@ func (s *Service) importSource(ctx context.Context, src Source) (Source, error) 
 		s.forgetSourceAuth(old.ID)
 		s.wakeSourceRefresh()
 		s.notifySourcesChanged()
+		// The source's channels leave or rejoin every lineup and guide.
+		s.bumpLineup()
 		old.Playlist, old.Guide = "", ""
 		redactSourceAuth(&old)
 		return old, err
@@ -2426,9 +2475,6 @@ func (s *Service) SavePendingSource(ctx context.Context, src Source) (Source, er
 // ImportUpload streams a raw playlist or guide body (gzip is decompressed
 // while reading) into an existing source.
 func (s *Service) ImportUpload(ctx context.Context, id, part string, body io.Reader) (Source, error) {
-	if !s.Enabled() {
-		return Source{}, core.ErrNotAvailable
-	}
 	src, err := s.storedSourceByID(ctx, id)
 	if err != nil {
 		return src, err

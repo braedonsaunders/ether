@@ -136,6 +136,9 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		return nil, core.ErrNotAvailable
 	}
 	expires := s.pageExpires()
+	// Page grants support only title artwork, so authorize with visibility
+	// rows just as IssueBatch does, without loading credited portraits.
+	ctx = frontend.WithArtworkRows(ctx)
 	experience := s.experience()
 	if page, ok := experience.(frontend.ItemArtworkPage); ok {
 		keys := make([]core.RatingKey, 0, len(req.Titles))

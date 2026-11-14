@@ -107,9 +107,22 @@ type PluginAuthor struct {
 
 // RuntimeDecl declares how the plugin is executed.
 type RuntimeDecl struct {
-	Kind   string `json:"kind"`
-	Entry  string `json:"entry,omitempty"`
-	Module string `json:"module,omitempty"`
+	Kind   string         `json:"kind"`
+	Entry  string         `json:"entry,omitempty"`
+	Module string         `json:"module,omitempty"`
+	Limits *RuntimeLimits `json:"limits,omitempty"`
+}
+
+// RuntimeLimits requests hosted/data resources within owner-controlled ceilings.
+// Defaults: 32 MiB heap, 12h, effectively unlimited background work units.
+type RuntimeLimits struct {
+	FetchBytes           int64  `json:"fetchBytes,omitempty"`
+	ArchiveMemberBytes   int64  `json:"archiveMemberBytes,omitempty"`
+	ArchiveExpandedBytes int64  `json:"archiveExpandedBytes,omitempty"`
+	ArchiveMembers       int    `json:"archiveMembers,omitempty"`
+	MemoryBytes          uint64 `json:"memoryBytes,omitempty"`
+	Deadline             string `json:"deadline,omitempty"`
+	UnitBudget           int64  `json:"unitBudget,omitempty"`
 }
 
 // HealthDecl configures periodic health checks.
@@ -740,10 +753,13 @@ type ToolResponse map[string]any
 
 // JobRequest is passed to a Job route handler.
 type JobRequest struct {
-	Name string `json:"name"`
+	Name         string          `json:"name"`
+	Continuation json.RawMessage `json:"continuation,omitempty"`
 }
 
-// JobResponse is returned by a Job route handler.
+// JobResponse returns continueInMs, continuation and progress to continue;
+// done:true completes, failed:string stops with an error. Ether caps jobs at
+// the owner time ceiling (12h by default) and 1000000 calls; store checkpoints in KV for restart recovery.
 type JobResponse map[string]any
 
 // NotifyRequest is passed to a Notify route handler.

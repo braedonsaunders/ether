@@ -486,3 +486,12 @@ func GrantsLAN(grantsOf func(ctx context.Context, pluginID string) (plugins.Gran
 		return err == nil && g.LAN
 	}
 }
+
+func (a HostAdapter) CallDataHost(ctx context.Context, pluginID, name string, args json.RawMessage) (json.RawMessage, error) {
+	h, err := a.host(pluginID)
+	if err != nil {
+		return nil, err
+	}
+	out, err := plugins.CallDataHost(ctx, h, name, args)
+	return out, mapHostErr(err)
+}

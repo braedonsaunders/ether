@@ -68,10 +68,21 @@ export interface PluginAuthor {
   url?: string;
 }
 
+/** Hosted/data requests are clamped to the owner's global or per-plugin ceilings. */
+export interface RuntimeLimits {
+  fetchBytes?: number;
+  archiveMemberBytes?: number;
+  archiveExpandedBytes?: number;
+  archiveMembers?: number;
+  memoryBytes?: number;
+  deadline?: string;
+  unitBudget?: number;
+}
 export interface RuntimeDecl {
   kind: "hosted" | "remote";
   entry?: string;
   module?: string;
+  limits?: RuntimeLimits;
 }
 
 export interface HealthDecl {
@@ -410,6 +421,7 @@ export interface KindChangePage {
 export interface SourceQuery {
   kind: "indexer_search" | "debrid_check" | "debrid_acquire";
   query?: string;
+  /** Comma-separated Newznab category IDs or standard family names; uses generic search. */
   category?: string;
   infoHashes?: string[];
   infoHash?: string;
@@ -420,6 +432,7 @@ export interface SourceCandidate {
   infoHash?: string;
   magnet?: string;
   nzbUrl?: string;
+  /** Zero-based index in the provider torrent file list. Omit for normal video selection. */
   fileIndex?: number;
   title?: string;
   size?: number;
@@ -466,6 +479,11 @@ export interface PlayableSource {
     magnet?: string;
     infoHash?: string;
     candidate?: SourceCandidate;
+    /** Zero-based torrent file index; overrides candidate.fileIndex. Invalid selections fail. */
+    fileIndex?: number;
+    /** Exact torrent path or unique basename, including non-video files. */
+    file?: string;
+    /** Archive member name when composing a release with container extraction. */
     fileHint?: string;
     passwordSecret?: string;
   };
@@ -891,9 +909,17 @@ export type ToolResponse = Record<string, unknown>;
 
 export interface JobRequest {
   name: string;
+  continuation?: unknown;
 }
 
 export interface JobResponse {
+  /** Presence asks Ether to call again after 0..300000 ms (minimum pause 100ms). */
+  continueInMs?: number;
+  /** Opaque JSON checkpoint forwarded as the next request's continuation. */
+  continuation?: unknown;
+  progress?: string;
+  done?: boolean;
+  failed?: string;
   ok?: boolean;
   [key: string]: unknown;
 }

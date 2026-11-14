@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontends/plex/model"
@@ -113,5 +116,106 @@ func TestCollectionGridPagingInvariant(t *testing.T) {
 		if item.RatingKey == core.MovieKey(40020).String() {
 			t.Fatal("retained generation bypassed current authorization")
 		}
+	}
+}
+
+type collectionAdmissionCatalog struct {
+	core.Catalog
+	open bool
+}
+
+func (c *collectionAdmissionCatalog) TitleOpenable(t *core.Title) bool {
+	return c.open && !t.Adult
+}
+
+// A series-only list must have one offset space across arbitrary slicing,
+// screen-cache expiry, episode-fact updates and live discovery changes.
+func TestSeriesCollectionSlicingInvariant(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	key := core.SmartKey(9822)
+	clock := fixedNow
+	f.srv.setTestNow(func() time.Time { return clock })
+	admission := &collectionAdmissionCatalog{Catalog: f.catalog, open: true}
+	f.srv.setCatalog(admission)
+	f.cols.cols[key] = core.Collection{Key: key, Title: "Series", Type: core.TypeShow, UpdatedAt: clock, MembershipRevision: "first"}
+	var expected []string
+	for i := 0; i < 160; i++ {
+		title := breakingBad
+		title.Key = core.ShowKey(int64(50000 + i))
+		title.Title = fmt.Sprintf("Series %03d", i)
+		f.cols.items[key] = append(f.cols.items[key], title)
+		f.catalog.titles[title.Key] = title
+		expected = append(expected, title.Key.String())
+	}
+	f.cols.items[key] = append(f.cols.items[key], f.cols.items[key][5])
+	source := &collectionGridSource{Collections: f.cols}
+	f.srv.setCollections(source)
+	path := "/library/collections/" + key.String() + "/children"
+	read := func(path string, start, size int) []string {
+		t.Helper()
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		response := f.get(t, fmt.Sprintf("%s%sX-Plex-Container-Start=%d&X-Plex-Container-Size=%d", path, sep, start, size), jsonAccept...)
+		if response.Code != 200 {
+			t.Fatalf("status=%d: %s", response.Code, response.Body.String())
+		}
+		mc := decodeShelfContainer(t, response.Body.Bytes())
+		if mc.TotalSize == nil || *mc.TotalSize != len(expected) {
+			t.Fatalf("total=%v want=%d", mc.TotalSize, len(expected))
+		}
+		var keys []string
+		for _, item := range mc.Metadata {
+			keys = append(keys, item.RatingKey)
+		}
+		return keys
+	}
+	first := read(path, 0, 84)
+	clock = clock.Add(6 * time.Minute)
+	admission.open = false
+	// Simulate a changed series ordering/new episode and discovery gate while
+	// the underlying collection membership generation is unchanged.
+	slices.Reverse(f.cols.items[key])
+	f.srv.setFilterAvailable(func(context.Context, []core.Title) []core.Title { return nil })
+	second := read(path, 84, 48)
+	full := read(path, 0, 132)
+	if !reflect.DeepEqual(append(first, second...), full) || !reflect.DeepEqual(full, expected[:132]) {
+		t.Fatal("full fetch differs from concatenated pages after cache expiry")
+	}
+	for size := 1; size <= 61; size += 10 {
+		var keys []string
+		for start := 0; start < len(expected); start += size {
+			keys = append(keys, read(path, start, size)...)
+		}
+		if !reflect.DeepEqual(keys, expected) {
+			t.Fatalf("slicing changed membership at size=%d", size)
+		}
+	}
+	if source.calls != 1 {
+		t.Fatalf("unchanged membership rebuilt %d times", source.calls)
+	}
+	// Preview assembly may contain only the initial cards. The key must page
+	// the full canonical source order, even for a Home row without a section.
+	f.srv.setFilterAvailable(nil)
+	pr := &Request{User: &ownerUser, ClientID: "client-1"}
+	row := f.srv.renderHub(context.Background(), pr, hubSpec{Hub: core.Hub{
+		ID: "collection.series", Key: key, Title: "Series", Type: core.TypeShow,
+		Items: f.cols.items[key][:8], More: true,
+	}}, hubCtx{visible: 8})
+	if row.Size != 8 || !row.More || row.TotalSize == nil || *row.TotalSize != len(expected) || shelfToken(strings.SplitN(row.Key, "?", 2)[1]) == "" {
+		t.Fatalf("preview cannot page full membership: %+v", row)
+	}
+	// A changed source stamp creates a new cut; the published preview token
+	// remains an immutable list when the unversioned collection moves on.
+	admission.open = true
+	c := f.cols.cols[key]
+	c.MembershipRevision = "second"
+	f.cols.cols[key] = c
+	old := read(row.Key, 0, len(expected))
+	current := read(path, 0, len(expected))
+	if reflect.DeepEqual(old, current) {
+		t.Fatal("changed collection did not create a new generation")
 	}
 }

@@ -1,7 +1,6 @@
 package resolver
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -17,8 +16,8 @@ import (
 //   - one on-demand check runs at a time, alone: no hedge, race or early
 //     discovery check opens a second link beside it;
 //   - the next on-demand candidate opens only after the current one failed;
-//     one the add-on did not answer in time may still be preparing, so no
-//     other add-on link opens in that pass (a retry finds it ready);
+//     a bounded open that times out is cancelled before trying the next
+//     eligible candidate in the same Play;
 //   - work nobody is waiting to watch (core.OnDemandStreamsAllowed) opens
 //     none and stops at the first one, keeping rank order intact.
 //
@@ -34,10 +33,7 @@ import (
 // It covers the stream probe's own deadline plus the health read.
 const onDemandBudget = 22 * time.Second
 
-var (
-	errOnDemandForeground = fmt.Errorf("add-on streams open only for Play: %w", core.ErrForegroundOnly)
-	errOnDemandHeld       = fmt.Errorf("another add-on stream is still preparing, so this one was not opened: %w", core.ErrPrepareSlow)
-)
+var errOnDemandForeground = fmt.Errorf("add-on streams open only for Play: %w", core.ErrForegroundOnly)
 
 // checkBudget is one candidate check's deadline.
 func checkBudget(rel core.Release) time.Duration {
@@ -45,13 +41,6 @@ func checkBudget(rel core.Release) time.Duration {
 		return onDemandBudget
 	}
 	return candidateBudget
-}
-
-// onDemandSlow reports an on-demand check the add-on did not answer in
-// time: it may still be preparing that release. A stream its add-on marks
-// debrid-cached imports nothing, so a slow answer there holds nothing back.
-func onDemandSlow(rel core.Release, v validation) bool {
-	return rel.OpensOnDemand() && !core.OnDemandCached(rel) && v.err != nil && (errors.Is(v.err, core.ErrPrepareSlow) || checkTimedOut(v.err))
 }
 
 // onDemandHedgeDelay is how long a foreground check of a debrid-cached

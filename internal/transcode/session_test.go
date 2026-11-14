@@ -804,6 +804,11 @@ func TestRungSwitchDoesNotResumeThrottleBeforeRestart(t *testing.T) {
 	fr.noPause = true
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true}, WithBuffering(24*time.Second, 16*time.Second, 0), withRungDwell(0))
 	s := startSession(t, m, ladderEncodeRequest(t, "handoff", 10*time.Minute))
+	// Select the base before observing its throttle lifecycle. Ladder
+	// metadata intentionally no longer creates an eager process.
+	if rec := get(t, s, 0); rec.Code != 200 {
+		t.Fatalf("initial base segment: %d", rec.Code)
+	}
 	first := fr.lastProc()
 	waitFor(t, "throttle stop", first.wasKilled)
 	s.mu.Lock()

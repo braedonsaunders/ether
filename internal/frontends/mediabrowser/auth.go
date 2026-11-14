@@ -111,12 +111,13 @@ func (i *instance) authenticate(r *http.Request) (*frontend.Viewer, string, erro
 			// UUID for Quick Connect). These hashes cannot be correlated.
 			// Treat its token as a bearer credential, as Jellyfin does, but
 			// retain the stored device for every downstream capability.
-			if bindingErr != nil && i.protocol == "jellyfin" && claim.Client == "Jellyfin for Android TV" {
-				if bv, st, _, e := grants.ResolveGrantDevice(r.Context(), token, ""); e == nil && st.Client == claim.Client {
+			if bindingErr != nil && i.protocol == "jellyfin" && frontend.JellyfinAndroidTVClient(claim.Client) {
+				if bv, st, _, e := grants.ResolveGrantDevice(r.Context(), token, ""); e == nil && frontend.JellyfinAndroidTVClient(st.Client) {
 					boundViewer, stored, bindingErr, claim.ID = bv, st, nil, st.ID
 				}
 			}
 			if bindingErr != nil || boundViewer == nil || boundViewer.ID != v.ID || stored.ID == "" || (claim.ID != "" && claim.ID != stored.ID) {
+				i.logIdentityFailure("device-binding", frontend.ErrNotFound)
 				return nil, "", errors.New("invalid device grant")
 			}
 			// Device ID is authoritative from the grant; client metadata is
@@ -493,6 +494,27 @@ func identityError(w http.ResponseWriter, err error) {
 		http.Error(w, "Unauthorized", 401)
 	}
 }
+
+// Log only fixed stage/reason values: exported diagnostics must never carry
+// the submitted name, password, device identifier, code, or polling secret.
+func (i *instance) logIdentityFailure(stage string, err error) {
+	if i.host.Log == nil {
+		return
+	}
+	reason := "rejected"
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		reason = "timed-out"
+	case errors.Is(err, context.Canceled):
+		reason = "canceled"
+	case errors.Is(err, frontend.ErrRateLimited):
+		reason = "rate-limited"
+	case errors.Is(err, frontend.ErrIdentityUnavailable):
+		reason = "unavailable"
+	}
+	i.host.Log.Debug("MediaBrowser authentication failed", "stage", stage, "reason", reason)
+}
+
 func (i *instance) quickEnabled() bool {
 	if i.host.Config != nil {
 		if value, ok := i.host.Config()["quickConnect"].(bool); ok {
@@ -588,6 +610,7 @@ func (i *instance) routes() error {
 			}
 			token, err := i.host.Identity.SignIn(i.identityContext(r), body.Username, body.Pw, device(r))
 			if err != nil {
+				i.logIdentityFailure("password", err)
 				identityError(w, err)
 				return
 			}
@@ -653,6 +676,7 @@ func (i *instance) routes() error {
 			}
 			details, err := i.host.Identity.QuickConnectDetails(i.identityContext(r), secret[0])
 			if err != nil {
+				i.logIdentityFailure("quick-connect-poll", err)
 				identityError(w, err)
 				return
 			}
@@ -700,6 +724,7 @@ func (i *instance) routes() error {
 				token, err = i.host.Identity.QuickConnectPoll(i.identityContext(r), body.Secret)
 			}
 			if err != nil {
+				i.logIdentityFailure("quick-connect-redemption", err)
 				identityError(w, err)
 				return
 			}

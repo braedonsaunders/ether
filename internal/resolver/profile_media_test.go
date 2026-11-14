@@ -256,7 +256,7 @@ func TestTitleMedia(t *testing.T) {
 		{name: "movie key only", title: &core.Title{Key: core.MovieKey(603)}, want: core.MediaMovie},
 		{name: "episode key only", title: &core.Title{Key: core.EpisodeKey(1399, 1, 1)}, want: core.MediaTV},
 		{name: "type wins over key", title: &core.Title{Type: core.TypeEpisode, Key: core.MovieKey(603)}, want: core.MediaTV},
-		{name: "show key is unknown", title: &core.Title{Type: core.TypeShow, Key: core.ShowKey(1399)}, want: core.MediaAny},
+		{name: "show uses the TV profile", title: &core.Title{Type: core.TypeShow, Key: core.ShowKey(1399)}, want: core.MediaTV},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

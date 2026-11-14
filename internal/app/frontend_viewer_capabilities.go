@@ -65,7 +65,7 @@ func (a *App) viewerCapabilities(local *identity.Local, experience frontend.Expe
 		if a.livetv != nil {
 			out.CanManageLiveTV = &owner
 			if p, e := a.livetv.Policy(ctx, v.ID); e == nil {
-				allowed := !p.Disabled
+				allowed := a.livetv.Enabled() && !p.Disabled
 				out.CanUseLiveTV = &allowed
 			}
 		}
