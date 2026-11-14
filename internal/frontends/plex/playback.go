@@ -706,7 +706,9 @@ func (s *Server) handleDecision(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	if arm, err := s.parsePlayRequest(r); err == nil {
-		s.armDecision(pr, arm.key)
+		owner := decisionOwner(pr)
+		owner.Generation = arm.sessionID
+		s.decisionArms.Arm(owner, arm.key)
 	}
 	// A slow source search must not hold the owner gates (timeline and stop
 	// share them) or outlast the client's request timeout.

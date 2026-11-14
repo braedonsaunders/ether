@@ -126,6 +126,15 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A stopped old encoder can arrive after the next version's decision
+	// within the SAME public player session. Reject it before reporting a
+	// stop to the broker, clearing the arm, or closing the new encoder.
+	owner := decisionOwner(pr)
+	owner.Generation = sanitizeSessionID(q.Get("session"))
+	if state == "stopped" && !s.decisionArms.Current(owner, key) {
+		s.writeEmpty(w, r)
+		return
+	}
 	s.rememberStreamRequest(r, pr.User, key)
 	// A late stop from an explicitly superseded playback must not stop the
 	// replacement source or overwrite its progress. Unknown/omitted IDs keep
@@ -244,7 +253,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	if state == "stopped" {
 		if q.Get("state") == "stopped" {
-			s.disarmDecision(pr, key)
+			s.decisionArms.Disarm(owner, key)
 		}
 		s.endVersionFlow(ctx, s.playIdentityFor(pr, key))
 		if e, ok := s.sessions.remove(tid); ok {
