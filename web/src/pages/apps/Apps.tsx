@@ -1,3 +1,4 @@
+import { WatchButton } from "../../components/WatchButton";
 import {
   Button,
   Input,
@@ -348,6 +349,7 @@ function ProtocolSettings({
   return (
     <>
       <div hidden={hidden} className="space-y-6">
+        {id === "vela" ? <WatchButton app="vela" /> : null}
         {["jellyfin", "emby", "silo"].includes(id) ? (
           <SignInSection
             info={info}
@@ -524,6 +526,8 @@ function protocolName(id: string): string {
       return "Jellyfin";
     case "emby":
       return "Emby";
+    case "vela":
+      return "Vela";
     case "silo":
       return "Silo";
     default:

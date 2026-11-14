@@ -117,9 +117,58 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 			return nil, err
 		}
 	}
-	rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: requestDevice(r), Placement: placement, Item: item, Limit: min(limit(r), 50)})
-	if err != nil {
-		return nil, err
+	rows := []frontend.Row{}
+	views, hasViews := i.host.Experience.(frontend.RowViews)
+	if id := r.PathValue("id"); id != "" && hasViews {
+		offset := 0
+		if token := r.URL.Query().Get("cursor"); token != "" {
+			c, e := i.readRowToken(r, v, token)
+			if e != nil || c.Row != id {
+				return nil, frontend.ErrRowViewStale
+			}
+			offset = c.Offset
+		}
+		row, e := i.rowPage(r, v, id, offset)
+		if e != nil {
+			return nil, e
+		}
+		i.rowMu.Lock()
+		meta, found := i.rowMeta[id]
+		i.rowMu.Unlock()
+		if !found {
+			return nil, frontend.ErrRowViewStale
+		}
+		row.Title = meta.Title
+		row.Purpose = meta.Purpose
+		row.Style = meta.Layout.Style
+		rows = append(rows, row)
+	} else if hasViews {
+		vv, e := views.ListRowViews(r.Context(), frontend.RowViewRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", Placement: placement, Item: item})
+		if e != nil {
+			return nil, e
+		}
+		for _, view := range vv {
+			i.rowMu.Lock()
+			if len(i.rowMeta) >= 2000 {
+				i.rowMeta = map[string]frontend.RowView{}
+			}
+			i.rowMeta[view.ID] = view
+			i.rowMu.Unlock()
+			row, e := i.rowPage(r, v, view.ID, 0)
+			if e != nil {
+				return nil, e
+			}
+			row.Title = view.Title
+			row.Purpose = view.Purpose
+			row.Style = view.Layout.Style
+			rows = append(rows, row)
+		}
+	} else {
+		var e error
+		rows, e = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: requestDevice(r), Placement: placement, Item: item, Limit: min(limit(r), 50)})
+		if e != nil {
+			return nil, e
+		}
 	}
 	out := []object{}
 	for _, row := range rows {
@@ -159,6 +208,18 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 				base["kind"] = "directory"
 				base["name"] = e.Directory.Title
 				base["artwork"] = []object{}
+			case e.Collection != nil:
+				base["id"] = ids.RatingKeyGUID(e.Collection.Key)
+				base["targetId"] = base["id"]
+				base["kind"] = "collection"
+				base["name"] = e.Collection.Title
+				base["artwork"] = []object{}
+			case e.Playlist != nil:
+				base["id"] = ids.RatingKeyGUID(e.Playlist.Key)
+				base["targetId"] = base["id"]
+				base["kind"] = "playlist"
+				base["name"] = e.Playlist.Title
+				base["artwork"] = []object{}
 			default:
 				continue
 			}
@@ -170,10 +231,20 @@ func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]ob
 			}
 		}
 		continuation := "exhausted"
-		if row.More {
+		if row.More || row.Kind == "truncated" {
 			continuation = "unknown"
 		}
-		out = append(out, object{"id": row.ID, "name": row.Title, "purpose": row.Purpose, "receiptToken": row.Handle, "style": row.Style, "items": entries, "continuation": continuation})
+		wire := object{"id": row.ID, "name": row.Title, "purpose": row.Purpose, "receiptToken": row.Handle, "style": row.Style, "items": entries, "continuation": continuation}
+		if row.More && hasViews {
+			offset := len(row.Entries)
+			if old := r.URL.Query().Get("cursor"); old != "" {
+				c, _ := i.readRowToken(r, v, old)
+				offset += c.Offset
+			}
+			wire["nextCursor"] = i.rowToken(r, v, row.ID, offset)
+			wire["continuation"] = "more"
+		}
+		out = append(out, wire)
 	}
 	return out, nil
 }
@@ -196,7 +267,7 @@ func (i *instance) rows(w http.ResponseWriter, r *http.Request) {
 		fail(w, e)
 		return
 	}
-	if !noCursor(w, r) {
+	if r.PathValue("id") == "" && !noCursor(w, r) {
 		return
 	}
 	rows, e := i.home(r, v, t)
@@ -305,7 +376,7 @@ func (i *instance) search(w http.ResponseWriter, r *http.Request) {
 		n = 50
 	}
 	n = min(n, 100)
-	p, e := i.host.Experience.Search(r.Context(), v, requestDevice(r), b.Query, frontend.ItemQuery{Limit: n, NoTotal: true})
+	p, e := i.host.Experience.Search(i.host.Experience.NoProviderWait(r.Context()), v, requestDevice(r), b.Query, frontend.ItemQuery{Limit: n, NoTotal: true})
 	if e != nil {
 		fail(w, e)
 		return

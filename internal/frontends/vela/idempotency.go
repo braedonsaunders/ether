@@ -5,7 +5,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -89,5 +88,3 @@ func (i *instance) save(ctx context.Context, key string, out savedResponse) erro
 	_, e = i.db.ExecContext(ctx, `UPDATE vela_replays SET response=? WHERE key=?`, data, key)
 	return e
 }
-
-var _ *sql.DB

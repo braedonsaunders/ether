@@ -53,7 +53,7 @@ func (i *instance) access(r *http.Request, v *frontend.Viewer) frontend.SessionA
 	return frontend.SessionAccess{Viewer: v, Device: requestDevice(r), Protocol: "vela"}
 }
 func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
-	v, _, e := i.viewer(r)
+	v, token, e := i.viewer(r)
 	if e != nil {
 		fail(w, e)
 		return
@@ -75,9 +75,32 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "request", "invalid_position")
 		return
 	}
-	if b.AudioTrackID != "" || len(b.SubtitleTrackID) > 0 {
-		i.unavailable(w, r)
-		return
+	options := frontend.DecideOptions{DirectPlay: true, DirectStream: b.Client.HLS, AudioStream: -1, SubtitleStream: -1}
+	audioSet, subtitleSet := false, false
+	if b.AudioTrackID != "" {
+		n, err := strconv.Atoi(b.AudioTrackID)
+		if err != nil || n < 0 {
+			problem(w, 400, "request", "invalid_audio_track")
+			return
+		}
+		options.AudioStream = n
+		audioSet = true
+	}
+	if len(b.SubtitleTrackID) > 0 {
+		subtitleSet = true
+		if string(b.SubtitleTrackID) != "null" {
+			var id string
+			if json.Unmarshal(b.SubtitleTrackID, &id) != nil {
+				problem(w, 400, "request", "invalid_subtitle_track")
+				return
+			}
+			n, err := strconv.Atoi(id)
+			if err != nil || n < 0 {
+				problem(w, 400, "request", "invalid_subtitle_track")
+				return
+			}
+			options.SubtitleStream = n
+		}
 	}
 	if i.host.Capabilities == nil {
 		i.unavailable(w, r)
@@ -107,7 +130,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	plan, e := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Protocol: "vela", Viewer: v, Device: requestDevice(r), Item: item, Channel: b.ChannelID, Caps: declared.Client, Intent: frontend.PlayIntent{Position: pos, AllowTranscoding: b.AllowTranscode, DeclaredCaps: true}})
+	plan, e := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Protocol: "vela", Viewer: v, Device: requestDevice(r), Item: item, Channel: b.ChannelID, Caps: declared.Client, Intent: frontend.PlayIntent{Options: options, AudioSet: audioSet, SubtitleSet: subtitleSet, Position: pos, AllowTranscoding: b.AllowTranscode, DeclaredCaps: true}})
 	if e != nil {
 		fail(w, e)
 		return
@@ -120,6 +143,9 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 	if e != nil {
 		fail(w, e)
 		return
+	}
+	if b.ChannelID != "" && s.Media != nil && !s.Media.Estimated {
+		plan.Media = *s.Media
 	}
 	format := frontend.StreamDirect
 	transport := "file"
@@ -176,7 +202,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	p := object{"sessionId": s.ID, "revision": uint64(1), "sourceGeneration": uint64(1), "seekGeneration": uint64(1), "state": "ready", "positionSeconds": pos.Seconds(), "durationSeconds": plan.Media.Duration.Seconds(), "paths": []object{path}, "selectedPathId": "primary", "audioTracks": audio, "subtitleTracks": subs, "selectedSubtitleTrackId": selectedSub, "chapters": []object{}, "fallback": object{"state": "unsupported"}}
+	p := object{"sessionId": s.ID, "revision": uint64(1), "sourceGeneration": uint64(1), "seekGeneration": uint64(1), "state": "ready", "positionSeconds": pos.Seconds(), "durationSeconds": plan.Media.Duration.Seconds(), "paths": []object{path}, "selectedPathId": "primary", "audioTracks": audio, "subtitleTracks": subs, "selectedSubtitleTrackId": selectedSub, "chapters": chapters(plan.Media), "fallback": object{"state": "unsupported"}}
 	if selectedAudio != "" {
 		p["selectedAudioTrackId"] = selectedAudio
 	}
@@ -198,6 +224,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 	i.sessions[s.ID] = ps
 	i.mu.Unlock()
 	send(w, 200, p)
+	i.watchSession(v, requestDevice(r), s.ID, token, ps)
 }
 func (i *instance) session(w http.ResponseWriter, r *http.Request) (*frontend.Viewer, *playSession) {
 	v, _, e := i.viewer(r)
@@ -346,6 +373,14 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 	if stale(w, s, b.SourceGeneration, b.SeekGeneration) {
 		return
 	}
+	if !s.ended.IsZero() {
+		send(w, 200, object{"accepted": true})
+		return
+	}
+	if !s.ended.IsZero() {
+		problem(w, 409, "conflict", "session_ended")
+		return
+	}
 	if b.Sequence <= s.sequence {
 		send(w, 200, object{"accepted": true})
 		return
@@ -459,4 +494,12 @@ func (i *instance) events(w http.ResponseWriter, r *http.Request) {
 			flush.Flush()
 		}
 	}
+}
+
+func chapters(media frontend.MediaInfo) []object {
+	out := []object{}
+	for _, c := range media.Chapters {
+		out = append(out, object{"id": strconv.FormatInt(c.ID, 10), "name": c.Title, "startSeconds": c.Start.Seconds(), "endSeconds": c.End.Seconds()})
+	}
+	return out
 }

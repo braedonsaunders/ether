@@ -40,10 +40,28 @@ func (h *Handler) webPlayer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "unauthorized", "Sign in required")
 		return
 	}
+	target := r.URL.Query().Get("app")
+	if target == "" {
+		target = "jellyfin"
+	}
+	if target != "jellyfin" && target != "vela" {
+		writeError(w, 400, "invalid_app", "Unknown web player")
+		return
+	}
 	infos, err := h.deps.Frontends.List(r.Context())
 	origin := ""
 	if err == nil {
 		for _, info := range infos {
+			if target == "vela" {
+				if info.Descriptor.ID == "vela" && info.Enabled && info.Status.Mounted && info.Status.WebPlayerReady {
+					scheme, host, valid := requestOrigin(r, h.proxyPrefixes())
+					if valid {
+						origin = originURL(scheme, host, "/vela")
+					}
+				}
+				continue
+			}
+
 			// The web client downloads on first use: /web answers a
 			// self-refreshing "Preparing" page meanwhile, so the button must
 			// not wait for an install nobody has triggered yet.
@@ -101,5 +119,9 @@ func (h *Handler) webPlayer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "unavailable", "Sign-in unavailable")
 		return
 	}
-	writeJSON(w, 200, map[string]string{"url": origin + "/web/ether-signin#code=" + url.QueryEscape(code)})
+	path := "/web/ether-signin"
+	if target == "vela" {
+		path = "/"
+	}
+	writeJSON(w, 200, map[string]string{"url": origin + path + "#code=" + url.QueryEscape(code)})
 }

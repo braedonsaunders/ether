@@ -42,6 +42,7 @@ func (f Frontend) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 		cancel()
 		return nil, err
 	}
+	i.rowMeta = map[string]frontend.RowView{}
 	i.db = f.DB
 	i.seal = seal
 	i.routes()
@@ -57,8 +58,10 @@ type replay struct {
 	expires time.Time
 }
 type instance struct {
-	db   *sql.DB
-	seal cipher.AEAD
+	db      *sql.DB
+	seal    cipher.AEAD
+	rowMu   sync.Mutex
+	rowMeta map[string]frontend.RowView
 
 	host     frontend.Host
 	ctx      context.Context
@@ -92,6 +95,12 @@ func problem(w http.ResponseWriter, status int, class, code string) {
 }
 func fail(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, frontend.ErrRowViewStale):
+		problem(w, 409, "conflict", "cursor_expired")
+	case errors.Is(err, frontend.ErrTranscodeCapacity), errors.Is(err, frontend.ErrStreamLimit):
+		problem(w, 503, "capacity", "playback_capacity")
+	case errors.Is(err, frontend.ErrNoSources), errors.Is(err, frontend.ErrSourceUnavailable):
+		problem(w, 502, "source", "source_unavailable")
 	case errors.Is(err, frontend.ErrNotFound):
 		problem(w, 404, "not-found", "not_found")
 	case errors.Is(err, frontend.ErrUnauthorized):

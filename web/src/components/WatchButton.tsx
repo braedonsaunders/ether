@@ -3,14 +3,15 @@ import { Tv } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import { t } from "../i18n";
 
-export function WatchButton() {
+export function WatchButton({ app }: { app?: "vela" } = {}) {
+  const endpoint = app ? `/web-player?app=${app}` : "/web-player";
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   useEffect(() => {
     let active = true;
     const check = () =>
-      apiFetch<{ available: boolean }>("/web-player")
+      apiFetch<{ available: boolean }>(endpoint)
         .then((r) => {
           if (active) setAvailable(r.available);
         })
@@ -23,7 +24,7 @@ export function WatchButton() {
       active = false;
       window.removeEventListener("focus", check);
     };
-  }, []);
+  }, [endpoint]);
   if (!available) return null;
   return (
     <button
@@ -42,7 +43,7 @@ export function WatchButton() {
         setBusy(true);
         setError(false);
         try {
-          const result = await apiFetch<{ url: string }>("/web-player", {
+          const result = await apiFetch<{ url: string }>(endpoint, {
             method: "POST",
             body: "{}",
           });
