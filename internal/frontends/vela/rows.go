@@ -34,12 +34,12 @@ type rowCursor struct {
 func (i *instance) cursorScope(r *http.Request, v *frontend.Viewer) string {
 	return hashJSON([]any{v, requestDevice(r).ID})
 }
-func (i *instance) rowPage(r *http.Request, v *frontend.Viewer, id string, offset int) (frontend.Row, error) {
+func (i *instance) rowPage(r *http.Request, v *frontend.Viewer, id string, offset, n int) (frontend.Row, error) {
 	views, ok := i.host.Experience.(frontend.RowViews)
 	if !ok {
 		return frontend.Row{}, frontend.ErrNotAvailable
 	}
-	page, e := views.ResolveRowView(r.Context(), frontend.RowViewPageRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", ID: id, Offset: offset, Limit: rowItemLimit(r)})
+	page, e := views.ResolveRowView(r.Context(), frontend.RowViewPageRequest{Viewer: v, Device: requestDevice(r), Protocol: "vela", ID: id, Offset: offset, Limit: n})
 	if e != nil {
 		return frontend.Row{}, e
 	}
@@ -80,4 +80,42 @@ func (i *instance) readRowToken(r *http.Request, v *frontend.Viewer, token strin
 		}
 	}
 	return c, nil
+}
+
+// backfillShelf consumes only the missing slots from the same immutable visit.
+// At most six extra pages (one per possible featured family) are fetched. A
+// family can contain many episodes, so hitting the bound retains honest "more"
+// rather than claiming exhaustion or scanning the entire source.
+func (i *instance) backfillShelf(r *http.Request, v *frontend.Viewer, token string, shelf object, wanted int) error {
+	for attempt := 0; attempt < 6; attempt++ {
+		items := shelf["items"].([]object)
+		if len(items) >= wanted || shelf["continuation"] != "more" {
+			break
+		}
+		cursor, err := i.readRowToken(r, v, shelf["nextCursor"].(string))
+		if err != nil {
+			return err
+		}
+		if len(cursor.Exclude) == 0 {
+			break
+		}
+		row, err := i.rowPage(r, v, cursor.Row, cursor.Offset, wanted-len(items))
+		if err != nil {
+			return err
+		}
+		page, err := i.rowWire(r, v, token, row, cursor.Offset, cursor.Exclude, true)
+		if err != nil {
+			return err
+		}
+		shelf["items"] = append(items, page["items"].([]object)...)
+		shelf["continuation"] = page["continuation"]
+		delete(shelf, "nextCursor")
+		if next, ok := page["nextCursor"]; ok {
+			shelf["nextCursor"] = next
+		}
+		if len(row.Entries) == 0 {
+			break // A non-progressing source must not spin.
+		}
+	}
+	return nil
 }

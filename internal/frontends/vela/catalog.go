@@ -142,7 +142,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 			offset = c.Offset
 			excludedHeroes = c.Exclude
 		}
-		row, e := i.rowPage(r, v, id, offset)
+		row, e := i.rowPage(r, v, id, offset, rowItemLimit(r))
 		if e != nil {
 			return nil, false, e
 		}
@@ -173,7 +173,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 			}
 			i.rowMeta[view.ID] = view
 			i.rowMu.Unlock()
-			row, e := i.rowPage(r, v, view.ID, 0)
+			row, e := i.rowPage(r, v, view.ID, 0, rowItemLimit(r))
 			if e != nil {
 				return nil, false, e
 			}
@@ -201,86 +201,100 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 		if len(sources) > 0 {
 			sources[0][row.ID] = heroSource{kind: row.Kind, pinned: row.Layout.Always}
 		}
-		ts := []frontend.Title{}
-		for _, e := range row.Entries {
-			if e.Kind == frontend.RowEntryTitle && e.Title != nil {
-				ts = append(ts, *e.Title)
-			}
+		offset := 0
+		if old := r.URL.Query().Get("cursor"); old != "" {
+			c, _ := i.readRowToken(r, v, old)
+			offset = c.Offset
 		}
-		if len(row.Entries) == 0 {
-			ts = row.Items
-		}
-		converted, e := i.titles(r, v, token, ts)
+		wire, e := i.rowWire(r, v, token, row, offset, excludedHeroes, hasViews)
 		if e != nil {
 			return nil, false, e
 		}
-		byID := map[string]object{}
-		for _, t := range converted {
-			byID[t["id"].(string)] = t
-		}
-		entries := []object{}
-		for _, e := range row.Entries {
-			base := object{"receiptToken": e.Handle}
-			switch {
-			case e.Title != nil:
-				base["id"] = ids.RatingKeyGUID(e.Title.Key)
-				base["kind"] = "title"
-				base["title"] = byID[base["id"].(string)]
-			case e.LiveChannel != nil:
-				c := e.LiveChannel
-				base["id"] = c.ID
-				base["kind"] = "channel"
-				base["channel"] = object{"id": c.ID, "number": c.Number, "name": c.Name, "kind": "", "favorite": false, "artwork": []object{}}
-			default:
-				continue
-			}
-			entries = append(entries, base)
-		}
-		if len(row.Entries) == 0 {
-			for _, t := range converted {
-				entries = append(entries, object{"id": t["id"], "kind": "title", "title": t, "receiptToken": ""})
-			}
-		}
-
-		if len(excludedHeroes) > 0 {
-			omitted := map[string]bool{}
-			for _, id := range excludedHeroes {
-				omitted[id] = true
-			}
-			filtered := entries[:0]
-			for _, entry := range entries {
-				if entry["kind"] == "title" {
-					if title, ok := entry["title"].(object); ok {
-						if omitted[heroFamily(title)] {
-							continue
-						}
-					}
-				}
-				filtered = append(filtered, entry)
-			}
-			entries = filtered
-		}
-		continuation := "exhausted"
-		if row.More || row.Kind == "truncated" {
-			continuation = "unknown"
-		}
-		wire := object{"id": row.ID, "name": row.Title, "purpose": row.Purpose, "receiptToken": row.Handle, "style": row.Style, "items": entries, "continuation": continuation}
-		if row.PreviewOnFocus {
-			wire["previewOnFocus"] = true
-		}
-		if row.More && hasViews {
-			offset := len(row.Entries)
-			if old := r.URL.Query().Get("cursor"); old != "" {
-				c, _ := i.readRowToken(r, v, old)
-				offset += c.Offset
-			}
-			wire["nextCursor"] = i.rowToken(r, v, row.ID, offset, excludedHeroes)
-			wire["continuation"] = "more"
+		if e := i.backfillShelf(r, v, token, wire, rowItemLimit(r)); e != nil {
+			return nil, false, e
 		}
 		out = append(out, wire)
 	}
 	return out, outerMore, nil
 }
+
+// rowWire retains source entry receipts while converting one authorized page.
+func (i *instance) rowWire(r *http.Request, v *frontend.Viewer, token string, row frontend.Row, sourceOffset int, excludedHeroes []string, hasViews bool) (object, error) {
+	ts := []frontend.Title{}
+	for _, e := range row.Entries {
+		if e.Kind == frontend.RowEntryTitle && e.Title != nil {
+			ts = append(ts, *e.Title)
+		}
+	}
+	if len(row.Entries) == 0 {
+		ts = row.Items
+	}
+	converted, e := i.titles(r, v, token, ts)
+	if e != nil {
+		return nil, e
+	}
+	byID := map[string]object{}
+	for _, t := range converted {
+		byID[t["id"].(string)] = t
+	}
+	entries := []object{}
+	for _, e := range row.Entries {
+		base := object{"receiptToken": e.Handle}
+		switch {
+		case e.Title != nil:
+			base["id"] = ids.RatingKeyGUID(e.Title.Key)
+			base["kind"] = "title"
+			base["title"] = byID[base["id"].(string)]
+		case e.LiveChannel != nil:
+			c := e.LiveChannel
+			base["id"] = c.ID
+			base["kind"] = "channel"
+			base["channel"] = object{"id": c.ID, "number": c.Number, "name": c.Name, "kind": "", "favorite": false, "artwork": []object{}}
+		default:
+			continue
+		}
+		entries = append(entries, base)
+	}
+	if len(row.Entries) == 0 {
+		for _, t := range converted {
+			entries = append(entries, object{"id": t["id"], "kind": "title", "title": t, "receiptToken": ""})
+		}
+	}
+
+	if len(excludedHeroes) > 0 {
+		omitted := map[string]bool{}
+		for _, id := range excludedHeroes {
+			omitted[id] = true
+		}
+		filtered := entries[:0]
+		for _, entry := range entries {
+			if entry["kind"] == "title" {
+				if title, ok := entry["title"].(object); ok {
+					if omitted[heroFamily(title)] {
+						continue
+					}
+				}
+			}
+			filtered = append(filtered, entry)
+		}
+		entries = filtered
+	}
+	continuation := "exhausted"
+	if row.More || row.Kind == "truncated" {
+		continuation = "unknown"
+	}
+	wire := object{"id": row.ID, "name": row.Title, "purpose": row.Purpose, "receiptToken": row.Handle, "style": row.Style, "items": entries, "continuation": continuation}
+	if row.PreviewOnFocus {
+		wire["previewOnFocus"] = true
+	}
+	if row.More && hasViews {
+		offset := sourceOffset + len(row.Entries)
+		wire["nextCursor"] = i.rowToken(r, v, row.ID, offset, excludedHeroes)
+		wire["continuation"] = "more"
+	}
+	return wire, nil
+}
+
 func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 	v, t, e := i.viewer(r)
 	if e != nil {
@@ -324,6 +338,10 @@ func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				shelf["nextCursor"] = next
+				if err := i.backfillShelf(r, v, t, shelf, rowItemLimit(r)); err != nil {
+					fail(w, err)
+					return
+				}
 			}
 		}
 		out["heroes"] = heroes

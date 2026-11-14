@@ -45,7 +45,7 @@ func (f *rowSizeImages) SignPage(_ context.Context, q frontend.ImagePageRequest)
 }
 
 // Paging must keep the issued source offset even when hero-family exclusions
-// shorten the wire page, and conversion cost must grow by page, not by item.
+// require backfill, and conversion cost must grow by page, not by item.
 func TestVelaRowSizeAndContinuation(t *testing.T) {
 	source := &rowSizeSource{}
 	states := []int{}
@@ -115,10 +115,10 @@ func TestVelaRowSizeAndContinuation(t *testing.T) {
 		next := request("/vela/v0/rows/0?limit=7&cursor=" + url.QueryEscape(i.sealRowCursor(cursor)))
 		next.SetPathValue("id", "0")
 		rows, _, err = i.home(next, viewer, "token")
-		if err != nil || len(rows[0]["items"].([]object)) != 6 {
+		if err != nil || len(rows[0]["items"].([]object)) != 7 {
 			t.Fatal("continuation exclusion lost", rows, err)
 		}
-		page := source.pages[len(source.pages)-1]
+		page := source.pages[len(source.pages)-2]
 		if page.Offset != tc.want || page.Limit != 7 {
 			t.Fatal("continuation page changed", page)
 		}
@@ -127,8 +127,91 @@ func TestVelaRowSizeAndContinuation(t *testing.T) {
 			t.Fatal("receipt changed", items[0])
 		}
 		cursor, err = i.readRowToken(next, viewer, rows[0]["nextCursor"].(string))
-		if err != nil || cursor.Offset != tc.want+7 || len(cursor.Exclude) != 1 {
+		if err != nil || cursor.Offset != tc.want+8 || len(cursor.Exclude) != 1 {
 			t.Fatal("filtered page changed source cursor", cursor, err)
 		}
+	}
+}
+
+// The offset counts consumed source entries, including excluded heroes, across
+// bootstrap backfill and all continuation pages through honest exhaustion.
+func TestVelaRowFeaturedBackfill(t *testing.T) {
+	source := &rowSizeSource{}
+	seal, err := encryption(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := &instance{seal: seal, host: frontend.Host{Experience: source}, rowMeta: map[string]frontend.RowView{"0": {ID: "0", Title: "Shelf"}}}
+	viewer := &frontend.Viewer{ID: 1}
+	r := httptest.NewRequest(http.MethodGet, "/vela/v0/bootstrap", nil)
+	r.Header.Set("X-Vela-Device-Id", "device")
+	excluded := []string{}
+	for _, n := range []int64{2, 8, 19} {
+		excluded = append(excluded, ids.RatingKeyGUID(frontend.MovieKey(n)))
+	}
+	row, err := i.rowPage(r, viewer, "0", 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shelf, err := i.rowWire(r, viewer, "token", row, 0, excluded, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shelf["items"].([]object)) != 17 {
+		t.Fatal("fixture did not exclude three featured titles")
+	}
+	if err := i.backfillShelf(r, viewer, "token", shelf, 20); err != nil {
+		t.Fatal(err)
+	}
+	if len(source.pages) != 2 || source.pages[1].Offset != 20 || source.pages[1].Limit != 3 {
+		t.Fatal("backfill fetched beyond the missing slots", source.pages)
+	}
+	seen := map[string]bool{}
+	for page := 0; ; page++ {
+		items := shelf["items"].([]object)
+		want := 20
+		if page == 4 {
+			want = 17
+		}
+		if len(items) != want || shelf["receiptToken"] != "row-receipt" {
+			t.Fatalf("page %d: count=%d receipt=%v", page, len(items), shelf["receiptToken"])
+		}
+		for _, entry := range items {
+			id := entry["title"].(object)["id"].(string)
+			if seen[id] {
+				t.Fatal("duplicate across pages", id)
+			}
+			for _, hero := range excluded {
+				if hero == id {
+					t.Fatal("featured title leaked", id)
+				}
+			}
+			seen[id] = true
+			key, err := ids.ParseRatingKeyGUID(id)
+			if err != nil || entry["receiptToken"] != fmt.Sprintf("receipt-%d", key.TMDB()-1) {
+				t.Fatal("entry receipt changed", entry, err)
+			}
+		}
+		if shelf["continuation"] == "exhausted" {
+			if len(seen) != 97 || shelf["nextCursor"] != nil {
+				t.Fatal("dishonest exhaustion", len(seen), shelf)
+			}
+			break
+		}
+		if page >= 4 {
+			t.Fatal("source did not exhaust")
+		}
+		cursor, err := i.readRowToken(r, viewer, shelf["nextCursor"].(string))
+		if err != nil || cursor.Offset != 23+page*20 || len(cursor.Exclude) != 3 {
+			t.Fatal("wrong consumed source offset or exclusion proof", cursor, err)
+		}
+		next := httptest.NewRequest(http.MethodGet, "/vela/v0/rows/0?cursor="+url.QueryEscape(shelf["nextCursor"].(string)), nil)
+		next.Header = r.Header.Clone()
+		next.SetPathValue("id", "0")
+		rows, _, err := i.home(next, viewer, "token")
+		if err != nil || len(rows) != 1 {
+			t.Fatal("continuation failed", rows, err)
+		}
+		shelf = rows[0]
 	}
 }
