@@ -15,6 +15,8 @@ import (
 func TestPreloadStoredMatchesLoadByKey(t *testing.T) {
 	ctx := context.Background()
 	c := newChunkTestCatalog(t)
+	// This test deletes the backing rows; keep its cache minute stable.
+	c.FreezeCacheMinute()
 	now := c.now()
 	var keys []core.RatingKey
 	for id := int64(1); id <= 3; id++ {
