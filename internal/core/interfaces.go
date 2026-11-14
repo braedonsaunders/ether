@@ -829,10 +829,10 @@ type Chapter struct {
 }
 
 // ProbeFactsVersion is the generation of facts a probe is expected to carry,
-// including reference frames, descriptive audio handler titles, and HEVC
-// decoder-configuration parameter-set completeness.
+// including reference frames, descriptive audio handler titles, HEVC decoder-
+// configuration parameter-set completeness, and AAC channel configurations.
 // Persisted probes from an older generation are cache misses.
-const ProbeFactsVersion = 7
+const ProbeFactsVersion = 8
 
 type MediaInfo struct {
 	Has64bitOffsets       *bool         `json:"has64bitOffsets,omitempty"`

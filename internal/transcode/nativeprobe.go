@@ -1548,11 +1548,11 @@ func (t mkvTrack) audio(si *core.StreamInfo) error {
 	case strings.HasPrefix(id, "A_AAC"):
 		si.Codec = "aac"
 		if len(t.private) >= 2 {
-			profile, sbrRate, channels, ok := aacConfig(t.private)
+			profile, sbrRate, channels, layout, ok := aacConfig(t.private)
 			if !ok {
 				return incomplete("bad AudioSpecificConfig")
 			}
-			si.Profile = profile
+			si.Profile, si.ChannelLayout = profile, layout
 			if sbrRate > 0 {
 				rate = float64(sbrRate)
 			}
@@ -1620,13 +1620,15 @@ func (t mkvTrack) audio(si *core.StreamInfo) error {
 		return incomplete("audio codec delay out of range")
 	}
 	si.DecodedPadding = int(padding)
-	si.ChannelLayout = defaultChannelLayout(si.Codec, si.Channels)
+	if si.ChannelLayout == "" {
+		si.ChannelLayout = defaultChannelLayout(si.Codec, si.Channels)
+	}
 	return nil
 }
 
 // aacConfig reads an AudioSpecificConfig: libavcodec's profile name, the
-// SBR output rate when explicitly signalled, and the channel configuration.
-func aacConfig(b []byte) (profile string, sbrRate, channels int, ok bool) {
+// SBR output rate when explicitly signalled, and the decoded channel count/layout.
+func aacConfig(b []byte) (profile string, sbrRate, channels int, layout string, ok bool) {
 	r := &bitReader{b: b}
 	rates := []int{96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350}
 	objectType := func() int {
@@ -1648,7 +1650,7 @@ func aacConfig(b []byte) (profile string, sbrRate, channels int, ok bool) {
 	}
 	aot := objectType()
 	rate()
-	channels = int(r.u(4))
+	channels, layout = aacChannelConfig(int(r.u(4)))
 	sbr, ps := false, false
 	if aot == 5 || aot == 29 {
 		sbr, ps = true, aot == 29
@@ -1673,24 +1675,56 @@ func aacConfig(b []byte) (profile string, sbrRate, channels int, ok bool) {
 		r.err = nil // extension parsing is optional
 	}
 	if r.err != nil || channels == 0 {
-		return "", 0, 0, false
+		return "", 0, 0, "", false
 	}
 	// libavcodec decodes mono SBR as stereo in case parametric stereo is
 	// present.
 	if sbr && channels == 1 {
-		channels = 2
+		channels, layout = 2, "stereo"
 	}
 	switch {
 	case ps:
-		return "HE-AACv2", sbrRate, channels, true
+		return "HE-AACv2", sbrRate, channels, layout, true
 	case sbr:
-		return "HE-AAC", sbrRate, channels, true
+		return "HE-AAC", sbrRate, channels, layout, true
 	}
 	names := map[int]string{1: "Main", 2: "LC", 3: "SSR", 4: "LTP", 23: "LD", 39: "ELD", 42: "xHE-AAC"}
 	if name, found := names[aot]; found {
-		return name, 0, channels, true
+		return name, 0, channels, layout, true
 	}
-	return "", 0, 0, false
+	return "", 0, 0, "", false
+}
+
+// aacChannelConfig maps ISO/IEC 14496-3 Table 1.19 configuration IDs to
+// channel counts and ffmpeg layout names. Zero requires a PCE; reserved IDs
+// and PCE-only layouts stay unknown so native probing can fall back.
+func aacChannelConfig(config int) (channels int, layout string) {
+	switch config {
+	case 1:
+		return 1, "mono"
+	case 2:
+		return 2, "stereo"
+	case 3:
+		return 3, "3.0"
+	case 4:
+		return 4, "4.0"
+	case 5:
+		return 5, "5.0"
+	case 6:
+		return 6, "5.1"
+	case 7:
+		return 8, "7.1(wide)"
+	case 11:
+		return 7, "6.1(back)"
+	case 12:
+		return 8, "7.1"
+	case 13:
+		return 24, "22.2"
+	case 14:
+		return 8, "5.1.2(back)"
+	default:
+		return 0, ""
+	}
 }
 
 // defaultChannelLayout is the layout name ffmpeg's decoders report for a

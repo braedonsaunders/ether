@@ -421,11 +421,11 @@ func mp4Audio(b []byte, e mp4Box, si *core.StreamInfo) error {
 		switch oti {
 		case 0x40, 0x66, 0x67, 0x68:
 			si.Codec = "aac"
-			profile, sbrRate, ch, ok := aacConfig(dsi)
+			profile, sbrRate, ch, layout, ok := aacConfig(dsi)
 			if !ok {
 				return incomplete("bad AudioSpecificConfig")
 			}
-			si.Profile, channels = profile, ch
+			si.Profile, channels, si.ChannelLayout = profile, ch, layout
 			if sbrRate > 0 {
 				rate = sbrRate
 			} else if r := ascRate(dsi); r > 0 {
@@ -496,7 +496,9 @@ func mp4Audio(b []byte, e mp4Box, si *core.StreamInfo) error {
 		return incomplete("audio channels or rate missing")
 	}
 	si.Channels, si.SampleRate = channels, rate
-	si.ChannelLayout = defaultChannelLayout(si.Codec, channels)
+	if si.ChannelLayout == "" {
+		si.ChannelLayout = defaultChannelLayout(si.Codec, channels)
+	}
 	return nil
 }
 
