@@ -110,10 +110,8 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 		return true
 	}
 	var transient error
-	// onDemandHeld: an on-demand check went unanswered (see ondemand.go);
-	// foregroundOnly: an on-demand candidate was reached by work that may
-	// not open it, so nothing ranked below it may win.
-	onDemandHeld, foregroundOnly, heldSkipped := false, false, false
+	// An unattended search stops at the first on-demand candidate.
+	foregroundOnly := false
 	// addonHedge reports whether cands[next] may start beside a lead
 	// add-on stream still being checked: Play is waiting, the lead is the
 	// only check running and its add-on marks it debrid-cached, it has run
@@ -155,17 +153,6 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 					foregroundOnly = true
 					return
 				}
-				if onDemandHeld {
-					i := next
-					next++
-					startedAt[i] = time.Now()
-					done[i] = &validation{index: i, err: errOnDemandHeld}
-					ct := &tr.Candidates[cands[i].trace]
-					ct.Rejected, ct.Reason, ct.err = true, errOnDemandHeld.Error(), errOnDemandHeld
-					transient = errors.Join(transient, errOnDemandHeld)
-					heldSkipped = true
-					continue
-				}
 				if inflight > 0 && !addonHedge(lead) {
 					return // starts once everything ranked above it settled
 				}
@@ -188,7 +175,6 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 		noteValidation(ctx, cands[v.index].rel, v)
 		inflight--
 		done[v.index] = &v
-		onDemandHeld = onDemandHeld || onDemandSlow(cands[v.index].rel, v)
 		ct := &tr.Candidates[cands[v.index].trace]
 		ct.Attempted = true
 		ct.FetchDuration = v.fetchDuration
@@ -261,10 +247,6 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 			break
 		}
 		fill(lead)
-		if heldSkipped {
-			heldSkipped = false
-			continue // settle the candidates fill passed over
-		}
 		if inflight == 0 && lead >= next {
 			break // a speculative warm-up reached its cap: nothing left running
 		}
