@@ -309,9 +309,12 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 		seenEdition[ed] = true
 		add(c.rel, "edition", false)
 	}
-	// Remaining distinct tiers fill any open slots.
+	// Preferred distinct tiers fill open slots first. Newly eligible soft
+	// tiers use only space left after Auto's same-quality alternatives.
 	for _, c := range pool {
-		add(c.rel, "tier", false)
+		if !c.belowScore && !c.fallback {
+			add(c.rel, "tier", false)
+		}
 	}
 
 	// Same-quality alternatives sit right after Auto, so plain Play and the
@@ -327,6 +330,10 @@ func pickVariants(t *core.Title, caps core.ClientCaps, profile core.QualityProfi
 			kept = append(kept, rel)
 		}
 		alts = kept
+	}
+	tierMax = min(tierMax, max-len(alts))
+	for _, c := range pool {
+		add(c.rel, "tier", false)
 	}
 	if len(alts) == 0 {
 		return out

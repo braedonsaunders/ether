@@ -53,16 +53,6 @@ func compareCandidates(a, b candidate) bool {
 	if a.identityWeak != b.identityWeak {
 		return !a.identityWeak
 	}
-	// Gates.
-	if a.policy.Fallback != b.policy.Fallback {
-		return a.policy.Fallback < b.policy.Fallback
-	}
-	if a.langOK != b.langOK {
-		return a.langOK
-	}
-	if a.bandwidth != b.bandwidth {
-		return a.bandwidth > b.bandwidth
-	}
 	// Soft profile preferences precede the ordinary quality comparer.
 	if a.belowScore != b.belowScore {
 		return !a.belowScore
@@ -76,6 +66,16 @@ func compareCandidates(a, b candidate) bool {
 	// Unlisted lower qualities still prefer the closest resolution.
 	if a.fallback && b.fallback && a.keys.height != b.keys.height {
 		return a.keys.height > b.keys.height
+	}
+	// Gates.
+	if a.policy.Fallback != b.policy.Fallback {
+		return a.policy.Fallback < b.policy.Fallback
+	}
+	if a.langOK != b.langOK {
+		return a.langOK
+	}
+	if a.bandwidth != b.bandwidth {
+		return a.bandwidth > b.bandwidth
 	}
 	// Radarr/Sonarr.
 	x, y := a.keys, b.keys
@@ -266,5 +266,6 @@ func preferredSource(mode string) string {
 }
 
 func samePreferenceTier(a, b candidate) bool {
-	return a.belowScore == b.belowScore && a.fallback == b.fallback && (!a.belowScore || a.counted == b.counted)
+	return a.belowScore == b.belowScore && a.fallback == b.fallback &&
+		(!a.belowScore || a.counted == b.counted) && (!a.fallback || a.keys.height == b.keys.height)
 }

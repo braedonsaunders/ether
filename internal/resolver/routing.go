@@ -364,15 +364,16 @@ func (s *Service) sourceAlwaysFirst(cands []candidate, want string, trace *Trace
 	out := slices.Clone(cands)
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
+		if !samePreferenceTier(a, b) {
+			return compareCandidates(a, b)
+		}
 		if a.policy.Fallback != b.policy.Fallback {
 			return a.policy.Fallback < b.policy.Fallback
 		}
 		if a.langOK != b.langOK {
 			return a.langOK
 		}
-		if !samePreferenceTier(a, b) {
-			return compareCandidates(a, b)
-		}
+
 		return preferred(a) && !preferred(b)
 	})
 	// A remembered success may break a score tie, but cannot jump ahead

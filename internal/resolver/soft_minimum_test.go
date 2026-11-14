@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,5 +53,40 @@ func TestSoftMinimumHardRules(t *testing.T) {
 		if err != nil || len(cands) != 0 || len(trace.Candidates) != 1 || !trace.Candidates[0].Rejected {
 			t.Fatalf("hard veto=%+v trace=%+v err=%v", cands, trace, err)
 		}
+	}
+}
+
+// Soft matches must preserve the strict prefix and prefer the smallest
+// shortfall even when source routing, language or connection fit disagree.
+func TestSoftMinimumPreferenceOrder(t *testing.T) {
+	for _, always := range []bool{false, true} {
+		cfg := testCfg()
+		cfg.Resolver.SourcePreference = PreferUsenet
+		cfg.Resolver.SourceAlwaysFirst = always
+		s := New(&fakeIndexer{}, fakeHealth{}, nil, cfg, Options{})
+		strict := []candidate{
+			{rel: core.Release{ID: "strict-a"}, keys: rankKeys{position: 10}},
+			{rel: core.Release{ID: "strict-b"}, langOK: true, keys: rankKeys{position: 1}},
+		}
+		wantStrict := s.orderCandidates(slices.Clone(strict), matrixTitle(), nil)
+		soft := []candidate{
+			{rel: core.Release{ID: "far-score"}, belowScore: true, counted: -8, langOK: true, bandwidth: 1},
+			{rel: core.Release{ID: "480p"}, fallback: true, keys: rankKeys{height: 480}, langOK: true},
+			{rel: core.Release{ID: "near-score", Protocol: core.ProtocolTorrent}, belowScore: true, counted: -2},
+			{rel: core.Release{ID: "720p", Protocol: core.ProtocolTorrent}, fallback: true, keys: rankKeys{height: 720}},
+		}
+		soft[2].policy.Fallback = 1
+		soft[3].policy.Fallback = 1
+		input := append(slices.Clone(soft), strict...)
+		got := s.orderCandidates(input, matrixTitle(), nil)
+		want := []string{wantStrict[0].rel.ID, wantStrict[1].rel.ID, "720p", "480p", "near-score", "far-score"}
+		ids := make([]string, len(got))
+		for i, c := range got {
+			ids[i] = c.rel.ID
+		}
+		if !slices.Equal(ids, want) {
+			t.Fatalf("always=%t: order %v, want %v", always, ids, want)
+		}
+		s.Close()
 	}
 }

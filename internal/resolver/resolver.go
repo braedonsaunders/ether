@@ -1668,6 +1668,24 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 }
 
 func (s *Service) orderCandidates(cands []candidate, title *core.Title, trace *Trace) []candidate {
+	// Rank strict matches in isolation so additional closest matches cannot
+	// affect their existing sort or source routing. Keep input order within
+	// each partition, including for stable tie-breaks.
+	strict := make([]candidate, 0, len(cands))
+	soft := make([]candidate, 0)
+	for _, c := range cands {
+		if c.belowScore || c.fallback {
+			soft = append(soft, c)
+		} else {
+			strict = append(strict, c)
+		}
+	}
+	strict = s.orderPreferenceCandidates(strict, title, trace)
+	soft = s.orderPreferenceCandidates(soft, title, trace)
+	return append(strict, soft...)
+}
+
+func (s *Service) orderPreferenceCandidates(cands []candidate, title *core.Title, trace *Trace) []candidate {
 	sort.SliceStable(cands, func(i, j int) bool {
 		return compareCandidates(cands[i], cands[j])
 	})
