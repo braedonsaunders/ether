@@ -243,16 +243,19 @@ func appendSoftSubtitleOutput(args []string, s runSpec) []string {
 // one EXT-X-MAP, never refetched. A failover to an encode with different
 // SPS/PPS then decodes against the old ones. Repeating them in-band at
 // every keyframe reconfigures the open decoder. These filters only add
-// parameter sets from extradata (Annex B input passes through unchanged);
+// parameter sets from extradata; HEVC needs a complete hvcC record.
+// Annex B and in-band-only sources already carry their own parameter sets;
 // matroskaenc stores the packets length-prefixed and still writes the
 // avcC/hvcC CodecPrivate.
-func matroskaCopyParameterSets(d core.Decision, codec string) string {
+func matroskaCopyParameterSets(d core.Decision, v *core.StreamInfo) string {
 	if d.Container != ContainerMatroska {
 		return ""
 	}
-	switch codec {
+	switch v.Codec {
 	case "hevc":
-		return "hevc_mp4toannexb"
+		if v.HEVCParameterSets {
+			return "hevc_mp4toannexb"
+		}
 	case "h264":
 		return "h264_mp4toannexb"
 	}
@@ -490,11 +493,11 @@ func buildCodecArgs(s runSpec) []string {
 					// HDR10 base NALs remain byte-for-byte unchanged.
 					filter += ",filter_units=remove_types=62|63"
 				}
-				if ps := matroskaCopyParameterSets(d, v.Codec); ps != "" {
+				if ps := matroskaCopyParameterSets(d, v); ps != "" {
 					filter += "," + ps
 				}
 				args = append(args, "-bsf:v", filter)
-			} else if ps := matroskaCopyParameterSets(d, v.Codec); ps != "" {
+			} else if ps := matroskaCopyParameterSets(d, v); ps != "" {
 				args = append(args, "-bsf:v", ps)
 			}
 			if container == ContainerFMP4 && v.Codec != "hevc" {

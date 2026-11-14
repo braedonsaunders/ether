@@ -174,6 +174,7 @@ func (e *realEnv) frameTimes(t *testing.T, file, stream string) []float64 {
 
 func TestMatroskaHLSRepeatsParameterSetsInBand(t *testing.T) {
 	info := mustParse(t, "mkv_hevc_hdr10.json")
+	info.Video().HEVCParameterSets = true // this test models complete hvcC
 	copyMKV := core.Decision{Kind: core.DecisionRemux, Container: ContainerMatroska, VideoCopy: true, AudioCopy: true, AudioStream: 1}
 	mustContain(t, buildArgs(baseSpec(info, copyMKV)), "-c:v copy -bsf:v hevc_mp4toannexb")
 	copyFMP4 := copyMKV
@@ -182,6 +183,7 @@ func TestMatroskaHLSRepeatsParameterSetsInBand(t *testing.T) {
 
 	// The profile 7 base-layer chain is unchanged; parameter sets follow it.
 	dv := mustParse(t, "mkv_dv_p8.json")
+	dv.Video().HEVCParameterSets = true
 	dv.Video().DolbyVisionProfile = 7
 	dv.Video().DolbyVisionCompatibilityID = 6
 	caps := appleTV

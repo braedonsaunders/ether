@@ -516,7 +516,7 @@ func (s *Session) restartLimit() int {
 // restarting it at n: wait when n is at or a little ahead of the encoder,
 // restart when n is behind the run's start, far ahead, or nothing runs.
 func (s *Session) needsRestartLocked(n int) bool {
-	if s.liveRecovering {
+	if s.liveRecovering || s.headerRecovering {
 		return false
 	}
 	if s.pendingStart && s.pendingSegment == n && s.pendingTrack == s.wantTrack {
@@ -644,7 +644,7 @@ func (s *Session) serveInit(w http.ResponseWriter, r *http.Request, t int) {
 			s.wantTrack = t
 		}
 		var dwell *time.Timer
-		if (s.cur == nil || s.cur.finished || s.cur.stopped || (selectTrack && s.cur.track != t)) && !restarted && !probe && !s.pendingStart {
+		if (s.cur == nil || s.cur.finished || s.cur.stopped || (selectTrack && s.cur.track != t)) && !restarted && !probe && !s.pendingStart && !s.headerRecovering {
 			left := s.rungDwellLocked(false, s.lastReq)
 			if s.isDASH() && selectTrack && !s.videoRequested && s.runSeq <= 1 {
 				// No video was requested yet: the initial quality choice

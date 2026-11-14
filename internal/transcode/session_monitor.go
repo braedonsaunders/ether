@@ -234,6 +234,7 @@ func (s *Session) progressedLocked(r *run) {
 		}
 		s.failures = 0
 		s.failErr = nil
+		s.headerFallbackPending = ""
 	}
 	s.maybeGovernLocked()
 	s.chainOrHoldLocked(r)
@@ -470,6 +471,19 @@ func (s *Session) finish(r *run) {
 	if s.cur != r {
 		return
 	}
+	if !s.liveInput && r.produced == 0 && (deterministicHeaderFailure(stderr) || s.headerFallbackPending == s.input) {
+		if s.recoverHeaderLocked(r) {
+			return
+		}
+		if s.headerRejected == nil {
+			s.headerRejected = make(map[string]bool)
+		}
+		s.headerRejected[s.input] = true
+		s.headerFallbackPending = ""
+		s.failErr = fmt.Errorf("ffmpeg header failed: %w: %s", err, tail(stderr, 500))
+		s.notifyInputFailureLocked(r)
+		return
+	}
 	// Normalization changes the output clock. Retry only before an init has
 	// been published in this scope; an established player clock must not move.
 	if errors.Is(err, errNegativeFMP4DecodeTime) && r.produced == 0 && !r.spec.NormalizeNegativeDTS {
@@ -549,6 +563,10 @@ func (s *Session) finish(r *run) {
 	} else {
 		s.failErr = fmt.Errorf("ffmpeg: %w: %s", err, tail(stderr, 300))
 	}
+	s.notifyInputFailureLocked(r)
+}
+
+func (s *Session) notifyInputFailureLocked(r *run) {
 	if s.inputFailed {
 		return
 	}
@@ -794,4 +812,81 @@ func (s *Session) liveRecoveryDelay(now time.Time, r *run) (time.Duration, bool)
 	}
 	s.liveFailures++
 	return 250 * time.Millisecond << min(s.liveFailures-1, 4), true
+}
+
+// Deterministic initialization failures cannot be repaired by probing the same
+// bytes again. Keep this classification narrow: transport outages still use
+// the normal recovery path.
+func deterministicHeaderFailure(stderr string) bool {
+	l := strings.ToLower(stderr)
+	return strings.Contains(l, "no parameter sets in the extradata") ||
+		strings.Contains(l, "could not write header") || strings.Contains(l, "error initializing output stream")
+}
+
+// recoverHeaderLocked permits one copy-to-encode attempt per input and at
+// most eight failing header attempts per minute across all input swaps.
+func (s *Session) recoverHeaderLocked(r *run) bool {
+	if s.headerInputs == nil {
+		s.headerInputs = make(map[string]int)
+	}
+	s.headerInputs[s.input]++
+	s.headerLastFailure = time.Now()
+	allowed := s.headerRestarts.take(s.headerLastFailure, 8, time.Minute)
+	if !allowed || len(s.headerRestarts) >= 8 || s.headerInputs[s.input] > 1 || !r.spec.Decision.VideoCopy {
+		return false
+	}
+	v := s.info.Video()
+	if v == nil || (v.Codec != "hevc" && v.Codec != "h264") {
+		return false
+	}
+	// A published Dolby Vision track cannot turn into a base-layer encode.
+	// Fail over instead of silently changing the client's retained format.
+	if s.contract != nil && (s.contract.dv || s.contract.rng == rangeDV) {
+		return false
+	}
+	if encodedRange(v) == rangeDV {
+		return false
+	}
+	d := s.decision
+	d.Kind, d.VideoCopy, d.VideoCodec = core.DecisionTranscode, false, v.Codec
+	d.StripDolbyVision = false
+	if d.BitrateKbps <= 0 {
+		d.BitrateKbps = bitrateCeiling(v.Height, v.Codec)
+	}
+	d.Reason += "; video copy header failed; encoding video"
+	s.decision = d
+	if len(s.rungs) > 0 {
+		s.rungs[0].decision = d
+	}
+	s.playlist = nil
+	s.log.Warn("copy header failed; trying video encode once", "run", r.seq)
+	// Prevent requests from racing the delayed fallback and starting copies.
+	s.headerRecovering = true
+	s.headerFallbackPending = s.input
+	timer := time.NewTimer(headerRecoveryDelay(len(s.headerRestarts)))
+	cancel := s.encoder.cancel
+	s.mu.Unlock()
+	select {
+	case <-timer.C:
+	case <-cancel:
+	}
+	timer.Stop()
+	s.mu.Lock()
+	if s.closed || s.cur != r {
+		return true
+	}
+	s.headerRecovering = false
+	if err := s.startRunForLocked(r.startSeg, true, "copy header fallback"); err != nil {
+		if s.headerRejected == nil {
+			s.headerRejected = make(map[string]bool)
+		}
+		s.headerRejected[s.input] = true
+		s.failErr = err
+		s.notifyInputFailureLocked(r)
+	}
+	return true
+}
+
+func headerRecoveryDelay(attempts int) time.Duration {
+	return 500 * time.Millisecond * time.Duration(1<<min(max(0, attempts-1), 3))
 }
