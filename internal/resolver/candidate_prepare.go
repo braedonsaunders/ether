@@ -30,6 +30,9 @@ func (s *Service) launchValidation(wg *sync.WaitGroup, workCtx context.Context, 
 		} else {
 			v = s.validateOne(checkCtx, cand.rel)
 		}
+		// Retire the losing open before publishing its result: a timeout must
+		// not let the next on-demand candidate start beside it.
+		cancel()
 		v.index = i
 		results <- v
 	}()
@@ -86,6 +89,10 @@ func (c *candidateCheck) wait(ctx context.Context) validation {
 		}
 		return c.result
 	case <-ctx.Done():
+		// Discovery owns this check for the same Resolve. Cancel and join it
+		// before failover can launch another open; never reopen a live check.
+		c.cancel()
+		<-c.done
 		return validation{err: ctx.Err()}
 	}
 }
