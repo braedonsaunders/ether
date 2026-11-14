@@ -713,7 +713,7 @@ func (s *Service) collectionFor(ctx context.Context, row *specRow, user *core.Us
 	if row.spec.MediaType == MediaMixed && t != "" {
 		keys = sectionKeys(keys, t)
 	}
-	c := core.Collection{Key: row.key(), Title: row.spec.Name, Summary: row.spec.Description, Kind: "smart",
+	c := core.Collection{RankedTop10: row.spec.RankedTop10, Key: row.key(), Title: row.spec.Name, Summary: row.spec.Description, Kind: "smart",
 		OwnerUserID: row.owner, ChildCount: len(keys), Upcoming: row.spec.ReleaseMode == "upcoming" || row.spec.ReleaseMode == "mixed"}
 	if row.spec.MediaType == MediaMixed && t != "" {
 		c.Key = core.SectionCollectionKey(c.Key, t)

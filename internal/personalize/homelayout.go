@@ -377,6 +377,9 @@ func arrangeLayout(rows []core.HomeRow, d core.HomeLayout, user int64, hc core.H
 			layer = "override"
 		}
 		row.Policy = p
+		if p != nil && p.RankedTop10 != nil {
+			row.Hub.RankedTop10 = *p.RankedTop10
+		}
 		row.PolicyLayer = ""
 		explicitAlways := false
 		if p != nil {
@@ -725,7 +728,7 @@ func (e *Engine) FinalizeNeutralHome(ctx context.Context, user *core.User, situa
 		if kind == "" {
 			kind = hubKind(candidate.ID)
 		}
-		h := core.Hub{ID: candidate.ID, Title: candidate.Title, Type: candidate.Type, Items: candidate.Items, ItemCount: candidate.ItemCount}
+		h := core.Hub{ID: candidate.ID, Title: candidate.Title, Type: candidate.Type, Items: candidate.Items, ItemCount: candidate.ItemCount, RankedTop10: candidate.RankedTop10}
 		rows = append(rows, core.HomeRow{HubID: candidate.ID, Title: candidate.Title, Kind: kind, Source: core.RowSourcePrecomposed, Items: candidate.Items, Hub: h})
 		byID[candidate.ID] = candidate
 	}
@@ -733,6 +736,7 @@ func (e *Engine) FinalizeNeutralHome(ctx context.Context, user *core.User, situa
 	out := make([]core.NeutralHomeRow, 0, len(arranged))
 	for _, row := range arranged {
 		if candidate, ok := byID[row.HubID]; ok {
+			candidate.RankedTop10 = row.Hub.RankedTop10
 			candidate.Always = row.Policy != nil && row.Policy.Status == "always"
 			out = append(out, candidate)
 		}

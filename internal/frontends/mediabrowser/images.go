@@ -12,6 +12,25 @@ import (
 	"strings"
 )
 
+type rankedRowKey struct{}
+
+func withRankedRow(r *http.Request, enabled bool, titles []frontend.Title, offset int) *http.Request {
+	if !enabled {
+		return r
+	}
+	ranks := map[frontend.RatingKey]int{}
+	for n, t := range titles {
+		if offset+n < 10 {
+			ranks[t.Key] = offset + n + 1
+		}
+	}
+	return r.WithContext(context.WithValue(r.Context(), rankedRowKey{}, ranks))
+}
+func rankedRowRanks(r *http.Request) map[frontend.RatingKey]int {
+	ranks, _ := r.Context().Value(rankedRowKey{}).(map[frontend.RatingKey]int)
+	return ranks
+}
+
 func (i *instance) gridImagesFor(r *http.Request, titles []frontend.Title) map[frontend.RatingKey]map[string]any {
 	return i.gridImageRows(r, titles, nil, nil)
 }
@@ -80,7 +99,7 @@ func (i *instance) gridImageRows(r *http.Request, titles []frontend.Title, keys 
 		if signer, ok := i.host.ImageGrants.(frontend.ImagePageSigner); ok {
 			for start := 0; start < len(titles); start += 50 {
 				end := min(start+50, len(titles))
-				rows, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{Credential: token, Device: device(r), Titles: titles[start:end], Kinds: gridKinds(kinds)})
+				rows, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{Ranked: rankedRowRanks(r), Credential: token, Device: device(r), Titles: titles[start:end], Kinds: gridKinds(kinds)})
 				if err != nil {
 					continue
 				}

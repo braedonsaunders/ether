@@ -30,7 +30,7 @@ func rankedCandidates(hubs []core.Hub, err error) ([]experience.RankedCandidate,
 	}
 	out := make([]experience.RankedCandidate, len(hubs))
 	for i, h := range hubs {
-		out[i] = experience.RankedCandidate{ID: h.ID, Purpose: experience.CandidatePurpose(h), Title: h.Title, Type: h.Type, Style: h.Style, Promoted: h.Promoted, Items: h.Items, More: h.More, Key: h.Key, ItemCount: h.ItemCount}
+		out[i] = experience.RankedCandidate{ID: h.ID, RankedTop10: h.RankedTop10, Purpose: experience.CandidatePurpose(h), Title: h.Title, Type: h.Type, Style: h.Style, Promoted: h.Promoted, Items: h.Items, More: h.More, Key: h.Key, ItemCount: h.ItemCount}
 	}
 	return out, nil
 }

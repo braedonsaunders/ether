@@ -108,7 +108,7 @@ func (s *Service) HomeRowsFor(ctx context.Context, user *core.User, hc core.HubC
 			continue
 		}
 		hub := core.Hub{
-			ID: "collection." + row.publicID(), Title: sp.Name, Style: "shelf",
+			ID: "collection." + row.publicID(), Title: sp.Name, Style: "shelf", RankedTop10: sp.RankedTop10,
 			Promoted: sp.Targets.HomeRow, Items: items, More: dropped || len(keys) > len(items), Key: row.key(),
 		}
 		switch sp.MediaType {
@@ -156,7 +156,7 @@ func (s *Service) LayoutRow(ctx context.Context, user *core.User, hc core.HubCon
 	if err != nil {
 		return nil, err
 	}
-	hub := core.Hub{ID: "collection." + row.publicID(), Title: row.spec.Name, Style: "shelf", Promoted: true, Items: items, More: dropped || count > len(items), Key: row.key(), Context: "hub.home.collection"}
+	hub := core.Hub{ID: "collection." + row.publicID(), Title: row.spec.Name, Style: "shelf", RankedTop10: row.spec.RankedTop10, Promoted: true, Items: items, More: dropped || count > len(items), Key: row.key(), Context: "hub.home.collection"}
 	switch row.spec.MediaType {
 	case MediaMovie:
 		hub.Type = core.TypeMovie
