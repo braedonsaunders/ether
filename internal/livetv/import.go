@@ -9,10 +9,13 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 var xtreamVODFile = regexp.MustCompile(`^[0-9]+\.[A-Za-z0-9]+$`)
@@ -426,6 +429,17 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 				}
 			}
 			item := Item{Thumb: p.Icon.Src}
+			for _, category := range p.Category {
+				genre := strings.TrimSpace(category.Value)
+				if genre != "" && !slices.Contains(item.Genres, genre) {
+					item.Genres = append(item.Genres, genre)
+				}
+			}
+			if frontend.LiveCategory(item.Genres, "movie", "") {
+				item.MediaType = "movie"
+			} else if frontend.LiveCategory(item.Genres, "series", "") {
+				item.MediaType = "episode"
+			}
 			if !end.IsZero() {
 				item.DurationMS = end.Sub(start).Milliseconds()
 			}

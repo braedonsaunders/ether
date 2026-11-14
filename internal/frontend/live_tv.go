@@ -11,15 +11,29 @@ import (
 // LiveTVProvider is the EPG provider identifier reported on Plex Live TV routes.
 const LiveTVProvider = "tv.plex.providers.epg.xmltv:1"
 
-// LiveChannel contains public metadata and a neutral channel identifier.
-// It never contains IPTV source URLs or credentials.
+// LiveGuide is an ordered owner guide descriptor. Its ID survives renames.
+type LiveGuide struct {
+	ID   string
+	Name string
+}
+
+// LiveTVGuides optionally exposes owner guides without changing channel identity.
+type LiveTVGuides interface {
+	Guides(context.Context, *core.User) ([]LiveGuide, error)
+	GuideChannels(context.Context, *core.User, string) ([]LiveTVChannel, error)
+}
+
+// LiveChannel contains public metadata, never provider URLs or credentials.
 type LiveChannel struct {
+	Guides                               []LiveGuide
 	ID, Number, Name, Kind, Logo, Rating string
 	Group                                string
 	Favorite                             bool
 	Images                               []Image
 }
 type LiveProgramme struct {
+	Genres                          []string
+	MediaType                       string
 	ID, ChannelID                   string
 	Start, End                      time.Time
 	Item                            core.RatingKey

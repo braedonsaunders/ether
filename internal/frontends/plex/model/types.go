@@ -630,14 +630,21 @@ type MediaProvider struct {
 	Feature    []Feature `plex:"Feature"`
 }
 
+type GridChannelFilter struct {
+	Key            string `plex:"key"`
+	GenreRatingKey string `plex:"genreRatingKey"`
+	Title          string `plex:"title"`
+}
+
 type Feature struct {
-	Flavor        string              `plex:"flavor,omitempty"`
-	ScrobbleKey   string              `plex:"scrobbleKey,omitempty"`
-	UnscrobbleKey string              `plex:"unscrobbleKey,omitempty"`
-	Key           string              `plex:"key,omitempty"`
-	Type          string              `plex:"type"`
-	Directory     []ProviderDirectory `plex:"Directory"`
-	Action        []Action            `plex:"Action"`
+	GridChannelFilter []GridChannelFilter `plex:"GridChannelFilter"`
+	Flavor            string              `plex:"flavor,omitempty"`
+	ScrobbleKey       string              `plex:"scrobbleKey,omitempty"`
+	UnscrobbleKey     string              `plex:"unscrobbleKey,omitempty"`
+	Key               string              `plex:"key,omitempty"`
+	Type              string              `plex:"type"`
+	Directory         []ProviderDirectory `plex:"Directory"`
+	Action            []Action            `plex:"Action"`
 }
 
 type Action struct {

@@ -34,14 +34,17 @@ CREATE TABLE livetv_policies(user_id INTEGER PRIMARY KEY, data TEXT NOT NULL);`)
 }
 
 type Service struct {
-	loginPool    loginPool
-	closeOnce    sync.Once
-	lifetimeStop chan struct{}
-	lifetimeDone chan struct{}
-	lifetimeWake chan struct{}
-	hasChannels  atomic.Bool
-	lifecycleMu  sync.Mutex
-	running      bool
+	ownerGuidesMu    sync.Mutex
+	ownerGuideGroups []guideChoice
+	ownerGuideRev    int64
+	loginPool        loginPool
+	closeOnce        sync.Once
+	lifetimeStop     chan struct{}
+	lifetimeDone     chan struct{}
+	lifetimeWake     chan struct{}
+	hasChannels      atomic.Bool
+	lifecycleMu      sync.Mutex
+	running          bool
 
 	readinessWake         chan struct{}
 	readiness             map[string]channelReadiness
