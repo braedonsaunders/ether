@@ -18,13 +18,28 @@ func (g *Grants) GrantScope(ctx context.Context, surface, token string, device c
 	if !ok {
 		return "", core.ErrUnauthorized
 	}
-	var scope string
 	now := g.now().UnixMilli()
-	err := g.db.QueryRowContext(ctx, `SELECT id FROM identity_refresh_families WHERE access_hash=? AND surface=? AND device_id=? AND revoked=0 AND absolute_expiry>? AND idle_expiry>? ORDER BY id LIMIT 1`, digest, surface, device.ID, now, now).Scan(&scope)
-	if errors.Is(err, sql.ErrNoRows) {
+	rows, err := g.db.QueryContext(ctx, `SELECT id FROM identity_refresh_families WHERE access_hash=? AND surface=? AND device_id=? AND revoked=0 AND absolute_expiry>? AND idle_expiry>? LIMIT 2`, digest, surface, device.ID, now, now)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	scope := ""
+	for rows.Next() {
+		if scope != "" {
+			return "", core.ErrUnauthorized
+		}
+		if err = rows.Scan(&scope); err != nil {
+			return "", err
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return "", err
+	}
+	if scope == "" {
 		return "", core.ErrUnauthorized
 	}
-	return scope, err
+	return scope, nil
 }
 
 // GrantScopeCurrent follows valid rotations, while rejecting expired families,

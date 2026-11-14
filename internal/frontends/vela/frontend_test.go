@@ -25,6 +25,7 @@ func (identityFake) GrantScopeCurrent(context.Context, string, frontend.Device) 
 	return &frontend.Viewer{ID: 1, Username: "viewer"}, nil
 }
 func TestVelaProtocolInvariants(t *testing.T) {
+	t.Run("pairing lineage", checkPairingLineage)
 	for version, want := range map[string]bool{"0.1.0": true, "0.1.9": true, "0.1.0+build.7": true, "0.1.1-beta.2": true, "0.2.0-rc.1": true, "0.0.9": false, "0.1.0-alpha": false, "0.2.0": false, "1.0.0": false, "0.1": false, "0.01.0": false, "0.1.1-01": false, "": false} {
 		if got := compatibleBuild(version); got != want {
 			t.Fatalf("build %q: got %v, want %v", version, got, want)

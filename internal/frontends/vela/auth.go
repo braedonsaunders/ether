@@ -28,15 +28,7 @@ func (i *instance) tokens(w http.ResponseWriter, r *http.Request, access, refres
 		fail(w, frontend.ErrUnauthorized)
 		return
 	}
-	if refresh == "" {
-		refresh, err = i.host.Identity.IssueRefresh(r.Context(), access, d)
-		if err != nil {
-			_ = i.host.Identity.Revoke(r.Context(), access)
-			fail(w, err)
-			return
-		}
-	}
-	send(w, 200, object{"accessToken": access, "refreshToken": refresh, "expiresAt": expires.UTC().Format(time.RFC3339), "viewer": viewerWire(v)})
+	i.tokenResult(w, r, access, refresh, d, v, expires)
 }
 func (i *instance) auth(w http.ResponseWriter, r *http.Request) {
 	var b struct {
