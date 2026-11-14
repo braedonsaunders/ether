@@ -1870,7 +1870,7 @@ func (s *Server) searchExperience() frontend.Search {
 		if searcher == nil {
 			searcher, _ = s.collections().(frontend.VibeSearcher)
 		}
-		src = frontend.SearchSources{Catalog: s.catalog().Search, Natural: s.exp().DiscoverySearch(s.discovery()), Familiar: s.exp().FamiliarFrom(s.state())}
+		src = frontend.SearchSources{Catalog: s.catalog().Search, Familiar: s.exp().FamiliarFrom(s.state())}
 		if searcher != nil {
 			src.Vibe = searcher
 		}
