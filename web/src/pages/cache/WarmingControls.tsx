@@ -64,7 +64,7 @@ export function WarmingPolicy({
 }) {
   const state = useAsync((signal) => apiFetch<Warming>(path, { signal }), []);
   return (
-    <section className="shrink-0 rounded-xl border border-border bg-surface p-4">
+    <section className="py-3">
       <h3 className="text-sm font-medium">{t("Keep warm")}</h3>
       <p className="mt-1 text-xs text-fg-muted">
         {t("People's next episodes come first, then your pins. Uses your cache budget.")}

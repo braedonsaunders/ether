@@ -745,17 +745,6 @@ export default function Cache() {
               </p>
             </div>
             {error ? <ErrorPanel error={error} /> : null}
-            {editor === "policy" && (
-              <WarmingPolicy
-                keys={draft.keepWarmTitles ?? []}
-                speculative={draft.speculativeWarming !== "off"}
-                disabled={saving}
-                onRemove={(key) =>
-                  patch({ keepWarmTitles: (draft.keepWarmTitles ?? []).filter((k) => k !== key) })
-                }
-                onSpeculativeChange={(value) => patch({ speculativeWarming: value ? "on" : "off" })}
-              />
-            )}
             <section aria-label={t("Cache storage")} className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">{t("Where your cache lives")}</h3>
@@ -1019,6 +1008,19 @@ export default function Cache() {
                   })
                 }
               />
+              {editor === "policy" && (
+                <WarmingPolicy
+                  keys={draft.keepWarmTitles ?? []}
+                  speculative={draft.speculativeWarming !== "off"}
+                  disabled={saving}
+                  onRemove={(key) =>
+                    patch({ keepWarmTitles: (draft.keepWarmTitles ?? []).filter((k) => k !== key) })
+                  }
+                  onSpeculativeChange={(value) =>
+                    patch({ speculativeWarming: value ? "on" : "off" })
+                  }
+                />
+              )}
               {draft.preloadEnabled && (
                 <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
                   <Field
