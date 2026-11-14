@@ -112,6 +112,35 @@ function Copy({ value }: { value: string }) {
     </Button>
   );
 }
+function AssistantCopy() {
+  const [state, setState] = useState<"idle" | "done" | "error">("idle");
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => {
+        void (async () => {
+          try {
+            const response = await fetch("/ether/plugins/reference/llms-full.txt");
+            if (!response.ok || !response.headers.get("content-type")?.includes("text/plain")) {
+              throw new Error("Reference unavailable");
+            }
+            await navigator.clipboard.writeText(await response.text());
+            setState("done");
+          } catch {
+            setState("error");
+          }
+        })();
+      }}
+    >
+      {state === "done"
+        ? t("Copied")
+        : state === "error"
+          ? t("Copy failed")
+          : t("Copy for your AI assistant")}
+    </Button>
+  );
+}
 function Markdown({ text, anchorPrefix }: { text: string; anchorPrefix: string }) {
   const headings = Object.fromEntries(
     [1, 2, 3, 4, 5, 6].map((level) => [
@@ -261,12 +290,15 @@ export default function DeveloperReference() {
       title={t("Developer reference")}
       base="/plugins"
       actions={
-        <Link
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-          to="/plugins/installed"
-        >
-          {t("Plugins")}
-        </Link>
+        <>
+          <AssistantCopy />
+          <Link
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+            to="/plugins/installed"
+          >
+            {t("Plugins")}
+          </Link>
+        </>
       }
     >
       <div className="space-y-2">

@@ -28,4 +28,17 @@ func main() {
 	if err = os.WriteFile(filepath.Join(root, "web/src/pages/plugins/developer-reference.json"), append(b, '\n'), 0644); err != nil {
 		panic(err)
 	}
+	short, full, err := devreference.MachineReference(root, b)
+	if err != nil {
+		panic(err)
+	}
+	dest := filepath.Join(root, "web/public/plugins/reference")
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		panic(err)
+	}
+	for name, content := range map[string][]byte{"llms.txt": short, "llms-full.txt": full} {
+		if err := os.WriteFile(filepath.Join(dest, name), content, 0644); err != nil {
+			panic(err)
+		}
+	}
 }

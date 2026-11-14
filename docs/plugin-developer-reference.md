@@ -40,3 +40,12 @@ Large data services added in v0.3.11 are generated from `host_data.go` and both
 SDK clients: `http.fetchToCache`, `cache.read`, `archive.list`, and `archive.open`.
 See `plugin-kinds.md` for the wire shapes, grant rules, ZIP safety bounds, and
 why a 10 MiB direct fetch can still exceed a 32 MiB guest's available heap.
+
+Agents can read `/ether/plugins/reference/llms.txt` for the entry guide and topic
+index, or `llms-full.txt` for every authored chapter and generated declaration.
+The Reference header's “Copy for your AI assistant” button fetches the full text
+only when clicked. Both files are static Vite public assets, included in the
+embedded console build; no server index or background work is involved.
+`go generate ./internal/plugins/devreference` updates all three artifacts. The
+same `TestReferenceMatchesContract` CI gate checks both text files for drift,
+including changes to authored guides and `sdk/AGENTS.md`.

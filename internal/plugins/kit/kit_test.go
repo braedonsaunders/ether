@@ -211,13 +211,17 @@ func TestCheckGoodPluginPasses(t *testing.T) {
 }
 
 func TestCheckAllTemplateKindsAndLangsPass(t *testing.T) {
-	kinds := []string{"livetv_source", "source", "integration", "notification_channel", "extension"}
+	kinds := []string{"livetv_source", "source", "integration", "notification_channel", "extension", "catalogue", "job"}
 	langs := []string{"ts", "js", "python"}
 	for _, k := range kinds {
 		for _, l := range langs {
 			t.Run(k+"_"+l, func(t *testing.T) {
 				dir := filepath.Join(t.TempDir(), "sample-"+k)
-				if err := Scaffold(TemplateOptions{Dir: dir, Kind: k, Lang: l}); err != nil {
+				kind, recipe := k, ""
+				if k == "catalogue" || k == "job" {
+					kind, recipe = "integration", k
+				}
+				if err := Scaffold(TemplateOptions{Dir: dir, Kind: kind, Lang: l, Recipe: recipe}); err != nil {
 					t.Fatalf("Scaffold(%s, %s): %v", k, l, err)
 				}
 				pkg, err := Load(dir)
