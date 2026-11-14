@@ -60,6 +60,7 @@ var tierTouchSources = []touchSource{
 	{table: "state_last_source", column: "rating_key", tierA: true},
 	{table: "watchlist_items", column: "item_key", tierA: true},
 	{table: "watchlist_rss_authors", column: "item_key", tierA: true},
+	{table: "watchlist_warm_intents", column: "item_key", tierA: true},
 	{table: "watchlist_episodes", column: "item_key", tierA: true},
 	{table: "watchlist_episodes", column: "episode_key", tierA: true},
 	{table: "watchlist_episodes_alerts", column: "episode_key"},
