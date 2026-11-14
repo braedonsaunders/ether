@@ -291,6 +291,12 @@ func (b *Broker) StopProtocol(ctx context.Context, protocol frontend.Protocol) e
 		return core.ErrNotAvailable
 	}
 	b.mu.Lock()
+	for id, s := range b.previews {
+		if s.public.Protocol == protocol {
+			s.cancel()
+			delete(b.previews, id)
+		}
+	}
 	var sessionIDs, planIDs []string
 	for id, s := range b.sessions {
 		if s.public.Protocol == protocol {

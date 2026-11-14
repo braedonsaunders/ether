@@ -14,8 +14,13 @@ func (a *App) buildExtras() {
 	if a.onair != nil {
 		dl = a.onair.Downloader()
 	}
+	cacheDir := ""
+	if root := a.cfg.Read().Cache.Dir; root != "" {
+		cacheDir = filepath.Join(root, "trailers")
+	}
 	a.extras = extras.New(extras.Options{
 		Videos:     a.tmdb,
+		CacheDir:   cacheDir,
 		Config:     func() config.Extras { return a.cfg.Read().Extras },
 		Logger:     a.log.With("component", "extras"),
 		ToolsDir:   filepath.Join(a.opts.DataDir, "tools"),
