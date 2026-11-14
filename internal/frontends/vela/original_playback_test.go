@@ -21,7 +21,9 @@ func TestOriginalPlaybackContract(t *testing.T) {
 	yes := true
 	ctx := context.Background()
 	starts := []frontend.StreamRequest{}
+	output := &outputFixture{rungs: []core.HLSRung{{ID: "base", Width: 1920, Height: 1080, Bandwidth: 8000000}}}
 	broker := frontendtest.Sessions{
+		TranscodeForFunc: func(context.Context, string) (core.HLSSession, bool) { return output, true },
 		PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
 			if !req.Intent.OriginalPlayback.Valid() {
 				t.Fatal("runtime capability lost")
@@ -33,6 +35,9 @@ func TestOriginalPlaybackContract(t *testing.T) {
 		},
 		StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, _ string, req frontend.StreamRequest) (string, error) {
 			starts = append(starts, req)
+			if req.Format == frontend.StreamHLS {
+				return "/sessions/media/session/grant/master.m3u8", nil
+			}
 			return "/sessions/media/session/grant/file", nil
 		},
 	}
@@ -48,7 +53,7 @@ func TestOriginalPlaybackContract(t *testing.T) {
 		handler(w, r)
 		return w
 	}
-	w := call(i.playback, object{"titleId": ids.RatingKeyGUID(core.MovieKey(1)), "positionSeconds": 123.0, "client": object{"device": object{"id": "device"}, "hls": true, "originalPlayback": object{"version": 1, "range": true, "demuxContainers": []string{"mkv"}, "videoDecoders": []string{"hevc"}}}})
+	w := call(i.playback, object{"titleId": ids.RatingKeyGUID(core.MovieKey(1)), "positionSeconds": 123.0, "client": object{"device": object{"id": "device"}, "mse": true, "originalPlayback": object{"version": 1, "range": true, "demuxContainers": []string{"mkv"}, "videoDecoders": []string{"hevc"}}}})
 	if w.Code != 200 {
 		t.Fatalf("playback %d %s", w.Code, w.Body.String())
 	}
@@ -66,11 +71,19 @@ func TestOriginalPlaybackContract(t *testing.T) {
 		t.Fatal("track index lost")
 	}
 	w = call(i.command, object{"kind": "switch", "pathId": "fallback-hls", "atSeconds": 456.0, "sourceGeneration": 1, "seekGeneration": 1})
-	if w.Code != 200 || len(starts) != 2 || starts[1].Position != 456*time.Second || starts[1].Format != frontend.StreamHLS {
+	if w.Code != 200 || len(starts) != 2 || starts[1].Position != 456*time.Second || starts[1].Format != frontend.StreamHLS || !starts[1].LazyStart || !starts[1].Continuous {
 		t.Fatalf("fallback switch %d %s %+v", w.Code, w.Body.String(), starts)
 	}
 	if paths[1]["timelineOriginSeconds"] != 456.0 || plan["sourceGeneration"] != uint64(1) || plan["seekGeneration"] != uint64(2) || paths[0]["url"] != nil {
 		t.Fatalf("timeline/source changed %+v", plan)
+	}
+	qualities := paths[1]["qualities"].([]object)
+	if len(qualities) != 1 || qualities[0]["codecStatus"] != "pending" || paths[1]["initialRenditionId"] != "base" || len(paths[0]["qualities"].([]object)) != 0 {
+		t.Fatal("fallback evidence attached to wrong path", plan)
+	}
+	output.rungs[0].OutputCodecs = "avc1.640029,mp4a.40.2"
+	if !i.refreshOutput(ctx, "session", i.sessions["session"]) || paths[1]["qualities"].([]object)[0]["codecStatus"] != "verified" {
+		t.Fatal("fallback codec evidence did not advance", plan)
 	}
 }
 

@@ -325,7 +325,7 @@ func TestFrontendLiveTVHonoursPerAppVisibility(t *testing.T) {
 // image grants, including reauthorization when channel visibility changes.
 func TestLiveGuideProgrammeArtworkPolicy(t *testing.T) {
 	ctx := context.Background()
-	a := setupTestAppConfigured(t, true, Options{}, func(c *config.Config) { enabled := true; c.LiveTV.Enabled = &enabled })
+	a := setupTestAppConfigured(t, true, Options{}, nil)
 	local, _ := identity.NewLocal(a.db)
 	viewerID, err := local.CreateViewer(ctx, "guide-viewer", "password-1234")
 	if err != nil {

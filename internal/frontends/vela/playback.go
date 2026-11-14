@@ -321,7 +321,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		p["live"] = object{"mode": mode}
 		delete(p, "durationSeconds")
 	}
-	if original && b.Client.HLS && plan.HLS {
+	if original && (b.Client.HLS || b.Client.MSE) && plan.HLS {
 		fallbackKind := "transcode"
 		if plan.DirectStream {
 			fallbackKind = "remux"
@@ -582,6 +582,18 @@ func (i *instance) command(w http.ResponseWriter, r *http.Request) {
 		}
 		paths := s.plan["paths"].([]object)
 		path := selectedPlaybackPath(s.plan, paths)
+		if path["original"] == true {
+			for _, candidate := range paths {
+				if candidate["id"] == "fallback-hls" {
+					delete(path, "url")
+					path["readiness"] = "on-demand"
+					path = candidate
+					s.plan["selectedPathId"] = path["id"]
+					break
+				}
+			}
+		}
+		path["readiness"] = "ready"
 		delete(path, "original")
 		delete(path, "range")
 		delete(path, "originalVideo")
