@@ -311,6 +311,10 @@ func fetchPlaylistGuide(ctx context.Context, s *Service, src *Source, withChanne
 		s.o.Logger.Info("Live TV source fetching", "sourceId", src.ID, "source", src.Name, "url", sourceOrigin(*src), "step", "playlist")
 		src.Playlist, err = s.readURLWith(ctx, src.PlaylistURL, maxPlaylistBytes, src.Auth.header(), "playlist")
 		if err != nil {
+			if len(src.Logins) > 0 && withChannels {
+				src.Account = &ProviderAccount{Status: "Disabled", CheckedAt: s.o.Now()}
+				return s.cachedPrimaryLineup(ctx, src, fmt.Errorf("playlist: %w", err))
+			}
 			return Fetched{}, fmt.Errorf("playlist: %w", err)
 		}
 	}

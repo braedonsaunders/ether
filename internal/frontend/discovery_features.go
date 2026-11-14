@@ -43,6 +43,8 @@ type DiscoveryRatings interface {
 
 type DiscoveryOverlays interface {
 	CustomPostersEnabled() bool
+	// Ranked decorates already authorized source bytes with a Top 10 rank.
+	Ranked(ctx context.Context, source []byte, rank int, wide bool) ([]byte, string, error)
 	Paths(ctx context.Context, viewer *core.User, t *core.Title, lang string) (string, string)
 	WithSettingsSnapshot(ctx context.Context) context.Context
 	WithArtworkPage(ctx context.Context, keys []core.RatingKey) (context.Context, error)

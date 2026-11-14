@@ -34,9 +34,30 @@ func (s *Session) swapInput(ctx context.Context, inputURL string, info core.Medi
 	// Decode a tiny bounded sample outside the session lock. Only proven
 	// embedded side bars matching the existing picture are removed.
 	s.mu.Lock()
+	if s.headerRejected[inputURL] {
+		s.mu.Unlock()
+		return fmt.Errorf("transcode: input rejected after deterministic header failure")
+	}
+	if len(s.headerRestarts) >= 8 && time.Since(s.headerLastFailure) < time.Minute {
+		s.mu.Unlock()
+		return fmt.Errorf("transcode: header restart limit reached")
+	}
+	retryAt := time.Time{}
+	if !s.headerLastFailure.IsZero() {
+		retryAt = s.headerLastFailure.Add(headerRecoveryDelay(len(s.headerRestarts)))
+	}
 	before := s.recoveryBufferLocked()
 	previousInput := s.input
 	s.mu.Unlock()
+	if delay := time.Until(retryAt); !retryAt.IsZero() && delay > 0 {
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+	}
 	sampleAt := at
 	if preserve {
 		if before.ReadyUntil > sampleAt && before.ReadyUntil < info.Duration {
@@ -149,6 +170,8 @@ func (s *Session) swapInput(ctx context.Context, inputURL string, info core.Medi
 	s.failures = 0
 	s.failErr = nil
 	s.inputFailed = false
+	s.headerRecovering = false
+	s.headerFallbackPending = ""
 	if !preserve {
 		s.lastReq = seg
 	}

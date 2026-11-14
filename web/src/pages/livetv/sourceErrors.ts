@@ -4,6 +4,12 @@ import { errorMessage } from "../../lib/api";
 /** Provider transport details remain in server logs; the console explains the remedy. */
 export function sourceImportError(error: unknown, previous = true): string {
   const raw = typeof error === "string" ? error : errorMessage(error);
+  const mismatch = /^login (\d+): playlist does not match channel "(.*)"$/.exec(raw);
+  if (mismatch)
+    return t("Login {number} does not include channel {channel}.", {
+      number: mismatch[1],
+      channel: mismatch[2],
+    });
   const status = Number(/HTTP\s+(\d{3})/i.exec(raw)?.[1] ?? 0);
   let cause: string;
   if (status === 401 || status === 403 || /refused the credentials/i.test(raw))

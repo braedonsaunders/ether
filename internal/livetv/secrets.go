@@ -36,6 +36,10 @@ func sourceFields(src *Source) []sourceField {
 	if a := src.Auth; a != nil {
 		fs = append(fs, sourceField{"auth.username", &a.Username, true}, sourceField{"auth.password", &a.Password, true}, sourceField{"auth.token", &a.Token, true})
 	}
+	for i := range src.Logins {
+		l := &src.Logins[i]
+		fs = append(fs, sourceField{"login." + l.ID + ".url", &l.PlaylistURL, false}, sourceField{"login." + l.ID + ".username", &l.Username, true}, sourceField{"login." + l.ID + ".password", &l.Password, true})
+	}
 	return fs
 }
 
@@ -67,6 +71,7 @@ func sourceContext(src *Source, field string, bound bool) []string {
 }
 
 func copyAuth(src *Source) {
+	src.Logins = append([]ProviderLogin(nil), src.Logins...)
 	if src.Auth == nil {
 		return
 	}

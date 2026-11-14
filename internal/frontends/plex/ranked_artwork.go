@@ -48,6 +48,11 @@ func (s *Server) serveRankedArtwork(w http.ResponseWriter, r *http.Request, key 
 	req := frontend.ArtworkRequest{Viewer: pr.User, Item: key, Device: frontend.Device{Language: pr.Language, Product: pr.Product, Platform: pr.Platform}}
 	images, complete, err := art.List(r.Context(), req)
 	if err != nil || !complete {
+		// Upcoming collections use a scoped placeholder proof instead of the
+		// released-title artwork list. Reuse that authorization before reading art.
+		if s.serveRankedPlaceholder(w, r, key, rank, shape == "wide", width) {
+			return
+		}
 		writeHTTPError(w, 404)
 		return
 	}
@@ -89,4 +94,61 @@ func paintRankedCollection(mc *model.MediaContainer, offset int) {
 		typ = mc.Metadata[0].Type
 	}
 	mc.Meta = &model.Meta{DisplayImage: []model.DisplayImage{{Type: typ, ImageType: "coverArt"}}}
+}
+
+// serveRankedPlaceholder preserves the existing upcoming-collection artwork
+// flow. rv contributes only its collection proof; never an arbitrary fetch URL.
+func (s *Server) serveRankedPlaceholder(w http.ResponseWriter, r *http.Request, key frontend.RatingKey, rank int, wide bool, width int) bool {
+	original, err := url.Parse(r.URL.Query().Get("rv"))
+	if err != nil {
+		return false
+	}
+	proof := original.Query().Get("collection")
+	if proof == "" {
+		return false
+	}
+	title, _, err := s.lookupPlaceholder(r.Context(), FromContext(r.Context()), key, proof)
+	if err != nil || title == nil {
+		return false
+	}
+	discovery := s.discovery()
+	if discovery == nil || discovery.Overlays == nil {
+		return false
+	}
+	var data []byte
+	if title.PosterPath != "" && s.svc().images != nil {
+		image, err := s.svc().images.Get(r.Context(), s.svc().imageURL(title.PosterPath, "w500"), s.now())
+		if err != nil {
+			return false
+		}
+		data = image.Data
+	} else {
+		generated, _, ok, err := frontend.RenderTitlePoster(r.Context(), s.svc().generatedPosters, title, 500)
+		if err != nil || !ok {
+			return false
+		}
+		data = generated
+	}
+	data, ct, err := discovery.Overlays.Ranked(r.Context(), data, rank, wide)
+	if err != nil {
+		return false
+	}
+	// The standard transform respects this request's output bound.
+	if width < 0 || width > 4000 {
+		return false
+	}
+	if width > 0 {
+		data, err = frontend.ResizePoster(data, width)
+		if err != nil {
+			return false
+		}
+	}
+	setArtworkHeaders(w.Header(), ct)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Add("Vary", "X-Plex-Token")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(data)
+	}
+	return true
 }

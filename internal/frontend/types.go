@@ -41,6 +41,7 @@ const (
 // aliases.
 type Hub = core.Hub
 type HubContext = core.HubContext
+type HomeSituation = core.HomeSituation
 
 // Playback session and decision values stay owned by core. Adapters
 // observe and render them through these aliases.

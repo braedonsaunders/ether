@@ -34,6 +34,7 @@ CREATE TABLE livetv_policies(user_id INTEGER PRIMARY KEY, data TEXT NOT NULL);`)
 }
 
 type Service struct {
+	loginPool    loginPool
 	closeOnce    sync.Once
 	lifetimeStop chan struct{}
 	lifetimeDone chan struct{}
@@ -2165,6 +2166,9 @@ func (s *Service) importSource(ctx context.Context, src Source) (Source, error) 
 		return src, err
 	}
 	cs, g := fetched.Channels, fetched.Guide
+	if err := s.refreshLogins(ctx, &src, cs); err != nil {
+		return src, err
+	}
 	s.matchLogos(ctx, cs)
 	g.Programmes = dedupeProgrammes(g.Programmes)
 	if progress != nil {
@@ -2180,6 +2184,9 @@ func (s *Service) importSource(ctx context.Context, src Source) (Source, error) 
 	// Bulk edits share this source lock, so refresh cannot restore a stale
 	// enabled/favourite/group snapshot over an edit that already succeeded.
 	if err := s.lockSourceEdits(ctx, tx, []string{src.ID}); err != nil {
+		return src, err
+	}
+	if err := s.writeLoginStreams(ctx, tx, src); err != nil {
 		return src, err
 	}
 	if err := s.invalidateVODConnection(ctx, tx, src); err != nil {
@@ -2568,7 +2575,7 @@ func (s *Service) DeleteSource(ctx context.Context, id string) error {
 		return err
 	}
 	d := store.DialectOf(s.o.DB)
-	for _, q := range []string{`DELETE FROM livetv_channels WHERE ` + store.JSONText(d, "data", "sourceId") + `=?`, `DELETE FROM livetv_programmes WHERE source_id=?`, `DELETE FROM livetv_sources WHERE id=?`, `DELETE FROM livetv_source_refresh WHERE id=?`, `DELETE FROM xtream_vod WHERE provider=?`, `DELETE FROM xtream_vod_refresh WHERE provider=?`, `DELETE FROM livetv_guide_channels WHERE source_id=?`,
+	for _, q := range []string{`DELETE FROM livetv_channels WHERE ` + store.JSONText(d, "data", "sourceId") + `=?`, `DELETE FROM livetv_programmes WHERE source_id=?`, `DELETE FROM livetv_login_streams WHERE source_id=?`, `DELETE FROM livetv_sources WHERE id=?`, `DELETE FROM livetv_source_refresh WHERE id=?`, `DELETE FROM xtream_vod WHERE provider=?`, `DELETE FROM xtream_vod_refresh WHERE provider=?`, `DELETE FROM livetv_guide_channels WHERE source_id=?`,
 		`UPDATE livetv_channels SET data=` + store.JSONRemove(d, "data", "guideSourceId") + ` WHERE ` + store.JSONText(d, "data", "guideSourceId") + `=?`} {
 		if _, err = tx.ExecContext(ctx, q, id); err != nil {
 			return err

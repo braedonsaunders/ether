@@ -21,6 +21,9 @@ type Item = {
 
 const known = (value?: string) => Boolean(value && !value.startsWith("0001"));
 
+const formatSources = (sources: string[]) =>
+  Array.from(new Set(sources.map((s) => (s.startsWith("plex-community:") ? "plex-community" : s))));
+
 /** One viewer's watched-for titles: sync, check and remove (viewer profile › Watchlist). */
 export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
   const settings = useAsync(() => apiFetch<DiscoverySettings>("/discovery/settings"), []);
@@ -210,7 +213,7 @@ export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
                             time: relativeTime(item.checkedAt),
                           })
                         : t("Not checked yet")}
-                    {item.sources.length ? ` · ${item.sources.join(", ")}` : ""}
+                    {item.sources.length ? ` · ${formatSources(item.sources).join(", ")}` : ""}
                   </p>
                 </div>
                 {available ? <Badge variant="success">{t("Available")}</Badge> : null}

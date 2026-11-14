@@ -165,6 +165,9 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	if s.closed {
 		return errors.New("transcode: session closed")
 	}
+	if s.headerRecovering {
+		return nil
+	}
 	if s.inputFailed {
 		return errInputExhausted
 	}

@@ -199,6 +199,7 @@ export function SourceEditor({
             useLiveTV: source.useLiveTV,
             useVOD: source.useVOD,
             auth: source.auth ? structuredClone(source.auth) : undefined,
+            logins: structuredClone(source.logins ?? []),
             ...groupRules(source),
             maxConnections: source.maxConnections,
             tuneGapSeconds: source.tuneGapSeconds,
@@ -249,7 +250,12 @@ export function SourceEditor({
 
   const auth = draft.auth ?? {};
   const xtream = kind === "playlist" && auth.type === "xtream";
-  const setAuth = (patch: SourceAuth) => setDraft((d) => ({ ...d, auth: { ...d.auth, ...patch } }));
+  const setAuth = (patch: SourceAuth) =>
+    setDraft((d) => ({
+      ...d,
+      auth: { ...d.auth, ...patch },
+      ...(patch.type && patch.type !== d.auth?.type ? { logins: [] } : {}),
+    }));
   const plex = kind === "guide" && guideKind === "plex";
   // GET never returns inline uploads, but the server keeps a stored upload
   // when a save sends none (keepStoredUploads), so it still counts here.
@@ -873,6 +879,83 @@ export function SourceEditor({
             onUrl={(v) => setDraft({ ...draft, playlistUrl: v, playlist: "" })}
             onFile={(f) => void upload(f, "playlist")}
           />
+        ) : null}
+        {kind === "playlist" && !pluginBacked && !plex ? (
+          <div className="space-y-3">
+            {(draft.logins ?? []).map((login, i) => {
+              const update = (patch: Partial<typeof login>) =>
+                setDraft((d) => ({
+                  ...d,
+                  logins: d.logins?.map((l, n) => (n === i ? { ...l, ...patch } : l)),
+                }));
+              return (
+                <section key={login.id} className="space-y-3 rounded-xl border border-border p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">
+                      {t("Login {number}", { number: i + 2 })}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setDraft((d) => ({ ...d, logins: d.logins?.filter((_, n) => n !== i) }))
+                      }
+                    >
+                      {t("Remove")}
+                    </Button>
+                  </div>
+                  {xtream ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label={t("Username")}>
+                        <Input
+                          autoComplete="off"
+                          value={login.username ?? ""}
+                          onChange={(e) => update({ username: e.currentTarget.value })}
+                        />
+                      </Field>
+                      <Field label={t("Password")}>
+                        <SecretInput
+                          ariaLabel={t("Password")}
+                          value={login.password ?? ""}
+                          onChange={(password) => update({ password })}
+                        />
+                      </Field>
+                    </div>
+                  ) : (
+                    <Field label={t("M3U playlist")}>
+                      <SecretInput
+                        ariaLabel={t("M3U playlist")}
+                        value={login.playlistUrl ?? ""}
+                        onChange={(playlistUrl) => update({ playlistUrl })}
+                      />
+                    </Field>
+                  )}
+                  {login.account ? <ProviderAccountCard account={login.account} /> : null}
+                  {login.error ? (
+                    <p role="status" className="text-sm text-danger">
+                      {login.error === "login refused"
+                        ? t("The provider rejected the login. Check the username and password.")
+                        : t("Provider unavailable; retry scheduled")}
+                    </p>
+                  ) : null}
+                </section>
+              );
+            })}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={(draft.logins?.length ?? 0) >= 15}
+              onClick={() =>
+                setDraft((d) => ({
+                  ...d,
+                  logins: [...(d.logins ?? []), { id: crypto.randomUUID() }],
+                }))
+              }
+            >
+              <Plus size={13} />
+              {t("Add another login")}
+            </Button>
+          </div>
         ) : null}
         {!pluginBacked && !plex ? (
           <UrlOrFile

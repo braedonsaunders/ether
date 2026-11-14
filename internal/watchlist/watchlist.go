@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"sort"
 	"strconv"
@@ -41,6 +42,7 @@ CREATE INDEX watchlist_viewer ON watchlist_items(user_id,available,added);
 	store.Register("watchlist", 2, `CREATE TABLE watchlist_meta(k TEXT PRIMARY KEY, v TEXT NOT NULL DEFAULT '');`)
 	store.Register("watchlist", 4, `CREATE TABLE watchlist_community_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,started_at INTEGER NOT NULL DEFAULT 0,finished_at INTEGER NOT NULL DEFAULT 0,count INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',plex TEXT NOT NULL DEFAULT ''); CREATE UNIQUE INDEX watchlist_community_active ON watchlist_community_jobs(user_id) WHERE state IN ('queued','running'); CREATE INDEX watchlist_community_history ON watchlist_community_jobs(user_id,id);`)
 	store.Register("watchlist", 5, `CREATE TABLE watchlist_community_locks(user_id TEXT PRIMARY KEY,touched INTEGER NOT NULL);`)
+	store.Register("watchlist", 7, `CREATE TABLE watchlist_rss_authors(friend_id TEXT NOT NULL,item_key INTEGER NOT NULL,PRIMARY KEY(friend_id,item_key));`)
 
 }
 
@@ -93,6 +95,9 @@ type Options struct {
 	Cache core.CacheProvenanceRecorder
 	// SyncInterval is how often Run passes over every viewer (30m).
 	SyncInterval time.Duration
+	// RSSInterval is how often Run polls configured Plex watchlist RSS feeds (5m).
+	// This is an internal scheduling option, not a persisted owner setting.
+	RSSInterval time.Duration
 	// ResumeSchedule makes Run wait until SyncInterval has passed since the
 	// last pass recorded in the database (by any node) before its first
 	// pass, instead of passing at once. A cluster sets it because Run
@@ -105,12 +110,16 @@ type Options struct {
 	OnFriendsRSSChanged func(context.Context)
 }
 type Service struct {
-	db          *sql.DB
-	o           Options
-	mu          sync.Mutex
-	communityMu sync.Mutex
-	nextCheck   time.Time
-	gen         atomic.Uint64
+	db              *sql.DB
+	o               Options
+	mu              sync.Mutex
+	rssMu           sync.Mutex
+	rssClient       *http.Client
+	communityMu     sync.Mutex
+	rssCheckMu      sync.Mutex
+	rssCheckPending map[int64]core.User
+	nextCheck       time.Time
+	gen             atomic.Uint64
 }
 
 // Generation changes when watchlist membership changes.
@@ -119,6 +128,33 @@ func (s *Service) Generation() uint64 {
 		return 0
 	}
 	return s.gen.Load()
+}
+
+func (s *Service) queueRSSCheck(u core.User) {
+	s.rssCheckMu.Lock()
+	if s.rssCheckPending == nil {
+		s.rssCheckPending = make(map[int64]core.User)
+	}
+	// A single worker drains at most 20 viewers; overflow waits for the
+	// regular scheduled pass, which already checks every viewer.
+	if len(s.rssCheckPending) < 20 {
+		s.rssCheckPending[u.ID] = u
+	}
+	s.rssCheckMu.Unlock()
+}
+
+func (s *Service) drainRSSChecks() []core.User {
+	s.rssCheckMu.Lock()
+	defer s.rssCheckMu.Unlock()
+	if len(s.rssCheckPending) == 0 {
+		return nil
+	}
+	out := make([]core.User, 0, len(s.rssCheckPending))
+	for _, u := range s.rssCheckPending {
+		out = append(out, u)
+	}
+	clear(s.rssCheckPending)
+	return out
 }
 
 type Item struct {
@@ -155,7 +191,10 @@ func New(db *sql.DB, o Options) *Service {
 	if o.SyncInterval <= 0 {
 		o.SyncInterval = 30 * time.Minute
 	}
-	return &Service{db: db, o: o}
+	if o.RSSInterval <= 0 {
+		o.RSSInterval = 5 * time.Minute
+	}
+	return &Service{db: db, o: o, rssClient: rssHTTPClient(o.Client)}
 }
 
 func (s *Service) memoKey() string { return fmt.Sprintf("watchlist:settings:%p", s) }
@@ -863,6 +902,48 @@ func (s *Service) Hubs(ctx context.Context, u *core.User, limit int) ([]core.Hub
 // SyncInterval; with ResumeSchedule the first pass waits out the interval
 // since the last recorded pass.
 func (s *Service) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+	if s.o.RSSInterval > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ctx.Err() == nil {
+				interval := max(s.o.RSSInterval, time.Minute)
+				if !schedule.Wait(ctx, s.o.Now, interval+time.Duration(rand.Int64N(int64(interval/5)))) {
+					return
+				}
+				feedJob, feedCancel := context.WithTimeout(ctx, time.Minute)
+				err := s.SyncRSS(feedJob)
+				feedCancel()
+				if err != nil {
+					s.o.Logger.Warn("watchlist rss sync failed", "err", err)
+					if !schedule.Wait(ctx, s.o.Now, time.Minute) {
+						return
+					}
+				} else if s.o.Resolver != nil {
+					// Inline work keeps one bounded worker, even when checks take
+					// longer than a feed interval. The shared check mutex also
+					// serializes these checks with normal scheduled availability.
+					checkJob, checkCancel := context.WithTimeout(ctx, 2*time.Minute)
+					for _, queued := range s.drainRSSChecks() {
+						if checkJob.Err() != nil {
+							break
+						}
+						latest, err := s.user(checkJob, queued.ID)
+						if err != nil || latest.PlexID != queued.PlexID || latest.UUID != queued.UUID {
+							continue
+						}
+						if err := s.Check(checkJob, latest); err != nil {
+							s.o.Logger.Warn("watchlist rss availability check failed", "user", latest.ID, "err", err)
+						}
+					}
+					checkCancel()
+				}
+			}
+		}()
+	}
+	defer wg.Wait()
+
 	if !schedule.Wait(ctx, s.o.Now, s.untilDue(ctx)) {
 		return
 	}
