@@ -243,11 +243,14 @@ func (s *Service) directRequest(hc *http.Client, req *http.Request, p Payload) (
 		if s.opts.AcquireStreamProvider == nil {
 			return nil, core.ErrSourceUnavailable
 		}
-		var err error
-		release, err = s.opts.AcquireStreamProvider(req.Context(), p.StreamProvider)
+		ctx, cancel := context.WithCancel(req.Context())
+		req = req.WithContext(core.WithProviderLeaseCancel(ctx, cancel))
+		slot, err := s.opts.AcquireStreamProvider(req.Context(), p.StreamProvider)
 		if err != nil {
+			cancel()
 			return nil, err
 		}
+		release = func() { slot(); cancel() }
 	}
 	resp, err := hc.Do(req)
 	if err != nil {

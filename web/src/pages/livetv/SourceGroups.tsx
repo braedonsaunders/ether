@@ -49,6 +49,9 @@ export function ProviderAccountCard({ account }: { account: SourceAccount }) {
           {t("Checked {when}", { when: relativeTime(account.checkedAt) })}
         </span>
       </div>
+      <p className="text-xs text-fg-muted">
+        {t("Connections")}: {account.activeConnections} / {max || 1}
+      </p>
       {left !== null ? (
         <p
           className={cn(

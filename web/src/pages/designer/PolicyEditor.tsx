@@ -116,9 +116,7 @@ export function PolicyEditor({
         <Segmented
           ariaLabel={t("Ranked (Top 10)")}
           size="sm"
-          value={
-            policy.rankedTop10 === undefined ? "default" : policy.rankedTop10 ? "on" : "off"
-          }
+          value={policy.rankedTop10 === undefined ? "default" : policy.rankedTop10 ? "on" : "off"}
           onChange={(v) =>
             onChange({ ...policy, rankedTop10: v === "default" ? undefined : v === "on" })
           }

@@ -47,6 +47,13 @@ func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		channel := object{"id": c.ID, "number": c.Number, "name": c.Name, "kind": c.Kind, "artwork": art, "favorite": c.Favorite, "rating": c.Rating}
+		if c.Guides != nil {
+			guides := []object{}
+			for _, guide := range c.Guides {
+				guides = append(guides, object{"id": guide.ID, "name": guide.Name})
+			}
+			channel["guides"] = guides
+		}
 		if c.Group != "" {
 			channel["group"] = c.Group
 		}

@@ -60,7 +60,7 @@ func (s *Service) AcquireProvider(ctx context.Context, id string) (func(), error
 	if limit == 0 {
 		limit = 1
 	}
-	return s.reserveVODProvider(id, limit, core.SpeculativeIndexerWork(ctx))
+	return s.reserveVODProvider(ctx, id, limit, core.SpeculativeIndexerWork(ctx))
 }
 func (s *Service) vodClient(src Source, background bool) xtream.Client {
 	a := src.Auth
@@ -72,11 +72,20 @@ func (s *Service) vodClient(src Source, background bool) xtream.Client {
 		if src.MaxConnections > 0 {
 			limit = min(limit, src.MaxConnections)
 		}
-		release, err := s.reserveVODProvider(src.ID, limit, background)
+		requestCtx, cancel := context.WithCancel(ctx)
+		requestCtx = core.WithProviderLeaseCancel(requestCtx, cancel)
+		slot, err := s.reserveVODProvider(requestCtx, src.ID, limit, background)
+		release := func() {
+			if slot != nil {
+				slot()
+			}
+			cancel()
+		}
 		if err != nil {
+			cancel()
 			return nil, xtream.ErrBusy
 		}
-		rc, err := s.openURL(ctx, raw, a.header())
+		rc, err := s.openURL(requestCtx, raw, a.header())
 		if err != nil {
 			release()
 			return nil, err
@@ -641,7 +650,41 @@ func (v *VODIndexer) FetchNZB(ctx context.Context, r core.Release) ([]byte, erro
 func (v *VODIndexer) HasDirectSources() bool { return v.hasVOD() }
 
 // The service mutex also covers live sessions and broadcast reservations.
-func (s *Service) reserveVODProvider(id string, limit int, background bool) (func(), error) {
+func (s *Service) reserveVODProvider(ctx context.Context, id string, limit int, background bool) (func(), error) {
+	entry, err := s.sourceEntry(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if entry.pool != nil && (entry.pool.LoginPool || len(entry.pool.Logins) > 0) {
+		if background {
+			s.loginPool.mu.Lock()
+			playing := false
+			for _, l := range s.loginPool.live {
+				if l.source == id && !strings.HasPrefix(l.raw, "vod:") {
+					playing = true
+					break
+				}
+			}
+			s.loginPool.mu.Unlock()
+			if playing {
+				return nil, ErrProviderBusy
+			}
+		}
+		// VOD URLs belong to the primary login; a second live account must
+		// never increase the primary account's VOD connection allowance.
+		lease, err := s.leaseLogin(ctx, id, "vod:"+randomID(), nil)
+		if err != nil {
+			return nil, err
+		}
+		if lease == nil {
+			return nil, ErrProviderBusy
+		}
+		s.loginPool.mu.Lock()
+		lease.onLost = core.ProviderLeaseCancel(ctx)
+		s.loginPool.mu.Unlock()
+		var once sync.Once
+		return func() { once.Do(func() { s.releaseLogin(lease) }) }, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	channels := map[string]bool{}

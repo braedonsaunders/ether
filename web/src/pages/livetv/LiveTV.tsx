@@ -1,3 +1,4 @@
+import { OwnerGuides } from "./OwnerGuides";
 import { ChannelDescribeDialog } from "./ChannelDescribeDialog";
 import Library, { LibraryAside } from "./library/Library";
 import { styleCopy } from "./onair/naming";
@@ -871,24 +872,27 @@ export default function LiveTV() {
             )}
           </div>
         }
-        <SubtabNav
-          ariaLabel={t("Lineup")}
-          className="justify-start"
-          active={leftTab}
-          onSelect={(next) => {
-            setLeftTab(next);
-            if (next === "library") navigate("/livetv/library");
-            else if (next === "looks") navigate("/livetv/looks");
-            else if (tab === "looks" || tab === "library")
-              navigate(next === "sources" ? "/livetv/sources" : "/livetv");
-          }}
-          tabs={[
-            { key: "channels", label: t("Channels") },
-            { key: "guide", label: t("Guide") },
-            { key: "looks", label: stylesName() },
-            { key: "library", label: t("Library") },
-          ]}
-        />
+        <div className="flex items-center justify-between">
+          <SubtabNav
+            ariaLabel={t("Lineup")}
+            className="justify-start"
+            active={leftTab}
+            onSelect={(next) => {
+              setLeftTab(next);
+              if (next === "library") navigate("/livetv/library");
+              else if (next === "looks") navigate("/livetv/looks");
+              else if (tab === "looks" || tab === "library")
+                navigate(next === "sources" ? "/livetv/sources" : "/livetv");
+            }}
+            tabs={[
+              { key: "channels", label: t("Channels") },
+              { key: "guide", label: t("Guide") },
+              { key: "looks", label: stylesName() },
+              { key: "library", label: t("Library") },
+            ]}
+          />
+          <OwnerGuides />
+        </div>
       </PanelHead>
     ),
     [
