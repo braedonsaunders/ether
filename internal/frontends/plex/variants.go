@@ -255,10 +255,8 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *frontend.
 		// of an undefined selected subtitle and ends playback (#267).
 		{
 			info := s.withCachedSidecars(ctx, pr.User, t, variant.Info)
-			if stored.subtitleSet {
-				info = infoWithSelectedSidecar(info, stored.subtitleStream)
-			}
-			sel := resolveSelection(stored, info)
+			info, partSelection := subtitleInfoForPart(info, stored, m.Part[0].ID)
+			sel := resolveSelection(partSelection, info)
 			sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 			m.Part[0].Stream = s.issuedStreams(t.Key, ik, m.ID, info, sel, pr.User, pr)
 		}
