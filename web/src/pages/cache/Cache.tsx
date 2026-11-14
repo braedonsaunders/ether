@@ -1,4 +1,4 @@
-import { WarmingControls } from "./WarmingControls";
+import { WarmingPolicy } from "./WarmingControls";
 import { SubtabNav } from "../../components/layout";
 import { Badge, Button, Input, Spinner, cn, toast } from "@braedonsaunders/appkit-ui";
 import { ArrowLeft, ArrowUpRight, HardDrive, Network, Settings2, Sparkles } from "lucide-react";
@@ -309,9 +309,6 @@ export default function Cache() {
       title={t("Cache")}
       actions={
         <>
-          <Button size="sm" disabled={busy !== null} onClick={() => void clearAll()}>
-            {t("Clear cache")}
-          </Button>
           {dirty && <Badge variant="warning">{t("Unsaved policy")}</Badge>}
           <Badge variant="secondary">
             {snap?.shared
@@ -320,6 +317,9 @@ export default function Cache() {
                 : t("NAS storage")
               : t("This node")}
           </Badge>
+          <Button size="sm" disabled={busy !== null} onClick={() => void clearAll()}>
+            {t("Clear cache")}
+          </Button>
           <Button size="sm" onClick={() => setEditor("policy")}>
             <Settings2 size={14} /> {dirty ? t("Resume editing") : t("Edit policy")}
           </Button>
@@ -443,9 +443,6 @@ export default function Cache() {
             </div>
           ) : (
             <div className="app-scroll mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 sm:p-5 lg:grid-cols-12">
-              <div className="lg:col-span-12">
-                <WarmingControls />
-              </div>
               <div className="lg:col-span-12">
                 <WarmNewArrivals />
               </div>
@@ -748,6 +745,17 @@ export default function Cache() {
               </p>
             </div>
             {error ? <ErrorPanel error={error} /> : null}
+            {editor === "policy" && (
+              <WarmingPolicy
+                keys={draft.keepWarmTitles ?? []}
+                speculative={draft.speculativeWarming !== "off"}
+                disabled={saving}
+                onRemove={(key) =>
+                  patch({ keepWarmTitles: (draft.keepWarmTitles ?? []).filter((k) => k !== key) })
+                }
+                onSpeculativeChange={(value) => patch({ speculativeWarming: value ? "on" : "off" })}
+              />
+            )}
             <section aria-label={t("Cache storage")} className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">{t("Where your cache lives")}</h3>

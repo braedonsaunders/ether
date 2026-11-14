@@ -750,12 +750,8 @@ export function CatalogBrowser({
             void browsed.reload();
             void count.reload();
           }}
-          watchlistAction={
-            <>
-              <div className="w-full">{watchlistPicker()}</div>
-              {watchButton(selected)}
-            </>
-          }
+          watchlistAction={watchButton(selected)}
+          watchlistViewers={watchlistPicker()}
         />
       ) : null}
     </div>
