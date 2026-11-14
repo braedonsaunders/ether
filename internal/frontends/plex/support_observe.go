@@ -198,6 +198,7 @@ func (s *Server) supportClientFacts(pr *Request, effective frontend.ClientCaps, 
 	owner := frontend.PlaybackDefaultsFor(wire.Product, wire.Platform, pr.Device, pr.Model, pr.Version, s.cfg().Clients.Overrides)
 	declared := s.declaredCaps(pr)
 	return &frontend.DiagnosticClientFacts{
+		PlayerProfile: resolvedPlayerProfile(pr), TranscodeVideoCodecs: effective.TranscodeVideoCodecs, TranscodeAudioCodecs: effective.TranscodeAudioCodecs,
 		Stage: stage, Registry: base.ID, RegistryMaxHeight: base.MaxHeight, OwnerMaxHeight: owner.MaxHeight,
 		DeclaredMaxHeight: declared.MaxHeight, MaxHeight: effective.MaxHeight, ExplicitMaxHeight: effective.ExplicitMaxHeight,
 		MaxBitrateKbps: effective.MaxBitrateKbps, DefaultRemoteBitrate: effective.DefaultRemoteBitrate, Remote: effective.Remote,

@@ -649,6 +649,12 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*fro
 		if err := s.applyDeviceProfile(pr, t, ps, p); err != nil {
 			return frontend.PlanAdmission{}, err
 		}
+		if s.svc().support != nil && s.svc().support.Recording() {
+			ev := s.supportEvent(pr, frontend.DiagnosticKindClientCapabilities)
+			ev.Client = s.supportClientFacts(pr, p.caps, "output")
+			ev.Client.OutputProtocol = p.protocol
+			s.svc().support.Observe(ev)
+		}
 		return frontend.PlanAdmission{
 			Source: ps, Media: ps.Info, Caps: p.caps, Options: p.opts, PreferRemux: p.mde, Protocol: p.protocol,
 			RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,
