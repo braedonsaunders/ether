@@ -259,9 +259,10 @@ func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 		fail(w, e)
 		return
 	}
-	out := object{"viewer": viewerWire(v), "capabilities": i.capabilities(), "defaultSkinId": "default", "rows": rows}
-	if hero := heroFromRows(rows); hero != nil {
-		out["hero"] = hero
+	heroes, shelves := heroesFromRows(rows)
+	out := object{"viewer": viewerWire(v), "capabilities": i.capabilities(), "defaultSkinId": "default", "rows": shelves}
+	if len(heroes) > 0 {
+		out["heroes"] = heroes
 	}
 	cache(w, r, out)
 }
