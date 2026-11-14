@@ -2078,6 +2078,7 @@ func (s *Server) handleHubSearch(w http.ResponseWriter, r *http.Request) {
 		tops = append(tops, top)
 	}
 	orderSearchHubs(mc.Hub, tops)
+	s.appendLiveSearchHubs(r, mc, query, limit)
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 }

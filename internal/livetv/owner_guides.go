@@ -25,11 +25,12 @@ type GuideGroup struct {
 	Name     string `json:"name"`
 }
 type OwnerGuide struct {
-	ID     string       `json:"id"`
-	Name   string       `json:"name"`
-	Groups []GuideGroup `json:"groups"`
-	All    bool         `json:"all,omitempty"`
-	Hidden bool         `json:"hidden,omitempty"`
+	Channels []string     `json:"channels,omitempty"`
+	ID       string       `json:"id"`
+	Name     string       `json:"name"`
+	Groups   []GuideGroup `json:"groups"`
+	All      bool         `json:"all,omitempty"`
+	Hidden   bool         `json:"hidden,omitempty"`
 }
 type guideChoice struct {
 	GuideGroup
@@ -140,9 +141,10 @@ func (s *Service) SaveOwnerGuides(ctx context.Context, gs []OwnerGuide) error {
 		if g.ID == "" {
 			g.ID = randomID()
 		}
-		if len(g.ID) > 100 || strings.ContainsAny(g.ID, "/\\?# \t\r\n") || seen[g.ID] || names[strings.ToLower(g.Name)] || g.Name == "" || len(g.Name) > 150 || len(g.Groups) > 2000 {
+		if len(g.ID) > 100 || strings.ContainsAny(g.ID, "/\\?# \t\r\n") || seen[g.ID] || names[strings.ToLower(g.Name)] || g.Name == "" || len(g.Name) > 150 || len(g.Groups) > 2000 || len(g.Channels) > 20000 {
 			return fmt.Errorf("invalid guide")
 		}
+		g.Channels = uniqueIDs(g.Channels)
 		seen[g.ID] = true
 		names[strings.ToLower(g.Name)] = true
 		slices.SortFunc(g.Groups, func(a, b GuideGroup) int {
@@ -157,8 +159,18 @@ func (s *Service) SaveOwnerGuides(ctx context.Context, gs []OwnerGuide) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.o.DB.ExecContext(ctx, `INSERT INTO livetv_owner_guides(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, raw)
-	if err == nil {
+	tx, err := s.o.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO livetv_owner_guides(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, raw); err != nil {
+		return err
+	}
+	if err = saveGuideVisibility(ctx, tx, gs); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err == nil {
 		s.bumpLineup()
 	}
 	return err
@@ -166,7 +178,7 @@ func (s *Service) SaveOwnerGuides(ctx context.Context, gs []OwnerGuide) error {
 func (s *Service) ownerGuidesRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {
 		var gs []OwnerGuide
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&gs); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20)).Decode(&gs); err != nil {
 			ownerResult(w, nil, err)
 			return
 		}
@@ -181,7 +193,12 @@ func (s *Service) ownerGuidesRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	choices, err := s.guideChoices(r.Context())
-	ownerResult(w, map[string]any{"guides": gs, "groups": choices}, err)
+	if err != nil {
+		ownerResult(w, nil, err)
+		return
+	}
+	channels, err := s.ChannelSummaries(r.Context())
+	ownerResult(w, map[string]any{"guides": gs, "groups": choices, "channels": channels}, err)
 }
 func guideMemberships(gs []OwnerGuide, source, group string) []frontend.LiveGuide {
 	out := []frontend.LiveGuide{}
@@ -238,9 +255,13 @@ func (h liveTVHost) GuideChannels(ctx context.Context, u *core.User, id string) 
 	for _, g := range chosen.Groups {
 		groups[g] = true
 	}
+	individual := map[string]bool{}
+	for _, id := range chosen.Channels {
+		individual[id] = true
+	}
 	out := []frontend.LiveTVChannel{}
 	for _, c := range cs {
-		if chosen.All || groups[GuideGroup{c.SourceID, c.Group}] {
+		if chosen.All || groups[GuideGroup{c.SourceID, c.Group}] || individual[c.ID] {
 			out = append(out, ToFrontendChannel(c))
 		}
 	}

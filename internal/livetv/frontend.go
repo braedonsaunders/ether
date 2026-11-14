@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
+	"sort"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -166,6 +168,16 @@ func (h liveTVHost) Channels(ctx context.Context, v *core.Viewer) ([]frontend.Li
 	if err != nil {
 		return nil, err
 	}
+	individual := map[string][]frontend.LiveGuide{}
+	order := map[string]int{}
+	for i, g := range gs {
+		order[g.ID] = i
+		if !g.Hidden {
+			for _, id := range g.Channels {
+				individual[id] = append(individual[id], frontend.LiveGuide{ID: g.ID, Name: g.Name})
+			}
+		}
+	}
 	memberships := map[GuideGroup][]frontend.LiveGuide{}
 	out := make([]frontend.LiveChannel, len(cs))
 	for i, c := range cs {
@@ -175,6 +187,13 @@ func (h liveTVHost) Channels(ctx context.Context, v *core.Viewer) ([]frontend.Li
 			guides = guideMemberships(gs, c.SourceID, c.Group)
 			memberships[group] = guides
 		}
+		guides = slices.Clone(guides)
+		for _, g := range individual[c.ID] {
+			if !slices.ContainsFunc(guides, func(v frontend.LiveGuide) bool { return v.ID == g.ID }) {
+				guides = append(guides, g)
+			}
+		}
+		sort.SliceStable(guides, func(i, j int) bool { return order[guides[i].ID] < order[guides[j].ID] })
 		out[i] = frontend.LiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Kind: c.Kind, Logo: c.Logo, Rating: c.Rating, Group: c.Group, Favorite: c.Favorite, Guides: guides}
 	}
 	return out, nil

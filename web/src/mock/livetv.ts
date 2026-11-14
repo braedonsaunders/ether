@@ -554,10 +554,86 @@ export function createLiveTVMock(titles: FakeTitle[], empty = false) {
     return saved;
   };
 
+  // Dedicated large editor fixture: ordinary guide/player mocks stay small.
+  const guideChannels = Array.from({ length: 10000 }, (_, i) => ({
+    id: `guide-${i}`,
+    name: i === 41 ? "World News" : `Channel ${i + 1}`,
+    number: String(i + 1),
+    sourceId: "large-lineup",
+    group: `${["News", "Sports", "Movies", "Kids", "Music"][Math.floor(i / 40) % 5]} ${Math.floor(i / 40) + 1}`,
+  }));
+  const guideGroups = [
+    ...new Map(
+      guideChannels.map((c) => [
+        c.group,
+        { sourceId: c.sourceId, name: c.group, sourceName: "10,000 channel lineup", count: 40 },
+      ]),
+    ).values(),
+  ];
+  let ownerGuides = [
+    {
+      id: "news",
+      name: "News and current affairs",
+      groups: guideGroups.filter((g) => g.name.startsWith("News")),
+      channels: [] as string[],
+      hidden: false,
+    },
+    {
+      id: "sports",
+      name: "Sports",
+      groups: guideGroups.filter((g) => g.name.startsWith("Sports")),
+      channels: [] as string[],
+      hidden: false,
+    },
+    {
+      id: "family",
+      name: "Family favourites",
+      groups: guideGroups.filter((g) => g.name.startsWith("Kids")),
+      channels: ["guide-41"],
+      hidden: false,
+    },
+    {
+      id: "movies",
+      name: "Movies",
+      groups: guideGroups.filter((g) => g.name.startsWith("Movies")),
+      channels: [] as string[],
+      hidden: true,
+    },
+  ];
   function handle(method: string, seg: string[], q: URLSearchParams, body: unknown) {
     if (seg[0] !== "livetv") return null;
     const route = `${method} /${seg.slice(1).join("/")}`;
     const now = Date.now();
+    if (route === "PUT /guides") {
+      ownerGuides = body as typeof ownerGuides;
+      return { body: { guides: ownerGuides, groups: guideGroups, channels: guideChannels } };
+    }
+    if (route === "GET /search") {
+      const query = (q.get("q") ?? "").toLowerCase();
+      return {
+        body: {
+          channels:
+            query && "world news 42".includes(query)
+              ? [{ id: "guide-41", name: "World News", number: "42" }]
+              : [],
+          programmes:
+            query && "world news morning report satellite launch".includes(query)
+              ? [
+                  {
+                    id: "guide-41-now",
+                    channelId: "guide-41",
+                    title: "World News: Morning Report",
+                    episodeTitle: "Satellite Launch",
+                    start: new Date(now).toISOString(),
+                    end: new Date(now + 3600000).toISOString(),
+                  },
+                ]
+              : [],
+        },
+      };
+    }
+    if (route === "GET /guides")
+      return { body: { guides: ownerGuides, groups: guideGroups, channels: guideChannels } };
     if (route === "GET /usage")
       return { body: { sessions: 0, viewers: 0, watching: [], sources: [] } };
     if (method === "GET" && seg[1] === "channels" && seg[3] === "timeline") {

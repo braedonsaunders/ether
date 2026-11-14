@@ -24,6 +24,11 @@ func (s *Service) indexPersonal(ctx context.Context, tx *sql.Tx, viewer int64, c
 	if _, err := tx.ExecContext(ctx, `DELETE FROM livetv_personal_programmes WHERE viewer_id=? AND channel_id=? AND day=?`, viewer, channel, day); err != nil {
 		return err
 	}
+	if s.searchDemanded.Load() {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM livetv_search_virtual WHERE viewer_id=? AND channel_id=?`, viewer, channel); err != nil {
+			return err
+		}
+	}
 	for _, record := range records {
 		p := record.Programme
 		b, err := json.Marshal(record)
@@ -32,6 +37,11 @@ func (s *Service) indexPersonal(ctx context.Context, tx *sql.Tx, viewer int64, c
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO livetv_personal_programmes(viewer_id,channel_id,day,start_ms,end_ms,data) VALUES(?,?,?,?,?,?)`, viewer, channel, day, p.Start.UnixMilli(), p.End.UnixMilli(), b); err != nil {
 			return err
+		}
+		if s.searchDemanded.Load() {
+			if err = writeSearchProgramme(ctx, tx, viewer, channel, p); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -2,7 +2,6 @@ package plex
 
 import (
 	"net/http"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -10,9 +9,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontends/plex/model"
 )
 
-// handleLiveChannelSearch is deliberately channel-only. Programme titles and
-// provider URLs never participate, and the ordinary channel policy determines
-// visibility before any result is ranked or counted.
+// Search shares the indexed, policy-filtered Live TV search with other apps.
 func (s *Server) handleLiveChannelSearch(w http.ResponseWriter, r *http.Request) {
 	limit, ok := searchLimit(w, r, 10, 50)
 	if !ok {
@@ -28,48 +25,67 @@ func (s *Server) handleLiveChannelSearch(w http.ResponseWriter, r *http.Request)
 		s.write(w, r, mc)
 		return
 	}
-	channels, err := s.svc().liveTV.AllowedChannels(r.Context(), FromContext(r.Context()).User)
+	search, ok := s.svc().liveTV.(frontend.LiveTVSearch)
+	if !ok {
+		s.write(w, r, mc)
+		return
+	}
+	results, err := search.SearchLiveTV(r.Context(), FromContext(r.Context()).User, query, limit)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	terms := strings.Fields(query)
-	for _, c := range channels {
-		name := strings.ToLower(c.Name)
-		number := strings.ToLower(c.Number)
-		match := true
-		for _, term := range terms {
-			if !strings.Contains(name, term) && !strings.Contains(number, term) {
-				match = false
-				break
-			}
-		}
-		if !match {
-			continue
-		}
-		score := 0.75
-		if name == query || number == query {
-			score = 1
-		} else if strings.HasPrefix(name, query) {
-			score = 0.9
-		}
-		// Keep at most limit hits even for a large provider lineup. Equal scores
-		// preserve channel order; exact matches can displace weaker matches.
-		if len(mc.SearchResult) == limit && score <= mc.SearchResult[limit-1].Score {
-			continue
-		}
-		categories := model.StringList{}
-		if c.Group != "" {
-			categories = append(categories, c.Group)
-		}
-		ch := &model.SearchChannel{ID: c.ID, GridKey: c.ID, VCN: c.Number, Title: c.Name, ShortTitle: c.Name, Categories: categories,
-			Source: "server://" + s.identity().MachineIdentifier + "/" + frontend.LiveTVProvider}
-		mc.SearchResult = append(mc.SearchResult, model.SearchResult{Score: score, Channel: ch})
-		sort.SliceStable(mc.SearchResult, func(i, j int) bool { return mc.SearchResult[i].Score > mc.SearchResult[j].Score })
-		if len(mc.SearchResult) > limit {
-			mc.SearchResult = mc.SearchResult[:limit]
-		}
+	for _, c := range results.Channels {
+		mc.SearchResult = append(mc.SearchResult, model.SearchResult{Score: 1, Channel: s.liveSearchChannel(c)})
+	}
+	parents := map[string]frontend.LiveTVChannel{}
+	for _, c := range results.ProgrammeChannels {
+		parents[c.ID] = c
+	}
+	for _, p := range results.Programmes {
+		md := s.liveProgrammeMetadata(parents[p.ChannelID], p)
+		mc.SearchResult = append(mc.SearchResult, model.SearchResult{Score: 0.9, Metadata: &md})
 	}
 	mc.Size = len(mc.SearchResult)
 	s.write(w, r, mc)
+}
+
+func (s *Server) liveSearchChannel(c frontend.LiveTVChannel) *model.SearchChannel {
+	categories := model.StringList{}
+	if c.Group != "" {
+		categories = append(categories, c.Group)
+	}
+	return &model.SearchChannel{ID: c.ID, GridKey: c.ID, VCN: c.Number, Title: c.Name, ShortTitle: c.Name, Categories: categories, Source: "server://" + s.identity().MachineIdentifier + "/" + frontend.LiveTVProvider}
+}
+
+func (s *Server) appendLiveSearchHubs(r *http.Request, mc *model.MediaContainer, query string, limit int) {
+	search, ok := s.svc().liveTV.(frontend.LiveTVSearch)
+	if !ok || r.URL.Query().Get("sectionId") != "" {
+		return
+	}
+	results, err := search.SearchLiveTV(r.Context(), FromContext(r.Context()).User, query, limit)
+	if err != nil {
+		s.log.Warn("live search unavailable", "error", err)
+		return
+	}
+	if len(results.Channels) > 0 {
+		hub := model.Hub{Title: "Live TV", Type: "livetv", HubIdentifier: "livetv", Style: "shelf"}
+		for _, c := range results.Channels {
+			hub.Channel = append(hub.Channel, *s.liveSearchChannel(c))
+		}
+		hub.Size = len(hub.Channel)
+		mc.Hub = append(mc.Hub, hub)
+	}
+	parents := map[string]frontend.LiveTVChannel{}
+	for _, c := range results.ProgrammeChannels {
+		parents[c.ID] = c
+	}
+	if len(results.Programmes) > 0 {
+		hub := model.Hub{Title: "On TV", Type: "episode", HubIdentifier: "tv.plex.provider.epg", Style: "shelf"}
+		for _, p := range results.Programmes {
+			hub.Metadata = append(hub.Metadata, s.liveProgrammeMetadata(parents[p.ChannelID], p))
+		}
+		hub.Size = len(hub.Metadata)
+		mc.Hub = append(mc.Hub, hub)
+	}
 }

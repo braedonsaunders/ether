@@ -99,9 +99,15 @@ export function CommandSearch() {
             `${ACTION_PREFIX}${encodeURIComponent(c.owner)}/${encodeURIComponent(c.meta!.action!)}`,
         }));
       if (actions.length) groups.push({ id: "actions", label: t("Actions"), hits: actions });
-      const [viewers, collections] = await Promise.all([
+      const [viewers, collections, liveTV] = await Promise.all([
         loadViewers().catch(() => []),
         api.collections().catch(() => []),
+        q.trim()
+          ? apiFetch<{
+              channels: { id: string; name: string; number: string }[];
+              programmes: { id: string; channelId: string; title: string; episodeTitle?: string }[];
+            }>(`/livetv/search?q=${encodeURIComponent(q)}`, { signal }).catch(() => null)
+          : null,
       ]);
       if (signal.aborted) return { groups: [], total: 0 };
       const people = viewers
@@ -126,6 +132,30 @@ export function CommandSearch() {
           href: `/collections/${encodeURIComponent(c.id!)}`,
         }));
       if (cols.length) groups.push({ id: "collections", label: t("Collections"), hits: cols });
+      if (liveTV?.channels.length)
+        groups.push({
+          id: "live-channels",
+          label: t("Channels"),
+          hits: liveTV.channels.map((c) => ({
+            id: `live-channel:${c.id}`,
+            type: "channel",
+            title: c.name,
+            subtitle: c.number,
+            href: `/livetv?channel=${encodeURIComponent(c.id)}`,
+          })),
+        });
+      if (liveTV?.programmes.length)
+        groups.push({
+          id: "live-programmes",
+          label: t("Guide"),
+          hits: liveTV.programmes.map((p) => ({
+            id: `live-programme:${p.id}`,
+            type: "programme",
+            title: p.title,
+            subtitle: p.episodeTitle,
+            href: `/livetv?channel=${encodeURIComponent(p.channelId)}`,
+          })),
+        });
       return { groups, total: groups.reduce((n, g) => n + g.hits.length, 0) };
     },
     [],

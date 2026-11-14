@@ -532,21 +532,22 @@ type Stream struct {
 
 // Hub is a row of items.
 type Hub struct {
-	Meta          *Meta  `plex:"Meta,object"`
-	RankedTop10   bool   `plex:"-"`
-	HubKey        string `plex:"hubKey,omitempty"`
-	UpNext        *bool  `plex:"upNext"`
-	Key           string `plex:"key,omitempty"`
-	Title         string `plex:"title"`
-	Type          string `plex:"type"`
-	HubIdentifier string `plex:"hubIdentifier"`
-	Context       string `plex:"context"`
-	Size          int    `plex:"size"`
-	TotalSize     *int   `plex:"totalSize"`
-	More          bool   `plex:"more"`
-	Style         string `plex:"style,omitempty"`
-	Promoted      *bool  `plex:"promoted"`
-	Random        *bool  `plex:"random"`
+	Channel       []SearchChannel `plex:"Channel"`
+	Meta          *Meta           `plex:"Meta,object"`
+	RankedTop10   bool            `plex:"-"`
+	HubKey        string          `plex:"hubKey,omitempty"`
+	UpNext        *bool           `plex:"upNext"`
+	Key           string          `plex:"key,omitempty"`
+	Title         string          `plex:"title"`
+	Type          string          `plex:"type"`
+	HubIdentifier string          `plex:"hubIdentifier"`
+	Context       string          `plex:"context"`
+	Size          int             `plex:"size"`
+	TotalSize     *int            `plex:"totalSize"`
+	More          bool            `plex:"more"`
+	Style         string          `plex:"style,omitempty"`
+	Promoted      *bool           `plex:"promoted"`
+	Random        *bool           `plex:"random"`
 
 	Metadata  []Metadata  `plex:"Metadata"`
 	Directory []Directory `plex:"Directory"`
