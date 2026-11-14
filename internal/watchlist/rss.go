@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plextv"
 )
 
 const (
@@ -71,6 +72,7 @@ type rssChannel struct {
 }
 
 type rssXMLItem struct {
+	Author     string        `xml:"author"`
 	Title      string        `xml:"title"`
 	Guids      []rssGUID     `xml:"guid"`
 	Links      []rssLink     `xml:"link"`
@@ -101,6 +103,7 @@ type rssCategory struct {
 }
 
 type rssItem struct {
+	Author     string
 	Title      string
 	Guids      []string
 	Links      []string
@@ -129,6 +132,33 @@ func validateRSSURL(raw string) error {
 	return nil
 }
 
+func rssHTTPClient(base *http.Client) *http.Client {
+	var c http.Client
+	if base != nil {
+		c = *base
+	} else {
+		c.Timeout = 20 * time.Second
+	}
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+			return errors.New("unsupported redirect scheme")
+		}
+		if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return errors.New("refusing https to http redirect")
+		}
+		if len(via) > 0 && !strings.EqualFold(req.URL.Host, via[len(via)-1].URL.Host) {
+			req.Header.Del("Authorization")
+			req.Header.Del("Cookie")
+			req.Header.Del("X-Plex-Token")
+		}
+		return nil
+	}
+	return &c
+}
+
 // SyncRSS polls configured Plex watchlist RSS feeds: the household "Friends'
 // watchlists" set (unattributed) and the owner's "Your Watchlist" feed.
 func (s *Service) SyncRSS(ctx context.Context) error {
@@ -140,7 +170,7 @@ func (s *Service) SyncRSS(ctx context.Context) error {
 		return nil
 	}
 	var us []core.User
-	if cfg.PlexOwnerRSSURL != "" && s.o.Users != nil {
+	if s.o.Users != nil {
 		us, err = s.o.Users(ctx)
 		if err != nil {
 			return err
@@ -150,6 +180,8 @@ func (s *Service) SyncRSS(ctx context.Context) error {
 }
 
 func (s *Service) syncRSSUsers(ctx context.Context, us []core.User) error {
+	s.rssMu.Lock()
+	defer s.rssMu.Unlock()
 	cfg, err := s.settings(ctx)
 	if err != nil {
 		return err
@@ -159,7 +191,7 @@ func (s *Service) syncRSSUsers(ctx context.Context, us []core.User) error {
 	}
 	var errs []error
 	if cfg.PlexFriendsRSSURL != "" {
-		if e := s.pollRSSFeed(ctx, cfg.PlexFriendsRSSURL, metaKeyFriendsRSS, sourcePlexFriendsRSS, true, nil); e != nil {
+		if e := s.pollRSSFeed(ctx, cfg.PlexFriendsRSSURL, metaKeyFriendsRSS, sourcePlexFriendsRSS, true, nil, us); e != nil {
 			errs = append(errs, e)
 		}
 	}
@@ -171,14 +203,14 @@ func (s *Service) syncRSSUsers(ctx context.Context, us []core.User) error {
 				break
 			}
 		}
-		if e := s.pollRSSFeed(ctx, cfg.PlexOwnerRSSURL, metaKeyOwnerRSS, sourcePlexOwnerRSS, false, owner); e != nil {
+		if e := s.pollRSSFeed(ctx, cfg.PlexOwnerRSSURL, metaKeyOwnerRSS, sourcePlexOwnerRSS, false, owner, us); e != nil {
 			errs = append(errs, e)
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source string, friendsFeed bool, owner *core.User) error {
+func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source string, friendsFeed bool, owner *core.User, us []core.User) error {
 	if s.o.Catalog == nil {
 		return errors.New("Plex watchlist RSS requires a catalog")
 	}
@@ -211,7 +243,7 @@ func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source stri
 		}
 	}
 
-	resp, err := s.o.Client.Do(req)
+	resp, err := rssHTTPClient(s.o.Client).Do(req)
 	if err != nil {
 		// Never return or log *url.Error raw: it embeds the secret feed URL.
 		meta.Problem = rssProblemNetwork
@@ -269,6 +301,7 @@ func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source stri
 	}
 
 	var resolved []core.Title
+	byAuthor := map[string][]core.Title{}
 	unmatchedTitles := 0
 	for _, it := range items {
 		title, e := s.resolveRSSItem(ctx, it)
@@ -284,11 +317,17 @@ func (s *Service) pollRSSFeed(ctx context.Context, feedURL, metaKey, source stri
 			continue
 		}
 		resolved = append(resolved, *title)
+		if friendsFeed && it.Author != "" {
+			byAuthor[it.Author] = append(byAuthor[it.Author], *title)
+		}
 	}
 
 	var imported int
 	if friendsFeed {
 		imported, err = s.replaceHouseholdFeedSnapshot(ctx, source, resolved)
+		if err == nil && len(byAuthor) > 0 && len(us) > 0 {
+			s.attributeFriendsRSSItems(ctx, byAuthor, us)
+		}
 	} else {
 		imported, err = s.replaceOwnerFeedSnapshot(ctx, source, owner, resolved)
 	}
@@ -340,6 +379,7 @@ func parseRSSItems(data []byte) ([]rssItem, error) {
 	out := make([]rssItem, 0, len(xmlItems)+len(doc.Entries))
 	for _, x := range xmlItems {
 		it := rssItem{
+			Author:     strings.TrimSpace(x.Author),
 			Title:      strings.TrimSpace(x.Title),
 			Categories: x.Categories,
 		}
@@ -407,6 +447,34 @@ func parsePlexRSSJSON(data []byte) ([]rssItem, error) {
 		out = append(out, it)
 	}
 	return out, nil
+}
+
+func (s *Service) attributeFriendsRSSItems(ctx context.Context, byAuthor map[string][]core.Title, us []core.User) {
+	statuses := map[string]FriendFeedStatus{}
+	for _, st := range s.friendStatuses(ctx) {
+		statuses[st.ID] = st
+	}
+	for authorID, titles := range byAuthor {
+		st, ok := statuses[authorID]
+		if !ok {
+			st = FriendFeedStatus{ID: authorID}
+		}
+		u := matchCommunityFriend(plextv.CommunityFriend{ID: st.ID, Username: st.Username}, us)
+		if u == nil {
+			continue
+		}
+		src := "plex-community:" + st.ID
+		for _, t := range titles {
+			if !s.allowed(u, &t) {
+				continue
+			}
+			var exists int
+			isNew := s.db.QueryRowContext(ctx, `SELECT 1 FROM watchlist_items WHERE user_id=? AND item_key=? AND source=?`, u.ID, t.Key, src).Scan(&exists) != nil
+			if err := s.upsert(ctx, u.ID, src, t); err == nil && isNew {
+				s.queueRSSCheck(*u)
+			}
+		}
+	}
 }
 
 type externalRef struct {

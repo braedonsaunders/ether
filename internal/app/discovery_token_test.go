@@ -13,18 +13,20 @@ import (
 func TestDiscoveryViewerToken(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
+		username     string
 		owner, home  bool
 		want         string
 		unauthorized bool
 	}{
-		{"owner", true, false, "owner", false},
-		{"managed", false, true, "member", false},
-		{"home account", false, true, "member", false},
-		{"friend", false, false, "", true},
+		{"owner", "owner", true, false, "owner", false},
+		{"managed", "kid", false, true, "member", false},
+		{"home account", "spouse", false, true, "member", false},
+		{"guest", "", false, false, "member", false},
+		{"friend", "friend", false, false, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			got, err := discoveryViewerToken(context.Background(), &core.User{IsOwner: tc.owner, PlexID: 42}, tc.home, "owner",
+			got, err := discoveryViewerToken(context.Background(), &core.User{Username: tc.username, IsOwner: tc.owner, PlexID: 42}, tc.home, "owner",
 				func(_ context.Context, token string, id int64, pin string) (string, error) {
 					calls++
 					if token != "owner" || id != 42 || pin != "" {
@@ -36,7 +38,7 @@ func TestDiscoveryViewerToken(t *testing.T) {
 				t.Fatalf("got %q, %v", got, err)
 			}
 			wantCalls := 0
-			if tc.home && !tc.owner {
+			if !tc.owner && !tc.unauthorized {
 				wantCalls = 1
 			}
 			if calls != wantCalls {
