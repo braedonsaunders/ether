@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, Input, Switch, toast } from "@braedonsaunders/appkit-ui";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 import { Drawer } from "../../components/Drawer";
+import { Segmented } from "../../components/fields";
 import { t, tn } from "../../i18n";
 import { apiFetch, errorMessage, uuid } from "../../lib/api";
 
@@ -305,26 +306,18 @@ export function OwnerGuides({ query = "" }: { query?: string }) {
               }}
             />
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant={mode === "groups" ? "secondary" : "ghost"}
-                onClick={() => {
-                  setMode("groups");
+              <Segmented
+                ariaLabel={t("Show")}
+                value={mode}
+                onChange={(value) => {
+                  setMode(value);
                   anchor.current = null;
                 }}
-              >
-                {t("Groups")}
-              </Button>
-              <Button
-                size="sm"
-                variant={mode === "channels" ? "secondary" : "ghost"}
-                onClick={() => {
-                  setMode("channels");
-                  anchor.current = null;
-                }}
-              >
-                {t("Channels")}
-              </Button>
+                options={[
+                  { value: "groups", label: t("Groups") },
+                  { value: "channels", label: t("Channels") },
+                ]}
+              />
               <span className="ml-auto text-sm text-fg-muted">
                 {tn(chosen.size, "{count} selected", "{count} selected")}
               </span>
@@ -363,6 +356,13 @@ export function OwnerGuides({ query = "" }: { query?: string }) {
               render={(row, i) => {
                 const cs = "id" in row ? [row] : (grouped.get(key(row)) ?? []);
                 const n = cs.reduce((n, c) => n + Number(chosen.has(c.id)), 0);
+                const query = search.trim().toLocaleLowerCase();
+                const channelMatch =
+                  !("id" in row) &&
+                  query &&
+                  !`${row.name} ${row.sourceName ?? ""}`.toLocaleLowerCase().includes(query)
+                    ? cs.find((c) => `${c.name} ${c.number}`.toLocaleLowerCase().includes(query))
+                    : undefined;
                 return (
                   <label
                     className="flex w-full min-w-0 items-center gap-3 text-sm"
@@ -386,8 +386,17 @@ export function OwnerGuides({ query = "" }: { query?: string }) {
                       aria-checked={n > 0 && n < cs.length ? "mixed" : n === cs.length}
                       onChange={(e) => select([i], e.currentTarget.checked)}
                     />
-                    <span className="min-w-0 flex-1 truncate">
-                      {"id" in row ? `${row.number} · ${row.name}` : row.name || t("Ungrouped")}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">
+                        {"id" in row ? `${row.number} · ${row.name}` : row.name || t("Ungrouped")}
+                      </span>
+                      {!("id" in row) && (
+                        <span className="block truncate text-xs text-fg-muted">
+                          {channelMatch
+                            ? `${channelMatch.number} · ${channelMatch.name}`
+                            : row.sourceName}
+                        </span>
+                      )}
                     </span>
                     <span className="shrink-0 text-xs text-fg-muted">
                       {"id" in row ? row.group : `${n} / ${cs.length}`}
