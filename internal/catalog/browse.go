@@ -13,7 +13,6 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/libraryfilter"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -598,6 +597,17 @@ func flagInt(b bool) int {
 // membership is a property of the saved filter alone, not of who is asking.
 func (c *Catalog) TitleInFilter(ctx context.Context, f core.Filter, key core.RatingKey) (bool, error) {
 	f.LocalOnly = true
+	// Membership protects direct lookup and playback. Discovery-only hides
+	// affect browse pages, never whether a title belongs to an allowed source.
+	if len(f.ExtraRules) > 0 {
+		rules := make([]core.LibraryExclusion, 0, len(f.ExtraRules))
+		for _, rule := range f.ExtraRules {
+			if rule.Scope != core.VisibilityDiscovery {
+				rules = append(rules, rule)
+			}
+		}
+		f.ExtraRules = rules
+	}
 	f.IncludeKeys = []core.RatingKey{key}
 	f.ExcludeKeys = nil
 	f.CatalogViewerID = 0
@@ -716,7 +726,7 @@ func (c *Catalog) browseWhereMode(f core.Filter, membershipOnly bool) (string, [
 			}
 		}
 		if f.RuleVisibility != "all" {
-			policy, err := libraryfilter.CompilePolicy(f.PreviewRules, f.PreviewFallback)
+			policy, err := c.compileLibraryRules(f.PreviewRules, f.PreviewFallback)
 			if err != nil {
 				return "", nil, err
 			}
@@ -727,26 +737,28 @@ func (c *Catalog) browseWhereMode(f core.Filter, membershipOnly bool) (string, [
 			conds = append(conds, "("+clause+")")
 			args = append(args, values...)
 		}
-	} else if policy := c.viewerFilter(f.CatalogViewerID, false); !membershipOnly && !f.CatalogCandidates && policy != nil {
-		clause, a := c.policySQLHidden(f.CatalogViewerID, policy)
-		conds = append(conds, clause)
-		args = append(args, a...)
-		// A strict viewer's rules fail closed on rows without details whose
-		// fields they cannot judge, as FilterVisibility and safety do.
-		if !policy.Passive() && c.strictViewer(f.CatalogViewerID, f.MaxContentRating != "") {
-			if u := policy.SQLUndecidable(); u != "0=1" {
-				conds = append(conds, "NOT (t.detail=0 AND "+u+")")
+	} else if !membershipOnly && !f.CatalogCandidates {
+		if policy := c.viewerFilter(f.CatalogViewerID, false); policy != nil {
+			clause, a := c.policySQLHidden(f.CatalogViewerID, policy)
+			conds = append(conds, clause)
+			args = append(args, a...)
+			// A strict viewer's rules fail closed on rows without details whose
+			// fields they cannot judge, as FilterVisibility and safety do.
+			if !policy.Passive() && c.strictViewer(f.CatalogViewerID, f.MaxContentRating != "") {
+				if u := policy.SQLUndecidable(); u != "0=1" {
+					conds = append(conds, "NOT (t.detail=0 AND "+u+")")
+				}
 			}
 		}
 	}
 	if len(f.ExtraRules) > 0 || f.ExtraFallback != "" {
-		extra, err := libraryfilter.CompilePolicy(f.ExtraRules, f.ExtraFallback)
+		extra, err := c.compileLibraryRulesMode(f.ExtraRules, f.ExtraFallback, membershipOnly)
 		if err != nil {
 			return "", nil, err
 		}
 		if !extra.Passive() {
-			clause, values := extra.SQLHidden()
-			conds = append(conds, "NOT ("+clause+")")
+			clause, values := extra.SQLShown()
+			conds = append(conds, "("+clause+")")
 			args = append(args, values...)
 		}
 	}

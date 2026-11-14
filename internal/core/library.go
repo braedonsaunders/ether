@@ -17,12 +17,12 @@ type LibrarySource string
 const (
 	LibraryBuiltin    LibrarySource = "builtin"    // the TMDB catalogue, split by MediaType
 	LibraryPlugin     LibrarySource = "plugin"     // items owned by one plugin MediaKind instance
-	LibraryFilter     LibrarySource = "filter"     // owner-saved Filter over the TMDB catalogue
+	LibraryCatalog    LibrarySource = "catalogue"  // owner-selected catalogue sources
 	LibraryCollection LibrarySource = "collection" // exactly the titles of one owner collection
 )
 
 // Library is the one library model for builtins, plugin kinds and
-// owner filter-libraries alike (spec §1.1).
+// owner catalogue libraries alike (spec §1.1).
 type Library struct {
 	ID      LibraryID     `json:"id"`
 	Key     string        `json:"key"`  // slug, unique, immutable: "movies", "shows", "pk-<plugin>-<kind>", owner slug
@@ -34,16 +34,13 @@ type Library struct {
 	// Plugin only.
 	PluginID string `json:"pluginId,omitempty"`
 	KindKey  string `json:"kindKey,omitempty"` // MediaKind.Key within that plugin
-	// Filter only: the saved browse predicate, stored verbatim and fed to
-	// catalog browseWhere. Type inside Filter pins movie|show.
-	Filter *Filter `json:"filter,omitempty"`
 	// Collection only: the owner collection whose titles this library
 	// shows (an MDBList list, a Trakt list, a smart rule, a hand-made
-	// list…). MediaType pins movie|show like a filter library. A deleted
+	// list…). MediaType pins movie|show. A deleted
 	// collection leaves the library empty, never an error.
 	CollectionID int64 `json:"collectionId,omitempty"`
 	// Visibility rules for this library. Built-in libraries 1 and 2
-	// govern canonical movie/show visibility across every protocol; filter
+	// govern canonical movie/show visibility across every protocol; catalogue
 	// libraries may carry additional rules on top of their canonical library.
 	Rules             []LibraryExclusion `json:"rules,omitempty"`
 	VisibilityDefault string             `json:"visibilityDefault,omitempty"`
@@ -52,7 +49,7 @@ type Library struct {
 	Present Presentations `json:"present,omitempty"`
 	// QualityProfile is the owner-set quality profile name titles in this
 	// library rank with. Empty means "Default": today's Movies/Shows
-	// home/away defaults apply. Set on any library, including filter
+	// home/away defaults apply. Set on any library, including catalogue
 	// libraries (an "Anime" library can rank with an anime profile).
 	QualityProfile string    `json:"qualityProfile,omitempty"`
 	Sort           int       `json:"sort"`   // owner order in every client

@@ -96,9 +96,6 @@ func (c *pluginCursorCache) put(key, cursor string) {
 }
 
 func filterMediaType(lib core.Library) core.MediaType {
-	if lib.Filter != nil && lib.Filter.Type != "" {
-		return lib.Filter.Type
-	}
 	if lib.MediaType != "" {
 		return lib.MediaType
 	}
@@ -127,7 +124,7 @@ func (s *Service) publishedLibrary(ctx context.Context, lib core.Library) (core.
 			return mt, s.builtinNative(mt), true
 		}
 		return s.presentLibrary(lib.Present, mt)
-	case core.LibraryFilter:
+	case core.LibraryCatalog:
 		return s.presentLibrary(lib.Present, filterMediaType(lib))
 	case core.LibraryCollection:
 		return s.presentLibrary(lib.Present, filterMediaType(lib))
@@ -177,25 +174,6 @@ func (s *Service) storedViews(ctx context.Context, v *core.User) ([]frontend.Vie
 	return out, nil
 }
 
-func mergeLibraryFilter(req core.Filter, saved *core.Filter) core.Filter {
-	f := req
-	if saved == nil {
-		return f
-	}
-	if saved.Type != "" {
-		f.Type = saved.Type
-	}
-	s := *saved
-	s.Type = ""
-	child := core.FilterGroup{Operator: "and", Filter: &s}
-	if f.Group != nil {
-		f.Group = &core.FilterGroup{Operator: "and", Children: []core.FilterGroup{*f.Group, child}}
-	} else {
-		f.Group = &core.FilterGroup{Operator: "and", Children: []core.FilterGroup{child}}
-	}
-	return f
-}
-
 func (s *Service) allowedFilterLibraries(ctx context.Context, v *core.User) []core.Library {
 	if s.d.PluginLibraries == nil || v == nil || v.IsOwner || len(v.AllowedLibraries) == 0 {
 		return nil
@@ -207,7 +185,7 @@ func (s *Service) allowedFilterLibraries(ctx context.Context, v *core.User) []co
 		}
 		var out []core.Library
 		for _, lib := range all {
-			if !lib.Hidden && (lib.Source == core.LibraryFilter && lib.Filter != nil || lib.Source == core.LibraryCollection && lib.CollectionID > 0) && v.AllowsLibrary(lib.ID) {
+			if !lib.Hidden && (lib.Source == core.LibraryCatalog || lib.Source == core.LibraryCollection && lib.CollectionID > 0) && v.AllowsLibrary(lib.ID) {
 				if _, _, ok := s.publishedLibrary(ctx, lib); ok {
 					out = append(out, lib)
 				}
@@ -280,23 +258,12 @@ func (s *Service) sectionOrFilterAllowed(ctx context.Context, v *core.User, titl
 			}
 			continue
 		}
-		restricted := len(lib.Sources) > 0
-		for _, id := range lib.Sources {
-			if id == "tmdb-movies" || id == "tmdb-tv" {
-				restricted = false
-			}
-		}
-		if restricted {
-			member, err := s.d.PluginLibraries.MemberOf(ctx, lib, target.Key)
-			if err != nil || !member {
-				continue
-			}
-		}
-		saved := *lib.Filter
-		saved.Type = wantType
-		if matchesFilter(*target, saved) {
+		// Membership includes sources and the visible policy in one indexed read.
+		member, err := s.d.PluginLibraries.MemberOf(ctx, lib, target.Key)
+		if err == nil && member {
 			return true
 		}
+
 	}
 	return false
 }

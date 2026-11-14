@@ -26,7 +26,7 @@ func TestPublishedTVFilterLibraryProfile(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"plex":{"base":"show"}}`), &present); err != nil {
 		t.Fatal(err)
 	}
-	lib, err := a.libraries.CreateFilter(ctx, "Anime Shows", core.Filter{Type: core.TypeShow, Genres: []string{"Animation"}}, present)
+	lib, err := a.libraries.Create(ctx, "Anime Shows", core.TypeShow, libraryRules(core.Filter{Type: core.TypeShow, Genres: []string{"Animation"}}), "hide", present)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,13 +80,13 @@ func TestLibraryProfileResolutionInvariant(t *testing.T) {
 		c.Quality.RemoteMovie = ""
 	})
 	ctx := t.Context()
-	title := core.Title{Key: core.MovieKey(311), Type: core.TypeMovie, Title: "Test", Genres: []string{"Animation"}}
+	title := core.Title{Key: core.MovieKey(311), Type: core.TypeMovie, Title: "Test", Year: 2000, Rating: 7, Genres: []string{"Animation"}}
 	if err := a.catalog.UpsertTitle(ctx, title, true); err != nil {
 		t.Fatal(err)
 	}
 	var libs []core.Library
 	for _, name := range []string{"Default library", "First assigned", "Second assigned"} {
-		lib, err := a.libraries.CreateFilter(ctx, name, core.Filter{Type: core.TypeMovie, Genres: []string{"Animation"}}, core.Presentations{})
+		lib, err := a.libraries.Create(ctx, name, core.TypeMovie, libraryRules(core.Filter{Type: core.TypeMovie, Genres: []string{"Animation"}}), "hide", core.Presentations{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,6 +96,11 @@ func TestLibraryProfileResolutionInvariant(t *testing.T) {
 		if err := a.libraries.SetQualityProfile(ctx, libs[i].ID, name); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Compound visible rules must use membership mode too: this title has
+	// no release date, but its source/rule membership still assigns a profile.
+	if err := a.libraries.SetRules(ctx, libs[1].ID, libraryRules(core.Filter{Type: core.TypeMovie, Genres: []string{"Animation"}, YearFrom: 1990, MinRating: 6}), "hide"); err != nil {
+		t.Fatal(err)
 	}
 	lookup := newLibraryProfiles(a)
 	if got := lookup.QualityProfileForTitle(ctx, &title); got != "Custom" {
@@ -148,4 +153,8 @@ func TestLibraryProfileResolutionInvariant(t *testing.T) {
 	if got := a.playbackProfile(core.ClientCaps{}, nil, core.PluginKey(1)); got.Name != "" || got.MinHeight != 0 {
 		t.Fatalf("plugin video policy = %+v", got)
 	}
+}
+
+func libraryRules(f core.Filter) []core.LibraryExclusion {
+	return []core.LibraryExclusion{{Action: "show", MediaType: string(f.Type), Match: "all", Rules: core.LibraryPredicateConditions(f)}}
 }

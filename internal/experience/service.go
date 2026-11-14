@@ -398,7 +398,7 @@ func (s *Service) LibraryCount(ctx context.Context, viewer *core.Viewer, viewID 
 		switch lib.Source {
 		case core.LibraryPlugin:
 			return s.d.PluginLibraries.Count(ctx, lib)
-		case core.LibraryFilter, core.LibraryCollection:
+		case core.LibraryCatalog, core.LibraryCollection:
 			page, err := s.LibraryItems(ctx, v, core.Device{}, viewID, frontend.ItemQuery{Limit: 1})
 			if err != nil {
 				return 0, err
@@ -2418,7 +2418,7 @@ func (s *Service) Facets(ctx context.Context, viewer *core.Viewer, device core.D
 			}
 			// A collection library's facet values are counted over the same
 			// SQL semi-join as its page, then the walk stays the last word.
-		case core.LibraryFilter:
+		case core.LibraryCatalog:
 			if out, ok, err := s.filterLibraryFacets(ctx, viewer, lib, name); err != nil || ok {
 				return out, err
 			}

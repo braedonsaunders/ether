@@ -58,25 +58,25 @@ func TestFilterAndPluginLibraries(t *testing.T) {
 	gen := s.Generation()
 
 	f := core.Filter{Type: core.TypeMovie, Genres: []string{"Comedy"}}
-	filter, err := s.CreateFilter(ctx, "Funny Movies!", f, core.Presentations{})
+	filter, err := s.Create(ctx, "Funny Movies!", f.Type, libraryRules(f), "hide", core.Presentations{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filter.ID != 3 || filter.Key != "funny-movies" || filter.Source != core.LibraryFilter || filter.MediaType != core.TypeMovie {
+	if filter.ID != 3 || filter.Key != "funny-movies" || filter.Source != core.LibraryCatalog || filter.MediaType != core.TypeMovie {
 		t.Fatalf("filter = %+v", filter)
 	}
 	got, err := s.Get(ctx, filter.ID)
-	if err != nil || got.Filter == nil || got.Filter.Type != core.TypeMovie || len(got.Filter.Genres) != 1 || got.Filter.Genres[0] != "Comedy" {
+	if err != nil || got.MediaType != core.TypeMovie || len(got.Rules) != 1 || got.Rules[0].Action != "show" {
 		t.Fatalf("round-trip filter = %+v, %v", got, err)
 	}
-	dup, err := s.CreateFilter(ctx, "Funny Movies", f, core.Presentations{})
+	dup, err := s.Create(ctx, "Funny Movies", f.Type, libraryRules(f), "hide", core.Presentations{})
 	if err != nil || dup.Key != "funny-movies-2" {
 		t.Fatalf("dup key = %+v, %v", dup, err)
 	}
-	if _, err := s.CreateFilter(ctx, "!!!", f, core.Presentations{}); !errors.Is(err, ErrInvalid) {
+	if _, err := s.Create(ctx, "!!!", f.Type, libraryRules(f), "hide", core.Presentations{}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unslugifiable name = %v, want ErrInvalid", err)
 	}
-	if _, err := s.CreateFilter(ctx, "Bad", core.Filter{Type: core.TypeEpisode}, core.Presentations{}); !errors.Is(err, ErrInvalid) {
+	if _, err := s.Create(ctx, "Bad", core.TypeEpisode, libraryRules(core.Filter{Type: core.TypeEpisode}), "hide", core.Presentations{}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("episode filter = %v, want ErrInvalid", err)
 	}
 
@@ -171,7 +171,7 @@ func TestOwnerEditsAndDelete(t *testing.T) {
 	if err := s.Delete(ctx, 1); !errors.Is(err, ErrBuiltinLibrary) {
 		t.Fatalf("delete builtin = %v, want ErrBuiltinLibrary", err)
 	}
-	filter, err := s.CreateFilter(ctx, "Short Lived", core.Filter{Type: core.TypeShow}, core.Presentations{})
+	filter, err := s.Create(ctx, "Short Lived", core.TypeShow, libraryRules(core.Filter{Type: core.TypeShow}), "hide", core.Presentations{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestOwnerEditsAndDelete(t *testing.T) {
 		t.Fatalf("deleted filter still readable: %v", err)
 	}
 	// A deleted id is never reused.
-	next, err := s.CreateFilter(ctx, "Next", core.Filter{Type: core.TypeShow}, core.Presentations{})
+	next, err := s.Create(ctx, "Next", core.TypeShow, libraryRules(core.Filter{Type: core.TypeShow}), "hide", core.Presentations{})
 	if err != nil || next.ID == filter.ID {
 		t.Fatalf("id reused: %+v, %v", next, err)
 	}
@@ -199,4 +199,8 @@ func TestAllowsLibrary(t *testing.T) {
 	if nobody.AllowsLibrary(1) {
 		t.Fatal("nil user allowed a library")
 	}
+}
+
+func libraryRules(f core.Filter) []core.LibraryExclusion {
+	return []core.LibraryExclusion{{Action: "show", MediaType: string(f.Type), Match: "all", Rules: core.LibraryPredicateConditions(f)}}
 }

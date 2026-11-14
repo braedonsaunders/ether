@@ -973,6 +973,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
   }
 
   function matches(t: FakeTitle, r: Rule): boolean {
+    if(r.field==="group") {const children=r.value as Rule[];if(!children.length)return r.op!=="isNot";const hit=r.op==="in"?children.some(child=>matches(t,child)):children.every(child=>matches(t,child));return r.op==="isNot"?!hit:hit;}
+
     if (r.field === "contentRating") return ratingMatches(t, r);
     const vals = fieldValues(t, r.field);
     const eq = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase();
@@ -2587,9 +2589,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
     id: 4,
     key: "weekend",
     name: "Weekend movies",
-    source: "filter",
+    source: "catalogue",
     sources: ["stremio:cinemeta:popular", "stremio:cinemeta:classics"],
-    filter: { type: "movie" },
+    rules: [],
     sort: 4,
     hidden: true,
     createdAt: "2026-01-01T00:00:00Z",
@@ -2612,14 +2614,15 @@ export function createFakeServer(opts: FakeOptions = {}) {
     id: 6,
     key: "family-films",
     name: "Family films",
-    source: "filter",
+    source: "catalogue",
     sources: ["tmdb-movies"],
-    filter: { type: "movie", genres: ["Family"] },
+    rules: [{ name: "", action: "show", mediaType: "movie", match: "all", rules: [{ field: "genre", op: "in", value: ["Family"] }] }], visibilityDefault: "hide",
     sort: 6,
     hidden: true,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
   });
+  mockLibs.push({id:7,key:"anime-shows",name:"Anime Shows",source:"catalogue",sources:["tmdb-tv"],mediaType:"show",rules:[{name:"",action:"show",mediaType:"show",match:"all",rules:[{field:"genre",op:"in",value:["Animation"]}]}],visibilityDefault:"hide",sort:7,hidden:false,itemCount:4500});
   const mockMatches: Record<string, unknown>[] = [];
   function hydrateLib(lib: Record<string, unknown>) {
     if (!lib.sources)
@@ -2793,10 +2796,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
           key: `lib-${id}`,
           name: String(b.name ?? "Library"),
           sources: b.sources,
-          source: b.collectionId ? "collection" : "filter",
+          source: b.collectionId ? "collection" : "catalogue",
           collectionId: b.collectionId,
           mediaType: b.mediaType,
-          filter: b.collectionId ? undefined : b.filter,
           rules: Array.isArray(b.rules) ? b.rules : [],
           visibilityDefault: String(b.visibilityDefault ?? "show"),
           present: b.present ?? {},
@@ -2977,7 +2979,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
     }
 
     const route = `${method} /${seg.join("/")}`;
-    if (seg[0] === "libraries" || seg[0] === "plugins-setup") {
+    if ((seg[0] === "libraries" && seg[1] !== "preview") || seg[0] === "plugins-setup") {
       return mockLibraries(method, seg, url, body);
     }
     if (seg[0] === "cluster" && seg[1] === "nodes" && seg[3] === "role-preflight") {
@@ -4104,25 +4106,26 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return json({ templates: TEMPLATES });
       case "GET /collections/template-bundles":
         return json({ bundles: TEMPLATE_BUNDLES });
+      case "POST /libraries/preview":
       case "POST /catalog/visibility/preview": {
         const reqLibId = Number((body as { libraryId?: number }).libraryId ?? 0);
         const reqLib = reqLibId ? mockLibs.find((l) => l.id === reqLibId) : undefined;
         const reqType = reqLib
           ? String(
-              reqLib.mediaType ?? ((reqLib.filter as { type?: string } | undefined)?.type || ""),
+              reqLib.mediaType ?? "",
             )
-          : "";
+          : String((body as {mediaType?:string}).mediaType??"");
         const scopedCatalog = reqType ? catalog.filter((t) => t.type === reqType) : catalog;
         const groups =
           (body as { exclusions: { mediaType: string; match: string; rules: Rule[] }[] })
-            .exclusions ?? [];
+            .exclusions ?? (body as {rules?: {mediaType:string;match:string;rules:Rule[]}[]}).rules ?? [];
         const hits = (g: (typeof groups)[number]) =>
           scopedCatalog.filter(
             (t) =>
               (g.mediaType === "mixed" || g.mediaType === t.type) &&
               (g.match === "any"
-                ? g.rules.some((r) => fieldValues(t, r.field).length > 0 && matches(t, r))
-                : g.rules.every((r) => fieldValues(t, r.field).length > 0 && matches(t, r))),
+                ? g.rules.some((r) => (r.field==="group"||fieldValues(t, r.field).length > 0) && matches(t, r))
+                : g.rules.every((r) => (r.field==="group"||fieldValues(t, r.field).length > 0) && matches(t, r))),
           );
         const items = scopedCatalog.filter((t) =>
           hiddenByRules(

@@ -68,7 +68,7 @@ func (s *Service) appendVisibility(ctx context.Context, where *strings.Builder, 
 // PreviewVisibility aggregates in the indexed item store and fetches at most
 // twelve examples per side. It never projects or loads the whole library.
 func (s *Service) PreviewVisibility(ctx context.Context, lib core.LibraryID, specs []core.LibraryExclusion, fallback string) (any, error) {
-	policy, err := libraryfilter.CompilePolicy(specs, fallback)
+	policy, err := libraryfilter.CompilePluginPolicy(specs, fallback)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func LibraryPolicy(ctx context.Context, lib core.Library) (*libraryfilter.Filter
 	if len(lib.Rules) == 0 && lib.VisibilityDefault != "hide" {
 		return nil, nil
 	}
-	f, err := libraryfilter.CompilePolicy(lib.Rules, lib.VisibilityDefault)
+	f, err := libraryfilter.CompilePluginPolicy(lib.Rules, lib.VisibilityDefault)
 	if err == nil && core.ExplicitSearch(ctx) {
 		f = f.ForSearch()
 	}

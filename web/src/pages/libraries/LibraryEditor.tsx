@@ -1,3 +1,6 @@
+import { conditionsFromBrowse } from "./browser/RuleCondition";
+import { compileQuery, readQuery } from "./browser/catalogQuery";
+import { isRuleComplete } from "../../lib/rules";
 import { sourceName, sourceLabel } from "./CatalogueSources";
 import { Button, Checkbox, toast } from "@braedonsaunders/appkit-ui";
 import { ArrowLeft, Check, Layers, Plus, ListFilter, LibraryBig } from "lucide-react";
@@ -6,19 +9,19 @@ import { Link } from "react-router-dom";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Segmented } from "../../components/fields";
-import { t, tn, tx } from "../../i18n";
-import { api, errorMessage } from "../../lib/api";
+import { t, tn } from "../../i18n";
+import { errorMessage } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import { librariesApi, type CollectionSource, type Library } from "./api";
-import { CatalogFilterBar, compileQuery, readQuery } from "./browser/CatalogFilterBar";
+import { RulesPanel, type VisibilityRule } from "./browser/LibraryVisibility";
 import { AddCatalogueSource, SourceIcon, sourceOwner } from "./CatalogueSources";
 import { useStreamEvent } from "../../lib/stream";
 import { SetupWizard } from "./SetupWizard";
 
 /**
  * Create a library from the Libraries page: first choose where titles come
- * from (TMDB saved filter or an installed content-kind plugin), then either
- * build the saved filter or walk the plugin's setup wizard.
+ * from (TMDB catalogue or an installed content-kind plugin), then either
+ * add visible rules or walk the plugin's setup wizard.
  */
 export function NewLibraryDrawer({
   onClose,
@@ -46,7 +49,7 @@ export function NewLibraryDrawer({
     );
   if (step === "tmdb" || step === "all")
     return (
-      <FilterLibraryEditor
+      <LibraryEditor
         sources={selected}
         sourceNames={chosen.map(sourceLabel)}
         allTitles={step === "all"}
@@ -59,10 +62,7 @@ export function NewLibraryDrawer({
   if (step === "collection")
     return (
       <CollectionLibraryEditor
-        sourceIds={selected}
-        sourceNames={chosen.map(sourceLabel)}
-        sourceType={chosen[0]?.mediaTypes[0]}
-        onBack={() => setStep("narrow")}
+        onBack={() => setStep("source")}
         onClose={onClose}
         onCreated={onCreated}
       />
@@ -143,15 +143,9 @@ export function NewLibraryDrawer({
             },
             {
               key: "tmdb" as const,
-              label: t("Saved filter"),
+              label: t("Add rules"),
               description: t("Narrow it with genres, years, ratings, or keywords."),
               icon: <ListFilter size={20} />,
-            },
-            {
-              key: "collection" as const,
-              label: t("From a collection"),
-              description: t("Only the titles of one collection."),
-              icon: <Layers size={20} />,
             },
           ].map((option) => (
             <button
@@ -171,6 +165,10 @@ export function NewLibraryDrawer({
       ) : (
         <div className="space-y-4">
           <p className="font-medium">{t("Where do titles come from?")}</p>
+          <Button variant="outline" onClick={() => setStep("collection")}>
+            <Layers size={20} />
+            {t("From a collection")}
+          </Button>
           {registry.loading && !registry.data ? <LoadingRows rows={2} /> : null}
           {registry.error ? (
             <ErrorPanel error={registry.error} onRetry={() => void registry.reload()} />
@@ -246,14 +244,8 @@ export function NewLibraryDrawer({
   );
 }
 
-/**
- * Create (or preview) a saved-filter library. The filter itself is
- * built with the same CatalogFilterBar the browser uses, seeded from
- * the current browse state when the owner asks from a library page.
- * New libraries are console-only until "Show in apps" is turned on
- * (§15.3). This drawer creates the saved filter; Library Settings can replace it later.
- */
-export function FilterLibraryEditor({
+/** Create a source library with the same visible rules editor used on its Rules tab. */
+export function LibraryEditor({
   allTitles,
   sourceNames,
   sources,
@@ -270,36 +262,37 @@ export function FilterLibraryEditor({
   onClose: () => void;
   onCreated: (lib: Library) => void;
 }) {
-  const viewers = useAsync(() => api.users(), []);
+  const [seededRules] = useState<VisibilityRule[]>(() => {
+    const predicate = {
+      ...compileQuery(readQuery(seed?.get("filters") ?? null), seed?.get("viewer") ?? ""),
+      ...(seed?.get("genre") ? { genres: [seed.get("genre")] } : {}),
+      ...(seed?.get("decade")
+        ? { yearFrom: Number(seed.get("decade")), yearTo: Number(seed.get("decade")) + 9 }
+        : {}),
+      ...(seed?.get("q")?.trim() ? { query: seed.get("q")!.trim() } : {}),
+    };
+    // A type-only source choice is the full source pool. Only an actual
+    // saved browse predicate needs an initial Show rule and a Hide default.
+    if (allTitles || Object.keys(predicate).length === 0) return [];
+    return [
+      {
+        name: "",
+        action: "show",
+        mediaType: seed?.get("type") === "show" ? "show" : "movie",
+        match: "all",
+        rules: conditionsFromBrowse(predicate),
+      },
+    ];
+  });
+  const [rules, setRules] = useState(seededRules);
+  const [fallback, setFallback] = useState(seededRules.length ? "hide" : "show");
   const [name, setName] = useState("");
   const [type, setType] = useState(seed?.get("type") === "show" ? "show" : "movie");
-  const [params, setParams] = useState<URLSearchParams>(
-    () => new URLSearchParams(seed?.toString() ?? ""),
-  );
   const [saving, setSaving] = useState(false);
-
-  const buildFilter = (): Record<string, unknown> => {
-    const compiled = compileQuery(
-      readQuery(params.get("filters") || ""),
-      params.get("viewer") || "",
-    ) as Record<string, unknown>;
-    const filter: Record<string, unknown> = { ...compiled, type };
-    const genre = params.get("genre");
-    if (genre) filter.genres = [genre];
-    const decade = Number(params.get("decade"));
-    if (decade) {
-      filter.yearFrom = decade;
-      filter.yearTo = decade + 9;
-    }
-    const q = (params.get("q") || "").trim();
-    if (q) filter.query = q;
-    return filter;
-  };
-
   const save = async () => {
     setSaving(true);
     try {
-      const lib = await librariesApi.createFilter(name.trim(), buildFilter(), undefined, sources);
+      const lib = await librariesApi.create(name.trim(), type, rules, fallback, undefined, sources);
       toast.success(t("Library created"));
       onCreated(lib);
     } catch (e) {
@@ -313,7 +306,7 @@ export function FilterLibraryEditor({
     <Drawer
       open
       onClose={onClose}
-      title={allTitles ? t("New library") : t("New library from a filter")}
+      title={t("New library")}
       size="lg"
       footer={
         <div className="flex items-center justify-between gap-3">
@@ -330,7 +323,12 @@ export function FilterLibraryEditor({
             <Button variant="ghost" onClick={onClose}>
               {t("Cancel")}
             </Button>
-            <Button disabled={saving || !name.trim()} onClick={() => void save()}>
+            <Button
+              disabled={
+                saving || !name.trim() || !rules.every((r) => r.rules.every(isRuleComplete))
+              }
+              onClick={() => void save()}
+            >
               {t("Create library")}
             </Button>
           </span>
@@ -366,7 +364,14 @@ export function FilterLibraryEditor({
                   <Segmented
                     ariaLabel={t("What goes in it")}
                     value={type}
-                    onChange={sources?.length ? () => {} : setType}
+                    onChange={
+                      sources?.length
+                        ? () => {}
+                        : (next) => {
+                            setType(next);
+                            setRules(rules.map((rule) => ({ ...rule, mediaType: next })));
+                          }
+                    }
                     options={[
                       { value: "movie", label: t("Movies") },
                       { value: "show", label: t("TV shows") },
@@ -375,18 +380,15 @@ export function FilterLibraryEditor({
                 </div>
               </>
             )}
-            <div className="[&_.catalog-query]:!px-0">
-              <CatalogFilterBar
-                params={params}
-                viewers={viewers.data || []}
-                onChange={(next) => setParams(new URLSearchParams(next.toString()))}
-              />
-            </div>
-            <p className="text-sm text-fg-muted">
-              {t(
-                "Pick filters above. Matching titles join this library and stay in Movies and TV Shows.",
-              )}
-            </p>
+            <RulesPanel
+              sources={sources ?? [type === "show" ? "tmdb-tv" : "tmdb-movies"]}
+              rules={rules}
+              fallback={fallback}
+              onRules={setRules}
+              onFallback={setFallback}
+              region=""
+              mediaType={type as "movie" | "show"}
+            />
           </>
         ) : null}
       </div>
@@ -496,17 +498,13 @@ export function CollectionLibraryEditor({
         ) : null}
         {!sources.loading && collections.length === 0 ? (
           <p className="text-sm text-fg-muted">
-            {tx("No collections yet. {link} first, or use a saved filter.", {
-              link: (
-                <Link
-                  to="/collections"
-                  onClick={onClose}
-                  className="font-medium text-primary underline"
-                >
-                  {t("Create a collection")}
-                </Link>
-              ),
-            })}
+            <Link
+              to="/collections"
+              onClick={onClose}
+              className="font-medium text-primary underline"
+            >
+              {t("Create a collection")}
+            </Link>
           </p>
         ) : null}
         {collections.length > 0 ? (

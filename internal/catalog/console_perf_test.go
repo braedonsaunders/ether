@@ -2,6 +2,8 @@ package catalog
 
 import (
 	"context"
+	"database/sql"
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 	"math"
@@ -21,7 +23,23 @@ func TestConsole600K(t *testing.T) {
 	if os.Getenv("ETHER_CATALOG_PERF") != "1" {
 		t.Skip("set ETHER_CATALOG_PERF=1 for the 600k-title performance fixture")
 	}
-	c := largeCatalogue(t, 0)
+	// Exercise the production file-backed database. Deserialized in-memory
+	// fixtures have a SQLite memory-file limit below this catalogue size.
+	var db *sql.DB
+	var err error
+	if os.Getenv(store.TestPostgresEnv) != "" {
+		db, err = store.OpenMemory(context.Background())
+	} else {
+		db, err = store.Open(context.Background(), t.TempDir())
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	c, err := New(db, nil, config.Catalog{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sqlite := store.DialectOf(c.db) != store.Postgres
 	// SQLite bulk import defers FTS row triggers and rebuilds afterward;
 	// PostgreSQL maintains its production GIN index during this bulk insert.
@@ -155,6 +173,12 @@ func TestConsole600K(t *testing.T) {
 		name string
 		q    core.BrowseQuery
 	}{"disjoint-genre-and-valid-years", core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, YearFrom: 1990, YearTo: 1999, Genres: []string{"Comedy"}, Group: &core.FilterGroup{Filter: &core.Filter{Genres: []string{"Thriller"}}}}, Sort: core.SortPopularity, Desc: true, Limit: 49, NoTotal: true}})
+	converted := cases[1].q
+	converted.Filter = core.Filter{Type: core.TypeMovie, ExtraRules: []core.LibraryExclusion{{Action: "show", MediaType: "movie", Match: "all", Rules: core.LibraryPredicateConditions(cases[1].q.Filter)}}, ExtraFallback: "hide"}
+	cases = append(cases, struct {
+		name string
+		q    core.BrowseQuery
+	}{"library-visible-rules", converted})
 	samples := 31
 	if raw := os.Getenv("ETHER_CATALOG_SAMPLES"); raw != "" {
 		n, err := strconv.Atoi(raw)

@@ -28,13 +28,13 @@ describe("Libraries workspace", () => {
     expect(within(nav).queryByText("Collections")).not.toBeInTheDocument();
   });
 
-  it("picks TMDB from the New library source drawer to create a saved-filter library", async () => {
+  it("picks TMDB from the New library source drawer to create a library with rules", async () => {
     const { fake } = renderApp("/libraries");
     fireEvent.click(await screen.findByRole("button", { name: "New library" }, { timeout: 15000 }));
     expect(await screen.findByText("Where do titles come from?")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("checkbox", { name: /TMDB Movies/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    fireEvent.click(screen.getByRole("button", { name: /Saved filter/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add rules/ }));
     fireEvent.change(await screen.findByLabelText("Library name"), {
       target: { value: "Weekend films" },
     });
@@ -52,8 +52,6 @@ describe("Libraries workspace", () => {
   it("creates a library from a collection through the From a collection step", async () => {
     const { fake } = renderApp("/libraries");
     fireEvent.click(await screen.findByRole("button", { name: "New library" }, { timeout: 15000 }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: /TMDB Movies/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(await screen.findByRole("button", { name: /From a collection/ }));
     await new Promise((r) => setTimeout(r, 300));
 

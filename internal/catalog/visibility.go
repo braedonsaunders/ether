@@ -189,7 +189,12 @@ func (c *Catalog) PreviewVisibilityPolicy(ctx context.Context, specs []core.Libr
 }
 
 func (c *Catalog) PreviewVisibilityScoped(ctx context.Context, specs []core.LibraryExclusion, fallback string, scopeFilter *core.Filter) (any, error) {
-	f, err := libraryfilter.CompilePolicy(specs, fallback)
+	if scopeFilter != nil {
+		if err := c.ensureCatalogueSources(ctx, *scopeFilter); err != nil {
+			return nil, err
+		}
+	}
+	f, err := c.compileLibraryRules(specs, fallback)
 	if err != nil {
 		return nil, err
 	}
@@ -254,4 +259,41 @@ func (c *Catalog) PreviewVisibilityScoped(ctx context.Context, specs []core.Libr
 		}
 	}
 	return p, nil
+}
+
+func (c *Catalog) compileLibraryRules(rules []core.LibraryExclusion, fallback string) (*libraryfilter.Filter, error) {
+	return c.compileLibraryRulesMode(rules, fallback, false)
+}
+
+func (c *Catalog) compileLibraryRulesMode(rules []core.LibraryExclusion, fallback string, membershipOnly bool) (*libraryfilter.Filter, error) {
+	f, err := libraryfilter.CompilePolicy(rules, fallback)
+	if err != nil {
+		return nil, err
+	}
+	return c.bindLibraryRulesMode(f, membershipOnly)
+}
+
+func (c *Catalog) bindLibraryRules(f *libraryfilter.Filter) (*libraryfilter.Filter, error) {
+	return c.bindLibraryRulesMode(f, false)
+}
+
+func (c *Catalog) bindLibraryRulesMode(f *libraryfilter.Filter, membershipOnly bool) (*libraryfilter.Filter, error) {
+	return f.BindCatalogue(func(p core.Filter) (string, []any, error) {
+		p.LocalOnly = true
+		p.CatalogCandidates = true
+		where, args, err := c.browseWhereMode(p, membershipOnly)
+		if err == nil && where == "" {
+			where = "1=1"
+		}
+		return where, args, err
+	}, func(q string, args []any, t *core.Title) bool {
+		if t == nil || t.Key == 0 {
+			return false
+		}
+		// Direct lookup decisions use one indexed point read. Browse, counts and
+		// facets evaluate the complete policy in their existing SQL statement.
+		var count int
+		err := c.db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM catalog_titles t WHERE t.key=? AND (`+q+`)`, append([]any{int64(t.Key)}, args...)...).Scan(&count)
+		return err == nil && count > 0
+	})
 }

@@ -48,7 +48,7 @@ func TestLibrariesConsoleCRUDAndFilterBrowse(t *testing.T) {
 	}
 
 	// Create a console-only filter library (spec §15.3).
-	w = call("POST", "/", `{"name":"Dramas","filter":{"type":"movie","genres":["Drama"]}}`)
+	w = call("POST", "/", `{"name":"Dramas","mediaType":"movie","rules":[{"action":"show","mediaType":"movie","match":"all","rules":[{"field":"genre","op":"in","value":["Drama"]}]}],"visibilityDefault":"hide"}`)
 	if w.Code != 201 {
 		t.Fatalf("create %d %s", w.Code, w.Body)
 	}
@@ -56,7 +56,7 @@ func TestLibrariesConsoleCRUDAndFilterBrowse(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &lib); err != nil {
 		t.Fatal(err)
 	}
-	if lib.Source != core.LibraryFilter || lib.Present.Plex != nil || lib.Present.MediaBrowser != nil {
+	if lib.Source != core.LibraryCatalog || lib.Present.Plex != nil || lib.Present.MediaBrowser != nil {
 		t.Fatalf("new filter library must be console-only: %+v", lib.Present)
 	}
 	id := strconv.FormatInt(int64(lib.ID), 10)
@@ -74,7 +74,7 @@ func TestLibrariesConsoleCRUDAndFilterBrowse(t *testing.T) {
 	}
 
 	// The saved filter can be replaced under the same id.
-	if w := call("PATCH", "/"+id, `{"filter":{"type":"movie"}}`); w.Code != 200 {
+	if w := call("PATCH", "/"+id, `{"rules":[],"visibilityDefault":"show"}`); w.Code != 200 {
 		t.Fatalf("filter patch %d %s", w.Code, w.Body)
 	}
 

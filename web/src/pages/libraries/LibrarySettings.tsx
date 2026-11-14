@@ -46,28 +46,6 @@ function presentationLabel(value: string): string {
   };
   return labels[value] ?? value;
 }
-function filterSummary(filter: Record<string, unknown> | undefined, sourceCount: number): string {
-  if (!filter)
-    return tn(sourceCount, "Everything from this source", "Everything from these sources");
-  const parts: string[] = [];
-  const walk = (f: Record<string, unknown>) => {
-    for (const field of ["genres", "countries", "languages", "keywords"])
-      if (Array.isArray(f[field])) parts.push((f[field] as unknown[]).join(", "));
-    if (f.yearFrom || f.yearTo) parts.push(`${f.yearFrom ?? "…"}–${f.yearTo ?? "…"}`);
-    if (f.query) parts.push(String(f.query));
-    const group = f.group as
-      | { filter?: Record<string, unknown>; children?: { filter?: Record<string, unknown> }[] }
-      | undefined;
-    if (group?.filter) walk(group.filter);
-    for (const child of group?.children ?? []) if (child.filter) walk(child.filter);
-  };
-  walk(filter);
-  return parts.length
-    ? parts.join(" · ")
-    : filter.group
-      ? t("Saved filter")
-      : tn(sourceCount, "Everything from this source", "Everything from these sources");
-}
 const PLEX_BASES = ["movie", "show", "artist", "photo"];
 const MB_TYPES = ["movies", "tvshows", "music", "audiobooks", "books", "photos", "homevideos"];
 const STREMIO_TYPES = ["movie", "series", "channel", "tv"];
@@ -75,7 +53,7 @@ const XTREAM_TYPES = ["movie", "series", "live"];
 
 function defaultPlexBase(lib: Library): string {
   if (lib.source === "plugin") return (lib.kind?.levels.length ?? 1) >= 3 ? "show" : "movie";
-  return lib.mediaType === "show" || lib.filter?.type === "show" ? "show" : "movie";
+  return lib.mediaType === "show" ? "show" : "movie";
 }
 function defaultMBType(lib: Library): string {
   const declared =
@@ -214,7 +192,7 @@ function QualityProfileRow({
   onChange: (value: string) => void;
 }) {
   const { quality } = useQuality();
-  const media = library.filter?.type ?? (library.mediaType === "show" ? "show" : "movie");
+  const media = library.mediaType === "show" ? "show" : "movie";
   const profileMedia = media === "show" ? "tv" : "movie";
   const names = (quality?.profiles ?? [])
     .filter((p) => !p.mediaType || p.mediaType === profileMedia)
@@ -268,7 +246,6 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
       present: library.present ?? {},
       qualityProfile: library.qualityProfile ?? "",
       sources: library.sources ?? [],
-      filter: library.filter,
       collectionId: library.collectionId,
       cacheMaxBytes: cache.data?.maxBytes ?? 0,
       cacheTTL: cache.data?.ttlSeconds ?? 0,
@@ -296,8 +273,6 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
       if (library.source !== "builtin") body.present = draft.present;
       if (JSON.stringify(draft.sources) !== JSON.stringify(stored.sources))
         body.sources = draft.sources;
-      if (JSON.stringify(draft.filter) !== JSON.stringify(stored.filter))
-        body.filter = draft.filter;
       if (draft.collectionId !== stored.collectionId) body.collectionId = draft.collectionId;
       await librariesApi.patch(library.id, body);
       if (
@@ -324,15 +299,12 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
             sources={draft.sources}
             onChange={(sources) => setDraft({ ...draft, sources })}
           >
-            {library.source === "filter" || library.source === "collection" ? (
+            {library.source === "collection" ? (
               <SettingsRow
-                title={library.source === "filter" ? t("Saved filter") : t("Collection")}
+                title={t("Collection")}
                 description={
-                  library.source === "filter"
-                    ? filterSummary(draft.filter, draft.sources.length)
-                    : (collectionSources.data?.find(
-                        (collection) => collection.id === draft.collectionId,
-                      )?.name ?? t("Collection"))
+                  collectionSources.data?.find((c) => c.id === draft.collectionId)?.name ??
+                  t("Collection")
                 }
                 control={
                   <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
@@ -420,7 +392,7 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
           {cache.error ? (
             <ErrorPanel error={cache.error} onRetry={() => void cache.reload()} />
           ) : null}
-          {library.source === "filter" || library.source === "collection" ? (
+          {library.source === "catalogue" || library.source === "collection" ? (
             <SettingsSection title={t("Remove")}>
               <SettingsRow
                 title={t("Delete this library")}
@@ -535,12 +507,11 @@ export function LibrarySettings({ library, onSaved }: { library: Library; onSave
       />
       {editing ? (
         <NarrowingEditor
-          library={{ ...library, filter: draft.filter, collectionId: draft.collectionId }}
+          library={{ ...library, collectionId: draft.collectionId }}
           onClose={() => setEditing(false)}
-          onChange={(filter, collectionId) => {
+          onChange={(collectionId) => {
             setDraft({
               ...draft,
-              ...(filter ? { filter } : {}),
               ...(collectionId ? { collectionId } : {}),
             });
             setEditing(false);

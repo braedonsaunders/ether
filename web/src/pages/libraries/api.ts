@@ -69,11 +69,10 @@ export interface Library {
   key: string;
   name: string;
   sources?: string[];
-  source: "builtin" | "plugin" | "filter" | "collection";
+  source: "builtin" | "plugin" | "catalogue" | "collection";
   mediaType?: string;
   pluginId?: string;
   kindKey?: string;
-  filter?: Record<string, unknown>;
   /** Collection-source libraries: the collection whose titles it shows. */
   collectionId?: number;
   rules?: VisibilityRule[];
@@ -185,15 +184,24 @@ export const librariesApi = {
   list: (signal?: AbortSignal) =>
     apiFetch<{ libraries: Library[] }>("/libraries", { signal }).then((r) => r.libraries),
   get: (id: number, signal?: AbortSignal) => apiFetch<Library>(`/libraries/${id}`, { signal }),
-  createFilter: (
+  create: (
     name: string,
-    filter: Record<string, unknown>,
+    mediaType: string,
+    rules: VisibilityRule[],
+    visibilityDefault: string,
     present?: Presentations,
     sources?: string[],
   ) =>
     apiFetch<Library>("/libraries", {
       method: "POST",
-      body: JSON.stringify({ name, filter, sources, ...(present ? { present } : {}) }),
+      body: JSON.stringify({
+        name,
+        mediaType,
+        rules,
+        visibilityDefault,
+        sources,
+        ...(present ? { present } : {}),
+      }),
     }),
   createCollection: (
     name: string,

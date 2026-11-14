@@ -830,7 +830,7 @@ function ProfileList({
                           (lib) =>
                             lib.source !== "plugin" &&
                             lib.qualityProfile === p.name &&
-                            ((lib.filter?.type ?? lib.mediaType) === "show" ? "tv" : "movie") ===
+                            (lib.mediaType === "show" ? "tv" : "movie") ===
                               p.mediaType,
                         )
                         .map((lib) => (

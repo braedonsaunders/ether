@@ -74,8 +74,8 @@ func seedPluginLibrary(ctx context.Context, db *sql.DB, n int) error {
 
 	now := int64(1700000000)
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO libraries(id, key, name, source, media_type, plugin_id, kind_key, filter, present, sort, hidden, created_at, updated_at)
-VALUES(?, ?, 'Field Clips', 'plugin', '', ?, ?, '', ?, ?, 0, ?, ?)`,
+INSERT INTO libraries(id, key, name, source, media_type, plugin_id, kind_key, present, sort, hidden, created_at, updated_at)
+VALUES(?, ?, 'Field Clips', 'plugin', '', ?, ?, ?, ?, 0, ?, ?)`,
 		pluginFixtureLibraryID, "pk-"+pluginFixturePluginID+"-"+pluginFixtureKindKey,
 		pluginFixturePluginID, pluginFixtureKindKey, string(presentJSON),
 		pluginFixtureLibraryID, now, now); err != nil {

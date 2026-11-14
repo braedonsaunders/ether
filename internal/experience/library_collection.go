@@ -8,29 +8,20 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
-// libraryBrowseFilter is the SQL predicate a stored library adds to a
-// catalogue browse: a filter library's saved predicate, or a collection
-// library's membership in one owner collection. Either is ANDed with the
-// request filter, whose media type stays the library's.
-//
-// A collection's membership is a semi-join on collections_members (the
-// materialised snapshot the collection engine keeps), never a list of keys
-// loaded into memory, so paging a collection library reads one SQL page.
+// libraryBrowseFilter composes the source pool and visible rules in indexed SQL.
 func (s *Service) libraryBrowseFilter(ctx context.Context, v *core.User, lib core.Library, req core.Filter) core.Filter {
-	switch lib.Source {
-	case core.LibraryFilter:
-		return mergeLibraryFilter(req, lib.Filter)
-	case core.LibraryCollection:
-		f := req
-		t := filterMediaType(lib)
-		if t != "" {
-			f.Type = t
-		}
+	f := req
+	f.Type = filterMediaType(lib)
+	f.CatalogueSources = lib.Sources
+	if lib.Source == core.LibraryCollection {
 		f.CollectionMembers = lib.CollectionID
-		f.CatalogueSources = lib.Sources
-		return f
+		f.CatalogueSources = nil
 	}
-	return req
+	if lib.ID != core.LibraryMovies && lib.ID != core.LibraryShows {
+		f.ExtraRules = lib.Rules
+		f.ExtraFallback = lib.VisibilityDefault
+	}
+	return f
 }
 
 // collectionLibraryScan is the in-process fallback for a collection library

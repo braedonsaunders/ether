@@ -106,26 +106,16 @@ func (l *libraryProfiles) resolve(ctx context.Context, t *core.Title) string {
 		if _, ok := core.FindProfile(profiles, lib.QualityProfile, scope); !ok {
 			continue
 		}
-		if lib.Source != core.LibraryFilter && lib.Source != core.LibraryCollection {
+		if lib.Source != core.LibraryCatalog && lib.Source != core.LibraryCollection {
 			continue
 		}
-		var membership core.Filter
-		switch lib.Source {
-		case core.LibraryFilter:
-			if lib.Filter == nil {
-				continue
-			}
-			if lib.Filter.Type != "" && string(lib.Filter.Type) != media {
-				continue
-			}
-			membership = *lib.Filter
-		case core.LibraryCollection:
-			if lib.CollectionID <= 0 || (lib.MediaType != "" && string(lib.MediaType) != media) {
-				continue
-			}
-			membership = core.Filter{Type: lib.MediaType, CollectionMembers: lib.CollectionID}
+		if lib.MediaType != "" && string(lib.MediaType) != media {
+			continue
 		}
-		membership.CatalogueSources = lib.Sources
+		if lib.Source == core.LibraryCollection && lib.CollectionID <= 0 {
+			continue
+		}
+		membership := libraryScopeFilter(lib, core.Filter{})
 		if l.app.catalog == nil {
 			continue
 		}
