@@ -175,9 +175,22 @@ func (m Manifest) RuntimeKind() string {
 // RuntimeDecl declares how a plugin runs: hosted (Entry JS or Module WASM)
 // or remote (the manifest URL or a tunnel is the endpoint).
 type RuntimeDecl struct {
-	Kind   string `json:"kind"` // "hosted" or "remote"
-	Entry  string `json:"entry,omitempty"`
-	Module string `json:"module,omitempty"`
+	Kind   string         `json:"kind"` // "hosted" or "remote"
+	Entry  string         `json:"entry,omitempty"`
+	Module string         `json:"module,omitempty"`
+	Limits *RuntimeLimits `json:"limits,omitempty"`
+}
+
+// RuntimeLimits requests per-call hosted resources. Ether grants defaults for
+// omitted fields and clamps requests to owner-controlled ceilings.
+type RuntimeLimits struct {
+	FetchBytes           int64  `json:"fetchBytes,omitempty"`
+	ArchiveMemberBytes   int64  `json:"archiveMemberBytes,omitempty"`
+	ArchiveExpandedBytes int64  `json:"archiveExpandedBytes,omitempty"`
+	ArchiveMembers       int    `json:"archiveMembers,omitempty"`
+	MemoryBytes          uint64 `json:"memoryBytes,omitempty"` // default 32 MiB, ceiling owner-controlled, up to 4 GiB
+	Deadline             string `json:"deadline,omitempty"`    // Go duration; default 12h, owner-controlled ceiling
+	UnitBudget           int64  `json:"unitBudget,omitempty"`  // default effectively unlimited, owner-controlled ceiling
 }
 
 // SidecarDecl says how a remote plugin's program comes to be: a Docker image,
@@ -542,8 +555,10 @@ type Runtime interface {
 // Installed is the host's record of one installed plugin, handed to a
 // RuntimeFactory when an instance is opened.
 type Installed struct {
-	ID       string
-	Manifest Manifest
+	RuntimeLimits *RuntimeLimits
+	Busy          func() bool
+	ID            string
+	Manifest      Manifest
 	// SourceURL is where the manifest came from (remote endpoint base).
 	SourceURL string
 	// Files returns an artifact file (entry, module, strings, schema) for

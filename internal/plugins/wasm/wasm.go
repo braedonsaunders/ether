@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -111,7 +112,7 @@ const (
 	// BaseCallUnits is charged once per handle call.
 	BaseCallUnits = 10
 	// MaxMemoryBytes is the hard ceiling for a plugin instance.
-	MaxMemoryBytes = 64 << 20
+	MaxMemoryBytes = 4 << 30
 	// MaxResponseBytes caps a plugin response.
 	MaxResponseBytes = 8 << 20
 	// MaxFetchBodyBytes caps a direct HTTP response before JSON encoding.
@@ -124,9 +125,10 @@ const (
 
 // Limits bound one plugin. Zero fields take the defaults in normalize.
 type Limits struct {
-	MemoryBytes uint64        // per instance; default 32 MiB, max 64 MiB
+	MemoryBytes uint64        // per instance; default 32 MiB, max wasm32 4 GiB
 	Deadline    time.Duration // per handle call; default 30s
 	UnitBudget  int64         // per handle call; default 10000
+	Busy        func() bool   // background work yields while playback or host load is high
 	PoolSize    int           // instances per pool; default 2
 	// Hot-path budgets. A manifest may lower these, never raise them:
 	// normalize clamps to the defaults below.
@@ -149,6 +151,9 @@ func (l *Limits) normalize() {
 	}
 	if l.Deadline <= 0 {
 		l.Deadline = 30 * time.Second
+	}
+	if l.Deadline > 365*24*time.Hour {
+		l.Deadline = 365 * 24 * time.Hour
 	}
 	if l.UnitBudget <= 0 {
 		l.UnitBudget = 10000
@@ -237,19 +242,20 @@ func (c *counters) snapshot() Stats {
 // instance serves one call at a time, so no locking is needed beyond the
 // exceeded flag (read after the call from the same goroutine).
 type callState struct {
-	ctx       context.Context
-	host      Host
-	lim       *Limits
-	start     time.Time
-	last      time.Time
-	units     int64
-	logs      int
-	hot       bool
-	exceeded  bool
-	aborted   bool
-	abortCode uint32
-	logger    *slog.Logger
-	pluginID  string
+	ctx        context.Context
+	host       Host
+	lim        *Limits
+	start      time.Time
+	last       time.Time
+	units      int64
+	logs       int
+	background bool
+	hot        bool
+	exceeded   bool
+	aborted    bool
+	abortCode  uint32
+	logger     *slog.Logger
+	pluginID   string
 }
 
 func (cs *callState) chargeWall() {
@@ -284,6 +290,13 @@ func (cs *callState) finishUnits() int64 {
 // hot-path lockdown. It is the single funnel for JS ether.* and raw
 // ether.host_call.
 func (cs *callState) dispatch(name string, args json.RawMessage) (json.RawMessage, *Fault) {
+	if cs.background {
+		waitedAt := time.Now()
+		if err := WaitBackground(cs.ctx, cs.lim.Busy); err != nil {
+			return nil, &Fault{Code: string(StatusTimeout), Message: err.Error()}
+		}
+		cs.last = cs.last.Add(time.Since(waitedAt))
+	}
 	if cs.hot && name != "log" {
 		return nil, Forbidden("host services are not available on the hot path: " + name)
 	}
@@ -638,10 +651,12 @@ func (p *Plugin) CallDetailed(ctx context.Context, req Request) (Response, Outco
 		out.Status = StatusError
 		return Response{}, out, &Error{Status: StatusError, Message: err.Error()}
 	}
-	callCtx, cancel := context.WithTimeout(ctx, p.lim.Deadline)
+	lim := limitsForRequest(p.lim, req.Path)
+	callCtx, cancel := context.WithTimeout(ctx, lim.Deadline)
 	defer cancel()
-	cs := &callState{ctx: callCtx, host: p.host, lim: &p.lim, start: start, last: start,
-		units: BaseCallUnits, logger: p.eng.logger, pluginID: p.id}
+	cs := &callState{ctx: callCtx, host: p.host, lim: &lim, start: start, last: start,
+		background: strings.HasPrefix(req.Path, "/ether/job/"),
+		units:      BaseCallUnits, logger: p.eng.logger, pluginID: p.id}
 	in, err := p.svc.get(callCtx)
 	if err != nil {
 		out.Status = StatusTimeout

@@ -15,7 +15,7 @@ import { apiFetch, apiStream, errorMessage } from "../../lib/api";
 import { PluginView } from "../../viewspec/PluginView";
 import { formatDateTime } from "../../lib/format";
 import { invalidateRegistry } from "../../lib/extend";
-import { PermissionSheet } from "./PermissionSheet";
+import { PermissionSheet, RuntimeLimitsCard } from "./PermissionSheet";
 import { StudioActions } from "./StudioActions";
 import { CodeStudio, ReferenceButton } from "./CodeStudio";
 import { CodeHome } from "./CodeHome";
@@ -760,6 +760,7 @@ function LiveWorkspace({
                   )
                 : t("The saved draft becomes a real plugin on this server.")}
             </p>
+            <RuntimeLimitsCard limits={installing.runtimeLimits} requested={installing.manifest.ether?.runtime?.limits} />
             <PermissionSheet
               permissions={installing.permissions}
               verified={installing.verified}

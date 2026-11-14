@@ -229,6 +229,9 @@ func (h *host) openFetch(ctx context.Context, req FetchRequest) (*http.Response,
 	// Recheck the current grant before every redirect, as well as the SSRF
 	// guard's own redirect policy. A redirect is another network request.
 	client := *h.m.client
+	if deadline, ok := ctx.Deadline(); ok {
+		client.Timeout = time.Until(deadline)
+	}
 	previousRedirect := client.CheckRedirect
 	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		current, grants, err := h.record(next.Context())

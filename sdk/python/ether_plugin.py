@@ -1006,7 +1006,10 @@ class PluginInstance:
             if not fn:
                 return _error_response(404, "not_found", "Job handler is not registered.")
             job_name = urllib.parse.unquote(path[len("/ether/job/") :])
-            return _ok_response(fn({"name": job_name}, ctx))
+            return _ok_response(fn({
+                "name": job_name,
+                "continuation": _parse_json_body(req.get("body")).get("continuation"),
+            }, ctx))
 
         if method == "POST" and path == "/ether/rank-key":
             fn = self.routes.get("rank_key") or self.routes.get("rankKey")

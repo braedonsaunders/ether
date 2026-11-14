@@ -1,3 +1,4 @@
+import { RuntimeLimitsEditor } from "./RuntimeLimitsEditor";
 import {
   Badge,
   Button,
@@ -36,7 +37,7 @@ import { InstalledPluginDrawer } from "./InstalledPluginDrawer";
 import { healthHeadline } from "./drawer/health";
 import { kindIcon, isAddon, kindLabel, type PluginSummary } from "./types";
 
-type TabKey = "installed" | "marketplace";
+type TabKey = "installed" | "marketplace" | "settings";
 
 /** Installed plugins, the marketplace and imports, on the real plugin API. */
 export default function Plugins() {
@@ -100,6 +101,7 @@ export default function Plugins() {
         count: plugins.length > 0 ? plugins.length : undefined,
       },
       { key: "marketplace", label: t("Marketplace") },
+      { key: "settings", label: t("Settings") },
     ],
     [plugins.length, locale],
   );
@@ -205,6 +207,8 @@ export default function Plugins() {
             </ul>
           )}
         </>
+      ) : active === "settings" ? (
+        <RuntimeLimitsEditor />
       ) : (
         <CatalogueTab
           installedIds={installedIds}
