@@ -93,6 +93,8 @@ type Options struct {
 	Cache core.CacheProvenanceRecorder
 	// SyncInterval is how often Run passes over every viewer (30m).
 	SyncInterval time.Duration
+	// RSSInterval is how often Run polls configured Plex watchlist RSS feeds (10s).
+	RSSInterval time.Duration
 	// ResumeSchedule makes Run wait until SyncInterval has passed since the
 	// last pass recorded in the database (by any node) before its first
 	// pass, instead of passing at once. A cluster sets it because Run
@@ -105,12 +107,15 @@ type Options struct {
 	OnFriendsRSSChanged func(context.Context)
 }
 type Service struct {
-	db          *sql.DB
-	o           Options
-	mu          sync.Mutex
-	communityMu sync.Mutex
-	nextCheck   time.Time
-	gen         atomic.Uint64
+	db              *sql.DB
+	o               Options
+	mu              sync.Mutex
+	rssMu           sync.Mutex
+	communityMu     sync.Mutex
+	rssCheckMu      sync.Mutex
+	rssCheckPending map[int64]core.User
+	nextCheck       time.Time
+	gen             atomic.Uint64
 }
 
 // Generation changes when watchlist membership changes.
@@ -119,6 +124,29 @@ func (s *Service) Generation() uint64 {
 		return 0
 	}
 	return s.gen.Load()
+}
+
+func (s *Service) queueRSSCheck(u core.User) {
+	s.rssCheckMu.Lock()
+	if s.rssCheckPending == nil {
+		s.rssCheckPending = make(map[int64]core.User)
+	}
+	s.rssCheckPending[u.ID] = u
+	s.rssCheckMu.Unlock()
+}
+
+func (s *Service) drainRSSChecks() []core.User {
+	s.rssCheckMu.Lock()
+	defer s.rssCheckMu.Unlock()
+	if len(s.rssCheckPending) == 0 {
+		return nil
+	}
+	out := make([]core.User, 0, len(s.rssCheckPending))
+	for _, u := range s.rssCheckPending {
+		out = append(out, u)
+	}
+	clear(s.rssCheckPending)
+	return out
 }
 
 type Item struct {
@@ -154,6 +182,9 @@ func New(db *sql.DB, o Options) *Service {
 	}
 	if o.SyncInterval <= 0 {
 		o.SyncInterval = 30 * time.Minute
+	}
+	if o.RSSInterval <= 0 {
+		o.RSSInterval = 10 * time.Second
 	}
 	return &Service{db: db, o: o}
 }
@@ -863,6 +894,44 @@ func (s *Service) Hubs(ctx context.Context, u *core.User, limit int) ([]core.Hub
 // SyncInterval; with ResumeSchedule the first pass waits out the interval
 // since the last recorded pass.
 func (s *Service) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+	if s.o.RSSInterval > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ctx.Err() == nil {
+				if !schedule.Wait(ctx, s.o.Now, s.o.RSSInterval) {
+					return
+				}
+				feedJob, feedCancel := context.WithTimeout(ctx, time.Minute)
+				err := s.SyncRSS(feedJob)
+				feedCancel()
+				if err != nil {
+					s.o.Logger.Warn("watchlist rss sync failed", "err", err)
+					if !schedule.Wait(ctx, s.o.Now, time.Minute) {
+						return
+					}
+				} else if users := s.drainRSSChecks(); len(users) > 0 && s.o.Resolver != nil {
+					wg.Add(1)
+					go func(users []core.User) {
+						defer wg.Done()
+						for i := range users {
+							if ctx.Err() != nil {
+								return
+							}
+							checkJob, checkCancel := context.WithTimeout(ctx, 2*time.Minute)
+							if err := s.Check(checkJob, &users[i]); err != nil {
+								s.o.Logger.Warn("watchlist rss availability check failed", "user", users[i].ID, "err", err)
+							}
+							checkCancel()
+						}
+					}(users)
+				}
+			}
+		}()
+	}
+	defer wg.Wait()
+
 	if !schedule.Wait(ctx, s.o.Now, s.untilDue(ctx)) {
 		return
 	}

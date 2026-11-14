@@ -293,3 +293,43 @@ func TestBackgroundScheduleWarmsGUIDs(t *testing.T) {
 		t.Fatalf("background cached=%q, want %q", got, want)
 	}
 }
+
+func TestIMDBFallbackWhenTMDBMissingFromPlex(t *testing.T) {
+	const canonical = "plex://movie/66112233445566778899aabb"
+	for _, tc := range []struct {
+		name string
+		ids  string
+		want string
+	}{
+		{"imdb_only", `[{"id":"imdb://tt32212403"}]`, canonical},
+		{"conflicting_tmdb", `[{"id":"imdb://tt32212403"},{"id":"tmdb://999999"}]`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, err := store.OpenMemory(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			k := core.MovieKey(1280015)
+			seedCatalogTitle(t, db, k, "movie", "Sunny Dancer", 2026)
+			if _, err := db.Exec(`UPDATE catalog_titles SET imdb='tt32212403' WHERE key=?`, int64(k)); err != nil {
+				t.Fatal(err)
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/library/metadata/matches" && r.URL.Query().Get("guid") == "tmdb://1280015" {
+					w.Write([]byte(`{"MediaContainer":{"Metadata":[]}}`))
+					return
+				}
+				w.Write([]byte(`{"MediaContainer":{"Metadata":[{"guid":"` + canonical + `","type":"movie","title":"Sunny Dancer","year":2026,"Guid":` + tc.ids + `}]}}`))
+			}))
+			defer srv.Close()
+
+			s := New(db, Options{BaseURL: srv.URL, Token: func() string { return "fixture" }})
+			got, err := s.Resolve(ctx, k)
+			if err != nil || got != tc.want {
+				t.Fatalf("Resolve=%q err=%v, want %q", got, err, tc.want)
+			}
+		})
+	}
+}

@@ -195,7 +195,7 @@ func discoveryViewerToken(ctx context.Context, u *core.User, home bool, ownerTok
 	if u.IsOwner {
 		return ownerToken, nil
 	}
-	if home {
+	if home || (u.PlexID > 0 && u.Username == "" && !u.IsOwner) {
 		return switchHome(ctx, ownerToken, u.PlexID, "")
 	}
 	return "", core.ErrUnauthorized
