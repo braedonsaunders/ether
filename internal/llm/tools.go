@@ -530,7 +530,8 @@ type oaiResponsesTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters"`
-	Strict      bool            `json:"strict,omitempty"`
+	// Keep optional builder fields optional rather than provider-normalizing them.
+	Strict bool `json:"strict"`
 }
 
 func (c *Client) streamOpenAIResponses(ctx context.Context, base string, cfg config.LLM, req ToolRequest, out chan<- Event) (string, error) {

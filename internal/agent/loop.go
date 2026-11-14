@@ -277,9 +277,17 @@ func (s *Service) loop(ctx context.Context, p tools.Principal, threadID, turnID 
 			return "error", err
 		}
 		if tokensUsed > budget {
+			if pendingRepair != "" {
+				stopNote(missingToolNote)
+				return "error", errMissingToolCall
+			}
 			stopNote("I stopped because this turn used its token budget. Ask me to continue, or narrow the request.")
 			return "other", nil
 		}
+	}
+	if pendingRepair != "" {
+		stopNote(missingToolNote)
+		return "error", errMissingToolCall
 	}
 	stopNote(fmt.Sprintf("I stopped after %d steps without finishing. Ask me to continue and I will pick up from here.", maxSteps))
 	return "tool-calls", nil
