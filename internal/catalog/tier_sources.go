@@ -174,7 +174,7 @@ var tierUntouchedTables = []string{
 	"collections_names", "collections_defaults", "collections_meta", "release_observations", "availability_",
 	"cachefill_shared", "plex_ultrablur", "plex_shelf_generations", "onair_", "xtream_vod", "xtream_vod_refresh", "experience_row_",
 	"mediabrowser_personal_home", "frontend_image_grants", "segcache_", "debrid_", "newznab_", "cardigann_",
-	"livetv_programmes", "livetv_guide_", "livetv_numbers", "livetv_sources", "livetv_policies",
+	"livetv_programmes", "livetv_guide_", "livetv_owner_guides", "livetv_search_", "livetv_numbers", "livetv_sources", "livetv_policies",
 	"livetv_channel_epoch", "livetv_plex_guide_gate", "livetv_source_history", "livetv_login_", "artwork_image_",
 	"subtitles_auto_attempts", "subtitles_auto_provider_pause",
 	// Libraries hold owner filter definitions and plugin-owned items; a

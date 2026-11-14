@@ -57,6 +57,7 @@ func (s *Service) VersionSlots(ctx context.Context, req core.ResolveRequest, lim
 	slots := s.configuredSlots(profile, req.Client, limit)
 	var candidates []candidate
 	var auto core.Release
+	var playedAuto core.Release
 	if labels {
 		if results, ok := s.peekSearchCache(searchCacheKey(searchRequestFor(req.Title))); ok {
 			pinID := ""
@@ -69,6 +70,15 @@ func (s *Service) VersionSlots(ctx context.Context, req core.ResolveRequest, lim
 				candidates = pinFirst(acceptableVariantAudio(clearIdentityVariants(ranked)), pinID)
 				if len(candidates) > 0 {
 					auto = candidates[0].rel
+					// Resume can keep an earlier Auto pick in this quality/cut.
+					// Only use a candidate that still passes the strict policy;
+					// the logical Auto selector and menu shape remain unchanged.
+					for _, c := range candidates {
+						if c.rel.ID == req.PlayedRelease && variantKey(c.rel.Info) == variantKey(auto.Info) {
+							playedAuto = c.rel
+							break
+						}
+					}
 				}
 				if s.resolverCfg().OfferHigherVersions {
 					if relaxed, ok := relaxedVariantProfile(profile, req.Client); ok {
@@ -104,6 +114,14 @@ func (s *Service) VersionSlots(ctx context.Context, req core.ResolveRequest, lim
 		}
 		out[i] = core.ReleaseVariant{ID: slot.id(), Label: label, Auto: i == 0, Edition: r.Info.Edition, Release: r, Info: info}
 	}
+	if playedAuto.ID != "" {
+		// Align Auto's presentation with resume without changing which
+		// concrete candidates the alternative selectors admit.
+		out[0].Release = playedAuto
+		out[0].Label = variantLabel(playedAuto, "auto")
+		out[0].Edition = playedAuto.Info.Edition
+		out[0].Info = estimateVariantInfo(req.Title, playedAuto, wanted)
+	}
 	return out, nil
 }
 func (s *Service) configuredSlots(profile core.QualityProfile, caps core.ClientCaps, limit int) []versionSlot {
@@ -122,9 +140,12 @@ func (s *Service) configuredSlots(profile core.QualityProfile, caps core.ClientC
 		for n := 0; n < alts; n++ {
 			add(versionSlot{Kind: "alternative", Ordinal: n})
 		}
-		// The original menu reserves three distinct tier/cut choices after Auto.
-		for n := 0; n < maxTierVariants-1; n++ {
-			add(versionSlot{Kind: "distinct", Ordinal: n})
+		// Extra tier/cut choices require the owner's opt-in. Without it,
+		// the menu is exactly Auto plus the configured alternatives.
+		if cfg.OfferHigherVersions {
+			for n := 0; n < maxTierVariants-1; n++ {
+				add(versionSlot{Kind: "distinct", Ordinal: n})
+			}
 		}
 		return slots
 	}

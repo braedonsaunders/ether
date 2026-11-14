@@ -630,7 +630,13 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *frontend.Title, w
 		stamp = 1
 	}
 	if source, ok := s.svc().variants.(frontend.VersionSlots); ok && !sessionMedia {
-		versions, err := source.VersionSlots(ctx, frontend.ResolveRequest{Title: t, Client: s.clientCapsForKey(pr, t.Key), User: pr.User}, frontend.MaxVariants, withVariants && withStreams)
+		req := frontend.ResolveRequest{Title: t, Client: s.clientCapsForKey(pr, t.Key), User: pr.User}
+		if ps != nil && ps.Resolution != nil {
+			req.PlayedRelease = ps.Resolution.Release.ID
+		} else if !info.Estimated {
+			_, req.PlayedRelease, _ = s.resumedTracks(ctx, pr, t)
+		}
+		versions, err := source.VersionSlots(ctx, req, frontend.MaxVariants, withVariants && withStreams)
 		if err != nil {
 			pr.versionErr = err
 			return nil, ""
