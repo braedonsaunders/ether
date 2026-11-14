@@ -111,12 +111,12 @@ func (s surfaceIdentity) allow(ctx context.Context, limiter *identity.LoginLimit
 	if !ok || ip.IsUnspecified() || ip.IsMulticast() {
 		return core.ErrUnauthorized
 	}
-	allowed, err := limiter.Allow(ctx, key, ip)
+	allowed, retry, err := limiter.AllowWithRetry(ctx, key, ip)
 	if err != nil {
 		return err
 	}
 	if !allowed {
-		return frontend.ErrRateLimited
+		return &frontend.IdentityRateLimitError{RetryAfter: retry}
 	}
 	return nil
 }

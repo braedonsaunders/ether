@@ -159,8 +159,13 @@ func TestSurfaceIdentityRateLimits(t *testing.T) {
 	if _, err := s.SignIn(ctx, "absent", "bad", core.Device{}); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatal(err)
 	}
-	if _, err := s.SignIn(ctx, "absent", "bad", core.Device{}); !errors.Is(err, frontend.ErrRateLimited) {
-		t.Fatal(err)
+	if _, err := s.SignIn(ctx, "absent", "bad", core.Device{}); err != nil {
+		var limited *frontend.IdentityRateLimitError
+		if !errors.Is(err, frontend.ErrRateLimited) || !errors.As(err, &limited) || limited.RetryAfter <= 0 || limited.RetryAfter > time.Minute {
+			t.Fatal("identity retry delay missing", err)
+		}
+	} else {
+		t.Fatal("identity limit bypassed")
 	}
 	_, secret, err := s.QuickConnectInitiate(ctx, core.Device{})
 	if err != nil {

@@ -67,41 +67,56 @@ func rateKey(kind string, parts ...string) string {
 // Allow records an attempt before verification. It fails closed on database
 // errors; callers must not skip this step for valid passwords or PINs.
 func (l *LoginLimiter) Allow(ctx context.Context, identity string, ip netip.Addr) (bool, error) {
+	allowed, _, err := l.AllowWithRetry(ctx, identity, ip)
+	return allowed, err
+}
+
+// AllowWithRetry records the same attempt as Allow and reports the remaining
+// fixed-window delay when either bucket is exhausted. It never resets a bucket.
+func (l *LoginLimiter) AllowWithRetry(ctx context.Context, identity string, ip netip.Addr) (bool, time.Duration, error) {
 	if !ip.IsValid() || len(identity) > 1024 {
-		return false, errors.New("identity: invalid limiter key")
+		return false, 0, errors.New("identity: invalid limiter key")
 	}
 	addr := ip.Unmap().String()
 	tx, err := l.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	defer tx.Rollback()
 	now := l.now().UnixMilli()
 	cutoff := now - l.window.Milliseconds()
-	update := func(key string) (int, error) {
+	update := func(key string) (int, int64, error) {
 		var n int
+		var start int64
 		err := tx.QueryRowContext(ctx, `INSERT INTO identity_rate_buckets(bucket_key,window_start,attempts,namespace) VALUES(?,?,1,?)
 ON CONFLICT(bucket_key) DO UPDATE SET
  attempts=CASE WHEN identity_rate_buckets.window_start<=? THEN 1 ELSE identity_rate_buckets.attempts+1 END,
  window_start=CASE WHEN identity_rate_buckets.window_start<=? THEN ? ELSE identity_rate_buckets.window_start END
-RETURNING attempts`, key, now, l.namespace, cutoff, cutoff, now).Scan(&n)
-		return n, err
+RETURNING attempts,window_start`, key, now, l.namespace, cutoff, cutoff, now).Scan(&n, &start)
+		return n, start, err
 	}
-	ipCount, err := update(rateKey(l.namespace, "ip", addr))
+	ipCount, ipStart, err := update(rateKey(l.namespace, "ip", addr))
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
-	pairCount, err := update(rateKey(l.namespace, "identity-ip", identity, addr))
+	pairCount, pairStart, err := update(rateKey(l.namespace, "identity-ip", identity, addr))
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if err = tx.Commit(); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	// Best-effort bounded cleanup runs outside the admission transaction; a
 	// cleanup failure never resets an active bucket or grants access.
 	_, _ = l.Cleanup(ctx, 16)
-	return ipCount <= l.perIP && pairCount <= l.perIdentityIP, nil
+	var retry time.Duration
+	if ipCount > l.perIP {
+		retry = max(retry, time.Duration(ipStart+l.window.Milliseconds()-now)*time.Millisecond)
+	}
+	if pairCount > l.perIdentityIP {
+		retry = max(retry, time.Duration(pairStart+l.window.Milliseconds()-now)*time.Millisecond)
+	}
+	return ipCount <= l.perIP && pairCount <= l.perIdentityIP, retry, nil
 }
 
 // Cleanup removes at most limit expired buckets. The predicate is repeated

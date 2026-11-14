@@ -40,6 +40,25 @@ func (f *descriptiveFake) DescriptiveSearch(context.Context, *frontend.Viewer, f
 
 func TestVelaProtocolInvariants(t *testing.T) {
 	t.Run("pairing lineage", checkPairingLineage)
+	t.Run("identity retry budget", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		fail(w, &frontend.IdentityRateLimitError{RetryAfter: 125*time.Second + time.Millisecond})
+		var response struct {
+			Error struct {
+				Class, Code string
+				Retry       struct {
+					Allowed                   bool
+					AfterSeconds, MaxAttempts int
+				}
+			}
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 503 || w.Header().Get("Retry-After") != "126" || response.Error.Class != "capacity" || response.Error.Code != "rate_limited" || !response.Error.Retry.Allowed || response.Error.Retry.AfterSeconds != 126 || response.Error.Retry.MaxAttempts != 2 {
+			t.Fatal("identity retry policy lost", w.Code, response)
+		}
+	})
 	t.Run("search capability and mode", func(t *testing.T) {
 		source := &descriptiveFake{available: true}
 		fastCalls := 0

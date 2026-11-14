@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"errors"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
@@ -34,3 +35,10 @@ var ErrDownloadNeedsTranscode = core.ErrDownloadNeedsTranscode
 
 // ErrInteractionReceipt is an invalid, stale or out-of-scope interaction handle.
 var ErrInteractionReceipt = errors.New("experience: invalid interaction receipt")
+
+// IdentityRateLimitError preserves the identity denial and its fixed-window
+// retry delay without exposing the peer, username or bucket identifiers.
+type IdentityRateLimitError struct{ RetryAfter time.Duration }
+
+func (*IdentityRateLimitError) Error() string { return ErrRateLimited.Error() }
+func (*IdentityRateLimitError) Unwrap() error { return ErrRateLimited }

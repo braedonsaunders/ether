@@ -128,7 +128,14 @@ func fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, frontend.ErrUnauthorized):
 		problem(w, 401, "auth", "unauthorized")
 	case errors.Is(err, frontend.ErrRateLimited):
-		problem(w, 503, "capacity", "rate_limited")
+		var limited *frontend.IdentityRateLimitError
+		if errors.As(err, &limited) && limited.RetryAfter > 0 && limited.RetryAfter <= 15*time.Minute {
+			seconds := int((limited.RetryAfter + time.Second - 1) / time.Second)
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+			send(w, 503, object{"error": object{"class": "capacity", "code": "rate_limited", "message": "rate limited", "retry": object{"allowed": true, "afterSeconds": seconds, "maxAttempts": 2}}})
+		} else {
+			problem(w, 503, "capacity", "rate_limited")
+		}
 	default:
 		problem(w, 503, "transient", "service_unavailable")
 	}

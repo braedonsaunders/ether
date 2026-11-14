@@ -36,6 +36,28 @@ func TestLoginLimiterBuckets(t *testing.T) {
 	if ok, err := l.Allow(ctx, "alice", netip.MustParseAddr("192.0.2.2")); err != nil || !ok {
 		t.Fatalf("other IP: %v %v", ok, err)
 	}
+	// Different bucket start times require waiting for both windows. Denied
+	// attempts increase the count but must not slide either expiry forward.
+	ip = netip.MustParseAddr("192.0.2.3")
+	check("alice", true)
+	check("alice", true)
+	now = now.Add(10 * time.Second)
+	check("bob", true)
+	check("bob", false)
+	allowed, retry, err := l.AllowWithRetry(ctx, "bob", ip)
+	if err != nil || allowed || retry != time.Minute {
+		t.Fatalf("later identity window: allowed=%v retry=%v err=%v", allowed, retry, err)
+	}
+	now = now.Add(50 * time.Second)
+	allowed, retry, err = l.AllowWithRetry(ctx, "bob", ip)
+	if err != nil || allowed || retry != 10*time.Second {
+		t.Fatalf("remaining identity window: allowed=%v retry=%v err=%v", allowed, retry, err)
+	}
+	now = now.Add(10 * time.Second)
+	allowed, retry, err = l.AllowWithRetry(ctx, "bob", ip)
+	if err != nil || !allowed || retry != 0 {
+		t.Fatalf("natural reset: allowed=%v retry=%v err=%v", allowed, retry, err)
+	}
 }
 
 func TestLoginLimiterCleanupIsBounded(t *testing.T) {
