@@ -371,6 +371,9 @@ type Collection struct {
 	// UpdatedAt changes when the collection's members or artwork change, so
 	// Plex clients refetch artwork (additive).
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+	// MembershipRevision identifies ordered source membership, including changes
+	// within one timestamp tick. Internal only; wire protocols choose their token.
+	MembershipRevision string `json:"-"`
 }
 
 type Collections interface {

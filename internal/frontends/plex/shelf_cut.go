@@ -81,12 +81,27 @@ func (s *Server) shelfSnapshot(ctx context.Context, pr *Request, h frontend.Hub,
 // shelfSnapshotResult never publishes an incomplete generation after a source
 // read fails. Existing hub builders have already handled their source errors.
 func (s *Server) shelfSnapshotResult(ctx context.Context, pr *Request, h frontend.Hub, hc hubCtx, build func() ([]frontend.Title, []model.Metadata, error)) ([]frontend.Title, string, error) {
+	return s.shelfSnapshotRevision(ctx, pr, h, hc, "", build)
+}
+
+// A source revision pins collection membership independently of screen-cache
+// timers. The deterministic address also recovers the cut after restart/eviction.
+func (s *Server) shelfSnapshotRevision(ctx context.Context, pr *Request, h frontend.Hub, hc hubCtx, revision string, build func() ([]frontend.Title, []model.Metadata, error)) ([]frontend.Title, string, error) {
 	scope, viewerRevision, ok := s.shelfScope(ctx, pr)
 	if !ok {
 		// Without the authorization revision a retained row cannot be served.
 		return nil, "", frontend.ErrNotAvailable
 	}
 	identity := fmt.Sprintf("%s|%d|%d|%s", scope, hc.section, hc.related, h.ID)
+	if revision != "" {
+		identity += "|" + revision + "|" + viewerRevision
+		address := fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
+		if gen, ok := s.recoverShelf(ctx, address); ok && gen.expires >= s.now().Unix() {
+			if titles, ok := s.shelfTitles(ctx, pr, gen, gen.keys); ok {
+				return titles, address, nil
+			}
+		}
+	}
 	s.shelfMu.Lock()
 	now := s.now()
 	if cut, ok := s.shelfCuts[identity]; ok && cut.revision == viewerRevision && now.Sub(cut.at) < 5*time.Minute && !now.Before(cut.at) {
@@ -123,6 +138,9 @@ func (s *Server) shelfSnapshotResult(ctx context.Context, pr *Request, h fronten
 	data, _ := json.Marshal(keys)
 	footprint, _ := json.Marshal(unique)
 	generation := fmt.Sprintf("%x", sha256.Sum256(append([]byte(identity+"|"), data...)))
+	if revision != "" {
+		generation = fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
+	}
 	s.shelfMu.Lock()
 	// Concurrent screen builds must publish the same winning generation.
 	if cut, ok := s.shelfCuts[identity]; ok && cut.revision == viewerRevision && now.Sub(cut.at) < 5*time.Minute && !now.Before(cut.at) {
@@ -221,6 +239,9 @@ func (s *Server) recoverShelf(ctx context.Context, generation string) (shelfGene
 
 func (s *Server) shelfTitles(ctx context.Context, pr *Request, g shelfGeneration, keys []frontend.RatingKey) ([]frontend.Title, bool) {
 	titles := g.items
+	if len(keys) == len(g.keys) && len(titles) == len(keys) {
+		return titles, true
+	}
 	if len(titles) == 0 && len(keys) > 0 {
 		if cached, ok := s.catalog().(frontend.CachedTitleSource); ok {
 			var err error
@@ -254,6 +275,16 @@ func (s *Server) shelfTitles(ctx context.Context, pr *Request, g shelfGeneration
 }
 
 type shelfMembershipKey struct{}
+
+// Carry proof of snapshot admission through presentation. Only discovery and
+// release gates are pinned; current content and library authorization still run.
+func withShelfMembers(ctx context.Context, titles []frontend.Title) context.Context {
+	members := make(map[frontend.RatingKey]frontend.Title, len(titles))
+	for _, title := range titles {
+		members[title.Key] = title
+	}
+	return context.WithValue(ctx, shelfMembershipKey{}, members)
+}
 
 func shelfMember(ctx context.Context, key frontend.RatingKey) (frontend.Title, bool) {
 	titles, _ := ctx.Value(shelfMembershipKey{}).(map[frontend.RatingKey]frontend.Title)
@@ -337,7 +368,7 @@ func (s *Server) serveShelfGeneration(w http.ResponseWriter, r *http.Request) bo
 		}
 		mc = s.collectionItemsContainer(c, key)
 	}
-	mc.Metadata = s.renderTitles(r.Context(), pr, titles, renderOpts{media: true, availabilityInSQL: true})
+	mc.Metadata = s.renderTitles(withShelfMembers(r.Context(), titles), pr, titles, renderOpts{media: true, availabilityInSQL: true})
 	mc.Size = len(mc.Metadata)
 	mc.SetPage(start, total)
 	s.write(w, r, mc)

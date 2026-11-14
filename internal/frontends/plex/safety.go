@@ -105,7 +105,8 @@ func (s *Server) openableTitles(ctx context.Context, u *frontend.User, ts []fron
 		ts = s.availableForViewer(ctx, u, ts)
 	}
 	for _, t := range ts {
-		if s.admittedTitle(&t) && s.playableTitle(ctx, u, &t) {
+		_, admitted := shelfMember(ctx, t.Key)
+		if (admitted || s.admittedTitle(&t)) && s.playableTitle(ctx, u, &t) {
 			out = append(out, t)
 		}
 	}
