@@ -183,6 +183,12 @@ func (i *instance) sectionCards(r *http.Request, v *frontend.Viewer, credential 
 			item["item_source"] = "in_progress"
 		}
 		i.paintCardArtwork(r, artwork[t.Key], item)
+		if row.PreviewOnFocus {
+			if art, ok := item["backdrop_url"].(string); ok && art != "" {
+				item["poster_url"] = art
+				delete(item, "poster_thumbhash")
+			}
+		}
 		if summary := overlays[t.Key]; len(summary) > 0 {
 			item["overlay_summary"] = summary
 		} else if !batched {

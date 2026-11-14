@@ -967,6 +967,13 @@ export const EXTRAS: FieldGroup[] = localized(() => [
       },
       { key: "resolverTimeout", label: t("Give up after"), kind: "duration" },
       {
+        key: "trailerCacheMaxBytes",
+        label: t("Trailer cache limit"),
+        kind: "bytes",
+        unit: "MiB",
+        help: t("Trailers are cached when opened. 0 uses 512 MiB."),
+      },
+      {
         key: "prewarmBytes",
         label: t("Pre-buffer the feature"),
         kind: "bytes",

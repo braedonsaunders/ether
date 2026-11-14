@@ -354,6 +354,7 @@ func (i *instance) writeListedTitles(w http.ResponseWriter, r *http.Request, vie
 		for key, value := range images[title.Key] {
 			item[key] = value
 		}
+		previewRowArtwork(r, item)
 		i.shapeJellyfinItem(r, viewer, item, title)
 		i.jellyfinListFacts(r, item, title)
 		i.jellyfinSeasonListFields(r, item, title)

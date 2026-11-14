@@ -1104,6 +1104,9 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request, k front
 			}
 			mc.Size = len(mc.Metadata)
 			mc.SetPage(min(offset, total), total)
+			if c.PreviewOnFocus {
+				landscapeMetadata(mc.Metadata)
+			}
 			s.write(w, r, mc)
 			return
 		}
@@ -1127,6 +1130,9 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request, k front
 		mc.Metadata = s.renderTitles(ctx, pr, uniq[offset:end], renderOpts{media: true, availabilityInSQL: true})
 		mc.Size = len(mc.Metadata)
 		mc.SetPage(offset, total)
+		if c.PreviewOnFocus {
+			landscapeMetadata(mc.Metadata)
+		}
 		s.write(w, r, mc)
 		return
 	}
@@ -1162,6 +1168,9 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request, k front
 	offset = min(offset, page.Total)
 	mc.Size = len(mc.Metadata)
 	mc.SetPage(offset, page.Total)
+	if c.PreviewOnFocus {
+		landscapeMetadata(mc.Metadata)
+	}
 	s.write(w, r, mc)
 }
 
@@ -1202,6 +1211,9 @@ func (s *Server) collectionMemberPage(w http.ResponseWriter, r *http.Request, c 
 	mc.Metadata = s.renderTitles(ctx, pr, selected[offset:end], renderOpts{media: true, availabilityInSQL: true})
 	mc.Size = len(mc.Metadata)
 	mc.SetPage(offset, total)
+	if c.PreviewOnFocus {
+		landscapeMetadata(mc.Metadata)
+	}
 	s.write(w, r, mc)
 }
 

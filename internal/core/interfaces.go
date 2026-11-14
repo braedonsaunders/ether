@@ -341,33 +341,35 @@ type ImageURLFunc func(path, size string) string
 
 // Hub is a Home row or a section row.
 type Hub struct {
-	ID       string    `json:"id"` // stable identifier, e.g. "trending.week.movie"
-	Title    string    `json:"title"`
-	Type     MediaType `json:"type"`            // item type in the row ("mixed" allowed via "")
-	Context  string    `json:"context"`         // Plex hub context, e.g. "hub.movie.recentlyreleased"
-	Style    string    `json:"style,omitempty"` // "shelf", "hero", "clip"
-	Promoted bool      `json:"promoted"`        // show on Home
-	Items    []Title   `json:"items"`
-	More     bool      `json:"more"`
-	Key      RatingKey `json:"key,omitempty"` // backing collection, if any
+	ID             string    `json:"id"` // stable identifier, e.g. "trending.week.movie"
+	Title          string    `json:"title"`
+	Type           MediaType `json:"type"`            // item type in the row ("mixed" allowed via "")
+	Context        string    `json:"context"`         // Plex hub context, e.g. "hub.movie.recentlyreleased"
+	Style          string    `json:"style,omitempty"` // "shelf", "hero", "clip"
+	PreviewOnFocus bool      `json:"previewOnFocus,omitempty"`
+	Promoted       bool      `json:"promoted"` // show on Home
+	Items          []Title   `json:"items"`
+	More           bool      `json:"more"`
+	Key            RatingKey `json:"key,omitempty"` // backing collection, if any
 	// ItemCount carries rendered availability when a front end retains the
 	// actual metadata and asks only for row placement.
 	ItemCount int `json:"itemCount,omitempty"`
 }
 
 type Collection struct {
-	Key          RatingKey `json:"key"`
-	Title        string    `json:"title"`
-	Summary      string    `json:"summary,omitempty"`
-	Kind         string    `json:"kind"` // "franchise", "trending", "smart", "user"
-	Type         MediaType `json:"type"`
-	Filter       *Filter   `json:"filter,omitempty"` // smart
-	Sort         SortOrder `json:"sort,omitempty"`
-	OwnerUserID  int64     `json:"ownerUserId,omitempty"` // 0 = server-wide
-	PosterPath   string    `json:"posterPath,omitempty"`
-	BackdropPath string    `json:"backdropPath,omitempty"`
-	ChildCount   int       `json:"childCount"`
-	Upcoming     bool      `json:"upcoming,omitempty"` // admits scoped future placeholders
+	PreviewOnFocus bool      `json:"previewOnFocus,omitempty"`
+	Key            RatingKey `json:"key"`
+	Title          string    `json:"title"`
+	Summary        string    `json:"summary,omitempty"`
+	Kind           string    `json:"kind"` // "franchise", "trending", "smart", "user"
+	Type           MediaType `json:"type"`
+	Filter         *Filter   `json:"filter,omitempty"` // smart
+	Sort           SortOrder `json:"sort,omitempty"`
+	OwnerUserID    int64     `json:"ownerUserId,omitempty"` // 0 = server-wide
+	PosterPath     string    `json:"posterPath,omitempty"`
+	BackdropPath   string    `json:"backdropPath,omitempty"`
+	ChildCount     int       `json:"childCount"`
+	Upcoming       bool      `json:"upcoming,omitempty"` // admits scoped future placeholders
 	// UpdatedAt changes when the collection's members or artwork change, so
 	// Plex clients refetch artwork (additive).
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`

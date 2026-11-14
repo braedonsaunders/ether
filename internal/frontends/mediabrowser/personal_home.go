@@ -299,17 +299,18 @@ func personalConfigKey(cfg personalHomeConfig) string {
 }
 
 type storedPersonalShelf struct {
-	Number int64  `json:"number"`
-	WireID string `json:"wireID"`
-	Name   string `json:"name"`
-	Kind   string `json:"kind"`
-	Count  int    `json:"count"`
+	PreviewOnFocus bool   `json:"previewOnFocus,omitempty"`
+	Number         int64  `json:"number"`
+	WireID         string `json:"wireID"`
+	Name           string `json:"name"`
+	Kind           string `json:"kind"`
+	Count          int    `json:"count"`
 }
 
 func encodeShelves(in []personalShelf) ([]byte, error) {
 	out := make([]storedPersonalShelf, len(in))
 	for i, shelf := range in {
-		out[i] = storedPersonalShelf{Number: shelf.number, WireID: shelf.wireID, Name: shelf.name, Kind: shelf.kind, Count: shelf.count}
+		out[i] = storedPersonalShelf{PreviewOnFocus: shelf.row.PreviewOnFocus, Number: shelf.number, WireID: shelf.wireID, Name: shelf.name, Kind: shelf.kind, Count: shelf.count}
 	}
 	return json.Marshal(out)
 }
@@ -324,7 +325,7 @@ func decodeShelves(body []byte) ([]personalShelf, error) {
 		if shelf.WireID == "" || shelf.Name == "" {
 			continue
 		}
-		out = append(out, personalShelf{number: shelf.Number, wireID: shelf.WireID, name: shelf.Name, kind: shelf.Kind, count: shelf.Count})
+		out = append(out, personalShelf{number: shelf.Number, wireID: shelf.WireID, name: shelf.Name, kind: shelf.Kind, count: shelf.Count, row: frontend.Row{PreviewOnFocus: shelf.PreviewOnFocus}})
 	}
 	return out, nil
 }
@@ -914,7 +915,7 @@ func (i *instance) writePersonalItems(w http.ResponseWriter, r *http.Request, v 
 		return
 	}
 	i.notePersonalDelivery(r, v, shelf, page)
-	i.page(w, r, v, frontend.Page{Items: page, Total: total}, q.Offset)
+	i.page(w, withPreviewRowArtwork(r, shelf.row.PreviewOnFocus), v, frontend.Page{Items: page, Total: total}, q.Offset)
 }
 
 func (i *instance) writePersonalActivity(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, number int64, latest bool, offset, limit int) {
@@ -949,7 +950,7 @@ func (i *instance) writePersonalActivity(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	i.notePersonalDelivery(r, v, shelf, page)
-	i.writeListedTitles(w, r, v, page, nil, total, true, offset, latest)
+	i.writeListedTitles(w, withPreviewRowArtwork(r, shelf.row.PreviewOnFocus), v, page, nil, total, true, offset, latest)
 }
 
 func (i *instance) personalViewOrder(r *http.Request, v *frontend.Viewer) []string {
@@ -1182,6 +1183,7 @@ func (i *instance) recommendations(w http.ResponseWriter, r *http.Request, want 
 			for key, value := range images[title.Key] {
 				item[key] = value
 			}
+			previewRowArtwork(withPreviewRowArtwork(r, shelf.row.PreviewOnFocus), item)
 			i.shapeJellyfinItem(r, v, item, title)
 			i.applyListedRatings(item, ratingFacts, title.Key)
 			items = append(items, item)

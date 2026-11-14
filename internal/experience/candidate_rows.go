@@ -12,7 +12,7 @@ import (
 func CandidateRows(candidates []RankedCandidate) []frontend.Row {
 	out := make([]frontend.Row, 0, len(candidates))
 	for _, c := range candidates {
-		row := frontend.Row{ID: c.ID, Title: c.Title, Purpose: c.Purpose, Style: c.Style, Promoted: c.Promoted, More: c.More, Collection: c.Key}
+		row := frontend.Row{ID: c.ID, Title: c.Title, PreviewOnFocus: c.PreviewOnFocus, Purpose: c.Purpose, Style: c.Style, Promoted: c.Promoted, More: c.More, Collection: c.Key}
 		for i := range c.Items {
 			item := c.Items[i]
 			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &item})

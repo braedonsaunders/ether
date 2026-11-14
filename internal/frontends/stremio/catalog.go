@@ -142,6 +142,7 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var titles []frontend.Title
+	previewTitles := map[frontend.RatingKey]bool{}
 	if purpose == frontend.RowRecentlyReleased {
 		q.Sort, _ = kitsort.Order("PremiereDate")
 		q.Desc = true
@@ -180,6 +181,7 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 					if string(title.Type) != map[string]string{"movie": "movie", "series": "show"}[typ] || seen[title.Key] {
 						continue
 					}
+					previewTitles[title.Key] = row.PreviewOnFocus
 					seen[title.Key] = true
 					titles = append(titles, title)
 				}
@@ -209,6 +211,13 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 	}
 	metas := make([]map[string]any, 0, len(titles))
 	posters := i.artwork(r, credential, viewer, device, titles)
+	var previewItems []frontend.Title
+	for _, title := range titles {
+		if previewTitles[title.Key] {
+			previewItems = append(previewItems, title)
+		}
+	}
+	backdrops := i.backdropArtwork(r, credential, viewer, device, previewItems)
 	refs := i.itemRefs(r, viewer, titles)
 	for _, title := range titles {
 		id := stremioMetaID(title, refs[title.Key])
@@ -221,6 +230,10 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		}
 		if poster := posters[title.Key]; poster != "" {
 			meta["poster"] = poster
+		}
+		if backdrop := backdrops[title.Key]; backdrop != "" {
+			meta["poster"] = backdrop
+			meta["posterShape"] = "landscape"
 		}
 		metas = append(metas, meta)
 	}

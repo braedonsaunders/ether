@@ -231,15 +231,16 @@ func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubC
 		key = hubItemsKey(h, hc)
 	}
 	mh := model.Hub{
-		Key:           s.shelfURL(key, generation),
-		Title:         h.Title,
-		Type:          typ,
-		HubIdentifier: h.ID,
-		Context:       ctxName,
-		Size:          len(md),
-		More:          h.More,
-		Style:         style,
-		Metadata:      md,
+		Key:            s.shelfURL(key, generation),
+		Title:          h.Title,
+		Type:           typ,
+		HubIdentifier:  h.ID,
+		Context:        ctxName,
+		Size:           len(md),
+		More:           h.More,
+		Style:          style,
+		PreviewOnFocus: h.PreviewOnFocus,
+		Metadata:       md,
 	}
 	if h.ID == "tv.upnext" {
 		mh.UpNext = model.Ptr(true)
