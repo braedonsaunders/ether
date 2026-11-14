@@ -1,3 +1,4 @@
+import { ChannelDescribeDialog } from "./ChannelDescribeDialog";
 import Library, { LibraryAside } from "./library/Library";
 import { styleCopy } from "./onair/naming";
 import { stylesName } from "./onair/naming";
@@ -232,6 +233,7 @@ export default function LiveTV() {
   const [inspected, setInspected] = useState<InspectedProgramme | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [previewChannel, setPreviewChannel] = useState<Channel | null>(null);
+  const [describing, setDescribing] = useState(false);
   const [draft, setDraft] = useState<StudioDraft | null>(null);
   const [baseline, setBaseline] = useState("");
   const [saving, setSaving] = useState(false);
@@ -402,6 +404,7 @@ export default function LiveTV() {
       setDraft(d);
       setBaseline(JSON.stringify(d));
     } else if (selection.kind !== "new") {
+      setDescribing(false);
       setDraft(null);
       setBaseline("");
     }
@@ -594,9 +597,10 @@ export default function LiveTV() {
     const base = emptyChannel();
     base.number = page?.nextNumber ?? "1";
     base.timezone = browserTimeZone();
-    const d = studioDraft(template.apply(base));
+    const d = studioDraft(templateKey === "describe" ? base : template.apply(base));
     setDraft(d);
     setBaseline("");
+    setDescribing(templateKey === "describe");
   };
 
   const saveDraft = async () => {
@@ -1354,6 +1358,16 @@ export default function LiveTV() {
           ) : null
         }
       >
+        {selection.kind === "new" && describing && draft && (
+          <ChannelDescribeDialog
+            channel={draft.channel}
+            onClose={() => {
+              setDescribing(false);
+              if (!draft.channel.name) setDraft(null);
+            }}
+            onApply={(channel) => setDraft(studioDraft(channel))}
+          />
+        )}
         <ChannelDrawerBody>
           {selection.kind === "new" && !draft ? (
             <TemplateGallery onPick={(k) => void startNew(k)} />
@@ -1594,6 +1608,22 @@ function TemplateGallery({ onPick }: { onPick: (key: string) => void }) {
           {t("What should it play?")}
         </h2>
       </div>
+      <button
+        type="button"
+        onClick={() => onPick("describe")}
+        className="group flex w-full max-w-xl items-center gap-4 rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/15 via-primary/5 to-surface p-5 text-left shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary text-primary-fg shadow-md">
+          <Sparkles size={22} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-base font-semibold">{t("Describe it")}</span>
+          <span className="mt-1 block text-sm text-fg-muted">
+            {t("Programming, schedule and a look, built with you.")}
+          </span>
+        </span>
+        <Plus size={18} className="shrink-0 text-primary" />
+      </button>
       <div className="grid gap-3 @md:grid-cols-2 @4xl:grid-cols-3">
         {TEMPLATES.map((template) => (
           <button

@@ -1,4 +1,3 @@
-import { ChannelDescribeDialog } from "./ChannelDescribeDialog";
 import { ProgrammingEditor } from "./ProgrammingEditor";
 import { programmeArtwork } from "./model";
 import { styleCopy } from "./onair/naming";
@@ -164,7 +163,6 @@ export function ChannelStudio({
   const set = (patch: Partial<Channel>) => onChange({ ...draft, channel: { ...c, ...patch } });
   const virtual = c.kind === "virtual";
   const [tab, setTab] = useState(virtual ? "programming" : "stream");
-  const [describing, setDescribing] = useState(false);
   const [watching, setWatching] = useState(false);
   const [selectedElement, setSelectedElement] = useState<TimelineElement | null>(null);
   const [editRequest, setEditRequest] = useState<
@@ -274,13 +272,6 @@ export function ChannelStudio({
 
   return (
     <div className="@container min-w-0 pb-10">
-      {virtual && describing && (
-        <ChannelDescribeDialog
-          channel={composed.channel ?? c}
-          onClose={() => setDescribing(false)}
-          onApply={(channel) => onChange({ ...studioDraft(channel), viewers: draft.viewers })}
-        />
-      )}
       {watching && c.id ? (
         <LivePreview
           channel={c}
@@ -529,15 +520,6 @@ export function ChannelStudio({
       <div className="space-y-5 p-4 sm:p-6">
         {tab === "programming" && virtual ? (
           <>
-            <section className="max-w-3xl space-y-3">
-              <h2 className="text-lg font-semibold">{t("What should it play?")}</h2>
-              <Button
-                className="w-full justify-start gap-3 rounded-xl py-6 text-base"
-                onClick={() => setDescribing(true)}
-              >
-                <Sparkles size={20} /> {t("Describe it")}
-              </Button>
-            </section>
             {c.personal ? (
               <RecipeTab
                 recipe={c.personal}

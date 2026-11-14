@@ -5,17 +5,23 @@ import { t } from "../../i18n";
 /** Collections and channel programming share one preview-and-conversation surface. */
 export function DescribeSurface({
   preview,
+  roomyChat = false,
   error,
   children,
   ...props
 }: Omit<ComponentProps<typeof Drawer>, "size" | "bodyClassName"> & {
   preview: ReactNode;
+  roomyChat?: boolean;
   error?: string;
 }) {
   return (
     <Drawer {...props} size="xl" bodyClassName="flex min-h-0 flex-col overflow-hidden p-0">
       <section
-        className="relative min-h-0 flex-[2] basis-0 overflow-auto border-b border-border"
+        className={
+          roomyChat
+            ? "relative min-h-0 flex-[1.3] basis-0 overflow-auto border-b border-border"
+            : "relative min-h-0 flex-[2] basis-0 overflow-auto border-b border-border"
+        }
         aria-label={t("Live build")}
       >
         {preview}
@@ -25,7 +31,11 @@ export function DescribeSurface({
           {error}
         </p>
       ) : null}
-      <div className="describe-chat flex min-h-0 flex-1 basis-0 flex-col">{children}</div>
+      <div
+        className={`describe-chat flex min-h-0 flex-1 basis-0 flex-col ${roomyChat ? "channel-describe-chat" : ""}`}
+      >
+        {children}
+      </div>
     </Drawer>
   );
 }
