@@ -3,8 +3,12 @@ package livetv
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // addonTestKind stands in for a plugin's add-on channel source.
@@ -179,5 +183,56 @@ func TestLegacyStremioSourceWaitsForMigrationThenMoves(t *testing.T) {
 	kept, err := s.Channel(ctx, c.ID)
 	if err != nil || kept.Number != "501" || !kept.Favorite || kept.GuideID != "espn.us" {
 		t.Fatalf("channel = %+v err=%v", kept, err)
+	}
+}
+
+// An owner metadata read must neither leak add-on secrets nor modify the
+// shared playback snapshot a later sweep and non-owner lineup use.
+func TestOwnerChannelReadPreservesPlaybackSnapshot(t *testing.T) {
+	for _, route := range []string{"/channels", "/channels/page", "/channels/id"} {
+		t.Run(route, func(t *testing.T) {
+			ctx := context.Background()
+			s := testService(t, Options{Transcoder: &fixtureLiveProber{}})
+			src := Source{ID: "addon", Name: "Add-on", Kind: "plugin:addon.test/channels"}
+			raw, err := s.encodeSource(src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = s.o.DB.ExecContext(ctx, `INSERT INTO livetv_sources(id,data) VALUES(?,?)`, src.ID, raw); err != nil {
+				t.Fatal(err)
+			}
+			c := addonChannel(src.ID, "news", "https://example.invalid/live?key=fixture-secret")
+			c.StreamSources[0].Headers = map[string]string{"X-Token": "fixture-secret"}
+			if _, err = s.SaveChannel(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			viewer := &core.User{ID: 123}
+			s.sweepChannels(ctx)
+			before, err := s.AllowedChannels(ctx, viewer)
+			if err != nil || len(before) != 1 {
+				t.Fatalf("before owner read: %d channels, %v", len(before), err)
+			}
+			path := route
+			if route == "/channels/id" {
+				path = "/channels/" + c.ID
+			}
+			response := httptest.NewRecorder()
+			s.Handler().ServeHTTP(response, httptest.NewRequest("GET", path, nil))
+			if response.Code != 200 || strings.Contains(response.Body.String(), "fixture-secret") || !strings.Contains(response.Body.String(), redactedSecret) {
+				t.Fatal("owner response failed or leaked input credentials", response.Code)
+			}
+			s.sweepChannels(ctx)
+			after, err := s.AllowedChannels(ctx, viewer)
+			if err != nil || len(after) != 1 || after[0].ID != before[0].ID {
+				t.Fatalf("owner read changed viewer lineup: before=%d after=%d err=%v", len(before), len(after), err)
+			}
+			cached, err := s.allChannels(ctx)
+			if err != nil || len(cached) != 1 {
+				t.Fatal("cached lineup unavailable", err)
+			}
+			if s.sweepState(cached[0]) != "available" || cached[0].StreamSources[0].URL != c.StreamURL || cached[0].StreamSources[0].Headers["X-Token"] != "fixture-secret" {
+				t.Fatal("owner read corrupted playback inputs or health verdict")
+			}
+		})
 	}
 }
