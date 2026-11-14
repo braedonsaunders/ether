@@ -1135,7 +1135,7 @@ func (i *instance) applyHomeSectionDefaults(r *http.Request, v *frontend.Viewer,
 }
 
 func (i *instance) recommendations(w http.ResponseWriter, r *http.Request, want frontend.MediaType) {
-	r = withJellyfinListFiles(r)
+	r = withJellyfinListFiles(withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r))))
 	v, _, err := i.viewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
