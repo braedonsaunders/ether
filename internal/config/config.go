@@ -617,8 +617,6 @@ type LiveTVScreens struct {
 }
 
 type LiveTV struct {
-	// Nil preserves pre-choice installations until their saved lineup is inspected.
-	Enabled *bool `json:"enabled,omitempty"`
 	// Extra act-break scan bandwidth. Zero selects defaults (1 GiB/day,
 	// 256 MiB/release including conservative read overhead, 1 GiB large-file
 	// threshold). Negative daily/release limits disable pre-air full scans.

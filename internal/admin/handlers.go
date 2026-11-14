@@ -80,7 +80,6 @@ func SetupStatus(cfg config.Config) (steps []SetupStep, complete bool) {
 		{ID: "cache", Title: "Cache folder and disk budget", Complete: cacheDone, Required: true, Detail: cfg.Cache.Dir},
 		// Without TMDB there is no catalogue; a build may bundle a key.
 		{ID: "catalog", Title: "TMDB API key", Complete: tmdb.ResolveKey(cfg.Catalog) != "", Required: true},
-		{ID: "livetv", Title: "Live TV", Complete: cfg.LiveTV.Enabled != nil, Required: false},
 		{ID: "optional", Title: "Optional integrations", Complete: true, Required: false,
 			Detail: "Trakt, OpenSubtitles, LLM, cam policy"},
 	}

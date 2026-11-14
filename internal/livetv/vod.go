@@ -220,9 +220,6 @@ func (s *Service) vodLoop() {
 // RefreshVOD streams large lists into a transaction. Unchanged revisions keep
 // cached details; a failed refresh never removes the previous index.
 func (s *Service) RefreshVOD(ctx context.Context, id string) (err error) {
-	if !s.Enabled() {
-		return core.ErrNotAvailable
-	}
 	if !s.vodRefreshMu.TryLock() {
 		return ErrProviderBusy
 	}

@@ -79,7 +79,7 @@ type liveContainer struct {
 }
 
 func (s *Server) liveTVEnabled() bool {
-	return s.svc().liveTV != nil && s.identity().MyPlexSubscription
+	return s.svc().liveTV != nil && s.svc().liveTV.Enabled() && s.identity().MyPlexSubscription
 }
 func (s *Server) liveTVProvider(ctx context.Context, u *frontend.User) *model.MediaProvider {
 	if !s.liveTVEnabled() || !s.svc().liveTV.VisibleTo(ctx, u) {
@@ -117,7 +117,15 @@ func (s *Server) registerLiveTVRoutes(r chi.Router) {
 	r.Delete("/media/subscriptions/{subscription}", guard(s.handleLiveSubscriptionStop))
 	get("/media/grabbers/operations/{operation}", s.handleLiveOperation)
 	r.Delete("/media/grabbers/operations/{operation}", guard(s.handleLiveOperationStop))
-	get("/livetv/dvrs", s.handleLiveDVRs)
+	listDVRs := func(w http.ResponseWriter, r *http.Request) {
+		if s.svc().liveTV == nil || !s.svc().liveTV.Enabled() {
+			s.write(w, r, &liveContainer{Size: 0, Identifier: frontend.LiveTVProvider, DVR: []liveDVR{}})
+			return
+		}
+		guard(s.handleLiveDVRs)(w, r)
+	}
+	r.Get("/livetv/dvrs", listDVRs)
+	r.Head("/livetv/dvrs", listDVRs)
 	get("/livetv/dvrs/{dvr}", s.handleLiveDVRs)
 	r.Post("/livetv/dvrs/{dvr}/channels/{channel}/tune", guard(s.handleLiveTune))
 	get("/media/grabbers", s.handleLiveGrabbers)

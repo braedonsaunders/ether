@@ -118,7 +118,7 @@ function backend(
       if (data instanceof Response) return data;
       if (data !== undefined) return new Response(JSON.stringify(data), { status: 200 });
       data = [];
-      if (url.endsWith("/config")) data = { config: { liveTV: { enabled: true } } };
+      if (url.endsWith("/config")) data = { config: {} };
       else if (/\/livetv\/channels\/[^/]+\/timeline\?/.test(url))
         data = {
           channelId: url.split("/channels/")[1]?.split("/")[0],

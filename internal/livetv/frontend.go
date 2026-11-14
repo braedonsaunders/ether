@@ -155,6 +155,8 @@ type liveTVHost struct {
 	s *Service
 }
 
+func (h liveTVHost) Enabled() bool { return h.s.Enabled() }
+
 func (h liveTVHost) Channels(ctx context.Context, v *core.Viewer) ([]frontend.LiveChannel, error) {
 	cs, err := h.s.AllowedChannels(ctx, v)
 	if err != nil {

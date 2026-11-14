@@ -27,9 +27,7 @@ describe("Stremio built-ins", () => {
   });
 
   it("adds a Live TV plugin through the shared plugin drawer", async () => {
-    renderApp("/livetv", {}, (fake) => {
-      fake.state.config.liveTV = { ...fake.state.config.liveTV, enabled: true };
-    });
+    renderApp("/livetv");
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Stremio plugin/ }));
     expect(await screen.findByText("Install link")).toBeInTheDocument();
