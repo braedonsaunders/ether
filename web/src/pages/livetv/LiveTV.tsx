@@ -1,4 +1,3 @@
-import { ChannelAIBuilder } from "./ChannelAIBuilder";
 import Library, { LibraryAside } from "./library/Library";
 import { styleCopy } from "./onair/naming";
 import { stylesName } from "./onair/naming";
@@ -736,7 +735,6 @@ export default function LiveTV() {
 
   const actions = (
     <div className="flex items-center gap-2">
-      <ChannelAIBuilder />
       <AddMenu
         onChannel={() => void go({ kind: "new" })}
         onPersonal={() =>
@@ -1216,7 +1214,6 @@ export default function LiveTV() {
         <Button variant="outline" onClick={() => navigate("/sources/iptv?new=playlist")}>
           {t("Add IPTV")}
         </Button>
-        <ChannelAIBuilder />
       </div>
       <Button className="mt-5" variant="ghost" onClick={() => void go({ kind: "new" })}>
         {t("New virtual channel")}

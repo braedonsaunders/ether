@@ -627,7 +627,25 @@ export function createAgentMock(): { handle: ExtendHandler } {
         const { lines, delays } = describeChunks(id, steps);
         return sseResponse(lines, thread.id, delays);
       }
-      const plan = planTurn(prompt);
+      const plan = planTurn(
+        context.route === "/livetv/channel-builder" ? "create a channel" : prompt,
+      );
+      if (context.route === "/livetv/channel-builder") {
+        const draft = asRecord(asRecord(context.draft).channel);
+        const output = asRecord(plan.tools[0]?.output);
+        output.channel = {
+          ...draft,
+          name: "Family Movie Night",
+          filter: { type: "movie", genres: ["Adventure"], yearFrom: 1980, yearTo: 1989 },
+          items: [],
+        };
+        if (plan.tools[0]) {
+          plan.tools[0].toolName = "livetv_channel_apply";
+          plan.tools[0].output = output;
+        }
+        plan.text =
+          "I've drafted the programming. Review it below; Apply updates your editor draft.";
+      }
       const assistant: MockAgentMessage = {
         id: nextId("msg"),
         role: "assistant",
@@ -687,7 +705,7 @@ export function createAgentMock(): { handle: ExtendHandler } {
             {
               type: "text",
               text:
-                record.toolName === "channel_draft"
+                record.toolName === "channel_draft" || record.toolName === "livetv_channel_apply"
                   ? decision === "approved"
                     ? "Channel draft approved."
                     : "Channel draft declined."
@@ -701,7 +719,13 @@ export function createAgentMock(): { handle: ExtendHandler } {
         });
         thread.updatedAt = now();
       }
-      return json({ status: decision });
+      const proposal = thread?.messages
+        .find((m) => m.id === record.messageId)
+        ?.parts.find((p) => asRecord(p).type === "dynamic-tool");
+      return json({
+        status: decision,
+        result: decision === "approved" ? asRecord(proposal).output : undefined,
+      });
     }
 
     if (method === "POST" && seg[1] === "secrets" && seg[2]) {

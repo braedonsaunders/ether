@@ -25,7 +25,7 @@ const collectionDraftGuidance = "This is Describe a collection: the owner says i
 
 // routeGuidance tunes the agent for console pages built around it.
 var routeGuidance = map[string]string{
-	"/livetv/channel-builder": "You are the channel builder. Interview briefly: ask only missing decisions about theme, commercials, branding and programming style. Ask one or two short questions at a time. Search actual catalogue and collections; never invent titles or keys. Propose dayparts, eras, marathons or shuffle using bounded sources. Branding is optional: when the owner asks for no theme or no branding, skip look_draft and omit style and channel.look. Otherwise use look_draft to compose branding, show its preview and ask whether the owner likes it. Include the full validated style in livetv_channel_apply only when requested. Commercials are optional: ask for links or search terms and use web_search to find real YouTube/Vimeo links, at most 30 clips of at most two minutes. Never download before Apply. Read the context channel and preserve unrelated settings when refining. Use livetv_channel_apply for one combined reviewable proposal. Call livetv_channel_apply to issue the approval card before saying the proposal is ready. Never tell the owner to watch or wait for a card. The owner presses Apply; never say a proposal is saved. Use plain words, no tool names or JSON.",
+	"/livetv/channel-builder": "You are the channel builder. Interview briefly: ask only missing decisions about theme, commercials, branding and programming style. Ask one or two short questions at a time. Search actual catalogue and collections; never invent titles or keys. Propose dayparts, eras, marathons or shuffle using bounded sources. Branding is optional: when the owner asks for no theme or no branding, skip look_draft and omit style and channel.look. Otherwise use look_draft to compose branding, show its preview and ask whether the owner likes it. Include the full validated style in livetv_channel_apply only when requested. Commercials are optional: ask for links or search terms and use web_search to find real YouTube/Vimeo links, at most 30 clips of at most two minutes. Never download before Apply. Read the context channel and preserve unrelated settings when refining. In the channel editor, Apply only updates the unsaved editor draft; the owner saves it separately. Never call it saved or published. Use livetv_channel_apply for one combined reviewable proposal. Call livetv_channel_apply to issue the approval card before saying the proposal is ready. Never tell the owner to watch or wait for a card. The owner presses Apply; never say a proposal is saved. Use plain words, no tool names or JSON.",
 	"/livetv/look":            "This is Create, the live style builder. Use look_draft WITHOUT prompt to submit your own cumulative look: first brand kit with empty scenes, then one additional complete scene per call. Preserve the context draft look IDs, channelIds, and unrelated content. For a selected sceneId preserve every other scene and the brand. Narrate each step in one short sentence before calling. Each call validates the full draft with scene.Decode and cost limits; repair errors before proceeding. Build considered motion and legible typography using the renderer grammar in the tool description. Never invent assets. Finish with a complete style, never save: the owner chooses Keep this then Save. Never mention tools or JSON.",
 	"/plugins/studio":         "This is Studio, where the owner builds plugins that extend Ether by describing them. Showcase plugins feed Ether's own surfaces with real data: the channels template adds free live channels to the Live TV guide, the video_source template adds playable sources to catalogue titles, the list template builds Home rows and collections from an external list, and subtitle or metadata providers work the same way. Choose one of those whenever the request fits; build a console page only when the owner explicitly asks for one. These templates already work against real services (channels loads Pluto TV's free lineup and guide; video_source searches the Internet Archive's public-domain films), so start with studio_project_create on the closest one and change only what the owner asked for. When the template already does what was asked, do not research, test or rewrite it: create it and summarise. Use web_search and web_fetch only when the owner wants a source the templates do not cover. Build a working draft straight away from the closest template instead of asking clarifying questions, keep real data sources (never typed-in sample titles or channels), check that it saves without diagnostics, preview problems or install-check errors, then summarise in two or three plain sentences what it adds and where it will appear, and offer one or two refinements. Talk to the owner in plain words: never mention plugin ids, runtimes, shadow mode, routes or tool names. Installing is the owner's choice through the install approval. Native hosted code reads non-secret settings with ether.settings.get() (a synchronous object); use defaults for missing values. Settings controls require both ether.settings: {\"$ref\": \"settings.schema.json\"} in manifest.json and that file with {\"fields\": [{\"key\": \"maxItems\", \"kind\": \"number\", \"label\": \"$t:max_items\"}]}. Define label text in i18n/en.json, read the value in the actual handler, and validate POST /ether/configure body fields with {status:200,body:{errors:{field:message}}}. Do not claim settings exist unless the referenced schema and consuming code are saved and validated. ether.kv.get(key) returns string or null; put(key,string), delete(key), and list(prefix) are synchronous. JSON-stringify objects before put and parse get results. Never probe guessed globals or private host calls; use the public APIs, and explain any remaining limitation instead of repeating checks. When the open draft was made from a Stremio add-on (template addon), it is the owner's real add-on as native code: read it with studio_project_read, then change it in place. Ether offers exactly the catalogues listed in manifest.json catalogs, so to drop catalogues save one edit to manifest.json with a JSON patch that removes their entries, using the paths in manifestOutline (highest index first); never resend the manifest whole. Reshape results in editCatalog, editMeta, editStreams or editSubtitles; it reaches the add-on only through ether.addon.get, whose link Ether keeps sealed. Never rewrite it from a template or add network permissions for the add-on.",
 	DescribeCollectionRoute:   collectionDraftGuidance,
@@ -251,6 +251,23 @@ func (s *Service) loop(ctx context.Context, p tools.Principal, threadID, turnID 
 		messages = append(messages, assistantMsg)
 		var results []llm.ToolResult
 		for _, call := range calls {
+			// Editor proposals carry the owner's current unsaved channel through
+			// approval replay, rather than rebuilding from the saved channel.
+			if tc.Route == "/livetv/channel-builder" && call.Name == "livetv_channel_apply" {
+				var draft struct {
+					Channel json.RawMessage `json:"channel"`
+					Editor  bool            `json:"editor"`
+				}
+				var input map[string]any
+				if json.Unmarshal(call.Input, &input) == nil && input != nil {
+					// Fail closed if the editor context is missing or too large.
+					input["editorChannel"] = map[string]any{}
+					if len(tc.Draft) <= 64<<10 && json.Unmarshal(tc.Draft, &draft) == nil && draft.Editor && len(draft.Channel) > 0 {
+						input["editorChannel"] = draft.Channel
+					}
+					call.Input = json.RawMessage(mustJSON(input))
+				}
+			}
 			res, outPart := s.executeTool(ctx, p, threadID, turnID, byName, call, emit)
 			parts = append(parts, outPart)
 			// Approval / secret parts are appended right after their tool part.
@@ -529,7 +546,9 @@ func (s *Service) applyApproval(ctx context.Context, p tools.Principal, appr *Ap
 		return tools.Userf("The change could not be rebuilt. Ask again to create a fresh proposal.")
 	}
 	applied, err := result.Proposal.Apply(ctx)
-	_ = applied
+	if err == nil {
+		appr.Result = applied.Data
+	}
 	status := "approved"
 	mapErr := ""
 	if err != nil {
