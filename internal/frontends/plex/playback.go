@@ -1451,14 +1451,15 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	hs, err := s.startPlexHLS(context.WithoutCancel(ctx), pr.User, ps.ID, p.sessionID, frontend.HLSRequest{
-		SoftSubtitleStream: sessionSoftSubtitle(entry, pr, dec),
-		SessionID:          p.sessionID,
-		ReleaseID:          ps.SourceReleaseID(),
-		InputURL:           s.playback().InputURL(ps.ID),
-		Info:               ps.Info,
-		Decision:           dec,
-		StartOffset:        p.offset,
-		ResumeHint:         resumeHint,
+		SoftSubtitleStream:  sessionSoftSubtitle(entry, pr, dec),
+		TextSubtitleStreams: s.plexTextTracks(pr, ps.Info, dec),
+		SessionID:           p.sessionID,
+		ReleaseID:           ps.SourceReleaseID(),
+		InputURL:            s.playback().InputURL(ps.ID),
+		Info:                ps.Info,
+		Decision:            dec,
+		StartOffset:         p.offset,
+		ResumeHint:          resumeHint,
 	})
 	if err != nil {
 		s.writeStartErr(w, r, pr, err)
@@ -1505,6 +1506,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		return
 	}
 	entry, _ := s.transcodes.get(sessionID)
+	subtitleTags, subtitleGroup := s.textRenditionTags(r, sessionID, hs, entry, info, dec)
 	// A ladder-capable session advertises every rung; the client's native
 	// ABR (AVPlayer, hls.js) steps between them and the session starts a
 	// rung's encoder lazily on its first segment request. The primary
@@ -1520,7 +1522,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		}
 		if len(rungs) > 1 {
 			var b strings.Builder
-			b.WriteString("#EXTM3U\n")
+			b.WriteString("#EXTM3U\n" + subtitleTags)
 			for _, rg := range rungs {
 				line := fmt.Sprintf("#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=%d", rg.Bandwidth)
 				if rg.AverageBandwidth > 0 {
@@ -1536,7 +1538,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 					line += fmt.Sprintf(",FRAME-RATE=%.3f", rg.FrameRate)
 				}
 				uri := s.mediaURL("session/"+sessionID+"/"+rg.ID+"/index.m3u8", sessionID, entry.streamToken)
-				b.WriteString(line + "\n" + uri + "\n")
+				b.WriteString(line + subtitleGroup + "\n" + uri + "\n")
 			}
 			body := b.String()
 			h := w.Header()
@@ -1582,7 +1584,7 @@ func (s *Server) writeMasterPlaylist(w http.ResponseWriter, r *http.Request, ses
 		}
 	}
 	line += frontend.HLSVariantAttributes(info, dec)
-	body := "#EXTM3U\n" + line + "\n" + s.mediaURL("session/"+sessionID+"/base/index.m3u8", sessionID, entry.streamToken) + "\n"
+	body := "#EXTM3U\n" + subtitleTags + line + subtitleGroup + "\n" + s.mediaURL("session/"+sessionID+"/base/index.m3u8", sessionID, entry.streamToken) + "\n"
 	h := w.Header()
 	h.Set("Content-Type", "application/vnd.apple.mpegurl")
 	h.Set("Cache-Control", "no-cache")
@@ -1617,6 +1619,22 @@ func (s *Server) handleTranscodeSession(w http.ResponseWriter, r *http.Request) 
 	name := rest
 	if i := strings.LastIndexByte(rest, '/'); i >= 0 {
 		name = rest[i+1:]
+	}
+	if dir, _, found := strings.Cut(rest, "/"); found && strings.HasPrefix(dir, "text-") {
+		index, err := strconv.Atoi(strings.TrimPrefix(dir, "text-"))
+		source, supported := hs.(playbackTextSubtitles)
+		if err != nil || !supported || !source.HasTextSubtitle(index) {
+			http.NotFound(w, r)
+			return
+		}
+		if name == "index.m3u8" {
+			s.serveStreamManifest(w, r, id, func(w http.ResponseWriter, r *http.Request) { source.ServeTextSubtitlePlaylist(w, r, index) })
+		} else if n, ok := segmentNumber(name); ok && strings.HasSuffix(name, ".vtt") {
+			source.ServeTextSubtitleSegment(w, r, index, n)
+		} else {
+			http.NotFound(w, r)
+		}
+		return
 	}
 	// ABR ladder: session/{id}/{rung}/index.m3u8 and .../{rung}/{seg}.ts.
 	// The primary rung is "base"; sessions without a ladder fall through

@@ -31,6 +31,11 @@ func (s *Server) currentPlexEncoder() SegmentedEncoder {
 	return s.plexEncoder
 }
 func (s *Server) startPlexHLS(ctx context.Context, viewer *frontend.User, playID, id string, req frontend.HLSRequest) (frontend.HLSSession, error) {
+	if len(req.TextSubtitleStreams) > 0 {
+		if keyer, ok := s.playback().(frontend.PlaybackSourceKeyer); ok {
+			req.TextSubtitleSource = keyer.SourceKey(playID)
+		}
+	}
 	if encoder := s.currentPlexEncoder(); encoder != nil {
 		return encoder.StartSegmentedHLS(ctx, viewer, playID, id, req)
 	}

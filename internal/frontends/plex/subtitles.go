@@ -782,6 +782,35 @@ func (s *Server) serveSessionASS(w http.ResponseWriter, r *http.Request, session
 			if ass, ok := session.(frontend.SoftSubtitleServer); ok && ass.ServeSoftSubtitle(w, r, index) {
 				return
 			}
+			if source, ok := session.(playbackTextSubtitles); ok && source.HasTextSubtitle(index) {
+				from := time.Duration(0)
+				playID := ""
+				if entry, ok := s.transcodes.get(sessionID); ok {
+					from = entry.offset
+					playID = entry.playID
+					if ps, ok := s.playback().Session(entry.playID); ok && ps != nil && ps.ViewOffset != nil {
+						from = time.Duration(*ps.ViewOffset) * time.Millisecond
+					}
+				}
+				s.serveCueSubtitle(w, r, source, index, playID, from, "ass", false)
+				return
+			}
+			// An authored ASS/SSA track chosen mid-play is streamed with
+			// its original styles instead of flattened through cue windows.
+			if entry, ok := s.transcodes.get(sessionID); ok {
+				for _, track := range entry.info.Streams {
+					if track.Type == "subtitle" && !track.External && track.Index == index && frontend.IsTextSubtitle(track.Codec) {
+						from := entry.offset
+						if ps, ok := s.playback().Session(entry.playID); ok && ps != nil && ps.ViewOffset != nil {
+							from = time.Duration(*ps.ViewOffset) * time.Millisecond
+						}
+						if s.writeEmbeddedASS(w, r, entry.playID, track, from) {
+							return
+						}
+						break
+					}
+				}
+			}
 			writeHTTPError(w, http.StatusNotFound)
 			return
 		}
@@ -1009,6 +1038,40 @@ var (
 // vtt). It reports false, with nothing written, when extraction failed
 // before the response had to start.
 func (s *Server) writeEmbeddedSubtitle(w http.ResponseWriter, r *http.Request, playID string, st frontend.StreamInfo, format string, matroska bool) bool {
+	// Attach sidecars to a verified playback tee when one exists. This
+	// yields the first cues immediately, without a whole-release reader.
+	// Native one-shot HLS consumers also receive finite WebVTT renditions.
+	cached := false
+	if cache, ok := s.transcoder().(subtitleStreamer); ok {
+		ctx := r.Context()
+		if keyer, ok := s.playback().(frontend.PlaybackSourceKeyer); ok {
+			ctx = frontend.WithSubtitleSource(ctx, keyer.SourceKey(playID))
+		}
+		_, cached = cache.CachedSubtitle(ctx, st.Index, st.Codec)
+	}
+	for _, id := range s.transcodes.ids() {
+		if cached {
+			break
+		}
+		entry, ok := s.transcodes.get(id)
+		if !ok || entry.playID != playID {
+			continue
+		}
+		hs, ok := s.plexHLSSession(id)
+		if !ok || hs == nil {
+			continue
+		}
+		source, ok := hs.(playbackTextSubtitles)
+		if !ok || !source.HasTextSubtitle(st.Index) {
+			continue
+		}
+		from := entry.offset
+		if ps, ok := s.playback().Session(playID); ok && ps != nil && ps.ViewOffset != nil {
+			from = time.Duration(*ps.ViewOffset) * time.Millisecond
+		}
+		s.serveCueSubtitle(w, r, source, st.Index, playID, from, format, matroska)
+		return true
+	}
 	type extracted struct {
 		body   []byte
 		actual string
