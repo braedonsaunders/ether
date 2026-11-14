@@ -8,6 +8,7 @@ import { t, tn } from "../../i18n";
 import { AddAddonDrawer } from "../../components/addons/AddAddonDrawer";
 import type { AddonSummary } from "../../components/addons/addons";
 import { errorMessage } from "../../lib/api";
+import { ProviderAccountCard } from "../livetv/SourceGroups";
 import { SourceEditor } from "../livetv/SourceEditor";
 import { addonChannelsKind, emptySource, plexLineupName, tv, type Source } from "../livetv/model";
 
@@ -128,6 +129,23 @@ export function IPTVProviders() {
                     </span>
                   ) : null}
                 </div>
+                {source.logins?.length ? (
+                  <details className="text-sm">
+                    <summary className="cursor-pointer text-fg-muted">
+                      {t("Provider account")}
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      {[{ id: "primary", account: source.account }, ...source.logins].map(
+                        (login, i) => (
+                          <div key={login.id} className="space-y-1">
+                            <p className="font-medium">{t("Login {number}", { number: i + 1 })}</p>
+                            {login.account ? <ProviderAccountCard account={login.account} /> : null}
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </details>
+                ) : null}
                 {source.lastError || source.vodStatus?.error ? (
                   <p className="text-sm text-danger">
                     {t("Provider unavailable; retry scheduled")}

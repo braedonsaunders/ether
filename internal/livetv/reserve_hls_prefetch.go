@@ -169,12 +169,12 @@ func (h *hlsInput) fetchOne(f *hlsFetch) {
 // extraSlot grants a fetch beyond the channel's own connection through the
 // account limiter; nil when the account has no room.
 func (h *hlsInput) extraSlot(s *Service) func() {
-	if s == nil {
+	if s == nil || h.g.login != nil {
 		return nil
 	}
 	if h.g.source != "" {
 		if limit := s.sourceConnectionLimit(h.g.source); limit > 0 {
-			release, err := s.reserveVODProvider(h.g.source, limit, false)
+			release, err := s.reserveVODProvider(h.g.ctx, h.g.source, limit, false)
 			if err != nil {
 				return nil
 			}
