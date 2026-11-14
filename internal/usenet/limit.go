@@ -16,7 +16,7 @@ import (
 //     connections"), the pool never runs above N minus ~10% headroom (at
 //     least one slot), leaving room for sockets the server is still tearing
 //     down. That ceiling only ever goes down for the life of the pool.
-//   - Whether or not N is stated, the pool is also capped at what the server
+//   - When no limit is stated, the pool is capped at what the server
 //     was carrying when it refused, and widens by one connection per widen
 //     step while requests succeed, until the next refusal or the configured
 //     count (or ceiling) is reached.
@@ -229,8 +229,10 @@ func (p *pool) refused(err error, live int) bool {
 			p.limit.ceiling = c
 			p.limit.stated = stated
 		}
-	}
-	if live > 0 || errors.Is(err, ErrConnectionLimit) {
+		// A stated limit is authoritative even while other handshakes are
+		// in flight. Drop any cap learned from an earlier unknown refusal.
+		p.limit.cap = 0
+	} else if live > 0 || errors.Is(err, ErrConnectionLimit) {
 		l := &p.limit
 		switch {
 		case l.refusedAt == 0 || live > l.refusedAt || l.widenStep == 0:

@@ -56,7 +56,7 @@ func TestProviderCapacityPolicy(t *testing.T) {
 		}
 		s.SetFault(func(cmd, arg string) nntptest.Fault {
 			if cmd == "AUTHINFO" && arg == "PASS pass" {
-				return nntptest.Fault{Code: 481, Text: "(remote) gn: max number of simultaneous connections"}
+				return nntptest.Fault{Code: 481, Text: "(remote) gn;gn1296806: max number of simultaneous connections"}
 			}
 			return nntptest.Fault{}
 		})
