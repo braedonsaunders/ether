@@ -61,7 +61,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		TitleID, ChannelID, ExtraID string
 		Client                      client
-		PositionSeconds             float64
+		PositionSeconds             *float64
 		AllowTranscode              *bool
 		AudioTrackID                string
 		SubtitleTrackID             json.RawMessage
@@ -70,10 +70,14 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "request", "invalid_target")
 		return
 	}
-	pos, ok := seconds(b.PositionSeconds)
-	if !ok {
-		problem(w, 400, "request", "invalid_position")
-		return
+	var pos time.Duration
+	if b.PositionSeconds != nil {
+		var ok bool
+		pos, ok = seconds(*b.PositionSeconds)
+		if !ok {
+			problem(w, 400, "request", "invalid_position")
+			return
+		}
 	}
 	options := frontend.DecideOptions{DirectPlay: true, DirectStream: b.Client.HLS, AudioStream: -1, SubtitleStream: -1}
 	audioSet, subtitleSet := false, false
@@ -128,6 +132,20 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		if item.Kind() == frontend.KindShow || item.Kind() == frontend.KindSeason {
 			problem(w, 400, "request", "not_playable")
 			return
+		}
+		// Omission delegates resume to current server-owned watch state. An
+		// explicit zero is an independent start-over choice and skips this read.
+		if b.PositionSeconds == nil {
+			states, err := i.host.Experience.UserData(r.Context(), v, []frontend.RatingKey{item})
+			if err != nil {
+				fail(w, err)
+				return
+			}
+			pos = states[item].ViewOffset
+			if pos < 0 {
+				problem(w, 503, "transient", "invalid_resume_position")
+				return
+			}
 		}
 	}
 	plan, e := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Protocol: "vela", Viewer: v, Device: requestDevice(r), Item: item, Channel: b.ChannelID, Caps: declared.Client, Intent: frontend.PlayIntent{Options: options, AudioSet: audioSet, SubtitleSet: subtitleSet, Position: pos, AllowTranscoding: b.AllowTranscode, DeclaredCaps: true}})
