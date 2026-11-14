@@ -419,9 +419,10 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ts[0]["watch"] = watchWire(d.UserData)
-	cast := []object{}
-	for _, p := range d.Title.Cast {
-		cast = append(cast, object{"name": p.Name, "role": p.Role})
+	cast, e := i.cast(r, t, d)
+	if e != nil {
+		fail(w, e)
+		return
 	}
 	out := object{"title": ts[0], "extras": extras, "chapters": []object{}, "cast": cast, "crew": crew(d.Title)}
 	if d.CanPlay != nil {

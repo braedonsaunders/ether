@@ -133,3 +133,54 @@ func (i *instance) detailChildren(r *http.Request, v *frontend.Viewer, token str
 	}
 	return nil
 }
+
+// cast uses the portraits already selected with the authorized title detail.
+// One batch proves current credit membership and admits grants for all portraits;
+// no person lookup or metadata refresh is needed here.
+func (i *instance) cast(r *http.Request, token string, d frontend.ItemDetail) ([]object, error) {
+	out := make([]object, 0, len(d.Title.Cast))
+	portraits := map[string]frontend.Image{}
+	if d.ImagesAuthoritative {
+		for _, image := range d.Images {
+			if image.Kind == frontend.ImagePerson && image.Subject != "" && image.Path != "" {
+				if _, exists := portraits[image.Subject]; !exists {
+					portraits[image.Subject] = image
+				}
+			}
+		}
+	}
+	targets := []frontend.PersonImageTarget{}
+	positions := []int{}
+	for n, person := range d.Title.Cast {
+		out = append(out, object{"name": person.Name, "role": person.Role})
+		if person.TMDB <= 0 {
+			continue
+		}
+		if image, ok := portraits["tmdb:"+strconv.FormatInt(person.TMDB, 10)]; ok {
+			targets = append(targets, frontend.PersonImageTarget{Item: d.Title.Key, Image: image})
+			positions = append(positions, n)
+		}
+	}
+	signer, ok := i.host.ImageGrants.(frontend.PersonImageGrantBatch)
+	if !ok {
+		return out, nil
+	}
+	for start := 0; start < len(targets); start += 100 {
+		end := min(start+100, len(targets))
+		secrets, err := signer.IssuePersonImages(r.Context(), token, requestDevice(r), targets[start:end])
+		if err != nil {
+			return nil, err
+		}
+		if len(secrets) != end-start {
+			return nil, frontend.ErrNotAvailable
+		}
+		for n, secret := range secrets {
+			if secret == "" {
+				continue
+			}
+			image := targets[start+n].Image
+			out[positions[start+n]]["artwork"] = object{"id": hash(image.Path), "kind": frontend.ImagePerson, "tag": image.Tag, "sizes": []object{imageSize(image, secret)}, "blurHash": image.BlurHash, "thumbHash": image.ThumbHash}
+		}
+	}
+	return out, nil
+}

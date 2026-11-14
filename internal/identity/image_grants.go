@@ -172,7 +172,7 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 	if experience == nil {
 		return core.ErrNotAvailable
 	}
-	if s.surface == "silo" && image.Kind == frontend.ImagePerson {
+	if (s.surface == "silo" || s.surface == "vela") && image.Kind == frontend.ImagePerson {
 		people, ok := experience.(frontend.PeopleImageReader)
 		if !ok {
 			return core.ErrNotAvailable
@@ -461,9 +461,9 @@ func (s *ImageGrantService) writeGrantedImage(w http.ResponseWriter, r *http.Req
 		http.Error(w, "image unavailable", 502)
 		return
 	}
-	// A Silo portrait fetch may cross I/O after its first authorization. Check
+	// A portrait fetch may cross I/O after its first authorization. Check
 	// current credited membership and fresh policy again before publishing bytes.
-	if s.surface == "silo" && img.Kind == frontend.ImagePerson {
+	if (s.surface == "silo" || s.surface == "vela") && img.Kind == frontend.ImagePerson {
 		if err := s.authorizePersonGrant(r.Context(), viewer, device, item, channel, img, hash, sourceHash, deviceJSON); err != nil {
 			http.NotFound(w, r)
 			return
