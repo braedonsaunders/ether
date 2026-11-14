@@ -201,19 +201,19 @@ func fetchError(host string, err error) error {
 	return fmt.Errorf("%w: %s: %s", ErrFetchFailed, host, reason)
 }
 
-func (h *host) HTTPFetch(ctx context.Context, req FetchRequest) (FetchResponse, error) {
+func (h *host) openFetch(ctx context.Context, req FetchRequest) (*http.Response, error) {
 	r, g, err := h.record(ctx)
 	if err != nil {
-		return FetchResponse{}, err
+		return nil, err
 	}
 	u, err := url.Parse(req.URL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
-		return FetchResponse{}, fmt.Errorf("%w: bad url", ErrPermissionDenied)
+		return nil, fmt.Errorf("%w: bad url", ErrPermissionDenied)
 	}
 	if err := h.deny(r, g, "network", "", func(string) bool {
 		return hostAllowed(r.Manifest.Ether.Permissions.Network, u.Hostname())
 	}); err != nil {
-		return FetchResponse{}, err
+		return nil, err
 	}
 	method := req.Method
 	if method == "" {
@@ -221,7 +221,7 @@ func (h *host) HTTPFetch(ctx context.Context, req FetchRequest) (FetchResponse, 
 	}
 	hr, err := http.NewRequestWithContext(ctx, method, req.URL, bytes.NewReader(req.Body))
 	if err != nil {
-		return FetchResponse{}, err
+		return nil, err
 	}
 	for k, v := range req.Headers {
 		hr.Header.Set(k, v)
@@ -250,8 +250,17 @@ func (h *host) HTTPFetch(ctx context.Context, req FetchRequest) (FetchResponse, 
 	}
 	resp, err := client.Do(hr)
 	if err != nil {
-		return FetchResponse{}, fetchError(u.Hostname(), err)
+		return nil, fetchError(u.Hostname(), err)
 	}
+	return resp, nil
+}
+
+func (h *host) HTTPFetch(ctx context.Context, req FetchRequest) (FetchResponse, error) {
+	resp, err := h.openFetch(ctx, req)
+	if err != nil {
+		return FetchResponse{}, err
+	}
+	u, _ := url.Parse(req.URL)
 	defer resp.Body.Close() //nolint:errcheck
 	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxFetchBytes+1))
 	if err != nil {
@@ -260,14 +269,7 @@ func (h *host) HTTPFetch(ctx context.Context, req FetchRequest) (FetchResponse, 
 	if len(body) > MaxFetchBytes {
 		return FetchResponse{}, fmt.Errorf("plugins: response larger than %d bytes", MaxFetchBytes)
 	}
-	// Privacy label: record the observed host and bytes.
-	h.m.healthMu.Lock()
-	if hh, err := h.m.store.health(ctx, h.plugin); err == nil {
-		hh.Observed[u.Hostname()]++
-		hh.EgressBytes += int64(len(body) + len(req.Body))
-		_ = h.m.store.putHealth(ctx, h.plugin, hh)
-	}
-	h.m.healthMu.Unlock()
+	h.noteFetchTraffic(ctx, req, int64(len(body)))
 	out := FetchResponse{Status: resp.StatusCode, Headers: map[string]string{}, Body: body}
 	for k := range resp.Header {
 		out.Headers[k] = resp.Header.Get(k)
@@ -776,4 +778,18 @@ func (h *host) hashFile(ctx context.Context, root, path string, background bool,
 		return FolderHash{}, err
 	}
 	return result, nil
+}
+
+func (h *host) noteFetchTraffic(ctx context.Context, req FetchRequest, size int64) {
+	u, err := url.Parse(req.URL)
+	if err != nil {
+		return
+	}
+	h.m.healthMu.Lock()
+	defer h.m.healthMu.Unlock()
+	if hh, err := h.m.store.health(ctx, h.plugin); err == nil {
+		hh.Observed[u.Hostname()]++
+		hh.EgressBytes += size + int64(len(req.Body))
+		_ = h.m.store.putHealth(ctx, h.plugin, hh)
+	}
 }
