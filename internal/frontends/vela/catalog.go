@@ -517,7 +517,7 @@ func (i *instance) search(w http.ResponseWriter, r *http.Request) {
 	switch b.Mode {
 	case "descriptive":
 		source, ok := i.host.Experience.(frontend.DescriptiveSearcher)
-		if !ok || !source.DescriptiveSearchAvailable() {
+		if !ok || !source.DescriptiveSearchAvailable() || !i.aiSearchAvailable() {
 			i.unavailable(w, r)
 			return
 		}

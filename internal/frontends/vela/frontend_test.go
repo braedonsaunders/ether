@@ -32,6 +32,10 @@ type descriptiveFake struct {
 	calls     int
 }
 
+func (f *descriptiveFake) AISearchAvailable() bool { return f.available }
+func (f *descriptiveFake) AISearch(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.SearchPage, error) {
+	return frontend.SearchPage{}, nil
+}
 func (f *descriptiveFake) DescriptiveSearchAvailable() bool { return f.available }
 func (f *descriptiveFake) DescriptiveSearch(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.SearchPage, error) {
 	f.calls++
@@ -39,6 +43,7 @@ func (f *descriptiveFake) DescriptiveSearch(context.Context, *frontend.Viewer, f
 }
 
 func TestVelaProtocolInvariants(t *testing.T) {
+	t.Run("AI search jobs", checkAISearch)
 	t.Run("pairing lineage", checkPairingLineage)
 	t.Run("live pages", checkLivePages)
 	t.Run("fresh home visit", checkFreshHomeVisit)
