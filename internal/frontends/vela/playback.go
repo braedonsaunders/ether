@@ -30,10 +30,12 @@ type client struct {
 	HDR              []string `json:"hdr,omitempty"`
 }
 type playSession struct {
-	scope       string
-	mse         bool
-	preparation []frontend.HLSPreparationEvent
-	diagnostics any
+	scope             string
+	mse               bool
+	preparation       []frontend.HLSPreparationEvent
+	diagnostics       any
+	observedRecords   []object
+	diagnosticHistory []object
 
 	mu                               sync.Mutex
 	viewer                           int64
@@ -244,6 +246,7 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		if track.Type == "audio" {
 			if track.Index == plan.Decision.AudioStream && !plan.Decision.AudioCopy && plan.Decision.AudioCodec != "" {
 				t["codec"] = plan.Decision.AudioCodec
+				delete(t, "channels")
 			}
 			audio = append(audio, t)
 			if track.Index == plan.Decision.AudioStream {
@@ -256,6 +259,9 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 			}
 			t["url"] = url
 			t["codec"] = "webvtt"
+			if strings.Contains(url, "ether_window=1") {
+				t["format"] = "webvtt-window"
+			}
 			subs = append(subs, t)
 			if track.Index == plan.Decision.SubtitleStream {
 				selectedSub = t["id"]
@@ -333,7 +339,7 @@ func (i *instance) session(w http.ResponseWriter, r *http.Request) (*frontend.Vi
 	return v, s
 }
 func (s *playSession) snapshot() object {
-	return object{"cursor": strconv.FormatUint(s.cursor, 10), "revision": s.revision, "plan": s.plan, "publishedRanges": []object{}, "lastObservationSequence": s.sequence, "diagnostics": s.diagnostics}
+	return object{"cursor": strconv.FormatUint(s.cursor, 10), "revision": s.revision, "plan": s.plan, "publishedRanges": []object{}, "lastObservationSequence": s.sequence, "diagnostics": object{"encoder": s.diagnostics, "media": s.observedRecords, "history": s.diagnosticHistory}}
 }
 func (s *playSession) publish(kind string) {
 	s.cursor++
@@ -422,8 +428,82 @@ func (i *instance) command(w http.ResponseWriter, r *http.Request) {
 			}
 			paths[0]["url"] = url
 		}
+		s.retainDiagnostics()
 		s.seek++
 		s.position = pos
+		i.refreshOutput(r.Context(), id, s)
+
+	case "tracks":
+		if _, ok := i.host.Sessions.(frontend.StreamDecisionReader); !ok {
+			i.unavailable(w, r)
+			return
+		}
+		if _, live := s.plan["live"]; live {
+			i.unavailable(w, r)
+			return
+		}
+		var audio, sub *int
+		if b.AudioTrackID != "" {
+			n, ok := offeredTrack(s.plan, "audioTracks", b.AudioTrackID)
+			if !ok {
+				problem(w, 400, "request", "invalid_audio_track")
+				return
+			}
+			audio = &n
+		}
+		var subID any = s.plan["selectedSubtitleTrackId"]
+		if len(b.SubtitleTrackID) > 0 {
+			n := -1
+			if string(b.SubtitleTrackID) != "null" {
+				var track string
+				if json.Unmarshal(b.SubtitleTrackID, &track) != nil {
+					problem(w, 400, "request", "invalid_subtitle_track")
+					return
+				}
+				var ok bool
+				n, ok = offeredTrack(s.plan, "subtitleTracks", track)
+				if !ok {
+					problem(w, 400, "request", "invalid_subtitle_track")
+					return
+				}
+				subID = track
+			} else {
+				subID = nil
+			}
+			sub = &n
+		}
+		if audio == nil && sub == nil {
+			problem(w, 400, "request", "invalid_request")
+			return
+		}
+		url, err := i.host.Sessions.StartStream(r.Context(), i.access(r, v), id, frontend.StreamRequest{Format: frontend.StreamHLS, Position: s.position, LazyStart: s.mse, Continuous: s.mse, AudioStream: audio, SubtitleStream: sub})
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		paths := s.plan["paths"].([]object)
+		paths[0]["url"], paths[0]["transport"], paths[0]["mimeType"] = url, "hls", "application/vnd.apple.mpegurl"
+		paths[0]["qualities"] = []object{}
+		if reader, ok := i.host.Sessions.(frontend.StreamDecisionReader); ok {
+			if d, e := reader.StreamDecision(r.Context(), i.access(r, v), id); e == nil {
+				kind := "remux"
+				if d.Kind == frontend.DecisionTranscode {
+					kind = "transcode"
+				}
+				paths[0]["kind"] = kind
+				paths[0]["decisionReason"] = d.Reason
+			}
+		}
+		if audio != nil {
+			s.plan["selectedAudioTrackId"] = b.AudioTrackID
+		}
+		if sub != nil {
+			s.plan["selectedSubtitleTrackId"] = subID
+		}
+		s.retainDiagnostics()
+		s.source++
+		s.seek++
+		s.preparation = []frontend.HLSPreparationEvent{{Stage: "decision", At: time.Now().UTC()}}
 		i.refreshOutput(r.Context(), id, s)
 	case "pause", "resume":
 		state := "paused"
@@ -491,6 +571,10 @@ func (i *instance) observe(w http.ResponseWriter, r *http.Request) {
 		n, ok := offeredTrack(s.plan, "audioTracks", *b.AudioTrackID)
 		if !ok {
 			problem(w, 400, "request", "invalid_audio_track")
+			return
+		}
+		if b.AudioTrackID != nil && *b.AudioTrackID != s.plan["selectedAudioTrackId"] {
+			problem(w, 409, "conflict", "track_command_required")
 			return
 		}
 		audioIndex = &n

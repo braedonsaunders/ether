@@ -936,6 +936,9 @@ func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (
 				}
 				decision, ok := constrainedH264(decision, ps.Info, caps, b.h264EncoderVerified())
 				if ok && profileDeliveryAllowed(req.Caps.Profiles, decision, ps.Info, candidate.Delivery) {
+					if req.Intent.Options.DirectPlay {
+						decision.Reason = strings.ReplaceAll(decision.Reason, "direct play not allowed by client", "direct play rejected by declared output profile")
+					}
 					return decision, true
 				}
 				if decision.VideoCopy || decision.VideoCodec != "h264" {

@@ -203,7 +203,7 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 		// Media elements cannot attach the API bearer/device headers. The
 		// surface-bound broker authenticates the URL grant, viewer and current
 		// policy on every read, including playlists, segments and subtitles.
-		i.host.Sessions.ServeMedia(w, r.WithContext(i.identityContext(r)))
+		i.serveObservedMedia(w, r.WithContext(i.identityContext(r)))
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/vela/v0/") {
@@ -387,11 +387,12 @@ func (i *instance) capabilities() object {
 		descriptive = source.DescriptiveSearchAvailable()
 	}
 	_, live := i.host.LiveTV.(frontend.LiveGuidePager)
+	_, trackChanges := i.host.Sessions.(frontend.StreamDecisionReader)
 	auth := frontend.AuthenticationFeatures{}
 	if source, ok := i.host.Identity.(frontend.AuthenticationFeatureSource); ok {
 		auth = source.AuthenticationFeatures()
 	}
-	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(live), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(false), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
+	return object{"protocolVersion": 0, "compatibleClientBuilds": object{"minInclusive": "0.1.0", "maxExclusive": "0.2.0"}, "server": object{"id": s.MachineID, "name": s.FriendlyName, "version": s.Version}, "features": object{"passwordSignIn": f(auth.Password), "deviceGrant": f(auth.QuickConnect && i.host.ViewerPortalURL != nil), "quickConnect": f(auth.QuickConnect), "descriptiveSearch": f(descriptive), "aiSearch": f(false), "proactiveFallback": f(false), "liveTV": f(live), "extras": f(false), "initialTrackSelection": f(true), "sessionTrackChanges": f(trackChanges), "extraPlayback": f(false)}, "skins": []object{{"id": "default", "name": "Vela"}}, "defaultSkinId": "default"}
 }
 func (i *instance) negotiate(w http.ResponseWriter, r *http.Request) {
 	var b struct {

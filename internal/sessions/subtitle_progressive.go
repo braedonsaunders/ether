@@ -23,12 +23,12 @@ type playbackTextSubtitles interface {
 }
 
 func progressiveTextTracks(protocol string, caps core.ClientCaps, info core.MediaInfo) []int {
-	if protocol != "jellyfin" || caps.Profiles == nil || (info.Size > 0 && info.Size <= 32<<20) {
+	if caps.Profiles == nil || (info.Size > 0 && info.Size <= 32<<20) {
 		return nil
 	}
 	declared := false
 	for _, p := range caps.Profiles.Subtitles {
-		if p.Format == progressiveSubtitleFormat && strings.EqualFold(p.Method, "external") {
+		if (p.Format == progressiveSubtitleFormat || p.Format == "ether-vtt-window") && strings.EqualFold(p.Method, "external") {
 			declared = true
 		}
 	}
@@ -145,5 +145,36 @@ func (b *Broker) serveProgressiveSubtitle(w http.ResponseWriter, r *http.Request
 				flusher.Flush()
 			}
 		}
+	}
+}
+
+// serveSubtitleWindow reads only cues already teed by active playback. Empty
+// windows are legitimate and may be retried as the encoder publishes more cues.
+func (b *Broker) serveSubtitleWindow(w http.ResponseWriter, r *http.Request, s *brokerSession, stream core.StreamInfo) {
+	fromMS, err := strconv.ParseInt(r.URL.Query().Get("from_ms"), 10, 64)
+	if err != nil || fromMS < 0 || fromMS > int64((1<<63-1)/int64(time.Millisecond))-180000 {
+		http.Error(w, "invalid subtitle position", 400)
+		return
+	}
+	hs, ok := b.transcodeSession(s.public.ID)
+	if !ok {
+		http.Error(w, "subtitle unavailable", 503)
+		return
+	}
+	source, ok := hs.(playbackTextSubtitles)
+	if !ok {
+		http.Error(w, "subtitle unavailable", 503)
+		return
+	}
+	from := time.Duration(fromMS) * time.Millisecond
+	cues, err := source.TextSubtitleCues(stream.Index, from, from+2*time.Minute)
+	if err != nil {
+		http.Error(w, "subtitle unavailable", 503)
+		return
+	}
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodHead {
+		_, _ = io.WriteString(w, subtitles.RenderVTT(cues))
 	}
 }
