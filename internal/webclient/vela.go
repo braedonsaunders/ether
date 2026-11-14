@@ -47,6 +47,17 @@ func ServeVela(w http.ResponseWriter, r *http.Request, dir string) {
 	}
 	defer f.Close()
 	s, e := f.Stat(path)
+	if path == "sw.js" {
+		// The worker's directory is /vela/, but the canonical home and worker
+		// scope are /vela. Never serve the SPA as a missing worker script.
+		if e != nil || !s.Mode().IsRegular() {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Service-Worker-Allowed", "/vela")
+	}
 	if e != nil || s.IsDir() {
 		r = r.Clone(r.Context())
 		u := *r.URL
