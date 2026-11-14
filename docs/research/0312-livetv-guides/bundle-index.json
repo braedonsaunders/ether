@@ -1,0 +1,51 @@
+{
+  "jf-settings.js": {
+    "sha256": "084972abdda8ab31c59786b2955d7bd27835162534ca15ac02422b05f76cbd42",
+    "bytes": 4633
+  },
+  "main-8792-0fadf59092c873ab638b-plex-4.163.0-8246fd2.js": {
+    "sha256": "bdb3e4ce5d49b5eb6be48e11a4aea0f33a357561f8bf1e1303d31255f701cd97",
+    "bytes": 3508034,
+    "modules": {
+      "2601": 2003225,
+      "69612": 2001692,
+      "49101": 2002146,
+      "29943": 516459,
+      "57628": 2002551
+    }
+  },
+  "chunk-6950-1234c6af33ad341d9df9-plex-4.163.0-8246fd2.js": {
+    "sha256": "f3158ede1f1f1e9834361121eed9eb67a16fd17c4debcacf262bd647efe0d95f",
+    "bytes": 10941
+  },
+  "jf-guide.js": {
+    "sha256": "227d341b4ede6b7b3c6114cdd5738a579415e7cbc3d36e3ff66a2779b45ecc68",
+    "bytes": 43241
+  },
+  "chunk-4119-d50918c5809d7bef8a1e-plex-4.163.0-8246fd2.js": {
+    "sha256": "76e05c513ca878de29a3132d90d57b1c3f7ad8a5d914d1fffe245176d95def45",
+    "bytes": 92295,
+    "symbols": {
+      "xl": 83693,
+      "Br": 38691,
+      "Or": 36892,
+      "Ll": 85747
+    }
+  },
+  "chunk-2825-4f7d5d718541ef33c257-plex-4.163.0-8246fd2.js": {
+    "sha256": "8cbdf37034fc19006bb12cbb997fa044cd59ff410fb2fd4be60caf0921aee209",
+    "bytes": 22626
+  },
+  "9054-9054-65a669ed61de90f41431-plex-4.163.0-8246fd2.js": {
+    "sha256": "b3c920640042838362dd3a41f8715f806fe4ec3e34f3ba7bbf5eff31cdda789a",
+    "bytes": 1999803
+  },
+  "chunk-3126-09a7c624d0b2d2642566-plex-4.163.0-8246fd2.js": {
+    "sha256": "388eecc27ccf9a866a76dc60ada02dec47afb625e45c562041c2c57597528907",
+    "bytes": 83745
+  },
+  "chunk-1324-5836e89cb37f466c5993-plex-4.163.0-8246fd2.js": {
+    "sha256": "444ae34dd14d789b46af1dd37e7c6c4fc1c41e8daac1e544c00dd785036eab6c",
+    "bytes": 101771
+  }
+}
