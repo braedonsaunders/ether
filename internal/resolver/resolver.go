@@ -110,13 +110,15 @@ type Options struct {
 
 // CandidateTrace explains one candidate's fate in a resolution.
 type CandidateTrace struct {
-	Preferences         *releasepolicy.Result `json:"preferences,omitempty"`
-	ReleaseID           string                `json:"releaseId"`
-	Name                string                `json:"name"`
-	Indexer             string                `json:"indexer"`
-	Score               float64               `json:"score"`
-	CustomFormats       []FormatMatch         `json:"customFormats,omitempty"`
-	CompatibilityReason string                `json:"compatibilityReason,omitempty"`
+	Preferences   *releasepolicy.Result `json:"preferences,omitempty"`
+	ReleaseID     string                `json:"releaseId"`
+	Name          string                `json:"name"`
+	Indexer       string                `json:"indexer"`
+	Score         float64               `json:"score"`
+	CustomFormats []FormatMatch         `json:"customFormats,omitempty"`
+	// MinimumFormatScore is set only for a custom-format score rejection.
+	MinimumFormatScore  *int   `json:"minimumFormatScore,omitempty"`
+	CompatibilityReason string `json:"compatibilityReason,omitempty"`
 	// Route explains a move by source routing (routing.go), e.g. "faster
 	// source: cached on debrid".
 	Route          string        `json:"route,omitempty"`
@@ -1462,12 +1464,24 @@ func (s *Service) rankWith(ctx context.Context, env rankEnv, req core.ResolveReq
 	if err != nil || len(cands) > 0 || !profile.FallbackBelowMin || profile.MinHeight <= 0 {
 		return cands, rejected, err
 	}
-	if trace != nil {
-		trace.Candidates = trace.Candidates[:start]
-	}
 	// Re-evaluate the same search results, relaxing only the quality floor
-	// and imported allowlist. All other gates are evaluated again unchanged.
-	fallback, fallbackRejected, err := s.rankPass(ctx, env, req, sreq, profile, results, trace, pinID, true)
+	// and imported allowlist. Keep the strict verdict for releases that are
+	// not eligible for the lower-resolution pass.
+	var fallbackTrace *Trace
+	if trace != nil {
+		fallbackTrace = &Trace{}
+	}
+	fallback, fallbackRejected, err := s.rankPass(ctx, env, req, sreq, profile, results, fallbackTrace, pinID, true)
+	if trace != nil {
+		for i, ct := range fallbackTrace.Candidates {
+			if h := fallbackHeight(results[i].Info); h > 0 && h < profile.MinHeight {
+				trace.Candidates[start+i] = ct
+			}
+		}
+		for i := range fallback {
+			fallback[i].trace += start
+		}
+	}
 	return fallback, rejected || fallbackRejected, err
 }
 
@@ -1711,7 +1725,8 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 		if minimum := profile.MinCustomFormatScore; minimum != nil && sc.counted < *minimum && !preferred {
 			clientRejected = true
 			ct.Rejected = true
-			ct.Reason = "below minimum custom format score"
+			ct.MinimumFormatScore = minimum
+			ct.Reason = fmt.Sprintf("Score %d is below this profile's minimum of %d", sc.counted, *minimum)
 			if trace != nil {
 				trace.Candidates = append(trace.Candidates, ct)
 			}
