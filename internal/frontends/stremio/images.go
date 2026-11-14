@@ -129,3 +129,47 @@ func (i *instance) directPoster(r *http.Request, viewer *frontend.Viewer, device
 	}
 	return ""
 }
+
+// backdropArtwork issues only bounded, already-selected row artwork; it never
+// discovers extras or starts media resolution.
+func (i *instance) backdropArtwork(r *http.Request, credential string, viewer *frontend.Viewer, device frontend.Device, titles []frontend.Title) map[frontend.RatingKey]string {
+	out := map[frontend.RatingKey]string{}
+	if len(titles) == 0 {
+		return out
+	}
+	batch, ok := i.host.ImageGrants.(frontend.ImageGrantBatch)
+	base := i.imageBase(r)
+	if !ok || base == nil {
+		for _, title := range titles {
+			if frontend.ValidArtworkPath(title.BackdropPath) {
+				out[title.Key] = "https://image.tmdb.org/t/p/w780" + title.BackdropPath
+			}
+		}
+		return out
+	}
+	for start := 0; start < len(titles); start += 50 {
+		end := min(start+50, len(titles))
+		keys := make([]frontend.RatingKey, 0, end-start)
+		for _, title := range titles[start:end] {
+			keys = append(keys, title.Key)
+		}
+		rows, err := batch.IssueBatch(r.Context(), frontend.ImageBatchRequest{Credential: credential, Device: device, Items: keys, Kinds: []string{frontend.ImageBackdrop}})
+		if err != nil {
+			continue
+		}
+		for _, row := range rows {
+			if !row.Authoritative {
+				continue
+			}
+			for _, image := range row.Images {
+				if image.Image.Kind == frontend.ImageBackdrop && image.Secret != "" {
+					u := *base
+					u.Path += image.Secret
+					out[row.Item] = u.String()
+					break
+				}
+			}
+		}
+	}
+	return out
+}

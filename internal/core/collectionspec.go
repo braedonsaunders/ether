@@ -19,18 +19,19 @@ type CollectionSpec struct {
 	Rules       []CollectionRule   `json:"rules"`
 	Exclude     []CollectionRule   `json:"exclude"`
 	// Sort: popularity | rating | released | title | added | random | personal | source.
-	Sort          string            `json:"sort"`
-	SortDesc      bool              `json:"sortDesc"`
-	Limit         int               `json:"limit"`   // 0 = no limit
-	Refresh       string            `json:"refresh"` // live | hourly | daily | weekly
-	Rotate        *CollectionRotate `json:"rotate,omitempty"`
-	Artwork       CollectionArtwork `json:"artwork"`
-	Targets       CollectionTargets `json:"targets"`
-	Enabled       bool              `json:"enabled"`
-	LocalOnly     bool              `json:"localOnly,omitempty"`     // evaluate rules against the local catalogue only; no remote discovery
-	ReleaseMode   string            `json:"releaseMode,omitempty"`   // released (default), upcoming, or mixed
-	LookaheadDays int               `json:"lookaheadDays,omitempty"` // 1..366 when upcoming is enabled
-	TemplateID    string            `json:"templateId,omitempty"`
+	Sort           string            `json:"sort"`
+	SortDesc       bool              `json:"sortDesc"`
+	Limit          int               `json:"limit"`   // 0 = no limit
+	Refresh        string            `json:"refresh"` // live | hourly | daily | weekly
+	Rotate         *CollectionRotate `json:"rotate,omitempty"`
+	Artwork        CollectionArtwork `json:"artwork"`
+	Targets        CollectionTargets `json:"targets"`
+	PreviewOnFocus bool              `json:"previewOnFocus,omitempty"`
+	Enabled        bool              `json:"enabled"`
+	LocalOnly      bool              `json:"localOnly,omitempty"`     // evaluate rules against the local catalogue only; no remote discovery
+	ReleaseMode    string            `json:"releaseMode,omitempty"`   // released (default), upcoming, or mixed
+	LookaheadDays  int               `json:"lookaheadDays,omitempty"` // 1..366 when upcoming is enabled
+	TemplateID     string            `json:"templateId,omitempty"`
 	// Server-maintained.
 	UpdatedAt   *time.Time `json:"updatedAt,omitempty"`
 	LastBuiltAt *time.Time `json:"lastBuiltAt,omitempty"`

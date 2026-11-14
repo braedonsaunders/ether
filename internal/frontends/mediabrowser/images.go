@@ -12,6 +12,35 @@ import (
 	"strings"
 )
 
+type previewRowArtworkKey struct{}
+
+func withPreviewRowArtwork(r *http.Request, enabled bool) *http.Request {
+	if !enabled {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), previewRowArtworkKey{}, true))
+}
+
+func previewRowArtwork(r *http.Request, item map[string]any) {
+	if enabled, _ := r.Context().Value(previewRowArtworkKey{}).(bool); !enabled {
+		return
+	}
+	backdrops, _ := item["BackdropImageTags"].([]string)
+	if len(backdrops) == 0 || backdrops[0] == "" {
+		return
+	}
+	tags := map[string]any{}
+	if old, ok := item["ImageTags"].(map[string]any); ok {
+		for k, v := range old {
+			tags[k] = v
+		}
+	}
+	tags["Primary"] = backdrops[0]
+	item["ImageTags"] = tags
+	item["PrimaryImageAspectRatio"] = float64(16) / 9
+	delete(item, "ImageBlurHashes")
+}
+
 func (i *instance) gridImagesFor(r *http.Request, titles []frontend.Title) map[frontend.RatingKey]map[string]any {
 	return i.gridImageRows(r, titles, nil, nil)
 }

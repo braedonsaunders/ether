@@ -181,6 +181,7 @@ export interface TargetSchedule {
 }
 
 export interface CollectionSpec {
+  previewOnFocus?: boolean;
   localOnly?: boolean;
   releaseMode?: "released" | "upcoming" | "mixed";
   lookaheadDays?: number;
@@ -415,6 +416,7 @@ export type RowStatus = "always" | "eligible" | "off";
 
 /** The owner's policy for a row (or a family of rows) on a page. */
 export interface RowPolicy {
+  previewOnFocus?: boolean;
   /** Kind ("short-on-time"), "collection:<id>", a hub id, or a glob ("because.*"). */
   row: string;
   status: RowStatus;

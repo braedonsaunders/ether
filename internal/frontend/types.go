@@ -123,3 +123,6 @@ type RangeRepresentation = core.RangeRepresentation
 
 var WithRangeResponse = core.WithRangeResponse
 var IsGrantCredential = core.IsGrantCredential
+
+// HomeSituation is the protocol-neutral Home presentation context.
+type HomeSituation = core.HomeSituation

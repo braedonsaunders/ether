@@ -88,6 +88,24 @@ export function PolicyEditor({
   };
   return (
     <div className="space-y-3 border-t border-border-subtle pt-3 text-xs">
+      <div className="space-y-1.5">
+        <p className="text-fg-muted">{t("Play trailer preview on focus")}</p>
+        <Segmented
+          ariaLabel={t("Play trailer preview on focus")}
+          size="sm"
+          value={
+            policy.previewOnFocus === undefined ? "default" : policy.previewOnFocus ? "on" : "off"
+          }
+          onChange={(v) =>
+            onChange({ ...policy, previewOnFocus: v === "default" ? undefined : v === "on" })
+          }
+          options={[
+            { value: "default", label: t("Default") },
+            { value: "on", label: t("On") },
+            { value: "off", label: t("Off") },
+          ]}
+        />
+      </div>
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
         <span className="text-fg-muted">{t("Anchor to slot")}</span>
         <OptNumber

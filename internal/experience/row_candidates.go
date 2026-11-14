@@ -10,16 +10,17 @@ import (
 
 // RankedCandidate carries protocol-neutral selection and presentation data.
 type RankedCandidate struct {
-	ID        string
-	Purpose   core.RowPurpose
-	Title     string
-	Type      core.MediaType
-	Style     string
-	Promoted  bool
-	Items     []core.Title
-	More      bool
-	Key       core.RatingKey
-	ItemCount int
+	ID             string
+	Purpose        core.RowPurpose
+	Title          string
+	Type           core.MediaType
+	PreviewOnFocus bool
+	Style          string
+	Promoted       bool
+	Items          []core.Title
+	More           bool
+	Key            core.RatingKey
+	ItemCount      int
 }
 
 // CandidateRanker assembles one ranked pool for a visit. A non-nil predicate

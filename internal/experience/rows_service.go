@@ -159,6 +159,7 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 			row := original[index]
 			placement := byID[row.ID]
 			row.Layout, row.Style, row.Rank = placement.Layout, placement.Style, placement.Rank
+			row.PreviewOnFocus = placement.PreviewOnFocus
 			out = append(out, row)
 		}
 	}
