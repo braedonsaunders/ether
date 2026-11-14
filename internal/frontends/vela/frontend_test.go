@@ -19,6 +19,16 @@ func (identityFake) ResolveDevice(context.Context, string, frontend.Device) (*fr
 	return &frontend.Viewer{ID: 1, Username: "viewer"}, time.Now().Add(time.Hour), nil
 }
 func TestVelaProtocolInvariants(t *testing.T) {
+	for version, want := range map[string]bool{"0.1.0": true, "0.1.9": true, "0.1.0+build.7": true, "0.1.1-beta.2": true, "0.2.0-rc.1": true, "0.0.9": false, "0.1.0-alpha": false, "0.2.0": false, "1.0.0": false, "0.1": false, "0.01.0": false, "0.1.1-01": false, "": false} {
+		if got := compatibleBuild(version); got != want {
+			t.Fatalf("build %q: got %v, want %v", version, got, want)
+		}
+	}
+	advertised := (&instance{}).capabilities()
+	if advertised["compatibleClientBuilds"].(object)["minInclusive"] != "0.1.0" {
+		t.Fatal("missing compatibility interval")
+	}
+
 	db, e := sql.Open("sqlite", ":memory:")
 	if e != nil {
 		t.Fatal(e)
