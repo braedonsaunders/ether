@@ -102,6 +102,15 @@ type sessionInput struct {
 	liveRecovering      bool
 	liveDiscontinuities map[int]bool
 	liveDurations       map[int]time.Duration // live: each published segment's real length (session_playlist.go)
+
+	// Header recovery survives input swaps and HTTP retries.
+	headerInputs          map[string]int // deterministic header attempts, retained across swaps
+	headerRestarts        restartBudget
+	headerLastFailure     time.Time
+	headerRecovering      bool
+	headerFallbackPending string
+	headerRejected        map[string]bool
+
 	// contract is the delivered video a static-header session keeps
 	// across failovers; nil for every other session (contract.go).
 	contract       *videoContract

@@ -460,6 +460,12 @@ func pick(streams []core.StreamInfo, kind string, want []string, style string, f
 			continue
 		}
 		matched := rankStreamLanguage(t, want)
+		// A release's default flag cannot make an unrelated language a
+		// viewer preference. Audio may fall back; unwanted subtitles stay off.
+		remembered := memory != nil && rememberedTrackLanguage(t) == langtag.Normalize(memory.Language) && t.Forced == memory.Forced && sdh(t) == memory.SDH
+		if kind == "subtitle" && matched == 0 && !remembered {
+			continue
+		}
 		n := matched
 		if t.Default {
 			n += 5
@@ -478,7 +484,7 @@ func pick(streams []core.StreamInfo, kind string, want []string, style string, f
 				n += 10
 			}
 		}
-		if memory != nil && rememberedTrackLanguage(t) == langtag.Normalize(memory.Language) && t.Forced == memory.Forced && sdh(t) == memory.SDH {
+		if remembered {
 			n += 10000
 		}
 		if n > score {

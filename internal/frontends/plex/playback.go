@@ -522,6 +522,9 @@ func applySelections(p *playRequest, info frontend.MediaInfo, langs []string) {
 	if audio >= 0 && audio < len(info.Streams) && info.Streams[audio].Type == "audio" {
 		p.opts.AudioStream = info.Streams[audio].Index
 	}
+	// Rebuilding a plan must clear the prior selection when the viewer
+	// switches subtitles off or their language is absent on this source.
+	p.opts.SubtitleStream = -1
 	if p.subSet && p.subSel >= 0 && p.subSel < len(info.Streams) && info.Streams[p.subSel].Type == "subtitle" {
 		st := info.Streams[p.subSel]
 		if !st.External {

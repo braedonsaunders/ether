@@ -440,6 +440,7 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 		}
 		if si.Codec == "hevc" {
 			si.MalformedHEVC = malformedHEVCConfig(extra)
+			si.HEVCParameterSets = completeHEVCConfig(extra)
 		}
 	case "audio":
 		si.Channels = s.Channels
