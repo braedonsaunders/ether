@@ -212,7 +212,7 @@ func (p *pool) refused(err error, live int) bool {
 	p.mu.Lock()
 	teardown := p.teardownLocked(now)
 	if teardown {
-		p.limit.dialAfter = later(p.limit.dialAfter, now.Add(t.refusalPause))
+		p.limit.dialAfter = later(p.limit.dialAfter, now.Add(limitJitter(t.refusalPause, t.refusalPause*2)))
 	}
 	p.mu.Unlock()
 	if teardown {
@@ -230,7 +230,7 @@ func (p *pool) refused(err error, live int) bool {
 			p.limit.stated = stated
 		}
 	}
-	if live > 0 {
+	if live > 0 || errors.Is(err, ErrConnectionLimit) {
 		l := &p.limit
 		switch {
 		case l.refusedAt == 0 || live > l.refusedAt || l.widenStep == 0:
@@ -243,10 +243,10 @@ func (p *pool) refused(err error, live int) bool {
 		// Refusals without a widen in between (a burst of dials hitting
 		// the limit together) keep the step.
 		l.refusedAt, l.probed = live, false
-		l.cap = live
-		l.widenAt = now.Add(l.widenStep)
+		l.cap = max(live, 1)
+		l.widenAt = now.Add(limitJitter(l.widenStep, t.widenMax))
 	}
-	p.limit.dialAfter = later(p.limit.dialAfter, now.Add(t.refusalPause))
+	p.limit.dialAfter = later(p.limit.dialAfter, now.Add(limitJitter(t.refusalPause, t.refusalPause*2)))
 	configured := p.targetLocked()
 	p.mu.Unlock()
 	if n, changed := p.applySize(); changed {
@@ -268,7 +268,7 @@ func (p *pool) widenLocked(now time.Time) bool {
 	}
 	p.limit.cap++
 	p.limit.probed = true
-	p.limit.widenAt = now.Add(p.limit.widenStep)
+	p.limit.widenAt = now.Add(limitJitter(p.limit.widenStep, p.o.limits.widenMax))
 	top := p.targetLocked()
 	if c := p.limit.ceiling; c > 0 {
 		top = min(top, c)
@@ -340,4 +340,9 @@ func later(a, b time.Time) time.Time {
 		return b
 	}
 	return a
+}
+
+// limitJitter spreads capacity retries across clients sharing an account.
+func limitJitter(d, cap time.Duration) time.Duration {
+	return min(d+time.Duration(rand.Float64()*float64(d)/8), cap)
 }

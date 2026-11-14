@@ -39,9 +39,19 @@ func (e *ProviderError) Error() string { return e.Message }
 func (e *ProviderError) Unwrap() error { return e.Err }
 
 // TestProvider connects to p, logs in and runs DATE, using the fetcher's
-// TLS and dialer options. It does not touch the fetcher's pools.
+// TLS and dialer options. A successful check re-enables the matching pool.
 func (f *Fetcher) TestProvider(ctx context.Context, p config.UsenetProvider) error {
-	return testProvider(ctx, p, &f.o)
+	err := testProvider(ctx, p, &f.o)
+	if err == nil {
+		for _, pool := range f.order() {
+			// A draft with changed credentials must never unlock the saved account.
+			if pool.cfg.ID == p.ID && pool.cfg.Host == p.Host && pool.cfg.Port == p.Port &&
+				pool.cfg.TLS == p.TLS && pool.cfg.Username == p.Username && pool.cfg.Password == p.Password {
+				pool.brk.authRecovered()
+			}
+		}
+	}
+	return err
 }
 
 // TestProvider is the setup wizard's check with default options.
