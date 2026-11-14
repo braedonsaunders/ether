@@ -198,6 +198,40 @@ export function createLiveTVMock(titles: FakeTitle[], empty = false) {
       useVOD: true,
       vodStatus: { movies: 102431, series: 18204, updated: Math.floor(Date.now() / 1000) - 120 },
       name: "Demo Xtream panel",
+      account: {
+        status: "Active",
+        activeConnections: 1,
+        maxConnections: 1,
+        checkedAt: new Date(Date.now()).toISOString(),
+        expiresAt: new Date(Date.now() + 90 * 86400e3).toISOString(),
+      },
+      logins: [
+        {
+          id: "demo-second",
+          username: "demo-family",
+          password: "••••",
+          account: {
+            status: "Active",
+            activeConnections: 0,
+            maxConnections: 1,
+            checkedAt: new Date(Date.now()).toISOString(),
+            expiresAt: new Date(Date.now() + 60 * 86400e3).toISOString(),
+          },
+        },
+        {
+          id: "demo-third",
+          username: "demo-extra",
+          password: "••••",
+          error: "login refused",
+          account: {
+            status: "Expired",
+            activeConnections: 0,
+            maxConnections: 1,
+            checkedAt: new Date(Date.now()).toISOString(),
+            expiresAt: new Date(Date.now() - 86400e3).toISOString(),
+          },
+        },
+      ],
       auth: {
         type: "xtream",
         server: "http://panel.example:8080",

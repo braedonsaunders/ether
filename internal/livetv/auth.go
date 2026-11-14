@@ -207,6 +207,9 @@ func (a *SourceAuth) hasRedacted() bool {
 // prepareSourceAuth runs before an import: it restores secrets the owner
 // API sent back redacted, validates the settings and derives Xtream URLs.
 func (s *Service) prepareSourceAuth(ctx context.Context, src *Source) error {
+	if err := s.prepareLogins(ctx, src); err != nil {
+		return err
+	}
 	if src.Auth.empty() {
 		src.Auth = nil
 		return nil
@@ -240,6 +243,16 @@ func isXtreamURL(raw, server string) bool {
 // redactSourceAuth hides secrets (and Xtream URLs, which embed them) from a
 // source about to be returned by the owner API.
 func redactSourceAuth(src *Source) {
+	src.Logins = append([]ProviderLogin(nil), src.Logins...)
+	for i := range src.Logins {
+		l := &src.Logins[i]
+		if l.Password != "" {
+			l.Password = redactedSecret
+		}
+		if l.PlaylistURL != "" {
+			l.PlaylistURL = redactedSecret
+		}
+	}
 	if src.Kind == legacyStremioKind && src.PlaylistURL != "" {
 		src.PlaylistURL = redactedSecret
 	}
@@ -450,6 +463,7 @@ type authCache struct {
 }
 
 type authEntry struct {
+	pool    *Source
 	auth    *SourceAuth
 	limit   int           // connection limit; 0 is none
 	gap     time.Duration // least time between new provider streams
@@ -545,11 +559,22 @@ func (s *Service) sourceEntry(ctx context.Context, id string) (authEntry, error)
 		return authEntry{}, core.ErrNotAvailable
 	}
 	e = authEntry{auth: src.Auth, at: s.o.Now(), perHour: max(src.TunesPerHour, 0)}
+	if src.LoginPool || len(src.Logins) > 0 {
+		e.pool = &Source{ID: src.ID, LoginPool: src.LoginPool, Auth: src.Auth, PlaylistURL: src.PlaylistURL, Account: src.Account, Logins: src.Logins}
+	}
 	if src.Account != nil {
 		e.limit = src.Account.MaxConnections
 	}
 	if src.MaxConnections > 0 && (e.limit == 0 || src.MaxConnections < e.limit) {
 		e.limit = src.MaxConnections
+	}
+	if src.LoginPool || len(src.Logins) > 0 {
+		e.limit = loginLimit(src.Account)
+		for _, l := range src.Logins {
+			if l.Error == "" {
+				e.limit += loginLimit(l.Account)
+			}
+		}
 	}
 	switch {
 	case src.TuneGapSeconds > 0:

@@ -66,6 +66,7 @@ type inputRelay struct {
 }
 
 type inputGrant struct {
+	login        *loginLease
 	log          *slog.Logger // immutable, credential-free session correlation
 	token        string
 	origin       string      // the only origin that receives authentication
@@ -184,6 +185,20 @@ func (s *Service) grantInputFor(ss *session, src StreamSource, headers http.Head
 	if source == "" && c.SourceID != "" && (src.ID == stableID(c.ID, "playlist") || len(c.StreamSources) <= 1) {
 		source = c.SourceID
 	}
+	lease, err := s.leaseLogin(ss.ctx, source, src.URL, headers)
+	if err != nil {
+		return err
+	}
+	accepted := false
+	defer func() {
+		if !accepted {
+			s.releaseLogin(lease)
+		}
+	}()
+	if lease != nil {
+		src.URL = lease.raw
+		headers = lease.headers
+	}
 	u, err := url.Parse(src.URL)
 	if err != nil || !validHTTP(src.URL) {
 		return core.ErrNotAvailable
@@ -204,7 +219,7 @@ func (s *Service) grantInputFor(ss *session, src StreamSource, headers http.Head
 	if ss.inputSource.ID != "" {
 		histSrc = ss.inputSource
 	}
-	g := &inputGrant{reserve: reserve, lead: lead, steady: steady, service: s, histChannel: c.ID, histSrc: histSrc,
+	g := &inputGrant{login: lease, reserve: reserve, lead: lead, steady: steady, service: s, histChannel: c.ID, histSrc: histSrc,
 		log:   s.sessionLog(ss).With("input", src.ID),
 		token: base64.RawURLEncoding.EncodeToString(b[:]), origin: relayOrigin(u), headers: headers.Clone(), mediaHeaders: redirectMediaHeaders(src.Headers),
 		ctx: ctx, cancel: cancel, slots: make(chan struct{}, relayConcurrency), source: source,
@@ -225,6 +240,17 @@ func (s *Service) grantInputFor(ss *session, src StreamSource, headers http.Head
 		cancel()
 		return core.ErrNotAvailable
 	}
+	if lease != nil {
+		s.loginPool.mu.Lock()
+		if lease.lost {
+			s.loginPool.mu.Unlock()
+			cancel()
+			return ErrProviderBusy
+		}
+		lease.grants[g] = struct{}{}
+		s.loginPool.mu.Unlock()
+	}
+	accepted = true
 	r.grants[tokenKey(g.token)] = g
 	r.bySess[ss] = g
 	r.health.Store(ss, g)
@@ -271,6 +297,12 @@ func (r *inputRelay) dropLocked(ss *session, g *inputGrant) {
 	delete(r.bySess, ss)
 	// Synchronous: a retune that follows finds the old connection closed.
 	r.taps.release(g)
+	if g.login != nil {
+		g.service.loginPool.mu.Lock()
+		delete(g.login.grants, g)
+		g.service.loginPool.mu.Unlock()
+		g.service.releaseLogin(g.login)
+	}
 }
 
 // relayInput is the URL ffmpeg and ffprobe read the session's input from.
