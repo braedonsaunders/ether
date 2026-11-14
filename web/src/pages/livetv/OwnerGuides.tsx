@@ -163,7 +163,8 @@ export function OwnerGuides({ query = "" }: { query?: string }) {
   const count = (g: Guide) => {
     if (g.all) return channels.length;
     const ids = new Set(g.channels);
-    for (const group of g.groups ?? []) for (const c of grouped.get(key(group)) ?? []) ids.add(c.id);
+    for (const group of g.groups ?? [])
+      for (const c of grouped.get(key(group)) ?? []) ids.add(c.id);
     return ids.size;
   };
   return (
