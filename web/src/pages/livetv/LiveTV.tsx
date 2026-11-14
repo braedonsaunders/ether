@@ -160,8 +160,8 @@ export default function LiveTV() {
             ? "guide"
             : tab === "sources"
               ? "sources"
-              : prev === "guide"
-                ? "guide"
+              : prev === "guide" || prev === "guides"
+                ? prev
                 : "channels",
     );
   }, [tab]);
@@ -887,11 +887,11 @@ export default function LiveTV() {
             tabs={[
               { key: "channels", label: t("Channels") },
               { key: "guide", label: t("Guide") },
+              { key: "guides", label: t("Guides") },
               { key: "looks", label: stylesName() },
               { key: "library", label: t("Library") },
             ]}
           />
-          <OwnerGuides />
         </div>
       </PanelHead>
     ),
@@ -926,7 +926,7 @@ export default function LiveTV() {
     <>
       {panelHead}
       <div className="app-scroll min-h-0 flex-1 lg:overflow-y-auto">
-        {leftTab === "library" ? (
+        {leftTab === "guides" ? null : leftTab === "library" ? (
           <LibraryAside />
         ) : leftTab === "looks" ? (
           <LooksAside
@@ -1047,7 +1047,9 @@ export default function LiveTV() {
   const guideSource = guideSourceId ? sources.find((x) => x.id === guideSourceId) : undefined;
   const mainClassName = "";
   const main =
-    leftTab === "library" ? (
+    leftTab === "guides" ? (
+      <OwnerGuides query={q} />
+    ) : leftTab === "library" ? (
       <div className="p-4 sm:p-6">
         <Library />
       </div>

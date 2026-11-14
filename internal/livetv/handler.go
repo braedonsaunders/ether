@@ -31,6 +31,7 @@ type channelLogoFetcher interface {
 
 func (s *Service) ownerHandler(logos channelLogoFetcher) http.Handler {
 	r := chi.NewRouter()
+	r.Get("/search", s.ownerSearchRoute)
 	r.Get("/guides", s.ownerGuidesRoute)
 	r.Put("/guides", s.ownerGuidesRoute)
 	r.Post("/channels/decades", func(w http.ResponseWriter, r *http.Request) {

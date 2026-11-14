@@ -3,9 +3,11 @@ package plex
 import (
 	"context"
 	"encoding/xml"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/livetv"
 )
@@ -22,6 +24,21 @@ func TestLiveChannelSearchContractAndPolicy(t *testing.T) {
 	if ch, err = service.SaveChannel(ctx, ch); err != nil {
 		t.Fatal(err)
 	}
+	// First demand returns partial indexed results rather than an error.
+	search := service.Frontend().(frontend.LiveTVSearch)
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		hits, e := search.SearchLiveTV(ctx, &ownerUser, "Lantern", 10)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if !hits.Partial {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("search index did not become ready")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	provider := f.srv.liveTVProvider(ctx, &ownerUser)
 	advertised := false
 	for _, feature := range provider.Feature {
@@ -36,6 +53,11 @@ func TestLiveChannelSearchContractAndPolicy(t *testing.T) {
 	request := func(query, token string) map[string]any {
 		t.Helper()
 		r := f.request(t, "GET", path+url.QueryEscape(query), map[string]string{"Accept": "application/json", "X-Plex-Token": token})
+		// Initial search demands the index; preparation runs outside requests.
+		for deadline := time.Now().Add(2 * time.Second); r.Code == 503 && time.Now().Before(deadline); {
+			time.Sleep(10 * time.Millisecond)
+			r = f.request(t, "GET", path+url.QueryEscape(query), map[string]string{"Accept": "application/json", "X-Plex-Token": token})
+		}
 		if r.Code != 200 {
 			t.Fatalf("search: %d %s", r.Code, r.Body.String())
 		}
@@ -58,10 +80,13 @@ func TestLiveChannelSearchContractAndPolicy(t *testing.T) {
 			t.Fatal("upstream exposed")
 		}
 	}
-	for _, q := range []string{"", "  ", "Owner programme", "not-present"} {
+	for _, q := range []string{"", "  ", "not-present"} {
 		if mc := request(q, ownerToken); mc["size"] != float64(0) {
 			t.Fatalf("not channel-only for %q: %#v", q, mc)
 		}
+	}
+	if mc := request("Owner programme", ownerToken); mc["size"] != float64(1) {
+		t.Fatalf("programme search missing: %#v", mc)
 	}
 	r := f.request(t, "GET", path+"Lantern", map[string]string{"Accept": "application/xml"})
 	var wire struct {

@@ -201,3 +201,15 @@ func ShowcaseLogo(c LiveTVChannel) (repoPath string, png []byte, ok bool) {
 	}
 	return "", nil, false
 }
+
+// LiveTVSearch is an optional indexed, policy-filtered search across visible guides.
+// Results are bounded, use the ordinary Live TV IDs, and are not a total count.
+type LiveTVSearch interface {
+	SearchLiveTV(context.Context, *core.Viewer, string, int) (LiveSearchResults, error)
+}
+type LiveSearchResults struct {
+	Partial           bool // Preparation is in progress; counts are never authoritative.
+	Channels          []LiveTVChannel
+	Programmes        []LiveTVProgramme
+	ProgrammeChannels []LiveTVChannel
+}

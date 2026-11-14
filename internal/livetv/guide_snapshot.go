@@ -130,15 +130,22 @@ func (s *Service) evictIdleVirtualGuide(now time.Time) bool {
 		return false
 	}
 	s.virtualGuide.mu.Lock()
-	defer s.virtualGuide.mu.Unlock()
 	if !s.virtualGuide.lastDemand.IsZero() && now.Sub(s.virtualGuide.lastDemand) < virtualGuideIdleWindow {
+		s.virtualGuide.mu.Unlock()
 		return false
 	}
-	if !s.virtualGuide.lastDemand.IsZero() {
+	evicted := !s.virtualGuide.lastDemand.IsZero()
+	if evicted {
 		s.virtualGuide.entries = nil
 		s.virtualGuide.timeline = nil
 		s.virtualGuide.lastDemand = time.Time{}
 		s.virtualGuide.timelineDemand = time.Time{}
+	}
+	s.virtualGuide.mu.Unlock()
+	if evicted {
+		s.searchVirtualMu.Lock()
+		s.searchVirtualSnapshots = nil
+		s.searchVirtualMu.Unlock()
 	}
 	return true
 }
@@ -209,6 +216,9 @@ func (s *Service) publishVirtualGuideEntry(id string, epoch int64, entry *virtua
 	}
 	s.virtualGuide.entries[id] = &published
 	s.virtualGuide.mu.Unlock()
+	if err := s.indexVirtualSearchSnapshot(s.serviceContext(), id, &published); err != nil {
+		s.o.Logger.Warn("virtual guide search index failed", "channel", id, "error", err)
+	}
 }
 
 func (s *Service) startChannelPrep(c Channel, epoch int64, revision uint64, now time.Time, compiled *guideCompileCache) *virtualGuideFlight {
