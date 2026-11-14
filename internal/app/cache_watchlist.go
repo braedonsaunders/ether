@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/cachefill"
@@ -52,16 +50,6 @@ func (a *App) cacheWatchlistDone(ctx context.Context, intent cachefill.WarmInten
 	return err
 }
 
-// This reads watched rows for one explicit show, using the state primary key;
-// it never expands the catalogue or walks another viewer's history.
 func (a *App) cacheWatchlistPosition(ctx context.Context, uid int64, show core.RatingKey) (core.WatchStatus, error) {
-	var key core.RatingKey
-	err := a.db.QueryRowContext(ctx, `SELECT rating_key FROM state_watch WHERE user_id=? AND rating_key>=? AND rating_key<? AND (view_count>0 OR view_offset_ns>0) ORDER BY rating_key DESC LIMIT 1`, uid, core.EpisodeKey(show.TMDB(), 0, 0), core.EpisodeKey(show.TMDB()+1, 0, 0)).Scan(&key)
-	if errors.Is(err, sql.ErrNoRows) {
-		return core.WatchStatus{}, nil
-	}
-	if err != nil {
-		return core.WatchStatus{}, err
-	}
-	return a.state.Get(ctx, uid, key)
+	return a.state.ShowPosition(ctx, uid, show)
 }

@@ -2,6 +2,7 @@ package livetv
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,16 @@ import (
 )
 
 func init() {
+	// FTS docids and readiness are disposable engine-local metadata. Keeping
+	// readiness in a dump without its FTS tables would skip the next backfill.
+	for _, table := range []string{"livetv_search_state", "livetv_search_channel_keys", "livetv_search_programme_keys"} {
+		store.RegisterLocalTable(table)
+	}
+	store.RegisterRestore("livetv_search", func(ctx context.Context, tx *sql.Tx) (func(context.Context, *sql.Tx) error, error) {
+		_, err := tx.ExecContext(ctx, `UPDATE livetv_search_state SET active=0,ready=0 WHERE id=1`)
+		return nil, err
+	}, "livetv_search_channel_keys", "livetv_search_programme_keys", "livetv_search_channels", "livetv_search_programmes")
+
 	// Index changes happen in the import transaction, without a worker or polling.
 	store.Register("livetv", 21, `
  CREATE TABLE livetv_search_state(id INTEGER PRIMARY KEY, active INTEGER NOT NULL, ready INTEGER NOT NULL); INSERT INTO livetv_search_state VALUES(1,0,0);

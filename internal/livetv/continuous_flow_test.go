@@ -639,6 +639,18 @@ func TestNeverHoldOnStillOnceStandbyMasterExistsAndVisibilityLogs(t *testing.T) 
 	}
 	_ = ms.Close()
 
+	// Cold airing queues its master independently of the plate reader. Wait
+	// for the premise of this test before asking the planner to select it.
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if _, ok := oa.CachedStandby(ctx, "nocturne"); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("standby master did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	ltv, err := New(Options{
 		DB:       db,
 		Graphics: oa,
