@@ -30,8 +30,10 @@ type client struct {
 	HDR              []string `json:"hdr,omitempty"`
 }
 type playSession struct {
-	scope string
-	mse   bool
+	scope       string
+	mse         bool
+	preparation []frontend.HLSPreparationEvent
+	diagnostics any
 
 	mu                               sync.Mutex
 	viewer                           int64
@@ -279,6 +281,14 @@ func (i *instance) playback(w http.ResponseWriter, r *http.Request) {
 		delete(p, "durationSeconds")
 	}
 	ps := &playSession{scope: scope, mse: b.Client.MSE, viewer: v.ID, device: requestDevice(r).ID, plan: p, source: 1, seek: 1, revision: 1, cursor: 1, signal: make(chan struct{}), position: pos}
+
+	if !plan.SourceChosenAt.IsZero() {
+		ps.preparation = append(ps.preparation, frontend.HLSPreparationEvent{Stage: "source-chosen", At: plan.SourceChosenAt})
+	}
+	if !plan.DecisionAt.IsZero() {
+		ps.preparation = append(ps.preparation, frontend.HLSPreparationEvent{Stage: "decision", At: plan.DecisionAt})
+	}
+	i.refreshOutput(r.Context(), s.ID, ps)
 	i.mu.Lock()
 	for id, old := range i.sessions {
 		old.mu.Lock()
@@ -323,7 +333,7 @@ func (i *instance) session(w http.ResponseWriter, r *http.Request) (*frontend.Vi
 	return v, s
 }
 func (s *playSession) snapshot() object {
-	return object{"cursor": strconv.FormatUint(s.cursor, 10), "revision": s.revision, "plan": s.plan, "publishedRanges": []object{}, "lastObservationSequence": s.sequence}
+	return object{"cursor": strconv.FormatUint(s.cursor, 10), "revision": s.revision, "plan": s.plan, "publishedRanges": []object{}, "lastObservationSequence": s.sequence, "diagnostics": s.diagnostics}
 }
 func (s *playSession) publish(kind string) {
 	s.cursor++
@@ -414,6 +424,7 @@ func (i *instance) command(w http.ResponseWriter, r *http.Request) {
 		}
 		s.seek++
 		s.position = pos
+		i.refreshOutput(r.Context(), id, s)
 	case "pause", "resume":
 		state := "paused"
 		if b.Kind == "resume" {

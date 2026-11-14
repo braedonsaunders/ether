@@ -950,6 +950,8 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		total:                   total,
 		container:               d.Container,
 		proto:                   proto,
+		diagnosticsEnabled:      req.Diagnostics,
+		outputCodecs:            map[int]string{},
 		requireIndependentProof: req.RequireIndependentProof,
 		log:                     m.log.With("session", id, "initialRelease", req.ReleaseID),
 		created:                 time.Now(),

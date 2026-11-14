@@ -317,7 +317,7 @@ func (s *Session) Rungs() []core.HLSRung {
 
 		out = append(out, core.HLSRung{
 			ID: r.id, Bandwidth: peak * 1000, AverageBandwidth: r.avgKbps * 1000,
-			Width: r.width, Height: r.height, Codecs: r.codecs, FrameRate: fr,
+			Width: r.width, Height: r.height, Codecs: r.codecs, OutputCodecs: s.outputCodecs[t], FrameRate: fr,
 		})
 	}
 	return out
@@ -358,6 +358,7 @@ func (s *Session) ServeRungPlaylist(w http.ResponseWriter, r *http.Request, rung
 		return
 	}
 	body := s.renderPlaylistLocked(t)
+	s.notePlaylistLocked(t, body)
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache")

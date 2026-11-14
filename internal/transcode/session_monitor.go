@@ -136,6 +136,7 @@ func (s *Session) poll(r *run, playlist string, exited bool) {
 		if r.produced == 0 {
 			s.log.Info("first segment ready", "run", r.seq, "segment", n, "after", time.Since(r.started))
 		}
+		s.preparationLocked("first-segment", t)
 		r.produced++
 		r.maxDone = n
 		s.done[t][n] = true
@@ -176,6 +177,8 @@ func (s *Session) noteInitLocked(r *run, t int) error {
 	for len(s.initFiles) <= t {
 		s.initFiles = append(s.initFiles, "")
 	}
+	s.noteOutputCodecsLocked(t, filepath.Join(s.dir, rel))
+	s.preparationLocked("init-segment", t)
 	s.initFiles[t] = rel
 	if t == 0 {
 		s.initFile = rel
@@ -366,6 +369,9 @@ func (s *Session) finish(r *run) {
 	err := redactScopedCommandError(r.proc.Err(), r.spec)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err != nil {
+		s.diagnosticLocked(core.HLSDiagnosticRecord{Resource: "encoder", Error: "encoder exited with an error"})
+	}
 	r.finished = true
 	r.err = err
 	r.paused = false

@@ -348,3 +348,54 @@ func TestBuildRungsHealthyLinkKeepsOriginal(t *testing.T) {
 		t.Fatalf("base peak %d avg %d, file peak %d", base.peakKbps, base.avgKbps, file)
 	}
 }
+
+// One contract covers the MSE startup invariants: metadata is free, first
+// selected rendition starts once, and every rung advertises the same clock.
+func TestMSELazyContinuousRenditions(t *testing.T) {
+	fr := newFakeRunner()
+	m := newTestManager(t, fr, config.Transcode{ABRLadder: true})
+	req := ladderEncodeRequest(t, "mse-lazy", 10*time.Minute)
+	req.LazyStart, req.Continuous, req.Diagnostics = true, true, true
+	req.Decision.Container = ContainerFMP4
+	s := startSession(t, m, req)
+	if n := fr.startCount(); n != 0 {
+		t.Fatalf("metadata started %d encoders", n)
+	}
+	var clock string
+	for _, rung := range s.Rungs() {
+		if rung.OutputCodecs != "" {
+			t.Fatal("unproduced output claims verified codecs")
+		}
+		rec := httptest.NewRecorder()
+		s.ServeRungPlaylist(rec, httptest.NewRequest("GET", "/"+rung.ID+"/index.m3u8", nil), rung.ID)
+		playlist := rec.Body.String()
+		if !strings.Contains(playlist, "#EXT-X-MAP") || strings.Contains(playlist, "#EXT-X-DISCONTINUITY") {
+			t.Fatalf("noncontinuous fMP4: %s", playlist)
+		}
+		var durations []string
+		for _, line := range strings.Split(playlist, "\n") {
+			if strings.HasPrefix(line, "#EXTINF") {
+				durations = append(durations, line)
+			}
+		}
+		got := strings.Join(durations, "\n")
+		if clock == "" {
+			clock = got
+		} else if got != clock {
+			t.Fatal("rung segment clocks differ")
+		}
+	}
+	if fr.startCount() != 0 {
+		t.Fatal("playlist GET started encoder")
+	}
+	rungs := s.Rungs()
+	chosen := rungs[len(rungs)-1].ID
+	rec := httptest.NewRecorder()
+	s.ServeRungSegment(rec, httptest.NewRequest("GET", "/"+chosen+"/init.mp4", nil), chosen, InitSegment)
+	if rec.Code != 200 || fr.startCount() != 1 {
+		t.Fatalf("selected init status=%d starts=%d", rec.Code, fr.startCount())
+	}
+	if !strings.Contains(argValue(fr.lastStart(), "-hls_segment_filename"), "rung-"+chosen) {
+		t.Fatal("initial encoder started on wrong rung")
+	}
+}

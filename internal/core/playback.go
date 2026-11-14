@@ -26,7 +26,8 @@ type HLSRamp struct {
 
 type HLSRequest struct {
 	// LazyStart defers the first encoder until the client selects a rendition.
-	LazyStart bool
+	LazyStart   bool
+	Diagnostics bool
 	// Continuous disables ramps and governor changes that introduce discontinuities.
 	Continuous bool
 	Ramp       HLSRamp    `json:",omitzero"`

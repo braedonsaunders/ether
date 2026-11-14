@@ -745,10 +745,11 @@ type PlanRequest struct {
 	Intent  PlayIntent
 }
 type PlayPlan struct {
-	ID        string
-	Estimated bool
-	Media     core.MediaInfo
-	Decision  core.Decision
+	SourceChosenAt, DecisionAt time.Time
+	ID                         string
+	Estimated                  bool
+	Media                      core.MediaInfo
+	Decision                   core.Decision
 	// Alternatives are evaluated against this same source and client policy.
 	// DirectPlay, DirectStream, Transcoding are evaluated against this same source.
 	DirectPlay, DirectStream, Transcoding bool
