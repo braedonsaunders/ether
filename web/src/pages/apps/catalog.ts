@@ -6,6 +6,7 @@ import { t } from "../../i18n";
  */
 /** Setup chooser and the Apps page use this order, not alphabetical registration. */
 const APP_ORDER = [
+  "vela",
   "plex",
   "jellyfin",
   "emby",
@@ -46,6 +47,8 @@ export function appPurpose(id: string): string {
       return t(
         "At home. Away from home, use a private network tool (Tailscale) or an address you publish.",
       );
+    case "vela":
+      return t("Watch Ether in your browser.");
     case "silo":
       return t("At home on your network.");
     case "stremio":

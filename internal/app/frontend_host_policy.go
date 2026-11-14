@@ -13,6 +13,8 @@ func frontendHostPolicy(id core.Protocol) core.FrontendHostPolicy {
 		return plex.HostPolicy()
 	case "jellyfin", "emby": // Wire the two native API frontends' host options.
 		return mediabrowser.HostPolicy()
+	case "vela":
+		return core.FrontendHostPolicy{PublicURL: true, PlaybackTelemetry: true, NativePlaybackCapabilities: true}
 	case "silo":
 		return core.FrontendHostPolicy{PublicURL: true, InferBuffering: true, PlaybackTelemetry: true, BestEffortLiveStart: true}
 	default:

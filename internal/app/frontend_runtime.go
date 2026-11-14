@@ -28,6 +28,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontends/plex"
 	"github.com/braedonsaunders/ether/internal/frontends/silo"
 	"github.com/braedonsaunders/ether/internal/frontends/stremio"
+	"github.com/braedonsaunders/ether/internal/frontends/vela"
 	"github.com/braedonsaunders/ether/internal/frontends/webdav"
 	"github.com/braedonsaunders/ether/internal/frontends/xtream"
 	"github.com/braedonsaunders/ether/internal/identity"
@@ -407,6 +408,9 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return nil, err
 	}
 	if err := r.registry.Register(silo.Frontend{MachineID: cfg.Server.MachineIdentifier}); err != nil {
+		return nil, err
+	}
+	if err := r.registry.Register(vela.Frontend{AssetsDir: filepath.Join(a.frontendClientsDir(), "vela"), DB: a.db, ReplayKey: a.cfg.DerivedKey("vela-idempotency-v0")}); err != nil {
 		return nil, err
 	}
 	if err := r.registry.Register(stremio.Frontend{}); err != nil {

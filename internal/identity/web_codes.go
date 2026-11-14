@@ -40,6 +40,15 @@ func (g *Grants) IssueWebCode(ctx context.Context, viewerID int64) (string, erro
 // RedeemWebCode atomically consumes a code, then issues an ordinary revocable
 // Jellyfin device grant. An existing matching grant avoids device churn.
 func (g *Grants) RedeemWebCode(ctx context.Context, code, browser, existing string) (string, int64, error) {
+	return g.RedeemDeviceWebCode(ctx, code, "jellyfin", core.Device{ID: browser, Client: "Jellyfin Web", Product: "Ether web player"}, existing)
+}
+
+// RedeemDeviceWebCode consumes a console handoff for a surface-bound device grant.
+func (g *Grants) RedeemDeviceWebCode(ctx context.Context, code, surface string, dev core.Device, existing string) (string, int64, error) {
+	browser := dev.ID
+	if surface == "" {
+		return "", 0, core.ErrUnauthorized
+	}
 	if len(code) != 43 || len(browser) < 16 || len(browser) > 128 {
 		return "", 0, core.ErrUnauthorized
 	}
@@ -51,13 +60,12 @@ func (g *Grants) RedeemWebCode(ctx context.Context, code, browser, existing stri
 	if err != nil || subtle.ConstantTimeCompare([]byte(stored), []byte(key)) != 1 {
 		return "", 0, core.ErrUnauthorized
 	}
-	dev := core.Device{ID: browser, Client: "Jellyfin Web", Product: "Ether web player"}
-	if v, _, err := g.ResolveDevice(ctx, "jellyfin", existing, dev); err == nil && v.ID == viewerID {
+	if v, _, err := g.ResolveDevice(ctx, surface, existing, dev); err == nil && v.ID == viewerID {
 		return existing, viewerID, nil
 	}
 	if err := g.RevokeDevice(ctx, viewerID, dev.ID); err != nil {
 		return "", 0, err
 	}
-	token, err := g.IssueLogin(ctx, viewerID, nil, "jellyfin", dev)
+	token, err := g.IssueLogin(ctx, viewerID, nil, surface, dev)
 	return token, viewerID, err
 }

@@ -297,3 +297,15 @@ func (s surfaceIdentity) RedeemWebCode(ctx context.Context, code, browser, exist
 	}
 	return s.grants.RedeemWebCode(ctx, code, browser, existing)
 }
+
+// RedeemDeviceWebCode exchanges a console handoff for the bound surface.
+func (s surfaceIdentity) RedeemDeviceWebCode(ctx context.Context, code string, device core.Device) (string, error) {
+	if s.grants == nil || s.policy.ExternalIdentity {
+		return "", core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.login, "ether-web"); err != nil {
+		return "", err
+	}
+	token, _, err := s.grants.RedeemDeviceWebCode(ctx, code, string(s.surface), device, "")
+	return token, err
+}
