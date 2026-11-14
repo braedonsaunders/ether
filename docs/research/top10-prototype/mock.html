@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>Top 10 — Plex Web candidate mock</title><style>*{box-sizing:border-box}body{background:#101115;color:#eee;font:18px system-ui;margin:52px}h1{font-size:26px}p{color:#b4b5c1}section{display:flex;gap:24px;margin:36px 0}article{width:360px}img{width:360px;aspect-ratio:16/9;object-fit:cover}h2{font-size:17px;margin:12px 0 4px}small{color:#a9abb6}pre{padding:22px;border:1px solid #454650;font-size:15px;line-height:1.7}b{color:#e6b74c}</style><h1>Ranked shelf · movie items · 16:9 candidate</h1><p>Phase 1 mock — source-derived layout, <b>not a Plex client/device acceptance screenshot</b>.</p><section><article><img src="top10-wide-dark-01.png"><h2>The Game</h2><small>Movie · rank 1</small></article><article><img src="top10-wide-dark-07.png"><h2>Resident Evil</h2><small>Movie · rank 7</small></article><article><img src="top10-wide-dark-10.png"><h2>The Game</h2><small>Movie · rank 10</small></article></section><pre>Hub: type="movie", style="shelf", hubIdentifier="ether.top10.example"
+Meta.DisplayImage: [{ type: "movie", imageType: "coverArt" }]
+Metadata[].type: "movie"                     ← normal detail/playback identity
+Metadata[].Image: [{ type: "coverArt", url: rowScopedRankedImage }]
+
+Web 4.163: selector 21424 → layout 58459 → ratio 77981 → image selector 39579
+Fallback for unverified clients: portrait composite in thumb / coverPoster</pre><p>Rank is the final row position. Samples use cached lab posters without modifying their originals.</p>

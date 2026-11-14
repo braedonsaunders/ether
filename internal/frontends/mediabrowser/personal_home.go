@@ -299,17 +299,18 @@ func personalConfigKey(cfg personalHomeConfig) string {
 }
 
 type storedPersonalShelf struct {
-	Number int64  `json:"number"`
-	WireID string `json:"wireID"`
-	Name   string `json:"name"`
-	Kind   string `json:"kind"`
-	Count  int    `json:"count"`
+	RankedTop10 bool   `json:"rankedTop10,omitempty"`
+	Number      int64  `json:"number"`
+	WireID      string `json:"wireID"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Count       int    `json:"count"`
 }
 
 func encodeShelves(in []personalShelf) ([]byte, error) {
 	out := make([]storedPersonalShelf, len(in))
 	for i, shelf := range in {
-		out[i] = storedPersonalShelf{Number: shelf.number, WireID: shelf.wireID, Name: shelf.name, Kind: shelf.kind, Count: shelf.count}
+		out[i] = storedPersonalShelf{RankedTop10: shelf.row.RankedTop10, Number: shelf.number, WireID: shelf.wireID, Name: shelf.name, Kind: shelf.kind, Count: shelf.count}
 	}
 	return json.Marshal(out)
 }
@@ -324,7 +325,7 @@ func decodeShelves(body []byte) ([]personalShelf, error) {
 		if shelf.WireID == "" || shelf.Name == "" {
 			continue
 		}
-		out = append(out, personalShelf{number: shelf.Number, wireID: shelf.WireID, name: shelf.Name, kind: shelf.Kind, count: shelf.Count})
+		out = append(out, personalShelf{number: shelf.Number, wireID: shelf.WireID, name: shelf.Name, kind: shelf.Kind, count: shelf.Count, row: frontend.Row{RankedTop10: shelf.RankedTop10}})
 	}
 	return out, nil
 }
@@ -754,6 +755,9 @@ func (i *instance) personalTitlePage(r *http.Request, v *frontend.Viewer, shelf 
 		}
 		titles = kept
 	}
+	if shelf.row.RankedTop10 {
+		titles = titles[:min(10, len(titles))]
+	}
 	total := len(titles)
 	offset, limit := q.Offset, q.Limit
 	if limit <= 0 {
@@ -914,7 +918,7 @@ func (i *instance) writePersonalItems(w http.ResponseWriter, r *http.Request, v 
 		return
 	}
 	i.notePersonalDelivery(r, v, shelf, page)
-	i.page(w, r, v, frontend.Page{Items: page, Total: total}, q.Offset)
+	i.page(w, withRankedRow(r, shelf.row.RankedTop10, page, q.Offset), v, frontend.Page{Items: page, Total: total}, q.Offset)
 }
 
 func (i *instance) writePersonalActivity(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, number int64, latest bool, offset, limit int) {
@@ -949,7 +953,7 @@ func (i *instance) writePersonalActivity(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	i.notePersonalDelivery(r, v, shelf, page)
-	i.writeListedTitles(w, r, v, page, nil, total, true, offset, latest)
+	i.writeListedTitles(w, withRankedRow(r, shelf.row.RankedTop10, page, offset), v, page, nil, total, true, offset, latest)
 }
 
 func (i *instance) personalViewOrder(r *http.Request, v *frontend.Viewer) []string {
@@ -1174,7 +1178,7 @@ func (i *instance) recommendations(w http.ResponseWriter, r *http.Request, want 
 			return
 		}
 		items := make([]any, 0, len(titles))
-		images := i.gridImagesFor(r, titles)
+		images := i.gridImagesFor(withRankedRow(r, shelf.row.RankedTop10, titles, 0), titles)
 		i.prefetchParentArtwork(r, titles)
 		ratingFacts := i.pageRatingFacts(r, v, titles)
 		for _, title := range titles {

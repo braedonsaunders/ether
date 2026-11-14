@@ -14,7 +14,7 @@ func HubRows(hubs []core.Hub) []frontend.Row {
 	out := make([]frontend.Row, 0, len(hubs))
 	for _, h := range hubs {
 		purpose := CandidatePurpose(h)
-		row := frontend.Row{ID: h.ID, Title: h.Title, Purpose: purpose, Style: h.Style, Promoted: h.Promoted, More: h.More, Collection: h.Key}
+		row := frontend.Row{ID: h.ID, Title: h.Title, RankedTop10: h.RankedTop10, Purpose: purpose, Style: h.Style, Promoted: h.Promoted, More: h.More, Collection: h.Key}
 		for i := range h.Items {
 			item := h.Items[i]
 			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &item})

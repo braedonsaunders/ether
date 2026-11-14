@@ -26,6 +26,7 @@ type CollectionSpec struct {
 	Rotate        *CollectionRotate `json:"rotate,omitempty"`
 	Artwork       CollectionArtwork `json:"artwork"`
 	Targets       CollectionTargets `json:"targets"`
+	RankedTop10   bool              `json:"rankedTop10,omitempty"`
 	Enabled       bool              `json:"enabled"`
 	LocalOnly     bool              `json:"localOnly,omitempty"`     // evaluate rules against the local catalogue only; no remote discovery
 	ReleaseMode   string            `json:"releaseMode,omitempty"`   // released (default), upcoming, or mixed

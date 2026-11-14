@@ -21,6 +21,33 @@ func (a Source) Read(ctx context.Context, req frontend.ArtworkRequest, img front
 	if transform.Width < 0 || transform.Width > 4000 || transform.Height < 0 || transform.Height > 4000 || (transform.Format != "" && transform.Format != "jpeg" && transform.Format != "png") {
 		return nil, "", core.ErrNotAvailable
 	}
+	base, rank, wide, rankErr := frontend.UnrankArtwork(img)
+	if rankErr != nil {
+		return nil, "", rankErr
+	}
+	if rank > 0 {
+		var renderer interface {
+			Ranked(context.Context, []byte, int, bool) ([]byte, string, error)
+		}
+		ok := false
+		if a.Discovery != nil {
+			renderer, ok = a.Discovery.Overlays.(interface {
+				Ranked(context.Context, []byte, int, bool) ([]byte, string, error)
+			})
+		}
+		if !ok {
+			return nil, "", core.ErrNotAvailable
+		}
+		data, _, err := a.Read(ctx, req, base, frontend.ArtworkTransform{})
+		if err != nil {
+			return nil, "", err
+		}
+		data, ct, err := renderer.Ranked(ctx, data, rank, wide)
+		if err != nil {
+			return nil, "", err
+		}
+		return a.transform(ctx, img.Path, data, ct, transform)
+	}
 	if strings.HasPrefix(img.Path, frontend.LibraryCollagePrefix) {
 		data, err := a.readLibraryCollage(img.Path)
 		if err != nil {

@@ -233,6 +233,7 @@ func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubC
 		TotalSize:     canonicalTotal,
 		More:          h.More,
 		Style:         style,
+		RankedTop10:   h.RankedTop10,
 		Metadata:      md,
 	}
 	if h.ID == "tv.upnext" {
