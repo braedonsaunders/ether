@@ -95,6 +95,9 @@ func TestProgrammeSourceRecovery(t *testing.T) {
 			pb := &programmeSourcePlayback{ready: map[core.RatingKey]string{core.MovieKey(2): "verified-ghost", core.MovieKey(3): "verified-diehard"}, delays: map[core.RatingKey]time.Duration{core.MovieKey(1): 13 * time.Second, core.MovieKey(2): time.Second, core.MovieKey(3): 6 * time.Second}}
 			s := testService(t, Options{Playback: pb})
 			c := testChannel()
+			if _, err := s.SaveChannel(t.Context(), c); err != nil {
+				t.Fatal(err)
+			}
 			c.Items[1].DurationMS = 2 * 60 * 60 * 1000
 			c.Fallback = []Item{c.Items[1], {Key: core.MovieKey(3), Title: "Third", DurationMS: 2 * 60 * 60 * 1000}, {Key: core.MovieKey(4), Title: "Unverified", DurationMS: 2 * 60 * 60 * 1000}}
 			runner := &broadcastFakeRunner{decoder: func(ctx context.Context, r transcode.DecoderRequest) (transcode.Decoder, error) {
@@ -150,6 +153,9 @@ func TestProgrammeSourceRecovery(t *testing.T) {
 			pb := &programmeSourcePlayback{}
 			s := testService(t, Options{Playback: pb})
 			c := testChannel()
+			if _, err := s.SaveChannel(t.Context(), c); err != nil {
+				t.Fatal(err)
+			}
 			c.Items[1].DurationMS = 2 * 60 * 60 * 1000
 			c.Fallback = []Item{c.Items[1]}
 			runner := &broadcastFakeRunner{decoder: func(ctx context.Context, r transcode.DecoderRequest) (transcode.Decoder, error) {
@@ -178,6 +184,9 @@ func TestProgrammeSourceRecovery(t *testing.T) {
 			pb := &programmeSourcePlayback{ready: map[core.RatingKey]string{}}
 			s := testService(t, Options{Playback: pb})
 			c := testChannel()
+			if _, err := s.SaveChannel(t.Context(), c); err != nil {
+				t.Fatal(err)
+			}
 			var offsets []time.Duration
 			runner := &broadcastFakeRunner{decoder: func(ctx context.Context, r transcode.DecoderRequest) (transcode.Decoder, error) {
 				offsets = append(offsets, r.Offset)

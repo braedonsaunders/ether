@@ -11,8 +11,18 @@ import (
 // libraryBrowseFilter composes the source pool and visible rules in indexed SQL.
 func (s *Service) libraryBrowseFilter(ctx context.Context, v *core.User, lib core.Library, req core.Filter) core.Filter {
 	f := req
-	f.Type = filterMediaType(lib)
 	f.CatalogueSources = lib.Sources
+	for _, source := range f.CatalogueSources {
+		if source == "tmdb-movies" || source == "tmdb-tv" {
+			f.CatalogueSources = nil // The union includes the full catalogue.
+			break
+		}
+	}
+	// Unrestricted built-ins impose their type at each browse boundary.
+	// Keeping it out of the request filter preserves recursive indexed paging.
+	if (lib.ID != core.LibraryMovies && lib.ID != core.LibraryShows) || len(f.CatalogueSources) > 0 {
+		f.Type = filterMediaType(lib)
+	}
 	if lib.Source == core.LibraryCollection {
 		f.CollectionMembers = lib.CollectionID
 		f.CatalogueSources = nil
