@@ -262,27 +262,30 @@ export function LibraryEditor({
   onClose: () => void;
   onCreated: (lib: Library) => void;
 }) {
-  const [rules, setRules] = useState<VisibilityRule[]>(
-    allTitles
-      ? []
-      : [
-          {
-            name: "",
-            action: "show",
-            mediaType: seed?.get("type") === "show" ? "show" : "movie",
-            match: "all",
-            rules: conditionsFromBrowse({
-              ...compileQuery(readQuery(seed?.get("filters") ?? null), seed?.get("viewer") ?? ""),
-              ...(seed?.get("genre") ? { genres: [seed.get("genre")] } : {}),
-              ...(seed?.get("decade")
-                ? { yearFrom: Number(seed.get("decade")), yearTo: Number(seed.get("decade")) + 9 }
-                : {}),
-              ...(seed?.get("q") ? { query: seed.get("q") } : {}),
-            }),
-          },
-        ],
-  );
-  const [fallback, setFallback] = useState(allTitles ? "show" : "hide");
+  const [seededRules] = useState<VisibilityRule[]>(() => {
+    const predicate = {
+      ...compileQuery(readQuery(seed?.get("filters") ?? null), seed?.get("viewer") ?? ""),
+      ...(seed?.get("genre") ? { genres: [seed.get("genre")] } : {}),
+      ...(seed?.get("decade")
+        ? { yearFrom: Number(seed.get("decade")), yearTo: Number(seed.get("decade")) + 9 }
+        : {}),
+      ...(seed?.get("q")?.trim() ? { query: seed.get("q")!.trim() } : {}),
+    };
+    // A type-only source choice is the full source pool. Only an actual
+    // saved browse predicate needs an initial Show rule and a Hide default.
+    if (allTitles || Object.keys(predicate).length === 0) return [];
+    return [
+      {
+        name: "",
+        action: "show",
+        mediaType: seed?.get("type") === "show" ? "show" : "movie",
+        match: "all",
+        rules: conditionsFromBrowse(predicate),
+      },
+    ];
+  });
+  const [rules, setRules] = useState(seededRules);
+  const [fallback, setFallback] = useState(seededRules.length ? "hide" : "show");
   const [name, setName] = useState("");
   const [type, setType] = useState(seed?.get("type") === "show" ? "show" : "movie");
   const [saving, setSaving] = useState(false);
