@@ -1,7 +1,6 @@
 package plex
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -113,13 +112,7 @@ func (s *Server) serveRankedPlaceholder(w http.ResponseWriter, r *http.Request, 
 		return false
 	}
 	discovery := s.discovery()
-	if discovery == nil {
-		return false
-	}
-	renderer, ok := discovery.Overlays.(interface {
-		Ranked(context.Context, []byte, int, bool) ([]byte, string, error)
-	})
-	if !ok {
+	if discovery == nil || discovery.Overlays == nil {
 		return false
 	}
 	var data []byte
@@ -136,7 +129,7 @@ func (s *Server) serveRankedPlaceholder(w http.ResponseWriter, r *http.Request, 
 		}
 		data = generated
 	}
-	data, ct, err := renderer.Ranked(r.Context(), data, rank, wide)
+	data, ct, err := discovery.Overlays.Ranked(r.Context(), data, rank, wide)
 	if err != nil {
 		return false
 	}

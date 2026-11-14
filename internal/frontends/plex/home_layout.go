@@ -2,7 +2,6 @@ package plex
 
 import (
 	"context"
-	"github.com/braedonsaunders/ether/internal/core"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -104,7 +103,7 @@ func (s *Server) arrangeHomeRows(ctx context.Context, pr *Request, hc frontend.H
 		}
 	}
 	if source, ok := s.recommender().(frontend.NeutralHomeLayoutSource); ok {
-		sit := core.HomeSituation{Device: hc.Device, Daypart: hc.Daypart, Weekend: hc.Weekend, Now: hc.Now, LibraryID: hc.SectionID, Product: hc.Product, Platform: hc.Platform, SessionID: hc.SessionID, ClientID: hc.ClientID}
+		sit := frontend.HomeSituation{Device: hc.Device, Daypart: hc.Daypart, Weekend: hc.Weekend, Now: hc.Now, LibraryID: hc.SectionID, Product: hc.Product, Platform: hc.Platform, SessionID: hc.SessionID, ClientID: hc.ClientID}
 		ordered, err := source.FinalizeNeutralHome(ctx, pr.User, sit, section, neutral)
 		if err != nil {
 			return rows
