@@ -1,6 +1,6 @@
 import { RuntimeLimitsEditor } from "../RuntimeLimitsEditor";
-import { RuntimeLimitsCard } from "../PermissionSheet";
 import { ActionJobs } from "./ActionJobs";
+import { SaveBarHost } from "../../../components/SaveBar";
 import { pluginCollectionHref } from "../../collections/links";
 import { DashboardPanel } from "@braedonsaunders/appkit-dashboard/primitives";
 import { Badge, Button, Skeleton, cn } from "@braedonsaunders/appkit-ui";
@@ -61,13 +61,19 @@ export function PluginOverview({
         <ProblemCard health={health} onRetry={onRetry} onActivity={onActivity} />
       ) : null}
       <LiveNow detail={detail} calls={calls} onClose={onClose} onFresh={onFresh} />
-      {detail.manifest.ether?.runtime?.kind && detail.manifest.ether.runtime.kind !== "data" ? <ActionJobs id={detail.id} /> : null}
-      <RuntimeLimitsCard
-        limits={detail.runtimeLimits}
-        requested={detail.manifest.ether?.runtime?.limits}
-      />
       {detail.manifest.ether?.runtime?.kind && detail.manifest.ether.runtime.kind !== "data" ? (
-        <RuntimeLimitsEditor plugin={detail.id} onSaved={onFresh} />
+        <ActionJobs id={detail.id} />
+      ) : null}
+      {detail.manifest.ether?.runtime?.kind && detail.manifest.ether.runtime.kind !== "data" ? (
+        <SaveBarHost>
+          <RuntimeLimitsEditor
+            key={detail.id}
+            plugin={detail.id}
+            limits={detail.runtimeLimits}
+            requested={detail.manifest.ether?.runtime?.limits}
+            onSaved={onFresh}
+          />
+        </SaveBarHost>
       ) : null}
       <Placements detail={detail} onClose={onClose} />
     </div>
