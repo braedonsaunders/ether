@@ -321,7 +321,18 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	for _, p := range d.Title.Cast {
 		cast = append(cast, object{"name": p.Name, "role": p.Role})
 	}
-	cache(w, r, object{"title": ts[0], "canPlay": d.CanPlay, "extras": extras, "chapters": []object{}, "cast": cast})
+	out := object{"title": ts[0], "extras": extras, "chapters": []object{}, "cast": cast, "crew": crew(d.Title)}
+	if d.CanPlay != nil {
+		out["canPlay"] = *d.CanPlay
+	}
+	if summary := mediaSummary(d); summary != nil {
+		out["mediaSummary"] = summary
+	}
+	if err := i.detailChildren(r, v, t, d, out); err != nil {
+		fail(w, err)
+		return
+	}
+	cache(w, r, out)
 }
 func (i *instance) children(w http.ResponseWriter, r *http.Request) {
 	v, t, e := i.viewer(r)
